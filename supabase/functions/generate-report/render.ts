@@ -73,6 +73,7 @@ import type {
   ProteinSetView,
   NoticedBlock,
   NoticedWordCount,
+  ProteinSource,
 } from './report.ts'
 // The ONE intake predicate (CUL-497) — a value import, because both surfaces on this page
 // have to reach the same verdict about the same ratings.
@@ -1103,7 +1104,7 @@ function capProtein(p: string): string {
 // ── Protein sets (B-351 slice 5 — §9, Dr. Chen's three conditions) ────────────
 //
 // The three conditions govern every string below:
-//   1. PROVENANCE, STATED ONCE — `PROTEIN_PROVENANCE_NOTE`, on the appendix sheet
+//   1. PROVENANCE, STATED ONCE — `proteinProvenanceNote`, on the appendix sheet
 //      that carries the sets. Label-derived, not lab-verified.
 //   2. PRIMARY FIRST — the set always renders `proteins[0]` in bold, with the
 //      secondaries subordinate behind "also". A 60-second scan never hunts for the
@@ -1120,8 +1121,21 @@ function capProtein(p: string): string {
 // wording implying a human transcription — and the page-1 self-contamination line is the
 // most action-changing sentence in the report, so the reader needs the cue to verify it
 // against the bag. Matches the register the report already uses for vomit-photo reads.
-const PROTEIN_PROVENANCE_NOTE =
-  'Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel, owner-correctable &mdash; label-derived, not lab-verified, and worth confirming against the bag before acting on it.'
+//
+// CUL-1979 — AND THE PROVENANCE IS THE DATA'S, here as on page 1. The cold read of the demo
+// report found this sheet calling every set a photo read beside rows reading "ingredient list
+// not captured", over two foods the owner typed in. Same decision as `proteinReadCaveat`.
+function proteinProvenanceNote(snap: ReportSnapshot): string {
+  const src = windowProteinSources(snap)
+  const tail = 'owner-correctable &mdash; not lab-verified, and worth confirming against the bag before acting on it.'
+  if (src.length === 1 && src[0] === 'photo') {
+    return `Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel, ${tail}`
+  }
+  if (src.length === 1 && src[0] === 'owner') {
+    return `Proteins are as the owner entered them, not read from a label photo &mdash; ${tail}`
+  }
+  return `Proteins are either an automated read of the owner&rsquo;s photo of a product&rsquo;s ingredient panel or entered by the owner &mdash; ${tail}`
+}
 
 /**
  * "during the trial" — or, when the report sees only part of it, what it actually saw.
@@ -1157,7 +1171,7 @@ function offTrialFootnote(targetProtein: string | null): string {
   return targetProtein
     ? `<p class="note"><b>*</b> a protein other than the trial protein (${h(
         capProtein(targetProtein),
-      )}), present on that food&rsquo;s label. This records exposure only; Culprit draws no link between it and any symptom.</p>`
+      )}), on that food&rsquo;s recorded protein list. This records exposure only and is not an association test &mdash; the food&ndash;symptom associations this report states are on page&nbsp;1 under Timing vs symptoms.</p>`
     : ''
 }
 
@@ -1274,9 +1288,35 @@ function trialProteinBreaches(snap: ReportSnapshot): {
 
 /** The one-clause epistemic qualifier for a protein claim made OUTSIDE appendix B, where
  *  the full provenance note lives. Promoting a claim to page 1 must not leave its
- *  provenance behind — a vet may change a prescription diet on the strength of it. */
-const PROTEIN_READ_CAVEAT =
-  '<span class="rnote">Read automatically from the owner&rsquo;s photo of the label &mdash; worth confirming against the bag.</span>'
+ *  provenance behind — a vet may change a prescription diet on the strength of it.
+ *
+ *  CUL-1979 — AND IT NAMES THE REAL PROVENANCE. This was one constant, so a food the owner
+ *  typed in, whose panel the line before had just called "not captured", was still "read
+ *  automatically from the owner's photo of the label". A vet reading both trusts neither.
+ *  The photo sentence prints only when every food behind the claim was photo-read; an
+ *  unknown source never gets it. */
+function proteinReadCaveat(sources: ReadonlyArray<ProteinSource | undefined>): string {
+  const known = sources.filter((x): x is ProteinSource => x !== undefined)
+  const body =
+    known.length > 0 && known.length === sources.length && known.every((x) => x === 'photo')
+      ? 'Read automatically from the owner&rsquo;s photo of the label'
+      : known.length > 0 && known.length === sources.length && known.every((x) => x === 'owner')
+        ? 'Entered by the owner, not read from a label photo'
+        : 'Each food&rsquo;s proteins were either read automatically from a label photo or entered by the owner'
+  return `<span class="rnote">${body} &mdash; worth confirming against the bag.</span>`
+}
+
+/** CUL-1979 — the window's food sources, as a list `proteinReadCaveat` decides over. */
+function windowProteinSources(snap: ReportSnapshot): Array<ProteinSource | undefined> {
+  const ps = snap.diet.proteinSources
+  if (!ps) return [undefined]
+  return [...(ps.photo > 0 ? ['photo' as const] : []), ...(ps.owner > 0 ? ['owner' as const] : [])]
+}
+
+/** CUL-1979 — an allowed food's source, by the label the contamination fact carries. */
+function permittedSource(t: NonNullable<ReportSnapshot['trial']>, label: string): ProteinSource | undefined {
+  return t.permittedFoods.find((f) => f.label === label)?.source
+}
 
 /**
  * The compact table-cell form (appendices C and E): no bold, order carries prominence.
@@ -2645,8 +2685,19 @@ function headline(snap: ReportSnapshot): string {
             outsideHere,
           )} of the trial&rsquo;s ${num(tb.trialDaysElapsed)} days fall outside it</b>, so the count above is over that window, not over the trial.`
         : ''
+    // CUL-1978 — THE DISCRETE BREACHES RIDE THE HEADLINE TOO. `breachBit` names proteins the
+    // record shows inside a food or a bowl; a beef dinner logged four times is neither, so
+    // the demo's headline read "Tracking … day 19 of 42" over four off-diet feedings that only
+    // the exposure tile mentioned. Same count and span as that tile, so the two cannot differ.
+    const offDiet = tb && !tb.allowedSetUnavailable ? tb.exposures.offDiet : 0
+    const offDietBit =
+      offDiet > 0 && tb
+        ? ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b> (${h(
+            fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
+          )}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
+        : ''
     return `
-  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${breachBit}</div>`
+  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${offDietBit}${breachBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
@@ -3076,7 +3127,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
           snap.diet.trialProteinMismatch
             ? ` <b>Measured against the trial food&rsquo;s label (${h(capProtein(snap.diet.trialProteinMismatch.foodProtein))}), not the recorded protein (${h(capProtein(snap.diet.trialProteinMismatch.target))}) &mdash; see the trial-protein safety flag.</b>`
             : ''
-        } ${PROTEIN_READ_CAVEAT}`,
+        } ${proteinReadCaveat(windowProteinSources(snap))}`,
       ),
     )
   }
@@ -3135,7 +3186,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
           onlyPrimary
             ? ''
             : 'A vet-approved extra that carries a second protein is as trial-invalidating as a contaminated primary diet, and less likely to be noticed. '
-        }${PROTEIN_READ_CAVEAT}`,
+        }${proteinReadCaveat(t.contamination.map((c) => permittedSource(t, c.food.label)))}`,
       ),
     )
   }
@@ -3350,6 +3401,30 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // moves the rungs next. It still counts toward suppressing the affirmative.
   const caveats: string[] = []
   let refusalCaveat: string | null = null
+  // CUL-1978 — A FEEDING OFF THE DIET IS A REASON THE RECORD CANNOT CARRY A CLEAN RESULT, and
+  // it was the one this list never named. The demo cold read: four beef feedings in nineteen
+  // days, the exposure tile said so, and this callout still opened "covers 19 of 19 days … and
+  // supports interpreting it" — coverage printed as validity. What the record positively shows
+  // ranks first. `mayClaimAllMatched`'s other two reasons (a feeding naming no food, a dose by
+  // mouth) are the same class and get their own sentences beside it.
+  const countScope = trialCountScope(t)
+  if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable) {
+    caveats.push(
+      `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.`,
+    )
+  }
+  if (t.exposures.unclassifiable > 0) {
+    caveats.push(
+      `${num(t.exposures.unclassifiable)} logged feeding${t.exposures.unclassifiable === 1 ? '' : 's'} ${countScope} name${
+        t.exposures.unclassifiable === 1 ? 's' : ''
+      } no food, so ${t.exposures.unclassifiable === 1 ? 'it' : 'they'} could not be checked against the trial.`,
+    )
+  }
+  if (t.oralRoute.length > 0) {
+    caveats.push(
+      `${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth ${countScope} may carry a protein (above), so the elimination cannot be confirmed clean from this record.`,
+    )
+  }
   if (t.belowCoverageFloor) {
     caveats.push(
       'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
@@ -4301,7 +4376,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
     const scope = trialCountScope(t)
     return `No medication or supplement is recorded as overlapping ${
       scope === 'during the trial' ? 'the trial window' : scope.replace(/^in /, '')
-    }.`
+    } &mdash; not checked with the owner.`
   }
   const rows = t.medicationOverlap.map((m) => {
     // SAY WHEN THE DRUG STARTED, NOT ONLY WHEN THE OVERLAP DID. `fromDate` is
@@ -5069,7 +5144,9 @@ function trialTiles(snap: ReportSnapshot): string[] {
       tile(
         `${mc.finishedMeals}`,
         `<small>&nbsp;/&nbsp;${mc.ratedMeals}</small>`,
-        `Meals fully eaten (rated meals only)${intake ? '<br/>recent decline flagged above' : ''}`,
+        `Meals fully eaten (rated meals only)${
+          recentNotFullyEatenRun(mc) > 0 ? `<br/><b>last ${num(recentNotFullyEatenRun(mc))} in a row not fully eaten</b>` : ''
+        }${intake ? '<br/>recent decline flagged above' : ''}`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline') {
@@ -5087,6 +5164,17 @@ function trialTiles(snap: ReportSnapshot): string[] {
   tiles.push(snap.trial ? trialExposureTile(snap.trial) : coverageTile(ag))
   tiles.push(weightTile(snap))
   return tiles
+}
+
+/**
+ * CUL-1978 — the trailing run of rated meals not fully eaten, or 0 when it says nothing a
+ * ratio beside it does not. `40 of 44 fully eaten` read as a dog who eats fine while the four
+ * left were the four most recent in a row, diluting the safety flag above it. A run of one is
+ * one meal; a run of every rated meal is already the ratio (`0 of 44`).
+ */
+function recentNotFullyEatenRun(mc: { ratedMeals: number; recentNotFullyEatenRun?: number }): number {
+  const run = mc.recentNotFullyEatenRun ?? 0
+  return run >= 2 && run < mc.ratedMeals ? run : 0
 }
 
 /**
@@ -5795,7 +5883,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     return `
   <div class="sec">
     <h2>Vomit characteristics</h2>
-    <p class="note">${denom} <b>Not a clearance:</b> a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads &mdash; if blood or foreign material <b>is</b> seen in any incident, that incident leads the flags for review at the top of the report.</p>
+    <p class="note"><b>No photo of any incident was read, so the automated blood and foreign-material check had nothing to look at and could not flag either.</b> ${denom} <b>Not a clearance:</b> a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads &mdash; if blood or foreign material <b>is</b> seen in any incident, that incident leads the flags for review at the top of the report.</p>
   </div>`
   }
 
@@ -5924,9 +6012,20 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
   // could be one loose stool of one or of forty, and those are opposite consults. A zero here
   // is a count of the owner's normal-stool logs, stated as a count beside its sibling — not a
   // present-only category and not a clearance.
-  const keyLine = allCats
-    .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
-    .join('&nbsp;&middot;&nbsp; ')
+  // CUL-1978 — A ZERO IS ONLY A COUNT WHEN SOMEONE WAS COUNTING. "Loose / watery ×0" from two
+  // stool logs in twenty-seven days read as a clean bowel record; it is two looks. Fewer stool
+  // logs than days in the window cannot assess diarrhea, so the page says that and drops the
+  // zero. A loose count above zero always prints: it is a finding at any density.
+  const thinStool = st.looseCount === 0 && st.total < st.windowDays
+  const thinLead = thinStool
+    ? `<b>Stool logged ${num(st.total)} time${st.total === 1 ? '' : 's'} in ${num(st.windowDays)} days &mdash; not enough to assess diarrhea.</b> `
+    : ''
+  const keyLine =
+    thinLead +
+    allCats
+      .filter((c) => !(thinStool && c.n === 0))
+      .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
+      .join('&nbsp;&middot;&nbsp; ')
 
   // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
   // it reaches into the window. Easier logging moves what gets RECORDED, not what the pet did, so
@@ -6167,7 +6266,11 @@ function dietMeds(snap: ReportSnapshot): string {
       ? 'Meal-food protein sets in appendix&nbsp;B; each allowed food&rsquo;s set is on the allowed list above.'
       : 'Full protein sets in appendix&nbsp;B.'
     const contamBit = contamBits.length
-      ? ` <b>${contamBits.join(' ')}</b> ${PROTEIN_READ_CAVEAT} ${setPointer}`
+      ? ` <b>${contamBits.join(' ')}</b> ${proteinReadCaveat([
+          ...(selfContam.length > 0 || !t.proteinSet.complete ? [t.proteinSet.source] : []),
+          ...breach.permittedExtras.map((c) => (snap.trial ? permittedSource(snap.trial, c.food.label) : undefined)),
+          ...d.freeFed.filter((f) => f.proteinSet.offTrial.length > 0).map((f) => f.proteinSet.source),
+        ])} ${setPointer}`
       : ''
     left.push(
       kv(
@@ -6263,7 +6366,10 @@ function dietMeds(snap: ReportSnapshot): string {
         : intake.kind === 'itemised'
           ? `, ratings: ${intakeRatingList(intake.ratings)}`
           : ''
-    const typically = mc ? `${modeBit} &mdash; ${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten` : ''
+    const ffRun = mc ? recentNotFullyEatenRun(mc) : 0
+    const typically = mc
+      ? `${modeBit} &mdash; ${ffRun > 0 ? `<b>the last ${num(ffRun)} rated in a row not fully eaten</b>; ` : ''}${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} fully eaten`
+      : ''
     // #8 — NAME the foods fed as meals (e.g. a wet diet) on page 1, not just a bare "N discrete
     // meals": the first real artifact left Nyx's wet food unnamed and cited a non-existent appendix.
     const mealNames = distinctLabels(d.mealItems.map((i) => ({ label: i.foodLabel })), 2)
@@ -6300,8 +6406,12 @@ function dietMeds(snap: ReportSnapshot): string {
     )
     const excluded = excludedParts.length > 0 ? `; ${excludedParts.join(' and ')} excluded` : ''
     if (shape.kind === 'legacy' && mc) {
+      // CUL-1978 — the recent run LEADS, and the window ratio is then named as the window's.
+      const run = recentNotFullyEatenRun(mc)
       feedBits.push(
-        `${num(mc.finishedMeals)} of ${num(mc.ratedMeals)} rated meals fully eaten (owner-observed${excluded}). ${pointer}`,
+        `${run > 0 ? `<b>The last ${num(run)} rated meals in a row were not fully eaten</b>; ` : ''}${num(mc.finishedMeals)} of ${num(
+          mc.ratedMeals,
+        )} rated meals fully eaten${run > 0 ? ' over the window' : ''} (owner-observed${excluded}). ${pointer}`,
       )
     } else if (shape.kind === 'byFood') {
       feedBits.push(`${shape.head}. Intake recorded (owner-observed), by food: ${shape.byFood}. ${pointer}`)
@@ -6410,7 +6520,9 @@ function dietMeds(snap: ReportSnapshot): string {
   // Ad-hoc / OTC doses with no configured regimen (§3.8 orphan-dose gap). Already window-scoped.
   const unlinked = snap.unlinkedMedications
   if (meds.length === 0 && supps.length === 0 && unlinked.length === 0) {
-    right.push(kv('Medication', 'None logged in this window.'))
+    // CUL-1978 — "none logged" is the record; whether the pet had any is the owner's answer,
+    // and the report never asked. Said so where a vet reads it, so the gap prompts the question.
+    right.push(kv('Medication', 'None logged in this window &mdash; not checked with the owner.'))
   }
   for (const m of meds) {
     right.push(kv(h(m.drugName), medicationLine(m)))
@@ -6912,36 +7024,75 @@ function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
   return `${prefix}${head} (${src}; no regimen configured).${extrasBit}`
 }
 
+/** One Established finding, as the line has always printed it (B-351 slice 6, B-499). */
+function establishedSentence(e: CorrelationSummary['established'][number]): string {
+  // A JOINT candidate (B-351 slice 6) must declare itself HERE, on the most-scanned
+  // line of the report.
+  //
+  // CURRENTLY UNREACHABLE BY CONSTRUCTION, and kept anyway. After the adversarial pass,
+  // a joint candidate caps at Early (§7 #4) and §8.5 admits only Established, so no joint
+  // finding reaches this line today. That cap is a spec-vs-build call the PM may rule
+  // either way; if it is ever relaxed, the report must not silently render a joint
+  // candidate bare. Defence in depth costs one branch here and would cost a vet a wrong
+  // diet decision there. Without the clause a vet reads "chicken and duck reached the
+  // established association threshold" as two independently-implicated antigens and
+  // may drop both from the diet — when the actual finding is that the record cannot
+  // yet distinguish them, and the informative next step is to separate them. The
+  // engine already refuses to credit one; the report must not un-refuse it by
+  // omission.
+  const joint =
+    e.proteins && e.proteins.length > 1
+      ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
+      : ''
+  // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
+  // holds no correlation detail on any report, and is empty on a clean/refused one, so
+  // the pointer dead-ended. The statistical detail — cases, controls, p — is already
+  // inline on this line, which is where a vet reads it; there is nowhere else to send them.
+  return `${h(e.protein)} reached the established association threshold for ${h(
+    symptomLabel(e.symptomType).toLowerCase(),
+  )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
+    e.controlExposed,
+  )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
+}
+
 function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
-  if (c.hasEstablished && c.established.length > 0) {
-    const e = c.established[0]
-    // A JOINT candidate (B-351 slice 6) must declare itself HERE, on the most-scanned
-    // line of the report.
-    //
-    // CURRENTLY UNREACHABLE BY CONSTRUCTION, and kept anyway. After the adversarial pass,
-    // a joint candidate caps at Early (§7 #4) and §8.5 admits only Established, so no joint
-    // finding reaches this line today. That cap is a spec-vs-build call the PM may rule
-    // either way; if it is ever relaxed, the report must not silently render a joint
-    // candidate bare. Defence in depth costs one branch here and would cost a vet a wrong
-    // diet decision there. Without the clause a vet reads "chicken and duck reached the
-    // established association threshold" as two independently-implicated antigens and
-    // may drop both from the diet — when the actual finding is that the record cannot
-    // yet distinguish them, and the informative next step is to separate them. The
-    // engine already refuses to credit one; the report must not un-refuse it by
-    // omission.
-    const joint =
-      e.proteins && e.proteins.length > 1
-        ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
-        : ''
-    // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
-    // holds no correlation detail on any report, and is empty on a clean/refused one, so
-    // the pointer dead-ended. The statistical detail — cases, controls, p — is already
-    // inline on this line, which is where a vet reads it; there is nowhere else to send them.
-    return `${h(e.protein)} reached the established association threshold for ${h(
+  // EVERY Early finding, the primary sign's first (adversarial pass 1). Naming only the
+  // engine's top-ranked one left the primary sign's out whenever a different symptom ranked
+  // higher, beside a line that now names a peer: exoneration by omission. There are always
+  // few. The hedge sits INSIDE the bold, so a skim cannot lift the association as a finding,
+  // and it states the tier, not a reason: Early also holds findings capped for a shared bowl,
+  // a drug on board or a joint candidate, so "too few events" would be false for some.
+  const primary = snap.clinicalQuestion.primarySymptom
+  const earlies = [...(c.early ?? [])].sort(
+    (a, b) => Number(b.symptomType === primary) - Number(a.symptomType === primary),
+  )
+  const earlyClause = (e: NonNullable<CorrelationSummary['early']>[number]): string =>
+    // Each count names its denominator and its window (cold read: "0 controls" alone could
+    // not be read). A matched pair is one episode and its time-matched control window; each
+    // arm counts the pairs where the protein fell in the window before it.
+    `${h(capProtein(e.protein))} ${e.proteins && e.proteins.length > 1 ? 'show' : 'shows'} an early association with ${h(
       symptomLabel(e.symptomType).toLowerCase(),
-    )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
-      e.controlExposed,
-    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
+    )} (${h(capProtein(e.protein))} in the ${num(e.correlationWindowHours)}&nbsp;h before ${num(e.caseExposed)} of ${num(
+      e.matchedPairs,
+    )} episodes, vs ${num(e.controlExposed)} of ${num(e.matchedPairs)} matched control windows)`
+  // A joint candidate caps at Early (§7 #4), so this is where it actually lands: the clause the
+  // established branch keeps for it applies here first.
+  const earlyJoint = earlies.some((e) => e.proteins && e.proteins.length > 1)
+    ? ' Proteins named together co-occur in every exposure on record, so that association <b>cannot be attributed to either one individually</b>.'
+    : ''
+  if (c.hasEstablished && c.established.length > 0) {
+    // EVERY Established finding, the primary sign's first, then every Early one (adversarial
+    // pass 2, QUIET). This branch rendered `established[0]` and returned, so a second
+    // Established finding and every Early one vanished whenever any finding was established,
+    // the primary sign's included, while appendix C's legend sends the reader here for them.
+    const established = [...c.established].sort(
+      (a, b) => Number(b.symptomType === primary) - Number(a.symptomType === primary),
+    )
+    const earlyTail =
+      earlies.length > 0
+        ? ` <b>${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed.</b>${earlyJoint}`
+        : ''
+    return `${established.map((e) => establishedSentence(e)).join(' ')}${earlyTail}`
   }
   const staple = c.stapleProtein
     // "IS OFFERED", NOT "EATS" (cold read round 10). The staple-washout reason is about
@@ -6950,7 +7101,7 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     // other source a free-fed bowl nobody observes. "Eats" asserts intake on the one
     // document whose headline is that there wasn't any. Same invariant as the refusal
     // lane: what the app sees is what was put down, never what went in.
-    ? ` — ${h(c.stapleProtein)} is in most of what ${h(snap.signalment.name)} is offered, so it can't be isolated`
+    ? ` ${h(capProtein(c.stapleProtein))} is in most of what ${h(snap.signalment.name)} is offered, so it can't be isolated.`
     : ''
   const timing = c.timing
     .map((t): string => {
@@ -6982,7 +7133,18 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   // correlation content and on a clean/refused report it is empty, so the pointer led a
   // vet who followed it to an off-diet table or a blank page. (The negative branch still
   // owes a denominator/power statement — that is B-489, folded in when either is picked up.)
-  return `<b>No single food/protein reached the established correlation threshold</b> over this window${staple}.${timingBit}`
+  // CUL-1978 — THE NULL LINE IS NOT A NEGATIVE, and it read as one. The demo's beef weeks
+  // mirrored its vomit weeks, Home showed beef as an early pattern, and this line told a vet
+  // no food reached the threshold. An Early finding is named here with its counts and its
+  // limit (PM, 2026-10-18, amending spec §8.5); it is never stated as a finding, and no p value
+  // rides with it, because Early is exactly the tier whose p a reader must not lean on.
+  // THE EARLY ASSOCIATION LEADS (cold read 2, N6): opening on "No food … reached" put the
+  // negative clause where a scan stops, ahead of the association it then names.
+  const lead =
+    earlies.length > 0
+      ? `<b>${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed; no food or protein reached that threshold over this window. Not a negative result.</b>`
+      : `<b>No food or protein reached the established association threshold over this window</b> &mdash; not a negative result: a record this size cannot rule a food out.`
+  return `${lead}${staple}${earlyJoint}${timingBit}`
 }
 
 // ── Footer (per page/section) ────────────────────────────────────────────────────
@@ -8534,7 +8696,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
           snap.trial!.challengeWindowDays,
         )} days after this feeding — the published time-to-flare window in ${h(
           speciesPlural(snap.signalment.species),
-        )} (Olivry &amp; Mueller). <b>Timing only.</b> It is not an attribution: an unlogged exposure is always possible, so no pairing here can be exclusive, and same-day pairs are deliberately excluded. It marks ${num(
+        )} (Olivry &amp; Mueller). <b>Timing only.</b> It is not an attribution, and not the association test on page&nbsp;1: an unlogged exposure is always possible, so no pairing here can be exclusive, and this marker deliberately excludes same-day pairs. It marks ${num(
           daggerRows,
         )} of ${num(grouped.length)} row${grouped.length === 1 ? '' : 's'} here &mdash; but on this record <b>${num(
           markerBaseRate,
@@ -8848,7 +9010,7 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
     .join('')
   const anyIncomplete = dietFoods.some((f) => !f.set.complete)
   const proteinsBit = proteinRows
-    ? `${proteinRows}<p class="note">${PROTEIN_PROVENANCE_NOTE}${
+    ? `${proteinRows}<p class="note">${proteinProvenanceNote(snap)}${
         anyIncomplete
           ? ' Where the ingredient list was never captured, only the protein on the front of the pack is known &mdash; those foods may contain proteins not listed here.'
           : ''
@@ -8858,7 +9020,7 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
       // along, because appendix C on this same sheet renders label-derived sets whether
       // or not a named DIET food exists, and §9 condition 1 is "stated once", not
       // "stated only when the diet block happens to be populated".
-      `No named diet food in this window to read a protein set from. <span class="rnote">${PROTEIN_PROVENANCE_NOTE}</span>`
+      `No named diet food in this window to read a protein set from. <span class="rnote">${proteinProvenanceNote(snap)}</span>`
 
   // CUL-978 site 1 — the negative is cross-checked against the indications the report
   // already prints. NEVER SYNTHESISED INTO A ROW: an indication is what the owner typed

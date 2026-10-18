@@ -42,7 +42,8 @@
 // same-minute symptom duplicates for the correlation/chronicity/worsening EPISODE counts,
 // and meal exposures are protein-keyed sets, so the divergence is bounded and, where it
 // exists, the report's de-duped version is the intended clinical truth). The report reads
-// ONLY `Established`-tier correlations (spec §8.5 — `Early` implies rigor the data lacks)
+// `Established`-tier correlations as findings, `Early` ones only as a qualifier on the null
+// line (CUL-1978, PM 2026-10-18, unseating spec §8.5's "Early never reaches the report")
 // and the safety-class findings (chronicity / intake-decline / worsening) for the
 // safety-leads slot; it NEVER reads the rolling Signal cache (the windows differ).
 // Window-consistency is load-bearing (Data Scientist sign-off, spec §7): see
@@ -152,6 +153,9 @@ export type {
   TrialMedicationOverlap,
   TrialPermittedFood,
 } from './trial.ts'
+// CUL-1979 — lives in trial.ts (which this file imports) so both can stamp a food's source.
+export { proteinSourceOf, type ProteinSource } from './trial.ts'
+import { proteinSourceOf, type ProteinSource } from './trial.ts'
 // CUL-875 (Noticed N-6) — the daily look's block. Pure assembly, like `trial.ts`.
 // The types are re-exported below so the I/O shell has one import surface for the
 // report's inputs, exactly as it does for every other row shape.
@@ -1892,9 +1896,23 @@ export interface ProteinSetView {
   /** Off-trial proteins present in THIS food, prominence-ordered. Empty when there
    *  is no active trial, no resolvable target protein, or none are present. */
   offTrial: string[]
+  /**
+   * CUL-1979 — where this set came from, so a protein claim promoted to page 1 names its
+   * real source instead of a constant "read from the owner's photo of the label".
+   * Optional for the fixture corpus; absent renders the neutral either-source wording,
+   * never the photo line.
+   */
+  source?: ProteinSource
 }
 
+
 export interface DietSummary {
+  /**
+   * CUL-1979 — how many distinct foods fed in this window had their proteins read from a
+   * label photo vs entered by the owner. The antigen tally pools every food fed, so its
+   * provenance note is decided over this. Optional for the fixture corpus.
+   */
+  proteinSources?: { photo: number; owner: number }
   /**
    * The active trial's canonical target protein — the one key every `offTrial` on this
    * snapshot was computed against, resolved once (B-351 slice 5).
@@ -1989,6 +2007,14 @@ export interface DietSummary {
     ratedMeals: number
     finishedMeals: number
     rate: number
+    /**
+     * CUL-1978 — how many of the MOST RECENT rated meals, in a row, were not fully eaten.
+     * `40 of 44` over a window whose last four meals were the four left reads as a dog who
+     * eats fine; the run is what a vet acts on, so the page leads with it. Same predicate
+     * as `finishedMeals` (`intakeRating === 'all'`), so the two never disagree. Optional
+     * only for the fixture corpus: `buildSnapshot` always sets it.
+     */
+    recentNotFullyEatenRun?: number
     /** The ratings behind the figures, for `summariseIntake` — the one predicate both
      *  surfaces read. Replaces the pre-CUL-497 `intakeMode`, whose null could not tell a
      *  tie from an empty set. */
@@ -2279,8 +2305,15 @@ export type TimingFinding =
     }
 
 export interface CorrelationSummary {
-  /** ONLY `Established`-tier (spec §8.5); `Early` never reaches the report. */
+  /** `Established`-tier: the only tier the report states as a finding (spec §8.5). */
   established: EstablishedCorrelation[]
+  /**
+   * CUL-1978 — `Early`-tier correlations over the same window. Not a finding: the null line
+   * names them, with their counts and "short of the established threshold, so not confirmed", because "no food reached
+   * the established threshold" alone read as a negative over a record whose beef weeks
+   * mirrored its vomit weeks. Optional for the fixture corpus; `buildSnapshot` always sets it.
+   */
+  early?: EstablishedCorrelation[]
   hasEstablished: boolean
   /** Honest "no established threshold over this window" state when established is empty. */
   noThreshold: boolean
@@ -3023,6 +3056,21 @@ function leftMostOfIt(rating: IntakeRating): boolean {
  * feedings are omitted — a "0 refused" cell is a negative claim, and this report does not
  * make those.
  */
+/**
+ * CUL-1978 — the trailing run of rated meals not fully eaten, newest first. Sorted here
+ * rather than trusted from the caller, because the window's events are not guaranteed to
+ * arrive in time order and a run read off an unsorted list is a run of nothing.
+ */
+export function recentNotFullyEatenRun(rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null } | null }>): number {
+  const newestFirst = [...rated].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
+  let run = 0
+  for (const e of newestFirst) {
+    if (e.meal?.intakeRating === 'all') break
+    run++
+  }
+  return run
+}
+
 function intakeBreakdownOf(ratings: IntakeRating[]): Array<{ rating: IntakeRating; count: number }> {
   const counts = new Map<IntakeRating, number>()
   for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
@@ -3233,6 +3281,9 @@ function buildIncidentPhenotype(
 
 export interface DetectionExtract {
   established: EstablishedCorrelation[]
+  /** CUL-1978 — Early-tier correlations, carried ONLY so the null line can stop reading
+   *  as a negative result. Never rendered as a finding. */
+  early: EstablishedCorrelation[]
   timing: TimingFinding[]
   intakeDecline: IntakeDeclineFinding | null
   /** EVERY chronic course, not just the longest (R4 both-stated, CUL-676). Was a
@@ -3403,6 +3454,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
   // Appendix A + the §3.5 trend chart already carry the cadence — Dr. Chen 2026-08-21).
   const ranked = detectSignals(detInput, config)
   const established: EstablishedCorrelation[] = []
+  const early: EstablishedCorrelation[] = []
   const timing: TimingFinding[] = []
   let intakeDecline: IntakeDeclineFinding | null = null
   const chronicity: SymptomChronicityFinding[] = []
@@ -3412,9 +3464,10 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
     switch (finding.type) {
       case 'food_symptom_correlation': {
         const f = finding as CorrelationFinding
-        // §8.5: ONLY Established reaches the report; Early is dropped here, deterministically.
-        if (f.tier !== 'established') break
-        established.push({
+        // §8.5 as amended by CUL-1978 (PM, 2026-10-18): Established is a finding; Early is
+        // carried apart, so the null line can name it instead of telling a vet to stop
+        // looking while Home shows the same protein as an early pattern.
+        ;(f.tier === 'established' ? established : early).push({
           symptomType: f.symptomType,
           protein: f.protein,
           proteins: f.proteins,
@@ -3543,7 +3596,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
     }
   }
 
-  return { established, timing, intakeDecline, chronicity, worsening, stapleProtein }
+  return { established, early, timing, intakeDecline, chronicity, worsening, stapleProtein }
 }
 
 // ── Top-level assembly ────────────────────────────────────────────────────────
@@ -4063,6 +4116,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
+      source: proteinSourceOf(food.extractionConfidence),
       offTrial: opts?.isTrialDiet
         ? offTrialProteinsInTrialFood(proteins, trialProteinTarget)
         : offTrialProteins(proteins, trialProteinTarget),
@@ -4115,6 +4169,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           ratedMeals: ratedMeals.length,
           finishedMeals,
           rate: finishedMeals / ratedMeals.length,
+          recentNotFullyEatenRun: recentNotFullyEatenRun(ratedMeals),
           intakeBreakdown: mealCompletionBreakdown,
         }
       : null
@@ -4367,6 +4422,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     established: detection.established,
     hasEstablished: detection.established.length > 0,
     noThreshold: detection.established.length === 0,
+    early: detection.early,
     stapleProtein: detection.stapleProtein,
     timing: detection.timing,
   }
@@ -4803,6 +4859,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
     previousDiet,
     medicationVehicles,
+    proteinSources: (() => {
+      const byFood = new Map<string, ProteinSource>()
+      for (const e of windowMeals) {
+        const key = e.meal!.foodItemId ?? `${e.meal!.brand ?? ''}|${e.meal!.productName ?? ''}`
+        byFood.set(key, proteinSourceOf(e.meal!.extractionConfidence))
+      }
+      // The window's free-fed bowls: they reach the tally without a meal event.
+      for (const f of freeFed) byFood.set(`bowl:${f.foodLabel ?? ''}`, f.proteinSet.source ?? 'owner')
+      const all = [...byFood.values()]
+      return { photo: all.filter((x) => x === 'photo').length, owner: all.filter((x) => x === 'owner').length }
+    })(),
   }
 
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"

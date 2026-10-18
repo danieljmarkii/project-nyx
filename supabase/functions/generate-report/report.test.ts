@@ -34,7 +34,10 @@ import {
   type ReportMedicationItemInput,
   type ReportDoseInput,
   type TimingFinding,
+  recentNotFullyEatenRun,
+  proteinSourceOf,
 } from './report.ts'
+import { cooperInput } from './cooperDemo.testutil.ts'
 // The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
 // the intermediate snapshot: "one adherence claim per drug per document" is a property of the
 // document, and a snapshot-level assertion cannot see a second claim a renderer prints.
@@ -5404,4 +5407,64 @@ Deno.test('normal shortcut: round 2 M1 — clocks a few days apart inside the wi
   const sec = plainText(renderReport(snap))
   assert.match(sec, /Logging changed between Jun 5 and Jun 11:/)
   assert.ok(!/Before Jun|From Jun/.test(sec), 'no split at an unconfirmed day')
+})
+
+// ── CUL-1978 / CUL-1979 — the facts the report needs to say what the record cannot show ─────
+
+const OWNER: ReportInput['audience'] = { kind: 'owner', includeLookNotes: true }
+
+Deno.test('CUL-1978 — the recent run counts back from the NEWEST rated meal, whatever order the rows arrive in', () => {
+  const m = (iso: string, r: 'all' | 'some' | 'picked') => ({ occurredAt: iso, meal: { intakeRating: r } })
+  // Shuffled on purpose: a run read off an unsorted list is a run of nothing.
+  const rows = [m('2026-10-15T08:00:00Z', 'some'), m('2026-10-10T08:00:00Z', 'all'), m('2026-10-16T08:00:00Z', 'picked'), m('2026-10-14T08:00:00Z', 'all')]
+  assert.equal(recentNotFullyEatenRun(rows), 2)
+  assert.equal(recentNotFullyEatenRun([m('2026-10-16T08:00:00Z', 'all'), m('2026-10-15T08:00:00Z', 'some')]), 0, 'a finished newest meal ends the run at zero')
+  assert.equal(recentNotFullyEatenRun([]), 0)
+})
+
+Deno.test('CUL-1979 — a food\'s protein source is the photo extractor\'s mark, nothing else', () => {
+  assert.equal(proteinSourceOf({ proteins: 0.9 }), 'photo')
+  assert.equal(proteinSourceOf({}), 'photo', 'an extraction that ran is a photo read, legible or not')
+  assert.equal(proteinSourceOf(null), 'owner')
+  assert.equal(proteinSourceOf(undefined), 'owner')
+})
+
+Deno.test('CUL-1979 — the window counts its foods by source, and each meal view and allowed food carries its own', () => {
+  const photoMeal = proteinMeal({ occurredAt: at('2026-06-20'), foodItemId: 'fi-photo', foodType: 'meal', format: 'dry_kibble', primaryProtein: 'duck', proteins: ['duck'], extractionConfidence: { proteins: 0.9 }, intakeRating: 'all' })
+  const typedMeal = proteinMeal({ occurredAt: at('2026-06-21'), foodItemId: 'fi-typed', foodType: 'meal', format: 'dry_kibble', primaryProtein: 'duck', proteins: ['duck'], intakeRating: 'all' })
+  const snap = assembleReport(baseInput({ events: [photoMeal, typedMeal, { ...typedMeal, id: 'typed-again', occurredAt: at('2026-06-22') }] }))
+  assert.deepEqual(snap.diet.proteinSources, { photo: 1, owner: 1 }, 'distinct foods, not feedings')
+  // The demo record: two owner-entered foods, and the trial's allowed food says so too.
+  const cooper = assembleReport({ ...cooperInput(), audience: OWNER })
+  assert.deepEqual(cooper.diet.proteinSources, { photo: 0, owner: 2 })
+  assert.ok(cooper.trial && cooper.trial.permittedFoods.length > 0)
+  for (const f of cooper.trial!.permittedFoods) assert.equal(f.source, 'owner', f.label)
+  assert.equal(cooper.diet.trial?.proteinSet.source, 'owner')
+})
+
+Deno.test('CUL-1978 — the demo record carries its Early beef association and its run of unfinished meals', () => {
+  const snap = assembleReport({ ...cooperInput(), audience: OWNER })
+  assert.equal(snap.correlation.established.length, 0, 'beef is not established on this record')
+  const early = snap.correlation.early ?? []
+  assert.equal(early.length, 1, 'and the Early finding is carried, not dropped')
+  assert.equal(early[0].protein, 'beef')
+  assert.equal(early[0].symptomType, 'vomit')
+  assert.equal(early[0].caseExposed, 4)
+  assert.equal(early[0].matchedPairs, 4)
+  assert.equal(snap.diet.mealCompletion?.recentNotFullyEatenRun, 4, 'the last four rated meals were the dip')
+  assert.equal(snap.diet.mealCompletion?.ratedMeals, 44)
+})
+
+Deno.test('CUL-1978 — the demo report, cold: every line the cold read flagged now says what the record cannot show', () => {
+  // Tags become spaces in `plainText`; fold them so a sentence reads as the vet reads it.
+  const p = plainText(renderReport(assembleReport({ ...cooperInput(), audience: OWNER }))).replace(/\s+/g, ' ').replace(/ ([;.,)\/])/g, '$1').replace(/([(\/]) /g, '$1')
+  assert.ok(!/supports interpreting it/.test(p), 'coverage is not printed as validity over four beef feedings')
+  assert.ok(/4 of 42 logged feedings did not match the trial diet/.test(p), 'the headline carries the breach')
+  assert.ok(/The last 4 rated meals in a row were not fully eaten; 40 of 44 rated meals fully eaten over the window/.test(p))
+  assert.ok(/Stool logged 2 times in 27 days — not enough to assess diarrhea\./.test(p) && !/Loose \/ watery ×0/.test(p))
+  assert.ok(/None logged in this window — not checked with the owner\./.test(p))
+  assert.ok(/No photo of any incident was read, so the automated blood and foreign-material check had nothing to look at/.test(p))
+  assert.ok(/Beef shows an early association with vomiting \(Beef in the 12 h before 4 of 4 episodes, vs 0 of 4 matched control windows\) — short of the established threshold, so not confirmed; no food or protein reached that threshold over this window\. Not a negative result/.test(p))
+  assert.ok(!/No single food\/protein reached/.test(p))
+  assert.ok(/Entered by the owner, not read from a label photo/.test(p) && !/photo of the label/.test(p), 'two typed-in foods are never said to be photo-read')
 })

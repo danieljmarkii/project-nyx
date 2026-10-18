@@ -969,6 +969,9 @@ Deno.test('the challenge-window marker is forward-only, species-keyed, and never
   assert.ok(/the published time-to-flare window in dogs/.test(text))
   assert.ok(/Timing only\./.test(text))
   assert.ok(/not an attribution/.test(text))
+  // CUL-1978 cold read 2 — its same-day exclusion is the MARKER's rule, not page 1's test,
+  // which now names associations over a 12–24 h window.
+  assert.ok(/not the association test on page.1: .*this marker deliberately excludes same-day pairs/.test(text), text.slice(text.indexOf('Timing only'), text.indexOf('Timing only') + 300))
 })
 
 Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Mueller)', () => {

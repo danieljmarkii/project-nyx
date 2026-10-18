@@ -79,6 +79,16 @@ const MS_PER_DAY = 86_400_000
 
 // ── Narrow input shapes (structurally satisfied by report.ts's rows) ─────────
 
+/**
+ * CUL-1979 — `photo` when the label extractor ran on this food (it is the only writer of
+ * `ai_extraction_confidence`; a manual capture leaves it NULL, `lib/protein.ts` provenance
+ * 1), else `owner`. Says nothing about completeness, which stays D10's gate.
+ */
+export type ProteinSource = 'photo' | 'owner'
+export function proteinSourceOf(extractionConfidence: unknown): ProteinSource {
+  return extractionConfidence != null ? 'photo' : 'owner'
+}
+
 export interface TrialFoodSource {
   foodItemId: string
   foodLabel: string
@@ -89,6 +99,9 @@ export interface TrialFoodSource {
   brand: string | null
   productName: string | null
   proteins?: string[] | null
+  /** CUL-1979 — `food_items.ai_extraction_confidence`, already spread in by
+   *  `mapFoodProteins`; read only for the provenance word (`proteinSourceOf`). */
+  extractionConfidence?: unknown
 }
 
 export interface TrialSource {
@@ -225,6 +238,9 @@ export interface TrialPermittedFood {
    */
   proteins: string[]
   panelRead: boolean
+  /** CUL-1979 — photo-read vs owner-entered, for the provenance note beside a
+   *  contamination claim about this food. Optional for the fixture corpus. */
+  source?: ProteinSource
 }
 
 /** C5, ruled: the symptom trend is rendered AGAINST logging density over the same
@@ -1231,6 +1247,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   const allowedSetUnavailable =
     !hasPrimary || (primaryPermitted === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
 
+  const sourceByFoodId = new Map((trial.allowedFoods ?? []).map((f) => [f.foodItemId, f.extractionConfidence ?? null]))
   const permittedFoods: TrialPermittedFood[] = allowedFoods
     .map((f) => ({
       label: f.label,
@@ -1246,6 +1263,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
         (dayIndexOfValue(f.allowedUntil, timeZone) ?? Infinity) < evidence.endDayIndex,
       proteins: [...(f.proteins ?? [])],
       panelRead: (f.proteins ?? []).length > 0,
+      source: proteinSourceOf(sourceByFoodId.get(f.foodItemId)),
     }))
     .sort(
       (a, b) =>
