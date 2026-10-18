@@ -500,13 +500,15 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     nowMs: number,
     trialOver: Partial<typeof TRIAL_ROW> = {},
     arrangements: Array<Record<string, unknown>> = [],
-    decline: Record<string, unknown> = { status: 'none', flags: [] },
+    decline: Record<string, unknown> | Error = { status: 'none', flags: [] },
   ) {
     jest.resetModules();
     const db = stubDb(meals, trialOver, arrangements);
     jest.doMock('./db', () => ({ getDb: () => db }));
     jest.doMock('./analytics', () => ({
-      getIntakeDecline: jest.fn().mockResolvedValue(decline),
+      // An Error is a read that throws (CUL-1972).
+      getIntakeDecline:
+        decline instanceof Error ? jest.fn().mockRejectedValue(decline) : jest.fn().mockResolvedValue(decline),
     }));
     jest.doMock('./trialContaminant', () => ({
       loadTrialProteinContext: jest.fn().mockResolvedValue(null),
@@ -521,6 +523,20 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
       nowMs,
     });
   }
+
+  // CUL-1972 (ruling 2a): a decline read that throws reaches the card as UNKNOWN, never as
+  // an empty list read as "eating fine". Mutation-proven: dropping the field reds this.
+  it('an intake-decline read that throws sets intakeDeclineUnknown, and an answered one does not', async () => {
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const meals = [{ id: 'e1', at: new Date(2026, 6, 4, 8).toISOString(), food: 'f1' }];
+    const now = new Date(2026, 6, 25, 20).getTime();
+    const thrown = await load(meals, now, {}, [], new Error('sqlite busy'));
+    expect(thrown.intakeDeclineUnknown).toBe(true);
+    expect(thrown.intakeDeclineHeadline).toBeNull();
+    const answered = await load(meals, now);
+    expect(answered.intakeDeclineUnknown).toBe(false);
+    quiet.mockRestore();
+  });
 
   // B-704 — the identity protein reaches the card, resolved through the ONE
   // predicate. No stored value → derived from the trial food (the duck stub).

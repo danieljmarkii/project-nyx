@@ -4132,3 +4132,63 @@ describe('R1 · CUL-60(b) — the off-diet count is caveated while the refusal s
     expect(textOf(none, 'qualifier').join(' ')).not.toContain('can’t match these against the food list');
   });
 });
+
+// CUL-1972 — the eating check did not answer. Ignorance withholds a reassurance and never
+// raises an alarm: its own reason, null on the three-state register, false on the
+// not-eating predicate, and only the FALLING form of the vomit line goes.
+describe('an eating check that did not answer (CUL-1972)', () => {
+  const card = jest.requireActual('./dietTrialCard') as typeof import('./dietTrialCard');
+  const counts = (trialCount: number, baselineCount: number): TrialResponseCounts =>
+    ({
+      trialDayNumber: 23,
+      trialCount,
+      trialLastEpisodeDayIndex: null,
+      baselineCount,
+      trialLoggedDays: 22,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      densityComparable: true,
+    }) as TrialResponseCounts;
+
+  it('is its own withholding reason, never a not-eating fact', () => {
+    const unknown = activeInput({ intakeDeclineUnknown: true });
+    expect(card.withholdingReasons(unknown)).toEqual(['intake_unknown']);
+    expect(card.isAnimalNotEating(unknown)).toBe(false);
+    expect(card.notEatingFact(unknown)).toBeNull();
+    // Answered checks keep their two answers.
+    expect(card.notEatingFact(activeInput())).toBe(false);
+    expect(card.notEatingFact(activeInput({ intakeDeclineHeadline: 'Biscuit has eaten less than usual today.' }))).toBe(true);
+    // A positive fact is never downgraded to unknown.
+    expect(
+      card.notEatingFact(activeInput({ intakeDeclineUnknown: true, trialDietRefusal: REFUSING_NOW })),
+    ).toBe(true);
+  });
+
+  it('the strip stops stating its coverage ratio plainly', () => {
+    expect(card.resolveTrialStrip(activeInput())?.line).toMatch(/meals logged on 22 of 23 days/);
+    expect(card.resolveTrialStrip(activeInput({ intakeDeclineUnknown: true }))?.line ?? '').not.toMatch(
+      /meals logged on/,
+    );
+  });
+
+  it('withholds a FALLING vomit line, keeps a rising one', () => {
+    const falling = counts(1, 9);
+    const rising = counts(9, 1);
+    // Control: the answered check draws the falling line.
+    expect(card.resolveTrialStrip(activeInput({ trialResponse: falling }))?.trialResponseLine).toMatch(/^Vomiting: 1/);
+    expect(
+      card.resolveTrialStrip(activeInput({ trialResponse: falling, intakeDeclineUnknown: true }))?.trialResponseLine,
+    ).toBeNull();
+    expect(
+      card.resolveTrialStrip(activeInput({ trialResponse: rising, intakeDeclineUnknown: true }))?.trialResponseLine,
+    ).toMatch(/^Vomiting: 9/);
+  });
+
+  it('vomitLineMayReassure is the fall only', () => {
+    expect(card.vomitLineMayReassure(counts(1, 9))).toBe(true);
+    expect(card.vomitLineMayReassure(counts(9, 1))).toBe(false);
+    expect(card.vomitLineMayReassure(counts(3, 3))).toBe(false);
+    expect(card.vomitLineMayReassure({ ...counts(1, 9), baselineLoggedDays: 2 })).toBe(false);
+    expect(card.vomitLineMayReassure(null)).toBe(false);
+  });
+});

@@ -143,6 +143,22 @@ describe('Home withholds the falling vomit pair on the device’s own eating che
   });
 });
 
+describe('the trial register is three-state on an unanswered check (CUL-1972, ruling 2a)', () => {
+  // `notEatingFact`, never `isAnimalNotEating`: a trial input whose eating check threw is
+  // null, so Noticed's withheld predicate fails closed while the door (`=== true`) stays shut.
+  // Mutation-proven: `isAnimalNotEating` here reds the first case.
+  it('a trial input whose check did not answer hands the zone null', () => {
+    mockDietTrial.current = { input: { ...NO_TRIAL, intakeDeclineUnknown: true }, inputIsForPet: true, loadedPetId: 'p1' };
+    render(<HomeScreen />);
+    expect(mockZoneProps.current?.trialNotEating).toBeNull();
+  });
+
+  it('control: an answered check is false', () => {
+    render(<HomeScreen />);
+    expect(mockZoneProps.current?.trialNotEating).toBe(false);
+  });
+});
+
 describe('the trial strip’s vomit line takes the same check (CUL-1975)', () => {
   const TRIAL_INPUT = {
     ...NO_TRIAL,

@@ -75,7 +75,6 @@ import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import {
   mayImplyRecordClean,
-  trialResponseLineCompares,
   type IntakeDeclineFact,
   type TrialCardInput,
   type TrialCardTrial,
@@ -590,11 +589,11 @@ export async function loadDietTrialFacts(args: {
     antigenArmDark: armDark,
     // ONE read, both fields: the card's single sentence is the first fact's, so the
     // two can never describe different declines (CUL-950).
-    // A check that did not answer is `[]` HERE ONLY because `TrialCardInput` has no
-    // third state yet (CUL-1972 brief 2a: the card's own reason lands after PR-25).
-    // Home and Get ready read the pet's decline themselves and fail closed on null.
+    // A check that did not answer carries no decline AND says so (CUL-1972): the card's
+    // own `intake_unknown` reason, never an empty list read as "eating fine".
     intakeDeclineHeadline: decline?.[0]?.headline ?? null,
     intakeDeclineFacts: decline ?? [],
+    intakeDeclineUnknown: decline === null,
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
     // R1 — the now-fact and the two inputs the live register's stand-down reads.
@@ -991,20 +990,9 @@ async function readArrangements(
   }
 }
 
-/**
- * Whether the trial's standing vomit line could read as improvement: it takes its
- * comparing form (`trialResponseLineCompares`, the line's own rule) AND the trial count
- * is below the baseline's. Switches on the COUNT, the reader's question (C-35).
- *
- * The device-eating withhold (CUL-1972 / CUL-1975) asks this, not "is there a line":
- * when the eating check did not answer, nothing louder leads the page, so a RISE (or the
- * trial-so-far count) must keep showing — the strip's own rule is that a rise always
- * shows. Only the fall, the half that can soften a not-eating cat, is withheld.
- */
-export function vomitLineMayReassure(counts: TrialResponseCounts | null | undefined): boolean {
-  if (!counts) return false;
-  return trialResponseLineCompares(counts) && counts.trialCount < counts.baselineCount;
-}
+// Moved to `lib/dietTrialCard.ts` beside the line's own rule (CUL-1972); re-exported
+// for the hosts that already import it from here.
+export { vomitLineMayReassure } from './dietTrialCard';
 
 /** §5.2's structural composition: the same clinically-floored `detectIntakeDecline`
  *  the dashboard consumes. A live flag REPLACES the adherence line, because a cat

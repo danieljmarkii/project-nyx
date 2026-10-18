@@ -19,7 +19,7 @@ import { AppointmentStrip } from '../../components/vetvisits/AppointmentStrip';
 import { LookExits, exitVisibility, lookRectInPage, type LayoutBox } from '../../components/home/LookExits';
 import { pullThreshold } from '../../lib/haptics';
 import { useDietTrial } from '../../hooks/useDietTrial';
-import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
+import { resolveTrialStrip, isAnimalNotEating, notEatingFact } from '../../lib/dietTrialCard';
 import { readIntakeDecline, vomitLineMayReassure } from '../../lib/dietTrialFacts';
 import { TodayCard } from '../../components/designV2/home/TodayCard';
 import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
@@ -211,8 +211,11 @@ export default function HomeScreen() {
   // `withholdFallingVomit` above is a third reading of the same register — "may this card
   // reassure?" — and it collapses ignorance to suppression for its own reason. Three
   // questions, one fact, each answer named where it is read.
+  // `notEatingFact`, not `isAnimalNotEating`: a trial read whose eating check did not
+  // answer is null here (CUL-1972), so the withheld predicate fails closed on it while
+  // the door, reading `=== true`, stays shut.
   const trialNotEating: boolean | null =
-    trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
+    trialFactsFresh && trialInput ? notEatingFact(trialInput) : null;
   const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
   // CUL-1975 — the strip's vomit line is the same reassuring summary, so the device's own
   // eating check withholds its falling form too: `resolveTrialStrip` reads the trial

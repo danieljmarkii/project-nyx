@@ -346,6 +346,15 @@ export interface TrialCardInput {
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
   /**
+   * CUL-1972 — the intake-decline read THREW: the device's eating check did not answer.
+   * Distinct from a null headline (the check ran and saw no decline): only the second
+   * may read as calm. Not a not-eating fact, so `isAnimalNotEating` stays false on it
+   * (the emergency door must never fire on a read failure, T-20); it is its own
+   * withholding reason, and `notEatingFact` answers null for it. Optional: absent means
+   * the check answered, as every hand-built input in the card's tests assumes.
+   */
+  intakeDeclineUnknown?: boolean;
+  /**
    * EVERY live intake-decline flag the device holds, in the detector's order, each
    * with its own sentence — where `intakeDeclineHeadline` is the first one's sentence
    * alone. Set by `loadDietTrialFacts` in the same statement, from the same read, so
@@ -860,7 +869,8 @@ export type TrialCardWithholding =
   | 'allowed_set_unavailable'
   | 'antigen_arm_dark'
   | 'untracked_head'
-  | 'below_floor';
+  | 'below_floor'
+  | 'intake_unknown';
 
 export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[] {
   const reasons: TrialCardWithholding[] = [];
@@ -906,6 +916,10 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   // out-of-contract values to a field only ever generated in contract.
   if ((input.untrackedDaysBeforeFirstLog ?? 0) !== 0) reasons.push('untracked_head');
   if (input.belowCoverageFloor) reasons.push('below_floor');
+  // CUL-1972 — the eating check did not answer. A reason the strip cannot state its ratio
+  // plainly beside (it has nowhere to say the check is missing), and NOT a not-eating
+  // reason: it is ignorance, which withholds a reassurance but never raises an alarm.
+  if (input.intakeDeclineUnknown && !input.intakeDeclineHeadline) reasons.push('intake_unknown');
   return reasons;
 }
 
@@ -944,6 +958,18 @@ const NOT_EATING_WITHHOLDING: readonly TrialCardWithholding[] = [
  */
 export function isAnimalNotEating(input: TrialCardInput): boolean {
   return withholdingReasons(input).some((r) => NOT_EATING_WITHHOLDING.includes(r));
+}
+
+/**
+ * The not-eating register in THREE states (CUL-1972, C-12): true on a not-eating fact,
+ * null when the eating check did not answer and nothing else says the animal is not
+ * eating, false only when the check answered and found nothing. For a caller whose
+ * reassurance must fail closed on ignorance (a withheld quiet run) while its alarm reads
+ * `=== true` (the emergency door). A positive fact is never downgraded to unknown.
+ */
+export function notEatingFact(input: TrialCardInput): boolean | null {
+  if (isAnimalNotEating(input)) return true;
+  return input.intakeDeclineUnknown ? null : false;
 }
 
 /**
@@ -3208,6 +3234,21 @@ export function trialResponseLineCompares(counts: TrialResponseCounts): boolean 
   );
 }
 
+/**
+ * Whether the standing vomit line could read as improvement: it takes its comparing form
+ * (`trialResponseLineCompares`, the line's own rule) AND the trial count is below the
+ * baseline's. Switches on the COUNT, the reader's question (C-35).
+ *
+ * The eating-unknown withhold (CUL-1972 / CUL-1975) asks this, not "is there a line":
+ * with the check merely unanswered nothing louder leads the surface, so a RISE (or the
+ * trial-so-far count) must keep showing — a rise always shows. Only the fall, the half
+ * that can soften a not-eating cat, is withheld.
+ */
+export function vomitLineMayReassure(counts: TrialResponseCounts | null | undefined): boolean {
+  if (!counts) return false;
+  return trialResponseLineCompares(counts) && counts.trialCount < counts.baselineCount;
+}
+
 export function trialResponseStandingLine(counts: TrialResponseCounts): string | null {
   const days = counts.trialDayNumber === 1 ? 'day' : 'days';
   const showComparison = trialResponseLineCompares(counts);
@@ -3369,8 +3410,12 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
     // byte-identical off the flag. Withheld on a not-eating record (above) so it never reassures over a
     // refusing/anorexic cat; its own render rule (comparison vs trial-so-far vs nothing) lives in
     // `trialResponseStandingLine`.
+    // CUL-1972 — and its FALLING form on an eating check that did not answer: ignorance
+    // is not eating, but nothing louder leads, so a rise keeps its line.
     trialResponseLine:
-      input.trialResponse && !animalNotEating
+      input.trialResponse &&
+      !animalNotEating &&
+      !(input.intakeDeclineUnknown && vomitLineMayReassure(input.trialResponse))
         ? trialResponseStandingLine(input.trialResponse)
         : null,
   };
