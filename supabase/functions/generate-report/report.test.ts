@@ -5942,3 +5942,21 @@ Deno.test('CUL-2026 cold read — a clinic reading against home-scale ones says 
   const one = run(losingWeighIns())
   assert.ok(one.w && !/come from different scales/.test(one.p))
 })
+
+Deno.test('CUL-2026 cold read r2 — with a Weight flag, the tile and the weight block defer to it; without one, neither does', () => {
+  // The window holds only the two agreeing late readings; the high sits before it, so the window's
+  // own delta is flat while the flag names the loss.
+  const weighIns = losingWeighIns()
+  const run = (engineFlags: ReportInput['engineFlags']) => {
+    idSeq = 0
+    const inWindow = weighIns.filter((w) => w.occurredAt >= '2026-04-04')
+    return readAs(renderReport(assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: inWindow, weightHistory: weighIns, engineFlags }))))
+  }
+  const on = run(EN8)
+  assert.ok(/-0\.6 kg Weight since Mar \d+, 2026 see the Weight flag/.test(on), on.slice(on.indexOf('At a glance'), on.indexOf('At a glance') + 600))
+  assert.ok(/See the Weight flag above: it compares the latest reading with the highest in the last 365 days \(5\.0 kg on Mar \d+, 2026\)/.test(on))
+  assert.ok(!/Weight over 2 weigh-ins/.test(on), 'the flat window delta never stands beside the flag')
+  const off = run({ on: [], readOk: true })
+  assert.ok(!/see the Weight flag|See the Weight flag/.test(off))
+  assert.ok(/Weight over 2 weigh-ins/.test(off))
+})

@@ -4741,8 +4741,28 @@ function outcomeLabel(outcome: 'improved' | 'no_change' | 'worse' | 'unsure'): s
   }
 }
 
+/**
+ * CUL-2026 cold read — the band's Weight flag compares across the lane's year, while the block and
+ * the tile read only this window's weigh-ins. Side by side, an in-window "11.7 → 11.6 kg" or a
+ * "-0.1 kg" tile read as a stable weight beside a 1.5 kg loss. When the flag fired, both say what
+ * they cover and point at it, so the calmer local number is never the page's weight story.
+ */
+function weightFlagOf(snap: ReportSnapshot): Extract<SafetyFlag, { kind: 'weight_loss' }> | null {
+  const f = snap.safetyFlags.find((x) => x.kind === 'weight_loss')
+  return f && f.kind === 'weight_loss' ? f : null
+}
+
+function weightFlagNote(snap: ReportSnapshot): string {
+  const f = weightFlagOf(snap)
+  if (!f) return ''
+  return ` <b>See the Weight flag above:</b> it compares the latest reading with the highest in the last ${num(
+    f.windowDays,
+  )} days (${num(f.highBefore.kg.toFixed(1))}&nbsp;kg on ${fmtDayYear(f.highBefore.day)}), which this block may not plot.`
+}
+
 function weightBlock(snap: ReportSnapshot): string {
   const w: WeightSection = snap.weight
+  const flagNote = weightFlagNote(snap)
   // Empty state when there is genuinely nothing to draw. Belt-and-suspenders on `latest`
   // + `trend` (not just `isEmpty`): those are independent fields across the report.ts
   // boundary, and a fabricated "0.0 kg" (from a `?? 0` fallback) would be exactly the
@@ -4753,7 +4773,7 @@ function weightBlock(snap: ReportSnapshot): string {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
-    <span class="l">No weight trend can be shown; body condition not assessed.</span></div>
+    <span class="l">No weight trend can be shown; body condition not assessed.${flagNote}</span></div>
   </div>`
   }
   const t = w.trend
@@ -4778,7 +4798,7 @@ function weightBlock(snap: ReportSnapshot): string {
     <div class="wt-read"><span class="v num">${h(latest.kg.toFixed(1))}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
       fmtDay(latest.date),
     )} (${latestSide})</span><br/>
-    <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.</span></div>
+    <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.${flagNote}</span></div>
   </div>`
   }
   const first = t.seriesKg[0]
@@ -4811,7 +4831,7 @@ function weightBlock(snap: ReportSnapshot): string {
       <span class="v num">${trajectory}</span> <span class="l">&middot; ${num(t.readingCount)} owner weigh-in${
         t.readingCount === 1 ? '' : 's'
       }, ${dateSpan}</span>${scaleBit}<br/>
-      <span class="l">A home-scale weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.</span>
+      <span class="l">A home-scale weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.${flagNote}</span>
     </div>
   </div>`
 }
@@ -5571,6 +5591,17 @@ function tileHtml(valueHtml: string, label: string): string {
 
 /** §3.4 weight tile (trend delta / single reading / empty) — shared by both tile sets. */
 function weightTile(snap: ReportSnapshot): string {
+  // CUL-2026 cold read: with a Weight flag the tile states the flag's change, never the window's
+  // own delta, which can read flat beside the loss on the line a vet scans first.
+  const flag = weightFlagOf(snap)
+  if (flag) {
+    const d = flag.latest.kg - flag.highBefore.kg
+    return tile(
+      `${d > 0 ? '+' : ''}${d.toFixed(1)}`,
+      `<small>&nbsp;kg</small>`,
+      `Weight since ${fmtDayYear(flag.highBefore.day)}<br/><b>see the Weight flag</b>`,
+    )
+  }
   if (snap.weight.isEmpty) {
     return tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`)
   }
@@ -9719,7 +9750,7 @@ function appendixF(snap: ReportSnapshot): string {
     ${photoDt}
     ${noticedDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
-    <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here. A loss the app raised with the owner leads the safety band as a Weight flag.</dd>
+    <dt>Weight</dt><dd>Owner weigh-ins (home scale, or at the vet where marked), shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here. A loss the app raised with the owner leads the safety band as a Weight flag.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
       // ON THE SCOPE, NOT ON THE LIST'S LENGTH (B-532). The itemisation is no longer gated
       // on the reduced-intake flag, so a non-empty `intakeLog` no longer implies the page-1
