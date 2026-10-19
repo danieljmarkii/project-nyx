@@ -1,9 +1,9 @@
 # Mixed Meals and Food Transitions — Requirements
 
-**Version:** 0.2 | **Last Updated:** 2026-10-19 (P-2 and P-3 ruled; mock round 1 published)
-**Status:** P-2 and P-3 ruled. P-1, P-4, P-5 and P-6 wait on the PM's reaction to mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY). Everything else is a team convergence from the 2026-10-19 convening.
+**Version:** 0.3 | **Last Updated:** 2026-10-19 (all six P-decisions ruled from mock round 1; §7.4 Foods tab; motion is round 2)
+**Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 adds motion and the Foods tab.
 **Reads first:** `docs/sessions/2026-10-19-mixed-meals-requirements.md` (the convening record), `docs/nyx-diet-trial-requirements.md` §4.1 and §5, `docs/research/2026-07-diet-trial-competitive-landscape.md`.
-**Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
+**Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Readable copy:** https://claude.ai/artifact/1NPLtiUGvc9gy6HDEx5ivR (this file wins on divergence). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
 
 ---
 
@@ -24,7 +24,7 @@
 
 Team recommendation marked ★. Forecast for the whole build: **5 rows** (§8), plus the mock round.
 
-**P-1 · The meal card's fourth door.**
+**P-1 · The meal card's fourth door. RULED (PM, 2026-10-19, round 1): (a). "Love the select mixed food, select food, then select ratio workflow." The FAB's MIX label is kept.**
 - **Deciding:** where an owner first says "this bowl is a mix."
 - **Options:** ★ (a) one line on the meal completion card, "+ Mixed with another food", for `food_type = 'meal'` only; the same slot becomes the ratio stepper once the meal is a mix, so the card never gains more than one mixing slot. (b) a mode toggle in the food picker. (c) event detail screen and FAB only.
 - **Why ★:** (b) taxes every meal log forever (Principle 1); (c) makes day 1 of a transition a trip through History. The card's own header says "Before proposing a FOURTH affordance: stop" (`components/ui/MealCompletionCard.tsx:113-122`), so this is a better-than-the-rule brief: the rule protected card density, and (a) holds it to one slot.
@@ -42,19 +42,19 @@ Team recommendation marked ★. Forecast for the whole build: **5 rows** (§8), 
 - **Why ★:** exposure is presence-based (§5.1), so nothing clinical needs the share; a required ratio makes owners invent one. Unknown beats a guess.
 - **Consequence:** none on the engines; the report says "ratio not recorded."
 
-**P-4 · A mix after Day 1 of a trial. Persona conflict, no team recommendation.**
+**P-4 · A mix after Day 1 of a trial. RULED (PM, 2026-10-19, round 1): (a), count it with the usual heads-up. The weaning-after-Day-1 case is a known issue, filed as [CUL-2040](https://linear.app/projectnyx/issue/CUL-2040), not tackled here.**
 > **Dr. Chen:** A bowl of the old food after Day 1 is an exposure and must count; but on days 1–14 it is very often an unfinished transition with a wrong Day 1. Offer one heads-up, on the existing once-per-food ledger: "{Old food} is in this bowl, and Day 1 was {date}. If the switch is still under way, you can move Day 1 to when it finishes. Otherwise this counts in the trial record." Silent exclusion is out: a partner slipping the old food on day 20 looks identical.
 > **Designer / Jordan:** R4 says the app never steers a transition. A "move Day 1" action is the app commenting on the transition the owner is running, inside the 5-second card. It also needs a new provenance column (when and from what Day 1 was moved), which is schema.
 > **PM decision needed:** (a) count it, no note, report discloses (§6.2); (b) the one-time heads-up with a Move Day 1 action, gated to days 1–14 and to contemporaneous logs (`created_at` within 24h of `occurred_at`); (c) exclude automatically (**rejected by both**: it lets the record erase its own contamination).
 - **Consequence:** (b) adds a schema column (never-list) and a cold-read of the moved-Day-1 disclosure; (a) ships with no new owner surface.
 
-**P-5 · Reintroducing a food while the trial still reads active.** (The PM's own case: a cat coming off a trial.)
+**P-5 · Reintroducing a food while the trial still reads active. RULED (PM, 2026-10-19, round 1): (a).** (The PM's own case: a cat coming off a trial.)
 - **Deciding:** what the log-time heads-up says when a bowl contains a non-allowed food and the trial is **past its target end** but never ended.
 - **Options:** ★ (a) keep the line that names what is in the bowl, then add a second sentence: "This bowl has chicken in it, from {Chicken Pâté}. If {pet}'s trial is over, ending it here keeps the record straight." (b) today's "trial should skip {protein}" (`lib/trialContaminant.ts:496`).
 - **Why ★:** (b) reads as a scolding for a reintroduction the vet ordered. (a) keeps the contamination named: overrunning the target is normal (`TRIAL_OVERRUN_GRACE_DAYS = 56`), so a real slip on a trial still running must not read as a soft "if it's over" (pass 1, break 10). The exposure is recorded either way.
 - **Consequence:** copy through `nyx-voice`; no schema.
 
-**P-6 · What the vet report says about the transition.**
+**P-6 · What the vet report says about the transition. RULED (PM, 2026-10-19): (a), the team's recommendation, per the PM's "go with the team's recs for the others." No setup-screen suggestion.**
 - **Deciding:** whether the report shows dates derived from the record.
 - **Options:** ★ (a) disclose "trial diet first fed {date}, mixed with {old food} on N days" and "first day only the trial diet was logged" beside the owner-entered Day 1, plus a post-trial "New foods introduced" line (first-fed date, the ratio ramp, symptoms in the forward window, side by side and never as attribution). (b) also offer the derived date as a suggested Day 1 at trial setup. (c) neither.
 - **Why ★:** closes CUL-1997 without moving anyone's start date. (b) adds a step to the 15-second trial setup and edges toward prescribing (R4).
@@ -224,6 +224,12 @@ One row, one node. Label "⅓ Chicken + ⅔ Rabbit"; with no share (a later path
 - **Trial block, page 1:** "Day 1: Sep 28, owner-entered. Trial diet first fed Sep 25, mixed with {old food} on 3 days before Day 1." The derived first exclusive day is shown **whenever it is later than Day 1 or Unknown**. The label never claims "trial diet only," because §6.2's after-Day-1 mixes can contradict it (P-6; pass 1).
 - **Off-diet exposures (appendix C):** the row names the **offending component**, not `mealFoodLabel(e.meal!)` (`report.ts:5102`, which reads the dominant food and would list Rabbit as the off-diet food in a rabbit-dominant bowl). Adds "in a mixed bowl with the trial diet (×N)". A component edit made more than 24h after the meal shows "edited {date}".
 - **Intake:** "Ate some (mixed bowl)." Mixed bowls are excluded from per-food rates, with the count disclosed.
+
+### §7.4 The Foods tab and food detail
+A mix is **never a library item** (team call, Designer lens, 2026-10-19; the PM can reverse). The library holds foods you buy; a mix is something you did with two of them, and §3 already rejected a "mix" food (a transition would mint three or four of them). So:
+- **Foods tab rows** keep their recency note and count a food's mixed bowls in it, disclosed: "Last logged today · 12 times · 8 in a mix". This is recency, not a rate, so counting the bowl is honest (§5.4 keeps it out of every rate).
+- **Food detail** gains one read-only section, "In mixed bowls", only when the food has been mixed: "8 bowls with Rabbit Pâté · last Oct 22", tapping through to those days in History.
+- **The FAB and the picker's recent row** are where a mix lives as a thing you can repeat (§7.1). Nowhere else.
 
 ## §8 Consumers and build sequence
 
