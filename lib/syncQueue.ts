@@ -677,6 +677,29 @@ export function unsentForSignalSql(queues: readonly SyncQueue[] = SYNC_QUEUES): 
 }
 
 /**
+ * CUL-2004: "is the server's copy missing an entry this device holds, and will one need the
+ * owner?" — Ask's two flags from ONE statement. `unsent` is exactly `unsentForSignalSql`'s rows
+ * (pinned equal by askRecordGaps.test.ts); `refused` is its complement among unsynced rows
+ * (`sync_error` set: the server refused it and it never sends without an edit). One read, not
+ * two: a drain that re-arms a parked child between two reads (refused → pending) would make
+ * both answer no while the child is still off the server. Same refused rows as the banner's
+ * `quarantineCountSql` today, kept apart because the questions differ (C-34). Nothing waits
+ * behind a refused row since CUL-1986, so its children count as `unsent`.
+ */
+export function recordGapsForAskSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
+  const arms = queues.map(
+    (q) =>
+      `SELECT CASE WHEN ${NOT_QUARANTINED_SQL} THEN 1 ELSE 0 END AS unsent, ` +
+      `CASE WHEN ${NOT_QUARANTINED_SQL} THEN 0 ELSE 1 END AS refused FROM ${q.table} WHERE synced = 0`,
+  );
+  return (
+    'SELECT COALESCE(SUM(unsent), 0) AS unsent, COALESCE(SUM(refused), 0) AS refused FROM (\n  ' +
+    arms.join('\n  UNION ALL\n  ') +
+    '\n)'
+  );
+}
+
+/**
  * "How many rows have we given up on?" Rows the owner still holds locally but
  * which will not move without an edit. Surfaced separately because the honest
  * copy is different: pending means "waiting for a connection", quarantined means

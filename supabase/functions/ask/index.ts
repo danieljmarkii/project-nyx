@@ -145,15 +145,45 @@ function serviceClient(): SupabaseClient {
 // Reads only the pet's freshest Signal cache row (RLS-scoped). A failed read leads with
 // nothing, the same survivable-as-absence shape fetchContext gives it. Never throws.
 export async function consentOffAnswer(client: SupabaseClient, petId: string, petName: string): Promise<AskAnswerBody> {
-  let safetyLead: string | null = null
+  return { ...buildDeflection('consent_off', petName), safetyLead: await cachedSafetyLead(client, petId, petName), conversationCredited: false }
+}
+
+// The engine's live safety finding from the Signal cache alone, for a decline that answers
+// before any record read (consent off, a refused entry). A failed read relays nothing and says so.
+async function cachedSafetyLead(client: SupabaseClient, petId: string, petName: string): Promise<string | null> {
   try {
     const { data, error } = await client.from('ai_signals').select('findings').eq('pet_id', petId).order('generated_at', { ascending: false }).limit(1)
-    if (error) console.warn('ask: ai_signals read failed, no engine findings relayed:', error.message)
-    else safetyLead = leadingSafetyText(mapEngineFindings(data), petName)
+    if (error) {
+      console.warn('ask: ai_signals read failed, no engine findings relayed:', error.message)
+      return null
+    }
+    return leadingSafetyText(mapEngineFindings(data), petName)
   } catch (err) {
     console.warn('ask: ai_signals read threw, no engine findings relayed:', err instanceof Error ? err.message : String(err))
+    return null
   }
-  return { ...buildDeflection('consent_off', petName), safetyLead, conversationCredited: false }
+}
+
+// CUL-2004: the phone sends `refused_rows: true` when it holds an entry the server refused
+// (`recordGapsForAskSql`, lib/syncQueue.ts). The server's copy is missing that entry until the owner
+// saves it again or removes it, so Ask answers nothing over it, and says so in copy that names the
+// fix. It declines BEFORE any cap read or increment: Ask stays closed until the owner acts, so a
+// retry must not spend the daily message backstop either. Strictly `true`, as `unsent_rows` is.
+export function refusedRowsClaimed(refusedRows: unknown): boolean {
+  return refusedRows === true
+}
+
+export async function refusedRowsAnswer(
+  client: SupabaseClient,
+  petId: string,
+  petName: string,
+  conversationCredited: boolean,
+): Promise<AskAnswerBody> {
+  return {
+    ...buildDeflection('refused_rows', petName),
+    safetyLead: await cachedSafetyLead(client, petId, petName),
+    conversationCredited,
+  }
 }
 
 // ── Usage I/O (§9) ────────────────────────────────────────────────────────────────
@@ -939,10 +969,9 @@ async function fetchContext(
 
 // CUL-1982: the name a device's unsent rows take in `recordIncomplete` (generate-signal's
 // UNSENT_ROWS_PULL, the same claim). The phone sends `unsent_rows: true` when it holds rows the
-// server has not received (`hasUnsentRows`, lib/signal.ts: any queue, any age, a failed read
-// counts as yes; refused rows and the children held behind them do not count, they are the
-// stuck-row banner's). The server's copy is then missing entries, which is an incomplete read
-// like any short pull: Ask answers nothing over it. Strictly `true`: an older build sends nothing
+// server has not received (`readRecordGaps`, lib/ask.ts: any queue, any age, a failed read counts
+// as yes; a refused row sets it too, and also `refused_rows`, which declines earlier). The
+// server's copy is then missing entries, which is an incomplete read like any short pull: Ask answers nothing over it. Strictly `true`: an older build sends nothing
 // and anything else is not the client's claim, so both keep today's behaviour.
 export const UNSENT_ROWS_PULL = 'unsent'
 
@@ -958,7 +987,7 @@ const handler = async (req: Request): Promise<Response> => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string; unsent_rows?: unknown }
+  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string; unsent_rows?: unknown; refused_rows?: unknown }
   try {
     body = (await req.json()) as typeof body
   } catch {
@@ -1014,6 +1043,12 @@ const handler = async (req: Request): Promise<Response> => {
     //     with the engine's live safety finding still leading it (escalations never hide).
     if (!(await readAiBoundaryConsent(serviceClient(), user.id))) {
       return answerResponse(await consentOffAnswer(client, petId, pet.name || 'your pet'))
+    }
+    // 2c. CUL-2004: an entry the server refused is missing from its copy until the owner acts, so
+    //     Ask answers nothing over it (the safety finding still leads), before any cap is touched.
+    if (refusedRowsClaimed(body.refused_rows)) {
+      console.warn('ask: declined over refused rows on the device:', petId)
+      return answerResponse(await refusedRowsAnswer(client, petId, pet.name || 'your pet', conversationAlreadyCredited(conversation)))
     }
     const caps = resolveAskCaps(cfgRows.find((r) => r.key === 'ai_caps')?.value)
 
