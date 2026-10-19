@@ -1,7 +1,7 @@
 # Mixed Meals and Food Transitions — Requirements
 
-**Version:** 0.3 | **Last Updated:** 2026-10-19 (all six P-decisions ruled from mock round 1; §7.4 Foods tab; motion is round 2)
-**Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 adds motion and the Foods tab.
+**Version:** 0.3 | **Last Updated:** 2026-10-19 (all six P-decisions ruled; §7.4 Foods tab; §7.5 motion from mock round 2)
+**Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 (same link) adds motion and the Foods tab, with D-M3 open.
 **Reads first:** `docs/sessions/2026-10-19-mixed-meals-requirements.md` (the convening record), `docs/nyx-diet-trial-requirements.md` §4.1 and §5, `docs/research/2026-07-diet-trial-competitive-landscape.md`.
 **Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Readable copy:** https://claude.ai/artifact/1NPLtiUGvc9gy6HDEx5ivR (this file wins on divergence). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
 
@@ -230,6 +230,25 @@ A mix is **never a library item** (team call, Designer lens, 2026-10-19; the PM 
 - **Foods tab rows** keep their recency note and count a food's mixed bowls in it, disclosed: "Last logged today · 12 times · 8 in a mix". This is recency, not a rate, so counting the bowl is honest (§5.4 keeps it out of every rate).
 - **Food detail** gains one read-only section, "In mixed bowls", only when the food has been mixed: "8 bowls with Rabbit Pâté · last Oct 22", tapping through to those days in History.
 - **The FAB and the picker's recent row** are where a mix lives as a thing you can repeat (§7.1). Nowhere else.
+
+### §7.5 Motion and delight (mock round 2)
+Every motion reuses a shipped constant (C-30); the feature adds **no new spring**. The delight is the record taking shape, not new choreography. Motion & IA lens, 2026-10-19; drawn and playable in round 2.
+
+| Moment | Motion | Haptic | Reduce Motion |
+|---|---|---|---|
+| Card gains "+ Mixed with another food" | Arrives with the card's words (`SHEET_SPRING` rise, words 120→300 ms, `completionMotion.ts:43-69`). No pulse: a door stays still. | none of its own | 150 ms crossfade |
+| Card → picker → card | The med-combo path unchanged: card exits 180 ms with 8 pt drift; picker on the platform modal; card returns 450 ms after `router.back()` (`app/log.tsx:432`). | — | crossfade |
+| Tap a split | The bar draws in on the shipped "compare" kind: 420 ms `MARK_EASE`, second segment +120 ms (`drawInMotion.ts:59-61`). The sheet **holds** about 540 ms so the bar answers the tap (D-M2). | none at the chip | bar appears at its split |
+| Card returns as the mix | Full arrival and `commitRoutine` (D-M1: a real write reaches the hand). Title lands whole; **no number roll**. | `commitRoutine` | crossfade |
+| Stepper tap | Value and title crossfade 180 ms in place; `rescheduleHide(1500)`; end stop dims to 0.4 and says why (C-7). | `selectChip` on save, same both directions | instant |
+| MIX pill on the FAB | Ordinary recent-food pill: `FAN_SPRING`, 38 ms stagger, the disc's flight to the check on `FLIGHT_SPRING`. **No gold outline.** | `commitRoutine` at reveal | no flight, 150 ms crossfade |
+| History | Still. Rows draw in once with the day; runs fold **within a day** (`spineCompaction.ts:141-148`). | — | — |
+| Undo a mix | Shipped collapse: unwrite 180 ms, fold 300 ms, "Removed". The bowl goes as one. | `destructiveConfirm` | crossfade |
+| Take out a food | History's `foldAway`: lift 180 ms + 8 pt, close 300 ms. **Staged until Save** (D-M4). | none | instant |
+
+**Never:** a celebration at 100% of the new food; gold on a door; stepper arrows that hint a direction or auto-repeat; a rolling ratio; motion when a History run breaks; a spinner for a local save; a custom slide over the platform modal.
+
+**Two shapes for the record, open as D-M3 (round 2 R-3, R-4):** a split bar on each mixed History row (one bowl = full width; dropped when a segment cannot carry its label), and a "switch strip" on food detail (one bar per bowl, this food's share, fractions under each, unlogged days as gaps, no target line or projection). Each needs a chart-table row and the Data Scientist's sign-off before build.
 
 ## §8 Consumers and build sequence
 
