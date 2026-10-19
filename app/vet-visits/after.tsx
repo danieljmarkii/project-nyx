@@ -23,6 +23,8 @@ import {
 } from '../../lib/careVisitConcerns';
 import { AddMedicationModal, type Regimen } from '../../components/profile/AddMedicationModal';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
+import { EndTrialReasonSheet, endTrialReasonPrompt } from '../../components/vetvisits/EndTrialReasonSheet';
+import type { TrialStopReason } from '../../lib/dietTrialCompletion';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { commitVisit, destructiveConfirm } from '../../lib/haptics';
 import { syncPendingMedications, syncPendingVetAppointments, syncPendingVetVisits } from '../../lib/sync';
@@ -85,6 +87,9 @@ type Sheet =
   | { kind: 'med'; editing: null }
   | { kind: 'med'; editing: Regimen; linkedNow: boolean }
   | { kind: 'trial' }
+  // CUL-1090: *Ended* asks why — before the target always, past it on request. `endOn`
+  // is the day the sheet names and the day the write records — one value, from the tap.
+  | { kind: 'end-trial'; endOn: string; copy: EndConfirmCopy; prompt: string }
   | null;
 
 // "How did it go?" (CUL-902 VV-4; mocks D1 + D2) — the plan becomes records.
@@ -495,18 +500,57 @@ export default function AfterVisitScreen() {
     // course path's rule, for the same reason: computed twice, the day on screen and
     // the day written can straddle midnight while the dialog is open.
     const endOn = localDateKey(new Date());
-    confirmEnd(
-      endTrialCopy({
-        foodLabel: trial.foodLabel,
-        petName: resolveRecordPetName(pets, petId),
-        endLabel: formatVisitDate(endOn),
-      }),
-      () => void applyTrialVerdict('ended', endOn),
-    );
+    const copy = endTrialCopy({
+      foodLabel: trial.foodLabel,
+      petName: resolveRecordPetName(pets, petId),
+      endLabel: formatVisitDate(endOn),
+    });
+    const { complete, dayLine } = describeActiveTrial(trial);
+    const prompt = endTrialReasonPrompt(dayLine, complete);
+    if (complete) {
+      // At or past the target *End it* stays ONE tap to `completed` (the only token
+      // `endActiveTrial` attaches an outcome to). But reaching the target is not the
+      // same as running its course: a pet refusing the diet on day 60 of 56 has to be
+      // sayable here, or the report reads "Ran its course" over food it would not eat
+      // (CUL-1090's own failure, past the target; PM, 2026-10-19, option a).
+      Alert.alert(copy.title, copy.body, [
+        { text: copy.keepLabel, style: 'cancel' },
+        {
+          text: 'Something got in the way',
+          onPress: () => setSheet({ kind: 'end-trial', endOn, copy, prompt }),
+        },
+        {
+          text: copy.confirmLabel,
+          style: 'destructive',
+          onPress: () => {
+            destructiveConfirm();
+            void applyTrialVerdict('ended', endOn, 'completed');
+          },
+        },
+      ]);
+      return;
+    }
+    // Before the target the REASON is what the vet report prints (CUL-1090, ruled
+    // (b)): a fixed `vet_advised` said "stopped on veterinary advice" about a pet that
+    // would not eat the food. The sheet stands in for the confirm and writes nothing
+    // until its own *End it*.
+    setSheet({ kind: 'end-trial', endOn, copy, prompt });
   }
 
-  async function applyTrialVerdict(verdict: TrialVerdict, endOn: string | null = null) {
+  async function applyTrialVerdict(
+    verdict: TrialVerdict,
+    endOn: string | null = null,
+    /** *Ended* only: `completed` at or past the target, else the owner's answer. */
+    stopReason: TrialStopReason | 'completed' | null = null,
+  ) {
     if (busyRow || !trial) return;
+    // No reason, no ending: a reason the owner did not give is the CUL-1090 bug again,
+    // printed on a clinical page. Unreachable from the two callers; checked before
+    // anything is written so a future one fails loudly and leaves the record alone.
+    if (verdict === 'ended' && !stopReason) {
+      sayFailed(new Error('applyTrialVerdict: ended without a reason'), 'trial verdict');
+      return;
+    }
     setBusyRow('trial');
     try {
       const id = await ensureVisit();
@@ -527,16 +571,12 @@ export default function AfterVisitScreen() {
       const linkedNow = await linkTrialToVisit(trial.id, id);
       let endedOn = endOn ?? localDateKey(new Date());
       if (verdict === 'ended') {
-        const { complete } = describeActiveTrial(trial);
         try {
           await endActiveTrial({
             trialId: trial.id,
-            // 'The vet said to stop' is literally what happened on this screen. On a
-            // trial that has reached its target the honest token is `completed`, which
-            // is also the only one `endActiveTrial` will attach an outcome to.
-            reason: complete ? 'completed' : 'vet_advised',
-            // The day the confirm showed. Only *Ended* reaches this branch, and only
-            // through the confirm, so it is always present here.
+            reason: stopReason as TrialStopReason | 'completed',
+            // The day the confirm or the reason sheet showed. Only *Ended* reaches
+            // this branch, and only through one of them, so it is always present here.
             endedOn: endOn ?? undefined,
           });
         } catch (e) {
@@ -922,6 +962,20 @@ export default function AfterVisitScreen() {
                   note: sheet.editing !== null && sheet.linkedNow ? 'linked to this visit' : 'still on it',
                 });
                 if (petId) void loadPlan(petId);
+              }}
+            />
+          ) : null}
+          {sheet?.kind === 'end-trial' ? (
+            <EndTrialReasonSheet
+              petName={petName}
+              copy={sheet.copy}
+              prompt={sheet.prompt}
+              onKeep={() => setSheet(null)}
+              onEnd={(reason) => {
+                const { endOn } = sheet;
+                setSheet(null);
+                destructiveConfirm();
+                void applyTrialVerdict('ended', endOn, reason);
               }}
             />
           ) : null}
