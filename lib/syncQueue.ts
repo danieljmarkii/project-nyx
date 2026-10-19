@@ -677,19 +677,26 @@ export function unsentForSignalSql(queues: readonly SyncQueue[] = SYNC_QUEUES): 
 }
 
 /**
- * CUL-2004: "does this device hold an entry the server refused, so the server's copy is missing
- * it until the owner acts?" — the flag Ask sends as `refused_rows`, which closes Ask with copy
- * naming the fix. The complement of `unsentForSignalSql` (every queue, any age, `sync_error` set).
- * Same rows as the banner's `quarantineCountSql` today, kept apart because the questions differ
- * (C-34): the banner counts what needs the owner; this asks whether a "did it happen" answer
- * could stand over a missing entry, and may widen or narrow on that question alone. Nothing
- * waits behind a refused row since CUL-1986, so its children are `unsentForSignalSql`'s.
+ * CUL-2004: "is the server's copy missing an entry this device holds, and will one need the
+ * owner?" — Ask's two flags from ONE statement. `unsent` is exactly `unsentForSignalSql`'s rows
+ * (pinned equal by askRecordGaps.test.ts); `refused` is its complement among unsynced rows
+ * (`sync_error` set: the server refused it and it never sends without an edit). One read, not
+ * two: a drain that re-arms a parked child between two reads (refused → pending) would make
+ * both answer no while the child is still off the server. Same refused rows as the banner's
+ * `quarantineCountSql` today, kept apart because the questions differ (C-34). Nothing waits
+ * behind a refused row since CUL-1986, so its children count as `unsent`.
  */
-export function refusedForAskSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
+export function recordGapsForAskSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
   const arms = queues.map(
-    (q) => `SELECT 1 AS refused FROM ${q.table} WHERE synced = 0 AND sync_error IS NOT NULL`,
+    (q) =>
+      `SELECT CASE WHEN ${NOT_QUARANTINED_SQL} THEN 1 ELSE 0 END AS unsent, ` +
+      `CASE WHEN ${NOT_QUARANTINED_SQL} THEN 0 ELSE 1 END AS refused FROM ${q.table} WHERE synced = 0`,
   );
-  return 'SELECT COUNT(*) AS count FROM (\n  ' + arms.join('\n  UNION ALL\n  ') + '\n)';
+  return (
+    'SELECT COALESCE(SUM(unsent), 0) AS unsent, COALESCE(SUM(refused), 0) AS refused FROM (\n  ' +
+    arms.join('\n  UNION ALL\n  ') +
+    '\n)'
+  );
 }
 
 /**

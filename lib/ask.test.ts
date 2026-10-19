@@ -31,7 +31,6 @@ jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicag
 
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 const mockedGetDb = getDb as jest.Mock;
-const mockedUnsent = countUnsentForSignal as jest.Mock;
 
 describe('parseAskResponse — the typed response contract', () => {
   it('discriminates a successful answer body', () => {
@@ -103,18 +102,21 @@ describe('parseAskResponse — the typed response contract', () => {
 });
 
 describe('askQuestion — the network call', () => {
-  const mockedRefused = jest.fn();
+  // CUL-2004: both flags come from ONE local read (recordGapsForAskSql); the real counts over the
+  // real schema are askRecordGaps.test.ts's.
+  const mockedGaps = jest.fn();
   beforeEach(() => {
-    mockedUnsent.mockReset().mockResolvedValue(0);
-    mockedRefused.mockReset().mockResolvedValue({ count: 0 });
-    mockedGetDb.mockReturnValue({ getFirstAsync: mockedRefused });
+    mockedGaps.mockReset().mockResolvedValue({ unsent: 0, refused: 0 });
+    mockedGetDb.mockReturnValue({ getFirstAsync: mockedGaps });
   });
   afterEach(() => jest.clearAllMocks());
 
-  const sentUnsent = (): unknown => {
+  const sentFlags = () => {
     expect(mockedInvoke).toHaveBeenCalledTimes(1);
-    return (mockedInvoke.mock.calls[0][1] as { body: { unsent_rows: unknown } }).body.unsent_rows;
+    const body = (mockedInvoke.mock.calls[0][1] as { body: { unsent_rows: unknown; refused_rows: unknown } }).body;
+    return { unsent_rows: body.unsent_rows, refused_rows: body.refused_rows };
   };
+  const deflected = { data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null };
 
   it('sends pet_id + question + prior conversation and returns the parsed answer', async () => {
     mockedInvoke.mockResolvedValue({ data: { outcome: 'answer', headline: 'ok', detail: '', followups: [] }, error: null });
@@ -125,50 +127,34 @@ describe('askQuestion — the network call', () => {
     expect(res.ok).toBe(true);
   });
 
-  // CUL-1982: Ask answers from the server's copy, so the phone says when it holds rows that copy
-  // lacks. The count is PR-24's (refused and held-for-good rows are already left out of it, see
-  // syncQueue.unsentForSignal.test.ts); this pins that Ask reads it and what a failure says.
-  it('a row the phone has not sent yet sends unsent_rows: true', async () => {
-    mockedUnsent.mockResolvedValue(2);
-    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
-    await askQuestion({ petId: 'p1', question: 'did she vomit today?', conversation: [] });
-    expect(sentUnsent()).toBe(true);
-  });
-
-  it('a failed unsent read sends unsent_rows: true (the louder error), and still asks', async () => {
-    mockedUnsent.mockRejectedValue(new Error('database is locked'));
-    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
-    const res = await askQuestion({ petId: 'p1', question: 'q', conversation: [] });
-    expect(sentUnsent()).toBe(true);
-    expect(res.ok).toBe(true);
-  });
-
-  // CUL-2004: an entry the server refused is missing from its copy until the owner acts, so the
-  // phone says so as its own flag (the real counts over the real schema: askRecordGaps.test.ts).
-  const sentFlags = () => {
-    expect(mockedInvoke).toHaveBeenCalledTimes(1);
-    const body = (mockedInvoke.mock.calls[0][1] as { body: { unsent_rows: unknown; refused_rows: unknown } }).body;
-    return { unsent_rows: body.unsent_rows, refused_rows: body.refused_rows };
-  };
-
-  it('a row the server refused sends refused_rows: true, read with the refused-for-Ask count', async () => {
-    mockedRefused.mockResolvedValue({ count: 1 });
-    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
-    await askQuestion({ petId: 'p1', question: 'did she vomit today?', conversation: [] });
-    expect(sentFlags()).toEqual({ unsent_rows: false, refused_rows: true });
-    expect(mockedRefused).toHaveBeenCalledWith(expect.stringContaining('sync_error IS NOT NULL'));
-  });
-
+  // CUL-1982: Ask answers from the server's copy, so the phone says when it holds rows that copy lacks.
   it('pending rows alone keep today: unsent_rows only', async () => {
-    mockedUnsent.mockResolvedValue(3);
-    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
-    await askQuestion({ petId: 'p1', question: 'q', conversation: [] });
+    mockedGaps.mockResolvedValue({ unsent: 2, refused: 0 });
+    mockedInvoke.mockResolvedValue(deflected);
+    await askQuestion({ petId: 'p1', question: 'did she vomit today?', conversation: [] });
     expect(sentFlags()).toEqual({ unsent_rows: true, refused_rows: false });
   });
 
-  it('a failed refused read still declines, as unsent, and never claims an entry was refused', async () => {
-    mockedRefused.mockRejectedValue(new Error('database is locked'));
-    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
+  // CUL-2004: a refused row is missing from the server's copy until the owner acts. It also sets
+  // unsent_rows, so a server without the refused gate (a rollback) still declines.
+  it('a row the server refused sends refused_rows: true, and unsent_rows with it', async () => {
+    mockedGaps.mockResolvedValue({ unsent: 0, refused: 1 });
+    mockedInvoke.mockResolvedValue(deflected);
+    await askQuestion({ petId: 'p1', question: 'did she vomit today?', conversation: [] });
+    expect(sentFlags()).toEqual({ unsent_rows: true, refused_rows: true });
+  });
+
+  it('reads both flags in ONE statement (a drain can re-arm a refused row between two reads)', async () => {
+    mockedInvoke.mockResolvedValue(deflected);
+    await askQuestion({ petId: 'p1', question: 'q', conversation: [] });
+    expect(mockedGaps).toHaveBeenCalledTimes(1);
+    expect(mockedGaps).toHaveBeenCalledWith(expect.stringContaining('AS refused'));
+    expect(countUnsentForSignal).not.toHaveBeenCalled();
+  });
+
+  it('a failed read still declines, as unsent, and never claims an entry was refused', async () => {
+    mockedGaps.mockRejectedValue(new Error('database is locked'));
+    mockedInvoke.mockResolvedValue(deflected);
     const res = await askQuestion({ petId: 'p1', question: 'q', conversation: [] });
     expect(sentFlags()).toEqual({ unsent_rows: true, refused_rows: false });
     expect(res.ok).toBe(true);

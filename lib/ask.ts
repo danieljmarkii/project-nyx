@@ -1,8 +1,7 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
-import { hasUnsentRows } from './signal';
-import { refusedForAskSql } from './syncQueue';
+import { recordGapsForAskSql } from './syncQueue';
 // The row predicate rather than monthReads' LOOK_EVENT_TYPE: lookDisplay has no RN or
 // lucide edge, where monthReads reaches constants/eventTypes (see the note below).
 import { isLookRow } from './lookDisplay';
@@ -158,14 +157,16 @@ export async function askQuestion(params: {
   }
 }
 
-/** CUL-2004: the two gaps the phone reports. A failed refused read still makes Ask deflect, as
- *  `unsent_rows` (a failed unsent read is already yes), and never claims an entry couldn't be
- *  saved when the phone could not look. Exported for unit tests. */
+/** CUL-2004: the two gaps the phone reports, from one statement (a drain can move a row from
+ *  refused to pending between two reads). A refused row also sets `unsent_rows`, so a server
+ *  without the refused gate (a rollback) still declines; the current one lets refused lead. A
+ *  failed read declines as unsent (CUL-1982's rule) and never claims an entry couldn't be saved
+ *  when the phone could not look. Exported for unit tests. */
 export async function readRecordGaps(): Promise<{ unsentRows: boolean; refusedRows: boolean }> {
-  const unsentRows = await hasUnsentRows();
   try {
-    const row = await getDb().getFirstAsync<{ count: number }>(refusedForAskSql());
-    return { unsentRows, refusedRows: (row?.count ?? 0) > 0 };
+    const row = await getDb().getFirstAsync<{ unsent: number; refused: number }>(recordGapsForAskSql());
+    const refusedRows = (row?.refused ?? 0) > 0;
+    return { unsentRows: (row?.unsent ?? 0) > 0 || refusedRows, refusedRows };
   } catch {
     return { unsentRows: true, refusedRows: false };
   }

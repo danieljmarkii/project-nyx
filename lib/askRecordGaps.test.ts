@@ -40,12 +40,16 @@ import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { softDeleteEvent, updateEvent, updateMealIntake } from './db';
 import { askQuestion } from './ask';
+import { quarantineCountSql, recordGapsForAskSql, unsentForSignalSql } from './syncQueue';
 import { supabase } from './supabase';
 
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 const PET = 'pet-1';
 const T0 = '2026-10-18T08:00:00.000Z';
-const REFUSAL = '22P02: invalid input value for enum event_type';
+// A refusal an edit can clear: a time the server's check rejected, which saving the entry again
+// (a corrected time) or removing it replaces. A 22P02 on event_type cannot recover this way
+// (both paths re-send the type), so it is not this fixture's shape (C-35).
+const REFUSAL = '23514: new row for relation "events" violates check constraint "events_occurred_at_check"';
 
 /** Insert a row, filling every required column the caller did not name. */
 function insert(table: string, values: Row): void {
@@ -97,15 +101,15 @@ it('a whole record sends neither flag', async () => {
   expect(await sentFlags()).toEqual({ unsent_rows: false, refused_rows: false });
 });
 
-it('a vomit the server refused sends refused_rows (and is not counted as about to send)', async () => {
+it('a vomit the server refused sends refused_rows (and unsent_rows, so an older server declines too)', async () => {
   insert('events', { id: 'e1', pet_id: PET, event_type: 'vomit', synced: 0, sync_error: REFUSAL });
-  expect(await sentFlags()).toEqual({ unsent_rows: false, refused_rows: true });
+  expect(await sentFlags()).toEqual({ unsent_rows: true, refused_rows: true });
 });
 
 it('a refused meal (the intake case) sends refused_rows', async () => {
   insert('events', { id: 'e1', pet_id: PET, event_type: 'meal', synced: 1, sync_error: null });
   insert('meals', { id: 'm1', event_id: 'e1', pet_id: PET, synced: 0, sync_error: '23503: meals_food_item_id_fkey' });
-  expect(await sentFlags()).toEqual({ unsent_rows: false, refused_rows: true });
+  expect(await sentFlags()).toEqual({ unsent_rows: true, refused_rows: true });
 });
 
 it('pending rows alone keep today: unsent_rows only', async () => {
@@ -115,7 +119,7 @@ it('pending rows alone keep today: unsent_rows only', async () => {
 
 it('saving the refused vomit again reopens Ask: pending until it lands, then nothing', async () => {
   insert('events', { id: 'e1', pet_id: PET, event_type: 'vomit', synced: 0, sync_error: REFUSAL });
-  await updateEvent('e1', { occurred_at: T0, occurred_at_source: 'manual' });
+  await updateEvent('e1', { occurred_at: '2026-10-18T07:30:00.000Z', occurred_at_source: 'manual' });
   expect(await sentFlags()).toEqual({ unsent_rows: true, refused_rows: false });
   landAll();
   expect(await sentFlags()).toEqual({ unsent_rows: false, refused_rows: false });
@@ -136,8 +140,26 @@ it('removing the refused vomit reopens Ask once the removal lands', async () => 
   expect(await sentFlags()).toEqual({ unsent_rows: false, refused_rows: false });
 });
 
-it('a refused row and a pending one send both flags (the server lets refused lead)', async () => {
+it('a refused row beside a pending one sends both flags (the server lets refused lead)', async () => {
   insert('events', { id: 'e1', pet_id: PET, event_type: 'vomit', synced: 0, sync_error: REFUSAL });
   insert('events', { id: 'e2', pet_id: PET, event_type: 'stool', synced: 0, sync_error: null });
   expect(await sentFlags()).toEqual({ unsent_rows: true, refused_rows: true });
+});
+
+it('the one read answers the same questions as the counts it stands beside', async () => {
+  // Mixed queues and states: unsent must be exactly the Signal's count (one meaning, CUL-1982),
+  // refused exactly the rows the banner calls stuck today.
+  insert('events', { id: 'e1', pet_id: PET, event_type: 'vomit', synced: 0, sync_error: REFUSAL });
+  insert('events', { id: 'e2', pet_id: PET, event_type: 'stool', synced: 0, sync_error: null });
+  insert('events', { id: 'e3', pet_id: PET, event_type: 'meal', synced: 1, sync_error: null });
+  insert('meals', { id: 'm1', event_id: 'e3', pet_id: PET, synced: 0, sync_error: null });
+  insert('events', { id: 'e4', pet_id: PET, event_type: 'meal', synced: 1, sync_error: null });
+  insert('meals', { id: 'm2', event_id: 'e4', pet_id: PET, synced: 0, sync_error: '23503: meals_food_item_id_fkey' });
+  const db = mockLocal.db!;
+  const gaps = db.prepare(recordGapsForAskSql()).get() as { unsent: number; refused: number };
+  expect(gaps).toEqual({
+    unsent: (db.prepare(unsentForSignalSql()).get() as { count: number }).count,
+    refused: (db.prepare(quarantineCountSql()).get() as { count: number }).count,
+  });
+  expect(gaps).toEqual({ unsent: 2, refused: 2 });
 });
