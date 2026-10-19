@@ -1684,6 +1684,10 @@ export type SafetyFlag =
       windowDays: number
     }
   | {
+      /** The weight check ran on a weigh-in record that did not load in full (CUL-2026). */
+      kind: 'weight_unchecked'
+    }
+  | {
       /** A safety finding the report does not detail (e.g. `incident_red_flag`), named so the band
        *  never implies nothing else fired. */
       kind: 'engine_other'
@@ -4889,18 +4893,42 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // (Home's card, live) left the band silent. So on a past window the lane also runs at real-now
   // over every reading, and that card, the one Home shows, wins; the window-end card is the
   // fallback, and is never said to be what the owner was told.
-  let weightAsOf: 'now' | 'window_end' = 'now'
-  let weightFindings = detection.weightLoss
-  if (scope.detectionNowIso !== input.now) {
+  //
+  // BOTH WHEN THEY DIFFER (adversarial pass 2). A partial recovery after the window can make
+  // today's card SOFTER than the window's (firm 5.00 → 4.30 kg at the window's end, soft 5.00 →
+  // 4.50 today), and letting today's win softened the band's ask. So on a past window each run
+  // that fires is carried, firmest first (today's leads a tie); one that names the same two
+  // readings as today's is the same card and is carried once.
+  const weightFindings: Array<{ f: WeightLossFinding; asOf: 'now' | 'window_end' }> = []
+  if (scope.detectionNowIso === input.now) {
+    for (const f of detection.weightLoss) weightFindings.push({ f, asOf: 'now' })
+  } else {
     const lane = weightLaneFor(input, droppedEventIds)
     const live = lane.weight ? detectWeightLoss({ ...detInput, ...lane, now: input.now }) : []
-    if (live.length > 0) weightFindings = live
-    else weightAsOf = 'window_end'
+    for (const f of live) weightFindings.push({ f, asOf: 'now' })
+    const same = (a: WeightLossFinding, b: WeightLossFinding): boolean =>
+      a.latest.occurredAt === b.latest.occurredAt && a.highBefore.occurredAt === b.highBefore.occurredAt
+    for (const f of detection.weightLoss) {
+      if (!live.some((l) => same(l, f))) weightFindings.push({ f, asOf: 'window_end' })
+    }
+    const rank = (x: { f: WeightLossFinding; asOf: 'now' | 'window_end' }): number =>
+      (x.f.tier === 'firm' ? 0 : 2) + (x.asOf === 'now' ? 0 : 1)
+    weightFindings.sort((a, b) => rank(a) - rank(b))
   }
-  for (const f of weightFindings) {
+  // A weigh-in pull that did not load in full can lose the year's high, and the lane then reads
+  // quieter (adversarial pass 2: never louder, often quieter). Home carries its earlier card over
+  // such a read; the report has none to carry, so the band says the check ran on part of the record.
+  if (
+    weightFindings.length === 0 &&
+    isEngineKeyOn(input.engineFlags, 'engines_v3_en8') &&
+    (input.incompletePulls ?? []).includes('weight_checks')
+  ) {
+    safetyFlags.push({ kind: 'weight_unchecked' })
+  }
+  for (const { f, asOf } of weightFindings) {
     safetyFlags.push({
       kind: 'weight_loss',
-      asOf: weightAsOf,
+      asOf,
       latest: { kg: f.latest.kg, source: f.latest.source, single: !f.latest.confirmed, day: f.latestDay },
       highBefore: { kg: f.highBefore.kg, source: f.highBefore.source, single: !f.highBefore.confirmed, day: f.highBeforeDay },
       tier: f.tier,

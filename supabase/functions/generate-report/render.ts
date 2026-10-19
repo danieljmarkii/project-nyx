@@ -2654,12 +2654,20 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // Home's lane already widened its noise band for a clinic-vs-home pair; the vet is told the
       // scales differ so the drop is not read at a single scale's precision (cold read, CUL-2026).
       const scales = f.mixedInstruments ? ' The two readings come from different scales.' : ''
-      const after = f.latest.day > snap.scope.endDate ? ' The latest reading is after this window.' : ''
+      const after =
+        f.highBefore.day > snap.scope.endDate
+          ? ' Both readings are after this window.'
+          : f.latest.day > snap.scope.endDate
+            ? ' The latest reading is after this window.'
+            : ''
       const ask = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth raising with the vet'
+      // A window-end row says "not today" only when no row from today stands beside it; when one
+      // does, that row is today's reading and says so itself.
+      const todayRow = snap.safetyFlags.some((x) => x.kind === 'weight_loss' && x.asOf === 'now')
       const told =
         f.asOf === 'now'
           ? `The owner was told it is ${ask}.`
-          : `As of this window's end the app's weight check reads it as ${ask}; it does not read so today.`
+          : `As of this window's end the app's weight check reads it as ${ask}${todayRow ? '' : '; it does not read so today'}.`
       return flagRow(
         'Weight',
         `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> The latest reading against the highest before it in the last ${num(
@@ -2667,6 +2675,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         )} days, not a diagnosis; body condition was not assessed.${scales}${after} ${told}`,
       )
     }
+    case 'weight_unchecked':
+      return flagRow(
+        'Weight',
+        `<b>The weigh-in record did not load in full</b>, so the app&rsquo;s weight-loss check ran on part of it and may have missed a loss. Weigh the patient.`,
+      )
     case 'engine_other': {
       const words: Record<string, string> = {
         incident_red_flag: 'a red flag on a photographed incident (see the incident appendix)',
@@ -9407,7 +9420,9 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
           .map((i) => `${h(i.indication)} (${h(i.drug)})`)
           .join('; ')}. An indication is what the owner entered against a drug, not a diagnosis, so it is shown here rather than listed above as a condition.`
       : recordSilence('None entered', 'no condition has been recorded in Culprit', 'there is none')
-  const weightBit = snap.weight.isEmpty
+  const weightBit = snap.weight.isEmpty && weightFlagOf(snap)
+    ? 'No weigh-ins in this report&rsquo;s lookback; the Weight flag on page&nbsp;1 names the two readings it compares. Body-condition score and caloric adequacy not assessed in this record.'
+    : snap.weight.isEmpty
     ? 'No home weigh-ins recorded. Body-condition score and caloric adequacy not assessed in this record.'
     : `${
         snap.weight.trend
@@ -9711,7 +9726,7 @@ function appendixF(snap: ReportSnapshot): string {
     ? // "a prescribed diet going uneaten" is named explicitly (B-494). The list here is what
       // teaches the reader what the zone covers, so a lane missing from it is a lane whose
       // silence the reader will misread as a negative result on exactly the patient it watches.
-      `<dt>Safety flags</dt><dd>Shown only when present, above the fold. They escalate on the presence of a concern (chronicity, reduced intake, a prescribed diet going uneaten, possible blood/foreign, worsening) and are owner-reported, not a diagnosis. Absence of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
+      `<dt>Safety flags</dt><dd>Shown only when present, above the fold. They escalate on the presence of a concern (chronicity, reduced intake, a prescribed diet going uneaten, weight loss, possible blood/foreign, worsening) and rest on the owner&rsquo;s record, not a diagnosis. Absence of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
     : // NOT "none were present in this window". The cold read lifted exactly that clause
       // off a report for an 8-year-old cat with 34 of 38 feedings refused and ~7% of body
       // weight lost in 18 days: one sentence that makes the all-clear claim and then
@@ -9767,7 +9782,7 @@ function appendixF(snap: ReportSnapshot): string {
     ${photoDt}
     ${noticedDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
-    <dt>Weight</dt><dd>Owner weigh-ins (home scale, or at the vet where marked), shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here.</dd>
+    <dt>Weight</dt><dd>Owner weigh-ins (home scale, or at the vet where marked), shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here. A Weight flag compares the latest reading with the highest in the year before it, which may come from a different scale.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
       // ON THE SCOPE, NOT ON THE LIST'S LENGTH (B-532). The itemisation is no longer gated
       // on the reduced-intake flag, so a non-empty `intakeLog` no longer implies the page-1

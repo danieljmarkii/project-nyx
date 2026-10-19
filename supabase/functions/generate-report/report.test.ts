@@ -6022,3 +6022,40 @@ Deno.test('CUL-2026 adv — as of a past window\'s end, a reading after it never
   assert.deepEqual(weightLaneFor(input, new Set(), '2026-06-15T03:59:59.999Z').weight?.readings.map((r) => r.occurredAt), ['2026-06-14T12:00:00Z'])
   assert.equal(weightLaneFor(input, new Set()).weight?.readings.length, 2)
 })
+
+Deno.test('CUL-2026 adv 2 — a partial recovery after a past window never softens the window\'s firmer loss', () => {
+  // Firm 5.00 → 4.30 kg as of Jul 15; a recovery to 4.50 kg by Sep leaves today's card soft.
+  const weighIns: ReportWeightCheckInput[] = [
+    { eventId: 'a', weightKg: 5.0, occurredAt: '2026-03-01T14:00:00Z', source: 'home_scale' },
+    { eventId: 'b', weightKg: 5.0, occurredAt: '2026-03-08T14:00:00Z', source: 'home_scale' },
+    { eventId: 'c', weightKg: 4.3, occurredAt: '2026-06-20T14:00:00Z', source: 'home_scale' },
+    { eventId: 'd', weightKg: 4.3, occurredAt: '2026-06-27T14:00:00Z', source: 'home_scale' },
+    { eventId: 'e', weightKg: 4.5, occurredAt: '2026-09-20T14:00:00Z', source: 'home_scale' },
+    { eventId: 'f', weightKg: 4.5, occurredAt: '2026-09-27T14:00:00Z', source: 'home_scale' },
+  ]
+  idSeq = 0
+  const snap = assembleReport(baseInput({
+    now: '2026-10-15T12:00:00Z',
+    events: mealsOn(dayKeys('2026-04-01', '2026-07-15')),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+    engineFlags: EN8,
+    requestedWindow: { startDate: '2026-04-01', endDate: '2026-07-15' },
+  }))
+  const flags = snap.safetyFlags.filter((f) => f.kind === 'weight_loss')
+  assert.deepEqual(flags.map((f) => f.kind === 'weight_loss' && [f.tier, f.asOf]), [['firm', 'window_end'], ['soft', 'now']])
+  const p = readAs(renderReport(snap))
+  assert.ok(/As of this window's end the app's weight check reads it as worth booking a vet visit\./.test(p))
+  assert.ok(/The owner was told it is worth raising with the vet\./.test(p))
+  assert.ok(/-0\.70 kg Weight since Mar 8, 2026|-0\.70 kg Weight since Mar 1, 2026/.test(p), 'the tile states the firmer row')
+})
+
+Deno.test('CUL-2026 adv 2 — a weigh-in record that did not load in full says so in the band, never silence', () => {
+  idSeq = 0
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightHistory: [], engineFlags: EN8, incompletePulls: ['weight_checks'] }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'weight_unchecked'))
+  assert.ok(/Weight The weigh-in record did not load in full, so the app's weight-loss check ran on part of it and may have missed a loss\./.test(readAs(renderReport(snap))))
+  idSeq = 0
+  const off = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), incompletePulls: ['weight_checks'] }))
+  assert.ok(!off.safetyFlags.some((f) => f.kind === 'weight_unchecked'), 'key off: Home has no weight check to speak of')
+})
