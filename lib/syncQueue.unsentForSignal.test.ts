@@ -1,18 +1,17 @@
 // Q14 (CUL-772) — what a Signal rebuild counts as "rows the server has not received".
 //
-// Driven over the REAL runtime schema (the DDL constants plus initDb's column upgrades), because
-// the defect this count exists to avoid is a shape only the real SQL shows: a meal, weigh-in or
-// look whose parent event the server refused is held by its drain for good (`e.synced = 1`
-// never comes), so it reads `synced = 0, sync_error IS NULL` forever. Counted, it would pin
-// every pet's Signal at the 1-hour expiry and spend the per-pet cap (adversarial review, this PR).
+// Driven over the REAL runtime schema (the DDL constants plus initDb's column upgrades). PR-24
+// had to leave out a meal, weigh-in or look whose parent event the server refused, because its
+// drain held it for good (`e.synced = 1` never came) and counting it would pin every pet's
+// Signal at the 1-hour expiry and spend the per-pet cap. CUL-1986 retired that hold: a refused
+// parent holds nothing (`parentLandedSql`), so such a child goes up and is answered within a
+// cycle, and the count is every pending row again. The last describe keeps the hold retired.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  EVENT_GATED_QUEUES,
-  HELD_FOR_GOOD_SQL,
   incidentFloorPushQueueSql,
   pendingStatusSql,
   unsentForSignalSql,
@@ -78,23 +77,27 @@ describe('Q14 (CUL-772) — unsentForSignalSql over the real schema', () => {
     expect(unsent(db)).toBe(0);
   });
 
-  it.each(EVENT_GATED_QUEUES)('a %s row held for good behind a refused event does not count', async (table) => {
+  // The drains that used to hold these for good behind a refused event (CUL-1986).
+  const EVENT_CHILDREN = ['meals', 'weight_checks', 'looks'] as const;
+
+  it.each(EVENT_CHILDREN)('a %s row behind a refused event counts: its drain sends it and it is answered', async (table) => {
     const db = await realSchemaDb();
     insert(db, 'events', { id: 'e1', synced: 0, sync_error: REFUSED });
     insert(db, table, { id: 'c1', event_id: 'e1', synced: 0, sync_error: null });
-    // The defect, reproduced: the general pending count still holds the child.
-    expect(pending(db)).toBe(1);
+    expect(unsent(db)).toBe(1);
+    // Once it is refused itself it stops counting: no retry is coming.
+    db.prepare(`UPDATE ${table} SET sync_error = ? WHERE id = 'c1'`).run(REFUSED);
     expect(unsent(db)).toBe(0);
   });
 
-  it.each(EVENT_GATED_QUEUES)('a %s row behind an event still waiting to land DOES count, and so does the event', async (table) => {
+  it.each(EVENT_CHILDREN)('a %s row behind an event still waiting to land DOES count, and so does the event', async (table) => {
     const db = await realSchemaDb();
     insert(db, 'events', { id: 'e1', synced: 0, sync_error: null });
     insert(db, table, { id: 'c1', event_id: 'e1', synced: 0, sync_error: null });
     expect(unsent(db)).toBe(2);
   });
 
-  it.each(EVENT_GATED_QUEUES)('a %s row whose event has landed counts', async (table) => {
+  it.each(EVENT_CHILDREN)('a %s row whose event has landed counts', async (table) => {
     const db = await realSchemaDb();
     insert(db, 'events', { id: 'e1', synced: 1, sync_error: null });
     insert(db, table, { id: 'c1', event_id: 'e1', synced: 0, sync_error: null });
@@ -102,24 +105,25 @@ describe('Q14 (CUL-772) — unsentForSignalSql over the real schema', () => {
   });
 
   it('a child under parentLandedSql still counts behind a refused event: it goes up and takes its own answer', async () => {
-    // intake_checks' gate lets a refused parent hold nothing (lib/syncQueue.ts parentLandedSql),
-    // so the row is pushed and either lands or is refused itself; until then it is unsent.
     const db = await realSchemaDb();
     insert(db, 'events', { id: 'e1', synced: 0, sync_error: REFUSED });
     insert(db, 'intake_checks', { id: 'c1', event_id: 'e1', synced: 0, sync_error: null });
     expect(unsent(db)).toBe(1);
   });
 
-  // EN-4's re-check marker waits on its event's meal (floorTriggerLandedSql). When that meal is
-  // held for good behind a refused event, so is the marker (adversarial pass 2, this PR).
-  it('a floor marker waiting on a meal held for good does not count, and its drain indeed never sends it', async () => {
+  // EN-4's re-check marker waits on its event's meal (floorTriggerLandedSql). Behind a refused
+  // event that meal used to be held for good, and the marker with it; now the meal is sent, so
+  // the marker waits only while the meal can still land, and both count meanwhile.
+  it('a floor marker waits on a meal behind a refused event only until the meal is answered', async () => {
     const db = await realSchemaDb();
     insert(db, 'events', { id: 'e1', event_type: 'meal', synced: 0, sync_error: REFUSED });
     insert(db, 'meals', { id: 'm1', event_id: 'e1', synced: 0, sync_error: null });
     insert(db, 'incident_floor_queue', { id: 'f1', event_id: 'e1', synced: 0, sync_error: null });
     expect(db.prepare(incidentFloorPushQueueSql()).all()).toHaveLength(0);
-    expect(pending(db)).toBe(2);
-    expect(unsent(db)).toBe(0);
+    expect(unsent(db)).toBe(2);
+    db.prepare(`UPDATE meals SET sync_error = '23503: fk' WHERE id = 'm1'`).run();
+    expect(db.prepare(incidentFloorPushQueueSql()).all()).toHaveLength(1);
+    expect(unsent(db)).toBe(1);
   });
 
   it('a floor marker under a refused event with no held meal counts: its drain sends it', async () => {
@@ -149,52 +153,38 @@ describe('Q14 (CUL-772) — unsentForSignalSql over the real schema', () => {
     expect(pending(db)).toBe(5);
     expect(unsent(db)).toBe(pending(db));
   });
-});
 
-describe('EVENT_GATED_QUEUES is exactly the drains that wait on `e.synced = 1`', () => {
-  // A new drain gated the same way would hold its children behind a refused event for good and
-  // pin every Signal at the hour; a listed queue whose drain stopped gating would hide real
-  // unsent rows. Read from the drains themselves, both directions.
-  const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
-  const gated = [
-    ...src.matchAll(
-      /FROM (\w+) (\w+)\s+(?:INNER\s+)?JOIN events (\w+) ON \3\.id\s*=\s*\2\.event_id\s+WHERE [^`]*?\b\3\.synced\s*=\s*1\b/g,
-    ),
-  ].map((m) => m[1]);
-
-  it('finds the drains (non-vacuous)', () => {
-    expect(gated.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('matches the list', () => {
-    expect([...new Set(gated)].sort()).toEqual([...EVENT_GATED_QUEUES].sort());
-  });
-});
-
-describe('a gate that waits on an event-gated child is held for good with it (nested holds)', () => {
-  // Pass 2's case: floorTriggerLandedSql waits on `meals`, which the meals drain holds behind a
-  // refused event, so the marker is held too. Any gate in the queue code that waits on an
-  // EVENT_GATED_QUEUES table must be registered in HELD_FOR_GOOD_SQL, or its rows pin every
-  // Signal at the hour. Scans every lib file a drain's gate lives in.
-  const files = ['syncQueue.ts', 'sync.ts'];
-  const nested = files.flatMap((f) => {
-    const src = readFileSync(join(__dirname, f), 'utf8');
-    const out: string[] = [];
-    for (const m of src.matchAll(/NOT EXISTS \(SELECT 1 FROM (\w+) \w+\s+WHERE \w+\.event_id = (\w+)\.event_id/g)) {
-      if ((EVENT_GATED_QUEUES as readonly string[]).includes(m[1])) out.push(m[2]);
+  it('behind a refused parent the count is still exactly the pending count: nothing is held for good', async () => {
+    const db = await realSchemaDb();
+    insert(db, 'events', { id: 'e1', event_type: 'meal', synced: 0, sync_error: REFUSED });
+    for (const t of ['meals', 'weight_checks', 'looks', 'intake_checks', 'incident_floor_queue']) {
+      insert(db, t, { id: `${t}-1`, event_id: 'e1', synced: 0, sync_error: null });
     }
-    return out;
+    expect(pending(db)).toBe(5);
+    expect(unsent(db)).toBe(pending(db));
+  });
+});
+
+describe('no drain holds a child behind its event for good (CUL-1986)', () => {
+  // The retired shape: a drain that joins `events` and requires `e.synced = 1` waits on a
+  // landing a REFUSED event never makes, so its child is never sent, never refused and never
+  // counted as stuck, and the Signal's unsent flag would need its exclusion back. A child
+  // waits on its parent through `parentLandedSql`, where a refused parent holds nothing.
+  const HOLD_FOR_GOOD =
+    /FROM (\w+) (\w+)\s+(?:INNER\s+)?JOIN events (\w+) ON \3\.id\s*=\s*\2\.event_id\s+WHERE [^`]*?\b\3\.synced\s*=\s*1\b/g;
+  const found = (src: string) => [...src.matchAll(HOLD_FOR_GOOD)].map((m) => m[1]);
+
+  it('recognises the retired shape (non-vacuous)', () => {
+    const retired = `SELECT m.* FROM meals m
+       JOIN events e ON e.id = m.event_id
+      WHERE m.synced = 0 AND m.sync_error IS NULL AND e.synced = 1
+      LIMIT 100`;
+    expect(found(retired)).toEqual(['meals']);
   });
 
-  it('finds the floor marker gate (non-vacuous)', () => {
-    expect(nested).toContain('incident_floor_queue');
-  });
-
-  it('every queue so gated is registered', () => {
-    for (const q of nested) expect(Object.keys(HELD_FOR_GOOD_SQL)).toContain(q);
-  });
-
-  it('the registry holds exactly the event-gated queues and the nested ones', () => {
-    expect(Object.keys(HELD_FOR_GOOD_SQL).sort()).toEqual([...new Set([...EVENT_GATED_QUEUES, ...nested])].sort());
+  it('finds it in no queue file', () => {
+    for (const f of ['sync.ts', 'syncQueue.ts', 'dietTrialMirror.ts']) {
+      expect({ file: f, held: found(readFileSync(join(__dirname, f), 'utf8')) }).toEqual({ file: f, held: [] });
+    }
   });
 });
