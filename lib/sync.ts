@@ -531,8 +531,9 @@ function isEventFkViolation(error: { code?: string | null; message?: string | nu
  * CUL-1986 — which of these children sit behind an event this phone holds REFUSED
  * (`synced = 0`, `sync_error` set). `parentLandedSql` lets such a child go up; this set is
  * what tells `pushRows` that a 23503 for it is not "wait for the parent" but final, because
- * no landing is coming. Read at queue time: an owner edit that re-arms the event in the
- * push gap is caught by `rearmChildrenOfLandedEvents` when that edit lands.
+ * no landing is coming. Read at queue time, so it can be stale by the time the answer comes
+ * back: `recordRefusedParentFailure` re-checks the parent in the same statement that parks
+ * the row.
  */
 async function refusedParentChildIds(
   db: Db,
@@ -549,8 +550,43 @@ async function refusedParentChildIds(
   return new Set(rows.filter((r) => refusedIds.has(r.event_id)).map((r) => r.id));
 }
 
+/**
+ * CUL-1986 — a refusal behind a refused log is final only while the log is STILL refused,
+ * checked in the same statement that parks the row. Between the queue read and this answer
+ * the owner may have fixed the log and the events drain landed it, re-arming children that
+ * were quarantined then; this row was not yet, so parking it now would strand it with its
+ * log on the server (adversarial review, this PR). If the log is no longer refused, or the
+ * row changed under the push, nothing is parked here and the ordinary budget applies:
+ * one attempt, and the next drain sends it after its log.
+ */
+async function recordRefusedParentFailure(
+  db: Db,
+  table: LwwQueueTable,
+  row: { id: string; updated_at: string },
+  error: PushError,
+): Promise<void> {
+  const reason = formatSyncError(error);
+  const parked = await db.runAsync(
+    `UPDATE ${table} SET sync_error = ?
+      WHERE id = ? AND updated_at IS ?
+        AND EXISTS (SELECT 1 FROM events gate_e WHERE gate_e.id = ${table}.event_id
+                      AND gate_e.synced = 0 AND gate_e.sync_error IS NOT NULL)`,
+    [reason, row.id, row.updated_at ?? null],
+  );
+  if (parked.changes > 0) {
+    console.warn(`[sync] ${table} ${row.id} refused behind a refused log: ${reason}`);
+    return;
+  }
+  await applyFailurePolicy(db, table, row, 'rejected', reason);
+}
+
 /** The event children whose refusal can be the parent's rather than their own (CUL-1986). */
 export const EVENT_CHILD_REARM_QUEUES = ['meals', 'weight_checks', 'looks'] as const;
+
+/** A parked child's `sync_error` that a log missing from the server explains: the event
+ *  foreign key's 23503 (budgeted or final), or 064's same-pet 23514 on a look. */
+const PARENT_CAUSED_REFUSAL_SQL =
+  `sync_error LIKE '23503:%event_id%' OR sync_error LIKE '23514:%'`;
 
 /**
  * CUL-1986 — when events land, their quarantined meals, weigh-ins and looks get one fresh
@@ -558,8 +594,10 @@ export const EVENT_CHILD_REARM_QUEUES = ['meals', 'weight_checks', 'looks'] as c
  * final 23503, or a look's 23514); if the owner then fixes the log and it lands, the child
  * would otherwise stay parked for good, where it used to follow its log up. Clears the
  * quarantine only: `synced` is already 0, and `updated_at` does not move, because no owner
- * changed the row (it is the version markSynced compares and the server's LWW reads). A
- * child refused for a fault of its own is refused again on the next push, once.
+ * changed the row (it is the version markSynced compares and the server's LWW reads). Only
+ * a refusal the missing log can explain is cleared (`PARENT_CAUSED_REFUSAL_SQL`), so a row
+ * parked for a fault of its own (a 42501, a 22P02) stays parked; a look's 23514 can be
+ * either, and is refused again on the next push, once per landing of its log.
  */
 async function rearmChildrenOfLandedEvents(db: Db, eventIds: readonly string[]): Promise<void> {
   for (let i = 0; i < eventIds.length; i += MARK_SYNCED_CHUNK) {
@@ -568,7 +606,7 @@ async function rearmChildrenOfLandedEvents(db: Db, eventIds: readonly string[]):
     for (const table of EVENT_CHILD_REARM_QUEUES) {
       await db.runAsync(
         `UPDATE ${table} SET sync_attempts = 0, sync_error = NULL
-          WHERE synced = 0 AND sync_error IS NOT NULL AND event_id IN (${placeholders})`,
+          WHERE synced = 0 AND (${PARENT_CAUSED_REFUSAL_SQL}) AND event_id IN (${placeholders})`,
         chunk,
       );
     }
@@ -586,7 +624,8 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   // CUL-1986 — the rows whose parent EVENT this phone holds refused (`refusedParentChildIds`).
   // A 23503 costs a row one attempt because "the parent has not landed yet"; behind a
   // refused parent that wait has no end, so the 23503 is final instead, and the row is
-  // counted as needing the owner within one cycle rather than reading pending for 25.
+  // counted as needing the owner within one cycle rather than reading pending for 25
+  // (`recordRefusedParentFailure`, which also takes a look's 23514 behind such a log).
   // Empty for every other caller, which keeps the ordinary budget.
   parentRefused: ReadonlySet<string> = NO_IDS,
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
@@ -616,8 +655,8 @@ async function pushRows<L extends { id: string; updated_at: string }>(
         .upsert([toRemote(row)], { onConflict: 'id' })
         .select('id');
       if (rowError) {
-        if (parentRefused.has(row.id) && isEventFkViolation(rowError)) {
-          await applyFailurePolicy(db, table, row, 'terminal', formatSyncError(rowError));
+        if (parentRefused.has(row.id) && (isEventFkViolation(rowError) || rowError.code === '23514')) {
+          await recordRefusedParentFailure(db, table, row, rowError);
         } else {
           await recordPushFailure(db, table, row, rowError);
         }

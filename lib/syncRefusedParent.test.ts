@@ -31,6 +31,9 @@ const mockServer = {
   writes: [] as { table: string; ids: string[] }[],
   /** An event named here (by id) is refused with this. */
   refuse: new Map<string, ServerError>(),
+  /** Runs once, after the server has answered a single-row write to the named table and
+   *  before the client sees the answer: what happens on the phone in the network gap. */
+  inGap: new Map<string, () => Promise<void>>(),
 };
 
 function mockServerTable(table: string): Map<string, Row> {
@@ -76,7 +79,16 @@ function mockServerWrite(table: string, payload: Row[]): ServerAnswer {
 function mockServerFrom(table: string) {
   return {
     upsert: (payload: Row | Row[]) => ({
-      select: async () => mockServerWrite(table, Array.isArray(payload) ? payload : [payload]),
+      select: async () => {
+        const rows = Array.isArray(payload) ? payload : [payload];
+        const answer = mockServerWrite(table, rows);
+        const gap = rows.length === 1 ? mockServer.inGap.get(table) : undefined;
+        if (gap) {
+          mockServer.inGap.delete(table);
+          await gap();
+        }
+        return answer;
+      },
     }),
     // The weigh-in drain's best-effort pets.weight_kg reconcile; nothing here reads it.
     update: () => ({ eq: async () => ({ error: null }) }),
@@ -158,6 +170,7 @@ beforeEach(async () => {
   mockServer.rows.clear();
   mockServer.writes.length = 0;
   mockServer.refuse.clear();
+  mockServer.inGap.clear();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -252,6 +265,27 @@ describe.each(CHILDREN)('the $table drain behind its log', ({ table, eventType, 
     });
   }
 
+  it('does not park the child when its log is fixed and lands while the refusal is in flight', async () => {
+    // Adversarial review, this PR: the re-arm runs when the log lands, and this child was
+    // not parked yet, so parking it on the stale answer would strand it for good.
+    log('e-refused', { synced: 0, sync_error: formatRefusal() }, false);
+    log('e-landed', { synced: 1 }, true);
+    child('c1', 'e-refused');
+    child('c-good', 'e-landed'); // makes the batch fail and isolate, so c1 goes alone
+    mockServer.inGap.set(table, async () => {
+      mockLocal.db!.prepare(
+        `UPDATE events SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'e-refused'`,
+      ).run(T2);
+      await syncPendingEvents();
+    });
+    await drain();
+    expect(localRow('events', 'e-refused')).toMatchObject({ synced: 1 });
+    // Not parked: the ordinary budget, and the next drain sends it after its log.
+    expect(localRow(table, 'c1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    await drain();
+    expect(localRow(table, 'c1')).toMatchObject({ synced: 1 });
+  });
+
   describe('when the refused log is fixed and lands', () => {
     beforeEach(async () => {
       log('e-fixed', { synced: 0, sync_error: formatRefusal() }, false);
@@ -274,6 +308,18 @@ describe.each(CHILDREN)('the $table drain behind its log', ({ table, eventType, 
       expect(localRow(table, 'c-fixed')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0, updated_at: T1 });
       await drain();
       expect(localRow(table, 'c-fixed')).toMatchObject({ synced: 1 });
+    });
+
+    it('leaves a child parked for a fault of its own', async () => {
+      log('e-own', { synced: 0, sync_error: formatRefusal() }, true);
+      child('c-own', 'e-own', { sync_error: '42501: new row violates row-level security policy', sync_attempts: 25 });
+      mockLocal.db!.prepare(
+        `UPDATE events SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'e-own'`,
+      ).run(T2);
+      await syncPendingEvents();
+      expect(localRow('events', 'e-own')).toMatchObject({ synced: 1 });
+      expect(localRow(table, 'c-own')).toMatchObject({ sync_attempts: 25 });
+      expect(String(localRow(table, 'c-own').sync_error)).toMatch(/^42501/);
     });
 
     it("leaves another log's stuck child alone", async () => {
