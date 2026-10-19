@@ -482,12 +482,23 @@ describe('storage.objects policy hygiene', () => {
 //   ✗ a later migration setting `public = true` on any bucket
 //   ✗ a `public` write in a shape the replay cannot read (`public = NOT public`)
 //   ✗ the baseline emptied
+//   ✗ the table quoted (`"storage"."buckets"`) or left unqualified behind a
+//     `search_path` (`UPDATE buckets …`)
+//   ✗ an INSERT with no column list (`VALUES (…, true)`)
+// The last three are the rls-privacy-reviewer's: the first draft matched only
+// `storage.buckets` spelled bare and skipped any statement not naming `public`,
+// so all three re-opened a bucket green.
 //
 // STATED BLIND SPOTS: this reads the repo, not the database. A bucket flipped
 // public in the dashboard, or a new bucket created public there, is invisible
-// here; 103's own read-back and its pre-apply query are what check the live
-// row. And a write is read only as `UPDATE storage.buckets … public = <bool> …
-// WHERE id = '<bucket>'`; anything else that names `public` fails as unread.
+// here; 103's own precondition, read-back and pre-apply query are what check
+// the live row. A write is read only as `UPDATE … buckets … public = <bool> …
+// WHERE id = '<bucket>'`; any other UPDATE naming `public`, and EVERY INSERT
+// (buckets are made in the dashboard, so an INSERT is already off the house
+// path), fails as unread. `stripSqlComments` knows no dollar quotes, so a lone
+// apostrophe inside a `$tag$…$tag$` body flips it into string mode and a
+// commented-out write after it replays as live; a dynamic `EXECUTE` of a bucket
+// write is invisible too. Both are reviewer-found and parked.
 
 const CREATED_PUBLIC_IN_DASHBOARD = ['nyx-pet-photos'] as const;
 
@@ -503,11 +514,15 @@ function bucketPublicWrites(): BucketWrite[] {
   const migrations = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
   for (const file of migrations) {
     const sql = stripSqlComments(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
-    for (const m of sql.matchAll(/\b(?:UPDATE|INSERT\s+INTO)\s+storage\.buckets\b/gi)) {
+    // Any spelling of the table: quoted or not, schema-qualified or left to a
+    // `search_path`. `buckets` is no other table's name in this schema.
+    for (const m of sql.matchAll(/\b(?:UPDATE|INSERT\s+INTO)\s+(?:"?storage"?\s*\.\s*)?"?buckets"?(?=[\s(;]|$)/gi)) {
       const end = sql.indexOf(';', m.index!);
       const text = normalise(sql.slice(m.index!, end === -1 ? undefined : end));
-      if (!/\bpublic\b/i.test(text)) continue;
       const isUpdate = /^UPDATE/i.test(text);
+      // An UPDATE that never names `public` (047's size and type limits) cannot
+      // move the flag. An INSERT can without naming it, positionally.
+      if (isUpdate && !/\bpublic\b/i.test(text)) continue;
       const value = isUpdate ? /\bSET\b.*?\bpublic\s*=\s*(true|false)\b/i.exec(text) : null;
       const target = isUpdate ? /\bWHERE\s+id\s*=\s*'([^']+)'\s*$/i.exec(text) : null;
       out.push({
