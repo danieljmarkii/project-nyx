@@ -1702,6 +1702,22 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
         expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
       });
 
+      // A positive fact in hand is never downgraded to "not answered" by an unknown beside it:
+      // the set-aside copy says why, where a rejection would only say it could not look.
+      it('a device decline beside a trial check that threw is withheld, never "not answered"', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(unknownCheck());
+        mockReadIntakeDecline.mockResolvedValue(deviceDecline);
+        expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
+      });
+
+      it('a trial not-eating fact beside a device check that threw is withheld, never "not answered"', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(refusing());
+        mockReadIntakeDecline.mockResolvedValue(null);
+        expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
+      });
+
       // The worst instance: a pet with NO trial. The loader hands back its base input (the
       // production shape, never null), which carries no decline fields at all.
       describe('a pet with no trial: the device’s own check answers', () => {

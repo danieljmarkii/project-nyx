@@ -1081,6 +1081,22 @@ describe('an eating check that threw withholds the screen’s reassurance and ra
     expect(trialScreenCard(l.input).lines.some((x) => /\d+ of \d+ days/.test(x.text))).toBe(false);
   });
 
+  it('a logged record with nothing classified is not read as empty under an unknown check either', async () => {
+    // Eaten meals that name no food (not a refusal), with the unnamed count forced to zero:
+    // the residual shape the projection's drop exists for (see the TS-4 re-run above).
+    const l = await loadUnknown({
+      target: 56, nowDay: 20, noPrimary: true, mealDays: [],
+      noFoodMeals: [1, 2, 3, 18, 19, 20].map((day) => ({ day, rating: 'all' })),
+    });
+    expect(isAnimalNotEating(l.input)).toBe(false);
+    const residual: Loaded = { ...l, input: { ...l.input, exposures: { ...l.input.exposures!, unclassifiable: 0 } } };
+    // Non-vacuity: resolved without coverage, the card WOULD say the record is empty.
+    expect(resolveTrialCard({ ...residual.input, coverage: null }).lines.map((x) => x.text)).toContain('Nothing is on the record for this trial yet.');
+    const m = trialModel(buildTrialScreenModel(argsFor(residual)));
+    expect(texts(m)).not.toContain('Nothing is on the record for this trial yet.');
+    expect(m.facts.filter((x) => x.role === 'fact')).toEqual([]);
+  });
+
   it('raises nothing: no safety face, the same state, and no "couldn’t pull" line in the ledger’s place', async () => {
     const answered = trialModel(buildTrialScreenModel(argsFor(await load(MOCHI_DAY_23))));
     const l = await loadUnknown(MOCHI_DAY_23);
