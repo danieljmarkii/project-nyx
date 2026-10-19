@@ -5575,10 +5575,11 @@ Deno.test('CUL-1995 — a FALL across an under-logged week is not compared, in t
 Deno.test('CUL-2001 — Cooper as production seeds it: page 1 says how late the vomiting was logged', () => {
   const p = readAs(cooperReport(true))
   assert.ok(
-    /4 of 4 vomiting entries were logged 3–16 days after the time given for them\. They were recalled, not recorded as they happened, so the counts, dates and timing on this page may be incomplete\./.test(p),
+    /All 4 vomiting entries were entered together on Oct 16 3–16 days after the time given for them\. They were recalled, not recorded as they happened, so the counts on this page may miss episodes, and the dates and times may be off\./.test(p),
+    p.slice(p.indexOf('All 4'), p.indexOf('All 4') + 260),
   )
   assert.ok(/4 of 4 logged 3–16 d after the time given/.test(p), 'and the chart panel carries it')
-  assert.ok(p.indexOf('4 of 4 vomiting entries were logged') < p.indexOf('At a glance'), 'on page 1, before the tiles')
+  assert.ok(p.indexOf('All 4 vomiting entries were entered') < p.indexOf('At a glance'), 'on page 1, before the tiles')
   // The fixture as CI pins it logs every row as it happens: silent, never "all logged on time".
   const prompt = readAs(cooperReport(false))
   assert.ok(!/after the time given/.test(prompt) && !/on time/.test(prompt))
@@ -5593,14 +5594,14 @@ Deno.test('CUL-2001 — late is a day or more, and a bout logged promptly once i
   const o = at('2026-06-01')
   const plus = (h: number): string => new Date(Date.parse(o) + h * 3_600_000).toISOString()
   assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS - 1) }])))
-  assert.ok(/1 of 1 vomiting entry was logged 1 day after the time given for it\. It was recalled/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS) }])))
+  assert.ok(/1 of 1 vomiting entry was entered 1 day after the time given for it\. It was recalled/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS) }])))
   // One bout, two rows: logged a week late once and promptly once — the record caught it. Both
   // row orders, so neither the bout's first nor its last row alone can stand in for the bout.
   assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(24 * 7) }, { occurredAt: o, loggedAt: plus(1) }])))
   assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(1) }, { occurredAt: o, loggedAt: plus(24 * 7) }])))
   // Part of the record late: "Those were", and the clause counts only the late ones.
   assert.ok(
-    /1 of 2 vomiting entries were logged 7 days after the time given for it\. That one was recalled, not recorded as it happened/.test(
+    /1 of 2 vomiting entries were entered 7 days after the time given for it\. That one was recalled, not recorded as it happened/.test(
       run([{ occurredAt: o, loggedAt: plus(24 * 7) }, { occurredAt: at('2026-06-10'), loggedAt: at('2026-06-10') }]),
     ),
   )
@@ -5630,14 +5631,15 @@ Deno.test('CUL-2003 — with no flag, the checks still show where the band sits,
   assert.equal(snap.safetyFlags.length, 0)
   const p = readAs(renderReport(snap))
   assert.ok(!/Safety — flags for review/.test(p), 'still no band and no all-clear (§5.3)')
-  assert.ok(/No safety flag\. Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in the last 8 weeks; it triggers at/.test(p), p.slice(p.indexOf('No safety'), p.indexOf('No safety') + 300))
+  assert.ok(!/No safety flag/.test(p), 'and no statement of none: the band shows only what this report renders')
+  assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in the last 8 weeks; it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
   assert.ok(
     /Vomiting getting worse: not checked, too few days logged to compare \(0 of the last 7, 0 of the 7 before; it needs 3 in each\)\./.test(p),
   )
   // The mutation: a record with no symptom in it has no check to name.
   idSeq = 0
   const quiet = readAs(renderReport(assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')) }))))
-  assert.ok(!/No safety flag/.test(quiet) && !/did not trigger/.test(quiet))
+  assert.ok(!/did not trigger/.test(quiet))
 })
 
 Deno.test('CUL-2003 — a check that DID flag is never also listed as not flagging', () => {
@@ -5699,14 +5701,14 @@ Deno.test('CUL-2003 adv 3 — the count printed is the one inside the check\'s l
   const p = readAs(renderReport(snap))
   const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')!
   assert.ok(c.kind === 'ongoing' && c.episodes === 4, JSON.stringify(c))
-  assert.ok(new RegExp(`ongoing vomiting \\(${c.episodes} episodes in the last 8 weeks;`).test(p), p.slice(p.indexOf('No safety'), p.indexOf('No safety') + 200))
+  assert.ok(new RegExp(`ongoing vomiting \\(${c.episodes} episodes in the last 8 weeks;`).test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 200))
 })
 
 Deno.test('CUL-2003 adv 4 — under EN-11 a rise under the card floor says so, never a bare "did not trigger"', () => {
   idSeq = 0
   const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...['2026-06-28', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
   const p = readAs(renderReport(assembleReport(baseInput({ events, engineFlags: { on: ['engines_v3_en11'], readOk: true } }))))
-  assert.ok(/Vomiting getting worse: did not trigger, but a sign on this record rose over the last 7 days below the 3 the flag needs\./.test(p), p.slice(p.indexOf('No safety'), p.indexOf('No safety') + 600))
+  assert.ok(/Vomiting getting worse: did not trigger, but a sign on this record rose over the last 7 days below the 3 the flag needs\./.test(p), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
   // The mutation: flag off, the same rise is a worsening flag.
   idSeq = 0
   const off = assembleReport(baseInput({ events: [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...['2026-06-28', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))] }))
@@ -5754,5 +5756,60 @@ Deno.test('CUL-2001 adv 7 — a found pile logged when it was found is not late'
     return readAs(renderReport(assembleReport(baseInput({ events }))))
   }
   assert.ok(!/after the time given/.test(run('2026-06-21T12:10:00Z')))
-  assert.ok(/1 of 1 vomiting entry was logged 2 days after the time given for it\. It was recalled, not recorded as it happened/.test(run('2026-06-23T13:00:00Z')))
+  assert.ok(/1 of 1 vomiting entry was entered 2 days after the time given for it\. It was recalled, not recorded as it happened/.test(run('2026-06-23T13:00:00Z')))
+})
+
+// ── Adversarial pass 2 / cold read r2 ────────────────────────────────────────────────────────
+
+Deno.test('CUL-2003 adv2 Q1 — a burden card fired leads the band, and the page never says "No safety flag"', () => {
+  idSeq = 0
+  // A cat vomiting three days running, twice: the engine's burden card ("call today").
+  const vomits = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-29', '2026-06-30', '2026-07-01']
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
+  const snap = assembleReport(baseInput({ events }))
+  const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(b && b.kind === 'symptom_burden', JSON.stringify(snap.safetyFlags.map((f) => f.kind)))
+  const p = readAs(renderReport(snap))
+  assert.ok(/Safety — flags for review/.test(p), 'the band renders')
+  assert.ok(new RegExp(`Burden ${b.count} vomiting entries in the last ${b.windowDays} days, on ${b.runDays} days in a row\\.`).test(p), p.slice(p.indexOf('Safety'), p.indexOf('Safety') + 400))
+  assert.ok(!/No safety flag/.test(p))
+})
+
+Deno.test('CUL-2003 adv2 Q1 — a safety finding the report does not detail is still named, and opens the band', () => {
+  idSeq = 0
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), makeEvent({ type: 'vomit', occurredAt: at('2026-06-01') })]
+  const snap = assembleReport(baseInput({ events }))
+  assert.equal(snap.safetyFlags.length, 0)
+  // The engine's other safety findings reach the band through this kind; pinned on the renderer.
+  const html = renderReport({ ...snap, safetyFlags: [{ kind: 'engine_other', findingTypes: ['weight_loss'] }] })
+  const p = readAs(html)
+  assert.ok(/Safety — flags for review Also flagged The app's checks also flagged weight loss \(see the weight trend\)\. This report does not detail it here\./.test(p))
+})
+
+Deno.test('CUL-2003 adv2 Q2 — a window exactly the span floor long cannot claim the ongoing check ran', () => {
+  idSeq = 0
+  const fl = chronicityFloorsFor('vomit', 'cat', DEFAULT_CONFIG.chronicity)
+  const start = new Date(Date.parse('2026-07-02T12:00:00Z') - (fl.minSpanDays - 1) * 86_400_000).toISOString().slice(0, 10)
+  const events = [...mealsOn(dayKeys(start, '2026-07-02')), makeEvent({ type: 'vomit', occurredAt: at('2026-06-25') })]
+  const snap = assembleReport(baseInput({ events, vetVisits: [{ visitedAt: start, clinicName: null, vetName: null, reason: null }] }))
+  assert.equal(snap.scope.windowDays, fl.minSpanDays)
+  const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
+  assert.ok(c && c.kind === 'ongoing' && c.state === 'window_short', JSON.stringify(c))
+})
+
+Deno.test('CUL-2001 r2 — entries entered in one sitting say so; spread-out late entries do not', () => {
+  const run = (loggedAts: string[]): string => {
+    idSeq = 0
+    const occ = ['2026-06-01', '2026-06-05', '2026-06-09']
+    const events = [
+      ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+      ...occ.map((d, i) => makeEvent({ type: 'vomit', occurredAt: at(d), loggedAt: loggedAts[i] })),
+    ]
+    return readAs(renderReport(assembleReport(baseInput({ events }))))
+  }
+  const together = run(['2026-06-20T15:00:00Z', '2026-06-20T15:05:00Z', '2026-06-20T15:10:00Z'])
+  assert.ok(/All 3 vomiting entries were entered together on Jun 20 11–19 days after/.test(together), together.slice(together.indexOf('All 3'), together.indexOf('All 3') + 120))
+  const spread = run(['2026-06-03T15:00:00Z', '2026-06-08T15:00:00Z', '2026-06-20T15:00:00Z'])
+  assert.ok(/All 3 vomiting entries were entered 2–11 days after/.test(spread))
+  assert.ok(!/together/.test(spread))
 })

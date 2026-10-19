@@ -2143,9 +2143,11 @@ function safetyBand(snap: ReportSnapshot): string {
     // No flag fired: still no band and no "all clear" (§5.3). The checks are named in a muted,
     // unboxed line where the band would sit, so "nothing flagged" reads as "these ran and stayed
     // under their floors", never as "nothing to look at" (PM ruling, 2026-10-19).
+    // Never "No safety flag": the band only shows what this report renders as a flag, and a
+    // statement of none was false the first time a finding it does not carry fired (pass 2, Q1).
     if (body === null) return ''
     return `
-  <div class="limit checked">No safety flag. ${body}</div>`
+  <div class="limit checked">${body}</div>`
   }
   const rows = flags.map((f) => safetyFlagRow(f, snap)).join('') + (body === null ? '' : flagRow('Not triggered', body))
   const warnIcon = `<svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg>`
@@ -2624,6 +2626,25 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
+    case 'symptom_burden': {
+      // CUL-1410's card, now on the report (adversarial pass 2 of CUL-1995's row). Counts only:
+      // no cause, no severity word. The tier is what the owner was told, stated as such.
+      const label = h(symptomLabel(f.symptomType).toLowerCase())
+      const run = f.runDays >= 2 ? `, on ${num(f.runDays)} days in a row` : ''
+      const told = f.tier === 'today' ? 'to call the vet today' : 'to call the vet soon'
+      return flagRow(
+        'Burden',
+        `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. The owner was told ${told}.`,
+      )
+    }
+    case 'engine_other': {
+      const words: Record<string, string> = {
+        weight_loss: 'weight loss (see the weight trend)',
+        incident_red_flag: 'a red flag on a photographed incident (see the incident appendix)',
+      }
+      const named = f.findingTypes.map((t) => h(words[t] ?? t.replace(/_/g, ' ')))
+      return flagRow('Also flagged', `The app's checks also flagged ${named.join('; ')}. This report does not detail ${f.findingTypes.length === 1 ? 'it' : 'them'} here.`)
+    }
     case 'symptom_worsening': {
       // windowDays is the comparison-window LENGTH (7 = week-over-week); priorDays/
       // currentDays are the distinct symptom-DAYS WITHIN each window (density) — not the
@@ -2684,17 +2705,23 @@ function lateLagPhrase(l: NonNullable<SymptomAggregate['lateLogged']>, unit: 'da
 function lateLoggedNote(snap: ReportSnapshot): string {
   const late = snap.symptoms.filter((s) => s.lateLogged !== null)
   if (late.length === 0) return ''
-  const clauses = late.map(
-    (s) =>
-      `${num(s.lateLogged!.count)} of ${num(s.count)} ${h(symptomLabel(s.type).toLowerCase())} ${
-        s.count === 1 ? 'entry was' : 'entries were'
-      } logged ${lateLagPhrase(s.lateLogged!, 'days')} after the time given for ${s.lateLogged!.count === 1 ? 'it' : 'them'}`,
-  )
+  const clauses = late.map((s) => {
+    const l = s.lateLogged!
+    const allOfType = l.count === s.count
+    // Entered together is a reconstruction, not a lagging log — the cold read's r2 blocker: "3–16
+    // days after" alone reads as an ongoing log with a delay.
+    const sitting = l.oneSittingDay ? ` together on ${h(fmtDay(l.oneSittingDay))}` : ''
+    const who = allOfType && l.count > 1 ? `All ${num(l.count)}` : `${num(l.count)} of ${num(s.count)}`
+    return `${who} ${h(symptomLabel(s.type).toLowerCase())} ${s.count === 1 ? 'entry was' : 'entries were'} entered${sitting} ${lateLagPhrase(
+      l,
+      'days',
+    )} after the time given for ${l.count === 1 ? 'it' : 'them'}`
+  })
   const all = late.every((s) => s.lateLogged!.count === s.count)
   const one = late.length === 1 && late[0].lateLogged!.count === 1
   const lead = one ? (all ? 'It was' : 'That one was') : all ? 'They were' : 'Those were'
   return `
-  <div class="latelog">${clauses.join('; ')}. ${lead} recalled, not recorded as ${one ? 'it' : 'they'} happened, so the counts, dates and timing on this page may be incomplete. <span class="qual">Late means logged ${num(
+  <div class="latelog">${clauses.join('; ')}. ${lead} recalled, not recorded as ${one ? 'it' : 'they'} happened, so the counts on this page may miss episodes, and the dates and times may be off. <span class="qual">Late means logged ${num(
     LATE_LOG_MIN_HOURS,
   )}&nbsp;h or more after; each entry's logged time is in appendix&nbsp;A.</span></div>`
 }

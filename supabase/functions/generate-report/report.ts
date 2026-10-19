@@ -78,6 +78,7 @@ import {
   type IntakeDeclineFinding,
   type SymptomChronicityFinding,
   type SymptomWorseningFinding,
+  type SymptomBurdenFinding,
   type PostprandialTimingFinding,
   type TimeOfDayClusteringFinding,
   type EmptyStomachTimingFinding,
@@ -1606,6 +1607,23 @@ export type SafetyFlag =
       coughVomitAdjacent?: true
     }
   | {
+      /** CUL-1410's absolute-burden card: a high count, or a run of days, with no earlier week
+       *  needed. Counts only, never causal. */
+      kind: 'symptom_burden'
+      symptomType: SymptomType
+      count: number
+      days: number
+      runDays: number
+      windowDays: number
+      tier: SymptomBurdenFinding['tier']
+    }
+  | {
+      /** A safety finding the report does not detail (e.g. `weight_loss`), named so the band
+       *  never implies nothing else fired. */
+      kind: 'engine_other'
+      findingTypes: string[]
+    }
+  | {
       kind: 'symptom_worsening'
       symptomType: SymptomType
       currentCount: number
@@ -1688,7 +1706,15 @@ export interface SymptomAggregate {
    * `LATE_LOG_MIN_HOURS`: one prompt log of the bout means it was seen as it happened.
    * Null when none was late, so the page is silent rather than claiming "all logged on time".
    */
-  lateLogged: { count: number; minDays: number; maxDays: number } | null
+  lateLogged: {
+    count: number
+    minDays: number
+    maxDays: number
+    /** The local day every late entry was entered on, when there are two or more and all were
+     *  entered within `ONE_SITTING_HOURS` of each other — a reconstruction, not a lagging log
+     *  (cold read r2). Null otherwise. */
+    oneSittingDay: string | null
+  } | null
   /**
    * The first-vs-last-half comparison, over EQUAL-LENGTH halves (B-532).
    *
@@ -1792,6 +1818,9 @@ export type SafetyCheck =
 /** An entry logged this many hours or more after the time given for it is "logged late"
  *  (CUL-2001). A day: a vomit at night logged the next morning is still a same-day record. */
 export const LATE_LOG_MIN_HOURS = 24
+
+/** Late entries all logged within this many hours of each other were entered in one sitting. */
+export const ONE_SITTING_HOURS = 3
 
 /** One under-floor week of the symptom chart, as the half trend names it (CUL-1995). */
 export interface ThinWeek {
@@ -3390,6 +3419,13 @@ export interface DetectionExtract {
    *  `worsening`, which has always been a list. */
   chronicity: SymptomChronicityFinding[]
   worsening: SymptomWorseningFinding[]
+  /** The absolute-burden safety card (CUL-1410), carried as a flag since adversarial pass 2 of
+   *  CUL-1995's row: the report had no case for it, so a cat vomiting three days running got a
+   *  silent band, and that row's "Not triggered" line then spoke over it. */
+  burden: SymptomBurdenFinding[]
+  /** Any other SAFETY-class finding type the report does not detail, named in the band so its
+   *  absence is never read as "nothing flagged". */
+  otherSafety: string[]
   stapleProtein: string | null
 }
 
@@ -3557,6 +3593,8 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
   let intakeDecline: IntakeDeclineFinding | null = null
   const chronicity: SymptomChronicityFinding[] = []
   const worsening: SymptomWorseningFinding[] = []
+  const burden: SymptomBurdenFinding[] = []
+  const otherSafety: string[] = []
 
   for (const { finding } of ranked) {
     switch (finding.type) {
@@ -3674,8 +3712,13 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
       case 'trial_response':
       case 'gap_shortening':
         break
-      // 'reflection' is owner-side only — never on the clinical report.
+      case 'symptom_burden':
+        burden.push(finding as SymptomBurdenFinding)
+        break
+      // 'reflection' is owner-side only — never on the clinical report. A SAFETY finding that
+      // lands here is one the report does not detail; it is still named in the band.
       default:
+        if (finding.priorityClass === 'safety' && !otherSafety.includes(finding.type)) otherSafety.push(finding.type)
         break
     }
   }
@@ -3694,7 +3737,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
     }
   }
 
-  return { established, early, timing, intakeDecline, chronicity, worsening, stapleProtein }
+  return { established, early, timing, intakeDecline, chronicity, worsening, burden, otherSafety, stapleProtein }
 }
 
 // ── Top-level assembly ────────────────────────────────────────────────────────
@@ -3831,7 +3874,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // Each kept entry's EARLIEST logged instant across the raw rows it stands for, so a bout one
   // row of which was logged promptly reads as prompt (the record did catch it as it happened).
   const loggedAtById = new Map(countableEvents.map((e) => [e.id, e.loggedAt]))
-  const lateLagDays = (e: (typeof windowEvents)[number]): number | null => {
+  const lateLagDays = (e: (typeof windowEvents)[number]): { days: number; loggedMs: number } | null => {
     // A found entry ("sometime in this window") is measured from the window's LATEST edge: a pile
     // found this morning and logged ten minutes later was recorded when it was found, and its
     // midpoint `occurredAt` would call it a day late (adversarial pass 1, finding 7).
@@ -3845,7 +3888,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }
     if (firstLoggedMs === null) return null
     const lagMs = firstLoggedMs - occurredMs
-    return lagMs >= LATE_LOG_MIN_HOURS * 3_600_000 ? Math.floor(lagMs / 86_400_000) : null
+    return lagMs >= LATE_LOG_MIN_HOURS * 3_600_000 ? { days: Math.floor(lagMs / 86_400_000), loggedMs: firstLoggedMs } : null
   }
 
   // ── Per-symptom aggregates (§3.5, §5.1) ──────────────────────────────────────
@@ -3863,12 +3906,16 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let lateCount = 0
     let lateMin = Infinity
     let lateMax = 0
+    let lateLoggedFirstMs = Infinity
+    let lateLoggedLastMs = -Infinity
     for (const e of incidents) {
       const lag = lateLagDays(e)
       if (lag !== null) {
         lateCount++
-        lateMin = Math.min(lateMin, lag)
-        lateMax = Math.max(lateMax, lag)
+        lateMin = Math.min(lateMin, lag.days)
+        lateMax = Math.max(lateMax, lag.days)
+        lateLoggedFirstMs = Math.min(lateLoggedFirstMs, lag.loggedMs)
+        lateLoggedLastMs = Math.max(lateLoggedLastMs, lag.loggedMs)
       }
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn !== null) {
@@ -3894,7 +3941,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       bucketStartDates,
       loggedDaysByBucket,
       bucketDays,
-      lateLogged: lateCount > 0 ? { count: lateCount, minDays: lateMin, maxDays: lateMax } : null,
+      lateLogged:
+        lateCount > 0
+          ? {
+              count: lateCount,
+              minDays: lateMin,
+              maxDays: lateMax,
+              oneSittingDay: (() => {
+                if (lateCount < 2 || lateLoggedLastMs - lateLoggedFirstMs > ONE_SITTING_HOURS * 3_600_000) return null
+                const dn = eventDayNumber(new Date(lateLoggedFirstMs).toISOString(), tz)
+                return dn === null ? null : dayKeyFromNumber(dn)
+              })(),
+            }
+          : null,
       trendHalves:
         halfDays > 0
           ? {
@@ -4814,6 +4873,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ...(f.coughVomitAdjacent ? { coughVomitAdjacent: true as const } : {}),
     })
   }
+  for (const f of detection.burden) {
+    safetyFlags.push({
+      kind: 'symptom_burden',
+      symptomType: f.symptomType,
+      count: f.count,
+      days: f.days,
+      runDays: f.runDays,
+      windowDays: f.windowDays,
+      tier: f.tier,
+    })
+  }
+  {
+    // An incident red flag is the engine's view of the same photo reads the present-only flags
+    // above are built from; named only when the report raised none of its own.
+    const hasPresent = safetyFlags.some((f) => f.kind === 'present_blood' || f.kind === 'present_foreign')
+    const other = detection.otherSafety.filter((t) => !(t === 'incident_red_flag' && hasPresent))
+    if (other.length > 0) safetyFlags.push({ kind: 'engine_other', findingTypes: other })
+  }
   for (const f of detection.worsening) {
     safetyFlags.push({
       kind: 'symptom_worsening',
@@ -4870,7 +4947,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       safetyChecks.push({
         kind: 'ongoing',
         symptomType: type,
-        state: windowDays < fl.minSpanDays ? 'window_short' : measurable.has(type) ? 'not_triggered' : 'too_few_days',
+        // A span is measured between onsets INSIDE the window, so it is at most windowDays − 1:
+        // a window equal to the floor cannot fire either (adversarial pass 2, Q2).
+        state: windowDays <= fl.minSpanDays ? 'window_short' : measurable.has(type) ? 'not_triggered' : 'too_few_days',
         episodes: compare ? compare.recentCount + compare.priorCount : 0,
         lookbackDays: detConfig.chronicity.windowDays,
         windowDays,
