@@ -249,8 +249,16 @@ describe('trialEndRefusedNotice', () => {
       expect(n?.body).not.toContain('!');
     });
 
-    it('a reason the record does not hold keeps the reason variant, verdict or not', () => {
+    it('*done* with a verdict over a trial stopped early elsewhere names the verdict', () => {
       const n = trialEndRefusedNotice({ refusal: refusal(), ownerReason: 'completed', ownerOutcome: 'worse', petName: 'Mochi', now: NOW });
+      expect(n?.body).toMatch(OUTCOME_BODY);
+    });
+
+    it.each([
+      ['*done* with no verdict and no note over a stopped trial', 'completed', undefined],
+      ['a stopped-early reason over a different one', 'refused', undefined],
+    ])('%s keeps the reason variant', (_l, ownerReason, ownerOutcome) => {
+      const n = trialEndRefusedNotice({ refusal: refusal(), ownerReason, ownerOutcome, petName: 'Mochi', now: NOW });
       expect(n?.body).toMatch(/so the reason you gave wasn’t saved\./);
     });
   });

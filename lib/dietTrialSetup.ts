@@ -875,15 +875,21 @@ export function trialEndRefusedNotice(args: {
       : refusal.status === 'abandoned'
         ? refusal.storedReason
         : null;
+  const ownerOutcome = args.ownerOutcome ?? null;
+  const ownerNotes = args.ownerOutcomeNotes?.trim() || null;
   let lost: 'reason' | 'outcome' | null = stored !== null && stored === ownerReason ? null : 'reason';
   if (lost === null && stored === 'completed') {
-    const ownerOutcome = args.ownerOutcome ?? null;
-    const ownerNotes = args.ownerOutcomeNotes?.trim() || null;
     const storedNotes = refusal.storedOutcomeNotes?.trim() || null;
     if (
       (ownerOutcome !== null && ownerOutcome !== refusal.storedOutcome) ||
       (ownerNotes !== null && ownerNotes !== storedNotes)
     ) lost = 'outcome';
+  }
+  // *This trial is done* over a trial stopped early elsewhere: the owner gave no
+  // stopped-early reason, so "the reason you gave" undersells it. When they also said
+  // how it went, that verdict is the larger loss and the sentence names it.
+  if (lost === 'reason' && ownerReason === 'completed' && (ownerOutcome !== null || ownerNotes !== null)) {
+    lost = 'outcome';
   }
   if (lost === null) return null;
   // `resolveRecordPetName` falls back to a lower-case 'your pet'; this sentence opens
