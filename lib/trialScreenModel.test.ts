@@ -47,6 +47,7 @@ import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import {
   BLIND_SPOT_QUALIFIER,
   isAnimalNotEating,
+  notEatingFact,
   resolveTrialCard,
   resolveTrialStrip,
   type TrialCardInput,
@@ -57,6 +58,7 @@ import type { TrialResponseCounts } from './trialResponseCounts';
 import { TRIAL_EXPOSURES_GROUP_ORAL, buildTrialExposuresScreen } from './trialExposuresScreen';
 import {
   buildTrialScreenModel,
+  trialScreenCard,
   ledgerUnreadableLine,
   noTrialLine,
   unreadableLine,
@@ -1038,6 +1040,58 @@ describe('Manage on the intake-decline face never drops the call-today (CUL-1339
     } finally {
       getIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
     }
+  });
+});
+
+// ── CUL-2006: an eating check that did not answer is not evidence of eating ──────────
+
+describe('an eating check that threw withholds the screen’s reassurance and raises nothing (CUL-2006)', () => {
+  // Driven through the REAL loader with the device's decline read throwing, so the input is
+  // the one production builds (`intakeDeclineUnknown: true`, no decline facts).
+  const loadUnknown = async (rec: Rec): Promise<Loaded> => {
+    const { getIntakeDecline } = jest.requireMock('./analytics') as { getIntakeDecline: jest.Mock };
+    getIntakeDecline.mockRejectedValue(new Error('sqlite'));
+    try {
+      return await load(rec);
+    } finally {
+      getIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
+    }
+  };
+
+  it('the fixture is an unanswered check over an otherwise eating record', async () => {
+    const l = await loadUnknown(MOCHI_DAY_23);
+    expect(l.input.intakeDeclineUnknown).toBe(true);
+    expect(isAnimalNotEating(l.input)).toBe(false);
+    expect(notEatingFact(l.input)).toBeNull();
+  });
+
+  it('no coverage ratio and no ledger; the register handed to the Signal door is null, never false', async () => {
+    const answered = trialModel(buildTrialScreenModel(argsFor(await load(MOCHI_DAY_23))));
+    // Non-vacuity: the same record, its check answered, draws the ratio and the ledger.
+    expect(answered.ledger).not.toBeNull();
+    expect(texts(answered)).toContain('Meals logged on 21 of 23 days.');
+    expect(answered.notEating).toBe(false);
+
+    const l = await loadUnknown(MOCHI_DAY_23);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.ledger).toBeNull();
+    expect(texts(m).some((t) => /\d+ of \d+ days/.test(t))).toBe(false);
+    expect(m.notEating).toBeNull();
+    // The card the screen resolves is projected the same way (one input, `screenCardInput`).
+    expect(trialScreenCard(l.input).lines.some((x) => /\d+ of \d+ days/.test(x.text))).toBe(false);
+  });
+
+  it('raises nothing: no safety face, the same state, and no "couldn’t pull" line in the ledger’s place', async () => {
+    const answered = trialModel(buildTrialScreenModel(argsFor(await load(MOCHI_DAY_23))));
+    const l = await loadUnknown(MOCHI_DAY_23);
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.safety).toBeNull();
+    expect(m.state).toBe(answered.state);
+    // An unreadable facts read over an unanswered check: the ledger was withheld, not lost,
+    // so nothing says a read failed where no ledger would have been drawn.
+    const unreadable = trialModel(buildTrialScreenModel(argsFor(l, { facts: { status: 'unreadable' } })));
+    expect(unreadable.ledgerUnreadable).toBeNull();
+    expect(unreadable.safety).toBeNull();
   });
 });
 
