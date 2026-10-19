@@ -51,7 +51,7 @@ jest.mock('../../lib/dietTrialCompletion', () => {
 });
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, TextInput } from 'react-native';
 import { TrialCompletionSheet } from './TrialCompletionSheet';
 import { TrialEndRefused } from '../../lib/dietTrialSetup';
 import type { TrialOutcomeFacts } from '../../lib/dietTrialCompletion';
@@ -316,6 +316,31 @@ describe('an ending the record refused', () => {
   it('*This trial is done* over a trial already completed elsewhere: the same answer, so silent', async () => {
     await saveDone(new TrialEndRefused({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20' }));
     expect(alert).not.toHaveBeenCalled();
+  });
+
+  // CUL-2035 — phone A ended at the target with no verdict; phone B's owner said
+  // "worse" with a note. The reasons match, but the verdict is not on the record.
+  it('*This trial is done* with worse and a note over a completion without one: said once, in the outcome variant', async () => {
+    mockEndActiveTrial.mockRejectedValueOnce(new TrialEndRefused({
+      reason: 'not_running', status: 'completed', endedOn: '2026-09-20', storedOutcome: null, storedOutcomeNotes: null,
+    }));
+    const onChanged = jest.fn();
+    const onClose = jest.fn();
+    const tree = renderSheet({ onChanged, onClose });
+    await waitFor(() => tree.getByTestId('trial-outcome-worse'));
+    fireEvent.press(tree.getByTestId('trial-outcome-worse'));
+    fireEvent.changeText(tree.UNSAFE_getAllByType(TextInput)[0], 'vomiting came back in week 6');
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+    expect(mockEndActiveTrial).toHaveBeenCalledTimes(1);
+    expect(mockEndActiveTrial.mock.calls[0][0]).toMatchObject({
+      reason: 'completed', outcome: 'worse', outcomeNotes: 'vomiting came back in week 6',
+    });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(notices()[0][1]).toMatch(
+      /^Biscuit’s trial was already ended on another phone, on Sep 20(, 2026)?\. That ending stays on the record, so what you said about how it went wasn’t saved\. You can tell your vet yourself\.$/,
+    );
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('*This trial is done* over a trial stopped early elsewhere: said once', async () => {
