@@ -1410,6 +1410,7 @@ type DeflectionReason =
   | 'llm_unavailable'
   | 'consent_off'
   | 'unsent_rows'
+  | 'refused_rows'
 
 /** The four-way plan contract's non-answer outcomes, rendered as designed deflections
  *  (§7.4). Never blank, never an error toast; every one offers a next step (the rundown,
@@ -1509,6 +1510,19 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
         'llm_unavailable',
         `Some of ${p}'s entries haven't sent yet.`,
         `I'd be answering without them, so I won't guess. Ask again in a moment, once they've sent, or open the vet-visit rundown.`,
+        ['Put together a vet-visit rundown'],
+      )
+    case 'refused_rows':
+      // CUL-2004: the phone holds an entry the server refused, so the server's copy is missing it
+      // and will stay missing until the owner saves it again or removes it. "Ask again in a
+      // moment" would be false, so the copy names the fix instead. "On this phone", never "p's":
+      // the phone's flag covers every pet on it, and naming the wrong pet sends the owner to the
+      // wrong history. A STATUS, never a verdict on the pet; the outcome reuses 'llm_unavailable'
+      // so every shipped build renders it, and the live safety finding still leads it.
+      return base(
+        'llm_unavailable',
+        `An entry on this phone couldn't be saved.`,
+        `I'd be answering about ${p} without it, so I won't guess. Open that entry and save it again, or remove it, then ask again. The vet-visit rundown works in the meantime.`,
         ['Put together a vet-visit rundown'],
       )
     case 'consent_off':

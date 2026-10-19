@@ -677,6 +677,22 @@ export function unsentForSignalSql(queues: readonly SyncQueue[] = SYNC_QUEUES): 
 }
 
 /**
+ * CUL-2004: "does this device hold an entry the server refused, so the server's copy is missing
+ * it until the owner acts?" — the flag Ask sends as `refused_rows`, which closes Ask with copy
+ * naming the fix. The complement of `unsentForSignalSql` (every queue, any age, `sync_error` set).
+ * Same rows as the banner's `quarantineCountSql` today, kept apart because the questions differ
+ * (C-34): the banner counts what needs the owner; this asks whether a "did it happen" answer
+ * could stand over a missing entry, and may widen or narrow on that question alone. Nothing
+ * waits behind a refused row since CUL-1986, so its children are `unsentForSignalSql`'s.
+ */
+export function refusedForAskSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
+  const arms = queues.map(
+    (q) => `SELECT 1 AS refused FROM ${q.table} WHERE synced = 0 AND sync_error IS NOT NULL`,
+  );
+  return 'SELECT COUNT(*) AS count FROM (\n  ' + arms.join('\n  UNION ALL\n  ') + '\n)';
+}
+
+/**
  * "How many rows have we given up on?" Rows the owner still holds locally but
  * which will not move without an edit. Surfaced separately because the honest
  * copy is different: pending means "waiting for a connection", quarantined means

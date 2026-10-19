@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
 import { hasUnsentRows } from './signal';
+import { refusedForAskSql } from './syncQueue';
 // The row predicate rather than monthReads' LOOK_EVENT_TYPE: lookDisplay has no RN or
 // lucide edge, where monthReads reaches constants/eventTypes (see the note below).
 import { isLookRow } from './lookDisplay';
@@ -133,10 +134,10 @@ export async function askQuestion(params: {
   conversation: AskTurn[];
 }): Promise<AskResponse> {
   try {
-    // CUL-1982: whether this phone still holds entries the server has not received (PR-24's
-    // count; a failed read says yes). Ask answers from the server's copy, so it deflects rather
-    // than answer as if that copy were whole.
-    const unsentRows = await hasUnsentRows();
+    // CUL-1982 / CUL-2004: whether this phone still holds entries the server lacks, pending or
+    // refused. Ask answers from the server's copy, so either one makes it deflect rather than
+    // answer as if that copy were whole.
+    const { unsentRows, refusedRows } = await readRecordGaps();
     const { data, error } = await supabase.functions.invoke('ask', {
       // timezone: the DEVICE zone, so the server's trial "Day N" buckets by the same clock the
       // card does (B-443). null when the runtime can't resolve one → the server falls back to
@@ -147,12 +148,26 @@ export async function askQuestion(params: {
         conversation: params.conversation,
         timezone: getDeviceTimezone(),
         unsent_rows: unsentRows,
+        refused_rows: refusedRows,
       },
     });
     if (error) return { ok: false, error: error.message };
     return parseAskResponse(data);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** CUL-2004: the two gaps the phone reports. A failed refused read still makes Ask deflect, as
+ *  `unsent_rows` (a failed unsent read is already yes), and never claims an entry couldn't be
+ *  saved when the phone could not look. Exported for unit tests. */
+export async function readRecordGaps(): Promise<{ unsentRows: boolean; refusedRows: boolean }> {
+  const unsentRows = await hasUnsentRows();
+  try {
+    const row = await getDb().getFirstAsync<{ count: number }>(refusedForAskSql());
+    return { unsentRows, refusedRows: (row?.count ?? 0) > 0 };
+  } catch {
+    return { unsentRows: true, refusedRows: false };
   }
 }
 
