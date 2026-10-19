@@ -35,6 +35,7 @@ import {
   endActiveTrial,
   getActiveTrialForPet,
   TrialEndRefused,
+  trialEndRefusedNotice,
   type ActiveTrialSummary,
 } from '../../lib/dietTrialSetup';
 import { captureVisitPaperwork, forgetPaperwork, readPaperworkFor } from '../../lib/visitPaperwork';
@@ -581,6 +582,15 @@ export default function AfterVisitScreen() {
           });
         } catch (e) {
           if (!(e instanceof TrialEndRefused)) throw e;
+          // CUL-2012 — the first ending stays the record, but the owner's answer never
+          // vanishes without a word: a reason the record does not hold (a refusal the
+          // vet report will not show) is said once, before the row settles.
+          const notice = trialEndRefusedNotice({
+            refusal: e,
+            ownerReason: stopReason as TrialStopReason | 'completed',
+            petName: resolveRecordPetName(pets, petId),
+          });
+          if (notice) Alert.alert(notice.title, notice.body);
           // CUL-1329 — the trial was already ended (on another device, or from the
           // Pet tab) after this screen read it. That first ending is the record and
           // is left alone. The owner's answer is still true — the trial IS over — so

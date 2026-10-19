@@ -44,7 +44,9 @@ import {
 } from '../../lib/dietTrialCompletion';
 import { destructiveConfirm } from '../../lib/haptics';
 import { loadTrialOutcomeFacts } from '../../lib/dietTrialOutcomeFacts';
-import { endActiveTrial, TrialEndRefused, type TrialIndication } from '../../lib/dietTrialSetup';
+import {
+  endActiveTrial, TrialEndRefused, trialEndRefusedNotice, type TrialIndication,
+} from '../../lib/dietTrialSetup';
 
 /** Which screen the host wants. `decision` is the overrun card's entry; the
  *  milestone card's three buttons land on the last two directly (its `Keep going`
@@ -194,6 +196,12 @@ export function TrialCompletionSheet({
         // unchanged. Have another go" would be false twice — it is not running, and
         // another go cannot succeed (C-28).
         if (e instanceof TrialEndRefused) {
+          // CUL-2012 — the first ending stays, but a reason it does not hold (a
+          // refusal the vet report will not show) is said once, never dropped.
+          const notice = trialEndRefusedNotice({
+            refusal: e, ownerReason: params.reason, petName,
+          });
+          if (notice) Alert.alert(notice.title, notice.body);
           setOutcome(null);
           setNotes('');
           setStopReason(null);
@@ -207,7 +215,7 @@ export function TrialCompletionSheet({
         setSaving(false);
       }
     },
-    [trialId, saving, onChanged, onClose],
+    [trialId, saving, onChanged, onClose, petName],
   );
 
   if (!entry || !trial) return null;

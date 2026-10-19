@@ -996,6 +996,82 @@ describe('CUL-1090 — *Ended* before the target asks why, and the answer is wha
   });
 });
 
+// CUL-2012 — another phone ended the trial while the reason sheet was open. The first
+// ending stays the record (CUL-1329); the owner's answer is never dropped without a
+// word when the record does not hold it, and is not repeated back when it does.
+describe('CUL-2012 — a reason the record refused is said once, never silently dropped', () => {
+  const EARLY = { id: 'trial-1', startedAt: daysAgo(10), targetDurationDays: 56, foodLabel: 'Hill’s z/d' };
+  const notices = (alert: jest.SpyInstance) =>
+    alert.mock.calls.filter((c) => c[0] === 'Already ended');
+
+  beforeEach(() => {
+    const { getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    getActiveTrialForPet.mockImplementation(async () => EARLY);
+  });
+
+  async function refuseWith(label: string, stored: { status: string; storedReason: string | null }) {
+    const { endActiveTrial, getActiveTrialForPet, TrialEndRefused } =
+      jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => {
+      getActiveTrialForPet.mockImplementation(async () => null);
+      throw new TrialEndRefused({ reason: 'not_running', endedOn: daysAgo(1), ...stored });
+    });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Ended')); });
+    await screen.findByText('Day 11 of 56, so it’s ending early. Which was it?');
+    fireEvent.press(screen.getByText(label));
+    await act(async () => { fireEvent.press(screen.getByText('End it')); });
+    await waitFor(() => expect(screen.queryByText('Switched')).toBeNull());
+    // One attempt, never a retry over the first ending.
+    expect(endActiveTrial).toHaveBeenCalledTimes(1);
+    return alert;
+  }
+
+  it('a refusal the record does not hold (another phone said *the vet advised it*) is said once', async () => {
+    const alert = await refuseWith('Nyx wouldn’t eat it', { status: 'abandoned', storedReason: 'vet_advised' });
+    expect(notices(alert)).toHaveLength(1);
+    expect(notices(alert)[0][1]).toMatch(
+      /^Nyx’s trial was already ended on another phone, on [A-Z][a-z]{2} \d{1,2}\. That ending stays on the record, so the reason you gave wasn’t saved\. You can tell your vet yourself\.$/,
+    );
+    // The row still settles on the day the RECORD holds, as before.
+    expect(screen.queryByText('Ended today')).toBeNull();
+  });
+
+  it('a refusal over a trial the other phone COMPLETED is said too', async () => {
+    const alert = await refuseWith('Nyx wouldn’t eat it', { status: 'completed', storedReason: null });
+    expect(notices(alert)).toHaveLength(1);
+  });
+
+  // The branch with no readable stored day re-reads and returns early; the notice is
+  // said before that return, never only on the settle path below it.
+  it('a differing reason is said even when the record holds no readable end day', async () => {
+    const { endActiveTrial, getActiveTrialForPet, TrialEndRefused } =
+      jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => {
+      getActiveTrialForPet.mockImplementation(async () => null);
+      throw new TrialEndRefused({ reason: 'not_running', status: 'abandoned', endedOn: null, storedReason: 'vet_advised' });
+    });
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Ended')); });
+    await screen.findByText('Day 11 of 56, so it’s ending early. Which was it?');
+    fireEvent.press(screen.getByText('Nyx wouldn’t eat it'));
+    await act(async () => { fireEvent.press(screen.getByText('End it')); });
+    await waitFor(() => expect(notices(alert)).toHaveLength(1));
+    expect(notices(alert)[0][1]).toMatch(/^Nyx’s trial was already ended on another phone\. That ending/);
+    expect(endActiveTrial).toHaveBeenCalledTimes(1);
+  });
+
+  it('the same reason already on the record stays silent', async () => {
+    const alert = await refuseWith('Nyx wouldn’t eat it', { status: 'abandoned', storedReason: 'refused' });
+    expect(notices(alert)).toHaveLength(0);
+    expect(alert).not.toHaveBeenCalled();
+  });
+});
+
 describe('CUL-1090 — past the target, *Something got in the way* lets a refusal be said', () => {
   const PAST = { id: 'trial-1', startedAt: daysAgo(70), targetDurationDays: 56, foodLabel: 'Hill’s z/d' };
 

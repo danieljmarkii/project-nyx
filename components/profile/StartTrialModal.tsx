@@ -62,7 +62,7 @@ import {
   getFoodPrimaryProteins,
   permittedRoleForFood, permittedRoleLabel, secondTrialIntro, startDateHelper,
   startDietTrial, startSheetIntro, stopReasonOptions, describeActiveTrial,
-  trialEndDayKey, trialSetupLines, TrialEndRefused,
+  trialEndDayKey, trialSetupLines, TrialEndRefused, trialEndRefusedNotice,
   type ActiveTrialSummary, type TrialFoodSelection, type TrialIndication,
 } from '../../lib/dietTrialSetup';
 
@@ -325,6 +325,13 @@ export function StartTrialModal({
           await endActiveTrial(pendingEnd);
         } catch (e) {
           if (!(e instanceof TrialEndRefused)) throw e;
+          // CUL-2012 — the owner's reason is not written over the first ending, but
+          // it is never dropped without a word either: a reason the record does not
+          // hold is said once, whichever way the slot check below goes.
+          const notice = trialEndRefusedNotice({
+            refusal: e, ownerReason: pendingEnd.reason, petName,
+          });
+          if (notice) Alert.alert(notice.title, notice.body);
           // CUL-1329 — the trial this sheet offered to end was already ended (on
           // another device, or the other host) while the form was open. That first
           // ending is the record and is left alone; the owner's reason here is
