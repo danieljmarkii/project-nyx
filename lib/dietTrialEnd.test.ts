@@ -180,6 +180,10 @@ describe('trialEndRefusedNotice', () => {
     ['a stop over a completed trial', refusal({ status: 'completed', storedReason: null }), 'refused'],
     ['completed over a stopped one', refusal(), 'completed'],
     ['an unreadable stored reason (errs loud)', refusal({ storedReason: null }), 'refused'],
+    // `stopped_reason` has no CHECK; the report keys on exactly `=== 'refused'`, so a
+    // stored variant does NOT reach the refusal lines and must not be read as a match.
+    ['a stored casing variant the report would not read as a refusal', refusal({ storedReason: 'Refused' }), 'refused'],
+    ['a stored padded variant', refusal({ storedReason: 'refused ' }), 'refused'],
     ['an unrecognised stored status (errs loud)', refusal({ status: 'active', storedReason: 'refused' }), 'refused'],
   ])('%s is said', (_l, r, ownerReason) => {
     expect(trialEndRefusedNotice({ refusal: r, ownerReason, petName: 'Mochi', now: NOW })?.title).toBe('Already ended');
