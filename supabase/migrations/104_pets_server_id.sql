@@ -41,14 +41,21 @@
 -- `.select().single()`, so they see the server's.
 --
 -- WHO IS EXEMPT: a write is the server's only when BOTH say so: `current_user`
--- is a server role AND the request carries no JWT, or a service_role one. The
--- JWT half is what keeps a client bound inside SECURITY DEFINER code: a DEFINER
--- function (or this one, if a later migration flipped it to DEFINER) runs as its
--- owner, so `current_user` alone would read `postgres` for a client's request.
--- PostgREST sets `request.jwt.claims` from the token for the whole transaction,
--- and a client cannot set it. No JWT is a direct SQL session (execute_sql, the
--- fixture). A malformed claims value fails the cast and refuses the insert.
--- (rls-privacy-reviewer on this PR, which proved the DEFINER flip on the stub.)
+-- is a server role AND the request carries no JWT at all, or one whose role is
+-- service_role. Claims that are present but name no role (or any other role)
+-- are a client's. The JWT half is what keeps a client bound inside SECURITY
+-- DEFINER code: a DEFINER function (or this one, if a later migration flipped
+-- it to DEFINER) runs as its owner, so `current_user` alone would read
+-- `postgres` for a client's request. PostgREST sets `request.jwt.claims` from
+-- the verified token for the whole transaction, and a client cannot set it. An
+-- empty setting counts as absent: a custom setting reads '' once a transaction
+-- that set it locally has ended. No JWT is a direct SQL session (execute_sql,
+-- the fixture). The claims are parsed on INSERT only and only for a server
+-- role (AND short-circuits), so a malformed value gives a client a server id,
+-- fails a server role's insert loudly, and never touches a pets UPDATE (the
+-- weight sync). Its error echoes only the caller's own claims, never another
+-- row (C-31).
+-- (rls-privacy-reviewer on this PR, both passes, replayed on the stub.)
 --
 -- SECURITY INVOKER: the function reads no other row, so it needs no privilege
 -- the caller lacks. The refusal names no value (C-31). 23514, the code this
@@ -76,13 +83,17 @@ SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE
-  jwt_role text := coalesce(
-    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
-    nullif(current_setting('request.jwt.claim.role', true), ''));
+  claims text;
+  legacy_role text;
+  server_write boolean;
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    IF current_user NOT IN ('postgres', 'supabase_admin', 'service_role')
-       OR coalesce(jwt_role, 'service_role') <> 'service_role' THEN
+    claims := nullif(current_setting('request.jwt.claims', true), '');
+    legacy_role := nullif(current_setting('request.jwt.claim.role', true), '');
+    server_write := current_user IN ('postgres', 'supabase_admin', 'service_role')
+      AND ((claims IS NULL AND legacy_role IS NULL)
+           OR coalesce(claims::jsonb ->> 'role', legacy_role, '') = 'service_role');
+    IF NOT server_write THEN
       NEW.id := gen_random_uuid();
     END IF;
   ELSIF NEW.id IS DISTINCT FROM OLD.id THEN
