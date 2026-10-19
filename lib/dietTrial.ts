@@ -1598,9 +1598,10 @@ export interface TrialRefusalRun {
  * WHAT IT DOES NOT COST. R1a is untouched — both populations count RATED feedings
  * only, so an owner who never taps intake is still never told her cat isn't
  * eating. Absence of data does not alarm in either population. And the fallback can
- * only ever ADD disclosure: it is reachable exclusively from the state where the
- * narrow population is EMPTY, so there is no record that fired before and is quiet
- * now.
+ * only ever ADD disclosure: it is reachable from the state where the narrow
+ * population is EMPTY, and (CUL-1993) from one where it fired in that state inside
+ * the recency window and nothing since has met the stand-down, so there is no record
+ * that fired before and is quiet now.
  *
  * ⚠️ TWO THINGS IT DELIBERATELY DOES NOT FIX. Both were executed against this code,
  * both are UNDER-fire, and neither is a regression — the shipped behaviour in both
@@ -2364,6 +2365,37 @@ function spanMsOf(stamps: readonly number[]): number {
   return stamps.length > 1 ? Math.max(...stamps) - Math.min(...stamps) : 0;
 }
 
+/** The recent fact's four floors, over one population. ONE predicate, because
+ *  CUL-1993's hold asks "did the meal-record fallback fire?", and an answer measured
+ *  any other way than the way the fact fires would be a second definition of firing. */
+function recentRefusalFires(c: RefusalCounters): boolean {
+  return (
+    c.recentRated >= REFUSAL_MIN_RATED &&
+    c.recentDays.size >= REFUSAL_MIN_DAYS &&
+    spanMsOf(c.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
+    c.recentNotFinished / c.recentRated >= REFUSAL_SHARE
+  );
+}
+
+/** The range fact's floors (no span guard — see `TrialFacts.rangeRefusal`). */
+function rangeRefusalFires(c: RefusalCounters): boolean {
+  return (
+    c.rangeRated >= REFUSAL_MIN_RATED &&
+    c.rangeDays.size >= REFUSAL_MIN_DAYS &&
+    c.rangeNotFinished / c.rangeRated >= REFUSAL_SHARE
+  );
+}
+
+/** The stand-down's own evidence: `REFUSAL_MIN_RATED` recent ratings, a finished
+ *  share clearing `1 - REFUSAL_SHARE`. MIRRORED from `isEatingNow`
+ *  (`lib/dietTrialCard.ts`), which asks the same question of the card's input; the
+ *  card imports this file, so the two cannot share one function. Ratings only: an
+ *  unrated bowl is unknown, never evidence of eating. */
+function eatingNowOf(c: RefusalCounters): boolean {
+  if (c.recentRated < REFUSAL_MIN_RATED) return false;
+  return c.recentFinished / c.recentRated >= 1 - REFUSAL_SHARE;
+}
+
 /** `picked` — the highest rating a run may carry. Some is food going in. */
 const RUN_MAX_SCORE = INTAKE_SCORE.picked;
 
@@ -2786,6 +2818,12 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // when food identity misses.
   const narrow = emptyRefusalCounters();
   const wide = emptyRefusalCounters();
+  // CUL-1993: the wide members, kept so the meal record can be re-read as it stood
+  // before the first matched trial-diet feeding (see the hold at the selection site).
+  const wideMembers: { feeding: TrialFeeding; day: number }[] = [];
+  const narrowIds = new Set<string>();
+  let firstNarrowStamp = Number.POSITIVE_INFINITY;
+  let firstNarrowDay = Number.POSITIVE_INFINITY;
   // Rated TREATS, read only by R2's history (CUL-54): never a refusal population (82%
   // of feedings are treats, and R1b's denominator excludes them), but a treat rated
   // Refused today is still something rated since, and something left unfinished now.
@@ -2839,6 +2877,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // can never teach the tap off one denominator and speak from another.
     if (feeding.foodType !== 'treat' && day >= startDayIndex) {
       tallyRefusal(wide, feeding, day, refusalWindowStart);
+      wideMembers.push({ feeding, day });
     } else if (feeding.foodType === 'treat' && day >= startDayIndex) {
       tallyRefusal(treats, feeding, day, refusalWindowStart);
     }
@@ -2886,6 +2925,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // and commoner.
     if (classification.role === 'primary_diet' && day >= startDayIndex) {
       tallyRefusal(narrow, feeding, day, refusalWindowStart);
+      // `day` is non-null here, so the stamp parsed (`dayIndexOf` skips the row first).
+      narrowIds.add(feeding.eventId);
+      const stamp = Date.parse(feeding.occurredAt);
+      if (stamp < firstNarrowStamp) {
+        firstNarrowStamp = stamp;
+        firstNarrowDay = day;
+      }
     }
 
     totalFeedings += 1;
@@ -3070,16 +3116,78 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // keeps the narrow population, and both facts still come from one population. It is
   // strictly louder: below the floor the narrow counters are all zero, so no stand-down
   // can be lost. `allowedSetUnavailable` and its other readers keep their floor.
-  const refusalFallback = allowedSetUnavailable || narrow.feedings === 0;
+  //
+  // CUL-1993, ruling (a) (PM, 2026-10-18): ONE RECOGNISED BOWL NEVER TAKES BACK THE
+  // WARNING. After R1 the meal record speaks first for an unmatched cat, so the round-1
+  // condition above turned a partial match from silence into a WITHDRAWAL: refusals on
+  // days 1–3 fired the card, one matched bowl on day 4 (refused or unrated) moved the
+  // lane to a one-feeding narrow population, and the card read "Keep going with the
+  // trial diet" over 4 of 4 refused bowls. The ruling: once the fallback has fired
+  // inside the recency window it holds until the stand-down's own evidence says
+  // otherwise. Silence never cancels an alarm, and neither does an unrated bowl.
+  //
+  // "HAS FIRED" IS READ OFF THE RECORD, NOT STORED. The fallback can only have spoken
+  // while nothing had matched, and it was still speaking at the first match if the
+  // fact's own question (`recentRefusalFires`) holds over the meal record as it stood
+  // then: every non-treat feeding up to that moment except the matched ones, over the
+  // recency window ending on the match's day. It fired INSIDE today's window when that
+  // day is inside it. The window is the one that ended at the match, not today's: the
+  // first cut measured today's and `adversarial-reviewer` executed the cost (refusals
+  // on days 1–3, a match on day 4, read on day 15: day 1 had aged out, the prefix fell
+  // below the floor and the card went silent, though the fallback fired on day 3).
+  // Same-moment rows count as before the match (`<=`, the matched rows themselves
+  // excluded): a minute-resolution picker puts a refusal and a match on one stamp.
+  //
+  // WHY THIS DOES NOT REOPEN ROUND 2. The hold needs refusals BEFORE any match, so a
+  // record whose matches came first (the re-shot bag) is exactly as before, and both
+  // facts still come from one population. Its loud edge is ruled, not accidental: three
+  // unmatched refusals followed by any number of matched UNRATED bowls stays held,
+  // because unrated is not eating.
+  //
+  // IT RELEASES ONLY ON THE STAND-DOWN'S OWN EVIDENCE, over the meal record it speaks
+  // from: `eatingNowOf`, and only once the now-fact over that record has stopped
+  // firing. At exactly `REFUSAL_SHARE` both are true (3 refused, 3 finished), and the
+  // card's `isEatingNow` stands down only the RANGE fact, never a live now-fact, so
+  // releasing at the tie withdrew a warning the record still fires (the second pass).
+  //
+  // AND ONLY WHILE THE TRIAL DIET IS NOT SPEAKING FOR ITSELF. When the narrow
+  // now-fact fires, the card already warns in the present tense, names the food and
+  // carries R4's run; switching to the meal record there lost the run to one finished
+  // rival bowl (the first pass) and put "can't match these meals" over matched ones.
+  // Nor when the trial diet's RANGE fact fires and the meal record's does not: finished
+  // rival bowls weeks old dilute the wide share, and the second pass executed a held
+  // record erasing a narrow range fact the report and the withheld card read.
+  //
+  // ⚠️ NOT COVERED: a fallback that last spoke BEFORE today's recency window (refusals
+  // weeks ago, a match, then only unrated bowls) still lets go, as on main. The ruling
+  // scoped the hold to the window; whether R2's "dated, not expired" reaches past it is
+  // the PM's open fork, filed beside CUL-1993.
+  let fallbackHeld = false;
+  if (
+    !allowedSetUnavailable &&
+    narrow.feedings > 0 &&
+    firstNarrowDay >= refusalWindowStart &&
+    !recentRefusalFires(narrow) &&
+    (!rangeRefusalFires(narrow) || rangeRefusalFires(wide))
+  ) {
+    const preMatch = emptyRefusalCounters();
+    const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);
+    for (const m of wideMembers) {
+      if (narrowIds.has(m.feeding.eventId)) continue;
+      if (Date.parse(m.feeding.occurredAt) <= firstNarrowStamp) {
+        tallyRefusal(preMatch, m.feeding, m.day, preMatchWindowStart);
+      }
+    }
+    fallbackHeld =
+      recentRefusalFires(preMatch) && (recentRefusalFires(wide) || !eatingNowOf(wide));
+  }
+  const refusalFallback = allowedSetUnavailable || narrow.feedings === 0 || fallbackHeld;
   const population: TrialRefusalPopulation = refusalFallback ? 'meal_record' : 'trial_diet';
   const pop = refusalFallback ? wide : narrow;
   const run = refusalRunOf(pop, refusalWindowStart);
 
   const trialDietRefusal: TrialDietRefusal | null =
-    pop.recentRated >= REFUSAL_MIN_RATED &&
-    pop.recentDays.size >= REFUSAL_MIN_DAYS &&
-    spanMsOf(pop.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
-    pop.recentNotFinished / pop.recentRated >= REFUSAL_SHARE
+    recentRefusalFires(pop)
       ? {
           refusedFeedings: pop.recentNotFinished,
           ratedFeedings: pop.recentRated,
@@ -3091,9 +3199,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
 
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
-    pop.rangeRated >= REFUSAL_MIN_RATED &&
-    pop.rangeDays.size >= REFUSAL_MIN_DAYS &&
-    pop.rangeNotFinished / pop.rangeRated >= REFUSAL_SHARE
+    rangeRefusalFires(pop)
       ? {
           refusedFeedings: pop.rangeNotFinished,
           ratedFeedings: pop.rangeRated,
