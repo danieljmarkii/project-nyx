@@ -37,6 +37,10 @@ const mockServer = {
   guarded: false,
 };
 
+/** Runs once, right after a local read whose SQL starts with the key: what happens on the
+ *  phone between a drain's queue read and its next step. */
+const mockAfterRead = new Map<string, () => void>();
+
 function mockServerTable(table: string): Map<string, Row> {
   if (!mockServer.rows.has(table)) mockServer.rows.set(table, new Map());
   return mockServer.rows.get(table)!;
@@ -95,6 +99,8 @@ function mockServerFrom(table: string) {
     upsert: write,
     insert: write,
     update: () => ({ eq: async () => ({ error: null }) }),
+    // syncNow's stale-capture sweep; nothing here holds one.
+    delete: () => mockServerSelect('__nothing'),
   };
 }
 
@@ -108,7 +114,16 @@ function mockAdapter() {
       const r = db().prepare(sql).run(...(params as never[]));
       return { changes: Number(r.changes), lastInsertRowId: Number(r.lastInsertRowid) };
     },
-    getAllAsync: async (sql: string, params: unknown[] = []) => db().prepare(sql).all(...(params as never[])),
+    getAllAsync: async (sql: string, params: unknown[] = []) => {
+      const rows = db().prepare(sql).all(...(params as never[]));
+      for (const [prefix, hook] of mockAfterRead) {
+        if (sql.trimStart().startsWith(prefix)) {
+          mockAfterRead.delete(prefix);
+          hook();
+        }
+      }
+      return rows;
+    },
     getFirstAsync: async (sql: string, params: unknown[] = []) =>
       db().prepare(sql).get(...(params as never[])) ?? null,
     execAsync: async (sql: string) => {
@@ -141,7 +156,9 @@ import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import { PARENT_LINKS, pushGuardColumn, type ParentLink } from './syncQueue';
 import {
+  __resetChildRearmStateForTests,
   hydrateFromCloud,
+  syncNow,
   syncPendingCareAcknowledgements,
   syncPendingDietTrials,
   syncPendingEvents,
@@ -228,6 +245,8 @@ beforeEach(async () => {
   mockServer.refuse.clear();
   mockServer.inGap.clear();
   mockServer.guarded = false;
+  mockAfterRead.clear();
+  __resetChildRearmStateForTests();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -372,6 +391,26 @@ describe('the answer to "Has she eaten?" under a vomit, end to end', () => {
     expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
   });
 
+  it('is not parked when its log is fixed after the queue read and lands while the answer is in flight', async () => {
+    // Adversarial pass 1 (A): the fix lands between the queue read and the parent snapshot,
+    // so the snapshot sees no refused log; the log then lands in the answer's write gap, and
+    // its re-arm cannot see a row still in flight. The mark taken before the read catches it.
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
+    answer();
+    insert('events', { id: 'e2', event_type: 'vomit', synced: 1 });
+    mockServerTable('events').set('e2', { id: 'e2' });
+    insert('intake_checks', { id: 'ic2', event_id: 'e2', synced: 0, sync_error: null });
+    mockAfterRead.set('SELECT * FROM intake_checks', () => fixParent('events', 'e1'));
+    mockServer.inGap.set('intake_checks', async () => {
+      await syncPendingEvents();
+    });
+    await syncPendingIntakeChecks();
+    expect(localRow('events', 'e1')).toMatchObject({ synced: 1 });
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    await syncPendingIntakeChecks();
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
+  });
+
   it('a 23514 behind a log that is not refused here is still terminal', async () => {
     // The log reads landed on this phone, so nothing explains the refusal but the row.
     insert('events', { id: 'e1', event_type: 'vomit', synced: 1 });
@@ -427,5 +466,40 @@ describe('the race on the other shapes of child', () => {
     expect(a.sync_error).toBeNull();
     await syncPendingVetAppointments();
     expect(localRow('vet_appointments', 'a1')).toMatchObject({ synced: 1 });
+  });
+});
+
+describe('the re-arm is bounded and catches what an earlier build left parked', () => {
+  beforeEach(() => {
+    mockServer.guarded = true;
+  });
+
+  it('a pull that re-reads the same server version re-arms once, not every cycle (adversarial pass 1, B)', async () => {
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
+    mockServerTable('events').set('e1', { id: 'e1', pet_id: PET, created_at: T0, updated_at: T2 });
+    // Its own fault: refused whatever the log does.
+    insert('intake_checks', { id: 'ic1', event_id: 'e1', synced: 0, sync_error: '23514: answer out of range' });
+    mockServer.refuse.set('ic1', { code: '23514', message: 'answer out of range' });
+    await hydrateFromCloud();
+    expect(localRow('intake_checks', 'ic1').sync_error).toBeNull();
+    await syncPendingIntakeChecks();
+    expect(String(localRow('intake_checks', 'ic1').sync_error)).toMatch(/^23514/);
+    // The overlap re-reads e1 at the same version: nothing re-armed this time.
+    await hydrateFromCloud();
+    expect(String(localRow('intake_checks', 'ic1').sync_error)).toMatch(/^23514/);
+    // A new server version of e1 (another fix elsewhere) earns one more try.
+    mockServerTable('events').get('e1')!.updated_at = '2026-10-18T11:00:00.000Z';
+    await hydrateFromCloud();
+    expect(localRow('intake_checks', 'ic1').sync_error).toBeNull();
+  });
+
+  it('an answer an earlier build parked under a log that has since landed is sent on the next sync (adversarial pass 1, C)', async () => {
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 1 });
+    mockServerTable('events').set('e1', { id: 'e1' });
+    insert('intake_checks', { id: 'ic1', event_id: 'e1', synced: 0, sync_error: '23514: intake_checks: event_id must reference a events row for the same pet' });
+    insert('intake_checks', { id: 'ic-own', event_id: 'e1', synced: 0, sync_error: '42501: new row violates row-level security policy' });
+    await syncNow();
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
+    expect(String(localRow('intake_checks', 'ic-own').sync_error)).toMatch(/^42501/);
   });
 });
