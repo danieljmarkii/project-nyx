@@ -165,7 +165,7 @@ async function cachedSafetyLead(client: SupabaseClient, petId: string, petName: 
 }
 
 // CUL-2004: the phone sends `refused_rows: true` when it holds an entry the server refused
-// (`refusedForAskSql`, lib/syncQueue.ts). The server's copy is missing that entry until the owner
+// (`recordGapsForAskSql`, lib/syncQueue.ts). The server's copy is missing that entry until the owner
 // saves it again or removes it, so Ask answers nothing over it, and says so in copy that names the
 // fix. It declines BEFORE any cap read or increment: Ask stays closed until the owner acts, so a
 // retry must not spend the daily message backstop either. Strictly `true`, as `unsent_rows` is.
@@ -969,9 +969,9 @@ async function fetchContext(
 
 // CUL-1982: the name a device's unsent rows take in `recordIncomplete` (generate-signal's
 // UNSENT_ROWS_PULL, the same claim). The phone sends `unsent_rows: true` when it holds rows the
-// server has not received (`hasUnsentRows`, lib/signal.ts: any queue, any age, a failed read
-// counts as yes; refused rows do not count, they travel as `refused_rows` and decline earlier). The server's copy is then missing entries, which is an incomplete read
-// like any short pull: Ask answers nothing over it. Strictly `true`: an older build sends nothing
+// server has not received (`readRecordGaps`, lib/ask.ts: any queue, any age, a failed read counts
+// as yes; a refused row sets it too, and also `refused_rows`, which declines earlier). The
+// server's copy is then missing entries, which is an incomplete read like any short pull: Ask answers nothing over it. Strictly `true`: an older build sends nothing
 // and anything else is not the client's claim, so both keep today's behaviour.
 export const UNSENT_ROWS_PULL = 'unsent'
 
