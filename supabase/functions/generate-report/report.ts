@@ -55,6 +55,9 @@ import {
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   EN11_CONFIG,
+  LANE_SYMPTOM_TYPES,
+  chronicityFloorsFor,
+  computeReflectionDensity,
   type DetectionConfig,
   CORRELATION_SYMPTOM_TYPES,
   type Species,
@@ -144,7 +147,7 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
+import { COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
@@ -1667,6 +1670,21 @@ export interface SymptomAggregate {
    * right denominator for "was this week observed at all".
    */
   loggedDaysByBucket: number[]
+  /** The window days each bucket covers: 7, except a trailing part week (1–7). The `/7 d` under
+   *  each column, so a column's logged days are always read over the days it actually spans. */
+  bucketDays: number[]
+  /**
+   * The entries of this type logged a day or more after the time given for them (CUL-2001).
+   *
+   * Every count, date and timing read on page 1 rests on `occurredAt`, and only appendix A
+   * printed `created_at`. The demo record's four vomits were all entered in one sitting, 3 to 16
+   * days late, and page 1 read them as caught as they happened — so a vet trusted the trend and
+   * the food timing as observed when they were recalled, and a recalled record can miss
+   * episodes. A de-duplicated bout counts as late only when NO row of it was logged within
+   * `LATE_LOG_MIN_HOURS`: one prompt log of the bout means it was seen as it happened.
+   * Null when none was late, so the page is silent rather than claiming "all logged on time".
+   */
+  lateLogged: { count: number; minDays: number; maxDays: number } | null
   /**
    * The first-vs-last-half comparison, over EQUAL-LENGTH halves (B-532).
    *
@@ -1716,8 +1734,66 @@ export interface SymptomAggregate {
     middleCount: number
     /** The excluded day, when the window is odd; null when it is even. */
     middleDate: string | null
+    /**
+     * Weeks overlapping each half whose logging is under `SYMPTOM_WEEK_MIN_LOGGED_DAYS` (CUL-1995).
+     *
+     * The chart refuses to draw a `0` for such a week, so the comparison above it must not quietly
+     * count one as a measured absence. The demo record's first half held Sep 20–26, logged on 2 of
+     * 7 days, under a "1 → 3" the cold read took as "the vomiting began on the new diet". The
+     * render decides by direction what that costs: a fall is withheld, a rise or a flat pair keeps
+     * its numbers and names the week (PM, 2026-10-19).
+     */
+    thinWeeks: { first: ThinWeek[]; last: ThinWeek[] }
   } | null
 }
+
+/** One safety check that did not flag, with the floors it applied (CUL-2003). */
+export type SafetyCheck =
+  | {
+      kind: 'ongoing'
+      symptomType: SymptomType
+      minEpisodes: number
+      minSpanDays: number
+      minActiveWeeks: number
+      ongoingRecencyDays: number
+    }
+  | {
+      kind: 'worsening'
+      symptomType: SymptomType
+      windowDays: number
+      /** `not_flagged`: both weeks were logged enough to compare and no flag fired.
+       *  `too_few_days`: the engine could not compare them. `not_separate`: another symptom's
+       *  getting-worse flag is the one the engine reports, so this one was not assessed apart. */
+      state: 'not_flagged' | 'too_few_days' | 'not_separate'
+      currentLoggingDays: number
+      priorLoggingDays: number
+      minLoggingDays: number
+    }
+
+/** An entry logged this many hours or more after the time given for it is "logged late"
+ *  (CUL-2001). A day: a vomit at night logged the next morning is still a same-day record. */
+export const LATE_LOG_MIN_HOURS = 24
+
+/** One under-floor week of the symptom chart, as the half trend names it (CUL-1995). */
+export interface ThinWeek {
+  startDate: string
+  endDate: string
+  loggedDays: number
+  days: number
+}
+
+/**
+ * The fewest logged days a week of the symptom chart needs before an empty week may print `0`
+ * (CUL-1995). Below it the week reads "not read", never a measured zero.
+ *
+ * MIRRORED from `COVERAGE_FLOOR` (`lib/dietTrial.ts`) for the reason the off-diet chart's
+ * `OFF_DIET_ZERO_MIN_MEAL_DAYS` mirrors it: both ask whether a week is logged densely enough that
+ * an absence may be read. Same question, same value; the off-diet chart counts meal days and this
+ * one counts days with any log, because a symptom can be logged on a day no meal was. Held
+ * ABSOLUTE rather than scaled to a part week, so a three-day tail can never print a `0` that looks
+ * like a full week's.
+ */
+export const SYMPTOM_WEEK_MIN_LOGGED_DAYS = Math.ceil(COVERAGE_FLOOR * 7)
 
 export type VomitContentCategory = 'food' | 'bile' | 'hairball' | 'foam_liquid' | 'grass' | 'unsure'
 
@@ -2868,6 +2944,9 @@ export interface ReportSnapshot {
   clinicalQuestion: ClinicalQuestion
   /** §5.3: EMPTY when no flag is present — never a fabricated "all clear". Ordered: present blood/foreign lead, then engine safety order. */
   safetyFlags: SafetyFlag[]
+  /** The ongoing and getting-worse checks that ran on a symptom in the window and did not flag
+   *  (CUL-2003). Rendered with the band, or in its place when no flag fired; never a clearance. */
+  safetyChecks: SafetyCheck[]
   weight: WeightSection
   atAGlance: AtAGlance
   symptoms: SymptomAggregate[]
@@ -3699,6 +3778,48 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const inFirstHalf = (dn: number): boolean => halfDays > 0 && dn <= firstHalfEndDayNum
   const inLastHalf = (dn: number): boolean => halfDays > 0 && dn >= lastHalfStartDayNum
 
+  // The days each bucket spans, and the under-floor weeks overlapping each half (CUL-1995). One
+  // derivation, shared by every symptom like `loggedDaysByBucket`, so the chart's "not read" mark
+  // and the half trend's named week cannot disagree about which weeks are thin.
+  const bucketDays = Array.from({ length: numBuckets }, (_, i) => Math.min(WEEK_DAYS, windowDays - i * WEEK_DAYS))
+  const thinWeeksIn = (fromDn: number, toDn: number): ThinWeek[] => {
+    const out: ThinWeek[] = []
+    for (let i = 0; i < numBuckets; i++) {
+      const bStart = startDayNum + i * WEEK_DAYS
+      const bEnd = bStart + bucketDays[i] - 1
+      if (bEnd < fromDn || bStart > toDn) continue
+      if ((loggedDaysByBucket[i] ?? 0) >= SYMPTOM_WEEK_MIN_LOGGED_DAYS) continue
+      out.push({
+        startDate: dayKeyFromNumber(bStart),
+        endDate: dayKeyFromNumber(bEnd),
+        loggedDays: loggedDaysByBucket[i] ?? 0,
+        days: bucketDays[i],
+      })
+    }
+    return out
+  }
+  const thinWeeks =
+    halfDays > 0
+      ? { first: thinWeeksIn(startDayNum, firstHalfEndDayNum), last: thinWeeksIn(lastHalfStartDayNum, endDayNum) }
+      : { first: [], last: [] }
+
+  // ── Late logging (CUL-2001) ──────────────────────────────────────────────────
+  // Each kept entry's EARLIEST logged instant across the raw rows it stands for, so a bout one
+  // row of which was logged promptly reads as prompt (the record did catch it as it happened).
+  const loggedAtById = new Map(countableEvents.map((e) => [e.id, e.loggedAt]))
+  const lateLagDays = (e: (typeof windowEvents)[number]): number | null => {
+    const occurredMs = Date.parse(e.occurredAt)
+    if (!Number.isFinite(occurredMs)) return null
+    let firstLoggedMs: number | null = null
+    for (const id of e.memberEventIds.length > 0 ? e.memberEventIds : [e.id]) {
+      const ms = Date.parse(loggedAtById.get(id) ?? '')
+      if (Number.isFinite(ms) && (firstLoggedMs === null || ms < firstLoggedMs)) firstLoggedMs = ms
+    }
+    if (firstLoggedMs === null) return null
+    const lagMs = firstLoggedMs - occurredMs
+    return lagMs >= LATE_LOG_MIN_HOURS * 3_600_000 ? Math.floor(lagMs / 86_400_000) : null
+  }
+
   // ── Per-symptom aggregates (§3.5, §5.1) ──────────────────────────────────────
   const symptoms: SymptomAggregate[] = []
   for (const type of REPORT_SYMPTOM_TYPES) {
@@ -3711,7 +3832,16 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let firstHalfCount = 0
     let lastHalfCount = 0
     let middleCount = 0
+    let lateCount = 0
+    let lateMin = Infinity
+    let lateMax = 0
     for (const e of incidents) {
+      const lag = lateLagDays(e)
+      if (lag !== null) {
+        lateCount++
+        lateMin = Math.min(lateMin, lag)
+        lateMax = Math.max(lateMax, lag)
+      }
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn !== null) {
         dayNums.add(dn)
@@ -3735,6 +3865,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       weeklyBuckets,
       bucketStartDates,
       loggedDaysByBucket,
+      bucketDays,
+      lateLogged: lateCount > 0 ? { count: lateCount, minDays: lateMin, maxDays: lateMax } : null,
       trendHalves:
         halfDays > 0
           ? {
@@ -3747,6 +3879,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
               lastEndDate: dayKeyFromNumber(endDayNum),
               middleCount,
               middleDate: windowDays % 2 === 1 ? dayKeyFromNumber(firstHalfEndDayNum + 1) : null,
+              thinWeeks,
             }
           : null,
     })
@@ -4413,10 +4546,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // under the same key, so the report and Home cannot disagree about which worsening and which
   // food lines exist. Under it the report loses ④'s rows below the card floor and any
   // Established or timing line the reversed-in-time control withholds; Early never reached it.
-  const detection = runDetection(
-    detInput,
-    isEngineKeyOn(input.engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG,
-  )
+  const detConfig = isEngineKeyOn(input.engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG
+  const detection = runDetection(detInput, detConfig)
 
   const correlation: CorrelationSummary = {
     established: detection.established,
@@ -4666,6 +4797,55 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       trigger: f.trigger,
       tier: f.tier,
       windowDays: f.windowDays,
+    })
+  }
+
+  // ── The checks that ran and did not flag (CUL-2003) ──────────────────────────
+  // The band used to show only what fired, so a vet scanning it could not tell "the ongoing and
+  // getting-worse checks ran and stayed under their floors" from "they never ran". Named per
+  // symptom in the window that the check's lane covers, with the floors the engine applied, read
+  // from the engine's own resolver and config (never retyped here). Absence ≠ wellness: the
+  // render says "not ruled out" beside every one of them.
+  const safetyChecks: SafetyCheck[] = []
+  const flagged = (kind: SafetyFlag['kind'], type: string): boolean =>
+    safetyFlags.some((f) => f.kind === kind && 'symptomType' in f && f.symptomType === type)
+  const anyWorseningFlag = safetyFlags.some((f) => f.kind === 'symptom_worsening')
+  const density = computeReflectionDensity(detInput, detConfig)
+  for (const s of symptoms) {
+    const type = s.type as SymptomType
+    const chronicFlag = flagged('chronicity', type)
+    if ((LANE_SYMPTOM_TYPES.chronicity as readonly string[]).includes(type) && !chronicFlag) {
+      const fl = chronicityFloorsFor(type, detInput.pet.species, detConfig.chronicity)
+      safetyChecks.push({
+        kind: 'ongoing',
+        symptomType: type,
+        minEpisodes: fl.minEpisodes,
+        minSpanDays: fl.minSpanDays,
+        minActiveWeeks: fl.minActiveWeeks,
+        ongoingRecencyDays: fl.ongoingRecencyDays,
+      })
+    }
+    // Where the ongoing flag fired, the engine folds this symptom's getting-worse card into it
+    // (`suppressWorseningWhenChronic`), so a "did not flag" here would be false.
+    if (!(LANE_SYMPTOM_TYPES.symptomDelta as readonly string[]).includes(type) || chronicFlag) continue
+    if (flagged('symptom_worsening', type)) continue
+    const minLoggingDays = detConfig.reflection.minLoggingDaysPerWindow
+    safetyChecks.push({
+      kind: 'worsening',
+      symptomType: type,
+      windowDays: detConfig.reflection.windowDays,
+      // The engine raises ONE getting-worse flag, the steepest; another symptom's rise is not
+      // assessed separately, and saying it "did not flag" would claim a check that was not made.
+      state: anyWorseningFlag
+        ? 'not_separate'
+        : density === null ||
+            density.currentLoggingDays < minLoggingDays ||
+            density.priorLoggingDays < minLoggingDays
+          ? 'too_few_days'
+          : 'not_flagged',
+      currentLoggingDays: density?.currentLoggingDays ?? 0,
+      priorLoggingDays: density?.priorLoggingDays ?? 0,
+      minLoggingDays,
     })
   }
 
@@ -5516,6 +5696,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     signalment,
     clinicalQuestion,
     safetyFlags,
+    safetyChecks,
     weight,
     atAGlance,
     symptoms,

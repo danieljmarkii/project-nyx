@@ -228,6 +228,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     },
     clinicalQuestion: { question: 'symptom_monitoring', primarySymptom: null },
     safetyFlags: [],
+    safetyChecks: [],
     weight: { isEmpty: true, latest: null, trend: null },
     atAGlance: {
       primarySymptom: null,
@@ -310,7 +311,18 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
   }
 }
 
-function aggregate(over: Partial<SymptomAggregate> & { type: SymptomAggregate['type'] }): SymptomAggregate {
+// CUL-1995 — a hand-built pair may omit `thinWeeks`, which defaults to none: every pre-CUL-1995
+// fixture describes a report whose weeks were all logged. A fixture exercising the thin-week rule
+// states its own.
+type HalvesFixture = Omit<NonNullable<SymptomAggregate['trendHalves']>, 'thinWeeks'> & {
+  thinWeeks?: NonNullable<SymptomAggregate['trendHalves']>['thinWeeks']
+}
+type AggregateFixture = Omit<Partial<SymptomAggregate>, 'trendHalves'> & {
+  type: SymptomAggregate['type']
+  trendHalves?: HalvesFixture | null
+}
+
+function aggregate(over: AggregateFixture): SymptomAggregate {
   return {
     type: over.type,
     count: over.count ?? 1,
@@ -329,7 +341,9 @@ function aggregate(over: Partial<SymptomAggregate> & { type: SymptomAggregate['t
     // B-532 — the delta no longer derives itself from `weeklyBuckets`, so a fixture that
     // wants one states it. Default null (no delta), which is the honest default for a
     // hand-built aggregate: the halves are a window partition, not a property of the bars.
-    trendHalves: over.trendHalves ?? null,
+    trendHalves: over.trendHalves ? { thinWeeks: { first: [], last: [] }, ...over.trendHalves } : null,
+    bucketDays: over.bucketDays ?? (over.weeklyBuckets ?? [1]).map(() => 7),
+    lateLogged: over.lateLogged ?? null,
   }
 }
 
@@ -2285,7 +2299,7 @@ Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲
 
 /** The chart SVG only — a page-wide `includes` cannot tell a chart glyph from a prose word. */
 function firstChart(html: string): string {
-  const m = /<svg viewBox="0 0 648 158".*?<\/svg>/s.exec(html)
+  const m = /<svg viewBox="0 0 648 162".*?<\/svg>/s.exec(html)
   assert.ok(m, 'the fixture renders a symptom chart')
   return m[0]
 }
@@ -5825,10 +5839,10 @@ Deno.test('B-532 COLD⑦ — an unobserved week is never drawn as a zero week', 
   assert.ok(
     // HR-7 (CUL-676): "entries" — this marker annotates the §3.5 weekly buckets, which
     // count minute-deduped entries, not chained episodes.
-    /nothing logged that week \(not a week without entries\)/.test(plain(html)),
+    /under 4 days logged that week: not read as a week without entries/.test(plain(html)),
     'the marker is defined on the same sheet it appears on',
   )
-  assert.ok(/not logged/.test(html), 'and the alt text draws the same distinction the bars do')
+  assert.ok(/not read \(0 of 7 days logged\)/.test(html), 'and the alt text draws the same distinction the bars do')
 })
 
 Deno.test('B-532 COLD⑦ — a genuinely quiet, well-logged week keeps its measured zero', () => {
@@ -5841,7 +5855,7 @@ Deno.test('B-532 COLD⑦ — a genuinely quiet, well-logged week keeps its measu
   )
   assert.ok(/class="nub"/.test(html), 'a week the owner logged with no episodes is still a zero')
   assert.ok(!/class="nolog"/.test(html), 'and never the no-data marker')
-  assert.ok(!/nothing logged that week/.test(plain(html)), 'nor its legend')
+  assert.ok(!/days logged that week: not read/.test(plain(html)), 'nor its legend')
 })
 
 Deno.test('B-532 COLD⑦ — the active problem list reaches page 1', () => {
@@ -6069,7 +6083,7 @@ Deno.test('CUL-982 item 4 — the marker legend precedes the first chart and nam
     }),
   )
   const legendAt = html.indexOf('class="chartlegend"')
-  const chartAt = html.indexOf('<svg viewBox="0 0 648 158"')
+  const chartAt = html.indexOf('<svg viewBox="0 0 648 162"')
   assert.ok(legendAt > 0 && chartAt > 0 && legendAt < chartAt, 'the legend sits above the first chart that uses it')
   assert.ok(
     /one stopped: the trial diet RC HP on May 2; the medication Metronidazole on May 4\. Timing and overlap are in &ldquo;Reading the trend&rdquo; below\./.test(html),
@@ -6309,7 +6323,7 @@ Deno.test('CUL-993 A.3 — the marker line is drawn in two segments that leave t
     }),
   )
   // The chart's own closing tag, not the letterhead brand mark's (the first </svg> in the document).
-  const chartAt = html.indexOf('<svg viewBox="0 0 648 158"')
+  const chartAt = html.indexOf('<svg viewBox="0 0 648 162"')
   const svg = html.slice(chartAt, html.indexOf('</svg>', chartAt))
   const marks = [...svg.matchAll(/<line class="mark" x1="([\d.]+)" y1="([\d.]+)" x2="[\d.]+" y2="([\d.]+)"\/>/g)].map((m) => ({ x: m[1], y1: Number(m[2]), y2: Number(m[3]) }))
   const caps = [...svg.matchAll(/<text class="(?:cap|z) num" x="([\d.]+)" y="([\d.]+)"/g)].map((m) => ({ x: m[1], y: Number(m[2]) }))
