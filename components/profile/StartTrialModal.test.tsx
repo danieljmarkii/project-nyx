@@ -297,6 +297,30 @@ describe('StartTrialModal — end-and-continue ordering', () => {
     // The record was asked again before starting — not assumed free.
     expect(mockedGetActive).toHaveBeenCalledTimes(2);
     expect(screen.props.onStarted).toHaveBeenCalledWith('trial-new');
+    // CUL-2012 — the other phone COMPLETED it; the owner's stopped-early reason is
+    // not on the record, so it is said once rather than dropped.
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(alertSpy.mock.calls[0][0]).toBe('Already ended');
+    expect(alertSpy.mock.calls[0][1]).toMatch(/^Pixel’s trial was already ended on another phone, on Sep 20(, 2026)?\. .*the reason you gave wasn’t saved/);
+    alertSpy.mockRestore();
+  });
+
+  it('a refused end whose stored reason matches the owner’s says nothing and still starts the new one', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockedGetActive.mockResolvedValueOnce(RUNNING_TRIAL).mockResolvedValue(null);
+    const reason = stopReasonOptions('Pixel', false)[0].value;
+    mockedEnd.mockRejectedValue(new TrialEndRefused({
+      reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: reason,
+    }));
+
+    const screen = renderModal();
+    await reachFormAfterAgreeingToEnd(screen);
+    await fillForm(screen);
+    fireEvent.press(screen.getByText('Start trial'));
+
+    await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
+    expect(mockedEnd).toHaveBeenCalledTimes(1);
+    expect(mockedEnd.mock.calls[0][0].reason).toBe(reason);
     expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
@@ -317,7 +341,10 @@ describe('StartTrialModal — end-and-continue ordering', () => {
     await waitFor(() => expect(screen.getByText('Pixel already has a trial running')).toBeTruthy());
     expect(mockedStart).not.toHaveBeenCalled();
     expect(screen.props.onStarted).not.toHaveBeenCalled();
-    expect(alertSpy).not.toHaveBeenCalled();
+    // CUL-2012 — the stored reason is unreadable here, so the notice errs loud: said
+    // once, on the blocked step as on the carry-on path.
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(alertSpy.mock.calls[0][0]).toBe('Already ended');
 
     // The owner decides again, about the trial that is actually running now.
     const reasons = stopReasonOptions('Pixel', false);
@@ -327,6 +354,8 @@ describe('StartTrialModal — end-and-continue ordering', () => {
     fireEvent.press(await screen.findByText('Start trial'));
     await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1));
     expect(mockedEnd).toHaveBeenLastCalledWith({ trialId: 'trial-other', reason: reasons[0].value });
+    // The second ending succeeded, so nothing more is said.
+    expect(alertSpy).toHaveBeenCalledTimes(1);
     alertSpy.mockRestore();
   });
 

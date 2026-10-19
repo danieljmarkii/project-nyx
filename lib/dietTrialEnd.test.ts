@@ -37,7 +37,7 @@ jest.mock('./dailyRecapOffer', () => ({
   surfaceOfferForValueMoment: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { endActiveTrial, TrialEndRefused } from './dietTrialSetup';
+import { endActiveTrial, TrialEndRefused, trialEndRefusedNotice } from './dietTrialSetup';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 
 type Row = Record<string, unknown>;
@@ -111,7 +111,7 @@ describe('endActiveTrial against real SQLite (CUL-1329)', () => {
       .catch((err: unknown) => err);
 
     expect(e).toBeInstanceOf(TrialEndRefused);
-    expect(e).toMatchObject({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20' });
+    expect(e).toMatchObject({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20', storedReason: null });
     // Byte-for-byte: the first ending's date, outcome and reason survive, and the sync
     // columns do not move — `updated_at` unbumped and `synced` still 1 means nothing is
     // queued for the push to carry over the other device's ending.
@@ -143,5 +143,61 @@ describe('endActiveTrial against real SQLite (CUL-1329)', () => {
     seed({ ended_at: '2026-09-18' });
     await endActiveTrial({ trialId: 't-1', reason: 'other', endedOn: '2026-09-22' });
     expect(read().status).toBe('abandoned');
+  });
+
+  // CUL-2012 — the refusal carries the FIRST ending's reason, read off the row, so a
+  // host can tell an owner their reason is not the one on the record.
+  it('a refusal carries the stored stopped_reason of an abandoned trial', async () => {
+    seed({ ...ENDED_ELSEWHERE, status: 'abandoned', completed_at: null, stopped_reason: 'vet_advised', outcome: null, outcome_notes: null });
+    const before = read();
+    await expect(endActiveTrial({ trialId: 't-1', reason: 'refused', endedOn: '2026-09-27' }))
+      .rejects.toMatchObject({ reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: 'vet_advised' });
+    expect(read()).toEqual(before);
+  });
+});
+
+// CUL-2012 — the notice a host says when its ending lost to one already on the record.
+describe('trialEndRefusedNotice', () => {
+  const NOW = new Date(2026, 9, 19, 12);
+  const refusal = (over: Partial<ConstructorParameters<typeof TrialEndRefused>[0]> = {}) =>
+    new TrialEndRefused({ reason: 'not_running', status: 'abandoned', endedOn: '2026-10-14', storedReason: 'vet_advised', ...over });
+
+  it('a refusal the record does not hold is said, naming the pet and the first ending’s day', () => {
+    expect(trialEndRefusedNotice({ refusal: refusal(), ownerReason: 'refused', petName: 'Mochi', now: NOW })).toEqual({
+      title: 'Already ended',
+      body: 'Mochi’s trial was already ended on another phone, on Oct 14. That ending stays on the record, so the reason you gave wasn’t saved. You can tell your vet yourself.',
+    });
+  });
+
+  it.each([
+    ['the same stopped-early reason', refusal({ storedReason: 'refused' }), 'refused'],
+    ['completed over completed', refusal({ status: 'completed', storedReason: null }), 'completed'],
+  ])('%s says nothing', (_l, r, ownerReason) => {
+    expect(trialEndRefusedNotice({ refusal: r, ownerReason, petName: 'Mochi', now: NOW })).toBeNull();
+  });
+
+  it.each([
+    ['a stop over a completed trial', refusal({ status: 'completed', storedReason: null }), 'refused'],
+    ['completed over a stopped one', refusal(), 'completed'],
+    ['an unreadable stored reason (errs loud)', refusal({ storedReason: null }), 'refused'],
+    ['an unrecognised stored status (errs loud)', refusal({ status: 'active', storedReason: 'refused' }), 'refused'],
+  ])('%s is said', (_l, r, ownerReason) => {
+    expect(trialEndRefusedNotice({ refusal: r, ownerReason, petName: 'Mochi', now: NOW })?.title).toBe('Already ended');
+  });
+
+  it('not_found is not this case: no ending won, so nothing is said here', () => {
+    expect(trialEndRefusedNotice({ refusal: new TrialEndRefused({ reason: 'not_found' }), ownerReason: 'refused', petName: 'Mochi', now: NOW })).toBeNull();
+  });
+
+  it('no stored day drops the date; a missing or fallback name reads "Your pet’s"', () => {
+    for (const petName of [null, '  ', 'your pet']) {
+      expect(trialEndRefusedNotice({ refusal: refusal({ endedOn: null }), ownerReason: 'refused', petName, now: NOW })?.body)
+        .toBe('Your pet’s trial was already ended on another phone. That ending stays on the record, so the reason you gave wasn’t saved. You can tell your vet yourself.');
+    }
+  });
+
+  it('carries no exclamation mark in any variant', () => {
+    const b = trialEndRefusedNotice({ refusal: refusal(), ownerReason: 'refused', petName: 'Mochi', now: NOW });
+    expect(`${b?.title}${b?.body}`).not.toContain('!');
   });
 });

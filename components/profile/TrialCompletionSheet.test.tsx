@@ -11,20 +11,21 @@
 // must be `mock`-prefixed.
 
 const mockEndActiveTrial = jest.fn().mockResolvedValue(undefined);
-// `TrialEndRefused` is a stand-in with the real class's structured fields (the
-// `profile.trialLifecycle.test.tsx` precedent): the sheet's `instanceof` reads the
-// class off this same mocked module, so the stand-in is what it switches on.
+// The real module's imports reach the network client; the read and the sync are
+// stubbed so `requireActual` below loads the pure half (the StartTrialModal precedent).
+jest.mock('../../lib/db', () => ({ getDb: jest.fn() }));
+jest.mock('../../lib/sync', () => ({
+  syncPendingDietTrials: jest.fn().mockResolvedValue(undefined),
+  syncPendingDietTrialFoods: jest.fn().mockResolvedValue(undefined),
+}));
+// The REAL `TrialEndRefused` and `trialEndRefusedNotice` (C-34: the write is what
+// needs stubbing, never the rule that decides what the owner is told, CUL-2012).
 jest.mock('../../lib/dietTrialSetup', () => {
-  class TrialEndRefused extends Error {
-    readonly reason: 'not_found' | 'not_running';
-    constructor(args: { reason: 'not_found' | 'not_running' }) {
-      super(`endActiveTrial refused (${args.reason})`);
-      this.reason = args.reason;
-    }
-  }
+  const actual = jest.requireActual('../../lib/dietTrialSetup');
   return {
     endActiveTrial: (...args: unknown[]) => mockEndActiveTrial(...args),
-    TrialEndRefused,
+    TrialEndRefused: actual.TrialEndRefused,
+    trialEndRefusedNotice: actual.trialEndRefusedNotice,
   };
 });
 
@@ -279,34 +280,73 @@ describe('an ending the record refused', () => {
   });
   afterEach(() => alert.mockRestore());
 
-  it.each(['not_running', 'not_found'] as const)(
-    '%s on *This trial is done*: re-reads, closes, and says nothing',
-    async (reason) => {
-      mockEndActiveTrial.mockRejectedValueOnce(new TrialEndRefused({ reason }));
-      const onChanged = jest.fn();
-      const onClose = jest.fn();
-      const tree = renderSheet({ onChanged, onClose });
-      await waitFor(() => tree.getByText('Save'));
-      await act(async () => { fireEvent.press(tree.getByText('Save')); });
+  const notices = () => alert.mock.calls.filter((c) => c[0] === 'Already ended');
 
-      expect(mockEndActiveTrial).toHaveBeenCalledTimes(1);
-      expect(onChanged).toHaveBeenCalledTimes(1);
-      expect(onClose).toHaveBeenCalledTimes(1);
-      expect(alert).not.toHaveBeenCalled();
-    },
-  );
+  async function saveDone(refusal: InstanceType<typeof TrialEndRefused>) {
+    mockEndActiveTrial.mockRejectedValueOnce(refusal);
+    const onChanged = jest.fn();
+    const onClose = jest.fn();
+    const tree = renderSheet({ onChanged, onClose });
+    await waitFor(() => tree.getByText('Save'));
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+    // One attempt, never a retry over the first ending; the sheet still re-reads and closes.
+    expect(mockEndActiveTrial).toHaveBeenCalledTimes(1);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  }
 
-  it('not_running on *Stopped early*: the same — the first ending is the record', async () => {
-    mockEndActiveTrial.mockRejectedValueOnce(new TrialEndRefused({ reason: 'not_running' }));
+  async function saveStoppedRefused(refusal: InstanceType<typeof TrialEndRefused>) {
+    mockEndActiveTrial.mockRejectedValueOnce(refusal);
     const onChanged = jest.fn();
     const onClose = jest.fn();
     const tree = renderSheet({ entry: 'stopped_early', onChanged, onClose });
     fireEvent.press(tree.getByTestId('trial-stop-refused'));
     await act(async () => { fireEvent.press(tree.getByText('Save')); });
-
+    expect(mockEndActiveTrial).toHaveBeenCalledTimes(1);
+    expect(mockEndActiveTrial.mock.calls[0][0].reason).toBe('refused');
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  }
+
+  it('not_found: re-reads, closes, and says nothing', async () => {
+    await saveDone(new TrialEndRefused({ reason: 'not_found' }));
     expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('*This trial is done* over a trial already completed elsewhere: the same answer, so silent', async () => {
+    await saveDone(new TrialEndRefused({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20' }));
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('*This trial is done* over a trial stopped early elsewhere: said once', async () => {
+    await saveDone(new TrialEndRefused({
+      reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: 'vet_advised',
+    }));
+    expect(notices()).toHaveLength(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+
+  // CUL-2012's case: the owner says "wouldn't eat it", the record says otherwise, and
+  // the vet report keys on the record. Before the fix this closed without a word.
+  it('*Stopped early → refused* over a trial completed elsewhere: tells the owner the reason was not saved', async () => {
+    await saveStoppedRefused(new TrialEndRefused({ reason: 'not_running', status: 'completed', endedOn: '2026-09-20' }));
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0][1]).toMatch(
+      /^Biscuit’s trial was already ended on another phone, on Sep 20(, 2026)?\. That ending stays on the record, so the reason you gave wasn’t saved\. You can tell your vet yourself\.$/,
+    );
+  });
+
+  it('*Stopped early → refused* over a refusal already on the record: silent', async () => {
+    await saveStoppedRefused(new TrialEndRefused({
+      reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: 'refused',
+    }));
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('*Stopped early → refused* with no readable stored reason errs loud', async () => {
+    await saveStoppedRefused(new TrialEndRefused({ reason: 'not_running' }));
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0][1]).toMatch(/^Biscuit’s trial was already ended on another phone\. That ending/);
   });
 
   it('a genuine failure still says so, and keeps the sheet open', async () => {
