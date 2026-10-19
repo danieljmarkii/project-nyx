@@ -286,6 +286,31 @@ describe.each(CHILDREN)('the $table drain behind its log', ({ table, eventType, 
     expect(localRow(table, 'c1')).toMatchObject({ synced: 1 });
   });
 
+  it('does not park the child when its log lands and is refused again on a newer edit while the refusal is in flight', async () => {
+    // Pass 2: the log is refused again, but its earlier version is now on the server, so the
+    // child would land. Only the version the queue read saw may park it.
+    log('e-refused', { synced: 0, sync_error: formatRefusal() }, false);
+    log('e-landed', { synced: 1 }, true);
+    child('c1', 'e-refused');
+    child('c-good', 'e-landed');
+    mockServer.inGap.set(table, async () => {
+      const edit = (at: string) => mockLocal.db!.prepare(
+        `UPDATE events SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = 'e-refused'`,
+      ).run(at);
+      edit(T1);
+      await syncPendingEvents(); // the fix lands
+      edit(T2);
+      mockServer.refuse.set('e-refused', REFUSED_EVENT);
+      await syncPendingEvents(); // the next edit is refused
+    });
+    await drain();
+    expect(localRow('events', 'e-refused')).toMatchObject({ synced: 0, updated_at: T2 });
+    expect(localRow('events', 'e-refused').sync_error).not.toBeNull();
+    expect(localRow(table, 'c1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    await drain();
+    expect(localRow(table, 'c1')).toMatchObject({ synced: 1 });
+  });
+
   describe('when the refused log is fixed and lands', () => {
     beforeEach(async () => {
       log('e-fixed', { synced: 0, sync_error: formatRefusal() }, false);

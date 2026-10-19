@@ -513,7 +513,7 @@ type RemoteUpsertRow = object;
 //    stuck, which is normally one row.
 //
 // 3. A GIVE-UP, via recordPushFailure. See there for the policy.
-const NO_IDS: ReadonlySet<string> = new Set();
+const NO_REFUSED_PARENTS: ReadonlyMap<string, string> = new Map();
 
 /**
  * A 23503 that names the EVENT foreign key (`meals_event_id_fkey`, `weight_checks_event_id_fkey`,
@@ -531,38 +531,43 @@ function isEventFkViolation(error: { code?: string | null; message?: string | nu
  * CUL-1986 — which of these children sit behind an event this phone holds REFUSED
  * (`synced = 0`, `sync_error` set). `parentLandedSql` lets such a child go up; this set is
  * what tells `pushRows` that a 23503 for it is not "wait for the parent" but final, because
- * no landing is coming. Read at queue time, so it can be stale by the time the answer comes
- * back: `recordRefusedParentFailure` re-checks the parent in the same statement that parks
- * the row.
+ * no landing is coming. Each child maps to the refused VERSION of its log (`updated_at`). Read
+ * at queue time, so it can be stale by the time the answer comes back:
+ * `recordRefusedParentFailure` re-checks that same version in the statement that parks the row.
  */
 async function refusedParentChildIds(
   db: Db,
   rows: readonly { id: string; event_id: string }[],
-): Promise<Set<string>> {
-  if (rows.length === 0) return new Set();
+): Promise<Map<string, string>> {
+  if (rows.length === 0) return new Map();
   const eventIds = [...new Set(rows.map((r) => r.event_id))];
-  const refused = await db.getAllAsync<{ id: string }>(
-    `SELECT id FROM events WHERE synced = 0 AND sync_error IS NOT NULL
+  const refused = await db.getAllAsync<{ id: string; updated_at: string }>(
+    `SELECT id, updated_at FROM events WHERE synced = 0 AND sync_error IS NOT NULL
         AND id IN (${eventIds.map(() => '?').join(',')})`,
     eventIds,
   );
-  const refusedIds = new Set(refused.map((e) => e.id));
-  return new Set(rows.filter((r) => refusedIds.has(r.event_id)).map((r) => r.id));
+  const versionOf = new Map(refused.map((e) => [e.id, e.updated_at]));
+  return new Map(
+    rows.filter((r) => versionOf.has(r.event_id)).map((r) => [r.id, versionOf.get(r.event_id)!]),
+  );
 }
 
 /**
- * CUL-1986 — a refusal behind a refused log is final only while the log is STILL refused,
- * checked in the same statement that parks the row. Between the queue read and this answer
- * the owner may have fixed the log and the events drain landed it, re-arming children that
- * were quarantined then; this row was not yet, so parking it now would strand it with its
- * log on the server (adversarial review, this PR). If the log is no longer refused, or the
- * row changed under the push, nothing is parked here and the ordinary budget applies:
- * one attempt, and the next drain sends it after its log.
+ * CUL-1986 — a refusal behind a refused log is final only while the log is STILL the refused
+ * version the queue read saw, checked in the same statement that parks the row. Between the
+ * queue read and this answer the owner may have fixed the log and the events drain landed it,
+ * re-arming children that were quarantined then; this row was not yet, so parking it now
+ * would strand it with its log on the server (adversarial review pass 1, this PR). The log
+ * may even have landed and been refused AGAIN on a newer edit, with its earlier version now
+ * on the server, which is why the version is pinned and not just the state (pass 2). If the
+ * log moved, or the row changed under the push, nothing is parked here and the ordinary
+ * budget applies: one attempt, and the next drain sends it again.
  */
 async function recordRefusedParentFailure(
   db: Db,
   table: LwwQueueTable,
   row: { id: string; updated_at: string },
+  refusedLogVersion: string,
   error: PushError,
 ): Promise<void> {
   const reason = formatSyncError(error);
@@ -570,8 +575,9 @@ async function recordRefusedParentFailure(
     `UPDATE ${table} SET sync_error = ?
       WHERE id = ? AND updated_at IS ?
         AND EXISTS (SELECT 1 FROM events gate_e WHERE gate_e.id = ${table}.event_id
-                      AND gate_e.synced = 0 AND gate_e.sync_error IS NOT NULL)`,
-    [reason, row.id, row.updated_at ?? null],
+                      AND gate_e.synced = 0 AND gate_e.sync_error IS NOT NULL
+                      AND gate_e.updated_at IS ?)`,
+    [reason, row.id, row.updated_at ?? null, refusedLogVersion],
   );
   if (parked.changes > 0) {
     console.warn(`[sync] ${table} ${row.id} refused behind a refused log: ${reason}`);
@@ -627,7 +633,7 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   // counted as needing the owner within one cycle rather than reading pending for 25
   // (`recordRefusedParentFailure`, which also takes a look's 23514 behind such a log).
   // Empty for every other caller, which keeps the ordinary budget.
-  parentRefused: ReadonlySet<string> = NO_IDS,
+  parentRefused: ReadonlyMap<string, string> = NO_REFUSED_PARENTS,
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
   // pushes against each other (syncPendingDietTrials) need this, not just "did it
   // throw" — "ordered" is only true if the second push can be held back when the
@@ -656,7 +662,7 @@ async function pushRows<L extends { id: string; updated_at: string }>(
         .select('id');
       if (rowError) {
         if (parentRefused.has(row.id) && (isEventFkViolation(rowError) || rowError.code === '23514')) {
-          await recordRefusedParentFailure(db, table, row, rowError);
+          await recordRefusedParentFailure(db, table, row, parentRefused.get(row.id)!, rowError);
         } else {
           await recordPushFailure(db, table, row, rowError);
         }
