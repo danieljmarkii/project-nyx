@@ -1561,9 +1561,11 @@ export async function generateReportForPet(
     events: mapEventRows(eventsPull.rows),
     aiAnalyses: mapAiAnalysisRows(aiPull.rows),
     weightChecks: mapWeightRows(weightPull.rows, lookbackMs),
-    // CUL-2026 — the weight lane's whole history (its window is a year). Absent on an incomplete
-    // pull: no lane, as Home, and the incomplete-read note already names weigh-ins.
-    ...(weightPull.complete ? { weightHistory: mapWeightRows(weightPull.rows) } : {}),
+    // CUL-2026 — the weight lane's whole history (its window is a year). Passed on an incomplete
+    // pull too, unlike Home (which carries its earlier card instead, and the report has none to
+    // carry): a loss between two real readings is still one, and the incomplete-read note already
+    // names weigh-ins (adversarial pass: silence here hid a card Home was carrying).
+    weightHistory: mapWeightRows(weightPull.rows),
     doses,
     lifetimeDoses,
     medications: mapMedicationRows(medsPull.rows),

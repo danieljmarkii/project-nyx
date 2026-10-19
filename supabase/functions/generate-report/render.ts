@@ -2531,8 +2531,8 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // longer than the lookback" is FALSE at exactly `windowDays === 56` (the ACVIM skin-trial
       // length, and the natural "8 weeks" custom pick), because the window opens at LOCAL midnight
       // while the lookback opens at `detectionNow − 56d` and `detectionNowFor` stamps a past-ending
-      // custom window at UTC end-of-day — up to 14h of exposure at UTC+14. Harmless today (a row in
-      // that sliver lands on `scope.startDate`, which forces `leftCensored` and selects the same
+      // custom window at the LOCAL day's end (CUL-2027), so the sliver is now only a DST change inside
+      // the window (±1 h). Harmless (a row in that sliver lands on `scope.startDate`, which forces `leftCensored` and selects the same
       // branch), but it must not be written down as an invariant for whoever next edits
       // `detectionNowFor`, `CHRONICITY_LEFT_CENSOR_DAYS` or `windowDays`.
       //
@@ -2642,24 +2642,29 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
     case 'weight_loss': {
       // CUL-2026 — Home's weight card on the report, in the card's own facts: the latest reading
       // and the highest before it, their days, where each was taken, whether either stands alone,
-      // and the ask. Readings only: no percentage (WG-4), no cause, and the weight block below
-      // carries the window's own trend. kg leads, as everywhere on this report; lb is what the
-      // owner read on Home, so it rides beside.
+      // and the ask. Readings only: no percentage (WG-4), no cause. kg to the column's 2 dp, so a
+      // small pet's loss never prints as "1.9 kg, down from 1.9 kg" (adversarial pass); lb, what
+      // the owner read on Home, rides beside.
       const where: Record<WeightFlagReading['source'], string> = { clinic: 'at the vet', home_scale: 'on a home scale' }
       const reading = (r: WeightFlagReading): string =>
-        `${num(r.kg.toFixed(1))}&nbsp;kg (${num(kgToLbsNum(r.kg).toFixed(1))}&nbsp;lb) on ${fmtDayYear(r.day)} ${where[r.source]}${
+        `${weightKgText(r.kg)}&nbsp;kg (${num(kgToLbsNum(r.kg).toFixed(1))}&nbsp;lb) on ${fmtDayYear(r.day)} ${where[r.source]}${
           r.single ? ', a single reading' : ''
         }`
       const plan = f.planned ? ', faster or further than the weight plan allows' : ''
       // Home's lane already widened its noise band for a clinic-vs-home pair; the vet is told the
       // scales differ so the drop is not read at a single scale's precision (cold read, CUL-2026).
       const scales = f.mixedInstruments ? ' The two readings come from different scales.' : ''
-      const told = f.tier === 'firm' ? 'it is worth booking a vet visit' : 'it is worth raising with the vet'
+      const after = f.latest.day > snap.scope.endDate ? ' The latest reading is after this window.' : ''
+      const ask = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth raising with the vet'
+      const told =
+        f.asOf === 'now'
+          ? `The owner was told it is ${ask}.`
+          : `As of this window's end the app's weight check reads it as ${ask}; it does not read so today.`
       return flagRow(
         'Weight',
-        `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> Two readings compared over the last ${num(
+        `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> The latest reading against the highest before it in the last ${num(
           f.windowDays,
-        )} days, not a diagnosis; body condition was not assessed.${scales} The owner was told ${told}.`,
+        )} days, not a diagnosis; body condition was not assessed.${scales}${after} ${told}`,
       )
     }
     case 'engine_other': {
@@ -4755,9 +4760,17 @@ function weightFlagOf(snap: ReportSnapshot): Extract<SafetyFlag, { kind: 'weight
 function weightFlagNote(snap: ReportSnapshot): string {
   const f = weightFlagOf(snap)
   if (!f) return ''
+  const t = snap.weight.trend
+  const plotted = t !== null && t.earliestDate !== null && t.latestDate !== null &&
+    f.highBefore.day >= t.earliestDate && f.highBefore.day <= t.latestDate
   return ` <b>See the Weight flag above:</b> it compares the latest reading with the highest in the last ${num(
     f.windowDays,
-  )} days (${num(f.highBefore.kg.toFixed(1))}&nbsp;kg on ${fmtDayYear(f.highBefore.day)}), which this block may not plot.`
+  )} days (${weightKgText(f.highBefore.kg)}&nbsp;kg on ${fmtDayYear(f.highBefore.day)})${plotted ? '.' : ', which this block does not plot.'}`
+}
+
+/** A weight-flag kilogram: the column's 2 dp (NUMERIC(5,2)), so two readings that differ never print alike. */
+function weightKgText(kg: number): string {
+  return num(kg.toFixed(2))
 }
 
 function weightBlock(snap: ReportSnapshot): string {
@@ -4866,8 +4879,12 @@ function atAGlance(snap: ReportSnapshot): string {
   // number and so name no span, by design. "Not window counts" is true on all six,
   // including the ones that are not counts at all, and it is the only thing the
   // heading actually needs to stop: a reader applying the window denominator here.
+  // CUL-2026 cold read: with a Weight flag the weight tile states the flag's change since the
+  // year's high, so it departs from the window too and the heading names it.
   const aside = snap.diet.trial
-    ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, which are not window counts`
+    ? weightFlagOf(snap)
+      ? `over the ${num(ag.windowDays)}-day window &mdash; except coverage, off-diet &amp; weight, which are not window counts`
+      : `over the ${num(ag.windowDays)}-day window &mdash; except coverage &amp; off-diet, which are not window counts`
     : `symptom trajectory over the window`
   return `
   <div class="sec">
@@ -5597,7 +5614,7 @@ function weightTile(snap: ReportSnapshot): string {
   if (flag) {
     const d = flag.latest.kg - flag.highBefore.kg
     return tile(
-      `${d > 0 ? '+' : ''}${d.toFixed(1)}`,
+      `${d > 0 ? '+' : ''}${d.toFixed(2)}`,
       `<small>&nbsp;kg</small>`,
       `Weight since ${fmtDayYear(flag.highBefore.day)}<br/><b>see the Weight flag</b>`,
     )
@@ -9750,7 +9767,7 @@ function appendixF(snap: ReportSnapshot): string {
     ${photoDt}
     ${noticedDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
-    <dt>Weight</dt><dd>Owner weigh-ins (home scale, or at the vet where marked), shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here. A loss the app raised with the owner leads the safety band as a Weight flag.</dd>
+    <dt>Weight</dt><dd>Owner weigh-ins (home scale, or at the vet where marked), shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
       // ON THE SCOPE, NOT ON THE LIST'S LENGTH (B-532). The itemisation is no longer gated
       // on the reduced-intake flag, so a non-empty `intakeLog` no longer implies the page-1

@@ -79,6 +79,7 @@ import {
   type SymptomChronicityFinding,
   type SymptomWorseningFinding,
   type SymptomBurdenFinding,
+  detectWeightLoss,
   type WeightLossFinding,
   type WeightLaneInput,
   type PostprandialTimingFinding,
@@ -692,8 +693,8 @@ export interface ReportInput {
   /**
    * CUL-2026 — every live weigh-in, UNTRIMMED by the lookback, for the engine's weight lane (its
    * own window is a year, wider than any report's lookback). Read under `engines_v3_en8` only, the
-   * key Home's weight card sits behind, so the report and Home flag the same loss. ABSENT when the
-   * pull was incomplete: no lane, as Home, and the report's incomplete-read note already says so.
+   * key Home's weight card sits behind, so the report and Home flag the same loss. Passed even on
+   * an incomplete pull (the incomplete-read note says so). Absent (an older caller) ⇒ no lane.
    */
   weightHistory?: ReportWeightCheckInput[]
   doses: ReportDoseInput[]
@@ -1671,6 +1672,9 @@ export type SafetyFlag =
       /** Home's weight card (CUL-2026): the latest reading and the highest before it, each with its
        *  local day, its source and whether it stands alone, and the ask the owner was given. */
       kind: 'weight_loss'
+      /** `now`: the card Home shows today (the owner was told). `window_end`: found only as of a
+       *  past window's end, which Home may never have shown. */
+      asOf: 'now' | 'window_end'
       latest: WeightFlagReading
       highBefore: WeightFlagReading
       tier: WeightLossFinding['tier']
@@ -3628,7 +3632,7 @@ export function buildDetectionInput(
     mealEvents,
     feedingArrangements,
     medicationWindows,
-    ...weightLaneFor(input, droppedEventIds),
+    ...weightLaneFor(input, droppedEventIds, scope.detectionNowIso === input.now ? undefined : scope.detectionNowIso),
     timezone: input.timezone ?? undefined,
     now: scope.detectionNowIso,
   }
@@ -3638,15 +3642,23 @@ export function buildDetectionInput(
  * CUL-2026 — the weight lane's input, under the key Home's weight card sits behind
  * (`engines_v3_en8`, generate-signal/index.ts 1f), so a loss Home shows leads the band too and a
  * loss Home cannot show yet stays off both. Every live reading with a source, not the window's:
- * the lane anchors on the highest reading in its own year, measured back from the detection `now`
- * (a reading after a past window's end is outside it by the lane's own filter). Absent history (an
- * incomplete pull) means no lane, as Home.
+ * the lane anchors on the highest reading in its own year, measured back from `now`. On a past
+ * window `cutoffIso` (the window's end) drops later readings; assembly runs it again at real-now.
  */
-function weightLaneFor(input: ReportInput, droppedEventIds: Set<string>): { weight?: WeightLaneInput } {
+export function weightLaneFor(
+  input: ReportInput,
+  droppedEventIds: Set<string>,
+  cutoffIso?: string,
+): { weight?: WeightLaneInput } {
   if (!isEngineKeyOn(input.engineFlags, 'engines_v3_en8') || !input.weightHistory) return {}
+  // As of a past window's end, a reading after that end is not the window's (the lane's own
+  // 10-minute future slack would otherwise date a flag on the next local day: adversarial pass).
+  const cutoffMs = cutoffIso === undefined ? null : parseMs(cutoffIso)
   const readings: WeightLaneInput['readings'] = []
   for (const w of input.weightHistory) {
     if (droppedEventIds.has(w.eventId) || w.source === undefined) continue
+    const ms = parseMs(w.occurredAt)
+    if (cutoffMs !== null && ms !== null && ms > cutoffMs) continue
     readings.push({
       kg: w.weightKg,
       occurredAt: w.occurredAt,
@@ -4871,9 +4883,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
   // CUL-2026 — Home's weight card, placed where Home ranks it (SAFETY_TYPE_ORDER: below burden,
   // above chronicity), carrying the card's two readings, their days and sources, and its ask.
-  for (const f of detection.weightLoss) {
+  //
+  // AS OF TODAY FIRST (adversarial pass). A weight card is about the pet now, and Home reads it at
+  // real-now. A window that ended in the past ran the lane at its end, so a loss weighed after it
+  // (Home's card, live) left the band silent. So on a past window the lane also runs at real-now
+  // over every reading, and that card, the one Home shows, wins; the window-end card is the
+  // fallback, and is never said to be what the owner was told.
+  let weightAsOf: 'now' | 'window_end' = 'now'
+  let weightFindings = detection.weightLoss
+  if (scope.detectionNowIso !== input.now) {
+    const lane = weightLaneFor(input, droppedEventIds)
+    const live = lane.weight ? detectWeightLoss({ ...detInput, ...lane, now: input.now }) : []
+    if (live.length > 0) weightFindings = live
+    else weightAsOf = 'window_end'
+  }
+  for (const f of weightFindings) {
     safetyFlags.push({
       kind: 'weight_loss',
+      asOf: weightAsOf,
       latest: { kg: f.latest.kg, source: f.latest.source, single: !f.latest.confirmed, day: f.latestDay },
       highBefore: { kg: f.highBefore.kg, source: f.highBefore.source, single: !f.highBefore.confirmed, day: f.highBeforeDay },
       tier: f.tier,
