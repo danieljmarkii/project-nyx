@@ -256,6 +256,10 @@ export interface LookRow {
 interface WeightRow {
   event_id: string
   weight_kg: number | string
+  // CUL-2026 — read for the engine's weight lane, which counts by source. Optional so a row
+  // without them (an older fixture) still maps for the weight block.
+  source?: string | null
+  source_basis?: string | null
   events: ParentEventJoin | ParentEventJoin[] | null
 }
 
@@ -591,6 +595,9 @@ function withinLookback(occurredAt: string, lookbackMs: number | undefined): boo
   return Number.isNaN(ms) ? true : ms >= lookbackMs
 }
 
+/** weight_checks.source_basis values the weight lane reads (lib/weightStory.ts `WeightSourceBasis`). */
+const WEIGHT_SOURCE_BASES: ReadonlySet<string> = new Set(['entry', 'owner', 'legacy'])
+
 /** Weigh-ins carry their timing on the PARENT event; soft-delete is on the parent
  * too (1:1 child), so a weigh-in whose event was soft-deleted is dropped here. */
 export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWeightCheckInput[] {
@@ -601,7 +608,17 @@ export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWei
     if (!withinLookback(ev.occurred_at, lookbackMs)) continue
     const kg = num(r.weight_kg)
     if (kg === null) continue
-    out.push({ eventId: r.event_id, weightKg: kg, occurredAt: ev.occurred_at })
+    out.push({
+      eventId: r.event_id,
+      weightKg: kg,
+      occurredAt: ev.occurred_at,
+      // Only the values the lane knows; anything else leaves the reading out of the lane (the
+      // shared mapper's rule, generate-signal/pipeline.ts `mapWeightCheckRows`).
+      ...(r.source === 'clinic' || r.source === 'home_scale' || r.source === 'estimate' ? { source: r.source } : {}),
+      ...(typeof r.source_basis === 'string' && WEIGHT_SOURCE_BASES.has(r.source_basis)
+        ? { sourceBasis: r.source_basis as NonNullable<ReportWeightCheckInput['sourceBasis']> }
+        : {}),
+    })
   }
   return out
 }
@@ -1254,7 +1271,7 @@ export async function generateReportForPet(
     fetchAll<WeightRow>('weight_checks', (r) => r.event_id, (from, to) =>
       supabase
       .from('weight_checks')
-      .select('event_id, weight_kg, events(occurred_at, deleted_at)', { count: 'exact' })
+      .select('event_id, weight_kg, source, source_basis, events(occurred_at, deleted_at)', { count: 'exact' })
       .eq('pet_id', petId)
       // `created_at`, not the weigh-in's instant — that is on the embedded parent and
       // PostgREST cannot ORDER a page by an embedded column reliably. `event_id` is UNIQUE.
@@ -1544,6 +1561,9 @@ export async function generateReportForPet(
     events: mapEventRows(eventsPull.rows),
     aiAnalyses: mapAiAnalysisRows(aiPull.rows),
     weightChecks: mapWeightRows(weightPull.rows, lookbackMs),
+    // CUL-2026 — the weight lane's whole history (its window is a year). Absent on an incomplete
+    // pull: no lane, as Home, and the incomplete-read note already names weigh-ins.
+    ...(weightPull.complete ? { weightHistory: mapWeightRows(weightPull.rows) } : {}),
     doses,
     lifetimeDoses,
     medications: mapMedicationRows(medsPull.rows),

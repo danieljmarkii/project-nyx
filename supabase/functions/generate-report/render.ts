@@ -74,7 +74,9 @@ import type {
   NoticedBlock,
   NoticedWordCount,
   ProteinSource,
+  WeightFlagReading,
 } from './report.ts'
+import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 // The ONE intake predicate (CUL-497) — a value import, because both surfaces on this page
 // have to reach the same verdict about the same ratings.
 import { summariseIntake } from './report.ts'
@@ -2637,9 +2639,28 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. The owner was told ${told}.`,
       )
     }
+    case 'weight_loss': {
+      // CUL-2026 — Home's weight card on the report, in the card's own facts: the latest reading
+      // and the highest before it, their days, where each was taken, whether either stands alone,
+      // and the ask. Readings only: no percentage (WG-4), no cause, and the weight block below
+      // carries the window's own trend. kg leads, as everywhere on this report; lb is what the
+      // owner read on Home, so it rides beside.
+      const where: Record<WeightFlagReading['source'], string> = { clinic: 'at the vet', home_scale: 'on a home scale' }
+      const reading = (r: WeightFlagReading): string =>
+        `${num(r.kg.toFixed(1))}&nbsp;kg (${num(kgToLbsNum(r.kg).toFixed(1))}&nbsp;lb) on ${fmtDayYear(r.day)} ${where[r.source]}${
+          r.single ? ', a single reading' : ''
+        }`
+      const plan = f.planned ? ', faster or further than the weight plan allows' : ''
+      const told = f.tier === 'firm' ? 'it is worth booking a vet visit' : 'it is worth raising with the vet'
+      return flagRow(
+        'Weight',
+        `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> Two readings compared over the last ${num(
+          f.windowDays,
+        )} days, not a diagnosis; body condition was not assessed. The owner was told ${told}.`,
+      )
+    }
     case 'engine_other': {
       const words: Record<string, string> = {
-        weight_loss: 'weight loss (see the weight trend)',
         incident_red_flag: 'a red flag on a photographed incident (see the incident appendix)',
       }
       const named = f.findingTypes.map((t) => h(words[t] ?? t.replace(/_/g, ' ')))

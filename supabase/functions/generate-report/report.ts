@@ -79,6 +79,8 @@ import {
   type SymptomChronicityFinding,
   type SymptomWorseningFinding,
   type SymptomBurdenFinding,
+  type WeightLossFinding,
+  type WeightLaneInput,
   type PostprandialTimingFinding,
   type TimeOfDayClusteringFinding,
   type EmptyStomachTimingFinding,
@@ -448,6 +450,10 @@ export interface ReportWeightCheckInput {
   eventId: string
   weightKg: number
   occurredAt: string // ISO, from the parent event
+  /** weight_checks.source / source_basis (CUL-2026): what the weight lane reads to decide which
+   *  readings count. Optional so older fixtures compile; a reading without one never reaches it. */
+  source?: WeightLaneInput['readings'][number]['source']
+  sourceBasis?: WeightLaneInput['readings'][number]['sourceBasis']
 }
 
 /** medication_administrations row (migration 020/023) joined to its parent event. */
@@ -683,6 +689,13 @@ export interface ReportInput {
   events: ReportEventInput[]
   aiAnalyses: ReportAiAnalysisInput[]
   weightChecks: ReportWeightCheckInput[]
+  /**
+   * CUL-2026 — every live weigh-in, UNTRIMMED by the lookback, for the engine's weight lane (its
+   * own window is a year, wider than any report's lookback). Read under `engines_v3_en8` only, the
+   * key Home's weight card sits behind, so the report and Home flag the same loss. ABSENT when the
+   * pull was incomplete: no lane, as Home, and the report's incomplete-read note already says so.
+   */
+  weightHistory?: ReportWeightCheckInput[]
   doses: ReportDoseInput[]
   /**
    * B-140 PR 5 — the pet's ENTIRE live dose history, UNTRIMMED by the lookback, for the
@@ -1056,7 +1069,7 @@ export function resolveScope(input: ScopeResolutionInput): ReportScope {
       startDayNum: startNum,
       endDayNum: endNum,
       windowDays: endNum - startNum + 1,
-      detectionNowIso: detectionNowFor(endNum, todayNum, input.now),
+      detectionNowIso: detectionNowFor(endNum, todayNum, input.now, tz),
       lastVisitDate: null,
       trialStartDate: null,
       isCustomOverride: true,
@@ -1194,13 +1207,42 @@ function scopeFromRange(
 /**
  * The instant handed to detection as `now`. For the default cascade the window
  * ends today, so it is input.now (the live reference). For a custom window ending
- * in the PAST, it is the end of that last day (UTC end-of-day) so the report reads
- * "as of the window end" — chronicity's "still ongoing" recency floor and its
+ * in the PAST, it is the last instant of that day IN THE OWNER'S ZONE, so the report
+ * reads "as of the window end" — chronicity's "still ongoing" recency floor and its
  * lookback are then measured from the window end, not real-now.
+ *
+ * CUL-2027: this was `endDay T23:59:59.999Z`, the end of the UTC day. West of UTC that
+ * instant falls in the owner's last afternoon, so an 8 pm vomit on the last day sat in
+ * the window's counts (its LOCAL day is inside) but after the detectors' `now`, and every
+ * safety check, and the "Not triggered" row beside them, ran without it.
  */
-function detectionNowFor(endNum: number, todayNum: number, nowIso: string): string {
+function detectionNowFor(endNum: number, todayNum: number, nowIso: string, tz: string | null): string {
   if (endNum >= todayNum) return nowIso
-  return `${dayKeyFromNumber(endNum)}T23:59:59.999Z`
+  const end = localDayEndMs(endNum, tz)
+  const nowMs = parseMs(nowIso)
+  // A past last day ends before real-now by construction; the min only keeps a bad clock from
+  // ever handing detection a future `now`.
+  return new Date(nowMs === null ? end : Math.min(end, nowMs)).toISOString()
+}
+
+/**
+ * The last millisecond of local calendar day `dayNum` in `tz` (UTC when the zone is absent or
+ * invalid, the same fallback `localDayKey` takes, so the window's days and its end agree).
+ * Searched rather than computed from an offset: the next local midnight lies within ±15 h of
+ * the UTC one in every zone, a local day number never decreases as the instant grows, and a
+ * search needs no DST arithmetic to land on the exact boundary.
+ */
+function localDayEndMs(dayNum: number, tz: string | null): number {
+  const utcNextMidnight = (dayNum + 1) * MS_PER_DAY
+  const past = (ms: number): boolean => (eventDayNumber(new Date(ms).toISOString(), tz) ?? dayNum + 1) > dayNum
+  let lo = utcNextMidnight - 15 * MS_PER_HOUR // still on the day (or earlier)
+  let hi = utcNextMidnight + 15 * MS_PER_HOUR // past it
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (past(mid)) hi = mid
+    else lo = mid
+  }
+  return hi - 1
 }
 
 // ── §5.11 de-duplication ─────────────────────────────────────────────────────
@@ -1494,6 +1536,14 @@ export interface ClinicalQuestion {
   primarySymptom: ReportSymptomType | null
 }
 
+/** One reading on the weight flag (CUL-2026). `day` is the owner's local 'YYYY-MM-DD'. */
+export interface WeightFlagReading {
+  kg: number
+  source: WeightLossFinding['latest']['source']
+  single: boolean
+  day: string
+}
+
 export type SafetyFlag =
   | {
       kind: 'present_blood'
@@ -1618,7 +1668,17 @@ export type SafetyFlag =
       tier: SymptomBurdenFinding['tier']
     }
   | {
-      /** A safety finding the report does not detail (e.g. `weight_loss`), named so the band
+      /** Home's weight card (CUL-2026): the latest reading and the highest before it, each with its
+       *  local day, its source and whether it stands alone, and the ask the owner was given. */
+      kind: 'weight_loss'
+      latest: WeightFlagReading
+      highBefore: WeightFlagReading
+      tier: WeightLossFinding['tier']
+      planned: boolean
+      windowDays: number
+    }
+  | {
+      /** A safety finding the report does not detail (e.g. `incident_red_flag`), named so the band
        *  never implies nothing else fired. */
       kind: 'engine_other'
       findingTypes: string[]
@@ -3423,6 +3483,8 @@ export interface DetectionExtract {
    *  CUL-1995's row: the report had no case for it, so a cat vomiting three days running got a
    *  silent band, and that row's "Not triggered" line then spoke over it. */
   burden: SymptomBurdenFinding[]
+  /** Home's weight card (CUL-2026), present only when the lane ran (see `weightLaneFor`). */
+  weightLoss: WeightLossFinding[]
   /** Any other SAFETY-class finding type the report does not detail, named in the band so its
    *  absence is never read as "nothing flagged". */
   otherSafety: string[]
@@ -3564,9 +3626,33 @@ export function buildDetectionInput(
     mealEvents,
     feedingArrangements,
     medicationWindows,
+    ...weightLaneFor(input, droppedEventIds),
     timezone: input.timezone ?? undefined,
     now: scope.detectionNowIso,
   }
+}
+
+/**
+ * CUL-2026 — the weight lane's input, under the key Home's weight card sits behind
+ * (`engines_v3_en8`, generate-signal/index.ts 1f), so a loss Home shows leads the band too and a
+ * loss Home cannot show yet stays off both. Every live reading with a source, not the window's:
+ * the lane anchors on the highest reading in its own year, measured back from the detection `now`
+ * (a reading after a past window's end is outside it by the lane's own filter). Absent history (an
+ * incomplete pull) means no lane, as Home.
+ */
+function weightLaneFor(input: ReportInput, droppedEventIds: Set<string>): { weight?: WeightLaneInput } {
+  if (!isEngineKeyOn(input.engineFlags, 'engines_v3_en8') || !input.weightHistory) return {}
+  const readings: WeightLaneInput['readings'] = []
+  for (const w of input.weightHistory) {
+    if (droppedEventIds.has(w.eventId) || w.source === undefined) continue
+    readings.push({
+      kg: w.weightKg,
+      occurredAt: w.occurredAt,
+      source: w.source,
+      ...(w.sourceBasis !== undefined ? { sourceBasis: w.sourceBasis } : {}),
+    })
+  }
+  return { weight: { readings, dateOfBirth: input.pet.dateOfBirth } }
 }
 
 /** A regimen's DATE end is inclusive of the whole day → push to end-of-day (mirrors generate-signal/index.ts). */
@@ -3594,6 +3680,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
   const chronicity: SymptomChronicityFinding[] = []
   const worsening: SymptomWorseningFinding[] = []
   const burden: SymptomBurdenFinding[] = []
+  const weightLoss: WeightLossFinding[] = []
   const otherSafety: string[] = []
 
   for (const { finding } of ranked) {
@@ -3715,6 +3802,9 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
       case 'symptom_burden':
         burden.push(finding as SymptomBurdenFinding)
         break
+      case 'weight_loss':
+        weightLoss.push(finding as WeightLossFinding)
+        break
       // 'reflection' is owner-side only — never on the clinical report. A SAFETY finding that
       // lands here is one the report does not detail; it is still named in the band.
       default:
@@ -3737,7 +3827,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
     }
   }
 
-  return { established, early, timing, intakeDecline, chronicity, worsening, burden, otherSafety, stapleProtein }
+  return { established, early, timing, intakeDecline, chronicity, worsening, burden, weightLoss, otherSafety, stapleProtein }
 }
 
 // ── Top-level assembly ────────────────────────────────────────────────────────
@@ -4766,6 +4856,29 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
             : [],
     })
   }
+  for (const f of detection.burden) {
+    safetyFlags.push({
+      kind: 'symptom_burden',
+      symptomType: f.symptomType,
+      count: f.count,
+      days: f.days,
+      runDays: f.runDays,
+      windowDays: f.windowDays,
+      tier: f.tier,
+    })
+  }
+  // CUL-2026 — Home's weight card, placed where Home ranks it (SAFETY_TYPE_ORDER: below burden,
+  // above chronicity), carrying the card's two readings, their days and sources, and its ask.
+  for (const f of detection.weightLoss) {
+    safetyFlags.push({
+      kind: 'weight_loss',
+      latest: { kg: f.latest.kg, source: f.latest.source, single: !f.latest.confirmed, day: f.latestDay },
+      highBefore: { kg: f.highBefore.kg, source: f.highBefore.source, single: !f.highBefore.confirmed, day: f.highBeforeDay },
+      tier: f.tier,
+      planned: f.planned,
+      windowDays: f.windowDays,
+    })
+  }
   for (const f of detection.chronicity) {
     // The engine buckets by UTC day — deliberate for the rolling Signal (detection.ts §2:
     // chronicity is timezone-independent), but on THIS artifact the numbers sit one page from
@@ -4871,17 +4984,6 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       tier: f.tier,
       windowDays: f.windowDays,
       ...(f.coughVomitAdjacent ? { coughVomitAdjacent: true as const } : {}),
-    })
-  }
-  for (const f of detection.burden) {
-    safetyFlags.push({
-      kind: 'symptom_burden',
-      symptomType: f.symptomType,
-      count: f.count,
-      days: f.days,
-      runDays: f.runDays,
-      windowDays: f.windowDays,
-      tier: f.tier,
     })
   }
   {
