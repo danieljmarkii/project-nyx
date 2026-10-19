@@ -6,7 +6,11 @@ import { Divider } from '../ui/Divider';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
 import { stopReasonOptions } from '../../lib/dietTrialSetup';
-import { stopReasonNote, type TrialStopReason } from '../../lib/dietTrialCompletion';
+import {
+  STOPPED_SHEET_TITLE,
+  stopReasonNote,
+  type TrialStopReason,
+} from '../../lib/dietTrialCompletion';
 import type { EndConfirmCopy } from '../../lib/vetVisitPlan';
 
 // CUL-1090 (ruled (b), 2026-10-12): *Ended* before the target asks WHY, because the
@@ -22,19 +26,32 @@ import type { EndConfirmCopy } from '../../lib/vetVisitPlan';
 // This sheet WRITES NOTHING. It hands the reason back; the host owns the link, the
 // ending, the refused-end race and the settled row (`applyTrialVerdict`). Cancel and
 // *Keep it* close it with the trial still running.
+//
+// PAST THE TARGET it opens too, from the confirm's *Something got in the way* (PM,
+// 2026-10-19, the adversarial pass's residual): *End it* there stays the one tap that
+// records `completed`, and this sheet is the door a refusal on day 60 of 56 needs —
+// without it the report read "Ran its course" over a diet the pet would not eat.
+// The list stays the early six; "It ran its course" is the confirm's own button.
+
+/** The question over the reasons. Before the target the day line explains why it is
+ *  "early"; past it, nothing is early, so it asks what §4.3's stopped sheet asks. */
+export function endTrialReasonPrompt(dayLine: string | null, complete: boolean): string {
+  if (complete) return STOPPED_SHEET_TITLE;
+  return dayLine ? `${dayLine}, so it’s ending early. Which was it?` : 'Which was it?';
+}
 
 interface Props {
   petName: string;
   /** The confirm's own title and day line (`endTrialCopy`), so the sheet names the
    *  same trial and the same day the write will record. */
   copy: EndConfirmCopy;
-  /** "Day 23 of 56", or null when the trial has no readable progress. */
-  dayLine: string | null;
+  /** The question over the reasons (`endTrialReasonPrompt`). */
+  prompt: string;
   onKeep: () => void;
   onEnd: (reason: TrialStopReason) => void;
 }
 
-export function EndTrialReasonSheet({ petName, copy, dayLine, onKeep, onEnd }: Props) {
+export function EndTrialReasonSheet({ petName, copy, prompt, onKeep, onEnd }: Props) {
   const [reason, setReason] = useState<TrialStopReason | null>(null);
   const reasons = stopReasonOptions(petName, false);
   const note = reason ? stopReasonNote(reason, petName) : null;
@@ -53,15 +70,13 @@ export function EndTrialReasonSheet({ petName, copy, dayLine, onKeep, onEnd }: P
           <ThemedText style={styles.sheetTitle}>{copy.title}</ThemedText>
           <ThemedText style={styles.sheetSub}>{copy.body}</ThemedText>
           <Divider style={styles.blockDivider} />
-          <ThemedText style={styles.reasonPrompt}>
-            {dayLine ? `${dayLine}, so it’s ending early. Which was it?` : 'Which was it?'}
-          </ThemedText>
+          <ThemedText style={styles.reasonPrompt}>{prompt}</ThemedText>
           {reasons.map((r) => (
             <TouchableOpacity
               key={r.value}
               style={styles.reasonRow}
               // The early list never carries `completed` (the `false` above), so every
-              // value here is a stopped-early token.
+              // value here is a stopped-early token, before the target or past it.
               onPress={() => setReason(r.value as TrialStopReason)}
               activeOpacity={0.7}
               accessibilityRole="radio"

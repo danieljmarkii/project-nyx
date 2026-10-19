@@ -777,7 +777,9 @@ describe('CUL-951 — *Ended* confirms first, and never turns into *Start a tria
     const [title, body, buttons] = alert.mock.calls[0];
     expect(title).toBe('End the Hill’s z/d trial?');
     expect(body).toMatch(/^Nyx’s trial ends today, [A-Z][a-z]{2} \d{1,2}\./);
-    expect((buttons ?? []).map((b) => b.text)).toEqual(['Keep it', 'End it']);
+    // Past the target: *End it* is the one tap to `completed`, and the middle door is
+    // how a refusal still gets said (CUL-1090, PM 2026-10-19).
+    expect((buttons ?? []).map((b) => b.text)).toEqual(['Keep it', 'Something got in the way', 'End it']);
     const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
     expect(endActiveTrial).not.toHaveBeenCalled();
   });
@@ -991,6 +993,55 @@ describe('CUL-1090 — *Ended* before the target asks why, and the answer is wha
     expect(screen.queryByText('Ended today')).toBeNull();
     const { linkTrialToVisit } = jest.requireMock('../../lib/vetVisits');
     expect(linkTrialToVisit).not.toHaveBeenCalled();
+  });
+});
+
+describe('CUL-1090 — past the target, *Something got in the way* lets a refusal be said', () => {
+  const PAST = { id: 'trial-1', startedAt: daysAgo(70), targetDurationDays: 56, foodLabel: 'Hill’s z/d' };
+
+  beforeEach(() => {
+    const { getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    getActiveTrialForPet.mockImplementation(async () => PAST);
+  });
+
+  async function openFromConfirm() {
+    answerAlertWith('Something got in the way');
+    render(<AfterVisitScreen />);
+    await screen.findByText('Hill’s z/d');
+    await act(async () => { fireEvent.press(screen.getByText('Ended')); });
+    await screen.findByText('What got in the way?');
+  }
+
+  it('opens the reason sheet, writes nothing yet, and never offers "It ran its course"', async () => {
+    await openFromConfirm();
+    expect(screen.getByText('Nyx wouldn’t eat it')).toBeTruthy();
+    expect(screen.queryByText('It ran its course')).toBeNull();
+    expect(screen.queryByText(/ending early/)).toBeNull();
+    const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    expect(endActiveTrial).not.toHaveBeenCalled();
+    expect(modals()).toHaveLength(1);
+  });
+
+  it('a refusal past the target is written as `refused`, never `completed`', async () => {
+    const { endActiveTrial, getActiveTrialForPet } = jest.requireMock('../../lib/dietTrialSetup');
+    endActiveTrial.mockImplementationOnce(async () => {
+      getActiveTrialForPet.mockImplementation(async () => null);
+    });
+    await openFromConfirm();
+    fireEvent.press(screen.getByText('Nyx wouldn’t eat it'));
+    await act(async () => { fireEvent.press(screen.getByText('End it')); });
+    await screen.findByText('Ended today');
+    expect(endActiveTrial).toHaveBeenCalledTimes(1);
+    expect(endActiveTrial.mock.calls[0][0]).toEqual({ trialId: 'trial-1', reason: 'refused', endedOn: localToday() });
+  });
+
+  it('*Cancel* on the sheet ends nothing', async () => {
+    await openFromConfirm();
+    await act(async () => { fireEvent.press(screen.getByText('Cancel')); });
+    const { endActiveTrial } = jest.requireMock('../../lib/dietTrialSetup');
+    expect(endActiveTrial).not.toHaveBeenCalled();
+    expect(modals()).toHaveLength(0);
+    expect(screen.getByText('Switched')).toBeTruthy();
   });
 });
 

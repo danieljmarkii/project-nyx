@@ -23,7 +23,7 @@ import {
 } from '../../lib/careVisitConcerns';
 import { AddMedicationModal, type Regimen } from '../../components/profile/AddMedicationModal';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
-import { EndTrialReasonSheet } from '../../components/vetvisits/EndTrialReasonSheet';
+import { EndTrialReasonSheet, endTrialReasonPrompt } from '../../components/vetvisits/EndTrialReasonSheet';
 import type { TrialStopReason } from '../../lib/dietTrialCompletion';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { commitVisit, destructiveConfirm } from '../../lib/haptics';
@@ -87,9 +87,9 @@ type Sheet =
   | { kind: 'med'; editing: null }
   | { kind: 'med'; editing: Regimen; linkedNow: boolean }
   | { kind: 'trial' }
-  // CUL-1090: *Ended* before the target asks why. `endOn` is the day the sheet names
-  // and the day the write records — one value, computed at the tap.
-  | { kind: 'end-trial'; endOn: string; copy: EndConfirmCopy; dayLine: string | null }
+  // CUL-1090: *Ended* asks why — before the target always, past it on request. `endOn`
+  // is the day the sheet names and the day the write records — one value, from the tap.
+  | { kind: 'end-trial'; endOn: string; copy: EndConfirmCopy; prompt: string }
   | null;
 
 // "How did it go?" (CUL-902 VV-4; mocks D1 + D2) — the plan becomes records.
@@ -506,17 +506,35 @@ export default function AfterVisitScreen() {
       endLabel: formatVisitDate(endOn),
     });
     const { complete, dayLine } = describeActiveTrial(trial);
+    const prompt = endTrialReasonPrompt(dayLine, complete);
     if (complete) {
-      // At or past the target the honest token is `completed` (the only one
-      // `endActiveTrial` attaches an outcome to), so there is nothing to ask: one tap.
-      confirmEnd(copy, () => void applyTrialVerdict('ended', endOn, 'completed'));
+      // At or past the target *End it* stays ONE tap to `completed` (the only token
+      // `endActiveTrial` attaches an outcome to). But reaching the target is not the
+      // same as running its course: a pet refusing the diet on day 60 of 56 has to be
+      // sayable here, or the report reads "Ran its course" over food it would not eat
+      // (CUL-1090's own failure, past the target; PM, 2026-10-19, option a).
+      Alert.alert(copy.title, copy.body, [
+        { text: copy.keepLabel, style: 'cancel' },
+        {
+          text: 'Something got in the way',
+          onPress: () => setSheet({ kind: 'end-trial', endOn, copy, prompt }),
+        },
+        {
+          text: copy.confirmLabel,
+          style: 'destructive',
+          onPress: () => {
+            destructiveConfirm();
+            void applyTrialVerdict('ended', endOn, 'completed');
+          },
+        },
+      ]);
       return;
     }
     // Before the target the REASON is what the vet report prints (CUL-1090, ruled
     // (b)): a fixed `vet_advised` said "stopped on veterinary advice" about a pet that
     // would not eat the food. The sheet stands in for the confirm and writes nothing
     // until its own *End it*.
-    setSheet({ kind: 'end-trial', endOn, copy, dayLine });
+    setSheet({ kind: 'end-trial', endOn, copy, prompt });
   }
 
   async function applyTrialVerdict(
@@ -951,7 +969,7 @@ export default function AfterVisitScreen() {
             <EndTrialReasonSheet
               petName={petName}
               copy={sheet.copy}
-              dayLine={sheet.dayLine}
+              prompt={sheet.prompt}
               onKeep={() => setSheet(null)}
               onEnd={(reason) => {
                 const { endOn } = sheet;
