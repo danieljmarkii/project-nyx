@@ -36,8 +36,11 @@ import {
   type TimingFinding,
   recentNotFullyEatenRun,
   proteinSourceOf,
+  SYMPTOM_WEEK_MIN_LOGGED_DAYS,
+  LATE_LOG_MIN_HOURS,
 } from './report.ts'
-import { cooperInput } from './cooperDemo.testutil.ts'
+import { cooperInput, COOPER_NOW } from './cooperDemo.testutil.ts'
+import { chronicityFloorsFor, DEFAULT_CONFIG } from '../generate-signal/detection.ts'
 // The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
 // the intermediate snapshot: "one adherence claim per drug per document" is a property of the
 // document, and a snapshot-level assertion cannot see a second claim a renderer prints.
@@ -3567,7 +3570,9 @@ Deno.test('B-532 — trendHalves are EQUAL over an even window', () => {
   const snap = assembleReport(baseInput({ events }))
   const v = snap.symptoms.find((s) => s.type === 'vomit')!
   assert.equal(v.windowDays, 90)
-  assert.deepEqual(v.trendHalves, {
+  // The thin weeks have their own CUL-1995 tests; this one pins the partition.
+  const { thinWeeks: _thin, ...partition } = v.trendHalves!
+  assert.deepEqual(partition, {
     days: 45,
     firstCount: 2,
     lastCount: 2,
@@ -5467,4 +5472,344 @@ Deno.test('CUL-1978 — the demo report, cold: every line the cold read flagged 
   assert.ok(/Beef shows an early association with vomiting \(Beef in the 12 h before 4 of 4 episodes, vs 0 of 4 matched control windows\) — short of the established threshold, so not confirmed; no food or protein reached that threshold over this window\. Not a negative result/.test(p))
   assert.ok(!/No single food\/protein reached/.test(p))
   assert.ok(/Entered by the owner, not read from a label photo/.test(p) && !/photo of the label/.test(p), 'two typed-in foods are never said to be photo-read')
+})
+
+// ── CUL-1995 / CUL-2001 / CUL-2003 — how thin and how late the symptom record is ─────────────
+//
+// Each instance is pinned twice: on the demo record (Cooper), whose cold read found all three,
+// and on a synthetic record built to sit exactly on the rule's boundary, derived from the shipped
+// constant (C-34). The default window here is the 90-day fallback, Apr 4 – Jul 2, 2026: weekly
+// buckets from Apr 4, halves Apr 4 – May 18 and May 19 – Jul 2.
+
+/** Text the way a vet reads it: tags as spaces, then the spaces before punctuation folded. */
+function readAs(html: string): string {
+  return plainText(html.replace(/&rarr;/g, '\u2192'))
+    .replace(/ ([;.,)\/])/g, '$1')
+    .replace(/([(\/]) /g, '$1')
+    .replace(/(\d) \u2013 (\d)/g, '$1\u2013$2')
+    .replace(/ -day/g, '-day')
+}
+
+/** 'YYYY-MM-DD' keys from `from` to `to`, inclusive. */
+function dayKeys(from: string, to: string): string[] {
+  const out: string[] = []
+  for (let ms = Date.parse(`${from}T12:00:00Z`); ms <= Date.parse(`${to}T12:00:00Z`); ms += 86_400_000) {
+    out.push(new Date(ms).toISOString().slice(0, 10))
+  }
+  return out
+}
+
+/** One unrated meal on each day — a logged day that holds no symptom. */
+function mealsOn(keys: string[]): ReportEventInput[] {
+  return keys.map((d) => mealEvent(d))
+}
+
+function cooperReport(seededLate = false): string {
+  const inp = cooperInput()
+  // Production's demo account: the seed stamps every row's created_at at seed time (CUL-2002),
+  // which is exactly the back-filled record CUL-2001 is about.
+  const events = seededLate ? inp.events.map((e) => ({ ...e, loggedAt: COOPER_NOW })) : inp.events
+  return renderReport(assembleReport({ ...inp, events, audience: OWNER }))
+}
+
+/** The vomiting chart's alt text. */
+function symptomAria(html: string): string {
+  const m = /aria-label="Vomiting entries per week: ([^"]*)"/.exec(html)
+  assert.ok(m, 'the report draws a vomiting chart')
+  return m[1]
+}
+
+Deno.test('CUL-1995 — Cooper: the barely-logged pre-trial week is not read, and says how barely', () => {
+  const html = cooperReport()
+  assert.ok(symptomAria(html).startsWith(`not read (2 of 7 days logged), 1, 2, 1`), symptomAria(html))
+  assert.ok(/>2\/7 d<\/text>/.test(html), 'the column carries its logged days')
+  assert.ok(/under 4 days logged that week: not read as a week without entries/.test(readAs(html)))
+})
+
+Deno.test('CUL-1995 — a week prints 0 only from the floor up', () => {
+  const run = (thinDays: number): string => {
+    idSeq = 0
+    const events = [
+      ...mealsOn(dayKeys('2026-04-04', '2026-04-04').concat(dayKeys('2026-04-05', '2026-04-10').slice(0, thinDays - 1))),
+      ...mealsOn(dayKeys('2026-04-11', '2026-07-02')),
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-01') }),
+    ]
+    return symptomAria(renderReport(assembleReport(baseInput({ events }))))
+  }
+  const below = run(SYMPTOM_WEEK_MIN_LOGGED_DAYS - 1)
+  assert.ok(below.startsWith(`not read (${SYMPTOM_WEEK_MIN_LOGGED_DAYS - 1} of 7 days logged), 0,`), below)
+  const atFloor = run(SYMPTOM_WEEK_MIN_LOGGED_DAYS)
+  assert.ok(atFloor.startsWith('0, 0,'), atFloor)
+})
+
+Deno.test('CUL-1995 — Cooper: the rise keeps its numbers and names the thin week under it', () => {
+  const p = readAs(cooperReport())
+  assert.ok(/first 13 d 8 logged 1 → last 13 d 3/.test(p), 'a rise is never hidden')
+  assert.ok(/the first half includes Sep 20 – Sep 26, which had a log on 2 of 7 days/.test(p))
+})
+
+Deno.test('CUL-1995 — a FALL across an under-logged week is not compared, in the panel and on the tile', () => {
+  const run = (lateWeekDays: number): string => {
+    idSeq = 0
+    // May 23 – May 29 (the eighth weekly bucket) is the thin week, inside the later half.
+    const events = [
+      ...mealsOn(dayKeys('2026-04-04', '2026-05-22')),
+      ...mealsOn(dayKeys('2026-05-23', '2026-05-29').slice(0, lateWeekDays)),
+      ...mealsOn(dayKeys('2026-05-30', '2026-07-02')),
+      ...['2026-04-08', '2026-04-20', '2026-05-02', '2026-05-12'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-20') }),
+    ]
+    return readAs(renderReport(assembleReport(baseInput({ events }))))
+  }
+  const thin = run(SYMPTOM_WEEK_MIN_LOGGED_DAYS - 1)
+  assert.ok(/first 45 d vs last 45 d not compared/.test(thin), 'the panel withholds the pair')
+  assert.ok(/May 23 – May 29 had a log on 3 of 7 days — a fall across such a week may be less logging, not fewer entries/.test(thin))
+  assert.ok(!/first 45 d \d* ?(logged )?4 → last/.test(thin), 'and prints no 4 → 1')
+  assert.ok(/not compared Entries, first vs last half/.test(thin), 'the page-1 tile withholds it too')
+  // The mutation: the same record with that week logged on the floor's days compares again.
+  const full = run(SYMPTOM_WEEK_MIN_LOGGED_DAYS)
+  assert.ok(/first 45 d 4 → last 45 d \d+ logged 1/.test(full), full.slice(full.indexOf('first 45'), full.indexOf('first 45') + 60))
+  assert.ok(!/not compared/.test(full))
+})
+
+Deno.test('CUL-2001 — Cooper as production seeds it: page 1 says how late the vomiting was logged', () => {
+  const p = readAs(cooperReport(true))
+  assert.ok(
+    /All 4 vomiting entries were entered together on Oct 16 3–16 days after the time given for them\. They were recalled, not recorded as they happened, so the counts on this page may miss episodes, and the dates and times may be off\./.test(p),
+    p.slice(p.indexOf('All 4'), p.indexOf('All 4') + 260),
+  )
+  assert.ok(/4 of 4 logged 3–16 d after the time given/.test(p), 'and the chart panel carries it')
+  assert.ok(p.indexOf('All 4 vomiting entries were entered') < p.indexOf('At a glance'), 'on page 1, before the tiles')
+  // The fixture as CI pins it logs every row as it happens: silent, never "all logged on time".
+  const prompt = readAs(cooperReport(false))
+  assert.ok(!/after the time given/.test(prompt) && !/on time/.test(prompt))
+})
+
+Deno.test('CUL-2001 — late is a day or more, and a bout logged promptly once is not late', () => {
+  const run = (rows: Array<{ occurredAt: string; loggedAt: string }>): string => {
+    idSeq = 0
+    const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...rows.map((r) => makeEvent({ type: 'vomit', ...r }))]
+    return readAs(renderReport(assembleReport(baseInput({ events }))))
+  }
+  const o = at('2026-06-01')
+  const plus = (h: number): string => new Date(Date.parse(o) + h * 3_600_000).toISOString()
+  assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS - 1) }])))
+  assert.ok(/1 of 1 vomiting entry was entered 1 day after the time given for it\. It was recalled/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS) }])))
+  // One bout, two rows: logged a week late once and promptly once — the record caught it. Both
+  // row orders, so neither the bout's first nor its last row alone can stand in for the bout.
+  assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(24 * 7) }, { occurredAt: o, loggedAt: plus(1) }])))
+  assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(1) }, { occurredAt: o, loggedAt: plus(24 * 7) }])))
+  // Part of the record late: "Those were", and the clause counts only the late ones.
+  assert.ok(
+    /1 of 2 vomiting entries were entered 7 days after the time given for it\. That one was recalled, not recorded as it happened/.test(
+      run([{ occurredAt: o, loggedAt: plus(24 * 7) }, { occurredAt: at('2026-06-10'), loggedAt: at('2026-06-10') }]),
+    ),
+  )
+})
+
+Deno.test('CUL-2003 — Cooper: the band names the checks that ran and did not trigger, with what they saw, never as a clearance', () => {
+  const p = readAs(cooperReport(true))
+  const band = p.slice(p.indexOf('Safety — flags for review'), p.indexOf('Tracking Venison'))
+  const fl = chronicityFloorsFor('vomit', 'dog', DEFAULT_CONFIG.chronicity)
+  assert.ok(
+    band.includes(
+      `Not triggered Ran and did not trigger, which does not rule these out: ongoing vomiting (4 episodes in this 27-day report, all the check could see; it triggers at ${fl.minEpisodes} or more episodes over ${fl.minSpanDays / 7} or more weeks, in ${fl.minActiveWeeks} separate weeks, the latest within ${fl.ongoingRecencyDays} days); vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the last 7 days, and more, or on more days, than the 7 before). Vomiting entries were logged late, so these checks may have counted fewer than happened.`,
+    ),
+    band,
+  )
+  assert.ok(!/Checked/.test(band), 'never a CHECKED tag a vet reads as "checked, OK"')
+})
+
+Deno.test('CUL-2003 — with no flag, the checks still show where the band sits, and say what could not be checked', () => {
+  idSeq = 0
+  // Logging stops Jun 15, so the last two weeks cannot be compared.
+  const events = [
+    ...mealsOn(dayKeys('2026-04-04', '2026-06-15')),
+    ...['2026-05-20', '2026-06-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  assert.equal(snap.safetyFlags.length, 0)
+  const p = readAs(renderReport(snap))
+  assert.ok(!/Safety — flags for review/.test(p), 'still no band and no all-clear (§5.3)')
+  assert.ok(!/No safety flag/.test(p), 'and no statement of none: the band shows only what this report renders')
+  assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in the last 8 weeks; it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
+  assert.ok(
+    /Vomiting getting worse: not checked, too few days logged to compare \(0 of the last 7, 0 of the 7 before; it needs 3 in each\)\./.test(p),
+  )
+  // The mutation: a record with no symptom in it has no check to name.
+  idSeq = 0
+  const quiet = readAs(renderReport(assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')) }))))
+  assert.ok(!/did not trigger/.test(quiet))
+})
+
+Deno.test('CUL-2003 — a check that DID flag is never also listed as not flagging', () => {
+  idSeq = 0
+  // Eight vomits across five weeks, the last two days ago, on a fully logged record: ongoing fires.
+  const vomits = ['2026-05-20', '2026-05-24', '2026-05-29', '2026-06-04', '2026-06-10', '2026-06-17', '2026-06-24', '2026-06-30']
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'chronicity'), 'the fixture fires the ongoing flag')
+  const p = readAs(renderReport(snap))
+  assert.ok(!/ongoing vomiting \(\d+ episodes/.test(p), 'the fired check is not named as quiet')
+  assert.ok(!/vomiting getting worse/i.test(p.slice(p.indexOf('Not triggered'))), 'nor the getting-worse check it absorbs')
+})
+
+// ── Adversarial pass 1 (CUL-2003): each break, pinned on the record that produced it ─────────
+
+Deno.test('CUL-2003 adv 1 — a rise hidden behind another symptom\'s folded card is never "did not trigger"', () => {
+  idSeq = 0
+  const vomits = ['2026-05-20', '2026-05-27', '2026-06-03', '2026-06-10', '2026-06-17', '2026-06-26', '2026-06-28', '2026-06-30', '2026-07-01']
+  const events = [
+    ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+    ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+    ...['2026-06-27', '2026-06-29', '2026-07-01'].map((d) => makeEvent({ type: 'diarrhea', occurredAt: at(d, '20:00:00') })),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'chronicity' && f.symptomType === 'vomit'))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'symptom_worsening'), 'the vomiting card was folded, so no worsening flag shows')
+  const p = readAs(renderReport(snap))
+  assert.ok(/Loose stool getting worse: not assessed on its own, because the check reports only the steepest rise\./.test(p))
+  assert.ok(!/loose stool getting worse \(it triggers/.test(p))
+})
+
+Deno.test('CUL-2003 adv 2 — a course the engine could not measure is "not checked", never "did not trigger"', () => {
+  idSeq = 0
+  // No meals: the only logged days are the vomits. Six episodes over 29 days, in four separate
+  // weeks, the latest two days ago — every printed floor met — but the first half of the span
+  // holds two logged days, under the engine's logging gate, so it never measured the course.
+  const events = ['2026-06-01', '2026-06-08', '2026-06-22', '2026-06-25', '2026-06-28', '2026-06-30'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'chronicity'), 'the engine withheld it on its logging gate')
+  const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
+  assert.ok(c && c.kind === 'ongoing' && c.state === 'too_few_days', JSON.stringify(c))
+  const p = readAs(renderReport(snap))
+  assert.ok(/Ongoing vomiting: not checked, too few episodes or logged days to measure a course \(6 episodes in the last 8 weeks\)\./.test(p))
+  assert.ok(!/ongoing vomiting \(6 episodes/.test(p))
+  // The mutation: the same six with a third first-half day logged are measured, and fire.
+  idSeq = 0
+  const measured = assembleReport(baseInput({ events: [...events, mealEvent('2026-06-05')] }))
+  assert.ok(measured.safetyFlags.some((f) => f.kind === 'chronicity'))
+})
+
+Deno.test('CUL-2003 adv 3 — the count printed is the one inside the check\'s lookback, so a 90-day chart cannot contradict it', () => {
+  idSeq = 0
+  // Nine in the window, four inside the engine's 8-week lookback (from May 7).
+  const vomits = ['2026-04-08', '2026-04-15', '2026-04-22', '2026-04-29', '2026-05-05', '2026-05-24', '2026-06-10', '2026-06-22', '2026-06-30']
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'chronicity'), 'nine in the window, under six inside the lookback: silent')
+  const p = readAs(renderReport(snap))
+  const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')!
+  assert.ok(c.kind === 'ongoing' && c.episodes === 4, JSON.stringify(c))
+  assert.ok(new RegExp(`ongoing vomiting \\(${c.episodes} episodes in the last 8 weeks;`).test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 200))
+})
+
+Deno.test('CUL-2003 adv 4 — under EN-11 a rise under the card floor says so, never a bare "did not trigger"', () => {
+  idSeq = 0
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...['2026-06-28', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
+  const p = readAs(renderReport(assembleReport(baseInput({ events, engineFlags: { on: ['engines_v3_en11'], readOk: true } }))))
+  assert.ok(/Vomiting getting worse: did not trigger, but a sign on this record rose over the last 7 days below the 3 the flag needs\./.test(p), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
+  // The mutation: flag off, the same rise is a worsening flag.
+  idSeq = 0
+  const off = assembleReport(baseInput({ events: [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...['2026-06-28', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))] }))
+  assert.ok(off.safetyFlags.some((f) => f.kind === 'symptom_worsening'))
+})
+
+Deno.test('CUL-2003 adv 5 — a report window shorter than the span floor cannot claim the ongoing check ran', () => {
+  idSeq = 0
+  const events = [...mealsOn(dayKeys('2026-06-19', '2026-07-02')), makeEvent({ type: 'vomit', occurredAt: at('2026-06-25') })]
+  const snap = assembleReport(baseInput({ events, vetVisits: [{ visitedAt: '2026-06-19', clinicName: null, vetName: null, reason: null }] }))
+  assert.equal(snap.scope.windowDays, 14)
+  const p = readAs(renderReport(snap))
+  assert.ok(/Ongoing vomiting: not checked, because this 14-day report is shorter than the 3 weeks the check needs\./.test(p))
+  assert.ok(!/ongoing vomiting \(\d+ episodes/.test(p))
+})
+
+Deno.test('CUL-1995 adv 6 — a fully logged part-week tail does not withhold a fall for ever', () => {
+  idSeq = 0
+  const events = [
+    ...mealsOn(dayKeys('2026-06-03', '2026-07-02')),
+    ...['2026-06-04', '2026-06-07', '2026-06-10', '2026-06-13'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-28') }),
+  ]
+  const snap = assembleReport(baseInput({ events, vetVisits: [{ visitedAt: '2026-06-03', clinicName: null, vetName: null, reason: null }] }))
+  assert.equal(snap.scope.windowDays, 30)
+  const p = readAs(renderReport(snap))
+  assert.ok(/first 15 d 4 → last 15 d 1/.test(p), p.slice(p.indexOf('first 15'), p.indexOf('first 15') + 80))
+  assert.ok(!/not compared/.test(p))
+})
+
+Deno.test('CUL-2001 adv 7 — a found pile logged when it was found is not late', () => {
+  const run = (loggedAt: string): string => {
+    idSeq = 0
+    const events = [
+      ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+      makeEvent({
+        type: 'vomit',
+        occurredAt: '2026-06-20T12:00:00Z',
+        occurredAtConfidence: 'window',
+        occurredAtEarliest: '2026-06-19T12:00:00Z',
+        occurredAtLatest: '2026-06-21T12:00:00Z',
+        loggedAt,
+      }),
+    ]
+    return readAs(renderReport(assembleReport(baseInput({ events }))))
+  }
+  assert.ok(!/after the time given/.test(run('2026-06-21T12:10:00Z')))
+  assert.ok(/1 of 1 vomiting entry was entered 2 days after the time given for it\. It was recalled, not recorded as it happened/.test(run('2026-06-23T13:00:00Z')))
+})
+
+// ── Adversarial pass 2 / cold read r2 ────────────────────────────────────────────────────────
+
+Deno.test('CUL-2003 adv2 Q1 — a burden card fired leads the band, and the page never says "No safety flag"', () => {
+  idSeq = 0
+  // A cat vomiting three days running, twice: the engine's burden card ("call today").
+  const vomits = ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-29', '2026-06-30', '2026-07-01']
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
+  const snap = assembleReport(baseInput({ events }))
+  const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(b && b.kind === 'symptom_burden', JSON.stringify(snap.safetyFlags.map((f) => f.kind)))
+  const p = readAs(renderReport(snap))
+  assert.ok(/Safety — flags for review/.test(p), 'the band renders')
+  assert.ok(new RegExp(`Burden ${b.count} vomiting entries in the last ${b.windowDays} days, on ${b.runDays} days in a row\\.`).test(p), p.slice(p.indexOf('Safety'), p.indexOf('Safety') + 400))
+  assert.ok(!/No safety flag/.test(p))
+})
+
+Deno.test('CUL-2003 adv2 Q1 — a safety finding the report does not detail is still named, and opens the band', () => {
+  idSeq = 0
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), makeEvent({ type: 'vomit', occurredAt: at('2026-06-01') })]
+  const snap = assembleReport(baseInput({ events }))
+  assert.equal(snap.safetyFlags.length, 0)
+  // The engine's other safety findings reach the band through this kind; pinned on the renderer.
+  const html = renderReport({ ...snap, safetyFlags: [{ kind: 'engine_other', findingTypes: ['weight_loss'] }] })
+  const p = readAs(html)
+  assert.ok(/Safety — flags for review Also flagged The app's checks also flagged weight loss \(see the weight trend\)\. This report does not detail it here\./.test(p))
+})
+
+Deno.test('CUL-2003 adv2 Q2 — a window exactly the span floor long cannot claim the ongoing check ran', () => {
+  idSeq = 0
+  const fl = chronicityFloorsFor('vomit', 'cat', DEFAULT_CONFIG.chronicity)
+  const start = new Date(Date.parse('2026-07-02T12:00:00Z') - (fl.minSpanDays - 1) * 86_400_000).toISOString().slice(0, 10)
+  const events = [...mealsOn(dayKeys(start, '2026-07-02')), makeEvent({ type: 'vomit', occurredAt: at('2026-06-25') })]
+  const snap = assembleReport(baseInput({ events, vetVisits: [{ visitedAt: start, clinicName: null, vetName: null, reason: null }] }))
+  assert.equal(snap.scope.windowDays, fl.minSpanDays)
+  const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
+  assert.ok(c && c.kind === 'ongoing' && c.state === 'window_short', JSON.stringify(c))
+})
+
+Deno.test('CUL-2001 r2 — entries entered in one sitting say so; spread-out late entries do not', () => {
+  const run = (loggedAts: string[]): string => {
+    idSeq = 0
+    const occ = ['2026-06-01', '2026-06-05', '2026-06-09']
+    const events = [
+      ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+      ...occ.map((d, i) => makeEvent({ type: 'vomit', occurredAt: at(d), loggedAt: loggedAts[i] })),
+    ]
+    return readAs(renderReport(assembleReport(baseInput({ events }))))
+  }
+  const together = run(['2026-06-20T15:00:00Z', '2026-06-20T15:05:00Z', '2026-06-20T15:10:00Z'])
+  assert.ok(/All 3 vomiting entries were entered together on Jun 20 11–19 days after/.test(together), together.slice(together.indexOf('All 3'), together.indexOf('All 3') + 120))
+  const spread = run(['2026-06-03T15:00:00Z', '2026-06-08T15:00:00Z', '2026-06-20T15:00:00Z'])
+  assert.ok(/All 3 vomiting entries were entered 2–11 days after/.test(spread))
+  assert.ok(!/together/.test(spread))
 })

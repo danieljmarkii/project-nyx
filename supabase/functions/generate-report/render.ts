@@ -82,6 +82,9 @@ import { summariseIntake } from './report.ts'
 // "Reading the trend"'s count all switch on it, so they cannot disagree about how many
 // changes overlap the window.
 import { drawsStopMark, isWindowChange } from './report.ts'
+// The symptom chart's week floor and the late-log line's threshold (CUL-1995, CUL-2001): value
+// imports, so the chart, the half trend and the copy read the number the snapshot was built on.
+import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, type SafetyCheck, type ThinWeek } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -539,6 +542,11 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   const yMax = evenAxisMax(buckets)
   const centerX = (i: number): number => L + (i + 0.5) * slot
   const yFor = (count: number): number => BASE - (count / yMax) * (BASE - TOP)
+  // A week may print `0` only when it was logged on enough days for an absence to be read
+  // (CUL-1995). Two logged days of seven used to draw the same `0` as a fully logged quiet week,
+  // and on the demo record that `0` was the pre-trial baseline a vet read as "no vomiting before
+  // the diet". One predicate for the bars, the label band, the alt text and the key.
+  const weekRead = (i: number): boolean => (loggedByBucket[i] ?? 0) >= SYMPTOM_WEEK_MIN_LOGGED_DAYS
 
   const parts: string[] = []
   // Gridlines + baseline axis + Y ticks (max / mid / 0).
@@ -597,7 +605,7 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   const labelBaseline = (i: number): number => {
     const c = buckets[i]
     if (c > 0) return yFor(c) - 6
-    return (loggedByBucket[i] ?? 0) > 0 ? BASE - 7 : BASE - 13
+    return weekRead(i) ? BASE - 7 : BASE - 13
   }
   /**
    * The y below which a rule at `x` is over this bucket's BAR rather than over paper — or null
@@ -798,6 +806,15 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   // two weekly charts align on identical dates. Replaces the month-only ticks (R2-6) with per-week
   // orientation ("May 11, May 18 …"); the exact window bounds stay in the range box + caption.
   parts.push(weekAxisLabels(sym.bucketStartDates, L, slot, n, BASE))
+  // Under each date, the days that week had a log, of the days it spans — the off-diet chart's
+  // per-column denominator (CUL-1779), so a `0` and a `–` always carry their coverage (CUL-1995).
+  // Every other week past 14, matching the dates drawn above them.
+  const stride = weekAxisStride(n)
+  for (let i = 0; i < n; i += stride) {
+    parts.push(
+      `<text class="xl dc num" x="${centerX(i).toFixed(1)}" y="${BASE + 28}" text-anchor="middle">${loggedByBucket[i] ?? 0}/${sym.bucketDays[i] ?? 7} d</text>`,
+    )
+  }
 
   // Bars + count labels.
   //
@@ -818,7 +835,7 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     const c = buckets[i]
     const cx = centerX(i)
     const x = cx - barW / 2
-    const observed = (loggedByBucket[i] ?? 0) > 0
+    const observed = weekRead(i)
     if (c > 0) {
       const y = yFor(c)
       const height = BASE - y
@@ -844,16 +861,18 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   // The marker is only legible where the sheet defines it, and only emitted when one was drawn.
   if (unobserved.length > 0) {
     parts.push(
-      `<text class="ann" x="${R}" y="${BASE + 26}" text-anchor="end">&ndash; nothing logged that week (not a week without entries)</text>`,
+      `<text class="ann" x="${R}" y="${BASE + 40}" text-anchor="end">&ndash; under ${SYMPTOM_WEEK_MIN_LOGGED_DAYS} days logged that week: not read as a week without entries</text>`,
     )
   }
 
   // The alt text has to draw the same distinction the bars now do.
   const ariaBuckets = buckets
-    .map((c, i) => ((loggedByBucket[i] ?? 0) > 0 ? String(c) : 'not logged'))
+    .map((c, i) =>
+      c > 0 || weekRead(i) ? String(c) : `not read (${loggedByBucket[i] ?? 0} of ${sym.bucketDays[i] ?? 7} days logged)`,
+    )
     .join(', ')
   const aria = `${symptomLabel(sym.type)} entries per week: ${ariaBuckets}. Window ends ${h(fmtDay(windowEndDate))}.`
-  return `<svg viewBox="0 0 648 158" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
+  return `<svg viewBox="0 0 648 162" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
 }
 
 /**
@@ -2030,10 +2049,107 @@ function trialCropDensitySentence(snap: ReportSnapshot): string {
  * array returns '' (never a fabricated "all clear"). Mono-prominent: heavy border +
  * weight, never colour.
  */
+/**
+ * THE CHECKS THAT RAN AND DID NOT FLAG (CUL-2003). The band showed only what fired, so a vet
+ * scanning it could not tell "the ongoing and getting-worse checks ran and stayed under their
+ * floors" from "they never ran" — on the demo record, a rising, three-week vomiting course under
+ * a band holding only the intake flag read as "intake is the only concern". Each check is named
+ * with the floor it applies, and every one carries "not ruled out" in the same sentence:
+ * absence ≠ wellness (§5.3), so this line is never a clearance. Null when nothing ran.
+ */
+function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: string[] } | null {
+  const checks = snap.safetyChecks
+  if (checks.length === 0) return null
+  const lower = (t: string): string => h(symptomLabel(t).toLowerCase())
+  const span = (d: number): string => (d % 7 === 0 ? `${num(d / 7)} or more weeks` : `${num(d)} or more days`)
+  const weeks = (d: number): string => (d % 7 === 0 ? `${num(d / 7)} weeks` : `${num(d)} days`)
+  const notTriggered: string[] = []
+  const rest: string[] = []
+  for (const c of checks) {
+    if (c.kind === 'ongoing') {
+      const floors = `it triggers at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
+        c.minActiveWeeks,
+      )} separate weeks, the latest within ${num(c.ongoingRecencyDays)} days`
+      // The OBSERVED count beside the floor, over the span the engine actually saw: its lookback,
+      // or this report's window when that is shorter (it is handed only the window's entries).
+      // A near miss in an undercounted record is the thing a vet most needs to see (cold read 4).
+      const seen =
+        c.windowDays < c.lookbackDays
+          ? `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in this ${num(c.windowDays)}-day report, all the check could see`
+          : `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in the last ${weeks(c.lookbackDays)}`
+      if (c.state === 'not_triggered') notTriggered.push(`ongoing ${lower(c.symptomType)} (${seen}; ${floors})`)
+      else if (c.state === 'window_short')
+        rest.push(
+          `Ongoing ${lower(c.symptomType)}: not checked, because this ${num(c.windowDays)}-day report is shorter than the ${weeks(
+            c.minSpanDays,
+          )} the check needs.`,
+        )
+      else
+        rest.push(
+          `Ongoing ${lower(c.symptomType)}: not checked, too few episodes or logged days to measure a course (${seen}).`,
+        )
+    } else if (c.state === 'not_flagged') {
+      notTriggered.push(
+        `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in the last ${num(
+          c.windowDays,
+        )} days, and more, or on more days, than the ${num(c.windowDays)} before)`,
+      )
+    } else if (c.state === 'below_card_floor') {
+      rest.push(
+        `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over the last ${num(
+          c.windowDays,
+        )} days below the ${num(c.minEpisodes)} the flag needs.`,
+      )
+    } else if (c.state === 'too_few_days') {
+      rest.push(
+        `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(c.currentLoggingDays)} of the last ${num(
+          c.windowDays,
+        )}, ${num(c.priorLoggingDays)} of the ${num(c.windowDays)} before; it needs ${num(c.minLoggingDays)} in each).`,
+      )
+    } else {
+      rest.push(
+        `${h(symptomLabel(c.symptomType))} getting worse: not assessed on its own, because the check reports only the steepest rise.`,
+      )
+    }
+  }
+  // The checks read the same occurred-at times CUL-2001 discloses; a record entered late may hold
+  // fewer episodes than happened, and a check under its floor on such a record is weaker still.
+  const late = snap.symptoms.filter(
+    (s) => s.lateLogged !== null && checks.some((c) => c.symptomType === s.type),
+  )
+  if (late.length > 0) {
+    rest.push(
+      `${late.map((s) => h(symptomLabel(s.type))).join(' and ')} entries were logged late, so these checks may have counted fewer than happened.`,
+    )
+  }
+  return {
+    lead: notTriggered.length > 0 ? `${notTriggered.join('; ')}.` : null,
+    rest,
+  }
+}
+
 function safetyBand(snap: ReportSnapshot): string {
   const flags = snap.safetyFlags
-  if (flags.length === 0) return ''
-  const rows = flags.map((f) => safetyFlagRow(f, snap)).join('')
+  const checked = safetyChecksText(snap)
+  // "Ran and did not trigger", never "checked": the cold read took a boxed CHECKED tag beside a
+  // real flag as "checked, OK". Each clause carries the count it saw against the floor it needs.
+  const body =
+    checked === null
+      ? null
+      : [checked.lead === null ? '' : `Ran and did not trigger, which does not rule these out: ${checked.lead}`, ...checked.rest]
+          .filter((x) => x !== '')
+          .join(' ')
+  if (flags.length === 0) {
+    // No flag fired: still no band and no "all clear" (§5.3). The checks are named in a muted,
+    // unboxed line where the band would sit, so "nothing flagged" reads as "these ran and stayed
+    // under their floors", never as "nothing to look at" (PM ruling, 2026-10-19).
+    // Never "No safety flag": the band only shows what this report renders as a flag, and a
+    // statement of none was false the first time a finding it does not carry fired (pass 2, Q1).
+    if (body === null) return ''
+    return `
+  <div class="limit checked">${body}</div>`
+  }
+  const rows = flags.map((f) => safetyFlagRow(f, snap)).join('') + (body === null ? '' : flagRow('Not triggered', body))
   const warnIcon = `<svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg>`
   return `
   <div class="safetyband">
@@ -2510,6 +2626,25 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
+    case 'symptom_burden': {
+      // CUL-1410's card, now on the report (adversarial pass 2 of CUL-1995's row). Counts only:
+      // no cause, no severity word. The tier is what the owner was told, stated as such.
+      const label = h(symptomLabel(f.symptomType).toLowerCase())
+      const run = f.runDays >= 2 ? `, on ${num(f.runDays)} days in a row` : ''
+      const told = f.tier === 'today' ? 'to call the vet today' : 'to call the vet soon'
+      return flagRow(
+        'Burden',
+        `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. The owner was told ${told}.`,
+      )
+    }
+    case 'engine_other': {
+      const words: Record<string, string> = {
+        weight_loss: 'weight loss (see the weight trend)',
+        incident_red_flag: 'a red flag on a photographed incident (see the incident appendix)',
+      }
+      const named = f.findingTypes.map((t) => h(words[t] ?? t.replace(/_/g, ' ')))
+      return flagRow('Also flagged', `The app's checks also flagged ${named.join('; ')}. This report does not detail ${f.findingTypes.length === 1 ? 'it' : 'them'} here.`)
+    }
     case 'symptom_worsening': {
       // windowDays is the comparison-window LENGTH (7 = week-over-week); priorDays/
       // currentDays are the distinct symptom-DAYS WITHIN each window (density) — not the
@@ -2546,6 +2681,49 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       )
     }
   }
+}
+
+/** "3–16 days" / "3 days" / "1 day" — a late entry's lag, floored to whole days (CUL-2001). */
+function lateLagPhrase(l: NonNullable<SymptomAggregate['lateLogged']>, unit: 'days' | 'd'): string {
+  const range = l.minDays === l.maxDays ? num(l.minDays) : `${num(l.minDays)}&ndash;${num(l.maxDays)}`
+  if (unit === 'd') return `${range}&nbsp;d`
+  return `${range} ${l.minDays === l.maxDays && l.minDays === 1 ? 'day' : 'days'}`
+}
+
+/**
+ * THE RECORD SAYS HOW LATE IT WAS WRITTEN (CUL-2001). Page 1 reads every symptom count, date
+ * and timing association off `occurredAt`; only appendix A printed when each entry was logged.
+ * The demo record's four vomits were all entered in one sitting, 3 to 16 days after the times
+ * given for them, and page 1 read them as if caught as they happened — a vet then trusts the
+ * trend, the counts and the food timing as observed, and a recalled record can miss episodes.
+ *
+ * So the lag is stated directly under the headline, where the symptom count is first read.
+ * LOUD by construction: it can only say the record may hold LESS than happened, never that it
+ * is complete. Silent when nothing was logged a day or more late — never "all logged on time",
+ * which would be a completeness claim the page cannot make.
+ */
+function lateLoggedNote(snap: ReportSnapshot): string {
+  const late = snap.symptoms.filter((s) => s.lateLogged !== null)
+  if (late.length === 0) return ''
+  const clauses = late.map((s) => {
+    const l = s.lateLogged!
+    const allOfType = l.count === s.count
+    // Entered together is a reconstruction, not a lagging log — the cold read's r2 blocker: "3–16
+    // days after" alone reads as an ongoing log with a delay.
+    const sitting = l.oneSittingDay ? ` together on ${h(fmtDay(l.oneSittingDay))}` : ''
+    const who = allOfType && l.count > 1 ? `All ${num(l.count)}` : `${num(l.count)} of ${num(s.count)}`
+    return `${who} ${h(symptomLabel(s.type).toLowerCase())} ${s.count === 1 ? 'entry was' : 'entries were'} entered${sitting} ${lateLagPhrase(
+      l,
+      'days',
+    )} after the time given for ${l.count === 1 ? 'it' : 'them'}`
+  })
+  const all = late.every((s) => s.lateLogged!.count === s.count)
+  const one = late.length === 1 && late[0].lateLogged!.count === 1
+  const lead = one ? (all ? 'It was' : 'That one was') : all ? 'They were' : 'Those were'
+  return `
+  <div class="latelog">${clauses.join('; ')}. ${lead} recalled, not recorded as ${one ? 'it' : 'they'} happened, so the counts on this page may miss episodes, and the dates and times may be off. <span class="qual">Late means logged ${num(
+    LATE_LOG_MIN_HOURS,
+  )}&nbsp;h or more after; each entry's logged time is in appendix&nbsp;A.</span></div>`
 }
 
 function headline(snap: ReportSnapshot): string {
@@ -5299,6 +5477,13 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
     // is where the second break was: this site compared a NEW-partition numerator against an
     // OLD-partition floor, which both lost a caveat at 90 days and printed a false "6 of 21 d".
     const sparse = trendSparseCaveat(halves, ag)
+    // The panel's thin-week rule, from the same helper (CUL-1995): a fall across an under-logged
+    // week is withheld here too, or the prominent tile would keep the number the panel refuses.
+    const thin = trendThinWeeks(halves)
+    const thinSub =
+      thin?.mode === 'disclose'
+        ? `<br/>includes a week logged on under ${SYMPTOM_WEEK_MIN_LOGGED_DAYS} days`
+        : ''
     const sub =
       sparse?.side === 'early'
         ? `early window sparsely logged (${num(ag.firstHalfLoggedDays)} of ${num(days)} d)`
@@ -5308,7 +5493,12 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
       // per minute-deduped ROW in the same loop as the §3.5 aggregate — so this tile and the
       // trend panel 250 lines below print the SAME numbers, and until this fix they disagreed
       // about the noun on one page. B-532's whole point was that these two must not diverge.
-      tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Entries, first &rarr; last half<br/>${sub}`),
+      thin?.mode === 'withhold'
+        ? tileHtml(
+            `<span class="arw">not compared</span>`,
+            `Entries, first vs last half<br/>${thinWeekList(thin.weeks)}`,
+          )
+        : tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Entries, first &rarr; last half<br/>${sub}${thinSub}`),
     )
   } else {
     tiles.push(weightTile(snap))
@@ -5501,6 +5691,48 @@ function trendSparseCaveat(
   return null
 }
 
+/**
+ * AN UNDER-LOGGED WEEK INSIDE A HALF (CUL-1995) — one derivation, the panel and the tile.
+ *
+ * The chart now refuses to draw a `0` for a week logged on fewer than
+ * `SYMPTOM_WEEK_MIN_LOGGED_DAYS` days, and the half trend above it was still counting such a week
+ * as a measured absence: the demo record's "1 → 3" rested on a first half holding Sep 20–26,
+ * logged on 2 of 7 days, which a vet read as "the vomiting began on the new diet".
+ *
+ * Direction decides what it costs (PM ruling, 2026-10-19). A FALL across a thin week is the
+ * reassuring misread — it can be less logging, not fewer entries — so the pair is withheld. A
+ * RISE or a flat pair keeps its numbers, because a rise is never hidden, and names the week so
+ * the reader sees how thin that half's baseline is. `trendSparseCaveat` still fires beside it:
+ * that one is a whole-half density threshold, this is a week the chart itself would not read.
+ */
+function trendThinWeeks(
+  halves: NonNullable<SymptomAggregate['trendHalves']>,
+): { mode: 'withhold'; weeks: ThinWeek[] } | { mode: 'disclose'; first: ThinWeek[]; last: ThinWeek[] } | null {
+  const { first, last } = halves.thinWeeks
+  if (first.length === 0 && last.length === 0) return null
+  if (halves.lastCount < halves.firstCount) {
+    // A week straddling the middle sits in both lists; name it once.
+    const weeks = [...first, ...last.filter((w) => !first.some((f) => f.startDate === w.startDate))]
+    return { mode: 'withhold', weeks }
+  }
+  return { mode: 'disclose', first, last }
+}
+
+/** "Sep 20 – Sep 26 had a log on 2 of 7 days" (or "…, which had…" after "includes"), up to two
+ *  weeks, then the count of the rest. */
+function thinWeekList(weeks: ThinWeek[], form: 'clause' | 'which' = 'clause'): string {
+  const shown = weeks
+    .slice(0, 2)
+    .map(
+      (w) =>
+        `${h(fmtDay(w.startDate))} &ndash; ${h(fmtDay(w.endDate))}${form === 'which' ? ', which' : ''} had a log on ${num(
+          w.loggedDays,
+        )} of ${num(w.days)} days`,
+    )
+  const rest = weeks.length - shown.length
+  return shown.join('; ') + (rest > 0 ? `; and ${num(rest)} more week${rest === 1 ? '' : 's'} logged on under ${SYMPTOM_WEEK_MIN_LOGGED_DAYS} days` : '')
+}
+
 function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
   // The first-vs-last delta, over EQUAL-LENGTH halves computed in report.ts (B-532).
   //
@@ -5557,11 +5789,32 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
             fmtDay(halves.middleDate),
           )} &mdash; the middle day of an odd window, counted in the total above and in neither half</div>`
         : ''
-    deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d${obs(
-      snap.atAGlance.firstHalfLoggedDays,
-    )} <b class="num">${firstCount}</b> &rarr; last ${num(days)}&nbsp;d${obs(
-      snap.atAGlance.secondHalfLoggedDays,
-    )} <b class="num">${lastCount}</b></div>${mid}${caveat}`
+    const thin = trendThinWeeks(halves)
+    if (thin?.mode === 'withhold') {
+      // The whole-half caveat still prints when it fires; the week list then carries no second
+      // copy of its "less logging" clause.
+      deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d vs last ${num(days)}&nbsp;d not compared</div><div class="delta-caveat">${thinWeekList(
+        thin.weeks,
+      )}${
+        sparse?.side === 'late' ? '' : ' &mdash; a fall across such a week may be less logging, not fewer entries'
+      }</div>${mid}${caveat}`
+    } else {
+      const thinBit =
+        thin?.mode === 'disclose'
+          ? [
+              thin.first.length > 0 ? `the first half includes ${thinWeekList(thin.first, 'which')}` : '',
+              thin.last.length > 0 ? `the later half includes ${thinWeekList(thin.last, 'which')}` : '',
+            ]
+              .filter((x) => x !== '')
+              .map((x) => `<div class="delta-caveat">${x}</div>`)
+              .join('')
+          : ''
+      deltaHtml = `<div class="delta">first ${num(days)}&nbsp;d${obs(
+        snap.atAGlance.firstHalfLoggedDays,
+      )} <b class="num">${firstCount}</b> &rarr; last ${num(days)}&nbsp;d${obs(
+        snap.atAGlance.secondHalfLoggedDays,
+      )} <b class="num">${lastCount}</b></div>${mid}${caveat}${thinBit}`
+    }
   }
   // NAME THIS ELEMENT'S OWN PARTITION, AND ITS EXPOSURE. The cold read counted four different
   // day-groupings on one page (the window, the weekly bars, these halves, and the trial's own
@@ -5597,7 +5850,11 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
       ${symptomChart(s, markers, snap.scope.endDate)}
       <div class="subnote">${num(s.symptomDays)} of ${num(s.windowDays)} days had an entry · ${num(
     s.loggedDays,
-  )} of ${num(s.windowDays)} days logged${halvesBit}.</div>
+  )} of ${num(s.windowDays)} days logged${halvesBit}${
+    s.lateLogged
+      ? ` · ${num(s.lateLogged.count)} of ${num(s.count)} logged ${lateLagPhrase(s.lateLogged, 'd')} after the time given`
+      : ''
+  }.</div>
     </div>`
 }
 
@@ -9490,6 +9747,7 @@ export function renderReport(snap: ReportSnapshot): string {
   ${signalmentBlock(snap)}
   ${safetyBand(snap)}
   ${headline(snap)}
+  ${lateLoggedNote(snap)}
   ${weightBlock(snap)}
   ${atAGlance(snap)}
   ${dietTrialSection(snap)}
@@ -9622,6 +9880,8 @@ const STYLE = `
   .safetyband .flag b{font-weight:700;}
 
   .headline{margin-top:14px;font-size:13.5px;line-height:1.45;border-left:3px solid var(--ink);padding:2px 0 2px 12px;}
+  .limit.checked{margin-top:14px;}
+  .latelog{margin-top:6px;font-size:12px;line-height:1.5;border-left:3px solid var(--ink);padding:2px 0 2px 12px;}
   .headline b{font-weight:700;}
 
   /* Weight strip — ruled above and below (CUL-1000 item 1), not boxed and tinted. */
