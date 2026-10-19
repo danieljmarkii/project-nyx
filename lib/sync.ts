@@ -44,8 +44,11 @@ import {
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
   parentLandedSql,
+  parentCausedRefusalSql,
   visitLandedSql,
   incidentFloorPushQueueSql,
+  PARENT_LINKS,
+  type ParentLink,
   classifyFloorCheckFailure,
   formatFloorCheckError,
   type SyncFailureClass,
@@ -310,6 +313,10 @@ export async function markSynced(
       [row.id, row.updated_at ?? null],
     );
   }
+  // CUL-2032 — every row here LANDED, whether or not the guard above matched (an edit
+  // inside the gap leaves the newer version queued, but the server holds this one), so
+  // its parked children get their fresh try.
+  await rearmChildrenOf(db, table, rows.map((r) => r.id));
 }
 
 // The same sweep for the two queues that need no guard, because their rows cannot
@@ -342,6 +349,8 @@ export async function markSyncedInsertOnly(
       chunk,
     );
   }
+  // CUL-2032 — a landed call or care answer re-arms the rows that name it.
+  await rearmChildrenOf(db, table, ids);
 }
 
 // Record ONE row's failed push (B-398). The whole retry-budget policy is here, in
@@ -513,109 +522,173 @@ type RemoteUpsertRow = object;
 //    stuck, which is normally one row.
 //
 // 3. A GIVE-UP, via recordPushFailure. See there for the policy.
-const NO_REFUSED_PARENTS: ReadonlyMap<string, string> = new Map();
+/** A parent this phone holds REFUSED (`synced = 0`, `sync_error` set), as a child's queue read
+ *  saw it: the link it is reached through, and the refused VERSION (`updated_at`) on a parent
+ *  that has one. An insert-only parent has no version: its row never changes. */
+type RefusedParent = { link: ParentLink; id: string; version: string | null };
+type RefusedParents = ReadonlyMap<string, readonly RefusedParent[]>;
+const NO_REFUSED_PARENTS: RefusedParents = new Map();
 
 /**
- * A 23503 that names the EVENT foreign key (`meals_event_id_fkey`, `weight_checks_event_id_fkey`,
- * "Key (event_id)=…"), and only that one. A meal also names its food (`food_item_id`), whose
- * 23503 says the food pre-sync has not landed yet: that wait can end, so it keeps the
- * ordinary budget even behind a refused log. A message this does not recognise keeps the
- * budget too, which only delays the stuck count; it never parks a row that could land.
+ * CUL-1986, widened to every link by CUL-2032 — which of these children sit behind a parent
+ * this phone holds REFUSED. `parentLandedSql` / `visitLandedSql` let such a child go up; this
+ * map is what tells the push that a refusal the missing parent explains is not "wait for the
+ * parent" but final, because no landing is coming. Read at queue time, so it can be stale by
+ * the time the answer comes back: `recordRefusedParentFailure` re-checks the same version in
+ * the statement that parks the row.
  */
-function isEventFkViolation(error: { code?: string | null; message?: string | null; details?: string | null }): boolean {
-  if (error.code !== '23503') return false;
-  return /event_id/.test(`${error.message ?? ''} ${error.details ?? ''}`);
-}
-
-/**
- * CUL-1986 — which of these children sit behind an event this phone holds REFUSED
- * (`synced = 0`, `sync_error` set). `parentLandedSql` lets such a child go up; this set is
- * what tells `pushRows` that a 23503 for it is not "wait for the parent" but final, because
- * no landing is coming. Each child maps to the refused VERSION of its log (`updated_at`). Read
- * at queue time, so it can be stale by the time the answer comes back:
- * `recordRefusedParentFailure` re-checks that same version in the statement that parks the row.
- */
-async function refusedParentChildIds(
+async function refusedParentsOf<R extends { id: string }>(
   db: Db,
-  rows: readonly { id: string; event_id: string }[],
-): Promise<Map<string, string>> {
-  if (rows.length === 0) return new Map();
-  const eventIds = [...new Set(rows.map((r) => r.event_id))];
-  const refused = await db.getAllAsync<{ id: string; updated_at: string }>(
-    `SELECT id, updated_at FROM events WHERE synced = 0 AND sync_error IS NOT NULL
-        AND id IN (${eventIds.map(() => '?').join(',')})`,
-    eventIds,
-  );
-  const versionOf = new Map(refused.map((e) => [e.id, e.updated_at]));
-  return new Map(
-    rows.filter((r) => versionOf.has(r.event_id)).map((r) => [r.id, versionOf.get(r.event_id)!]),
-  );
+  child: QueueTable,
+  rows: readonly R[],
+): Promise<Map<string, RefusedParent[]>> {
+  const out = new Map<string, RefusedParent[]>();
+  for (const link of PARENT_LINKS) {
+    if (link.child !== child || rows.length === 0) continue;
+    const idOf = (r: R) => (r as unknown as Record<string, unknown>)[link.column];
+    const parentIds = [...new Set(rows.map(idOf).filter((v): v is string => typeof v === 'string'))];
+    if (parentIds.length === 0) continue;
+    const versioned = pushGuardColumn(link.parent) === 'updated_at';
+    const refused = await db.getAllAsync<{ id: string; version: string | null }>(
+      `SELECT id, ${versioned ? 'updated_at' : 'NULL'} AS version FROM ${link.parent}
+        WHERE synced = 0 AND sync_error IS NOT NULL
+          AND id IN (${parentIds.map(() => '?').join(',')})`,
+      parentIds,
+    );
+    const versionOf = new Map(refused.map((p) => [p.id, p.version]));
+    for (const r of rows) {
+      const parentId = idOf(r);
+      if (typeof parentId !== 'string' || !versionOf.has(parentId)) continue;
+      out.set(r.id, [...(out.get(r.id) ?? []), { link, id: parentId, version: versionOf.get(parentId)! }]);
+    }
+  }
+  return out;
 }
 
 /**
- * CUL-1986 — a refusal behind a refused log is final only while the log is STILL the refused
- * version the queue read saw, checked in the same statement that parks the row. Between the
- * queue read and this answer the owner may have fixed the log and the events drain landed it,
+ * A refusal one of these refused parents can explain: a same-pet guard's 23514, or a 23503
+ * that names the link's column. A meal's 23503 on its FOOD names `food_item_id`, which no
+ * refused parent's link does: that wait can end (the food pre-sync lands next cycle), so it
+ * keeps the ordinary budget even behind a refused log. A message this does not recognise
+ * keeps the budget too, which only delays the stuck count; it never parks a row that could land.
+ */
+function isParentCausedRefusal(
+  error: { code?: string | null; message?: string | null; details?: string | null },
+  parents: readonly RefusedParent[],
+): boolean {
+  if (error.code === '23514') return true;
+  if (error.code !== '23503') return false;
+  const text = `${error.message ?? ''} ${error.details ?? ''}`;
+  return parents.some((p) => text.includes(p.link.column));
+}
+
+/**
+ * CUL-1986 — a refusal behind a refused parent is final only while the parent is STILL the
+ * refused version the queue read saw, checked in the same statement that parks the row.
+ * Between the queue read and this answer the owner may have fixed the parent and it landed,
  * re-arming children that were quarantined then; this row was not yet, so parking it now
- * would strand it with its log on the server (adversarial review pass 1, this PR). The log
- * may even have landed and been refused AGAIN on a newer edit, with its earlier version now
- * on the server, which is why the version is pinned and not just the state (pass 2). If the
- * log moved, or the row changed under the push, nothing is parked here and the ordinary
- * budget applies: one attempt, and the next drain sends it again.
+ * would strand it with its parent on the server (adversarial review pass 1, CUL-1986). The
+ * parent may even have landed and been refused AGAIN on a newer edit, with its earlier
+ * version now on the server, which is why the version is pinned and not just the state
+ * (pass 2). A child with two refused parents parks while either still holds. If none does,
+ * or the row changed under the push, nothing is parked here and the ordinary budget applies:
+ * one attempt, and the next drain sends it again. CUL-2032 carries it to every link.
  */
 async function recordRefusedParentFailure(
   db: Db,
-  table: LwwQueueTable,
-  row: { id: string; updated_at: string },
-  refusedLogVersion: string,
+  table: QueueTable,
+  row: PushedRow,
+  parents: readonly RefusedParent[],
   error: PushError,
 ): Promise<void> {
   const reason = formatSyncError(error);
+  const versioned = pushGuardColumn(table) === 'updated_at';
+  const stillRefused = parents.map((p) =>
+    `EXISTS (SELECT 1 FROM ${p.link.parent} gate_p WHERE gate_p.id = ?
+               AND gate_p.synced = 0 AND gate_p.sync_error IS NOT NULL
+               ${p.version === null ? '' : 'AND gate_p.updated_at IS ?'})`);
   const parked = await db.runAsync(
     `UPDATE ${table} SET sync_error = ?
-      WHERE id = ? AND updated_at IS ?
-        AND EXISTS (SELECT 1 FROM events gate_e WHERE gate_e.id = ${table}.event_id
-                      AND gate_e.synced = 0 AND gate_e.sync_error IS NOT NULL
-                      AND gate_e.updated_at IS ?)`,
-    [reason, row.id, row.updated_at ?? null, refusedLogVersion],
+      WHERE id = ? ${versioned ? 'AND updated_at IS ?' : ''}
+        AND (${stillRefused.join(' OR ')})`,
+    [
+      reason,
+      row.id,
+      ...(versioned ? [row.updated_at ?? null] : []),
+      ...parents.flatMap((p) => (p.version === null ? [p.id] : [p.id, p.version])),
+    ],
   );
   if (parked.changes > 0) {
-    console.warn(`[sync] ${table} ${row.id} refused behind a refused log: ${reason}`);
+    console.warn(`[sync] ${table} ${row.id} refused behind a refused parent: ${reason}`);
     return;
   }
   await applyFailurePolicy(db, table, row, 'rejected', reason);
 }
 
-/** The event children whose refusal can be the parent's rather than their own (CUL-1986). */
-export const EVENT_CHILD_REARM_QUEUES = ['meals', 'weight_checks', 'looks'] as const;
-
-/** A parked child's `sync_error` that a log missing from the server explains: the event
- *  foreign key's 23503 (budgeted or final), or 064's same-pet 23514 on a look. */
-const PARENT_CAUSED_REFUSAL_SQL =
-  `sync_error LIKE '23503:%event_id%' OR sync_error LIKE '23514:%'`;
+/** A row's push failure, routed by whether a refused parent explains it (CUL-2032). */
+async function recordChildPushFailure(
+  db: Db,
+  table: QueueTable,
+  row: PushedRow,
+  error: PushError & { details?: string | null },
+  parentRefused: RefusedParents,
+): Promise<void> {
+  const parents = parentRefused.get(row.id);
+  if (parents && isParentCausedRefusal(error, parents)) {
+    await recordRefusedParentFailure(db, table, row, parents, error);
+  } else {
+    await applyFailurePolicy(db, table, row, classifySyncFailure(error), formatSyncError(error));
+  }
+}
 
 /**
- * CUL-1986 — when events land, their quarantined meals, weigh-ins and looks get one fresh
- * try. A child behind a refused log that the server has never seen is refused itself (a
- * final 23503, or a look's 23514); if the owner then fixes the log and it lands, the child
- * would otherwise stay parked for good, where it used to follow its log up. Clears the
- * quarantine only: `synced` is already 0, and `updated_at` does not move, because no owner
- * changed the row (it is the version markSynced compares and the server's LWW reads). Only
- * a refusal the missing log can explain is cleared (`PARENT_CAUSED_REFUSAL_SQL`), so a row
- * parked for a fault of its own (a 42501, a 22P02) stays parked; a look's 23514 can be
- * either, and is refused again on the next push, once per landing of its log.
+ * CUL-1986, widened to every link by CUL-2032 — when parents land, their children parked on
+ * a refusal the missing parent explains get one fresh try. A child behind a refused parent
+ * the server has never seen is refused itself; if the owner then fixes the parent and it
+ * lands, the child would otherwise stay parked for good. Clears the quarantine only:
+ * `synced` is already 0, and `updated_at` does not move, because no owner changed the row
+ * (it is the version markSynced compares and the server's LWW reads). Only a refusal the
+ * missing parent can explain is cleared (`parentCausedRefusalSql`, per link), so a row
+ * parked for a fault of its own (a 42501, a 22P02) stays parked. Called from markSynced and
+ * markSyncedInsertOnly, so every landing re-arms whatever its drain, and before the
+ * children's drains run in pushAllQueues, so the re-armed rows go up in the same cycle.
  */
-async function rearmChildrenOfLandedEvents(db: Db, eventIds: readonly string[]): Promise<void> {
-  for (let i = 0; i < eventIds.length; i += MARK_SYNCED_CHUNK) {
-    const chunk = eventIds.slice(i, i + MARK_SYNCED_CHUNK);
+async function rearmChildrenOf(db: Db, parent: QueueTable, ids: readonly string[]): Promise<void> {
+  const links = PARENT_LINKS.filter((l) => l.parent === parent);
+  if (links.length === 0 || ids.length === 0) return;
+  for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = ids.slice(i, i + MARK_SYNCED_CHUNK);
     const placeholders = chunk.map(() => '?').join(',');
-    for (const table of EVENT_CHILD_REARM_QUEUES) {
+    for (const link of links) {
       await db.runAsync(
-        `UPDATE ${table} SET sync_attempts = 0, sync_error = NULL
-          WHERE synced = 0 AND (${PARENT_CAUSED_REFUSAL_SQL}) AND event_id IN (${placeholders})`,
+        `UPDATE ${link.child} SET sync_attempts = 0, sync_error = NULL
+          WHERE synced = 0 AND ${parentCausedRefusalSql(link)} AND ${link.column} IN (${placeholders})`,
         chunk,
       );
     }
+  }
+}
+
+/**
+ * CUL-2032 — the other-device half. Another phone of the household fixes a parent and it
+ * lands; this phone's copy stays refused (hydration never rewrites a row at `synced = 0`),
+ * so no local landing ever re-arms its children. When a pull shows the server holding a
+ * parent this phone holds refused, its parked children get the same fresh try. Pulls are
+ * incremental, so this runs once per server change of that parent, not every cycle.
+ */
+async function rearmChildrenOfServerParents(
+  db: Db,
+  parent: 'events' | 'vet_visits' | 'medications' | 'diet_trials',
+  serverIds: readonly string[],
+): Promise<void> {
+  for (let i = 0; i < serverIds.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = serverIds.slice(i, i + MARK_SYNCED_CHUNK);
+    const refused = await db.getAllAsync<{ id: string }>(
+      `SELECT id FROM ${parent} WHERE synced = 0 AND sync_error IS NOT NULL
+          AND id IN (${chunk.map(() => '?').join(',')})`,
+      chunk,
+    );
+    await rearmChildrenOf(db, parent, refused.map((r) => r.id));
   }
 }
 
@@ -627,13 +700,13 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   table: LwwQueueTable,
   rows: L[],
   toRemote: (row: L) => RemoteUpsertRow,
-  // CUL-1986 — the rows whose parent EVENT this phone holds refused (`refusedParentChildIds`).
+  // CUL-1986 / CUL-2032 — the rows whose parent this phone holds refused (`refusedParentsOf`).
   // A 23503 costs a row one attempt because "the parent has not landed yet"; behind a
   // refused parent that wait has no end, so the 23503 is final instead, and the row is
-  // counted as needing the owner within one cycle rather than reading pending for 25
-  // (`recordRefusedParentFailure`, which also takes a look's 23514 behind such a log).
-  // Empty for every other caller, which keeps the ordinary budget.
-  parentRefused: ReadonlyMap<string, string> = NO_REFUSED_PARENTS,
+  // counted as needing the owner within one cycle rather than reading pending for 25. A
+  // same-pet 23514 parks only while that parent is still refused (`recordRefusedParentFailure`).
+  // Empty for a queue with no parent, which keeps the ordinary policy.
+  parentRefused: RefusedParents = NO_REFUSED_PARENTS,
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
   // pushes against each other (syncPendingDietTrials) need this, not just "did it
   // throw" — "ordered" is only true if the second push can be held back when the
@@ -661,11 +734,7 @@ async function pushRows<L extends { id: string; updated_at: string }>(
         .upsert([toRemote(row)], { onConflict: 'id' })
         .select('id');
       if (rowError) {
-        if (parentRefused.has(row.id) && (isEventFkViolation(rowError) || rowError.code === '23514')) {
-          await recordRefusedParentFailure(db, table, row, parentRefused.get(row.id)!, rowError);
-        } else {
-          await recordPushFailure(db, table, row, rowError);
-        }
+        await recordChildPushFailure(db, table, row, rowError, parentRefused);
         continue;
       }
       if (!((one ?? []) as { id: string }[]).some((r) => r.id === row.id)) {
@@ -1036,7 +1105,7 @@ async function drainMealsQueue(): Promise<void> {
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
-  const parentRefused = await refusedParentChildIds(db, unsyncedMeals);
+  const parentRefused = await refusedParentsOf(db, 'meals', unsyncedMeals);
   await pushRows(db, 'meals', unsyncedMeals, (m) => ({
     id: m.id,
     event_id: m.event_id,
@@ -1096,7 +1165,7 @@ async function drainWeightChecksQueue(): Promise<void> {
 
   if (unsynced.length === 0) return;
 
-  const parentRefused = await refusedParentChildIds(db, unsynced);
+  const parentRefused = await refusedParentsOf(db, 'weight_checks', unsynced);
   const landed = await pushRows(db, 'weight_checks', unsynced, (w) => ({
     id: w.id,
     event_id: w.event_id,
@@ -1184,6 +1253,7 @@ async function drainIntakeChecksQueue(): Promise<void> {
       LIMIT 100`,
   );
   if (unsynced.length === 0) return;
+  const parentRefused = await refusedParentsOf(db, 'intake_checks', unsynced);
   await pushRows(db, 'intake_checks', unsynced, (r) => ({
     id: r.id,
     pet_id: r.pet_id,
@@ -1194,7 +1264,7 @@ async function drainIntakeChecksQueue(): Promise<void> {
     answered_at: r.answered_at,
     updated_at: r.updated_at,
     deleted_at: r.deleted_at,
-  }));
+  }), parentRefused);
 }
 
 async function drainLooksQueue(): Promise<void> {
@@ -1223,7 +1293,7 @@ async function drainLooksQueue(): Promise<void> {
 
   if (unsynced.length === 0) return;
 
-  const parentRefused = await refusedParentChildIds(db, unsynced);
+  const parentRefused = await refusedParentsOf(db, 'looks', unsynced);
   await pushRows(db, 'looks', unsynced, (l) => ({
     id: l.id,
     event_id: l.event_id,
@@ -1331,10 +1401,8 @@ async function drainEventsQueue(): Promise<void> {
     logged_via: e.logged_via ?? 'app',
   }));
 
-  // CUL-1986 — a log that lands gives its quarantined meal, weigh-in or look a fresh try,
-  // since a child refused while its log was refused may land now. Before the children's
-  // drains run in pushAllQueues, so the re-armed rows go up in this same cycle.
-  if (landedEvents.size > 0) await rearmChildrenOfLandedEvents(db, [...landedEvents]);
+  // CUL-1986 / CUL-2032 — a log that lands gives its parked children a fresh try: markSynced
+  // re-arms them (`rearmChildrenOf`), before the children's drains run in pushAllQueues.
 
   // CUL-641 — the RETRY half of the delete-side snapshot reconcile, and the exact
   // mirror of the CUL-293 loop in syncPendingWeightChecks above. Removing a weigh-in
@@ -1593,6 +1661,7 @@ async function drainVetDocumentsQueue(): Promise<void> {
       ORDER BY created_at LIMIT 20`,
   );
 
+  const parentRefused = await refusedParentsOf(db, 'vet_documents', unsynced);
   for (const doc of unsynced) {
     try {
       if (needsObjectUpload(doc.local_uri)) {
@@ -1650,7 +1719,7 @@ async function drainVetDocumentsQueue(): Promise<void> {
       // and vet-visit attachments). Leave synced = 0 so the queue retries.
       if (error) {
         console.warn('[sync] vet_document upsert failed:', error.message);
-        await recordPushFailure(db, 'vet_documents', doc, error);
+        await recordChildPushFailure(db, 'vet_documents', doc, error, parentRefused);
         continue;
       }
       if (!((data ?? []) as { id: string }[]).some((r) => r.id === doc.id)) {
@@ -1724,6 +1793,7 @@ async function drainVetAppointmentsQueue(): Promise<void> {
 
   if (unsynced.length === 0) return;
 
+  const parentRefused = await refusedParentsOf(db, 'vet_appointments', unsynced);
   await pushRows(db, 'vet_appointments', unsynced, (a) => ({
     id: a.id, pet_id: a.pet_id, scheduled_at: a.scheduled_at,
     clinic_name: a.clinic_name, vet_name: a.vet_name, reason: a.reason,
@@ -1737,7 +1807,7 @@ async function drainVetAppointmentsQueue(): Promise<void> {
     vet_visit_id: a.vet_visit_id,
     cancelled_at: a.cancelled_at, deleted_at: a.deleted_at,
     created_at: a.created_at, updated_at: a.updated_at,
-  }));
+  }), parentRefused);
 }
 
 /**
@@ -2272,7 +2342,7 @@ async function drainMedicationsQueue(): Promise<void> {
   const itemIds = [...new Set(unsynced.map((m) => m.medication_item_id).filter(Boolean))] as string[];
   await presyncMedicationItems(db, session.user.id, itemIds);
 
-  await pushRows(db, 'medications', unsynced, medicationRowToRemote);
+  await pushRows(db, 'medications', unsynced, medicationRowToRemote, await refusedParentsOf(db, 'medications', unsynced));
 }
 
 // Flush unsynced medication dose-event children (B-117). Mirrors syncPendingMeals
@@ -2386,12 +2456,13 @@ async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promis
   // starting rows costs one cycle; they are still queued and retry next flush,
   // by which time the ending row has either landed or been quarantined (and a
   // quarantined row drops out of the queue, so this cannot starve).
+  const parentRefused = await refusedParentsOf(db, 'diet_trials', unsynced);
   const ending = unsynced.filter((t) => t.status !== 'active');
   const starting = unsynced.filter((t) => t.status === 'active');
   const landed = new Set<string>();
 
   if (ending.length > 0) {
-    const endingLanded = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+    const endingLanded = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote, parentRefused);
     endingLanded.forEach((id) => landed.add(id));
     const stuck = ending.filter((t) => !endingLanded.has(t.id));
     if (stuck.length > 0) {
@@ -2403,7 +2474,7 @@ async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promis
     }
   }
   if (starting.length > 0) {
-    (await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote)).forEach((id) => landed.add(id));
+    (await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote, parentRefused)).forEach((id) => landed.add(id));
   }
   return landed;
 }
@@ -2433,7 +2504,7 @@ async function drainDietTrialFoodsQueue(): Promise<void> {
   const foodIds = [...new Set(unsynced.map((f) => f.food_item_id))];
   await presyncFoodItems(db, session.user.id, foodIds, 'diet trial foods');
 
-  await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
+  await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote, await refusedParentsOf(db, 'diet_trial_foods', unsynced));
 }
 
 // ── Notification-preferences mirror push (B-661 PR 2) ────────────────────────
@@ -2635,6 +2706,8 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<boolean> {
   if (rows.length === 0) return true; // read, and the server holds none: still a pull
 
   const localById = await loadLocalRowMeta(db, 'events', rows.map((r) => r.id), 'updated_at');
+  if (stale()) return false;
+  await rearmChildrenOfServerParents(db, 'events', rows.map((r) => r.id));
   // FR-4: server-time LWW — replace only when remote is strictly newer (see
   // lib/hydration.ts header for the accepted failure mode). FR-7: soft-deletes
   // ride along on the deleted_at column, hidden by the WHERE deleted_at IS NULL reads.
@@ -2947,6 +3020,7 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> 
   const localById = await loadLocalRowMeta(db, 'vet_visits', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return false; // FR-9: signed out during the fetch — don't write to a wiped store.
+  await rearmChildrenOfServerParents(db, 'vet_visits', rows.map((r) => r.id));
   for (const v of toWrite) {
     await db.runAsync(
       `INSERT INTO vet_visits
@@ -3227,6 +3301,7 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
   const localById = await loadLocalRowMeta(db, 'medications', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  await rearmChildrenOfServerParents(db, 'medications', rows.map((r) => r.id));
   for (const m of toWrite) {
     await db.runAsync(
       `INSERT INTO medications
@@ -3355,6 +3430,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
   const localById = await loadLocalRowMeta(db, 'diet_trials', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  await rearmChildrenOfServerParents(db, 'diet_trials', rows.map((r) => r.id));
   for (const t of toWrite) {
     await db.runAsync(
       `INSERT INTO diet_trials
@@ -3845,6 +3921,7 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
      ORDER BY created_at ASC, rowid ASC LIMIT 50`,
       );
       let landedThisPass = 0;
+      const parentRefused = await refusedParentsOf(db, 'care_acknowledgements', rows);
       for (const r of rows) {
         const { data, error } = await supabase
           .from('care_acknowledgements')
@@ -3862,7 +3939,7 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
             console.warn('[sync] care_acknowledgements push failed (retrying next cycle):', error.message);
             return;
           }
-          await recordPushFailure(db, 'care_acknowledgements', r, error);
+          await recordChildPushFailure(db, 'care_acknowledgements', r, error, parentRefused);
           continue;
         }
         if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
@@ -3934,6 +4011,7 @@ async function insertQueuedRows<T extends { id: string }>(
   epoch: number,
 ): Promise<'stop' | number> {
   const db = getDb();
+  const parentRefused = await refusedParentsOf(db, table, rows);
   let landed = 0;
   for (const r of rows) {
     const { data, error } = await supabase.from(table).insert(payload(r)).select('id');
@@ -3943,7 +4021,7 @@ async function insertQueuedRows<T extends { id: string }>(
         console.warn(`[sync] ${table} push failed (retrying next cycle):`, error.message);
         return 'stop';
       }
-      await recordPushFailure(db, table, r, error);
+      await recordChildPushFailure(db, table, r, error, parentRefused);
       continue;
     }
     if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
