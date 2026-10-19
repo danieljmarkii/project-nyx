@@ -1,7 +1,7 @@
 # Mixed Meals and Food Transitions — Requirements
 
-**Version:** 0.1 (draft for PM ruling) | **Last Updated:** 2026-10-19
-**Status:** Requirements round. Six decisions open for the PM (§0.2); everything else is a team convergence from the 2026-10-19 convening. Mocks are the next round (§9).
+**Version:** 0.2 | **Last Updated:** 2026-10-19 (P-2 and P-3 ruled; mock round 1 published)
+**Status:** P-2 and P-3 ruled. P-1, P-4, P-5 and P-6 wait on the PM's reaction to mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY). Everything else is a team convergence from the 2026-10-19 convening.
 **Reads first:** `docs/sessions/2026-10-19-mixed-meals-requirements.md` (the convening record), `docs/nyx-diet-trial-requirements.md` §4.1 and §5, `docs/research/2026-07-diet-trial-competitive-landscape.md`.
 **Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
 
@@ -30,13 +30,13 @@ Team recommendation marked ★. Forecast for the whole build: **5 rows** (§8), 
 - **Why ★:** (b) taxes every meal log forever (Principle 1); (c) makes day 1 of a transition a trip through History. The card's own header says "Before proposing a FOURTH affordance: stop" (`components/ui/MealCompletionCard.tsx:113-122`), so this is a better-than-the-rule brief: the rule protected card density, and (a) holds it to one slot.
 - **Consequence:** (a) needs the worst-case density frame in the mock (§9 frame 1).
 
-**P-2 · The common-ratio scale.**
+**P-2 · The common-ratio scale. RULED (PM, 2026-10-19): (a), five fraction stops.**
 - **Deciding:** which preset ratios the chips offer.
 - **Options:** ★ (a) five stops in fractions: ¾·¼, ⅔·⅓, ½·½, ⅓·⅔, ¼·¾. (b) the published 25/50/75.
 - **Why ★:** the PM's own first bowl (¼ can chicken + ½ can rabbit) is 1:2, which 25/50/75 cannot record without rounding it to something false. Owners mixing cans produce thirds.
 - **Consequence:** (b) pushes the most common real bowl into the custom path.
 
-**P-3 · A mix with an unknown ratio.**
+**P-3 · A mix with an unknown ratio. RULED (PM, 2026-10-19): punted from v1. No "Not sure" button. The custom path takes one unit for both foods, so every v1 mix has a share. The schema keeps `share` nullable for a later path; v1 never writes NULL.**
 - **Deciding:** whether "Not sure" is allowed.
 - **Options:** ★ (a) allow it; stored as `share = NULL`, shown as "Chicken + Rabbit". (b) require a ratio.
 - **Why ★:** exposure is presence-based (§5.1), so nothing clinical needs the share; a required ratio makes owners invent one. Unknown beats a guess.
@@ -71,7 +71,7 @@ Team recommendation marked ★. Forecast for the whole build: **5 rows** (§8), 
 | **T5** | Intake is rated **once, for the bowl**. A refusal carries to each component's history (the loud direction); a finished bowl carries to neither (§5.4). | Designer, Data, Dr. Chen |
 | **T6** | The transition is **derived at read**, never stored as a state and never shown to the owner as one. `transition_started_at` stays NULL; `started_at` is never moved by the app (§6). | Data, Designer, Dr. Chen |
 | **T7** | Share is **stored**, not fed to the engines in v1 (§5.3). | Data, Dr. Chen |
-| **T8** | The ratio on the report is **what the owner entered**, labelled as the owner's estimate: fractions as fractions, amounts as amounts, a typed percentage rounded to 5% with "~". Units that differ show "ratio not recorded"; never a default 50/50 (§7). | Dr. Chen, Designer |
+| **T8** | The ratio on the report is **what the owner entered**, labelled as the owner's estimate: fractions as fractions, amounts as amounts, a typed percentage rounded to 5% with "~". A share that is ever missing (not written by v1, P-3) shows "ratio not recorded"; never a default 50/50 (§7). | Dr. Chen, Designer |
 | **T9** | Readers ship **before** the writer. No mix can be written until every clinical reader is mix-aware (§8). | Eng |
 
 ---
@@ -116,7 +116,7 @@ CREATE TABLE public.meal_components (
   position      SMALLINT NOT NULL CHECK (position BETWEEN 0 AND 7),  -- 0 = the food logged first
   food_item_id  UUID REFERENCES public.food_items(id) ON DELETE SET NULL,
   food_label    TEXT NOT NULL,          -- snapshot; survives a purged food (diet_trials.food_label precedent)
-  share         NUMERIC(4,3) CHECK (share IS NULL OR (share > 0 AND share <= 1)),  -- NULL = not sure
+  share         NUMERIC(4,3) CHECK (share IS NULL OR (share > 0 AND share <= 1)),  -- NULL reserved for a later path; v1 never writes it (P-3)
   share_source  TEXT NOT NULL CHECK (share_source IN ('preset','custom','amounts','unknown')),
   amount_value  NUMERIC CHECK (amount_value IS NULL OR amount_value > 0),
   amount_unit   TEXT CHECK (amount_unit IN ('can','pouch','cup','tbsp','scoop','g','oz')),
@@ -207,8 +207,8 @@ Not a declared rechallenge (out, D8). The report derives a **New foods introduce
 
 ### §7.1 Owner logging (R6 B)
 - **First mix:** "+ Mixed with another food" on the meal card (P-1), for `food_type = 'meal'`. The card hides and the picker opens bound to this event, the `pairedEventId` pattern (`app/log.tsx:76-115`), reusing `FoodPicker`'s SELECTION mode (`components/log/FoodPicker.tsx:39-50`) with the first food locked and a cap of 2. Banner: "Mixing with {food} in {Pet}'s bowl. Pick the other food."
-- **Ratio step:** "About how much of each?" A split bar, the five chips (P-2), first food on the left, nothing preselected; the chip tap is the save (the `IntakeFirstMealSheet` pattern). "Not sure" saves `share = NULL` (P-3). "Other amounts…" opens one field per food with a unit, or a percentage.
-- **Different units** (½ can wet + ¼ cup dry): amounts kept verbatim, `share = NULL`, "Different measures, so no split is shown." The app never converts wet to dry.
+- **Ratio step:** "About how much of each?" A split bar, the five chips (P-2), first food on the left, nothing preselected; the chip tap is the save (the `IntakeFirstMealSheet` pattern). "Other amounts…" opens one unit picker shared by both foods (cans, cups, grams, %) and one field per food. There is no "Not sure" (P-3).
+- **One unit per bowl** means a share always exists and the app never converts wet to dry. A bowl measured in two different units is out of v1; the owner enters a % instead.
 - **After the fact:** the same line on the event detail screen, twin of the retroactive med entry (`app/event/[id].tsx:1022-1036`).
 - **Repeat (the transition days):** a mix enters FAB recency as one item keyed by its **set of foods**, not its ratio (`lib/fabRecentFoods.ts`). The pill reads "⅓ Chicken + ⅔ Rabbit" and logs the latest ratio in one press.
 - **Moving the ratio:** on a mix's completion card, the mixing slot becomes a two-way stepper: "More Chicken ‹ ⅓·⅔ › More Rabbit." One tap moves one stop in **either** direction. The app never picks the direction (R4).
@@ -217,7 +217,7 @@ Not a declared rechallenge (out, D8). The report derives a **New foods introduce
 - **Voice:** past tense, no "!", and the word "transition" never appears in owner copy.
 
 ### §7.2 History, spine and card
-One row, one node. Label "⅓ Chicken + ⅔ Rabbit"; with an unknown split, "Chicken + Rabbit". The ratio is text, never a pie (Principle 8; a pie at row size leans on colour). The spine glyph is the meal disc with a "+". Card title in the CUL-894 shape: "Logged · ⅓ Chicken + ⅔ Rabbit". On truncation the ratio is protected (`flexShrink: 0`, C-8). **Runs** (`lib/spineCompaction.ts:141-148`) key on the composition key **plus ratio**: identical mixes compact, and a ratio step breaks the run, so the step is visible in the record.
+One row, one node. Label "⅓ Chicken + ⅔ Rabbit"; with no share (a later path only, P-3), "Chicken + Rabbit". The ratio is text, never a pie (Principle 8; a pie at row size leans on colour). The spine glyph is the meal disc with a "+". Card title in the CUL-894 shape: "Logged · ⅓ Chicken + ⅔ Rabbit". On truncation the ratio is protected (`flexShrink: 0`, C-8). **Runs** (`lib/spineCompaction.ts:141-148`) key on the composition key **plus ratio**: identical mixes compact, and a ratio step breaks the run, so the step is visible in the record.
 
 ### §7.3 The vet report
 - **Meal log (appendix E):** a mix is its own row, and every share is **named**, so a ramp cannot print inverted when position 0 differs between bowls: "Rabbit LID + Chicken Pâté, mixed · ×7 · Oct 19–25 · Rabbit about ⅔ → about ¼". The ratio is shown as the owner entered it and labelled owner-estimated (T8).
@@ -258,13 +258,16 @@ One row, one node. Label "⅓ Chicken + ⅔ Rabbit"; with an unknown split, "Chi
 
 **Adversarial record.** Pass 1 (2026-10-19, isolated, spec stage): 10 breaks, 9 quiet and 1 loud, all folded in above and marked "pass 1". Held: union exposure on one `MealEvent`, constant-staple washout during a transition, denominator counted once, pre-start bowls out of window, mixed bowls excluded from per-food rates, unknown ratio inert in every engine, plain-vs-mix same-minute separation. A second pass on the revised §5–§6 has **not** run; the row 3 PR carries the mandatory build-time pass.
 
-## §9 Next round: the mocks
+## §9 Mock round 1 (published 2026-10-19)
+
+`docs/culprit-mixed-meals-mockups.html`, published at https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY. It draws frames 1–3, 5–8, 10, 11, 14 and 15 of the list below, plus P-1 (b), P-4 (b), P-5 (b) and P-6 (b) as labelled options. Frames 4, 9, 12 and 13 and the real-timer prototype follow in round 2.
+
 
 Drawn against the real 5000 ms / 1500 ms / 7000 ms card timers (the med-combo lesson, `docs/medication-food-combo-investigation.md` §9). Options that differ visually (P-1, P-2, P-4) render side by side.
 
 1. The meal card at worst-case density: "+ Mixed with…", the med line and the trial panel together.
 2. The picker in pairing mode: first food locked, banner, cap of 2.
-3. The ratio step: split bar, five chips (and P-2's 25/50/75 alternative), "Not sure", "Other amounts…".
+3. The ratio step: split bar, five chips as ruled (P-2), "Other amounts…".
 4. Custom amounts, same units and different units.
 5. The mix card arriving, title in place, crossfade under Reduce Motion, with the stepper.
 6. The FAB fan with a mix pill at 390 pt and at large text.
@@ -305,9 +308,8 @@ Drawn against the real 5000 ms / 1500 ms / 7000 ms card timers (the med-combo le
 |---|---|
 | Meal card | "+ Mixed with another food" |
 | Picker banner | "Mixing with {food} in {Pet}'s bowl. Pick the other food." |
-| Ratio step | "About how much of each?" · "Not sure" · "Other amounts…" |
+| Ratio step | "About how much of each?" · "Other amounts…" |
 | Custom fields | "Amounts, as you measured them" |
-| Different units | "Different measures, so no split is shown" |
 | Stepper | "More {food} in this bowl" |
 | Event detail | "Mixed bowl · ¼ can Chicken, ½ can Rabbit (about ⅓ and ⅔)" |
 | Heads-up, contents | "This bowl has {protein} in it, from {food}." |

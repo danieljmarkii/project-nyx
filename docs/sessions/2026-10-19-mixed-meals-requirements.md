@@ -42,3 +42,10 @@ Spec v0.1 with six PM decisions (P-1 to P-6), a 5-row build forecast, the migrat
 **Not done this session:** the PR. The session had read access to `project-nyx` only; the doc and this record are committed on a local branch `claude/mixed-meal-transitions` and need a session with push access to open the PR.
 
 **Proposed Tier 1 edit, awaiting PM:** add a Read-These row to `CLAUDE.md`: "`docs/nyx-mixed-meals-requirements.md` 🌱 | Any meal with more than one food, `meal_components`, the ratio, a transition read". The CLAUDE.md budget guard means the row is paid for by a deletion; not written here.
+
+## Later in the session: rulings and mock round 1
+
+The PM ruled **P-2** (five fraction stops) and **P-3** (punt "Not sure" from v1: "what the heck does that even mean"). The custom path now takes one unit for both foods, so every v1 mix has a share. For P-1, P-5 and P-6 the PM asked to see it before ruling, and P-4 needed a plain-words restatement; spec v0.2 records both rulings and points the rest at the mock.
+
+Mock round 1 is `docs/culprit-mixed-meals-mockups.html`, published at https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY. One story throughout (Pixel, chicken to rabbit, ¼ can + ½ can on day one). Sections: the first mix (P-1, with the picker-switch option beside it), the days after (FAB pill, stepper, History runs, editing), a mix during a trial at the card's worst-case density, P-4 side by side with a plain-words box, P-5 side by side, and the vet report page 1 plus appendix rows (P-6, with the setup-suggestion option). Reaction prompts R-1 to R-5 close the page.
+
