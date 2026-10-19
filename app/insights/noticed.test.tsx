@@ -22,8 +22,10 @@ jest.mock('../../components/designV2/patterns/MonthInstrument', () => {
 });
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
+// Mutable so a test can hand the screen a confirmed trial input (CUL-2006); null by default.
+let mockDietTrial: { input: unknown; inputIsForPet: boolean } = { input: null, inputIsForPet: false };
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
+  useDietTrial: () => ({ ...mockDietTrial, isLoading: false, reload: jest.fn() }),
 }));
 
 // CUL-914 (c): the pairing is held, and the vomit-day read exists only for it. The mock is
@@ -107,6 +109,7 @@ import { notEnoughData } from '../../lib/analytics';
 import { LOOK_VOCAB_VERSION } from '../../constants/lookWords';
 import { localDayIndex, dayKeyFromIndex } from '../../lib/utils';
 import { noticedCardHref } from '../../lib/lookPatterns';
+import { doorRecordRefusal, loadLookWithheldFacts, lookWithheldState } from '../../lib/lookWithheld';
 
 const A = analytics as jest.Mocked<typeof analytics>;
 const NOW = Date.now();
@@ -132,6 +135,7 @@ function record() {
 beforeEach(() => {
   jest.clearAllMocks();
   setPairingOn(false);
+  mockDietTrial = { input: null, inputIsForPet: false };
   mockWithheldFacts = {
     petId: 'p1', serverIntakeDecline: false, trialNotEating: false, recentQualifyingMeals: [],
   };
@@ -192,6 +196,45 @@ describe('where it lands', () => {
     expect(href).toMatch(/[?&]ts=\d+/);
     // And it MOVES between taps, which is the whole point of a nonce.
     expect(noticedCardHref(1)).not.toBe(noticedCardHref(2));
+  });
+});
+
+// CUL-2006 — the trial arm is `notEatingFact`, as Home's: an eating check that did not answer
+// is null (ignorance), which the withheld predicate fails CLOSED on and the door ignores.
+describe('a trial whose eating check did not answer reaches the predicate as unknown (CUL-2006)', () => {
+  const trialInput = (intakeDeclineUnknown: boolean) => ({
+    trial: { id: 't', status: 'active', startedAt: dayKeyFromIndex(TODAY - 20), endedAt: null, targetDurationDays: 56, foodLabel: null },
+    nowMs: NOW,
+    petName: 'Mochi',
+    species: 'cat',
+    petObjectPronoun: 'her',
+    otherPetNames: [],
+    intakeDeclineHeadline: null,
+    intakeDeclineFacts: [],
+    intakeDeclineUnknown,
+  });
+  const trialArmPassed = async (): Promise<unknown> => {
+    const load = loadLookWithheldFacts as jest.Mock;
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    return load.mock.calls[load.mock.calls.length - 1][1];
+  };
+
+  it('a check that answered and saw nothing is false (non-vacuity)', async () => {
+    mockDietTrial = { input: trialInput(false), inputIsForPet: true };
+    const { findByTestId } = render(<PatternsScreen />);
+    await findByTestId('what-you-noticed-card');
+    expect(await trialArmPassed()).toBe(false);
+  });
+
+  it('a check that threw is null, never false: withheld (unknown), and the door stays shut', async () => {
+    mockDietTrial = { input: trialInput(true), inputIsForPet: true };
+    render(<PatternsScreen />);
+    const arm = await trialArmPassed();
+    expect(arm).toBeNull();
+    // The shared predicate over what the screen passed (its load is the only stub here).
+    const facts = { petId: 'p1', serverIntakeDecline: false, trialNotEating: arm as boolean | null, recentQualifyingMeals: [] };
+    expect(lookWithheldState({ id: 'p1' }, facts)).toBe('unknown');
+    expect(doorRecordRefusal({ id: 'p1' }, facts)).toBe(false);
   });
 });
 

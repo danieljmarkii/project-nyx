@@ -39,10 +39,19 @@ jest.mock('./patternsTiming', () => {
 
 const mockLoadTrialPredicateFacts = jest.fn();
 const mockLoadDietTrialFacts = jest.fn();
+// The device's own eating check (CUL-2006). Its default is the production answer for a pet
+// the phone sees eating, `[]` (answered, no decline); a test that needs a decline or a
+// thrown check (`null`, as `readIntakeDecline` returns on a throw) sets it.
+const mockReadIntakeDecline = jest.fn();
 jest.mock('./dietTrialFacts', () => ({
   loadTrialPredicateFacts: (...a: unknown[]) => mockLoadTrialPredicateFacts(...a),
   loadDietTrialFacts: (...a: unknown[]) => mockLoadDietTrialFacts(...a),
+  readIntakeDecline: (...a: unknown[]) => mockReadIntakeDecline(...a),
 }));
+beforeEach(() => {
+  mockReadIntakeDecline.mockReset();
+  mockReadIntakeDecline.mockResolvedValue([]);
+});
 
 /** The strip loader's trial-less answer — the card's state 0 (`loadDietTrialFacts`' `base`). */
 const trialLessFacts = { trial: null, nowMs: Date.now(), petName: 'Nyx', species: 'cat', petObjectPronoun: 'her', otherPetNames: [] };
@@ -82,7 +91,7 @@ import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLoc
 import { usePetStore } from '../store/petStore';
 import { foldIdentity } from './signalFold';
 import { collapseEpisodes } from './mealTiming';
-import { isAnimalNotEating, type TrialCardInput } from './dietTrialCard';
+import { isAnimalNotEating, notEatingFact, type TrialCardInput } from './dietTrialCard';
 import { claimAnalysisChain } from './analysisChain';
 
 const idx = (key: string): number => {
@@ -1647,6 +1656,110 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
     it('a pet the loaded list does not hold (archived) is missing, never a Try again that cannot succeed', async () => {
       mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
       expect((await loadSignalScreen('pet-archived', 'trial_response')).status).toBe('missing');
+    });
+
+    // CUL-2006 — an eating check that did not answer is not evidence of eating. The trial
+    // register is `notEatingFact` (null on #1241's `intakeDeclineUnknown`), and the device's
+    // own check is read for EVERY pet, as Home reads it (CUL-1975): unknown withholds the
+    // falling pair and raises nothing.
+    describe('CUL-2006 — a failed eating check never reads as eating', () => {
+      const unknownCheck = (): TrialCardInput => ({ ...eating(), intakeDeclineFacts: [], intakeDeclineUnknown: true }) as TrialCardInput;
+      const deviceDecline = [{ trigger: 'consecutive_low', refusedFoodLabel: null, headline: 'Nyx has eaten less than usual for 3 days.' }];
+      const reflection = (): CachedFinding['finding'] => ({
+        type: 'reflection',
+        priorityClass: 'insight',
+        symptomType: 'vomit',
+        currentCount: 1,
+        priorCount: 5,
+        direction: 'improving',
+        windowDays: 14,
+        density: { comparable: true, currentLoggingDays: 12, priorLoggingDays: 12 },
+      });
+
+      it('the fixture is an unanswered check, not a not-eating fact', () => {
+        expect(isAnimalNotEating(unknownCheck())).toBe(false);
+        expect(notEatingFact(unknownCheck())).toBeNull();
+      });
+
+      it('a trial whose eating check threw never draws the falling pair: the load says it has not answered', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(unknownCheck());
+        await expect(loadSignalScreen('pet-1', 'trial_response')).rejects.toThrow(/not answered/);
+      });
+
+      it('the same unanswered check raises nothing: a rising pair is ready, and no safety face appears', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('more_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(unknownCheck());
+        const out = await loadSignalScreen('pet-1', 'trial_response');
+        if (out.status !== 'ready') throw new Error(out.status);
+        expect(out.model.safety).toBe(false);
+      });
+
+      it('a trial pet the trial read sees eating is still withheld on the device’s own decline', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(eating());
+        mockReadIntakeDecline.mockResolvedValue(deviceDecline);
+        expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
+      });
+
+      // A positive fact in hand is never downgraded to "not answered" by an unknown beside it:
+      // the set-aside copy says why, where a rejection would only say it could not look.
+      it('a device decline beside a trial check that threw is withheld, never "not answered"', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(unknownCheck());
+        mockReadIntakeDecline.mockResolvedValue(deviceDecline);
+        expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
+      });
+
+      it('a trial not-eating fact beside a device check that threw is withheld, never "not answered"', async () => {
+        mockReadSignalCache.mockResolvedValue({ findings: [trialPair('fewer_during_trial')] });
+        mockLoadDietTrialFacts.mockResolvedValue(refusing());
+        mockReadIntakeDecline.mockResolvedValue(null);
+        expect(await loadSignalScreen('pet-1', 'trial_response')).toEqual({ status: 'withheld', petName: 'Nyx' });
+      });
+
+      // The worst instance: a pet with NO trial. The loader hands back its base input (the
+      // production shape, never null), which carries no decline fields at all.
+      describe('a pet with no trial: the device’s own check answers', () => {
+        const falling = () => ({ findings: [cachedOf(reflection())] });
+        const identity = foldIdentity(reflection());
+
+        beforeEach(() => {
+          mockLoadDietTrialFacts.mockResolvedValue(trialLessFacts);
+        });
+
+        it('the check is asked for the route’s pet', async () => {
+          mockReadSignalCache.mockResolvedValue(falling());
+          await loadSignalScreen('pet-1', identity);
+          expect(mockReadIntakeDecline).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1' }), expect.any(Number));
+        });
+
+        it('answered, no decline: the falling pair is drawn', async () => {
+          mockReadSignalCache.mockResolvedValue(falling());
+          mockReadIntakeDecline.mockResolvedValue([]);
+          expect((await loadSignalScreen('pet-1', identity)).status).toBe('ready');
+        });
+
+        it('a decline the phone can see withholds the falling pair, with no intake_decline in the Signal', async () => {
+          mockReadSignalCache.mockResolvedValue(falling());
+          mockReadIntakeDecline.mockResolvedValue(deviceDecline);
+          expect(await loadSignalScreen('pet-1', identity)).toEqual({ status: 'withheld', petName: 'Nyx' });
+        });
+
+        it('a check that threw (null) never draws the falling pair: the load says it has not answered', async () => {
+          mockReadSignalCache.mockResolvedValue(falling());
+          mockReadIntakeDecline.mockResolvedValue(null);
+          await expect(loadSignalScreen('pet-1', identity)).rejects.toThrow(/not answered/);
+        });
+
+        it('a check that threw raises nothing: a finding that is not a falling pair is ready, with no safety face', async () => {
+          mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(postprandial())] });
+          mockReadIntakeDecline.mockResolvedValue(null);
+          const out = await loadSignalScreen('pet-1', 'postprandial_timing:vomit');
+          if (out.status !== 'ready') throw new Error(out.status);
+          expect(out.model.safety).toBe(false);
+        });
+      });
     });
 
     it('findings Home keeps over a refusing cat still render; only an expired stood-down line is missing', async () => {

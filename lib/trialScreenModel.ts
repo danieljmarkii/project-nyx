@@ -12,10 +12,11 @@
 // THE WITHHOLDING, IN ONE PLACE (S3, S4, S7; v1.1 §12 findings 2, 3, 6, 7):
 //   • a safety face (`intake_decline`, `trial_refusal`) draws the card's flag lines first,
 //     then the doors, then the card's own actions for that state, and no ledger at all;
-//   • the coverage sentence and the ledger are withheld whenever `isAnimalNotEating(input)`,
-//     which reads the RAW refusal facts, so a refusal the card's register has stood down
-//     still withholds them (the card keeps printing its ratio by a standing ruling; the
-//     screen may add withholding, and does);
+//   • the coverage sentence and the ledger are withheld whenever `notEatingFact(input)` is
+//     not false: a not-eating fact (the RAW refusal facts, so a refusal the card's register
+//     has stood down still withholds them; the card keeps printing its ratio by a standing
+//     ruling, and the screen may add withholding, and does) or an eating check that did not
+//     answer (CUL-2006: unknown withholds the reassurance, never raises the alarm);
 //   • the milestone draws no ledger and no coverage beside its stop decision;
 //   • the vomiting line is the strip's own field, verbatim, null exactly when the strip's
 //     is, and it sits inside the facts with no heading;
@@ -29,7 +30,7 @@ import { allowedFoodsOn } from './dietTrial';
 import {
   BLIND_SPOT_QUALIFIER,
   formatTrialDate,
-  isAnimalNotEating,
+  notEatingFact,
   planTrialCard,
   resolveTrialCard,
   resolveTrialStrip,
@@ -138,9 +139,10 @@ export interface TrialScreenTrial {
    *  bowl in force, CUL-1554). Get ready reads it to route that lead under *is she eating
    *  it*. */
   freeFed: boolean;
-  /** `isAnimalNotEating(input)`: the register Home feeds `visibleFindings`, handed to the
-   *  Signal door (TS-9) so the door and Home's card can never disagree about a falling pair. */
-  notEating: boolean;
+  /** `notEatingFact(input)`: the register Home feeds `visibleFindings`, handed to the Signal
+   *  door (TS-9) so the door and Home's card can never disagree about a falling pair. Null
+   *  when the eating check did not answer (CUL-2006); the door reads it `!== false`. */
+  notEating: boolean | null;
   /** The LOCKED blind-spot qualifier, once, at the foot of the card the ledger and the
    *  facts share (§3.5, §5.2: the qualifier sits on the claim). */
   qualifier: string | null;
@@ -225,8 +227,9 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   }
 
   // S7 — WHERE HOME WITHHOLDS ITS RATIO, SO DOES THIS. Over a pet that may not be eating
-  // (`isAnimalNotEating`, the raw refusal facts, so a refusal the register has stood down
-  // still counts) the card's record region is resolved WITHOUT coverage: every register
+  // (`notEatingFact`, the raw refusal facts, so a refusal the register has stood down
+  // still counts; and since CUL-2006 an eating check that did not answer, which is not
+  // evidence of eating) the card's record region is resolved WITHOUT coverage: every register
   // that states it (the plain sentence, the "so far" paragraph) then speaks its own
   // no-coverage form, with the off-diet floor intact. No string is matched or invented,
   // and neither the state nor the register reads coverage (adversarial pass, TS-4).
@@ -258,9 +261,11 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   // implies that anything matched, so nothing reassuring reaches a pet that may not be
   // eating. The drop stays for the residual (days logged, nothing classified, nothing
   // unnamed), which no register can yet explain.
-  const notEating = isAnimalNotEating(input);
+  // Three states (CUL-2006): every reassurance below withholds on `!== false`; nothing here
+  // reads it as an alarm, so an unknown check only ever takes a ratio or a ledger away.
+  const notEating = notEatingFact(input);
   const running = input.trial.status === 'active';
-  const projected = notEating && running;
+  const projected = notEating !== false && running;
   const card = trialScreenCard(input);
   const unclassifiedRecord =
     projected &&
@@ -303,7 +308,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   const safety = safetyLines.length > 0;
 
   const ledger =
-    safety || state === 'milestone' || notEating || facts.status !== 'ready'
+    safety || state === 'milestone' || notEating !== false || facts.status !== 'ready'
       ? null
       : buildTrialLedger({ input, facts: facts.facts, timeZone: args.timeZone });
   // S9 (CUL-1336): a failed ledger read is said where the ledger would be, never a silent
@@ -312,7 +317,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     facts.status === 'unreadable' &&
     !safety &&
     state !== 'milestone' &&
-    !notEating &&
+    notEating === false &&
     !input.freeFed &&
     !input.freeFedOverlap
       ? ledgerUnreadableLine(args.petName)
@@ -413,7 +418,7 @@ export function trialScreenCard(input: TrialCardInput): TrialCardModel {
  *  trial's pet may not be eating (S7). One function, so the card and the plan the model
  *  reads its register from (`freeFed`) are resolved over the same input. */
 function screenCardInput(input: TrialCardInput): TrialCardInput {
-  const projected = isAnimalNotEating(input) && input.trial?.status === 'active';
+  const projected = notEatingFact(input) !== false && input.trial?.status === 'active';
   return projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input;
 }
 

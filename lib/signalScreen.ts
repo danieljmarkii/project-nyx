@@ -42,9 +42,9 @@ import { getDietTrialProgress } from './analytics';
 import { episodeDaysOf, type CompareWindowsModel, type WeeklyBucketsModel } from './chartModels';
 import { getDb } from './db';
 import { LOOK_EVENT_TYPE } from './monthReads';
-import { isAnimalNotEating, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
+import { notEatingFact, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
 import { isTrialRunning } from './dietTrial';
-import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
+import { loadDietTrialFacts, loadTrialPredicateFacts, readIntakeDecline } from './dietTrialFacts';
 import { classifyEpisodeSet, collapseEpisodes, compareOnsets, DEFAULT_MEAL_TIMING_CONFIG, type OnsetConfidence } from './mealTiming';
 import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
@@ -185,9 +185,10 @@ export interface SignalScreenInput {
   verdicts: Readonly<Record<string, EpisodeVerdict | null>>;
   doses: readonly SignalDoseDay[];
   /**
-   * The pet's not-eating register (CUL-1216, BRK-6): `isAnimalNotEating` over the route's
-   * pet's trial facts, OR'd with an `intake_decline` in its Signal; null when the facts did
-   * not answer. A falling vomit pair is withheld on true AND on null (fail closed).
+   * The pet's not-eating register (CUL-1216, BRK-6): `notEatingFact` over the route's pet's
+   * trial facts, OR'd with the device's own eating check and an `intake_decline` in its
+   * Signal; null when the facts or the check did not answer (CUL-2006). A falling vomit pair
+   * is withheld on true AND on null (fail closed).
    */
   notEating: NotEatingFact;
   /**
@@ -1471,7 +1472,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const pet = pets.find((p) => p.id === petId) ?? null;
   const symptom = signalChartSymptomOf(cached.finding);
 
-  const [episodes, logged, gateRead, trialFacts] = await Promise.all([
+  const [episodes, logged, gateRead, trialFacts, deviceDecline] = await Promise.all([
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
     // A gate that cannot read its days is UNANSWERED (C-12): no compare is drawn, and the
@@ -1493,6 +1494,11 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
           return null;
         })
       : Promise.resolve(null),
+    // CUL-2006 — the device's own eating check, for every pet, as Home reads it (CUL-1975).
+    // For a pet with no trial the loader above returns its base input before any decline
+    // read, so without this the screen never saw a decline the phone can see. Null is "did
+    // not answer" (it catches its own throw), never "eating".
+    pet ? readIntakeDecline({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs) : Promise.resolve(null),
   ]);
   // CUL-1360: which trial the cached finding counted. A trial finding from a trial since
   // replaced or restarted is not this trial's: the screen draws a rising one in its own day
@@ -1503,13 +1509,18 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trial: trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null,
   };
   const trial = signalTrialWindowFor(cached.finding, trialAnchor);
-  // Either fact withholds: the Signal's own intake decline answers on its own, whatever the
-  // trial read did (a positive fact in hand is never downgraded to "unknown").
-  const notEating: NotEatingFact = signalSaysNotEating(row?.findings ?? [])
-    ? true
-    : trialFacts
-      ? isAnimalNotEating(trialFacts)
-      : null;
+  // Any positive fact withholds: the Signal's own intake decline, the trial register or the
+  // device's decline answers on its own, whatever the other reads did (a positive fact in
+  // hand is never downgraded to "unknown"). Otherwise an eating check that did not answer —
+  // the trial read thrown, its decline read thrown (`notEatingFact` null, CUL-1972) or the
+  // device read thrown — is null, never "eating" (CUL-2006): the falling pair stays out.
+  const trialNotEating = trialFacts ? notEatingFact(trialFacts) : null;
+  const notEating: NotEatingFact =
+    signalSaysNotEating(row?.findings ?? []) || trialNotEating === true || (deviceDecline?.length ?? 0) > 0
+      ? true
+      : trialNotEating === null || deviceDecline === null
+        ? null
+        : false;
   // THE SCREEN ANSWERS ONLY FOR A FINDING HOME WOULD DRAW (TS-9 · CUL-1305, adversarial pass).
   // The route is reachable without Home's stack in between: a stale door (the trial screen's
   // Signal row, a card tapped a beat before a regen landed), a deep link. The sentence is the
