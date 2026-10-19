@@ -513,6 +513,68 @@ type RemoteUpsertRow = object;
 //    stuck, which is normally one row.
 //
 // 3. A GIVE-UP, via recordPushFailure. See there for the policy.
+const NO_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * A 23503 that names the EVENT foreign key (`meals_event_id_fkey`, `weight_checks_event_id_fkey`,
+ * "Key (event_id)=…"), and only that one. A meal also names its food (`food_item_id`), whose
+ * 23503 says the food pre-sync has not landed yet: that wait can end, so it keeps the
+ * ordinary budget even behind a refused log. A message this does not recognise keeps the
+ * budget too, which only delays the stuck count; it never parks a row that could land.
+ */
+function isEventFkViolation(error: { code?: string | null; message?: string | null; details?: string | null }): boolean {
+  if (error.code !== '23503') return false;
+  return /event_id/.test(`${error.message ?? ''} ${error.details ?? ''}`);
+}
+
+/**
+ * CUL-1986 — which of these children sit behind an event this phone holds REFUSED
+ * (`synced = 0`, `sync_error` set). `parentLandedSql` lets such a child go up; this set is
+ * what tells `pushRows` that a 23503 for it is not "wait for the parent" but final, because
+ * no landing is coming. Read at queue time: an owner edit that re-arms the event in the
+ * push gap is caught by `rearmChildrenOfLandedEvents` when that edit lands.
+ */
+async function refusedParentChildIds(
+  db: Db,
+  rows: readonly { id: string; event_id: string }[],
+): Promise<Set<string>> {
+  if (rows.length === 0) return new Set();
+  const eventIds = [...new Set(rows.map((r) => r.event_id))];
+  const refused = await db.getAllAsync<{ id: string }>(
+    `SELECT id FROM events WHERE synced = 0 AND sync_error IS NOT NULL
+        AND id IN (${eventIds.map(() => '?').join(',')})`,
+    eventIds,
+  );
+  const refusedIds = new Set(refused.map((e) => e.id));
+  return new Set(rows.filter((r) => refusedIds.has(r.event_id)).map((r) => r.id));
+}
+
+/** The event children whose refusal can be the parent's rather than their own (CUL-1986). */
+export const EVENT_CHILD_REARM_QUEUES = ['meals', 'weight_checks', 'looks'] as const;
+
+/**
+ * CUL-1986 — when events land, their quarantined meals, weigh-ins and looks get one fresh
+ * try. A child behind a refused log that the server has never seen is refused itself (a
+ * final 23503, or a look's 23514); if the owner then fixes the log and it lands, the child
+ * would otherwise stay parked for good, where it used to follow its log up. Clears the
+ * quarantine only: `synced` is already 0, and `updated_at` does not move, because no owner
+ * changed the row (it is the version markSynced compares and the server's LWW reads). A
+ * child refused for a fault of its own is refused again on the next push, once.
+ */
+async function rearmChildrenOfLandedEvents(db: Db, eventIds: readonly string[]): Promise<void> {
+  for (let i = 0; i < eventIds.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = eventIds.slice(i, i + MARK_SYNCED_CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    for (const table of EVENT_CHILD_REARM_QUEUES) {
+      await db.runAsync(
+        `UPDATE ${table} SET sync_attempts = 0, sync_error = NULL
+          WHERE synced = 0 AND sync_error IS NOT NULL AND event_id IN (${placeholders})`,
+        chunk,
+      );
+    }
+  }
+}
+
 async function pushRows<L extends { id: string; updated_at: string }>(
   db: Db,
   // LWW only: every batch writer in this file pushes a table an owner can rewrite,
@@ -521,6 +583,12 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   table: LwwQueueTable,
   rows: L[],
   toRemote: (row: L) => RemoteUpsertRow,
+  // CUL-1986 — the rows whose parent EVENT this phone holds refused (`refusedParentChildIds`).
+  // A 23503 costs a row one attempt because "the parent has not landed yet"; behind a
+  // refused parent that wait has no end, so the 23503 is final instead, and the row is
+  // counted as needing the owner within one cycle rather than reading pending for 25.
+  // Empty for every other caller, which keeps the ordinary budget.
+  parentRefused: ReadonlySet<string> = NO_IDS,
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
   // pushes against each other (syncPendingDietTrials) need this, not just "did it
   // throw" — "ordered" is only true if the second push can be held back when the
@@ -548,7 +616,11 @@ async function pushRows<L extends { id: string; updated_at: string }>(
         .upsert([toRemote(row)], { onConflict: 'id' })
         .select('id');
       if (rowError) {
-        await recordPushFailure(db, table, row, rowError);
+        if (parentRefused.has(row.id) && isEventFkViolation(rowError)) {
+          await applyFailurePolicy(db, table, row, 'terminal', formatSyncError(rowError));
+        } else {
+          await recordPushFailure(db, table, row, rowError);
+        }
         continue;
       }
       if (!((one ?? []) as { id: string }[]).some((r) => r.id === row.id)) {
@@ -882,13 +954,17 @@ async function drainMealsQueue(): Promise<void> {
 
   const db = getDb();
 
-  // Only push meals whose PARENT event has already landed in Supabase (events.synced
-  // = 1). The meal→event FK is enforced server-side, so a meal that flushes ahead of
-  // its event fails with 23503 ("Key is not present in table events"). The unsynced
-  // callers (insertMeal, signal regen, completion-card edits) aren't serialised, so a
-  // meal can otherwise out-race its own event; gating on the parent here makes the
-  // order safe by construction — a meal simply waits for the next cycle, after its
-  // event syncs. (B-027 FK-ordering class; same reasoning as medication_administrations.)
+  // A meal never goes up ahead of its PARENT event (`parentLandedSql`). The meal→event FK
+  // is enforced server-side, so a meal that flushes ahead of its event fails with 23503
+  // ("Key is not present in table events"). The unsynced callers (insertMeal, signal
+  // regen, completion-card edits) aren't serialised, so a meal can otherwise out-race its
+  // own event; the gate makes the order safe by construction, and a meal simply waits for
+  // the next cycle, after its event syncs. (B-027 FK-ordering class.)
+  //
+  // A REFUSED event holds nothing (CUL-1986). This gate used to be `e.synced = 1`, which a
+  // refused event never reaches, so a meal re-rated to refused (an intake signal) stayed
+  // on this phone for good even when the log's earlier version was on the server and the
+  // rating would land. It now goes up and takes its own answer (`refusedParentChildIds`).
   const unsyncedMeals = await db.getAllAsync<{
     id: string;
     event_id: string;
@@ -902,9 +978,8 @@ async function drainMealsQueue(): Promise<void> {
     intake_rating: string | null;
     logged_via: string;
   }>(
-    `SELECT m.* FROM meals m
-       JOIN events e ON e.id = m.event_id
-      WHERE m.synced = 0 AND m.${NOT_QUARANTINED_SQL} AND e.synced = 1
+    `SELECT * FROM meals WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('meals')}
       LIMIT 100`,
   );
 
@@ -916,6 +991,7 @@ async function drainMealsQueue(): Promise<void> {
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
+  const parentRefused = await refusedParentChildIds(db, unsyncedMeals);
   await pushRows(db, 'meals', unsyncedMeals, (m) => ({
     id: m.id,
     event_id: m.event_id,
@@ -934,13 +1010,14 @@ async function drainMealsQueue(): Promise<void> {
     // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
     // local default, the record's own value for inbox-ingested rows.
     logged_via: m.logged_via ?? 'app',
-  }));
+  }), parentRefused);
 }
 
 // Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
-// exactly: only push a weight row whose PARENT event has already landed
-// (events.synced = 1), because the weight_checks→events FK is enforced server-side
-// and a child that flushes ahead of its event fails with 23503. The unsynced
+// exactly: a weight row never goes up while its PARENT event is still waiting to land
+// (`parentLandedSql`), because the weight_checks→events FK is enforced server-side
+// and a child that flushes ahead of its event fails with 23503; a REFUSED event holds
+// nothing (CUL-1986), as the meals drain says. The unsynced
 // callers (insertWeightCheck) aren't serialised against the event push, so gating
 // on the parent here makes the order safe by construction — a weight row simply
 // waits for the next cycle, after its event syncs. No food_items pre-sync (a weight
@@ -967,14 +1044,14 @@ async function drainWeightChecksQueue(): Promise<void> {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT w.* FROM weight_checks w
-       JOIN events e ON e.id = w.event_id
-      WHERE w.synced = 0 AND w.${NOT_QUARANTINED_SQL} AND e.synced = 1
+    `SELECT * FROM weight_checks WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('weight_checks')}
       LIMIT 100`,
   );
 
   if (unsynced.length === 0) return;
 
+  const parentRefused = await refusedParentChildIds(db, unsynced);
   const landed = await pushRows(db, 'weight_checks', unsynced, (w) => ({
     id: w.id,
     event_id: w.event_id,
@@ -991,7 +1068,7 @@ async function drainWeightChecksQueue(): Promise<void> {
     // value is authoritative only for a brand-new INSERT; either way the row
     // lands with a usable updated_at for the next device to compare.
     updated_at: w.updated_at,
-  }));
+  }), parentRefused);
 
   // CUL-293 — reconcile the denormalized pets.weight_kg snapshot for each pet whose
   // reading just landed. The inline snapshot write at log/edit time (app/log.tsx and
@@ -1013,14 +1090,21 @@ async function drainWeightChecksQueue(): Promise<void> {
  * (migration 064) reads the parent row and requires it to exist, to belong to the same
  * pet, and to BE a `check_in` — so a child that flushes ahead of its event is not just
  * an FK violation, it is refused as a check_violation (23514) that the row can never
- * recover from on its own. Gating on `e.synced = 1` makes the order safe by
- * construction: a look simply waits for the next cycle, after its event lands.
+ * recover from on its own. Gating on the parent (`parentLandedSql`) makes the order safe
+ * by construction: a look simply waits for the next cycle, after its event lands.
  *
  * 23514 is already in TERMINAL_SYNC_ERROR_CODES, which is the right policy for this
  * table and is why nothing is added here: with the parent gate in place, a
  * check_violation from `looks` means a genuinely malformed row (a forged pet_id, a
  * local_day two days from its parent) — a permanent, client-side fault, not something
  * to retry into. Verified against lib/syncQueue.ts rather than assumed.
+ *
+ * Behind a REFUSED check_in the look goes up too (CUL-1986; it used to wait on
+ * `e.synced = 1`, which a refused event never reaches). It lands when the check_in's
+ * earlier version is on the server; when the server has never seen the check_in, the
+ * same 23514 quarantines it on the first try, and it is counted as needing the owner.
+ * When the check_in is fixed and lands, the look gets a fresh try
+ * (`rearmChildrenOfLandedEvents`).
  */
 export function syncPendingLooks(): Promise<void> {
   return serializeQueuePush('looks', drainLooksQueue);
@@ -1087,14 +1171,14 @@ async function drainLooksQueue(): Promise<void> {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT l.* FROM looks l
-       JOIN events e ON e.id = l.event_id
-      WHERE l.synced = 0 AND l.${NOT_QUARANTINED_SQL} AND e.synced = 1
+    `SELECT * FROM looks WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('looks')}
       LIMIT 100`,
   );
 
   if (unsynced.length === 0) return;
 
+  const parentRefused = await refusedParentChildIds(db, unsynced);
   await pushRows(db, 'looks', unsynced, (l) => ({
     id: l.id,
     event_id: l.event_id,
@@ -1115,7 +1199,7 @@ async function drainLooksQueue(): Promise<void> {
     // for a brand-new INSERT; either way the row lands with a usable updated_at for
     // the next device to compare.
     updated_at: l.updated_at,
-  }));
+  }), parentRefused);
 }
 
 // Re-point the server-side pets.weight_kg snapshot at a pet's LATEST reading (by
@@ -1201,6 +1285,11 @@ async function drainEventsQueue(): Promise<void> {
     // B-289 — capture-surface provenance (see the meals payload note).
     logged_via: e.logged_via ?? 'app',
   }));
+
+  // CUL-1986 — a log that lands gives its quarantined meal, weigh-in or look a fresh try,
+  // since a child refused while its log was refused may land now. Before the children's
+  // drains run in pushAllQueues, so the re-armed rows go up in this same cycle.
+  if (landedEvents.size > 0) await rearmChildrenOfLandedEvents(db, [...landedEvents]);
 
   // CUL-641 — the RETRY half of the delete-side snapshot reconcile, and the exact
   // mirror of the CUL-293 loop in syncPendingWeightChecks above. Removing a weigh-in
@@ -4130,8 +4219,8 @@ async function pushAllQueues(): Promise<void> {
   // B-186: weight_checks FK→events; pushed after events (parents land first).
   await syncPendingWeightChecks();
   // CUL-868: looks FK→events AND trg_looks_same_pet requires the parent check_in to
-  // be visible, so the parent must land first. The drain gates on e.synced = 1
-  // regardless — this ordering only saves a cycle.
+  // be visible, so the parent must land first. The drain holds it behind a parent still
+  // waiting to land regardless (`parentLandedSql`); this ordering only saves a cycle.
   await syncPendingLooks();
   // Engines v3 PR-30q: an answer waits on its vomit (pushed above); the drain holds it
   // otherwise, because 097's guard refuses an unseen parent with a TERMINAL 23514.
