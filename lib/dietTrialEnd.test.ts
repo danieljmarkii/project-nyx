@@ -156,6 +156,37 @@ describe('endActiveTrial against real SQLite (CUL-1329)', () => {
   });
 });
 
+// CUL-2035 — a reason match hides a different verdict, so the refusal carries the
+// FIRST ending's outcome and note too.
+describe('a refusal over a completed trial carries its verdict (CUL-2035)', () => {
+  it('reads the stored outcome and note off the row', async () => {
+    seed(ENDED_ELSEWHERE);
+    await expect(endActiveTrial({ trialId: 't-1', reason: 'completed', outcome: 'worse', endedOn: '2026-09-27' }))
+      .rejects.toMatchObject({ storedOutcome: 'improved', storedOutcomeNotes: 'Scratching stopped in week three.' });
+  });
+
+  it('phone A ended with no outcome, phone B refused with worse plus a note: said once, in the outcome variant', async () => {
+    // Phone A: the after-visit *Ended* path, completed at the target with no verdict.
+    seed();
+    await endActiveTrial({ trialId: 't-1', reason: 'completed', endedOn: '2026-10-14' });
+    const first = read();
+    // Phone B: the sheet was open; the owner picked worse and wrote a note.
+    const e = await endActiveTrial({
+      trialId: 't-1', reason: 'completed', outcome: 'worse',
+      outcomeNotes: 'vomiting came back in week 6', endedOn: '2026-10-15',
+    }).catch((err: unknown) => err);
+    expect(e).toBeInstanceOf(TrialEndRefused);
+    expect(read()).toEqual(first);
+    expect(trialEndRefusedNotice({
+      refusal: e as TrialEndRefused, ownerReason: 'completed', ownerOutcome: 'worse',
+      ownerOutcomeNotes: 'vomiting came back in week 6', petName: 'Mochi', now: new Date(2026, 9, 19, 12),
+    })).toEqual({
+      title: 'Already ended',
+      body: 'Mochi’s trial was already ended on another phone, on Oct 14. That ending stays on the record, so what you said about how it went wasn’t saved. You can tell your vet yourself.',
+    });
+  });
+});
+
 // CUL-2012 — the notice a host says when its ending lost to one already on the record.
 describe('trialEndRefusedNotice', () => {
   const NOW = new Date(2026, 9, 19, 12);
@@ -187,6 +218,49 @@ describe('trialEndRefusedNotice', () => {
     ['an unrecognised stored status (errs loud)', refusal({ status: 'active', storedReason: 'refused' }), 'refused'],
   ])('%s is said', (_l, r, ownerReason) => {
     expect(trialEndRefusedNotice({ refusal: r, ownerReason, petName: 'Mochi', now: NOW })?.title).toBe('Already ended');
+  });
+
+  describe('completed over completed weighs the verdict and the note (CUL-2035)', () => {
+    const done = (storedOutcome: string | null, storedOutcomeNotes: string | null = null) =>
+      refusal({ status: 'completed', storedReason: null, storedOutcome, storedOutcomeNotes });
+    const OUTCOME_BODY = /so what you said about how it went wasn’t saved\./;
+
+    it.each([
+      ['no verdict and no note from the owner, whatever is stored', done('improved', 'x'), undefined, undefined],
+      ['the same verdict, no note', done('worse'), 'worse' as const, null],
+      ['the same verdict and note', done('worse', 'week 6'), 'worse' as const, 'week 6'],
+      ['the same note, trimmed the way the write trims it', done('worse', 'week 6'), 'worse' as const, '  week 6 \n'],
+      ['a blank note is no note', done('worse', 'week 6'), null, '   '],
+    ])('%s says nothing', (_l, r, ownerOutcome, ownerOutcomeNotes) => {
+      expect(trialEndRefusedNotice({ refusal: r, ownerReason: 'completed', ownerOutcome, ownerOutcomeNotes, petName: 'Mochi', now: NOW })).toBeNull();
+    });
+
+    it.each([
+      ['a verdict over none', done(null), 'worse' as const, null],
+      ['a different verdict', done('improved'), 'worse' as const, null],
+      ['a note over none', done('worse'), 'worse' as const, 'week 6'],
+      ['a different note', done('worse', 'week 5'), 'worse' as const, 'week 6'],
+      ['a note with no verdict, over a record holding neither', done(null), null, 'week 6'],
+      ['a stored verdict spelling the app never writes (errs loud)', done('Worse'), 'worse' as const, null],
+    ])('%s is said, in the outcome variant', (_l, r, ownerOutcome, ownerOutcomeNotes) => {
+      const n = trialEndRefusedNotice({ refusal: r, ownerReason: 'completed', ownerOutcome, ownerOutcomeNotes, petName: 'Mochi', now: NOW });
+      expect(n?.title).toBe('Already ended');
+      expect(n?.body).toMatch(OUTCOME_BODY);
+      expect(n?.body).not.toContain('!');
+    });
+
+    it('*done* with a verdict over a trial stopped early elsewhere names the verdict', () => {
+      const n = trialEndRefusedNotice({ refusal: refusal(), ownerReason: 'completed', ownerOutcome: 'worse', petName: 'Mochi', now: NOW });
+      expect(n?.body).toMatch(OUTCOME_BODY);
+    });
+
+    it.each([
+      ['*done* with no verdict and no note over a stopped trial', 'completed', undefined],
+      ['a stopped-early reason over a different one', 'refused', undefined],
+    ])('%s keeps the reason variant', (_l, ownerReason, ownerOutcome) => {
+      const n = trialEndRefusedNotice({ refusal: refusal(), ownerReason, ownerOutcome, petName: 'Mochi', now: NOW });
+      expect(n?.body).toMatch(/so the reason you gave wasn’t saved\./);
+    });
   });
 
   it('not_found is not this case: no ending won, so nothing is said here', () => {

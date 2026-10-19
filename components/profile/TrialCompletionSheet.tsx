@@ -197,9 +197,11 @@ export function TrialCompletionSheet({
         // another go cannot succeed (C-28).
         if (e instanceof TrialEndRefused) {
           // CUL-2012 — the first ending stays, but a reason it does not hold (a
-          // refusal the vet report will not show) is said once, never dropped.
+          // refusal the vet report will not show) is said once, never dropped; so is
+          // a verdict or note it does not hold (CUL-2035).
           const notice = trialEndRefusedNotice({
             refusal: e, ownerReason: params.reason, petName,
+            ownerOutcome: params.outcome, ownerOutcomeNotes: params.notes,
           });
           if (notice) Alert.alert(notice.title, notice.body);
           setOutcome(null);
