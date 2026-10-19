@@ -5593,8 +5593,10 @@ Deno.test('CUL-2001 — late is a day or more, and a bout logged promptly once i
   const plus = (h: number): string => new Date(Date.parse(o) + h * 3_600_000).toISOString()
   assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS - 1) }])))
   assert.ok(/1 of 1 vomiting entry was logged 1 day after the time given for it\. It was recalled/.test(run([{ occurredAt: o, loggedAt: plus(LATE_LOG_MIN_HOURS) }])))
-  // One bout, two rows: logged a week late once and promptly once — the record caught it.
+  // One bout, two rows: logged a week late once and promptly once — the record caught it. Both
+  // row orders, so neither the bout's first nor its last row alone can stand in for the bout.
   assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(24 * 7) }, { occurredAt: o, loggedAt: plus(1) }])))
+  assert.ok(!/after the time given/.test(run([{ occurredAt: o, loggedAt: plus(1) }, { occurredAt: o, loggedAt: plus(24 * 7) }])))
   // Part of the record late: "Those were", and the clause counts only the late ones.
   assert.ok(
     /1 of 2 vomiting entries were logged 7 days after the time given for it\. Those were recalled/.test(
