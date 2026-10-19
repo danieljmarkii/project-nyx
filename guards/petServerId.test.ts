@@ -23,6 +23,11 @@ import { stripSqlComments } from './sqlComments';
 //     runtime, or an insert whose payload is a variable, is not read; the payload
 //     check fails closed on a spread or an identifier rather than passing it.
 //   · A superuser can disable the trigger; that is the server, not a client.
+//   · SECURITY DEFINER code that writes pets is not scanned for: the trigger's JWT
+//     half binds it for any client request (replayed on the stub), so only a
+//     DEFINER path reached with no JWT (a direct SQL session) keeps a chosen id.
+//   · `liveFunctions` reads a body between matching dollar tags; a function body
+//     in single quotes is not read, and so not checked.
 
 const REPO_ROOT = join(__dirname, '..');
 const MIGRATIONS_DIR = join(REPO_ROOT, 'supabase', 'migrations');
@@ -38,53 +43,86 @@ function allMigrations(): string {
 
 const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+const NAME = String.raw`(?:public\.)?"?enforce_pet_server_id"?`;
+const PETS = String.raw`(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:"?public"?\.)?"?pets"?`;
+const TRIGGER = String.raw`"?trg_pets_server_id"?`;
+
+/** The last definition of each function in `sql`, by name (lower-cased, unqualified). */
+function liveFunctions(sql: string): Map<string, { text: string; index: number }> {
+  const out = new Map<string, { text: string; index: number }>();
+  for (const m of sql.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?(\w+)"?\s*\([\s\S]*?\$(\w*)\$[\s\S]*?\$\2\$\s*;/gi)) {
+    out.set(m[1].toLowerCase(), { text: m[0], index: m.index ?? 0 });
+  }
+  return out;
+}
+
+/** Every trigger created on pets, as [trigger, function], lower-cased. */
+export function petTriggers(sql: string): Array<[string, string]> {
+  return [
+    ...sql.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+"?(\w+)"?[^;]*?\bON\s+(?:"?public"?\.)?"?pets"?\s[^;]*?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+(?:"?public"?\.)?"?(\w+)"?/gi),
+  ].map((m) => [m[1].toLowerCase(), m[2].toLowerCase()]);
+}
+
 /** The problems with the live trigger, read from every migration in order. Empty when it holds. */
 export function triggerProblems(sql: string): string[] {
   const problems: string[] = [];
-  const defs = [...sql.matchAll(/CREATE OR REPLACE FUNCTION (?:public\.)?enforce_pet_server_id\(\)[\s\S]*?\$\$;/g)];
-  if (defs.length === 0) return ['no definition of enforce_pet_server_id'];
-  const live = defs[defs.length - 1];
-  const body = squash(live[0]);
+  const live = liveFunctions(sql).get('enforce_pet_server_id');
+  if (!live) return ['no definition of enforce_pet_server_id'];
+  const body = squash(live.text);
 
-  const insertArm = /IF TG_OP = 'INSERT' THEN IF current_user NOT IN \(([^)]*)\) THEN NEW\.id := gen_random_uuid\(\); END IF;/.exec(body);
+  // The JWT half binds a client inside SECURITY DEFINER code, where current_user
+  // is the owner (the rls-privacy-reviewer's DEFINER flip, proven on the stub).
+  if (!/jwt_role text := coalesce\( nullif\(current_setting\('request\.jwt\.claims', true\), ''\)::jsonb ->> 'role', nullif\(current_setting\('request\.jwt\.claim\.role', true\), ''\)\);/i.test(body)) {
+    problems.push('jwt_role is not read from the request\'s JWT claims');
+  }
+  const insertArm = /IF TG_OP = 'INSERT' THEN IF current_user NOT IN \(([^)]*)\) OR coalesce\(jwt_role, 'service_role'\) <> 'service_role' THEN NEW\.id := gen_random_uuid\(\); END IF;/i.exec(body);
   if (!insertArm) {
-    problems.push('the INSERT arm does not replace NEW.id for every non-exempt role');
+    problems.push('the INSERT arm does not replace NEW.id for every write that is not the server\'s');
   } else {
     const roles = insertArm[1].split(',').map((r) => r.trim().replace(/^'|'$/g, ''));
-    if (squash(roles.sort().join(' ')) !== squash([...EXEMPT].sort().join(' '))) {
+    if ([...roles].sort().join(' ') !== [...EXEMPT].sort().join(' ')) {
       problems.push(`the exempt roles are ${roles.join(', ')}, not ${EXEMPT.join(', ')}`);
     }
   }
   // The UPDATE arm sits beside the INSERT arm, outside any role check: no role
   // changes an id.
-  const updateArm = /END IF; ELSIF NEW\.id IS DISTINCT FROM OLD\.id THEN RAISE EXCEPTION ('(?:[^']|'')*') USING ERRCODE = '23514'; END IF; RETURN NEW;/.exec(body);
+  const updateArm = /END IF; ELSIF NEW\.id IS DISTINCT FROM OLD\.id THEN RAISE EXCEPTION ('(?:[^']|'')*') USING ERRCODE = '23514'; END IF; RETURN NEW;/i.exec(body);
   if (!updateArm) problems.push('the UPDATE arm does not refuse every change to id');
   else if (/%/.test(updateArm[1])) problems.push('the refusal formats a value into its message (C-31)');
-  if (!/SET search_path = ''/.test(body)) problems.push("the function does not pin search_path = ''");
+  if (!/SECURITY INVOKER/i.test(body) || /SECURITY DEFINER/i.test(body)) problems.push('the function is not SECURITY INVOKER');
+  if (!/SET search_path = ''/i.test(body)) problems.push("the function does not pin search_path = ''");
+  if (new RegExp(String.raw`ALTER\s+FUNCTION\s+${NAME}`, 'i').test(sql)) problems.push('an ALTER FUNCTION changes enforce_pet_server_id');
+  if (new RegExp(String.raw`DROP\s+FUNCTION[^;]*\benforce_pet_server_id\b`, 'i').test(sql.slice(live.index))) {
+    problems.push('the function is dropped after its live definition');
+  }
 
-  // The trigger: created on pets for INSERT and UPDATE, after the live function,
-  // and never dropped or disabled after its last creation.
+  // The trigger: created on pets for INSERT and UPDATE, and never dropped,
+  // renamed or disabled after its last creation.
   const creates = [
-    ...sql.matchAll(/CREATE TRIGGER trg_pets_server_id\s+BEFORE INSERT OR UPDATE ON (?:public\.)?pets\s+FOR EACH ROW EXECUTE FUNCTION (?:public\.)?enforce_pet_server_id\(\);/g),
+    ...sql.matchAll(new RegExp(String.raw`CREATE\s+TRIGGER\s+trg_pets_server_id\s+BEFORE\s+INSERT\s+OR\s+UPDATE\s+ON\s+(?:public\.)?pets\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+${NAME}\(\);`, 'gi')),
   ];
   if (creates.length === 0) {
     problems.push('no BEFORE INSERT OR UPDATE trigger trg_pets_server_id on pets');
-  } else {
-    const lastCreate = creates[creates.length - 1].index ?? 0;
-    const after = sql.slice(lastCreate);
-    if (/DROP TRIGGER[^;]*\btrg_pets_server_id\b/i.test(after)) problems.push('the trigger is dropped after its last creation');
-    // The last toggle wins. `ENABLE REPLICA` fires only in replica sessions, so it
-    // switches the trigger off for every client as surely as DISABLE does.
-    const toggles = [
-      ...after.matchAll(/ALTER TABLE\s+(?:ONLY\s+)?(?:public\.)?pets\s+(DISABLE|ENABLE(?:\s+(?:REPLICA|ALWAYS))?)\s+TRIGGER\s+(?:trg_pets_server_id|ALL|USER)\b/gi),
-    ];
-    const last = toggles.length ? squash(toggles[toggles.length - 1][1]).toUpperCase() : 'ENABLE';
-    if (last === 'DISABLE' || last === 'ENABLE REPLICA') {
-      problems.push('a trigger on pets is disabled after the last creation');
-    }
-    if (/DROP FUNCTION[^;]*\benforce_pet_server_id\b/i.test(sql.slice(live.index ?? 0))) {
-      problems.push('the function is dropped after its live definition');
-    }
+    return problems;
+  }
+  const after = sql.slice(creates[creates.length - 1].index ?? 0);
+  if (new RegExp(String.raw`DROP\s+TRIGGER[^;]*\btrg_pets_server_id\b`, 'i').test(after)) problems.push('the trigger is dropped after its last creation');
+  if (new RegExp(String.raw`ALTER\s+TRIGGER\s+${TRIGGER}`, 'i').test(after)) problems.push('the trigger is renamed or altered after its last creation');
+  // The last toggle wins. `ENABLE REPLICA` fires only in replica sessions, so it
+  // switches the trigger off for every client as surely as DISABLE does.
+  const toggles = [
+    ...after.matchAll(new RegExp(String.raw`ALTER\s+TABLE\s+${PETS}\s+(DISABLE|ENABLE(?:\s+(?:REPLICA|ALWAYS))?)\s+TRIGGER\s+(?:${TRIGGER}|ALL|USER)(?![\w"])`, 'gi')),
+  ];
+  const last = toggles.length ? squash(toggles[toggles.length - 1][1]).toUpperCase() : 'ENABLE';
+  if (last === 'DISABLE' || last === 'ENABLE REPLICA') problems.push('a trigger on pets is disabled after the last creation');
+
+  // Any OTHER trigger on pets whose function assigns NEW.id would run beside
+  // 104's and could put a chosen id back.
+  const fns = liveFunctions(sql);
+  for (const [trigger, fnName] of petTriggers(sql)) {
+    if (trigger === 'trg_pets_server_id') continue;
+    const fn = fns.get(fnName);
+    if (fn && /\bNEW\s*\.\s*"?id"?\s*:?=/i.test(fn.text)) problems.push(`trigger ${trigger} on pets assigns NEW.id`);
   }
   return problems;
 }
@@ -92,7 +130,7 @@ export function triggerProblems(sql: string): string[] {
 /** Every `.from('pets')` insert or upsert in a source text whose payload can carry an id. */
 export function clientIdWrites(source: string): string[] {
   const hits: string[] = [];
-  for (const m of source.matchAll(/\.from\(\s*['"]pets['"]\s*\)\s*\.(insert|upsert)\(\s*/g)) {
+  for (const m of source.matchAll(/\.from\(\s*['"`]pets['"`]\s*\)\s*\.(insert|upsert)\(\s*/g)) {
     const start = (m.index ?? 0) + m[0].length;
     // The payload: from the call's open paren to its matching close.
     let depth = 1;
@@ -105,7 +143,7 @@ export function clientIdWrites(source: string): string[] {
     const payload = source.slice(start, i - 1);
     // Fail closed: a payload that is not a literal object (a variable, a spread)
     // cannot be read, so it counts as one that may carry an id.
-    if (!/^\s*[{[]/.test(payload) || /\.\.\./.test(payload) || /(?:^|[{,\s])['"]?id['"]?\s*[:,}]/.test(payload)) {
+    if (!/^\s*[{[]/.test(payload) || /\.\.\./.test(payload) || /(?:^|[{,\s[])['"`]?id['"`]?\]?\s*[:,}]/.test(payload)) {
       hits.push(`${m[1]}(${squash(payload).slice(0, 80)})`);
     }
   }
@@ -165,6 +203,37 @@ describe('a pet id is always the server\'s (CUL-2029, migration 104)', () => {
     ]);
     const replaced = body104.replace(/NEW\.id := gen_random_uuid\(\);/, 'NULL;').replace(/[\s\S]*?(CREATE OR REPLACE FUNCTION[\s\S]*?\$\$;)[\s\S]*/, '$1');
     expect(triggerProblems(`${body104}\n${replaced}`)).toEqual([expect.stringMatching(/INSERT arm/)]);
+    // The reviewer's mutations (rls-privacy-reviewer on this PR), each of which
+    // reopened the claim while the first draft of this guard stayed green.
+    expect(mutate(/coalesce\(jwt_role, 'service_role'\) <> 'service_role'/, 'FALSE')).toEqual([expect.stringMatching(/INSERT arm/)]);
+    expect(mutate(/SECURITY INVOKER/, 'SECURITY DEFINER')).toEqual([expect.stringMatching(/SECURITY INVOKER/)]);
+    expect(triggerProblems(`${body104}\nALTER FUNCTION public.enforce_pet_server_id() SECURITY DEFINER;`)).toEqual([
+      expect.stringMatching(/ALTER FUNCTION/),
+    ]);
+    const lower = `create or replace function public.enforce_pet_server_id() returns trigger language plpgsql security invoker set search_path = '' as $$ begin return new; end; $$;`;
+    expect(triggerProblems(`${body104}\n${lower}`)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/INSERT arm/), expect.stringMatching(/UPDATE arm/)]),
+    );
+    for (const off of [
+      'ALTER TABLE IF EXISTS public.pets DISABLE TRIGGER trg_pets_server_id;',
+      'ALTER TABLE public."pets" DISABLE TRIGGER "trg_pets_server_id";',
+      'alter table only pets disable trigger all;',
+    ]) {
+      expect(triggerProblems(`${body104}\n${off}`)).toEqual([expect.stringMatching(/disabled/)]);
+    }
+    expect(triggerProblems(`${body104}\nALTER TRIGGER trg_pets_server_id ON public.pets RENAME TO x; DROP TRIGGER x ON public.pets;`)).toEqual([
+      expect.stringMatching(/renamed/),
+    ]);
+    const competitor =
+      `CREATE OR REPLACE FUNCTION public.zz_pet_id() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.id := '00000000-0000-0000-0000-000000000001'; RETURN NEW; END; $$;\n` +
+      `CREATE TRIGGER zz_pet_id BEFORE INSERT ON public.pets FOR EACH ROW EXECUTE FUNCTION public.zz_pet_id();`;
+    expect(triggerProblems(`${body104}\n${competitor}`)).toEqual([expect.stringMatching(/zz_pet_id on pets assigns NEW\.id/)]);
+    // Non-vacuity: the scan reads the shipped neighbours on pets (001's updated_at,
+    // 072's displaced weight), which never touch the id.
+    expect(petTriggers(sql).map(([t]) => t)).toEqual(
+      expect.arrayContaining(['trg_pets_updated_at', 'trg_pets_preserve_displaced_weight', 'trg_pets_server_id']),
+    );
+    expect(triggerProblems(sql)).toEqual([]);
   });
 
   it('no client insert or upsert of pets sends an id', () => {
@@ -173,7 +242,7 @@ describe('a pet id is always the server\'s (CUL-2029, migration 104)', () => {
     const bad: string[] = [];
     for (const f of files) {
       const src = readFileSync(f, 'utf8');
-      writes += [...src.matchAll(/\.from\(\s*['"]pets['"]\s*\)\s*\.(insert|upsert)\(/g)].length;
+      writes += [...src.matchAll(/\.from\(\s*['"`]pets['"`]\s*\)\s*\.(insert|upsert)\(/g)].length;
       for (const hit of clientIdWrites(src)) bad.push(`${relative(REPO_ROOT, f)}: ${hit}`);
     }
     expect(bad).toEqual([]);
@@ -190,6 +259,8 @@ describe('a pet id is always the server\'s (CUL-2029, migration 104)', () => {
     expect(one('row')).toHaveLength(1);
     expect(one('[{ "id": x }]')).toHaveLength(1);
     expect(clientIdWrites(`supabase.from('pets').upsert({ id: p.id, name })`)).toHaveLength(1);
+    expect(clientIdWrites('supabase.from(`pets`).insert({ id: x, name })')).toHaveLength(1);
+    expect(one("{ ['id']: x, name }")).toHaveLength(1);
     expect(clientIdWrites(`supabase.from('pets').update({ weight_kg }).eq('id', petId)`)).toEqual([]);
   });
 });

@@ -23,9 +23,10 @@
 -- ------------------------------------------------------------
 -- One BEFORE trigger on pets, two arms:
 --   · INSERT: the id is replaced with gen_random_uuid(), whatever was sent,
---     for every role except the server's own (postgres, supabase_admin,
---     service_role). So `authenticated` and `anon` are bound, and so is any
---     role added later: the list names who is exempt, never who is bound.
+--     for every write except the server's own (a server role, with no JWT or
+--     a service_role one; WHO IS EXEMPT below). So `authenticated` and `anon`
+--     are bound, and so is any role added later: the list names who is
+--     exempt, never who is bound.
 --     The exemption exists for scripts/fixture/emitFixtureSql.ts, which writes
 --     four pets with fixed ids through execute_sql; no Edge Function inserts a
 --     pet. A server write never comes from a phone.
@@ -39,9 +40,19 @@
 -- updates `weight_kg` by id (lib/sync.ts). Both inserts read the id back with
 -- `.select().single()`, so they see the server's.
 --
+-- WHO IS EXEMPT: a write is the server's only when BOTH say so: `current_user`
+-- is a server role AND the request carries no JWT, or a service_role one. The
+-- JWT half is what keeps a client bound inside SECURITY DEFINER code: a DEFINER
+-- function (or this one, if a later migration flipped it to DEFINER) runs as its
+-- owner, so `current_user` alone would read `postgres` for a client's request.
+-- PostgREST sets `request.jwt.claims` from the token for the whole transaction,
+-- and a client cannot set it. No JWT is a direct SQL session (execute_sql, the
+-- fixture). A malformed claims value fails the cast and refuses the insert.
+-- (rls-privacy-reviewer on this PR, which proved the DEFINER flip on the stub.)
+--
 -- SECURITY INVOKER: the function reads no other row, so it needs no privilege
--- the caller lacks, and `current_user` is the caller's role. The refusal names
--- no value (C-31). 23514, the code this repo's guards raise for a refused write.
+-- the caller lacks. The refusal names no value (C-31). 23514, the code this
+-- repo's guards raise for a refused write.
 --
 -- STATED BLIND SPOTS:
 --   · A superuser can disable the trigger. That is the server, not a client.
@@ -64,9 +75,14 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = ''
 AS $$
+DECLARE
+  jwt_role text := coalesce(
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role',
+    nullif(current_setting('request.jwt.claim.role', true), ''));
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    IF current_user NOT IN ('postgres', 'supabase_admin', 'service_role') THEN
+    IF current_user NOT IN ('postgres', 'supabase_admin', 'service_role')
+       OR coalesce(jwt_role, 'service_role') <> 'service_role' THEN
       NEW.id := gen_random_uuid();
     END IF;
   ELSIF NEW.id IS DISTINCT FROM OLD.id THEN
