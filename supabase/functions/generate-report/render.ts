@@ -2057,50 +2057,97 @@ function trialCropDensitySentence(snap: ReportSnapshot): string {
  * with the floor it applies, and every one carries "not ruled out" in the same sentence:
  * absence ≠ wellness (§5.3), so this line is never a clearance. Null when nothing ran.
  */
-function safetyChecksText(snap: ReportSnapshot): string | null {
+function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: string[] } | null {
   const checks = snap.safetyChecks
   if (checks.length === 0) return null
   const lower = (t: string): string => h(symptomLabel(t).toLowerCase())
   const span = (d: number): string => (d % 7 === 0 ? `${num(d / 7)} or more weeks` : `${num(d)} or more days`)
-  const notFlagged: string[] = []
-  const notChecked: string[] = []
+  const weeks = (d: number): string => (d % 7 === 0 ? `${num(d / 7)} weeks` : `${num(d)} days`)
+  const notTriggered: string[] = []
+  const rest: string[] = []
   for (const c of checks) {
     if (c.kind === 'ongoing') {
-      notFlagged.push(
-        `ongoing ${lower(c.symptomType)} (flags at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
-          c.minActiveWeeks,
-        )} separate weeks, the latest within ${num(c.ongoingRecencyDays)} days)`,
-      )
+      const floors = `it triggers at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
+        c.minActiveWeeks,
+      )} separate weeks, the latest within ${num(c.ongoingRecencyDays)} days`
+      // The OBSERVED count beside the floor, over the span the engine actually saw: its lookback,
+      // or this report's window when that is shorter (it is handed only the window's entries).
+      // A near miss in an undercounted record is the thing a vet most needs to see (cold read 4).
+      const seen =
+        c.windowDays < c.lookbackDays
+          ? `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in this ${num(c.windowDays)}-day report, all the check could see`
+          : `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in the last ${weeks(c.lookbackDays)}`
+      if (c.state === 'not_triggered') notTriggered.push(`ongoing ${lower(c.symptomType)} (${seen}; ${floors})`)
+      else if (c.state === 'window_short')
+        rest.push(
+          `Ongoing ${lower(c.symptomType)}: not checked, because this ${num(c.windowDays)}-day report is shorter than the ${weeks(
+            c.minSpanDays,
+          )} the check needs.`,
+        )
+      else
+        rest.push(
+          `Ongoing ${lower(c.symptomType)}: not checked, too few episodes or logged days to measure a course (${seen}).`,
+        )
     } else if (c.state === 'not_flagged') {
-      notFlagged.push(`${lower(c.symptomType)} getting worse (the last ${num(c.windowDays)} days against the ${num(c.windowDays)} before)`)
+      notTriggered.push(
+        `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in the last ${num(
+          c.windowDays,
+        )} days, and more, or on more days, than the ${num(c.windowDays)} before)`,
+      )
+    } else if (c.state === 'below_card_floor') {
+      rest.push(
+        `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over the last ${num(
+          c.windowDays,
+        )} days below the ${num(c.minEpisodes)} the flag needs.`,
+      )
     } else if (c.state === 'too_few_days') {
-      notChecked.push(
+      rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(c.currentLoggingDays)} of the last ${num(
           c.windowDays,
         )}, ${num(c.priorLoggingDays)} of the ${num(c.windowDays)} before; it needs ${num(c.minLoggingDays)} in each).`,
       )
     } else {
-      notChecked.push(
+      rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: not assessed on its own, because the check reports only the steepest rise.`,
       )
     }
   }
-  const lead = notFlagged.length > 0 ? `Did not flag, which is not ruled out: ${notFlagged.join('; ')}.` : ''
-  return [lead, ...notChecked].filter((x) => x !== '').join(' ')
+  // The checks read the same occurred-at times CUL-2001 discloses; a record entered late may hold
+  // fewer episodes than happened, and a check under its floor on such a record is weaker still.
+  const late = snap.symptoms.filter(
+    (s) => s.lateLogged !== null && checks.some((c) => c.symptomType === s.type),
+  )
+  if (late.length > 0) {
+    rest.push(
+      `${late.map((s) => h(symptomLabel(s.type))).join(' and ')} entries were logged late, so these checks may have counted fewer than happened.`,
+    )
+  }
+  return {
+    lead: notTriggered.length > 0 ? `${notTriggered.join('; ')}.` : null,
+    rest,
+  }
 }
 
 function safetyBand(snap: ReportSnapshot): string {
   const flags = snap.safetyFlags
   const checked = safetyChecksText(snap)
+  // "Ran and did not trigger", never "checked": the cold read took a boxed CHECKED tag beside a
+  // real flag as "checked, OK". Each clause carries the count it saw against the floor it needs.
+  const body =
+    checked === null
+      ? null
+      : [checked.lead === null ? '' : `Ran and did not trigger, which does not rule these out: ${checked.lead}`, ...checked.rest]
+          .filter((x) => x !== '')
+          .join(' ')
   if (flags.length === 0) {
     // No flag fired: still no band and no "all clear" (§5.3). The checks are named in a muted,
     // unboxed line where the band would sit, so "nothing flagged" reads as "these ran and stayed
     // under their floors", never as "nothing to look at" (PM ruling, 2026-10-19).
-    if (checked === null) return ''
+    if (body === null) return ''
     return `
-  <div class="limit checked">No safety flag. ${checked.replace(/^Did not flag, which/, 'Checked and did not flag, which')}</div>`
+  <div class="limit checked">No safety flag. ${body}</div>`
   }
-  const rows = flags.map((f) => safetyFlagRow(f, snap)).join('') + (checked === null ? '' : flagRow('Checked', checked))
+  const rows = flags.map((f) => safetyFlagRow(f, snap)).join('') + (body === null ? '' : flagRow('Not triggered', body))
   const warnIcon = `<svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg>`
   return `
   <div class="safetyband">
@@ -2644,9 +2691,10 @@ function lateLoggedNote(snap: ReportSnapshot): string {
       } logged ${lateLagPhrase(s.lateLogged!, 'days')} after the time given for ${s.lateLogged!.count === 1 ? 'it' : 'them'}`,
   )
   const all = late.every((s) => s.lateLogged!.count === s.count)
-  const lead = all ? (late.length === 1 && late[0].count === 1 ? 'It was' : 'They were') : 'Those were'
+  const one = late.length === 1 && late[0].lateLogged!.count === 1
+  const lead = one ? (all ? 'It was' : 'That one was') : all ? 'They were' : 'Those were'
   return `
-  <div class="latelog">${clauses.join('; ')}. ${lead} recalled, not recorded as they happened, so the counts, dates and timing on this page may be incomplete. <span class="qual">Late means logged ${num(
+  <div class="latelog">${clauses.join('; ')}. ${lead} recalled, not recorded as ${one ? 'it' : 'they'} happened, so the counts, dates and timing on this page may be incomplete. <span class="qual">Late means logged ${num(
     LATE_LOG_MIN_HOURS,
   )}&nbsp;h or more after; each entry's logged time is in appendix&nbsp;A.</span></div>`
 }

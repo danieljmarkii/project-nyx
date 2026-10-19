@@ -57,7 +57,11 @@ import {
   EN11_CONFIG,
   LANE_SYMPTOM_TYPES,
   chronicityFloorsFor,
+  computeChronicityCompare,
   computeReflectionDensity,
+  detectChronicity,
+  detectWorsening,
+  risingBelowCardFloor,
   type DetectionConfig,
   CORRELATION_SYMPTOM_TYPES,
   type Species,
@@ -1752,6 +1756,17 @@ export type SafetyCheck =
   | {
       kind: 'ongoing'
       symptomType: SymptomType
+      /** `not_triggered`: the engine measured a course and it stayed under a floor.
+       *  `too_few_days`: the engine could not measure one (too few logged days across the
+       *  episodes' span, or a single episode). `window_short`: the report window is shorter than
+       *  the span floor, so the check cannot fire on what this report holds. */
+      state: 'not_triggered' | 'too_few_days' | 'window_short'
+      /** Collapsed episodes the check counted: over its lookback, or the report window when that
+       *  is shorter (the engine only sees the window's entries). */
+      episodes: number
+      /** The engine's lookback, and the report window it was handed. */
+      lookbackDays: number
+      windowDays: number
       minEpisodes: number
       minSpanDays: number
       minActiveWeeks: number
@@ -1761,10 +1776,14 @@ export type SafetyCheck =
       kind: 'worsening'
       symptomType: SymptomType
       windowDays: number
-      /** `not_flagged`: both weeks were logged enough to compare and no flag fired.
-       *  `too_few_days`: the engine could not compare them. `not_separate`: another symptom's
-       *  getting-worse flag is the one the engine reports, so this one was not assessed apart. */
-      state: 'not_flagged' | 'too_few_days' | 'not_separate'
+      /** `not_flagged`: both weeks were logged enough to compare and no sign reached the floor.
+       *  `too_few_days`: the engine could not compare them. `not_separate`: the engine reports
+       *  one getting-worse finding, the steepest, and it was another symptom's (whether or not
+       *  its flag was then folded into an ongoing one), so this one was not assessed apart.
+       *  `below_card_floor`: a sign rose in the last week but under the flag's floor (EN-11). */
+      state: 'not_flagged' | 'too_few_days' | 'not_separate' | 'below_card_floor'
+      /** The current-week count the flag needs. */
+      minEpisodes: number
       currentLoggingDays: number
       priorLoggingDays: number
       minLoggingDays: number
@@ -3788,7 +3807,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const bStart = startDayNum + i * WEEK_DAYS
       const bEnd = bStart + bucketDays[i] - 1
       if (bEnd < fromDn || bStart > toDn) continue
-      if ((loggedDaysByBucket[i] ?? 0) >= SYMPTOM_WEEK_MIN_LOGGED_DAYS) continue
+      // A part week (the window's 1–3-day tail) is held to the same SHARE, not the absolute 4:
+      // fully logged, it is not thin, or every falling pair on a 7k+1..7k+3-day window would be
+      // withheld for ever (adversarial pass 1, finding 6). The chart's bar keeps the absolute
+      // floor, so a short tail still never draws a `0` that looks like a full week's.
+      const floor = Math.min(SYMPTOM_WEEK_MIN_LOGGED_DAYS, Math.ceil(COVERAGE_FLOOR * bucketDays[i]))
+      if ((loggedDaysByBucket[i] ?? 0) >= floor) continue
       out.push({
         startDate: dayKeyFromNumber(bStart),
         endDate: dayKeyFromNumber(bEnd),
@@ -3808,7 +3832,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // row of which was logged promptly reads as prompt (the record did catch it as it happened).
   const loggedAtById = new Map(countableEvents.map((e) => [e.id, e.loggedAt]))
   const lateLagDays = (e: (typeof windowEvents)[number]): number | null => {
-    const occurredMs = Date.parse(e.occurredAt)
+    // A found entry ("sometime in this window") is measured from the window's LATEST edge: a pile
+    // found this morning and logged ten minutes later was recorded when it was found, and its
+    // midpoint `occurredAt` would call it a day late (adversarial pass 1, finding 7).
+    const anchor = e.occurredAtConfidence === 'window' && e.occurredAtLatest ? e.occurredAtLatest : e.occurredAt
+    const occurredMs = Date.parse(anchor)
     if (!Number.isFinite(occurredMs)) return null
     let firstLoggedMs: number | null = null
     for (const id of e.memberEventIds.length > 0 ? e.memberEventIds : [e.id]) {
@@ -4809,16 +4837,43 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const safetyChecks: SafetyCheck[] = []
   const flagged = (kind: SafetyFlag['kind'], type: string): boolean =>
     safetyFlags.some((f) => f.kind === kind && 'symptomType' in f && f.symptomType === type)
-  const anyWorseningFlag = safetyFlags.some((f) => f.kind === 'symptom_worsening')
+  // Every verdict below is the ENGINE's, read through its exported entry points, never a re-derived
+  // predicate (adversarial pass 1 broke five inferences from the flag list alone):
+  //   • getting worse: `detectWorsening` BEFORE the ranker folds a card into an ongoing flag. It
+  //     returns one card, the steepest, so any other symptom was not assessed apart — even when
+  //     that card was then absorbed (`suppressWorseningWhenChronic`) and no worsening flag shows.
+  //   • ongoing: whether the engine could MEASURE a course at all is its own `loggingEligible`
+  //     gate, read by running `detectChronicity` with every floor at its minimum: a type that
+  //     still does not come back was not measured, so "did not trigger" would over-claim.
+  const worseningCards = detectWorsening(detInput, detConfig)
+  const belowCardFloor = risingBelowCardFloor(detInput, detConfig)
   const density = computeReflectionDensity(detInput, detConfig)
+  const measurable = new Set(
+    detectChronicity(detInput, {
+      ...detConfig,
+      chronicity: {
+        ...detConfig.chronicity,
+        minSpanDays: 0,
+        minEpisodes: 1,
+        minActiveWeeks: 1,
+        ongoingRecencyDays: Number.MAX_SAFE_INTEGER,
+        perType: undefined,
+      },
+    }).map((f) => f.symptomType as string),
+  )
   for (const s of symptoms) {
     const type = s.type as SymptomType
     const chronicFlag = flagged('chronicity', type)
     if ((LANE_SYMPTOM_TYPES.chronicity as readonly string[]).includes(type) && !chronicFlag) {
       const fl = chronicityFloorsFor(type, detInput.pet.species, detConfig.chronicity)
+      const compare = computeChronicityCompare(detInput, type, detConfig)
       safetyChecks.push({
         kind: 'ongoing',
         symptomType: type,
+        state: windowDays < fl.minSpanDays ? 'window_short' : measurable.has(type) ? 'not_triggered' : 'too_few_days',
+        episodes: compare ? compare.recentCount + compare.priorCount : 0,
+        lookbackDays: detConfig.chronicity.windowDays,
+        windowDays,
         minEpisodes: fl.minEpisodes,
         minSpanDays: fl.minSpanDays,
         minActiveWeeks: fl.minActiveWeeks,
@@ -4828,21 +4883,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // Where the ongoing flag fired, the engine folds this symptom's getting-worse card into it
     // (`suppressWorseningWhenChronic`), so a "did not flag" here would be false.
     if (!(LANE_SYMPTOM_TYPES.symptomDelta as readonly string[]).includes(type) || chronicFlag) continue
-    if (flagged('symptom_worsening', type)) continue
+    if (flagged('symptom_worsening', type) || worseningCards.some((c) => c.symptomType === type)) continue
     const minLoggingDays = detConfig.reflection.minLoggingDaysPerWindow
     safetyChecks.push({
       kind: 'worsening',
       symptomType: type,
       windowDays: detConfig.reflection.windowDays,
-      // The engine raises ONE getting-worse flag, the steepest; another symptom's rise is not
-      // assessed separately, and saying it "did not flag" would claim a check that was not made.
-      state: anyWorseningFlag
-        ? 'not_separate'
-        : density === null ||
-            density.currentLoggingDays < minLoggingDays ||
-            density.priorLoggingDays < minLoggingDays
+      state:
+        density === null || density.currentLoggingDays < minLoggingDays || density.priorLoggingDays < minLoggingDays
           ? 'too_few_days'
-          : 'not_flagged',
+          : worseningCards.length > 0
+            ? 'not_separate'
+            : belowCardFloor
+              ? 'below_card_floor'
+              : 'not_flagged',
+      minEpisodes: Math.max(detConfig.reflection.worseningMinEpisodes, detConfig.en11?.worseningCardMinEpisodes ?? 0),
       currentLoggingDays: density?.currentLoggingDays ?? 0,
       priorLoggingDays: density?.priorLoggingDays ?? 0,
       minLoggingDays,
