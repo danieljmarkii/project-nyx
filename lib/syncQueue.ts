@@ -530,7 +530,7 @@ export const PARENT_GATED_QUEUES = {
   //   for good even when the log's earlier version was on the server and the rating would
   //   land. A refused log now holds nothing, as everywhere else: the child goes up and takes
   //   its own answer. Its 23503 is final there (`pushRows`' `parentRefused`), and when the
-  //   log is fixed and lands, its children get a fresh try (`rearmChildrenOfLandedEvents`).
+  //   log is fixed and lands, its children get a fresh try (`rearmChildrenOf`, lib/sync.ts).
   meals: [{ parent: 'events', column: 'event_id' }],
   weight_checks: [{ parent: 'events', column: 'event_id' }],
   looks: [{ parent: 'events', column: 'event_id' }],

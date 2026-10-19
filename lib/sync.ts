@@ -1078,7 +1078,7 @@ async function drainMealsQueue(): Promise<void> {
   // A REFUSED event holds nothing (CUL-1986). This gate used to be `e.synced = 1`, which a
   // refused event never reaches, so a meal re-rated to refused (an intake signal) stayed
   // on this phone for good even when the log's earlier version was on the server and the
-  // rating would land. It now goes up and takes its own answer (`refusedParentChildIds`).
+  // rating would land. It now goes up and takes its own answer (`refusedParentsOf`).
   const unsyncedMeals = await db.getAllAsync<{
     id: string;
     event_id: string;
@@ -1218,7 +1218,7 @@ async function drainWeightChecksQueue(): Promise<void> {
  * earlier version is on the server; when the server has never seen the check_in, the
  * same 23514 quarantines it on the first try, and it is counted as needing the owner.
  * When the check_in is fixed and lands, the look gets a fresh try
- * (`rearmChildrenOfLandedEvents`).
+ * (`rearmChildrenOf`).
  */
 export function syncPendingLooks(): Promise<void> {
   return serializeQueuePush('looks', drainLooksQueue);
