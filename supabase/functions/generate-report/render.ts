@@ -2651,12 +2651,15 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           r.single ? ', a single reading' : ''
         }`
       const plan = f.planned ? ', faster or further than the weight plan allows' : ''
+      // Home's lane already widened its noise band for a clinic-vs-home pair; the vet is told the
+      // scales differ so the drop is not read at a single scale's precision (cold read, CUL-2026).
+      const scales = f.mixedInstruments ? ' The two readings come from different scales.' : ''
       const told = f.tier === 'firm' ? 'it is worth booking a vet visit' : 'it is worth raising with the vet'
       return flagRow(
         'Weight',
         `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> Two readings compared over the last ${num(
           f.windowDays,
-        )} days, not a diagnosis; body condition was not assessed. The owner was told ${told}.`,
+        )} days, not a diagnosis; body condition was not assessed.${scales} The owner was told ${told}.`,
       )
     }
     case 'engine_other': {
@@ -9716,7 +9719,7 @@ function appendixF(snap: ReportSnapshot): string {
     ${photoDt}
     ${noticedDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
-    <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
+    <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. The trend is descriptive context, never a diagnosis; body condition is not assessed here. A loss the app raised with the owner leads the safety band as a Weight flag.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
       // ON THE SCOPE, NOT ON THE LIST'S LENGTH (B-532). The itemisation is no longer gated
       // on the reduced-intake flag, so a non-empty `intakeLog` no longer implies the page-1

@@ -5923,3 +5923,22 @@ Deno.test('CUL-2027 — a west-of-UTC 8 pm vomit on the window\'s last day reach
   const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
   assert.ok(b && b.kind === 'symptom_burden' && b.runDays === 3, JSON.stringify(snap.safetyFlags))
 })
+
+Deno.test('CUL-2026 cold read — a clinic reading against home-scale ones says the scales differ; one scale does not', () => {
+  const mixed: ReportWeightCheckInput[] = [
+    { eventId: 'w-1', weightKg: 5.0, occurredAt: at('2026-03-01'), source: 'clinic' },
+    { eventId: 'w-3', weightKg: 4.4, occurredAt: at('2026-06-20'), source: 'home_scale' },
+    { eventId: 'w-4', weightKg: 4.4, occurredAt: at('2026-06-27'), source: 'home_scale' },
+  ]
+  const run = (weighIns: ReportWeightCheckInput[]) => {
+    idSeq = 0
+    const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 }))
+    const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
+    return { w, p: readAs(renderReport(snap)) }
+  }
+  const m = run(mixed)
+  assert.ok(m.w && m.w.kind === 'weight_loss' && m.w.mixedInstruments, JSON.stringify(m.w))
+  assert.ok(/at the vet/.test(m.p) && /The two readings come from different scales\./.test(m.p))
+  const one = run(losingWeighIns())
+  assert.ok(one.w && !/come from different scales/.test(one.p))
+})

@@ -1675,6 +1675,8 @@ export type SafetyFlag =
       highBefore: WeightFlagReading
       tier: WeightLossFinding['tier']
       planned: boolean
+      /** One reading at the clinic, the other on a home scale: the lane widened its band for it. */
+      mixedInstruments: boolean
       windowDays: number
     }
   | {
@@ -4876,6 +4878,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       highBefore: { kg: f.highBefore.kg, source: f.highBefore.source, single: !f.highBefore.confirmed, day: f.highBeforeDay },
       tier: f.tier,
       planned: f.planned,
+      mixedInstruments: f.mixedInstruments,
       windowDays: f.windowDays,
     })
   }
