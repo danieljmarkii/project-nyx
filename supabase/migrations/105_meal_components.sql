@@ -64,8 +64,15 @@
 --           and gets the same-pet check alone.
 --   UPDATE  id, pet_id, event_id and position are frozen. The sync upsert sends
 --           them unchanged, so IS DISTINCT FROM OLD is false and nothing is
---           looked up, which keeps the row repairable (C-38): a later re-type or
---           move of the parent never bricks a ratio edit on a terminal 23514.
+--           looked up, which keeps the row repairable (C-38).
+--   UPSERT  INSERT ... ON CONFLICT DO UPDATE (lib/sync.ts pushRows) fires the
+--           INSERT arm on the proposed row before it finds the conflict, on EVERY
+--           push. So the INSERT arm also passes a row already stored with the
+--           same id, pet, event and position, behind the same ownership arm.
+--           Without it, a parent re-typed or moved after the first push would
+--           brick every later ratio edit on a terminal 23514 (rls-privacy-reviewer
+--           on this file, reproduced; 097 carries the same gap, filed as its own
+--           issue). A fresh row still needs the pet's meal.
 -- Posture B-520 from birth: SECURITY DEFINER (the lookup is not RLS-filtered),
 -- search_path = pg_catalog, pg_temp (072), EXECUTE revoked from PUBLIC, anon and
 -- authenticated (trigger firing does not check EXECUTE). Registered in
@@ -112,10 +119,15 @@
 -- THE PRIVACY LINE
 -- ------------------------------------------------------------
 --   Free text: food_label, and only that. It is a copy of the owner's own
---              food_items.name, the same field diet_trials.food_label and
+--              food name, the same field diet_trials.food_label and
 --              diet_trial_foods.food_label already store under the same RLS; it
---              adds no new kind of data and no new reader. Every other text
---              column is CHECK-bounded to a fixed set.
+--              adds no new kind of data and no new reader. Unlike those two it is
+--              bounded, 1 to 300 characters after trimming: it is headed for the
+--              vet report and model context (row 3), and an empty label would
+--              break "a purged food still has a name". Row 2's writer trims and
+--              truncates to 300 and never writes an empty label, so the CHECK
+--              can never refuse a push. Every other text column is CHECK-bounded
+--              to a fixed set.
 --   Readers:   no Edge Function reads the table in this PR. Row 3 adds the
 --              server readers (report, signal, AI context, Ask), each through its
 --              own review.
@@ -156,7 +168,7 @@ ALTER TABLE public.meals
     CHECK (component_count IS NULL OR component_count >= 2);
 
 COMMENT ON COLUMN public.meals.component_count IS
-  'Migration 105 (Mixed meals, CUL-2050): NULL = a single-food meal; 2+ = a mixed bowl whose foods are in meal_components, and whose food_item_id is NULL (T2). Live components win over this count: 2+ live components is a mix whatever it says, and fewer live components than it says is incomplete (a reader rule, spec §3).';
+  'Migration 105 (Mixed meals, CUL-2050): NULL = a single-food meal; 2+ = a mixed bowl whose foods are in meal_components, and whose food_item_id is NULL by convention (T2; not enforced, meals_owner lets the owner write both). Live components win over this count: 2+ live components is a mix whatever it says, and fewer live components than it says is incomplete (a reader rule, spec §3).';
 
 CREATE TABLE public.meal_components (
   id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -164,7 +176,7 @@ CREATE TABLE public.meal_components (
   event_id      UUID         NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
   position      SMALLINT     NOT NULL CHECK (position BETWEEN 0 AND 7),
   food_item_id  UUID         REFERENCES public.food_items(id) ON DELETE SET NULL,
-  food_label    TEXT         NOT NULL,
+  food_label    TEXT         NOT NULL CHECK (char_length(btrim(food_label)) BETWEEN 1 AND 300),
   share         NUMERIC(4,3) CHECK (share IS NULL OR (share > 0 AND share <= 1)),
   share_source  TEXT         NOT NULL CHECK (share_source IN ('preset', 'custom', 'amounts', 'unknown')),
   amount_value  NUMERIC      CHECK (amount_value IS NULL OR amount_value > 0),
@@ -189,8 +201,7 @@ COMMENT ON COLUMN public.meal_components.position IS
 -- cascade; the food_items SET NULL walks food_item_id alone, so it gets its own.
 CREATE INDEX meal_components_event_idx    ON public.meal_components (event_id, position);
 CREATE INDEX meal_components_pet_food_idx ON public.meal_components (pet_id, food_item_id);
-CREATE INDEX meal_components_food_idx     ON public.meal_components (food_item_id)
-  WHERE food_item_id IS NOT NULL;
+CREATE INDEX meal_components_food_idx     ON public.meal_components (food_item_id);
 
 
 -- ============================================================
@@ -219,17 +230,36 @@ BEGIN
       AND NEW.event_id IS NOT DISTINCT FROM OLD.event_id
       AND NEW.position IS NOT DISTINCT FROM OLD.position;
   ELSE
-    -- The caller's own pet (when there is a caller), and that pet's meal. One
-    -- EXISTS shape, so a missing event, another pet's event, a non-meal and
-    -- another account's pet all land on the same RAISE. Fail closed.
+    -- The caller's own pet (when there is a caller), and either that pet's meal
+    -- or this row already stored with the same identity. The second arm is the
+    -- sync upsert: INSERT ... ON CONFLICT DO UPDATE fires this INSERT arm on
+    -- every push, so without it a parent re-typed or moved after the first push
+    -- would brick every later ratio edit on a terminal 23514 (C-38; found by
+    -- rls-privacy-reviewer on this file). The ownership arm stays in front of
+    -- both, so another account's pet still lands on the same RAISE whether the
+    -- row id is real or not. One EXISTS shape, so a missing event, another pet's
+    -- event, a non-meal and another account's pet all land on the same RAISE.
+    -- Fail closed.
     SELECT EXISTS (
       SELECT 1
         FROM public.pets p
-        JOIN public.events e ON e.pet_id = p.id
        WHERE p.id = NEW.pet_id
          AND (me IS NULL OR p.user_id = me)
-         AND e.id = NEW.event_id
-         AND e.event_type::text = 'meal'
+         AND (
+           EXISTS (
+             SELECT 1 FROM public.events e
+              WHERE e.id = NEW.event_id
+                AND e.pet_id = p.id
+                AND e.event_type::text = 'meal'
+           )
+           OR EXISTS (
+             SELECT 1 FROM public.meal_components mc
+              WHERE mc.id = NEW.id
+                AND mc.pet_id = NEW.pet_id
+                AND mc.event_id = NEW.event_id
+                AND mc.position = NEW.position
+           )
+         )
     ) INTO ok;
   END IF;
 
@@ -237,7 +267,7 @@ BEGIN
     -- NEW.* only, one message for every cause (C-31). Never the event's type,
     -- pet or time: under DEFINER that is another tenant's data.
     RAISE EXCEPTION
-      'meal_components.pet_id % must be the caller''s pet, event_id % that pet''s meal, and neither they nor position may change',
+      'meal_components.pet_id % must be the caller''s pet and event_id % that pet''s meal; id, pet_id, event_id and position never change',
       NEW.pet_id, NEW.event_id
       USING ERRCODE = 'check_violation';
   END IF;
@@ -251,7 +281,7 @@ REVOKE ALL ON FUNCTION public.enforce_meal_component_same_pet() FROM anon;
 REVOKE ALL ON FUNCTION public.enforce_meal_component_same_pet() FROM authenticated;
 
 COMMENT ON FUNCTION public.enforce_meal_component_same_pet() IS
-  'CUL-2050 (105) / B-520: BEFORE INSERT OR UPDATE on meal_components. INSERT: event_id must be a meal of NEW.pet_id, and for a signed-in caller that pet must be the caller''s (082''s arm, closes the 42501-vs-23514 membership oracle). UPDATE: id, pet_id, event_id and position are frozen, and nothing is looked up, so a ratio edit is never bricked by a moved parent (C-38). food_item_id ownership is RLS''s check, not this one. SECURITY DEFINER so the lookup is not RLS-filtered; search_path = pg_catalog, pg_temp (072); EXECUTE revoked from PUBLIC/anon/authenticated. One RAISE naming only NEW.* (C-31).';
+  'CUL-2050 (105) / B-520: BEFORE INSERT OR UPDATE on meal_components. INSERT: event_id must be a meal of NEW.pet_id, and for a signed-in caller that pet must be the caller''s (082''s arm, closes the 42501-vs-23514 membership oracle). UPDATE: id, pet_id, event_id and position are frozen, and nothing is looked up; and the INSERT arm an upsert fires also passes a row already stored with the same identity, so a ratio edit is never bricked by a moved parent (C-38). food_item_id ownership is RLS''s check, not this one. SECURITY DEFINER so the lookup is not RLS-filtered; search_path = pg_catalog, pg_temp (072); EXECUTE revoked from PUBLIC/anon/authenticated. One RAISE naming only NEW.* (C-31).';
 
 CREATE TRIGGER trg_meal_components_same_pet
   BEFORE INSERT OR UPDATE ON public.meal_components
@@ -349,5 +379,7 @@ GRANT UPDATE (id, pet_id, event_id, position, food_item_id, food_label, share, s
 --   3. As A: INSERT naming A's pet and another pet's (or B's) meal event -> 23514,
 --      and the message carries only the two ids A sent.
 --   4. As A: UPDATE a component's pet_id, event_id or position -> 23514.
---   5. As A: DELETE a component -> 0 rows (no policy, no grant).
---   6. Rollback block above, then re-apply: both clean.
+--   5. As A: DELETE a component -> 42501 permission denied (no grant, no policy).
+--   6. As A: re-type A's meal event, then upsert an unchanged component of it
+--      (ON CONFLICT (id) DO UPDATE SET share = ...) -> succeeds (the UPSERT arm).
+--   7. Rollback block above, then re-apply: both clean.
