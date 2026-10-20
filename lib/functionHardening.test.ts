@@ -110,6 +110,13 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-1723 (097) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
+  // 105 (CUL-2050): meal_components' same-pet guard, 097's shape. The INSERT arm
+  // is the lookup (DEFINER) with 082's ownership arm; the UPDATE arm freezes
+  // identity and position and reads nothing.
+  enforce_meal_component_same_pet: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-2050 (105) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
   // 075 (CUL-1201 part 3): event_ai_analysis's updated_at, strictly increasing.
   // Reads nothing, so INVOKER; a trigger fires without an EXECUTE check, so no
   // client role needs it.
