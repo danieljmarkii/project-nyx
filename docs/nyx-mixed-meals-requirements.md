@@ -1,6 +1,6 @@
 # Mixed Meals and Food Transitions — Requirements
 
-**Version:** 0.3 | **Last Updated:** 2026-10-19 (all six P-decisions ruled; §7.4 Foods tab; §7.5 motion from mock round 2)
+**Version:** 0.4 | **Last Updated:** 2026-10-20 (row 5 ships unflagged, PM)
 **Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 (same link) adds motion and the Foods tab. Round 2 reactions R-1 and R-2 move to device QA at build row 5; R-3 and R-4 moved to CUL-2049 (PM, 2026-10-20). Nothing in the spec waits on the PM.
 **Reads first:** `docs/sessions/2026-10-19-mixed-meals-requirements.md` (the convening record), `docs/nyx-diet-trial-requirements.md` §4.1 and §5, `docs/research/2026-07-diet-trial-competitive-landscape.md`.
 **Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Readable copy:** https://claude.ai/artifact/1NPLtiUGvc9gy6HDEx5ivR (this file wins on divergence). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
@@ -101,6 +101,8 @@ A meal holds exactly one food. `meals.event_id` is UNIQUE and `meals.food_item_i
 - Free-fed mixes: a `feeding_arrangements` row stays one food (018, "no quantity by design").
 
 ## §3 Schema — migration 103
+
+> **The number is provisional (2026-10-20).** App Store 1.2.0's PR-34b (the private pet-photo bucket) also wants the next migration number. Whichever merges first takes 103; the other takes the next free number, and `guards/migrationNumbers.test.ts` catches a clash. Read every "103" below as "the next free number at build time". Never applied between App Store Submit and the review verdict (App Store 1.2.0 D14).
 
 Next free number after `102_engines_v3_rest_pm_seed.sql` (095 is a gap; leave it). Schema only, its own PR. Template: `097_intake_checks.sql`, the newest child hung off an event.
 
@@ -277,7 +279,7 @@ Every motion reuses a shipped constant (C-30); the feature adds **no new spring*
 2. `lib/mealComposition.ts`, the local mirror, sync and hydration (§3, §4). No writer.
 3. Server readers (classifier in `generate-report/trial.ts`, signal exposure, report rows and dedupe, Trigger B, AI context, Ask) and the §6 derived transition. **`adversarial-reviewer` mandatory; `vet-report-cold-read` mandatory.** Deploys on merge.
 4. App readers: trial card, heads-up, analytics, same-minute collapse, History and spine.
-5. The writer and UI (§7.1) behind an `app_config` flag, after the mock round rules.
+5. The writer and UI (§7.1), **unflagged** (PM, 2026-10-20: small enough to ship on for every account). It lands whole in one PR, because nothing hides a half-built surface, and merges only after the on-device check passes.
 
 **Older builds:** with T2, an older build reads a mix as a meal naming no food: History shows it unnamed and the trial card discloses it as unclassifiable, which errs loud. **Residual, stated:** an older build editing that meal's food through `updateMealFood` gives the parent a food while components stay live; components win (§3), so the old build's edit vanishes. The pre-1.2.0 install base is small; not built for.
 
@@ -325,7 +327,7 @@ Drawn against the real 5000 ms / 1500 ms / 7000 ms card timers (the med-combo le
 - Editing a meal into a mix after a vomit read never lowers or re-runs the stored read; the report recomputes the juxtaposition with no causal wording.
 - CUL-1997's demo story renders "first fed" and the transition days on page 1. (Its second finding, the trial food listed under two names, is a food-identity fix outside this spec.)
 
-**Writer and UI (row 5):** on a physical device, the first mix is logged from the meal card in under 15 s and a repeat from the FAB in one press (timed, in the QA script); undo removes the whole bowl; taking a food out leaves a plain meal; a synced 3-food mix renders "+1 more"; a 0% component cannot be saved; the flag-off differential shows no change for single-food meals (C-36).
+**Writer and UI (row 5):** on a physical device, the first mix is logged from the meal card in under 15 s and a repeat from the FAB in one press (timed, in the QA script); undo removes the whole bowl; taking a food out leaves a plain meal; a synced 3-food mix renders "+1 more"; a 0% component cannot be saved; a single-food meal logs, reads and renders exactly as before (snapshot or render test over the meal card, History row and FAB pill; this replaces the flag-off differential, since there is no flag).
 
 ## §11 Copy (proposed, through `nyx-voice` at row 5)
 
