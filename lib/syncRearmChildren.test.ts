@@ -65,11 +65,14 @@ const mockGuarded: Record<string, { parent: string; column: string }[]> = {
   intake_checks: [{ parent: 'events', column: 'event_id' }],
   vet_calls: [{ parent: 'events', column: 'event_id' }],
   vet_appointments: [{ parent: 'vet_visits', column: 'vet_visit_id' }],
+  // 023: a dose's paired log, checked before the foreign key.
+  medication_administrations: [{ parent: 'events', column: 'paired_event_id' }],
 };
 
 /** The plain foreign keys these tests lean on: a 23503 naming the constraint, as Postgres does. */
 const mockForeignKeys: Record<string, { parent: string; column: string }[]> = {
   medication_administrations: [{ parent: 'medications', column: 'medication_id' }],
+  event_attachments: [{ parent: 'events', column: 'event_id' }],
 };
 
 function mockServerRefusal(table: string, row: Row): ServerError | null {
@@ -115,9 +118,14 @@ function mockServerSelect(table: string) {
 }
 
 function mockServerFrom(table: string) {
-  const write = (payload: Row | Row[]) => ({
-    select: () => mockServerWrite(table, Array.isArray(payload) ? payload : [payload]),
-  });
+  // Answered through `.select()` or, for the photo drains' bare upsert, by awaiting it.
+  const write = (payload: Row | Row[]) => {
+    const send = () => mockServerWrite(table, Array.isArray(payload) ? payload : [payload]);
+    return {
+      select: send,
+      then: (ok: (v: ServerAnswer) => unknown, bad?: (e: unknown) => unknown) => send().then(ok, bad),
+    };
+  };
   return {
     ...mockServerSelect(table),
     upsert: write,
@@ -190,6 +198,7 @@ import {
   __resetChildRearmStateForTests,
   hydrateFromCloud,
   syncNow,
+  syncPendingAttachments,
   syncPendingCareAcknowledgements,
   syncPendingDietTrials,
   syncPendingEvents,
@@ -376,6 +385,16 @@ describe.each(REARM_LINKS.map((l) => [`${l.child}.${l.column} → ${l.parent}`, 
       expect(localRow(link.child, 'c-still').sync_error).toBe(parentCausedError(link).sync_error);
     });
 
+    it('a child an earlier build parked under a parent that has since landed is sent again at launch', async () => {
+      mockLocal.db!.prepare(`UPDATE ${link.parent} SET synced = 1, sync_error = NULL WHERE id = 'p-fixed'`).run();
+      await syncNow();
+      await settle();
+      // Re-armed by the launch sweep: it went up, or took a fresh answer of its own. Never
+      // still parked on the refusal its landed parent explained.
+      expect(localRow(link.child, 'c-fixed').sync_error).not.toBe(parentCausedError(link).sync_error);
+      expect(String(localRow(link.child, 'c-own').sync_error)).toMatch(/^42501/);
+    });
+
     // The other-device half, for every parent a pull can bring (an insert-only parent is
     // minted on this phone, so no other device can land it).
     if (['events', 'vet_visits', 'medications', 'diet_trials'].includes(link.parent)) {
@@ -517,6 +536,53 @@ describe('a Refused dose behind a refused course, end to end (CUL-2046)', () => 
     expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
   });
 
+  it('is not parked when its course is fixed and lands while its last attempt is in flight (adversarial, CUL-2046)', async () => {
+    await syncNow(); // this process has already run its once-per-launch sweep
+    insert('medications', { id: 'm1', synced: 0, sync_error: REFUSAL_TEXT });
+    refusedDose(24);
+    // A sibling under a landed course, so the batch is refused and isolates: d1 then goes
+    // alone, and the gap opens on its own answer.
+    insert('medications', { id: 'm2', synced: 1 });
+    mockServerTable('medications').set('m2', { id: 'm2' });
+    insert('events', { id: 'ev-d2', event_type: 'medication', synced: 1 });
+    mockServerTable('events').set('ev-d2', { id: 'ev-d2' });
+    insert('medication_administrations', { id: 'd2', event_id: 'ev-d2', medication_id: 'm2', synced: 0, sync_error: null });
+    mockServer.inGap.set('medication_administrations', async () => {
+      fixParent('medications', 'm1');
+      await syncPendingMedications();
+    });
+    await syncPendingMedicationAdministrations();
+    expect(localRow('medications', 'm1')).toMatchObject({ synced: 1 });
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+    await syncPendingMedicationAdministrations();
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 1, adherence: 'refused' });
+  });
+
+  it('is not parked when its paired log lands while 023\'s refusal is in flight', async () => {
+    await syncNow();
+    insert('medications', { id: 'm1', synced: 1 });
+    mockServerTable('medications').set('m1', { id: 'm1' });
+    insert('events', { id: 'meal1', event_type: 'meal', synced: 0, sync_error: REFUSAL_TEXT });
+    insert('medication_administrations', {
+      id: 'd1', event_id: 'ev-d1', medication_id: 'm1', paired_event_id: 'meal1', adherence: 'refused',
+      synced: 0, sync_error: null, updated_at: T1,
+    });
+    // A sibling that lands, so the batch isolates and the gap opens on d1's own answer.
+    insert('events', { id: 'ev-d2', event_type: 'medication', synced: 1 });
+    mockServerTable('events').set('ev-d2', { id: 'ev-d2' });
+    insert('medication_administrations', { id: 'd2', event_id: 'ev-d2', medication_id: 'm1', synced: 0, sync_error: null });
+    mockServer.inGap.set('medication_administrations', async () => {
+      fixParent('events', 'meal1');
+      await syncPendingEvents();
+    });
+    await syncPendingMedicationAdministrations();
+    expect(localRow('events', 'meal1')).toMatchObject({ synced: 1 });
+    // The 23514 is terminal: without the mark this parked on the first try.
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+    await syncPendingMedicationAdministrations();
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 1 });
+  });
+
   it('a dose an earlier build parked under a course that has since landed is sent on the next sync', async () => {
     insert('medications', { id: 'm1', synced: 1 });
     mockServerTable('medications').set('m1', { id: 'm1' });
@@ -533,6 +599,25 @@ describe('the race on the other shapes of child', () => {
   beforeEach(() => {
     mockServer.guarded = true;
   });
+  it('a photo on its last attempt is not parked when its log lands while the refusal is in flight (CUL-2046)', async () => {
+    await syncNow();
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
+    insert('event_attachments', { id: 'ph1', event_id: 'e1', synced: 0, sync_error: null, sync_attempts: 24 });
+    mockServer.inGap.set('event_attachments', async () => {
+      fixParent('events', 'e1');
+      await syncPendingEvents();
+    });
+    await syncPendingAttachments();
+    await settle();
+    expect(localRow('events', 'e1')).toMatchObject({ synced: 1 });
+    const ph = localRow('event_attachments', 'ph1');
+    // Re-armed (or already sent again by a drain the landing started), never parked.
+    expect(ph.sync_error).toBeNull();
+    if (ph.synced === 0) expect(ph.sync_attempts).toBe(0);
+    await syncPendingAttachments();
+    expect(localRow('event_attachments', 'ph1')).toMatchObject({ synced: 1 });
+  });
+
   it('an "I\'ve called" (insert-only, no version) is not parked when its log lands while the refusal is in flight', async () => {
     insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
     insert('vet_calls', { id: 'call1', event_id: 'e1', supersedes: null, synced: 0, sync_error: null });
