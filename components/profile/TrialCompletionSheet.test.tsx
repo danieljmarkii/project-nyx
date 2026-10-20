@@ -800,6 +800,67 @@ describe('the trial under an open sheet is replaced by a different trial (A→B)
     expect(mockEndActiveTrial).not.toHaveBeenCalled();
   });
 
+  // The adversarial pass on this PR (BROKE-1): a Save in flight defers the verdict,
+  // and a failure that leaves the sheet open must not leave it open over B.
+  it('a Save that fails after A→B never leaves the sheet live over B', async () => {
+    let reject: (e: unknown) => void = () => {};
+    mockEndActiveTrial.mockImplementationOnce(() => new Promise((_, r) => { reject = r; }));
+    const onClose = jest.fn();
+    const withTrial = host(onClose, 'stopped_early');
+    const tree = render(withTrial(TRIAL));
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+
+    tree.rerender(withTrial(T2));
+    expect(tree.queryByText('Save')).toBeNull();
+    await act(async () => { reject(new Error('network')); });
+
+    // The owner's reason was lost to an ending this sheet cannot read: said, loud.
+    expect(tree.getByTestId('trial-lost-notice-title').props.children).toBe('Already ended');
+    expect(tree.queryByText('Save')).toBeNull();
+    fireEvent.press(tree.getByText('OK'));
+    expect(tree.toJSON()).toBeNull();
+    expect(mockEndActiveTrial).toHaveBeenCalledTimes(1);
+    expect(mockEndActiveTrial).toHaveBeenCalledWith(expect.objectContaining({ trialId: 't-1' }));
+  });
+
+  // BROKE-2: once the notice is up, a second change must not take it down unread.
+  it.each([['B→C', { ...TRIAL, id: 't-3', startedAt: '2026-09-25' }], ['B→gone', null]] as const)(
+    'the notice survives a second change (%s) until the owner reads it',
+    async (_label, next) => {
+      const onClose = jest.fn();
+      const withTrial = host(onClose, 'stopped_early');
+      const tree = render(withTrial(TRIAL));
+      fireEvent.press(tree.getByTestId('trial-stop-refused'));
+      tree.rerender(withTrial(T2));
+      expect(tree.getByTestId('trial-lost-notice-title')).toBeTruthy();
+
+      tree.rerender(withTrial(next));
+      await act(async () => {});
+      expect(tree.getByTestId('trial-lost-notice-title')).toBeTruthy();
+      expect(onClose).not.toHaveBeenCalled();
+      fireEvent.press(tree.getByText('OK'));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('an open and a replacement in one commit bind to the trial the owner tapped over', async () => {
+    const onClose = jest.fn();
+    const closed = (trial: typeof TRIAL) => (
+      <TrialCompletionSheet
+        entry={null} trial={trial} petName="Biscuit" dayCounter={56}
+        onClose={onClose} onExtend={jest.fn()} onChanged={jest.fn()}
+      />
+    );
+    const tree = render(closed(TRIAL));
+    mockDrawnDecisions.length = 0;
+    tree.rerender(host(onClose, 'decision')({ ...T2, indication: 'gi' }));
+    await act(async () => {});
+    expect(mockDrawnDecisions).toEqual([]);
+    expect(tree.toJSON()).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('a fresh open over B, after the close, is an ordinary open', async () => {
     const onClose = jest.fn();
     const tree = render(host(onClose, 'stopped_early')(TRIAL));
