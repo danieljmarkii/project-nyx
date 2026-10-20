@@ -51,6 +51,7 @@ import {
   type ParentLink,
   classifyFloorCheckFailure,
   formatFloorCheckError,
+  functionsErrorStatus,
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
@@ -681,11 +682,28 @@ async function recordRefusedParentFailure(
 }
 
 /**
+ * A refusal its parent explains, from a parent that landed after the drain's mark: the
+ * landing's re-arm ran while this row was in flight and could not see it, so this does it
+ * instead. The row keeps a clean budget rather than spending an attempt, because an attempt
+ * here can be the one that parks it, with no landing left to re-arm it (adversarial pass 2,
+ * CUL-2032). Bounded: once per landing of its parent. Version-guarded like every write to a
+ * queued row, so an edit inside the gap keeps its own state.
+ */
+async function rearmAfterLandedParent(db: Db, table: QueueTable, row: PushedRow, reason: string): Promise<void> {
+  const versioned = pushGuardColumn(table) === 'updated_at';
+  await db.runAsync(
+    `UPDATE ${table} SET sync_attempts = 0, sync_error = NULL
+      WHERE id = ? ${versioned ? 'AND updated_at IS ?' : ''}`,
+    versioned ? [row.id, row.updated_at ?? null] : [row.id],
+  );
+  console.warn(`[sync] ${table} ${row.id} refused while its parent landed; sending again: ${reason}`);
+}
+
+/**
  * A row's push failure, routed by what its parents did (CUL-2032). A refusal a parent can
- * explain, from a parent that landed since the drain's mark, costs one attempt and is never
- * parked: the landing's re-arm ran while this row was in flight, so nothing else would send it
- * again. Behind a parent still held refused, it parks while that parent stays refused
- * (`recordRefusedParentFailure`). Anything else takes the ordinary policy.
+ * explain, from a parent that landed since the drain's mark, is re-armed and never parked
+ * (`rearmAfterLandedParent`). Behind a parent still held refused, it parks while that parent
+ * stays refused (`recordRefusedParentFailure`). Anything else takes the ordinary policy.
  */
 async function recordChildPushFailure(
   db: Db,
@@ -697,7 +715,7 @@ async function recordChildPushFailure(
   const reason = formatSyncError(error);
   const linked = ctx?.linked.get(row.id) ?? [];
   if (ctx && isParentCausedRefusal(error, linked) && linked.some((p) => landedSince(p, ctx.mark))) {
-    await applyFailurePolicy(db, table, row, 'rejected', reason);
+    await rearmAfterLandedParent(db, table, row, reason);
     return;
   }
   const refused = ctx?.refused.get(row.id);
@@ -4305,6 +4323,7 @@ export function syncPendingIncidentFloors(): Promise<void> {
 }
 
 const FLOOR_QUEUE_MAX_PASSES = 3;
+const FLOOR_EVENT_LINK = PARENT_LINKS.find((l) => l.child === 'incident_floor_queue' && l.parent === 'events')!;
 
 async function drainIncidentFloorQueue(): Promise<void> {
   const epoch = currentSignOutEpoch();
@@ -4313,6 +4332,7 @@ async function drainIncidentFloorQueue(): Promise<void> {
   const db = getDb();
   for (let pass = 0; pass < FLOOR_QUEUE_MAX_PASSES; pass++) {
     if (epoch !== currentSignOutEpoch()) return;
+    const mark = landingMark();
     const rows = await db.getAllAsync<{ id: string; pet_id: string; event_id: string; device_claim: string | null }>(
       incidentFloorPushQueueSql(),
     );
@@ -4353,8 +4373,14 @@ async function drainIncidentFloorQueue(): Promise<void> {
           console.warn('[sync] re-check failed (retrying next cycle):', error);
           return;
         }
+        // CUL-2032: a 404 is the missing log's, and a log that landed after this pass's read
+        // was re-armed while the request was in flight; spending an attempt here could park the
+        // marker with nothing left to re-arm it.
+        const logLanded = functionsErrorStatus(error) === 404
+          && landedSince({ link: FLOOR_EVENT_LINK, id: eventId }, mark);
         for (const r of group) {
-          await applyFailurePolicy(db, 'incident_floor_queue', r, failure, formatFloorCheckError(error));
+          if (logLanded) await rearmAfterLandedParent(db, 'incident_floor_queue', r, formatFloorCheckError(error));
+          else await applyFailurePolicy(db, 'incident_floor_queue', r, failure, formatFloorCheckError(error));
         }
         continue;
       }

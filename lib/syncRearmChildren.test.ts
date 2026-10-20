@@ -25,6 +25,11 @@ type ServerAnswer = { data: { id: string }[] | null; error: ServerError | null }
 
 const mockLocal = { db: null as InstanceType<typeof DatabaseSync> | null };
 
+const mockInvokeOk = async (..._args: unknown[]): Promise<{ data: unknown; error: unknown }> =>
+  ({ data: { results: [] }, error: null });
+/** The edge function the re-check marker calls; a test swaps `fn` for one request. */
+const mockInvoke = { fn: mockInvokeOk };
+
 const mockServer = {
   rows: new Map<string, Map<string, Row>>(),
   /** A row named here (by id) is refused with this. */
@@ -139,7 +144,7 @@ jest.mock('./supabase', () => ({
     auth: { getSession: async () => ({ data: { session: { user: { id: 'user-1' } } } }) },
     from: (table: string) => mockServerFrom(table),
     rpc: async () => ({ data: null, error: null }),
-    functions: { invoke: async () => ({ data: { results: [] }, error: null }) },
+    functions: { invoke: (...args: unknown[]) => mockInvoke.fn(...args) },
   },
 }));
 jest.mock('./storage', () => ({ uploadPhoto: jest.fn(), compressForUpload: jest.fn() }));
@@ -162,6 +167,7 @@ import {
   syncPendingCareAcknowledgements,
   syncPendingDietTrials,
   syncPendingEvents,
+  syncPendingIncidentFloors,
   syncPendingIntakeChecks,
   syncPendingMedications,
   syncPendingVetAppointments,
@@ -246,6 +252,7 @@ beforeEach(async () => {
   mockServer.inGap.clear();
   mockServer.guarded = false;
   mockAfterRead.clear();
+  mockInvoke.fn = mockInvokeOk;
   __resetChildRearmStateForTests();
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -386,7 +393,8 @@ describe('the answer to "Has she eaten?" under a vomit, end to end', () => {
     await syncPendingIntakeChecks();
     expect(localRow('events', 'e1')).toMatchObject({ synced: 1 });
     // The ordinary budget, not a quarantine, and the next drain lands it.
-    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    // Re-armed with a clean budget, never parked, and the next drain lands it.
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
     await syncPendingIntakeChecks();
     expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
   });
@@ -406,7 +414,8 @@ describe('the answer to "Has she eaten?" under a vomit, end to end', () => {
     });
     await syncPendingIntakeChecks();
     expect(localRow('events', 'e1')).toMatchObject({ synced: 1 });
-    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    // Re-armed with a clean budget, never parked, and the next drain lands it.
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
     await syncPendingIntakeChecks();
     expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
   });
@@ -434,7 +443,7 @@ describe('the race on the other shapes of child', () => {
       mockServer.refuse.set('call1', { message: 'network down' });
     });
     await syncPendingVetCalls();
-    expect(localRow('vet_calls', 'call1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    expect(localRow('vet_calls', 'call1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
     mockServer.refuse.clear();
     await syncPendingVetCalls();
     expect(localRow('vet_calls', 'call1')).toMatchObject({ synced: 1 });
@@ -501,5 +510,55 @@ describe('the re-arm is bounded and catches what an earlier build left parked', 
     await syncNow();
     expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
     expect(String(localRow('intake_checks', 'ic-own').sync_error)).toMatch(/^42501/);
+  });
+});
+
+describe('a refusal whose parent lands in flight never spends the attempt that parks it (adversarial pass 2)', () => {
+  beforeEach(() => {
+    mockServer.guarded = true;
+  });
+
+  it('R1: a re-check on its last attempt, whose log lands while the 404 is in flight, is sent again', async () => {
+    await syncNow(); // this process has already run its once-per-launch sweep
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
+    insert('incident_floor_queue', { id: 'f1', event_id: 'e1', synced: 0, sync_error: null, sync_attempts: 24 });
+    mockInvoke.fn = async () => {
+      mockInvoke.fn = mockInvokeOk;
+      fixParent('events', 'e1');
+      await syncPendingEvents();
+      return { data: null, error: Object.assign(new Error('Event not found'), { context: { status: 404 } }) };
+    };
+    await syncPendingIncidentFloors();
+    expect(localRow('events', 'e1')).toMatchObject({ synced: 1 });
+    // Re-armed with a clean budget, never parked, and the next run lands it.
+    expect(localRow('incident_floor_queue', 'f1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+    await syncPendingIncidentFloors();
+    expect(localRow('incident_floor_queue', 'f1')).toMatchObject({ synced: 1 });
+  });
+
+  it('R2: an answer on its last attempt, whose log lands while the refusal is in flight, is not parked', async () => {
+    await syncNow();
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
+    insert('intake_checks', { id: 'ic1', event_id: 'e1', synced: 0, sync_error: null, sync_attempts: 24 });
+    insert('events', { id: 'e2', event_type: 'vomit', synced: 1 });
+    mockServerTable('events').set('e2', { id: 'e2' });
+    insert('intake_checks', { id: 'ic2', event_id: 'e2', synced: 0, sync_error: null });
+    mockServer.inGap.set('intake_checks', async () => {
+      fixParent('events', 'e1');
+      await syncPendingEvents();
+    });
+    await syncPendingIntakeChecks();
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
+    await syncPendingIntakeChecks();
+    expect(localRow('intake_checks', 'ic1')).toMatchObject({ synced: 1 });
+  });
+
+  it('a 404 on a re-check whose log has not landed still spends its attempt', async () => {
+    insert('events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSAL_TEXT });
+    insert('incident_floor_queue', { id: 'f1', event_id: 'e1', synced: 0, sync_error: null, sync_attempts: 3 });
+    mockInvoke.fn = async () =>
+      ({ data: null, error: Object.assign(new Error('Event not found'), { context: { status: 404 } }) });
+    await syncPendingIncidentFloors();
+    expect(localRow('incident_floor_queue', 'f1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 4 });
   });
 });

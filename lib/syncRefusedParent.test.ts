@@ -280,8 +280,8 @@ describe.each(CHILDREN)('the $table drain behind its log', ({ table, eventType, 
     });
     await drain();
     expect(localRow('events', 'e-refused')).toMatchObject({ synced: 1 });
-    // Not parked: the ordinary budget, and the next drain sends it after its log.
-    expect(localRow(table, 'c1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    // Not parked: re-armed with a clean budget (CUL-2032), and the next drain sends it after its log.
+    expect(localRow(table, 'c1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
     await drain();
     expect(localRow(table, 'c1')).toMatchObject({ synced: 1 });
   });
@@ -306,7 +306,7 @@ describe.each(CHILDREN)('the $table drain behind its log', ({ table, eventType, 
     await drain();
     expect(localRow('events', 'e-refused')).toMatchObject({ synced: 0, updated_at: T2 });
     expect(localRow('events', 'e-refused').sync_error).not.toBeNull();
-    expect(localRow(table, 'c1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+    expect(localRow(table, 'c1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 0 });
     await drain();
     expect(localRow(table, 'c1')).toMatchObject({ synced: 1 });
   });
