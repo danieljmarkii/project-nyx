@@ -536,6 +536,13 @@ describe('a Refused dose behind a refused course, end to end (CUL-2046)', () => 
     expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
   });
 
+  it('behind a course that stays refused keeps its budget: one attempt spent, never parked early', async () => {
+    insert('medications', { id: 'm1', synced: 0, sync_error: REFUSAL_TEXT });
+    refusedDose(0);
+    await syncPendingMedicationAdministrations();
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+  });
+
   it('is not parked when its course is fixed and lands while its last attempt is in flight (adversarial, CUL-2046)', async () => {
     await syncNow(); // this process has already run its once-per-launch sweep
     insert('medications', { id: 'm1', synced: 0, sync_error: REFUSAL_TEXT });
