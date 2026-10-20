@@ -1,0 +1,915 @@
+<title>Culprit Mixed Meals</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* ============================================================
+     Mixed meals and food transitions, mock ROUND 2 (CUL-2039).
+     Spec: docs/nyx-mixed-meals-requirements.md v0.3.
+     Round 2 supersedes round 1 (commit 92b2919 keeps round 1).
+
+     Layout: one reading column of sections, each a row of phone
+     frames that wraps to one column on a phone. Motion frames
+     carry a Play control; the bar at the top sets slow motion
+     and Reduce Motion for every frame.
+
+     Every timing is a shipped constant (motion lens, 2026-10-19):
+     completionMotion.ts, drawInMotion.ts, FAB.tsx, flightMotion.ts,
+     foldMotion.ts, threadMotion.ts. Springs are approximated as
+     cubic-beziers and named at each rule.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;
+    --teal-ink:   #0B7B6C;
+    --teal-wash:  #E0FBF7;
+    --gold:       #FBBF24;
+    --opt-wash:   #FFF7E6;
+    --opt-rule:   #E8C77A;
+    --opt-ink:    #8A5A00;
+
+    --dev-bg:      #F4F4F2;
+    --dev-card:    #FFFFFF;
+    --dev-line:    #E6E6E2;
+    --dev-text:    #17171A;
+    --dev-text-2:  #6B6B66;
+    --dev-text-3:  #8A8A84;
+    --dev-chip:    #F2F2EE;
+    --dev-teal-ink:#0B7B6C;
+    --dev-teal-wash:#E0FBF7;
+    --dev-red:     #B42318;
+    --night-2:     #26224F;
+    --night-disc:  #2E2A5E;
+
+    /* One hue, two tints: the bowl's two foods. A 2pt gap and the
+       fraction on each segment carry the split, never colour alone. */
+    --seg-a:      #3F3A78;
+    --seg-a-text: #FFFFFF;
+    --seg-b:      #B9B3E3;
+    --seg-b-text: #1D1A42;
+
+    --card-bg:      #0A0A0A;
+    --card-text:    #FFFFFF;
+    --card-subtle:  rgba(255,255,255,0.7);
+    --card-faint:   rgba(255,255,255,0.55);
+    --card-divider: rgba(255,255,255,0.15);
+    --card-fill:    rgba(255,255,255,0.06);
+    --warn:         #FBBF24;
+    --warn-wash:    rgba(251,191,36,0.12);
+
+    --rep-paper:   #FFFFFF;
+    --rep-ink:     #111114;
+    --rep-ink-2:   #55555C;
+    --rep-rule:    #D9D9DE;
+    --hl:          #FFF3C4;
+
+    --s: 1;   /* slow-motion multiplier */
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C88BE;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --opt-wash: rgba(251,191,36,0.10); --opt-rule: rgba(251,191,36,0.45); --opt-ink: #F5C451;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C88BE;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --opt-wash: rgba(251,191,36,0.10); --opt-rule: rgba(251,191,36,0.45); --opt-ink: #F5C451;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1180px; margin: 0 auto; padding-block: 48px 96px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 8px 18px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 66ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .ledger-h { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 26px 0 10px; }
+  .ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .led {
+    background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 14px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  }
+  .led-q { font-size: 13.5px; color: var(--ink-2); font-style: italic; }
+  .led-a { font-size: 14px; color: var(--ink); }
+  .state { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; }
+  .state.ruled { color: var(--teal-ink); }
+  .state.open  { color: var(--opt-ink); }
+
+  /* ── Motion controls ──────────────────────────────────────── */
+  .controls {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+    background: var(--paper); border-bottom: 1px solid var(--rule);
+    padding: 10px 0; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+  }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 21; background: var(--paper); }
+  .controls .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .tog {
+    font: inherit; font-size: 13.5px; color: var(--ink); background: var(--paper-2);
+    border: 1px solid var(--rule); border-radius: 999px; padding: 6px 12px; cursor: pointer;
+  }
+  .tog[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .tog:focus-visible, .play-btn:focus-visible, .step-btn:focus-visible, .rchip:focus-visible, .pill:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  section { margin-top: 56px; }
+  h2 {
+    font-family: var(--serif); font-weight: 600; font-size: 26px;
+    letter-spacing: -0.01em; margin: 0 0 6px; text-wrap: balance;
+  }
+  .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 6px; }
+  .lede { color: var(--ink-2); margin: 8px 0 24px; max-width: 70ch; }
+  .lede strong { color: var(--ink); }
+
+  .frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; align-items: start; }
+  .frame  { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .frame-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .frame-tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .frame-tag b { color: var(--ink); font-weight: 600; }
+  .tag-cur { color: var(--teal-ink); font-weight: 600; }
+  .tag-opt { color: var(--opt-ink); font-weight: 600; }
+  .frame-note { font-size: 14px; color: var(--ink-2); margin: 0; }
+  .frame-note strong { color: var(--ink); }
+  .spec { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin: 0; line-height: 1.5; }
+  .play-btn {
+    font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash);
+    border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  }
+  .option-box { border: 1.5px dashed var(--opt-rule); background: var(--opt-wash); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Device ───────────────────────────────────────────────── */
+  .screen {
+    background: var(--dev-bg); border: 1px solid var(--rule); border-radius: 26px;
+    padding: 18px 14px 16px; min-height: 380px; color: var(--dev-text);
+    box-shadow: 0 1px 2px rgba(20,18,40,0.06), 0 12px 32px rgba(20,18,40,0.08);
+    display: flex; flex-direction: column; gap: 12px; justify-content: flex-end;
+    position: relative; overflow: hidden;
+  }
+  .screen.top { justify-content: flex-start; }
+  .ghost { opacity: 0.45; display: flex; flex-direction: column; gap: 8px; margin-bottom: auto; }
+  .ghost-title { font-size: 13px; font-weight: 600; color: var(--dev-text-2); }
+  .ghost-row { height: 40px; border-radius: 12px; background: var(--dev-card); border: 1px solid var(--dev-line); }
+  .haptic {
+    position: absolute; top: 10px; right: 10px; z-index: 9; pointer-events: none;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em;
+    background: var(--dev-text); color: var(--dev-card); border-radius: 999px; padding: 3px 8px; opacity: 0;
+  }
+
+  /* ── Completion card ──────────────────────────────────────── */
+  .card {
+    background: var(--card-bg); border-radius: 20px; padding: 12px 16px; position: relative;
+    display: flex; flex-direction: column; gap: 8px; color: var(--card-text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .card-head { display: flex; align-items: center; gap: 12px; }
+  .mark { width: 32px; height: 32px; flex: none; position: relative; }
+  .mark .disc { position: absolute; inset: 0; border-radius: 16px; background: var(--card-fill); border: 1.5px solid var(--teal); }
+  .mark .halo { position: absolute; inset: -2px; border-radius: 18px; box-shadow: 0 0 10px rgba(251,191,36,0.55); }
+  .mark .chk { position: absolute; inset: 0; width: 32px; height: 32px; }
+  .card-titles { flex: 1 1 auto; min-width: 0; }
+  .card-title { font-size: 16px; font-weight: 500; line-height: 1.3; }
+  .ratio { white-space: nowrap; }
+  .card-sub { font-size: 13px; color: var(--card-subtle); }
+  .card-actions { display: flex; gap: 14px; flex: none; }
+  .card-action { font-size: 14px; font-weight: 500; text-decoration: underline; }
+  .card-sect { border-top: 1px solid var(--card-divider); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .intake-label { font-size: 13px; color: var(--card-subtle); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 12.5px; color: var(--card-subtle); background: var(--card-fill); border: 1px solid var(--card-divider); border-radius: 999px; padding: 5px 11px; }
+  .quiet-line { font-size: 13px; color: var(--card-subtle); padding: 2px 0; }
+  .flag-panel { border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--warn-wash); border-left: 3px solid var(--warn); }
+  .flag-eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; color: var(--warn); }
+  .flag-headline { font-size: 13px; font-weight: 600; }
+  .flag-detail { font-size: 13px; line-height: 1.4; color: var(--card-subtle); }
+  .flag-add { font-size: 13px; color: var(--card-text); font-weight: 500; padding-top: 4px; }
+  .removed { display: none; flex-direction: column; gap: 2px; padding: 4px 0; }
+  .removed b { font-size: 15px; font-weight: 500; }
+  .removed span { font-size: 13px; color: var(--card-subtle); }
+
+  .stepper { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .step-btn {
+    font: inherit; font-size: 12.5px; color: var(--card-text); background: var(--card-fill);
+    border: 1px solid var(--card-divider); border-radius: 999px; padding: 8px 10px; white-space: nowrap; cursor: pointer; min-height: 36px;
+  }
+  .step-btn[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+  .step-now { font-size: 15px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .step-why { font-size: 12px; color: var(--card-faint); min-height: 1em; }
+
+  /* ── Light sheet & picker ─────────────────────────────────── */
+  .sheet {
+    background: var(--dev-card); border-radius: 20px 20px 16px 16px; padding: 20px 16px 16px;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.16); display: flex; flex-direction: column; gap: 12px;
+  }
+  .grabber { width: 36px; height: 4px; border-radius: 2px; background: var(--dev-line); align-self: center; margin-top: -8px; }
+  .sheet-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .sheet-cap { font-size: 13px; color: var(--dev-text-2); }
+  .banner { background: var(--dev-teal-wash); color: var(--dev-teal-ink); font-size: 13px; border-radius: 10px; padding: 8px 10px; }
+  .search { border: 1px solid var(--dev-line); border-radius: 12px; padding: 10px 12px; font-size: 14px; color: var(--dev-text-3); }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { background: var(--dev-card); border: 1px solid var(--dev-line); border-radius: 12px; padding: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tile small { color: var(--dev-text-3); font-size: 11.5px; }
+  .tile.locked { border-color: var(--teal); background: var(--dev-teal-wash); }
+  .tile.dim { opacity: 0.45; }
+
+  /* The split bar: one bowl, full width. */
+  .split-names { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; }
+  .split { display: flex; gap: 2px; height: 22px; border-radius: 8px; overflow: hidden; background: var(--dev-chip); }
+  .seg { display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 600; transform-origin: left center; font-variant-numeric: tabular-nums; }
+  .seg.a { background: var(--seg-a); color: var(--seg-a-text); }
+  .seg.b { background: var(--seg-b); color: var(--seg-b-text); }
+  .ratio-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .rchip {
+    font: inherit; text-align: center; font-size: 15px; font-weight: 600; padding: 10px 0; border-radius: 12px; border: 0;
+    background: var(--dev-chip); color: var(--dev-text); font-variant-numeric: tabular-nums; cursor: pointer;
+  }
+  .rchip.on { background: var(--dev-text); color: var(--dev-card); }
+  .link-line { font-size: 14px; font-weight: 500; text-decoration: underline; color: var(--dev-text); }
+
+  /* ── FAB ──────────────────────────────────────────────────── */
+  .veil { position: absolute; inset: 0; background: rgba(19,17,46,0.55); opacity: 0; pointer-events: none; }
+  .fan { position: absolute; right: 14px; bottom: 84px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 2; max-width: calc(100% - 28px); }
+  .pill {
+    font: inherit; background: var(--night-2); color: #FFFFFF; border: 0; border-radius: 999px; padding: 10px 14px;
+    font-size: 14px; font-weight: 500; display: flex; gap: 8px; align-items: center; max-width: 100%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25); transform-origin: right bottom; opacity: 0; cursor: pointer;
+  }
+  .pill .pdisc { width: 20px; height: 20px; border-radius: 10px; background: var(--dev-teal-wash); position: relative; flex: none; }
+  .pill .pdisc.mix::after { content: "+"; position: absolute; right: -4px; bottom: -5px; font-size: 12px; font-weight: 700; color: #FFFFFF; line-height: 12px; }
+  .pill small { font-size: 10.5px; color: rgba(255,255,255,0.7); font-family: var(--mono); letter-spacing: 0.08em; border: 1px solid rgba(255,255,255,0.35); border-radius: 4px; padding: 0 4px; }
+  .fab-disc { position: absolute; right: 14px; bottom: 16px; width: 56px; height: 56px; border-radius: 28px; background: var(--night-disc); color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 30px; z-index: 3; }
+  .fab-disc i { font-style: normal; display: block; }
+  .flyer { position: absolute; width: 32px; height: 32px; border-radius: 16px; background: var(--dev-teal-wash); z-index: 8; opacity: 0; pointer-events: none; }
+  .flyer::after { content: "+"; position: absolute; right: -3px; bottom: -6px; font-size: 13px; font-weight: 700; color: var(--dev-text); }
+  .fab-card { opacity: 0; }
+  .fan-hint { position: absolute; left: 14px; right: 84px; bottom: 30px; font-size: 12.5px; color: var(--dev-text-2); }
+
+  /* ── History ──────────────────────────────────────────────── */
+  .day-h { font-size: 12px; font-weight: 600; color: var(--dev-text-2); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+  .hrow { display: flex; flex-direction: column; gap: 6px; background: var(--dev-card); border: 1px solid var(--dev-line); border-radius: 12px; padding: 9px 10px; font-size: 13.5px; min-width: 0; }
+  .hline { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .glyph { width: 22px; height: 22px; border-radius: 11px; background: #E8E2D6; flex: none; position: relative; }
+  .glyph.mix::after { content: "+"; position: absolute; right: -3px; bottom: -4px; font-size: 12px; font-weight: 700; color: var(--dev-text); background: var(--dev-card); border-radius: 6px; line-height: 12px; padding: 0 1px; }
+  .hlabel { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .hmeta { flex: none; color: var(--dev-text-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .hrow.refused .hmeta { color: var(--dev-red); font-weight: 600; }
+  .hrow .split { height: 16px; border-radius: 5px; margin-left: 32px; }
+  .hrow .seg { font-size: 10px; }
+
+  /* ── Edit ─────────────────────────────────────────────────── */
+  .edit-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--dev-card); border: 1px solid var(--dev-line); border-radius: 12px; padding: 10px 12px; font-size: 14px; overflow: hidden; max-height: 80px; }
+  .edit-row .acts { display: flex; gap: 12px; font-size: 13px; flex: none; }
+  .edit-row .acts span { text-decoration: underline; }
+  .edit-row .acts .warnlink { color: var(--dev-red); }
+  .btn { text-align: center; border-radius: 14px; padding: 12px 10px; font-size: 15px; font-weight: 600; background: var(--dev-text); color: var(--dev-card); }
+
+  /* ── Foods tab & switch strip ─────────────────────────────── */
+  .frow { display: flex; gap: 10px; align-items: center; background: var(--dev-card); border: 1px solid var(--dev-line); border-radius: 12px; padding: 10px 12px; }
+  .fthumb { width: 36px; height: 36px; border-radius: 9px; background: #EDE7DC; flex: none; }
+  .ftext { min-width: 0; display: flex; flex-direction: column; }
+  .ftext b { font-size: 14px; font-weight: 600; }
+  .ftext span { font-size: 12.5px; color: var(--dev-text-2); }
+  .ftext em { font-style: normal; color: var(--dev-teal-ink); font-weight: 600; }
+  .sect-l { font-size: 12px; font-weight: 600; color: var(--dev-text-2); text-transform: uppercase; letter-spacing: 0.06em; }
+  .strip-wrap { background: var(--dev-card); border: 1px solid var(--dev-line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; align-items: end; height: 120px; }
+  .sbar { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; min-width: 0; }
+  .sbar .col { flex: 1; background: var(--dev-chip); border-radius: 4px; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+  .sbar .fill { background: var(--seg-b); transform-origin: bottom center; }
+  .sbar .fl { font-size: 9.5px; text-align: center; color: var(--dev-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sbar.ref .fl { color: var(--dev-red); font-weight: 700; }
+  .sbar.gap .col { background: repeating-linear-gradient(135deg, var(--dev-chip) 0 3px, var(--dev-card) 3px 6px); }
+  .strip-x { display: flex; justify-content: space-between; font-size: 11px; color: var(--dev-text-3); font-variant-numeric: tabular-nums; gap: 8px; }
+  .strip-key { font-size: 12px; color: var(--dev-text-2); }
+
+  /* ── Report ───────────────────────────────────────────────── */
+  .report { background: var(--rep-paper); color: var(--rep-ink); border: 1px solid var(--rule); border-radius: 6px; padding: 20px; font-size: 12.5px; line-height: 1.45; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .rep-h { font-family: var(--serif); font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--rep-rule); padding-bottom: 4px; }
+  .rep-line { display: flex; gap: 8px; }
+  .rep-k { flex: 0 0 104px; color: var(--rep-ink-2); }
+  .rep-line > span:last-child { min-width: 0; }
+  .hl { background: var(--hl); }
+
+  .anti { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  .anti div { background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 12px; padding: 10px 12px; font-size: 14px; color: var(--ink-2); }
+  .anti b { color: var(--ink); display: block; font-size: 14px; }
+  .prompts { display: flex; flex-direction: column; gap: 10px; max-width: 78ch; margin: 0; padding: 0; list-style: none; }
+  .prompts li { background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 12px; padding: 12px 14px; font-size: 15px; }
+  .prompts b { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--teal-ink); margin-right: 6px; }
+
+  /* ============================================================
+     KEYFRAMES
+     ============================================================ */
+  @keyframes k-fade  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes k-out   { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes k-rise  { from { transform: translateY(24px); } to { transform: none; } }
+  @keyframes k-disc  { from { transform: scale(.6); } to { transform: none; } }
+  @keyframes k-write { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  @keyframes k-unwrite { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 100% 0 0); } }
+  @keyframes k-sink  { from { transform: none; opacity: 1; } to { transform: translateY(8px); opacity: 0; } }
+  @keyframes k-back  { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+  @keyframes k-drawx { from { transform: scaleX(.01); } to { transform: none; } }
+  @keyframes k-drawy { from { transform: scaleY(.01); } to { transform: none; } }
+  @keyframes k-haptic { 0% { opacity: 0; transform: translateY(-4px); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes k-pill  { from { opacity: 0; transform: translate(10px, 10px) scale(.6); } to { opacity: 1; transform: none; } }
+  @keyframes k-turn  { from { transform: rotate(0deg); } to { transform: rotate(45deg); } }
+  @keyframes k-press { 0% { opacity: 1; transform: scale(.97); } 37% { opacity: 1; transform: scale(.97); } 100% { opacity: 0; transform: scale(.97); } }
+  @keyframes k-fly {
+    0%   { transform: translate(var(--dx), var(--dy)) scale(.875); opacity: 1; animation-timing-function: cubic-bezier(.3,.55,.45,1); }
+    38%  { transform: translate(calc(var(--dx) * -0.046), calc(var(--dy) * -0.046)) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.45,0,.55,1); }
+    62%  { transform: translate(calc(var(--dx) * 0.012), calc(var(--dy) * 0.012)) scale(1); opacity: 1; animation-timing-function: cubic-bezier(.45,0,.55,1); }
+    100% { transform: none; opacity: 1; } }
+  @keyframes k-fold  { from { max-height: 80px; } to { max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; } }
+  @keyframes k-lift  { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-8px); } }
+  @keyframes k-rowin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* M1/M3 · card arrival: SHEET_SPRING rise, completionMotion.ts:43-69 */
+  .play.arrive .card { animation: k-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both, k-rise calc(213ms * var(--s)) cubic-bezier(.2,.9,.25,1) both; }
+  .play.arrive .disc { animation: k-disc calc(150ms * var(--s)) cubic-bezier(.33,1,.68,1) both; }
+  .play.arrive .chk  { animation: k-write calc(160ms * var(--s)) cubic-bezier(.45,0,.55,1) calc(90ms * var(--s)) both; }
+  .play.arrive .t    { animation: k-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(120ms * var(--s)) both; }
+  .play.arrive .halo { animation: k-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(250ms * var(--s)) both; }
+  .play.arrive .haptic { animation: k-haptic calc(900ms * var(--s)) linear calc(250ms * var(--s)) both; }
+
+  /* M2 · split step: drawInMotion.ts "compare" kind, 420ms MARK_EASE, second segment +120ms */
+  .play.splitstep .seg.a { animation: k-drawx calc(420ms * var(--s)) cubic-bezier(.2,.8,.2,1.02) both; }
+  .play.splitstep .seg.b { animation: k-drawx calc(420ms * var(--s)) cubic-bezier(.2,.8,.2,1.02) calc(120ms * var(--s)) both; }
+  .play.splitstep .seg span { animation: k-fade calc(180ms * var(--s)) linear calc(400ms * var(--s)) both; }
+  .play.splitstep .sheet { animation: k-sink calc(180ms * var(--s)) cubic-bezier(.55,.06,.68,.19) calc(1100ms * var(--s)) both; }
+  .play.splitstep .closing { animation: k-fade calc(180ms * var(--s)) linear calc(1250ms * var(--s)) both; }
+  .closing { position: absolute; left: 14px; right: 14px; bottom: 24px; opacity: 0; font-size: 13px; color: var(--dev-text-2); text-align: center; }
+
+  /* M4 · stepper: 180ms ease-out crossfade, completionMotion.ts:69 */
+  .xfade { animation: k-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+  .buzz { animation: k-haptic calc(900ms * var(--s)) linear both; }
+
+  /* M5 · FAB fan: FAN_SPRING ≈ (.5,.9,.1,1.15) 286ms with 38ms stagger; TURN_SPRING ≈ 420ms; veil 240ms; FLIGHT_SPRING 600ms */
+  .fanning .veil { animation: k-fade calc(240ms * var(--s)) linear both; }
+  .fanning .fab-disc i { animation: k-turn calc(420ms * var(--s)) cubic-bezier(.5,.9,.1,1.1) both; }
+  .fanning .pill { animation: k-pill calc(286ms * var(--s)) cubic-bezier(.5,.9,.1,1.15) calc(var(--i) * 38ms * var(--s)) both; }
+  .fanning .fan-hint { opacity: 0; }
+  .landing .veil { animation: k-out calc(240ms * var(--s)) linear calc(120ms * var(--s)) both; }
+  .landing .pill { opacity: 0; }
+  .landing .pill.pressed { animation: k-press calc(320ms * var(--s)) linear both; }
+  .landing .flyer { animation: k-fly calc(600ms * var(--s)) both, k-out 1ms linear calc(750ms * var(--s)) forwards; }
+  .landing .fab-card { animation: k-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+  .landing .fab-card .disc, .landing .fab-card .chk { animation: k-fade 1ms linear calc(750ms * var(--s)) both; }
+  .landing .fab-card .halo { animation: k-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(750ms * var(--s)) both; }
+  .landing .fab-card .t { animation: k-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(120ms * var(--s)) both; }
+  .landing .haptic { animation: k-haptic calc(900ms * var(--s)) linear calc(750ms * var(--s)) both; }
+  .landing .fan-hint { opacity: 0; }
+
+  /* M6 · undo: completionMotion.ts:73, foldMotion.ts:42-70 */
+  .play.undo .chk  { animation: k-unwrite calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+  .play.undo .card-head, .play.undo .card-sect { overflow: hidden; animation: k-out calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(60ms * var(--s)) both, k-fold calc(300ms * var(--s)) cubic-bezier(.42,0,.58,1) calc(240ms * var(--s)) both; }
+  .play.undo .removed { display: flex; animation: k-back calc(300ms * var(--s)) cubic-bezier(.33,1,.68,1) calc(280ms * var(--s)) both; }
+  .play.undo .haptic { animation: k-haptic calc(900ms * var(--s)) linear both; }
+
+  /* M7 · take out: HistoryList foldAway, 180ms lift then 300ms close */
+  .play.takeoutp .gone { animation: k-lift calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both, k-fold calc(300ms * var(--s)) cubic-bezier(.42,0,.58,1) calc(180ms * var(--s)) both; }
+  .now-single { display: none; }
+  .play.takeoutp .now-single { display: inline; animation: k-fade calc(180ms * var(--s)) linear calc(480ms * var(--s)) both; }
+  .play.takeoutp .was-mix { display: none; }
+
+  /* M8 · History day draw-in: threadMotion.ts:70-78, rows 300ms, bars with them */
+  .play.dayin .hrow { animation: k-rowin calc(300ms * var(--s)) cubic-bezier(.2,.8,.2,1) calc(var(--i) * 40ms * var(--s)) both; }
+  .play.dayin .seg { animation: k-drawx calc(420ms * var(--s)) cubic-bezier(.2,.8,.2,1.02) calc((var(--i) * 40ms + 120ms) * var(--s)) both; }
+
+  /* F2 · switch strip: drawInMotion.ts:48-77, 420ms per bar, 40ms stagger, labels at 400ms */
+  .play.stripin .fill { animation: k-drawy calc(420ms * var(--s)) cubic-bezier(.2,.8,.2,1.02) calc(var(--i) * 40ms * var(--s)) both; }
+  .play.stripin .fl { animation: k-fade calc(180ms * var(--s)) linear calc((400ms + var(--i) * 40ms) * var(--s)) both; }
+
+  /* ── Reduce Motion: every move becomes the 150ms still crossfade ── */
+  .rm .play.arrive .card, .rm .landing .fab-card { animation: k-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+  .rm .play.arrive .disc, .rm .play.arrive .chk, .rm .play.arrive .t, .rm .play.arrive .halo,
+  .rm .play.splitstep .seg, .rm .play.splitstep .seg span, .rm .play.dayin .seg, .rm .play.stripin .fill, .rm .play.stripin .fl,
+  .rm .landing .fab-card .disc, .rm .landing .fab-card .chk, .rm .landing .fab-card .halo, .rm .landing .fab-card .t { animation: none; }
+  .rm .landing .flyer { animation: none; opacity: 0; }
+  .rm .fanning .pill { animation: k-fade calc(150ms * var(--s)) linear both; }
+  .rm .fanning .fab-disc i { animation: none; transform: rotate(45deg); }
+  .rm .play.dayin .hrow { animation: k-fade calc(150ms * var(--s)) linear both; }
+  .rm .play.undo .removed { animation: k-fade calc(150ms * var(--s)) linear both; }
+  .rm .play.undo .card-head, .rm .play.undo .card-sect { animation: k-out 1ms linear both, k-fold 1ms linear both; }
+  .rm .play.takeoutp .gone { animation: k-out 1ms linear both, k-fold 1ms linear both; }
+  .rm .play.takeoutp .now-single { animation: none; }
+  .rm .xfade { animation: none; }
+
+  @media (max-width: 420px) {
+    .rchip { font-size: 14px; }
+    .card-actions { gap: 10px; }
+  }
+</style>
+
+<div class="wrap" id="root">
+
+<header class="mast">
+  <p class="eyebrow"><span>Culprit · CUL-2039</span><span>Mock round 2 · supersedes round 1</span><span>2026-10-19</span></p>
+  <h1>Mixed meals, in motion</h1>
+  <p class="standfirst">Same story as round 1: <strong>Pixel</strong> the cat, moving from Chicken Pâté to Rabbit Pâté, starting with ¼ can mixed into ½ can. Round 2 is <strong>one proposal</strong>. Retired options left the page (round 1 lives in git at 92b2919). Every motion here reuses a spring, duration or haptic the app already ships, so the delight comes from the record taking shape, never from new choreography. Press <strong>Play</strong> on any frame.</p>
+
+  <p class="ledger-h">Round 1 reactions, and what moved</p>
+  <div class="ledger">
+    <div class="led"><span class="led-q">"Love the select mixed food, select food and then select ratio workflow."</span><span class="led-a">P-1 ruled (a). Now animated in §1.</span><span class="state ruled">Ruled</span></div>
+    <div class="led"><span class="led-q">"Love the labels of 'mix' on FAB."</span><span class="led-a">Kept. Its gold outline is gone: gold is the app's celebrate tone, not decoration (§2).</span><span class="state ruled">Kept, refined</span></div>
+    <div class="led"><span class="led-q">"I don't fully know how these mixed meals appear in the food library."</span><span class="led-a">They don't become library items. Each food says how often it was mixed. Drawn in §4.</span><span class="state open">New, react R-4</span></div>
+    <div class="led"><span class="led-q">"Edit. 2d. Smart."</span><span class="led-a">Kept. "Take out" now animates and saves when you tap Save (§3).</span><span class="state ruled">Kept</span></div>
+    <div class="led"><span class="led-q">"3a. Looks good!" · "5a. Great!"</span><span class="led-a">P-5 ruled (a). Both shown unchanged in §5.</span><span class="state ruled">Ruled</span></div>
+    <div class="led"><span class="led-q">"4a… log this as a known known and not tackle it here."</span><span class="led-a">P-4 ruled (a). The weaning case is CUL-2040. 4b left the page.</span><span class="state ruled">Ruled</span></div>
+    <div class="led"><span class="led-q">"Let's consider how to introduce design delight and motion."</span><span class="led-a">Every frame below plays. Two new shapes for the record are drawn as options (§2, §4).</span><span class="state open">New, react R-1 to R-3</span></div>
+    <div class="led"><span class="led-q">Team correction</span><span class="led-a">Round 1's History ran one row across three days. Shipped runs never cross a day, so History is redrawn per day (§2).</span><span class="state ruled">Fixed</span></div>
+  </div>
+</header>
+
+<div class="controls" role="group" aria-label="Motion controls">
+  <span class="lbl">Motion</span>
+  <button class="tog" id="t-slow" type="button" aria-pressed="false">Slow motion ×4</button>
+  <button class="tog" id="t-rm" type="button" aria-pressed="false">Reduce Motion</button>
+  <button class="tog" id="t-all" type="button">Play every frame</button>
+</div>
+
+<!-- ============================================================ §1 -->
+<section>
+  <p class="kicker">§1 · Day one · ruled P-1 (a)</p>
+  <h2>The first mixed bowl</h2>
+  <p class="lede">Four beats. The card arrives the way every meal card does. The picker opens on the platform's own sheet. Tapping a split <strong>draws the bowl's first shape</strong> and holds long enough for you to see it. The card returns as the mix, with the stepper ready for the next morning's nudge.</p>
+
+  <div class="frames">
+    <div class="frame" id="f-m1">
+      <div class="frame-top"><span class="frame-tag"><b>M1</b> · <span class="tag-cur">current</span> · the meal card</span><button class="play-btn" type="button" data-play="f-m1" data-kind="arrive">Play</button></div>
+      <div class="screen">
+        <span class="haptic">haptic · commitRoutine</span>
+        <div class="ghost"><span class="ghost-title">Log</span><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles t"><div class="card-title">Logged · Chicken Pâté</div><div class="card-sub">7:40 am · Pixel</div></div>
+            <div class="card-actions t"><span class="card-action">Undo</span><span class="card-action">Change time</span></div>
+          </div>
+          <div class="card-sect t">
+            <span class="intake-label">How much did Pixel eat?</span>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect t">
+            <span class="quiet-line">+ Mixed with another food</span>
+            <span class="quiet-line">+ Add a med given with this</span>
+          </div>
+        </div>
+      </div>
+      <p class="frame-note">The mix line arrives with the card's words and has no pulse of its own. It is a door, so it stays still.</p>
+      <p class="spec">rise 213ms SHEET_SPRING · fade 150 · check written 90→250 · words 120→300 · gold 250 · commitRoutine at reveal</p>
+    </div>
+
+    <div class="frame">
+      <div class="frame-top"><span class="frame-tag"><b>M1b</b> · <span class="tag-cur">current</span> · pick the other food</span></div>
+      <div class="screen top">
+        <div class="sheet" style="box-shadow:none;border-radius:16px">
+          <div class="sheet-title">Pick the other food</div>
+          <div class="banner">Mixing with Chicken Pâté in Pixel's bowl.</div>
+          <div class="search">Search foods</div>
+          <div class="tiles">
+            <div class="tile locked"><b>Chicken Pâté</b><small>Wet · in the bowl</small></div>
+            <div class="tile"><b>Rabbit Pâté</b><small>Wet</small></div>
+            <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
+            <div class="tile"><b>Indoor Dry</b><small>Dry</small></div>
+            <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
+            <div class="tile"><b>+ Add a food</b><small>Scan or type</small></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-note">The card slips away (180ms, 8pt drift) and the picker rises on <strong>the platform's own sheet</strong>, exactly as "+ Add a med" does today. One motion engine per gesture.</p>
+    </div>
+
+    <div class="frame" id="f-m2">
+      <div class="frame-top"><span class="frame-tag"><b>M2</b> · <span class="tag-cur">current</span> · tap a split</span><button class="play-btn" type="button" data-play="f-m2" data-kind="splitstep">Play</button></div>
+      <div class="screen">
+        <div class="ghost"><div class="ghost-row"></div></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sheet-title">About how much of each?</div>
+          <div class="split-names"><span>Chicken</span><span>Rabbit</span></div>
+          <div class="split" role="img" aria-label="One third chicken, two thirds rabbit">
+            <div class="seg a" style="width:33.3%"><span>⅓</span></div>
+            <div class="seg b" style="width:66.7%"><span>⅔</span></div>
+          </div>
+          <div class="ratio-chips" role="group" aria-label="Split">
+            <button class="rchip" type="button" aria-label="Three quarters chicken, one quarter rabbit">¾·¼</button>
+            <button class="rchip" type="button" aria-label="Two thirds chicken, one third rabbit">⅔·⅓</button>
+            <button class="rchip" type="button" aria-label="Half and half">½·½</button>
+            <button class="rchip on" type="button" aria-label="One third chicken, two thirds rabbit">⅓·⅔</button>
+            <button class="rchip" type="button" aria-label="One quarter chicken, three quarters rabbit">¼·¾</button>
+          </div>
+          <span class="sheet-cap">Tapping a split saves the bowl.</span>
+          <span class="link-line">Other amounts…</span>
+        </div>
+        <span class="closing">The card returns as the mix (M3)</span>
+      </div>
+      <p class="frame-note">Before a tap the bar is an empty track. Then it <strong>draws the bowl</strong>: chicken first, rabbit 120ms behind, fractions last. The sheet holds about half a second so the bar visibly answers the tap (D-M2, team pick).</p>
+      <p class="spec">draw 420ms MARK_EASE, second segment +120 · labels at 400 · hold, then close · no haptic at the chip</p>
+    </div>
+
+    <div class="frame" id="f-m3">
+      <div class="frame-top"><span class="frame-tag"><b>M3</b> · <span class="tag-cur">current</span> · the card, now a mix</span><button class="play-btn" type="button" data-play="f-m3" data-kind="arrive">Play</button></div>
+      <div class="screen">
+        <span class="haptic">haptic · commitRoutine</span>
+        <div class="ghost"><span class="ghost-title">Log</span><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles t"><div class="card-title">Logged · <span class="ratio">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">7:40 am · Pixel · one bowl</div></div>
+            <div class="card-actions t"><span class="card-action">Undo</span></div>
+          </div>
+          <div class="card-sect t">
+            <span class="intake-label">How much did Pixel eat?</span>
+            <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip">Most</span><span class="chip">All</span></div>
+          </div>
+          <div class="card-sect t">
+            <div class="stepper"><span class="step-btn">‹ More Chicken</span><span class="step-now">⅓ · ⅔</span><span class="step-btn">More Rabbit ›</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-note">A full arrival and one more buzz, because the mix is a real write (D-M1, team pick). The new title lands whole. <strong>No number roll</strong>: a roll would pass through splits you never entered.</p>
+      <p class="spec">same arrival as M1 · VoiceOver: "Logged, one third chicken plus two thirds rabbit"</p>
+    </div>
+
+    <div class="frame" id="f-m4">
+      <div class="frame-top"><span class="frame-tag"><b>M4</b> · <span class="tag-cur">current</span> · nudge the split · tap it</span></div>
+      <div class="screen">
+        <span class="haptic" id="m4-buzz">haptic · selectChip</span>
+        <div class="ghost"><span class="ghost-title">Home</span><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles"><div class="card-title" aria-live="polite">Logged · <span class="ratio" id="m4-title">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">Day 5 · 7:35 am · Pixel · one bowl</div></div>
+            <div class="card-actions"><span class="card-action">Undo</span></div>
+          </div>
+          <div class="card-sect">
+            <div class="stepper">
+              <button class="step-btn" type="button" id="m4-a">‹ More Chicken</button>
+              <span class="step-now" id="m4-now">⅓ · ⅔</span>
+              <button class="step-btn" type="button" id="m4-b">More Rabbit ›</button>
+            </div>
+            <span class="step-why" id="m4-why"></span>
+          </div>
+        </div>
+      </div>
+      <p class="frame-note">Tap either side. The split and the title <strong>crossfade in place</strong>, one light tick in the hand, and the card stays up a beat longer. Both sides feel the same, so the app never hints which way to go.</p>
+      <p class="spec">180ms ease-out crossfade · selectChip on save · end stop dims to 0.4 and says why</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ §2 -->
+<section>
+  <p class="kicker">§2 · The days after</p>
+  <h2>One press, and the record takes shape</h2>
+  <p class="lede">From day two the mix is a pill on the + button. Pressing it sends the bowl's disc to the card, the same flight every food pill makes today. History then shows each bowl as one row, folded within each day.</p>
+
+  <div class="frames">
+    <div class="frame" id="f-m5">
+      <div class="frame-top"><span class="frame-tag"><b>M5</b> · <span class="tag-cur">current</span> · the + button, day two</span><button class="play-btn" type="button" id="m5-play">Play</button></div>
+      <div class="screen" id="m5-screen" style="min-height:420px">
+        <span class="haptic">haptic · commitRoutine</span>
+        <div class="ghost"><span class="ghost-title">Home</span><div class="ghost-row"></div><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="card fab-card" id="m5-card">
+          <div class="card-head">
+            <div class="mark" id="m5-mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles t"><div class="card-title">Logged · <span class="ratio">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">Day 2 · 7:38 am · Pixel</div></div>
+          </div>
+        </div>
+        <span class="fan-hint">Press Play to open the fan, then press the MIX pill.</span>
+        <div class="veil"></div>
+        <div class="fan">
+          <button class="pill" type="button" style="--i:3" id="m5-mix"><span class="pdisc mix"></span>⅓ Chicken + ⅔ Rabbit <small>MIX</small></button>
+          <button class="pill" type="button" style="--i:2" tabindex="-1"><span class="pdisc"></span>Rabbit Pâté</button>
+          <button class="pill" type="button" style="--i:1" tabindex="-1"><span class="pdisc"></span>Chicken Pâté</button>
+          <button class="pill" type="button" style="--i:0" tabindex="-1"><span class="pdisc"></span>More events</button>
+        </div>
+        <div class="flyer" id="m5-flyer"></div>
+        <div class="fab-disc"><i>+</i></div>
+      </div>
+      <p class="frame-note">The pills spring in with the fan's own overshoot. Pressing <strong>MIX</strong> sends the bowl's disc to the card, where it fills to a check. Gold appears once, at the reveal.</p>
+      <p class="spec">FAN_SPRING ≈ 286ms, 38ms stagger · TURN_SPRING 420 · press hold 120, fade 200 · FLIGHT_SPRING 600 · commitRoutine at 750</p>
+    </div>
+
+    <div class="frame" id="f-m8">
+      <div class="frame-top"><span class="frame-tag"><b>M8</b> · <span class="tag-cur">current</span> · History, folded per day</span><button class="play-btn" type="button" data-play="f-m8" data-kind="dayin">Play</button></div>
+      <div class="screen top">
+        <span class="day-h">Tue, Oct 21</span>
+        <div class="hrow refused" style="--i:0"><div class="hline"><span class="glyph mix"></span><span class="hlabel">¼ Chicken + ¾ Rabbit</span><span class="hmeta">Refused · 6:10 pm</span></div></div>
+        <div class="hrow" style="--i:1"><div class="hline"><span class="glyph mix"></span><span class="hlabel">¼ Chicken + ¾ Rabbit</span><span class="hmeta">All · 7:35 am</span></div></div>
+        <span class="day-h">Mon, Oct 20</span>
+        <div class="hrow" style="--i:2"><div class="hline"><span class="glyph mix"></span><span class="hlabel">¼ Chicken + ¾ Rabbit</span><span class="hmeta">All · 6:00 pm</span></div></div>
+        <div class="hrow" style="--i:3"><div class="hline"><span class="glyph mix"></span><span class="hlabel">⅓ Chicken + ⅔ Rabbit</span><span class="hmeta">All · 7:40 am</span></div></div>
+        <span class="day-h">Sun, Oct 19</span>
+        <div class="hrow" style="--i:4"><div class="hline"><span class="glyph mix"></span><span class="hlabel">⅓ Chicken + ⅔ Rabbit</span><span class="hmeta">×2</span></div></div>
+      </div>
+      <p class="frame-note">Runs fold <strong>within a day</strong>, as shipped History does. Monday evening's bowl moved a stop, so it stands alone. A refused bowl never folds. Rows draw in once with the day; scrolling never moves anything.</p>
+    </div>
+
+    <div class="frame" id="f-m8b">
+      <div class="option-box">
+        <div class="frame-top"><span class="frame-tag"><b>M8b</b> · <span class="tag-opt">option D-M3, shape 1</span> · a split bar per mixed row</span><button class="play-btn" type="button" data-play="f-m8b" data-kind="dayin">Play</button></div>
+        <div class="screen top" style="min-height:360px">
+          <span class="day-h">Tue, Oct 21</span>
+          <div class="hrow refused" style="--i:0"><div class="hline"><span class="glyph mix"></span><span class="hlabel">¼ Chicken + ¾ Rabbit</span><span class="hmeta">Refused · 6:10 pm</span></div><div class="split" aria-hidden="true"><div class="seg a" style="width:25%"><span>¼</span></div><div class="seg b" style="width:75%"><span>¾</span></div></div></div>
+          <div class="hrow" style="--i:1"><div class="hline"><span class="glyph mix"></span><span class="hlabel">¼ Chicken + ¾ Rabbit</span><span class="hmeta">All · 7:35 am</span></div><div class="split" aria-hidden="true"><div class="seg a" style="width:25%"><span>¼</span></div><div class="seg b" style="width:75%"><span>¾</span></div></div></div>
+          <span class="day-h">Mon, Oct 20</span>
+          <div class="hrow" style="--i:2"><div class="hline"><span class="glyph mix"></span><span class="hlabel">¼ Chicken + ¾ Rabbit</span><span class="hmeta">All · 6:00 pm</span></div><div class="split" aria-hidden="true"><div class="seg a" style="width:25%"><span>¼</span></div><div class="seg b" style="width:75%"><span>¾</span></div></div></div>
+          <div class="hrow" style="--i:3"><div class="hline"><span class="glyph mix"></span><span class="hlabel">⅓ Chicken + ⅔ Rabbit</span><span class="hmeta">All · 7:40 am</span></div><div class="split" aria-hidden="true"><div class="seg a" style="width:33.3%"><span>⅓</span></div><div class="seg b" style="width:66.7%"><span>⅔</span></div></div></div>
+        </div>
+        <p class="frame-note">The full width is one bowl, so the bar reads without a legend and the rows show the shift. It costs a second line per mixed row. If a segment is too small to label, the row drops the bar and keeps the words.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ §3 -->
+<section>
+  <p class="kicker">§3 · Fixing and undoing</p>
+  <h2>Undo the bowl, or take one food out</h2>
+  <p class="lede">Both reuse motion the app already ships. Undo folds the whole bowl away. Taking out one food is an edit that waits for Save (D-M4, team pick), so it needs no confirm and no buzz.</p>
+  <div class="frames">
+    <div class="frame" id="f-m6">
+      <div class="frame-top"><span class="frame-tag"><b>M6</b> · <span class="tag-cur">current</span> · undo a mix</span><button class="play-btn" type="button" data-play="f-m6" data-kind="undo">Play</button></div>
+      <div class="screen" style="min-height:300px">
+        <span class="haptic">haptic · destructiveConfirm</span>
+        <div class="ghost"><span class="ghost-title">Log</span><div class="ghost-row"></div></div>
+        <div class="card">
+          <div class="card-head">
+            <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles"><div class="card-title">Logged · <span class="ratio">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">7:40 am · Pixel · one bowl</div></div>
+            <div class="card-actions"><span class="card-action">Undo</span></div>
+          </div>
+          <div class="card-sect">
+            <div class="stepper"><span class="step-btn">‹ More Chicken</span><span class="step-now">⅓ · ⅔</span><span class="step-btn">More Rabbit ›</span></div>
+          </div>
+          <div class="removed"><b>Removed</b><span>Taken out of Pixel's record.</span></div>
+        </div>
+      </div>
+      <p class="frame-note">The check un-writes, the body folds, and "Removed" settles in. The whole bowl goes as one; the two foods never animate apart.</p>
+      <p class="spec">unwrite 180 · body out 180 +60 · fold 300 +240 · Removed 300</p>
+    </div>
+
+    <div class="frame" id="f-m7">
+      <div class="frame-top"><span class="frame-tag"><b>M7</b> · <span class="tag-cur">current</span> · take out a food</span><button class="play-btn" type="button" data-play="f-m7" data-kind="takeoutp">Play</button></div>
+      <div class="screen top" style="min-height:330px">
+        <div class="sheet-title" style="font-size:17px">Edit meal</div>
+        <span class="sheet-cap">Sun, Oct 19 · 7:40 am · Pixel</span>
+        <span class="day-h"><span class="was-mix">In this bowl · about ⅓ and ⅔</span><span class="now-single">One food</span></span>
+        <div class="edit-row gone"><span>¼ can Chicken Pâté</span><span class="acts"><span>Change</span><span class="warnlink">Take out</span></span></div>
+        <div class="edit-row"><span>½ can Rabbit Pâté</span><span class="acts"><span>Change</span></span></div>
+        <div class="edit-row gone"><span>Split</span><span class="acts"><span>Change</span></span></div>
+        <div class="btn">Save</div>
+      </div>
+      <p class="frame-note">Chicken lifts away and its row closes; the split row leaves in the same beat. What remains looks exactly like a plain rabbit meal. It saves when you tap Save, and Cancel puts it back.</p>
+      <p class="spec">lift 180 + 8pt · close 300 · staged until Save · VoiceOver: "Chicken Pâté taken out of this bowl"</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ §4 -->
+<section>
+  <p class="kicker">§4 · The food library</p>
+  <h2>Where a mix shows up in Foods</h2>
+  <p class="lede">A mix is never its own food. The library holds what you buy; a mix is something you did with two of them. So each food <strong>says how often it was mixed</strong>, and its detail page can show the switch as a shape.</p>
+  <div class="frames">
+    <div class="frame">
+      <div class="frame-top"><span class="frame-tag"><b>F1</b> · <span class="tag-cur">current</span> · the Foods tab</span></div>
+      <div class="screen top" style="min-height:300px">
+        <span class="sect-l">Meals</span>
+        <div class="frow"><span class="fthumb"></span><span class="ftext"><b>Rabbit Pâté</b><span>Last logged today · 14 times · <em>8 in a mix</em></span></span></div>
+        <div class="frow"><span class="fthumb"></span><span class="ftext"><b>Chicken Pâté</b><span>Last logged today · 22 times · <em>8 in a mix</em></span></span></div>
+        <div class="frow"><span class="fthumb"></span><span class="ftext"><b>Salmon Dinner</b><span>Last logged Sep 30 · 3 times</span></span></div>
+        <div class="frow"><span class="fthumb"></span><span class="ftext"><b>Indoor Dry</b><span>Last logged Aug 12</span></span></div>
+      </div>
+      <p class="frame-note">The row's count already exists. It now includes mixed bowls and says how many. It counts times fed and never rates the food.</p>
+    </div>
+
+    <div class="frame" id="f-m9">
+      <div class="option-box">
+        <div class="frame-top"><span class="frame-tag"><b>F2</b> · <span class="tag-opt">option D-M3, shape 2</span> · the switch strip</span><button class="play-btn" type="button" data-play="f-m9" data-kind="stripin">Play</button></div>
+        <div class="screen top" style="min-height:360px">
+          <div class="sheet-title" style="font-size:17px">Rabbit Pâté</div>
+          <span class="sect-l">In mixed bowls</span>
+          <div class="strip-wrap">
+            <span class="strip-key">Rabbit's share of each bowl, Oct 19 to Oct 25 · 11 bowls</span>
+            <div class="strip" role="img" aria-label="Rabbit's share of each of 11 bowls from October 19 to 25: two thirds in the first three, three quarters in the next five including one refused bowl, then all rabbit in the last three. No bowls logged October 24.">
+              <div class="sbar" style="--i:0"><div class="col"><div class="fill" style="height:66.7%"></div></div><span class="fl">⅔</span></div>
+              <div class="sbar" style="--i:1"><div class="col"><div class="fill" style="height:66.7%"></div></div><span class="fl">⅔</span></div>
+              <div class="sbar" style="--i:2"><div class="col"><div class="fill" style="height:66.7%"></div></div><span class="fl">⅔</span></div>
+              <div class="sbar" style="--i:3"><div class="col"><div class="fill" style="height:75%"></div></div><span class="fl">¾</span></div>
+              <div class="sbar" style="--i:4"><div class="col"><div class="fill" style="height:75%"></div></div><span class="fl">¾</span></div>
+              <div class="sbar ref" style="--i:5"><div class="col"><div class="fill" style="height:75%"></div></div><span class="fl">Ref.</span></div>
+              <div class="sbar" style="--i:6"><div class="col"><div class="fill" style="height:75%"></div></div><span class="fl">¾</span></div>
+              <div class="sbar" style="--i:7"><div class="col"><div class="fill" style="height:75%"></div></div><span class="fl">¾</span></div>
+              <div class="sbar" style="--i:8"><div class="col"><div class="fill" style="height:100%"></div></div><span class="fl">all</span></div>
+              <div class="sbar" style="--i:9"><div class="col"><div class="fill" style="height:100%"></div></div><span class="fl">all</span></div>
+              <div class="sbar gap" style="--i:10"><div class="col"></div><span class="fl">–</span></div>
+              <div class="sbar" style="--i:11"><div class="col"><div class="fill" style="height:100%"></div></div><span class="fl">all</span></div>
+            </div>
+            <div class="strip-x"><span>Oct 19</span><span>Oct 24 not logged</span><span>Oct 25</span></div>
+          </div>
+          <span class="sheet-cap">8 bowls with Chicken Pâté · last Oct 22 · see those days</span>
+        </div>
+        <p class="frame-note">One bar per bowl. Full height is the whole bowl, with the fraction under each. No target line, no projection, no "done": the strip ends at the last bowl. The refused bowl keeps its word, and the unlogged day shows as a gap.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ §5 -->
+<section>
+  <p class="kicker">§5 · Ruled in round 1, unchanged</p>
+  <h2>Trial heads-ups and the vet report</h2>
+  <p class="lede">These stay still. A heads-up is information, and it arrives with the card like every other line.</p>
+  <div class="frames">
+    <div class="frame">
+      <span class="frame-tag"><b>3a</b> · <span class="tag-cur">current</span> · a mix during a trial</span>
+      <div class="screen" style="min-height:300px">
+        <div class="card">
+          <div class="card-head">
+            <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles"><div class="card-title">Logged · <span class="ratio">¼ Chicken + ¾ Rabbit</span></div><div class="card-sub">7:35 am · Pixel · one bowl</div></div>
+          </div>
+          <div class="flag-panel">
+            <span class="flag-eyebrow">Rabbit trial · day 12</span>
+            <span class="flag-headline">This bowl has chicken in it, from Chicken Pâté.</span>
+            <span class="flag-detail">It counts in Pixel's trial record. The meal's saved, so nothing to undo. Maybe a note for your vet.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <span class="frame-tag"><b>5a</b> · <span class="tag-cur">current</span> · after the trial</span>
+      <div class="screen" style="min-height:300px">
+        <div class="card">
+          <div class="card-head">
+            <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="card-titles"><div class="card-title">Logged · <span class="ratio">¼ Chicken + ¾ Rabbit</span></div><div class="card-sub">Nov 19 · 7:40 am · Pixel</div></div>
+          </div>
+          <div class="flag-panel">
+            <span class="flag-eyebrow">Rabbit trial · past its 42 days</span>
+            <span class="flag-headline">This bowl has chicken in it, from Chicken Pâté.</span>
+            <span class="flag-detail">If Pixel's trial is over, ending it here keeps the record straight.</span>
+            <span class="flag-add">+ End the trial</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <span class="frame-tag"><b>6a</b> · <span class="tag-cur">current</span> · vet report, page 1</span>
+      <div class="report">
+        <div class="rep-h">Diet trial · Rabbit · gut · 42 days</div>
+        <div class="rep-line"><span class="rep-k">Day 1</span><span>Oct 1, owner-entered</span></div>
+        <div class="rep-line"><span class="rep-k">Switch-over</span><span class="hl">Trial diet first fed Sep 25, mixed with Chicken Pâté on 6 days before Day 1.</span></div>
+        <div class="rep-line"><span class="rep-k">Trial food only</span><span class="hl">From Oct 4 in the log. Mixed bowls on Oct 2 and 3 count as off-diet exposures.</span></div>
+        <div class="rep-line"><span class="rep-k">Off-diet</span><span>2 exposures in 48 feedings, both chicken, both in a mixed bowl.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ §6 -->
+<section>
+  <p class="kicker">§6 · Held back on purpose</p>
+  <h2>What we won't animate</h2>
+  <div class="anti">
+    <div><b>No celebration at all-rabbit</b>Nothing in the app ends a switch, so nothing celebrates one. No confetti, no bloom.</div>
+    <div><b>No gold on doors</b>Gold marks a saved record. The MIX pill and the mix line stay plain.</div>
+    <div><b>No direction hints</b>Both stepper sides look, move and buzz the same. No long-press repeat.</div>
+    <div><b>No rolling numbers</b>The split changes whole. A roll would show splits nobody fed.</div>
+    <div><b>No motion in History on scroll</b>Rows draw in once with the day. A run breaking is shown, never animated.</div>
+    <div><b>No spinner for a save</b>A mix saves on the phone first. The tick is only for waiting on the network.</div>
+  </div>
+</section>
+
+<!-- ============================================================ prompts -->
+<section>
+  <p class="kicker">Your reactions</p>
+  <h2>What to react to</h2>
+  <ul class="prompts">
+    <li><b>R-1</b>Play M1 to M4. Does the first mix feel quick and satisfying? Is the half-second hold on the split bar (M2) right, or should the sheet close at once?</li>
+    <li><b>R-2</b>Play M5. Does the MIX pill landing on the card feel like the rest of the app?</li>
+    <li><b>R-3</b>Shape 1 (M8b): a split bar on each mixed History row. Worth the extra line?</li>
+    <li><b>R-4</b>Foods (F1, F2): is "8 in a mix" on the row enough, and do you want the switch strip on the food's page?</li>
+  </ul>
+</section>
+
+</div>
+
+<script>
+(function () {
+  var root = document.getElementById('root');
+  var slow = document.getElementById('t-slow');
+  var rm = document.getElementById('t-rm');
+  try {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      root.classList.add('rm'); rm.setAttribute('aria-pressed', 'true');
+    }
+  } catch (e) {}
+
+  slow.addEventListener('click', function () {
+    var on = slow.getAttribute('aria-pressed') !== 'true';
+    slow.setAttribute('aria-pressed', String(on));
+    document.documentElement.style.setProperty('--s', on ? '4' : '1');
+  });
+  rm.addEventListener('click', function () {
+    var on = rm.getAttribute('aria-pressed') !== 'true';
+    rm.setAttribute('aria-pressed', String(on));
+    root.classList.toggle('rm', on);
+  });
+
+  function replay(el, cls) {
+    el.classList.remove('play', cls);
+    void el.offsetWidth;
+    el.classList.add('play', cls);
+  }
+  var plays = document.querySelectorAll('[data-play]');
+  plays.forEach(function (b) {
+    b.addEventListener('click', function () { replay(document.getElementById(b.dataset.play), b.dataset.kind); });
+  });
+
+  // M4 · the stepper
+  var stops = [['¾', '¼'], ['⅔', '⅓'], ['½', '½'], ['⅓', '⅔'], ['¼', '¾']];
+  var idx = 3;
+  var title = document.getElementById('m4-title'), now = document.getElementById('m4-now');
+  var btnA = document.getElementById('m4-a'), btnB = document.getElementById('m4-b');
+  var why = document.getElementById('m4-why'), buzz = document.getElementById('m4-buzz');
+  function render(animate) {
+    title.textContent = stops[idx][0] + ' Chicken + ' + stops[idx][1] + ' Rabbit';
+    now.textContent = stops[idx][0] + ' · ' + stops[idx][1];
+    btnA.setAttribute('aria-disabled', String(idx === 0));
+    btnB.setAttribute('aria-disabled', String(idx === stops.length - 1));
+    why.textContent = idx === stops.length - 1 ? 'Last stop. All rabbit is a plain Rabbit Pâté meal.'
+                    : idx === 0 ? 'Last stop. All chicken is a plain Chicken Pâté meal.' : '';
+    if (animate) {
+      [title, now].forEach(function (n) { n.classList.remove('xfade'); void n.offsetWidth; n.classList.add('xfade'); });
+      buzz.classList.remove('buzz'); void buzz.offsetWidth; buzz.classList.add('buzz');
+    }
+  }
+  btnA.addEventListener('click', function () { if (idx > 0) { idx--; render(true); } });
+  btnB.addEventListener('click', function () { if (idx < stops.length - 1) { idx++; render(true); } });
+  render(false);
+
+  // M5 · open the fan, then the MIX pill's flight to the card
+  var scr = document.getElementById('m5-screen');
+  var mix = document.getElementById('m5-mix');
+  var flyer = document.getElementById('m5-flyer');
+  var mark = document.getElementById('m5-mark');
+  function openFan() {
+    scr.classList.remove('landing', 'fanning');
+    mix.classList.remove('pressed');
+    void scr.offsetWidth;
+    scr.classList.add('fanning');
+  }
+  document.getElementById('m5-play').addEventListener('click', openFan);
+  mix.addEventListener('click', function () {
+    if (!scr.classList.contains('fanning')) return;
+    var s = scr.getBoundingClientRect();
+    var p = mix.querySelector('.pdisc').getBoundingClientRect();
+    var m = mark.getBoundingClientRect();
+    flyer.style.left = (m.left - s.left) + 'px';
+    flyer.style.top = (m.top - s.top) + 'px';
+    flyer.style.setProperty('--dx', (p.left - m.left - 6) + 'px');
+    flyer.style.setProperty('--dy', (p.top - m.top - 6) + 'px');
+    mix.classList.add('pressed');
+    scr.classList.remove('fanning');
+    void scr.offsetWidth;
+    scr.classList.add('landing');
+  });
+
+  document.getElementById('t-all').addEventListener('click', function () {
+    plays.forEach(function (b) { b.click(); });
+    openFan();
+  });
+})();
+</script>
