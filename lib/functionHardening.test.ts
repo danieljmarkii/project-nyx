@@ -117,6 +117,17 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-2050 (105) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
+  // CUL-2044 (106): a food's id can never be claimed again. The guard reads
+  // another account's food, the server-only ledger and storage; the retire writes
+  // the ledger no client holds a grant on. Both DEFINER, both revoked.
+  guard_food_item_id: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-2044 (106) — DEFINER so the cross-tenant id lookups are not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
+  retire_food_item_id: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-2044 (106) — DEFINER so a client delete can write the server-only ledger; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
   // 075 (CUL-1201 part 3): event_ai_analysis's updated_at, strictly increasing.
   // Reads nothing, so INVOKER; a trigger fires without an EXECUTE check, so no
   // client role needs it.
