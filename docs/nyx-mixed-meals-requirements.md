@@ -1,7 +1,7 @@
 # Mixed Meals and Food Transitions — Requirements
 
 **Version:** 0.3 | **Last Updated:** 2026-10-19 (all six P-decisions ruled; §7.4 Foods tab; §7.5 motion from mock round 2)
-**Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 (same link) adds motion and the Foods tab, with D-M3 open.
+**Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 (same link) adds motion and the Foods tab. Round 2 reactions R-1 and R-2 move to device QA at build row 5; R-3 and R-4 moved to CUL-2049 (PM, 2026-10-20). Nothing in the spec waits on the PM.
 **Reads first:** `docs/sessions/2026-10-19-mixed-meals-requirements.md` (the convening record), `docs/nyx-diet-trial-requirements.md` §4.1 and §5, `docs/research/2026-07-diet-trial-competitive-landscape.md`.
 **Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Readable copy:** https://claude.ai/artifact/1NPLtiUGvc9gy6HDEx5ivR (this file wins on divergence). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
 
@@ -248,7 +248,7 @@ Every motion reuses a shipped constant (C-30); the feature adds **no new spring*
 
 **Never:** a celebration at 100% of the new food; gold on a door; stepper arrows that hint a direction or auto-repeat; a rolling ratio; motion when a History run breaks; a spinner for a local save; a custom slide over the platform modal.
 
-**Two shapes for the record, open as D-M3 (round 2 R-3, R-4):** a split bar on each mixed History row (one bowl = full width; dropped when a segment cannot carry its label), and a "switch strip" on food detail (one bar per bowl, this food's share, fractions under each, unlogged days as gaps, no target line or projection). Each needs a chart-table row and the Data Scientist's sign-off before build.
+**Two shapes for the record, D-M3, deferred out of this build to [CUL-2049](https://linear.app/projectnyx/issue/CUL-2049) (PM, 2026-10-20):** a split bar on each mixed History row (one bowl = full width; dropped when a segment cannot carry its label), and a "switch strip" on food detail (one bar per bowl, this food's share, fractions under each, unlogged days as gaps, no target line or projection). Each needs a chart-table row and the Data Scientist's sign-off before build.
 
 ## §8 Consumers and build sequence
 
