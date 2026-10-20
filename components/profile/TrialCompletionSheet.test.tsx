@@ -395,6 +395,134 @@ describe('an ending the record refused', () => {
 // one open must never answer the next. The flow is a likely one ("wait, let me log
 // this first"): close, log this morning's vomit, reopen, and the sheet must not say
 // "No symptoms are on the record for either stretch."
+// CUL-2041 — the same loss as above, one step earlier: another phone's ending
+// hydrates while the owner is still entering their answer, and the host's gate takes
+// the sheet's trial away before Save. The owner is told, from the newly read row, in
+// CUL-2012's own words; nothing is written.
+describe('a trial another phone ended while the owner is entering an answer', () => {
+  let alert: jest.SpyInstance;
+  beforeEach(() => {
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+  afterEach(() => alert.mockRestore());
+
+  const COMPLETED_ELSEWHERE = {
+    id: 't-1', status: 'completed', endedOn: '2026-09-20',
+    stoppedReason: null, outcome: 'improved', outcomeNotes: null,
+  };
+  const STOPPED_ELSEWHERE = {
+    id: 't-1', status: 'abandoned', endedOn: '2026-09-20',
+    stoppedReason: 'vet_advised', outcome: null, outcomeNotes: null,
+  };
+
+  function host(onClose: jest.Mock, entry: 'complete' | 'stopped_early' = 'complete') {
+    return (
+      trial: typeof TRIAL | null,
+      endedRow: React.ComponentProps<typeof TrialCompletionSheet>['endedRow'] = null,
+    ) => (
+      <TrialCompletionSheet
+        entry={entry}
+        trial={trial}
+        endedRow={endedRow}
+        petName="Biscuit"
+        species="cat"
+        dayCounter={56}
+        onClose={onClose}
+        onExtend={jest.fn()}
+        onChanged={jest.fn()}
+      />
+    );
+  }
+
+  it('an outcome picked mid-entry: the sheet stays to say it, from the newly read row', async () => {
+    const onClose = jest.fn();
+    const withTrial = host(onClose);
+    const tree = render(withTrial(TRIAL));
+    await waitFor(() => tree.getByTestId('trial-outcome-worse'));
+    fireEvent.press(tree.getByTestId('trial-outcome-worse'));
+
+    tree.rerender(withTrial(null, COMPLETED_ELSEWHERE));
+
+    expect(tree.getByTestId('trial-lost-notice-title').props.children).toBe('Already ended');
+    expect(tree.getByTestId('trial-lost-notice-body').props.children).toMatch(
+      /^Biscuit’s trial was already ended on another phone, on Sep 20(, 2026)?\. That ending stays on the record, so what you said about how it went wasn’t saved\. You can tell your vet yourself\.$/,
+    );
+    // Nothing is written over the first ending, and the sheet waits for the owner.
+    expect(mockEndActiveTrial).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+
+    fireEvent.press(tree.getByText('OK'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(tree.queryByTestId('trial-lost-notice-body')).toBeNull();
+  });
+
+  it('a note typed mid-entry, with no outcome picked, is said too', async () => {
+    const withTrial = host(jest.fn());
+    const tree = render(withTrial(TRIAL));
+    await waitFor(() => tree.getByTestId('trial-outcome-worse'));
+    fireEvent.changeText(tree.UNSAFE_getAllByType(TextInput)[0], 'itching back by week 5');
+
+    tree.rerender(withTrial(null, COMPLETED_ELSEWHERE));
+
+    expect(tree.getByTestId('trial-lost-notice-body').props.children).toMatch(
+      /so what you said about how it went wasn’t saved/,
+    );
+  });
+
+  it('a stopped-early reason picked mid-entry, over a different reason on the record', () => {
+    const withTrial = host(jest.fn(), 'stopped_early');
+    const tree = render(withTrial(TRIAL));
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+
+    tree.rerender(withTrial(null, STOPPED_ELSEWHERE));
+
+    expect(tree.getByTestId('trial-lost-notice-body').props.children).toMatch(
+      /^Biscuit’s trial was already ended on another phone, on Sep 20(, 2026)?\. That ending stays on the record, so the reason you gave wasn’t saved\./,
+    );
+    expect(mockEndActiveTrial).not.toHaveBeenCalled();
+  });
+
+  it('no entry: the sheet goes away as before, and says nothing', async () => {
+    const onClose = jest.fn();
+    const withTrial = host(onClose);
+    const tree = render(withTrial(TRIAL));
+    await waitFor(() => tree.getByTestId('trial-outcome-worse'));
+
+    tree.rerender(withTrial(null, COMPLETED_ELSEWHERE));
+
+    expect(tree.toJSON()).toBeNull();
+    expect(tree.queryByTestId('trial-lost-notice-body')).toBeNull();
+    expect(mockEndActiveTrial).not.toHaveBeenCalled();
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('the record already holds the owner’s answer: nothing lost, so it closes in silence', () => {
+    const onClose = jest.fn();
+    const withTrial = host(onClose, 'stopped_early');
+    const tree = render(withTrial(TRIAL));
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+
+    tree.rerender(withTrial(null, { ...STOPPED_ELSEWHERE, stoppedReason: 'refused' }));
+
+    expect(tree.toJSON()).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('no row to read (the trial was replaced elsewhere): errs loud, with no date', () => {
+    const withTrial = host(jest.fn(), 'stopped_early');
+    const tree = render(withTrial(TRIAL));
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+
+    tree.rerender(withTrial({ ...TRIAL, id: 't-2', startedAt: '2026-09-21' }, null));
+
+    expect(tree.getByTestId('trial-lost-notice-body').props.children).toMatch(
+      /^Biscuit’s trial was already ended on another phone\. That ending stays on the record, so the reason you gave wasn’t saved\./,
+    );
+  });
+});
+
 describe('reopening the sheet (CUL-1560)', () => {
   const ABSENCE = 'No symptoms are on the record for either stretch.';
   const NOTHING: TrialOutcomeFacts = { ...FACTS, symptoms: [] };

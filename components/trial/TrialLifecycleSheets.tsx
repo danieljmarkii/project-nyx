@@ -35,6 +35,7 @@ export function TrialLifecycleSheets({
       <TrialCompletionSheet
         entry={lifecycle.completionEntry}
         trial={lifecycle.sheetTrial}
+        endedRow={lifecycle.sheetEndedRow}
         petName={pet.name}
         species={pet.species}
         pronouns={petPronouns(pet.sex ?? 'unknown')}
