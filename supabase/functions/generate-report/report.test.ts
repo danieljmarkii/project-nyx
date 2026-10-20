@@ -5659,20 +5659,58 @@ Deno.test('CUL-2003 — a check that DID flag is never also listed as not flaggi
 
 // ── Adversarial pass 1 (CUL-2003): each break, pinned on the record that produced it ─────────
 
-Deno.test('CUL-2003 adv 1 — a rise hidden behind another symptom\'s folded card is never "did not trigger"', () => {
+// The record CUL-2003 adv 1 pinned the stopgap line on: ongoing, rising vomiting (4 this week, 1
+// the week before) and loose stool going from 0 to 3. Vomiting is the steepest rise and its card
+// folds into the ongoing flag.
+const foldedVomitDog = (extra: ReturnType<typeof makeEvent>[] = []) => {
+  idSeq = 0
+  const vomits = ['2026-05-20', '2026-05-27', '2026-06-03', '2026-06-10', '2026-06-17', '2026-06-26', '2026-06-28', '2026-06-30', '2026-07-01']
+  return assembleReport(
+    baseInput({
+      events: [
+        ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+        ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+        ...['2026-06-27', '2026-06-29', '2026-07-01'].map((d) => makeEvent({ type: 'diarrhea', occurredAt: at(d, '20:00:00') })),
+        ...extra,
+      ],
+    }),
+  )
+}
+
+Deno.test('CUL-2022 — a rise behind a card folded into an ongoing flag is flagged itself, never "did not trigger"', () => {
+  const snap = foldedVomitDog()
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'chronicity' && f.symptomType === 'vomit'))
+  const worse = snap.safetyFlags.filter((f) => f.kind === 'symptom_worsening')
+  assert.deepEqual(worse.map((f) => 'symptomType' in f && f.symptomType), ['diarrhea'], 'the loose-stool rise takes the one card')
+  const p = readAs(renderReport(snap))
+  assert.ok(/Rising frequency\. Loose stool rose from 0 episodes in the prior 7 days to 3 in the recent 7 days\./.test(p), p.slice(p.indexOf('Safety'), p.indexOf('Safety') + 1500))
+  assert.ok(!/Loose stool getting worse: not assessed on its own/.test(p), 'the stopgap line no longer stands in for the flag')
+  assert.ok(!/loose stool getting worse \(it triggers/.test(p))
+})
+
+Deno.test('CUL-2022 — the stopgap line stays where it is true: a third symptom behind the one card', () => {
+  const snap = foldedVomitDog([makeEvent({ type: 'itch', occurredAt: at('2026-06-30', '09:00:00') })])
+  const itch = snap.safetyChecks.find((c) => c.kind === 'worsening' && c.symptomType === 'itch')
+  assert.ok(itch && itch.kind === 'worsening' && itch.state === 'not_separate', JSON.stringify(itch))
+  const p = readAs(renderReport(snap))
+  assert.ok(/getting worse: not assessed on its own, because the check reports only the steepest rise\./.test(p))
+})
+
+Deno.test('CUL-2022 — when only the ongoing symptom rose, the others were assessed, so "not assessed on its own" would be false', () => {
   idSeq = 0
   const vomits = ['2026-05-20', '2026-05-27', '2026-06-03', '2026-06-10', '2026-06-17', '2026-06-26', '2026-06-28', '2026-06-30', '2026-07-01']
   const events = [
     ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
     ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
-    ...['2026-06-27', '2026-06-29', '2026-07-01'].map((d) => makeEvent({ type: 'diarrhea', occurredAt: at(d, '20:00:00') })),
+    // Flat: one the week before, one this week.
+    ...['2026-06-20', '2026-06-29'].map((d) => makeEvent({ type: 'diarrhea', occurredAt: at(d, '20:00:00') })),
   ]
   const snap = assembleReport(baseInput({ events }))
   assert.ok(snap.safetyFlags.some((f) => f.kind === 'chronicity' && f.symptomType === 'vomit'))
-  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'symptom_worsening'), 'the vomiting card was folded, so no worsening flag shows')
-  const p = readAs(renderReport(snap))
-  assert.ok(/Loose stool getting worse: not assessed on its own, because the check reports only the steepest rise\./.test(p))
-  assert.ok(!/loose stool getting worse \(it triggers/.test(p))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'symptom_worsening'))
+  const c = snap.safetyChecks.find((x) => x.kind === 'worsening' && x.symptomType === 'diarrhea')
+  assert.ok(c && c.kind === 'worsening' && c.state !== 'not_separate', JSON.stringify(c))
+  assert.ok(!/not assessed on its own/.test(readAs(renderReport(snap))))
 })
 
 Deno.test('CUL-2003 adv 2 — a course the engine could not measure is "not checked", never "did not trigger"', () => {
