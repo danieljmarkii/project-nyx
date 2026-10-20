@@ -15,6 +15,11 @@
 //   • the race: a parent that lands while its child's refusal is in flight leaves the child
 //     un-parked, on an insert-only child (no version) and a visit-linked one;
 //   • another device lands the fixed parent: the pull re-arms the child, per hydrated parent.
+//
+// CUL-2046 widens the walk to the children the push never holds (REARM_ONLY_LINKS): a dose
+// behind its course or its log, and the photos on a log or a visit. Each parks on a budgeted
+// 23503 behind a refused parent, and every test above runs over them too; the Refused dose
+// gets its own end to end below, and so does its exemption from holding.
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
@@ -46,6 +51,10 @@ const mockServer = {
  *  phone between a drain's queue read and its next step. */
 const mockAfterRead = new Map<string, () => void>();
 
+function fkMessage(table: string, column: string): string {
+  return `insert or update on table "${table}" violates foreign key constraint "${table}_${column}_fkey"`;
+}
+
 function mockServerTable(table: string): Map<string, Row> {
   if (!mockServer.rows.has(table)) mockServer.rows.set(table, new Map());
   return mockServer.rows.get(table)!;
@@ -58,12 +67,22 @@ const mockGuarded: Record<string, { parent: string; column: string }[]> = {
   vet_appointments: [{ parent: 'vet_visits', column: 'vet_visit_id' }],
 };
 
+/** The plain foreign keys these tests lean on: a 23503 naming the constraint, as Postgres does. */
+const mockForeignKeys: Record<string, { parent: string; column: string }[]> = {
+  medication_administrations: [{ parent: 'medications', column: 'medication_id' }],
+};
+
 function mockServerRefusal(table: string, row: Row): ServerError | null {
   const refused = mockServer.refuse.get(String(row.id));
   if (refused) return refused;
   for (const { parent, column } of mockServer.guarded ? mockGuarded[table] ?? [] : []) {
     if (row[column] != null && !mockServerTable(parent).has(String(row[column]))) {
       return { code: '23514', message: `${table}: ${column} must reference a ${parent} row for the same pet` };
+    }
+  }
+  for (const { parent, column } of mockServer.guarded ? mockForeignKeys[table] ?? [] : []) {
+    if (row[column] != null && !mockServerTable(parent).has(String(row[column]))) {
+      return { code: '23503', message: fkMessage(table, column) };
     }
   }
   return null;
@@ -159,7 +178,14 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
-import { PARENT_LINKS, pushGuardColumn, type ParentLink } from './syncQueue';
+import {
+  PARENT_GATED_QUEUES,
+  PARENT_LINKS,
+  REARM_LINKS,
+  REARM_ONLY_LINKS,
+  pushGuardColumn,
+  type ParentLink,
+} from './syncQueue';
 import {
   __resetChildRearmStateForTests,
   hydrateFromCloud,
@@ -169,6 +195,7 @@ import {
   syncPendingEvents,
   syncPendingIncidentFloors,
   syncPendingIntakeChecks,
+  syncPendingMedicationAdministrations,
   syncPendingMedications,
   syncPendingVetAppointments,
   syncPendingVetCalls,
@@ -228,6 +255,10 @@ function parentCausedError(link: ParentLink): { sync_error: string; sync_attempt
   if (link.child === 'incident_floor_queue') {
     return { sync_error: 'refloor-404: Event not found (unsent after 25 attempts)', sync_attempts: 25 };
   }
+  // An ungated child meets the plain foreign key, budgeted, and parks when the budget runs out.
+  if (REARM_ONLY_LINKS.includes(link)) {
+    return { sync_error: `23503: ${fkMessage(link.child, link.column)} (unsent after 25 attempts)`, sync_attempts: 25 };
+  }
   return { sync_error: `23514: ${link.child}: ${link.column} must reference a ${link.parent} row for the same pet`, sync_attempts: 0 };
 }
 
@@ -265,10 +296,10 @@ afterEach(async () => {
 });
 
 it('every link a child can be refused through has a parent drain that lands it', () => {
-  const missing = PARENT_LINKS.filter((l) => !PARENT_DRAINS[l.parent]).map((l) => `${l.child}.${l.column}`);
+  const missing = REARM_LINKS.filter((l) => !PARENT_DRAINS[l.parent]).map((l) => `${l.child}.${l.column}`);
   expect(missing).toEqual([]);
-  // The instances CUL-2032 lists, so the derivation cannot quietly drop one.
-  const named = PARENT_LINKS.map((l) => `${l.child}.${l.column}→${l.parent}`);
+  // The instances CUL-2032 and CUL-2046 list, so the derivation cannot quietly drop one.
+  const named = REARM_LINKS.map((l) => `${l.child}.${l.column}→${l.parent}`);
   expect(named).toEqual(expect.arrayContaining([
     'intake_checks.event_id→events',
     'vet_calls.event_id→events',
@@ -288,14 +319,32 @@ it('every link a child can be refused through has a parent drain that lands it',
     'meals.event_id→events',
     'weight_checks.event_id→events',
     'looks.event_id→events',
+    'medication_administrations.medication_id→medications',
+    'medication_administrations.event_id→events',
+    'medication_administrations.paired_event_id→events',
+    'event_attachments.event_id→events',
+    'vet_visit_attachments.vet_visit_id→vet_visits',
   ]));
 });
 
-describe.each(PARENT_LINKS.map((l) => [`${l.child}.${l.column} → ${l.parent}`, l] as const))(
+it('the ungated children are re-armed only: never held, never parked on a refused parent', () => {
+  const ungated = [...new Set(REARM_ONLY_LINKS.map((l) => l.child))];
+  // The push gate and the parking context read PARENT_LINKS; none of these is in either.
+  expect(ungated.filter((c) => c in PARENT_GATED_QUEUES)).toEqual([]);
+  expect(PARENT_LINKS.filter((l) => ungated.includes(l.child))).toEqual([]);
+});
+
+describe.each(REARM_LINKS.map((l) => [`${l.child}.${l.column} → ${l.parent}`, l] as const))(
   '%s',
   (_name, link) => {
+    // A dose is its own log's child, one per log (a local foreign key, unique).
+    const ownLog = (id: string): Row => {
+      if (link.child !== 'medication_administrations' || link.column === 'event_id') return {};
+      insert('events', { id: `ev-${id}`, event_type: 'medication', synced: 1 });
+      return { event_id: `ev-${id}` };
+    };
     const child = (id: string, parentId: string, values: Row) =>
-      insert(link.child, { id, [link.column]: parentId, synced: 0, ...values });
+      insert(link.child, { id, ...ownLog(id), [link.column]: parentId, synced: 0, ...values });
 
     // Each child behind its own parent: meals, weigh-ins, looks and a trial's foods hold one
     // row per parent. `p-own` lands beside `p-fixed`, so its child's fault is its own.
@@ -426,6 +475,57 @@ describe('the answer to "Has she eaten?" under a vomit, end to end', () => {
     answer();
     await syncPendingIntakeChecks();
     expect(String(localRow('intake_checks', 'ic1').sync_error)).toMatch(/^23514/);
+  });
+});
+
+describe('a Refused dose behind a refused course, end to end (CUL-2046)', () => {
+  beforeEach(() => {
+    mockServer.guarded = true;
+    // The dose's own log is on the server; only its course is missing.
+    insert('events', { id: 'ev-d1', event_type: 'medication', synced: 1 });
+    mockServerTable('events').set('ev-d1', { id: 'ev-d1' });
+  });
+  const refusedDose = (attempts: number) => insert('medication_administrations', {
+    id: 'd1', event_id: 'ev-d1', medication_id: 'm1', adherence: 'refused',
+    synced: 0, sync_error: null, sync_attempts: attempts, updated_at: T1,
+  });
+
+  it('parks after its budget, then is sent again and lands once the course is fixed and lands', async () => {
+    insert('medications', { id: 'm1', synced: 0, sync_error: REFUSAL_TEXT });
+    refusedDose(24);
+    await syncPendingMedicationAdministrations();
+    expect(String(localRow('medication_administrations', 'd1').sync_error)).toMatch(/^23503: .*medication_id/);
+    // Parked: the next drain asks the server nothing.
+    await syncPendingMedicationAdministrations();
+    expect(mockServerTable('medication_administrations').has('d1')).toBe(false);
+
+    fixParent('medications', 'm1');
+    await syncPendingMedications();
+    // Re-armed, not rewritten: the Refused rating and its version are still the owner's.
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({
+      synced: 0, sync_error: null, sync_attempts: 0, updated_at: T1, adherence: 'refused',
+    });
+    await syncPendingMedicationAdministrations();
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 1 });
+    expect(mockServerTable('medication_administrations').get('d1')).toMatchObject({ adherence: 'refused' });
+  });
+
+  it('is never held for its course: behind a course still waiting to land, it goes up and spends its own attempt', async () => {
+    insert('medications', { id: 'm1', synced: 0, sync_error: null });
+    refusedDose(0);
+    await syncPendingMedicationAdministrations();
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 0, sync_error: null, sync_attempts: 1 });
+  });
+
+  it('a dose an earlier build parked under a course that has since landed is sent on the next sync', async () => {
+    insert('medications', { id: 'm1', synced: 1 });
+    mockServerTable('medications').set('m1', { id: 'm1' });
+    insert('medication_administrations', {
+      id: 'd1', event_id: 'ev-d1', medication_id: 'm1', adherence: 'refused', synced: 0, sync_attempts: 25,
+      sync_error: `23503: ${fkMessage('medication_administrations', 'medication_id')} (unsent after 25 attempts)`,
+    });
+    await syncNow();
+    expect(localRow('medication_administrations', 'd1')).toMatchObject({ synced: 1 });
   });
 });
 

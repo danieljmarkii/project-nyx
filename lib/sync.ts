@@ -48,6 +48,7 @@ import {
   visitLandedSql,
   incidentFloorPushQueueSql,
   PARENT_LINKS,
+  REARM_LINKS,
   type ParentLink,
   classifyFloorCheckFailure,
   formatFloorCheckError,
@@ -739,7 +740,9 @@ async function recordChildPushFailure(
  * children's drains run in pushAllQueues, so the re-armed rows go up in the same cycle.
  */
 async function rearmChildrenOf(db: Db, parent: QueueTable, ids: readonly string[]): Promise<void> {
-  const links = PARENT_LINKS.filter((l) => l.parent === parent);
+  // CUL-2046 — REARM_LINKS, not PARENT_LINKS: a dose or a photo is never held for its
+  // parent, but parks behind a refused one all the same.
+  const links = REARM_LINKS.filter((l) => l.parent === parent);
   if (links.length === 0 || ids.length === 0) return;
   noteLanded(parent, ids);
   for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
@@ -800,7 +803,7 @@ let legacyChildrenRearmed = false;
 async function rearmLegacyChildren(db: Db): Promise<void> {
   if (legacyChildrenRearmed) return;
   try {
-    for (const link of PARENT_LINKS) {
+    for (const link of REARM_LINKS) {
       await db.runAsync(
         `UPDATE ${link.child} SET sync_attempts = 0, sync_error = NULL
           WHERE synced = 0 AND ${parentCausedRefusalSql(link)}
