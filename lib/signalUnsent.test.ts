@@ -13,6 +13,7 @@ jest.mock('./sync', () => ({
 jest.mock('./db', () => ({ countRecordGaps: jest.fn() }));
 
 import { countRecordGaps } from './db';
+import { useSyncStore } from '../store/syncStore';
 import { regenerateSignal } from './signal';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
@@ -93,5 +94,29 @@ describe('Q14 (CUL-772) / CUL-2037 — the rebuild names unsent and refused rows
     mockedInvoke.mockImplementation(async () => { order.push('invoke'); return { error: null }; });
     await regenerateSignal('pet-a');
     expect(order).toEqual(['events', 'meals', 'gaps', 'invoke']);
+  });
+
+  // CUL-2037 (adversarial pass 1): a refused row holds every expiry at an hour, so the per-pet
+  // cap is reachable. A capped reply writes nothing; bumping the tick would re-run useSignal and
+  // the cross-pet banner over the same expired row, each regen refused and still counted, until
+  // the monthly cap was spent.
+  it('a capped reply does not bump the signal tick (no regen loop)', async () => {
+    mockedGaps.mockResolvedValue({ unsent: 0, refused: 1 });
+    mockedInvoke.mockResolvedValue({
+      data: { cap_reached: true, cap: 'daily', function: 'generate_signal', resets_at: '2026-10-21T00:00:00.000Z' },
+      error: null,
+    });
+    const before = useSyncStore.getState().signalTick;
+    const res = await regenerateSignal('pet-a');
+    expect(res.error).toBeNull();
+    expect(useSyncStore.getState().signalTick).toBe(before);
+  });
+
+  it('a regen that wrote a Signal still bumps the tick', async () => {
+    mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
+    mockedInvoke.mockResolvedValue({ data: { is_building: false, findings: [] }, error: null });
+    const before = useSyncStore.getState().signalTick;
+    await regenerateSignal('pet-a');
+    expect(useSyncStore.getState().signalTick).toBe(before + 1);
   });
 });

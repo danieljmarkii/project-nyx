@@ -928,10 +928,16 @@ async function runRegen(petId: string): Promise<{ error: string | null }> {
     // generate-signal treats either flag as an incomplete read: the 1-hour expiry and no
     // reassurance, so a calm Signal is never renewed for a day over rows it has not seen.
     const { unsentRows, refusedRows } = await readSignalRecordGaps();
-    const { error } = await supabase.functions.invoke('generate-signal', {
+    const { data, error } = await supabase.functions.invoke('generate-signal', {
       body: { petId, unsentRows, refusedRows },
     });
-    if (!error) {
+    // CUL-2037: over the cap the function answers 200 `{ cap_reached: true }` and writes
+    // nothing. Bumping the tick then would re-run useSignal and the cross-pet banner over the
+    // same expired row, each regen refused and still counted, until the MONTHLY cap was gone
+    // and no new safety card could be built for weeks. A refused row holds every expiry at an
+    // hour, which is what makes the cap reachable.
+    const capped = (data as { cap_reached?: unknown } | null)?.cap_reached === true;
+    if (!error && !capped) {
       // A successful regen wrote a fresh cache. Bump the signal tick so the Home
       // Signal (useSignal) and the cross-pet safety banner (useCrossPetSafetyBanner)
       // re-read it without waiting for a screen re-focus — closes the B-150 window
