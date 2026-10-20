@@ -530,7 +530,7 @@ export const PARENT_GATED_QUEUES = {
   //   for good even when the log's earlier version was on the server and the rating would
   //   land. A refused log now holds nothing, as everywhere else: the child goes up and takes
   //   its own answer. Its 23503 is final there (`pushRows`' `parentRefused`), and when the
-  //   log is fixed and lands, its children get a fresh try (`rearmChildrenOfLandedEvents`).
+  //   log is fixed and lands, its children get a fresh try (`rearmChildrenOf`, lib/sync.ts).
   meals: [{ parent: 'events', column: 'event_id' }],
   weight_checks: [{ parent: 'events', column: 'event_id' }],
   looks: [{ parent: 'events', column: 'event_id' }],
@@ -556,6 +556,37 @@ export function parentLandedSql(child: ParentGatedQueue): string {
      WHERE gate_p.id = ${child}.${column}
        AND gate_p.synced = 0 AND gate_p.sync_error IS NULL)`)
     .join('\n     AND ');
+}
+
+/** One link from a child queue to a parent whose absence from the server can refuse it. */
+export type ParentLink = { readonly child: string; readonly parent: string; readonly column: string };
+
+/**
+ * CUL-2032 — every child → parent link a refusal can come from: each gate in
+ * `PARENT_GATED_QUEUES`, plus every visit-linked queue → `vet_visits` (`visitLandedSql`).
+ * A refused parent holds nothing, so its child goes up and, when the server lacks the
+ * parent, is refused itself; this is the list `lib/sync.ts` reads to give that child a fresh
+ * try when the parent lands, and to park the refusal only while the parent is still refused.
+ * Derived, never restated, so a new gate is re-armed the day it is added.
+ */
+export const PARENT_LINKS: readonly ParentLink[] = [
+  ...Object.entries(PARENT_GATED_QUEUES).flatMap(([child, gates]) =>
+    gates.map(({ parent, column }) => ({ child, parent, column }))),
+  ...VISIT_LINKED_TABLES.map((child) => ({ child, parent: 'vet_visits', column: 'vet_visit_id' })),
+];
+
+/**
+ * CUL-2032 — the `sync_error` shapes a parent missing from the server explains, for one
+ * link: a same-pet guard's 23514 (041, 045/066/067, 064, 082, 097 all run before the
+ * foreign key), or the foreign key's own 23503 naming the link's column, budgeted or final.
+ * The re-check marker is not a table write: the edge function reads its event and answers
+ * 404 when the server lacks it, budgeted (`classifyFloorCheckFailure`). A 23514 can also be
+ * the child's own fault; such a row is refused again on its next push, once per landing of
+ * its parent, which is the cost of never leaving a parent-caused refusal parked.
+ */
+export function parentCausedRefusalSql(link: ParentLink): string {
+  if (link.child === 'incident_floor_queue') return `sync_error LIKE 'refloor-404:%'`;
+  return `(sync_error LIKE '23514:%' OR sync_error LIKE '23503:%${link.column}%')`;
 }
 
 /**
