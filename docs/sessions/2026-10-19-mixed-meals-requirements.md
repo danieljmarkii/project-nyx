@@ -1,7 +1,7 @@
 # Mixed meals and food transitions: requirements convening
 
 **Date:** 2026-10-19
-**Type:** Discovery (PM-requested), [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). No app code changed. Produced `docs/nyx-mixed-meals-requirements.md` v0.1.
+**Type:** Discovery (PM-requested), [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). Shipped via #1261. No app code changed. Produced `docs/nyx-mixed-meals-requirements.md` v0.1.
 
 ## The PM's report
 
@@ -58,4 +58,8 @@ They asked for design delight and motion. The Motion & IA lens set the rule that
 The PM asked for a Linear project: **Mixed meals: one bowl, two foods**, with the build board as CUL-2050 (migration 103) through CUL-2054 (the writer and UI), each blocked by the one before. The readable spec is published at https://claude.ai/artifact/1NPLtiUGvc9gy6HDEx5ivR.
 
 **Proposed Tier 1 edit, still awaiting PM:** the Read-These row for `docs/nyx-mixed-meals-requirements.md` (above).
+
+## 2026-10-20: the release question, the flag, and the merge
+
+The PM asked whether mixed meals can run beside App Store 1.2.0 so they can track their cat's intake now. A read of the 1.2.0 page: no freeze (D2), so whatever is on `main` at the cut ships in 1.2.0, and after the cut `main` moves to 1.2.1. The PM ruled that **row 05 ships unflagged**, on for every account, and chose **option (a)**: build now; row 05 rides 1.2.0 only if it is merged and device-checked before the cut, and the cut never waits for it. The project page was rewritten into `/dispatch`'s page format (run order, lanes, Done means, one-at-a-time rules against 1.2.0's render.ts, generate-signal and migration rows, build notes with hotspots). Migration 103 had not been applied (the PM asked); the number is now provisional because 1.2.0's PR-34b also wants it. Interim for the PM's cat: two same-minute meals of different foods are not collapsed as duplicates.
 
