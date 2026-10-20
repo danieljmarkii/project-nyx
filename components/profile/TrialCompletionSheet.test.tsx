@@ -716,7 +716,7 @@ describe('the trial under an open sheet is replaced by a different trial (A→B)
   // A host whose `onClose` behaves like the real one's or (`sticky`) never clears the
   // entry, so the sheet's own latch is what is under test.
   function host(onClose: jest.Mock, entry: 'complete' | 'stopped_early' | 'decision') {
-    return (trial: typeof TRIAL | null) => (
+    return (trial: React.ComponentProps<typeof TrialCompletionSheet>['trial']) => (
       <TrialCompletionSheet
         entry={entry}
         trial={trial}
