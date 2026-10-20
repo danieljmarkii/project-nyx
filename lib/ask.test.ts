@@ -14,16 +14,15 @@ import {
   RUNDOWN_CTA,
 } from './ask';
 import { supabase } from './supabase';
-import { countUnsentForSignal, getDb } from './db';
+import { countRecordGaps, getDb } from './db';
 
 // ask.ts imports the real supabase client (fail-fast env check) and the SQLite
 // handle — replace both before ask.ts resolves them (same pattern as signal.test.ts).
 jest.mock('./supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
-jest.mock('./db', () => ({ getDb: jest.fn(), countUnsentForSignal: jest.fn() }));
-// CUL-1982: the real hasUnsentRows (lib/signal.ts) runs over a mocked queue count; its push
-// imports are stubbed only so the module resolves (Ask never pushes).
+jest.mock('./db', () => ({ getDb: jest.fn(), countRecordGaps: jest.fn() }));
+// Ask never pushes; the push is stubbed so nothing it reaches can.
 jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(), syncPendingMeals: jest.fn() }));
 // getDeviceTimezone (B-443) rides the request; pin it to a fixed zone so the body assertion is
 // deterministic under any runner clock (the non-UTC CI job runs jest in Kiritimati/Chatham/Honolulu).
@@ -149,7 +148,7 @@ describe('askQuestion — the network call', () => {
     await askQuestion({ petId: 'p1', question: 'q', conversation: [] });
     expect(mockedGaps).toHaveBeenCalledTimes(1);
     expect(mockedGaps).toHaveBeenCalledWith(expect.stringContaining('AS refused'));
-    expect(countUnsentForSignal).not.toHaveBeenCalled();
+    expect(countRecordGaps).not.toHaveBeenCalled();
   });
 
   it('a failed read still declines, as unsent, and never claims an entry was refused', async () => {
