@@ -48,6 +48,8 @@ import {
   visitLandedSql,
   incidentFloorPushQueueSql,
   PARENT_LINKS,
+  REARM_LINKS,
+  REARM_ONLY_LINKS,
   type ParentLink,
   classifyFloorCheckFailure,
   formatFloorCheckError,
@@ -622,6 +624,30 @@ async function childPushContext<R extends { id: string }>(
 }
 
 /**
+ * CUL-2046 — the same context for a child the push never holds or parks (`REARM_ONLY_LINKS`):
+ * the parents each row names, and no refused set, so a refusal behind a refused parent keeps
+ * the ordinary budget. What it adds is the mark. A course or a log that lands while a dose's or
+ * a photo's refusal is in flight re-arms before that refusal is recorded, so without the mark
+ * the row parked on its last attempt (or on 023's terminal 23514) until the next app launch
+ * (adversarial review, CUL-2046). With it, that refusal is re-armed instead (`rearmAfterLandedParent`).
+ */
+function rearmOnlyPushContext<R extends { id: string }>(
+  child: QueueTable,
+  rows: readonly R[],
+  mark: number,
+): ChildPushContext {
+  const linked = new Map<string, LinkedParent[]>();
+  for (const link of REARM_ONLY_LINKS) {
+    if (link.child !== child) continue;
+    for (const r of rows) {
+      const parentId = (r as unknown as Record<string, unknown>)[link.column];
+      if (typeof parentId === 'string') linked.set(r.id, [...(linked.get(r.id) ?? []), { link, id: parentId }]);
+    }
+  }
+  return { mark, linked, refused: new Map() };
+}
+
+/**
  * A refusal one of these refused parents can explain: a same-pet guard's 23514, or a 23503
  * that names the link's column. A meal's 23503 on its FOOD names `food_item_id`, which no
  * refused parent's link does: that wait can end (the food pre-sync lands next cycle), so it
@@ -739,7 +765,9 @@ async function recordChildPushFailure(
  * children's drains run in pushAllQueues, so the re-armed rows go up in the same cycle.
  */
 async function rearmChildrenOf(db: Db, parent: QueueTable, ids: readonly string[]): Promise<void> {
-  const links = PARENT_LINKS.filter((l) => l.parent === parent);
+  // CUL-2046 — REARM_LINKS, not PARENT_LINKS: a dose or a photo is never held for its
+  // parent, but parks behind a refused one all the same.
+  const links = REARM_LINKS.filter((l) => l.parent === parent);
   if (links.length === 0 || ids.length === 0) return;
   noteLanded(parent, ids);
   for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
@@ -800,7 +828,7 @@ let legacyChildrenRearmed = false;
 async function rearmLegacyChildren(db: Db): Promise<void> {
   if (legacyChildrenRearmed) return;
   try {
-    for (const link of PARENT_LINKS) {
+    for (const link of REARM_LINKS) {
       await db.runAsync(
         `UPDATE ${link.child} SET sync_attempts = 0, sync_error = NULL
           WHERE synced = 0 AND ${parentCausedRefusalSql(link)}
@@ -2057,6 +2085,7 @@ async function drainEventAttachmentsQueue(): Promise<void> {
 
   // Only a live log's photo is pushed. LEFT JOIN, so a photo whose event row is
   // not on this device still goes up as it always did; only a KNOWN removal holds it.
+  const mark = landingMark();
   const pending = await db.getAllAsync<{
     id: string; event_id: string; pet_id: string;
     local_uri: string; storage_path: string;
@@ -2067,6 +2096,7 @@ async function drainEventAttachmentsQueue(): Promise<void> {
       WHERE a.synced = 0 AND a.${NOT_QUARANTINED_SQL} AND e.deleted_at IS NULL
       LIMIT 20`,
   );
+  const childCtx = rearmOnlyPushContext('event_attachments', pending, mark);
 
   for (const att of pending) {
     try {
@@ -2083,7 +2113,7 @@ async function drainEventAttachmentsQueue(): Promise<void> {
       // read them back. supabase-js returns errors, it does not throw.
       if (error) {
         console.warn('[sync] event_attachment upsert failed:', error.message);
-        await recordPushFailure(db, 'event_attachments', att, error);
+        await recordChildPushFailure(db, 'event_attachments', att, error, childCtx);
         continue;
       }
       // Marked only while the log is live, in one statement (lib/attachments.ts).
@@ -2511,6 +2541,7 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
 
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<LocalMedicationAdministration>(
     `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
   );
@@ -2519,7 +2550,8 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
   const itemIds = [...new Set(unsynced.map((a) => a.medication_item_id).filter(Boolean))] as string[];
   await presyncMedicationItems(db, session.user.id, itemIds);
 
-  await pushRows(db, 'medication_administrations', unsynced, administrationRowToRemote);
+  await pushRows(db, 'medication_administrations', unsynced, administrationRowToRemote,
+    rearmOnlyPushContext('medication_administrations', unsynced, mark));
 }
 
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────

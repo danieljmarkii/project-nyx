@@ -576,6 +576,27 @@ export const PARENT_LINKS: readonly ParentLink[] = [
 ];
 
 /**
+ * CUL-2046 — the links a refusal can come from on a child the push never holds: a dose
+ * (its course, its own log, the log it was paired with) and the photos on a log or a visit.
+ * Sent ahead of a parent the server lacks, each meets a budgeted 23503 (or 023's same-pet
+ * 23514 on a dose's paired log). Behind a REFUSED parent that wait never ends, so the row
+ * parks after its budget, and without these links nothing re-sent it once the parent was
+ * fixed and landed: a Refused dose stayed on this phone for good. Re-armed only, never
+ * gated: a held dose is a held correction (`PARENT_GATED_QUEUES` says why), and the push
+ * reads `PARENT_LINKS` alone (`childPushContext`), so these keep the ordinary budget.
+ */
+export const REARM_ONLY_LINKS: readonly ParentLink[] = [
+  { child: 'medication_administrations', parent: 'medications', column: 'medication_id' },
+  { child: 'medication_administrations', parent: 'events', column: 'event_id' },
+  { child: 'medication_administrations', parent: 'events', column: 'paired_event_id' },
+  { child: 'event_attachments', parent: 'events', column: 'event_id' },
+  { child: 'vet_visit_attachments', parent: 'vet_visits', column: 'vet_visit_id' },
+];
+
+/** Every link a parent's landing re-arms: the gated ones and the ungated ones. */
+export const REARM_LINKS: readonly ParentLink[] = [...PARENT_LINKS, ...REARM_ONLY_LINKS];
+
+/**
  * CUL-2032 — the `sync_error` shapes a parent missing from the server explains, for one
  * link: a same-pet guard's 23514 (041, 045/066/067, 064, 082, 097 all run before the
  * foreign key), or the foreign key's own 23503 naming the link's column, budgeted or final.
