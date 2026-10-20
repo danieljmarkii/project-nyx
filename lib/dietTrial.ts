@@ -3123,15 +3123,15 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // days 1–3 fired the card, one matched bowl on day 4 (refused or unrated) moved the
   // lane to a one-feeding narrow population, and the card read "Keep going with the
   // trial diet" over 4 of 4 refused bowls. The ruling: once the fallback has fired
-  // inside the recency window it holds until the stand-down's own evidence says
-  // otherwise. Silence never cancels an alarm, and neither does an unrated bowl.
+  // it holds until the stand-down's own evidence says otherwise (CUL-2015 below
+  // removed the ruling's original recency-window scope). Silence never cancels an alarm, and neither does an unrated bowl.
   //
   // "HAS FIRED" IS READ OFF THE RECORD, NOT STORED. The fallback can only have spoken
   // while nothing had matched, and it was still speaking at the first match if the
-  // fact's own question (`recentRefusalFires`) holds over the meal record as it stood
-  // then: every non-treat feeding up to that moment except the matched ones, over the
-  // recency window ending on the match's day. It fired INSIDE today's window when that
-  // day is inside it. The window is the one that ended at the match, not today's: the
+  // facts' own questions (`recentRefusalFires`, `rangeRefusalFires`) hold over the
+  // meal record as it stood then: every non-treat feeding up to that moment except the
+  // matched ones, the now-fact over the recency window ending on the match's day. The
+  // window is the one that ended at the match, not today's: the
   // first cut measured today's and `adversarial-reviewer` executed the cost (refusals
   // on days 1–3, a match on day 4, read on day 15: day 1 had aged out, the prefix fell
   // below the floor and the card went silent, though the fallback fired on day 3).
@@ -3157,18 +3157,37 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // Nor when the trial diet's RANGE fact fires and the meal record's does not: finished
   // rival bowls weeks old dilute the wide share, and the second pass executed a held
   // record erasing a narrow range fact the report and the withheld card read.
+  // CUL-2015: PAST TODAY'S WINDOW THE HOLD ONLY EVER ADDS. Inside the window the
+  // carve-out is CUL-1993's as shipped. Past it, a first match that the old scope left
+  // to the trial diet stays there whenever the trial diet's range fact fires, so the
+  // hold reaches only a record where the trial diet says nothing at all and can never
+  // trade one warning for another. Two passes executed what a single rule cost:
+  // keeping the in-window carve-out past the window traded a trial-diet 3 of 3 with
+  // R4's run for a meal-record "largely" (rival refusals days 1–3, matched refusals
+  // days 4–5, a finished rival bowl on day 10, a matched refusal on day 30); asking
+  // for the meal record's NOW-fact instead silenced the card in the window (a trial-
+  // diet range fact under the span guard) and dropped the run past it. Which of two
+  // firing facts should speak is the PM's fork, filed beside CUL-2015.
   //
-  // ⚠️ NOT COVERED: a fallback that last spoke BEFORE today's recency window (refusals
-  // weeks ago, a match, then only unrated bowls) still lets go, as on main. The ruling
-  // scoped the hold to the window; whether R2's "dated, not expired" reaches past it is
-  // the PM's open fork, filed beside CUL-1993.
+  // CUL-2015, ruling (a) (PM, 2026-10-19): THE HOLD HAS NO RECENCY SCOPE. It applies
+  // whenever the pre-match meal record fired EITHER refusal fact, however long ago the
+  // first match was, and only the stand-down releases it. R2's "dated, not expired"
+  // (CUL-54), carried through the population switch: before this, refusals weeks ago,
+  // a match, then only unrated bowls let go (20 of 20 refused, then nothing on the
+  // card), where the same record with no match kept R2's past-tense range fact. The
+  // range fact joins the now-fact because the meal record can have been speaking ONLY
+  // in the past tense when the first recognised bowl arrived (refusals on days 1–3, a
+  // first match on day 30), and the card was still showing it. Ruled loud edge: rival
+  // refusals logged long before the trial food stay held, in the past tense, until
+  // REFUSAL_MIN_RATED recent ratings say eating.
   let fallbackHeld = false;
   if (
     !allowedSetUnavailable &&
     narrow.feedings > 0 &&
-    firstNarrowDay >= refusalWindowStart &&
     !recentRefusalFires(narrow) &&
-    (!rangeRefusalFires(narrow) || rangeRefusalFires(wide))
+    (firstNarrowDay >= refusalWindowStart
+      ? !rangeRefusalFires(narrow) || rangeRefusalFires(wide)
+      : !rangeRefusalFires(narrow))
   ) {
     const preMatch = emptyRefusalCounters();
     const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);
@@ -3179,7 +3198,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       }
     }
     fallbackHeld =
-      recentRefusalFires(preMatch) && (recentRefusalFires(wide) || !eatingNowOf(wide));
+      (recentRefusalFires(preMatch) || rangeRefusalFires(preMatch)) &&
+      (recentRefusalFires(wide) || !eatingNowOf(wide));
   }
   const refusalFallback = allowedSetUnavailable || narrow.feedings === 0 || fallbackHeld;
   const population: TrialRefusalPopulation = refusalFallback ? 'meal_record' : 'trial_diet';
