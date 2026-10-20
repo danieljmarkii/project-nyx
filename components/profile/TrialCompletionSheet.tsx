@@ -121,6 +121,10 @@ export function TrialCompletionSheet({
   // CUL-2041 — what the sheet says when the trial it was open over went away under an
   // answer the owner had entered. Held until the owner reads it.
   const [lostNotice, setLostNotice] = useState<{ title: string; body: string } | null>(null);
+  // CUL-2055 — the trial this open was for went away or was replaced, with nothing
+  // entered. The sheet has asked the host to close, and stays shut until it does:
+  // it must never come back drawn over a different trial with its saves live.
+  const [orphaned, setOrphaned] = useState(false);
 
   // The entry point decides the step every time the sheet opens, so re-opening
   // from a different button never lands on the previous one's screen.
@@ -146,6 +150,7 @@ export function TrialCompletionSheet({
     if (!entry) {
       setStep('decision');
       setLostNotice(null);
+      setOrphaned(false);
     }
   }, [entry]);
 
@@ -178,9 +183,14 @@ export function TrialCompletionSheet({
   // open to say it. Nothing is written; the first ending stays the record.
   //
   // Only when the owner had ENTERED something: a sheet with nothing picked loses
-  // nothing, and goes away as before. A row the host could not hand over (the trial
-  // is gone or was replaced) is an ending this sheet cannot read, and the notice reads
-  // an unknown ending as a loss, so it errs loud.
+  // nothing, and closes. A row the host could not hand over (the trial is gone or was
+  // replaced) is an ending this sheet cannot read, and the notice reads an unknown
+  // ending as a loss, so it errs loud.
+  //
+  // CLOSES, NEVER CARRIES ON (CUL-2055). With nothing entered this used to return and
+  // leave the host's entry set, so a trial replaced elsewhere (A→B, or A→gone→B) redrew
+  // this sheet over B with every save live: one tap ended a trial the owner never
+  // opened it for. The sheet was opened for one trial and answers for that one only.
   //
   // Declared ABOVE the clear below, which empties the answers on the same change;
   // both read this render's values, so the order is for the reader.
@@ -198,7 +208,11 @@ export function TrialCompletionSheet({
         : step === 'outcome' && (outcome !== null || ownerNotes !== '')
           ? 'completed'
           : null;
-    if (!ownerReason) return;
+    if (!ownerReason) {
+      setOrphaned(true);
+      onClose();
+      return;
+    }
     const row = endedRow && endedRow.id === was ? endedRow : null;
     const notice = trialEndRefusedNotice({
       refusal: new TrialEndRefused({
@@ -214,6 +228,8 @@ export function TrialCompletionSheet({
       ownerOutcome: step === 'outcome' ? outcome : null,
       ownerOutcomeNotes: step === 'outcome' ? ownerNotes : null,
     });
+    // Either way this open is over: the notice is the last thing it draws.
+    setOrphaned(true);
     if (notice) setLostNotice(notice);
     else onClose();
   }, [trialId, entry, step, outcome, notes, stopReason, endedRow, petName, onClose, saving]);
@@ -328,6 +344,10 @@ export function TrialCompletionSheet({
   }
 
   if (!trial) return null;
+  // The commit that brings in a different trial renders before the effect above can
+  // close: `prevTrialId` still names the trial this open was for, so not even that
+  // one frame draws the new trial's saves (CUL-2055).
+  if (orphaned || (prevTrialId.current !== null && prevTrialId.current !== trial.id)) return null;
 
   const sheet: TrialOutcomeSheetModel | null = facts
     ? buildOutcomeSheet({

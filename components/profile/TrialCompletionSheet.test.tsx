@@ -39,6 +39,9 @@ jest.mock('../../lib/dietTrialOutcomeFacts', () => ({
 // clears is invisible to a query; the builder sees every render that painted.
 // A passthrough over the real module (C-34): the read is stubbed, never the rule.
 const mockBuiltFacts: unknown[] = [];
+// Every indication the decision step DREW, in order (CUL-2055): the same reason, for a
+// frame a passive effect closes before any query can see it.
+const mockDrawnDecisions: unknown[] = [];
 jest.mock('../../lib/dietTrialCompletion', () => {
   const actual = jest.requireActual('../../lib/dietTrialCompletion');
   return {
@@ -46,6 +49,10 @@ jest.mock('../../lib/dietTrialCompletion', () => {
     buildOutcomeSheet: (args: { facts: unknown }) => {
       mockBuiltFacts.push(args.facts);
       return actual.buildOutcomeSheet(args);
+    },
+    milestoneNote: (indication: unknown) => {
+      mockDrawnDecisions.push(indication);
+      return actual.milestoneNote(indication);
     },
   };
 });
@@ -602,9 +609,12 @@ describe('reopening the sheet (CUL-1560)', () => {
     expect(tree.queryByText(ABSENCE)).toBeNull();
   });
 
+  // CUL-2055 replaced S1's second half: the sheet no longer re-reads for the new trial,
+  // it closes. What S1 protected (the old trial's counts never paint) holds a fortiori.
   it('S1: a trial that changes while the sheet is open never renders the old trial’s read', async () => {
     mockLoadFacts.mockReset().mockResolvedValueOnce(NOTHING).mockResolvedValueOnce(VOMIT);
     const T2 = { ...TRIAL, id: 't-2', startedAt: '2026-08-01' };
+    const onClose = jest.fn();
     const withTrial = (trial: typeof TRIAL) => (
       <TrialCompletionSheet
         entry="complete"
@@ -612,7 +622,7 @@ describe('reopening the sheet (CUL-1560)', () => {
         petName="Biscuit"
         species="cat"
         dayCounter={56}
-        onClose={jest.fn()}
+        onClose={onClose}
         onExtend={jest.fn()}
         onChanged={jest.fn()}
       />
@@ -622,21 +632,26 @@ describe('reopening the sheet (CUL-1560)', () => {
 
     mockBuiltFacts.length = 0;
     tree.rerender(withTrial(T2));
-    await waitFor(() => tree.getByText('Vomit: 0 before · 1 during.'));
-    expect(mockLoadFacts).toHaveBeenLastCalledWith({ petId: 'pet-1', startedAt: '2026-08-01' });
-    expect(mockBuiltFacts).not.toContain(NOTHING);
+    await act(async () => {});
+    expect(mockBuiltFacts).toEqual([]);
+    expect(tree.toJSON()).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('a trial that goes away and comes back with the same key reads the record again', async () => {
     mockLoadFacts.mockReset().mockResolvedValueOnce(NOTHING).mockResolvedValueOnce(VOMIT);
-    const withTrial = (trial: typeof TRIAL | null) => (
+    const onClose = jest.fn();
+    const withTrial = (
+      trial: typeof TRIAL | null,
+      entry: React.ComponentProps<typeof TrialCompletionSheet>['entry'] = 'complete',
+    ) => (
       <TrialCompletionSheet
-        entry="complete"
+        entry={entry}
         trial={trial}
         petName="Biscuit"
         species="cat"
         dayCounter={56}
-        onClose={jest.fn()}
+        onClose={onClose}
         onExtend={jest.fn()}
         onChanged={jest.fn()}
       />
@@ -644,9 +659,13 @@ describe('reopening the sheet (CUL-1560)', () => {
     const tree = render(withTrial(TRIAL));
     await waitFor(() => tree.getByText(ABSENCE));
 
-    // The sheet renders nothing while the trial is null; to the owner its return
-    // is a reopen, and a vomit may have been logged in between.
+    // The trial going away closes the sheet (CUL-2055); its return is the owner's
+    // reopen, and a vomit may have been logged in between.
     tree.rerender(withTrial(null));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // The host clears its entry on that close, before the trial comes back.
+    tree.rerender(withTrial(null, null));
+    tree.rerender(withTrial({ ...TRIAL }, null));
     mockBuiltFacts.length = 0;
     tree.rerender(withTrial({ ...TRIAL }));
     await waitFor(() => tree.getByText('Vomit: 0 before · 1 during.'));
@@ -678,5 +697,126 @@ describe('reopening the sheet (CUL-1560)', () => {
     fireEvent.press(tree.getByTestId('trial-decision-complete'));
     await waitFor(() => tree.getByTestId('trial-outcome-density'));
     expect(mockLoadFacts).toHaveBeenCalledTimes(2);
+  });
+});
+
+// CUL-2055 — the sheet was opened for one trial and answers for that one only. When
+// another phone ends it and starts a new one, hydration hands this sheet trial B under
+// the open entry. It must never redraw over B with its saves live: one Save would end a
+// trial the owner never opened it for.
+describe('the trial under an open sheet is replaced by a different trial (A→B)', () => {
+  let alert: jest.SpyInstance;
+  beforeEach(() => {
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+  afterEach(() => alert.mockRestore());
+
+  const T2 = { ...TRIAL, id: 't-2', startedAt: '2026-09-21' };
+
+  // A host whose `onClose` behaves like the real one's or (`sticky`) never clears the
+  // entry, so the sheet's own latch is what is under test.
+  function host(onClose: jest.Mock, entry: 'complete' | 'stopped_early' | 'decision') {
+    return (trial: typeof TRIAL | null) => (
+      <TrialCompletionSheet
+        entry={entry}
+        trial={trial}
+        endedRow={null}
+        petName="Biscuit"
+        species="cat"
+        dayCounter={56}
+        onClose={onClose}
+        onExtend={jest.fn()}
+        onChanged={jest.fn()}
+      />
+    );
+  }
+
+  it.each(['decision', 'complete', 'stopped_early'] as const)(
+    'nothing entered (%s): closes, and no frame draws B’s saves',
+    async (entry) => {
+      const onClose = jest.fn();
+      const withTrial = host(onClose, entry);
+      const tree = render(withTrial(TRIAL));
+      await act(async () => {});
+      expect(tree.toJSON()).not.toBeNull();
+
+      mockBuiltFacts.length = 0;
+      tree.rerender(withTrial(T2));
+      // The commit that brought B in, and every one after, draws nothing.
+      expect(tree.toJSON()).toBeNull();
+      await act(async () => {});
+      expect(tree.toJSON()).toBeNull();
+      expect(mockBuiltFacts).toEqual([]);
+      expect(tree.queryByText('Save')).toBeNull();
+      expect(tree.queryByTestId('trial-decision-complete')).toBeNull();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(mockEndActiveTrial).not.toHaveBeenCalled();
+      expect(alert).not.toHaveBeenCalled();
+    },
+  );
+
+  it('not even the commit that brings B in draws B’s decision', async () => {
+    const withTrial = host(jest.fn(), 'decision');
+    const tree = render(withTrial(TRIAL));
+    expect(mockDrawnDecisions).toContain('skin');
+
+    mockDrawnDecisions.length = 0;
+    tree.rerender(withTrial({ ...T2, indication: 'gi' }));
+    await act(async () => {});
+    expect(mockDrawnDecisions).toEqual([]);
+  });
+
+  it('nothing entered, and the trial goes away before B arrives (A→gone→B): never reappears over B', async () => {
+    const onClose = jest.fn();
+    const withTrial = host(onClose, 'stopped_early');
+    const tree = render(withTrial(TRIAL));
+
+    tree.rerender(withTrial(null));
+    await act(async () => {});
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    tree.rerender(withTrial(T2));
+    await act(async () => {});
+    expect(tree.toJSON()).toBeNull();
+    expect(tree.queryByText('Save')).toBeNull();
+    expect(mockEndActiveTrial).not.toHaveBeenCalled();
+  });
+
+  it('an answer entered: says what happened, and nothing can be saved against B', async () => {
+    const onClose = jest.fn();
+    const withTrial = host(onClose, 'complete');
+    const tree = render(withTrial(TRIAL));
+    await waitFor(() => tree.getByTestId('trial-outcome-worse'));
+    fireEvent.press(tree.getByTestId('trial-outcome-worse'));
+
+    tree.rerender(withTrial(T2));
+
+    expect(tree.getByTestId('trial-lost-notice-title').props.children).toBe('Already ended');
+    expect(tree.queryByTestId('trial-outcome-worse')).toBeNull();
+    expect(tree.queryByText('Save')).toBeNull();
+    fireEvent.press(tree.getByText('OK'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(tree.toJSON()).toBeNull();
+    expect(mockEndActiveTrial).not.toHaveBeenCalled();
+  });
+
+  it('a fresh open over B, after the close, is an ordinary open', async () => {
+    const onClose = jest.fn();
+    const tree = render(host(onClose, 'stopped_early')(TRIAL));
+    tree.rerender(host(onClose, 'stopped_early')(T2));
+    await act(async () => {});
+    expect(tree.toJSON()).toBeNull();
+
+    // The host clears its entry on the close; the owner then opens the sheet for B.
+    tree.rerender(
+      <TrialCompletionSheet
+        entry={null} trial={T2} petName="Biscuit" dayCounter={1}
+        onClose={onClose} onExtend={jest.fn()} onChanged={jest.fn()}
+      />,
+    );
+    tree.rerender(host(onClose, 'stopped_early')(T2));
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+    expect(mockEndActiveTrial).toHaveBeenCalledWith(expect.objectContaining({ trialId: 't-2' }));
   });
 });
