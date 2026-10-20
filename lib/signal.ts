@@ -820,8 +820,16 @@ export function isSignalCacheStale(row: SignalCacheRow | null, nowMs = Date.now(
 // or the function computes on stale server data and the new event is invisible to
 // it. Mirrors lib/analysis.ts:triggerVomitAnalysis. Fire-and-forget friendly:
 // returns the error rather than throwing.
-export function regenerateSignal(petId: string): Promise<{ error: string | null }> {
-  return serializeRegen(petId, () => runRegen(petId));
+//
+// CUL-2059: `reason` tells generate-signal why it was asked. 'log' (the debounced rebuild
+// after a write, below) is never turned away by the per-pet cap; 'refresh' (an expired row,
+// the cross-pet banner, pull to refresh) is, uncounted.
+export type SignalRegenReason = 'log' | 'refresh';
+export function regenerateSignal(
+  petId: string,
+  reason: SignalRegenReason = 'refresh',
+): Promise<{ error: string | null }> {
+  return serializeRegen(petId, reason, (r) => runRegen(petId, r));
 }
 
 // ── One regen at a time, per pet (CUL-642) ────────────────────────────────────
@@ -858,6 +866,10 @@ const REGEN_WAIT_CEILING_MS = 15_000;
 
 const regenInFlight = new Map<string, Promise<{ error: string | null }>>();
 const regenTrailing = new Map<string, Promise<{ error: string | null }>>();
+// CUL-2059: pets whose pending trailing run a LOG has joined. The trailing run reads it when
+// it starts, so a log arriving behind a refresh is never sent as a refresh (which the cap
+// may turn away).
+const regenTrailingForLog = new Set<string>();
 
 function settledOrCeiling(active: Promise<unknown>): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -871,17 +883,23 @@ function settledOrCeiling(active: Promise<unknown>): Promise<void> {
 
 function serializeRegen(
   petId: string,
-  run: () => Promise<{ error: string | null }>,
+  reason: SignalRegenReason,
+  run: (reason: SignalRegenReason) => Promise<{ error: string | null }>,
 ): Promise<{ error: string | null }> {
   const waiting = regenTrailing.get(petId);
-  if (waiting) return waiting;
+  if (waiting) {
+    if (reason === 'log') regenTrailingForLog.add(petId);
+    return waiting;
+  }
 
   const active = regenInFlight.get(petId);
-  if (!active) return startRegen(petId, run);
+  if (!active) return startRegen(petId, () => run(reason));
 
+  if (reason === 'log') regenTrailingForLog.add(petId);
   const trailing = settledOrCeiling(active).then(() => {
     regenTrailing.delete(petId);
-    return startRegen(petId, run);
+    const trailingReason: SignalRegenReason = regenTrailingForLog.delete(petId) ? 'log' : 'refresh';
+    return startRegen(petId, () => run(trailingReason));
   });
   regenTrailing.set(petId, trailing);
   return trailing;
@@ -921,7 +939,7 @@ export async function readSignalRecordGaps(): Promise<{ unsentRows: boolean; ref
   }
 }
 
-async function runRegen(petId: string): Promise<{ error: string | null }> {
+async function runRegen(petId: string, reason: SignalRegenReason): Promise<{ error: string | null }> {
   try {
     await syncPendingEvents().catch(() => {});
     await syncPendingMeals().catch(() => {});
@@ -929,7 +947,7 @@ async function runRegen(petId: string): Promise<{ error: string | null }> {
     // reassurance, so a calm Signal is never renewed for a day over rows it has not seen.
     const { unsentRows, refusedRows } = await readSignalRecordGaps();
     const { data, error } = await supabase.functions.invoke('generate-signal', {
-      body: { petId, unsentRows, refusedRows },
+      body: { petId, unsentRows, refusedRows, reason },
     });
     // CUL-2037: over the cap the function answers 200 `{ cap_reached: true }` and writes
     // nothing. Bumping the tick then would re-run useSignal and the cross-pet banner over the
@@ -1033,6 +1051,7 @@ export function cancelPendingSignalRegens(): void {
   // would make the next account's first regen for that pet id wait behind it.
   regenInFlight.clear();
   regenTrailing.clear();
+  regenTrailingForLog.clear();
   // The kept rows are the signing-out account's findings (CUL-1219).
   lastAnsweredRows.clear();
   keptEpoch += 1;
@@ -1072,7 +1091,7 @@ export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOU
       regenTimers.delete(petId);
       // regenerateSignal never rejects (it catches internally), but keep the .catch so a
       // future contract change can't strand the ack line up.
-      regenerateSignal(petId)
+      regenerateSignal(petId, 'log')
         .catch(() => {})
         .finally(() => {
           // Only the latest log's regen clears the ack — a superseded earlier call that

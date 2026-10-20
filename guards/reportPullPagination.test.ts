@@ -166,6 +166,9 @@ const BOUNDED_BY_KEY: Record<string, string> = {
   'ask/app_config':
     'The Ask flags and caps: `.in(\'key\', [ASK_FLAG, GENERAL_FLAG, \'ai_caps\'])`, three rows at ' +
     'most, by the same primary-key argument.',
+  'generate-signal/ai_usage':
+    'CUL-2059: the pet\'s usage read before it is counted: one row per (function, scope, UTC ' +
+    'day), filtered to one function, one pet and the current month — at most 31 rows, fixed by the calendar.',
   'ask/ai_usage':
     'The monthly conversation count: one row per (function, scope, UTC day), filtered to one ' +
     'function, one scope and the current month — at most 31 rows, fixed by the calendar.',

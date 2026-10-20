@@ -14,11 +14,11 @@ jest.mock('./db', () => ({ countRecordGaps: jest.fn() }));
 
 import { countRecordGaps } from './db';
 import { useSyncStore } from '../store/syncStore';
-import { regenerateSignal } from './signal';
+import { regenerateSignal, triggerSignalRegenDebounced } from './signal';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 
-type Body = { petId: string; unsentRows: unknown; refusedRows: unknown };
+type Body = { petId: string; unsentRows: unknown; refusedRows: unknown; reason: unknown };
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 const mockedGaps = countRecordGaps as jest.Mock;
 
@@ -38,7 +38,7 @@ describe('Q14 (CUL-772) / CUL-2037 — the rebuild names unsent and refused rows
   it('a row still unsent after the push sends unsentRows: true, refusedRows: false', async () => {
     mockedGaps.mockResolvedValue({ unsent: 1, refused: 0 });
     await regenerateSignal('pet-a');
-    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: false });
+    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: false, reason: 'refresh' });
   });
 
   // CUL-2037, PM ruling (a): a vomit the server refused is off the server's record, so the
@@ -47,13 +47,13 @@ describe('Q14 (CUL-772) / CUL-2037 — the rebuild names unsent and refused rows
   it('a row the server refused, and nothing pending, sends refusedRows: true and unsentRows with it', async () => {
     mockedGaps.mockResolvedValue({ unsent: 0, refused: 1 });
     await regenerateSignal('pet-a');
-    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: true });
+    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: true, reason: 'refresh' });
   });
 
   it('both kinds at once send both flags', async () => {
     mockedGaps.mockResolvedValue({ unsent: 2, refused: 3 });
     await regenerateSignal('pet-a');
-    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: true });
+    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: true, reason: 'refresh' });
   });
 
   it('a failed push still rebuilds, and says the rows are unsent', async () => {
@@ -68,13 +68,13 @@ describe('Q14 (CUL-772) / CUL-2037 — the rebuild names unsent and refused rows
   it('nothing unsent or refused sends both false, so the 24-hour expiry stands', async () => {
     mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
     await regenerateSignal('pet-a');
-    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: false, refusedRows: false });
+    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: false, refusedRows: false, reason: 'refresh' });
   });
 
   it('a failed gaps read sends unsentRows: true (the louder error) and never claims a refusal', async () => {
     mockedGaps.mockRejectedValue(new Error('database is locked'));
     await regenerateSignal('pet-a');
-    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: false });
+    expect(sentBody()).toEqual({ petId: 'pet-a', unsentRows: true, refusedRows: false, reason: 'refresh' });
   });
 
   it('both flags come from ONE read (a drain can re-arm a refused row between two)', async () => {
@@ -118,5 +118,52 @@ describe('Q14 (CUL-772) / CUL-2037 — the rebuild names unsent and refused rows
     const before = useSyncStore.getState().signalTick;
     await regenerateSignal('pet-a');
     expect(useSyncStore.getState().signalTick).toBe(before + 1);
+  });
+
+  // CUL-2059 (PM ruling (A)): a log's rebuild is never turned away by the cap, so the phone
+  // must say which rebuilds are logs, and a log must not lose that behind a queued refresh.
+  describe('CUL-2059 — the reason rides the regen', () => {
+    beforeEach(() => mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 }));
+    afterEach(() => jest.useRealTimers());
+
+    it('the debounced rebuild after a log sends reason: log', async () => {
+      jest.useFakeTimers();
+      triggerSignalRegenDebounced('pet-log', 5000);
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(sentBody().reason).toBe('log');
+    });
+
+    it('a log that joins a queued refresh upgrades it, so the run goes as a log', async () => {
+      let release: (v: { error: null }) => void = () => {};
+      mockedInvoke
+        .mockImplementationOnce(() => new Promise((r) => { release = r; }))
+        .mockResolvedValue({ error: null });
+      const first = regenerateSignal('pet-q');            // active, refresh
+      await Promise.resolve();
+      const trailing = regenerateSignal('pet-q');         // queues a trailing refresh
+      const joined = regenerateSignal('pet-q', 'log');    // a log joins it
+      expect(joined).toBe(trailing);
+      await new Promise((r) => setImmediate(r));
+      release({ error: null });
+      await Promise.all([first, trailing]);
+      const reasons = mockedInvoke.mock.calls.map((c) => (c[1] as { body: Body }).body.reason);
+      expect(reasons).toEqual(['refresh', 'log']);
+    });
+
+    it('a refresh queued behind a log stays a refresh, and the flag does not leak to the next run', async () => {
+      let release: (v: { error: null }) => void = () => {};
+      mockedInvoke
+        .mockImplementationOnce(() => new Promise((r) => { release = r; }))
+        .mockResolvedValue({ error: null });
+      const first = regenerateSignal('pet-r');
+      await Promise.resolve();
+      const trailing = regenerateSignal('pet-r', 'log');
+      await new Promise((r) => setImmediate(r));
+      release({ error: null });
+      await Promise.all([first, trailing]);
+      await regenerateSignal('pet-r');
+      const reasons = mockedInvoke.mock.calls.map((c) => (c[1] as { body: Body }).body.reason);
+      expect(reasons).toEqual(['refresh', 'log', 'refresh']);
+    });
   });
 });
