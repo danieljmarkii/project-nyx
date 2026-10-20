@@ -2724,8 +2724,8 @@ describe('R1 · CUL-60(b) — the refusal lane falls back when nothing ever matc
   });
 });
 
-// CUL-1993, ruling (a) (PM, 2026-10-18): once the meal-record fallback has fired
-// inside the recency window, it holds until REFUSAL_MIN_RATED recent ratings at least
+// CUL-1993, ruling (a) (PM, 2026-10-18), widened past the recency window by CUL-2015
+// (PM, 2026-10-19): once the meal-record fallback has fired, it holds until REFUSAL_MIN_RATED recent ratings at least
 // half finished say otherwise. S2 is the executed counterexample from PR-25's pass.
 describe('CUL-1993 — one recognised bowl never takes back a refusal warning', () => {
   const day = (n: number) => `2026-07-${String(n).padStart(2, '0')}`;
@@ -2878,12 +2878,55 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 3, population: 'trial_diet' });
   });
 
-  it('KNOWN LIMIT (the PM’s open fork): a fallback that last spoke before today’s window lets go', () => {
-    // Expected to flip if the fork rules that R2's "dated, not expired" reaches past
-    // the window. Today it matches main: the match's day has left the window.
+  // CUL-2015, ruling (a) (PM, 2026-10-19): the hold has no recency scope. A fallback
+  // that last spoke before today's window is held, in the past tense, until the
+  // stand-down. This was the KNOWN LIMIT test that matched main.
+  it('CUL-2015 — a fallback that last spoke before today’s window is held, not withdrawn', () => {
     const aged = cat([...refusing(3), matched('m4', 4, null)], 4 + REFUSAL_WINDOW_DAYS);
     expect(aged.trialDietRefusal).toBeNull();
-    expect(aged.rangeRefusal).toBeNull();
+    expect(aged.rangeRefusal).toMatchObject({ refusedFeedings: 3, ratedFeedings: 3, population: 'meal_record' });
+    expect(aged.rangeRefusal?.history?.unfinishedInRecentWindow).toBe(false);
+  });
+
+  it('CUL-2015 — the executed record: 20 refusals, then two weeks of recognised unrated bowls', () => {
+    // Unmatched refusals on days 1–20, matched unrated bowls on days 21–34, read on
+    // day 35. With no match the card shows 20 of 20 in the past tense; so must this.
+    const unrated = Array.from({ length: 14 }, (_, i) => matched(`m${i}`, 21 + i, null));
+    const record = [...refusing(20), ...unrated];
+    const facts = cat(record, 35);
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 20, ratedFeedings: 20, population: 'meal_record' });
+    // The same record with no recognised bowl at all says the same thing.
+    const unmatchedOnly = cat(refusing(20), 35);
+    expect(unmatchedOnly.rangeRefusal).toMatchObject({ refusedFeedings: 20, ratedFeedings: 20, population: 'meal_record' });
+  });
+
+  it('CUL-2015 — refusals that were already past tense at the first match are held (the range fact)', () => {
+    // Refusals on days 1–3, the first recognised bowl on day 30: the window that ended
+    // at the match holds no refusal, so only the range fact was speaking. It still was.
+    const facts = cat([...refusing(3), matched('m30', 30, null)], 31);
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 3, population: 'meal_record' });
+  });
+
+  it('CUL-2015 — past the window, only the stand-down releases it', () => {
+    // Refusals on days 1–3, then four finished recognised bowls on days 30–33, read on
+    // day 33: four recent ratings, all finished, so the meal record says eating.
+    const finished = Array.from({ length: 4 }, (_, i) => matched(`f${i}`, 30 + i, 'all'));
+    const released = cat([...refusing(3), ...finished], 33);
+    expect(released.trialDietRefusal).toBeNull();
+    expect(released.rangeRefusal).toBeNull();
+    expect(released.recentRatedFeedings).toBe(4); // the narrow population speaks again
+    // Two finished bowls is below the stand-down's count: still held.
+    const twoFinished = cat([...refusing(3), ...finished.slice(0, 2)], 31);
+    expect(twoFinished.rangeRefusal?.population).toBe('meal_record');
+  });
+
+  it('CUL-2015 — a pre-match record that never fired still lets the trial diet speak, however old', () => {
+    const facts = cat([...refusing(REFUSAL_MIN_RATED - 1), matched('m30', 30, 'refused')], 31);
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).toBeNull();
+    expect(facts.recentRatedFeedings).toBe(1);
   });
 });
 
