@@ -36,7 +36,9 @@
 // own window (report.ts) and never reads the Signal's cache.
 
 import {
+  chronicSymptomTypes,
   detectSignals,
+  detectWorsening,
   detectCoverage,
   chronicityFloorsFor,
   risingBelowCardFloor,
@@ -744,7 +746,9 @@ export function runSignalPipeline(
   // unless `engines_v3_en11` is on, so flag off is the same object as before.
   const config = signalDetectionConfig(engineFlags, en11Config)
   // Engines v3 PR-14d (CUL-1410): one card per sign where the burden card and ④ say the same week.
-  const detected = suppressWorseningUnderBurden(detectSignals(input, config))
+  const detected = suppressWorseningUnderBurden(detectSignals(input, config), (exclude) =>
+    detectWorsening(input, config, exclude),
+  )
   // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
   const ranked = readIncomplete ? withholdOverIncompleteRead(detected) : detected
 
@@ -1261,14 +1265,29 @@ function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly 
  * off the vet report with nothing in its place. Chronicity is NOT dropped (duration and this
  * week's burden are different statements, and the ⑦ valve and stand-down depend on it).
  */
-export function suppressWorseningUnderBurden<T extends { rank: number; finding: Finding }>(ranked: readonly T[]): T[] {
-  const burdenSigns = new Set<string>(
+export function suppressWorseningUnderBurden<T extends { rank: number; finding: Finding }>(
+  ranked: readonly T[],
+  repick?: (exclude: ReadonlySet<SymptomType>) => Finding[],
+): T[] {
+  const burdenSigns = new Set<SymptomType>(
     ranked.flatMap((r) => (r.finding.type === 'symptom_burden' ? [r.finding.symptomType] : [])),
   )
   if (burdenSigns.size === 0) return [...ranked]
-  return ranked
-    .filter((r) => !(r.finding.type === 'symptom_worsening' && burdenSigns.has(r.finding.symptomType)))
-    .map((r, i) => ({ ...r, rank: i }))
+  // CUL-2022: the dropped ④ was the ONE getting-worse card, so a second sign rising behind it
+  // was flagged nowhere. Its slot goes to ④'s pick over the signs no other card speaks for (not
+  // under a burden card, not ongoing: those ④s were folded already). Same type, so the same
+  // place in the safety band rankFindings would give it; never a second ④ card.
+  const absorbed = new Set<SymptomType>([...burdenSigns, ...chronicSymptomTypes(ranked.map((r) => r.finding))])
+  const out: T[] = []
+  for (const r of ranked) {
+    if (!(r.finding.type === 'symptom_worsening' && burdenSigns.has(r.finding.symptomType))) {
+      out.push(r)
+      continue
+    }
+    const next = repick?.(absorbed)[0]
+    if (next) out.push({ ...r, finding: next })
+  }
+  return out.map((r, i) => ({ ...r, rank: i }))
 }
 
 // ── After the phrasing ────────────────────────────────────────────────────────

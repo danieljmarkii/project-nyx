@@ -1874,8 +1874,8 @@ export type SafetyCheck =
       windowDays: number
       /** `not_flagged`: both weeks were logged enough to compare and no sign reached the floor.
        *  `too_few_days`: the engine could not compare them. `not_separate`: the engine reports
-       *  one getting-worse finding, the steepest, and it was another symptom's (whether or not
-       *  its flag was then folded into an ongoing one), so this one was not assessed apart.
+       *  one getting-worse finding, the steepest rise among the symptoms not flagged as ongoing
+       *  (CUL-2022), and it was another symptom's, so this one was not assessed apart.
        *  `below_card_floor`: a sign rose in the last week but under the flag's floor (EN-11). */
       state: 'not_flagged' | 'too_few_days' | 'not_separate' | 'below_card_floor'
       /** The current-week count the flag needs. */
@@ -5076,13 +5076,18 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     safetyFlags.some((f) => f.kind === kind && 'symptomType' in f && f.symptomType === type)
   // Every verdict below is the ENGINE's, read through its exported entry points, never a re-derived
   // predicate (adversarial pass 1 broke five inferences from the flag list alone):
-  //   • getting worse: `detectWorsening` BEFORE the ranker folds a card into an ongoing flag. It
-  //     returns one card, the steepest, so any other symptom was not assessed apart — even when
-  //     that card was then absorbed (`suppressWorseningWhenChronic`) and no worsening flag shows.
+  //   • getting worse: `detectWorsening` over the signs NOT flagged as ongoing, the pick the
+  //     engine flags (CUL-2022: `repickWorseningPastChronic`). It returns one card, the steepest
+  //     rise among them, so any other of them was not assessed apart; with none, every one of
+  //     them was assessed and stayed under the floor.
   //   • ongoing: whether the engine could MEASURE a course at all is its own `loggingEligible`
   //     gate, read by running `detectChronicity` with every floor at its minimum: a type that
   //     still does not come back was not measured, so "did not trigger" would over-claim.
-  const worseningCards = detectWorsening(detInput, detConfig)
+  const worseningCards = detectWorsening(
+    detInput,
+    detConfig,
+    new Set(detection.chronicity.map((f) => f.symptomType)),
+  )
   const belowCardFloor = risingBelowCardFloor(detInput, detConfig)
   const density = computeReflectionDensity(detInput, detConfig)
   const measurable = new Set(

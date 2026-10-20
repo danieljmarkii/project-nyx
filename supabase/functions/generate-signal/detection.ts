@@ -4945,7 +4945,8 @@ export function computeChronicityCompare(
 // Out of scope (owned elsewhere / deferred): the ABSOLUTE-burden case with no prior
 // window at all (week-1 acute illness) — owned by per-incident analysis (analyze-vomit)
 // and the separate absolute-burden open question; ④ is the WORSENING lane only.
-// Surfaces at most ONE card (the most-worsening symptom) so the safety surface stays
+// Surfaces at most ONE card (the most-worsening symptom; when another flag absorbs that
+// sign's card, the most-worsening among the rest: CUL-2022) so the safety surface stays
 // calm; co-firing with an intake-decline flag is intentional (both kept by curation —
 // that two-signal gestalt is exactly what the re-run brief found MISSING).
 
@@ -4964,9 +4965,16 @@ function resolveWorseningTier(
   return trigger === 'more_episodes' ? 'standard' : 'soft'
 }
 
+/**
+ * `exclude` (CUL-2022, PM ruling (a) 2026-10-19): symptom types left out BEFORE the pick. The
+ * composition layer passes the signs whose card another flag absorbs (ongoing, and on Home the
+ * burden card), so the one card goes to the steepest rise among the rest instead of being folded
+ * away with a second rise behind it. Empty by default: every other caller reads the bare pick.
+ */
 export function detectWorsening(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
+  exclude: ReadonlySet<SymptomType> = new Set(),
 ): SymptomWorseningFinding[] {
   const cfg = config.reflection
   const windowed = computeWindowedStats(input, config)
@@ -4975,7 +4983,7 @@ export function detectWorsening(
   if (!windowed || !windowed.loggingEligible) return []
 
   // ④ fires on the card predicate; ③'s mute (detectReflections) keeps `isWorsening` (CUL-1411).
-  const worsening = windowed.stats.filter((s) => isWorseningCard(s, config))
+  const worsening = windowed.stats.filter((s) => !exclude.has(s.symptomType) && isWorseningCard(s, config))
   if (worsening.length === 0) return []
 
   // One card only — the most-worsening symptom: largest episode rise, then larger
@@ -7890,6 +7898,42 @@ function composeTimingStory(findings: Finding[]): Finding[] {
  * missing). Lives in the COMPOSITION layer (like suppressTimeOfDayWhenPostprandial) so each
  * detector stays pure and independently unit-testable; runs before ranking.
  */
+/**
+ * The signs a ⑦ card speaks for: their ④ card is folded into it (`suppressWorseningWhenChronic`).
+ */
+export function chronicSymptomTypes(findings: readonly Finding[]): Set<SymptomType> {
+  return new Set(
+    findings
+      .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity')
+      .map((f) => f.symptomType),
+  )
+}
+
+/**
+ * CUL-2022 (PM ruling (a), 2026-10-19) — the one getting-worse card goes to the steepest rise
+ * among the signs NOT flagged as ongoing.
+ *
+ * The defect: ④ emits one card, the steepest rise, and `suppressWorseningWhenChronic` folds it
+ * into a same-sign ⑦. Nothing re-picked, so a second sign rising behind it was flagged nowhere: a
+ * dog with ongoing, rising vomiting and loose stool going from 0 to 3 got no loose-stool flag, on
+ * Home or in the vet report (the adversarial pass on CUL-1995, probe 1).
+ *
+ * The rule: when the picked card's sign has a ⑦ card, add ④'s pick over the non-ongoing signs.
+ * The folded card stays in the set until `suppressWorseningWhenChronic` drops it, so its firm-tier
+ * inheritance is exactly what it was; the result still holds at most one ④ card. Additive only: it
+ * never removes a finding or changes a tier, and with no folded card it is the identity.
+ */
+export function repickWorseningPastChronic(
+  findings: Finding[],
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): Finding[] {
+  const chronic = chronicSymptomTypes(findings)
+  const folded = findings.some((f) => f.type === 'symptom_worsening' && chronic.has(f.symptomType))
+  if (!folded) return findings
+  return [...findings, ...detectWorsening(input, config, chronic)]
+}
+
 export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
   const chronicTypes = new Set(
     findings
@@ -8308,8 +8352,10 @@ export function detectSignals(
   //      episode-set-aware; it READS the ⑤/L1 onset sets, so it must run BEFORE the merge.
   //   2. composeTimingStory — merge a same-symptom ⑤ + L1 pair into one timing_story card, copying
   //      L1's long onsets onto the merged card's `long` block for L3's retained-food join.
-  //   3. suppressWorseningWhenChronic — ⑦ suppresses same-symptom ④ with firm-tier inheritance
-  //      (§4.5/§5); disjoint type pair from the timing lane, so its position is free.
+  //   3. repickWorseningPastChronic (CUL-2022) then suppressWorseningWhenChronic — a ④ folded
+  //      into a same-symptom ⑦ hands the one card to the steepest non-ongoing rise; ⑦ then
+  //      suppresses the folded ④ with firm-tier inheritance (§4.5/§5); disjoint type pair from
+  //      the timing lane, so their position is free.
   //   4. holdChronicityTier (CUL-1272) — a firm tier earned on an earlier day of the same course
   //      holds until the count falls or the course stands down. After 3, because it reads the
   //      tier 3 resolved; before the adjacency mark and ranking, neither of which reads tier.
@@ -8329,6 +8375,10 @@ export function detectSignals(
     ? suppressTimeOfDayWhenPostprandial(findings, config)
     : suppressTimeOfDayWhenPostprandial([...findings, ...withheld], config).filter((f) => !withheld.includes(f as PostprandialTimingFinding))
   const composed = composeTimingStory(suppressed)
-  const tiered = holdChronicityTier(suppressWorseningWhenChronic(composed), input, config)
+  const tiered = holdChronicityTier(
+    suppressWorseningWhenChronic(repickWorseningPastChronic(composed, input, config)),
+    input,
+    config,
+  )
   return rankFindings(discloseCoughVomitAdjacency(tiered), input.pet)
 }
