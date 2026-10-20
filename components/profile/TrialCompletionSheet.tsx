@@ -189,6 +189,8 @@ export function TrialCompletionSheet({
     const was = prevTrialId.current;
     prevTrialId.current = trialId;
     if (!was || was === trialId || !entry) return;
+    // A Save in flight owns this: its refusal says the same sentence, once.
+    if (saving) return;
     const ownerNotes = notes.trim();
     const ownerReason =
       step === 'stopped'
@@ -214,7 +216,7 @@ export function TrialCompletionSheet({
     });
     if (notice) setLostNotice(notice);
     else onClose();
-  }, [trialId, entry, step, outcome, notes, stopReason, endedRow, petName, onClose]);
+  }, [trialId, entry, step, outcome, notes, stopReason, endedRow, petName, onClose, saving]);
 
   // A different trial must never inherit the previous one's counts or answers.
   // The read's key stops a switch painting the old counts for even one commit;

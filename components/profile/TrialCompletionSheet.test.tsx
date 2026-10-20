@@ -510,6 +510,27 @@ describe('a trial another phone ended while the owner is entering an answer', ()
     expect(alert).not.toHaveBeenCalled();
   });
 
+  it('a Save in flight when the ending hydrates: said once, by the Save’s refusal', async () => {
+    let reject: (e: unknown) => void = () => {};
+    mockEndActiveTrial.mockImplementationOnce(() => new Promise((_, r) => { reject = r; }));
+    const onClose = jest.fn();
+    const withTrial = host(onClose, 'stopped_early');
+    const tree = render(withTrial(TRIAL));
+    fireEvent.press(tree.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(tree.getByText('Save')); });
+
+    tree.rerender(withTrial(null, STOPPED_ELSEWHERE));
+    expect(tree.queryByTestId('trial-lost-notice-body')).toBeNull();
+
+    await act(async () => {
+      reject(new TrialEndRefused({
+        reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: 'vet_advised',
+      }));
+    });
+    expect(alert.mock.calls.filter((c) => c[0] === 'Already ended')).toHaveLength(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('no row to read (the trial was replaced elsewhere): errs loud, with no date', () => {
     const withTrial = host(jest.fn(), 'stopped_early');
     const tree = render(withTrial(TRIAL));
