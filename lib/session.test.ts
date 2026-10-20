@@ -457,7 +457,7 @@ describe('wipeLocalSession — the Signal regen teardown (CUL-642)', () => {
     await jest.advanceTimersByTimeAsync(5000);
 
     expect(invoke).toHaveBeenCalledWith('generate-signal', {
-      body: { petId: 'pet-of-account-a', unsentRows: expect.any(Boolean) },
+      body: { petId: 'pet-of-account-a', unsentRows: expect.any(Boolean), refusedRows: expect.any(Boolean) },
     });
   });
 });

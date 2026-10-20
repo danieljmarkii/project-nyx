@@ -26,7 +26,7 @@ import {
   localUriUnionSql,
   applyColumnUpgrades,
 } from './localSchema';
-import { pendingStatusSql, quarantineCountSql, unsentForSignalSql } from './syncQueue';
+import { pendingStatusSql, quarantineCountSql, recordGapsForAskSql } from './syncQueue';
 import { uuid } from './utils';
 import { clearTransientFiles } from './transientFiles';
 
@@ -1022,10 +1022,12 @@ export async function getSyncStatus(): Promise<{
   };
 }
 
-/** Q14 (CUL-772): rows a Signal rebuild must treat as missing from the server (`unsentForSignalSql`). */
-export async function countUnsentForSignal(): Promise<number> {
-  const row = await getDb().getFirstAsync<{ count: number }>(unsentForSignalSql());
-  return row?.count ?? 0;
+/** Q14 (CUL-772) / CUL-2037: rows a Signal rebuild must treat as missing from the server, from
+ *  ONE statement (`recordGapsForAskSql`, Ask's): `unsent` a drain will still send, `refused` the
+ *  server refused. One read, so a drain re-arming a refused row cannot make both answer no. */
+export async function countRecordGaps(): Promise<{ unsent: number; refused: number }> {
+  const row = await getDb().getFirstAsync<{ unsent: number; refused: number }>(recordGapsForAskSql());
+  return { unsent: row?.unsent ?? 0, refused: row?.refused ?? 0 };
 }
 
 export async function getMealForEvent(eventId: string): Promise<{

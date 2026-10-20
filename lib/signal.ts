@@ -16,7 +16,7 @@
 import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
-import { countUnsentForSignal } from './db';
+import { countRecordGaps } from './db';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
 // The jsonb column ai_signals.findings is the contract. These types mirror the
@@ -901,20 +901,23 @@ function startRegen(
   return started;
 }
 
-// Q14 (CUL-772): whether this device still holds rows the server has not received, read AFTER
-// the push. A push that resolved only says a drain ran, not that a row landed, so the rebuild
-// cannot assume the server's copy is whole. The count is `unsentForSignalSql`'s: every queue,
-// any age, `sync_error IS NULL`. Rows the server refused, and the children a drain holds
-// behind a refused event, are left out on purpose: no retry moves them, so counting them would
-// hold every Signal at the 1-hour expiry and spend the per-pet cap; they are the stuck-row
-// banner's (Q6). Device wide, not per pet, because the
-// queue is global: an unsent row for one pet shortens every pet's expiry (the louder error).
-// A failed read says yes, for the same reason.
-export async function hasUnsentRows(): Promise<boolean> {
+// Q14 (CUL-772) / CUL-2037: whether the server's copy is missing rows this device holds, read
+// AFTER the push. A push that resolved only says a drain ran, not that a row landed, so the
+// rebuild cannot assume the server's copy is whole. `refusedRows`: a row the server refused
+// (`sync_error` set), which no retry moves. `unsentRows`: a row a drain will still send, OR a
+// refused one, so a generate-signal that ignores `refusedRows` (a rollback) still takes the
+// incomplete read. Refused rows count (PM ruling (a), 2026-10-19): a vomit stuck on the phone
+// must not let a calm Signal renew for a day. Known cost: a row that stays refused holds every
+// Signal at the 1-hour expiry and spends the per-pet cap until the owner can clear it (CUL-2038).
+// Device wide, not per pet, because the queue is global (the louder error). A failed read says
+// unsent, never refused: it must not claim a refusal it could not see.
+export async function readSignalRecordGaps(): Promise<{ unsentRows: boolean; refusedRows: boolean }> {
   try {
-    return (await countUnsentForSignal()) > 0;
+    const { unsent, refused } = await countRecordGaps();
+    const refusedRows = refused > 0;
+    return { unsentRows: unsent > 0 || refusedRows, refusedRows };
   } catch {
-    return true;
+    return { unsentRows: true, refusedRows: false };
   }
 }
 
@@ -922,11 +925,11 @@ async function runRegen(petId: string): Promise<{ error: string | null }> {
   try {
     await syncPendingEvents().catch(() => {});
     await syncPendingMeals().catch(() => {});
-    // generate-signal treats `unsentRows: true` as an incomplete read: the 1-hour expiry and no
+    // generate-signal treats either flag as an incomplete read: the 1-hour expiry and no
     // reassurance, so a calm Signal is never renewed for a day over rows it has not seen.
-    const unsentRows = await hasUnsentRows();
+    const { unsentRows, refusedRows } = await readSignalRecordGaps();
     const { error } = await supabase.functions.invoke('generate-signal', {
-      body: { petId, unsentRows },
+      body: { petId, unsentRows, refusedRows },
     });
     if (!error) {
       // A successful regen wrote a fresh cache. Bump the signal tick so the Home

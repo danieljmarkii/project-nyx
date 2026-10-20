@@ -132,7 +132,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.10' // signal.10: PR-24 (CUL-772, Q14), a device with unsent rows makes the run an incomplete read. signal.9: PR-30s (CUL-1725), I5's refused-then-vomited intake card behind engines_v3_en5 (flag off unchanged). signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.11' // signal.11: CUL-2037, a device with refused rows makes the run an incomplete read (PM ruling (a)). signal.10: PR-24 (CUL-772, Q14), a device with unsent rows makes the run an incomplete read. signal.9: PR-30s (CUL-1725), I5's refused-then-vomited intake card behind engines_v3_en5 (flag off unchanged). signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -146,15 +146,26 @@ const INCOMPLETE_READ_TTL_MS = 60 * 60 * 1000
 // sends `unsentRows: true` when, after its push, rows it holds have still not reached the server
 // (any age, any queue). The server's copy is then missing entries, which is an incomplete read
 // like any short pull: counts are floors, nothing reassures, and the row takes the 1-hour
-// lifetime instead of renewing a calm Signal for a day. Rows the server REFUSED (sync_error set)
-// never set the flag: no retry moves them, so they would shorten every expiry and spend the
-// per-pet cap of 12 a day; they belong to the stuck-row banner (Q6).
+// lifetime instead of renewing a calm Signal for a day.
 export const UNSENT_ROWS_PULL = 'unsent'
+
+// CUL-2037 (PM ruling (a), 2026-10-19): the name a device's REFUSED rows take. The client sends
+// `refusedRows: true` while it holds a row the server refused (sync_error set): a vomit stuck on
+// the phone is as absent from this read as an unsent one, so the run is incomplete the same way.
+// Its own name so `record_incomplete` and the log say which gap it was. Known cost: a row that
+// stays refused holds every Signal at the hour and spends the per-pet cap until the owner can
+// clear it (CUL-2038). The current client also sets `unsentRows` over a refused row, so a
+// rollback of this name still takes the incomplete read.
+export const REFUSED_ROWS_PULL = 'refused'
 
 // Strictly `true`: an older build sends nothing, and anything other than the boolean is not the
 // client's claim, so both keep today's behaviour.
-export function withUnsentRows(pulls: readonly string[], unsentRows: unknown): string[] {
-  return unsentRows === true ? [...pulls, UNSENT_ROWS_PULL] : [...pulls]
+export function withUnsentRows(pulls: readonly string[], unsentRows: unknown, refusedRows?: unknown): string[] {
+  return [
+    ...pulls,
+    ...(unsentRows === true ? [UNSENT_ROWS_PULL] : []),
+    ...(refusedRows === true ? [REFUSED_ROWS_PULL] : []),
+  ]
 }
 
 // The cache row's expiry override: the 1-hour lifetime over an incomplete read, otherwise none,
@@ -508,10 +519,12 @@ const handler = async (req: Request): Promise<Response> => {
 
   let petId: string
   let unsentRows: unknown
+  let refusedRows: unknown
   try {
-    const body = (await req.json()) as { petId?: string; unsentRows?: unknown }
+    const body = (await req.json()) as { petId?: string; unsentRows?: unknown; refusedRows?: unknown }
     petId = body.petId ?? ''
     unsentRows = body.unsentRows
+    refusedRows = body.refusedRows
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -777,10 +790,12 @@ const handler = async (req: Request): Promise<Response> => {
     // incomplete (CUL-989): a weight card the owner already saw is CARRIED, dated, and the row
     // takes the short lifetime, rather than vanishing without a word (final adversarial pass).
     // Flag off adds nothing, so the list is the one from before the lane.
-    // Q14 (CUL-772): the device's unsent rows join the list after the server's own pulls.
+    // Q14 (CUL-772) / CUL-2037: the device's unsent and refused rows join the list after the
+    // server's own pulls.
     const incompletePulls = withUnsentRows(
       en8On && weightFacts === null ? [...readPulls, 'weights'] : readPulls,
       unsentRows,
+      refusedRows,
     )
     const fingerprint = await engineFingerprint({
       engine: 'generate-signal',

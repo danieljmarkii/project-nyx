@@ -438,8 +438,8 @@ describe('CUL-989 — an incomplete pull is acted on, in each function, and no r
     // The row pulls are named here; under engines_v3_en8 a failed weight read joins them
     // (PR-19, CUL-1413), so what the pipeline is handed is that composed list.
     expect(signal).toMatch(/const readPulls = incompletePullNames\(\{/);
-    // Q14 (CUL-772): the device's unsent rows join it through withUnsentRows.
-    expect(signal).toMatch(/const incompletePulls = withUnsentRows\(\s*en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls,\s*unsentRows,?\s*\)/);
+    // Q14 (CUL-772) / CUL-2037: the device's unsent and refused rows join it through withUnsentRows.
+    expect(signal).toMatch(/const incompletePulls = withUnsentRows\(\s*en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls,\s*unsentRows,\s*refusedRows,?\s*\)/);
     expect(signal).toMatch(/runSignalPipeline\(\{[\s\S]*?\n\s*incompletePulls,\n/);
     expect(signal).toMatch(/console\.error\('generate-signal incomplete pulls:'/);
     // Over an incomplete read no card goes to the model: the "at least" lives in the template.
