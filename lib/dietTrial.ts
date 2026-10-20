@@ -3157,6 +3157,14 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // Nor when the trial diet's RANGE fact fires and the meal record's does not: finished
   // rival bowls weeks old dilute the wide share, and the second pass executed a held
   // record erasing a narrow range fact the report and the withheld card read.
+  // CUL-2015 narrowed that second carve-out further: whenever the trial diet's range
+  // fact fires, the trial diet keeps the lane unless the meal record's NOW-fact fires.
+  // Holding a range fact over a range fact traded R4's run and the report's "Not one
+  // … (3 of 3)" for a meal-record "largely not eaten" over bowls that were matched;
+  // once the window scope went, that path opened past the window too (rival
+  // refusals on days 1–3, matched refusals on days 4–5, one finished rival bowl on
+  // day 10, a matched refusal on day 30: `adversarial-reviewer`, executed). A live
+  // meal-record now-fact still holds: a present-tense warning outranks a past one.
   //
   // CUL-2015, ruling (a) (PM, 2026-10-19): THE HOLD HAS NO RECENCY SCOPE. It applies
   // whenever the pre-match meal record fired EITHER refusal fact, however long ago the
@@ -3174,7 +3182,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     !allowedSetUnavailable &&
     narrow.feedings > 0 &&
     !recentRefusalFires(narrow) &&
-    (!rangeRefusalFires(narrow) || rangeRefusalFires(wide))
+    (!rangeRefusalFires(narrow) || recentRefusalFires(wide))
   ) {
     const preMatch = emptyRefusalCounters();
     const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);
