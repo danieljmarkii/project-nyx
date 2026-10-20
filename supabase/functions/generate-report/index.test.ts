@@ -214,6 +214,20 @@ Deno.test('mapWeightRows: lookbackMs drops readings whose parent event predates 
   assert.deepEqual(rows.map((r) => r.eventId), ['new'])
 })
 
+Deno.test('CUL-2026 mapWeightRows: carries the source the weight lane counts by, and only a known one', () => {
+  const ev = { occurred_at: '2026-06-01T12:00:00Z', deleted_at: null }
+  const rows = mapWeightRows([
+    { event_id: 'vet', weight_kg: '4.1', source: 'clinic', source_basis: 'entry', events: ev },
+    { event_id: 'odd', weight_kg: '4.1', source: 'guess', source_basis: 'whim', events: ev },
+    { event_id: 'none', weight_kg: '4.1', events: ev },
+  ])
+  assert.deepEqual(rows.map((r) => [r.eventId, r.source, r.sourceBasis]), [
+    ['vet', 'clinic', 'entry'],
+    ['odd', undefined, undefined],
+    ['none', undefined, undefined],
+  ])
+})
+
 // ── mapDoseRows ─────────────────────────────────────────────────────────────
 
 Deno.test('mapDoseRows: timing from parent, soft-deleted dropped, paired link carried', () => {

@@ -15,12 +15,14 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  weightLaneFor,
   partitionCourseDays,
   type PartitionRow,
   buildDetectionInput,
   dedupeEvents,
   drawsStopMark,
   resolveScope,
+  type ReportWeightCheckInput,
   FALLBACK_DAYS,
   INTAKE_LOG_CAP,
   summariseIntake,
@@ -40,7 +42,8 @@ import {
   LATE_LOG_MIN_HOURS,
 } from './report.ts'
 import { cooperInput, COOPER_NOW } from './cooperDemo.testutil.ts'
-import { chronicityFloorsFor, DEFAULT_CONFIG } from '../generate-signal/detection.ts'
+import { chronicityFloorsFor, DEFAULT_CONFIG, detectWeightLoss } from '../generate-signal/detection.ts'
+import { templateWeightLoss } from '../generate-signal/phrasing.ts'
 // The CUL-976 cross-surface guards drive the REAL renderer and assert over its output, not over
 // the intermediate snapshot: "one adherence claim per drug per document" is a property of the
 // document, and a snapshot-level assertion cannot see a second claim a renderer prints.
@@ -5781,9 +5784,10 @@ Deno.test('CUL-2003 adv2 Q1 — a safety finding the report does not detail is s
   const snap = assembleReport(baseInput({ events }))
   assert.equal(snap.safetyFlags.length, 0)
   // The engine's other safety findings reach the band through this kind; pinned on the renderer.
-  const html = renderReport({ ...snap, safetyFlags: [{ kind: 'engine_other', findingTypes: ['weight_loss'] }] })
+  // (weight_loss was the example until CUL-2026 gave it its own row; the red flag still rides here.)
+  const html = renderReport({ ...snap, safetyFlags: [{ kind: 'engine_other', findingTypes: ['incident_red_flag'] }] })
   const p = readAs(html)
-  assert.ok(/Safety — flags for review Also flagged The app's checks also flagged weight loss \(see the weight trend\)\. This report does not detail it here\./.test(p))
+  assert.ok(/Safety — flags for review Also flagged The app's checks also flagged a red flag on a photographed incident \(see the incident appendix\)\. This report does not detail it here\./.test(p))
 })
 
 Deno.test('CUL-2003 adv2 Q2 — a window exactly the span floor long cannot claim the ongoing check ran', () => {
@@ -5812,4 +5816,246 @@ Deno.test('CUL-2001 r2 — entries entered in one sitting say so; spread-out lat
   const spread = run(['2026-06-03T15:00:00Z', '2026-06-08T15:00:00Z', '2026-06-20T15:00:00Z'])
   assert.ok(/All 3 vomiting entries were entered 2–11 days after/.test(spread))
   assert.ok(!/together/.test(spread))
+})
+
+// ── CUL-2026 / CUL-2027: the band misses nothing Home shows ────────────────────────────────────
+
+/** A cat who lost ~12% on a home scale: two agreeing readings at 5.0 kg, then two at 4.4 kg. */
+function losingWeighIns(): ReportWeightCheckInput[] {
+  return [
+    { eventId: 'w-1', weightKg: 5.0, occurredAt: at('2026-03-01'), source: 'home_scale' },
+    { eventId: 'w-2', weightKg: 5.0, occurredAt: at('2026-03-08'), source: 'home_scale' },
+    { eventId: 'w-3', weightKg: 4.4, occurredAt: at('2026-06-20'), source: 'home_scale' },
+    { eventId: 'w-4', weightKg: 4.4, occurredAt: at('2026-06-27'), source: 'home_scale' },
+  ]
+}
+const EN8: ReportInput['engineFlags'] = { on: ['engines_v3_en8'], readOk: true }
+
+Deno.test('CUL-2026 — Home\'s weight card leads the band, in the card\'s own readings, days, sources and ask', () => {
+  idSeq = 0
+  const weighIns = losingWeighIns()
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 }))
+  const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
+  assert.ok(w && w.kind === 'weight_loss', JSON.stringify(snap.safetyFlags.map((f) => f.kind)))
+  // Home, over the same readings at the same clock: the card the owner read.
+  const home = detectWeightLoss({
+    pet: { name: 'Nyx', species: 'cat', dietTrialActive: false },
+    symptomEvents: [], mealEvents: [], feedingArrangements: [], medicationWindows: [],
+    weight: { readings: weighIns.map((r) => ({ kg: r.weightKg, occurredAt: r.occurredAt, source: r.source! })), dateOfBirth: '2019-04-01' },
+    timezone: TZ,
+    now: NOW,
+  })
+  assert.equal(home.length, 1)
+  const card = templateWeightLoss(home[0], 'Nyx')
+  assert.equal(w.tier, home[0].tier)
+  const p = readAs(renderReport(snap))
+  const row = p.slice(p.indexOf('Weight Weighed'), p.indexOf('Weight Weighed') + 400)
+  assert.ok(p.includes('Weight Weighed'), p.slice(p.indexOf('Safety'), p.indexOf('Safety') + 400))
+  // Every reading Home names (its pounds, its day, its source) is on the report's row.
+  // Home spells the month out ("June 27"); the report abbreviates every date ("Jun 27"), so the
+  // month is compared on its first three letters. Everything else is compared verbatim.
+  const readings = [...card.matchAll(/(\d+\.\d) lb on ([A-Z][a-z]{2})[a-z]* (\d+, \d{4}) (at the vet|on a home scale)(, a single reading)?/g)]
+  assert.equal(readings.length, 2, card)
+  for (const m of readings) {
+    const expected = `${m[1]} lb) on ${m[2]} ${m[3]} ${m[4]}${m[5] ?? ''}`
+    assert.ok(row.includes(expected), `${expected} missing from: ${row}`)
+  }
+  assert.ok(/Weighed 4\.40 kg \(9\.7 lb\) on Jun 27, 2026 on a home scale(, a single reading)?, down from 5\.00 kg \(11\.0 lb\) on Mar \d+, 2026 on a home scale(, a single reading)?\./.test(row), row)
+  const ask = home[0].tier === 'firm' ? 'it is worth booking a vet visit' : 'it is worth raising with the vet'
+  assert.ok(row.includes(`The owner was told ${ask}.`), row)
+  assert.ok(!/% of body weight/.test(row), 'no percentage on the flag (WG-4)')
+})
+
+Deno.test('CUL-2026 — the weight flag sits where Home ranks it: below burden, above chronicity', () => {
+  idSeq = 0
+  const vomits = ['2026-05-10', '2026-05-17', '2026-05-24', '2026-05-31', '2026-06-07', '2026-06-14', '2026-06-29', '2026-06-30', '2026-07-01']
+  const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...vomits.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
+  const weighIns = losingWeighIns()
+  const kinds = assembleReport(baseInput({ events, weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 })).safetyFlags.map((f) => f.kind)
+  const b = kinds.indexOf('symptom_burden')
+  const w = kinds.indexOf('weight_loss')
+  const c = kinds.indexOf('chronicity')
+  assert.ok(b >= 0 && w > b, JSON.stringify(kinds))
+  if (c >= 0) assert.ok(c > w, JSON.stringify(kinds))
+})
+
+Deno.test('CUL-2026 — no weight flag where Home has none: the key off, or the weigh-in read incomplete', () => {
+  const weighIns = losingWeighIns()
+  idSeq = 0
+  const off = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns }))
+  assert.ok(!off.safetyFlags.some((f) => f.kind === 'weight_loss'), 'engines_v3_en8 off: Home shows no weight card')
+  idSeq = 0
+  const partial = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, engineFlags: EN8 }))
+  assert.ok(!partial.safetyFlags.some((f) => f.kind === 'weight_loss'), 'no history (an older caller): no lane')
+  // The mutation: the same input with the history present fires, so the two absences are the gate.
+  idSeq = 0
+  const on = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 }))
+  assert.ok(on.safetyFlags.some((f) => f.kind === 'weight_loss'))
+})
+
+Deno.test('CUL-2027 — a past-ending window\'s checks run to the owner\'s local midnight, not UTC\'s', () => {
+  const scopeIn = (timezone: string, endDate: string) =>
+    resolveScope({ now: NOW, timezone, requestedWindow: { startDate: '2026-04-01', endDate }, vetVisits: [], dietTrials: [] })
+  assert.equal(scopeIn('America/New_York', '2026-06-20').detectionNowIso, '2026-06-21T03:59:59.999Z')
+  assert.equal(scopeIn('America/Los_Angeles', '2026-06-20').detectionNowIso, '2026-06-21T06:59:59.999Z')
+  assert.equal(scopeIn('Asia/Tokyo', '2026-06-20').detectionNowIso, '2026-06-20T14:59:59.999Z')
+  assert.equal(scopeIn('UTC', '2026-06-20').detectionNowIso, '2026-06-20T23:59:59.999Z')
+  // A fall-back day is 25 hours long; it still ends at the next local midnight (EST, UTC−5).
+  assert.equal(
+    resolveScope({ now: '2026-12-01T12:00:00Z', timezone: 'America/New_York', requestedWindow: { startDate: '2026-10-01', endDate: '2026-11-01' }, vetVisits: [], dietTrials: [] }).detectionNowIso,
+    '2026-11-02T04:59:59.999Z',
+  )
+  // A window ending today still reads as of real-now.
+  assert.equal(scopeIn('America/New_York', '2026-07-02').detectionNowIso, NOW)
+})
+
+Deno.test('CUL-2027 — a west-of-UTC 8 pm vomit on the window\'s last day reaches the safety checks', () => {
+  idSeq = 0
+  // Three evenings running in New York; the third at 8 pm EDT on the window's last day, which is
+  // already the next UTC day. Three local days running is Home's burden card.
+  const events = [
+    ...mealsOn(dayKeys('2026-04-01', '2026-06-20')),
+    makeEvent({ type: 'vomit', occurredAt: '2026-06-19T00:00:00Z' }), // Jun 18, 8 pm EDT
+    makeEvent({ type: 'vomit', occurredAt: '2026-06-20T00:00:00Z' }), // Jun 19, 8 pm EDT
+    makeEvent({ type: 'vomit', occurredAt: '2026-06-21T00:00:00Z' }), // Jun 20, 8 pm EDT
+  ]
+  const snap = assembleReport(baseInput({ events, requestedWindow: { startDate: '2026-04-01', endDate: '2026-06-20' } }))
+  assert.equal(snap.scope.endDate, '2026-06-20')
+  const b = snap.safetyFlags.find((f) => f.kind === 'symptom_burden')
+  assert.ok(b && b.kind === 'symptom_burden' && b.runDays === 3, JSON.stringify(snap.safetyFlags))
+})
+
+Deno.test('CUL-2026 cold read — a clinic reading against home-scale ones says the scales differ; one scale does not', () => {
+  const mixed: ReportWeightCheckInput[] = [
+    { eventId: 'w-1', weightKg: 5.0, occurredAt: at('2026-03-01'), source: 'clinic' },
+    { eventId: 'w-3', weightKg: 4.4, occurredAt: at('2026-06-20'), source: 'home_scale' },
+    { eventId: 'w-4', weightKg: 4.4, occurredAt: at('2026-06-27'), source: 'home_scale' },
+  ]
+  const run = (weighIns: ReportWeightCheckInput[]) => {
+    idSeq = 0
+    const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 }))
+    const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
+    return { w, p: readAs(renderReport(snap)) }
+  }
+  const m = run(mixed)
+  assert.ok(m.w && m.w.kind === 'weight_loss' && m.w.mixedInstruments, JSON.stringify(m.w))
+  assert.ok(/at the vet/.test(m.p) && /The two readings come from different scales\./.test(m.p))
+  const one = run(losingWeighIns())
+  assert.ok(one.w && !/come from different scales/.test(one.p))
+})
+
+Deno.test('CUL-2026 cold read r2 — with a Weight flag, the tile and the weight block defer to it; without one, neither does', () => {
+  // The window holds only the two agreeing late readings; the high sits before it, so the window's
+  // own delta is flat while the flag names the loss.
+  const weighIns = losingWeighIns()
+  const run = (engineFlags: ReportInput['engineFlags']) => {
+    idSeq = 0
+    const inWindow = weighIns.filter((w) => w.occurredAt >= '2026-04-04')
+    return readAs(renderReport(assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: inWindow, weightHistory: weighIns, engineFlags }))))
+  }
+  const on = run(EN8)
+  assert.ok(/-0\.60 kg Weight since Mar \d+, 2026 see the Weight flag/.test(on), on.slice(on.indexOf('At a glance'), on.indexOf('At a glance') + 600))
+  assert.ok(/See the Weight flag above: it compares the latest reading with the highest in the last 365 days \(5\.00 kg on Mar \d+, 2026\), which this block does not plot\./.test(on))
+  assert.ok(!/Weight over 2 weigh-ins/.test(on), 'the flat window delta never stands beside the flag')
+  const off = run({ on: [], readOk: true })
+  assert.ok(!/see the Weight flag|See the Weight flag/.test(off))
+  assert.ok(/Weight over 2 weigh-ins/.test(off))
+})
+
+// ── CUL-2026 adversarial pass ─────────────────────────────────────────────────────────────────
+
+Deno.test('CUL-2026 adv — a past window ending before the loss still flags the card Home shows today, dated after it', () => {
+  idSeq = 0
+  const weighIns = losingWeighIns() // the low readings are Jun 20 and 27
+  const snap = assembleReport(baseInput({
+    events: mealsOn(dayKeys('2026-04-01', '2026-06-15')),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+    engineFlags: EN8,
+    requestedWindow: { startDate: '2026-04-01', endDate: '2026-06-15' },
+  }))
+  const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
+  assert.ok(w && w.kind === 'weight_loss' && w.asOf === 'now' && w.latest.day === '2026-06-27', JSON.stringify(snap.safetyFlags))
+  const p = readAs(renderReport(snap))
+  assert.ok(/The latest reading is after this window\. The owner was told it is worth booking a vet visit\./.test(p), p.slice(p.indexOf('Weight Weighed'), p.indexOf('Weight Weighed') + 500))
+})
+
+Deno.test('CUL-2026 adv — a loss as of a past window\'s end that has since recovered is flagged, never as what the owner was told', () => {
+  idSeq = 0
+  const weighIns: ReportWeightCheckInput[] = [
+    ...losingWeighIns(),
+    { eventId: 'w-5', weightKg: 5.0, occurredAt: at('2026-07-01'), source: 'home_scale' },
+    { eventId: 'w-6', weightKg: 5.0, occurredAt: at('2026-07-02', '10:00:00'), source: 'home_scale' },
+  ]
+  const snap = assembleReport(baseInput({
+    events: mealsOn(dayKeys('2026-04-01', '2026-06-28')),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+    engineFlags: EN8,
+    requestedWindow: { startDate: '2026-04-01', endDate: '2026-06-28' },
+  }))
+  const w = snap.safetyFlags.find((f) => f.kind === 'weight_loss')
+  assert.ok(w && w.kind === 'weight_loss' && w.asOf === 'window_end', JSON.stringify(snap.safetyFlags))
+  const p = readAs(renderReport(snap))
+  assert.ok(/As of this window's end the app's weight check reads it as worth booking a vet visit; it does not read so today\./.test(p))
+  assert.ok(!/The owner was told it is worth/.test(p))
+})
+
+Deno.test('CUL-2026 adv — a small pet\'s loss never prints as the same kilograms twice', () => {
+  idSeq = 0
+  const weighIns: ReportWeightCheckInput[] = [
+    { eventId: 'k-1', weightKg: 1.95, occurredAt: at('2026-05-01'), source: 'clinic' },
+    { eventId: 'k-2', weightKg: 1.85, occurredAt: at('2026-06-27'), source: 'clinic' },
+  ]
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: weighIns, weightHistory: weighIns, engineFlags: EN8 }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'weight_loss'), JSON.stringify(snap.safetyFlags))
+  const p = readAs(renderReport(snap))
+  assert.ok(/Weighed 1\.85 kg \(4\.1 lb\) on Jun 27, 2026 at the vet(, a single reading)?, down from 1\.95 kg \(4\.3 lb\)/.test(p), p.slice(p.indexOf('Weight Weighed'), p.indexOf('Weight Weighed') + 300))
+})
+
+Deno.test('CUL-2026 adv — as of a past window\'s end, a reading after it never reaches the lane', () => {
+  const weighIns: ReportWeightCheckInput[] = [
+    { eventId: 'in', weightKg: 5.0, occurredAt: '2026-06-14T12:00:00Z', source: 'clinic' },
+    { eventId: 'after', weightKg: 4.4, occurredAt: '2026-06-15T04:05:00Z', source: 'clinic' }, // Jun 15, 00:05 EDT
+  ]
+  const input = baseInput({ weightHistory: weighIns, engineFlags: EN8 })
+  assert.deepEqual(weightLaneFor(input, new Set(), '2026-06-15T03:59:59.999Z').weight?.readings.map((r) => r.occurredAt), ['2026-06-14T12:00:00Z'])
+  assert.equal(weightLaneFor(input, new Set()).weight?.readings.length, 2)
+})
+
+Deno.test('CUL-2026 adv 2 — a partial recovery after a past window never softens the window\'s firmer loss', () => {
+  // Firm 5.00 → 4.30 kg as of Jul 15; a recovery to 4.50 kg by Sep leaves today's card soft.
+  const weighIns: ReportWeightCheckInput[] = [
+    { eventId: 'a', weightKg: 5.0, occurredAt: '2026-03-01T14:00:00Z', source: 'home_scale' },
+    { eventId: 'b', weightKg: 5.0, occurredAt: '2026-03-08T14:00:00Z', source: 'home_scale' },
+    { eventId: 'c', weightKg: 4.3, occurredAt: '2026-06-20T14:00:00Z', source: 'home_scale' },
+    { eventId: 'd', weightKg: 4.3, occurredAt: '2026-06-27T14:00:00Z', source: 'home_scale' },
+    { eventId: 'e', weightKg: 4.5, occurredAt: '2026-09-20T14:00:00Z', source: 'home_scale' },
+    { eventId: 'f', weightKg: 4.5, occurredAt: '2026-09-27T14:00:00Z', source: 'home_scale' },
+  ]
+  idSeq = 0
+  const snap = assembleReport(baseInput({
+    now: '2026-10-15T12:00:00Z',
+    events: mealsOn(dayKeys('2026-04-01', '2026-07-15')),
+    weightChecks: weighIns,
+    weightHistory: weighIns,
+    engineFlags: EN8,
+    requestedWindow: { startDate: '2026-04-01', endDate: '2026-07-15' },
+  }))
+  const flags = snap.safetyFlags.filter((f) => f.kind === 'weight_loss')
+  assert.deepEqual(flags.map((f) => f.kind === 'weight_loss' && [f.tier, f.asOf]), [['firm', 'window_end'], ['soft', 'now']])
+  const p = readAs(renderReport(snap))
+  assert.ok(/As of this window's end the app's weight check reads it as worth booking a vet visit\./.test(p))
+  assert.ok(/The owner was told it is worth raising with the vet\./.test(p))
+  assert.ok(/-0\.70 kg Weight since Mar 8, 2026|-0\.70 kg Weight since Mar 1, 2026/.test(p), 'the tile states the firmer row')
+})
+
+Deno.test('CUL-2026 adv 2 — a weigh-in record that did not load in full says so in the band, never silence', () => {
+  idSeq = 0
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightHistory: [], engineFlags: EN8, incompletePulls: ['weight_checks'] }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'weight_unchecked'))
+  assert.ok(/Weight The weigh-in record did not load in full, so the app's weight-loss check ran on part of it and may have missed a loss\./.test(readAs(renderReport(snap))))
+  idSeq = 0
+  const off = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), incompletePulls: ['weight_checks'] }))
+  assert.ok(!off.safetyFlags.some((f) => f.kind === 'weight_unchecked'), 'key off: Home has no weight check to speak of')
 })
