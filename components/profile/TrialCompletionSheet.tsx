@@ -121,6 +121,10 @@ export function TrialCompletionSheet({
   // CUL-2041 — what the sheet says when the trial it was open over went away under an
   // answer the owner had entered. Held until the owner reads it.
   const [lostNotice, setLostNotice] = useState<{ title: string; body: string } | null>(null);
+  // CUL-2055 — the trial this open was for went away or was replaced, with nothing
+  // entered. The sheet has asked the host to close, and stays shut until it does:
+  // it must never come back drawn over a different trial with its saves live.
+  const [orphaned, setOrphaned] = useState(false);
 
   // The entry point decides the step every time the sheet opens, so re-opening
   // from a different button never lands on the previous one's screen.
@@ -146,6 +150,7 @@ export function TrialCompletionSheet({
     if (!entry) {
       setStep('decision');
       setLostNotice(null);
+      setOrphaned(false);
     }
   }, [entry]);
 
@@ -178,27 +183,73 @@ export function TrialCompletionSheet({
   // open to say it. Nothing is written; the first ending stays the record.
   //
   // Only when the owner had ENTERED something: a sheet with nothing picked loses
-  // nothing, and goes away as before. A row the host could not hand over (the trial
-  // is gone or was replaced) is an ending this sheet cannot read, and the notice reads
-  // an unknown ending as a loss, so it errs loud.
+  // nothing, and closes. A row the host could not hand over (the trial is gone or was
+  // replaced) is an ending this sheet cannot read, and the notice reads an unknown
+  // ending as a loss, so it errs loud.
+  //
+  // CLOSES, NEVER CARRIES ON (CUL-2055). With nothing entered this used to return and
+  // leave the host's entry set, so a trial replaced elsewhere (A→B, or A→gone→B) redrew
+  // this sheet over B with every save live: one tap ended a trial the owner never
+  // opened it for. The sheet was opened for one trial and answers for that one only.
+  //
+  // BOUND TO ONE TRIAL PER OPEN. `lastSeenTrialId` follows the prop; `boundTrialId` is
+  // the trial an open was made over, fixed for that open and released with it. The
+  // open binds to the trial the previous commit showed, so an open and a replacement
+  // landing in one commit still bind to the trial the owner tapped over. Judging
+  // against the bound trial, never the last one seen, is what stops a Save that fails
+  // after a replacement from leaving the sheet live over the new trial (CUL-2055).
+  //
+  // A Save in flight owns the verdict: its refusal says the same sentence, once. So
+  // the answer is snapshotted as it stood when the trial changed (the clear below
+  // empties it in the same commit), and judged once the Save settles without closing.
+  //
+  // Once this open is over (`orphaned`) nothing re-judges it: a second change under an
+  // unread notice must never take the notice down (CUL-2055 adversarial, BROKE-2).
   //
   // Declared ABOVE the clear below, which empties the answers on the same change;
   // both read this render's values, so the order is for the reader.
-  const prevTrialId = useRef<string | null>(trialId);
+  const lastSeenTrialId = useRef<string | null>(trialId);
+  const boundTrialId = useRef<string | null>(null);
+  const deferredAnswer = useRef<{
+    ownerReason: string | null;
+    step: Step;
+    outcome: TrialOutcome | null;
+    notes: string;
+  } | null>(null);
   useEffect(() => {
-    const was = prevTrialId.current;
-    prevTrialId.current = trialId;
-    if (!was || was === trialId || !entry) return;
-    // A Save in flight owns this: its refusal says the same sentence, once.
-    if (saving) return;
+    const lastSeen = lastSeenTrialId.current;
+    lastSeenTrialId.current = trialId;
+    if (!entry) {
+      boundTrialId.current = null;
+      deferredAnswer.current = null;
+      return;
+    }
+    if (boundTrialId.current === null) boundTrialId.current = lastSeen ?? trialId;
+    const was = boundTrialId.current;
+    if (!was || was === trialId || orphaned) return;
     const ownerNotes = notes.trim();
-    const ownerReason =
-      step === 'stopped'
-        ? stopReason
-        : step === 'outcome' && (outcome !== null || ownerNotes !== '')
-          ? 'completed'
-          : null;
-    if (!ownerReason) return;
+    const answer = deferredAnswer.current ?? {
+      ownerReason:
+        step === 'stopped'
+          ? stopReason
+          : step === 'outcome' && (outcome !== null || ownerNotes !== '')
+            ? 'completed'
+            : null,
+      step,
+      outcome,
+      notes: ownerNotes,
+    };
+    if (saving) {
+      deferredAnswer.current = answer;
+      return;
+    }
+    deferredAnswer.current = null;
+    // Either way this open is over: the notice, if any, is the last thing it draws.
+    setOrphaned(true);
+    if (!answer.ownerReason) {
+      onClose();
+      return;
+    }
     const row = endedRow && endedRow.id === was ? endedRow : null;
     const notice = trialEndRefusedNotice({
       refusal: new TrialEndRefused({
@@ -209,14 +260,14 @@ export function TrialCompletionSheet({
         storedOutcome: row?.outcome ?? null,
         storedOutcomeNotes: row?.outcomeNotes ?? null,
       }),
-      ownerReason,
+      ownerReason: answer.ownerReason,
       petName,
-      ownerOutcome: step === 'outcome' ? outcome : null,
-      ownerOutcomeNotes: step === 'outcome' ? ownerNotes : null,
+      ownerOutcome: answer.step === 'outcome' ? answer.outcome : null,
+      ownerOutcomeNotes: answer.step === 'outcome' ? answer.notes : null,
     });
     if (notice) setLostNotice(notice);
     else onClose();
-  }, [trialId, entry, step, outcome, notes, stopReason, endedRow, petName, onClose, saving]);
+  }, [trialId, entry, step, outcome, notes, stopReason, endedRow, petName, onClose, saving, orphaned]);
 
   // A different trial must never inherit the previous one's counts or answers.
   // The read's key stops a switch painting the old counts for even one commit;
@@ -259,6 +310,7 @@ export function TrialCompletionSheet({
         setOutcome(null);
         setNotes('');
         setStopReason(null);
+        setOrphaned(true);
         onChanged();
         onClose();
       } catch (e) {
@@ -280,6 +332,7 @@ export function TrialCompletionSheet({
           setOutcome(null);
           setNotes('');
           setStopReason(null);
+          setOrphaned(true);
           onChanged();
           onClose();
           return;
@@ -328,6 +381,12 @@ export function TrialCompletionSheet({
   }
 
   if (!trial) return null;
+  // The commit that brings in a different trial renders before the effect above can
+  // close, and a Save in flight defers it: the bound trial (or, on the commit that
+  // opens, the trial the previous commit showed) keeps every such frame from drawing
+  // the new trial's saves (CUL-2055).
+  const openFor = boundTrialId.current ?? lastSeenTrialId.current;
+  if (orphaned || (openFor !== null && openFor !== trial.id)) return null;
 
   const sheet: TrialOutcomeSheetModel | null = facts
     ? buildOutcomeSheet({
