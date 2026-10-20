@@ -87,3 +87,42 @@ describe('useTrialLifecycle — the record’s pet, with another pet active (C-9
     expect(result.current.pet).toBeNull();
   });
 });
+
+// CUL-2041 — another phone's ending, hydrated: the sheet's trial goes away, and the
+// row that ending left is what the sheet phrases its notice from.
+describe('useTrialLifecycle — the ended row the completion sheet reads', () => {
+  it('is null while the trial runs', () => {
+    const { result } = renderHook(() =>
+      useTrialLifecycle({ petId: 'p1', input: INPUT, reload: jest.fn() }));
+    expect(result.current.sheetEndedRow).toBeNull();
+  });
+
+  it('carries the newly read ending once a hydration ends the trial', () => {
+    const ended = {
+      ...INPUT,
+      trial: {
+        ...INPUT.trial,
+        status: 'abandoned',
+        endedAt: '2026-08-20',
+        stoppedReason: 'vet_advised',
+        outcome: null,
+      },
+    } as unknown as TrialCardInput;
+    const { result, rerender } = renderHook(
+      ({ input }: { input: TrialCardInput }) =>
+        useTrialLifecycle({ petId: 'p1', input, reload: jest.fn() }),
+      { initialProps: { input: INPUT } },
+    );
+    rerender({ input: ended });
+    expect(result.current.sheetTrial).toBeNull();
+    expect(result.current.sheetEndedRow).toEqual({
+      id: 'mochi-trial',
+      status: 'abandoned',
+      endedOn: '2026-08-20',
+      stoppedReason: 'vet_advised',
+      outcome: null,
+      // The read carries no note, so the notice reads it as unknown and errs loud.
+      outcomeNotes: null,
+    });
+  });
+});

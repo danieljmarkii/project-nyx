@@ -22,7 +22,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import type { TrialCompletionEntry } from '../components/profile/TrialCompletionSheet';
-import type { CompletionSheetTrial } from '../components/profile/TrialCompletionSheet';
+import type {
+  CompletionSheetEndedRow, CompletionSheetTrial,
+} from '../components/profile/TrialCompletionSheet';
 import type { TrialWindowSheetTrial } from '../components/profile/TrialWindowPanel';
 import type { TrialCardInput } from '../lib/dietTrialCard';
 import { extensionDays, nextTargetDays } from '../lib/dietTrialCompletion';
@@ -50,6 +52,9 @@ export interface TrialLifecycle {
   closeCompletion: () => void;
   /** The trial the completion sheet writes against; null unless it is `active`. */
   sheetTrial: CompletionSheetTrial | null;
+  /** The newly read row once the trial is no longer `active` (CUL-2041), so the
+   *  sheet can say an answer another phone's ending took from it. */
+  sheetEndedRow: CompletionSheetEndedRow | null;
   sheetDayCounter: number;
   intakeDeclineHeadline: string | null;
   /** Re-read after the completion sheet's own write. */
@@ -257,6 +262,21 @@ export function useTrialLifecycle(params: {
           indication: trialInput.trial.indication,
         }
       : null;
+  // CUL-2041 — the other half of the gate above. When hydration brings in another
+  // phone's ending, `sheetTrial` goes null under an open sheet; this is the row that
+  // ending left, so the sheet can say what it took. The read carries no outcome note,
+  // so that field is null, which the notice reads as unknown and errs loud on.
+  const sheetEndedRow: CompletionSheetEndedRow | null =
+    trialInput?.trial?.id && trialInput.trial.status !== 'active'
+      ? {
+          id: trialInput.trial.id,
+          status: trialInput.trial.status,
+          endedOn: trialInput.trial.endedAt ?? null,
+          stoppedReason: trialInput.trial.stoppedReason ?? null,
+          outcome: trialInput.trial.outcome ?? null,
+          outcomeNotes: null,
+        }
+      : null;
   const sheetDayCounter = trialInput?.trial
     ? getDietTrialProgress(
         {
@@ -305,6 +325,7 @@ export function useTrialLifecycle(params: {
     completionEntry,
     closeCompletion,
     sheetTrial,
+    sheetEndedRow,
     sheetDayCounter,
     intakeDeclineHeadline: trialInput?.intakeDeclineHeadline ?? null,
     reload: reloadTrial,

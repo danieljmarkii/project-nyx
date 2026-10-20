@@ -25,7 +25,7 @@
 // Read as permission to stop the diet. No completion vocabulary appears here, the
 // data leads and the question follows, and `Keep going` is never the weaker
 // option. The greppable guard lives in the pure module's test.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   StyleSheet, TextInput, TouchableOpacity, View,
@@ -61,10 +61,26 @@ export interface CompletionSheetTrial {
   indication?: TrialIndication | null;
 }
 
+/** The host's newly read row for a trial that is no longer `active` (CUL-2041): the
+ *  ending another device recorded, as hydration brought it in. Only what
+ *  `trialEndRefusedNotice` weighs; a field the host's read does not carry is null,
+ *  and the notice reads a null it cannot match as a loss (it errs loud). */
+export interface CompletionSheetEndedRow {
+  id: string;
+  status: string;
+  endedOn: string | null;
+  stoppedReason: string | null;
+  outcome: string | null;
+  outcomeNotes: string | null;
+}
+
 interface Props {
   /** null closes the sheet — the host clears its entry state. */
   entry: TrialCompletionEntry | null;
   trial: CompletionSheetTrial | null;
+  /** The record's row once `trial` is no longer active — what another phone's ending
+   *  left. Read only when `trial` goes away under an answer the owner had entered. */
+  endedRow?: CompletionSheetEndedRow | null;
   petName: string;
   /** Drives the decline note's register — the 48h window is feline. */
   species?: 'dog' | 'cat' | 'other';
@@ -88,7 +104,7 @@ function stepFor(entry: TrialCompletionEntry): Step {
 }
 
 export function TrialCompletionSheet({
-  entry, trial, petName, species, pronouns, dayCounter,
+  entry, trial, endedRow, petName, species, pronouns, dayCounter,
   intakeDeclineHeadline, onClose, onExtend, onChanged,
 }: Props) {
   const [step, setStep] = useState<Step>('decision');
@@ -102,6 +118,9 @@ export function TrialCompletionSheet({
   const [notes, setNotes] = useState('');
   const [stopReason, setStopReason] = useState<TrialStopReason | null>(null);
   const [saving, setSaving] = useState(false);
+  // CUL-2041 — what the sheet says when the trial it was open over went away under an
+  // answer the owner had entered. Held until the owner reads it.
+  const [lostNotice, setLostNotice] = useState<{ title: string; body: string } | null>(null);
 
   // The entry point decides the step every time the sheet opens, so re-opening
   // from a different button never lands on the previous one's screen.
@@ -124,7 +143,10 @@ export function TrialCompletionSheet({
   // reopen showing it without a read of its own.
   useEffect(() => {
     setRead(null);
-    if (!entry) setStep('decision');
+    if (!entry) {
+      setStep('decision');
+      setLostNotice(null);
+    }
   }, [entry]);
 
   // The counts the outcome sheet leads with. Loaded when that step opens rather
@@ -144,6 +166,57 @@ export function TrialCompletionSheet({
       .finally(() => { if (!cancelled) setFactsLoading(false); });
     return () => { cancelled = true; };
   }, [step, petId, startedAt, readKey, facts]);
+
+  // AN ANSWER THE SHEET LOSES BEFORE SAVE IS SAID, NEVER DROPPED (CUL-2041).
+  //
+  // The host re-reads on every hydration, so another phone's ending reaches this
+  // sheet as its trial going away (or turning into a different trial) while it is
+  // open. Without this the sheet vanished and took the owner's picked outcome, note
+  // or stopped-early reason with it, which is the loss CUL-2012 and CUL-2035 fixed at
+  // Save, one step earlier. So it is phrased exactly as at Save: a refusal built from
+  // the newly read row, through the same `trialEndRefusedNotice`, and the sheet stays
+  // open to say it. Nothing is written; the first ending stays the record.
+  //
+  // Only when the owner had ENTERED something: a sheet with nothing picked loses
+  // nothing, and goes away as before. A row the host could not hand over (the trial
+  // is gone or was replaced) is an ending this sheet cannot read, and the notice reads
+  // an unknown ending as a loss, so it errs loud.
+  //
+  // Declared ABOVE the clear below, which empties the answers on the same change;
+  // both read this render's values, so the order is for the reader.
+  const prevTrialId = useRef<string | null>(trialId);
+  useEffect(() => {
+    const was = prevTrialId.current;
+    prevTrialId.current = trialId;
+    if (!was || was === trialId || !entry) return;
+    // A Save in flight owns this: its refusal says the same sentence, once.
+    if (saving) return;
+    const ownerNotes = notes.trim();
+    const ownerReason =
+      step === 'stopped'
+        ? stopReason
+        : step === 'outcome' && (outcome !== null || ownerNotes !== '')
+          ? 'completed'
+          : null;
+    if (!ownerReason) return;
+    const row = endedRow && endedRow.id === was ? endedRow : null;
+    const notice = trialEndRefusedNotice({
+      refusal: new TrialEndRefused({
+        reason: 'not_running',
+        status: row?.status ?? null,
+        endedOn: row?.endedOn ?? null,
+        storedReason: row?.stoppedReason ?? null,
+        storedOutcome: row?.outcome ?? null,
+        storedOutcomeNotes: row?.outcomeNotes ?? null,
+      }),
+      ownerReason,
+      petName,
+      ownerOutcome: step === 'outcome' ? outcome : null,
+      ownerOutcomeNotes: step === 'outcome' ? ownerNotes : null,
+    });
+    if (notice) setLostNotice(notice);
+    else onClose();
+  }, [trialId, entry, step, outcome, notes, stopReason, endedRow, petName, onClose, saving]);
 
   // A different trial must never inherit the previous one's counts or answers.
   // The read's key stops a switch painting the old counts for even one commit;
@@ -220,7 +293,41 @@ export function TrialCompletionSheet({
     [trialId, saving, onChanged, onClose, petName],
   );
 
-  if (!entry || !trial) return null;
+  if (!entry) return null;
+
+  if (lostNotice) {
+    const dismissNotice = () => {
+      setLostNotice(null);
+      handleClose();
+    };
+    return (
+      <Modal
+        visible
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={dismissNotice}
+      >
+        <SafeAreaView style={styles.container}>
+          <View style={styles.header}>
+            <View style={styles.headerSpacer} />
+            <ThemedText style={styles.headerTitle}>Diet trial</ThemedText>
+            <View style={styles.headerSpacer} />
+          </View>
+          <ScrollView contentContainerStyle={styles.body}>
+            <ThemedText testID="trial-lost-notice-title" style={styles.sheetTitle}>
+              {lostNotice.title}
+            </ThemedText>
+            <ThemedText testID="trial-lost-notice-body" style={styles.sheetSub}>
+              {lostNotice.body}
+            </ThemedText>
+            <PrimaryButton label="OK" onPress={dismissNotice} style={styles.primaryAction} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  if (!trial) return null;
 
   const sheet: TrialOutcomeSheetModel | null = facts
     ? buildOutcomeSheet({
