@@ -3157,14 +3157,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // Nor when the trial diet's RANGE fact fires and the meal record's does not: finished
   // rival bowls weeks old dilute the wide share, and the second pass executed a held
   // record erasing a narrow range fact the report and the withheld card read.
-  // CUL-2015 narrowed that second carve-out further: whenever the trial diet's range
-  // fact fires, the trial diet keeps the lane unless the meal record's NOW-fact fires.
-  // Holding a range fact over a range fact traded R4's run and the report's "Not one
-  // … (3 of 3)" for a meal-record "largely not eaten" over bowls that were matched;
-  // once the window scope went, that path opened past the window too (rival
-  // refusals on days 1–3, matched refusals on days 4–5, one finished rival bowl on
-  // day 10, a matched refusal on day 30: `adversarial-reviewer`, executed). A live
-  // meal-record now-fact still holds: a present-tense warning outranks a past one.
+  // CUL-2015: PAST TODAY'S WINDOW THE HOLD ONLY EVER ADDS. Inside the window the
+  // carve-out is CUL-1993's as shipped. Past it, a first match that the old scope left
+  // to the trial diet stays there whenever the trial diet's range fact fires, so the
+  // hold reaches only a record where the trial diet says nothing at all and can never
+  // trade one warning for another. Two passes executed what a single rule cost:
+  // keeping the in-window carve-out past the window traded a trial-diet 3 of 3 with
+  // R4's run for a meal-record "largely" (rival refusals days 1–3, matched refusals
+  // days 4–5, a finished rival bowl on day 10, a matched refusal on day 30); asking
+  // for the meal record's NOW-fact instead silenced the card in the window (a trial-
+  // diet range fact under the span guard) and dropped the run past it. Which of two
+  // firing facts should speak is the PM's fork, filed beside CUL-2015.
   //
   // CUL-2015, ruling (a) (PM, 2026-10-19): THE HOLD HAS NO RECENCY SCOPE. It applies
   // whenever the pre-match meal record fired EITHER refusal fact, however long ago the
@@ -3182,7 +3185,9 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     !allowedSetUnavailable &&
     narrow.feedings > 0 &&
     !recentRefusalFires(narrow) &&
-    (!rangeRefusalFires(narrow) || recentRefusalFires(wide))
+    (firstNarrowDay >= refusalWindowStart
+      ? !rangeRefusalFires(narrow) || rangeRefusalFires(wide)
+      : !rangeRefusalFires(narrow))
   ) {
     const preMatch = emptyRefusalCounters();
     const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);

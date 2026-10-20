@@ -2933,7 +2933,7 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(facts.rangeRefusal?.run?.feedings).toBe(3);
   });
 
-  it('CUL-2015 — a live meal-record now-fact still holds over a trial-diet range fact', () => {
+  it('CUL-2015 — inside the window, a live meal-record now-fact still holds over a trial-diet range fact', () => {
     // Unmatched refusals days 1–3, then three matched refusals inside 12 hours across
     // the midnight into day 5 (two days, so the narrow range fact fires; the narrow
     // now-fact misses its span), read on day 5: the meal record fires in the present
@@ -2942,6 +2942,44 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(cat([matched('m4', 4, 'refused', 22), matched('m5a', 5, 'refused', 1), matched('m5b', 5, 'refused', 2)], 5).rangeRefusal)
       .toMatchObject({ population: 'trial_diet' }); // the narrow range fact does fire on its own
     expect(facts.trialDietRefusal).toMatchObject({ refusedFeedings: 6, population: 'meal_record' });
+  });
+
+  it('CUL-2015 — inside the window, a trial-diet range fact under the span guard does not unhold the meal record', () => {
+    // Adversarial pass 2 (P1): unmatched refusals days 2–4, matched refusals across one
+    // midnight on days 15–16 inside 12 hours, read on day 18. The narrow range fact
+    // fires 3 of 3 but the card withholds it (span); the meal record must keep 6 of 6.
+    const at2 = (id: string, n: number, h: number) =>
+      feeding({ eventId: id, occurredAt: at(day(n), h), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' });
+    const record = [unmatched(2), unmatched(3), unmatched(4), at2('m15', 15, 23), at2('m16a', 16, 1), at2('m16b', 16, 2)];
+    const facts = cat(record, 18);
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 6, ratedFeedings: 6, population: 'meal_record' });
+    expect(facts.rangeRefusalSpansEpisodes).toBe(true);
+  });
+
+  it('CUL-2015 — past the window, a firing trial-diet range fact keeps its run whatever the meal record says now', () => {
+    // Adversarial pass 2 (P3b): unmatched refusals days 1–3, nine finished unmatched
+    // bowls on day 16, matched refusals on day 15 and three on day 20, unmatched
+    // refusals days 25–26 and a finished one late on day 26, read on day 30. The meal
+    // record's now-fact fires, but holding on it dropped the trial diet's 4 of 4 and
+    // its run for a run-less 5 of 6.
+    const finishedRival = Array.from({ length: 9 }, (_, i) =>
+      feeding({ eventId: `fin${i}`, occurredAt: at(day(16), 1 + i), foodItemId: 'dry-duck-rephotographed', foodKey: 'royal caninduck dry kibble', intakeRating: 'all' }),
+    );
+    const late = feeding({ eventId: 'x26', occurredAt: at(day(26), 21), foodItemId: 'dry-duck-rephotographed', foodKey: 'royal caninduck dry kibble', intakeRating: 'all' });
+    const record = [
+      ...refusing(3),
+      ...finishedRival,
+      matched('m15', 15, 'refused'),
+      matched('m20a', 20, 'refused', 1),
+      matched('m20b', 20, 'refused', 8),
+      matched('m20c', 20, 'refused', 23),
+      unmatched(25),
+      unmatched(26),
+      late,
+    ];
+    const facts = cat(record, 30);
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 4, ratedFeedings: 4, population: 'trial_diet' });
+    expect(facts.rangeRefusal?.run?.feedings).toBe(4);
   });
 
   it('CUL-2015 — the pre-match now-fact is measured over the window that ended at the match', () => {
