@@ -3085,7 +3085,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const switchLine = trialSwitchLine(t, identityDay)
   if (switchLine) rows.push(kv('Switch onto the diet', switchLine))
   const newFoodsLine = trialNewFoodsLine(t, identityDay, (type) => symptomLabel(type))
-  if (newFoodsLine) rows.push(kv('New foods since', newFoodsLine))
+  if (newFoodsLine) rows.push(kv('New foods after the trial', newFoodsLine))
 
   // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
   // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line

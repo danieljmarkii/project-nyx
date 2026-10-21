@@ -198,5 +198,5 @@ Deno.test('§10: CUL-1997\'s demo story renders "first fed" and the days before 
 Deno.test('a report with no mixed bowl prints no switch row beyond what the record shows', () => {
   const p = plain(renderReport(assembleReport(trialInput(dailyTrial()))))
   assert.ok(!p.includes('mixed bowl'))
-  assert.ok(!p.includes('New foods since'))
+  assert.ok(!p.includes('New foods after the trial'))
 })
