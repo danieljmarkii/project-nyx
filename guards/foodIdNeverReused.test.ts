@@ -55,6 +55,7 @@ END; $$;`),
   guard_food_item_id: squash(`
 CREATE OR REPLACE FUNCTION public.guard_food_item_id()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+DECLARE claims text; legacy_role text; client boolean;
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF NEW.id IS DISTINCT FROM OLD.id
@@ -63,7 +64,11 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
-  IF (auth.uid() IS NOT NULL AND NEW.created_by_user_id IS DISTINCT FROM auth.uid())
+  claims := nullif(current_setting('request.jwt.claims', true), '');
+  legacy_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  client := (claims IS NOT NULL OR legacy_role IS NOT NULL)
+    AND coalesce(claims::jsonb ->> 'role', legacy_role, '') <> 'service_role';
+  IF (client AND NEW.created_by_user_id IS DISTINCT FROM auth.uid())
      OR EXISTS (
        SELECT 1 FROM public.food_items f
        WHERE f.id = NEW.id
@@ -82,6 +87,16 @@ BEGIN
   RETURN NEW;
 END; $$;`),
 };
+
+// The apply-time refusal of a role that does not bypass RLS, exactly.
+const BYPASS_ASSERTION = squash(`
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles
+                 WHERE rolname = current_user AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION '106 must be applied by a role that bypasses RLS';
+  END IF;
+END $$;`);
 
 // Each trigger, by the exact shape it must keep.
 const TRIGGERS: Record<string, { fn: string; when: string }> = {
@@ -190,6 +205,10 @@ export function guardProblems(sql: string): string[] {
     if (!other) problems.push(`trigger ${trigger} on food_items runs ${fnName}, which this guard cannot read`);
     else if (/\bNEW\s*\.\s*"?(?:id|created_by_user_id)"?\s*:?=|\bINTO\s+(?:STRICT\s+)?NEW\b|\bNEW\s*:?=(?!=)/i.test(other.text)) {
       problems.push(`trigger ${trigger} on food_items can assign NEW.id or NEW.created_by_user_id`);
+    } else if (/\bRETURN\s+(?!(?:NEW|OLD|NULL)\s*;)/i.test(other.text.replace(/\bRETURNS\b/gi, ''))) {
+      // A BEFORE trigger's returned row is the row written: returning anything
+      // but NEW, OLD or NULL can replace the id after the guard (pass 2, N2).
+      problems.push(`trigger ${trigger} on food_items can return a replaced row`);
     }
   }
 
@@ -201,9 +220,11 @@ export function guardProblems(sql: string): string[] {
   // The functions read storage.objects as their owner; an owner that does not
   // bypass RLS sees nothing and passes every claim, silently (review F1). The
   // file refuses such a role before it creates anything.
-  const assertAt = sql.search(/IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_catalog\.pg_roles\s+WHERE\s+rolname\s*=\s*current_user\s+AND\s*\(\s*rolsuper\s+OR\s+rolbypassrls\s*\)\s*\)\s*THEN\s+RAISE\s+EXCEPTION/i);
+  // Pinned whole, so a swallowing EXCEPTION clause cannot ride along (pass 2, N3).
+  const assertAt = squash(sql).indexOf(BYPASS_ASSERTION);
   const ledgerAt = sql.search(new RegExp(String.raw`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?${QUAL(LEDGER)}\s*\(`, 'i'));
-  if (assertAt === -1 || (ledgerAt !== -1 && assertAt > ledgerAt)) problems.push('no RLS-bypass assertion before the ledger');
+  const ledgerSquashed = ledgerAt === -1 ? -1 : squash(sql.slice(0, ledgerAt)).length;
+  if (assertAt === -1 || (ledgerSquashed !== -1 && assertAt > ledgerSquashed)) problems.push('no RLS-bypass assertion before the ledger');
 
   // The ledger: server-only, for good.
   const table = QUAL(LEDGER);
@@ -253,7 +274,9 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
     expect(mutate(/r\.owner_id IS DISTINCT FROM NEW\.created_by_user_id\)/, 'FALSE)')).toEqual(guardPinned);
     expect(mutate(/AND coalesce\(o\.owner_id, o\.owner::text\) IS DISTINCT FROM NEW\.created_by_user_id::text\)/, ')')).toEqual(guardPinned);
     // The caller check removed (review F3: naming another owner was an oracle).
-    expect(mutate(/\(auth\.uid\(\) IS NOT NULL AND NEW\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)\)\n\s*OR /, '')).toEqual(guardPinned);
+    expect(mutate(/\(client AND NEW\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)\)\n\s*OR /, '')).toEqual(guardPinned);
+    // Pass 2, N1: reading "signed in" for "client" handed the anon key the oracle back.
+    expect(mutate(/client := \(claims IS NOT NULL OR legacy_role IS NOT NULL\)\n\s*AND /, 'client := auth.uid() IS NOT NULL AND ')).toEqual(guardPinned);
     // A NULL ledger owner read as "anyone may".
     expect(mutate(/r\.owner_id IS DISTINCT FROM NEW\.created_by_user_id/, 'r.owner_id <> NEW.created_by_user_id')).toEqual(guardPinned);
     // The update arm loses the owner, or the id.
@@ -263,7 +286,7 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
     expect(mutate(/BEGIN\n  IF TG_OP = 'UPDATE'/, "BEGIN\n  IF current_user = 'service_role' THEN RETURN NEW; END IF;\n  IF TG_OP = 'UPDATE'")).toEqual(guardPinned);
     expect(mutate(/'A food''s id and owner cannot change'\n\s*USING ERRCODE = '23514';\n  END IF;\n  RETURN NEW;\nEND;/, "'id % is taken', NEW.id USING ERRCODE = '23514';\n  END IF;\n  RETURN NEW;\nEND;")).toEqual(guardPinned);
     // INVOKER would let RLS hide another account's row from the lookup.
-    expect(mutate(/SECURITY DEFINER\nSET search_path = pg_catalog, pg_temp\nAS \$\$\nBEGIN/, 'SECURITY INVOKER\nSET search_path = pg_catalog, pg_temp\nAS $$\nBEGIN')).toEqual(guardPinned);
+    expect(mutate(/SECURITY DEFINER\nSET search_path = pg_catalog, pg_temp\nAS \$\$\nDECLARE\n  claims text;/, 'SECURITY INVOKER\nSET search_path = pg_catalog, pg_temp\nAS $$\nDECLARE\n  claims text;')).toEqual(guardPinned);
     // The retire stops recording, or keeps a dead account's owner.
     expect(mutate(/INSERT INTO public\.food_item_retired_ids AS r/, 'INSERT INTO public.food_items_unused AS r')).toEqual(retirePinned);
     expect(mutate(/SELECT u\.id INTO owner FROM auth\.users u WHERE u\.id = OLD\.created_by_user_id;/, 'owner := OLD.created_by_user_id;')).toEqual(retirePinned);
@@ -323,6 +346,13 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
     // Review F2b / F2c: whole-row assignment with `=`, and INTO STRICT.
     expect(add(`${fnDef('public.zz', "NEW = jsonb_populate_record(NEW, jsonb_build_object('id', gen_random_uuid()));")}\n${trg('public.zz')}`)).toEqual(assigns);
     expect(add(`${fnDef('public.zz', 'SELECT f.* INTO STRICT NEW FROM public.food_items f LIMIT 1;')}\n${trg('public.zz')}`)).toEqual(assigns);
+    // Pass 2, N2: a replaced row returned, with no assignment to NEW.
+    const returns = [expect.stringMatching(/zz on food_items can return a replaced row/)];
+    const raw = (body: string): string =>
+      `CREATE OR REPLACE FUNCTION public.zz() RETURNS trigger LANGUAGE plpgsql AS $$ DECLARE r public.food_items; BEGIN ${body} END; $$;\n${trg('public.zz')}`;
+    expect(add(raw("RETURN jsonb_populate_record(NEW, jsonb_build_object('id', gen_random_uuid()));"))).toEqual(returns);
+    expect(add(raw('r := NEW; r.id := gen_random_uuid(); RETURN r;'))).toEqual(returns);
+    expect(add(raw('IF TG_OP = \'DELETE\' THEN RETURN OLD; END IF; RETURN NULL;'))).toEqual([]);
     // A comparison is not an assignment.
     expect(add(`${fnDef('public.zz', "IF NEW.brand = 'x' THEN NULL; END IF;")}\n${trg('public.zz')}`)).toEqual([]);
     expect(add(trg('public.not_defined_here'))).toEqual([expect.stringMatching(/cannot read/)]);
@@ -361,6 +391,9 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
     const assertion = /DO \$\$\nBEGIN\n  IF NOT EXISTS \(SELECT 1 FROM pg_catalog\.pg_roles[\s\S]*?END \$\$;\n/;
     expect(mutate(assertion, '')).toEqual([expect.stringMatching(/no RLS-bypass assertion/)]);
     expect(mutate(/rolsuper OR rolbypassrls/, 'rolsuper OR true')).toEqual([expect.stringMatching(/no RLS-bypass assertion/)]);
+    expect(mutate(/  END IF;\nEND \$\$;\n\nCREATE TABLE/, '  END IF;\nEXCEPTION WHEN OTHERS THEN NULL;\nEND $$;\n\nCREATE TABLE')).toEqual([
+      expect.stringMatching(/no RLS-bypass assertion/),
+    ]);
     const moved = body106.replace(assertion, '');
     expect(moved).not.toBe(body106);
     const block = (body106.match(assertion) ?? [''])[0];

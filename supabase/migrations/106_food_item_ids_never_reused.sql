@@ -44,10 +44,16 @@
 --         (1) a live food_items row,
 --         (2) the ledger,
 --         (3) an object in nyx-food-photos under `{id}/`.
---       First, a signed-in caller naming an owner other than itself is
---       refused here, before RLS would refuse it with 42501, so naming another
---       account's uid cannot tell held ids from free ones (rls-privacy-reviewer
---       F3). A server write (no JWT subject) names any owner.
+--       First, a client naming an owner other than itself is refused here,
+--       before RLS would refuse it with 42501, so naming another account's
+--       uid cannot tell held ids from free ones (rls-privacy-reviewer F3). A
+--       client is any request carrying JWT claims whose role is not
+--       service_role, signed in or anon (104's test): the anon key has no uid,
+--       so every anon insert is the same 23514 (pass 2, N1; production grants
+--       anon INSERT on food_items). A server write, with no claims or a
+--       service_role JWT, names any owner. Claims are parsed only on INSERT
+--       and come from PostgREST's verified token, so a client cannot send a
+--       malformed value; one would fail the write loudly.
 --       The owner re-creating its own food passes all three, so offline
 --       capture, presync and commitFood's re-create are untouched. (1) is not
 --       needed for safety (the primary key holds); it makes every refusal of a
@@ -180,6 +186,10 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $$
+DECLARE
+  claims text;
+  legacy_role text;
+  client boolean;
 BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF NEW.id IS DISTINCT FROM OLD.id
@@ -190,7 +200,11 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF (auth.uid() IS NOT NULL AND NEW.created_by_user_id IS DISTINCT FROM auth.uid())
+  claims := nullif(current_setting('request.jwt.claims', true), '');
+  legacy_role := nullif(current_setting('request.jwt.claim.role', true), '');
+  client := (claims IS NOT NULL OR legacy_role IS NOT NULL)
+    AND coalesce(claims::jsonb ->> 'role', legacy_role, '') <> 'service_role';
+  IF (client AND NEW.created_by_user_id IS DISTINCT FROM auth.uid())
      OR EXISTS (
        SELECT 1 FROM public.food_items f
        WHERE f.id = NEW.id
@@ -216,7 +230,7 @@ REVOKE ALL ON FUNCTION public.guard_food_item_id() FROM anon;
 REVOKE ALL ON FUNCTION public.guard_food_item_id() FROM authenticated;
 
 COMMENT ON FUNCTION public.guard_food_item_id() IS
-  'CUL-2044 (106) / B-520: BEFORE INSERT OR UPDATE on food_items, every role. INSERT (an upsert included): refused when a signed-in caller names another owner, or when another account holds the id as a live row, in food_item_retired_ids, or as a nyx-food-photos object under {id}/, or the ledger holds it with no owner; the owner re-creating its own food passes. UPDATE: id and created_by_user_id are frozen. SECURITY DEFINER so the cross-tenant reads are not RLS-filtered; search_path = pg_catalog, pg_temp; EXECUTE revoked from PUBLIC/anon/authenticated. One RAISE naming no value (C-31).';
+  'CUL-2044 (106) / B-520: BEFORE INSERT OR UPDATE on food_items, every role. INSERT (an upsert included): refused when a client (claims present, role not service_role, anon included) names an owner other than itself, or when another account holds the id as a live row, in food_item_retired_ids, or as a nyx-food-photos object under {id}/, or the ledger holds it with no owner; the owner re-creating its own food passes. UPDATE: id and created_by_user_id are frozen. SECURITY DEFINER so the cross-tenant reads are not RLS-filtered; search_path = pg_catalog, pg_temp; EXECUTE revoked from PUBLIC/anon/authenticated. One RAISE naming no value (C-31).';
 
 DROP TRIGGER IF EXISTS trg_food_items_retire_id ON public.food_items;
 CREATE TRIGGER trg_food_items_retire_id
