@@ -1269,7 +1269,9 @@ export function FAB() {
       label: food.mix
         ? fabMixLabel(food.mix)
         : rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food',
-      tag: food.mix ? null : foodFormatTag(food.format),
+      // P-1 kept the FAB's MIX label: the tag slot a format uses, so a mix pill reads apart
+      // from a food pill without new chrome (mock round 2, the fan frame).
+      tag: food.mix ? 'MIX' : foodFormatTag(food.format),
     }]),
   );
   const fanPlan = planFan({

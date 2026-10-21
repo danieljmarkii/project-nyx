@@ -79,8 +79,12 @@ export default function MixRoute() {
     return () => { live = false; };
   }, [eventId]);
 
+  // Backing out returns the card the owner left (pm-feature-review): its intake chips and
+  // its Undo, unchanged, so the meal never seems to have vanished. Nothing was written.
   function close() {
+    const held = fromCard && eventId ? takeMixReturn(eventId) : null;
     router.back();
+    if (held) useMomentStore.getState().showMeal(held, { delayMs: CARD_RETURN_DELAY_MS });
   }
 
   function pickSecond(food: PickerFood) {
@@ -130,7 +134,7 @@ export default function MixRoute() {
         <Header title="Mixed with another food" leading="back" onLeadingPress={close} />
         <View style={styles.body}>
           <ThemedText style={styles.note}>
-            This meal can’t take a second food from here. You can change its foods from the meal’s detail screen.
+            This meal can’t take a second food here. To change its foods, open the meal and tap Edit.
           </ThemedText>
         </View>
       </SafeAreaView>

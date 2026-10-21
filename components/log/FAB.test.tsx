@@ -2222,6 +2222,7 @@ describe('FAB — the mix pill', () => {
   it('reads with its split, writes the whole bowl in one call, and the card shows the mix', async () => {
     const view = await openMenu();
     const pill = view.getByText('⅓ Chicken Pâté + ⅔ Rabbit Pâté');
+    view.getByText('MIX');
     await act(async () => { fireEvent.press(pill); });
     expect(insertMeal).toHaveBeenCalledTimes(1);
     expect(insertMeal).toHaveBeenCalledWith(expect.objectContaining({

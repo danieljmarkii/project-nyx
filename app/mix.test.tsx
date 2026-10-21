@@ -66,6 +66,16 @@ it('names the bowl, locks its first food and offers meal foods only', async () =
   expect(lastPickerProps).toEqual(expect.objectContaining({ petId: 'p1', selectedFoodIds: ['rabbit'], mixableOnly: true }));
 });
 
+it('backing out of the picker returns the card it left, with nothing written', async () => {
+  holdMixReturn({ eventId: 'e1', petId: 'p1', occurredAt: '2026-10-21T07:30:00.000Z', foodType: 'meal', intakeRating: 'all' });
+  const view = await openAndPick();
+  fireEvent.press(view.getByLabelText('Back'));
+  await act(async () => { jest.advanceTimersByTime(CARD_RETURN_DELAY_MS + 10); });
+  expect(mockBack).toHaveBeenCalledTimes(1);
+  expect(mockSet).not.toHaveBeenCalled();
+  expect(useMomentStore.getState().payload).toEqual(expect.objectContaining({ eventId: 'e1', intakeRating: 'all' }));
+});
+
 it('the first food cannot be picked as the second', async () => {
   const view = await openAndPick();
   act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)({ ...CHICKEN, id: 'rabbit' }));

@@ -135,7 +135,7 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
             {changing === i ? (
               <View style={styles.list}>
                 {choices.filter((c) => !inBowl.has(c.id)).length === 0 ? (
-                  <ThemedText style={styles.empty}>No other meal foods yet.</ThemedText>
+                  <ThemedText style={styles.empty}>No other meal foods yet. Add one from the Foods tab, then change it here.</ThemedText>
                 ) : null}
                 {choices.filter((c) => !inBowl.has(c.id)).map((c) => (
                   <TouchableOpacity
