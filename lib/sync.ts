@@ -3981,10 +3981,26 @@ async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Pro
     return;
   }
   if (stale()) return;
-  const toDelete = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
+  const candidates = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
+  if (candidates.length === 0) return;
+  // The id pull pages by offset, so a cascade delete and an insert landing between two pages
+  // can shift a page and skip live rows while the total still matches the count (adversarial
+  // pass 2). Ask the server about each candidate by id before deleting it; a row the targeted
+  // read still finds is not a ghost, and a failed read deletes nothing.
+  const CHUNK = 400;
+  const toDelete: string[] = [];
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const chunk = candidates.slice(i, i + CHUNK);
+    const { data: still, error: checkErr } = await supabase.from('meal_components').select('id').in('id', chunk);
+    if (checkErr || !still) {
+      console.warn('[hydrate] meal_components absence re-check failed, skipping absence pass:', checkErr?.message);
+      return;
+    }
+    const present = new Set((still as { id: string }[]).map((r) => r.id));
+    toDelete.push(...chunk.filter((id) => !present.has(id)));
+  }
   if (toDelete.length === 0) return;
   if (stale()) return;
-  const CHUNK = 400;
   for (let i = 0; i < toDelete.length; i += CHUNK) {
     const chunk = toDelete.slice(i, i + CHUNK);
     // `synced = 1` again: a row re-queued by an edit since the snapshot is pending, not a ghost.

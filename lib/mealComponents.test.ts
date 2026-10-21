@@ -52,12 +52,18 @@ let mockServer: Record<string, Record<string, unknown>[]> = {};
 /** Runs when a pull's exact count is read: the moment a beside-running push can land. */
 let mockOnCount: ((table: string) => void) | null = null;
 const mockUpserts: { table: string; rows: Record<string, unknown>[] }[] = [];
+/** What a paged full pull (and its count) sees, per table, when it differs from the rows a
+ *  targeted `.in('id', …)` read finds: a page shifted under a concurrent delete + insert. */
+let mockPagedView: Record<string, Record<string, unknown>[]> = {};
 function mockQuery(table: string, head: boolean): unknown {
-  const rows = mockServer[table] ?? [];
+  let ids: string[] | null = null;
   const q: Record<string, unknown> = {};
-  for (const m of ['select', 'order', 'range', 'gte', 'eq', 'is', 'in', 'not', 'lte', 'limit']) q[m] = () => q;
+  for (const m of ['select', 'order', 'range', 'gte', 'eq', 'is', 'not', 'lte', 'limit']) q[m] = () => q;
+  q.in = (_col: string, values: string[]) => { ids = values; return q; };
   q.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
     if (head && mockOnCount) mockOnCount(table);
+    const all = mockServer[table] ?? [];
+    const rows = ids ? all.filter((r) => ids!.includes(r.id as string)) : (mockPagedView[table] ?? all);
     return Promise.resolve(head ? { count: rows.length, data: null, error: null } : { data: rows, error: null }).then(res, rej);
   };
   return q;
@@ -124,6 +130,7 @@ beforeEach(async () => {
   mockStatements.length = 0;
   mockServer = {};
   mockOnCount = null;
+  mockPagedView = {};
   seedFood('rabbit');
   seedFood('chicken');
 });
@@ -307,6 +314,17 @@ describe('hydration (spec §3 point 4)', () => {
     expect(ids).toContain('pending');
     expect(ids).not.toContain('ghost');
     expect(ids).toEqual(expect.arrayContaining([`${G}0`, `${G}1`]));
+  });
+
+  it('never deletes a live row the paged id pull skipped, though the counts matched (pass 2)', async () => {
+    // Locally synced and on the server, but the paged pull and its count both miss it.
+    mockDb.prepare(
+      `INSERT INTO meal_components (id, pet_id, event_id, position, food_label, share, share_source, created_at, updated_at, synced)
+       VALUES (?, ?, 'e1', 0, 'Rabbit Pâté', 0.5, 'preset', ?, ?, 1)`,
+    ).run(`${G}0`, PET, AT, AT);
+    mockPagedView = { meal_components: [serverComponent(1)] };
+    await hydrateFromCloud();
+    expect(components().map((r) => r.id)).toContain(`${G}0`);
   });
 
   it('never deletes a row a beside-running push marked synced after the server was read', async () => {
