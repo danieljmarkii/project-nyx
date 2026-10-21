@@ -1246,6 +1246,20 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
       }
     }
   }
+  // A PLAIN refusal after a mixed switch (CUL-2083): the food's latest plain meal is also
+  // tested over its plain meals with the earlier mixes that held it. The plain-only
+  // reading still stands, so this only adds a finding. Lockstep with detection.ts.
+  for (const [key, meals] of byFood) {
+    if (!key.startsWith('food|')) continue;
+    const foodId = key.slice('food|'.length);
+    const sorted = [...meals].sort((x, y) => x.ms - y.ms);
+    const latest = sorted[sorted.length - 1];
+    const earlierMixes = windowMeals.filter(
+      (x) => x.ms < latest.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === foodId),
+    );
+    if (earlierMixes.length === 0) continue;
+    tested.push({ meals: [...sorted, ...earlierMixes].sort((x, y) => x.ms - y.ms), latest });
+  }
   let refusalFlag: IntakeDeclineFlag | null = null;
   for (const { meals, latest } of tested) {
     const sorted = meals;

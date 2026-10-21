@@ -4546,6 +4546,24 @@ function detectIntakeDeclineCore(
       }
     }
   }
+  // A PLAIN refusal after a mixed switch (CUL-2083, row 4's adversarial pass): ten days of
+  // chicken-and-rabbit bowls eaten well, two plain rabbit meals, then a refused plain
+  // rabbit meal is a refusal of a normally-eaten food, and the plain meals alone sit under
+  // the 3-sample floor. So a food's latest plain meal is ALSO tested over its plain meals
+  // with the earlier mixes that held it; the plain-only reading above still stands, so
+  // this can only add a finding, never remove one. Kept in lockstep with
+  // lib/analytics.ts detectIntakeDecline.
+  for (const [key, meals] of byFood) {
+    if (!key.startsWith('food|')) continue
+    const foodId = key.slice('food|'.length)
+    const sorted = [...meals].sort((x, y) => x.ms - y.ms)
+    const latest = sorted[sorted.length - 1]
+    const earlierMixes = windowMeals.filter(
+      (x) => x.ms < latest.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === foodId),
+    )
+    if (earlierMixes.length === 0) continue
+    tested.push({ meals: [...sorted, ...earlierMixes].sort((x, y) => x.ms - y.ms), latest })
+  }
 
   let refusalFinding: IntakeDeclineFinding | null = null
   for (const { meals, latest } of tested) {

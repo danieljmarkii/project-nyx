@@ -77,11 +77,11 @@ function serverEvents(meals: M[]): MealEvent[] {
 }
 
 /** Both real detectors, one verdict: [trigger, refused label] pairs, which must agree. */
-function verdict(meals: M[], nowIso: string, zone: string): string[][] {
-  const phoneRes = phoneDetect({ species: 'cat', nowMs: Date.parse(nowIso), meals: phoneRows(meals), freeFedSpans: [], timeZone: zone });
+function verdict(meals: M[], nowIso: string, zone: string, species: 'cat' | 'dog' = 'cat'): string[][] {
+  const phoneRes = phoneDetect({ species, nowMs: Date.parse(nowIso), meals: phoneRows(meals), freeFedSpans: [], timeZone: zone });
   const phone = phoneRes.status === 'watch' ? phoneRes.flags.map((f) => [f.trigger, f.refusedFoodLabel ?? '']) : [];
   const server = serverDetect({
-    pet: { name: 'Pixel', species: 'cat', dietTrialActive: false },
+    pet: { name: 'Pixel', species, dietTrialActive: false },
     symptomEvents: [],
     mealEvents: serverEvents(meals),
     feedingArrangements: [],
@@ -92,6 +92,7 @@ function verdict(meals: M[], nowIso: string, zone: string): string[][] {
   return phone;
 }
 
+const verdictDog = (meals: M[], nowIso: string, zone: string) => verdict(meals, nowIso, zone, 'dog');
 const day = (d: number) => `2026-10-${String(d).padStart(2, '0')}`;
 const refusals = (v: string[][]) => v.filter(([t]) => t === 'refused_normal_food').map(([, label]) => label);
 
@@ -128,6 +129,18 @@ describe.each(ZONES)('Trigger B over mixed bowls ($zone)', ({ zone, offset }) =>
     expect(refusals(verdict(withPlain, `${day(9)}T07:00:00${offset}`, zone))).toEqual([]);
     const withMix = [...base, { iso: `${day(8)}T18:00:00${offset}`, rating: 'all' as IntakeRating, food: MIX }];
     expect(refusals(verdict(withMix, `${day(9)}T07:00:00${offset}`, zone)).length).toBeGreaterThan(0);
+  });
+
+  it('a dog refusing the new food plainly after a mixed switch is flagged, naming that food (CUL-2083)', () => {
+    const meals: M[] = [];
+    for (let d = 2; d <= 11; d++) {
+      meals.push({ iso: `${day(d)}T08:00:00${offset}`, rating: 'all', food: MIX });
+      meals.push({ iso: `${day(d)}T18:00:00${offset}`, rating: 'all', food: MIX });
+    }
+    for (const d of [12, 13]) meals.push({ iso: `${day(d)}T08:00:00${offset}`, rating: 'all', food: 'rabbit' });
+    meals.push({ iso: `${day(14)}T08:00:00${offset}`, rating: 'refused', food: 'rabbit' });
+    const flags = verdictDog(meals, `${day(14)}T12:00:00${offset}`, zone);
+    expect(flags).toContainEqual(['refused_normal_food', RABBIT.foodLabel]);
   });
 
   it('an incomplete bowl feeds no history, but its visible food is tested', () => {
