@@ -25,6 +25,7 @@ import {
   VISIT_LINKED_TABLES,
   parentLandedSql,
   incidentFloorPushQueueSql,
+  mealComponentsPushQueueSql,
   visitLandedSql,
   type ParentGatedQueue,
   type VisitLinkedTable,
@@ -215,6 +216,7 @@ const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   incident_floor_queue: () => incidentFloorPushQueueSql(),
   intake_checks: () => shippedSelect('intake_checks'),
   meals: () => shippedSelect('meals'),
+  meal_components: () => mealComponentsPushQueueSql(),
   weight_checks: () => shippedSelect('weight_checks'),
   looks: () => shippedSelect('looks'),
 };

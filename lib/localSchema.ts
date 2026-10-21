@@ -142,6 +142,39 @@ export const BASE_SCHEMA_SQL = `
     );
     CREATE INDEX IF NOT EXISTS idx_intake_checks_event ON intake_checks(event_id, answered_at);
 
+    CREATE TABLE IF NOT EXISTS meal_components (
+      -- Mixed meals row 2 (CUL-2051; migration 105 is the server side): the foods in one
+      -- mixed bowl, one row per food, under ONE meal event. Written only by
+      -- the one meal-components writer (lib/mealComponents.ts) and read only through
+      -- lib/mealComposition.ts, whose generation rule decides which rows are the bowl.
+      -- Mutable only by a tombstone (deleted_at): an edit is a new generation of rows.
+      -- No uniqueness on (event_id, position), as on the server. No local FK (the
+      -- intake_checks reasoning): the meals drain holds a row until its event and its
+      -- meal row have landed, because 105's guard answers an unseen parent with a
+      -- TERMINAL 23514, and every reader joins events. No local CHECK, as elsewhere in
+      -- this mirror. In LOCAL_WIPE_TABLES before meals.
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      event_id      TEXT NOT NULL,
+      position      INTEGER NOT NULL,
+      food_item_id  TEXT,
+      food_label    TEXT NOT NULL,
+      share         REAL,
+      share_source  TEXT NOT NULL,
+      amount_value  REAL,
+      amount_unit   TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at    TEXT,
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_meal_components_event ON meal_components(event_id, position);
+    CREATE INDEX IF NOT EXISTS idx_meal_components_unsynced
+      ON meal_components(synced)
+      WHERE synced = 0;
+
     CREATE TABLE IF NOT EXISTS food_items_cache (
       id              TEXT PRIMARY KEY,
       brand           TEXT NOT NULL,
@@ -707,6 +740,11 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   // is a true backfill: every pre-widget local row was written by the app.
   { table: 'events', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
   { table: 'meals', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
+  // Mixed meals row 2 (CUL-2051) / migration 105 — NULL is a single-food meal, 2+ a mix.
+  // Nullable, no default, nothing to backfill: every meal before the writer (row 5) is one
+  // food. No `rehydrate`: no build has written a count, so no server row holds one an
+  // older pull could have skipped, and the components decide a bowl anyway.
+  { table: 'meals', column: 'component_count', type: 'INTEGER' },
   { table: 'medication_administrations', column: 'logged_via', type: "TEXT NOT NULL DEFAULT 'app'" },
   // B-546 / migration 048 — the filename a vet document arrived with (Files/PDF
   // picks only). `vet_documents` shipped in VF-1 without it, so a device that

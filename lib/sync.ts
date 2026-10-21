@@ -47,6 +47,7 @@ import {
   parentCausedRefusalSql,
   visitLandedSql,
   incidentFloorPushQueueSql,
+  mealComponentsPushQueueSql,
   PARENT_LINKS,
   REARM_LINKS,
   REARM_ONLY_LINKS,
@@ -126,6 +127,7 @@ type QueueTable =
   | 'weight_checks'
   | 'looks'
   | 'intake_checks'
+  | 'meal_components'
   | 'events'
   | 'event_attachments'
   | 'vet_visits'
@@ -865,15 +867,25 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   // same-pet 23514 parks only while that parent is still refused (`recordRefusedParentFailure`).
   // Empty for a queue with no parent, which keeps the ordinary policy.
   childCtx: ChildPushContext | null = null,
+  // CUL-2051 — send every batch TWICE, so the second send is the ON CONFLICT update and the
+  // table's BEFORE UPDATE trigger stamps updated_at with server NOW. A fresh INSERT keeps the
+  // phone's updated_at, and an incremental pull's floor is a server time (lib/hydration.ts
+  // FR-3), so a row written offline and pushed later than the overlap sat below every other
+  // phone's watermark for good. Only for a table whose rows are born and changed by this
+  // push (meal_components); a row is marked synced only on the second send's answer.
+  opts: { serverStamp?: boolean } = {},
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
   // pushes against each other (syncPendingDietTrials) need this, not just "did it
   // throw" — "ordered" is only true if the second push can be held back when the
   // first did not land.
 ): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from(table)
-    .upsert(rows.map(toRemote), { onConflict: 'id' })
-    .select('id');
+  const send = async (payload: RemoteUpsertRow[]) => {
+    const once = () => supabase.from(table).upsert(payload, { onConflict: 'id' }).select('id');
+    if (!opts.serverStamp) return once();
+    const first = await once();
+    return first.error ? first : once();
+  };
+  const { data, error } = await send(rows.map(toRemote));
 
   if (error) {
     if (classifySyncFailure(error) === 'transient') {
@@ -887,10 +899,7 @@ async function pushRows<L extends { id: string; updated_at: string }>(
     );
     const landed = new Set<string>();
     for (const row of rows) {
-      const { data: one, error: rowError } = await supabase
-        .from(table)
-        .upsert([toRemote(row)], { onConflict: 'id' })
-        .select('id');
+      const { data: one, error: rowError } = await send([toRemote(row)]);
       if (rowError) {
         await recordChildPushFailure(db, table, row, rowError, childCtx);
         continue;
@@ -1250,13 +1259,19 @@ async function drainMealsQueue(): Promise<void> {
     updated_at: string;
     intake_rating: string | null;
     logged_via: string;
+    component_count: number | null;
   }>(
     `SELECT * FROM meals WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
         AND ${parentLandedSql('meals')}
       LIMIT 100`,
   );
 
-  if (unsyncedMeals.length === 0) return;
+  // Mixed meals row 2 (CUL-2051): a bowl's components go up after its meal, in this same
+  // drain, so they run even when no meal is pending (a ratio edit writes components only).
+  if (unsyncedMeals.length === 0) {
+    await drainMealComponents(db, session.user.id);
+    return;
+  }
 
   // Ensure every referenced food item exists in Supabase before syncing meals.
   // The local best-effort insert at food-creation time may have failed — this
@@ -1283,7 +1298,53 @@ async function drainMealsQueue(): Promise<void> {
     // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
     // local default, the record's own value for inbox-ingested rows.
     logged_via: m.logged_via ?? 'app',
+    // Migration 105: NULL = one food, 2+ = a mix (whose food_item_id is NULL, T2).
+    component_count: m.component_count ?? null,
   }), childCtx);
+
+  await drainMealComponents(db, session.user.id);
+}
+
+/**
+ * The foods in a mixed bowl (Mixed meals row 2, CUL-2051; spec §3). Called only from
+ * drainMealsQueue, after the meals push, so the order is events → meals → components and
+ * the queue shares the meals slot (one drain at a time, C-24). A row waits until its event
+ * and its meal row have landed (`mealComponentsLandedSql`). The set is replace-whole-set:
+ * a write tombstones the old rows and inserts a new generation, so every push here is
+ * either a fresh insert or a tombstone, and a re-push of a live row changes nothing the
+ * read rule looks at (its generation lives in its id, lib/mealComposition.ts). Sent with
+ * `serverStamp`, so every row carries the server's time once it lands (pushRows says why).
+ */
+async function drainMealComponents(db: Db, userId: string): Promise<void> {
+  const mark = landingMark();
+  const unsynced = await db.getAllAsync<{
+    id: string; pet_id: string; event_id: string; position: number;
+    food_item_id: string | null; food_label: string; share: number | null; share_source: string;
+    amount_value: number | null; amount_unit: string | null;
+    updated_at: string; deleted_at: string | null;
+  }>(mealComponentsPushQueueSql());
+  if (unsynced.length === 0) return;
+
+  // Pattern 6: a component can name a food captured offline, which the FK would refuse.
+  const foodIds = [...new Set(unsynced.map((c) => c.food_item_id).filter(Boolean))] as string[];
+  await presyncFoodItems(db, userId, foodIds, 'meal components');
+
+  const childCtx = await childPushContext(db, 'meal_components', unsynced, mark);
+  await pushRows(db, 'meal_components', unsynced, (c) => ({
+    id: c.id,
+    pet_id: c.pet_id,
+    event_id: c.event_id,
+    position: c.position,
+    food_item_id: c.food_item_id,
+    food_label: c.food_label,
+    share: c.share,
+    share_source: c.share_source,
+    amount_value: c.amount_value,
+    amount_unit: c.amount_unit,
+    // created_at is the server's (105 grants no client write to it).
+    updated_at: c.updated_at,
+    deleted_at: c.deleted_at,
+  }), childCtx, { serverStamp: true });
 }
 
 // Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
@@ -2757,6 +2818,13 @@ interface RemoteMeal {
   quantity: string | null; is_full_portion: boolean | null; notes: string | null;
   created_at: string; updated_at: string; intake_rating: string | null;
   logged_via: string | null; // B-289
+  component_count: number | null; // migration 105
+}
+interface RemoteMealComponent {
+  id: string; pet_id: string; event_id: string; position: number;
+  food_item_id: string | null; food_label: string; share: number | string | null;
+  share_source: string; amount_value: number | string | null; amount_unit: string | null;
+  created_at: string; updated_at: string; deleted_at: string | null;
 }
 interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
@@ -2939,7 +3007,7 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMeal>(
     'meals',
-    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, logged_via',
+    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, logged_via, component_count',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2957,24 +3025,69 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
     // it's safe to compare in SQL — no parseTs format trap).
     await db.runAsync(
       `INSERT INTO meals
-        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, logged_via, created_at, updated_at, intake_rating, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, logged_via, created_at, updated_at, intake_rating, component_count, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, quantity=excluded.quantity,
          is_full_portion=excluded.is_full_portion, notes=excluded.notes,
          logged_via=excluded.logged_via,
-         intake_rating=excluded.intake_rating, updated_at=excluded.updated_at, synced=1
+         intake_rating=excluded.intake_rating, component_count=excluded.component_count,
+         updated_at=excluded.updated_at, synced=1
        WHERE meals.synced = 1`,
       [
         m.id, m.event_id, m.pet_id, m.food_item_id ?? null, m.quantity ?? 'unknown',
         m.is_full_portion === null || m.is_full_portion === undefined ? null : (m.is_full_portion ? 1 : 0),
         m.notes ?? null, m.logged_via ?? 'app', m.created_at, m.updated_at, m.intake_rating ?? null,
+        m.component_count ?? null,
       ],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('meals', wm);
+}
+
+async function hydrateMealComponents(db: Db, stale: () => boolean): Promise<void> {
+  // Mixed meals row 2 (CUL-2051): incremental on updated_at, the intake_checks shape. Runs
+  // after hydrateMeals, so a bowl's parent rows are present for the readers that join them
+  // (spec §3 point 4). A food taken out travels as deleted_at; a hard delete (the events
+  // and pets cascades) is caught by reconcileDeletedMealComponents. EXPLICIT COLUMN LIST.
+  const since = await getWatermark('meal_components');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteMealComponent>(
+    'meal_components',
+    'id, pet_id, event_id, position, food_item_id, food_label, share, share_source, amount_value, amount_unit, created_at, updated_at, deleted_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+  const localById = await loadLocalRowMeta(db, 'meal_components', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return;
+  const num = (v: number | string | null) => (v === null || v === undefined ? null : Number(v));
+  for (const r of toWrite) {
+    // The mutable fields only (105 freezes id, pet_id, event_id and position). The
+    // `WHERE ...synced = 1` backstop never clobbers a row with an unpushed local edit.
+    await db.runAsync(
+      `INSERT INTO meal_components
+        (id, pet_id, event_id, position, food_item_id, food_label, share, share_source,
+         amount_value, amount_unit, created_at, updated_at, deleted_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         food_item_id=excluded.food_item_id, food_label=excluded.food_label,
+         share=excluded.share, share_source=excluded.share_source,
+         amount_value=excluded.amount_value, amount_unit=excluded.amount_unit,
+         updated_at=excluded.updated_at, deleted_at=excluded.deleted_at, synced=1
+       WHERE meal_components.synced = 1`,
+      [
+        r.id, r.pet_id, r.event_id, r.position, r.food_item_id ?? null, r.food_label,
+        num(r.share), r.share_source, num(r.amount_value), r.amount_unit ?? null,
+        r.created_at, r.updated_at, r.deleted_at ?? null,
+      ],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('meal_components', wm);
 }
 
 async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> {
@@ -3843,6 +3956,58 @@ async function reconcileDeletedMeals(db: Db, stale: () => boolean): Promise<void
   }
 }
 
+// The same verified absence pass for a bowl's components (Mixed meals row 2, spec §3
+// point 4). A component is never hard-deleted by a client (105 grants no DELETE), but the
+// events and pets cascades remove it server-side, which no incremental pull can observe;
+// left here, a ghost row would keep a deleted bowl reading as a mix. Same guard as meals:
+// an exact count first, then the full id set, and delete only a SYNCED local row the
+// server no longer has. Skipping is always the safe direction.
+async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Promise<void> {
+  // The local set is read FIRST: a push running beside this pass (setMealComponents fires
+  // one) can land a row and mark it synced after the server's id list was read, and that
+  // row must not look like a ghost. Only a row already synced before the server read can be.
+  const local = await db.getAllAsync<{ id: string; synced: number }>('SELECT id, synced FROM meal_components');
+  const { count, error: countErr } = await supabase
+    .from('meal_components')
+    .select('id', { count: 'exact', head: true });
+  if (countErr || count === null) {
+    console.warn('[hydrate] meal_components count failed, skipping absence pass:', countErr?.message);
+    return;
+  }
+  const remote = await fetchAllRows<{ id: string }>('meal_components', 'id');
+  if (remote === null) return;
+  if (remote.length !== count) {
+    console.warn(`[hydrate] meal_components id pull incomplete (${remote.length}/${count}), skipping absence pass`);
+    return;
+  }
+  if (stale()) return;
+  const candidates = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
+  if (candidates.length === 0) return;
+  // The id pull pages by offset, so a cascade delete and an insert landing between two pages
+  // can shift a page and skip live rows while the total still matches the count (adversarial
+  // pass 2). Ask the server about each candidate by id before deleting it; a row the targeted
+  // read still finds is not a ghost, and a failed read deletes nothing.
+  const CHUNK = 400;
+  const toDelete: string[] = [];
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const chunk = candidates.slice(i, i + CHUNK);
+    const { data: still, error: checkErr } = await supabase.from('meal_components').select('id').in('id', chunk);
+    if (checkErr || !still) {
+      console.warn('[hydrate] meal_components absence re-check failed, skipping absence pass:', checkErr?.message);
+      return;
+    }
+    const present = new Set((still as { id: string }[]).map((r) => r.id));
+    toDelete.push(...chunk.filter((id) => !present.has(id)));
+  }
+  if (toDelete.length === 0) return;
+  if (stale()) return;
+  for (let i = 0; i < toDelete.length; i += CHUNK) {
+    const chunk = toDelete.slice(i, i + CHUNK);
+    // `synced = 1` again: a row re-queued by an edit since the snapshot is pending, not a ghost.
+    await db.runAsync(`DELETE FROM meal_components WHERE synced = 1 AND id IN (${chunk.map(() => '?').join(',')})`, chunk);
+  }
+}
+
 // Pull the account's pet data down into local SQLite. Called by runSync AFTER
 // the push flush (FR-2: push-before-pull, so a not-yet-pushed local edit is
 // sent up before remote state is read down). Order: parents before their FK
@@ -3884,6 +4049,12 @@ export async function hydrateFromCloud(): Promise<void> {
   // just-inserted meal is already present in the local set (and in the server
   // set, so it won't be flagged).
   await runHydrationStep('meals:absence', () => reconcileDeletedMeals(db, stale));
+  if (stale()) return;
+  // Mixed meals row 2 (CUL-2051): a bowl's components after its meals (spec §3 point 4),
+  // then their own absence pass.
+  await runHydrationStep('meal_components', () => hydrateMealComponents(db, stale));
+  if (stale()) return;
+  await runHydrationStep('meal_components:absence', () => reconcileDeletedMealComponents(db, stale));
   if (stale()) return;
   // B-186: weight_checks.event_id → events (CASCADE), so it must follow
   // hydrateEvents (run first, above). LWW child like meals; no absence pass.

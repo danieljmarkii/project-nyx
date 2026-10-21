@@ -95,6 +95,8 @@ export async function flushLegacyCatalogCachesIfNeeded(
        WHERE id NOT IN (
          SELECT food_item_id FROM meals WHERE synced = 0 AND food_item_id IS NOT NULL
          UNION
+         SELECT food_item_id FROM meal_components WHERE synced = 0 AND food_item_id IS NOT NULL
+         UNION
          SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL
        );
      DELETE FROM medication_items_cache
