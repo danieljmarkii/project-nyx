@@ -56,11 +56,17 @@ function freshDb() {
     );
     CREATE TABLE meals (
       id TEXT PRIMARY KEY, event_id TEXT NOT NULL, pet_id TEXT,
-      food_item_id TEXT, intake_rating TEXT
+      food_item_id TEXT, intake_rating TEXT, component_count INTEGER
+    );
+    -- Mixed meals (CUL-2053): the feedings read looks every meal up in its components.
+    CREATE TABLE meal_components (
+      id TEXT PRIMARY KEY, pet_id TEXT, event_id TEXT NOT NULL, position INTEGER,
+      food_item_id TEXT, food_label TEXT NOT NULL, share REAL, share_source TEXT NOT NULL,
+      amount_value REAL, amount_unit TEXT, updated_at TEXT, deleted_at TEXT
     );
     CREATE TABLE food_items_cache (
       id TEXT PRIMARY KEY, brand TEXT, product_name TEXT,
-      food_type TEXT, primary_protein TEXT, proteins TEXT
+      food_type TEXT, primary_protein TEXT, proteins TEXT, format TEXT
     );
     CREATE TABLE diet_trial_foods (
       id TEXT PRIMARY KEY, diet_trial_id TEXT, food_item_id TEXT, role TEXT,
