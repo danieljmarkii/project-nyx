@@ -49,13 +49,17 @@ jest.mock('./db', () => ({
 
 /** What the fake server holds for a pull, per table. */
 let mockServer: Record<string, Record<string, unknown>[]> = {};
+/** Runs when a pull's exact count is read: the moment a beside-running push can land. */
+let mockOnCount: ((table: string) => void) | null = null;
 const mockUpserts: { table: string; rows: Record<string, unknown>[] }[] = [];
 function mockQuery(table: string, head: boolean): unknown {
   const rows = mockServer[table] ?? [];
   const q: Record<string, unknown> = {};
   for (const m of ['select', 'order', 'range', 'gte', 'eq', 'is', 'in', 'not', 'lte', 'limit']) q[m] = () => q;
-  q.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-    Promise.resolve(head ? { count: rows.length, data: null, error: null } : { data: rows, error: null }).then(res, rej);
+  q.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
+    if (head && mockOnCount) mockOnCount(table);
+    return Promise.resolve(head ? { count: rows.length, data: null, error: null } : { data: rows, error: null }).then(res, rej);
+  };
   return q;
 }
 jest.mock('./supabase', () => ({
@@ -119,6 +123,7 @@ beforeEach(async () => {
   mockUpserts.length = 0;
   mockStatements.length = 0;
   mockServer = {};
+  mockOnCount = null;
   seedFood('rabbit');
   seedFood('chicken');
 });
@@ -164,8 +169,9 @@ describe('setMealComponents (the one writer, spec §4)', () => {
   it('taking a food out leaves a plain meal, indistinguishable from one never mixed', async () => {
     seedEvent('e1');
     seedMeal('e1');
-    await setMealComponents('e1', mix(0.5, 0.5));
-    await setMealComponents('e1', [mix(0.5, 0.5)[1]]);
+    // Distinct instants: two writes in one millisecond share a version, C-23's stated gap.
+    await setMealComponents('e1', mix(0.5, 0.5), new Date('2026-10-21T09:00:00.000Z'));
+    await setMealComponents('e1', [mix(0.5, 0.5)[1]], new Date('2026-10-21T09:01:00.000Z'));
     expect(meal('e1')).toEqual(expect.objectContaining({ food_item_id: 'chicken', component_count: null, synced: 0 }));
     expect(components().every((r) => r.deleted_at !== null)).toBe(true);
     expect(readMealComposition({ food_item_id: 'chicken', component_count: null }, components()).status).toBe('single');
@@ -199,9 +205,14 @@ describe('the push: events → meals → components (spec §3 point 5)', () => {
     mockUpserts.length = 0;
     await syncPendingMeals();
     const order = mockUpserts.map((u) => u.table).filter((t) => t === 'meals' || t === 'meal_components');
-    expect(order).toEqual(['meals', 'meal_components']);
+    expect(order).toEqual(['meals', 'meal_components', 'meal_components']);
     expect(sent('meals')[0]).toEqual(expect.objectContaining({ food_item_id: null, component_count: 2 }));
-    expect(sent('meal_components')).toHaveLength(2);
+    // Sent twice (adversarial F1): the second send is the conflict update, so the server's
+    // trigger stamps updated_at and another phone's incremental pull cannot miss the set.
+    const batches = mockUpserts.filter((u) => u.table === 'meal_components');
+    expect(batches).toHaveLength(2);
+    expect(batches[1].rows).toEqual(batches[0].rows);
+    expect(batches[0].rows).toHaveLength(2);
     expect(sent('meal_components').every((r) => !('created_at' in r))).toBe(true);
     expect(components().every((r) => r.synced === 1)).toBe(true);
   });
@@ -209,14 +220,14 @@ describe('the push: events → meals → components (spec §3 point 5)', () => {
   it('a ratio edit alone (no meal pending) still goes up', async () => {
     seedEvent('e1');
     seedMeal('e1');
-    await setMealComponents('e1', mix(0.5, 0.5));
+    await setMealComponents('e1', mix(0.5, 0.5), new Date('2026-10-21T09:00:00.000Z'));
     await syncPendingMeals();
-    await setMealComponents('e1', mix(0.25, 0.75));
+    await setMealComponents('e1', mix(0.25, 0.75), new Date('2026-10-21T09:05:00.000Z'));
     expect(meal('e1')).toEqual(expect.objectContaining({ synced: 1 }));
     mockUpserts.length = 0;
     await syncPendingMeals();
     expect(sent('meals')).toEqual([]);
-    expect(sent('meal_components')).toHaveLength(4); // two tombstones, two new rows
+    expect(sent('meal_components')).toHaveLength(8); // two tombstones, two new rows, each sent twice
   });
 
   it('holds a component while its event or its meal row has not landed', async () => {
@@ -231,7 +242,7 @@ describe('the push: events → meals → components (spec §3 point 5)', () => {
     mockDb.prepare('UPDATE events SET synced = 1').run();
     mockDb.prepare("UPDATE meals SET sync_error = '23514: refused'").run();
     await syncPendingMeals();
-    expect(sent('meal_components')).toHaveLength(2);
+    expect(sent('meal_components')).toHaveLength(4);
   });
 
   it('pre-syncs a component food the server may not hold (Pattern 6)', async () => {
@@ -296,6 +307,19 @@ describe('hydration (spec §3 point 4)', () => {
     expect(ids).toContain('pending');
     expect(ids).not.toContain('ghost');
     expect(ids).toEqual(expect.arrayContaining([`${G}0`, `${G}1`]));
+  });
+
+  it('never deletes a row a beside-running push marked synced after the server was read', async () => {
+    mockDb.prepare(
+      `INSERT INTO meal_components (id, pet_id, event_id, position, food_label, share, share_source, created_at, updated_at, synced)
+       VALUES ('just-landed', ?, 'e1', 0, 'x', 0.5, 'preset', ?, ?, 0)`,
+    ).run(PET, AT, AT);
+    // The push lands it while the absence pass is reading the server's set (which lacks it).
+    mockOnCount = (table) => {
+      if (table === 'meal_components') mockDb.prepare("UPDATE meal_components SET synced = 1 WHERE id = 'just-landed'").run();
+    };
+    await hydrateFromCloud();
+    expect(components().map((r) => r.id)).toContain('just-landed');
   });
 
   it('never overwrites a component with an unpushed local tombstone', async () => {

@@ -867,15 +867,25 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   // same-pet 23514 parks only while that parent is still refused (`recordRefusedParentFailure`).
   // Empty for a queue with no parent, which keeps the ordinary policy.
   childCtx: ChildPushContext | null = null,
+  // CUL-2051 — send every batch TWICE, so the second send is the ON CONFLICT update and the
+  // table's BEFORE UPDATE trigger stamps updated_at with server NOW. A fresh INSERT keeps the
+  // phone's updated_at, and an incremental pull's floor is a server time (lib/hydration.ts
+  // FR-3), so a row written offline and pushed later than the overlap sat below every other
+  // phone's watermark for good. Only for a table whose rows are born and changed by this
+  // push (meal_components); a row is marked synced only on the second send's answer.
+  opts: { serverStamp?: boolean } = {},
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
   // pushes against each other (syncPendingDietTrials) need this, not just "did it
   // throw" — "ordered" is only true if the second push can be held back when the
   // first did not land.
 ): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from(table)
-    .upsert(rows.map(toRemote), { onConflict: 'id' })
-    .select('id');
+  const send = async (payload: RemoteUpsertRow[]) => {
+    const once = () => supabase.from(table).upsert(payload, { onConflict: 'id' }).select('id');
+    if (!opts.serverStamp) return once();
+    const first = await once();
+    return first.error ? first : once();
+  };
+  const { data, error } = await send(rows.map(toRemote));
 
   if (error) {
     if (classifySyncFailure(error) === 'transient') {
@@ -889,10 +899,7 @@ async function pushRows<L extends { id: string; updated_at: string }>(
     );
     const landed = new Set<string>();
     for (const row of rows) {
-      const { data: one, error: rowError } = await supabase
-        .from(table)
-        .upsert([toRemote(row)], { onConflict: 'id' })
-        .select('id');
+      const { data: one, error: rowError } = await send([toRemote(row)]);
       if (rowError) {
         await recordChildPushFailure(db, table, row, rowError, childCtx);
         continue;
@@ -1305,7 +1312,8 @@ async function drainMealsQueue(): Promise<void> {
  * and its meal row have landed (`mealComponentsLandedSql`). The set is replace-whole-set:
  * a write tombstones the old rows and inserts a new generation, so every push here is
  * either a fresh insert or a tombstone, and a re-push of a live row changes nothing the
- * read rule looks at (its generation lives in its id, lib/mealComposition.ts).
+ * read rule looks at (its generation lives in its id, lib/mealComposition.ts). Sent with
+ * `serverStamp`, so every row carries the server's time once it lands (pushRows says why).
  */
 async function drainMealComponents(db: Db, userId: string): Promise<void> {
   const mark = landingMark();
@@ -1336,7 +1344,7 @@ async function drainMealComponents(db: Db, userId: string): Promise<void> {
     // created_at is the server's (105 grants no client write to it).
     updated_at: c.updated_at,
     deleted_at: c.deleted_at,
-  }), childCtx);
+  }), childCtx, { serverStamp: true });
 }
 
 // Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
@@ -3955,6 +3963,10 @@ async function reconcileDeletedMeals(db: Db, stale: () => boolean): Promise<void
 // an exact count first, then the full id set, and delete only a SYNCED local row the
 // server no longer has. Skipping is always the safe direction.
 async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Promise<void> {
+  // The local set is read FIRST: a push running beside this pass (setMealComponents fires
+  // one) can land a row and mark it synced after the server's id list was read, and that
+  // row must not look like a ghost. Only a row already synced before the server read can be.
+  const local = await db.getAllAsync<{ id: string; synced: number }>('SELECT id, synced FROM meal_components');
   const { count, error: countErr } = await supabase
     .from('meal_components')
     .select('id', { count: 'exact', head: true });
@@ -3969,14 +3981,14 @@ async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Pro
     return;
   }
   if (stale()) return;
-  const local = await db.getAllAsync<{ id: string; synced: number }>('SELECT id, synced FROM meal_components');
   const toDelete = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
   if (toDelete.length === 0) return;
   if (stale()) return;
   const CHUNK = 400;
   for (let i = 0; i < toDelete.length; i += CHUNK) {
     const chunk = toDelete.slice(i, i + CHUNK);
-    await db.runAsync(`DELETE FROM meal_components WHERE id IN (${chunk.map(() => '?').join(',')})`, chunk);
+    // `synced = 1` again: a row re-queued by an edit since the snapshot is pending, not a ghost.
+    await db.runAsync(`DELETE FROM meal_components WHERE synced = 1 AND id IN (${chunk.map(() => '?').join(',')})`, chunk);
   }
 }
 

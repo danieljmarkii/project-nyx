@@ -17,6 +17,7 @@ import {
   type ComponentInput,
   type MealComponentRow,
 } from './mealComposition';
+import { advanceWatermark, watermarkQueryFloor } from './hydration';
 
 /** A deterministic PRNG, so a failing interleaving reproduces. */
 function prng(seed: number): () => number {
@@ -267,32 +268,40 @@ describe('the write plan', () => {
 
 // ── §10: after any offline interleaving of two devices, the live set is one device's
 //    whole set ──────────────────────────────────────────────────────────────────────
+//
+// One shared real clock (`world.now`); each phone reads it with its own skew. The server
+// stamps as 105 does: an insert keeps the phone's updated_at, an update (the ON CONFLICT
+// branch, even a no-op re-push) has it rewritten to server NOW by the trigger. Phones pull
+// INCREMENTALLY, through the shipped watermark functions, because that is where a
+// client-stamped insert goes missing (adversarial review, CUL-2051 F1).
 
-interface ServerRow extends MealComponentRow { }
+const world = { now: T0 };
 
 class Server {
-  rows = new Map<string, ServerRow>();
-  clock = T0 + 10 * 60_000;
-  /** 105 as it behaves: insert keeps the client's updated_at; an update (the ON CONFLICT
-   *  branch, even a no-op re-push) has it rewritten to server NOW by the trigger. */
+  rows = new Map<string, MealComponentRow>();
+  private tick = 0;
+  private stamp(): string {
+    this.tick += 1;
+    return new Date(world.now + this.tick / 1000).toISOString();
+  }
   upsert(r: MealComponentRow): void {
     const held = this.rows.get(r.id);
-    this.clock += 1;
     if (!held) this.rows.set(r.id, { ...r });
-    else this.rows.set(r.id, { ...held, deleted_at: r.deleted_at, updated_at: new Date(this.clock).toISOString() });
+    else this.rows.set(r.id, { ...held, deleted_at: r.deleted_at, updated_at: this.stamp() });
   }
 }
 
 class Device {
   rows = new Map<string, MealComponentRow & { synced: boolean }>();
   writes: string[][] = [];
-  constructor(public clock: number, private random: () => number) {}
+  private watermark: string | null = null;
+  constructor(public skewMs: number, private random: () => number) {}
 
   write(n: number): void {
-    this.clock += 1 + Math.floor(this.random() * 3);
-    const at = new Date(this.clock).toISOString();
+    const clock = world.now + this.skewMs;
+    const at = new Date(clock).toISOString();
     const shares = Array.from({ length: n }, () => 1 / n);
-    const plan = planComponentWrite({ existing: [...this.rows.values()], components: input(...shares), nowMs: this.clock, random: this.random });
+    const plan = planComponentWrite({ existing: [...this.rows.values()], components: input(...shares), nowMs: clock, random: this.random });
     for (const id of plan.tombstoneIds) {
       const r = this.rows.get(id)!;
       this.rows.set(id, { ...r, deleted_at: at, updated_at: at, synced: false });
@@ -301,23 +310,29 @@ class Device {
     this.writes.push(plan.inserts.map((i) => i.id).sort());
   }
 
-  /** Push every unsynced row; `retry` re-sends some synced ones too (a lost ack). */
-  push(server: Server, retry: boolean): void {
+  /** Push every unsynced row; `retry` re-sends some synced ones too (a lost ack).
+   *  `serverStamp` is the shipped drain's double send (pushRows' opts). */
+  push(server: Server, retry: boolean, serverStamp = true): void {
     for (const r of this.rows.values()) {
       if (!r.synced || (retry && this.random() < 0.5)) {
         server.upsert(r);
+        if (serverStamp) server.upsert(r);
         this.rows.set(r.id, { ...r, synced: true });
       }
     }
   }
 
-  /** hydrateMealComponents: LWW, never over an unpushed local edit. */
+  /** hydrateMealComponents: incremental from the watermark, LWW, never over an unpushed
+   *  local edit. */
   pull(server: Server): void {
-    for (const s of server.rows.values()) {
+    const floor = watermarkQueryFloor(this.watermark);
+    const page = [...server.rows.values()].filter((s) => floor === null || Date.parse(s.updated_at) >= Date.parse(floor));
+    for (const s of page) {
       const local = this.rows.get(s.id);
       if (!local) { this.rows.set(s.id, { ...s, synced: true }); continue; }
       if (local.synced && Date.parse(s.updated_at) > Date.parse(local.updated_at)) this.rows.set(s.id, { ...s, synced: true });
     }
+    this.watermark = advanceWatermark(page.map((s) => s.updated_at), this.watermark);
   }
 
   live(): string[] {
@@ -325,50 +340,85 @@ class Device {
   }
 }
 
+const liveOn = (server: Server) => liveComponentRows([...server.rows.values()]).map((r) => r.id).sort();
+
 describe('two devices, any interleaving (§10)', () => {
   it('the live set equals one write\'s whole set (or none), on the server and on both phones', () => {
     for (let seed = 1; seed <= 400; seed += 1) {
       const random = prng(seed);
+      world.now = T0;
       const server = new Server();
-      // Skewed clocks, in either direction, up to a minute apart.
-      const a = new Device(T0 + Math.floor(random() * 60_000), random);
-      const b = new Device(T0 + Math.floor(random() * 60_000), random);
+      // Skewed clocks, in either direction, up to a minute off.
+      const a = new Device(Math.floor(random() * 120_000) - 60_000, random);
+      const b = new Device(Math.floor(random() * 120_000) - 60_000, random);
       const steps = 4 + Math.floor(random() * 10);
       for (let i = 0; i < steps; i += 1) {
+        // Up to 30 minutes between steps, so offline writes are pushed long after the overlap.
+        world.now += Math.floor(random() * 30 * 60_000);
         const d = random() < 0.5 ? a : b;
         const op = random();
         if (op < 0.5) d.write(1 + Math.floor(random() * 4)); // 1 = back to a plain meal
         else if (op < 0.8) d.push(server, random() < 0.3);
         else d.pull(server);
       }
+      world.now += 60_000;
       a.push(server, false); b.push(server, false);
+      world.now += 60_000;
       a.pull(server); b.pull(server);
 
-      const winner = liveComponentRows([...server.rows.values()]).map((r) => r.id).sort();
+      const winner = liveOn(server);
       const sets = [...a.writes, ...b.writes];
       const isOneWrite = winner.length === 0 || sets.some((s) => s.length === winner.length && s.every((id, k) => id === winner[k]));
       if (!isOneWrite) throw new Error(`seed ${seed}: live set ${winner.join(',')} is not one write's set`);
-      expect(a.live()).toEqual(winner);
-      expect(b.live()).toEqual(winner);
+      if (a.live().join() !== winner.join() || b.live().join() !== winner.join()) {
+        throw new Error(`seed ${seed}: a phone disagrees with the server`);
+      }
     }
   });
 
+  it('an offline ratio edit pushed an hour later reaches the other phone (F1)', () => {
+    const run = (serverStamp: boolean) => {
+      world.now = T0;
+      const random = prng(99);
+      const server = new Server();
+      const a = new Device(0, random);
+      const b = new Device(0, random);
+      a.write(2); a.push(server, false, serverStamp); b.pull(server);
+      world.now += 5 * 60_000;
+      a.write(2); // offline
+      world.now += 15 * 60_000;
+      // Unrelated server-stamped activity (another bowl's food taken out) moves B's watermark.
+      const elsewhere = row({ id: 'another-bowl', position: 0, deleted_at: new Date(world.now).toISOString() });
+      server.upsert(elsewhere); server.upsert(elsewhere);
+      b.pull(server);
+      world.now += 40 * 60_000;
+      a.push(server, false, serverStamp);
+      b.pull(server);
+      return { server: liveOn(server), b: b.live() };
+    };
+    // Non-vacuity: a single send leaves B on the old set's tombstones, the bug itself.
+    const single = run(false);
+    expect(single.server).toHaveLength(2);
+    expect(single.b).toEqual([]);
+    const stamped = run(true);
+    expect(stamped.b).toEqual(stamped.server);
+    expect(stamped.b).toHaveLength(2);
+  });
+
   it('is not vacuous: the interleavings produce mixes that survive, and contested ones', () => {
-    let survived = 0;
     let contested = 0;
     for (let seed = 1; seed <= 400; seed += 1) {
       const random = prng(seed);
+      world.now = T0;
       const server = new Server();
-      const a = new Device(T0, random);
-      const b = new Device(T0 + 30_000, random);
+      const a = new Device(0, random);
+      const b = new Device(30_000, random);
       a.write(3); b.write(2);
       a.push(server, false); b.push(server, false);
-      const live = liveComponentRows([...server.rows.values()]);
-      if (live.length > 0) survived += 1;
+      expect(liveOn(server)).toHaveLength(2);
       // Both sets reached the server live: only the read rule stands between them and a union.
       if ([...server.rows.values()].filter((r) => r.deleted_at === null).length === 5) contested += 1;
     }
-    expect(survived).toBe(400);
     expect(contested).toBe(400);
   });
 });

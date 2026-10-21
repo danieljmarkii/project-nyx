@@ -645,7 +645,10 @@ export function floorTriggerLandedSql(): string {
  * components), in EN-4's shape above. The event half is the 23514 the guard would answer;
  * the meal half keeps the parent's `food_item_id = NULL` and count landing no later than
  * the rows they describe, so an older build never reads a mix's components beside a parent
- * that still names one food. A quarantined parent holds nothing, as everywhere else.
+ * that still names one food. A quarantined parent holds nothing, as everywhere else, so a
+ * REFUSED meal row does let its components go up: current builds then read the bowl as a
+ * mix (live components win), and an installed older build reads the parent's one food.
+ * Stated residual (adversarial review, CUL-2051); a held set would count pending forever.
  */
 export function mealComponentsLandedSql(): string {
   return `${parentLandedSql('meal_components')}
