@@ -543,7 +543,8 @@ export interface TrialTransitionBlock {
   firstFedMixed: boolean
   /** The trial diet's share of that bowl, as the owner estimated it (null: unknown). */
   firstFedShare: number | null
-  /** Local days before Day 1 with a bowl that mixed the trial diet with another food. */
+  /** Local days before Day 1 the trial diet was fed at all, and those with a mixed bowl. */
+  fedDaysBeforeDay1: number
   mixedDaysBeforeDay1: number
   otherFoodLabels: string[]
   /** The first day of trial-food-only feeding, when it is later than Day 1 ('after'), or
@@ -1390,6 +1391,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
           firstFedDate: derived.firstFed ? dateOf(derived.firstFed.dayIndex) : null,
           firstFedMixed: derived.firstFed?.mixed ?? false,
           firstFedShare: derived.firstFed?.share ?? null,
+          fedDaysBeforeDay1: derived.fedDaysBeforeDay1,
           mixedDaysBeforeDay1: derived.mixedDaysBeforeDay1,
           otherFoodLabels: derived.otherFoodLabels,
           firstExclusive,

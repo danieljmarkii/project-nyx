@@ -8204,11 +8204,13 @@ export function trialSwitchLine(t: TrialBlock, day: (d: string) => string): stri
       ? `, mixed with ${others}, trial diet ${h(proportionWord(x.firstFedShare))} of the bowl (owner&rsquo;s estimate)`
       : ''
     parts.push(`Trial diet first fed ${h(day(x.firstFedDate))}${how}.`)
-    if (x.mixedDaysBeforeDay1 > 0) {
-      parts.push(
-        `Mixed with ${others} on ${num(x.mixedDaysBeforeDay1)} day${x.mixedDaysBeforeDay1 === 1 ? '' : 's'} before Day 1, in this record.`,
-      )
-    }
+    const fed = x.fedDaysBeforeDay1
+    const mixed = x.mixedDaysBeforeDay1
+    parts.push(
+      `In this record it was fed on ${num(fed)} day${fed === 1 ? '' : 's'} before Day 1${
+        mixed > 0 ? `, mixed with ${others} on ${num(mixed)} of them` : ''
+      }.`,
+    )
   }
   if (x?.firstExclusive?.kind === 'after') {
     parts.push(`First day of an unbroken run of logged days with only foods on the trial&rsquo;s list: ${h(day(x.firstExclusive.date))}.`)
@@ -8292,7 +8294,7 @@ export function mixRampText(mix: MixRow): string {
     const b = shareWord(f.last)
     return a === b ? `${f.label} ${a}` : `${f.label} ${a} → ${b}`
   })
-  return `${foods.join(' · ')} (owner's estimate)${mix.incomplete ? ' · some bowls are missing a food in the record' : ''}`
+  return `${foods.join(' · ')} (owner’s estimate)${mix.incomplete ? ' · some bowls are missing a food in the record' : ''}`
 }
 
 /** The grouped meal-item summary — one row per food fed as meals (label · protein · feedings · span · intake recorded). */

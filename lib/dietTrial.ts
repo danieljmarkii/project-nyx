@@ -3662,6 +3662,8 @@ export interface TrialTransition {
      *  ratio is unknown. The OWNER'S estimate, printed as such. */
     share: number | null;
   } | null;
+  /** Local days before Day 1 on which the trial diet was fed at all, mixed or not. */
+  fedDaysBeforeDay1: number;
   /** Local days before Day 1 holding a bowl that mixed the trial diet with another food. */
   mixedDaysBeforeDay1: number;
   /** The other foods in those bowls, most often first. */
@@ -3723,7 +3725,7 @@ function hasIdentity(f: { foodItemId: string | null; foodKey: string | null }): 
  */
 export function deriveTrialTransition(input: TrialTransitionInput): TrialTransition {
   const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
-  const empty: TrialTransition = { firstFed: null, mixedDaysBeforeDay1: 0, otherFoodLabels: [], firstExclusive: { kind: 'unknown' } };
+  const empty: TrialTransition = { firstFed: null, fedDaysBeforeDay1: 0, mixedDaysBeforeDay1: 0, otherFoodLabels: [], firstExclusive: { kind: 'unknown' } };
   if (ctx.startDayIndex === null) return empty;
   const start = ctx.startDayIndex;
   const onDay1 = allowedFoodsOn(ctx, start);
@@ -3745,6 +3747,7 @@ export function deriveTrialTransition(input: TrialTransitionInput): TrialTransit
   // First fed, and the mixed days, before Day 1.
   let firstFed: TrialTransition['firstFed'] = null;
   const mixedDays = new Set<number>();
+  const fedDays = new Set<number>();
   const others = new Map<string, number>();
   for (const [d, list] of byDay) {
     if (d >= start) continue;
@@ -3752,6 +3755,7 @@ export function deriveTrialTransition(input: TrialTransitionInput): TrialTransit
       const foods = fedFoods(f);
       const trialParts = foods.filter(isTrialDiet);
       if (trialParts.length === 0) continue;
+      fedDays.add(d);
       const otherParts = foods.filter((x) => !isTrialDiet(x));
       const mixed = otherParts.length > 0;
       if (mixed) {
@@ -3813,6 +3817,7 @@ export function deriveTrialTransition(input: TrialTransitionInput): TrialTransit
 
   return {
     firstFed,
+    fedDaysBeforeDay1: fedDays.size,
     mixedDaysBeforeDay1: mixedDays.size,
     otherFoodLabels: [...others.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
