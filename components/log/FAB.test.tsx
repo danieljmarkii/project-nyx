@@ -1449,6 +1449,10 @@ describe('FAB — CUL-1665, a deleted past meal leaves the recent foods', () => 
   });
 
   it('a removal while the menu is open lands nothing under the thumb; the close re-reads', async () => {
+    // Its own fake timers (row 5): the close's animation must run for the close to
+    // re-read, and this test used to borrow fake timers an earlier test left switched on,
+    // so it failed when run alone (on main too).
+    jest.useFakeTimers();
     getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
     seedPets(1);
     const view = render(<FAB />);
@@ -1466,6 +1470,7 @@ describe('FAB — CUL-1665, a deleted past meal leaves the recent foods', () => 
     fireEvent.press(view.getByTestId('fab-scrim'));
     await settleAnimations();
     expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
   });
 });
 
@@ -2182,5 +2187,56 @@ describe('FAB — CUL-1657, the split stool pill', () => {
     usePetStore.setState({ pets: [] as never, activePet: null });
     await openMenu();
     expect(recordCaptureChange).not.toHaveBeenCalled();
+  });
+});
+
+// Mixed meals row 5 (CUL-2054; spec §7.1, §7.5) — the MIX pill: one pill per set of foods,
+// named with its latest split, writing that bowl in one press through insertMeal's
+// components and returning the card AS the mix.
+describe('FAB — the mix pill', () => {
+  const fabItems = require('../../lib/fabRecentItems') as typeof import('../../lib/fabRecentItems');
+  const chicken = { id: 'chicken', brand: 'Weruva', product_name: 'Chicken Pâté', format: 'wet', food_type: 'meal', photo_path: null };
+  const rabbit = { id: 'rabbit', brand: 'Weruva', product_name: 'Rabbit Pâté', format: 'wet', food_type: 'meal', photo_path: null };
+  const MIX = {
+    key: 'chicken|rabbit',
+    foods: [
+      { food: chicken, rowName: 'Chicken Pâté', share: 1 / 3, written: { share: 0.333, shareSource: 'preset' as const } },
+      { food: rabbit, rowName: 'Rabbit Pâté', share: 2 / 3, written: { share: 0.667, shareSource: 'preset' as const } },
+    ],
+  };
+  let spy: jest.SpyInstance;
+  beforeEach(() => {
+    insertMeal.mockReset();
+    insertMeal.mockResolvedValue({ eventId: 'mx1', occurredAtIso: '2026-10-21T12:00:00.000Z', now: '2026-10-21T12:00:00.000Z' });
+    spy = jest.spyOn(fabItems, 'withRecentMixes').mockImplementation(async (_p, foods) => [
+      { id: 'mix:chicken|rabbit', brand: '', product_name: '', format: '', food_type: 'meal', photo_path: null, mix: MIX },
+      ...foods,
+    ]);
+  });
+  afterEach(async () => {
+    spy.mockRestore();
+    act(() => { useMomentStore.getState().hide(); });
+    await settleAnimations();
+  });
+
+  it('reads with its split, writes the whole bowl in one call, and the card shows the mix', async () => {
+    const view = await openMenu();
+    const pill = view.getByText('⅓ Chicken Pâté + ⅔ Rabbit Pâté');
+    await act(async () => { fireEvent.press(pill); });
+    expect(insertMeal).toHaveBeenCalledTimes(1);
+    expect(insertMeal).toHaveBeenCalledWith(expect.objectContaining({
+      foodId: 'chicken',
+      components: [
+        expect.objectContaining({ foodItemId: 'chicken', foodLabel: 'Weruva Chicken Pâté', share: 0.333, shareSource: 'preset' }),
+        expect.objectContaining({ foodItemId: 'rabbit', share: 0.667 }),
+      ],
+    }));
+    const p = useMomentStore.getState().payload;
+    expect(p?.kind).toBe('meal');
+    expect(p?.kind === 'meal' && p.bowl?.foods.map((f) => [f.rowName, f.share])).toEqual([
+      ['Chicken Pâté', 0.333],
+      ['Rabbit Pâté', 0.667],
+    ]);
+    expect(p?.kind === 'meal' && p.foodProductName).toBeNull();
   });
 });
