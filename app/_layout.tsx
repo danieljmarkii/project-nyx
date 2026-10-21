@@ -454,6 +454,7 @@ function RootLayoutTree() {
         <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
         <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="mix" options={{ presentation: 'modal' }} />
         <Stack.Screen name="event/[id]" options={recordRouteOptions(reducedMotion)} />
         <Stack.Screen name="weight-history" />
         <Stack.Screen name="vet-document/[id]" />

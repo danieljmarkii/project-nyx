@@ -436,3 +436,40 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
     expect(queryByText('On the trial list')).toBeNull();
   });
 });
+
+// Mixed meals row 5 (CUL-2054; R1) — the picker for a bowl's second food offers meal foods
+// only, in the rotation shelf and the library alike, and drops "+ Add new" (its capture
+// flow logs a meal of its own).
+describe('FoodPicker mixableOnly (row 5)', () => {
+  const pf = (id: string, product: string, food_type: string, format: string): PickerFood => ({
+    id, brand: 'B', product_name: product, format, food_type, photo_path: null,
+  });
+  const FOODS: PickerFood[] = [
+    pf('m1', 'Rabbit Pâté', 'meal', 'wet'),
+    pf('t1', 'Jerky', 'treat', 'jerky'),
+    pf('p1', 'Sprinkle', 'meal', 'topper'),
+  ];
+
+  it('shows meal foods only, and no add CTA', async () => {
+    DB.getRecentFoods.mockResolvedValue(FOODS);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const { findAllByText, queryByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect((await findAllByText('Rabbit Pâté')).length).toBeGreaterThan(0);
+    expect(queryByText('Jerky')).toBeNull();
+    expect(queryByText('Sprinkle')).toBeNull();
+    expect(queryByText('Snap a new food')).toBeNull();
+  });
+
+  it('without it, the same foods all show (the control)', async () => {
+    DB.getRecentFoods.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const { findByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await findByText('Jerky')).toBeTruthy();
+    expect(await findByText('Sprinkle')).toBeTruthy();
+  });
+});
