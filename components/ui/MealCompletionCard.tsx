@@ -655,7 +655,7 @@ export function MealCompletionCard() {
     } catch (e) {
       console.error('[meal-card] ratio step failed:', e);
       patchMealBowl(eventId, before, { tick: false });
-      Alert.alert('Couldn’t save that', 'Try again, or change it from the meal’s detail screen.');
+      Alert.alert('Couldn’t save that', 'Something went wrong. Please try again.');
     }
   }
 

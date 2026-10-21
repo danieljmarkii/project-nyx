@@ -167,6 +167,28 @@ describe('MealCompletionCard — mixing (row 5)', () => {
     expect(useMomentStore.getState().visible).toBe(false);
   });
 
+  // §10 "a single-food meal logs, reads and renders exactly as before" (this replaces the
+  // flag-off differential: there is no flag). Every word a plain meal's card paints, pinned:
+  // the one addition is the mixing door, and nothing of a bowl leaks into it.
+  it('a single-food meal renders as before, with the mixing door its only new line', () => {
+    seedMeal({ foodType: 'meal', foodBrand: 'Weruva', foodProductName: 'Rabbit Pâté', foodFormat: null });
+    const view = render(<MealCompletionCard />);
+    const words = view.UNSAFE_root.findAll((n) => typeof n.type === 'string' && n.type === 'Text')
+      .map((n) => [n.props.children].flat().join(''))
+      .filter((t) => t.trim().length > 0);
+    expect(words).toEqual([
+      'Logged · Weruva Rabbit Pâté',
+      formatTime(new Date('2026-06-07T14:00:00.000Z')),
+      'Undo',
+      'Change time',
+      'How much did Biscuit eat?',
+      ...['Refused', 'Picked', 'Some', 'Most', 'All'],
+      '+ Mixed with another food',
+      '+ Add a med given with this',
+    ]);
+    expect(view.queryByTestId('mix-step-first')).toBeNull();
+  });
+
   it('a treat offers no mixing line (treats stay their own logs, R1)', () => {
     seedMeal({ foodType: 'treat' });
     const { queryByText } = render(<MealCompletionCard />);
@@ -211,7 +233,7 @@ describe('MealCompletionCard — mixing (row 5)', () => {
     const { getByTestId, getByText } = render(<MealCompletionCard />);
     await act(async () => { fireEvent.press(getByTestId('mix-step-second')); });
     getByText('⅓·⅔');
-    expect(alert).toHaveBeenCalledWith('Couldn’t save that', 'Try again, or change it from the meal’s detail screen.');
+    expect(alert).toHaveBeenCalledWith('Couldn’t save that', 'Something went wrong. Please try again.');
     alert.mockRestore();
   });
 });
