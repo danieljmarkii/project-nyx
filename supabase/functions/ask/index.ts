@@ -40,6 +40,7 @@ import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 // MAX_TOOL_ITERATIONS.
 import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and generate-signal.
+import { bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from '../_shared/mealBowl.ts'
 import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { intakeCorrectionOf, intakeCorrectionSentence, type IntakeCorrectionColumns } from '../../../lib/readCorrection.ts'
@@ -692,7 +693,11 @@ async function fetchContext(
     fetchAll<MealRowDb>('events', (r) => r.id, (from, to) =>
       client
       .from('events')
-      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))', { count: 'exact' })
+      .select(
+        'id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, component_count, food_items(primary_protein, proteins, food_type, brand, product_name)), ' +
+          MEAL_BOWL_SELECT('primary_protein, proteins, food_type, brand, product_name'),
+        { count: 'exact' },
+      )
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
@@ -817,9 +822,39 @@ async function fetchContext(
     occurred_at_confidence: string | null
     event_attachments: { id: string }[] | null
     meals: { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
+    meal_components?: MealComponentJoin<FoodItemDb>[] | null
   }
   const meals: AskMealRow[] = mealsPull.rows.map((r) => {
-    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
+    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; component_count?: number | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
+    // A MIXED BOWL (CUL-2052), through the server's one bowl read: every food named, the
+    // union of their proteins, and no single food id (T2). The tools keep it out of every
+    // per-food and per-protein finished rate (§5.4).
+    const bowl = bowlOf(meal, r.meal_components)
+    if (bowl) {
+      const parts = bowl.components.map((c) => ({
+        foodItemId: c.foodItemId,
+        foodLabel: (c.food ? `${c.food.brand ?? ''} ${c.food.product_name ?? ''}`.trim() : '') || c.foodLabel,
+        foodType: c.food?.food_type ?? null,
+        primaryProtein: c.food?.primary_protein ?? null,
+        proteins: c.food?.proteins ?? null,
+      }))
+      const types = parts.map((p) => p.foodType)
+      return {
+        id: r.id,
+        occurredAt: r.occurred_at,
+        occurredAtConfidence: (r.occurred_at_confidence ?? null) as AskMealRow['occurredAtConfidence'],
+        foodItemId: null,
+        foodLabel: `${parts.map((p) => p.foodLabel).join(' + ')}, mixed`,
+        foodType: types.length > 0 && types.every((t) => t === 'treat') ? 'treat' : types.includes('meal') ? 'meal' : types.find((t) => t !== null && t !== 'treat') ?? null,
+        primaryProtein: null,
+        proteins: [...new Set(parts.flatMap((p) => [...(p.primaryProtein ? [p.primaryProtein] : []), ...(p.proteins ?? [])]))],
+        intakeRating: meal?.intake_rating ?? null,
+        note: null,
+        hasPhoto: Array.isArray(r.event_attachments) && r.event_attachments.length > 0,
+        deletedAt: null,
+        bowl: { status: bowl.status, components: parts.map(({ foodItemId, foodLabel, foodType }) => ({ foodItemId, foodLabel, foodType })) },
+      }
+    }
     const fi = first(meal?.food_items ?? null) as FoodItemDb | null
     return {
       id: r.id,

@@ -79,7 +79,7 @@ function firstOf<T>(v: T | T[] | null | undefined): T | null {
  * components alone decide, which is the rule anyway (§3: live components win).
  */
 export function bowlOf<F>(
-  meal: { food_item_id: string | null; component_count?: number | null } | null,
+  meal: { food_item_id?: string | null; component_count?: number | null } | null,
   rows: readonly MealComponentJoin<F>[] | null | undefined,
 ): MealBowl<F> | null {
   const all = rows ?? []

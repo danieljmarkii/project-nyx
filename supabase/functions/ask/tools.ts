@@ -365,6 +365,10 @@ export interface AskMealRow {
   note?: string | null
   hasPhoto?: boolean
   deletedAt: string | null
+  /** A MIXED BOWL (CUL-2052): its foods. Then `foodItemId` and `primaryProtein` are null
+   *  (T2) and `proteins` is the union. Its one rating is the bowl's: it counts toward the
+   *  pet's intake, and toward NO food's or protein's finished rate (§5.4). */
+  bowl?: { status: 'mix' | 'incomplete'; components: { foodItemId: string | null; foodLabel: string; foodType: string | null }[] } | null
 }
 
 /** A weight_check reading reduced for the trend core (mirrors lib/weight.ts WeightReading
@@ -1186,6 +1190,9 @@ export interface RankedFoodEntry {
   finishedRate: number | null
   ratedMeals: number
   isTreat: boolean
+  /** Of `count`, the feedings that were mixed bowls (CUL-2052): counted as feedings of
+   *  this food, never in its finished rate. Absent when none. */
+  inMixedBowls?: number
 }
 
 export interface TopFoodsResult {
@@ -1216,31 +1223,52 @@ export function topFoods(
   const limit = params.limit ?? 5
   const freeFed = params.freeFedFoodIds ?? new Set<string>()
   const inWindow = liveEvents(meals).filter((m) => inSpan(m.occurredAt, w))
-  const candidates = collapseTreatRelogs(inWindow).filter((m) => m.foodItemId !== null && !!m.foodLabel)
+  // A MIXED BOWL (CUL-2052) is a feeding of each of its foods: it counts toward each
+  // component's tally (so a food mostly fed mixed is not missing from "what's fed most")
+  // and toward NONE of their finished rates, because one bowl rating says nothing about
+  // either food (§5.4). The candidate set counts each bowl once.
+  const live = collapseTreatRelogs(inWindow)
+  const candidates = live.filter((m) => (m.bowl ? m.bowl.components.some((c) => c.foodItemId !== null) : m.foodItemId !== null && !!m.foodLabel))
   if (candidates.length < ASK_FLOORS.minMealsForRanking) {
     return notEnoughData(candidates.length, ASK_FLOORS.minMealsForRanking)
   }
-  const byFood = new Map<string, AskMealRow[]>()
+  const byFood = new Map<string, { label: string; foodType: string | null; feedings: AskMealRow[]; plain: AskMealRow[]; mixed: number }>()
+  const entry = (id: string, label: string, foodType: string | null) => {
+    const held = byFood.get(id)
+    if (held) return held
+    const fresh = { label, foodType, feedings: [] as AskMealRow[], plain: [] as AskMealRow[], mixed: 0 }
+    byFood.set(id, fresh)
+    return fresh
+  }
   for (const m of candidates) {
-    const id = m.foodItemId as string
-    const arr = byFood.get(id)
-    if (arr) arr.push(m)
-    else byFood.set(id, [m])
+    if (m.bowl) {
+      for (const c of m.bowl.components) {
+        if (!c.foodItemId) continue
+        const e = entry(c.foodItemId, c.foodLabel, c.foodType)
+        e.feedings.push({ ...m, foodType: c.foodType })
+        e.mixed += 1
+      }
+      continue
+    }
+    const e = entry(m.foodItemId as string, m.foodLabel as string, m.foodType)
+    e.feedings.push(m)
+    e.plain.push(m)
   }
   const total = candidates.length
   const ranked: RankedFoodEntry[] = []
   for (const [id, group] of byFood) {
-    const isTreat = group.some((m) => m.foodType === 'treat')
-    const fr = itemFinishedRate(group, freeFed)
+    const isTreat = group.feedings.some((m) => m.foodType === 'treat')
+    const fr = itemFinishedRate(group.plain, freeFed)
     ranked.push({
       foodItemId: id,
-      label: group[0].foodLabel as string,
-      foodType: group[0].foodType,
-      count: group.length,
-      shareOfDiet: group.length / total,
+      label: group.label,
+      foodType: group.foodType,
+      count: group.feedings.length,
+      shareOfDiet: group.feedings.length / total,
       finishedRate: isTreat ? null : fr.rate,
       ratedMeals: fr.ratedMeals,
       isTreat,
+      ...(group.mixed > 0 ? { inMixedBowls: group.mixed } : {}),
     })
   }
   ranked.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
@@ -1321,7 +1349,8 @@ export function topProteins(
   for (const [protein, feedings] of byProtein) {
     const mealRows = feedings.filter((m) => m.foodType !== 'treat')
     const isTreat = mealRows.length === 0
-    const fr = itemFinishedRate(mealRows, freeFed)
+    // A mixed bowl is an EXPOSURE to every protein in it, and a rating of none (§5.4).
+    const fr = itemFinishedRate(mealRows.filter((m) => !m.bowl), freeFed)
     ranked.push({
       protein,
       count: feedings.length,

@@ -89,3 +89,15 @@ Deno.test('the select names every column the read rule needs', () => {
     assertStrictEquals(MEAL_BOWL_SELECT('food_type').includes(col), true, col)
   }
 })
+
+// §8: the stool read and the may-wait evidence read only the BOWL's rating, which a mixed
+// bowl carries on its one `meals` row exactly as a plain meal does. They read no food, so
+// a mix cannot change what they see. Pinned so a later edit that starts reading a food
+// there has to come through the bowl adapter.
+Deno.test('the stool and may-wait meal reads take the rating only, never a food', async () => {
+  for (const path of ['analyze-stool/index.ts', '_shared/incidentMayWaitEvidence.ts']) {
+    const src = await Deno.readTextFile(new URL(`../${path}`, import.meta.url))
+    assertStrictEquals(src.includes("meals(intake_rating)"), true, `${path} reads the rating`)
+    assertStrictEquals(/meals\([^)]*food_item_id/.test(src), false, `${path} reads a food: go through _shared/mealBowl.ts`)
+  }
+})

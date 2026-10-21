@@ -26,6 +26,7 @@
 // one boundary; nothing else moves.
 
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
+import { bowlOf, type MealComponentJoin } from '../_shared/mealBowl.ts'
 import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorResult } from '../../../lib/incidentFloor.ts'
 import type { FreeFedIntakeSpan } from '../../../lib/freeFedIntake.ts'
 import {
@@ -133,13 +134,22 @@ export type FoodTypeJoin = { food_type: string | null } | { food_type: string | 
 export interface MealIntakeRow {
   intake_rating: string | null
   food_item_id?: string | null
+  /** Mixed meals (migration 105), EN-5's select only: NULL for a single food. */
+  component_count?: number | null
   food_items?: FoodTypeJoin
 }
 export type MealIntakeJoin = MealIntakeRow | MealIntakeRow[] | null
+/** A meal event as the intake reads return it. Under EN-5 a mixed bowl's components ride
+ *  along (CUL-2052), each with its own food type. */
+export interface MealIntakeEventRow {
+  occurred_at: string
+  meals: MealIntakeJoin
+  meal_components?: MealComponentJoin<{ food_type: string | null }>[] | null
+}
 export interface VomitContextRows {
   vomits: { occurred_at: string }[]
   lethargy: { occurred_at: string }[]
-  meals: { occurred_at: string; meals: MealIntakeJoin }[]
+  meals: MealIntakeEventRow[]
   // EN-5 only: the pet's free-fed bowl spans, active and ended. Absent reads as no bowls,
   // which keeps a free-fed rating counted: the louder reading of an unknown.
   freeFedSpans?: FreeFedIntakeSpan[]
@@ -410,8 +420,21 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 // eaten something else?), so T10b, a dog's "no food in 24 h", is not built here.
 export const AFTER_VOMIT_INTAKE_HOURS = 24
 
-function evidenceOf(m: { occurred_at: string; meals: MealIntakeJoin }): IntakeEvidenceMeal {
+function evidenceOf(m: MealIntakeEventRow): IntakeEvidenceMeal {
   const meal = Array.isArray(m.meals) ? m.meals[0] : m.meals
+  // A MIXED BOWL (CUL-2052, spec §8): the treat test is "any non-treat component". The
+  // bowl's one rating is a fact about the pet, so it qualifies unless EVERY food in it is
+  // a treat; it names no single food (T2), so no free-fed bowl can claim it either.
+  const bowl = meal ? bowlOf(meal, m.meal_components) : null
+  if (bowl) {
+    const types = bowl.components.map((c) => c.food?.food_type ?? null)
+    return {
+      ms: Date.parse(m.occurred_at),
+      foodItemId: null,
+      foodType: types.length > 0 && types.every((t) => t === 'treat') ? 'treat' : 'meal',
+      intakeRating: meal?.intake_rating ?? null,
+    }
+  }
   const food = Array.isArray(meal?.food_items) ? meal?.food_items[0] : meal?.food_items
   return {
     ms: Date.parse(m.occurred_at),
