@@ -348,3 +348,38 @@ Deno.test('⑤ — pre-breakfast vomits never count backwards: the timing story 
   assert.deepEqual(off, ['timing_story'], `premise ${off}`)
   assert.deepEqual(timingTypes(i, EN11_CONFIG), off)
 })
+
+// ── Mixed meals (CUL-2052, adversarial pass 2 break B) ─────────────────────────────────
+// An INCOMPLETE mixed bowl (its live foods fewer than it held) is an unknown. Wherever it lands,
+// it may cost a control day, but it may never make the reversed-in-time control withhold a card:
+// its after-control window reads as exposed to every food, never as a gap that reads as absence.
+Deno.test('① — an incomplete bowl after a control never makes the reversed check withhold the card', () => {
+  // The adversarial pass's case: chicken twice a day; eight vomits at 10:00 every fourth day;
+  // beef at breakfast before seven of them and at dinner after the same seven; and beef at
+  // dinner on day 31, the control day for the last vomit. As a plain meal, beef reads Established. The
+  // same beef inside an INCOMPLETE bowl must read the same: dropping that pair from the reversed
+  // count pushed the reversed difference over the forward one and withheld the card.
+  const day0 = Date.UTC(2026, 3, 1)
+  const t = (n: number, h: number) => new Date(day0 + n * 86_400_000 + h * 3_600_000).toISOString()
+  const m = (n: number, h: number, protein: string, over: Partial<MealEvent> = {}): MealEvent =>
+    ({ ...meal(1, 1, protein), occurredAt: t(n, h), ...over })
+  const vomitDays = [4, 8, 12, 16, 20, 24, 28, 32]
+  const meals: MealEvent[] = []
+  for (let n = 0; n <= 34; n++) meals.push(m(n, 8, 'chicken'), m(n, 18, 'chicken'))
+  for (const n of vomitDays.slice(0, 7)) meals.push(m(n, 8, 'beef'))
+  for (const n of vomitDays.slice(0, 7)) meals.push(m(n, 18, 'beef'))
+  const run = (late: MealEvent) => detectCorrelations({
+    pet: { name: 'Mochi', species: 'dog', dietTrialActive: false },
+    symptomEvents: vomitDays.map((n) => ({ id: `v${n}`, type: 'vomit' as SymptomType, occurredAt: t(n, 10), occurredAtConfidence: 'witnessed' as const })),
+    mealEvents: [...meals, late],
+    now: t(35, 12),
+  }, EN11_CONFIG).find((f) => f.protein === 'beef')?.tier ?? null
+  const plainTier = run(m(31, 18, 'beef'))
+  assert.equal(plainTier, 'established')
+  const bowlTier = run(m(31, 18, 'beef', {
+    primaryProtein: null,
+    proteins: ['beef'],
+    bowl: { status: 'incomplete', compositionKey: 'id:beef', components: [{ foodItemId: 'beef', foodLabel: 'Beef' }] },
+  }))
+  assert.equal(bowlTier, plainTier)
+})

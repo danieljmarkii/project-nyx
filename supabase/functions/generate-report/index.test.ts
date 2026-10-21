@@ -479,7 +479,9 @@ Deno.test('B-613 computeLookbackIso: a trial starting before the window stretche
   const without = computeLookbackIso(scope, NOW_MS)
   const withTrial = computeLookbackIso(scope, NOW_MS, trialStart)
   assert.equal(without, new Date(NOW_MS - 180 * MS_PER_DAY).toISOString())
-  assert.equal(withTrial, trialStart, 'the pull now reaches the trial start exactly')
+  // Mixed meals (CUL-2052): and the transition lookback behind it, so "first fed" before
+  // Day 1 is in the pull (spec §6.1).
+  assert.equal(withTrial, new Date(Date.parse(trialStart) - 60 * MS_PER_DAY).toISOString(), 'the pull reaches the transition before the trial start')
   assert.ok(Date.parse(withTrial) < Date.parse(without))
 })
 

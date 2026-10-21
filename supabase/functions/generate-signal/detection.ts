@@ -364,6 +364,21 @@ export interface SymptomEvent {
   occurredAtConfidence?: OccurredAtConfidence | null
 }
 
+/**
+ * A MIXED BOWL (Mixed meals, CUL-2052; spec docs/nyx-mixed-meals-requirements.md §5).
+ * Present only on a meal with components, read through `_shared/mealBowl.ts`. Then the
+ * meal's `foodItemId` and `primaryProtein` are NULL (T2), `proteins` is the UNION of the
+ * components' sets (exposure is presence, §5.1), and `foodLabel` names the bowl.
+ */
+export interface MealEventBowl {
+  /** `incomplete`: the live set is smaller than the bowl says. Its contents are not
+   *  known, so it feeds no food history and its window is never a control (§3). */
+  status: 'mix' | 'incomplete'
+  /** The sorted set of food keys: one mix's identity, whatever its ratio. */
+  compositionKey: string
+  components: { foodItemId: string | null; foodLabel: string }[]
+}
+
 export interface MealEvent {
   id: string
   /** ISO-8601 UTC. */
@@ -422,6 +437,8 @@ export interface MealEvent {
    * are excluded from the descriptive-timing lane. Absent ⇒ today's behavior unchanged.
    */
   occurredAtConfidence?: OccurredAtConfidence | null
+  /** A mixed bowl's composition; absent for a single food. See `MealEventBowl`. */
+  bowl?: MealEventBowl | null
   /**
    * This meal/treat was the VEHICLE for a co-logged medication dose (B-156 combo; the
    * caller sets it true when this event's id appears as `paired_event_id` on a non-
@@ -3498,6 +3515,14 @@ export function detectCorrelations(
   const cfg = config.correlation
 
   const meals = classifyMeals(input.mealEvents)
+  // An INCOMPLETE mixed bowl (CUL-2052, spec §3): its live components are fewer than the
+  // bowl held, so what was in it is not known. A control window holding one could read a
+  // food it carried as absent and turn an exposed window into a clean control, so no
+  // control window may contain one. Its known proteins still count wherever it falls.
+  const unknownBowlMs = input.mealEvents
+    .filter((m) => m.bowl?.status === 'incomplete')
+    .map((m) => Date.parse(m.occurredAt))
+    .filter((ms) => Number.isFinite(ms))
   // Free-fed standing exposures (B-040). A free-fed food is BACKGROUND context, never
   // a correlate candidate on its own (§3). It does two things here, and ONLY these:
   //   (a) any protein under an active free-fed arrangement that is in-window for a
@@ -3767,7 +3792,7 @@ export function detectCorrelations(
        * now (an unfinished window reads as absence, which would bias the control toward keeping
        * the forward card).
        */
-      reversed: { caseExp: Map<string, AttributionConfidence>; ctrlExp: Map<string, AttributionConfidence> } | null
+      reversed: { caseExp: Map<string, AttributionConfidence>; ctrlExp: Map<string, AttributionConfidence>; ctrlUnknown: boolean } | null
     }[] = []
     // Proteins under an active free-fed arrangement that was in-window for ≥1 matched
     // pair (case OR control) of this symptom. These are excluded from candidacy — a
@@ -3815,6 +3840,7 @@ export function detectCorrelations(
         if (en11 && dist > en11.maxControlDistanceDays) continue
         const ctrlAnchorMs = d * MS_PER_DAY + timeOfDay
         if (en11 && inPostEpisodeHours(ctrlAnchorMs)) continue // EN-11 rule 4
+        if (unknownBowlMs.some((ms) => ms <= ctrlAnchorMs && ctrlAnchorMs - ms <= windowMs)) continue
         const ctrlWin = windowExposures(ctrlAnchorMs, windowMs)
         if (ctrlWin.mealCount === 0) continue // control window not logging-eligible
         bestCtrl = { anchorMs: ctrlAnchorMs, ...ctrlWin }
@@ -3840,6 +3866,12 @@ export function detectCorrelations(
             ? {
               caseExp: windowExposures(onset + windowMs, windowMs).exposures,
               ctrlExp: windowExposures(bestCtrl.anchorMs + windowMs, windowMs).exposures,
+              // An INCOMPLETE bowl in the after-control window (CUL-2052): what it held is not
+              // known, so the pair stays in the count and its control reads as EXPOSED to every
+              // food. That can only lower the reversed difference, so an unknown never withholds
+              // a forward card (adversarial pass 2: dropping the pair shrank the denominator and
+              // withheld an Established card; reading the gap as absence did the same).
+              ctrlUnknown: unknownBowlMs.some((ms) => ms <= bestCtrl!.anchorMs + windowMs && bestCtrl!.anchorMs + windowMs - ms <= windowMs),
             }
             : null,
       })
@@ -4006,7 +4038,7 @@ export function detectCorrelations(
           if (!p.reversed) continue
           nRev++
           const inCaseRev = cluster.some((member) => p.reversed!.caseExp.has(member))
-          const inCtrlRev = cluster.some((member) => p.reversed!.ctrlExp.has(member))
+          const inCtrlRev = p.reversed.ctrlUnknown || cluster.some((member) => p.reversed!.ctrlExp.has(member))
           if (inCaseRev && !inCtrlRev) bRev++
           else if (!inCaseRev && inCtrlRev) cRev++
         }
@@ -4164,6 +4196,8 @@ interface RatedMeal {
   score: number
   foodItemId: string | null
   foodLabel: string | null
+  /** A mixed bowl's composition (CUL-2052), read by Trigger B's two histories only. */
+  bowl?: MealEventBowl | null
 }
 
 /**
@@ -4205,6 +4239,7 @@ function classifyRatedMeals(mealEvents: MealEvent[], freeFedSpans: readonly Free
       score: intakeScore(m.intakeRating as IntakeRating),
       foodItemId: m.foodItemId,
       foodLabel: m.foodLabel ?? null,
+      bowl: m.bowl ?? null,
     }))
     .filter((m) => Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -4453,19 +4488,68 @@ function detectIntakeDeclineCore(
   // ── Trigger B: refusal of a normally-eaten food ────────────────────────────
   // Per food: if it has a solid history of being eaten well and was just refused,
   // that is a clinically meaningful signal even when overall daily means look ok.
+  //
+  // MIXED BOWLS (CUL-2052, spec §5.4) keep TWO histories, and a refused mix is tested
+  // against both: each component's SINGLE-food meals, and the mix's own composition key
+  // (whatever its ratio). Without the second, about twelve days of mixes drain every
+  // single-food baseline (14 days, 3 samples) and Trigger B goes silent for the whole
+  // transition (pass 1, break 2). Either way the finding names the BOWL, never "her
+  // usual Chicken". An incomplete bowl feeds neither history: its contents are unknown.
   const byFood = new Map<string, typeof windowMeals>()
-  for (const m of windowMeals) {
-    if (!m.foodItemId) continue
-    const arr = byFood.get(m.foodItemId) ?? []
+  const push = (key: string, m: RatedMeal) => {
+    const arr = byFood.get(key) ?? []
     arr.push(m)
-    byFood.set(m.foodItemId, arr)
+    byFood.set(key, arr)
+  }
+  for (const m of windowMeals) {
+    if (m.bowl) {
+      if (m.bowl.status === 'mix') push(`mix|${m.bowl.compositionKey}`, m)
+      continue
+    }
+    if (!m.foodItemId) continue
+    push(`food|${m.foodItemId}`, m)
   }
 
   const refusalRecencyStart = nowMs - cfg.refusalRecencyDays * MS_PER_DAY
-  let refusalFinding: IntakeDeclineFinding | null = null
+  // Each history whose LATEST exposure is a recent outright refusal, with that refusal.
+  // A component's latest exposure is the refused mix when no single-food meal of it came
+  // after: a chicken eaten well on its own since then stands the component down, the
+  // same rule the single-food lane has always kept.
+  const tested: { meals: RatedMeal[]; latest: RatedMeal }[] = []
   for (const [, meals] of byFood) {
     const sorted = [...meals].sort((x, y) => x.ms - y.ms)
-    const latest = sorted[sorted.length - 1]
+    tested.push({ meals: sorted, latest: sorted[sorted.length - 1] })
+  }
+  // A component's history, FOR FIRING ONLY, is its single-food meals AND the earlier mixes
+  // that held it (adversarial pass 2, break 2): two plain chicken meals and two chicken
+  // mixes eaten well, then a refused mix, is the same record as four plain chicken meals
+  // and a refusal, and splitting it under the 3-sample floor silenced the watch. Only a
+  // later PLAIN meal stands a component down: a bowl rating never claims a food was eaten
+  // (§5.4), so an eaten mix cannot stand a warning down. An INCOMPLETE bowl's known
+  // components are tested too (break 4): the food we can see in it was refused.
+  for (const m of windowMeals) {
+    if (!m.bowl) continue
+    for (const c of m.bowl.components) {
+      if (!c.foodItemId) continue
+      const singles = byFood.get(`food|${c.foodItemId}`) ?? []
+      if (singles.some((x) => x.ms > m.ms)) continue
+      const earlierMixes = windowMeals.filter(
+        (x) => x.ms < m.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === c.foodItemId),
+      )
+      // Two readings, and the accusing one stands (adversarial pass 2, break A): the plain
+      // meals alone, and the plain meals with the mixes. Partly eaten mixes during a switch
+      // must not drag a solid plain history under the floor and silence a full refusal.
+      const plainBefore = singles.filter((x) => x.ms < m.ms)
+      for (const history of [plainBefore, [...plainBefore, ...earlierMixes]]) {
+        if (history.length === 0) continue
+        tested.push({ meals: [...history, m].sort((x, y) => x.ms - y.ms), latest: m })
+      }
+    }
+  }
+
+  let refusalFinding: IntakeDeclineFinding | null = null
+  for (const { meals, latest } of tested) {
+    const sorted = meals
     if (latest.ms < refusalRecencyStart) continue
     if (latest.score > intakeScore('refused')) continue // only an outright refusal trips this
 

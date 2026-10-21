@@ -48,6 +48,8 @@
 // pet + range + section label only — no placeholder URL.
 
 import type {
+  MixRow,
+  MixShare,
   ReportSnapshot,
   SafetyFlag,
   SymptomAggregate,
@@ -91,13 +93,13 @@ import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
 // contamination finding is.
-import type { ContaminationFact } from './trial.ts'
+import type { ContaminationFact, TrialBlock } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
 // The off-diet chart's per-week floor mirrors the trial coverage floor (CUL-1779) — the same
 // question ("is this record dense enough to read an absence of off-diet food?"), one constant.
-import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
+import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -3077,6 +3079,13 @@ function dietTrialSection(snap: ReportSnapshot): string {
   // for the attribution failure, not a separate complaint about it."* Under its own label
   // this sentence is no longer the fifth of its kind in a run.
   if (windowMoveLine) rows.push(kv('Window change', windowMoveLine))
+  // §6 (Mixed meals, CUL-2052; P-6): the switch onto the diet, DERIVED from the record
+  // and printed beside the owner's Day 1, never in place of it. Its own row, after the
+  // identity, on the window-change precedent: it qualifies the date above it.
+  const switchLine = trialSwitchLine(t, identityDay)
+  if (switchLine) rows.push(kv('Switch onto the diet', switchLine))
+  const newFoodsLine = trialNewFoodsLine(t, identityDay, (type) => symptomLabel(type))
+  if (newFoodsLine) rows.push(kv('New foods after the trial', newFoodsLine))
 
   // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
   // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line
@@ -8167,6 +8176,135 @@ function mealsAppendix(snap: ReportSnapshot): string {
 </section>`
 }
 
+/** A share the record holds only as a proportion (§6): a common fraction when it is one,
+ *  else rounded to 5%. The owner's estimate, always labelled as such where it prints. */
+function proportionWord(share: number | null): string {
+  if (share === null) return 'ratio not recorded'
+  if (share >= 0.999) return 'on its own'
+  const FRACTIONS: Array<[number, string]> = [[1 / 4, '¼'], [1 / 3, '⅓'], [1 / 2, '½'], [2 / 3, '⅔'], [3 / 4, '¾']]
+  const hit = FRACTIONS.find(([v]) => Math.abs(v - share) < 0.01)
+  return hit ? `about ${hit[1]}` : `~${Math.round((share * 100) / 5) * 5}%`
+}
+
+/**
+ * Page 1's switch row (spec §6.1, §6.2, P-6). Day 1 stays the owner's; what follows is
+ * read off the meals. The first-exclusive date prints only when it is LATER than Day 1 or
+ * cannot be read: a run that reaches Day 1 agrees with the owner and adds nothing. The
+ * wording never says "trial diet only": a permitted treat is on the list too, and a
+ * mix after Day 1 can contradict any such claim (§6.2).
+ */
+export function trialSwitchLine(t: TrialBlock, day: (d: string) => string): string | null {
+  const x = t.transition ?? null
+  const mixedAfter = t.exposures.mixedWithTrialDiet ?? 0
+  if (!x && mixedAfter === 0) return null
+  const parts: string[] = [`Day 1 (${h(day(t.startedAt))}) is the date the owner entered.`]
+  if (x?.firstFedDate) {
+    const others = x.otherFoodLabels.length > 0 ? x.otherFoodLabels.map(h).join(', ') : 'another food'
+    const how = x.firstFedMixed
+      ? `, mixed with ${others}, trial diet ${h(proportionWord(x.firstFedShare))} of what went into the bowl (owner&rsquo;s estimate, not what was eaten)`
+      : ''
+    // "In this record" leads, because the read reaches a bounded way back and an earlier
+    // feeding may sit behind it (adversarial pass 2, break 9).
+    parts.push(`In this record, the trial diet was first fed ${h(day(x.firstFedDate))}${how}.`)
+    const fed = x.fedDaysBeforeDay1
+    const mixed = x.mixedDaysBeforeDay1
+    parts.push(
+      `It was fed on ${num(fed)} day${fed === 1 ? '' : 's'} before Day 1${
+        mixed > 0 ? `, mixed with ${others} on ${num(mixed)} of them` : ''
+      }.`,
+    )
+  }
+  if (x?.firstExclusive?.kind === 'after') {
+    parts.push(`First day of an unbroken run of logged days with only foods on the trial&rsquo;s list: ${h(day(x.firstExclusive.date))}.`)
+  } else if (x?.firstExclusive?.kind === 'unknown') {
+    parts.push('When feeding became only foods on the trial&rsquo;s list cannot be read from the record: an unlogged day or a later mix sits where it would be.')
+  }
+  if (mixedAfter > 0) {
+    parts.push(
+      `<b>After Day 1, ${num(mixedAfter)} off-diet feeding${mixedAfter === 1 ? ' was a mixed bowl' : 's were mixed bowls'} that also held the trial diet.</b>`,
+    )
+  }
+  return parts.join(' ')
+}
+
+/**
+ * Page 1's new-foods row (spec §6.3): each food fed after the trial ended that was never
+ * on its list, its first and last feeding, its ramp, and the symptoms logged inside its
+ * forward windows (the union of per-feeding windows, same day excluded). SIDE BY SIDE,
+ * never as attribution, and a zero is never "none": unlogged days are always possible.
+ */
+export function trialNewFoodsLine(
+  t: TrialBlock,
+  day: (d: string) => string,
+  symptomName: (type: string) => string,
+): string | null {
+  const newFoods = t.newFoods ?? []
+  if (newFoods.length === 0) return null
+  const windowDays = CHALLENGE_WINDOW_DAYS[t.species]
+  const foods = newFoods.map((f) => {
+    const first = dayKeyOfIndex(f.firstFedDayIndex)
+    const last = dayKeyOfIndex(f.lastFedDayIndex)
+    const span = first === last ? h(day(first)) : `${h(day(first))} &ndash; ${h(day(last))}`
+    const firstShare = f.ramp[0]?.share ?? null
+    const lastShare = f.ramp[f.ramp.length - 1]?.share ?? null
+    const ramp =
+      f.ramp.length > 1 && firstShare !== lastShare
+        ? `, ${h(proportionWord(firstShare))} of what went into the bowl &rarr; ${h(proportionWord(lastShare))} (owner&rsquo;s estimate, not what was eaten)`
+        : firstShare !== null && firstShare < 0.999
+          ? `, ${h(proportionWord(firstShare))} of what went into the bowl (owner&rsquo;s estimate, not what was eaten)`
+          : ''
+    const counts = new Map<string, number>()
+    for (const s of f.symptomsInWindow) counts.set(s.eventType, (counts.get(s.eventType) ?? 0) + 1)
+    const symptoms =
+      counts.size > 0
+        ? [...counts.entries()].map(([type, n]) => `${h(symptomName(type))} &times;${num(n)}`).join(', ')
+        : '0 logged'
+    // The denominator rides with the count: a quiet window over unlogged days is not a
+    // clean one (cold read, CUL-2052).
+    const coverage = `anything logged on ${num(f.windowDaysLogged)} of the ${num(f.windowDaysElapsed)} window day${
+      f.windowDaysElapsed === 1 ? '' : 's'
+    } so far`
+    const fed = `${num(f.ramp.length)} feeding${f.ramp.length === 1 ? '' : 's'} on ${num(f.fedDays)} day${f.fedDays === 1 ? '' : 's'}`
+    return `${h(f.label)}: ${fed}, ${span}${ramp}. Symptoms logged within ${num(windowDays)} days after a feeding: ${symptoms} (${coverage}).`
+  })
+  return `${foods.join(' ')} Shown side by side with the feedings, not as a cause.`
+}
+
+/** 'YYYY-MM-DD' for an epoch-day index (UTC read, the inverse of `localDayIndexOf`). */
+function dayKeyOfIndex(dayIndex: number): string {
+  return new Date(dayIndex * 86_400_000).toISOString().slice(0, 10)
+}
+
+/**
+ * One food's share of a mixed bowl, AS THE OWNER ENTERED IT and labelled as their estimate
+ * (T8): a chip's fraction as a fraction, measured amounts as amounts, a typed percentage
+ * rounded to 5% with "~". A missing share is "ratio not recorded", never a default 50/50.
+ */
+export function shareWord(s: MixShare | null): string {
+  if (!s) return 'not in this bowl'
+  if (s.shareSource === 'amounts' && s.amountValue !== null && s.amountUnit) {
+    return `${num(s.amountValue)} ${s.amountUnit}`
+  }
+  if (s.normalizedShare === null) return 'ratio not recorded'
+  if (s.shareSource === 'preset') {
+    const FRACTIONS: Array<[number, string]> = [[1 / 4, '¼'], [1 / 3, '⅓'], [1 / 2, '½'], [2 / 3, '⅔'], [3 / 4, '¾']]
+    const hit = FRACTIONS.find(([v]) => Math.abs(v - s.normalizedShare!) < 0.01)
+    if (hit) return `about ${hit[1]}`
+  }
+  return `~${Math.round((s.normalizedShare * 100) / 5) * 5}%`
+}
+
+/** Appendix E's ramp for a mix row: every food named with its share in the first bowl
+ *  and the last, so a ramp cannot print inverted (spec §7.3). The owner's estimate. */
+export function mixRampText(mix: MixRow): string {
+  const foods = mix.foods.map((f) => {
+    const a = shareWord(f.first)
+    const b = shareWord(f.last)
+    return a === b ? `${f.label} ${a}` : `${f.label} ${a} → ${b}`
+  })
+  return `${foods.join(' · ')} (owner’s estimate of what went into the bowl, not of what was eaten)${mix.incomplete ? ' · some bowls are missing a food in the record' : ''}`
+}
+
 /** The grouped meal-item summary — one row per food fed as meals (label · protein · feedings · span · intake recorded). */
 function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): string {
   const { logged: total, rated } = mealCounts(snap.diet)
@@ -8211,7 +8349,8 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
       // intake — so rendering a bare `duck` here for a food whose label also lists chicken was
       // the one place in the report that showed the contaminated trial diet as clean. Marked
       // off-trial like every other set, because this sheet defines the marker below.
-      return `<tr><td>${i.foodLabel ? h(i.foodLabel) : '&mdash;'}</td><td>${proteinSetCell(
+      const ramp = i.mix ? `<br><span class="rnote">${h(mixRampText(i.mix))}</span>` : ''
+      return `<tr><td>${i.foodLabel ? h(i.foodLabel) : '&mdash;'}${ramp}</td><td>${proteinSetCell(
         i.proteinSet,
         markOffTrial,
         i.format === 'human_food' ? 'home' : 'packaged',
@@ -8614,6 +8753,10 @@ function appendixBCD(snap: ReportSnapshot): string {
 interface ConfounderRow {
   category: 'human' | 'treat' | 'other'
   label: string | null
+  /** A mixed bowl edited more than 24h after the meal: the edit's day (CUL-2052). */
+  editedOn?: string | null
+  /** A mixed-bowl row: the bowl's recorded intake ('unrated' when none). Joins the key. */
+  bowlIntake?: string | null
   protein: string | null
   /** The full captured set for this row's food (B-351 slice 5) — what the Protein column renders. */
   proteinSet: ProteinSetView
@@ -8662,10 +8805,14 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
     const cat = confCategory(c)
     const day = c.dayKey ?? c.occurredAt.slice(0, 10)
     // Human food OR any feeding carrying an owner note stays a discrete row (nothing dropped, §5.1).
-    if (cat === 'human' || c.note) {
+    // So does a mixed bowl edited after the fact: its edit date belongs to that feeding only.
+    const bowlIntake = c.bowlIntake === undefined ? undefined : c.bowlIntake ?? 'unrated'
+    if (cat === 'human' || c.note || c.editedOn) {
       itemised.push({
         category: cat,
         label: c.foodLabel,
+        editedOn: c.editedOn ?? null,
+        bowlIntake,
         protein: c.primaryProtein,
         proteinSet: c.proteinSet,
         note: c.note,
@@ -8704,12 +8851,13 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
     // stop reconciling. Keying on it splits the row, which is what both surfaces need.
     const key = `${cat}||${c.foodLabel ?? ''}||${c.primaryProtein ?? ''}||${c.proteinSet.proteins.join(',')}|${
       c.proteinSet.complete ? 'c' : 'i'
-    }|${c.rung ?? ''}|${c.permittedLaterFrom ?? ''}`
+    }|${c.rung ?? ''}|${c.permittedLaterFrom ?? ''}|${bowlIntake ?? ''}`
     let g = groups.get(key)
     if (!g) {
       g = {
         category: cat,
         label: c.foodLabel,
+        bowlIntake,
         protein: c.primaryProtein,
         proteinSet: c.proteinSet,
         note: null,
@@ -8768,7 +8916,15 @@ function confounderRowHtml(
   // The timing dagger. Marks ONLY that a symptom was logged inside the species'
   // forward challenge window after this feeding — never that one caused the other.
   const dagger = trialDerived && r.symptomInChallengeWindow ? ' <span class="rnote">&dagger;</span>' : ''
-  const item = `${r.label ? h(r.label) : '&mdash;'}${dagger}${r.note ? ` <span class="rnote">${h(r.note)}</span>` : ''}`
+  const edited = r.editedOn ? ` <span class="rnote">the foods in this bowl were edited on ${h(day(r.editedOn))}</span>` : ''
+  // A MIXED BOWL is an exposure by presence (§5.1); what was eaten of it is unknown, and the
+  // row says what intake was recorded so the vet can weigh it (cold read, CUL-2052).
+  const offered = r.bowlIntake
+    ? ` <span class="rnote">offered in the bowl; intake recorded for the bowl: ${
+        r.bowlIntake === 'unrated' ? 'not recorded' : h(intakeLabel(r.bowlIntake).toLowerCase())
+      }, so how much of this food was eaten is unknown</span>`
+    : ''
+  const item = `${r.label ? h(r.label) : '&mdash;'}${dagger}${offered}${edited}${r.note ? ` <span class="rnote">${h(r.note)}</span>` : ''}`
   const feedings = r.count > 1 ? `&times;${num(r.count)}` : num(1)
   // §6.3: "a flag the owner cannot interrogate is an unfalsifiable accusation." On the
   // report the reader is the vet, and the same rule applies — a row listed as off-diet

@@ -41,8 +41,11 @@
 //   statement about the RECORD, never about the pet and never about the owner.
 import {
   buildTrialContext,
+  carriesTrialDiet,
   classifyFeeding,
   computeTrialFacts,
+  deriveTrialTransition,
+  newFoodsIntroduced,
   dayIndexOf,
   feedingWasFinished,
   interpretabilityStatement,
@@ -64,6 +67,7 @@ import {
   type ContaminationFact,
   type FeedingClassification,
   type Interpretability,
+  type NewFoodIntroduced,
   type OralRouteExposure,
   type TrialDietRefusal,
   type TrialDose,
@@ -143,7 +147,26 @@ export interface TrialMealSource {
     brand: string | null
     productName: string | null
     proteins?: string[] | null
+    /** A MIXED BOWL (CUL-2052), read through `_shared/mealBowl.ts`. Then the fields
+     *  above describe the bowl and name no food (T2); identity is per component. */
+    bowl?: {
+      status: 'mix' | 'incomplete'
+      components: TrialMealComponentSource[]
+    } | null
   } | null
+}
+
+export interface TrialMealComponentSource {
+  foodItemId: string | null
+  /** The component's food identity: the handle the report finds it by again. */
+  foodKey: string
+  snapshotLabel: string
+  brand: string | null
+  productName: string | null
+  foodType: string | null
+  proteins?: string[] | null
+  primaryProtein?: string | null
+  normalizedShare: number | null
 }
 
 export interface TrialDoseSource {
@@ -508,6 +531,28 @@ export function deriveWindowChange(
   }
 }
 
+/**
+ * The switch onto the trial diet, DERIVED from the record at read (Mixed meals, CUL-2052;
+ * spec §6, P-6). Never a state, never moved Day 1, and printed beside the owner-entered
+ * Day 1 rather than in place of it. Null when there is no trial-diet feeding before Day 1
+ * and nothing after Day 1 contradicts it: the report then says nothing new.
+ */
+export interface TrialTransitionBlock {
+  /** The earliest trial-diet feeding before Day 1, inside the lookback. */
+  firstFedDate: string | null
+  firstFedMixed: boolean
+  /** The trial diet's share of that bowl, as the owner estimated it (null: unknown). */
+  firstFedShare: number | null
+  /** Local days before Day 1 the trial diet was fed at all, and those with a mixed bowl. */
+  fedDaysBeforeDay1: number
+  mixedDaysBeforeDay1: number
+  otherFoodLabels: string[]
+  /** The first day of trial-food-only feeding, when it is later than Day 1 ('after'), or
+   *  'unknown' when the record cannot say; null when the run reaches Day 1 (nothing
+   *  to add beside the owner's date). */
+  firstExclusive: { kind: 'after'; date: string } | { kind: 'unknown' } | null
+}
+
 export interface TrialBlock {
   id: string
   status: 'active' | 'completed' | 'abandoned'
@@ -623,10 +668,18 @@ export interface TrialBlock {
   elapsedEndDayIndex: number
 
   coverage: { daysLogged: number; daysElapsed: number } | null
+  /** §6 — the derived switch, or null when there is nothing to add (CUL-2052). */
+  transition?: TrialTransitionBlock | null
+  /** §6.3 — foods fed after the trial ENDED that were never on its list, each with the
+   *  symptoms in its forward windows SIDE BY SIDE, never as attribution. Empty while
+   *  the trial runs. */
+  newFoods?: NewFoodIntroduced[]
   exposures: {
     totalFeedings: number
     /** A FLOOR, never a total (§5.2). */
     offDiet: number
+    /** Of `offDiet`: mixed bowls that also held the trial diet (§6.2). */
+    mixedWithTrialDiet?: number
     byRung: { derived_protein: number; unrecognised: number }
     /**
      * Exposures whose food IS on the allowed list, just not on the day it was fed — the
@@ -955,6 +1008,13 @@ export interface BuildTrialBlockArgs {
   mealLoggedDayIndices: readonly number[]
   /** Local-day indices of every in-window symptom event. */
   symptomDayIndices: readonly number[]
+  /** Every deduped meal in the pull, not only the window's (CUL-2052): the switch onto
+   *  the trial diet happens BEFORE Day 1 and §6.3's new foods after its end, so §6 reads
+   *  the record. Its DATES may reach outside the window; its one count is scoped "before
+   *  Day 1" in the sentence that prints it (C-37). Absent: the window's meals. */
+  recordMeals?: readonly TrialMealSource[]
+  /** Every deduped symptom event in the pull, for §6.3's side-by-side windows. */
+  recordSymptoms?: readonly { occurredAt: string; eventType: string }[]
   scope: { startDate: string; endDate: string; endDayNum: number }
   nowMs: number
   timeZone: string | null
@@ -1096,6 +1156,11 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // disagree — and the alternative, widening PR 5's return shape from a consumer,
   // is how a shared module stops being shared.
   const permittedCounts = new Map<string, number>()
+  // Mixed bowls that held the trial diet (CUL-2052). A bowl of the trial diet with the old
+  // food is off-diet, so it never reaches `permittedCounts`; it is still proof the list
+  // loaded, and the unhydrated-set guard below must count it (adversarial pass 2, break 1:
+  // a trial fed only in mixed bowls printed "No allowed-food list is recorded").
+  let bowlsWithTrialDiet = 0
   const symptomDays = [...new Set(args.symptomDayIndices)]
   const exposures: TrialExposure[] = []
   for (const e of args.meals) {
@@ -1103,6 +1168,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     const dn = dayIndexOf(ctx, e.occurredAt)
     if (!inRange(dn)) continue
     const classification = classifyFeeding(ctx, toTrialFeeding(e))
+    if (classification.components && carriesTrialDiet(classification)) bowlsWithTrialDiet += 1
     if (classification.verdict === 'permitted' && classification.permittedBy) {
       const key = allowedRowKey(classification.permittedBy)
       permittedCounts.set(key, (permittedCounts.get(key) ?? 0) + 1)
@@ -1199,7 +1265,13 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // rung 2 keys on. Empty means nothing to say; non-empty and still rung 3 means
       // "read, and nothing in it is outside the trial diet", which is a different
       // sentence and a much more interesting one.
-      panelWasRead: (e.meal.proteins ?? []).length > 0,
+      // A bowl's panel was read only when EVERY off-diet component's was: rung 3's
+      // "read, and nothing in it is outside the trial diet" is about the foods named.
+      panelWasRead: classification.components
+        ? classification.components.every(
+            (c, i) => !c.offDiet || (classification.componentFoods?.[i]?.proteins.length ?? 0) > 0,
+          )
+        : (e.meal.proteins ?? []).length > 0,
       attributionChecked: classification.attributionChecked,
       // THE OPERATIVE REASON, WHICH IS NEITHER RUNG. This same food IS on the allowed
       // list — just not on this day. §7's dated-membership rule is what makes that
@@ -1245,7 +1317,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     .filter((f) => f.role === 'primary_diet')
     .reduce((n, f) => n + (permittedCounts.get(allowedRowKey(f)) ?? 0), 0)
   const allowedSetUnavailable =
-    !hasPrimary || (primaryPermitted === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
+    !hasPrimary || (primaryPermitted === 0 && bowlsWithTrialDiet === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
 
   const sourceByFoodId = new Map((trial.allowedFoods ?? []).map((f) => [f.foodItemId, f.extractionConfidence ?? null]))
   const permittedFoods: TrialPermittedFood[] = allowedFoods
@@ -1299,7 +1371,42 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   const dayCounter = trialDayCounter(ctx.startDayIndex as number, evidence.endDayIndex)
   const target = trial.targetDurationDays > 0 ? trial.targetDurationDays : 0
 
+  // §6 — the switch onto the trial diet and, once it has ended, the foods after it. One
+  // pass over the record through the shared derivation (`lib/dietTrial.ts`).
+  const recordFeedings = (args.recordMeals ?? args.meals).filter((e) => e.meal).map(toTrialFeeding)
+  const transitionInput = {
+    trial: { id: trial.id, startedAt: trial.startedAt, endedAt, targetDurationDays: trial.targetDurationDays, species },
+    allowedFoods,
+    feedings: recordFeedings,
+    arrangements,
+    nowMs: args.nowMs,
+    timeZone: tz,
+  }
+  const derived = deriveTrialTransition(transitionInput)
+  const dateOf = (dayIndex: number) => dayKeyFromIndex(dayIndex)
+  const firstExclusive: TrialTransitionBlock['firstExclusive'] =
+    derived.firstExclusive.kind === 'after_day1'
+      ? { kind: 'after', date: dateOf(derived.firstExclusive.dayIndex) }
+      : derived.firstExclusive.kind === 'unknown'
+        ? { kind: 'unknown' }
+        : null
+  const transition: TrialTransitionBlock | null =
+    derived.firstFed === null && firstExclusive === null
+      ? null
+      : {
+          firstFedDate: derived.firstFed ? dateOf(derived.firstFed.dayIndex) : null,
+          firstFedMixed: derived.firstFed?.mixed ?? false,
+          firstFedShare: derived.firstFed?.share ?? null,
+          fedDaysBeforeDay1: derived.fedDaysBeforeDay1,
+          mixedDaysBeforeDay1: derived.mixedDaysBeforeDay1,
+          otherFoodLabels: derived.otherFoodLabels,
+          firstExclusive,
+        }
+  const newFoods = newFoodsIntroduced({ ...transitionInput, symptoms: args.recordSymptoms ?? [] })
+
   return {
+    transition,
+    newFoods,
     id: trial.id,
     status: normaliseStatus(trial.status),
     startedAt: trial.startedAt,
@@ -1350,6 +1457,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     exposures: {
       totalFeedings: facts.exposures.totalFeedings,
       offDiet: facts.exposures.offDiet,
+      mixedWithTrialDiet: facts.exposures.items.filter((i) => i.classification.components && carriesTrialDiet(i.classification)).length,
       byRung: facts.exposures.byRung,
       // The SAME test `exposureReasonOf` applies in the renderer — truthy, not
       // `!== null`. Equivalent today (this field is a DATE column or null, never ''),
@@ -1533,6 +1641,37 @@ function mapAllowedFoods(rows: readonly TrialFoodSource[]): AllowedFood[] {
 
 function toTrialFeeding(e: TrialMealSource): TrialFeeding {
   const m = e.meal!
+  if (m.bowl) {
+    // A MIXED BOWL: identity, type and proteins are each component's own (§5.2). The
+    // bowl-level food is never read: it names no food (T2).
+    return {
+      eventId: e.id,
+      occurredAt: e.occurredAt,
+      foodItemId: null,
+      foodKey: null,
+      label: mealLabel(e),
+      foodType: m.foodType,
+      proteins: [],
+      intakeRating: m.intakeRating,
+      incompleteBowl: m.bowl.status === 'incomplete',
+      components: m.bowl.components.map((c) => ({
+        foodItemId: c.foodItemId,
+        // A purged component (food row gone) still has its snapshot name, which is the
+        // §5.4 key's product half; the brand is lost with the row, so the key is the
+        // name alone and matches only an allowed row keyed the same way.
+        foodKey: c.brand !== null || c.productName !== null
+          ? trialFoodKey(c.brand, c.productName)
+          : c.foodItemId === null
+            ? trialFoodKey(null, c.snapshotLabel)
+            : null,
+        label: componentName(c),
+        foodType: c.foodType,
+        proteins: [...(c.primaryProtein ? [c.primaryProtein] : []), ...(c.proteins ?? [])],
+        share: c.normalizedShare,
+        ref: c.foodKey,
+      })),
+    }
+  }
   return {
     eventId: e.id,
     occurredAt: e.occurredAt,
@@ -1545,9 +1684,14 @@ function toTrialFeeding(e: TrialMealSource): TrialFeeding {
   }
 }
 
+function componentName(c: TrialMealComponentSource): string {
+  return `${c.brand ?? ''} ${c.productName ?? ''}`.trim() || c.snapshotLabel
+}
+
 function mealLabel(e: TrialMealSource): string | null {
   const m = e.meal
   if (!m) return null
+  if (m.bowl) return `${m.bowl.components.map(componentName).join(' + ')}, mixed`
   const label = `${m.brand ?? ''} ${m.productName ?? ''}`.trim()
   return label.length > 0 ? label : null
 }
