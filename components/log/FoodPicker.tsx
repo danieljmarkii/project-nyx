@@ -55,6 +55,17 @@ interface Props {
   // default (every existing caller is unaffected). It only SEEDS the chip: the
   // owner can still switch scope from the pinned row, exactly as after a manual tap.
   initialScope?: FoodScope;
+  // Mixed meals row 5 (CUL-2054; spec §7.1, R1) — the picker for a bowl's second food.
+  // Only meal foods that are not toppers are offered: treats, human food and toppers stay
+  // their own logs, and the writer would refuse them anyway (`assertMixableFoods`). "+ Add
+  // new" steps aside too: its capture flow logs a meal of its own, which is not a food in
+  // this bowl. Pair with `selectedFoodIds={[first]}` so the bowl's first food shows locked.
+  mixableOnly?: boolean;
+}
+
+/** The R1 rule the writer enforces, as the picker filters by it. */
+function isMixable(f: PickerFood): boolean {
+  return f.food_type === 'meal' && f.format !== 'topper';
 }
 
 // B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
@@ -67,7 +78,7 @@ const ROTATION_LIMIT = 12;
 const SCREEN_PADDING = theme.space2;
 
 export function FoodPicker({
-  petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds, initialScope,
+  petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds, initialScope, mixableOnly = false,
 }: Props) {
   const selecting = selectedFoodIds !== undefined;
   const [rotation, setRotation] = useState<PickerFood[]>([]);
@@ -225,7 +236,7 @@ export function FoodPicker({
   // first, then the free-text search over brand + product. Both are AND-ed, so
   // "Wet" + "tur" narrows to wet turkey foods.
   const filteredLibrary = useMemo(() => {
-    const scoped = filterFoodsByScope(library, scope);
+    const scoped = filterFoodsByScope(mixableOnly ? library.filter(isMixable) : library, scope);
     const q = search.trim().toLowerCase();
     if (!q) return scoped;
     return scoped.filter(
@@ -233,7 +244,11 @@ export function FoodPicker({
         f.brand.toLowerCase().includes(q) ||
         f.product_name.toLowerCase().includes(q),
     );
-  }, [library, search, scope]);
+  }, [library, search, scope, mixableOnly]);
+  const rotationShown = useMemo(
+    () => (mixableOnly ? rotation.filter(isMixable) : rotation),
+    [rotation, mixableOnly],
+  );
 
   // Group the (filtered) library by food_type via the shared helper (lib/food,
   // tested there + reused by the standalone Foods tab). B-011: treats and meals
@@ -251,7 +266,7 @@ export function FoodPicker({
   // elimination diet feeds exactly one, so at 1 the label degrades to the neutral,
   // still recency-factual "Recently fed".
   const rotationLabel =
-    rotation.length === 1 ? 'Recently fed' : petName ? `${petName}'s rotation` : 'Rotation';
+    rotationShown.length === 1 ? 'Recently fed' : petName ? `${petName}'s rotation` : 'Rotation';
 
   // ── B-616 FR-16–FR-19 — the pinned "On the trial list" section (variant H) ──
   //
@@ -354,7 +369,7 @@ export function FoodPicker({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {!searching && (
+        {!searching && !mixableOnly && (
           <View style={styles.zone}>
             <AddFoodCta onPress={onAddNew} />
           </View>
@@ -377,7 +392,7 @@ export function FoodPicker({
           </View>
         )}
 
-        {!searching && rotation.length > 0 && (
+        {!searching && rotationShown.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label={rotationLabel} header />
             {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
@@ -388,7 +403,7 @@ export function FoodPicker({
                 first) by getRecentFoods, so the morning food is the first tile at
                 breakfast. Reuses the same TileGrid the library groups use. */}
             <TileGrid
-              foods={rotation}
+              foods={rotationShown}
               compact
               onPickFood={onPickFood}
               onOpenDetail={onOpenDetail}
@@ -411,7 +426,7 @@ export function FoodPicker({
               // the food the owner just failed to find is exactly the one to snap.
               <>
                 <ThemedText style={styles.empty}>No matches.</ThemedText>
-                <AddFoodCta onPress={onAddNew} />
+                {!mixableOnly && <AddFoodCta onPress={onAddNew} />}
               </>
             ) : (
               <ThemedText style={styles.empty}>

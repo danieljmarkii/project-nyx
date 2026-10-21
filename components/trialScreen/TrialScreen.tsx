@@ -18,6 +18,7 @@
 // a Modal, so it may present them (C-14). *Replace* and *Start* hand off to the Pet tab,
 // where `StartTrialModal` must stay mounted (B-535; `lib/profileFocus`).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import type { TrialRouteOpen } from '../../lib/trialRoute';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
@@ -83,7 +84,7 @@ function useNextAppointment(petId: string): { id: string; when: string } | null 
   return state.petId === petId ? state.next : null;
 }
 
-export function TrialScreen({ petId }: { petId: string }) {
+export function TrialScreen({ petId, openOnArrive }: { petId: string; openOnArrive?: TrialRouteOpen }) {
   const pets = usePetStore((s) => s.pets);
   // CUL-1336: the list's own "answered" flag, so an account with no pets reaches
   // `unknown_pet` instead of a skeleton that never resolves (S9, C-12). A list with pets in
@@ -150,6 +151,19 @@ export function TrialScreen({ petId }: { petId: string }) {
   useEffect(() => {
     if (arrived) focusAccessibility(titleRef.current);
   }, [arrived]);
+
+  // CUL-2084 — the meal card's "+ End the trial" arrives here and opens the completion
+  // sheet on its outcome step (the label's own act) once the trial has loaded. Never the
+  // decision step: that one offers `Keep going`, and G1 (`guards/trialWindow.test.ts`)
+  // keeps it to the card's milestone action. Consumed in a ref before the call (C-22), so
+  // a re-render or a focus return never opens it a second time.
+  const openRequest = useRef(openOnArrive ?? null);
+  const lifecycleReady = dietTrial.inputIsForPet && dietTrial.input !== null;
+  useEffect(() => {
+    if (openRequest.current !== 'end' || !lifecycleReady) return;
+    openRequest.current = null;
+    lifecycle.openCompletion('complete');
+  }, [lifecycleReady, lifecycle]);
 
   const handOffToStart = useCallback(() => {
     router.push(profileStartTrialHref({ petId, nowMs: Date.now() }));

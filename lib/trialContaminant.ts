@@ -130,6 +130,7 @@ import {
 // `resolveTargetProtein` re-export — that function is now trialTargetProtein's
 // internal fallback arm, and a consumer importing it directly is review-blocking.
 import { offTrialProteins, trialTargetProtein, proteinList } from './trialProtein';
+import { proteinTrialLabel } from './trialProteinPicker';
 
 export { offTrialProteins, trialTargetProtein, proteinList } from './trialProtein';
 
@@ -158,6 +159,9 @@ export interface TrialProteinContext {
   /** Display name of the trial diet, for copy — the `primary_diet` rows, named.
    *  Null when nothing resolved. */
   trialFoodLabel: string | null;
+  /** The trial's protein, for naming it in copy only ("Rabbit trial"). Null names
+   *  nothing and falls back to "Diet trial"; it never decides a verdict. */
+  trialProtein: string | null;
   /** How many `primary_diet` rows the allowed set holds. ZERO disables every
    *  check (silence, never an all-clear) and is a real state: `diet_trials` can
    *  hydrate before `diet_trial_foods` does. */
@@ -260,6 +264,10 @@ export interface BowlFlagContext {
   /** The bowl was fed after the trial's own target end (P-5): the trial still reads as
    *  running, and the copy adds the one sentence that names ending it. */
   pastTarget: boolean;
+  /** For the past-target eyebrow (CUL-2084, mock frame 5a): "Rabbit trial" and the
+   *  trial's planned length. Optional so an older payload still renders. */
+  trialLabel?: string;
+  targetDays?: number | null;
 }
 
 /**
@@ -504,6 +512,9 @@ function display(key: string): string {
 export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
   headline: string;
   detail: string;
+  /** Only on a bowl fed past the trial's target (CUL-2084): "Rabbit trial · past its 42
+   *  days", the frame that makes P-5's sentence and its door read as one thing. */
+  eyebrow?: string;
 } {
   const detail =
     `${petName}’s ${proteinPhrase(flag.trialProteins)} trial should skip ` +
@@ -520,12 +531,26 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
       // of P-5's sentence, so nothing reads as needing undoing (Principle 1) and a slip on a
       // trial that is still running keeps its weight (pm-feature-review, CUL-2053).
       detail: flag.bowl.pastTarget ? `The meal’s saved, and it counts in the trial record. ${pastTargetLine(petName)}` : detail,
+      ...(flag.bowl.pastTarget ? { eyebrow: pastTargetEyebrow(flag.bowl) } : {}),
     };
   }
   return {
     headline: `This one has ${proteinList(flag.proteins)}.`,
     detail,
   };
+}
+
+/** The door beside P-5's sentence (CUL-2084): the sentence names ending the trial, so the
+ *  card carries the way to do it. Words only; the card renders the "+". */
+export const END_TRIAL_LINE = 'End the trial';
+
+/** The past-target eyebrow, mock frame 5a: "Rabbit trial · past its 42 days". A trial
+ *  with no protein to name reads "Diet trial"; one with no planned length reads "past its
+ *  planned end" rather than a number the record does not hold. */
+export function pastTargetEyebrow(bowl: BowlFlagContext): string {
+  const label = bowl.trialLabel ?? 'Diet trial';
+  const days = bowl.targetDays;
+  return days && days > 0 ? `${label} · past its ${days} days` : `${label} · past its planned end`;
 }
 
 /** P-5's sentence, on a mixed bowl fed past the trial's target end (ruled (a), PM,
@@ -560,18 +585,28 @@ export function membershipFlagCopy(petName: string, bowl?: BowlFlagContext): {
   eyebrow: string;
   headline: string;
   detail: string;
-  addLine: string;
+  /** Null on a bowl past the trial's target (CUL-2084, PM 2026-10-21): there the door
+   *  that matters is ending the trial, and two doors would crowd the card's densest
+   *  state. */
+  addLine: string | null;
 } {
   if (bowl) {
     // A MIXED BOWL names the component that is off the list (spec §5.2, §11). Still a
     // claim about the LIST, never about what the food contains.
+    if (bowl.pastTarget) {
+      return {
+        eyebrow: pastTargetEyebrow(bowl),
+        headline: `${bowl.foodLabel} isn’t on ${petName}’s trial list.`,
+        detail: `The meal’s saved, and it counts in the trial record. ${pastTargetLine(petName)}`,
+        addLine: null,
+      };
+    }
     return {
       eyebrow: 'Off the trial list',
       headline: `${bowl.foodLabel} isn’t on ${petName}’s trial list.`,
-      detail: bowl.pastTarget
-        ? `The meal’s saved, and it counts in the trial record. ${pastTargetLine(petName)}`
-        : 'The meal’s saved, and it counts in the trial record. If your vet okayed ' +
-          'this food, adding it to the list keeps the record straight.',
+      detail:
+        'The meal’s saved, and it counts in the trial record. If your vet okayed ' +
+        'this food, adding it to the list keeps the record straight.',
       addLine: 'Add to the trial list',
     };
   }
@@ -907,7 +942,7 @@ function parseConfidence(text: string | null): unknown {
  *  winner, and the row the SERVER accepted is the one every surface must agree
  *  on. Identical ordering to `ACTIVE_DIET_TRIAL_QUERY` and the card's own read. */
 const ACTIVE_TRIAL_SQL = `
-  SELECT id, started_at, ended_at, target_duration_days
+  SELECT id, started_at, ended_at, target_duration_days, target_protein
     FROM diet_trials
    WHERE pet_id = ? AND status = 'active'
    ORDER BY synced DESC, started_at DESC, id
@@ -937,6 +972,7 @@ interface TrialRow {
   started_at: string;
   ended_at: string | null;
   target_duration_days: number;
+  target_protein: string | null;
 }
 
 interface AllowedRow {
@@ -1055,6 +1091,12 @@ export async function loadTrialProteinContext(
     allowedFoods,
     trialFoodLabel:
       primaryRows.map((r) => r.food_label).filter(Boolean).join(' + ') || null,
+    // The trial's name for copy (CUL-2084's eyebrow), through the one resolver
+    // (`docs/nyx-trial-protein-requirements.md`): it NAMES, it never permits.
+    trialProtein: trialTargetProtein(
+      { target_protein: trial.target_protein ?? null },
+      primaryRows.map((r) => ({ primaryProtein: r.primary_protein })),
+    ).protein,
     primaryCount: primaryRows.length,
     primaryResolved: resolvedPrimary.length,
     // Compared against the RAW column, not against the narrowed value: the
@@ -1145,6 +1187,51 @@ async function readHeadsUpLedger(): Promise<HeadsUpLedger> {
   return headsUpLedger;
 }
 
+// ONE WRITER AT A TIME (CUL-2086, adversarial pass 1, R3). Every write below reads the
+// in-memory mirror, awaits storage, and swaps the mirror; two of them interleaved lose
+// one update (a forget filtering a copy a record has since replaced). A bowl edit made
+// the race reachable: its forget and the log path's record land on the same reveal. So
+// writes queue on one chain. Reads stay unqueued: a read that misses a pending record can
+// only show one extra heads-up, the loud direction.
+let ledgerChain: Promise<unknown> = Promise.resolve();
+function serializeLedger<T>(fn: () => Promise<T>): Promise<T> {
+  const run = ledgerChain.then(fn, fn);
+  ledgerChain = run.catch(() => undefined);
+  return run;
+}
+
+// WHICH MEAL SPENT EACH FOOD (CUL-2086, pass 1, R6). A food taken out of a bowl away from
+// its card (edit-event, a dismissed card) left the food spent on a feeding that no longer
+// contains it, and its real feeding later got no warning. The card cannot give it back
+// because the card is gone, so the ledger remembers the meal: "{trialId}\u001F{foodId}" →
+// eventId. Same storage class and the same wipe as the ledger itself.
+const HEADS_UP_BY_KEY = 'nyx.trialHeadsUpBy.v1';
+let spentBy: Record<string, string> | null = null;
+const spentKey = (trialId: string, foodId: string) => `${trialId}\u001F${foodId}`;
+
+async function readSpentBy(): Promise<Record<string, string>> {
+  if (spentBy) return spentBy;
+  try {
+    const raw = await AsyncStorage.getItem(HEADS_UP_BY_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    spentBy = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  } catch {
+    spentBy = {};
+  }
+  return spentBy;
+}
+
+async function writeSpentBy(next: Record<string, string>): Promise<void> {
+  spentBy = next;
+  try {
+    await AsyncStorage.setItem(HEADS_UP_BY_KEY, JSON.stringify(next));
+  } catch (e) {
+    console.warn('[trialContaminant] heads-up attribution write failed:', e);
+  }
+}
+
 /** Have we already shown a heads-up for this food under this trial? */
 export async function hasFlaggedFoodInTrial(trialId: string, foodId: string): Promise<boolean> {
   const ledger = await readHeadsUpLedger();
@@ -1153,10 +1240,27 @@ export async function hasFlaggedFoodInTrial(trialId: string, foodId: string): Pr
 
 /** Record that we just showed one. Best-effort: a write failure re-shows the
  *  heads-up next time, which is the harmless direction. */
-export async function recordFlaggedFoodInTrial(trialId: string, foodId: string): Promise<void> {
+export function recordFlaggedFoodInTrial(trialId: string, foodId: string, eventId?: string): Promise<void> {
+  return serializeLedger(() => recordUnqueued(trialId, foodId, eventId));
+}
+
+async function recordUnqueued(trialId: string, foodId: string, eventId?: string): Promise<void> {
+  // Only the meal that SPENT the food owns it: a re-note of a food already spoken for
+  // never moves the attribution to a later meal.
+  const added = await recordLedgerEntry(trialId, foodId);
+  if (!eventId || !added) return;
+  // Attribution follows the ledger's own bound: an entry for a trial the ledger has
+  // dropped can give nothing back, so it goes with it.
+  const by = await readSpentBy();
+  const live = headsUpLedger ?? {};
+  const kept = Object.fromEntries(Object.entries(by).filter(([k]) => k.split('\u001F')[0] in live));
+  await writeSpentBy({ ...kept, [spentKey(trialId, foodId)]: eventId });
+}
+
+async function recordLedgerEntry(trialId: string, foodId: string): Promise<boolean> {
   const ledger = await readHeadsUpLedger();
   const existing = Array.isArray(ledger[trialId]) ? ledger[trialId] : [];
-  if (existing.includes(foodId)) return;
+  if (existing.includes(foodId)) return false;
   // MERGE, never replace. An earlier cut wrote `{ [trialId]: … }` to prune dead
   // trials, which silently dropped every OTHER trial's entries — and multi-pet
   // ships free (B-086), so two littermates on two elimination trials is routine:
@@ -1179,6 +1283,7 @@ export async function recordFlaggedFoodInTrial(trialId: string, foodId: string):
   } catch (e) {
     console.warn('[trialContaminant] heads-up ledger write failed:', e);
   }
+  return true;
 }
 
 /**
@@ -1202,8 +1307,19 @@ export async function recordFlaggedFoodInTrial(trialId: string, foodId: string):
  * food simply stays spoken-for, which is the quiet direction rather than the
  * alarming one — but it never throws into a reversal that has already happened.
  */
-export async function forgetFlaggedFoodInTrial(trialId: string, foodId: string): Promise<void> {
+export function forgetFlaggedFoodInTrial(trialId: string, foodId: string): Promise<void> {
+  return serializeLedger(() => forgetUnqueued(trialId, foodId));
+}
+
+async function forgetUnqueued(trialId: string, foodId: string): Promise<void> {
   try {
+    const by = await readSpentBy();
+    const key = spentKey(trialId, foodId);
+    if (key in by) {
+      const next = { ...by };
+      delete next[key];
+      await writeSpentBy(next);
+    }
     const ledger = await readHeadsUpLedger();
     const existing = Array.isArray(ledger[trialId]) ? ledger[trialId] : [];
     if (!existing.includes(foodId)) return;
@@ -1221,18 +1337,42 @@ export async function forgetFlaggedFoodInTrial(trialId: string, foodId: string):
 
 /** Wipe the ledger. Called from the sign-out teardown alongside the context
  *  cache — it is per-account bookkeeping and must not leak across a switch. */
-export async function clearTrialHeadsUpLedger(): Promise<void> {
-  headsUpLedger = null;
-  try {
-    await AsyncStorage.removeItem(HEADS_UP_KEY);
-  } catch (e) {
-    console.warn('[trialContaminant] heads-up ledger clear failed:', e);
-  }
+export function clearTrialHeadsUpLedger(): Promise<void> {
+  return serializeLedger(async () => {
+    headsUpLedger = null;
+    spentBy = null;
+    for (const key of [HEADS_UP_KEY, HEADS_UP_BY_KEY]) {
+      try {
+        await AsyncStorage.removeItem(key);
+      } catch (e) {
+        console.warn('[trialContaminant] heads-up ledger clear failed:', e);
+      }
+    }
+  });
 }
 
-/** Test seam — reset the in-memory mirror without touching storage. */
+/**
+ * A bowl edit took foods out of a meal (CUL-2086, pass 1, R6): give back every food whose
+ * heads-up THAT meal spent and that the bowl no longer holds, so the food's real feeding
+ * later still gets its warning. Wherever the edit was made, on the card or away from it.
+ * Best-effort in the quiet direction, like the forget it runs.
+ */
+export function forgetFlagsSpentByEvent(eventId: string, keepFoodIds: readonly string[]): Promise<void> {
+  return serializeLedger(async () => {
+    const by = await readSpentBy();
+    for (const [key, owner] of Object.entries(by)) {
+      if (owner !== eventId) continue;
+      const [trialId, foodId] = key.split('\u001F');
+      if (!trialId || !foodId || keepFoodIds.includes(foodId)) continue;
+      await forgetUnqueued(trialId, foodId);
+    }
+  });
+}
+
+/** Test seam — reset the in-memory mirrors without touching storage. */
 export function resetHeadsUpLedgerCache(): void {
   headsUpLedger = null;
+  spentBy = null;
 }
 
 /**
@@ -1383,7 +1523,12 @@ export async function evaluateBowlLogTimeFlag(args: {
       if (await hasFlaggedFoodInTrial(ctx.trialId, c.foodId)) continue;
       const record = await readFoodProteinRecord(c.foodId);
       if (!record) continue;
-      const bowl: BowlFlagContext = { foodLabel: c.foodLabel, pastTarget };
+      const bowl: BowlFlagContext = {
+        foodLabel: c.foodLabel,
+        pastTarget,
+        trialLabel: proteinTrialLabel(ctx.trialProtein),
+        targetDays: ctx.spec.targetDurationDays ?? null,
+      };
       const protein = foodContaminantFlag(ctx, c.foodId, record.proteins, record.foodKey, args.occurredAt);
       if (protein) {
         contents.push({ ...protein, bowl });
@@ -1424,6 +1569,10 @@ export async function evaluateBowlLogTimeFlag(args: {
  * kind spoke). Typed structurally so a `TrialContaminantFlag`, a
  * `TrialMembershipFlag`, or the `LogTimeTrialFlag` union all satisfy it.
  */
-export async function noteTrialFlagShown(flag: { trialId: string; foodId: string }): Promise<void> {
-  await recordFlaggedFoodInTrial(flag.trialId, flag.foodId);
+export async function noteTrialFlagShown(
+  flag: { trialId: string; foodId: string },
+  /** The meal it was shown for, so a later bowl edit can give it back (CUL-2086). */
+  eventId?: string,
+): Promise<void> {
+  await recordFlaggedFoodInTrial(flag.trialId, flag.foodId, eventId);
 }

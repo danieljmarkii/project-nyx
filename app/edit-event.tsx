@@ -13,6 +13,13 @@ import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
+import { BowlEditor, type BowlPickerFood, type StagedBowlFood } from '../components/log/BowlEditor';
+import { loadMealBowls, type AppBowl } from '../lib/mealBowls';
+import { componentRowName } from '../lib/mealBowlLabel';
+import { setMealComponents } from '../lib/mealComponents';
+import { AMOUNT_UNITS, type AmountUnit } from '../lib/mealComposition';
+import { mixFoodOf } from '../lib/mixCard';
+import { bowlDetailLine } from '../lib/mixDetail';
 import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { writeOwingFloorCheck } from '../lib/incidentFloorQueue';
 import { triggerSignalRegenDebounced } from '../lib/signal';
@@ -41,6 +48,30 @@ import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel 
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
 import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer } from '../components/ui';
+
+/** A bowl as the editor stages it, in position order. */
+function stagedFromBowl(bowl: AppBowl): StagedBowlFood[] {
+  return bowl.components
+    .filter((c) => c.foodItemId !== null)
+    .map((c) => ({
+      foodItemId: c.foodItemId as string,
+      foodLabel: c.foodLabel,
+      rowName: componentRowName(c),
+      share: c.share ?? c.normalizedShare ?? 0,
+      shareSource: c.shareSource === 'preset' || c.shareSource === 'amounts' ? c.shareSource : 'custom',
+      amountValue: c.amountValue,
+      amountUnit: c.amountUnit,
+    }));
+}
+
+/** What Save compares against the loaded bowl: the foods, in order, and their shares. */
+function bowlSignature(foods: readonly StagedBowlFood[]): string {
+  return foods.map((f) => `${f.foodItemId}:${f.share}`).join('|');
+}
+
+function isAmountUnit(u: string | null): u is AmountUnit {
+  return u !== null && (AMOUNT_UNITS as readonly string[]).includes(u);
+}
 
 interface CachedFood {
   id: string;
@@ -154,6 +185,14 @@ export default function EditEventModal() {
   // brand + product alone cannot say whether that is the wet or the dry of one product.
   const [currentFoodFormat, setCurrentFoodFormat] = useState<string | null>(null);
   const [showFoodPicker, setShowFoodPicker] = useState(false);
+  // Mixed meals row 5 (spec §7.1, D-M4) — a mixed bowl's foods, staged until Save. Null
+  // for a plain meal, which keeps the single food row below exactly as it was.
+  const [bowlFoods, setBowlFoods] = useState<StagedBowlFood[] | null>(null);
+  const loadedBowlRef = useRef<string | null>(null);
+  // A mix this screen must not rewrite: a food in it is gone from the library (its id was
+  // purged), the bowl is incomplete on this phone, or its read failed. Saving a staged set
+  // there would drop a food, and with it an exposure, so the foods are shown and kept.
+  const [bowlReadOnly, setBowlReadOnly] = useState<string | null>(null);
   const [foods, setFoods] = useState<CachedFood[]>([]);
 
   // WSAVA intake (B-014). Held in local state and persisted on Save —
@@ -222,7 +261,25 @@ export default function EditEventModal() {
     if (!id) return;
 
     if (config.hasFood) {
-      getMealForEvent(id).then((meal) => {
+      getMealForEvent(id).then(async (meal) => {
+        if (meal && !meal.food_item_id) {
+          // A mix names no food on its row (T2): read its bowl. A failed read leaves the
+          // bowl editor out, and Save then writes no food at all, never a single food over
+          // a mix.
+          try {
+            const bowl = (await loadMealBowls([id])).get(id) ?? null;
+            if (bowl && bowl.status === 'mix' && bowl.components.every((c) => c.foodItemId !== null)) {
+              const staged = stagedFromBowl(bowl);
+              setBowlFoods(staged);
+              loadedBowlRef.current = bowlSignature(staged);
+            } else if (bowl) {
+              setBowlReadOnly(bowlDetailLine(bowl));
+            }
+          } catch (e) {
+            console.warn('[edit-event] bowl read failed:', e);
+            setBowlReadOnly('');
+          }
+        }
         if (meal) {
           setCurrentFoodId(meal.food_item_id);
           loadedFoodRef.current = meal.food_item_id;
@@ -312,6 +369,18 @@ export default function EditEventModal() {
     if (!showFoodPicker) return;
     loadFoods();
   }, [showFoodPicker]);
+
+  // The bowl editor's "Change" list: meal foods only (R1), the picker's own archive rule.
+  async function loadMixableFoods(): Promise<BowlPickerFood[]> {
+    return getDb().getAllAsync<BowlPickerFood>(
+      `SELECT id, brand, product_name, format
+       FROM food_items_cache
+       WHERE archived_at IS NULL AND food_type = 'meal' AND COALESCE(format, '') <> 'topper'
+       GROUP BY LOWER(brand), LOWER(product_name)
+       ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
+       LIMIT 30`,
+    );
+  }
 
   async function loadFoods() {
     const db = getDb();
@@ -563,7 +632,22 @@ export default function EditEventModal() {
         });
       }
 
-      if (config.hasFood && currentFoodId) {
+      // A mixed bowl saves its whole staged set through the bowl's one writer, and only
+      // when it changed; it never takes `updateMealFood`, which would name one food on a
+      // row whose components say otherwise.
+      const bowlChanged = bowlFoods !== null && bowlSignature(bowlFoods) !== loadedBowlRef.current;
+      if (config.hasFood && bowlFoods !== null) {
+        if (bowlChanged) {
+          await setMealComponents(id, bowlFoods.map((f) => ({
+            foodItemId: f.foodItemId,
+            foodLabel: f.foodLabel,
+            share: f.share,
+            shareSource: f.shareSource,
+            amountValue: f.amountValue,
+            amountUnit: isAmountUnit(f.amountUnit) ? f.amountUnit : null,
+          })));
+        }
+      } else if (config.hasFood && currentFoodId && bowlReadOnly === null) {
         await updateMealFood(id, currentFoodId);
       }
 
@@ -702,10 +786,17 @@ export default function EditEventModal() {
         // outcomes are not editable — an absence is a different observation, not a
         // correction), so it is not restated here.
         ...(isLook ? { look_note: lookNote.trim() || null } : {}),
-        food_item_id: currentFoodId,
-        food_brand: currentFoodBrand,
-        food_product_name: currentFoodProduct,
-        food_format: currentFoodFormat,
+        // A bowl left with one food is a plain meal of it; a mix names none (T2).
+        ...(bowlFoods !== null
+          ? bowlFoods.length === 1
+            ? { food_item_id: bowlFoods[0].foodItemId }
+            : { food_item_id: null, food_brand: null, food_product_name: null, food_format: null }
+          : {
+              food_item_id: currentFoodId,
+              food_brand: currentFoodBrand,
+              food_product_name: currentFoodProduct,
+              food_format: currentFoodFormat,
+            }),
         intake_rating: intakeRating,
         ...(isMedication && dose ? { adherence, how_given: howGiven } : {}),
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
@@ -725,7 +816,8 @@ export default function EditEventModal() {
         (newAttachmentUri != null && !isReadable) ||
         // A food cleared to none writes nothing (`updateMealFood` is skipped above), so only
         // a food set to another one counts.
-        (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current);
+        (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current) ||
+        bowlChanged;
       if (!isLook && engineInputMoved) {
         // Best effort, after the edit is stored: a failed lookup never reports the save failed.
         try {
@@ -915,8 +1007,37 @@ export default function EditEventModal() {
             </>
           )}
 
+          {/* Mixed meals row 5 — a mixed bowl's foods, each with Change and Take out,
+              staged until Save (spec §7.1, D-M4). */}
+          {config.hasFood && bowlFoods !== null ? (
+            <>
+              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <BowlEditor
+                foods={bowlFoods}
+                onChange={setBowlFoods}
+                loadChoices={loadMixableFoods}
+                toStaged={(food, replacing) => ({
+                  ...replacing,
+                  ...mixFoodOf({ id: food.id, brand: food.brand, product_name: food.product_name, format: food.format }),
+                })}
+              />
+            </>
+          ) : null}
+
+          {config.hasFood && bowlReadOnly !== null ? (
+            <>
+              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              {bowlReadOnly ? <ThemedText style={styles.foodProduct}>{bowlReadOnly}</ThemedText> : null}
+              <ThemedText style={styles.foodBrand}>
+                {bowlReadOnly
+                  ? 'One of these foods isn’t on this phone, so the bowl’s foods can’t be changed here. Everything else saves as usual.'
+                  : 'This bowl’s foods didn’t load, so they can’t be changed here. Everything else saves as usual.'}
+              </ThemedText>
+            </>
+          ) : null}
+
           {/* Food (meal events only) */}
-          {config.hasFood ? (
+          {config.hasFood && bowlFoods === null && bowlReadOnly === null ? (
             <>
               <SectionLabel label="Food" style={{ marginTop: theme.space3, marginBottom: 4 }} />
               <TouchableOpacity

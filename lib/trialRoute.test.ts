@@ -19,4 +19,10 @@ describe('trialScreenHref / parseTrialRouteParams', () => {
     expect(parseTrialRouteParams({ pet: '' })).toBeNull();
     expect(parseTrialRouteParams({ pet: [] })).toBeNull();
   });
+
+  it('carries the end-trial door (CUL-2084), and an unknown open value opens nothing', () => {
+    expect(trialScreenHref('pet-1', { open: 'end' })).toBe('/trial/pet-1?open=end');
+    expect(parseTrialRouteParams({ pet: 'pet-1', open: 'end' })).toEqual({ petId: 'pet-1', open: 'end' });
+    expect(parseTrialRouteParams({ pet: 'pet-1', open: 'delete' })).toEqual({ petId: 'pet-1' });
+  });
 });

@@ -767,7 +767,7 @@ export default function FoodCaptureScreen() {
         // has to mean given.
         if (cardTrialFlag) {
           void whenMealCardVisible(loggedMeal.eventId)
-            .then((shown) => (shown ? noteTrialFlagShown(cardTrialFlag) : undefined))
+            .then((shown) => (shown ? noteTrialFlagShown(cardTrialFlag, loggedMeal.eventId) : undefined))
             // A failed ledger write costs at most ONE extra heads-up later, never a
             // suppressed one — the safe direction, and the same one readHeadsUpLedger
             // already fails in. Never let it surface: the meal is saved and this is

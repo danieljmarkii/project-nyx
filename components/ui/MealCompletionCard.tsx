@@ -25,7 +25,13 @@ import { rateMealIntake } from '../../lib/meals';
 import { syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
-import { mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
+import { END_TRIAL_LINE, mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
+import { trialScreenHref } from '../../lib/trialRoute';
+import { bowlWithShares, cardBowlLabel, normalisedShares, type CardBowl } from '../../lib/mixCard';
+import { MIX_STOPS, stepStop, stopLabel, type StepToward } from '../../lib/mixRatio';
+import { shareGlyph } from '../../lib/mealBowlLabel';
+import { setMealComponents } from '../../lib/mealComponents';
+import { holdMixReturn } from '../../lib/mixReturn';
 import { foodFormatTag } from '../../lib/food';
 import { unfinishedIntakePhrase } from '../../lib/dayEvents';
 import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
@@ -50,6 +56,9 @@ import { TAB_HEIGHT } from '../nav/NyxTabBar';
 // confirmed before dismiss. Per the B-014 persona round: snatching it away
 // immediately reads as the system overriding the input.
 const INTAKE_CONFIRM_HOLD_MS = 1500;
+// Mixed meals row 5 (§7.5): a stepper tap holds the card as long as a chip tap does, so
+// the owner sees the split land before the card goes. The same 1500 ms, named for its use.
+const STEPPER_HOLD_MS = INTAKE_CONFIRM_HOLD_MS;
 
 // CUL-1643 / CUL-1691 §2.2 — the FAB's meal mark lands in this card's check. While it
 // flies the card crossfades in place (never the rise) with its own mark hidden; the
@@ -152,10 +161,62 @@ interface AddTarget {
 // meal is saved before the panel resolves, and adding is optional. Both kinds
 // render only when evaluateMealLogTimeFlag returned a flag; the absence of either
 // is never an all-clear, and there is deliberately no "no conflict" state.
+/**
+ * The two-way stepper on a mixed bowl's card (Mixed meals row 5; spec §7.1, §7.5):
+ * "‹ More Chicken · ⅓·⅔ · More Rabbit ›". Each side is named for its food, never "up" or
+ * "down", and neither is emphasised: the app has no direction of its own (R4). An end stop
+ * dims to 0.4 and says why (C-7). No auto-repeat; one tap is one stop.
+ */
+function MixStepper({ bowl, fade, onStep }: {
+  bowl: CardBowl;
+  fade: Animated.Value;
+  onStep: (toward: StepToward) => void;
+}) {
+  const [a, b] = bowl.foods;
+  const firstShare = normalisedShares(bowl)[0];
+  const atFirstEnd = stepStop(firstShare, 'first') === null;
+  const atSecondEnd = stepStop(firstShare, 'second') === null;
+  const onStop = MIX_STOPS.some((st) => Math.abs(st - firstShare) <= 0.002);
+  const value = onStop ? stopLabel(firstShare) : `${shareGlyph(firstShare)}·${shareGlyph(1 - firstShare)}`;
+  const side = (food: typeof a, toward: StepToward, atEnd: boolean, glyph: string) => {
+    const share = toward === 'first' ? firstShare : 1 - firstShare;
+    const label = atEnd
+      ? `More ${food.rowName} in this bowl. Already at ${shareGlyph(share)}, the most the steps go.`
+      : `More ${food.rowName} in this bowl`;
+    return (
+      <TouchableOpacity
+        style={[styles.stepSide, toward === 'second' && styles.stepSideRight, atEnd && styles.stepEnd]}
+        onPress={() => onStep(toward)}
+        disabled={atEnd}
+        hitSlop={toward === 'first' ? HITSLOP_ACTION_LEFT : HITSLOP_ACTION_RIGHT}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: atEnd }}
+        testID={`mix-step-${toward}`}
+      >
+        <ThemedText style={styles.stepText} numberOfLines={1}>
+          {toward === 'first' ? `${glyph} More ${food.rowName}` : `More ${food.rowName} ${glyph}`}
+        </ThemedText>
+      </TouchableOpacity>
+    );
+  };
+  return (
+    <View style={styles.stepRow}>
+      {side(a, 'first', atFirstEnd, '‹')}
+      <Animated.View style={[styles.stepValueWrap, { opacity: fade }]}>
+        <ThemedText style={styles.stepValue} accessibilityLabel={`${shareGlyph(firstShare)} ${a.rowName}, ${shareGlyph(1 - firstShare)} ${b.rowName}`}>
+          {value}
+        </ThemedText>
+      </Animated.View>
+      {side(b, 'second', atSecondEnd, '›')}
+    </View>
+  );
+}
+
 export function MealCompletionCard() {
   const {
     visible, payload, removed, undoing, hide, undo, patchOccurredAt, patchIntakeRating, rescheduleHide,
-    pauseDwell, resumeDwell, armRemovedDwell,
+    pauseDwell, resumeDwell, armRemovedDwell, patchMealBowl,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
@@ -167,6 +228,23 @@ export function MealCompletionCard() {
   // CUL-1633 — read in the render, as the FAB and the named card do: the store has the
   // OS answer before the first frame (CUL-1123), and unknown reads as still (C-43).
   const reduced = useReducedMotion();
+  // Mixed meals row 5 (§7.5) — the stepper's value and the title crossfade in place when
+  // the bowl's split moves: the new words fade up over the label fade the card already
+  // uses. No roll, no number motion; instant under Reduce Motion.
+  const stepFade = useRef(new Animated.Value(1)).current;
+  const bowlKey = payload?.kind === 'meal' && payload.bowl ? cardBowlLabel(payload.bowl) : null;
+  const lastBowlKey = useRef(bowlKey);
+  useEffect(() => {
+    const prev = lastBowlKey.current;
+    lastBowlKey.current = bowlKey;
+    if (prev === null || bowlKey === null || prev === bowlKey || reduced) return;
+    stepFade.setValue(0);
+    Animated.timing(stepFade, {
+      toValue: 1,
+      duration: COMPLETION_MOTION.labelFadeMs,
+      useNativeDriver: true,
+    }).start();
+  }, [bowlKey, reduced, stepFade]);
   const appActive = useAppActive();
 
   // The eventId the picker was OPENED for; null while closed (CUL-709). Captured at
@@ -521,7 +599,9 @@ export function MealCompletionCard() {
   function handleAddMed() {
     if (!isMeal) return;
     if (inertNow(payload.eventId)) return;
-    const foodName = [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim();
+    const foodName = payload.bowl
+      ? cardBowlLabel(payload.bowl)
+      : [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim();
     hide();
     router.push({
       pathname: '/log',
@@ -533,6 +613,50 @@ export function MealCompletionCard() {
         pairedFoodName: foodName,
       },
     });
+  }
+
+  // Mixed meals row 5 (spec §7.1, P-1 (a)) — the first mix. The card hides and the mix
+  // route opens bound to THIS meal (its event and its pet, never a re-read active pet,
+  // C-9); the split's chip tap writes the bowl and brings this card back as the mix. The
+  // card is held as it hides so it returns with what it showed: the intake answer and the
+  // trial heads-up whose budget is already spent (lib/mixReturn.ts).
+  function handleMix() {
+    if (!isMeal) return;
+    if (inertNow(payload.eventId)) return;
+    holdMixReturn({ ...payload });
+    hide();
+    router.push({ pathname: '/mix', params: { event: payload.eventId, pet: payload.petId, from: 'card' } });
+  }
+
+  // The stepper (§7.1, §7.5): one tap moves the bowl one stop toward the named food, in
+  // either direction, and the app never picks which (R4). Optimistic like the intake chips:
+  // the card moves at once and goes back if the write fails, which is said.
+  async function handleStep(toward: StepToward) {
+    if (!isMeal || !payload.bowl || payload.bowl.foods.length !== 2) return;
+    const eventId = payload.eventId;
+    if (inertNow(eventId)) return;
+    const before: CardBowl = payload.bowl;
+    const firstShare = normalisedShares(before)[0];
+    const stop = stepStop(firstShare, toward);
+    if (stop === null) return;
+    const share = MIX_STOPS[stop];
+    const next: CardBowl = {
+      foods: [
+        { ...before.foods[0], share },
+        { ...before.foods[1], share: 1 - share },
+      ],
+    };
+    // The store plays the step's tick (`selectChip`, the same both ways, §7.5): this card
+    // is a safety surface and imports no haptics (D7, guards/haptics.test.ts).
+    if (!patchMealBowl(eventId, next, { tick: true })) return;
+    rescheduleHide(STEPPER_HOLD_MS);
+    try {
+      await setMealComponents(eventId, bowlWithShares(next, share));
+    } catch (e) {
+      console.error('[meal-card] ratio step failed:', e);
+      patchMealBowl(eventId, before, { tick: false });
+      Alert.alert('Couldn’t save that', 'Something went wrong. Please try again.');
+    }
   }
 
   // CUL-612 — see the module header. 'ignored' is silent (a second tap, or a card
@@ -558,13 +682,16 @@ export function MealCompletionCard() {
   // line has no truncating-name-plus-badge layout to protect, and the card is a
   // sentence ("Logged · …"), so a parenthetical reads better than a caps tag.
   const formatTag = foodFormatTag(meal?.foodFormat);
-  const foodName = [
+  const plainName = [
     [meal?.foodBrand, meal?.foodProductName].filter(Boolean).join(' ').trim(),
     formatTag ? `(${formatTag.charAt(0)}${formatTag.slice(1).toLowerCase()})` : '',
   ]
     .filter(Boolean)
     .join(' ')
     .trim();
+  // A MIXED BOWL is named as History names it ("⅓ Chicken Pâté + ⅔ Rabbit Pâté"), from the
+  // bowl the card just wrote (Mixed meals row 5).
+  const foodName = meal?.bowl ? cardBowlLabel(meal.bowl) : plainName;
   // CUL-614 — the nameless-food fallback says "Food logged", never a bare "Logged":
   // §5's sentence rule is that a beat names the record, and a card that has lost the
   // food's name still knows it wrote food. Deliberately NOT "Meal logged" / "Treat
@@ -663,6 +790,18 @@ export function MealCompletionCard() {
       food: { id: trialFlag.foodId, brand, product_name, food_type: payload.foodType },
     });
     hide();
+  }
+
+  // CUL-2084 — the past-target bowl heads-up names ending the trial, so it carries the
+  // door: the trial screen's own completion sheet, on its outcome step, never a second
+  // end path. Dismisses the card first, as every hand-off from it does. The pet
+  // is the meal's (C-9), never the active one.
+  const pastTarget = trialFlag?.bowl?.pastTarget === true;
+  function handleEndTrial() {
+    if (!isMeal) return;
+    if (inertNow(payload.eventId)) return;
+    hide();
+    router.push(trialScreenHref(payload.petId, { open: 'end' }));
   }
 
   async function handleAddConfirm() {
@@ -781,9 +920,14 @@ export function MealCompletionCard() {
               accessibilityLiveRegion={removed ? undefined : 'polite'}
               accessibilityLabel={headerLabel}
             >
-              <ThemedText style={styles.title} numberOfLines={1}>
-                {headline}
-              </ThemedText>
+              {/* A bowl's title gets a second line rather than losing its second food (C-8:
+                  the ratio is the half the card states once). It crossfades in place when
+                  the stepper moves it (§7.5), and never rolls. */}
+              <Animated.View style={{ opacity: stepFade }}>
+                <ThemedText style={styles.title} numberOfLines={meal?.bowl ? 2 : 1}>
+                  {headline}
+                </ThemedText>
+              </Animated.View>
               <ThemedText style={styles.subLabel}>{occurredTime}</ThemedText>
             </Animated.View>
             {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
@@ -845,11 +989,25 @@ export function MealCompletionCard() {
             <View
               style={styles.flagWrap}
               accessibilityRole="summary"
-              accessibilityLabel={`${contentsCopy.headline} ${contentsCopy.detail}`}
+              accessibilityLabel={[contentsCopy.eyebrow, contentsCopy.headline, contentsCopy.detail].filter(Boolean).join('. ')}
             >
+              {contentsCopy.eyebrow && (
+                <ThemedText style={styles.flagEyebrow}>{contentsCopy.eyebrow}</ThemedText>
+              )}
               <ThemedText style={styles.flagHeadline}>{contentsCopy.headline}</ThemedText>
               <ThemedText style={styles.flagDetail}>{contentsCopy.detail}</ThemedText>
             </View>
+          )}
+          {contentsCopy && pastTarget && (
+            <TouchableOpacity
+              style={styles.membershipAddRow}
+              onPress={handleEndTrial}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={END_TRIAL_LINE}
+            >
+              <ThemedText style={styles.membershipAddText}>+ {END_TRIAL_LINE}</ThemedText>
+            </TouchableOpacity>
           )}
           {/* B-693 — the rung-3 MEMBERSHIP heads-up ("this isn't on the trial
               list"), as the amber "attention" inset panel (design-locked mock round
@@ -870,6 +1028,20 @@ export function MealCompletionCard() {
                   <ThemedText style={styles.flagHeadline}>{membershipCopy.headline}</ThemedText>
                   <ThemedText style={styles.flagDetail}>{membershipCopy.detail}</ThemedText>
                 </View>
+                {pastTarget && (
+                  <TouchableOpacity
+                    style={styles.membershipAddRow}
+                    onPress={handleEndTrial}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={END_TRIAL_LINE}
+                  >
+                    <ThemedText style={styles.membershipAddText}>+ {END_TRIAL_LINE}</ThemedText>
+                  </TouchableOpacity>
+                )}
+                {/* Hidden past the trial's target (CUL-2084, PM 2026-10-21): the door that
+                    matters there is ending the trial. */}
+                {membershipCopy.addLine && (
                 <TouchableOpacity
                   style={styles.membershipAddRow}
                   onPress={handleAddToTrialList}
@@ -882,8 +1054,26 @@ export function MealCompletionCard() {
                       way the combo row hardcodes its own "+ Add …" literal below. */}
                   <ThemedText style={styles.membershipAddText}>+ {membershipCopy.addLine}</ThemedText>
                 </TouchableOpacity>
+                )}
               </View>
             </View>
+          )}
+          {/* Mixed meals row 5 (P-1 (a), spec §7.1) — ONE mixing slot, meals only. A plain
+              meal offers "+ Mixed with another food"; once the meal is a two-food bowl the
+              same slot is the stepper. A door stays still (§7.5): no pulse, no gold. */}
+          {payload.foodType === 'meal' && !payload.bowl && (
+            <TouchableOpacity
+              style={styles.comboRow}
+              onPress={handleMix}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Mixed with another food. Add the other food in ${mealPetName}’s bowl`}
+            >
+              <ThemedText style={styles.comboText}>+ Mixed with another food</ThemedText>
+            </TouchableOpacity>
+          )}
+          {payload.bowl && payload.bowl.foods.length === 2 && (
+            <MixStepper bowl={payload.bowl} fade={stepFade} onStep={(t) => { void handleStep(t); }} />
           )}
           {/* B-156 PR B2b — the opt-in combo line (meal/treat only). The quietest line
               on the card; the no-med majority reads past it, the few who hid a pill in
@@ -1086,6 +1276,16 @@ const styles = StyleSheet.create({
     paddingTop: theme.space1,
     gap: 2,
   },
+  // CUL-2084 — the past-target frame ("Rabbit trial · past its 42 days"), the same
+  // micro-caps as the membership eyebrow in the card's calm secondary ink: a contents
+  // line stays divider-only, never tinted.
+  flagEyebrow: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   flagHeadline: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
@@ -1153,6 +1353,42 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     fontWeight: theme.weightMedium,
+  },
+  // The stepper (Mixed meals row 5). The mixing slot's row, split three ways: the two
+  // named sides share the width and may truncate a long name, the split between them never
+  // shrinks (C-8). Sides are 44pt tall; the value sits between them with the gap the
+  // asymmetric slops need (C-5).
+  stepRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorderStrong,
+    paddingTop: theme.space1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: theme.space2,
+  },
+  stepSide: {
+    flex: 1,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  stepSideRight: {
+    alignItems: 'flex-end',
+  },
+  stepEnd: {
+    opacity: 0.4,
+  },
+  stepText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    fontWeight: theme.weightMedium,
+  },
+  stepValueWrap: {
+    flexShrink: 0,
+  },
+  stepValue: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    fontWeight: theme.weightSemibold,
   },
 
 });
