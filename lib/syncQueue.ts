@@ -327,6 +327,11 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   // LWW on updated_at (Change edits the row). PARENT-GATED: 097's same-pet guard runs
   // before the foreign key, so an answer sent ahead of its vomit is a TERMINAL 23514.
   { table: 'intake_checks', pendingSince: 'updated_at' },
+  // Mixed meals row 2 (CUL-2051) — the foods in a mixed bowl. LWW on updated_at (a food
+  // taken out is a tombstone). PARENT-GATED on its event AND its meal row
+  // (`mealComponentsLandedSql`): 105's same-pet guard answers an unseen event with a
+  // TERMINAL 23514.
+  { table: 'meal_components', pendingSince: 'updated_at' },
   // Insert-only: no updated_at column exists (an attachment row is never edited
   // in place), so created_at is the honest and only age.
   { table: 'event_attachments', pendingSince: 'created_at' },
@@ -532,6 +537,11 @@ export const PARENT_GATED_QUEUES = {
   //   its own answer. Its 23503 is final there (`pushRows`' `parentRefused`), and when the
   //   log is fixed and lands, its children get a fresh try (`rearmChildrenOf`, lib/sync.ts).
   meals: [{ parent: 'events', column: 'event_id' }],
+  // • meal_components (Mixed meals row 2, CUL-2051) → the bowl's event. 105's same-pet
+  //   guard runs BEFORE the foreign key, so a component sent ahead of an offline-logged
+  //   meal is a TERMINAL 23514. Its meal row is keyed by event_id, not id, so that half of
+  //   the gate is `mealComponentsLandedSql`'s own clause.
+  meal_components: [{ parent: 'events', column: 'event_id' }],
   weight_checks: [{ parent: 'events', column: 'event_id' }],
   looks: [{ parent: 'events', column: 'event_id' }],
 } as const satisfies Record<string, readonly { parent: string; column: string }[]>;
@@ -628,6 +638,30 @@ export function floorTriggerLandedSql(): string {
      AND NOT EXISTS (SELECT 1 FROM intake_checks gate_i
      WHERE gate_i.event_id = incident_floor_queue.event_id
        AND gate_i.synced = 0 AND gate_i.sync_error IS NULL)`;
+}
+
+/**
+ * A bowl's components go up after its event AND its meal row (spec §3: events → meals →
+ * components), in EN-4's shape above. The event half is the 23514 the guard would answer;
+ * the meal half keeps the parent's `food_item_id = NULL` and count landing no later than
+ * the rows they describe, so an older build never reads a mix's components beside a parent
+ * that still names one food. A quarantined parent holds nothing, as everywhere else.
+ */
+export function mealComponentsLandedSql(): string {
+  return `${parentLandedSql('meal_components')}
+     AND NOT EXISTS (SELECT 1 FROM meals gate_m
+     WHERE gate_m.event_id = meal_components.event_id
+       AND gate_m.synced = 0 AND gate_m.sync_error IS NULL)`;
+}
+
+/** The components drain's queue read, exported so a test replays the shipped statement.
+ *  Ordered by event and position so a bowl's set travels in one batch where it can. A set
+ *  split by the LIMIT lands in two pushes, and a reader between them sees `incomplete`,
+ *  never one food (lib/mealComposition.ts). */
+export function mealComponentsPushQueueSql(): string {
+  return `SELECT * FROM meal_components WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${mealComponentsLandedSql()}
+      ORDER BY event_id ASC, position ASC, id ASC LIMIT 200`;
 }
 
 /** The re-check drain's queue read, exported so `syncQueue.visitLink.test.ts` replays the
