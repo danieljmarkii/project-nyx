@@ -2742,6 +2742,9 @@ export interface ConfounderExposure {
   /** A mixed bowl whose foods were edited more than 24h after the meal: the day of the
    *  edit (CUL-2052, §7.3). The record changed after the fact, so the row says when. */
   editedOn?: string | null
+  /** A mixed bowl's recorded intake (the bowl's, never a food's); null when unrated.
+   *  Absent on a plain feeding. */
+  bowlIntake?: IntakeRating | null
 }
 
 /**
@@ -3234,6 +3237,14 @@ export function bowlLabel(bowl: ReportMealBowl): string {
   return bowl.status === 'incomplete'
     ? `${names.join(' + ')} + another food, mixed (record incomplete)`
     : `${names.join(' + ')}, mixed`
+}
+
+type MixPhase = 'none' | 'before' | 'during' | 'after'
+const MIX_PHASE_SUFFIX: Record<MixPhase, string> = {
+  none: '',
+  before: ', before Day 1 (the switch)',
+  during: ', during the trial',
+  after: ', after the trial',
 }
 
 interface MixRowBuild {
@@ -4571,6 +4582,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }
   }
 
+  // Where a mixed bowl falls against the selected trial: the switch before Day 1, inside
+  // the trial, or after it ended. No trial: one phase.
+  const trialStartNum = reportTrialInput ? dayNumber(reportTrialInput.startedAt) : null
+  const trialEndRaw = reportTrialInput ? reportTrialInput.endedAt ?? reportTrialInput.completedAt ?? null : null
+  const trialEndNum = trialEndRaw ? dayNumber(localDayKey(trialEndRaw, tz) ?? trialEndRaw) : null
+  const mixPhaseOf = (dayKey: string | null): MixPhase => {
+    const dn = dayKey === null ? null : dayNumber(dayKey)
+    if (trialStartNum === null || dn === null) return 'none'
+    if (dn < trialStartNum) return 'before'
+    if (trialEndNum !== null && dn > trialEndNum) return 'after'
+    return 'during'
+  }
+
   /** A mixed bowl's protein view: the union of its components' own views, each taking
    *  the trial-diet rule only for the component that IS the trial diet. Complete only
    *  when every component's set is (D10): one unread component leaves the bowl open. */
@@ -4670,8 +4694,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // share is NAMED, first bowl to last, so a ramp cannot print inverted when the food
     // logged first differs between bowls.
     if (m.bowl) {
-      const key = `mix|${m.bowl.compositionKey}`
+      // SPLIT BY THE TRIAL'S PHASE (cold read, CUL-2052): the switch bowls before Day 1 and
+      // an off-diet bowl inside the trial are different clinical facts, and one row with
+      // one ramp let a vet read the in-trial bowl as where the switch ended.
       const dayKey = localDayKey(e.occurredAt, tz)
+      const phase = mixPhaseOf(dayKey)
+      const key = `mix|${phase}|${m.bowl.compositionKey}`
       const ms = Date.parse(e.occurredAt)
       const g = mealGroups.get(key)
       if (g) {
@@ -4688,7 +4716,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         if (ms > mix.lastMs) { mix.lastMs = ms; mix.last = m.bowl }
       } else {
         mealGroups.set(key, {
-          foodLabel: bowlLabel(m.bowl),
+          foodLabel: `${bowlLabel(m.bowl)}${MIX_PHASE_SUFFIX[phase]}`,
           format: null,
           primaryProtein: null,
           count: 1,
@@ -5556,6 +5584,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       attributionChecked: x?.attributionChecked ?? true,
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
       editedOn: editedAfter,
+      // The bowl was OFFERED; what was eaten of it is unknown, and a refused bowl may mean
+      // little of the off-list food was eaten (cold read). Counted as an exposure all the
+      // same (presence, §5.1): the row says which, so the vet can weigh it.
+      bowlIntake: e.meal!.intakeRating ?? null,
     }
   }
 

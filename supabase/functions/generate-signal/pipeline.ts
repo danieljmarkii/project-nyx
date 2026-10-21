@@ -90,7 +90,7 @@ import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
-import { bowlOf, MEAL_BOWL_SELECT, type MealBowl, type MealComponentJoin } from '../_shared/mealBowl.ts'
+import { bowlFoodType, bowlOf, MEAL_BOWL_SELECT, type MealBowl, type MealComponentJoin } from '../_shared/mealBowl.ts'
 import {
   buildBuildingText,
   canRenderCarried,
@@ -423,14 +423,7 @@ function mapBowlRow(
       if (p && !proteins.includes(p)) proteins.push(p)
     }
   }
-  const types = bowl.components.map((c) => c.food?.food_type ?? null)
-  const foodType = (
-    types.length > 0 && types.every((t) => t === 'treat')
-      ? 'treat'
-      : types.includes('meal')
-        ? 'meal'
-        : types.find((t) => t !== null && t !== 'treat') ?? null
-  ) as 'meal' | 'treat' | 'other' | null
+  const foodType = bowlFoodType(bowl.components.map((c) => c.food?.food_type)) as 'meal' | 'treat' | 'other' | null
   const labelOf = (c: MealBowl<FoodItemJoin>['components'][number]): string =>
     (c.food ? `${c.food.brand} ${c.food.product_name}`.trim() : '') || c.foodLabel
   const labels = bowl.components.map(labelOf)

@@ -1223,7 +1223,7 @@ function classifyBowl(ctx: TrialContext, feeding: TrialFeeding): FeedingClassifi
   antigens.sort();
   const detail = { components: perComponent, componentFoods: parts };
 
-  if (feeding.incompleteBowl || parts.length === 0) {
+  if (parts.length === 0) {
     return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
   }
   let worstIndex = 0;
@@ -1236,6 +1236,14 @@ function classifyBowl(ctx: TrialContext, feeding: TrialFeeding): FeedingClassifi
     }
   }
   const worst = perComponent[worstIndex];
+  // AN INCOMPLETE BOWL is never one food and never "matched" (§3). But a component we CAN
+  // see that is off the list is a known exposure, and §5.2's order puts off-diet above
+  // unclassifiable: the bowl is off-diet on that food (adversarial pass 2, break 3, the
+  // louder reading of a spec conflict, put to the PM on CUL-2052). With no off-diet
+  // component visible it stays unclassifiable, disclosed.
+  if (feeding.incompleteBowl && !worst.offDiet) {
+    return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
+  }
   if (worst.verdict === 'unclassifiable') {
     return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
   }
@@ -3731,7 +3739,12 @@ export function deriveTrialTransition(input: TrialTransitionInput): TrialTransit
   const onDay1 = allowedFoodsOn(ctx, start);
   const trialDiet = onDay1.filter((f) => f.role === 'primary_diet');
   const isTrialDiet = (f: FedFood) => matchAllowed(trialDiet, f.foodItemId, f.foodKey) !== null;
-  const isAllowed = (f: FedFood) => matchAllowed(onDay1, f.foodItemId, f.foodKey) !== null;
+  // Before Day 1 against the list in force ON Day 1 (undated identity, break 6b); from Day 1
+  // on, against the list in force THAT day, as the classifier reads it, so a food withdrawn
+  // after Day 1 never starts an "only foods on the list" run beside an off-diet count
+  // (adversarial pass 2, break 6).
+  const listOn = (d: number) => (d < start ? onDay1 : allowedFoodsOn(ctx, d));
+  const isAllowedOn = (f: FedFood, d: number) => matchAllowed(listOn(d), f.foodItemId, f.foodKey) !== null;
   const lookbackStart = start - TRANSITION_LOOKBACK_DAYS;
   const today = localDayIndexOf(new Date(input.nowMs).toISOString(), input.timeZone) ?? start;
 
@@ -3774,16 +3787,16 @@ export function deriveTrialTransition(input: TrialTransitionInput): TrialTransit
     }
   }
 
-  const free = (input.arrangements ?? []).filter(
-    (a) => matchAllowed(onDay1, a.foodItemId, a.foodKey) === null,
-  );
   const offListBowlDown = (d: number) =>
-    free.some((a) => {
+    (input.arrangements ?? []).some((a) => {
+      if (matchAllowed(listOn(d), a.foodItemId, a.foodKey) !== null) return false;
       const from = dayIndexOf(ctx, a.startedAt) ?? -Infinity;
       const until = a.endedAt ? dayIndexOf(ctx, a.endedAt) ?? Infinity : Infinity;
       return from <= d && d <= until;
     });
-  const logged = (d: number) => (byDay.get(d)?.length ?? 0) > 0;
+  // A day counts as LOGGED, for knowing where a run starts, only with a non-treat feeding:
+  // a treat-only day does not show what the bowl held (adversarial pass 2, break 8).
+  const logged = (d: number) => (byDay.get(d) ?? []).some((f) => !isTreatFeeding(f));
   const qualifies = (d: number): boolean => {
     const list = byDay.get(d);
     if (!list || list.length === 0) return false;
@@ -3791,7 +3804,7 @@ export function deriveTrialTransition(input: TrialTransitionInput): TrialTransit
     for (const f of list) {
       if (f.incompleteBowl) return false;
       for (const food of fedFoods(f)) {
-        if (!hasIdentity(food) || !isAllowed(food)) return false;
+        if (!hasIdentity(food) || !isAllowedOn(food, d)) return false;
       }
     }
     return !offListBowlDown(d);
@@ -3838,6 +3851,13 @@ export interface NewFoodIntroduced {
   /** Every feeding of the food, in order: its share of that bowl (1 when fed on its
    *  own, null when the ratio is unknown). Context, never a dose (§5.3). */
   ramp: { dayIndex: number; share: number | null }[];
+  /** Distinct local days the food was fed: the span alone implies daily feeding. */
+  fedDays: number;
+  /** Days of the union window that have elapsed (to today), and how many of them hold
+   *  ANY logged feeding or symptom: the denominator behind a symptom count, so a quiet
+   *  window over unlogged days never reads as a clean one (cold read, CUL-2052). */
+  windowDaysElapsed: number;
+  windowDaysLogged: number;
   /** Symptoms inside the UNION of per-exposure windows. Empty is "none logged in the
    *  window", never "none": unlogged days are always possible (§5.2). */
   symptomsInWindow: { occurredAt: string; eventType: string; dayIndex: number }[];
@@ -3860,7 +3880,7 @@ export function newFoodsIntroduced(input: NewFoodsInput): NewFoodIntroduced[] {
   if (today === null || today <= end) return [];
   const everListed = (f: FedFood) => matchAllowed(input.allowedFoods, f.foodItemId, f.foodKey) !== null;
 
-  const byFood = new Map<string, NewFoodIntroduced & { days: Set<number> }>();
+  const byFood = new Map<string, Omit<NewFoodIntroduced, 'fedDays' | 'windowDaysElapsed' | 'windowDaysLogged'> & { days: Set<number> }>();
   const sorted = [...input.feedings].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
   for (const f of sorted) {
     const d = dayIndexOf(ctx, f.occurredAt);
@@ -3887,11 +3907,25 @@ export function newFoodsIntroduced(input: NewFoodsInput): NewFoodIntroduced[] {
     .map((s) => ({ ...s, dayIndex: dayIndexOf(ctx, s.occurredAt) }))
     .filter((s): s is { occurredAt: string; eventType: string; dayIndex: number } => s.dayIndex !== null)
     .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  const loggedDays = new Set<number>(symptoms.map((s) => s.dayIndex));
+  for (const f of input.feedings) {
+    const d = dayIndexOf(ctx, f.occurredAt);
+    if (d !== null) loggedDays.add(d);
+  }
   return [...byFood.values()]
-    .map(({ days, ...food }) => ({
-      ...food,
-      symptomsInWindow: symptoms.filter((s) => [...days].some((d) => isWithinChallengeWindow(d, s.dayIndex, species))),
-    }))
+    .map(({ days, ...food }) => {
+      const windowDays = new Set<number>();
+      for (const d of days) {
+        for (let w = d + 1; w <= Math.min(d + CHALLENGE_WINDOW_DAYS[species], today); w++) windowDays.add(w);
+      }
+      return {
+        ...food,
+        fedDays: days.size,
+        windowDaysElapsed: windowDays.size,
+        windowDaysLogged: [...windowDays].filter((w) => loggedDays.has(w)).length,
+        symptomsInWindow: symptoms.filter((s) => [...days].some((d) => isWithinChallengeWindow(d, s.dayIndex, species))),
+      };
+    })
     .sort((a, b) => a.firstFedDayIndex - b.firstFedDayIndex || a.label.localeCompare(b.label));
 }
 

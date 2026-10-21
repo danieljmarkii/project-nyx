@@ -1228,7 +1228,9 @@ export function topFoods(
   // and toward NONE of their finished rates, because one bowl rating says nothing about
   // either food (§5.4). The candidate set counts each bowl once.
   const live = collapseTreatRelogs(inWindow)
-  const candidates = live.filter((m) => (m.bowl ? m.bowl.components.some((c) => c.foodItemId !== null) : m.foodItemId !== null && !!m.foodLabel))
+  // Every bowl is a feeding, even one whose foods were all purged since: it stays in the
+  // total, so a deleted food never shrinks what the window says was fed.
+  const candidates = live.filter((m) => m.bowl || (m.foodItemId !== null && !!m.foodLabel))
   if (candidates.length < ASK_FLOORS.minMealsForRanking) {
     return notEnoughData(candidates.length, ASK_FLOORS.minMealsForRanking)
   }

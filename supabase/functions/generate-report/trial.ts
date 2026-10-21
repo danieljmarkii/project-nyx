@@ -1156,6 +1156,11 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // disagree — and the alternative, widening PR 5's return shape from a consumer,
   // is how a shared module stops being shared.
   const permittedCounts = new Map<string, number>()
+  // Mixed bowls that held the trial diet (CUL-2052). A bowl of the trial diet with the old
+  // food is off-diet, so it never reaches `permittedCounts`; it is still proof the list
+  // loaded, and the unhydrated-set guard below must count it (adversarial pass 2, break 1:
+  // a trial fed only in mixed bowls printed "No allowed-food list is recorded").
+  let bowlsWithTrialDiet = 0
   const symptomDays = [...new Set(args.symptomDayIndices)]
   const exposures: TrialExposure[] = []
   for (const e of args.meals) {
@@ -1163,6 +1168,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     const dn = dayIndexOf(ctx, e.occurredAt)
     if (!inRange(dn)) continue
     const classification = classifyFeeding(ctx, toTrialFeeding(e))
+    if (classification.components && carriesTrialDiet(classification)) bowlsWithTrialDiet += 1
     if (classification.verdict === 'permitted' && classification.permittedBy) {
       const key = allowedRowKey(classification.permittedBy)
       permittedCounts.set(key, (permittedCounts.get(key) ?? 0) + 1)
@@ -1311,7 +1317,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     .filter((f) => f.role === 'primary_diet')
     .reduce((n, f) => n + (permittedCounts.get(allowedRowKey(f)) ?? 0), 0)
   const allowedSetUnavailable =
-    !hasPrimary || (primaryPermitted === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
+    !hasPrimary || (primaryPermitted === 0 && bowlsWithTrialDiet === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
 
   const sourceByFoodId = new Map((trial.allowedFoods ?? []).map((f) => [f.foodItemId, f.extractionConfidence ?? null]))
   const permittedFoods: TrialPermittedFood[] = allowedFoods

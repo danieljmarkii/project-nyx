@@ -473,3 +473,45 @@ describe('§6.3 — new foods introduced after a trial', () => {
     })).toEqual([]);
   });
 });
+
+// ── Adversarial pass 2 (build time) ───────────────────────────────────────────
+
+describe('adversarial pass 2', () => {
+  it('break 3: an incomplete bowl with a visible off-list component is off-diet on it', () => {
+    const c = classifyFeeding(ctx(), { ...bowl('b', at('2026-07-05'), [CHICKEN_PART]), incompleteBowl: true });
+    expect(c.verdict).toBe('off_diet_protein');
+    expect(c.antigens).toContain('chicken');
+  });
+
+  it('break 6: a food withdrawn after Day 1 never starts an "only foods on the list" run', () => {
+    const LAMB = food({ foodItemId: 'lamb', foodKey: 'x lamb', label: 'Lamb', role: 'permitted_other', primaryProtein: 'lamb', proteins: ['lamb'], allowedUntil: '2026-07-03' });
+    const lambPart = part({ foodItemId: 'lamb', foodKey: 'x lamb', label: 'Lamb', proteins: ['lamb'] });
+    const t = deriveTrialTransition({
+      trial: TRIAL,
+      allowedFoods: [DUCK, LAMB],
+      feedings: [
+        bowl('m0', at('2026-07-01'), [DUCK_PART, CHICKEN_PART]),
+        ...Array.from({ length: 8 }, (_, i) => bowl(`l${i}`, at(`2026-07-0${i + 2}`), [DUCK_PART, lambPart])),
+      ],
+      nowMs: new Date(2026, 6, 9, 22).getTime(),
+    });
+    expect(t.firstExclusive).toEqual({ kind: 'unknown' });
+  });
+
+  it('break 8: a treat-only day before the run leaves its start unknown', () => {
+    const TREAT = food({ foodItemId: 'tr', foodKey: 'b treat', label: 'Duck treat', role: 'permitted_treat', primaryProtein: 'duck', proteins: ['duck'] });
+    const treatPart = part({ foodItemId: 'tr', foodKey: 'b treat', label: 'Duck treat', foodType: 'treat', proteins: ['duck'] });
+    const t = deriveTrialTransition({
+      trial: TRIAL,
+      allowedFoods: [DUCK, TREAT],
+      feedings: [
+        bowl('m1', at('2026-07-01'), [DUCK_PART, CHICKEN_PART]),
+        plain('t', at('2026-07-02'), treatPart),
+        plain('p1', at('2026-07-03'), DUCK_PART),
+        plain('p2', at('2026-07-04'), DUCK_PART),
+      ],
+      nowMs: new Date(2026, 6, 4, 22).getTime(),
+    });
+    expect(t.firstExclusive).toEqual({ kind: 'unknown' });
+  });
+});

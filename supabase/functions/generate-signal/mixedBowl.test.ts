@@ -162,3 +162,29 @@ Deno.test('the meals pull selects the components and the count', () => {
   assert.ok(MEAL_EVENTS_SELECT.includes('component_count'))
   assert.ok(MEAL_EVENTS_SELECT.includes('meal_components('))
 })
+
+// ── Adversarial pass 2 (build time) ───────────────────────────────────────────
+
+Deno.test('break 2: two plain and two mixed meals eaten well, then a refused mix, fires for the component', () => {
+  const meals: MealEvent[] = [
+    plain(18, 'all', 'chicken', 'Chicken Pâté'),
+    plain(20, 'all', 'chicken', 'Chicken Pâté'),
+    mix(22, 'all'),
+    mix(24, 'all'),
+    mix(30, 'refused'),
+  ]
+  const b = detectIntakeDecline(input(meals)).find((f) => f.trigger === 'refused_normal_food')
+  assert.ok(b, 'one food\'s record is not split under the floor')
+  assert.equal(b!.refusedFoodLabel, 'Rabbit Pâté mixed with Chicken Pâté')
+})
+
+Deno.test('break 4: a refused incomplete bowl still trips the food we can see in it', () => {
+  const meals: MealEvent[] = [
+    plain(18, 'all', 'chicken', 'Chicken Pâté'),
+    plain(20, 'all', 'chicken', 'Chicken Pâté'),
+    plain(22, 'all', 'chicken', 'Chicken Pâté'),
+    plain(24, 'all', 'chicken', 'Chicken Pâté'),
+    { ...mix(30, 'refused'), bowl: { status: 'incomplete', compositionKey: 'id:chicken', components: [{ foodItemId: 'chicken', foodLabel: 'Chicken Pâté' }] } },
+  ]
+  assert.ok(detectIntakeDecline(input(meals)).find((f) => f.trigger === 'refused_normal_food'))
+})

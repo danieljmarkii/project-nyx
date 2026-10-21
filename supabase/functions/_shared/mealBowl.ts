@@ -109,3 +109,14 @@ export function bowlOf<F>(
     writtenAtMs: live.length > 0 ? generationMs(live[0].id) : null,
   }
 }
+
+/**
+ * A bowl's food type, ONE rule for every reader (code review, CUL-2052): a treat only when
+ * EVERY component is one; a meal when any component is; else the first other known type;
+ * else null (a type nobody recorded is never assumed a treat, §5.1).
+ */
+export function bowlFoodType(types: readonly (string | null | undefined)[]): string | null {
+  if (types.length > 0 && types.every((t) => t === 'treat')) return 'treat'
+  if (types.includes('meal')) return 'meal'
+  return types.find((t): t is string => !!t && t !== 'treat') ?? null
+}

@@ -3862,7 +3862,11 @@ export function detectCorrelations(
         reversed:
           en11 &&
             onset + windowMs <= correlationNowMs &&
-            bestCtrl.anchorMs + windowMs <= correlationNowMs
+            bestCtrl.anchorMs + windowMs <= correlationNowMs &&
+            // The reversed control window may not hold an incomplete bowl either (adversarial
+            // pass 2, break 5): its missing food would read as absent "after", and a reversed
+            // hit withholds the forward card. No reversed read: the forward card stands.
+            !unknownBowlMs.some((ms) => ms <= bestCtrl!.anchorMs + windowMs && bestCtrl!.anchorMs + windowMs - ms <= windowMs)
             ? {
               caseExp: windowExposures(onset + windowMs, windowMs).exposures,
               ctrlExp: windowExposures(bestCtrl.anchorMs + windowMs, windowMs).exposures,
@@ -4514,14 +4518,25 @@ function detectIntakeDeclineCore(
     const sorted = [...meals].sort((x, y) => x.ms - y.ms)
     tested.push({ meals: sorted, latest: sorted[sorted.length - 1] })
   }
+  // A component's history, FOR FIRING ONLY, is its single-food meals AND the earlier mixes
+  // that held it (adversarial pass 2, break 2): two plain chicken meals and two chicken
+  // mixes eaten well, then a refused mix, is the same record as four plain chicken meals
+  // and a refusal, and splitting it under the 3-sample floor silenced the watch. Only a
+  // later PLAIN meal stands a component down: a bowl rating never claims a food was eaten
+  // (§5.4), so an eaten mix cannot stand a warning down. An INCOMPLETE bowl's known
+  // components are tested too (break 4): the food we can see in it was refused.
   for (const m of windowMeals) {
-    if (m.bowl?.status !== 'mix') continue
+    if (!m.bowl) continue
     for (const c of m.bowl.components) {
       if (!c.foodItemId) continue
-      const singles = (byFood.get(`food|${c.foodItemId}`) ?? []).filter((x) => x.ms < m.ms)
-      const laterSingle = (byFood.get(`food|${c.foodItemId}`) ?? []).some((x) => x.ms > m.ms)
-      if (singles.length === 0 || laterSingle) continue
-      tested.push({ meals: [...singles, m].sort((x, y) => x.ms - y.ms), latest: m })
+      const singles = byFood.get(`food|${c.foodItemId}`) ?? []
+      if (singles.some((x) => x.ms > m.ms)) continue
+      const earlierMixes = windowMeals.filter(
+        (x) => x.ms < m.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === c.foodItemId),
+      )
+      const history = [...singles.filter((x) => x.ms < m.ms), ...earlierMixes]
+      if (history.length === 0) continue
+      tested.push({ meals: [...history, m].sort((x, y) => x.ms - y.ms), latest: m })
     }
   }
 

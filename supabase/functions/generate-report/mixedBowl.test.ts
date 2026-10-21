@@ -119,6 +119,26 @@ Deno.test('§10: a trial-food + chicken bowl: one off-diet feeding, appendix C n
   const p = plain(renderReport(snap))
   assert.match(p, /After Day 1, 1 off-diet feeding was a mixed bowl that also held the trial diet/)
   assert.match(p, /Fancy Chicken Pâté, in a mixed bowl with the trial diet/)
+  // Cold read: an exposure by presence, with the bowl's intake stated beside it.
+  assert.match(p, /offered in the bowl; intake recorded for the bowl: not recorded, so how much of this food was eaten is unknown/)
+})
+
+Deno.test('cold read: switch bowls and an in-trial bowl of the same foods are two meal-log rows', () => {
+  const OLD = { foodItemId: 'f-old', brand: 'Purina', productName: 'Chicken Kibble', proteins: ['chicken'] }
+  const events = [
+    mixMeal('2026-05-29', [part(OLD, 0.5), part(HP, 0.5)]),
+    mixMeal('2026-05-31', [part(OLD, 0.25), part(HP, 0.75)]),
+    ...dailyTrial(),
+    mixMeal('2026-06-15', [part(HP, 0.75), part(OLD, 0.25)], { time: '18:00:00', rating: 'refused' }),
+  ]
+  const snap = assembleReport(trialInput(events))
+  // The window opens at Day 1 here, so only the in-trial bowl is in the meal log, labelled
+  // by its phase; the switch bowls are on page 1's switch row instead.
+  const labels = snap.diet.mealItems.filter((i) => i.mix).map((i) => i.foodLabel)
+  assert.deepEqual(labels, ['Royal Canin Hydrolyzed HP + Purina Chicken Kibble, mixed, during the trial'])
+  assert.equal(snap.trial?.transition?.mixedDaysBeforeDay1, 2)
+  const row = snap.provenance.confounders.find((c) => c.eventId === events[events.length - 1].id)
+  assert.equal(row?.bowlIntake, 'refused')
 })
 
 Deno.test('§10: a plain rabbit meal and a rabbit-dominant mix within 60 s do NOT collapse', () => {
@@ -155,12 +175,12 @@ Deno.test('§7.3: a mix is its own meal-log row and names every share, first bow
   const mixRow = snap.diet.mealItems.find((i) => i.mix)
   assert.ok(mixRow)
   assert.equal(mixRow!.count, 2)
-  assert.equal(mixRow!.foodLabel, 'Zignature Rabbit + Fancy Chicken Pâté, mixed')
+  assert.equal(mixRow!.foodLabel, 'Zignature Rabbit + Fancy Chicken Pâté, mixed, during the trial')
   // The plain trial food's row is untouched by the bowl's ratings (§5.4).
   const hp = snap.diet.mealItems.find((i) => i.foodLabel === 'Royal Canin Hydrolyzed HP')
   assert.ok(hp && !hp.intakeBreakdown.some((b) => b.rating === 'refused'))
   const p = plain(renderReport(snap))
-  assert.match(p, /Zignature Rabbit about ¾ → about ½ · Fancy Chicken Pâté about ¼ → about ½ \(owner’s estimate\)/)
+  assert.match(p, /Zignature Rabbit about ¾ → about ½ · Fancy Chicken Pâté about ¼ → about ½ \(owner’s estimate of what went into the bowl, not of what was eaten\)/)
 })
 
 Deno.test('§7.3: a bowl edited more than 24h after the meal says so on appendix C', () => {
@@ -169,7 +189,7 @@ Deno.test('§7.3: a bowl edited more than 24h after the meal says so on appendix
   const snap = assembleReport(trialInput(events))
   const row = snap.provenance.confounders.find((c) => c.eventId === events[events.length - 1].id)
   assert.equal(row?.editedOn, '2026-06-23')
-  assert.match(plain(renderReport(snap)), /foods edited Jun 23/)
+  assert.match(plain(renderReport(snap)), /the foods in this bowl were edited on Jun 23/)
 })
 
 Deno.test('§6.1: a mixed switch before Day 1 prints first fed, its share and the mixed days; Day 1 stays the owner\'s', () => {
@@ -183,7 +203,7 @@ Deno.test('§6.1: a mixed switch before Day 1 prints first fed, its share and th
   const snap = assembleReport(trialInput(events))
   const p = plain(renderReport(snap))
   assert.match(p, /Day 1 \(Jun 1\) is the date the owner entered\./)
-  assert.match(p, /Trial diet first fed May 27, mixed with Purina Chicken Kibble, trial diet about ¼ of the bowl \(owner’s estimate\)\./)
+  assert.match(p, /In this record, the trial diet was first fed May 27, mixed with Purina Chicken Kibble, trial diet about ¼ of what went into the bowl \(owner’s estimate, not what was eaten\)\./)
   assert.match(p, /fed on 3 days before Day 1, mixed with Purina Chicken Kibble on 3 of them/)
   // The previous diet counts the old food in each bowl, never the trial diet (CUL-1997).
   assert.deepEqual(snap.diet.previousDiet?.labels, ['Purina Chicken Kibble'])
@@ -191,8 +211,16 @@ Deno.test('§6.1: a mixed switch before Day 1 prints first fed, its share and th
 
 Deno.test('§10: CUL-1997\'s demo story renders "first fed" and the days before Day 1 on page 1', () => {
   const p = plain(renderReport(assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: true } })))
-  assert.match(p, /Trial diet first fed Sep 25\./)
+  assert.match(p, /In this record, the trial diet was first fed Sep 25\./)
   assert.match(p, /fed on 3 days before Day 1/)
+})
+
+Deno.test('adversarial pass 2, break 1: a trial fed only in mixed bowls still has its allowed list', () => {
+  const events = days('2026-06-01', '2026-07-01').map((d) => mixMeal(d, [part(HP, 0.75), part(CHICKEN, 0.25)]))
+  const snap = assembleReport(trialInput(events))
+  assert.equal(snap.trial?.allowedSetUnavailable, false)
+  assert.equal(snap.trial?.exposures.offDiet, 31)
+  assert.ok(!plain(renderReport(snap)).includes('No allowed-food list is recorded'))
 })
 
 Deno.test('a report with no mixed bowl prints no switch row beyond what the record shows', () => {

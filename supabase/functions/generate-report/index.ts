@@ -39,7 +39,7 @@ import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
 // CUL-975's paged reader, lifted to _shared/ by Engines v3 PR-09 (CUL-989) so generate-signal
 // and ask read their records the same way. Re-exported for index.test.ts, which drives it.
 import { fetchAll, rowsOrThrow } from '../_shared/pull.ts'
-import { bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from '../_shared/mealBowl.ts'
+import { bowlFoodType, bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from '../_shared/mealBowl.ts'
 export { fetchAll, PULL_MAX_PAGES, PULL_PAGE } from '../_shared/pull.ts'
 import {
   assembleReport,
@@ -563,13 +563,7 @@ function mapMealDetail(meal: MealJoin, componentRows: MealComponentJoin<FoodItem
       amountValue: c.amountValue,
       amountUnit: c.amountUnit,
     }))
-    const types = components.map((c) => c.foodType)
-    const foodType: ReportMealDetail['foodType'] =
-      types.length > 0 && types.every((t) => t === 'treat')
-        ? 'treat'
-        : types.includes('meal')
-          ? 'meal'
-          : types.find((t) => t !== null && t !== 'treat') ?? null
+    const foodType = bowlFoodType(components.map((c) => c.foodType)) as ReportMealDetail['foodType']
     return {
       foodItemId: null,
       intakeRating: (meal.intake_rating ?? null) as ReportMealDetail['intakeRating'],

@@ -26,7 +26,7 @@
 // one boundary; nothing else moves.
 
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
-import { bowlOf, type MealComponentJoin } from '../_shared/mealBowl.ts'
+import { bowlFoodType, bowlOf, type MealComponentJoin } from '../_shared/mealBowl.ts'
 import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorResult } from '../../../lib/incidentFloor.ts'
 import type { FreeFedIntakeSpan } from '../../../lib/freeFedIntake.ts'
 import {
@@ -427,11 +427,10 @@ function evidenceOf(m: MealIntakeEventRow): IntakeEvidenceMeal {
   // a treat; it names no single food (T2), so no free-fed bowl can claim it either.
   const bowl = meal ? bowlOf(meal, m.meal_components) : null
   if (bowl) {
-    const types = bowl.components.map((c) => c.food?.food_type ?? null)
     return {
       ms: Date.parse(m.occurred_at),
       foodItemId: null,
-      foodType: types.length > 0 && types.every((t) => t === 'treat') ? 'treat' : 'meal',
+      foodType: bowlFoodType(bowl.components.map((c) => c.food?.food_type)),
       intakeRating: meal?.intake_rating ?? null,
     }
   }
