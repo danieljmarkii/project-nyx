@@ -1639,7 +1639,9 @@ function mapAllowedFoods(rows: readonly TrialFoodSource[]): AllowedFood[] {
   }))
 }
 
-function toTrialFeeding(e: TrialMealSource): TrialFeeding {
+/** EXPORTED for the app's parity suite (`lib/dietTrialFactsBowl.test.ts`): the phone's
+ *  `feedingOfBowl` must hand the predicate the same bowl this does. */
+export function toTrialFeeding(e: TrialMealSource): TrialFeeding {
   const m = e.meal!
   if (m.bowl) {
     // A MIXED BOWL: identity, type and proteins are each component's own (§5.2). The

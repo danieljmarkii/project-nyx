@@ -1187,3 +1187,42 @@ describe('the stack: a folded run carries "several", and only that (CUL-1736, D4
     expect(opacityNode.__getValue()).toBe(1);
   });
 });
+
+// ── Mixed meals (CUL-2053, spec §7.2): one row, both foods, the ratio protected ─────────
+
+describe('a mixed bowl row', () => {
+  const mix = {
+    segments: [
+      { share: '⅓', name: 'Chicken Pâté with a very long name that has to give way first' },
+      { share: '⅔', name: 'Rabbit Pâté' },
+    ],
+    more: 0,
+    incomplete: false,
+    text: '⅓ Chicken Pâté with a very long name that has to give way first + ⅔ Rabbit Pâté',
+  };
+  const node = meal('mx', '7:40 AM', { detail: mix.text, food: mix.text, mix, formatTag: null });
+
+  it('draws each share as text that never shrinks, beside a name that truncates (C-8)', () => {
+    const screen = render(<SpineEventRow node={node} isFirst isLast onOpen={() => {}} />);
+    const line = screen.getByTestId('spine-mix-mx', { includeHiddenElements: true });
+    for (const share of ['⅓', '⅔']) {
+      const style = StyleSheet.flatten(within(line).getByText(share, { includeHiddenElements: true }).props.style);
+      expect(style.flexShrink).toBe(0);
+    }
+    expect(within(line).getByText('Rabbit Pâté', { includeHiddenElements: true }).props.numberOfLines).toBe(1);
+  });
+
+  it('the meal disc carries the "+", and the spoken label carries the whole bowl once', () => {
+    const screen = render(<SpineEventRow node={node} isFirst isLast onOpen={() => {}} />);
+    expect(screen.getByTestId('spine-dot-mixed')).toBeTruthy();
+    expect(eventRowLabel(node)).toContain(mix.text);
+    // The drawn line is hidden from assistive tech, so the bowl is not read twice.
+    expect(screen.getByTestId('spine-mix-mx', { includeHiddenElements: true }).props.importantForAccessibility).toBe('no-hide-descendants');
+  });
+
+  it('a plain meal draws no mix line and no "+"', () => {
+    const screen = render(<SpineEventRow node={meal('pl', '7:40 AM')} isFirst isLast onOpen={() => {}} />);
+    expect(screen.queryByTestId('spine-mix-pl', { includeHiddenElements: true })).toBeNull();
+    expect(screen.queryByTestId('spine-dot-mixed')).toBeNull();
+  });
+});

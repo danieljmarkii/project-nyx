@@ -996,6 +996,12 @@ export const useMomentStore = create<MomentState>((set) => ({
     // burn the food's one heads-up on something nobody saw. Same for an UNDONE one
     // (CUL-612): the meal it would describe is soft-deleted.
     if (!state.visible || state.removed) return false;
+    // Never replace a heads-up the card already shows (Mixed meals, CUL-2053, adversarial
+    // pass 1): a bowl edited on a showing card re-runs the heads-up, and a replacement would
+    // swap a contents flag for a weaker one and leave the first food's budget spent with
+    // nothing on the card for Undo to give back. The second food stays unspent, so it
+    // speaks the next time it is fed.
+    if (state.payload.trialFlag) return false;
     set({ payload: { ...state.payload, trialFlag } });
     return true;
   },

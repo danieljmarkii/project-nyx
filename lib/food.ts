@@ -86,6 +86,7 @@ export function foodLabelOf(
 // foods too). Re-exported here because the three library surfaces already import
 // FORMAT_LABEL from this module; splitting the file must not move their import.
 export { FORMAT_LABEL, foodFormatTag, foodFormatWord } from './foodFormat';
+import { FORMAT_LABEL as FORMAT_WORD, foodFormatTag as formatTagOf } from './foodFormat';
 
 // ── Picker scope chips (B-347 / B-020) ─────────────────────────────────────────
 // The pinned scope-chip row filters the picker's library by a FACT the food
@@ -325,7 +326,9 @@ export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): s
   const when = relativeDayLabel(stat.last_fed_at, now);
   if (!when) return null; // unreadable timestamp — no honest recency to show
   const recency = `Last logged ${when}`;
-  return stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
+  const counted = stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
+  // Mixed bowls counted above are disclosed (spec §7.4): "· 8 in a mix".
+  return (stat.mix_count ?? 0) > 0 ? `${counted} · ${stat.mix_count} in a mix` : counted;
 }
 
 // ── Reliable-favorites shelf (B-004 PR 5) ──────────────────────────────────────
@@ -516,4 +519,45 @@ export function foodFavoriteNote(fav: ReliableFavorite): string {
 // the IntakeDeclineResult.status the wrapper reads from getIntakeDecline.
 export function shouldSuppressFavorites(declineStatus: string): boolean {
   return declineStatus === 'watch';
+}
+
+/** A regex-safe copy of a format word ("Freeze-dried" carries a hyphen). */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The product's name as a row prints it BESIDE its format tag: a trailing qualifier that
+ * only restates the item's own recorded format is dropped, because the tag already says
+ * it ("Selected Protein PR, Dry" beside DRY reads "Selected Protein PR").
+ *
+ * WHY THIS IS A DATA KEY, NOT A ", Wet" REGEX (BRK-12, the round-3 critique): the owner's
+ * library holds one prescription line as two items, "Selected Protein PR, Dry"
+ * (dry_kibble) and "Selected Protein PR, Wet" (wet_canned), and rule B's run crosses wet
+ * and dry of ONE product. What decides that the trailing word is a qualifier is the
+ * item's own `format` column: only the word `FORMAT_LABEL` gives that format can be
+ * dropped, and only when the row shows it as a tag. A dry item named "…, Wet" keeps its
+ * name (the record disagrees with itself, and the row shows both halves rather than
+ * choosing); a name that merely ends in a format word with no separator ("Hill's Dry")
+ * is never touched; an unknown or 'other' format has no tag, so nothing is dropped.
+ *
+ * A Class A canonical key in CLAUDE.md's sense (a form-qualifier spelling), so it is
+ * CONVERGENT: it strips until nothing more matches, and never strips a name to nothing
+ * (", Dry" alone is kept). `f(f(x)) === f(x)` is pinned by a property test.
+ */
+export function productNameBesideTag(
+  product: string | null | undefined,
+  format: string | null | undefined,
+  rowLabel?: string | null,
+): string | null {
+  const name = product?.trim() || null;
+  if (name === null || !format || formatTagOf(format, rowLabel) === null) return name;
+  const word = escapeRegExp(FORMAT_WORD[format]);
+  const qualifier = new RegExp(`(?:\\s*,\\s*|\\s+[-–—]\\s+)${word}$|\\s*\\(${word}\\)$`, 'i');
+  let out = name;
+  for (;;) {
+    const next = out.replace(qualifier, '').trim();
+    if (next === out || next.length === 0) return out;
+    out = next;
+  }
 }

@@ -428,6 +428,7 @@ describe('foodIntakeKey + indexIntakeStats', () => {
     product_key: 'chicken paté',
     meal_count: 3,
     last_fed_at: '2026-06-14T12:00:00.000Z',
+    mix_count: 0,
     ...over,
   });
 
@@ -502,8 +503,15 @@ describe('foodIntakeNote', () => {
     d.setDate(d.getDate() - daysAgo);
     return d.toISOString();
   };
-  const stat = (meal_count: number, daysAgo: number): FoodIntakeStat => ({
-    brand_key: 'b', product_key: 'p', meal_count, last_fed_at: at(daysAgo),
+  const stat = (meal_count: number, daysAgo: number, mix_count = 0): FoodIntakeStat => ({
+    brand_key: 'b', product_key: 'p', meal_count, last_fed_at: at(daysAgo), mix_count,
+  });
+
+  // Mixed meals (CUL-2053, spec §7.4): the bowls counted are disclosed.
+  it('discloses how many of the logged meals were mixed bowls', () => {
+    expect(foodIntakeNote(stat(12, 0, 8), now)).toBe('Last logged today · 12 times · 8 in a mix');
+    expect(foodIntakeNote(stat(1, 0, 1), now)).toBe('Last logged today · 1 in a mix');
+    expect(foodIntakeNote(stat(12, 0), now)).toBe('Last logged today · 12 times');
   });
 
   it('returns null when the pet has no logged meals of the food', () => {
@@ -512,7 +520,7 @@ describe('foodIntakeNote', () => {
   });
 
   it('returns null (no dangling "Last logged ") for an unreadable timestamp', () => {
-    expect(foodIntakeNote({ brand_key: 'b', product_key: 'p', meal_count: 3, last_fed_at: 'not-a-date' }, now)).toBeNull();
+    expect(foodIntakeNote({ brand_key: 'b', product_key: 'p', meal_count: 3, last_fed_at: 'not-a-date', mix_count: 0 }, now)).toBeNull();
   });
 
   it('says "logged", not "fed" — recency alone for a single meal, never "· 1 times"', () => {

@@ -634,7 +634,7 @@ export function MealCompletionCard() {
   const contentsCopy =
     trialFlag?.kind === 'off_diet_protein' ? mealFlagCopy(trialFlag, mealPetName) : null;
   const membershipCopy =
-    trialFlag?.kind === 'off_trial_list' ? membershipFlagCopy(mealPetName) : null;
+    trialFlag?.kind === 'off_trial_list' ? membershipFlagCopy(mealPetName, trialFlag.bowl) : null;
 
   // Open the shipped AddTrialFoodSheet for the membership flag's food. Capture
   // everything the sheet + the write need NOW (see AddTarget), then dismiss the

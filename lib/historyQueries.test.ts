@@ -439,8 +439,9 @@ describe('HV-7 — the whole day behind a filtered page, and the record\'s first
     seedRich();
     mockReads = 0;
     const whole = await readWholeDays(PET, ['2026-09-06', '2026-09-05', '2026-09-04', '2026-09-10', '2026-09-15']);
-    // The regimens, then one read per run: Sep 4 – 6, Sep 10, Sep 15.
-    expect(mockReads).toBe(4);
+    // The regimens, then one read per run: Sep 4 – 6, Sep 10, Sep 15; and one bowl read
+    // (Mixed meals, CUL-2053) behind the only run that holds a meal.
+    expect(mockReads).toBe(5);
     expect(whole.has('2026-09-15')).toBe(false);
     expect(whole.get('2026-09-04')?.map((r) => r.id)).toEqual(['m3', 'm4', 't1', 't2', 't3']);
     // The look on Sep 10 is not in the population: the Noticed filter draws its own rows.
