@@ -91,6 +91,7 @@ import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { setMealComponents } from './mealComponents';
+import { insertMeal } from './meals';
 import { MealComponentInputError, generationOf, readMealComposition, type MealComponentRow } from './mealComposition';
 import { hydrateFromCloud, syncPendingMeals } from './sync';
 
@@ -200,6 +201,48 @@ describe('setMealComponents (the one writer, spec §4)', () => {
   it('throws on a meal it cannot find (C-39), and rolls the components back', async () => {
     seedEvent('e1');
     await expect(setMealComponents('e1', mix(0.5, 0.5))).rejects.toThrow('No meal row');
+    expect(components()).toEqual([]);
+  });
+});
+
+// Mixed meals row 5 (CUL-2054): the FAB's mix pill writes the event, the meal and its foods
+// in ONE transaction. Two writes would leave a bowl saved as its first food alone whenever
+// the second failed, which drops the second food's exposure from every reader.
+describe('insertMeal with components (the one-press mix)', () => {
+  const events = () => mockDb.prepare('SELECT * FROM events').all();
+
+  it('writes the bowl as a mix in one go', async () => {
+    const { eventId } = await insertMeal({
+      petId: PET, foodId: 'rabbit', occurredAt: new Date(AT), occurredAtSource: 'now', components: mix(1 / 3, 2 / 3),
+    });
+    expect(meal(eventId)).toEqual(expect.objectContaining({ food_item_id: null, component_count: 2 }));
+    expect(components().map((r) => [r.position, r.food_item_id, r.event_id])).toEqual([
+      [0, 'rabbit', eventId],
+      [1, 'chicken', eventId],
+    ]);
+  });
+
+  it('a component write that fails rolls back the event and the meal too', async () => {
+    mockDb.exec(`CREATE TRIGGER boom BEFORE INSERT ON meal_components BEGIN SELECT RAISE(ABORT, 'boom'); END`);
+    await expect(insertMeal({
+      petId: PET, foodId: 'rabbit', occurredAt: new Date(AT), occurredAtSource: 'now', components: mix(0.5, 0.5),
+    })).rejects.toThrow();
+    expect(events()).toEqual([]);
+    expect(mockDb.prepare('SELECT * FROM meals').all()).toEqual([]);
+  });
+
+  it('refuses a treat in the bowl before writing anything', async () => {
+    seedFood('jerky', 'treat');
+    await expect(insertMeal({
+      petId: PET, foodId: 'rabbit', occurredAt: new Date(AT), occurredAtSource: 'now',
+      components: [mix(0.5, 0.5)[0], { foodItemId: 'jerky', foodLabel: 'Jerky', share: 0.5, shareSource: 'preset' }],
+    })).rejects.toBeInstanceOf(MealComponentInputError);
+    expect(events()).toEqual([]);
+  });
+
+  it('a plain meal writes exactly as before: no components, the food on the parent', async () => {
+    const { eventId } = await insertMeal({ petId: PET, foodId: 'rabbit', occurredAt: new Date(AT), occurredAtSource: 'now' });
+    expect(meal(eventId)).toEqual(expect.objectContaining({ food_item_id: 'rabbit', component_count: null }));
     expect(components()).toEqual([]);
   });
 });
