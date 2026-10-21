@@ -214,6 +214,9 @@ export interface TrialFeedingComponent {
   /** The owner's share over the bowl, normalised; null when unknown. Stored, never
    *  fed to a verdict (§5.3, T3): it is carried only for the ratio a report prints. */
   share?: number | null;
+  /** The caller's own handle for this component (an opaque key), carried through
+   *  `classification.componentFoods` so a surface can find its row again. */
+  ref?: string;
 }
 
 /** Is this feeding a mixed bowl (components present, or an incomplete one)? */

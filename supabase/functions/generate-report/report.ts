@@ -155,7 +155,7 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
+import { carriesTrialDiet, COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
@@ -1328,6 +1328,11 @@ export function dedupeEvents(
   // row, so a type-and-minute collapse would silently drop a real dose/reading (the B-156
   // "two drugs together" data-loss bug this narrow scope closes).
   const groupKey = (e: ReportEventInput): string => {
+    // A MIXED BOWL keys on its composition (the sorted set of its foods), never on a
+    // food id it does not have (T2): a plain rabbit meal and a rabbit-and-chicken bowl a
+    // minute apart are two feedings, and collapsing them would lose the chicken. Kept in
+    // lockstep with the client's same-minute collapse (`lib/sameMinuteDuplicates.ts`).
+    if (e.type === 'meal' && e.meal?.bowl) return `meal|bowl|${e.meal.bowl.compositionKey}`
     if (e.type === 'meal') return `meal|${e.meal?.foodItemId ?? 'null'}`
     if (DEDUP_OBSERVATION_TYPES.has(e.type)) return e.type
     return `keep|${e.id}`
@@ -2299,6 +2304,9 @@ export interface DietSummary {
     proteinSet: ProteinSetView
     /** CUL-292 — decides WHICH incompleteness marker is true of this row, nothing else. */
     format: FoodFormat | null
+    /** A MIXED BOWL row (CUL-2052): one row per composition, every share named. Its
+     *  ratings are the bowl's and belong to neither food (§5.4). */
+    mix?: MixRow
   }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
@@ -2731,6 +2739,9 @@ export interface ConfounderExposure {
   /** This same food became permitted on a LATER date, so the row is here because the
    *  feeding predates permission — the reason that outranks the rung. */
   permittedLaterFrom?: string | null
+  /** A mixed bowl whose foods were edited more than 24h after the meal: the day of the
+   *  edit (CUL-2052, §7.3). The record changed after the fact, so the row says when. */
+  editedOn?: string | null
 }
 
 /**
@@ -3193,12 +3204,75 @@ function kgToLbsNum(kg: number): number {
  * single group when the id is absent. An unspecified/unmapped form adds nothing (null tag).
  */
 function mealFoodLabel(
-  meal: { brand: string | null; productName: string | null; format?: FoodFormat | null },
+  meal: { brand: string | null; productName: string | null; format?: FoodFormat | null; bowl?: ReportMealBowl | null },
 ): string | null {
+  if (meal.bowl) return bowlLabel(meal.bowl)
   const name = `${meal.brand ?? ''} ${meal.productName ?? ''}`.trim()
   const form = foodFormatWord(meal.format ?? null)
   if (!name) return form ? form : null
   return form ? `${name} (${form})` : name
+}
+
+/** Off a trial, the heuristic's off-diet test, per component: a treat or human food. */
+function isHeuristicConfounder(c: ReportMealComponent): boolean {
+  return c.foodType === 'treat' || c.format === 'treat' || c.format === 'human_food'
+}
+
+/** One component's name: its food's label, else the snapshot taken when it was logged
+ *  (a purged food keeps its name, §3). */
+export function componentLabel(c: ReportMealComponent): string {
+  return mealFoodLabel({ brand: c.brand, productName: c.productName, format: c.format }) ?? c.snapshotLabel
+}
+
+/**
+ * A mixed bowl's name (Mixed meals, CUL-2052): every food, in the order the owner logged
+ * them, and "mixed" so no reader takes it for one food. An incomplete bowl says so: its
+ * live components are fewer than it held, so the list is not the whole bowl (§3).
+ */
+export function bowlLabel(bowl: ReportMealBowl): string {
+  const names = bowl.components.map(componentLabel)
+  return bowl.status === 'incomplete'
+    ? `${names.join(' + ')} + another food, mixed (record incomplete)`
+    : `${names.join(' + ')}, mixed`
+}
+
+interface MixRowBuild {
+  incomplete: boolean
+  first: ReportMealBowl
+  last: ReportMealBowl
+  firstMs: number
+  lastMs: number
+}
+
+/** The owner's ratio for one food in one bowl, as entered (T8): never filled in. */
+export interface MixShare {
+  normalizedShare: number | null
+  shareSource: string
+  amountValue: number | null
+  amountUnit: string | null
+}
+
+/** Appendix E's mix row: each food with its share in the first and the last bowl. */
+export interface MixRow {
+  incomplete: boolean
+  foods: Array<{ label: string; first: MixShare | null; last: MixShare | null }>
+}
+
+function mixRowOf(b: MixRowBuild): MixRow {
+  const shareOf = (bowl: ReportMealBowl, key: string): MixShare | null => {
+    const c = bowl.components.find((x) => x.foodKey === key)
+    return c
+      ? { normalizedShare: c.normalizedShare, shareSource: c.shareSource, amountValue: c.amountValue, amountUnit: c.amountUnit }
+      : null
+  }
+  return {
+    incomplete: b.incomplete,
+    foods: b.first.components.map((c) => ({
+      label: componentLabel(c),
+      first: shareOf(b.first, c.foodKey),
+      last: shareOf(b.last, c.foodKey),
+    })),
+  }
 }
 
 export type { IntakeRating }
@@ -3583,6 +3657,19 @@ export function buildDetectionInput(
       // currently shows a wider exposure picture than it correlates over, which is the
       // spec's intended phase boundary, not an oversight.
       primaryProtein: e.meal.primaryProtein,
+      // A MIXED BOWL (CUL-2052): the union of its components' primaries, on the same
+      // primary-only footing as every plain meal above, so a minor component is never
+      // the exposure the engine misses (§5.3). No food id stands for the bowl (T2).
+      ...(e.meal.bowl
+        ? {
+            proteins: [...new Set(e.meal.bowl.components.map((c) => c.primaryProtein).filter((p): p is string => !!p))],
+            bowl: {
+              status: e.meal.bowl.status,
+              compositionKey: e.meal.bowl.compositionKey,
+              components: e.meal.bowl.components.map((c) => ({ foodItemId: c.foodItemId, foodLabel: componentLabel(c) })),
+            },
+          }
+        : {}),
       intakeRating: e.meal.intakeRating,
       foodType: e.meal.foodType,
       format: e.meal.format,
@@ -4484,12 +4571,32 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     }
   }
 
+  /** A mixed bowl's protein view: the union of its components' own views, each taking
+   *  the trial-diet rule only for the component that IS the trial diet. Complete only
+   *  when every component's set is (D10): one unread component leaves the bowl open. */
+  function bowlProteinView(bowl: ReportMealBowl): ProteinSetView {
+    const views = bowl.components.map((c) =>
+      proteinView(c, {
+        isTrialDiet: isReportTrialFood({ foodItemId: c.foodItemId, brand: c.brand, productName: c.productName, format: c.format }),
+      }),
+    )
+    const union = (xs: string[][]): string[] => [...new Set(xs.flat())]
+    return {
+      proteins: union(views.map((v) => v.proteins)),
+      complete: bowl.status === 'mix' && views.every((v) => v.complete),
+      source: views[0]?.source,
+      offTrial: union(views.map((v) => v.offTrial)),
+    }
+  }
+
   // Is this meal the selected trial's own food? By item id, else by its label. ONE predicate
   // for every consumer that has to treat the trial diet differently from other foods: the
   // meal rows' protein view below, and the previous-diet derivation that must never name it.
   const trialFoodId = reportTrialInput?.foodItemId ?? null
   const trialFoodLabel = reportTrialInput?.foodLabel?.trim().toLowerCase() ?? null
-  const isReportTrialFood = (m: NonNullable<ReportEventInput['meal']>): boolean => {
+  const isReportTrialFood = (
+    m: { foodItemId: string | null; brand: string | null; productName: string | null; format?: FoodFormat | null },
+  ): boolean => {
     if (trialFoodId && m.foodItemId === trialFoodId) return true
     const label = mealFoodLabel(m)?.trim().toLowerCase()
     return !!trialFoodLabel && !!label && label === trialFoodLabel
@@ -4553,10 +4660,48 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastRatedDate: string | null
       intakes: IntakeRating[]
       proteinSet: ProteinSetView
+      mix?: MixRowBuild
     }
   >()
   for (const e of loggedMeals) {
     const m = e.meal!
+    // A MIXED BOWL is its own row (spec §7.3), keyed on its composition whatever the
+    // ratio, so it adds to NEITHER food's row and to neither food's intake (§5.4). Every
+    // share is NAMED, first bowl to last, so a ramp cannot print inverted when the food
+    // logged first differs between bowls.
+    if (m.bowl) {
+      const key = `mix|${m.bowl.compositionKey}`
+      const dayKey = localDayKey(e.occurredAt, tz)
+      const ms = Date.parse(e.occurredAt)
+      const g = mealGroups.get(key)
+      if (g) {
+        g.count++
+        if (dayKey && (g.firstDate === null || dayKey < g.firstDate)) g.firstDate = dayKey
+        if (dayKey && (g.lastDate === null || dayKey > g.lastDate)) g.lastDate = dayKey
+        if (m.intakeRating != null) {
+          g.intakes.push(m.intakeRating)
+          if (dayKey && (g.lastRatedDate === null || dayKey > g.lastRatedDate)) g.lastRatedDate = dayKey
+        }
+        const mix = g.mix!
+        if (m.bowl.status === 'incomplete') mix.incomplete = true
+        if (ms < mix.firstMs) { mix.firstMs = ms; mix.first = m.bowl }
+        if (ms > mix.lastMs) { mix.lastMs = ms; mix.last = m.bowl }
+      } else {
+        mealGroups.set(key, {
+          foodLabel: bowlLabel(m.bowl),
+          format: null,
+          primaryProtein: null,
+          count: 1,
+          firstDate: dayKey,
+          lastDate: dayKey,
+          lastRatedDate: m.intakeRating != null ? dayKey : null,
+          intakes: m.intakeRating != null ? [m.intakeRating] : [],
+          proteinSet: bowlProteinView(m.bowl),
+          mix: { incomplete: m.bowl.status === 'incomplete', first: m.bowl, last: m.bowl, firstMs: ms, lastMs: ms },
+        })
+      }
+      continue
+    }
     // Group by food identity: the library item id when present, else the brand/product label.
     // A meal with NEITHER collapses into ONE "unlabeled" bucket (a fixed key, not the unique
     // event id) so N unlabeled meals never fragment into N singleton "—" rows (code-reviewer).
@@ -4628,6 +4773,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastRatedDate: g.lastRatedDate,
       intakeBreakdown: intakeBreakdownOf(g.intakes),
       proteinSet: g.proteinSet,
+      ...(g.mix ? { mix: mixRowOf(g.mix) } : {}),
     }))
     .sort((a, b) => b.count - a.count || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''))
 
@@ -4637,9 +4783,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // feeding was summed on BOTH the page-1 human-food line and the treats line (adversarial
   // finding A3 — page 1 disagreed with the de-duplicated Appendix B). Appendix B's category
   // ternary is ordered human_food-first to match.
-  const humanFoodFeedings = windowMeals.filter((e) => e.meal!.format === 'human_food')
-  const treatFeedings = windowMeals.filter(
-    (e) => (e.meal!.foodType === 'treat' || e.meal!.format === 'treat') && e.meal!.format !== 'human_food',
+  // A MIXED BOWL is read per component (spec §8): a human-food or treat component is that
+  // feeding, whatever the bowl's other food. The picker only mixes meals today, but a
+  // synced or future mix may not obey it, and missing one here loses an exposure.
+  const humanFoodFeedings = windowMeals.filter((e) =>
+    e.meal!.bowl ? e.meal!.bowl.components.some((c) => c.format === 'human_food') : e.meal!.format === 'human_food',
+  )
+  const treatFeedings = windowMeals.filter((e) =>
+    e.meal!.bowl
+      ? !e.meal!.bowl.components.some((c) => c.format === 'human_food') &&
+        e.meal!.bowl.components.some((c) => c.foodType === 'treat' || c.format === 'treat')
+      : (e.meal!.foodType === 'treat' || e.meal!.format === 'treat') && e.meal!.format !== 'human_food',
   )
   const treatItemIds = new Set(treatFeedings.map((e) => e.meal!.foodItemId ?? e.id))
   const humanFoodDays = new Set<number>()
@@ -4665,6 +4819,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // classifier a different set is how "one definition of off-diet across page
         // 1, the tile and the appendix" quietly stops being true.
         meals: windowMeals,
+        // §6 (CUL-2052): the switch onto the diet precedes Day 1 and new foods follow the
+        // end, so the derivation reads every deduped meal and symptom in the pull.
+        recordMeals: dedupedAll.filter((e) => e.type === 'meal' && e.meal),
+        recordSymptoms: dedupedAll
+          .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
+          .map((e) => ({ occurredAt: e.occurredAt, eventType: e.type })),
         eventsById: new Map(dedupedAll.map((e) => [e.id, e])),
         doses: windowLookbackDoses,
         medicationItems: input.medicationItems ?? [],
@@ -4745,8 +4905,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let firstDay: string | null = null
     let lastDay: string | null = null
     for (const e of dedupedAll) {
-      if (e.type !== 'meal' || !e.meal || e.meal.foodType !== 'meal') continue
-      if (isReportTrialFood(e.meal)) continue
+      if (e.type !== 'meal' || !e.meal) continue
+      // A MIXED BOWL counts its NON-TRIAL components here, each by its own name, and the
+      // dominant food decides nothing (spec §6.1; CUL-1997's half this closes): a bowl of
+      // the old food with a quarter of the trial diet is a previous-diet feeding, and the
+      // trial food inside it is the transition, which page 1 states from §6.
+      const oldFoods: string[] = []
+      if (e.meal.bowl) {
+        for (const c of e.meal.bowl.components) {
+          if (c.foodType !== 'meal') continue
+          if (isReportTrialFood({ foodItemId: c.foodItemId, brand: c.brand, productName: c.productName, format: c.format })) continue
+          oldFoods.push(componentLabel(c))
+        }
+        if (oldFoods.length === 0) continue
+      } else {
+        if (e.meal.foodType !== 'meal') continue
+        if (isReportTrialFood(e.meal)) continue
+      }
       const key = localDayKey(e.occurredAt, tz)
       if (key === null) continue
       // The BOUND is numeric, on day numbers parsed from both sides — never a text compare
@@ -4757,8 +4932,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       feedings++
       if (firstDay === null || key < firstDay) firstDay = key
       if (lastDay === null || key > lastDay) lastDay = key
-      const label = mealFoodLabel(e.meal)
-      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+      for (const label of e.meal.bowl ? oldFoods : [mealFoodLabel(e.meal)]) {
+        if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+      }
     }
     if (feedings === 0 || firstDay === null || lastDay === null) return null
     const labels = [...counts.entries()]
@@ -5286,13 +5462,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // trial-breaking antigen (adversarial finding: a `format==='treat'` item with a non-'treat'
         // foodType was in page-1 treats but absent from the reconciliation). `format==='treat'` is a
         // legitimate FoodFormat, so the treat arm needs BOTH predicates here too.
-        (e) => e.meal!.foodType === 'treat' || e.meal!.format === 'treat' || e.meal!.format === 'human_food',
+        (e) =>
+          e.meal!.bowl
+            ? e.meal!.bowl.components.some(isHeuristicConfounder)
+            : e.meal!.foodType === 'treat' || e.meal!.format === 'treat' || e.meal!.format === 'human_food',
       )
   const trialExposureByEvent = new Map(
     (trialBlock?.exposures.items ?? []).map((x) => [x.eventId, x]),
   )
   const confounders: ConfounderExposure[] = confounderFeedings.map((e) => {
     const x = trialClassified ? trialExposureByEvent.get(e.id) ?? null : null
+    if (e.meal!.bowl) return bowlConfounder(e, e.meal!.bowl, x)
     return {
       eventId: e.id,
       occurredAt: e.occurredAt,
@@ -5313,6 +5493,72 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })
+  /**
+   * A MIXED BOWL's appendix C row (spec §7.3). The row names the OFFENDING component, never
+   * the bowl's dominant food: `mealFoodLabel` on a rabbit-dominant bowl would list Rabbit as
+   * the off-diet food. Off a trial, the components the heuristic keeps. A bowl that held
+   * the trial diet says so, and an edit to its foods made more than 24h after the meal is
+   * disclosed with its date, since a late edit is the record changing after the fact.
+   */
+  function bowlConfounder(
+    e: (typeof windowMeals)[number],
+    bowl: ReportMealBowl,
+    x: TrialBlock['exposures']['items'][number] | null,
+  ): ConfounderExposure {
+    const c = x?.classification ?? null
+    const parts = c?.components ?? []
+    const foods = c?.componentFoods ?? []
+    const byRef = new Map(bowl.components.map((b) => [b.foodKey, b]))
+    const named: ReportMealComponent[] = []
+    const alsoOff: ReportMealComponent[] = []
+    if (c) {
+      parts.forEach((p, i) => {
+        const comp = byRef.get(foods[i]?.ref ?? '')
+        if (!comp || !p.offDiet) return
+        ;(p.verdict === c.verdict ? named : alsoOff).push(comp)
+      })
+    } else {
+      named.push(...bowl.components.filter(isHeuristicConfounder))
+    }
+    if (named.length === 0) named.push(...bowl.components)
+    const withTrialDiet = c ? carriesTrialDiet(c) : false
+    const label =
+      named.map(componentLabel).join(' + ') +
+      (alsoOff.length > 0 ? `; also off the list: ${alsoOff.map(componentLabel).join(' + ')}` : '') +
+      (withTrialDiet ? ', in a mixed bowl with the trial diet' : ', in a mixed bowl')
+    const lead = named[0]
+    const views = named.map((n) =>
+      proteinView(n, { isTrialDiet: isReportTrialFood({ foodItemId: n.foodItemId, brand: n.brand, productName: n.productName, format: n.format }) }),
+    )
+    const editedAfter =
+      bowl.writtenAtMs !== null && bowl.writtenAtMs - Date.parse(e.occurredAt) > 24 * 60 * 60 * 1000
+        ? localDayKey(new Date(bowl.writtenAtMs).toISOString(), tz)
+        : null
+    return {
+      eventId: e.id,
+      occurredAt: e.occurredAt,
+      dayKey: localDayKey(e.occurredAt, tz),
+      foodLabel: label,
+      primaryProtein: canonicalizeProtein(lead.primaryProtein) ? lead.primaryProtein : null,
+      format: lead.format,
+      foodType: lead.foodType,
+      note: e.notes,
+      proteinSet: {
+        proteins: [...new Set(views.flatMap((v) => v.proteins))],
+        complete: views.every((v) => v.complete),
+        source: views[0]?.source,
+        offTrial: [...new Set(views.flatMap((v) => v.offTrial))],
+      },
+      rung: x ? (x.classification.rung === 'derived_protein' ? 'derived_protein' : 'unrecognised') : null,
+      antigens: x?.classification.antigens ?? [],
+      symptomInChallengeWindow: x?.symptomInChallengeWindow ?? false,
+      panelWasRead: x?.panelWasRead ?? false,
+      attributionChecked: x?.attributionChecked ?? true,
+      permittedLaterFrom: x?.permittedLaterFrom ?? null,
+      editedOn: editedAfter,
+    }
+  }
+
   // CUL-852 — the WSAVA "Food used to give medication" row.
   //
   // THE TALLY IS NOT WIDENED HERE. Whether a vehicle feeding's protein reaches the antigen

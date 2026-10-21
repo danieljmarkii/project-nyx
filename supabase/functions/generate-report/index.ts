@@ -77,6 +77,7 @@ import { selectReportTrial, trialAllowedListMissing } from './trial.ts'
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
+import { TRANSITION_LOOKBACK_DAYS } from '../../../lib/dietTrial.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -1067,7 +1068,11 @@ export function computeLookbackIso(
   // The trial term never RAISES the floor — `Math.min` over all three — so a trial that
   // starts inside the window (the first report of any trial) leaves the pull exactly as
   // it was, and this can only ever widen.
-  const trialMs = trialStartIso === null ? NaN : Date.parse(trialStartIso)
+  // Mixed meals (CUL-2052, spec §6.1): the switch ONTO the trial diet happens before Day 1,
+  // so the pull reaches `TRANSITION_LOOKBACK_DAYS` behind the trial's start. Floored at Day 1
+  // it made "first fed" come back empty for every trial older than the window, and the
+  // disclosure silently vanished (pass 1, break 6b, one layer down).
+  const trialMs = trialStartIso === null ? NaN : Date.parse(trialStartIso) - TRANSITION_LOOKBACK_DAYS * MS_PER_DAY
   const trialFloor = Number.isNaN(trialMs)
     ? Infinity
     : Math.max(
