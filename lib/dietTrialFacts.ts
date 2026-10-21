@@ -72,6 +72,7 @@ import {
   type TrialResponseCounts,
 } from './trialResponseCounts';
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
+import { offendingFoodLabel } from './trialExposuresScreen';
 import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import {
@@ -552,7 +553,7 @@ export async function loadDietTrialFacts(args: {
           unclassifiable: readable.exposures.unclassifiable,
           mostRecent: readable.exposures.mostRecent
             ? {
-                label: readable.exposures.mostRecent.label ?? 'Something off the list',
+                label: offendingFoodLabel(readable.exposures.mostRecent) ?? 'Something off the list',
                 when: relativeDayLabel(readable.exposures.mostRecent.occurredAt, nowMs),
               }
             : null,
