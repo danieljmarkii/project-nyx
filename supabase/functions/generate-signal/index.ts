@@ -61,6 +61,7 @@ import {
   type ArrangementRow,
   type IncidentAnalysisRow,
   type MealEventRow,
+  MEAL_EVENTS_SELECT,
   type MedDoseEventRow,
   type PriorSignal,
   type RegimenRow,
@@ -702,7 +703,7 @@ const handler = async (req: Request): Promise<Response> => {
         supabase
         .from('events')
         .select(
-          'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, format, brand, product_name))',
+          MEAL_EVENTS_SELECT,
           { count: 'exact' },
         )
         .eq('pet_id', petId)

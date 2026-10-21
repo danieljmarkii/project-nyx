@@ -11,6 +11,7 @@ import {
   type MealEvent,
   type PetContext,
 } from './detection.ts'
+import { mapMealRows, MEAL_EVENTS_SELECT, type MealEventRow } from './pipeline.ts'
 
 const at = (day: number, hour = 8): string =>
   `2026-05-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00.000Z`
@@ -113,4 +114,51 @@ Deno.test('a plain refusal still fires exactly as before (no bowl anywhere)', ()
   ]
   const b = detectIntakeDecline(input(meals)).find((f) => f.trigger === 'refused_normal_food')
   assert.equal(b?.refusedFoodLabel, 'the turkey pâté')
+})
+
+// ── The read: mapMealRows goes through the one bowl adapter ────────────────────
+
+const genId = (ms: number, tail: string) => {
+  const t = ms.toString(16).padStart(12, '0')
+  return `${t.slice(0, 8)}-${t.slice(8, 12)}-7001-8000-${tail.padStart(12, '0')}`
+}
+const food = (protein: string, food_type = 'meal') => ({
+  primary_protein: protein, proteins: [protein], food_type, format: 'wet', brand: 'B', product_name: protein,
+})
+
+Deno.test('a mix maps to the UNION of component proteins and never to the parent food', () => {
+  const ms = Date.UTC(2026, 4, 20, 8)
+  const row: MealEventRow = {
+    id: 'e1',
+    occurred_at: at(20),
+    occurred_at_confidence: 'witnessed',
+    // A stale parent food (an older build's edit) must not stand for the bowl (T2, §8).
+    meals: { food_item_id: 'stale', intake_rating: 'all', component_count: 2, food_items: food('beef') },
+    meal_components: [
+      { id: genId(ms, '1'), position: 0, food_item_id: 'r', food_label: 'Rabbit', share: '0.75', share_source: 'preset', amount_value: null, amount_unit: null, updated_at: at(20), deleted_at: null, food_items: food('rabbit') },
+      { id: genId(ms, '2'), position: 1, food_item_id: 'c', food_label: 'Chicken', share: '0.25', share_source: 'preset', amount_value: null, amount_unit: null, updated_at: at(20), deleted_at: null, food_items: food('chicken') },
+    ],
+  }
+  const [m] = mapMealRows([row], new Set())
+  assert.equal(m.foodItemId, null)
+  assert.equal(m.primaryProtein, null)
+  assert.deepEqual([...(m.proteins ?? [])].sort(), ['chicken', 'rabbit'])
+  assert.equal(m.bowl?.status, 'mix')
+  assert.equal(m.foodLabel, 'B rabbit mixed with B chicken')
+})
+
+Deno.test('a plain meal maps exactly as before', () => {
+  const row: MealEventRow = {
+    id: 'e2', occurred_at: at(20), occurred_at_confidence: null,
+    meals: { food_item_id: 'f', intake_rating: null, food_items: food('duck') },
+    meal_components: [],
+  }
+  const [m] = mapMealRows([row], new Set())
+  assert.equal(m.foodItemId, 'f')
+  assert.equal(m.bowl, undefined)
+})
+
+Deno.test('the meals pull selects the components and the count', () => {
+  assert.ok(MEAL_EVENTS_SELECT.includes('component_count'))
+  assert.ok(MEAL_EVENTS_SELECT.includes('meal_components('))
 })

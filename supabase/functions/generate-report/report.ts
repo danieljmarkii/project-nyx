@@ -409,6 +409,39 @@ export interface ReportMealDetail extends ReportFoodProteinInput {
   primaryProtein: string | null
   brand: string | null
   productName: string | null
+  /** Present only for a mixed bowl. Then the fields above describe the BOWL: no single
+   *  food id, brand, primary or format (T2), and no reader may read them as one food. */
+  bowl?: ReportMealBowl | null
+}
+
+/** One food in a mixed bowl (Mixed meals, CUL-2052): the component's OWN food row. */
+export interface ReportMealComponent extends ReportFoodProteinInput {
+  foodItemId: string | null
+  /** `meal_components.food_label`: the name at logging time; survives a purged food. */
+  snapshotLabel: string
+  /** The component's food identity (id, else folded snapshot name). */
+  foodKey: string
+  foodType: 'meal' | 'treat' | 'other' | null
+  format: FoodFormat | null
+  primaryProtein: string | null
+  brand: string | null
+  productName: string | null
+  /** The owner's estimate, as entered and normalised (null when unknown: never 50/50, T8). */
+  share: number | null
+  normalizedShare: number | null
+  shareSource: string
+  amountValue: number | null
+  amountUnit: string | null
+}
+
+/** A mixed bowl, as `_shared/mealBowl.ts` read it. `incomplete` is never one food. */
+export interface ReportMealBowl {
+  status: 'mix' | 'incomplete'
+  components: ReportMealComponent[]
+  compositionKey: string
+  compositionKeyWithRatio: string
+  /** When the current set was written; an edit more than 24h after the meal is disclosed. */
+  writtenAtMs: number | null
 }
 
 /** One event row from reference query [4] (caller pre-filters deleted_at IS NULL). */

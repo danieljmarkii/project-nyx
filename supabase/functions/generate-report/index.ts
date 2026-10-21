@@ -39,6 +39,7 @@ import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
 // CUL-975's paged reader, lifted to _shared/ by Engines v3 PR-09 (CUL-989) so generate-signal
 // and ask read their records the same way. Re-exported for index.test.ts, which drives it.
 import { fetchAll, rowsOrThrow } from '../_shared/pull.ts'
+import { bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from '../_shared/mealBowl.ts'
 export { fetchAll, PULL_MAX_PAGES, PULL_PAGE } from '../_shared/pull.ts'
 import {
   assembleReport,
@@ -48,6 +49,7 @@ import {
   type ReportPetInput,
   type ReportEventInput,
   type ReportMealDetail,
+  type ReportMealComponent,
   type ReportAiAnalysisInput,
   type ReportWeightCheckInput,
   type ReportDoseInput,
@@ -197,6 +199,8 @@ type MealJoin = {
   food_item_id: string | null
   intake_rating: string | null
   quantity: string | null
+  /** Mixed meals (migration 105): NULL for a single food; the components decide (§3). */
+  component_count?: number | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
 }
 interface EventRow {
@@ -210,6 +214,8 @@ interface EventRow {
   notes: string | null
   created_at: string
   meals: MealJoin | MealJoin[] | null
+  /** Every component row of a mixed bowl, tombstones included (the read rule needs them). */
+  meal_components?: MealComponentJoin<FoodItemJoin>[] | null
 }
 
 interface AiAnalysisRow {
@@ -530,7 +536,60 @@ function mapFoodProteins(fi: FoodProteinCols | null | undefined): {
   }
 }
 
-function mapMealDetail(meal: MealJoin): ReportMealDetail {
+/**
+ * A meal's detail. A MIXED BOWL (CUL-2052) is read through `bowlOf`, the server's one
+ * door to the generations rule, and never from `meals.food_item_id`, which is NULL for a
+ * mix (T2). Its bowl-level fields name no single food: no id, no brand, no primary, no
+ * format, and the food type is the bowl's (a treat only when every component is one).
+ * Every reader that needs a food reads `bowl.components`.
+ */
+function mapMealDetail(meal: MealJoin, componentRows: MealComponentJoin<FoodItemJoin>[] | null | undefined): ReportMealDetail {
+  const bowl = bowlOf(meal, componentRows)
+  if (bowl) {
+    const components: ReportMealComponent[] = bowl.components.map((c) => ({
+      foodItemId: c.foodItemId,
+      snapshotLabel: c.foodLabel,
+      foodKey: c.foodKey,
+      foodType: (c.food?.food_type ?? null) as ReportMealComponent['foodType'],
+      format: (c.food?.format ?? null) as ReportMealComponent['format'],
+      primaryProtein: c.food?.primary_protein ?? null,
+      ...mapFoodProteins(c.food),
+      brand: c.food?.brand ?? null,
+      productName: c.food?.product_name ?? null,
+      share: c.share,
+      normalizedShare: c.normalizedShare,
+      shareSource: c.shareSource,
+      amountValue: c.amountValue,
+      amountUnit: c.amountUnit,
+    }))
+    const types = components.map((c) => c.foodType)
+    const foodType: ReportMealDetail['foodType'] =
+      types.length > 0 && types.every((t) => t === 'treat')
+        ? 'treat'
+        : types.includes('meal')
+          ? 'meal'
+          : types.find((t) => t !== null && t !== 'treat') ?? null
+    return {
+      foodItemId: null,
+      intakeRating: (meal.intake_rating ?? null) as ReportMealDetail['intakeRating'],
+      quantity: meal.quantity ?? null,
+      foodType,
+      format: null,
+      primaryProtein: null,
+      proteins: null,
+      ingredientsNotes: null,
+      extractionConfidence: null,
+      brand: null,
+      productName: null,
+      bowl: {
+        status: bowl.status,
+        components,
+        compositionKey: bowl.compositionKey,
+        compositionKeyWithRatio: bowl.compositionKeyWithRatio,
+        writtenAtMs: bowl.writtenAtMs,
+      },
+    }
+  }
   const fi = first(meal.food_items)
   return {
     foodItemId: meal.food_item_id ?? null,
@@ -558,7 +617,7 @@ export function mapEventRows(rows: EventRow[]): ReportEventInput[] {
       severity: r.severity ?? null,
       notes: r.notes ?? null,
       loggedAt: r.created_at,
-      meal: r.event_type === 'meal' && meal ? mapMealDetail(meal) : null,
+      meal: r.event_type === 'meal' && meal ? mapMealDetail(meal, r.meal_components) : null,
     }
   })
 }
@@ -1236,7 +1295,8 @@ export async function generateReportForPet(
       .select(
         'id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
           'severity, notes, created_at, ' +
-          `meals(food_item_id, intake_rating, quantity, food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name))`,
+          `meals(food_item_id, intake_rating, quantity, component_count, food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name)), ` +
+          MEAL_BOWL_SELECT(`food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name`),
         { count: 'exact' },
       )
       .eq('pet_id', petId)

@@ -90,6 +90,7 @@ import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
+import { bowlOf, MEAL_BOWL_SELECT, type MealBowl, type MealComponentJoin } from '../_shared/mealBowl.ts'
 import {
   buildBuildingText,
   canRenderCarried,
@@ -158,6 +159,8 @@ export type FoodItemJoin = {
 export type MealJoin = {
   food_item_id: string | null
   intake_rating: string | null
+  /** Mixed meals (migration 105): NULL for a single food; the components decide. */
+  component_count?: number | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
 }
 export interface MealEventRow {
@@ -165,7 +168,17 @@ export interface MealEventRow {
   occurred_at: string
   occurred_at_confidence: string | null
   meals: MealJoin | MealJoin[] | null
+  /** A mixed bowl's component rows, tombstones included (CUL-2052). */
+  meal_components?: MealComponentJoin<FoodItemJoin>[] | null
 }
+
+/** The food columns every meal read selects, for a meal's food and a component's alike. */
+export const MEAL_FOOD_COLUMNS = 'primary_protein, proteins, food_type, format, brand, product_name'
+
+/** The meals pull's select: the meal, its food, and a mixed bowl's components. */
+export const MEAL_EVENTS_SELECT =
+  `id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, component_count, food_items(${MEAL_FOOD_COLUMNS})), ` +
+  MEAL_BOWL_SELECT(MEAL_FOOD_COLUMNS)
 
 export function first<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
@@ -361,6 +374,8 @@ export function mapMedDoseFacts(
 export function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEvent[] {
   return rows.map((r) => {
     const meal = first(r.meals)
+    const bowl = bowlOf(meal, r.meal_components)
+    if (bowl) return mapBowlRow(r, meal, bowl, pairedEventIds)
     const fi = first(meal?.food_items)
     return {
       id: r.id,
@@ -388,6 +403,55 @@ export function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): 
       // semantics). B-040 will supply 'low' for shared / free-fed bowls.
     }
   })
+}
+
+/**
+ * A MIXED BOWL (CUL-2052, spec §5.3). Exposure is presence: the bowl's protein set is the
+ * UNION of every component's, so a minor component never turns an exposed day into a
+ * control day. No single food stands for the bowl (T2): no food id, no primary, no
+ * format. The food type is the bowl's: a treat only when every component is one.
+ */
+function mapBowlRow(
+  r: MealEventRow,
+  meal: MealJoin | null,
+  bowl: MealBowl<FoodItemJoin>,
+  pairedEventIds: Set<string>,
+): MealEvent {
+  const proteins: string[] = []
+  for (const c of bowl.components) {
+    for (const p of [c.food?.primary_protein ?? null, ...(c.food?.proteins ?? [])]) {
+      if (p && !proteins.includes(p)) proteins.push(p)
+    }
+  }
+  const types = bowl.components.map((c) => c.food?.food_type ?? null)
+  const foodType = (
+    types.length > 0 && types.every((t) => t === 'treat')
+      ? 'treat'
+      : types.includes('meal')
+        ? 'meal'
+        : types.find((t) => t !== null && t !== 'treat') ?? null
+  ) as 'meal' | 'treat' | 'other' | null
+  const labelOf = (c: MealBowl<FoodItemJoin>['components'][number]): string =>
+    (c.food ? `${c.food.brand} ${c.food.product_name}`.trim() : '') || c.foodLabel
+  const labels = bowl.components.map(labelOf)
+  return {
+    id: r.id,
+    occurredAt: r.occurred_at,
+    isMedicationVehicle: pairedEventIds.has(r.id),
+    occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
+    foodItemId: null,
+    primaryProtein: null,
+    proteins,
+    intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
+    foodType,
+    format: null,
+    foodLabel: labels.length > 1 ? `${labels.slice(0, -1).join(', ')} mixed with ${labels[labels.length - 1]}` : labels[0] ?? null,
+    bowl: {
+      status: bowl.status,
+      compositionKey: bowl.compositionKey,
+      components: bowl.components.map((c) => ({ foodItemId: c.foodItemId, foodLabel: labelOf(c) })),
+    },
+  }
 }
 
 // ── Per-incident visual red flags (B-340) ─────────────────────────────────────
