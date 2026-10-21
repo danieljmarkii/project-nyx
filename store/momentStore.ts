@@ -7,6 +7,7 @@ import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
 import type { LogTimeTrialFlag } from '../lib/trialContaminant';
+import type { CardBowl } from '../lib/mixCard';
 import type { LoggedRecord } from '../lib/completionCard';
 import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 import { recordShownTiers } from '../lib/incidentTierShown';
@@ -170,6 +171,10 @@ export interface MealPayload {
   // Engines v3 PR-28b — a meal re-checks the vomits around it, and a raise the server
   // finds is said here (NamedPayload's field, same meaning).
   floorLine?: FloorAnnouncement | null;
+  // Mixed meals row 5 (CUL-2054) — set when this meal is a MIXED BOWL: the foods and shares
+  // just written, so the title names the bowl and the mixing slot becomes the stepper.
+  // Absent on a plain meal, which renders exactly as before.
+  bowl?: CardBowl | null;
 }
 
 export interface MedicationPayload {
@@ -421,6 +426,10 @@ interface MomentState {
   // for FLOOR_LINE_DWELL_MS (a floor on every later reschedule, like the double-dose
   // note's). Returns whether it landed, so the caller records the tier as said only then.
   patchFloorLine: (eventId: string, line: FloorAnnouncement) => boolean;
+  // Mixed meals row 5 — the stepper's optimistic write: the card's bowl moves the moment
+  // the owner taps, and the caller reverts it if the write fails. Same guards as every
+  // patch: this meal's card, visible, not undone. Returns whether it landed.
+  patchMealBowl: (eventId: string, bowl: CardBowl, opts: { tick: boolean }) => boolean;
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;
@@ -1048,6 +1057,16 @@ export const useMomentStore = create<MomentState>((set) => ({
     if (!shownGone && !louder) return refused;
     set({ payload: { ...state.payload, trialFlag: trialFlag ?? null } });
     return { landed: trialFlag !== null, displaced: { trialId: shown.trialId, foodId: shown.foodId } };
+  },
+  patchMealBowl: (eventId, bowl, opts): boolean => {
+    const state: MomentState = useMomentStore.getState();
+    if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return false;
+    if (!state.visible || state.removed || state.undoing === eventId) return false;
+    // The stepper's tick plays here, only when the patch lands (patchIntakeRating's shape);
+    // a revert after a failed write is silent.
+    if (opts.tick) selectChip();
+    set({ payload: { ...state.payload, bowl } });
+    return true;
   },
   patchFloorLine: (eventId, floorLine) => {
     const state = useMomentStore.getState();

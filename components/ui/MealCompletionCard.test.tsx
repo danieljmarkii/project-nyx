@@ -46,6 +46,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+// Mixed meals row 5 — the bowl's one writer, observable; the stepper's tests drive it.
+const mockSetMealComponents = jest.fn().mockResolvedValue({ food_item_id: null, component_count: 2 });
+jest.mock('../../lib/mealComponents', () => ({
+  setMealComponents: (...a: unknown[]) => mockSetMealComponents(...a),
+}));
 // The door the floor line and the combo row open, observable (CUL-1691 §2.3's guards).
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (...a: unknown[]) => mockPush(...a) }, usePathname: () => '/' }));
@@ -142,6 +147,73 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+});
+
+// Mixed meals row 5 (CUL-2054; spec §7.1, §7.5) — the card's one mixing slot.
+describe('MealCompletionCard — mixing (row 5)', () => {
+  const BOWL = {
+    foods: [
+      { foodItemId: 'chicken', foodLabel: 'Weruva Chicken Pâté', rowName: 'Chicken Pâté', share: 1 / 3 },
+      { foodItemId: 'rabbit', foodLabel: 'Weruva Rabbit Pâté', rowName: 'Rabbit Pâté', share: 2 / 3 },
+    ],
+  };
+  beforeEach(() => mockSetMealComponents.mockClear());
+
+  it('a plain meal offers "+ Mixed with another food" and opens the mix route bound to this meal', () => {
+    seedMeal({ foodType: 'meal' }, 'p2');
+    const { getByText } = render(<MealCompletionCard />);
+    fireEvent.press(getByText('+ Mixed with another food'));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/mix', params: { event: 'e1', pet: 'p1', from: 'card' } });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('a treat offers no mixing line (treats stay their own logs, R1)', () => {
+    seedMeal({ foodType: 'treat' });
+    const { queryByText } = render(<MealCompletionCard />);
+    expect(queryByText('+ Mixed with another food')).toBeNull();
+  });
+
+  it('a bowl is titled as History names it, and the slot is the stepper', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('Logged · ⅓ Chicken Pâté + ⅔ Rabbit Pâté');
+    getByText('⅓·⅔');
+    getByText('‹ More Chicken Pâté');
+    getByText('More Rabbit Pâté ›');
+    expect(queryByText('+ Mixed with another food')).toBeNull();
+  });
+
+  it('a step moves one stop toward the named food and writes the bowl', async () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByTestId, getByText } = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(getByTestId('mix-step-first')); });
+    getByText('½·½');
+    expect(mockSetMealComponents).toHaveBeenCalledWith('e1', [
+      expect.objectContaining({ foodItemId: 'chicken', share: 0.5, shareSource: 'preset' }),
+      expect.objectContaining({ foodItemId: 'rabbit', share: 0.5, shareSource: 'preset' }),
+    ]);
+  });
+
+  it('an end stop is dimmed, says why, and writes nothing', async () => {
+    seedMeal({ foodType: 'meal', bowl: { foods: [{ ...BOWL.foods[0], share: 0.25 }, { ...BOWL.foods[1], share: 0.75 }] } });
+    const { getByTestId } = render(<MealCompletionCard />);
+    const end = getByTestId('mix-step-second');
+    expect(end.props.accessibilityState).toEqual({ disabled: true });
+    expect(end.props.accessibilityLabel).toBe('More Rabbit Pâté in this bowl. Already at ¾, the most the steps go.');
+    await act(async () => { fireEvent.press(end); });
+    expect(mockSetMealComponents).not.toHaveBeenCalled();
+  });
+
+  it('a failed step goes back and says so', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockSetMealComponents.mockRejectedValueOnce(new Error('disk'));
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByTestId, getByText } = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(getByTestId('mix-step-second')); });
+    getByText('⅓·⅔');
+    expect(alert).toHaveBeenCalledWith('Couldn’t save that', 'Try again, or change it from the meal’s detail screen.');
+    alert.mockRestore();
+  });
 });
 
 // CUL-2084 — a mixed bowl fed past the trial's target: the eyebrow frames P-5's sentence,
