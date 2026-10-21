@@ -81,7 +81,6 @@ jest.mock('../../lib/trialFoodsScreen', () => ({
 
 import { Alert, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import type { ReactTestInstance } from 'react-test-renderer';
 import { MealCompletionCard } from './MealCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
@@ -174,8 +173,9 @@ describe('MealCompletionCard — mixing (row 5)', () => {
   it('a single-food meal renders as before, with the mixing door its only new line', () => {
     seedMeal({ foodType: 'meal', foodBrand: 'Weruva', foodProductName: 'Rabbit Pâté', foodFormat: null });
     const view = render(<MealCompletionCard />);
-    const words = view.UNSAFE_root.findAll((n: ReactTestInstance) => typeof n.type === 'string' && n.type === 'Text')
-      .map((n: ReactTestInstance) => [n.props.children].flat().join(''))
+    type Node = typeof view.UNSAFE_root;
+    const words = view.UNSAFE_root.findAll((n: Node) => typeof n.type === 'string' && n.type === 'Text')
+      .map((n: Node) => [n.props.children].flat().join(''))
       .filter((t: string) => t.trim().length > 0);
     expect(words).toEqual([
       'Logged · Weruva Rabbit Pâté',
