@@ -325,7 +325,9 @@ export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): s
   const when = relativeDayLabel(stat.last_fed_at, now);
   if (!when) return null; // unreadable timestamp — no honest recency to show
   const recency = `Last logged ${when}`;
-  return stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
+  const counted = stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
+  // Mixed bowls counted above are disclosed (spec §7.4): "· 8 in a mix".
+  return (stat.mix_count ?? 0) > 0 ? `${counted} · ${stat.mix_count} in a mix` : counted;
 }
 
 // ── Reliable-favorites shelf (B-004 PR 5) ──────────────────────────────────────

@@ -276,3 +276,33 @@ describe('the phone reads a bowl the way the vet report does (spec §8: one verd
     expect(verdicts.size).toBe(1);
   });
 });
+
+// ── The Day-1 boundary, pinned on both sides of UTC (spec §10, C-29) ──────────────
+
+describe.each([
+  { zone: 'Etc/GMT+7', offset: '-07:00' }, // UTC−7
+  { zone: 'Etc/GMT-11', offset: '+11:00' }, // UTC+11
+])('a mix at the trial’s first local midnight ($zone)', ({ zone, offset }) => {
+  async function verdictAt(local: string) {
+    seedMeal('edge', { count: 2 });
+    seedSet('edge', 1_760_000_000_000, [
+      { food: 'duck', label: 'Duck Dry', share: 0.5 },
+      { food: 'chicken', label: 'Chicken Pâté', share: 0.5 },
+    ]);
+    const bowl = (await loadMealBowls(['edge'])).get('edge')!;
+    const occurredAt = new Date(`${local}${offset}`).toISOString();
+    const ctx = buildTrialContext(TRIAL, [DUCK_ROW], { timeZone: zone });
+    const phone = classifyFeeding(ctx, feedingOfBowl('edge', occurredAt, null, bowl));
+    const server = classifyFeeding(ctx, toTrialFeeding(asServerSource('edge', occurredAt, null, bowl)));
+    expect(server).toEqual(phone);
+    return phone.verdict;
+  }
+
+  it('23:50 the evening before Day 1 is out of window', async () => {
+    expect(await verdictAt('2026-06-30T23:50:00')).toBe('out_of_window');
+  });
+
+  it('00:10 on Day 1 is in, and the chicken in it counts', async () => {
+    expect(await verdictAt('2026-07-01T00:10:00')).toBe('off_diet_protein');
+  });
+});
