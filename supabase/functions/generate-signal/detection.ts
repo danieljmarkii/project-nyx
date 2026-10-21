@@ -3792,7 +3792,7 @@ export function detectCorrelations(
        * now (an unfinished window reads as absence, which would bias the control toward keeping
        * the forward card).
        */
-      reversed: { caseExp: Map<string, AttributionConfidence>; ctrlExp: Map<string, AttributionConfidence> } | null
+      reversed: { caseExp: Map<string, AttributionConfidence>; ctrlExp: Map<string, AttributionConfidence>; ctrlUnknown: boolean } | null
     }[] = []
     // Proteins under an active free-fed arrangement that was in-window for ≥1 matched
     // pair (case OR control) of this symptom. These are excluded from candidacy — a
@@ -3862,14 +3862,16 @@ export function detectCorrelations(
         reversed:
           en11 &&
             onset + windowMs <= correlationNowMs &&
-            bestCtrl.anchorMs + windowMs <= correlationNowMs &&
-            // The reversed control window may not hold an incomplete bowl either (adversarial
-            // pass 2, break 5): its missing food would read as absent "after", and a reversed
-            // hit withholds the forward card. No reversed read: the forward card stands.
-            !unknownBowlMs.some((ms) => ms <= bestCtrl!.anchorMs + windowMs && bestCtrl!.anchorMs + windowMs - ms <= windowMs)
+            bestCtrl.anchorMs + windowMs <= correlationNowMs
             ? {
               caseExp: windowExposures(onset + windowMs, windowMs).exposures,
               ctrlExp: windowExposures(bestCtrl.anchorMs + windowMs, windowMs).exposures,
+              // An INCOMPLETE bowl in the after-control window (CUL-2052): what it held is not
+              // known, so the pair stays in the count and its control reads as EXPOSED to every
+              // food. That can only lower the reversed difference, so an unknown never withholds
+              // a forward card (adversarial pass 2: dropping the pair shrank the denominator and
+              // withheld an Established card; reading the gap as absence did the same).
+              ctrlUnknown: unknownBowlMs.some((ms) => ms <= bestCtrl!.anchorMs + windowMs && bestCtrl!.anchorMs + windowMs - ms <= windowMs),
             }
             : null,
       })
@@ -4036,7 +4038,7 @@ export function detectCorrelations(
           if (!p.reversed) continue
           nRev++
           const inCaseRev = cluster.some((member) => p.reversed!.caseExp.has(member))
-          const inCtrlRev = cluster.some((member) => p.reversed!.ctrlExp.has(member))
+          const inCtrlRev = p.reversed.ctrlUnknown || cluster.some((member) => p.reversed!.ctrlExp.has(member))
           if (inCaseRev && !inCtrlRev) bRev++
           else if (!inCaseRev && inCtrlRev) cRev++
         }
@@ -4534,9 +4536,14 @@ function detectIntakeDeclineCore(
       const earlierMixes = windowMeals.filter(
         (x) => x.ms < m.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === c.foodItemId),
       )
-      const history = [...singles.filter((x) => x.ms < m.ms), ...earlierMixes]
-      if (history.length === 0) continue
-      tested.push({ meals: [...history, m].sort((x, y) => x.ms - y.ms), latest: m })
+      // Two readings, and the accusing one stands (adversarial pass 2, break A): the plain
+      // meals alone, and the plain meals with the mixes. Partly eaten mixes during a switch
+      // must not drag a solid plain history under the floor and silence a full refusal.
+      const plainBefore = singles.filter((x) => x.ms < m.ms)
+      for (const history of [plainBefore, [...plainBefore, ...earlierMixes]]) {
+        if (history.length === 0) continue
+        tested.push({ meals: [...history, m].sort((x, y) => x.ms - y.ms), latest: m })
+      }
     }
   }
 

@@ -188,3 +188,17 @@ Deno.test('break 4: a refused incomplete bowl still trips the food we can see in
   ]
   assert.ok(detectIntakeDecline(input(meals)).find((f) => f.trigger === 'refused_normal_food'))
 })
+
+Deno.test('break A: partly eaten mixes never drag a solid plain history under the floor', () => {
+  const meals: MealEvent[] = [
+    plain(17, 'all', 'chicken', 'Chicken Pâté'),
+    plain(18, 'all', 'chicken', 'Chicken Pâté'),
+    plain(19, 'all', 'chicken', 'Chicken Pâté'),
+    mix(22, 'some'),
+    mix(24, 'some'),
+    mix(26, 'some'),
+    mix(27, 'some'),
+    mix(30, 'refused'),
+  ]
+  assert.ok(detectIntakeDecline(input(meals)).find((f) => f.trigger === 'refused_normal_food'))
+})
