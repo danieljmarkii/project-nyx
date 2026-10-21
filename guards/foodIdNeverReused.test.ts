@@ -12,7 +12,8 @@ import { stripSqlComments } from './sqlComments';
 // another account holds (live row, ledger, or storage object), and freezes a
 // food's id and owner. Proven on a PG16 stub replay of the touched surface with
 // every attack driven with 106 on and off (the PR records the run), and attacked
-// by the rls-privacy-reviewer.
+// by the rls-privacy-reviewer (pass 1 found F1-F3; their mutants are
+// tests here).
 //
 // This file pins the live definitions (the LAST in filename order) by their exact
 // text, so any later edit to either function, or an ALTER, DROP, DISABLE or
@@ -62,7 +63,8 @@ BEGIN
     END IF;
     RETURN NEW;
   END IF;
-  IF EXISTS (
+  IF (auth.uid() IS NOT NULL AND NEW.created_by_user_id IS DISTINCT FROM auth.uid())
+     OR EXISTS (
        SELECT 1 FROM public.food_items f
        WHERE f.id = NEW.id
          AND f.created_by_user_id IS DISTINCT FROM NEW.created_by_user_id)
@@ -152,10 +154,13 @@ export function guardProblems(sql: string): string[] {
   }
 
   for (const [trigger, { fn, when }] of Object.entries(TRIGGERS)) {
+    // Every creation of the name, CREATE OR REPLACE included (a replacement in
+    // another shape, or with a WHEN, is the live one); the last must be exact.
     const creates = [
-      ...sql.matchAll(new RegExp(String.raw`CREATE\s+TRIGGER\s+${trigger}\s+${when}\s+ON\s+${QUAL('food_items')}\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+${QUAL(fn)}\s*\(\s*\)\s*;`, 'gi')),
+      ...sql.matchAll(new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?${trigger}"?[\s\S]*?;`, 'gi')),
     ];
-    if (creates.length === 0) {
+    const shape = new RegExp(String.raw`^CREATE\s+TRIGGER\s+${trigger}\s+${when}\s+ON\s+${QUAL('food_items')}\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+${QUAL(fn)}\s*\(\s*\)\s*;$`, 'i');
+    if (creates.length === 0 || !shape.test(creates[creates.length - 1][0])) {
       problems.push(`no ${trigger} on food_items in its required shape`);
       continue;
     }
@@ -183,10 +188,22 @@ export function guardProblems(sql: string): string[] {
     if (trigger in TRIGGERS) continue;
     const other = fns.get(fnName);
     if (!other) problems.push(`trigger ${trigger} on food_items runs ${fnName}, which this guard cannot read`);
-    else if (/\bNEW\s*\.\s*"?(?:id|created_by_user_id)"?\s*:?=|\bINTO\s+NEW\b|\bNEW\s*:=/i.test(other.text)) {
+    else if (/\bNEW\s*\.\s*"?(?:id|created_by_user_id)"?\s*:?=|\bINTO\s+(?:STRICT\s+)?NEW\b|\bNEW\s*:?=(?!=)/i.test(other.text)) {
       problems.push(`trigger ${trigger} on food_items can assign NEW.id or NEW.created_by_user_id`);
     }
   }
+
+  // A rule rewrites a write before any trigger sees it; a rename moves the
+  // triggers off the table the policies name.
+  if (new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?RULE[^;]*\bTO\s+${QUAL('food_items')}\b`, 'i').test(sql)) problems.push('a rule rewrites writes to food_items');
+  if (new RegExp(String.raw`ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${QUAL('food_items')}\s+RENAME\s+TO\b`, 'i').test(sql)) problems.push('food_items is renamed');
+
+  // The functions read storage.objects as their owner; an owner that does not
+  // bypass RLS sees nothing and passes every claim, silently (review F1). The
+  // file refuses such a role before it creates anything.
+  const assertAt = sql.search(/IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+pg_catalog\.pg_roles\s+WHERE\s+rolname\s*=\s*current_user\s+AND\s*\(\s*rolsuper\s+OR\s+rolbypassrls\s*\)\s*\)\s*THEN\s+RAISE\s+EXCEPTION/i);
+  const ledgerAt = sql.search(new RegExp(String.raw`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?${QUAL(LEDGER)}\s*\(`, 'i'));
+  if (assertAt === -1 || (ledgerAt !== -1 && assertAt > ledgerAt)) problems.push('no RLS-bypass assertion before the ledger');
 
   // The ledger: server-only, for good.
   const table = QUAL(LEDGER);
@@ -235,6 +252,8 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
     expect(mutate(/f\.created_by_user_id IS DISTINCT FROM NEW\.created_by_user_id\)/, 'FALSE)')).toEqual(guardPinned);
     expect(mutate(/r\.owner_id IS DISTINCT FROM NEW\.created_by_user_id\)/, 'FALSE)')).toEqual(guardPinned);
     expect(mutate(/AND coalesce\(o\.owner_id, o\.owner::text\) IS DISTINCT FROM NEW\.created_by_user_id::text\)/, ')')).toEqual(guardPinned);
+    // The caller check removed (review F3: naming another owner was an oracle).
+    expect(mutate(/\(auth\.uid\(\) IS NOT NULL AND NEW\.created_by_user_id IS DISTINCT FROM auth\.uid\(\)\)\n\s*OR /, '')).toEqual(guardPinned);
     // A NULL ledger owner read as "anyone may".
     expect(mutate(/r\.owner_id IS DISTINCT FROM NEW\.created_by_user_id/, 'r.owner_id <> NEW.created_by_user_id')).toEqual(guardPinned);
     // The update arm loses the owner, or the id.
@@ -273,6 +292,19 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
       expect.stringMatching(/retire_id is disabled/),
     ]);
     expect(add('ALTER TABLE food_items DISABLE TRIGGER USER; ALTER TABLE food_items ENABLE TRIGGER USER;')).toEqual([]);
+    // A later CREATE OR REPLACE in another shape, or with a WHEN, is the live one
+    // (review F2a; the first version of this file was green on both).
+    expect(add('CREATE OR REPLACE TRIGGER trg_food_items_guard_id BEFORE UPDATE ON public.food_items FOR EACH ROW EXECUTE FUNCTION public.guard_food_item_id();')).toEqual([
+      expect.stringMatching(/no trg_food_items_guard_id/),
+    ]);
+    expect(add('CREATE OR REPLACE TRIGGER trg_food_items_guard_id BEFORE INSERT OR UPDATE ON public.food_items FOR EACH ROW WHEN (false) EXECUTE FUNCTION public.guard_food_item_id();')).toEqual([
+      expect.stringMatching(/no trg_food_items_guard_id/),
+    ]);
+    expect(add('create or replace trigger "trg_food_items_retire_id" after delete on public.food_items for each statement execute function public.retire_food_item_id();')).toEqual([
+      expect.stringMatching(/no trg_food_items_retire_id/),
+    ]);
+    expect(add('CREATE RULE r AS ON INSERT TO public.food_items DO INSTEAD NOTHING;')).toEqual([expect.stringMatching(/rule rewrites/)]);
+    expect(add('ALTER TABLE public.food_items RENAME TO food_items_old;')).toEqual([expect.stringMatching(/renamed/)]);
     // A trigger recreated in the wrong shape (UPDATE only) no longer guards inserts.
     expect(mutate(/BEFORE INSERT OR UPDATE ON public\.food_items/, 'BEFORE UPDATE ON public.food_items')).toEqual([
       expect.stringMatching(/no trg_food_items_guard_id/),
@@ -288,6 +320,11 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
     expect(add(`${fnDef('public.zz', 'NEW.created_by_user_id = auth.uid();')}\n${trg('public.zz')}`)).toEqual(assigns);
     expect(add(`${fnDef('public.zz', "NEW := jsonb_populate_record(NEW, '{}'::jsonb);")}\n${trg('public.zz')}`)).toEqual(assigns);
     expect(add(`${fnDef('public.zz', 'SELECT gen_random_uuid() INTO NEW.id;')}\n${trg('public.zz')}`)).toEqual(assigns);
+    // Review F2b / F2c: whole-row assignment with `=`, and INTO STRICT.
+    expect(add(`${fnDef('public.zz', "NEW = jsonb_populate_record(NEW, jsonb_build_object('id', gen_random_uuid()));")}\n${trg('public.zz')}`)).toEqual(assigns);
+    expect(add(`${fnDef('public.zz', 'SELECT f.* INTO STRICT NEW FROM public.food_items f LIMIT 1;')}\n${trg('public.zz')}`)).toEqual(assigns);
+    // A comparison is not an assignment.
+    expect(add(`${fnDef('public.zz', "IF NEW.brand = 'x' THEN NULL; END IF;")}\n${trg('public.zz')}`)).toEqual([]);
     expect(add(trg('public.not_defined_here'))).toEqual([expect.stringMatching(/cannot read/)]);
     // Non-vacuity: the scan reads the shipped neighbour (001's updated_at), resolves
     // its function, and passes it.
@@ -318,6 +355,16 @@ describe("a food's id can never be claimed again (CUL-2044, migration 106)", () 
       expect.stringMatching(/guard_food_item_id: EXECUTE is not revoked from anon/),
       expect.stringMatching(/guard_food_item_id: EXECUTE is not revoked from authenticated/),
     ]);
+  });
+
+  it('reds when the RLS-bypass assertion is removed or comes after the ledger', () => {
+    const assertion = /DO \$\$\nBEGIN\n  IF NOT EXISTS \(SELECT 1 FROM pg_catalog\.pg_roles[\s\S]*?END \$\$;\n/;
+    expect(mutate(assertion, '')).toEqual([expect.stringMatching(/no RLS-bypass assertion/)]);
+    expect(mutate(/rolsuper OR rolbypassrls/, 'rolsuper OR true')).toEqual([expect.stringMatching(/no RLS-bypass assertion/)]);
+    const moved = body106.replace(assertion, '');
+    expect(moved).not.toBe(body106);
+    const block = (body106.match(assertion) ?? [''])[0];
+    expect(guardProblems(`${moved}\n${block}`)).toEqual([expect.stringMatching(/no RLS-bypass assertion/)]);
   });
 
   it('reds when the ledger is opened to a client or loses RLS', () => {

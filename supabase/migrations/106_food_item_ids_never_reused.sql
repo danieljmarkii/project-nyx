@@ -44,6 +44,10 @@
 --         (1) a live food_items row,
 --         (2) the ledger,
 --         (3) an object in nyx-food-photos under `{id}/`.
+--       First, a signed-in caller naming an owner other than itself is
+--       refused here, before RLS would refuse it with 42501, so naming another
+--       account's uid cannot tell held ids from free ones (rls-privacy-reviewer
+--       F3). A server write (no JWT subject) names any owner.
 --       The owner re-creating its own food passes all three, so offline
 --       capture, presync and commitFood's re-create are untouched. (1) is not
 --       needed for safety (the primary key holds); it makes every refusal of a
@@ -85,6 +89,12 @@
 --     to replica. That is the server, not a client.
 --   · TRUNCATE skips the row trigger, so it retires nothing. No client can
 --     reach it (PostgREST has no TRUNCATE) and five foreign keys refuse it.
+--   · The check reads one snapshot. A REPEATABLE READ transaction opened
+--     before another account's create, upload and delete can still insert the
+--     id. PostgREST runs each request at READ COMMITTED; only a server-held
+--     transaction could, with the id known in advance.
+--   · An object with no owner (a dashboard upload) blocks even the real
+--     owner's re-create. No path uploads that way (0 such objects, 2026-10-20).
 --   · A food deleted before 106 with no leftover object is not in the ledger,
 --     so its id can be created again. There is nothing under it to claim.
 --   · The ledger keeps a deleted account's uid against the ids it retired
@@ -106,6 +116,20 @@
 --     DROP FUNCTION IF EXISTS public.retire_food_item_id();
 --     DROP TABLE IF EXISTS public.food_item_retired_ids;
 -- ============================================================
+
+-- Both functions run as the role applying this file, and both read
+-- storage.objects, whose policies admit only `authenticated`. A role that
+-- does not bypass RLS would see no object: the backfill would write nothing and
+-- the storage check would pass every claim, silently (rls-privacy-reviewer F1,
+-- reproduced on the stub). So it is refused here, loudly. postgres bypasses RLS
+-- in production (read 2026-10-20).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles
+                 WHERE rolname = current_user AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION '106 must be applied by a role that bypasses RLS';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.food_item_retired_ids (
   id         uuid PRIMARY KEY,
@@ -166,7 +190,8 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF EXISTS (
+  IF (auth.uid() IS NOT NULL AND NEW.created_by_user_id IS DISTINCT FROM auth.uid())
+     OR EXISTS (
        SELECT 1 FROM public.food_items f
        WHERE f.id = NEW.id
          AND f.created_by_user_id IS DISTINCT FROM NEW.created_by_user_id)
@@ -191,7 +216,7 @@ REVOKE ALL ON FUNCTION public.guard_food_item_id() FROM anon;
 REVOKE ALL ON FUNCTION public.guard_food_item_id() FROM authenticated;
 
 COMMENT ON FUNCTION public.guard_food_item_id() IS
-  'CUL-2044 (106) / B-520: BEFORE INSERT OR UPDATE on food_items, every role. INSERT (an upsert included): refused when another account holds the id as a live row, in food_item_retired_ids, or as a nyx-food-photos object under {id}/, or the ledger holds it with no owner; the owner re-creating its own food passes. UPDATE: id and created_by_user_id are frozen. SECURITY DEFINER so the cross-tenant reads are not RLS-filtered; search_path = pg_catalog, pg_temp; EXECUTE revoked from PUBLIC/anon/authenticated. One RAISE naming no value (C-31).';
+  'CUL-2044 (106) / B-520: BEFORE INSERT OR UPDATE on food_items, every role. INSERT (an upsert included): refused when a signed-in caller names another owner, or when another account holds the id as a live row, in food_item_retired_ids, or as a nyx-food-photos object under {id}/, or the ledger holds it with no owner; the owner re-creating its own food passes. UPDATE: id and created_by_user_id are frozen. SECURITY DEFINER so the cross-tenant reads are not RLS-filtered; search_path = pg_catalog, pg_temp; EXECUTE revoked from PUBLIC/anon/authenticated. One RAISE naming no value (C-31).';
 
 DROP TRIGGER IF EXISTS trg_food_items_retire_id ON public.food_items;
 CREATE TRIGGER trg_food_items_retire_id
