@@ -189,6 +189,45 @@ export interface TrialFeeding {
    *  `trialDietRefusal` below, which is what stops the clean two-fact card
    *  rendering over an animal that has not eaten. */
   intakeRating?: string | null;
+  /**
+   * MIXED MEALS (CUL-2052, spec docs/nyx-mixed-meals-requirements.md §5.2): a bowl's
+   * live components, as the one composition helper (`lib/mealComposition.ts`) read
+   * them. Present and non-empty only for a MIX; a plain meal leaves it absent and is
+   * read from the fields above exactly as before. For a mix the fields above describe
+   * the BOWL (`foodItemId` is NULL by T2) and no rule may read them as one food.
+   */
+  components?: readonly TrialFeedingComponent[];
+  /** The parent or the rows say a mix and the live set is smaller (spec §3). Never
+   *  one food: the bowl is `unclassifiable`, disclosed, whatever its components say. */
+  incompleteBowl?: boolean;
+}
+
+/** One food in a mixed bowl. Identity, type and proteins are the component's own. */
+export interface TrialFeedingComponent {
+  foodItemId: string | null;
+  foodKey: string | null;
+  label: string | null;
+  /** `food_items.food_type` of THIS component; a reader evaluates it per component,
+   *  because a synced or future mix may not obey the picker's meal-only rule. */
+  foodType: string | null;
+  proteins: readonly string[];
+  /** The owner's share over the bowl, normalised; null when unknown. Stored, never
+   *  fed to a verdict (§5.3, T3): it is carried only for the ratio a report prints. */
+  share?: number | null;
+}
+
+/** Is this feeding a mixed bowl (components present, or an incomplete one)? */
+export function isBowlFeeding(feeding: TrialFeeding): boolean {
+  return feeding.incompleteBowl === true || (feeding.components?.length ?? 0) > 0;
+}
+
+/** A treat, for coverage and the refusal populations. A bowl is a treat only when
+ *  EVERY component is one (§10: "a bowl with any non-treat component counts toward
+ *  coverage; an all-treat bowl does not"). A NULL type is never assumed a treat. */
+export function isTreatFeeding(feeding: TrialFeeding): boolean {
+  const parts = feeding.components ?? [];
+  if (parts.length > 0) return parts.every((c) => c.foodType === 'treat');
+  return feeding.foodType === 'treat';
 }
 
 /** One logged dose, for rung 4 (C3 — the oral route). */
@@ -947,6 +986,14 @@ export interface FeedingClassification {
    * byte-identical input. Any surface rendering a REASON must gate on this.
    */
   attributionChecked: boolean;
+  /** A mixed bowl's per-component classifications, in component order after
+   *  same-food components collapse (§5.2). Absent for a plain feeding. A surface that
+   *  names the offending food reads the worst entry here, never the bowl's dominant
+   *  food (spec §7.3, appendix C). */
+  components?: FeedingClassification[];
+  /** For a bowl: the component foods that carry each classification, aligned with
+   *  `components`. */
+  componentFoods?: TrialFeedingComponent[];
 }
 
 /**
@@ -977,6 +1024,7 @@ export function classifyFeeding(
   if (!isInTrialWindow(ctx, dayIndex)) {
     return blank('out_of_window', 'out_of_window', { countsAsFeeding: false });
   }
+  if (isBowlFeeding(feeding)) return classifyBowl(ctx, feeding);
   const day = dayIndex as number;
   const sanctioned = sanctionedProteinsOn(ctx, day);
   // AN EMPTY SANCTIONED SET TURNS THE PROTEIN ARM OFF, it does not turn it on.
@@ -1104,6 +1152,138 @@ export function classifyFeeding(
     offDiet: true,
     attributionChecked: canAttributeUnrecognised,
   });
+}
+
+/** §5.2's order, worst first. `out_of_window` never reaches a bowl's fold: the bowl's
+ *  own date decides the window before any component is read. */
+const BOWL_VERDICT_ORDER: readonly FeedingVerdict[] = [
+  'off_diet_protein',
+  'off_diet_unrecognised',
+  'unclassifiable',
+  'permitted',
+];
+
+/** One identity per food in a bowl: two components with the same food (by id, else by
+ *  key) are one food, so a duplicate row can neither double an antigen nor hide one. */
+function distinctComponents(parts: readonly TrialFeedingComponent[]): TrialFeedingComponent[] {
+  const seen = new Set<string>();
+  const out: TrialFeedingComponent[] = [];
+  for (const c of parts) {
+    const k = c.foodItemId
+      ? `id:${c.foodItemId}`
+      : isUsableFoodKey(c.foodKey)
+        ? `key:${c.foodKey}`
+        : null;
+    if (k !== null) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+    }
+    out.push(c);
+  }
+  return out;
+}
+
+/**
+ * A MIXED BOWL (spec §5.2, CUL-2052). Each component is classified as the feeding it
+ * would be on its own, by the one predicate, and the bowl takes:
+ *
+ * - the WORST verdict, `off_diet_protein` > `off_diet_unrecognised` > `unclassifiable`
+ *   > `permitted`. A permitted + nameless bowl is `unclassifiable`: never permitted
+ *   (reassurance) and never off-diet (blaming a gap in the record).
+ * - the UNION of every component's antigens, a permitted component's included (D-B).
+ * - `attributionChecked` as the AND (break 5: an unchecked component under appendix
+ *   C's "carries nothing the trial diet does not" is the R7(c) failure, in a bowl).
+ *
+ * Share never enters (T3, §5.1): exposure is presence. The bowl counts ONCE.
+ * An incomplete bowl is unclassifiable whatever its live components say (§3).
+ */
+function classifyBowl(ctx: TrialContext, feeding: TrialFeeding): FeedingClassification {
+  const parts = distinctComponents(feeding.components ?? []);
+  const perComponent = parts.map((c) =>
+    classifyFeeding(ctx, {
+      eventId: feeding.eventId,
+      occurredAt: feeding.occurredAt,
+      foodItemId: c.foodItemId,
+      foodKey: c.foodKey,
+      label: c.label,
+      foodType: c.foodType,
+      proteins: c.proteins,
+      intakeRating: feeding.intakeRating,
+    }),
+  );
+  const attributionChecked = perComponent.every((c) => c.attributionChecked);
+  const antigens: string[] = [];
+  for (const c of perComponent) {
+    for (const a of c.antigens) if (!antigens.includes(a)) antigens.push(a);
+  }
+  // Sorted, so the bowl reads the same whichever food the owner logged first.
+  antigens.sort();
+  const detail = { components: perComponent, componentFoods: parts };
+
+  if (feeding.incompleteBowl || parts.length === 0) {
+    return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
+  }
+  let worstIndex = 0;
+  for (let i = 1; i < perComponent.length; i++) {
+    if (
+      BOWL_VERDICT_ORDER.indexOf(perComponent[i].verdict) <
+      BOWL_VERDICT_ORDER.indexOf(perComponent[worstIndex].verdict)
+    ) {
+      worstIndex = i;
+    }
+  }
+  const worst = perComponent[worstIndex];
+  if (worst.verdict === 'unclassifiable') {
+    return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
+  }
+  // Every component permitted: the role and the permitting row are the trial diet's
+  // when the bowl holds it, so the refusal lane and the report's "permitted" counts
+  // read the bowl as the prescribed diet it carries.
+  const representative =
+    worst.verdict === 'permitted'
+      ? perComponent.find((c) => c.role === 'primary_diet') ?? worst
+      : worst;
+  return {
+    verdict: worst.verdict,
+    rung: worst.rung,
+    offDiet: worst.offDiet,
+    countsAsFeeding: true,
+    antigens,
+    role: representative.role,
+    matchedBy: representative.matchedBy,
+    permittedBy: representative.permittedBy,
+    attributionChecked,
+    ...detail,
+  };
+}
+
+/** Does this classification carry the TRIAL DIET in it? A plain feeding by its role; a
+ *  bowl by any component's, whatever the bowl's verdict (spec §5.2, the refusal lane). */
+export function carriesTrialDiet(c: FeedingClassification): boolean {
+  if (c.components) return c.components.some((x) => x.role === 'primary_diet');
+  return c.role === 'primary_diet';
+}
+
+/**
+ * D-B's provenance, per component (spec §5.2): did this antigen come from a PERMITTED
+ * food? A plain feeding answers by its verdict. In a bowl a permitted component's
+ * antigen keeps its credit inside an off-diet bowl, and loses it when ANY other
+ * component lists the same protein: "all from an approved treat" must never stand
+ * over a chicken the off-list food also carried (the loud direction).
+ */
+export function antigenFromPermitted(c: FeedingClassification, protein: string): boolean {
+  if (!c.components || !c.componentFoods) return c.verdict === 'permitted';
+  let fromPermitted = false;
+  for (let i = 0; i < c.components.length; i++) {
+    const part = c.components[i];
+    const listed = canonicalProteins(c.componentFoods[i]?.proteins ?? []).includes(protein);
+    if (part.verdict === 'permitted') {
+      if (part.antigens.includes(protein)) fromPermitted = true;
+    } else if (listed || part.antigens.includes(protein)) {
+      return false;
+    }
+  }
+  return fromPermitted;
 }
 
 function blank(
@@ -2860,7 +3040,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // than had elapsed — 100 of 112, `supports`, on a record that read 19 of 56
     // and `does_not_support` the moment they tapped Complete on the same data.
     // Post-trial logging was un-suppressing §5.2's record claim.
-    if (feeding.foodType !== 'treat' && day >= startDayIndex && day <= endDayIndex) {
+    const treat = isTreatFeeding(feeding);
+    if (!treat && day >= startDayIndex && day <= endDayIndex) {
       coveredDays.add(day);
     }
 
@@ -2875,14 +3056,35 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // test: the record R1b teaches about and the record the refusal lane falls
     // back to when identity misses are THE SAME SET, deliberately, so a surface
     // can never teach the tap off one denominator and speak from another.
-    if (feeding.foodType !== 'treat' && day >= startDayIndex) {
+    if (!treat && day >= startDayIndex) {
       tallyRefusal(wide, feeding, day, refusalWindowStart);
       wideMembers.push({ feeding, day });
-    } else if (feeding.foodType === 'treat' && day >= startDayIndex) {
+    } else if (treat && day >= startDayIndex) {
       tallyRefusal(treats, feeding, day, refusalWindowStart);
     }
 
     const classification = classifyFeeding(ctx, feeding);
+    const bowl = isBowlFeeding(feeding);
+    if (bowl) {
+      // A MIXED BOWL (spec §5.2), two rules the bowl verdict must not erase, both
+      // applied BEFORE the unclassifiable skip below:
+      // • darkness is per component (break 5): any component the arm did not
+      //   consult darkens the day, whatever the bowl's verdict;
+      // • the refusal lane (break 1): a bowl carrying the trial diet joins the
+      //   trial-diet population with the bowl's rating, WHATEVER the bowl's verdict.
+      //   Otherwise a cat refusing every mixed bowl on days 1–14 while eating two
+      //   plain trial bowls reads as eating the trial diet.
+      if ((classification.components ?? []).some((c) => !c.attributionChecked)) darkDays.add(day);
+      if (carriesTrialDiet(classification) && day >= startDayIndex) {
+        tallyRefusal(narrow, feeding, day, refusalWindowStart);
+        narrowIds.add(feeding.eventId);
+        const stamp = Date.parse(feeding.occurredAt);
+        if (stamp < firstNarrowStamp) {
+          firstNarrowStamp = stamp;
+          firstNarrowDay = day;
+        }
+      }
+    }
     if (classification.verdict === 'unclassifiable') {
       unclassifiable += 1;
       continue;
@@ -2923,7 +3125,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // R1b's narrow denominator, and `allowedSetUnavailable`'s second disjunct: a
     // `primary_diet` row that matches NOTHING is the same fact as no row at all,
     // and commoner.
-    if (classification.role === 'primary_diet' && day >= startDayIndex) {
+    if (!bowl && classification.role === 'primary_diet' && day >= startDayIndex) {
       tallyRefusal(narrow, feeding, day, refusalWindowStart);
       // `day` is non-null here, so the stamp parsed (`dayIndexOf` skips the row first).
       narrowIds.add(feeding.eventId);
@@ -2953,7 +3155,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     for (const protein of classification.antigens) {
       const entry = antigens.get(protein) ?? { protein, feedings: 0, fromPermitted: 0 };
       entry.feedings += 1;
-      if (classification.verdict === 'permitted') entry.fromPermitted += 1;
+      if (antigenFromPermitted(classification, protein)) entry.fromPermitted += 1;
       antigens.set(protein, entry);
     }
   }
@@ -3411,6 +3613,278 @@ export function isWithinChallengeWindow(
 ): boolean {
   const delta = symptomDayIndex - exposureDayIndex;
   return delta >= 1 && delta <= CHALLENGE_WINDOW_DAYS[species];
+}
+
+// ── §6 — the transition, derived at read (Mixed meals, CUL-2052) ─────────────
+//
+// `transition_started_at` stays NULL and `started_at` is never moved by the app (T6):
+// everything below is computed from the record, at read, beside `classifyFeeding`,
+// and never shown to the owner as a state. The vet report prints it beside the
+// owner-entered Day 1 (spec §7.3, P-6) and never in place of it.
+
+/** How far before Day 1 "first fed" looks. The published ramps run 7 days (Ollie,
+ *  The Farmer's Dog) to 14 (a vet dermatologist's stretch; spec §1), so 60 days
+ *  covers a slow transition four times over while staying a bounded read: a food
+ *  fed months earlier and dropped is the old diet's history, not this switch. */
+export const TRANSITION_LOOKBACK_DAYS = 60;
+
+export interface TrialTransitionInput {
+  trial: TrialSpec;
+  allowedFoods: readonly AllowedFood[];
+  feedings: readonly TrialFeeding[];
+  arrangements?: readonly TrialArrangement[];
+  nowMs: number;
+  timeZone?: string;
+}
+
+export type FirstExclusiveDay =
+  /** The unbroken run of trial-food-only days reaches Day 1; its first day. */
+  | { kind: 'by_day1'; dayIndex: number }
+  /** Day 1 did not qualify; the run that reaches today starts here, after Day 1. */
+  | { kind: 'after_day1'; dayIndex: number }
+  /** The record cannot say: a gap sits where the run would start, or the run
+   *  does not reach today at all. */
+  | { kind: 'unknown' };
+
+export interface TrialTransition {
+  /** The earliest feeding, inside the lookback before Day 1, that carried a food on
+   *  the trial-diet list in force on Day 1. Null when there is none. */
+  firstFed: {
+    eventId: string;
+    occurredAt: string;
+    dayIndex: number;
+    /** In a bowl with another food. */
+    mixed: boolean;
+    /** The trial diet's share of that bowl (1 for a plain feeding); null when the
+     *  ratio is unknown. The OWNER'S estimate, printed as such. */
+    share: number | null;
+  } | null;
+  /** Local days before Day 1 holding a bowl that mixed the trial diet with another food. */
+  mixedDaysBeforeDay1: number;
+  /** The other foods in those bowls, most often first. */
+  otherFoodLabels: string[];
+  firstExclusive: FirstExclusiveDay;
+}
+
+interface FedFood {
+  foodItemId: string | null;
+  foodKey: string | null;
+  label: string | null;
+  foodType: string | null;
+  proteins: readonly string[];
+  share: number | null;
+}
+
+/** The foods a feeding put in front of the pet: a bowl's distinct components, or the
+ *  plain feeding as one food at the whole share. */
+function fedFoods(f: TrialFeeding): FedFood[] {
+  if ((f.components?.length ?? 0) > 0) {
+    return distinctComponents(f.components ?? []).map((c) => ({
+      foodItemId: c.foodItemId,
+      foodKey: c.foodKey,
+      label: c.label,
+      foodType: c.foodType,
+      proteins: c.proteins,
+      share: c.share ?? null,
+    }));
+  }
+  return [{
+    foodItemId: f.foodItemId,
+    foodKey: f.foodKey,
+    label: f.label,
+    foodType: f.foodType,
+    proteins: f.proteins,
+    share: 1,
+  }];
+}
+
+function hasIdentity(f: { foodItemId: string | null; foodKey: string | null }): boolean {
+  return f.foodItemId !== null || isUsableFoodKey(f.foodKey);
+}
+
+/**
+ * The transition IN (spec §6.1).
+ *
+ * MATCHING IS ON UNDATED IDENTITY (pass 1, break 6b): allowed-set membership is dated
+ * from `started_at`, so before Day 1 nothing is "in" the set. Each food is matched
+ * against the rows in force ON `started_at`, never on the meal's own date; otherwise
+ * "first fed" comes back empty and the disclosure silently vanishes.
+ *
+ * THE FIRST EXCLUSIVE DAY is the first day of the UNBROKEN run of logged days where
+ * the day has at least one non-treat feeding, every food fed is on the list, and no
+ * free-choice bowl of an off-list food is down. A treat-only day and an unlogged day
+ * both break the run (break 6a). Falsification (held): out of chicken on day 3,
+ * rabbit-only for a day, back to mixing — a naive "first trial-only day" lands on day
+ * 3; the run does not. Where a gap sits right before the run that reaches today, the
+ * start is unknowable and the answer is `unknown`, never the day after the gap.
+ */
+export function deriveTrialTransition(input: TrialTransitionInput): TrialTransition {
+  const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
+  const empty: TrialTransition = { firstFed: null, mixedDaysBeforeDay1: 0, otherFoodLabels: [], firstExclusive: { kind: 'unknown' } };
+  if (ctx.startDayIndex === null) return empty;
+  const start = ctx.startDayIndex;
+  const onDay1 = allowedFoodsOn(ctx, start);
+  const trialDiet = onDay1.filter((f) => f.role === 'primary_diet');
+  const isTrialDiet = (f: FedFood) => matchAllowed(trialDiet, f.foodItemId, f.foodKey) !== null;
+  const isAllowed = (f: FedFood) => matchAllowed(onDay1, f.foodItemId, f.foodKey) !== null;
+  const lookbackStart = start - TRANSITION_LOOKBACK_DAYS;
+  const today = localDayIndexOf(new Date(input.nowMs).toISOString(), input.timeZone) ?? start;
+
+  const byDay = new Map<number, TrialFeeding[]>();
+  for (const f of input.feedings) {
+    const d = dayIndexOf(ctx, f.occurredAt);
+    if (d === null || d < lookbackStart || d > today) continue;
+    const list = byDay.get(d) ?? [];
+    list.push(f);
+    byDay.set(d, list);
+  }
+
+  // First fed, and the mixed days, before Day 1.
+  let firstFed: TrialTransition['firstFed'] = null;
+  const mixedDays = new Set<number>();
+  const others = new Map<string, number>();
+  for (const [d, list] of byDay) {
+    if (d >= start) continue;
+    for (const f of list) {
+      const foods = fedFoods(f);
+      const trialParts = foods.filter(isTrialDiet);
+      if (trialParts.length === 0) continue;
+      const otherParts = foods.filter((x) => !isTrialDiet(x));
+      const mixed = otherParts.length > 0;
+      if (mixed) {
+        mixedDays.add(d);
+        for (const o of otherParts) {
+          const label = o.label ?? '';
+          if (label) others.set(label, (others.get(label) ?? 0) + 1);
+        }
+      }
+      const share = trialParts.some((x) => x.share === null)
+        ? null
+        : trialParts.reduce((sum, x) => sum + (x.share as number), 0);
+      if (firstFed === null || Date.parse(f.occurredAt) < Date.parse(firstFed.occurredAt)) {
+        firstFed = { eventId: f.eventId, occurredAt: f.occurredAt, dayIndex: d, mixed, share };
+      }
+    }
+  }
+
+  const free = (input.arrangements ?? []).filter(
+    (a) => matchAllowed(onDay1, a.foodItemId, a.foodKey) === null,
+  );
+  const offListBowlDown = (d: number) =>
+    free.some((a) => {
+      const from = dayIndexOf(ctx, a.startedAt) ?? -Infinity;
+      const until = a.endedAt ? dayIndexOf(ctx, a.endedAt) ?? Infinity : Infinity;
+      return from <= d && d <= until;
+    });
+  const logged = (d: number) => (byDay.get(d)?.length ?? 0) > 0;
+  const qualifies = (d: number): boolean => {
+    const list = byDay.get(d);
+    if (!list || list.length === 0) return false;
+    if (!list.some((f) => !isTreatFeeding(f))) return false;
+    for (const f of list) {
+      if (f.incompleteBowl) return false;
+      for (const food of fedFoods(f)) {
+        if (!hasIdentity(food) || !isAllowed(food)) return false;
+      }
+    }
+    return !offListBowlDown(d);
+  };
+
+  let firstExclusive: FirstExclusiveDay = { kind: 'unknown' };
+  if (qualifies(start)) {
+    let d = start;
+    while (d - 1 >= lookbackStart && qualifies(d - 1)) d -= 1;
+    firstExclusive = { kind: 'by_day1', dayIndex: d };
+  } else {
+    // The run that reaches today. Today still being logged is not a gap.
+    const evidenceEnd = Math.min(ctx.endDayIndex ?? today, today);
+    const end = evidenceEnd === today && !logged(today) ? today - 1 : evidenceEnd;
+    if (end > start && qualifies(end)) {
+      let d = end;
+      while (d - 1 > start && qualifies(d - 1)) d -= 1;
+      // The day before the run must be LOGGED and not qualify for the start to be
+      // known: after a gap, the switch could have finished on any unlogged day.
+      if (logged(d - 1)) firstExclusive = { kind: 'after_day1', dayIndex: d };
+    }
+  }
+
+  return {
+    firstFed,
+    mixedDaysBeforeDay1: mixedDays.size,
+    otherFoodLabels: [...others.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([label]) => label),
+    firstExclusive,
+  };
+}
+
+export interface NewFoodsInput extends TrialTransitionInput {
+  /** Symptom events to show side by side, never as attribution. */
+  symptoms: readonly { occurredAt: string; eventType: string }[];
+}
+
+export interface NewFoodIntroduced {
+  label: string;
+  firstFedDayIndex: number;
+  lastFedDayIndex: number;
+  /** Every feeding of the food, in order: its share of that bowl (1 when fed on its
+   *  own, null when the ratio is unknown). Context, never a dose (§5.3). */
+  ramp: { dayIndex: number; share: number | null }[];
+  /** Symptoms inside the UNION of per-exposure windows. Empty is "none logged in the
+   *  window", never "none": unlogged days are always possible (§5.2). */
+  symptomsInWindow: { occurredAt: string; eventType: string; dayIndex: number }[];
+}
+
+/**
+ * Coming off a trial (spec §6.3): the foods fed after the trial ENDED that were never
+ * on its list. Not a declared rechallenge (D8). First fed is the first date ANY amount
+ * was fed (share does not matter). The symptom window is the UNION of per-exposure
+ * windows, from first fed to last fed plus the species window, same day excluded —
+ * exactly `isWithinChallengeWindow` per feeding day. A window anchored only at first
+ * fed misses a day-11 flare after a ramp that reached 100% on day 10 (break 7).
+ * Empty while the trial runs: there is no "after" yet.
+ */
+export function newFoodsIntroduced(input: NewFoodsInput): NewFoodIntroduced[] {
+  const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
+  if (ctx.startDayIndex === null || ctx.endDayIndex === null) return [];
+  const end = ctx.endDayIndex;
+  const today = localDayIndexOf(new Date(input.nowMs).toISOString(), input.timeZone);
+  if (today === null || today <= end) return [];
+  const everListed = (f: FedFood) => matchAllowed(input.allowedFoods, f.foodItemId, f.foodKey) !== null;
+
+  const byFood = new Map<string, NewFoodIntroduced & { days: Set<number> }>();
+  const sorted = [...input.feedings].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  for (const f of sorted) {
+    const d = dayIndexOf(ctx, f.occurredAt);
+    if (d === null || d <= end || d > today) continue;
+    for (const food of fedFoods(f)) {
+      if (!hasIdentity(food) || everListed(food)) continue;
+      const key = food.foodItemId ? `id:${food.foodItemId}` : `key:${food.foodKey}`;
+      const entry = byFood.get(key) ?? {
+        label: food.label ?? '',
+        firstFedDayIndex: d,
+        lastFedDayIndex: d,
+        ramp: [],
+        symptomsInWindow: [],
+        days: new Set<number>(),
+      };
+      entry.lastFedDayIndex = Math.max(entry.lastFedDayIndex, d);
+      entry.ramp.push({ dayIndex: d, share: food.share });
+      entry.days.add(d);
+      byFood.set(key, entry);
+    }
+  }
+  const species = ctx.species;
+  const symptoms = input.symptoms
+    .map((s) => ({ ...s, dayIndex: dayIndexOf(ctx, s.occurredAt) }))
+    .filter((s): s is { occurredAt: string; eventType: string; dayIndex: number } => s.dayIndex !== null)
+    .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  return [...byFood.values()]
+    .map(({ days, ...food }) => ({
+      ...food,
+      symptomsInWindow: symptoms.filter((s) => [...days].some((d) => isWithinChallengeWindow(d, s.dayIndex, species))),
+    }))
+    .sort((a, b) => a.firstFedDayIndex - b.firstFedDayIndex || a.label.localeCompare(b.label));
 }
 
 // ── Copy (nyx-voice + clinical-guardrails) ───────────────────────────────────
