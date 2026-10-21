@@ -404,6 +404,17 @@ interface MomentState {
   // spends rule 3's one-per-food budget on a heads-up actually rendered. Takes
   // either kind of the log-time union (contents or membership, B-693).
   patchTrialFlag: (eventId: string, flag: LogTimeTrialFlag) => boolean;
+  // Mixed meals row 5 (CUL-2086) — the heads-up after a BOWL EDIT on a showing card. Unlike
+  // patchTrialFlag it may REPLACE what the card shows, in exactly two cases: the shown
+  // flag's food has left the bowl, or the re-run's flag is stronger (contents over
+  // membership). A null flag with the shown food gone clears the stale line. Returns what
+  // landed and what it displaced, so the caller gives the displaced food its warning back
+  // and spends the new one only when it is on screen.
+  patchBowlTrialFlag: (
+    eventId: string,
+    flag: LogTimeTrialFlag | null,
+    bowlFoodIds: readonly string[],
+  ) => BowlFlagPatch;
   // Engines v3 PR-28b (CUL-1436) — land a raised read's sentence on the card of the log
   // that raised it, when the server's re-check answers after the card appeared. The
   // patchTrialFlag guards: the card for THIS event, visible, not undone. Holds the card
@@ -526,6 +537,17 @@ function recordFloorLineShown(line: FloorAnnouncement | null | undefined): void 
 }
 
 const FLOOR_RANK = { call_today: 1, call_now: 2 } as const;
+
+// CUL-2086: a contents heads-up names a protein the trial excludes; a membership one says
+// only that the food is off the list. The stronger may replace the weaker after a bowl edit.
+const TRIAL_FLAG_RANK: Record<LogTimeTrialFlag['kind'], number> = { off_trial_list: 1, off_diet_protein: 2 };
+
+/** What `patchBowlTrialFlag` did: whether the new flag is on screen, and which food's
+ *  heads-up it took off the card (null when none). */
+export interface BowlFlagPatch {
+  landed: boolean;
+  displaced: { trialId: string; foodId: string } | null;
+}
 
 function carriesFloorLine(payload: MomentPayload | null): boolean {
   if (!payload) return false;
@@ -1004,6 +1026,25 @@ export const useMomentStore = create<MomentState>((set) => ({
     if (state.payload.trialFlag) return false;
     set({ payload: { ...state.payload, trialFlag } });
     return true;
+  },
+  patchBowlTrialFlag: (eventId, trialFlag, bowlFoodIds): BowlFlagPatch => {
+    const state: MomentState = useMomentStore.getState();
+    const refused: BowlFlagPatch = { landed: false, displaced: null };
+    if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return refused;
+    if (!state.visible || state.removed) return refused;
+    const shown: LogTimeTrialFlag | null = state.payload.trialFlag ?? null;
+    if (!shown) {
+      if (!trialFlag) return refused;
+      set({ payload: { ...state.payload, trialFlag } });
+      return { landed: true, displaced: null };
+    }
+    // The shown food is still in the bowl and nothing louder arrived: keep the line, and
+    // keep its budget spent (the CUL-2053 rule, which holds for every other case).
+    const shownGone = !bowlFoodIds.includes(shown.foodId);
+    const louder = trialFlag !== null && TRIAL_FLAG_RANK[trialFlag.kind] > TRIAL_FLAG_RANK[shown.kind];
+    if (!shownGone && !louder) return refused;
+    set({ payload: { ...state.payload, trialFlag: trialFlag ?? null } });
+    return { landed: trialFlag !== null, displaced: { trialId: shown.trialId, foodId: shown.foodId } };
   },
   patchFloorLine: (eventId, floorLine) => {
     const state = useMomentStore.getState();

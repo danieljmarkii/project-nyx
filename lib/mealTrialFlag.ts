@@ -41,6 +41,7 @@ import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '.
 import {
   evaluateBowlLogTimeFlag,
   evaluateMealLogTimeFlag,
+  forgetFlaggedFoodInTrial,
   noteTrialFlagShown,
   type BowlFlagComponent,
 } from './trialContaminant';
@@ -83,4 +84,49 @@ export async function applyMealTrialFlag(args: MealTrialFlagArgs): Promise<MealT
   rescheduleHide(MEAL_FLAGGED_DURATION_MS);
   await noteTrialFlagShown(flag);
   return 'shown';
+}
+
+/** What a bowl edit's re-run did to the card (CUL-2086). `replaced` and `cleared` both
+ *  give the displaced food its one warning back. */
+export type BowlEditFlagOutcome = MealTrialFlagOutcome | 'replaced' | 'cleared';
+
+export interface BowlEditFlagArgs extends MealTrialFlagArgs {
+  /** Every food in the bowl AFTER the edit, so the card can tell whether the food its
+   *  heads-up names is still in it. */
+  bowlFoodIds: readonly string[];
+}
+
+/**
+ * The heads-up after a BOWL EDIT (Mixed meals row 5, CUL-2086): the writer re-runs it
+ * over the new bowl, and the card it lands on may already show one.
+ *
+ * `applyMealTrialFlag` never replaces a heads-up, and for a fresh log that is right. After
+ * an edit it is wrong in two ways the adversarial pass on row 4 found: the flagged food can
+ * leave the bowl (the card warns about a food that is not in the meal, and that food's one
+ * warning for the trial is used up, so its real feeding later gets none), and a stronger
+ * flag (a protein the trial excludes) can arrive behind a weaker one (off the list) and
+ * wait until that food is fed again. So the store's `patchBowlTrialFlag` may replace in
+ * exactly those two cases, and this function gives the displaced food its budget back.
+ *
+ * The same order as the log path, with the ledger last: the displaced food is forgotten
+ * only once the card has dropped its line, and the new one is spent only once it shows.
+ */
+export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<BowlEditFlagOutcome> {
+  const { eventId, petId, foodId, components, occurredAt, bowlFoodIds } = args;
+  const flag = components && components.length > 0
+    ? await evaluateBowlLogTimeFlag({ petId, components, occurredAt })
+    : foodId
+      ? await evaluateMealLogTimeFlag({ petId, foodId, occurredAt })
+      : null;
+  // The card may be between screens (the first mix returns it 450 ms after the picker
+  // closes), so wait for it as the log path does. An edit made off the card waits out
+  // the timeout and lands nothing, which spends nothing.
+  if (!(await whenMealCardVisible(eventId))) return flag ? 'card_gone' : 'no_flag';
+  const { patchBowlTrialFlag, rescheduleHide } = useMomentStore.getState();
+  const { landed, displaced } = patchBowlTrialFlag(eventId, flag, bowlFoodIds);
+  if (displaced) await forgetFlaggedFoodInTrial(displaced.trialId, displaced.foodId);
+  if (!landed || !flag) return displaced ? 'cleared' : flag ? 'patch_refused' : 'no_flag';
+  rescheduleHide(MEAL_FLAGGED_DURATION_MS);
+  await noteTrialFlagShown(flag);
+  return displaced ? 'replaced' : 'shown';
 }

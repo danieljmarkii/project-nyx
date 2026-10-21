@@ -6,8 +6,8 @@
 // `meals` row, then a push. No caller yet: the writer and its UI are row 5, after every
 // clinical reader is mix-aware (T9).
 //
-// Spec §4's side effects: the trial heads-up re-runs over the new bowl (row 4, CUL-2053,
-// below). FAB recency is derived at read from the meal log and lands with its reader in
+// Spec §4's side effects: the trial heads-up re-runs over the new bowl (row 4, CUL-2053;
+// the bowl-edit replacement rule is row 5's, CUL-2086, below). FAB recency is derived at read from the meal log and lands with its reader in
 // row 5.
 
 import { getDb } from './db';
@@ -123,8 +123,10 @@ async function rerunTrialHeadsUp(
     if (!event) return;
     // Lazy, as above: the heads-up module reaches the card store.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { applyMealTrialFlag } = require('./mealTrialFlag') as typeof import('./mealTrialFlag');
-    await applyMealTrialFlag({
+    const { applyBowlEditTrialFlag } = require('./mealTrialFlag') as typeof import('./mealTrialFlag');
+    // The bowl-edit variant (CUL-2086): the card it lands on may already show a heads-up
+    // about a food this edit removed, or a weaker one than the new bowl earns.
+    await applyBowlEditTrialFlag({
       eventId,
       petId: event.pet_id,
       occurredAt: event.occurred_at,
@@ -133,6 +135,7 @@ async function rerunTrialHeadsUp(
         parent.component_count !== null
           ? components.map((c) => ({ foodId: c.foodItemId, foodLabel: c.foodLabel }))
           : undefined,
+      bowlFoodIds: components.map((c) => c.foodItemId),
     });
   } catch (e) {
     console.warn('[meal components] trial heads-up re-run failed:', e);
