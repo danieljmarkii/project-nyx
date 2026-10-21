@@ -32,7 +32,7 @@ export const OFF_ACTION = "Open your pet's tab";
 
 export default function TrialRoute() {
   const reducedMotion = useReducedMotion();
-  const params = useLocalSearchParams<{ pet?: string }>();
+  const params = useLocalSearchParams<{ pet?: string; open?: string }>();
   const parsed = parseTrialRouteParams(params);
 
   return (
@@ -47,7 +47,7 @@ export default function TrialRoute() {
         }}
       />
       {parsed ? (
-        <TrialScreen petId={parsed.petId} />
+        <TrialScreen petId={parsed.petId} openOnArrive={parsed.open} />
       ) : (
         <View style={styles.off} testID="trial-route-off">
           <Header title="Diet trial" leading="back" onLeadingPress={() => router.back()} />

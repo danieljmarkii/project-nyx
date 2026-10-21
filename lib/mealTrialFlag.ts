@@ -42,6 +42,7 @@ import {
   evaluateBowlLogTimeFlag,
   evaluateMealLogTimeFlag,
   forgetFlaggedFoodInTrial,
+  forgetFlagsSpentByEvent,
   noteTrialFlagShown,
   type BowlFlagComponent,
 } from './trialContaminant';
@@ -82,13 +83,13 @@ export async function applyMealTrialFlag(args: MealTrialFlagArgs): Promise<MealT
   const { patchTrialFlag, rescheduleHide } = useMomentStore.getState();
   if (!patchTrialFlag(eventId, flag)) return 'patch_refused';
   rescheduleHide(MEAL_FLAGGED_DURATION_MS);
-  await noteTrialFlagShown(flag);
+  await noteTrialFlagShown(flag, eventId);
   return 'shown';
 }
 
 /** What a bowl edit's re-run did to the card (CUL-2086). `replaced` and `cleared` both
  *  give the displaced food its one warning back. */
-export type BowlEditFlagOutcome = MealTrialFlagOutcome | 'replaced' | 'cleared';
+export type BowlEditFlagOutcome = MealTrialFlagOutcome | 'replaced' | 'cleared' | 'superseded';
 
 export interface BowlEditFlagArgs extends MealTrialFlagArgs {
   /** Every food in the bowl AFTER the edit, so the card can tell whether the food its
@@ -113,20 +114,46 @@ export interface BowlEditFlagArgs extends MealTrialFlagArgs {
  */
 export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<BowlEditFlagOutcome> {
   const { eventId, petId, foodId, components, occurredAt, bowlFoodIds } = args;
+  // Only the NEWEST edit of a bowl may touch its card (CUL-2086, pass 1, R2): two quick
+  // edits can finish out of order, and an older one would patch against a bowl that no
+  // longer exists, pulling a warning off a meal that still holds the food.
+  const seq = (editSeq.get(eventId) ?? 0) + 1;
+  editSeq.set(eventId, seq);
+  const current = () => editSeq.get(eventId) === seq;
+
   const flag = components && components.length > 0
     ? await evaluateBowlLogTimeFlag({ petId, components, occurredAt })
     : foodId
       ? await evaluateMealLogTimeFlag({ petId, foodId, occurredAt })
       : null;
+  if (!current()) return 'superseded';
+  // Whatever the card does, a food this meal spent and the bowl no longer holds gets its
+  // warning back, even when the edit was made away from the card (R6). After the
+  // newest-edit check, so a superseded edit never gives back a food the final bowl holds.
+  // A food put back by a LATER edit after this ran stays unspent: one extra heads-up.
+  await forgetFlagsSpentByEvent(eventId, bowlFoodIds);
   // The card may be between screens (the first mix returns it 450 ms after the picker
   // closes), so wait for it as the log path does. An edit made off the card waits out
   // the timeout and lands nothing, which spends nothing.
   if (!(await whenMealCardVisible(eventId))) return flag ? 'card_gone' : 'no_flag';
-  const { patchBowlTrialFlag, rescheduleHide } = useMomentStore.getState();
+  if (!current()) return 'superseded';
+  const { patchBowlTrialFlag } = useMomentStore.getState();
   const { landed, displaced } = patchBowlTrialFlag(eventId, flag, bowlFoodIds);
   if (displaced) await forgetFlaggedFoodInTrial(displaced.trialId, displaced.foodId);
   if (!landed || !flag) return displaced ? 'cleared' : flag ? 'patch_refused' : 'no_flag';
-  rescheduleHide(MEAL_FLAGGED_DURATION_MS);
-  await noteTrialFlagShown(flag);
+  // Spend only what is STILL on screen (R1): a second edit, an Undo or a newer meal can
+  // have taken this flag off the card during the forget above.
+  const after = useMomentStore.getState();
+  const stillShown =
+    after.visible && !after.removed && after.undoing !== eventId &&
+    after.payload?.kind === 'meal' && after.payload.eventId === eventId &&
+    after.payload.trialFlag === flag;
+  if (!stillShown) return displaced ? 'cleared' : 'patch_refused';
+  after.rescheduleHide(MEAL_FLAGGED_DURATION_MS);
+  await noteTrialFlagShown(flag, eventId);
   return displaced ? 'replaced' : 'shown';
 }
+
+/** The newest bowl edit per meal (see `applyBowlEditTrialFlag`). Grows by one small entry
+ *  per meal edited in a session, which is bounded by what an owner can tap. */
+const editSeq = new Map<string, number>();

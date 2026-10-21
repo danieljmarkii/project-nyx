@@ -84,7 +84,7 @@ describe('applyMealTrialFlag — the gates, in order', () => {
     await expect(applyMealTrialFlag(ARGS)).resolves.toBe('shown');
     expect(calls).toEqual(['evaluate', 'wait', 'patch', 'reschedule', 'note']);
     expect(mockReschedule).toHaveBeenCalledWith(7000);
-    expect(mockNote).toHaveBeenCalledWith(FLAG);
+    expect(mockNote).toHaveBeenCalledWith(FLAG, 'ev1');
   });
 
   it('the picker path is the reason for the wait: the evaluation resolves before the card reveals', async () => {

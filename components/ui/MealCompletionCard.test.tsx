@@ -144,6 +144,34 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+// CUL-2084 — a mixed bowl fed past the trial's target: the eyebrow frames P-5's sentence,
+// "+ End the trial" opens the trial screen's own decision sheet for the MEAL's pet, and
+// "Add to the trial list" is hidden on that variant (PM, 2026-10-21).
+describe('MealCompletionCard — the past-target bowl heads-up (CUL-2084)', () => {
+  const PAST = { foodLabel: 'Chicken Pâté', pastTarget: true, trialLabel: 'Rabbit trial', targetDays: 42 };
+
+  it.each([
+    ['membership', { ...MEMBERSHIP_FLAG, bowl: PAST }],
+    ['contents', { ...CONTENTS_FLAG, bowl: PAST }],
+  ] as const)('%s: eyebrow and the end door, no add hatch', (_k, flag) => {
+    seedMeal({ trialFlag: flag as LogTimeTrialFlag, foodType: 'meal' }, 'p2');
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('Rabbit trial · past its 42 days');
+    getByText(/If Biscuit’s trial is over, ending it here keeps the record straight\./);
+    expect(queryByText('+ Add to the trial list')).toBeNull();
+    fireEvent.press(getByText('+ End the trial'));
+    expect(mockPush).toHaveBeenCalledWith('/trial/p1?open=end');
+  });
+
+  it('a bowl inside the trial keeps "Add to the trial list" and has no end door', () => {
+    seedMeal({ trialFlag: { ...MEMBERSHIP_FLAG, bowl: { ...PAST, pastTarget: false } }, foodType: 'meal' });
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('+ Add to the trial list');
+    getByText('Off the trial list');
+    expect(queryByText('+ End the trial')).toBeNull();
+  });
+});
+
 describe('MealCompletionCard — the two trial-flag registers (B-693)', () => {
   it('renders the amber MEMBERSHIP panel: eyebrow, headline, and the add hatch', () => {
     seedMeal({ trialFlag: MEMBERSHIP_FLAG });

@@ -1031,7 +1031,10 @@ export const useMomentStore = create<MomentState>((set) => ({
     const state: MomentState = useMomentStore.getState();
     const refused: BowlFlagPatch = { landed: false, displaced: null };
     if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return refused;
-    if (!state.visible || state.removed) return refused;
+    // `undoing` too (CUL-2086, pass 1, R5): Undo captured the flag it will give back
+    // BEFORE its write, so a flag swapped in during that write would stay spent on a meal
+    // that is gone.
+    if (!state.visible || state.removed || state.undoing === eventId) return refused;
     const shown: LogTimeTrialFlag | null = state.payload.trialFlag ?? null;
     if (!shown) {
       if (!trialFlag) return refused;

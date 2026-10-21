@@ -16,21 +16,25 @@ jest.mock('./haptics', () => ({
   selectChip: jest.fn(),
   destructiveConfirm: jest.fn(),
 }));
-jest.mock('./undoLog', () => ({ reverseLoggedEvent: jest.fn(async () => {}) }));
+// Undo's write takes a beat, as a real SQLite write does: R5 lands an edit inside it.
+jest.mock('./undoLog', () => ({
+  reverseLoggedEvent: jest.fn(() => new Promise((r) => setTimeout(r, 30))),
+}));
 jest.mock('../store/eventStore', () => ({
   useEventStore: { getState: () => ({ removeFromToday: jest.fn() }) },
 }));
 
 const mockEvaluateBowl = jest.fn();
+const mockEvaluateMeal = jest.fn();
 jest.mock('./trialContaminant', () => ({
   ...jest.requireActual('./trialContaminant'),
   evaluateBowlLogTimeFlag: (...a: unknown[]) => mockEvaluateBowl(...a),
-  evaluateMealLogTimeFlag: jest.fn(async () => null),
+  evaluateMealLogTimeFlag: (...a: unknown[]) => mockEvaluateMeal(...a),
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMomentStore } from '../store/momentStore';
-import { applyBowlEditTrialFlag } from './mealTrialFlag';
+import { applyBowlEditTrialFlag, applyMealTrialFlag } from './mealTrialFlag';
 import {
   hasFlaggedFoodInTrial,
   noteTrialFlagShown,
@@ -73,7 +77,7 @@ async function cardShowing(flag: LogTimeTrialFlag | null): Promise<void> {
     intakeRating: null,
     trialFlag: flag,
   });
-  if (flag) await noteTrialFlagShown(flag);
+  if (flag) await noteTrialFlagShown(flag, EVENT);
 }
 
 function edit(bowlFoodIds: string[]) {
@@ -95,10 +99,11 @@ const shownFlag = () => {
 beforeEach(async () => {
   jest.useFakeTimers();
   mockEvaluateBowl.mockReset();
+  mockEvaluateMeal.mockReset().mockResolvedValue(null);
   await AsyncStorage.clear();
   // The ledger caches in memory; the module's own sign-out wipe is the reset.
   await jest.requireActual('./trialContaminant').clearTrialHeadsUpLedger();
-  useMomentStore.setState({ visible: false, payload: null, removed: false });
+  useMomentStore.setState({ visible: false, payload: null, removed: false, undoing: null });
 });
 
 afterEach(() => {
@@ -199,5 +204,95 @@ describe('never on a card nobody can act on', () => {
     await jest.advanceTimersByTimeAsync(3500);
     await expect(pending).resolves.toBe('card_gone');
     expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken-pate')).toBe(false);
+  });
+});
+
+// Adversarial pass 1 on this fix (R1–R6): each was a sequence that left a food spent with
+// nothing ever shown for it. Real timers where the race is between awaits.
+describe('CUL-2086 pass 1 — the races', () => {
+  const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+  beforeEach(() => jest.useRealTimers());
+
+  it('R1: a second quick edit that removes the first edit’s food never leaves it spent', async () => {
+    await cardShowing(membership('A', 'A'));
+    mockEvaluateBowl.mockResolvedValueOnce(membership('D', 'D')).mockResolvedValueOnce(null);
+    await Promise.all([edit(['B', 'D']), edit(['B'])]);
+    expect(shownFlag()).toBeNull();
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'D')).toBe(false);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(false);
+  });
+
+  it('R2: an older edit finishing last never patches against a bowl that is gone', async () => {
+    await cardShowing(membership('A', 'A'));
+    let release: (v: unknown) => void = () => undefined;
+    mockEvaluateBowl
+      .mockImplementationOnce(() => new Promise((r) => { release = r; }))
+      .mockResolvedValueOnce(null);
+    const older = edit(['B']);
+    const newer = await edit(['A', 'B']);
+    release(null);
+    expect(await older).toBe('superseded');
+    expect(newer).toBe('no_flag');
+    expect(shownFlag()).toEqual(membership('A', 'A'));
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(true);
+  });
+
+  it('R3: the log path and a bowl edit landing on one reveal spend only what shows', async () => {
+    mockEvaluateMeal.mockResolvedValueOnce(membership('A', 'A'));
+    mockEvaluateBowl.mockResolvedValueOnce(contents('B', 'B'));
+    const log = applyMealTrialFlag({ eventId: EVENT, petId: 'pet-1', foodId: 'A', occurredAt: 'x' });
+    const ed = edit(['A', 'B']);
+    await tick(20);
+    useMomentStore.getState().showMeal({
+      eventId: EVENT, petId: 'pet-1', occurredAt: '2026-10-21T07:30:00.000Z',
+      foodType: 'meal', intakeRating: null, trialFlag: null,
+    });
+    await Promise.all([log, ed]);
+    expect(shownFlag()).toEqual(contents('B', 'B'));
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'B')).toBe(true);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(false);
+  });
+
+  it('R4: an edit then Undo gives every food back', async () => {
+    await cardShowing(membership('A', 'A'));
+    mockEvaluateBowl.mockResolvedValueOnce(membership('D', 'D'));
+    const p = edit(['D']);
+    await tick();
+    await Promise.all([p, useMomentStore.getState().undo(EVENT)]);
+    await tick(40);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(false);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'D')).toBe(false);
+  });
+
+  it('R5: an edit landing while Undo writes never spends a food on the undone meal', async () => {
+    await cardShowing(membership('A', 'A'));
+    mockEvaluateBowl.mockResolvedValueOnce(membership('D', 'D'));
+    const u = useMomentStore.getState().undo(EVENT);
+    await Promise.all([edit(['D']), u]);
+    await tick(40);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(false);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'D')).toBe(false);
+  });
+
+  it('R6: a food taken out away from the card gets its warning back', async () => {
+    jest.useFakeTimers();
+    await cardShowing(membership('A', 'A'));
+    useMomentStore.setState({ visible: false });
+    mockEvaluateBowl.mockResolvedValueOnce(null);
+    const p = edit(['B']);
+    await jest.advanceTimersByTimeAsync(3100);
+    await p;
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(false);
+  });
+
+  it('R6 control: an edit that keeps the food leaves it spent', async () => {
+    jest.useFakeTimers();
+    await cardShowing(membership('A', 'A'));
+    useMomentStore.setState({ visible: false });
+    mockEvaluateBowl.mockResolvedValueOnce(null);
+    const p = edit(['A', 'B']);
+    await jest.advanceTimersByTimeAsync(3100);
+    await p;
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'A')).toBe(true);
   });
 });

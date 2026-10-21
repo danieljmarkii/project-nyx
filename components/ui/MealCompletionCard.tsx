@@ -25,7 +25,8 @@ import { rateMealIntake } from '../../lib/meals';
 import { syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
-import { mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
+import { END_TRIAL_LINE, mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
+import { trialScreenHref } from '../../lib/trialRoute';
 import { foodFormatTag } from '../../lib/food';
 import { unfinishedIntakePhrase } from '../../lib/dayEvents';
 import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
@@ -665,6 +666,18 @@ export function MealCompletionCard() {
     hide();
   }
 
+  // CUL-2084 — the past-target bowl heads-up names ending the trial, so it carries the
+  // door: the trial screen's own completion sheet, on its outcome step, never a second
+  // end path. Dismisses the card first, as every hand-off from it does. The pet
+  // is the meal's (C-9), never the active one.
+  const pastTarget = trialFlag?.bowl?.pastTarget === true;
+  function handleEndTrial() {
+    if (!isMeal) return;
+    if (inertNow(payload.eventId)) return;
+    hide();
+    router.push(trialScreenHref(payload.petId, { open: 'end' }));
+  }
+
   async function handleAddConfirm() {
     if (!addTarget) return;
     setAddSaving(true);
@@ -845,11 +858,25 @@ export function MealCompletionCard() {
             <View
               style={styles.flagWrap}
               accessibilityRole="summary"
-              accessibilityLabel={`${contentsCopy.headline} ${contentsCopy.detail}`}
+              accessibilityLabel={[contentsCopy.eyebrow, contentsCopy.headline, contentsCopy.detail].filter(Boolean).join('. ')}
             >
+              {contentsCopy.eyebrow && (
+                <ThemedText style={styles.flagEyebrow}>{contentsCopy.eyebrow}</ThemedText>
+              )}
               <ThemedText style={styles.flagHeadline}>{contentsCopy.headline}</ThemedText>
               <ThemedText style={styles.flagDetail}>{contentsCopy.detail}</ThemedText>
             </View>
+          )}
+          {contentsCopy && pastTarget && (
+            <TouchableOpacity
+              style={styles.membershipAddRow}
+              onPress={handleEndTrial}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={END_TRIAL_LINE}
+            >
+              <ThemedText style={styles.membershipAddText}>+ {END_TRIAL_LINE}</ThemedText>
+            </TouchableOpacity>
           )}
           {/* B-693 — the rung-3 MEMBERSHIP heads-up ("this isn't on the trial
               list"), as the amber "attention" inset panel (design-locked mock round
@@ -870,6 +897,20 @@ export function MealCompletionCard() {
                   <ThemedText style={styles.flagHeadline}>{membershipCopy.headline}</ThemedText>
                   <ThemedText style={styles.flagDetail}>{membershipCopy.detail}</ThemedText>
                 </View>
+                {pastTarget && (
+                  <TouchableOpacity
+                    style={styles.membershipAddRow}
+                    onPress={handleEndTrial}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={END_TRIAL_LINE}
+                  >
+                    <ThemedText style={styles.membershipAddText}>+ {END_TRIAL_LINE}</ThemedText>
+                  </TouchableOpacity>
+                )}
+                {/* Hidden past the trial's target (CUL-2084, PM 2026-10-21): the door that
+                    matters there is ending the trial. */}
+                {membershipCopy.addLine && (
                 <TouchableOpacity
                   style={styles.membershipAddRow}
                   onPress={handleAddToTrialList}
@@ -882,6 +923,7 @@ export function MealCompletionCard() {
                       way the combo row hardcodes its own "+ Add …" literal below. */}
                   <ThemedText style={styles.membershipAddText}>+ {membershipCopy.addLine}</ThemedText>
                 </TouchableOpacity>
+                )}
               </View>
             </View>
           )}
@@ -1085,6 +1127,16 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 2,
+  },
+  // CUL-2084 — the past-target frame ("Rabbit trial · past its 42 days"), the same
+  // micro-caps as the membership eyebrow in the card's calm secondary ink: a contents
+  // line stays divider-only, never tinted.
+  flagEyebrow: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   flagHeadline: {
     fontSize: theme.textSM,
