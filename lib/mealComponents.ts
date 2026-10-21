@@ -6,9 +6,9 @@
 // `meals` row, then a push. No caller yet: the writer and its UI are row 5, after every
 // clinical reader is mix-aware (T9).
 //
-// Two spec §4 side effects are deliberately NOT here yet, each landing with its reader:
-// FAB recency (derived at read from the meal log, row 5) and the trial heads-up re-run
-// (needs the mix-aware heads-up, row 4).
+// Spec §4's side effects: the trial heads-up re-runs over the new bowl (row 4, CUL-2053,
+// below). FAB recency is derived at read from the meal log and lands with its reader in
+// row 5.
 
 import { getDb } from './db';
 import {
@@ -99,5 +99,42 @@ export async function setMealComponents(
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { syncPendingMeals } = require('./sync') as typeof import('./sync');
   syncPendingMeals().catch((e: unknown) => console.warn('[meal components] push failed (queued):', e));
+  void rerunTrialHeadsUp(eventId, components, parent);
   return parent;
+}
+
+/**
+ * Spec §4: the writer re-runs the trial heads-up over the bowl it just wrote, so a food
+ * mixed into a meal after the fact is evaluated like one logged with it (§5.2: every
+ * component, the offending one named). Fire-and-forget, after the write has landed; it
+ * lands only on this meal's card while that card is up (`applyMealTrialFlag`'s gates),
+ * and never throws into the save.
+ */
+async function rerunTrialHeadsUp(
+  eventId: string,
+  components: readonly ComponentInput[],
+  parent: MealParent,
+): Promise<void> {
+  try {
+    const event = await getDb().getFirstAsync<{ pet_id: string; occurred_at: string }>(
+      'SELECT pet_id, occurred_at FROM events WHERE id = ?',
+      [eventId],
+    );
+    if (!event) return;
+    // Lazy, as above: the heads-up module reaches the card store.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { applyMealTrialFlag } = require('./mealTrialFlag') as typeof import('./mealTrialFlag');
+    await applyMealTrialFlag({
+      eventId,
+      petId: event.pet_id,
+      occurredAt: event.occurred_at,
+      foodId: parent.food_item_id,
+      components:
+        parent.component_count !== null
+          ? components.map((c) => ({ foodId: c.foodItemId, foodLabel: c.foodLabel }))
+          : undefined,
+    });
+  } catch (e) {
+    console.warn('[meal components] trial heads-up re-run failed:', e);
+  }
 }

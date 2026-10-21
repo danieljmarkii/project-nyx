@@ -38,13 +38,22 @@
 // log never waits on it). The returned outcome exists so a test can assert which
 // gate stopped it; callers `void` it.
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
-import { evaluateMealLogTimeFlag, noteTrialFlagShown } from './trialContaminant';
+import {
+  evaluateBowlLogTimeFlag,
+  evaluateMealLogTimeFlag,
+  noteTrialFlagShown,
+  type BowlFlagComponent,
+} from './trialContaminant';
 
 export interface MealTrialFlagArgs {
   /** The just-logged meal's event id — the card this heads-up may land on. */
   eventId: string;
   petId: string;
-  foodId: string;
+  /** A plain meal's food. Ignored when `components` is given. */
+  foodId: string | null;
+  /** A MIXED BOWL's foods (spec §5.2): every one is evaluated, and the heads-up names
+   *  the offending one. Absent for a plain meal. */
+  components?: readonly BowlFlagComponent[];
   /** The meal's occurred_at, ISO. */
   occurredAt: string;
 }
@@ -58,8 +67,12 @@ export type MealTrialFlagOutcome =
   | 'shown';         // steps 3–5: on screen, dwell extended, budget spent
 
 export async function applyMealTrialFlag(args: MealTrialFlagArgs): Promise<MealTrialFlagOutcome> {
-  const { eventId, petId, foodId, occurredAt } = args;
-  const flag = await evaluateMealLogTimeFlag({ petId, foodId, occurredAt });
+  const { eventId, petId, foodId, components, occurredAt } = args;
+  const flag = components && components.length > 0
+    ? await evaluateBowlLogTimeFlag({ petId, components, occurredAt })
+    : foodId
+      ? await evaluateMealLogTimeFlag({ petId, foodId, occurredAt })
+      : null;
   if (!flag) return 'no_flag';
   if (!(await whenMealCardVisible(eventId))) return 'card_gone';
   // Read the store at the moment of the patch, not through a render-time hook

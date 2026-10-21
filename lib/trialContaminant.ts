@@ -101,7 +101,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDb } from './db';
 import { foodIntakeKey } from './food';
-import { localDayIndex } from './utils';
+import { localDayIndex, localDayIndexOf } from './utils';
 import {
   proteinSetCompleteness,
   proteinsFromCacheText,
@@ -116,6 +116,7 @@ import {
   proteinPhrase,
   sanctionedProteinsOn,
   trialContamination,
+  trialTargetEndDayIndex,
   type AllowedFood,
   type TrialContext,
   type TrialSpec,
@@ -247,6 +248,18 @@ export interface TrialContaminantFlag {
    *  re-derive which trial was live at evaluation time. */
   trialId: string;
   foodId: string;
+  /** Set when the meal is a MIXED BOWL (spec §5.2): `foodId` is then the OFFENDING
+   *  component, for the ledger and for Undo, and the copy names it. See `BowlFlagContext`. */
+  bowl?: BowlFlagContext;
+}
+
+/** What a heads-up on a MIXED BOWL needs beyond the plain flag (CUL-2053). */
+export interface BowlFlagContext {
+  /** The offending component's name, as the owner's library shows it. */
+  foodLabel: string;
+  /** The bowl was fed after the trial's own target end (P-5): the trial still reads as
+   *  running, and the copy adds the one sentence that names ending it. */
+  pastTarget: boolean;
 }
 
 /**
@@ -281,6 +294,8 @@ export interface TrialMembershipFlag {
    *  membership flag names nothing about what the food contains (§5, mock). */
   trialStartedAt: string;
   trialTargetDurationDays: number;
+  /** Set on a MIXED BOWL; see `TrialContaminantFlag.bowl`. */
+  bowl?: BowlFlagContext;
 }
 
 /**
@@ -490,13 +505,30 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
   headline: string;
   detail: string;
 } {
+  const detail =
+    `${petName}’s ${proteinPhrase(flag.trialProteins)} trial should skip ` +
+    `${proteinList(flag.proteins)}. The meal’s saved — just worth knowing, and ` +
+    'maybe a note for your vet.';
+  if (flag.bowl) {
+    // A MIXED BOWL names the food the protein came from (spec §5.2, §11). Past the
+    // trial's target (P-5, ruled (a)) the "should skip" clause gives way to the one
+    // sentence that names ending the trial; the headline still names what is in the bowl,
+    // so a real slip on a trial that is still running never reads as a soft "if it's over".
+    return {
+      headline: `This bowl has ${proteinList(flag.proteins)} in it, from ${flag.bowl.foodLabel}.`,
+      detail: flag.bowl.pastTarget ? pastTargetLine(petName) : detail,
+    };
+  }
   return {
     headline: `This one has ${proteinList(flag.proteins)}.`,
-    detail:
-      `${petName}’s ${proteinPhrase(flag.trialProteins)} trial should skip ` +
-      `${proteinList(flag.proteins)}. The meal’s saved — just worth knowing, and ` +
-      'maybe a note for your vet.',
+    detail,
   };
+}
+
+/** P-5's sentence, on a mixed bowl fed past the trial's target end (ruled (a), PM,
+ *  2026-10-19; bowls only, PM go 2026-10-21). */
+export function pastTargetLine(petName: string): string {
+  return `If ${petName}’s trial is over, ending it here keeps the record straight.`;
 }
 
 /**
@@ -521,12 +553,25 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
  * literal (there is no shared prepend convention to reuse — just the same glyph
  * rendered at the call site).
  */
-export function membershipFlagCopy(petName: string): {
+export function membershipFlagCopy(petName: string, bowl?: BowlFlagContext): {
   eyebrow: string;
   headline: string;
   detail: string;
   addLine: string;
 } {
+  if (bowl) {
+    // A MIXED BOWL names the component that is off the list (spec §5.2, §11). Still a
+    // claim about the LIST, never about what the food contains.
+    return {
+      eyebrow: 'Off the trial list',
+      headline: `${bowl.foodLabel} isn’t on ${petName}’s trial list.`,
+      detail: bowl.pastTarget
+        ? pastTargetLine(petName)
+        : 'The meal’s saved, and it counts in the trial record. If your vet okayed ' +
+          'this food, adding it to the list keeps the record straight.',
+      addLine: 'Add to the trial list',
+    };
+  }
   return {
     eyebrow: 'Off the trial list',
     headline: `This one isn’t on ${petName}’s trial list.`,
@@ -1290,6 +1335,65 @@ export function evaluateMealLogTimeFlag(args: {
       foodContaminantFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt) ??
       foodMembershipFlag(ctx, args.foodId, record.proteins, record.foodKey, args.occurredAt),
   );
+}
+
+/** One food in a bowl, as the heads-up reads it. */
+export interface BowlFlagComponent {
+  /** Null for a component whose food was purged: it names nothing to flag. */
+  foodId: string | null;
+  /** The name the copy uses for it. */
+  foodLabel: string;
+}
+
+/**
+ * The log-time heads-up for a MIXED BOWL (spec §5.2, CUL-2053). Every component is
+ * evaluated by the same two predicates a plain meal is, and the bowl speaks about ONE
+ * of them: a CONTENTS flag on any component beats a MEMBERSHIP flag on any other (the
+ * bowl's verdict order, worst first), and within a kind the first component in bowl
+ * order. The flag's `foodId` is that OFFENDING component, so the once-per-food ledger
+ * and Undo work exactly as they do for a plain meal; a component already spoken for
+ * under this trial is skipped and the next offending one speaks, never the bowl going
+ * quiet because one of its foods was flagged last week.
+ *
+ * The same spine as a plain meal: the `isTrialRunning` gate, silence on every
+ * uncertainty, never thrown into the log path. Share never enters (§5.1).
+ */
+export async function evaluateBowlLogTimeFlag(args: {
+  petId: string;
+  components: readonly BowlFlagComponent[];
+  occurredAt: string;
+}): Promise<LogTimeTrialFlag | null> {
+  try {
+    const ctx = await loadTrialProteinContext(args.petId);
+    if (!ctx) return null;
+    if (!isTrialRunning(ctx.spec, Date.now())) return null;
+    const fedDay = localDayIndexOf(args.occurredAt);
+    const targetEnd = trialTargetEndDayIndex(ctx.spec);
+    const pastTarget = fedDay !== null && targetEnd !== null && fedDay > targetEnd;
+
+    const contents: LogTimeTrialFlag[] = [];
+    const membership: LogTimeTrialFlag[] = [];
+    const seen = new Set<string>();
+    for (const c of args.components) {
+      if (!c.foodId || seen.has(c.foodId)) continue;
+      seen.add(c.foodId);
+      if (await hasFlaggedFoodInTrial(ctx.trialId, c.foodId)) continue;
+      const record = await readFoodProteinRecord(c.foodId);
+      if (!record) continue;
+      const bowl: BowlFlagContext = { foodLabel: c.foodLabel, pastTarget };
+      const protein = foodContaminantFlag(ctx, c.foodId, record.proteins, record.foodKey, args.occurredAt);
+      if (protein) {
+        contents.push({ ...protein, bowl });
+        continue;
+      }
+      const list = foodMembershipFlag(ctx, c.foodId, record.proteins, record.foodKey, args.occurredAt);
+      if (list) membership.push({ ...list, bowl });
+    }
+    return contents[0] ?? membership[0] ?? null;
+  } catch (e) {
+    console.warn('[trialContaminant] bowl log-time flag evaluation failed:', e);
+    return null;
+  }
 }
 
 /**
