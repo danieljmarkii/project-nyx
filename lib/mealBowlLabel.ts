@@ -1,14 +1,16 @@
 // How a mixed bowl reads on a row (Mixed meals row 4, CUL-2053; spec §7.2 and T8).
 //
 // One row, one label: "⅓ Chicken Pâté + ⅔ Rabbit Pâté". The ratio is TEXT, never a pie
-// (Principle 8), and it is what the owner entered: a preset stop prints as its fraction,
-// anything else as a percentage rounded to 5 with "~". A bowl whose ratio is unknown (a
-// later path only, P-3) prints its foods with no numbers, never a default 50/50.
+// (Principle 8): each food's share of the BOWL, so ¼ can + ½ can reads ⅓ + ⅔ (the spec's own
+// example); the amounts as entered are the event detail's (§11). A share on a preset stop
+// prints as its fraction, anything else as a percentage rounded to 5 with "~". A bowl whose
+// ratio is unknown (a later path only, P-3) prints its foods with no numbers, never a
+// default 50/50.
 //
 // The row renders the segments itself so each fraction can refuse to shrink (C-8): a
 // long food name truncates, the share beside it never does.
 
-import { productNameBesideTag } from './dayEvents';
+import { productNameBesideTag } from './food';
 import { componentDisplayName, type AppBowl, type AppBowlComponent } from './mealBowls';
 
 /** The five preset stops (P-2), as the glyph a row prints. */

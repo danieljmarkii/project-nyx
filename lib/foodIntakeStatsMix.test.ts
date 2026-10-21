@@ -86,3 +86,13 @@ it('a meal an older build put a food back on, over live components, is read as t
   expect(by.get('rabbit pâté')).toMatchObject({ meal_count: 1, mix_count: 1 });
   expect(by.get('chicken pâté')).toMatchObject({ meal_count: 1, mix_count: 1 });
 });
+
+it('a name with a non-ASCII capital keys the same on both sides (SQLite LOWER folds ASCII only)', async () => {
+  mockDb.prepare(`INSERT INTO food_items_cache (id, brand, product_name, format, food_type) VALUES ('ecl', 'Éclair', 'Pâté Royal', 'wet', 'meal')`).run();
+  meal('pl', '2026-10-01T08:00:00.000Z', 'ecl');
+  meal('mx', '2026-10-02T08:00:00.000Z', null, 2);
+  set('mx', 1_760_000_000_300, ['ecl', 'rabbit']);
+  const rows = (await getFoodIntakeStats(PET)).filter((s) => s.product_key.includes('royal'));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ meal_count: 2, mix_count: 1 });
+});

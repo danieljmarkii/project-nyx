@@ -516,7 +516,10 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
     // so a real slip on a trial that is still running never reads as a soft "if it's over".
     return {
       headline: `This bowl has ${proteinList(flag.proteins)} in it, from ${flag.bowl.foodLabel}.`,
-      detail: flag.bowl.pastTarget ? pastTargetLine(petName) : detail,
+      // Past the target the meal is still saved and still counts: that clause stays ahead
+      // of P-5's sentence, so nothing reads as needing undoing (Principle 1) and a slip on a
+      // trial that is still running keeps its weight (pm-feature-review, CUL-2053).
+      detail: flag.bowl.pastTarget ? `The meal’s saved, and it counts in the trial record. ${pastTargetLine(petName)}` : detail,
     };
   }
   return {
@@ -566,7 +569,7 @@ export function membershipFlagCopy(petName: string, bowl?: BowlFlagContext): {
       eyebrow: 'Off the trial list',
       headline: `${bowl.foodLabel} isn’t on ${petName}’s trial list.`,
       detail: bowl.pastTarget
-        ? pastTargetLine(petName)
+        ? `The meal’s saved, and it counts in the trial record. ${pastTargetLine(petName)}`
         : 'The meal’s saved, and it counts in the trial record. If your vet okayed ' +
           'this food, adding it to the list keeps the record straight.',
       addLine: 'Add to the trial list',

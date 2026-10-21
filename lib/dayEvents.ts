@@ -13,7 +13,7 @@
 import type { TimelineRow } from './db';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { formatDrugLabel } from './medications';
-import { FORMAT_LABEL, canonicalizeBrand, foodFormatTag, foodLabelOf, mealRowLabel } from './food';
+import { canonicalizeBrand, foodFormatTag, foodLabelOf, mealRowLabel, productNameBesideTag } from './food';
 import { describeOccurredAt } from './utils';
 import { pluralize } from './dashboardCards';
 import { describeLook, lookSummary } from './lookDisplay';
@@ -110,46 +110,9 @@ export interface DayEventDisplay {
   timeMs: number;
 }
 
-/** A regex-safe copy of a format word ("Freeze-dried" carries a hyphen). */
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * The product's name as a row prints it BESIDE its format tag: a trailing qualifier that
- * only restates the item's own recorded format is dropped, because the tag already says
- * it ("Selected Protein PR, Dry" beside DRY reads "Selected Protein PR").
- *
- * WHY THIS IS A DATA KEY, NOT A ", Wet" REGEX (BRK-12, the round-3 critique): the owner's
- * library holds one prescription line as two items, "Selected Protein PR, Dry"
- * (dry_kibble) and "Selected Protein PR, Wet" (wet_canned), and rule B's run crosses wet
- * and dry of ONE product. What decides that the trailing word is a qualifier is the
- * item's own `format` column: only the word `FORMAT_LABEL` gives that format can be
- * dropped, and only when the row shows it as a tag. A dry item named "…, Wet" keeps its
- * name (the record disagrees with itself, and the row shows both halves rather than
- * choosing); a name that merely ends in a format word with no separator ("Hill's Dry")
- * is never touched; an unknown or 'other' format has no tag, so nothing is dropped.
- *
- * A Class A canonical key in CLAUDE.md's sense (a form-qualifier spelling), so it is
- * CONVERGENT: it strips until nothing more matches, and never strips a name to nothing
- * (", Dry" alone is kept). `f(f(x)) === f(x)` is pinned by a property test.
- */
-export function productNameBesideTag(
-  product: string | null | undefined,
-  format: string | null | undefined,
-  rowLabel?: string | null,
-): string | null {
-  const name = product?.trim() || null;
-  if (name === null || !format || foodFormatTag(format, rowLabel) === null) return name;
-  const word = escapeRegExp(FORMAT_LABEL[format]);
-  const qualifier = new RegExp(`(?:\\s*,\\s*|\\s+[-–—]\\s+)${word}$|\\s*\\(${word}\\)$`, 'i');
-  let out = name;
-  for (;;) {
-    const next = out.replace(qualifier, '').trim();
-    if (next === out || next.length === 0) return out;
-    out = next;
-  }
-}
+// `productNameBesideTag` moved to `lib/food.ts` (CUL-2053) so the mixed-bowl label can use
+// it without an import cycle through this module; re-exported for every existing caller.
+export { productNameBesideTag } from './food';
 
 /** The food a row names beside its format tag: `foodLabelOf` over `productNameBesideTag`. */
 export function rowFoodLabelOf(food: {

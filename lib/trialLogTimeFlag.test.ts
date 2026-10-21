@@ -400,7 +400,7 @@ describe('evaluateBowlLogTimeFlag — every component, the offending one named',
     expect(flag?.bowl?.pastTarget).toBe(true);
     const copy = mealFlagCopy(flag as never, 'Biscuit');
     expect(copy.headline).toBe('This bowl has chicken in it, from Acme Chicken Chew.');
-    expect(copy.detail).toBe(pastTargetLine('Biscuit'));
+    expect(copy.detail).toBe(`The meal’s saved, and it counts in the trial record. ${pastTargetLine('Biscuit')}`);
   });
 
   it('P-5 is bowls only: a plain meal past the target keeps today’s copy', async () => {

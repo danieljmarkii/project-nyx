@@ -1008,6 +1008,12 @@ export const MIX_CANDIDATES_SQL = `SELECT m.event_id, e.occurred_at
          SELECT 1 FROM meal_components mc WHERE mc.event_id = m.event_id AND mc.deleted_at IS NULL
        ))`;
 
+/** SQLite's `LOWER()`: ASCII letters only, so a key built here meets the SQL's own key for
+ *  a name with a non-ASCII capital ("Éclair"), rather than splitting one food in two. */
+function sqliteLower(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
 /** Folds each bowl into the stats of every food it held, once per bowl per food (by the
  *  library's case-folded brand+product). A component with no cached food row has no
  *  library row to annotate. Instants are compared parsed (C-40). EXPORTED for its test. */
@@ -1021,7 +1027,7 @@ export function mergeMixedBowlStats(
     const keys = new Set<string>();
     for (const c of bowl.components) {
       if (!c.food || c.food.brand === null || c.food.productName === null) continue;
-      keys.add(`${c.food.brand.toLowerCase()}\u001F${c.food.productName.toLowerCase()}`);
+      keys.add(`${sqliteLower(c.food.brand)}\u001F${sqliteLower(c.food.productName)}`);
     }
     for (const key of keys) {
       const [brand_key, product_key] = key.split('\u001F');
@@ -1041,11 +1047,11 @@ export function mergeMixedBowlStats(
 export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[]> {
   const db = getDb();
   const [plain, candidates] = await Promise.all([
-    db.getAllAsync<Omit<FoodIntakeStat, 'mix_count'>>(PLAIN_INTAKE_STATS_SQL, [petId]),
-    db.getAllAsync<{ event_id: string; occurred_at: string }>(MIX_CANDIDATES_SQL, [petId]),
+    db.getAllAsync<Omit<FoodIntakeStat, 'mix_count'>>(PLAIN_INTAKE_STATS_SQL, [petId]).then((r) => r ?? []),
+    db.getAllAsync<{ event_id: string; occurred_at: string }>(MIX_CANDIDATES_SQL, [petId]).then((r) => r ?? []),
   ]);
   if (candidates.length === 0) return mergeMixedBowlStats(plain, []);
-  // Lazy: `lib/mealBowls.ts` imports this module.
+  // Lazy: `lib/mealBowls.ts` imports this module at runtime (this one imports only its type).
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { loadMealBowls } = require('./mealBowls') as typeof import('./mealBowls');
   const bowls = await loadMealBowls(candidates.map((c) => c.event_id), db);

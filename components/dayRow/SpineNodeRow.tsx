@@ -307,6 +307,7 @@ export function SpineEventRow({
                   </ThemedText>
                 ) : null}
               </ThemedText>
+              {node.mix ? <MixLine mix={node.mix} testID={`spine-mix-${node.id}`} inline /> : null}
               {node.formatTag ? (
                 <ThemedText style={styles.formatTag} numberOfLines={1}>
                   {node.formatTag}
@@ -327,7 +328,6 @@ export function SpineEventRow({
               {chip ? <RowChip chip={chip} testID={`spine-chip-${node.id}`} /> : null}
             </View>
           )}
-          {node.mix && !member ? <MixLine mix={node.mix} testID={`spine-mix-${node.id}`} /> : null}
           {node.carries ? (
             <ThemedText style={styles.line2} testID={`spine-carries-${node.id}`}>
               {node.carries}
@@ -391,30 +391,32 @@ function MemberLines({ node, chip }: { node: SpineEventNode; chip: Chip | null }
 
 /**
  * A MIXED BOWL's foods (Mixed meals, CUL-2053; spec §7.2): "⅓ Chicken Pâté + ⅔ Rabbit
- * Pâté" on the row's second line. Each share is its own text that never shrinks, beside a
+ * Pâté", on the title's line after "Meal ·" (the mock's one line, wrapping under it when
+ * the names are long), or on an opened run member's second line. Each share is its own text that never shrinks, beside a
  * name that truncates (C-8: the ratio is the half a reader cannot recover anywhere else on
  * the row). Drawn only; the row's one spoken label already carries the whole string, so
  * this is hidden from assistive tech rather than read twice.
  */
-function MixLine({ mix, testID }: { mix: BowlRowLabel; testID: string }) {
+function MixLine({ mix, testID, inline = false }: { mix: BowlRowLabel; testID: string; inline?: boolean }) {
   return (
     <View
-      style={styles.mixLine}
+      style={[styles.mixLine, inline && styles.mixInline]}
       testID={testID}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
+      {inline ? <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>·</ThemedText> : null}
       {mix.segments.map((s, i) => (
         <View key={i} style={styles.mixSegment}>
-          {i > 0 ? <ThemedText style={styles.mixJoin}>+</ThemedText> : null}
-          {s.share ? <ThemedText style={styles.mixShare}>{s.share}</ThemedText> : null}
-          <ThemedText style={styles.mixName} numberOfLines={1}>
+          {i > 0 ? <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>+</ThemedText> : null}
+          {s.share ? <ThemedText style={[styles.mixShare, inline && styles.mixTextInline]}>{s.share}</ThemedText> : null}
+          <ThemedText style={[styles.mixName, inline && styles.mixTextInline]} numberOfLines={1}>
             {s.name}
           </ThemedText>
         </View>
       ))}
-      {mix.more > 0 ? <ThemedText style={styles.mixJoin}>{`+${mix.more} more`}</ThemedText> : null}
-      {mix.incomplete ? <ThemedText style={styles.mixJoin}>{INCOMPLETE_BOWL_TAIL}</ThemedText> : null}
+      {mix.more > 0 ? <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>{`+${mix.more} more`}</ThemedText> : null}
+      {mix.incomplete ? <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>{INCOMPLETE_BOWL_TAIL}</ThemedText> : null}
     </View>
   );
 }
@@ -927,6 +929,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     columnGap: theme.space0_5,
   },
+  // On the title's line the type takes the title's size, as a plain meal's food does there.
+  mixInline: { marginTop: 0, flexShrink: 1 },
+  mixTextInline: { fontSize: theme.textSM },
   mixSegment: {
     flexDirection: 'row',
     alignItems: 'center',
