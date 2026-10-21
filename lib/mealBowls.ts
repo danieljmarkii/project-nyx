@@ -166,11 +166,13 @@ const CHUNK = 400;
  * decides what an unread bowl means on its surface (the trial card degrades to null,
  * never to "every meal was one food").
  */
-export async function loadMealBowls(eventIds: readonly string[]): Promise<Map<string, AppBowl>> {
+export async function loadMealBowls(
+  eventIds: readonly string[],
+  db: Pick<ReturnType<typeof getDb>, 'getAllAsync'> = getDb(),
+): Promise<Map<string, AppBowl>> {
   const out = new Map<string, AppBowl>();
   const ids = [...new Set(eventIds)];
   if (ids.length === 0) return out;
-  const db = getDb();
   const byEvent = new Map<string, { parent: MealParent; rows: (MealComponentRow & { food: BowlFood | null })[] }>();
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);

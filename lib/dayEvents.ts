@@ -17,6 +17,7 @@ import { FORMAT_LABEL, canonicalizeBrand, foodFormatTag, foodLabelOf, mealRowLab
 import { describeOccurredAt } from './utils';
 import { pluralize } from './dashboardCards';
 import { describeLook, lookSummary } from './lookDisplay';
+import { bowlRowLabel } from './mealBowlLabel';
 
 // Intake ratings → a short factual phrase. Mirrors the IntakeChipRow vocabulary (Refused /
 // Picked / Some / Most / All) so the drill-in never invents a warmer or cooler word than
@@ -210,7 +211,8 @@ function describeByCategory(
 
   switch (category) {
     case 'meal': {
-      const food = foodLabelOf(row.food_brand, row.food_product_name);
+      // A MIXED BOWL names both foods and their shares (spec §7.2), never a dominant food.
+      const food = row.meal_bowl ? bowlRowLabel(row.meal_bowl).text : foodLabelOf(row.food_brand, row.food_product_name);
       // The meal's word when there's no food name — the one shared rule (CUL-625),
       // so this drill-in, EventRow and TodayZone cannot drift apart.
       const mealLabel = mealRowLabel(row.food_type);
@@ -219,7 +221,7 @@ function describeByCategory(
         // B-568 — the wet/dry variant, so the drill-in can tell apart two rows of one
         // prescription line stocked in both. Suppressed against the same label EventRow
         // suppresses against, so the three timeline surfaces agree on when it is shown.
-        formatTag: foodFormatTag(row.food_format, mealLabel),
+        formatTag: row.meal_bowl ? null : foodFormatTag(row.food_format, mealLabel),
         detail: row.intake_rating ? INTAKE_PHRASE[row.intake_rating] ?? null : null,
       };
     }

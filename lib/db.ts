@@ -1,3 +1,4 @@
+import type { AppBowl } from './mealBowls';
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
@@ -391,6 +392,11 @@ export interface TimelineRow {
   created_at: string;
   updated_at: string;
   food_item_id: string | null;
+  /** A MIXED BOWL (Mixed meals, CUL-2053): set by the History and Home reads through
+   *  `loadMealBowls`; absent on a plain meal and on reads that do not ask (month reads may read a
+   *  mix as a meal naming no food, spec §8). Every row surface reads the bowl from here,
+   *  never `food_item_id`, which is NULL for a mix (T2). */
+  meal_bowl?: AppBowl | null;
   quantity: string | null;
   food_brand: string | null;
   food_product_name: string | null;

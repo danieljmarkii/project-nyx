@@ -194,7 +194,7 @@ interface ReportEventLike {
   severity: number | null;
   notes: string | null;
   loggedAt: string;
-  meal: { foodItemId: string | null } | null;
+  meal: { foodItemId: string | null; bowl?: { compositionKey: string } } | null;
 }
 
 interface ReportSurvivor extends ReportEventLike {
@@ -310,7 +310,13 @@ function buildCorpus(seed: number, cases: number): CorpusCase[] {
         severity: rand() < 0.3 ? 1 + Math.floor(rand() * 5) : null,
         notes: rand() < 0.2 ? 'a note' : null,
         loggedAt: new Date(t).toISOString(),
-        meal: type === 'meal' ? { foodItemId: pick(['food-a', 'food-b', null]) } : null,
+        // Mixed bowls (CUL-2053): two compositions, one sharing food-a with the plain meals,
+        // so the corpus meets a plain meal and a bowl of the same food within the window.
+        meal: type === 'meal'
+          ? ((b) => (b ? { foodItemId: null, bowl: { compositionKey: b } } : { foodItemId: pick(['food-a', 'food-b', null]) }))(
+              rand() < 0.3 ? pick(['id:food-a+id:food-b', 'id:food-a+id:food-c']) : null,
+            )
+          : null,
       });
       if (rand() < 0.25) completed.add(id);
       // Mostly a real edge (time-ordered); sometimes an arbitrary set, which the rule must
@@ -345,7 +351,7 @@ describe('it IS the report\'s rule — the report\'s live dedupeEvents, evaluate
     corpus.forEach((k, i) => {
       const theirs = report.dedupeEvents(k.events, k.completed, (e) => k.inWindow.has(e.id));
       const ours = collapseSameMinute(
-        k.events.map((e) => ({ ...e, foodItemId: e.meal?.foodItemId ?? null })),
+        k.events.map((e) => ({ ...e, foodItemId: e.meal?.foodItemId ?? null, bowlKey: e.meal?.bowl?.compositionKey ?? null })),
         { isInWindow: (e) => k.inWindow.has(e.id), isPreferred: (e) => k.completed.has(e.id) },
       );
       const a = JSON.stringify({
@@ -372,7 +378,7 @@ describe('it IS the report\'s rule — the report\'s live dedupeEvents, evaluate
     let neverGrouped = 0;
     for (const k of corpus) {
       const ours = collapseSameMinute(
-        k.events.map((e) => ({ ...e, foodItemId: e.meal?.foodItemId ?? null })),
+        k.events.map((e) => ({ ...e, foodItemId: e.meal?.foodItemId ?? null, bowlKey: e.meal?.bowl?.compositionKey ?? null })),
         { isInWindow: (e) => k.inWindow.has(e.id), isPreferred: (e) => k.completed.has(e.id) },
       );
       for (const c of ours.clusters) {
@@ -423,5 +429,32 @@ describe('the sweep parses each instant once (CUL-1228)', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// Mixed meals (CUL-2053, spec §10): a plain rabbit meal and a rabbit-dominant mix within
+// the window are two feedings; two logs of the same mix are one, whatever their ratio.
+describe('mixed bowls group by their composition', () => {
+  const at = (s: number) => new Date(Date.UTC(2026, 9, 21, 8, 0, s)).toISOString();
+  it('a plain meal and a mix holding its food do not collapse', () => {
+    const { droppedEventIds } = collapseSameMinute([
+      { id: 'plain', type: 'meal', occurredAt: at(0), foodItemId: 'rabbit' },
+      { id: 'mix', type: 'meal', occurredAt: at(20), foodItemId: null, bowlKey: 'id:chicken+id:rabbit' },
+    ]);
+    expect([...droppedEventIds]).toEqual([]);
+  });
+  it('two logs of one mix collapse', () => {
+    const { droppedEventIds } = collapseSameMinute([
+      { id: 'a', type: 'meal', occurredAt: at(0), foodItemId: null, bowlKey: 'id:chicken+id:rabbit' },
+      { id: 'b', type: 'meal', occurredAt: at(20), foodItemId: null, bowlKey: 'id:chicken+id:rabbit' },
+    ]);
+    expect([...droppedEventIds]).toEqual(['b']);
+  });
+  it('a mix never groups with a food-less plain meal', () => {
+    const { droppedEventIds } = collapseSameMinute([
+      { id: 'a', type: 'meal', occurredAt: at(0), foodItemId: null },
+      { id: 'b', type: 'meal', occurredAt: at(20), foodItemId: null, bowlKey: 'id:chicken+id:rabbit' },
+    ]);
+    expect([...droppedEventIds]).toEqual([]);
   });
 });

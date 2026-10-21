@@ -26,7 +26,7 @@
 import { memo, useCallback, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { router } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import type { DaySummaryRow } from '../../lib/daySummary';
 import type { EventTintCategory } from '../../lib/dayEvents';
@@ -200,6 +200,9 @@ export interface SpineRowFrameProps {
    *  step darker (the secondary ink), because it is the fact the owner opened the run to
    *  read. Absent, the frame is exactly what it was. */
   member?: boolean;
+  /** A MIXED BOWL (Mixed meals, CUL-2053; spec §7.2): the meal disc carries a "+". Absent,
+   *  the bead is exactly what it was. */
+  mixed?: boolean;
   /** Drawn in the rail on the thread and UNDER the bead (CUL-1736: a folded run's back
    *  beads), handed the bead's own colours and frame so it never retypes them. Absent, the
    *  rail is exactly what it was. */
@@ -234,6 +237,7 @@ export function SpineRowFrame({
   trailing,
   pressed = false,
   member = false,
+  mixed = false,
   underBead,
   style,
 }: SpineRowFrameProps) {
@@ -278,6 +282,12 @@ export function SpineRowFrame({
             style={[styles.dot, styles.dotMember, { backgroundColor: fill, borderColor: ring }]}
             testID="spine-dot-member"
           />
+        ) : mixed ? (
+          // The "+" in the ring's colour, cut out of the meal's fill: the glyph, never a
+          // second bead or a new colour, so a mix reads as a meal first.
+          <View style={[styles.dot, styles.dotMixed, { backgroundColor: fill, borderColor: ring }]} testID="spine-dot-mixed">
+            <Plus size={DOT - 2 * NODE_DOT_RING} color={ring} strokeWidth={3.5} />
+          </View>
         ) : (
           <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
         )}
@@ -412,6 +422,7 @@ const styles = StyleSheet.create({
   lineTop: { top: 0, height: DOT_CENTER_Y },
   // Through the row's bottom padding to the next row's top, where its `lineTop` begins.
   lineBottom: { top: DOT_CENTER_Y, bottom: -ROW_GAP_PAD },
+  dotMixed: { alignItems: 'center', justifyContent: 'center' },
   dot: {
     marginTop: DOT_TOP,
     width: DOT,
