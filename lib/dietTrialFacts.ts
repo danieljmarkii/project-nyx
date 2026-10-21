@@ -64,6 +64,7 @@ import {
   type TrialSpec,
 } from './dietTrial';
 import { relativeDayLabel } from './food';
+import { bowlFoodType, componentDisplayName, loadMealBowls, type AppBowl } from './mealBowls';
 import { proteinsFromCacheText } from './protein';
 import {
   computeTrialResponseCounts,
@@ -807,17 +808,25 @@ async function readFeedings(
       feedingsQuery(until !== null),
       until ? [petId, windowFromISO(startedAt), until] : [petId, windowFromISO(startedAt)],
     );
-    return rows.map((r) => ({
-      eventId: r.event_id,
-      occurredAt: r.occurred_at,
-      foodItemId: r.food_item_id,
-      foodKey:
-        r.brand !== null || r.product_name !== null ? trialFoodKey(r.brand, r.product_name) : null,
-      label: `${r.brand ?? ''} ${r.product_name ?? ''}`.trim() || null,
-      foodType: r.food_type,
-      proteins: proteinsFromCacheText(r.proteins),
-      intakeRating: r.intake_rating,
-    }));
+    // MIXED BOWLS (CUL-2053): every meal is looked up through the one bowl read. A bowl
+    // read that fails fails the whole list (null, below): reading a mix as the meal that
+    // names no food would be a quieter card than the record supports.
+    const bowls = await loadMealBowls(rows.map((r) => r.event_id));
+    return rows.map((r) => {
+      const bowl = bowls.get(r.event_id);
+      if (bowl) return feedingOfBowl(r.event_id, r.occurred_at, r.intake_rating, bowl);
+      return {
+        eventId: r.event_id,
+        occurredAt: r.occurred_at,
+        foodItemId: r.food_item_id,
+        foodKey:
+          r.brand !== null || r.product_name !== null ? trialFoodKey(r.brand, r.product_name) : null,
+        label: `${r.brand ?? ''} ${r.product_name ?? ''}`.trim() || null,
+        foodType: r.food_type,
+        proteins: proteinsFromCacheText(r.proteins),
+        intakeRating: r.intake_rating,
+      };
+    });
   } catch (e) {
     // Null, never `[]`. An empty feeding list is a trial with nothing logged, and
     // the card renders that as "0 feedings in total — all 0 matched the trial
@@ -825,6 +834,52 @@ async function readFeedings(
     console.error('[DietTrial] feedings read failed:', e);
     return null;
   }
+}
+
+/**
+ * A MIXED BOWL as the trial predicate reads it (spec §5.2). The twin of the vet report's
+ * `toTrialFeeding` bowl arm (`supabase/functions/generate-report/trial.ts`), so the card
+ * and the report give one bowl one verdict; `mealBowls.test.ts` runs both over the same
+ * bowls and asserts the feedings equal. Identity, type and proteins are each component's
+ * own; the bowl-level food is never read, because it names no food (T2). EXPORTED for
+ * that test.
+ */
+export function feedingOfBowl(
+  eventId: string,
+  occurredAt: string,
+  intakeRating: string | null,
+  bowl: AppBowl,
+): TrialFeeding {
+  return {
+    eventId,
+    occurredAt,
+    foodItemId: null,
+    foodKey: null,
+    label: `${bowl.components.map(componentDisplayName).join(' + ')}, mixed`,
+    foodType: bowlFoodType(bowl.components.map((c) => c.food?.foodType ?? null)),
+    proteins: [],
+    intakeRating,
+    incompleteBowl: bowl.status === 'incomplete',
+    components: bowl.components.map((c) => {
+      const brand = c.food?.brand ?? null;
+      const productName = c.food?.productName ?? null;
+      return {
+        foodItemId: c.foodItemId,
+        // A purged component keeps its snapshot name, the key's product half; the brand
+        // went with the row, so it matches only an allowed row keyed the same way.
+        foodKey: brand !== null || productName !== null
+          ? trialFoodKey(brand, productName)
+          : c.foodItemId === null
+            ? trialFoodKey(null, c.foodLabel)
+            : null,
+        label: componentDisplayName(c),
+        foodType: c.food?.foodType ?? null,
+        proteins: [...(c.food?.primaryProtein ? [c.food.primaryProtein] : []), ...(c.food?.proteins ?? [])],
+        share: c.normalizedShare,
+        ref: c.foodKey,
+      };
+    }),
+  };
 }
 
 /**
