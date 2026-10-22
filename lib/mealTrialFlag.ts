@@ -149,7 +149,13 @@ export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<Bo
   // The card may be between screens (the first mix returns it 450 ms after the picker
   // closes), so wait for it as the log path does. An edit made off the card waits out
   // the timeout and lands nothing, which spends nothing.
-  if (!(await whenMealCardVisible(eventId))) return flag ? 'card_gone' : 'no_flag';
+  if (!(await whenMealCardVisible(eventId))) {
+    // The card never came back (a mix begun on the card, the card gone by the return):
+    // the heads-up goes where an edit made off the card puts it, the meal's screen
+    // (CUL-2088, adversarial pass 1), rather than nowhere.
+    if (flag && !(await handToMealScreen(eventId, flag, current))) return 'superseded';
+    return flag ? 'card_gone' : 'no_flag';
+  }
   if (!current()) return 'superseded';
   const { patchBowlTrialFlag } = useMomentStore.getState();
   const { landed, displaced } = patchBowlTrialFlag(eventId, flag, bowlFoodIds);

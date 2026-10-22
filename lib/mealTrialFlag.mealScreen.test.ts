@@ -118,21 +118,23 @@ describe('a bowl edit off the card hands its heads-up to the meal\'s screen (CUL
     expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined();
   });
 
-  it('the card surface is untouched: nothing waits for the meal\'s screen', async () => {
-    mockEvaluateBowl.mockResolvedValue(contents('chicken', 'Chicken Pâté'));
-    const out = applyBowlEditTrialFlag({
-      eventId: EVENT, petId: 'pet-1', foodId: null,
-      components: [{ foodId: 'chicken', foodLabel: 'Chicken Pâté' }],
-      occurredAt: '2026-10-21T07:30:00.000Z', bowlFoodIds: ['rabbit', 'chicken'],
-    });
+  it('the card surface: a card that never comes back hands the heads-up to the meal\'s screen', async () => {
+    const flag = contents('chicken', 'Chicken Pâté');
+    mockEvaluateBowl.mockResolvedValue(flag);
     jest.useFakeTimers();
     try {
+      const out = applyBowlEditTrialFlag({
+        eventId: EVENT, petId: 'pet-1', foodId: null,
+        components: [{ foodId: 'chicken', foodLabel: 'Chicken Pâté' }],
+        occurredAt: '2026-10-21T07:30:00.000Z', bowlFoodIds: ['rabbit', 'chicken'],
+      });
       await jest.advanceTimersByTimeAsync(5000);
       await expect(out).resolves.toBe('card_gone');
     } finally {
       jest.useRealTimers();
     }
-    expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined();
+    expect(useMealScreenFlagStore.getState().pending[EVENT]?.flag).toBe(flag);
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(false);
   });
 });
 
