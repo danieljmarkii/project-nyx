@@ -38,6 +38,9 @@
 // log never waits on it). The returned outcome exists so a test can assert which
 // gate stopped it; callers `void` it.
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
+import { useMealScreenFlagStore } from '../store/mealScreenFlagStore';
+import { getDb } from './db';
+import type { TrialFoodSelection } from './dietTrialSetup';
 import {
   evaluateBowlLogTimeFlag,
   evaluateMealLogTimeFlag,
@@ -45,7 +48,12 @@ import {
   forgetFlagsSpentByEvent,
   noteTrialFlagShown,
   type BowlFlagComponent,
+  type LogTimeTrialFlag,
 } from './trialContaminant';
+
+/** Where an edit's heads-up lands (CUL-2088): the completion card when the edit was made
+ *  on it, the meal's own screen when it was made there or on the edit screen. */
+export type HeadsUpSurface = 'card' | 'meal_screen';
 
 export interface MealTrialFlagArgs {
   /** The just-logged meal's event id — the card this heads-up may land on. */
@@ -88,13 +96,17 @@ export async function applyMealTrialFlag(args: MealTrialFlagArgs): Promise<MealT
 }
 
 /** What a bowl edit's re-run did to the card (CUL-2086). `replaced` and `cleared` both
- *  give the displaced food its one warning back. */
-export type BowlEditFlagOutcome = MealTrialFlagOutcome | 'replaced' | 'cleared' | 'superseded';
+ *  give the displaced food its one warning back. `handed`: the heads-up now waits for the
+ *  meal's own screen (CUL-2088), which spends it only once it shows. */
+export type BowlEditFlagOutcome = MealTrialFlagOutcome | 'replaced' | 'cleared' | 'superseded' | 'handed';
 
 export interface BowlEditFlagArgs extends MealTrialFlagArgs {
   /** Every food in the bowl AFTER the edit, so the card can tell whether the food its
    *  heads-up names is still in it. */
   bowlFoodIds: readonly string[];
+  /** Defaults to the card. `meal_screen` never waits for a card: the edit was made away
+   *  from one, and a 3 s wait would land the line after the screen has come back. */
+  surface?: HeadsUpSurface;
 }
 
 /**
@@ -117,9 +129,7 @@ export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<Bo
   // Only the NEWEST edit of a bowl may touch its card (CUL-2086, pass 1, R2): two quick
   // edits can finish out of order, and an older one would patch against a bowl that no
   // longer exists, pulling a warning off a meal that still holds the food.
-  const seq = (editSeq.get(eventId) ?? 0) + 1;
-  editSeq.set(eventId, seq);
-  const current = () => editSeq.get(eventId) === seq;
+  const current = claimEdit(eventId);
 
   const flag = components && components.length > 0
     ? await evaluateBowlLogTimeFlag({ petId, components, occurredAt })
@@ -132,6 +142,10 @@ export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<Bo
   // newest-edit check, so a superseded edit never gives back a food the final bowl holds.
   // A food put back by a LATER edit after this ran stays unspent: one extra heads-up.
   await forgetFlagsSpentByEvent(eventId, bowlFoodIds);
+  if (args.surface === 'meal_screen') {
+    if (!(await handToMealScreen(eventId, flag, current))) return 'superseded';
+    return flag ? 'handed' : 'no_flag';
+  }
   // The card may be between screens (the first mix returns it 450 ms after the picker
   // closes), so wait for it as the log path does. An edit made off the card waits out
   // the timeout and lands nothing, which spends nothing.
@@ -154,6 +168,75 @@ export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<Bo
   return displaced ? 'replaced' : 'shown';
 }
 
-/** The newest bowl edit per meal (see `applyBowlEditTrialFlag`). Grows by one small entry
- *  per meal edited in a session, which is bounded by what an owner can tap. */
+/**
+ * The heads-up after a PLAIN meal's food is changed on the edit screen (CUL-2088,
+ * instance 1). There is no card, so the flag goes to the meal's own screen, which the edit
+ * screen returns to. The caller has already given back what this meal spent on the food it
+ * replaced (`forgetFlagsSpentByEvent`, CUL-2087), so the evaluation sees today's ledger.
+ * A change to a food with nothing to say clears a heads-up an earlier change left waiting.
+ * Never throws into the save.
+ */
+export async function applyMealScreenTrialFlag(
+  eventId: string,
+  foodId: string,
+): Promise<'no_flag' | 'handed' | 'superseded'> {
+  const current = claimEdit(eventId);
+  try {
+    // The meal's own pet and time, read from the record (C-9), never the active pet.
+    const event = await getDb().getFirstAsync<{ pet_id: string; occurred_at: string }>(
+      'SELECT pet_id, occurred_at FROM events WHERE id = ?',
+      [eventId],
+    );
+    const flag = event
+      ? await evaluateMealLogTimeFlag({ petId: event.pet_id, foodId, occurredAt: event.occurred_at })
+      : null;
+    if (!(await handToMealScreen(eventId, flag, current))) return 'superseded';
+    return flag ? 'handed' : 'no_flag';
+  } catch (e) {
+    console.warn('[mealTrialFlag] meal-screen heads-up failed:', e);
+    return 'no_flag';
+  }
+}
+
+/**
+ * Leave the newest edit's verdict for the meal's screen: a flag waits there, null clears
+ * one an older edit left. Spends nothing: `TrialHeadsUpLine` spends once it is on screen.
+ * False when a newer edit took over while the food was read.
+ */
+async function handToMealScreen(
+  eventId: string,
+  flag: LogTimeTrialFlag | null,
+  current: () => boolean,
+): Promise<boolean> {
+  const food = flag ? await readTrialFoodSelection(flag.foodId) : null;
+  if (!current()) return false;
+  useMealScreenFlagStore.getState().put(eventId, flag ? { flag, food } : null);
+  return true;
+}
+
+/** The flagged food as the add-to-list sheet writes it. Null when its row is not on this
+ *  phone or the read fails; the line then shows without its add door. */
+async function readTrialFoodSelection(foodId: string): Promise<TrialFoodSelection | null> {
+  try {
+    const row = await getDb().getFirstAsync<{ brand: string | null; product_name: string | null; food_type: string | null }>(
+      'SELECT brand, product_name, food_type FROM food_items_cache WHERE id = ?',
+      [foodId],
+    );
+    if (!row) return null;
+    return { id: foodId, brand: row.brand ?? '', product_name: row.product_name ?? '', food_type: row.food_type };
+  } catch (e) {
+    console.warn('[mealTrialFlag] flagged food read failed:', e);
+    return null;
+  }
+}
+
+/** Claim the newest edit of a meal; the returned check is false once a later one claims. */
+function claimEdit(eventId: string): () => boolean {
+  const seq = (editSeq.get(eventId) ?? 0) + 1;
+  editSeq.set(eventId, seq);
+  return () => editSeq.get(eventId) === seq;
+}
+
+/** The newest edit per meal (see `applyBowlEditTrialFlag`). Grows by one small entry per
+ *  meal edited in a session, which is bounded by what an owner can tap. */
 const editSeq = new Map<string, number>();

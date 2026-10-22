@@ -37,6 +37,7 @@ import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { describeLook, isLookRow } from '../../lib/lookDisplay';
 import { LookRecordSection } from '../../components/event/LookRecordSection';
 import { bowlFoodType, loadMealBowls, type AppBowl } from '../../lib/mealBowls';
+import { TrialHeadsUpLine } from '../../components/event/TrialHeadsUpLine';
 import { bowlDetailLine } from '../../lib/mixDetail';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
@@ -180,6 +181,9 @@ export default function EventDetailScreen() {
   const [foodType, setFoodType] = useState<string | null>(null);
   // Mixed meals row 5 — the meal's bowl when it is a mix (null for a plain meal).
   const [bowl, setBowl] = useState<AppBowl | null>(null);
+  // CUL-2088 — the foods this meal holds, from this load's own read (null until it answers),
+  // so a trial heads-up waiting for this screen is shown only for a food still in the meal.
+  const [mealFoodIds, setMealFoodIds] = useState<string[] | null>(null);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   // Medication (dose) detail — B-117 PR 8. `dose` carries the drug-library display
   // fields; `adherence` is the mutable rating (the intakeRating analog); `doubleDose`
@@ -216,6 +220,7 @@ export default function EventDetailScreen() {
     setFoodLabel(null);
     setFoodType(null);
     setBowl(null);
+    setMealFoodIds(null);
     setIntakeRating(null);
     setDose(null);
     setAdherence(null);
@@ -307,9 +312,15 @@ export default function EventDetailScreen() {
               const b = (await loadMealBowls([id])).get(id) ?? null;
               setBowl(b);
               if (b) setFoodType(bowlFoodType(b.components.map((c) => c.food?.foodType)));
+              // A failed read leaves the ids unanswered, so a waiting heads-up waits too.
+              setMealFoodIds(
+                (b?.components ?? []).map((c) => c.foodItemId).filter((f): f is string => f !== null),
+              );
             } catch (e) {
               console.warn('[event] bowl read failed:', e);
             }
+          } else {
+            setMealFoodIds([meal.food_item_id]);
           }
           const rating = meal.intake_rating;
           setIntakeRating(
@@ -1025,6 +1036,19 @@ export default function EventDetailScreen() {
               <ThemedText style={styles.sectionLabel}>MIXED BOWL</ThemedText>
               <ThemedText style={styles.foodProduct}>{bowlDetailLine(bowl)}</ThemedText>
             </View>
+          ) : null}
+
+          {/* CUL-2088 — a trial heads-up for a food put in after the fact (Change on the
+              edit screen, a mix from here, a bowl-editor save): the card's line, under the
+              food, spent only once it shows. */}
+          {EVENT_TYPES[event.event_type as EventTypeKey]?.hasFood ? (
+            <TrialHeadsUpLine
+              key={event.id}
+              eventId={event.id}
+              petId={event.pet_id}
+              petName={eventPetName}
+              mealFoodIds={mealFoodIds}
+            />
           ) : null}
 
           {isMeal ? (

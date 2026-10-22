@@ -12,6 +12,7 @@
 // row 5.
 
 import { getDb } from './db';
+import type { HeadsUpSurface } from './mealTrialFlag';
 import {
   planComponentWrite,
   MealComponentInputError,
@@ -26,11 +27,15 @@ import {
  * one food leaves a plain meal, indistinguishable from one never mixed; none is refused.
  * Only `food_type = 'meal'` foods that are not toppers can be in a bowl (R1). Returns the
  * parent's new food and count. Throws, writing nothing, on any refusal.
+ *
+ * `headsUp` says where the re-run trial heads-up lands (CUL-2088): the card for an edit
+ * made on it, `meal_screen` for one made on the edit screen or the meal's own screen.
  */
 export async function setMealComponents(
   eventId: string,
   components: readonly ComponentInput[],
   now: Date = new Date(),
+  { headsUp = 'card' }: { headsUp?: HeadsUpSurface } = {},
 ): Promise<MealParent> {
   const db = getDb();
   await assertMixableFoods(db, components);
@@ -44,7 +49,7 @@ export async function setMealComponents(
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { syncPendingMeals } = require('./sync') as typeof import('./sync');
   syncPendingMeals().catch((e: unknown) => console.warn('[meal components] push failed (queued):', e));
-  void rerunTrialHeadsUp(eventId, components, parent);
+  void rerunTrialHeadsUp(eventId, components, parent, headsUp);
   return parent;
 }
 
@@ -132,13 +137,15 @@ export async function writeMealComponentsTx(
  * Spec §4: the writer re-runs the trial heads-up over the bowl it just wrote, so a food
  * mixed into a meal after the fact is evaluated like one logged with it (§5.2: every
  * component, the offending one named). Fire-and-forget, after the write has landed; it
- * lands only on this meal's card while that card is up (`applyMealTrialFlag`'s gates),
+ * lands only on this meal's card while that card is up (`applyMealTrialFlag`'s gates), or
+ * waits for the meal's own screen when the edit was made away from the card (CUL-2088),
  * and never throws into the save.
  */
 async function rerunTrialHeadsUp(
   eventId: string,
   components: readonly ComponentInput[],
   parent: MealParent,
+  surface: HeadsUpSurface,
 ): Promise<void> {
   try {
     const event = await getDb().getFirstAsync<{ pet_id: string; occurred_at: string }>(
@@ -161,6 +168,7 @@ async function rerunTrialHeadsUp(
           ? components.map((c) => ({ foodId: c.foodItemId, foodLabel: c.foodLabel }))
           : undefined,
       bowlFoodIds: components.map((c) => c.foodItemId),
+      surface,
     });
   } catch (e) {
     console.warn('[meal components] trial heads-up re-run failed:', e);

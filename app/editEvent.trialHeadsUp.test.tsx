@@ -1,4 +1,6 @@
 // CUL-2087 — Change on the edit screen gives a plain meal's trial heads-up back.
+// CUL-2088 — and the food it changes TO gets the heads-up the card would have given, as a
+// line waiting for the meal's own screen (the line itself: `TrialHeadsUpLine.test.tsx`).
 //
 // During a trial a food gets one heads-up, spent when the card shows it. The card's own
 // heads-up is usually what tells the owner they tapped the wrong food, and the edit
@@ -59,6 +61,12 @@ jest.mock('../lib/meals', () => ({
   rateMealIntake: (...a: unknown[]) => mockRateMealIntake(...a),
 }));
 
+const mockEvaluateMeal = jest.fn().mockResolvedValue(null);
+jest.mock('../lib/trialContaminant', () => ({
+  ...jest.requireActual('../lib/trialContaminant'),
+  evaluateMealLogTimeFlag: (...a: unknown[]) => mockEvaluateMeal(...a),
+}));
+
 const mockTriggerRegen = jest.fn();
 jest.mock('../lib/signal', () => ({ triggerSignalRegenDebounced: (...a: unknown[]) => mockTriggerRegen(...a) }));
 
@@ -85,7 +93,8 @@ import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import EditEventModal from './edit-event';
-import { clearTrialHeadsUpLedger, hasFlaggedFoodInTrial, noteTrialFlagShown } from '../lib/trialContaminant';
+import { clearTrialHeadsUpLedger, hasFlaggedFoodInTrial, noteTrialFlagShown, type LogTimeTrialFlag } from '../lib/trialContaminant';
+import { useMealScreenFlagStore } from '../store/mealScreenFlagStore';
 
 function meal(intake: string | null) {
   return {
@@ -98,7 +107,9 @@ let alertSpy: jest.SpyInstance;
 beforeEach(async () => {
   jest.clearAllMocks();
   mockGetAllAsync.mockResolvedValue([]);
-  mockGetFirstAsync.mockResolvedValue({ pet_id: 'pet-cat' });
+  mockGetFirstAsync.mockResolvedValue({ pet_id: 'pet-cat', occurred_at: '2026-09-22T07:30:00.000Z' });
+  mockEvaluateMeal.mockResolvedValue(null);
+  useMealScreenFlagStore.getState().reset();
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   await AsyncStorage.clear();
   await clearTrialHeadsUpLedger();
@@ -151,5 +162,52 @@ describe('Change on the edit screen gives the old food its trial heads-up back (
     await act(async () => { fireEvent.press(getByText('Save')); });
     expect(await hasFlaggedFoodInTrial(TRIAL, 'food-1')).toBe(true);
     quiet.mockRestore();
+  });
+});
+
+const OFF_LIST: LogTimeTrialFlag = {
+  kind: 'off_trial_list',
+  trialId: TRIAL,
+  foodId: 'food-2',
+  trialStartedAt: '2026-09-10T07:00:00.000Z',
+  trialTargetDurationDays: 56,
+};
+
+async function changeToTurkey() {
+  mockGetMealForEvent.mockResolvedValue(meal('most'));
+  mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
+  const { getByText } = await open();
+  fireEvent.press(getByText('Pate'));
+  await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
+  fireEvent.press(getByText('Turkey'));
+  await act(async () => { fireEvent.press(getByText('Save')); });
+}
+
+describe('the food changed in gets its trial heads-up on the meal\'s screen (CUL-2088)', () => {
+  it('an off-trial food: the heads-up waits for the meal\'s screen, for the meal\'s own pet, spending nothing', async () => {
+    mockEvaluateMeal.mockResolvedValue(OFF_LIST);
+    await changeToTurkey();
+    await waitFor(() => expect(useMealScreenFlagStore.getState().pending['evt-1']?.flag).toBe(OFF_LIST));
+    expect(mockEvaluateMeal).toHaveBeenCalledWith({
+      petId: 'pet-cat', foodId: 'food-2', occurredAt: '2026-09-22T07:30:00.000Z',
+    });
+    // Spent only by the line, once it shows.
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'food-2')).toBe(false);
+  });
+
+  it('a food with nothing to say clears a heads-up an earlier change left waiting', async () => {
+    useMealScreenFlagStore.getState().put('evt-1', { flag: { ...OFF_LIST, foodId: 'food-1' }, food: null });
+    await changeToTurkey();
+    await waitFor(() => expect(mockEvaluateMeal).toHaveBeenCalled());
+    await waitFor(() => expect(useMealScreenFlagStore.getState().pending['evt-1']).toBeUndefined());
+  });
+
+  it('a save that leaves the food alone asks nothing', async () => {
+    mockEvaluateMeal.mockResolvedValue(OFF_LIST);
+    mockGetMealForEvent.mockResolvedValue(meal('most'));
+    const { getByText } = await open();
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockEvaluateMeal).not.toHaveBeenCalled();
+    expect(useMealScreenFlagStore.getState().pending['evt-1']).toBeUndefined();
   });
 });

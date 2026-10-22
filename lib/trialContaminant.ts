@@ -620,6 +620,54 @@ export function membershipFlagCopy(petName: string, bowl?: BowlFlagContext): {
   };
 }
 
+/** The one door a meal-screen heads-up carries, as the card would: the add-to-list sheet
+ *  for a food off the list, ending the trial past its target, none for a contents flag. */
+export type MealScreenFlagDoor = 'add_to_list' | 'end_trial' | null;
+
+/**
+ * The trial heads-up as a line on the MEAL'S OWN SCREEN, after a food went into the meal
+ * after the fact (CUL-2088, PM ruling (a); mock frames 7a to 7c). The card's headline,
+ * eyebrow and door, so a food reads the same wherever it is first added; only the detail
+ * moves off "The meal's saved", which speaks for the moment of logging, to "The change is
+ * saved". Like the card it reports and never asks, and it never says the meal is fine.
+ */
+export function mealScreenFlagCopy(flag: LogTimeTrialFlag, petName: string): {
+  eyebrow: string | null;
+  headline: string;
+  detail: string;
+  door: MealScreenFlagDoor;
+} {
+  const saved = 'The change is saved and counts in the trial record.';
+  if (flag.bowl?.pastTarget) {
+    const headline = flag.kind === 'off_diet_protein'
+      ? mealFlagCopy(flag, petName).headline
+      : membershipFlagCopy(petName, flag.bowl).headline;
+    return {
+      eyebrow: pastTargetEyebrow(flag.bowl),
+      headline,
+      detail: `${saved} If ${petName}’s trial is over, ending it keeps the record straight.`,
+      door: 'end_trial',
+    };
+  }
+  if (flag.kind === 'off_diet_protein') {
+    return {
+      eyebrow: null,
+      headline: mealFlagCopy(flag, petName).headline,
+      detail:
+        `${petName}’s ${proteinPhrase(flag.trialProteins)} trial should skip ` +
+        `${proteinList(flag.proteins)}. ${saved} Maybe a note for your vet.`,
+      door: null,
+    };
+  }
+  const card = membershipFlagCopy(petName, flag.bowl);
+  return {
+    eyebrow: card.eyebrow,
+    headline: card.headline,
+    detail: `${saved} If your vet okayed this food, adding it to the list keeps the record straight.`,
+    door: 'add_to_list',
+  };
+}
+
 /**
  * The add-to-library soft confirm (mock §2, top).
  *

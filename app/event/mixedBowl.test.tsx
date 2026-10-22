@@ -35,6 +35,7 @@ jest.mock('expo-router', () => {
     router: { push: jest.fn(), back: jest.fn(), canGoBack: () => true },
     useLocalSearchParams: () => ({ id: 'evt-1' }),
     useFocusEffect: (cb: () => void | (() => void)) => react.useEffect(() => { cb(); }, [cb]),
+    useIsFocused: () => true,
   };
 });
 
@@ -77,6 +78,9 @@ jest.mock('../../store/petStore', () => {
 });
 
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMealScreenFlagStore } from '../../store/mealScreenFlagStore';
+import { clearTrialHeadsUpLedger, hasFlaggedFoodInTrial } from '../../lib/trialContaminant';
 import { router } from 'expo-router';
 import EventDetailScreen from './[id]';
 import { bowlFromRows } from '../../lib/mealBowls';
@@ -152,4 +156,43 @@ it('a mix shows its foods as measured, and no mix line', async () => {
   expect(view.queryByText('+ Mixed with another food')).toBeNull();
   // The bowl is a meal: the retroactive med line still offers itself.
   view.getByText('+ Add a med given with this');
+});
+
+// CUL-2088 — a food mixed in from here (or changed on the edit screen) has no card to land
+// on, so its trial heads-up waits for this screen and shows under the bowl, spent once.
+describe('the trial heads-up for a food put in after the fact (CUL-2088)', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    await clearTrialHeadsUpLedger();
+    useMealScreenFlagStore.getState().reset();
+  });
+
+  it('a mix made from here comes back with the line under the bowl, and spends the food', async () => {
+    useMealScreenFlagStore.getState().put('evt-1', {
+      flag: {
+        kind: 'off_diet_protein', trialId: 'trial-1', foodId: 'f0', proteins: ['chicken'],
+        trialProteins: ['rabbit'], bowl: { foodLabel: 'Chicken Pâté', pastTarget: false },
+      },
+      food: null,
+    });
+    mockGetEventById.mockResolvedValue(row({ food_item_id: null }));
+    mockGetMealForEvent.mockResolvedValue({
+      food_item_id: null, food_brand: null, food_product_name: null, food_format: null, food_type: null, intake_rating: null,
+    });
+    mockLoadMealBowls.mockResolvedValue(new Map([['evt-1', BOWL]]));
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('This bowl has chicken in it, from Chicken Pâté.')).toBeTruthy());
+    view.getByText('Biscuit’s rabbit trial should skip chicken. The change is saved and counts in the trial record. Maybe a note for your vet.');
+    await waitFor(async () => expect(await hasFlaggedFoodInTrial('trial-1', 'f0')).toBe(true));
+  });
+
+  it('nothing waiting: no line', async () => {
+    mockGetEventById.mockResolvedValue(row());
+    mockGetMealForEvent.mockResolvedValue({
+      food_item_id: 'food-1', food_brand: 'Weruva', food_product_name: 'Rabbit Pâté', food_format: 'wet', food_type: 'meal', intake_rating: null,
+    });
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('+ Mixed with another food')).toBeTruthy());
+    expect(view.queryByText(/trial/)).toBeNull();
+  });
 });

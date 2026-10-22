@@ -149,7 +149,7 @@ it('Take out is staged until Save, then writes the bowl as a plain meal of the f
   await act(async () => { fireEvent.press(view.getByText('Save')); });
   expect(mockSetMealComponents).toHaveBeenCalledWith('evt-1', [
     expect.objectContaining({ foodItemId: 'chicken', foodLabel: 'Weruva Chicken Pâté', share: 0.333 }),
-  ]);
+  ], expect.any(Date), { headsUp: 'meal_screen' });
   expect(updateMealFood).not.toHaveBeenCalled();
   expect(mockTriggerRegen).toHaveBeenCalled();
 });
@@ -162,7 +162,9 @@ it('Change swaps one food for a meal food not in the bowl, keeping its share', a
   expect(mockSetMealComponents).toHaveBeenCalledWith('evt-1', [
     expect.objectContaining({ foodItemId: 'chicken', share: 0.333 }),
     expect.objectContaining({ foodItemId: 'duck', foodLabel: 'Weruva Duck Stew', share: 0.667 }),
-  ]);
+  // CUL-2088: no card is up on the edit screen, so the bowl's trial heads-up waits for the
+  // meal's own screen rather than a card that never comes.
+  ], expect.any(Date), { headsUp: 'meal_screen' });
 });
 
 it('a bowl holding a food gone from the library is shown and kept: no food write', async () => {

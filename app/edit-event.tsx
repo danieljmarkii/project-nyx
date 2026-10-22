@@ -17,6 +17,7 @@ import { BowlEditor, type BowlPickerFood, type StagedBowlFood } from '../compone
 import { loadMealBowls, type AppBowl } from '../lib/mealBowls';
 import { componentRowName } from '../lib/mealBowlLabel';
 import { setMealComponents } from '../lib/mealComponents';
+import { applyMealScreenTrialFlag } from '../lib/mealTrialFlag';
 import { forgetFlagsSpentByEvent } from '../lib/trialContaminant';
 import { AMOUNT_UNITS, type AmountUnit } from '../lib/mealComposition';
 import { mixFoodOf } from '../lib/mixCard';
@@ -639,6 +640,7 @@ export default function EditEventModal() {
       const bowlChanged = bowlFoods !== null && bowlSignature(bowlFoods) !== loadedBowlRef.current;
       if (config.hasFood && bowlFoods !== null) {
         if (bowlChanged) {
+          // CUL-2088: no card is up here, so the bowl's heads-up waits for the meal's screen.
           await setMealComponents(id, bowlFoods.map((f) => ({
             foodItemId: f.foodItemId,
             foodLabel: f.foodLabel,
@@ -646,7 +648,7 @@ export default function EditEventModal() {
             shareSource: f.shareSource,
             amountValue: f.amountValue,
             amountUnit: isAmountUnit(f.amountUnit) ? f.amountUnit : null,
-          })));
+          })), new Date(), { headsUp: 'meal_screen' });
         }
       } else if (config.hasFood && currentFoodId && bowlReadOnly === null) {
         await updateMealFood(id, currentFoodId);
@@ -658,6 +660,11 @@ export default function EditEventModal() {
         await forgetFlagsSpentByEvent(id, [currentFoodId]).catch((e: unknown) => {
           console.warn('[edit-event] trial heads-up give-back failed:', e);
         });
+        // CUL-2088: a food changed in after the fact gets the heads-up the card would have
+        // given, as a line on the meal's screen this one returns to. Only when the food
+        // changed; after the give-back, so it reads today's ledger. Fire-and-forget: the
+        // save never waits on it.
+        if (currentFoodId !== loadedFoodRef.current) void applyMealScreenTrialFlag(id, currentFoodId);
       }
 
       // Through the shared write path, which also refreshes the Signal (CUL-1087), and

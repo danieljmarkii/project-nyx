@@ -92,7 +92,7 @@ it('from the card: a chip writes the bowl, holds, and the card returns as the mi
   expect(mockSet).toHaveBeenCalledWith('e1', [
     expect.objectContaining({ foodItemId: 'rabbit', foodLabel: 'Weruva Rabbit Pâté', share: 1 / 3, shareSource: 'preset' }),
     expect.objectContaining({ foodItemId: 'chicken', foodLabel: 'Weruva Chicken Pâté', shareSource: 'preset' }),
-  ]);
+  ], expect.any(Date), { headsUp: 'card' });
   // D-M2: the step holds while the bar draws.
   expect(mockBack).not.toHaveBeenCalled();
   await act(async () => { jest.advanceTimersByTime(SPLIT_HOLD_MS); });
@@ -108,6 +108,8 @@ it('from the detail screen: the route closes and no card shows', async () => {
   const view = await openAndPick();
   act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)(CHICKEN));
   await act(async () => { fireEvent.press(view.getByText('½·½')); });
+  // CUL-2088: with no card to land on, the bowl's trial heads-up waits for the meal's screen.
+  expect(mockSet).toHaveBeenCalledWith('e1', expect.any(Array), expect.any(Date), { headsUp: 'meal_screen' });
   await act(async () => { jest.advanceTimersByTime(SPLIT_HOLD_MS + CARD_RETURN_DELAY_MS + 10); });
   expect(mockBack).toHaveBeenCalledTimes(1);
   expect(useMomentStore.getState().payload).toBeNull();
@@ -141,5 +143,5 @@ it('Other amounts: one unit for both, and no save until both are above zero', as
   expect(mockSet).toHaveBeenCalledWith('e1', [
     expect.objectContaining({ shareSource: 'amounts', amountValue: 0.25, amountUnit: 'can' }),
     expect.objectContaining({ shareSource: 'amounts', amountValue: 0.5, amountUnit: 'can' }),
-  ]);
+  ], expect.any(Date), { headsUp: 'card' });
 });
