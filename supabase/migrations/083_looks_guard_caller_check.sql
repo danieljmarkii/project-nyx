@@ -73,7 +73,9 @@
 --     confines it to the owner. A pet that did move would make its owner's own
 --     looks writes refuse here, which is the correct answer.
 --   * The parent event (occurred_at, pet_id): the CUL-882 class 064 carries,
---     unchanged by this file.
+--     unchanged by this file. This guard re-judged the parent on every write,
+--     the sync upsert included, so a moved parent bricked the row; 108
+--     (CUL-2064) stops that for an unchanged row.
 --
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT

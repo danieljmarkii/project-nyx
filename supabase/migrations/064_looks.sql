@@ -283,7 +283,11 @@ CREATE TRIGGER trg_looks_updated_at
 -- is only as good as the parent staying put: an events UPDATE that moves
 -- occurred_at or pet_id re-validates nothing (the same gap 023 and 041 carry;
 -- filed as its own class-wide issue), so a later looks UPDATE then fails 23514
--- until the day is re-derived. "Change time" across midnight (C-10)
+-- until the day is re-derived. (CORRECTED by 108, CUL-2064: that refusal hit
+-- every write, the sync upsert included, so a moved or re-typed parent bricked
+-- the row for good. 108 reads nothing for an unchanged id, pet, event and day,
+-- and passes an upsert of the row already stored; a changed day is still
+-- bounded.) "Change time" across midnight (C-10)
 -- re-derives local_day on the client and pushes the parent first (the child's
 -- push is parent-gated, N-2), so the guard sees the moved occurred_at; a child
 -- that arrives before its moved parent is refused and retried by the queue,

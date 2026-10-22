@@ -62,11 +62,13 @@
 --           not. BEFORE ROW triggers run ahead of RLS WITH CHECK and the FK.
 --           The service role has no user and gets the same-pet check alone.
 --   UPDATE  id, pet_id, event_id, since and form are frozen. A row never moves
---           to another vomit, another pet or another question. The sync upsert
---           sends them unchanged, so IS DISTINCT FROM OLD is false and nothing
---           is looked up. That is also what keeps the row repairable (C-38): a
---           later re-type of the vomit, or a parent move, re-validates nothing
---           here, so an answer edit is never bricked on a terminal 23514.
+--           to another vomit, another pet or another question. A plain UPDATE
+--           that leaves them unchanged looks nothing up (C-38).
+--           CORRECTED by 108 (CUL-2064): this header claimed the sync upsert
+--           reached only this arm. It does not: INSERT ... ON CONFLICT DO
+--           UPDATE fires the INSERT arm first, on every push, so a re-typed or
+--           moved vomit bricked every later answer edit on a terminal 23514.
+--           108 adds 105's stored-row arm to the INSERT arm.
 -- Posture B-520 from birth: SECURITY DEFINER (the lookup is not RLS-filtered),
 -- search_path = pg_catalog, pg_temp (072: pg_temp last), EXECUTE revoked from
 -- PUBLIC, anon and authenticated (trigger firing does not check EXECUTE).
