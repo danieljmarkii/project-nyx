@@ -98,6 +98,18 @@
 --     valid" above, by design. A new row on the moved parent cannot be made
 --     that way (the key lock), and a key change on 041 / 023 is judged as an
 --     insert is.
+--   * Two pushes of the same row on a moved parent arriving together (two
+--     devices; one device's queue is serialized) can deadlock: both hold the
+--     key lock and each conflict path wants the row exclusively. One gets
+--     40P01, which the client retries (not a terminal code, so never
+--     quarantined). Before this file both were refused outright.
+--     (rls-privacy-reviewer pass 2, measured with a widened window.)
+--   * On 097, 041 and 023 the caller arm and the stored-row read share one
+--     EXISTS, so the stored-row read running only after the caller arm is the
+--     planner's order (measured: another account's request never took or
+--     waited on the owner's lock, 0.03s vs 2.5s). In the worst case the lock
+--     lands on a row of NEW.pet_id, the statement then fails, and the lock is
+--     released with it. Looks orders it procedurally.
 --   * Looks: an unchanged local_day is no longer re-bounded after the parent's
 --     time moves. The day is what the table already held; re-judging it only
 --     bricked the edit, it never corrected the day. The client re-derives the
