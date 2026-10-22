@@ -3915,88 +3915,80 @@ async function hydrateNotificationPreferences(db: Db, stale: () => boolean): Pro
 // local meal (synced = 0) is NOT yet on the server and must never be reconciled
 // away.
 async function reconcileDeletedMeals(db: Db, stale: () => boolean): Promise<void> {
-  // ⚠️ Verified full pull. This pass DELETEs by absence, so a SILENTLY truncated
-  // read (PostgREST can return data:[] with no error under load / statement
-  // timeout) would make every synced local meal look like a ghost and mass-delete
-  // real data — the highest-blast-radius line in hydration. Guard: get the exact
-  // server count first, then the full id set, and proceed ONLY if they match. A
-  // count/length mismatch (truncation, or a meal added between the two queries)
-  // skips the pass and retries next cycle. Skipping is always the safe direction.
-  const { count, error: countErr } = await supabase
-    .from('meals')
-    .select('id', { count: 'exact', head: true });
-  if (countErr || count === null) {
-    console.warn('[hydrate] meals count failed, skipping absence pass:', countErr?.message);
-    return;
-  }
-  const remote = await fetchAllRows<{ id: string }>('meals', 'id');
-  // null = couldn't read the server set (error). Do NOT delete blind on a failed
-  // read — an empty [] (genuinely no server meals) is a valid set to reconcile
-  // against, but a null is "we don't know", so skip this cycle.
-  if (remote === null) return;
-  if (remote.length !== count) {
-    console.warn(`[hydrate] meals id pull incomplete (${remote.length}/${count}), skipping absence pass`);
-    return;
-  }
-  if (stale()) return; // FR-9: signed out mid-cycle — don't touch the wiped store.
-
-  const serverIds = new Set(remote.map((r) => r.id));
-  const localMeals = await db.getAllAsync<{ id: string; synced: number }>(
-    'SELECT id, synced FROM meals',
-  );
-  const toDelete = mealsToDeleteByAbsence(serverIds, localMeals);
-  if (toDelete.length === 0) return;
-  if (stale()) return; // re-check after the local read (another async hop).
-
-  const CHUNK = 400;
-  for (let i = 0; i < toDelete.length; i += CHUNK) {
-    const chunk = toDelete.slice(i, i + CHUNK);
-    const placeholders = chunk.map(() => '?').join(',');
-    await db.runAsync(`DELETE FROM meals WHERE id IN (${placeholders})`, chunk);
-  }
+  await reconcileByAbsence(db, 'meals', stale);
 }
 
 // The same verified absence pass for a bowl's components (Mixed meals row 2, spec §3
 // point 4). A component is never hard-deleted by a client (105 grants no DELETE), but the
 // events and pets cascades remove it server-side, which no incremental pull can observe;
-// left here, a ghost row would keep a deleted bowl reading as a mix. Same guard as meals:
-// an exact count first, then the full id set, and delete only a SYNCED local row the
-// server no longer has. Skipping is always the safe direction.
+// left here, a ghost row would keep a deleted bowl reading as a mix.
 async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Promise<void> {
-  // The local set is read FIRST: a push running beside this pass (setMealComponents fires
-  // one) can land a row and mark it synced after the server's id list was read, and that
-  // row must not look like a ghost. Only a row already synced before the server read can be.
-  const local = await db.getAllAsync<{ id: string; synced: number }>('SELECT id, synced FROM meal_components');
+  await reconcileByAbsence(db, 'meal_components', stale);
+}
+
+// The one absence pass both tables run (CUL-2076: the meals copy had drifted from the
+// components one and could delete a meal a push landed mid-pass). Skipping is always the
+// safe direction, so every step that cannot vouch for its read returns without deleting.
+async function reconcileByAbsence(db: Db, table: 'meals' | 'meal_components', stale: () => boolean): Promise<void> {
+  // The local set is read FIRST: a push running beside this pass (insertMeal and
+  // setMealComponents each fire one) can land a row and mark it synced after the server's
+  // id list was read, and that row must not look like a ghost. Only a row already synced
+  // before the server read can be.
+  const local = await db.getAllAsync<{ id: string; synced: number }>(`SELECT id, synced FROM ${table}`);
+  // ⚠️ Verified full pull. This pass DELETEs by absence, so a SILENTLY truncated
+  // read (PostgREST can return data:[] with no error under load / statement
+  // timeout) would make every synced local row look like a ghost and mass-delete
+  // real data — the highest-blast-radius line in hydration. Guard: get the exact
+  // server count first, then the full id set, and proceed ONLY if they match.
   const { count, error: countErr } = await supabase
-    .from('meal_components')
+    .from(table)
     .select('id', { count: 'exact', head: true });
   if (countErr || count === null) {
-    console.warn('[hydrate] meal_components count failed, skipping absence pass:', countErr?.message);
+    console.warn(`[hydrate] ${table} count failed, skipping absence pass:`, countErr?.message);
     return;
   }
-  const remote = await fetchAllRows<{ id: string }>('meal_components', 'id');
+  const remote = await fetchAllRows<{ id: string }>(table, 'id');
+  // null = couldn't read the server set (error). Do NOT delete blind on a failed
+  // read — an empty [] (genuinely no server rows) is a valid set to reconcile
+  // against, but a null is "we don't know", so skip this cycle.
   if (remote === null) return;
   if (remote.length !== count) {
-    console.warn(`[hydrate] meal_components id pull incomplete (${remote.length}/${count}), skipping absence pass`);
+    console.warn(`[hydrate] ${table} id pull incomplete (${remote.length}/${count}), skipping absence pass`);
     return;
   }
-  if (stale()) return;
+  if (stale()) return; // FR-9: signed out mid-cycle — don't touch the wiped store.
+  // An empty server answer never deletes. When getSession() comes back empty (a retryable
+  // refresh failure, no SIGNED_OUT), supabase-js sends the anon key, and anon may SELECT
+  // meals: RLS answers count 0, [] and [] with no error, which would delete every synced
+  // meal. The cost is that an account whose every row really was removed keeps its ghosts.
+  if (count === 0 && local.some((r) => r.synced === 1)) {
+    console.warn(`[hydrate] ${table} server answered empty beside synced local rows, skipping absence pass`);
+    return;
+  }
   const candidates = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
   if (candidates.length === 0) return;
   // The id pull pages by offset, so a cascade delete and an insert landing between two pages
   // can shift a page and skip live rows while the total still matches the count (adversarial
   // pass 2). Ask the server about each candidate by id before deleting it; a row the targeted
-  // read still finds is not a ghost, and a failed read deletes nothing.
+  // read still finds is not a ghost, and a failed read deletes nothing. Each read also asks for
+  // one id the pull just saw (the canary): a re-check that went out on the anon key answers []
+  // with no error, and only a missing canary tells that apart from a chunk of real ghosts.
+  const canary = remote[0]?.id;
+  if (canary === undefined) return;
   const CHUNK = 400;
   const toDelete: string[] = [];
   for (let i = 0; i < candidates.length; i += CHUNK) {
     const chunk = candidates.slice(i, i + CHUNK);
-    const { data: still, error: checkErr } = await supabase.from('meal_components').select('id').in('id', chunk);
+    const { data: still, error: checkErr } = await supabase.from(table).select('id').in('id', [...chunk, canary]);
     if (checkErr || !still) {
-      console.warn('[hydrate] meal_components absence re-check failed, skipping absence pass:', checkErr?.message);
+      console.warn(`[hydrate] ${table} absence re-check failed, skipping absence pass:`, checkErr?.message);
       return;
     }
     const present = new Set((still as { id: string }[]).map((r) => r.id));
+    if (!present.has(canary)) {
+      console.warn(`[hydrate] ${table} absence re-check lost a live row, skipping absence pass`);
+      return;
+    }
     toDelete.push(...chunk.filter((id) => !present.has(id)));
   }
   if (toDelete.length === 0) return;
@@ -4004,7 +3996,7 @@ async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Pro
   for (let i = 0; i < toDelete.length; i += CHUNK) {
     const chunk = toDelete.slice(i, i + CHUNK);
     // `synced = 1` again: a row re-queued by an edit since the snapshot is pending, not a ghost.
-    await db.runAsync(`DELETE FROM meal_components WHERE synced = 1 AND id IN (${chunk.map(() => '?').join(',')})`, chunk);
+    await db.runAsync(`DELETE FROM ${table} WHERE synced = 1 AND id IN (${chunk.map(() => '?').join(',')})`, chunk);
   }
 }
 

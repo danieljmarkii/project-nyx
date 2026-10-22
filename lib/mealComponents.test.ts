@@ -7,7 +7,7 @@
 // never rewrites the parent; only meal foods can be mixed (R1); the push order is events →
 // meals → components, a component waits for its event AND its meal row, and runs even when
 // no meal is pending; hydration lands components after meals; the absence pass removes a
-// synced ghost and never an unsynced row.
+// synced ghost and never an unsynced row, and the meals pass shares it (CUL-2076).
 
 const { DatabaseSync } = require('node:sqlite');
 
@@ -390,5 +390,119 @@ describe('hydration (spec §3 point 4)', () => {
     ).run(`${G}0`, PET, AT);
     await hydrateFromCloud();
     expect(components().find((r) => r.id === `${G}0`)).toEqual(expect.objectContaining({ deleted_at: '2026-10-21T09:00:00.000Z', synced: 0 }));
+  });
+});
+
+describe('the meals absence pass (CUL-2076)', () => {
+  beforeEach(() => {
+    mockServer = {
+      events: [],
+      meals: [{
+        id: 'm-e1', event_id: 'e1', pet_id: PET, food_item_id: 'rabbit', quantity: 'unknown', is_full_portion: null,
+        notes: null, created_at: AT, updated_at: AT, intake_rating: 'some', logged_via: 'app', component_count: 0,
+      }],
+      meal_components: [],
+    };
+    seedEvent('e1');
+    seedMeal('e1');
+  });
+  const mealIds = () => (mockDb.prepare('SELECT id FROM meals ORDER BY id').all() as { id: string }[]).map((r) => r.id);
+
+  it('removes a synced ghost the server no longer has, and never an unsynced meal', async () => {
+    seedEvent('e2');
+    seedMeal('e2');
+    seedEvent('e3', 0);
+    seedMeal('e3', { synced: 0 });
+    await hydrateFromCloud();
+    expect(mealIds()).toEqual(['m-e1', 'm-e3']);
+  });
+
+  it('never deletes a meal a beside-running push marked synced after the server was read', async () => {
+    seedEvent('e2', 0);
+    seedMeal('e2', { synced: 0 });
+    // insertMeal's fire-and-forget push lands it while the pass reads the server's set (which lacks it).
+    mockOnCount = (table) => {
+      if (table === 'meals') mockDb.prepare("UPDATE meals SET synced = 1 WHERE id = 'm-e2'").run();
+    };
+    await hydrateFromCloud();
+    expect(mealIds()).toContain('m-e2');
+  });
+
+  const serverMeal = (eventId: string) => ({ ...mockServer.meals[0], id: `m-${eventId}`, event_id: eventId });
+  /** On the server and synced locally, but a page shift makes the paged pull and its count
+   *  both miss m-e1 while the total still matches (two rows seen, two counted). */
+  const shiftPages = () => {
+    seedEvent('e2');
+    seedMeal('e2');
+    mockServer.meals.push(serverMeal('e2'), serverMeal('e9'));
+    mockPagedView = { meals: [serverMeal('e2'), serverMeal('e9')] };
+  };
+
+  it('never deletes a live meal the paged id pull skipped, though the counts matched', async () => {
+    shiftPages();
+    await hydrateFromCloud();
+    expect(mealIds()).toContain('m-e1');
+  });
+
+  it('never deletes when the by-id re-check alone went out anonymous and answered empty', async () => {
+    shiftPages();
+    const from = jest.requireMock('./supabase').supabase.from as jest.Mock;
+    const inner = from.getMockImplementation()!;
+    from.mockImplementation((table: string) => {
+      const api = inner(table);
+      return {
+        ...api,
+        select: (cols: string, opts?: { head?: boolean }) => {
+          const q = api.select(cols, opts) as Record<string, unknown>;
+          // RLS under the anon key: no rows, no error.
+          if (table === 'meals') q.in = () => ({ then: (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res) });
+          return q;
+        },
+      };
+    });
+    try {
+      await hydrateFromCloud();
+    } finally {
+      from.mockImplementation(inner);
+    }
+    expect(mealIds()).toContain('m-e1');
+  });
+
+  it('never deletes on an empty server answer, the shape an anon-key fallback reads', async () => {
+    // A dropped session sends the anon key; RLS answers zero meals with no error.
+    mockServer = { events: [], meals: [], meal_components: [] };
+    seedEvent('e2');
+    seedMeal('e2');
+    await hydrateFromCloud();
+    expect(mealIds()).toEqual(['m-e1', 'm-e2']);
+  });
+
+  it('never deletes a ghost re-queued by an edit after the snapshot', async () => {
+    seedEvent('e2');
+    seedMeal('e2');
+    // The edit lands while the pass confirms its candidates by id.
+    const realFrom = jest.requireMock('./supabase').supabase.from as jest.Mock;
+    const inner = realFrom.getMockImplementation()!;
+    realFrom.mockImplementation((table: string) => {
+      const api = inner(table);
+      return {
+        ...api,
+        select: (cols: string, opts?: { head?: boolean }) => {
+          const q = api.select(cols, opts) as Record<string, unknown>;
+          const realIn = q.in as (c: string, v: string[]) => unknown;
+          q.in = (c: string, v: string[]) => {
+            if (table === 'meals') mockDb.prepare("UPDATE meals SET synced = 0, updated_at = '2026-10-21T09:00:00.000Z' WHERE id = 'm-e2'").run();
+            return realIn(c, v);
+          };
+          return q;
+        },
+      };
+    });
+    try {
+      await hydrateFromCloud();
+    } finally {
+      realFrom.mockImplementation(inner);
+    }
+    expect(mealIds()).toContain('m-e2');
   });
 });
