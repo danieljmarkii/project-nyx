@@ -212,6 +212,22 @@
   .flag-headline { font-size: 13px; font-weight: 600; }
   .flag-detail { font-size: 13px; line-height: 1.4; color: var(--card-subtle); }
   .flag-add { font-size: 13px; color: var(--card-text); font-weight: 500; padding-top: 4px; }
+  /* ── The meal's own screen (CUL-2088): light ground, theme.colorAttention* panel ── */
+  .det { background: var(--dev-card); border: 1px solid var(--rule); border-radius: 26px; padding: 18px 16px; color: var(--dev-text); display: flex; flex-direction: column; gap: 14px; box-shadow: 0 1px 2px rgba(20,18,40,0.06), 0 12px 32px rgba(20,18,40,0.08); }
+  .det-nav { display: flex; justify-content: space-between; font-size: 14px; color: var(--dev-text-2); }
+  .det-title { font-size: 20px; font-weight: 600; }
+  .det-sub { font-size: 13px; color: var(--dev-text-2); margin-top: -10px; }
+  .det-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; color: var(--dev-text-3); font-weight: 600; }
+  .det-body { font-size: 15px; font-weight: 500; }
+  .det-meta { font-size: 13px; color: var(--dev-text-2); }
+  .det-sect { display: flex; flex-direction: column; gap: 3px; }
+  .det-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .det-chip { font-size: 12.5px; color: var(--dev-text-2); background: var(--dev-chip); border-radius: 999px; padding: 5px 11px; }
+  .att { border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: #FDF3DC; border-left: 3px solid #B7791F; color: #6B4A0E; }
+  .att-eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+  .att-headline { font-size: 14px; font-weight: 600; }
+  .att-detail { font-size: 13px; line-height: 1.45; }
+  .att-door { font-size: 13.5px; font-weight: 600; padding-top: 4px; text-decoration: underline; }
   .removed { display: none; flex-direction: column; gap: 2px; padding: 4px 0; }
   .removed b { font-size: 15px; font-weight: 500; }
   .removed span { font-size: 13px; color: var(--card-subtle); }
@@ -799,6 +815,50 @@
 </section>
 
 <!-- ============================================================ §6 -->
+<section>
+  <p class="kicker">§5b · Proposed, CUL-2088 (PM ruled (a), 2026-10-22)</p>
+  <h2>A food added after the fact</h2>
+  <p class="lede">Today the card is the only place a trial heads-up appears, so a food changed on the edit screen or mixed in from the meal’s own screen goes in without one. Here it appears <strong>once, on the meal’s screen</strong>, under the food, the first time that screen shows after the change. It spends the same once-per-food warning the card does, so a food already warned about never speaks twice. Like every heads-up it arrives with the screen and does not animate.</p>
+  <div class="frames">
+    <div class="frame">
+      <span class="frame-tag"><b>7a</b> · <span class="tag-opt">proposed, CUL-2088</span> · a mix made from this screen</span>
+      <div class="det">
+        <div class="det-nav"><span>‹ History</span><span>Edit</span></div>
+        <div class="det-title">Meal</div>
+        <div class="det-sub">Today · 7:35 am · Pixel</div>
+        <div class="det-sect"><span class="det-label">MIXED BOWL</span><span class="det-body">¼ Chicken Pâté + ¾ Rabbit Formula</span></div>
+        <div class="att" role="note"><span class="att-headline">This bowl has chicken in it, from Chicken Pâté.</span><span class="att-detail">Pixel’s rabbit trial should skip chicken. The change is saved and counts in the trial record. Maybe a note for your vet.</span></div>
+        <div class="det-sect"><span class="det-label">INTAKE</span><div class="det-chips"><span class="det-chip">Refused</span><span class="det-chip">Picked</span><span class="det-chip">Some</span><span class="det-chip">Most</span><span class="det-chip">All</span></div></div>
+      </div>
+      <p class="frame-note">Mixed in from <strong>+ Mixed with another food</strong>. The screen comes back with the line under the bowl: the card’s own sentence, with “The meal’s saved” becoming “The change is saved”. No door, as on the card.</p>
+    </div>
+    <div class="frame">
+      <span class="frame-tag"><b>7b</b> · <span class="tag-opt">proposed, CUL-2088</span> · Change on the edit screen</span>
+      <div class="det">
+        <div class="det-nav"><span>‹ History</span><span>Edit</span></div>
+        <div class="det-title">Meal</div>
+        <div class="det-sub">Today · 7:35 am · Pixel</div>
+        <div class="det-sect"><span class="det-label">FOOD</span><span class="det-body">Chicken &amp; Rice</span><span class="det-meta">Purina · Dry</span></div>
+        <div class="att" role="note"><span class="att-eyebrow">Off the trial list</span><span class="att-headline">This one isn’t on Pixel’s trial list.</span><span class="att-detail">The change is saved and counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</span><span class="att-door">+ Add to the trial list</span></div>
+        <div class="det-sect"><span class="det-label">INTAKE</span><div class="det-chips"><span class="det-chip">Refused</span><span class="det-chip">Picked</span><span class="det-chip">Some</span><span class="det-chip">Most</span><span class="det-chip">All</span></div></div>
+      </div>
+      <p class="frame-note">Edit, Change, Save: the food is now one that isn’t on the list. The card’s eyebrow and door; the door opens the same Add to the trial list sheet, on this screen.</p>
+    </div>
+    <div class="frame">
+      <span class="frame-tag"><b>7c</b> · <span class="tag-opt">proposed, CUL-2088</span> · a bowl edit past the target</span>
+      <div class="det">
+        <div class="det-nav"><span>‹ History</span><span>Edit</span></div>
+        <div class="det-title">Meal</div>
+        <div class="det-sub">Today · 7:35 am · Pixel</div>
+        <div class="det-sect"><span class="det-label">MIXED BOWL</span><span class="det-body">¼ Chicken Pâté + ¾ Rabbit Formula</span></div>
+        <div class="att" role="note"><span class="att-eyebrow">Rabbit trial · past its 42 days</span><span class="att-headline">This bowl has chicken in it, from Chicken Pâté.</span><span class="att-detail">The change is saved and counts in the trial record. If Pixel’s trial is over, ending it keeps the record straight.</span><span class="att-door">+ End the trial</span></div>
+        <div class="det-sect"><span class="det-label">INTAKE</span><div class="det-chips"><span class="det-chip">Refused</span><span class="det-chip">Picked</span><span class="det-chip">Some</span><span class="det-chip">Most</span><span class="det-chip">All</span></div></div>
+      </div>
+      <p class="frame-note">A bowl-editor save on a meal fed past the 42 days. The card’s past-target eyebrow and its one door, which opens the trial’s end sheet.</p>
+    </div>
+  </div>
+</section>
+
 <section>
   <p class="kicker">§6 · Held back on purpose</p>
   <h2>What we won't animate</h2>

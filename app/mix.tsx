@@ -95,7 +95,8 @@ export default function MixRoute() {
   async function save(components: ComponentInput[]): Promise<boolean> {
     if (!eventId) return false;
     try {
-      await setMealComponents(eventId, components);
+      // From the detail screen no card is up, so the heads-up waits for that screen (CUL-2088).
+      await setMealComponents(eventId, components, new Date(), { headsUp: fromCard ? 'card' : 'meal_screen' });
       return true;
     } catch (e) {
       console.error('[mix] bowl write failed:', e);

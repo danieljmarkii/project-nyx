@@ -668,6 +668,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
     askStore: 'useAskStore',
     eventStore: 'useEventStore',
     historyListStore: 'useHistoryListStore',
+    mealScreenFlagStore: 'useMealScreenFlagStore',
     momentStore: 'useMomentStore',
     onboardingDraftStore: 'useOnboardingDraftStore',
     petStore: 'usePetStore',

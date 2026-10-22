@@ -14,6 +14,7 @@ import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
 import { useSyncStore } from '../store/syncStore';
 import { useAiConsentStore } from '../store/aiConsentStore';
+import { useMealScreenFlagStore } from '../store/mealScreenFlagStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -295,6 +296,8 @@ export async function wipeLocalSession(): Promise<void> {
     // entry could not answer for the next account, but it is that account's answer to
     // a privacy question and it does not stay on a shared phone (FR-9 parity).
     ['ai consent', () => useAiConsentStore.getState().reset()],
+    // CUL-2088: a trial heads-up waiting for a meal's screen names a food and a trial.
+    ['meal screen heads-up', () => useMealScreenFlagStore.getState().reset()],
   ];
   for (const [what, clear] of inMemory) {
     try {
