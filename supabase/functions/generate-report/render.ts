@@ -2088,7 +2088,9 @@ function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: st
       const seenSpan = Math.min(c.windowDays, c.lookbackDays)
       const seen =
         tail !== null && tail.days >= seenSpan
-          ? `no episode could be seen: ${nothingLoggedFor(tail)}`
+          ? `none of ${
+              c.windowDays < c.lookbackDays ? `this ${num(c.windowDays)}-day report` : `the last ${weeks(c.lookbackDays)}`
+            } was logged: ${nothingLoggedFor(tail)}`
           : (c.windowDays < c.lookbackDays
               ? `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in this ${num(c.windowDays)}-day report, all the check could see`
               : `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in the last ${weeks(c.lookbackDays)}`) + seenTail

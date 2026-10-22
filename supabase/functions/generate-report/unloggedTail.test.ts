@@ -71,7 +71,7 @@ Deno.test('CUL-2101 — Tama: the headline count names its logged days where it 
   // The ongoing check's "0 episodes in the last 8 weeks" was counted over eight weeks nobody logged:
   // a zero over no logged day is not printed as a measurement.
   assert.ok(
-    html.includes('(no episode could be seen: nothing of any kind logged after Apr 28 (the last <span class="num">65</span> days))'),
+    html.includes('(none of the last <span class="num">8</span> weeks was logged: nothing of any kind logged after Apr 28 (the last <span class="num">65</span> days))'),
     'a check whose whole span is the tail says nothing could be seen',
   )
   assert.ok(!/<span class="num">0<\/span> episodes in the last/.test(html), 'no zero counted over a blank span')
