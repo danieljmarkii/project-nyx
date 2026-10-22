@@ -5,8 +5,9 @@
 --      105_meal_components.sql (the template: the stored-row arm);
 --      082_care_record.sql (the caller arm);
 --      066_vet_appointments.sql (the IS DISTINCT FROM OLD predicate, C-38).
--- Replaces four function bodies. No table, column, trigger, policy or grant
--- changes; every trigger stays bound to the function it already calls.
+-- Replaces four function bodies and revokes anon's grants on two of their
+-- tables (§5). No table, column, trigger or policy changes; every trigger stays
+-- bound to the function it already calls.
 -- ============================================================
 --
 -- THE BUG (rls-privacy-reviewer on 105, reproduced here for all four)
@@ -18,7 +19,10 @@
 -- the parent each time. Once the parent moved to another pet or changed type
 -- after the first push, every later edit of the child was refused on a terminal
 -- 23514 and quarantined on the phone (the C-38 brick). Three of the four were
--- wider still: they had no TG_OP split, so a plain UPDATE bricked too.
+-- wider still: they had no TG_OP split, so a plain UPDATE bricked too, and so
+-- did an FK action: deleting a medication whose dose kept a moved pairing was
+-- refused, because the ON DELETE SET NULL update fired 023's guard
+-- (rls-privacy-reviewer's L1, measured).
 --
 -- Measured on a scratch PG16 (001 to 107 replayed; the four bodies md5-equal to
 -- production), before this file: 11 of 11 unchanged-row edits after a parent
@@ -50,7 +54,16 @@
 --   UPDATE arm   Reads nothing when the identity is unchanged (IS NOT DISTINCT
 --                FROM OLD). 097 freezes its identity, as it did. 064 / 041 /
 --                023 let it change, and a changed one is checked against the
---                parent exactly as an insert is (066's predicate).
+--                parent exactly as an insert is (066's predicate). On 041 and
+--                023 the row's own id is in that set too (below).
+--   Key lock     The stored-row read takes FOR KEY SHARE on the row it matches.
+--                Without it, an owner's PATCH of a stored row's id (or a DELETE)
+--                raced against an upsert of the old id let the upsert pass this
+--                arm on the committed row, then find no conflict and INSERT a
+--                fresh row on the moved parent (rls-privacy-reviewer on this
+--                file's first draft, two sessions, measured). With the lock the
+--                upsert waits for the key change, re-reads the row's new
+--                version, finds no match and is judged on the parent alone.
 -- One RAISE per function, naming only NEW.* values (C-31), and the same code
 -- and message for every cause: no parent, another pet's parent, a wrong type,
 -- another account's pet. Posture B-520 kept: SECURITY DEFINER (the lookups are
@@ -64,6 +77,15 @@
 -- row id lands on the same RAISE whether that id exists or not, so the arm
 -- answers nothing about another account's rows.
 --
+-- The caller arm trusts every request with no user (the service role). The
+-- anon key carries none either, and anon held every verb on diet_trial_foods
+-- and medication_administrations (read live 2026-10-22), so an anon POST still
+-- told a real (pet, trial / event) pair from a made-up one (42501 vs 23514),
+-- and would have told whether a stored row exists. §5 revokes those two tables
+-- from anon, as 083 did for looks; intake_checks and meal_components never
+-- granted anon anything. No client path writes these tables without a user:
+-- RLS already refused every anon write.
+--
 -- WHAT IS NOT CLOSED, stated (each predates this file):
 --   * A child at rest on a moved parent stays as it is: writable, readable,
 --     never re-judged (the CUL-882 class: an events or diet_trials UPDATE
@@ -71,10 +93,11 @@
 --     A reader joining the parent's type or pet still sees what it saw.
 --   * The platform-generic row-id existence oracle (an upsert reusing another
 --     account's primary key with ON CONFLICT DO NOTHING; 097's list). Unchanged.
---   * A stored row hard-deleted between the INSERT arm and the conflict check
---     lets that identical row in again on its stale parent. Only the owner can
---     delete it (RLS), the row is byte-identical to the one she just held, and
---     intake_checks and looks have no DELETE path at all.
+--   * A stored row can still be soft-deleted, edited in its non-identity
+--     columns or revived while its parent stands moved: "editable, never
+--     valid" above, by design. A new row on the moved parent cannot be made
+--     that way (the key lock), and a key change on 041 / 023 is judged as an
+--     insert is.
 --   * Looks: an unchanged local_day is no longer re-bounded after the parent's
 --     time moves. The day is what the table already held; re-judging it only
 --     bricked the edit, it never corrected the day. The client re-derives the
@@ -83,7 +106,9 @@
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT
 -- ------------------------------------------------------------
---   Destructive:  n. Four function bodies replaced; nothing else is touched.
+--   Destructive:  n. Four function bodies replaced; anon's grants on
+--                 diet_trial_foods and medication_administrations revoked
+--                 (RLS refused every anon write already). Nothing else.
 --   Backfill:     N/A. Every stored row already passed the stricter check.
 --   Rollback:     re-run the four prior definitions, which leaves the triggers
 --                 bound and the ACL as it is. Capture them BEFORE applying:
@@ -98,6 +123,8 @@
 --                 all four prosrc md5s back to production's, DEFINER kept,
 --                 EXECUTE still revoked.) The same bodies live in 097, 083, and
 --                 041 / 023 as flipped by 047 PART 3.
+--                 §5:  GRANT ALL ON TABLE public.diet_trial_foods TO anon;
+--                      GRANT ALL ON TABLE public.medication_administrations TO anon;
 --                 Rolling back re-opens the brick and 041 / 023's oracle.
 --   Ordering:     after 107. No client change depends on it.
 --   After:        the VERIFY block at the foot, then get_advisors (security +
@@ -151,6 +178,7 @@ BEGIN
                 AND ic.event_id = NEW.event_id
                 AND ic.since = NEW.since
                 AND ic.form = NEW.form
+                FOR KEY SHARE
            )
          )
     ) INTO ok;
@@ -229,6 +257,7 @@ BEGIN
            AND l.pet_id = NEW.pet_id
            AND l.event_id = NEW.event_id
            AND l.local_day = NEW.local_day
+           FOR KEY SHARE
       );
     END IF;
   END IF;
@@ -270,10 +299,13 @@ DECLARE
   ok  boolean;
 BEGIN
   IF TG_OP = 'UPDATE'
+     AND NEW.id            IS NOT DISTINCT FROM OLD.id
      AND NEW.diet_trial_id IS NOT DISTINCT FROM OLD.diet_trial_id
      AND NEW.pet_id        IS NOT DISTINCT FROM OLD.pet_id THEN
-    -- Unchanged trial and pet. Reads nothing, so a moved trial never bricks
-    -- the row (C-38).
+    -- Unchanged id, trial and pet. Reads nothing, so a moved trial never
+    -- bricks the row (C-38). id is in the set because a key change on a
+    -- moved trial, raced against an upsert of the old id, would otherwise let
+    -- that upsert pass the stored-row arm and then insert a fresh row.
     RETURN NEW;
   END IF;
 
@@ -297,6 +329,7 @@ BEGIN
             WHERE f.id = NEW.id
               AND f.pet_id = NEW.pet_id
               AND f.diet_trial_id = NEW.diet_trial_id
+              FOR KEY SHARE
          ))
        )
   ) INTO ok;
@@ -340,10 +373,11 @@ BEGIN
   END IF;
 
   IF TG_OP = 'UPDATE'
+     AND NEW.id              IS NOT DISTINCT FROM OLD.id
      AND NEW.paired_event_id IS NOT DISTINCT FROM OLD.paired_event_id
      AND NEW.pet_id          IS NOT DISTINCT FROM OLD.pet_id THEN
-    -- Unchanged pairing and pet. Reads nothing, so a moved paired event never
-    -- bricks the dose (C-38).
+    -- Unchanged id, pairing and pet. Reads nothing, so a moved paired event
+    -- never bricks the dose (C-38). id is in the set for 041's reason.
     RETURN NEW;
   END IF;
 
@@ -367,6 +401,7 @@ BEGIN
             WHERE a.id = NEW.id
               AND a.pet_id = NEW.pet_id
               AND a.paired_event_id = NEW.paired_event_id
+              FOR KEY SHARE
          ))
        )
   ) INTO ok;
@@ -392,6 +427,13 @@ COMMENT ON FUNCTION public.enforce_dose_paired_event_same_pet() IS
 
 
 -- ============================================================
+-- §5. anon, the other user-less role (083's precedent for looks)
+-- ============================================================
+REVOKE ALL ON TABLE public.diet_trial_foods FROM anon;
+REVOKE ALL ON TABLE public.medication_administrations FROM anon;
+
+
+-- ============================================================
 -- VERIFY (run by hand after apply; read-only)
 -- ============================================================
 --   1. The four bodies carry the arms, and the posture held:
@@ -414,7 +456,12 @@ COMMENT ON FUNCTION public.enforce_dose_paired_event_same_pet() IS
 --                          'trg_diet_trial_foods_same_pet',
 --                          'trg_medication_administrations_paired_same_pet');
 --      -> 4 rows, each naming its function above.
---   3. The behaviour, in a rolled-back transaction as the owner: move one of
+--   3. anon holds nothing on the two tables:
+--        SELECT t, has_table_privilege('anon', t, 'INSERT,UPDATE,SELECT,DELETE')
+--          FROM unnest(ARRAY['public.diet_trial_foods',
+--                            'public.medication_administrations']) t;
+--      -> 2 rows, f.
+--   4. The behaviour, in a rolled-back transaction as the owner: move one of
 --      her own events to her other pet, upsert an unchanged child of it
 --      (ON CONFLICT (id) DO UPDATE) -> succeeds; a fresh child on the moved
 --      event -> 23514. The full probe (45 cases, two accounts) is in the PR.

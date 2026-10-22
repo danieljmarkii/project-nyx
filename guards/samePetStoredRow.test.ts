@@ -43,14 +43,23 @@ interface Guard {
   readonly identity: readonly string[];
   /** Columns the UPDATE arm compares with OLD before it reads anything. */
   readonly updateKeys: readonly string[];
+  /**
+   * Must the stored-row read lock the row it matches (FOR KEY SHARE)? Without
+   * it, an owner's DELETE (or key change) raced against an upsert of the old id
+   * let the upsert pass on the committed row and then INSERT a fresh one on the
+   * moved parent: measured on the replay, 1 row minted per table with the lock
+   * removed, 0 with it. 105 is false: meal_components has no DELETE grant and a
+   * frozen id, so the race has no first half there.
+   */
+  readonly keyLock: boolean;
 }
 
 const CLASS: readonly Guard[] = [
-  { fn: 'enforce_intake_check_same_pet', table: 'intake_checks', identity: ['id', 'pet_id', 'event_id', 'since', 'form'], updateKeys: ['id', 'pet_id', 'event_id', 'since', 'form'] },
-  { fn: 'enforce_look_paired_event_same_pet', table: 'looks', identity: ['id', 'pet_id', 'event_id', 'local_day'], updateKeys: ['id', 'pet_id', 'event_id', 'local_day'] },
-  { fn: 'enforce_diet_trial_food_same_pet', table: 'diet_trial_foods', identity: ['id', 'pet_id', 'diet_trial_id'], updateKeys: ['pet_id', 'diet_trial_id'] },
-  { fn: 'enforce_dose_paired_event_same_pet', table: 'medication_administrations', identity: ['id', 'pet_id', 'paired_event_id'], updateKeys: ['pet_id', 'paired_event_id'] },
-  { fn: 'enforce_meal_component_same_pet', table: 'meal_components', identity: ['id', 'pet_id', 'event_id', 'position'], updateKeys: ['id', 'pet_id', 'event_id', 'position'] },
+  { fn: 'enforce_intake_check_same_pet', table: 'intake_checks', identity: ['id', 'pet_id', 'event_id', 'since', 'form'], updateKeys: ['id', 'pet_id', 'event_id', 'since', 'form'], keyLock: true },
+  { fn: 'enforce_look_paired_event_same_pet', table: 'looks', identity: ['id', 'pet_id', 'event_id', 'local_day'], updateKeys: ['id', 'pet_id', 'event_id', 'local_day'], keyLock: true },
+  { fn: 'enforce_diet_trial_food_same_pet', table: 'diet_trial_foods', identity: ['id', 'pet_id', 'diet_trial_id'], updateKeys: ['id', 'pet_id', 'diet_trial_id'], keyLock: true },
+  { fn: 'enforce_dose_paired_event_same_pet', table: 'medication_administrations', identity: ['id', 'pet_id', 'paired_event_id'], updateKeys: ['id', 'pet_id', 'paired_event_id'], keyLock: true },
+  { fn: 'enforce_meal_component_same_pet', table: 'meal_components', identity: ['id', 'pet_id', 'event_id', 'position'], updateKeys: ['id', 'pet_id', 'event_id', 'position'], keyLock: false },
 ];
 
 function allMigrations(): string {
@@ -73,7 +82,22 @@ function liveBody(sql: string, fn: string): string {
 describe('same-pet guards pass a row they already store (CUL-2064)', () => {
   const sql = allMigrations();
 
-  describe.each(CLASS)('$fn', ({ fn, table, identity, updateKeys }) => {
+  it.each(['diet_trial_foods', 'medication_administrations'])(
+    'anon holds no verb on %s, so the user-less caller arm admits only the trusted server',
+    (table) => {
+      // The caller arm skips any request with no user. The anon key carries none,
+      // so with an anon grant in place an anon POST reads 42501 for a real parent
+      // and 23514 for a made-up one (rls-privacy-reviewer on 108). Replay the
+      // grants in order: the LAST statement touching anon on the table is the revoke.
+      const grants = [
+        ...sql.matchAll(new RegExp(`\\b(GRANT|REVOKE)\\s[^;]*?\\bON\\s+(?:TABLE\\s+)?(?:public\\.)?${table}\\b[^;]*?\\b(?:TO|FROM)\\s+[^;]*\\banon\\b[^;]*;`, 'gi')),
+      ];
+      expect(grants.length).toBeGreaterThan(0);
+      expect(grants[grants.length - 1][0]).toBe(`REVOKE ALL ON TABLE public.${table} FROM anon;`);
+    },
+  );
+
+  describe.each(CLASS)('$fn', ({ fn, table, identity, updateKeys, keyLock }) => {
     const body = liveBody(sql, fn);
 
     it('keeps its one RAISE (non-vacuity: the body was found)', () => {
@@ -100,6 +124,7 @@ describe('same-pet guards pass a row they already store (CUL-2064)', () => {
       for (const col of identity) {
         expect(where).toMatch(new RegExp(`\\b${alias}\\.${col} = NEW\\.${col}\\b`));
       }
+      if (keyLock) expect(where).toMatch(/\bFOR KEY SHARE\s*$/);
     });
 
     it('reads nothing on an UPDATE that leaves the identity unchanged', () => {
