@@ -15,7 +15,7 @@ jest.mock('expo-router', () => ({
 const mockRunning = jest.fn();
 jest.mock('../../lib/trialContaminant', () => ({
   ...jest.requireActual('../../lib/trialContaminant'),
-  isRunningTrialForPet: (...a: unknown[]) => mockRunning(...a),
+  isMealInRunningTrial: (...a: unknown[]) => mockRunning(...a),
 }));
 const mockAddTrialFood = jest.fn();
 jest.mock('../../lib/dietTrialSetup', () => ({
@@ -82,7 +82,7 @@ beforeEach(async () => {
 
 describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
   it('shows the card\'s sentence for the edit, and spends the food once it shows', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['rabbit', 'chicken']));
     await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
     view.getByText('Pixel’s rabbit trial should skip chicken. The change is saved and counts in the trial record. Maybe a note for your vet.');
@@ -95,7 +95,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('rendered is not seen: below the fold and never brought into view, it spends nothing', async () => {
     mockReveal.mockResolvedValue(false);
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
     await waitFor(() => expect(mockReveal).toHaveBeenCalledTimes(1));
@@ -105,7 +105,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('brought into view, it is spent and announced', async () => {
     const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     render(line(['chicken']));
     await waitFor(async () => expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(true));
     expect(announce).toHaveBeenCalledWith(
@@ -117,7 +117,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
   it('leaving during the reveal spends nothing; coming back reveals again and spends once', async () => {
     let release: (seen: boolean) => void = () => undefined;
     mockReveal.mockImplementationOnce(() => new Promise<boolean>((r) => { release = r; }));
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
     await waitFor(() => expect(mockReveal).toHaveBeenCalledTimes(1));
@@ -132,7 +132,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
   });
 
   it('waits while the layout above can still move it, then reveals', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken'], false));
     await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
     await act(async () => {});
@@ -144,7 +144,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('a pet name arriving late, or a refocus, never announces a spent heads-up again', async () => {
     const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken'], true, 'your pet'));
     await waitFor(() => expect(announce).toHaveBeenCalledTimes(1));
     view.rerender(line(['chicken'], true, 'Pixel'));
@@ -160,15 +160,15 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('a heads-up whose trial has ended is dropped, never offering to end the next one', async () => {
     mockRunning.mockResolvedValue(false);
-    useMealScreenFlagStore.getState().put(EVENT, { flag: PAST, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: PAST, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await waitFor(() => expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined());
     expect(view.queryByText('+ End the trial')).toBeNull();
-    expect(mockRunning).toHaveBeenCalledWith('pet-1', TRIAL);
+    expect(mockRunning).toHaveBeenCalledWith('pet-1', TRIAL, EVENT);
   });
 
   it('never twice: a remount after it showed shows nothing', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const first = render(line(['chicken']));
     await first.findByText('This bowl has chicken in it, from Chicken Pâté.');
     first.unmount();
@@ -179,7 +179,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('waits while the screen is not in front of the owner, spending nothing', async () => {
     mockFocused = false;
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await act(async () => {});
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
@@ -191,7 +191,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
   });
 
   it('waits for the screen\'s own read of the meal before deciding', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(null));
     await act(async () => {});
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
@@ -200,7 +200,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('a food the screen\'s read does not show yet keeps waiting, unspent, until a fresh read does', async () => {
     // Back from the edit screen, focus can arrive before the re-read replaces the old food.
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['rabbit']));
     await act(async () => {});
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
@@ -212,14 +212,14 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
 
   it('a food already spoken for since (a card elsewhere) stays quiet', async () => {
     await noteTrialFlagShown(CONTENTS, 'evt-other');
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await waitFor(() => expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined());
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
   });
 
   it('the line holds still through a refocus re-read, and goes with the food when an edit takes it out', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
     view.rerender(line(null));
@@ -229,7 +229,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
   });
 
   it('off the list: the card\'s eyebrow and its add door, which writes for the meal\'s pet', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: OFF_LIST, food: TURKEY });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: OFF_LIST, food: TURKEY, origin: 'edit' });
     const view = render(line(['turkey']));
     await view.findByText('This one isn’t on Pixel’s trial list.');
     view.getByText('Off the trial list');
@@ -243,14 +243,14 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
   });
 
   it('off the list with no food row on this phone: the line, without a door it cannot open', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: OFF_LIST, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: OFF_LIST, food: null, origin: 'edit' });
     const view = render(line(['turkey']));
     await view.findByText('This one isn’t on Pixel’s trial list.');
     expect(view.queryByText('+ Add to the trial list')).toBeNull();
   });
 
   it('past the target: the card\'s eyebrow and the door to the trial\'s end sheet', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: PAST, food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: PAST, food: null, origin: 'edit' });
     const view = render(line(['chicken']));
     await view.findByText('Rabbit trial · past its 42 days');
     view.getByText('The change is saved and counts in the trial record. If Pixel’s trial is over, ending it keeps the record straight.');
@@ -258,5 +258,31 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     expect(mockPush).toHaveBeenCalledWith('/trial/pet-1?open=end');
     // Taken, the door leaves with its line: no live "End the trial" on an ended trial.
     expect(view.queryByText('+ End the trial')).toBeNull();
+  });
+});
+
+describe('a fresh log\'s heads-up whose card was lost (CUL-2106, frame 7d)', () => {
+  it('keeps the card\'s own clause, since nothing was changed, and spends once it shows', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+    useMealScreenFlagStore.getState().put(EVENT, { flag: OFF_LIST, food: TURKEY, origin: 'log' });
+    const view = render(line(['turkey']));
+    await view.findByText('This one isn’t on Pixel’s trial list.');
+    view.getByText('The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.');
+    expect(view.queryByText(/The change is saved/)).toBeNull();
+    view.getByText('+ Add to the trial list');
+    await waitFor(async () => expect(await hasFlaggedFoodInTrial(TRIAL, 'turkey')).toBe(true));
+    expect(announce).toHaveBeenCalledTimes(1);
+    announce.mockRestore();
+  });
+
+  it('never twice: the same food warned on a later card first, the waiting line never shows', async () => {
+    useMealScreenFlagStore.getState().put(EVENT, { flag: OFF_LIST, food: TURKEY, origin: 'log' });
+    // The owner logs turkey again before opening this meal; that card warns and spends.
+    await noteTrialFlagShown(OFF_LIST, 'evt-later');
+    const view = render(line(['turkey']));
+    await waitFor(() => expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined());
+    await act(async () => {});
+    expect(view.queryByText('This one isn’t on Pixel’s trial list.')).toBeNull();
+    expect(mockReveal).not.toHaveBeenCalled();
   });
 });

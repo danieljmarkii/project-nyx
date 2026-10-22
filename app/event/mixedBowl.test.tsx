@@ -49,7 +49,7 @@ jest.mock('../../lib/measureNode', () => ({
 // The pet's trial is the one the waiting heads-up was raised under.
 jest.mock('../../lib/trialContaminant', () => ({
   ...jest.requireActual('../../lib/trialContaminant'),
-  isRunningTrialForPet: jest.fn().mockResolvedValue(true),
+  isMealInRunningTrial: jest.fn().mockResolvedValue(true),
 }));
 
 const mockLoadMealBowls = jest.fn();
@@ -187,6 +187,7 @@ describe('the trial heads-up for a food put in after the fact (CUL-2088)', () =>
         trialProteins: ['rabbit'], bowl: { foodLabel: 'Chicken Pâté', pastTarget: false },
       },
       food: null,
+      origin: 'edit',
     });
     mockGetEventById.mockResolvedValue(row({ food_item_id: null }));
     mockGetMealForEvent.mockResolvedValue({
@@ -211,6 +212,7 @@ describe('the trial heads-up for a food put in after the fact (CUL-2088)', () =>
         trialProteins: ['rabbit'], bowl: { foodLabel: 'Chicken Pâté', pastTarget: false },
       },
       food: null,
+      origin: 'edit',
     });
     mockGetEventById.mockResolvedValue(row({ food_item_id: null }));
     mockGetMealForEvent.mockResolvedValue({

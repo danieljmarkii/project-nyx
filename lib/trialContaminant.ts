@@ -111,6 +111,8 @@ import {
   buildTrialContext,
   classifyFeeding,
   contaminationNote,
+  dayIndexOf,
+  isInTrialWindow,
   isTrialRunning,
   narrowTrialFoodRole,
   proteinPhrase,
@@ -631,13 +633,21 @@ export type MealScreenFlagDoor = 'add_to_list' | 'end_trial' | null;
  * moves off "The meal's saved", which speaks for the moment of logging, to "The change is
  * saved". Like the card it reports and never asks, and it never says the meal is fine.
  */
-export function mealScreenFlagCopy(flag: LogTimeTrialFlag, petName: string): {
+export function mealScreenFlagCopy(
+  flag: LogTimeTrialFlag,
+  petName: string,
+  origin: 'log' | 'edit',
+): {
   eyebrow: string | null;
   headline: string;
   detail: string;
   door: MealScreenFlagDoor;
 } {
-  const saved = 'The change is saved and counts in the trial record.';
+  // A fresh log handed here because its card was lost (CUL-2106, frame 7d) changed nothing,
+  // so it keeps the card's own clause.
+  const saved = origin === 'log'
+    ? 'The meal’s saved, and it counts in the trial record.'
+    : 'The change is saved and counts in the trial record.';
   if (flag.bowl?.pastTarget) {
     const headline = flag.kind === 'off_diet_protein'
       ? mealFlagCopy(flag, petName).headline
@@ -1292,6 +1302,35 @@ export async function isRunningTrialForPet(petId: string, trialId: string): Prom
     return ctx !== null && ctx.trialId === trialId && isTrialRunning(ctx.spec, Date.now());
   } catch (e) {
     console.warn('[trialContaminant] running-trial read failed:', e);
+    return true;
+  }
+}
+
+/**
+ * Is this meal, as it stands NOW, a feeding inside this pet's running trial (CUL-2106,
+ * adversarial pass 1)? A heads-up handed to the meal's screen was worked out when the food
+ * went in; the meal's time can have moved since (an edit backdating it to before the trial),
+ * and spending the food's one warning on a pre-trial feeding would silence its next real
+ * one. Read from the record, never a screen's copy of it, and through the same window
+ * `classifyFeeding` asks first. A deleted meal is not a feeding. A failed EVENT read answers
+ * true, so the line shows as it did before this check; a failed TRIAL read answers false,
+ * because `loadTrialProteinContext` reports it as no trial (as `isRunningTrialForPet` does),
+ * and the food stays unspent (CUL-2120).
+ */
+export async function isMealInRunningTrial(petId: string, trialId: string, eventId: string): Promise<boolean> {
+  try {
+    const [ctx, row] = await Promise.all([
+      loadTrialProteinContext(petId),
+      getDb().getFirstAsync<{ occurred_at: string }>(
+        'SELECT occurred_at FROM events WHERE id = ? AND deleted_at IS NULL',
+        [eventId],
+      ),
+    ]);
+    if (!ctx || ctx.trialId !== trialId || !isTrialRunning(ctx.spec, Date.now()) || !row) return false;
+    const trial = trialContextOf(ctx);
+    return isInTrialWindow(trial, dayIndexOf(trial, row.occurred_at));
+  } catch (e) {
+    console.warn('[trialContaminant] meal trial-window read failed:', e);
     return true;
   }
 }

@@ -88,6 +88,7 @@ describe('a bowl edit off the card hands its heads-up to the meal\'s screen (CUL
     expect(useMealScreenFlagStore.getState().pending[EVENT]).toEqual({
       flag,
       food: { id: 'chicken', brand: 'Weruva', product_name: 'Chicken Pâté', food_type: 'meal' },
+      origin: 'edit',
     });
     expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(false);
   });
@@ -100,7 +101,7 @@ describe('a bowl edit off the card hands its heads-up to the meal\'s screen (CUL
   });
 
   it('an edit with nothing to say clears the heads-up an older edit left waiting', async () => {
-    useMealScreenFlagStore.getState().put(EVENT, { flag: contents('chicken', 'Chicken Pâté'), food: null });
+    useMealScreenFlagStore.getState().put(EVENT, { flag: contents('chicken', 'Chicken Pâté'), food: null, origin: 'edit' });
     mockEvaluateBowl.mockResolvedValue(null);
     await bowlEdit(['rabbit']);
     expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined();
