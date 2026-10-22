@@ -8533,3 +8533,77 @@ Deno.test('CUL-1978 ⑥ — an Established finding never silences a second one o
   assert.ok(two.indexOf('beef reached the established association threshold for vomiting') >= 0, 'the second Established finding prints')
   assert.ok(two.indexOf('beef reached') < two.indexOf('lamb reached'), 'the primary sign leads')
 })
+
+// ── CUL-2077 — an ended trial short of its target says how long it ran ───────────────────
+// The §7.2 coverage sentence is true of the record and silent about the trial's length, so a
+// trial ended at day 23 of 56 read "23 of 23 days … supports interpreting it" with nothing
+// beside it. PM ruling (a): keep the sentence, state the run's length after it.
+
+function endedTrialSnap(over: Partial<NonNullable<ReportSnapshot['trial']>> = {}): ReportSnapshot {
+  return cleanTrialSnap(NO_HOUSEHOLD, {
+    status: 'completed',
+    endedAt: '2026-05-30',
+    dayCounter: 23,
+    interpretabilityStatement: 'This record covers 23 of 23 days of the trial window and supports interpreting it.',
+    ...over,
+  })
+}
+
+Deno.test('CUL-2077 — a trial ended at day 23 of 56 keeps the coverage sentence and states the run beside it', () => {
+  const callout = text(interpretingCallout(renderReport(endedTrialSnap())))
+  assert.ok(
+    /This record covers 23 of 23 days of the trial window and supports interpreting it\. The trial ran 23 of a planned 56 days\./.test(
+      callout,
+    ),
+    callout,
+  )
+  // A trial stopped early (abandoned) is the same fact, said the same way.
+  const stopped = text(interpretingCallout(renderReport(endedTrialSnap({ status: 'abandoned' }))))
+  assert.ok(/supports interpreting it\. The trial ran 23 of a planned 56 days\./.test(stopped), stopped)
+  // And on the non-affirmative rungs, whose "N of N days of the trial window" reads as full too.
+  const partial = text(
+    interpretingCallout(
+      renderReport(
+        endedTrialSnap({
+          interpretability: 'partially_supports',
+          interpretabilityStatement:
+            'This record covers 12 of 23 days of the trial window — enough to read alongside the rest of the history, not enough to stand on its own.',
+        }),
+      ),
+    ),
+  )
+  assert.ok(/not enough to stand on its own\. The trial ran 23 of a planned 56 days\./.test(partial), partial)
+})
+
+Deno.test('CUL-2077 — every other trial prints the callout it printed before (before/after)', () => {
+  // The callout with the new sentence removed must equal the callout of the same trial with
+  // no reason to print it, and those reasons are exactly: still active, ran its full target,
+  // ran past it, or no coverage sentence shown. Each control is rendered and compared byte
+  // for byte against the pre-change expectation: no "The trial ran" anywhere.
+  const cases: Array<[string, Partial<NonNullable<ReportSnapshot['trial']>>]> = [
+    ['active at day 23', { status: 'active', endedAt: null }],
+    ['completed on target', { dayCounter: 56, interpretabilityStatement: 'This record covers 56 of 56 days of the trial window and supports interpreting it.' }],
+    ['completed past target', { dayCounter: 70, trialDaysElapsed: 70 }],
+    ['abandoned on target', { status: 'abandoned', dayCounter: 56 }],
+    // A since-visit window over a full trial: the window ends early, the trial did not.
+    ['full trial viewed through an earlier window', { dayCounter: 45, trialDaysElapsed: 56, trialDaysOutsideRange: { before: 0, after: 11 } }],
+  ]
+  for (const [label, over] of cases) {
+    const html = renderReport(endedTrialSnap(over))
+    assert.ok(!/The trial ran/.test(html), `${label}: ${text(interpretingCallout(html))}`)
+  }
+  // No statement shown (a caveat suppresses the affirmative): nothing to sit beside.
+  const suppressed = renderReport(
+    endedTrialSnap({
+      exposures: { totalFeedings: 44, offDiet: 4, byRung: { derived_protein: 4, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      mayClaimAllMatched: false,
+    }),
+  )
+  assert.ok(!/The trial ran/.test(suppressed), text(interpretingCallout(suppressed)))
+  // Before/after on the active trial: the callout is exactly the statement, unchanged.
+  const active = text(interpretingCallout(renderReport(endedTrialSnap({ status: 'active', endedAt: null }))))
+  assert.ok(
+    /Interpreting this record This record covers 23 of 23 days of the trial window and supports interpreting it\.$/.test(active.trim()),
+    active,
+  )
+})

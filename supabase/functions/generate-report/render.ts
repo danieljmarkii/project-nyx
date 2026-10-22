@@ -3783,8 +3783,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const suppressStatement =
     (caveats.length > 0 || refusalCaveat !== null) && t.interpretability === 'supports'
   const shown = suppressStatement ? null : statement
+  // CUL-2077 (PM ruling a) — COVERAGE IS NOT LENGTH. On an ended trial §7.2's sentence
+  // reads "23 of 23 days of the trial window and supports interpreting it", true of the
+  // record and silent that the trial stopped at day 23 of 56; the cold read took it for a
+  // full, clean trial. The coverage sentence stays verbatim and the run's length is said
+  // beside it, on every rung that shows it. `trialDaysElapsed` is the trial's OWN span
+  // (bounded at its end, not the report window), the same number the stop-reason row's
+  // "Marked complete at day N" switches on, so a since-visit view of a full trial never
+  // calls it short (B-600).
+  const ranShort =
+    shown !== null && t.status !== 'active' && t.trialDaysElapsed < t.targetDurationDays
+      ? `The trial ran ${num(t.trialDaysElapsed)} of a planned ${num(t.targetDurationDays)} days.`
+      : null
   // Refusal first, then the record-quality statement, then the remaining caveats.
-  const body = [refusalCaveat, shown ? h(shown) : null, ...caveats].filter(
+  const body = [refusalCaveat, shown ? h(shown) : null, ranShort, ...caveats].filter(
     (p): p is string => p !== null,
   )
   const callout =
