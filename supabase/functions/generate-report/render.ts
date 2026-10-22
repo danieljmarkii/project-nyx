@@ -2851,8 +2851,15 @@ function headline(snap: ReportSnapshot): string {
     // Dr. Chen on the design lock — "an app that renders Day 61 of 56 tells me nobody
     // is reading it" — and with 70–80% of trials abandoned, overrun is the steady state.
     const tb = snap.trial
+    // CUL-2092 — "COMPLETED" IS A CLAIM ABOUT LENGTH TO A VET, and the first bolded word on
+    // the page. `completed` only means the owner tapped the milestone, so a trial marked
+    // complete at day 23 of 56 led "Completed:" and the cold read took it for a full course.
+    // Same predicate as the stop row's "Marked complete at day N — X days short": the trial's
+    // OWN span, never the report window (B-600).
+    const completedLead =
+      tb && tb.trialDaysElapsed < tb.targetDurationDays ? 'Marked complete early' : 'Completed'
     const lead = tb && tb.status !== 'active'
-      ? `${tb.status === 'completed' ? 'Completed' : 'Stopped early'}: <b>${food}</b> as a diet trial${vet}`
+      ? `${tb.status === 'completed' ? completedLead : 'Stopped early'}: <b>${food}</b> as a diet trial${vet}`
       : `Tracking <b>${food}</b> as a diet trial${vet}`
     // ── TWO SPANS IN ONE SENTENCE, AND THE COUNT HAD NO WINDOW (B-600) ─────────
     //
@@ -3783,8 +3790,24 @@ function dietTrialSection(snap: ReportSnapshot): string {
   const suppressStatement =
     (caveats.length > 0 || refusalCaveat !== null) && t.interpretability === 'supports'
   const shown = suppressStatement ? null : statement
-  // Refusal first, then the record-quality statement, then the remaining caveats.
-  const body = [refusalCaveat, shown ? h(shown) : null, ...caveats].filter(
+  // CUL-2077 (PM ruling a) — COVERAGE IS NOT LENGTH. On an ended trial §7.2's sentence
+  // reads "23 of 23 days of the trial window and supports interpreting it", true of the
+  // record and silent that the trial stopped at day 23 of 56; the cold read took it for a
+  // full, clean trial. The coverage sentence stays verbatim and the run's length is said
+  // beside it, on every rung that shows it, and LEADS it (team review, PM go 2026-10-22):
+  // the affirmative is the clause a busy reader lifts, so the shortfall comes first. Not a
+  // downgrade: on GI, ACVIM counts two weeks' exclusive feeding as a complete trial, so a
+  // well-logged 23 days can be read; the vet judges sufficiency from the length. `trialDaysElapsed` is the trial's OWN span
+  // (bounded at its end, not the report window), the same number the stop-reason row's
+  // "Marked complete at day N" switches on, so a since-visit view of a full trial never
+  // calls it short (B-600).
+  const ranShort =
+    shown !== null && t.status !== 'active' && t.trialDaysElapsed < t.targetDurationDays
+      ? `The trial ran ${num(t.trialDaysElapsed)} of a planned ${num(t.targetDurationDays)} days.`
+      : null
+  // Refusal first, then the run's length, then the record-quality statement, then the
+  // remaining caveats.
+  const body = [refusalCaveat, ranShort, shown ? h(shown) : null, ...caveats].filter(
     (p): p is string => p !== null,
   )
   const callout =

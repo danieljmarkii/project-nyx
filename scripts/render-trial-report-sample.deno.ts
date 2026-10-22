@@ -913,6 +913,28 @@ function extendedLateCase(): ReportInput {
   })
 }
 
+// ── CUL-2077 — A CLEAN TRIAL ENDED WELL SHORT OF ITS TARGET ─────────────────────────
+//
+//   trial-report-ended-early.html — Tama's well-kept trial again, marked complete at
+//                              day 23 of 56 with every day logged and nothing off the
+//                              diet. The §7.2 sentence earns its affirmative here
+//                              ("23 of 23 days … supports interpreting it"), which is
+//                              exactly the shape that read as a full, clean trial.
+function endedEarlyCase(): ReportInput {
+  const full = pastWindowCase()
+  const END = '2026-04-28'
+  const events = full.events.filter(
+    (e) => e.occurredAt.slice(0, 10) <= END && !('foodItemId' in e && (e as { foodItemId?: string }).foodItemId === 'f-beef'),
+  )
+  const { requestedWindow: _picked, ...rest } = full
+  return {
+    ...rest,
+    events,
+    weightChecks: full.weightChecks.filter((w) => w.occurredAt.slice(0, 10) <= END),
+    dietTrials: full.dietTrials.map((t) => ({ ...t, completedAt: END, endedAt: END })),
+  }
+}
+
 const outDir = Deno.args[0] ?? '.'
 for (const [name, input] of [
   ['trial-report-clean.html', cleanCase()],
@@ -922,6 +944,7 @@ for (const [name, input] of [
   ['trial-report-past-window.html', pastWindowCase()],
   ['trial-report-extended.html', extendedCase()],
   ['trial-report-extended-late.html', extendedLateCase()],
+  ['trial-report-ended-early.html', endedEarlyCase()],
 ] as const) {
   const html = renderReport(assembleReport(input))
   await Deno.writeTextFile(`${outDir}/${name}`, html)
