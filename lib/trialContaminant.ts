@@ -1312,8 +1312,10 @@ export async function isRunningTrialForPet(petId: string, trialId: string): Prom
  * went in; the meal's time can have moved since (an edit backdating it to before the trial),
  * and spending the food's one warning on a pre-trial feeding would silence its next real
  * one. Read from the record, never a screen's copy of it, and through the same window
- * `classifyFeeding` asks first. A deleted meal is not a feeding. A failed read answers
- * true, as `isRunningTrialForPet` does: the line then shows as it did before this check.
+ * `classifyFeeding` asks first. A deleted meal is not a feeding. A failed EVENT read answers
+ * true, so the line shows as it did before this check; a failed TRIAL read answers false,
+ * because `loadTrialProteinContext` reports it as no trial (as `isRunningTrialForPet` does),
+ * and the food stays unspent (CUL-2120).
  */
 export async function isMealInRunningTrial(petId: string, trialId: string, eventId: string): Promise<boolean> {
   try {
