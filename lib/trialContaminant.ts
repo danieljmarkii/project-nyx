@@ -1324,9 +1324,11 @@ async function forgetUnqueued(trialId: string, foodId: string): Promise<void> {
       else delete headsUpLedger[trialId];
       await AsyncStorage.setItem(HEADS_UP_KEY, JSON.stringify(headsUpLedger));
     }
-    // The attribution goes only once the un-spend is durable (CUL-2087, adversarial):
-    // dropped first, a failed ledger write left the food spent on disk with nothing
-    // naming the meal, so after a restart no retry could ever give it back.
+    // Ledger first, attribution after (CUL-2087, adversarial pass 1): dropped first, a
+    // failed ledger write left the food spent on disk with nothing naming the meal, so no
+    // retry could ever give it back. A throw above now keeps the attribution. This reads
+    // the in-memory mirror, not disk, so a mirror that ran ahead of a failed write can
+    // still drop it; that class, and the missing retry after a restart, is CUL-2099.
     const by = await readSpentBy();
     const key = spentKey(trialId, foodId);
     if (key in by) {

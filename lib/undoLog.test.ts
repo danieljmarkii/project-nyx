@@ -373,7 +373,8 @@ describe('reverseLoggedEvent', () => {
     it('a give-back whose ledger write failed can still be retried after a restart', async () => {
       // Adversarial pass 1: the attribution used to be dropped BEFORE the ledger write, so a
       // failed write left the food spent on disk with nothing naming its meal, and no later
-      // retry could give it back. Now the attribution goes only once the un-spend landed.
+      // retry could give it back. Now a failed ledger write keeps the attribution. (The
+      // retry here is by hand: nothing in production replays it after a restart, CUL-2099.)
       const { hasFlaggedFoodInTrial, noteTrialFlagShown, resetHeadsUpLedgerCache } = ledger();
       await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
       // The storage mock's setItem is itself a jest.fn, so swap its implementation and put
