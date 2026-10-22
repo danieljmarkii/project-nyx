@@ -65,19 +65,29 @@ Deno.test('CUL-2101 — Rosie: the safety band recency carries the tail', () => 
 Deno.test('CUL-2101 — Tama: the headline count names its logged days where it is printed', () => {
   const html = renderReport(snap('trial-report-ended-early.html'))
   assert.ok(
-    html.includes('<span class="num">5</span> loose stool<br/><span class="num">23</span> of <span class="num">88</span> days logged; none after Apr 28'),
+    html.includes('<span class="num">5</span> loose stool<br/><span class="num">23</span> of <span class="num">88</span> days logged; nothing logged after Apr 28'),
     'the count sits beside its logged days and the tail',
   )
-  // The ongoing check's "0 episodes in the last 8 weeks" was counted over eight weeks nobody logged.
+  // The ongoing check's "0 episodes in the last 8 weeks" was counted over eight weeks nobody logged:
+  // a zero over no logged day is not printed as a measurement.
   assert.ok(
-    html.includes('</span> weeks; nothing of any kind logged after Apr 28)'),
-    'the safety check names the tail inside the count it qualifies',
+    html.includes('(no episode could be seen: nothing of any kind logged after Apr 28 (the last <span class="num">65</span> days))'),
+    'a check whose whole span is the tail says nothing could be seen',
   )
+  assert.ok(!/<span class="num">0<\/span> episodes in the last/.test(html), 'no zero counted over a blank span')
 })
 
 Deno.test('CUL-2101 — Mira: "did not trigger" names the tail its recency floor ran over', () => {
   const html = renderReport(snap('trial-report-refused.html'))
-  assert.ok(html.includes('all the check could see; nothing of any kind logged after Jun 19; it triggers at'), 'the not-triggered check names the tail')
+  assert.ok(
+    html.includes('all the check could see; nothing of any kind logged after Jun 19 (the last <span class="num">13</span> days); it triggers at'),
+    'the not-triggered check names the tail',
+  )
+  // The refusal flag's dates stop where logging stopped; the silence after is named on the flag.
+  assert.ok(
+    html.includes('Dates covered: Jun 1 – Jun 19, 2026. Nothing of any kind logged after Jun 19 (the last <span class="num">13</span> days), so current intake is not on this record.'),
+    'the refusal flag says current intake is not on the record',
+  )
 })
 
 Deno.test('CUL-2101 — the floor: one unlogged day (today) is never named, two is', () => {
