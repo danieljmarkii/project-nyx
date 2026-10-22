@@ -370,6 +370,33 @@ describe('reverseLoggedEvent', () => {
       expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(true);
     });
 
+    it('a give-back whose ledger write failed can still be retried after a restart', async () => {
+      // Adversarial pass 1: the attribution used to be dropped BEFORE the ledger write, so a
+      // failed write left the food spent on disk with nothing naming its meal, and no later
+      // retry could give it back. Now the attribution goes only once the un-spend landed.
+      const { hasFlaggedFoodInTrial, noteTrialFlagShown, resetHeadsUpLedgerCache } = ledger();
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
+      // The storage mock's setItem is itself a jest.fn, so swap its implementation and put
+      // the original back, rather than spying (a spy on it would call itself).
+      const setItem = AsyncStorage.setItem as jest.Mock;
+      const original = setItem.getMockImplementation();
+      setItem.mockImplementation(async (k: string, v: string) => {
+        if (k === 'nyx.trialHeadsUp.v1') throw new Error('storage full');
+        return AsyncStorage.multiSet([[k, v]]);
+      });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await reverseLoggedEvent('ev-meal');
+      } finally {
+        setItem.mockImplementation(original);
+      }
+      resetHeadsUpLedgerCache(); // the cold start: memory gone, storage is the truth
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(true);
+      await ledger().forgetFlagsSpentByEvent('ev-meal', []);
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(false);
+      warn.mockRestore();
+    });
+
     it('a failed give-back never fails a removal that already landed', async () => {
       const spy = jest.spyOn(ledger(), 'forgetFlagsSpentByEvent').mockRejectedValueOnce(new Error('storage gone'));
       const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});

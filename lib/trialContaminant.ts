@@ -1313,6 +1313,20 @@ export function forgetFlaggedFoodInTrial(trialId: string, foodId: string): Promi
 
 async function forgetUnqueued(trialId: string, foodId: string): Promise<void> {
   try {
+    const ledger = await readHeadsUpLedger();
+    const existing = Array.isArray(ledger[trialId]) ? ledger[trialId] : [];
+    if (existing.includes(foodId)) {
+      const remaining = existing.filter((id) => id !== foodId);
+      // Drop the trial's key entirely once its last entry goes, rather than leaving
+      // an empty array to occupy one of the MAX_LEDGER_TRIALS slots.
+      headsUpLedger = { ...ledger };
+      if (remaining.length > 0) headsUpLedger[trialId] = remaining;
+      else delete headsUpLedger[trialId];
+      await AsyncStorage.setItem(HEADS_UP_KEY, JSON.stringify(headsUpLedger));
+    }
+    // The attribution goes only once the un-spend is durable (CUL-2087, adversarial):
+    // dropped first, a failed ledger write left the food spent on disk with nothing
+    // naming the meal, so after a restart no retry could ever give it back.
     const by = await readSpentBy();
     const key = spentKey(trialId, foodId);
     if (key in by) {
@@ -1320,16 +1334,6 @@ async function forgetUnqueued(trialId: string, foodId: string): Promise<void> {
       delete next[key];
       await writeSpentBy(next);
     }
-    const ledger = await readHeadsUpLedger();
-    const existing = Array.isArray(ledger[trialId]) ? ledger[trialId] : [];
-    if (!existing.includes(foodId)) return;
-    const remaining = existing.filter((id) => id !== foodId);
-    // Drop the trial's key entirely once its last entry goes, rather than leaving
-    // an empty array to occupy one of the MAX_LEDGER_TRIALS slots.
-    headsUpLedger = { ...ledger };
-    if (remaining.length > 0) headsUpLedger[trialId] = remaining;
-    else delete headsUpLedger[trialId];
-    await AsyncStorage.setItem(HEADS_UP_KEY, JSON.stringify(headsUpLedger));
   } catch (e) {
     console.warn('[trialContaminant] heads-up ledger un-spend failed:', e);
   }
