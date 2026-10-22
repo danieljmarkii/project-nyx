@@ -3970,17 +3970,25 @@ async function reconcileByAbsence(db: Db, table: 'meals' | 'meal_components', st
   // The id pull pages by offset, so a cascade delete and an insert landing between two pages
   // can shift a page and skip live rows while the total still matches the count (adversarial
   // pass 2). Ask the server about each candidate by id before deleting it; a row the targeted
-  // read still finds is not a ghost, and a failed read deletes nothing.
+  // read still finds is not a ghost, and a failed read deletes nothing. Each read also asks for
+  // one id the pull just saw (the canary): a re-check that went out on the anon key answers []
+  // with no error, and only a missing canary tells that apart from a chunk of real ghosts.
+  const canary = remote[0]?.id;
+  if (canary === undefined) return;
   const CHUNK = 400;
   const toDelete: string[] = [];
   for (let i = 0; i < candidates.length; i += CHUNK) {
     const chunk = candidates.slice(i, i + CHUNK);
-    const { data: still, error: checkErr } = await supabase.from(table).select('id').in('id', chunk);
+    const { data: still, error: checkErr } = await supabase.from(table).select('id').in('id', [...chunk, canary]);
     if (checkErr || !still) {
       console.warn(`[hydrate] ${table} absence re-check failed, skipping absence pass:`, checkErr?.message);
       return;
     }
     const present = new Set((still as { id: string }[]).map((r) => r.id));
+    if (!present.has(canary)) {
+      console.warn(`[hydrate] ${table} absence re-check lost a live row, skipping absence pass`);
+      return;
+    }
     toDelete.push(...chunk.filter((id) => !present.has(id)));
   }
   if (toDelete.length === 0) return;

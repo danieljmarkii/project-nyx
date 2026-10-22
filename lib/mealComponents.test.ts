@@ -428,10 +428,43 @@ describe('the meals absence pass (CUL-2076)', () => {
     expect(mealIds()).toContain('m-e2');
   });
 
+  const serverMeal = (eventId: string) => ({ ...mockServer.meals[0], id: `m-${eventId}`, event_id: eventId });
+  /** On the server and synced locally, but a page shift makes the paged pull and its count
+   *  both miss m-e1 while the total still matches (two rows seen, two counted). */
+  const shiftPages = () => {
+    seedEvent('e2');
+    seedMeal('e2');
+    mockServer.meals.push(serverMeal('e2'), serverMeal('e9'));
+    mockPagedView = { meals: [serverMeal('e2'), serverMeal('e9')] };
+  };
+
   it('never deletes a live meal the paged id pull skipped, though the counts matched', async () => {
-    // On the server and synced locally, but the paged pull and its count both miss it.
-    mockPagedView = { meals: [] };
+    shiftPages();
     await hydrateFromCloud();
+    expect(mealIds()).toContain('m-e1');
+  });
+
+  it('never deletes when the by-id re-check alone went out anonymous and answered empty', async () => {
+    shiftPages();
+    const from = jest.requireMock('./supabase').supabase.from as jest.Mock;
+    const inner = from.getMockImplementation()!;
+    from.mockImplementation((table: string) => {
+      const api = inner(table);
+      return {
+        ...api,
+        select: (cols: string, opts?: { head?: boolean }) => {
+          const q = api.select(cols, opts) as Record<string, unknown>;
+          // RLS under the anon key: no rows, no error.
+          if (table === 'meals') q.in = () => ({ then: (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res) });
+          return q;
+        },
+      };
+    });
+    try {
+      await hydrateFromCloud();
+    } finally {
+      from.mockImplementation(inner);
+    }
     expect(mealIds()).toContain('m-e1');
   });
 
