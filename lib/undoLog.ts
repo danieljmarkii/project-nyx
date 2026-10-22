@@ -101,6 +101,7 @@ import { syncPendingAttachments, syncPendingEvents } from './sync';
 import { queueRemovedLogPhotosForPurge } from './attachments';
 import { writeOwingFloorCheck } from './incidentFloorQueue';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
+import { forgetFlagsSpentByEvent } from './trialContaminant';
 
 /**
  * Soft-delete `eventId`, settle the side-effects that removal implies, and queue
@@ -151,6 +152,17 @@ export async function reverseLoggedEvent(
   // a row left the record (the FAB's recent foods: a past-day meal is in no list
   // `todayEvents` drives). Same rule as the line above: only after the write landed.
   useRecordChangeStore.getState().notifyChanged();
+  // CUL-2087 — give back every trial heads-up THIS feeding spent: it never happened, or
+  // never happened as logged, so the food's real feeding later must still be warned about.
+  // Here, not on the card, so History's and the record screen's Remove give it back too
+  // (the card's own Undo also forgets its shown flag, which covers a spend made before the
+  // ledger recorded which meal spent it). Any event reaches this; one that spent nothing
+  // owns no entry. Best-effort, after the write landed, like the reconcile below.
+  try {
+    await forgetFlagsSpentByEvent(eventId, []);
+  } catch (e) {
+    console.warn('[undo] trial heads-up give-back failed:', e);
+  }
   // CUL-641 — unconditional: the helper decides for itself whether this event was
   // a weigh-in. Awaited, but only its local half is (the server write inside is
   // fired and not waited on), so a reversal still resolves at local-write speed.

@@ -28,6 +28,7 @@ import { triggerSignalRegenDebounced } from './signal';
 import { syncPendingAttachments, syncPendingEvents } from './sync';
 import { queueRemovedLogPhotosForPurge } from './attachments';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reverseLoggedEvent } from './undoLog';
 import { useRecordChangeStore } from '../store/recordChangeStore';
 
@@ -100,6 +101,9 @@ describe('reverseLoggedEvent', () => {
     // CUL-1947 added the sync store's record tick, on the failure path only: a data-free
     // counter that re-reads Home's gap warning when the delete landed and its floor marker
     // then threw. It writes no record.
+    // CUL-2087 added `forgetFlagsSpentByEvent`: the device-local trial heads-up ledger
+    // gives back the warnings the removed feeding spent. It writes no record row, and it
+    // can only make a later heads-up MORE likely, never less (its tests are below).
     expect(imports.join('\n')).toBe(
       "import { useRecordChangeStore } from '../store/recordChangeStore';\n" +
       "import { useSyncStore } from '../store/syncStore';\n" +
@@ -109,7 +113,8 @@ describe('reverseLoggedEvent', () => {
       "import { syncPendingAttachments, syncPendingEvents } from './sync';\n" +
       "import { queueRemovedLogPhotosForPurge } from './attachments';\n" +
       "import { writeOwingFloorCheck } from './incidentFloorQueue';\n" +
-      "import { reconcileWeightSnapshotAfterDelete } from './weight';",
+      "import { reconcileWeightSnapshotAfterDelete } from './weight';\n" +
+      "import { forgetFlagsSpentByEvent } from './trialContaminant';",
     );
     expect(body()).not.toMatch(/adherence|updateEvent|updateMealIntake/);
   });
@@ -331,6 +336,49 @@ describe('reverseLoggedEvent', () => {
       expect(softDeleteEvent).toHaveBeenCalledWith('ev-7');
       expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+  // ── CUL-2087: a removed feeding gives its trial heads-ups back ──────────────
+  // Against the REAL ledger (AsyncStorage's jest mock): History's and the record screen's
+  // Remove reach no card, so the reversal itself has to give back what the meal spent, or
+  // the food's real feeding later on the trial gets no warning.
+  describe('the trial heads-up a removed meal spent (CUL-2087)', () => {
+    const ledger = () => jest.requireActual('./trialContaminant') as typeof import('./trialContaminant');
+    beforeEach(async () => {
+      await AsyncStorage.clear();
+      await ledger().clearTrialHeadsUpLedger();
+    });
+
+    it('gives back every food that meal spent, and only that meal\'s', async () => {
+      const { hasFlaggedFoodInTrial, noteTrialFlagShown } = ledger();
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-y' }, 'ev-meal');
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-z' }, 'ev-other');
+      await reverseLoggedEvent('ev-meal');
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(false);
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-y')).toBe(false);
+      // Another meal's spend is that meal's: removing this one must not re-open it.
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-z')).toBe(true);
+    });
+
+    it('gives nothing back for a removal whose local write failed', async () => {
+      const { hasFlaggedFoodInTrial, noteTrialFlagShown } = ledger();
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
+      (softDeleteEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+      await expect(reverseLoggedEvent('ev-meal')).rejects.toThrow('disk full');
+      // The meal is still in the record, so its heads-up is still spoken for.
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(true);
+    });
+
+    it('a failed give-back never fails a removal that already landed', async () => {
+      const spy = jest.spyOn(ledger(), 'forgetFlagsSpentByEvent').mockRejectedValueOnce(new Error('storage gone'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await expect(reverseLoggedEvent('ev-meal')).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalledWith('ev-meal', []);
+      expect(syncPendingEvents).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+      spy.mockRestore();
     });
   });
 });
