@@ -32,6 +32,15 @@
 // live components are a mix whatever the count says, and fewer live components than the
 // count says is INCOMPLETE (adversarial pass 1, break 3). No reader treats an incomplete
 // bowl as one food; the clinical readers (rows 3–4) make it unclassifiable.
+//
+// ── A MIX WITH NO LIVE COMPONENTS READS AS ITS LAST RECORDED FOODS (CUL-2096) ───────
+// A phone's stale parent retry can win over a newer "back to one food" write and leave
+// `component_count` 2 over rows that are all tombstoned: a bowl that names no food, so an
+// off-diet food's heads-up and its exposure were dropped. The reader falls back to the
+// newest TOMBSTONED generation and names those foods, marked `lastRecorded` (PM ruling
+// (a), 2026-10-22). It stays INCOMPLETE, never a full mix: the set is known to be stale
+// and the other phone's food may not be in it, so a visible off-diet food still makes
+// the bowl off-diet while an all-permitted set stays unclassifiable, never "on diet".
 
 export const SHARE_SOURCES = ['preset', 'custom', 'amounts', 'unknown'] as const;
 export type ShareSource = (typeof SHARE_SOURCES)[number];
@@ -94,6 +103,9 @@ export interface MealComposition {
   /** For DISPLAY only (T2): the largest share; on a tie or an unknown ratio, the lowest
    *  position. No clinical reader may use it to stand for the bowl. Null unless a mix. */
   dominant: ResolvedComponent | null;
+  /** True when the parent says a mix, no component is live, and `components` are the
+   *  newest tombstoned generation: the foods as last recorded. Always `incomplete`. */
+  lastRecorded: boolean;
 }
 
 const SHARE_EPSILON = 1e-9;
@@ -137,15 +149,28 @@ function newerRow(a: MealComponentRow, b: MealComponentRow): MealComponentRow {
 /** The read rule: the live rows of the newest generation, one per position, in position
  *  order. Every reader of a bowl goes through this. */
 export function liveComponentRows(rows: readonly MealComponentRow[]): MealComponentRow[] {
-  const live = rows.filter((r) => r.deleted_at === null || r.deleted_at === undefined);
-  if (live.length === 0) return [];
+  return newestGeneration(rows.filter(isLive));
+}
+
+/** The newest TOMBSTONED generation, by the same rule: the bowl as last recorded. Read
+ *  only when no row is live (CUL-2096). */
+export function lastRecordedComponentRows(rows: readonly MealComponentRow[]): MealComponentRow[] {
+  return newestGeneration(rows.filter((r) => !isLive(r)));
+}
+
+function isLive(r: MealComponentRow): boolean {
+  return r.deleted_at === null || r.deleted_at === undefined;
+}
+
+function newestGeneration(rows: readonly MealComponentRow[]): MealComponentRow[] {
+  if (rows.length === 0) return [];
   let newest = '';
-  for (const r of live) {
+  for (const r of rows) {
     const g = generationOf(r.id);
     if (g > newest) newest = g;
   }
   const byPosition = new Map<number, MealComponentRow>();
-  for (const r of live) {
+  for (const r of rows) {
     if (generationOf(r.id) !== newest) continue;
     const held = byPosition.get(r.position);
     byPosition.set(r.position, held ? newerRow(held, r) : r);
@@ -190,6 +215,12 @@ export function readMealComposition(
   const components = resolve(liveComponentRows(rows));
   const n = components.length;
   const count = parent.component_count ?? null;
+  if (n === 0 && count !== null && count >= 2) {
+    const last = resolve(lastRecordedComponentRows(rows));
+    if (last.length > 0) {
+      return { status: 'incomplete', consistent: false, components: last, dominant: null, lastRecorded: true };
+    }
+  }
   let status: MealCompositionStatus;
   if (n >= 2) status = count !== null && n < count ? 'incomplete' : 'mix';
   else if (n === 1) status = 'incomplete';
@@ -201,6 +232,7 @@ export function readMealComposition(
     consistent,
     components: status === 'single' ? [] : components,
     dominant: status === 'mix' ? dominantComponent(components) : null,
+    lastRecorded: false,
   };
 }
 

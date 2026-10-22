@@ -6,6 +6,7 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  bowlLabel,
   dedupeEvents,
   type ReportEventInput,
   type ReportInput,
@@ -227,4 +228,18 @@ Deno.test('a report with no mixed bowl prints no switch row beyond what the reco
   const p = plain(renderReport(assembleReport(trialInput(dailyTrial()))))
   assert.ok(!p.includes('mixed bowl'))
   assert.ok(!p.includes('New foods after the trial'))
+})
+
+// CUL-2096: a bowl with no live component names its foods as last recorded, and says the
+// record is incomplete; every other bowl's label is as it was.
+Deno.test('a last recorded bowl is labelled as such; a mix and an incomplete bowl are unchanged', () => {
+  const comp = (productName: string): ReportMealComponent => ({
+    foodItemId: productName, snapshotLabel: productName, foodKey: `id:${productName}`, foodType: 'meal', format: null,
+    primaryProtein: null, proteins: null, brand: null, productName, share: 0.5, normalizedShare: 0.5,
+    shareSource: 'preset', amountValue: null, amountUnit: null,
+  } as unknown as ReportMealComponent)
+  const base = { components: [comp('Chicken Pâté'), comp('Rabbit Pâté')], compositionKey: 'k', compositionKeyWithRatio: 'k', writtenAtMs: null }
+  assert.equal(bowlLabel({ ...base, status: 'incomplete', lastRecorded: true }), 'Chicken Pâté + Rabbit Pâté, mixed (as last recorded; record incomplete)')
+  assert.equal(bowlLabel({ ...base, status: 'mix' }), 'Chicken Pâté + Rabbit Pâté, mixed')
+  assert.equal(bowlLabel({ ...base, status: 'incomplete' }), 'Chicken Pâté + Rabbit Pâté + another food, mixed (record incomplete)')
 })

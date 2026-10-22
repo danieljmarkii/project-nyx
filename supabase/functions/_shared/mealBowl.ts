@@ -14,7 +14,6 @@ import {
   componentFoodKey,
   compositionKey,
   generationMs,
-  liveComponentRows,
   readMealComposition,
   type MealComponentRow,
   type MealCompositionStatus,
@@ -65,6 +64,9 @@ export interface MealBowl<F> {
   /** When the bowl's current set was written (its generation's millisecond); null for
    *  a set no generation stamps. Read for the report's "edited {date}" (§7.3). */
   writtenAtMs: number | null
+  /** No component is live and these are the foods as last recorded (CUL-2096); the
+   *  bowl is then always `incomplete`. */
+  lastRecorded: boolean
 }
 
 function firstOf<T>(v: T | T[] | null | undefined): T | null {
@@ -86,7 +88,6 @@ export function bowlOf<F>(
   const parent = { food_item_id: meal?.food_item_id ?? null, component_count: meal?.component_count ?? null }
   const composition = readMealComposition(parent, all)
   if (composition.status === 'single') return null
-  const live = liveComponentRows(all)
   const byId = new Map(all.map((r) => [r.id, r]))
   const components: BowlComponent<F>[] = composition.components.map((c) => ({
     position: c.position,
@@ -106,7 +107,8 @@ export function bowlOf<F>(
     components,
     compositionKey: compositionKey(composition.components),
     compositionKeyWithRatio: compositionKey(composition.components, { withRatio: true }),
-    writtenAtMs: live.length > 0 ? generationMs(live[0].id) : null,
+    writtenAtMs: composition.components.length > 0 ? generationMs(composition.components[0].id) : null,
+    lastRecorded: composition.lastRecorded,
   }
 }
 

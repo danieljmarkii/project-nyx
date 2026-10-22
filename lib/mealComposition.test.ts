@@ -159,7 +159,7 @@ describe('status: live components win over the parent', () => {
 
   it('a plain meal is single', () => {
     expect(readMealComposition({ food_item_id: 'f', component_count: null }, [])).toEqual({
-      status: 'single', consistent: true, components: [], dominant: null,
+      status: 'single', consistent: true, components: [], dominant: null, lastRecorded: false,
     });
   });
 
@@ -187,6 +187,56 @@ describe('status: live components win over the parent', () => {
 
   it('a mix whose parent agrees is consistent', () => {
     expect(readMealComposition({ food_item_id: null, component_count: 2 }, two()).consistent).toBe(true);
+  });
+});
+
+describe('a mix with no live components reads as its last recorded foods (CUL-2096)', () => {
+  const r = prng(2096);
+  const DEAD = '2026-10-21T09:00:00.000Z';
+  const set = (ms: number, deletedAt: string | null, foods: string[]) => {
+    const randA = Math.floor(r() * 4096);
+    return foods.map((f, p) => row({ id: mintGenerationId(ms, randA, r), position: p, food_item_id: f, food_label: f, deleted_at: deletedAt }));
+  };
+
+  it('the found case: a stale count-2 parent over a tombstoned X+Y set names X and Y, incomplete', () => {
+    // Phone A wrote X+Y; phone B went back to X and tombstoned both; A's stale parent won.
+    const c = readMealComposition({ food_item_id: null, component_count: 2 }, set(T0, DEAD, ['x', 'y']));
+    expect(c.status).toBe('incomplete');
+    expect(c.lastRecorded).toBe(true);
+    expect(c.consistent).toBe(false);
+    expect(c.dominant).toBeNull();
+    expect(c.components.map((x) => x.foodItemId)).toEqual(['x', 'y']);
+  });
+
+  it('names the NEWEST tombstoned generation, never a union with an older one', () => {
+    const rows = [...set(T0, DEAD, ['a', 'b', 'c']), ...set(T0 + 1000, DEAD, ['x', 'y'])];
+    const c = readMealComposition({ food_item_id: null, component_count: 2 }, rows);
+    expect(c.components.map((x) => x.foodItemId)).toEqual(['x', 'y']);
+  });
+
+  // Before/after: every input that is not "a mix with no live rows" reads as it did.
+  it('a meal back to one food (count NULL over tombstones) is still a plain meal', () => {
+    expect(readMealComposition({ food_item_id: 'x', component_count: null }, set(T0, DEAD, ['x', 'y']))).toEqual({
+      status: 'single', consistent: true, components: [], dominant: null, lastRecorded: false,
+    });
+  });
+
+  it('a count with no rows at all still names nothing', () => {
+    const c = readMealComposition({ food_item_id: null, component_count: 2 }, []);
+    expect(c).toEqual({ status: 'incomplete', consistent: false, components: [], dominant: null, lastRecorded: false });
+  });
+
+  it('a live set always wins over a newer tombstoned one, and one live row stays as it was', () => {
+    const live = set(T0, null, ['x', 'y']);
+    const dead = set(T0 + 1000, DEAD, ['p', 'q']);
+    const mix = readMealComposition({ food_item_id: null, component_count: 2 }, [...live, ...dead]);
+    expect(mix.status).toBe('mix');
+    expect(mix.lastRecorded).toBe(false);
+    expect(mix.components.map((x) => x.foodItemId)).toEqual(['x', 'y']);
+    const one = readMealComposition({ food_item_id: null, component_count: 2 }, [live[0], ...dead]);
+    expect(one.status).toBe('incomplete');
+    expect(one.lastRecorded).toBe(false);
+    expect(one.components.map((x) => x.foodItemId)).toEqual(['x']);
   });
 });
 

@@ -1198,6 +1198,7 @@ describe('a mixed bowl row', () => {
     ],
     more: 0,
     incomplete: false,
+    lastRecorded: false,
     text: '⅓ Chicken Pâté with a very long name that has to give way first + ⅔ Rabbit Pâté',
   };
   const node = meal('mx', '7:40 AM', { detail: mix.text, food: mix.text, mix, formatTag: null });

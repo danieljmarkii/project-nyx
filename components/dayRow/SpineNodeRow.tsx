@@ -67,7 +67,7 @@ import { theme } from '../../constants/theme';
 import { SPINE_THREAD, SpineRowFrame, type SpineBead } from '../recap/DaySpine';
 import { NODE_DOT_SIZE } from '../recap/nodeTints';
 import { ThemedText } from '../ui/ThemedText';
-import { INCOMPLETE_BOWL_TAIL, type BowlRowLabel } from '../../lib/mealBowlLabel';
+import { INCOMPLETE_BOWL_TAIL, LAST_RECORDED_BOWL_TAIL, type BowlRowLabel } from '../../lib/mealBowlLabel';
 import { useNodeArrival } from '../motion/arrivalMotion';
 import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
@@ -416,7 +416,11 @@ function MixLine({ mix, testID, inline = false }: { mix: BowlRowLabel; testID: s
         </View>
       ))}
       {mix.more > 0 ? <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>{`+${mix.more} more`}</ThemedText> : null}
-      {mix.incomplete ? <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>{INCOMPLETE_BOWL_TAIL}</ThemedText> : null}
+      {mix.lastRecorded ? (
+        <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>{`, ${LAST_RECORDED_BOWL_TAIL}`}</ThemedText>
+      ) : mix.incomplete ? (
+        <ThemedText style={[styles.mixJoin, inline && styles.mixTextInline]}>{INCOMPLETE_BOWL_TAIL}</ThemedText>
+      ) : null}
     </View>
   );
 }

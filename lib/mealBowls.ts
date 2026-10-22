@@ -62,6 +62,9 @@ export interface AppBowl {
   compositionKey: string;
   /** The same with each food's share: a ratio step is a different key (§7.2). */
   compositionKeyWithRatio: string;
+  /** No component is live and these are the foods as last recorded (CUL-2096); the
+   *  bowl is then always `incomplete`. */
+  lastRecorded: boolean;
 }
 
 /** A `meal_components` row with its parent's fields and its food's, as the loader reads it. */
@@ -106,6 +109,7 @@ export function bowlFromRows(
     components,
     compositionKey: compositionKey(composition.components),
     compositionKeyWithRatio: compositionKey(composition.components, { withRatio: true }),
+    lastRecorded: composition.lastRecorded,
   };
 }
 

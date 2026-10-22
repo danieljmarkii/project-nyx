@@ -59,11 +59,15 @@ export interface BowlRowLabel {
   /** The bowl's live set is smaller than it says (§3): its contents are not all known,
    *  so it never reads as one food or as a complete mix. */
   incomplete: boolean;
+  /** No component is live and these are the foods as last recorded (CUL-2096): the row
+   *  says so in place of the incomplete tail. */
+  lastRecorded: boolean;
   /** The whole label as one string, for the spoken label and any plain-text surface. */
   text: string;
 }
 
 export const INCOMPLETE_BOWL_TAIL = 'and a food not on this phone yet';
+export const LAST_RECORDED_BOWL_TAIL = 'as last recorded';
 
 export function bowlRowLabel(bowl: AppBowl): BowlRowLabel {
   const incomplete = bowl.status === 'incomplete';
@@ -76,6 +80,8 @@ export function bowlRowLabel(bowl: AppBowl): BowlRowLabel {
   const parts = segments.map((s) => (s.share ? `${s.share} ${s.name}` : s.name));
   let text = parts.join(' + ');
   if (more > 0) text += ` +${more} more`;
-  if (incomplete) text = `${text}${text ? ' ' : ''}${INCOMPLETE_BOWL_TAIL}`;
-  return { segments, more, incomplete, text };
+  const lastRecorded = bowl.lastRecorded;
+  if (lastRecorded) text = `${text}, ${LAST_RECORDED_BOWL_TAIL}`;
+  else if (incomplete) text = `${text}${text ? ' ' : ''}${INCOMPLETE_BOWL_TAIL}`;
+  return { segments, more, incomplete, lastRecorded, text };
 }

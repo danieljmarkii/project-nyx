@@ -49,6 +49,44 @@ Deno.test('a count of 2 over one live component is incomplete, never one food', 
   assertStrictEquals(b?.status, 'incomplete')
 })
 
+// CUL-2096: phone A's stale count-2 parent won over phone B's "back to one food", whose
+// write tombstoned A's whole set. The bowl names that set as last recorded, incomplete.
+Deno.test('a mix with no live components reads as its last recorded foods', () => {
+  const dead = '2026-10-21T09:00:00+00:00'
+  const b = bowlOf({ food_item_id: null, component_count: 2 }, [
+    row({ id: genId(MS, 1, 'a'), position: 0, food_item_id: 'old-0', deleted_at: dead }),
+    row({ id: genId(MS, 1, 'b'), position: 1, food_item_id: 'old-1', deleted_at: dead }),
+    row({ id: genId(MS + 5, 2, 'c'), position: 0, food_item_id: 'x', deleted_at: dead }),
+    row({ id: genId(MS + 5, 2, 'd'), position: 1, food_item_id: 'y', deleted_at: dead }),
+  ])
+  assertStrictEquals(b?.status, 'incomplete')
+  assertStrictEquals(b?.lastRecorded, true)
+  assertEquals(b?.components.map((c) => c.foodItemId), ['x', 'y'])
+  assertEquals(b?.components.map((c) => c.food), [{ food_type: 'meal' }, { food_type: 'meal' }])
+  assertStrictEquals(b?.compositionKey, 'id:x+id:y')
+  assertStrictEquals(b?.writtenAtMs, MS + 5)
+})
+
+Deno.test('before/after: back to one food over tombstones is plain; a count with no rows names nothing', () => {
+  const dead = '2026-10-21T09:00:00+00:00'
+  const tombstones = [
+    row({ id: genId(MS, 1, 'a'), position: 0, deleted_at: dead }),
+    row({ id: genId(MS, 1, 'b'), position: 1, deleted_at: dead }),
+  ]
+  assertStrictEquals(bowlOf({ food_item_id: 'f', component_count: null }, tombstones), null)
+  const empty = bowlOf({ food_item_id: null, component_count: 2 }, [])
+  assertStrictEquals(empty?.status, 'incomplete')
+  assertStrictEquals(empty?.lastRecorded, false)
+  assertEquals(empty?.components, [])
+  assertStrictEquals(empty?.writtenAtMs, null)
+  const live = bowlOf({ food_item_id: null, component_count: 2 }, [
+    row({ id: genId(MS, 1, 'a'), position: 0 }),
+    row({ id: genId(MS, 1, 'b'), position: 1 }),
+  ])
+  assertStrictEquals(live?.status, 'mix')
+  assertStrictEquals(live?.lastRecorded, false)
+})
+
 Deno.test('the newest whole generation wins; an older set never unions in', () => {
   const b = bowlOf({ food_item_id: null, component_count: 2 }, [
     row({ id: genId(MS, 1, 'a'), position: 0, food_item_id: 'old-0' }),

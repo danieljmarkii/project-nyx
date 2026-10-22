@@ -38,6 +38,8 @@ import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { mintGenerationId } from './mealComposition';
 import { bowlFoodType, loadMealBowls, mealBowlsQuery, type AppBowl } from './mealBowls';
+import { bowlRowLabel } from './mealBowlLabel';
+import { bowlDetailLine } from './mixDetail';
 import { feedingOfBowl } from './dietTrialFacts';
 import { buildTrialContext, classifyFeeding, type AllowedFood, type TrialSpec } from './dietTrial';
 import { toTrialFeeding, type TrialMealSource } from '../supabase/functions/generate-report/trial';
@@ -258,6 +260,48 @@ describe('the phone reads a bowl the way the vet report does (spec §8: one verd
     seedSet('partial', 1_760_000_000_000, [{ food: 'duck', label: 'Duck Dry', share: 0.5 }]);
     const { phone } = await bothFeedings('partial');
     expect(classifyFeeding(buildTrialContext(TRIAL, [DUCK_ROW]), phone).verdict).toBe('unclassifiable');
+  });
+
+  // CUL-2096: phone A made the meal duck + chicken, lost both answers, phone B went back to
+  // duck alone (tombstoning both rows), and A's stale parent retry won: count 2, no live row.
+  it('a mix with no live foods reads as its last recorded foods: chicken is named and off-diet', async () => {
+    seedMeal('stale', { count: 2 });
+    seedSet('stale', 1_760_000_000_000, [
+      { food: 'duck', label: 'Duck Dry', share: 0.5 },
+      { food: 'chicken', label: 'Chicken Pâté', share: 0.5 },
+    ], AT);
+    const bowl = (await loadMealBowls(['stale'])).get('stale')!;
+    expect(bowl.status).toBe('incomplete');
+    expect(bowl.lastRecorded).toBe(true);
+    expect(bowl.components.map((c) => c.foodItemId)).toEqual(['duck', 'chicken']);
+    const { phone, server } = await bothFeedings('stale');
+    expect(phone).toEqual(server);
+    const c = classifyFeeding(buildTrialContext(TRIAL, [DUCK_ROW]), phone);
+    expect(c.offDiet).toBe(true);
+    expect(c.antigens).toContain('chicken');
+    expect(bowlRowLabel(bowl).text).toBe('Duck Dry + Chicken Pâté, as last recorded');
+    expect(bowlDetailLine(bowl)).toBe('Duck Dry + Chicken Pâté, as last recorded');
+  });
+
+  it('a last recorded set of only the trial food stays unclassifiable, never "on diet"', async () => {
+    seedMeal('stale', { count: 2 });
+    seedSet('stale', 1_760_000_000_000, [
+      { food: 'duck', label: 'Duck Dry', share: 0.5 },
+      { food: 'duck', label: 'Duck Dry', share: 0.5 },
+    ], AT);
+    const { phone } = await bothFeedings('stale');
+    const c = classifyFeeding(buildTrialContext(TRIAL, [DUCK_ROW]), phone);
+    expect(c.verdict).toBe('unclassifiable');
+    expect(c.countsAsFeeding).toBe(false);
+  });
+
+  it('before/after: a meal back to one food over the same tombstones is still a plain meal', async () => {
+    seedMeal('single', { foodId: 'duck', count: null });
+    seedSet('single', 1_760_000_000_000, [
+      { food: 'duck', label: 'Duck Dry', share: 0.5 },
+      { food: 'chicken', label: 'Chicken Pâté', share: 0.5 },
+    ], AT);
+    expect((await loadMealBowls(['single'])).has('single')).toBe(false);
   });
 
   it('the verdict, counts and antigens do not move when the dominant food changes (§10 property)', async () => {
