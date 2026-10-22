@@ -212,11 +212,12 @@ export default function EventDetailScreen() {
     return measure().then(async (m) => {
       if (!m) return false;
       const dy = scrollDeltaToReveal(m.line, m.frame, REVEAL_MARGIN);
-      if (dy === 0) return true;
-      const still = reducedMotionNow();
-      scrollRef.current?.scrollTo({ y: Math.max(0, scrollYRef.current + dy), animated: !reducedMotionNow() });
-      // Measure again once the scroll has settled: only a line wholly in view is seen.
-      await new Promise((r) => setTimeout(r, still ? 0 : REVEAL_SETTLE_MS));
+      if (dy !== 0) {
+        scrollRef.current?.scrollTo({ y: Math.max(0, scrollYRef.current + dy), animated: !reducedMotionNow() });
+      }
+      // Measure again after a beat, even when no scroll was needed (adversarial pass 2):
+      // only a line still wholly in view after it has had time to be read is seen.
+      await new Promise((r) => setTimeout(r, REVEAL_SETTLE_MS));
       const after = await measure();
       return after !== null && isWhollyInView(after.line, after.frame);
     });
@@ -1087,6 +1088,9 @@ export default function EventDetailScreen() {
               petName={eventPetName}
               mealFoodIds={mealFoodIds}
               reveal={revealInScroll}
+              // A remote photo still resolving would land above the line and push it
+              // down after it was measured (adversarial pass 2); the viewer covers it.
+              revealReady={(!attachment || photoUri !== null) && !photoViewerVisible}
             />
           ) : null}
 

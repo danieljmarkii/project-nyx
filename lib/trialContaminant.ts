@@ -1280,6 +1280,22 @@ async function writeSpentBy(next: Record<string, string>): Promise<void> {
   }
 }
 
+/**
+ * Is `trialId` still the pet's running trial? For a heads-up that waited (CUL-2088,
+ * adversarial pass 2): one raised under a trial that has since ended must not show, nor
+ * offer "End the trial" on the next one. A failed read answers yes: an extra heads-up is
+ * the safe direction.
+ */
+export async function isRunningTrialForPet(petId: string, trialId: string): Promise<boolean> {
+  try {
+    const ctx = await loadTrialProteinContext(petId);
+    return ctx !== null && ctx.trialId === trialId && isTrialRunning(ctx.spec, Date.now());
+  } catch (e) {
+    console.warn('[trialContaminant] running-trial read failed:', e);
+    return true;
+  }
+}
+
 /** Have we already shown a heads-up for this food under this trial? */
 export async function hasFlaggedFoodInTrial(trialId: string, foodId: string): Promise<boolean> {
   const ledger = await readHeadsUpLedger();

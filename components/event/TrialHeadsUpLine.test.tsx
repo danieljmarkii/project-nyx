@@ -12,6 +12,11 @@ jest.mock('expo-router', () => ({
   router: { push: (...a: unknown[]) => mockPush(...a) },
   useIsFocused: () => mockFocused,
 }));
+const mockRunning = jest.fn();
+jest.mock('../../lib/trialContaminant', () => ({
+  ...jest.requireActual('../../lib/trialContaminant'),
+  isRunningTrialForPet: (...a: unknown[]) => mockRunning(...a),
+}));
 const mockAddTrialFood = jest.fn();
 jest.mock('../../lib/dietTrialSetup', () => ({
   ...jest.requireActual('../../lib/dietTrialSetup'),
@@ -55,8 +60,13 @@ const PAST: LogTimeTrialFlag = {
 const TURKEY = { id: 'turkey', brand: 'Hill’s', product_name: 'Turkey', food_type: 'meal' };
 
 const mockReveal = jest.fn();
-function line(mealFoodIds: string[] | null) {
-  return <TrialHeadsUpLine eventId={EVENT} petId="pet-1" petName="Pixel" mealFoodIds={mealFoodIds} reveal={mockReveal} />;
+function line(mealFoodIds: string[] | null, revealReady = true, petName = 'Pixel') {
+  return (
+    <TrialHeadsUpLine
+      eventId={EVENT} petId="pet-1" petName={petName} mealFoodIds={mealFoodIds}
+      reveal={mockReveal} revealReady={revealReady}
+    />
+  );
 }
 
 beforeEach(async () => {
@@ -64,6 +74,7 @@ beforeEach(async () => {
   mockFocused = true;
   mockAddTrialFood.mockResolvedValue('row-1');
   mockReveal.mockResolvedValue(true);
+  mockRunning.mockResolvedValue(true);
   await AsyncStorage.clear();
   await clearTrialHeadsUpLedger();
   useMealScreenFlagStore.getState().reset();
@@ -101,6 +112,59 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
       'This bowl has chicken in it, from Chicken Pâté. Pixel’s rabbit trial should skip chicken. The change is saved and counts in the trial record. Maybe a note for your vet.',
     );
     announce.mockRestore();
+  });
+
+  it('leaving during the reveal spends nothing; coming back reveals again and spends once', async () => {
+    let release: (seen: boolean) => void = () => undefined;
+    mockReveal.mockImplementationOnce(() => new Promise<boolean>((r) => { release = r; }));
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    const view = render(line(['chicken']));
+    await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
+    await waitFor(() => expect(mockReveal).toHaveBeenCalledTimes(1));
+    mockFocused = false;
+    view.rerender(line(['chicken']));
+    await act(async () => { release(true); });
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(false);
+    mockFocused = true;
+    view.rerender(line(['chicken']));
+    await waitFor(async () => expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(true));
+    expect(mockReveal).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits while the layout above can still move it, then reveals', async () => {
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    const view = render(line(['chicken'], false));
+    await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
+    await act(async () => {});
+    expect(mockReveal).not.toHaveBeenCalled();
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(false);
+    view.rerender(line(['chicken'], true));
+    await waitFor(async () => expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(true));
+  });
+
+  it('a pet name arriving late, or a refocus, never announces a spent heads-up again', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    const view = render(line(['chicken'], true, 'your pet'));
+    await waitFor(() => expect(announce).toHaveBeenCalledTimes(1));
+    view.rerender(line(['chicken'], true, 'Pixel'));
+    mockFocused = false;
+    view.rerender(line(['chicken'], true, 'Pixel'));
+    mockFocused = true;
+    view.rerender(line(['chicken'], true, 'Pixel'));
+    await act(async () => {});
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(mockReveal).toHaveBeenCalledTimes(1);
+    announce.mockRestore();
+  });
+
+  it('a heads-up whose trial has ended is dropped, never offering to end the next one', async () => {
+    mockRunning.mockResolvedValue(false);
+    useMealScreenFlagStore.getState().put(EVENT, { flag: PAST, food: null });
+    const view = render(line(['chicken']));
+    await waitFor(() => expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined());
+    expect(view.queryByText('+ End the trial')).toBeNull();
+    expect(mockRunning).toHaveBeenCalledWith('pet-1', TRIAL);
   });
 
   it('never twice: a remount after it showed shows nothing', async () => {

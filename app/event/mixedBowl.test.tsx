@@ -46,6 +46,12 @@ jest.mock('../../lib/measureNode', () => ({
   measureNodeInWindow: (n: unknown, cb: (r: unknown) => void) => mockMeasure(n, cb),
 }));
 
+// The pet's trial is the one the waiting heads-up was raised under.
+jest.mock('../../lib/trialContaminant', () => ({
+  ...jest.requireActual('../../lib/trialContaminant'),
+  isRunningTrialForPet: jest.fn().mockResolvedValue(true),
+}));
+
 const mockLoadMealBowls = jest.fn();
 jest.mock('../../lib/mealBowls', () => ({
   ...jest.requireActual('../../lib/mealBowls'),

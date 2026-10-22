@@ -15,7 +15,7 @@
 // waiting heads-up: `take` hands it to this screen and forgets it, and the ledger write is
 // idempotent, so a food never speaks twice.
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AccessibilityInfo, AppState, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router, useIsFocused } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
@@ -24,6 +24,7 @@ import { useMealScreenFlagStore, type MealScreenFlag } from '../../store/mealScr
 import {
   END_TRIAL_LINE,
   hasFlaggedFoodInTrial,
+  isRunningTrialForPet,
   mealScreenFlagCopy,
   noteTrialFlagShown,
 } from '../../lib/trialContaminant';
@@ -45,10 +46,19 @@ interface Props {
    *  screen (adversarial pass 1: rendered is not seen, and below the fold on a photo meal
    *  it is not). The ledger is spent only on `true`. */
   reveal: (node: View) => Promise<boolean>;
+  /** False while the screen's layout above the line can still move it, or something covers
+   *  the screen (a photo still loading in over it, the photo viewer up; adversarial pass 2):
+   *  the line waits to be revealed until it is true. */
+  revealReady: boolean;
 }
 
-export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal }: Props) {
+export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal, revealReady }: Props) {
   const panelRef = useRef<View>(null);
+  // The heads-up this line has spent, so a refocus or a late pet name never reveals,
+  // announces or spends it again. The name is read through a ref for the same reason.
+  const spentRef = useRef<MealScreenFlag | null>(null);
+  const petNameRef = useRef(petName);
+  petNameRef.current = petName;
   const focused = useIsFocused();
   const waiting = useMealScreenFlagStore((s) => s.pending[eventId] ?? null);
   const [shown, setShown] = useState<MealScreenFlag | null>(null);
@@ -66,29 +76,37 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal 
     let live = true;
     void (async () => {
       const { trialId, foodId } = waiting.flag;
-      const spent = await hasFlaggedFoodInTrial(trialId, foodId).catch(() => false);
+      const [spent, running] = await Promise.all([
+        hasFlaggedFoodInTrial(trialId, foodId).catch(() => false),
+        isRunningTrialForPet(petId, trialId),
+      ]);
       // A newer edit's verdict, or a blur, while the ledger was read: the next run decides.
       if (!live || useMealScreenFlagStore.getState().pending[eventId] !== waiting) return;
       useMealScreenFlagStore.getState().take(eventId);
-      // Already spoken for since (a card on another meal): dropped, as the card would.
-      if (!spent) setShown(waiting);
+      // Already spoken for since (a card on another meal), or its trial is over: dropped.
+      if (!spent && running) setShown(waiting);
     })();
     return () => { live = false; };
-  }, [waiting, focused, mealFoodIds, eventId]);
+  }, [waiting, focused, mealFoodIds, eventId, petId]);
 
   // Spent once the line is ON SCREEN, never on render alone: the screen scrolls it into
   // view and measures. A line the owner scrolls away from first stays unspent, and the
   // food is warned about again at its next feeding (the loud direction). Announced on
   // both platforms: the line carries no live region, and arriving still is no reason
   // for VoiceOver to miss it.
+  // Gated on focus and readiness like the take (adversarial pass 2): a blur during the
+  // reveal's settle cancels it, and the next focus measures again.
   useEffect(() => {
-    if (!shown) return;
+    if (!shown || !focused || !revealReady || spentRef.current === shown) return;
     let live = true;
     const node = panelRef.current;
     if (!node) return;
     void reveal(node).then((seen) => {
-      if (!live || !seen) return;
-      const copy = mealScreenFlagCopy(shown.flag, petName);
+      // The app in the background is not the owner reading the line either.
+      const away = AppState.currentState === 'background' || AppState.currentState === 'inactive';
+      if (!live || !seen || away || spentRef.current === shown) return;
+      spentRef.current = shown;
+      const copy = mealScreenFlagCopy(shown.flag, petNameRef.current);
       AccessibilityInfo.announceForAccessibility(
         [copy.eyebrow ? `${copy.eyebrow}.` : null, copy.headline, copy.detail].filter(Boolean).join(' '),
       );
@@ -97,7 +115,7 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal 
       });
     }).catch((e: unknown) => console.warn('[trial heads-up line] reveal failed:', e));
     return () => { live = false; };
-  }, [shown, eventId, reveal, petName]);
+  }, [shown, eventId, reveal, focused, revealReady]);
 
   // A later edit can take the food back out while the line is up: it goes with the food.
   // While the screen re-reads on a refocus (ids null) the line holds still (Principle 9).
