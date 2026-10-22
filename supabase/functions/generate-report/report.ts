@@ -2925,7 +2925,24 @@ export interface AtAGlance {
    */
   firstHalfLoggedDays: number
   secondHalfLoggedDays: number
+  /**
+   * The UNLOGGED TAIL (CUL-2101): local days after the last day with ANY log, through the window
+   * end; the whole window when nothing was logged. A recency or count claim that spans this stretch
+   * reads the silence as quiet days ("most recent 10 days ago" over seven days nobody logged), so
+   * the render names it where each such claim is printed, from at least `UNLOGGED_TAIL_MIN_DAYS`.
+   * Same `loggedDayNums` as `loggedDays`, so the tail can never disagree with "N of M days logged".
+   * Required, not optional: a fixture that omits it would silently claim a fully logged window.
+   */
+  unloggedTailDays: number
 }
+
+/**
+ * The shortest unlogged tail the report names (CUL-2101, PM ruling 2026-10-22). One day is the
+ * window's own last day, which on the default basis is TODAY and is unlogged on almost every report
+ * made before the owner's first log of the day; naming it would say nothing about the pet and would
+ * change most reports. Two days is the first tail that includes a whole elapsed day nobody logged.
+ */
+export const UNLOGGED_TAIL_MIN_DAYS = 2
 
 /**
  * Off-diet protein exposure binned by the SAME weekly buckets as the symptom chart (#9) — the
@@ -6228,6 +6245,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     loggedDaysSinceLastEpisode,
     firstHalfLoggedDays,
     secondHalfLoggedDays,
+    unloggedTailDays: lastLoggedDayNum === null ? windowDays : Math.max(0, endDayNum - lastLoggedDayNum),
   }
 
   // ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ───────────────

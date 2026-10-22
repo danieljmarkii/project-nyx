@@ -88,7 +88,7 @@ import { summariseIntake } from './report.ts'
 import { drawsStopMark, isWindowChange } from './report.ts'
 // The symptom chart's week floor and the late-log line's threshold (CUL-1995, CUL-2001): value
 // imports, so the chart, the half trend and the copy read the number the snapshot was built on.
-import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, type SafetyCheck, type ThinWeek } from './report.ts'
+import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, UNLOGGED_TAIL_MIN_DAYS, type SafetyCheck, type ThinWeek } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -2607,6 +2607,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const adjacencyBit = f.coughVomitAdjacent
         ? ` Cough and vomiting are both flagged chronic for this patient. Post-tussive vomiting, and cough mistaken for hairball retching, are common in both directions, so <b>either count may be understated as readily as overstated</b> &mdash; both are owner-classified, reported separately and un-reclassified.`
         : ''
+      // The recency clause carries the unlogged tail (CUL-2101, PM ruling (a)): "most recent 10 days
+      // ago" over seven days with no log of any kind reads the silence as quiet days on the lead line
+      // of the safety band. Capped at the recency figure, so it can never outrun it.
+      const tailDays = unloggedTailOf(snap.atAGlance, f.daysSinceLastEpisode)
+      const recencyTail = tailDays === null ? '' : `; the last ${num(tailDays)} days unlogged`
       return flagRow(
         'Chronicity',
         // "SPANS", not "has been ongoing" (CUL-687, adversarial pass 2026-08-28). This is the
@@ -2627,7 +2632,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago${recencyTail}. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
     case 'symptom_burden': {
@@ -5365,6 +5370,18 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
       </div>`
 }
 
+/**
+ * The unlogged tail a claim spans, or null when there is none worth naming (CUL-2101). `cap` is the
+ * claim's own reach back from the window end: a recency figure can never be outrun by its tail, so
+ * "most recent 6 days ago; the last 7 days unlogged" is unwritable even where the recency is the
+ * engine's UTC count and the tail is local. Every caller renders nothing on null, which is what
+ * keeps a report without a tail byte-identical.
+ */
+function unloggedTailOf(ag: AtAGlance, cap: number = Infinity): number | null {
+  const tail = Math.min(ag.unloggedTailDays, cap)
+  return tail >= UNLOGGED_TAIL_MIN_DAYS ? tail : null
+}
+
 /** The diet-trial At-a-glance tiles (the pre-round-2 set — appropriate only when a trial is active). */
 function trialTiles(snap: ReportSnapshot): string[] {
   const ag = snap.atAGlance
@@ -5374,11 +5391,21 @@ function trialTiles(snap: ReportSnapshot): string[] {
   const breakdown = snap.symptoms
     .map((s) => `${num(s.count)} ${h(symptomLabel(s.type).toLowerCase())}`)
     .join(', ')
+  // The count names its logged days WHERE IT IS PRINTED when logging stopped before the window end
+  // (CUL-2101): "5 / 88 d" read as five over 88 observed days when all five fell in the 23 anyone
+  // logged, and the caveat that said so sat a page further down.
+  const tail = unloggedTailOf(ag)
+  const tailLine =
+    tail === null
+      ? ''
+      : ag.loggedDays === 0
+        ? '<br/>nothing logged in this window'
+        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; the last ${num(tail)} unlogged`
   tiles.push(
     tile(
       `${ag.totalSymptomIncidents}`,
       `<small>&nbsp;/&nbsp;${ag.windowDays}&nbsp;d</small>`,
-      `Symptom events${breakdown ? `<br/>${breakdown}` : ''}`,
+      `Symptom events${breakdown ? `<br/>${breakdown}` : ''}${tailLine}`,
     ),
   )
 
@@ -5547,11 +5574,16 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
   // Tile 1 — episodes since onset. An onset-scoped denominator, not the window: for a mid-window
   // onset (Nyx: ~46 of 91 days) the window denominator dilutes the rate a vet actually reads.
   if (ps && ag.sinceOnsetDays !== null) {
+    // Same class as the trial tile's count (CUL-2101): the since-onset days run to the window end,
+    // so a tail nobody logged is named here. Tile 3 beside it carries the logged-day coverage.
+    const tail = unloggedTailOf(ag, ag.sinceOnsetDays)
     tiles.push(
       tile(
         `${ps.count}`,
         `<small>&nbsp;/&nbsp;${ag.sinceOnsetDays}&nbsp;d</small>`,
-        `${h(symptomLabel(ps.type))} since onset<br/>on ${num(ps.symptomDays)} of ${num(ag.sinceOnsetDays)} days`,
+        `${h(symptomLabel(ps.type))} since onset<br/>on ${num(ps.symptomDays)} of ${num(ag.sinceOnsetDays)} days${
+          tail === null ? '' : `<br/>the last ${num(tail)} days unlogged`
+        }`,
       ),
     )
   } else {
