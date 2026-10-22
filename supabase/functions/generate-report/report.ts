@@ -3679,7 +3679,11 @@ export function buildDetectionInput(
       // the exposure the engine misses (§5.3). No food id stands for the bowl (T2).
       ...(e.meal.bowl
         ? {
-            proteins: [...new Set(e.meal.bowl.components.map((c) => c.primaryProtein).filter((p): p is string => !!p))],
+            // A bowl read as its last recorded foods (CUL-2096) gives the engine no protein,
+            // as the signal pipeline's `mapBowlRow` does: the set is stale.
+            proteins: e.meal.bowl.lastRecorded
+              ? []
+              : [...new Set(e.meal.bowl.components.map((c) => c.primaryProtein).filter((p): p is string => !!p))],
             bowl: {
               status: e.meal.bowl.status,
               compositionKey: e.meal.bowl.compositionKey,

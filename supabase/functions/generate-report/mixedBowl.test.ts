@@ -7,7 +7,9 @@ import { strict as assert } from 'node:assert'
 import {
   assembleReport,
   bowlLabel,
+  buildDetectionInput,
   dedupeEvents,
+  resolveScope,
   type ReportEventInput,
   type ReportInput,
   type ReportMealComponent,
@@ -242,4 +244,19 @@ Deno.test('a last recorded bowl is labelled as such; a mix and an incomplete bow
   assert.equal(bowlLabel({ ...base, status: 'incomplete', lastRecorded: true }), 'Chicken Pâté + Rabbit Pâté, mixed (as last recorded; record incomplete)')
   assert.equal(bowlLabel({ ...base, status: 'mix' }), 'Chicken Pâté + Rabbit Pâté, mixed')
   assert.equal(bowlLabel({ ...base, status: 'incomplete' }), 'Chicken Pâté + Rabbit Pâté + another food, mixed (record incomplete)')
+})
+
+// CUL-2096, adversarial pass 2 Q1: the report's detection input gives a last recorded bowl
+// no protein, as the signal pipeline does, so the stale set never widens the vet report's
+// candidate family. A live bowl still hands over its proteins.
+Deno.test("the report's detection input gives a last recorded bowl no protein", () => {
+  const input = { ...cooperInput(), audience: { kind: 'owner' as const, includeLookNotes: true } }
+  const live = mixMeal('2026-06-20', [part(HP, 0.5), part(CHICKEN, 0.5)])
+  const stale = mixMeal('2026-06-21', [part(HP, 0.5), part(CHICKEN, 0.5)], { status: 'incomplete' })
+  stale.meal!.bowl!.lastRecorded = true
+  const det = buildDetectionInput(input, resolveScope(input), [live, stale].map((e) => ({ ...e, dupCount: 0 })), new Set())
+  const byId = new Map(det.mealEvents.map((m) => [m.id, m]))
+  assert.deepEqual(byId.get(stale.id)?.proteins, [])
+  assert.equal(byId.get(stale.id)?.bowl?.status, 'incomplete')
+  assert.ok((byId.get(live.id)?.proteins ?? []).length > 0)
 })
