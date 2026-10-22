@@ -18,6 +18,7 @@ jest.mock('../../lib/dietTrialSetup', () => ({
   addTrialFood: (...a: unknown[]) => mockAddTrialFood(...a),
 }));
 
+import { AccessibilityInfo } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TrialHeadsUpLine } from './TrialHeadsUpLine';
@@ -53,14 +54,16 @@ const PAST: LogTimeTrialFlag = {
 };
 const TURKEY = { id: 'turkey', brand: 'Hill’s', product_name: 'Turkey', food_type: 'meal' };
 
+const mockReveal = jest.fn();
 function line(mealFoodIds: string[] | null) {
-  return <TrialHeadsUpLine eventId={EVENT} petId="pet-1" petName="Pixel" mealFoodIds={mealFoodIds} />;
+  return <TrialHeadsUpLine eventId={EVENT} petId="pet-1" petName="Pixel" mealFoodIds={mealFoodIds} reveal={mockReveal} />;
 }
 
 beforeEach(async () => {
   jest.clearAllMocks();
   mockFocused = true;
   mockAddTrialFood.mockResolvedValue('row-1');
+  mockReveal.mockResolvedValue(true);
   await AsyncStorage.clear();
   await clearTrialHeadsUpLedger();
   useMealScreenFlagStore.getState().reset();
@@ -77,6 +80,27 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined();
     // A contents flag carries no door, as on the card.
     expect(view.queryByText(/^\+ /)).toBeNull();
+  });
+
+  it('rendered is not seen: below the fold and never brought into view, it spends nothing', async () => {
+    mockReveal.mockResolvedValue(false);
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    const view = render(line(['chicken']));
+    await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
+    await waitFor(() => expect(mockReveal).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(false);
+  });
+
+  it('brought into view, it is spent and announced', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+    useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
+    render(line(['chicken']));
+    await waitFor(async () => expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(true));
+    expect(announce).toHaveBeenCalledWith(
+      'This bowl has chicken in it, from Chicken Pâté. Pixel’s rabbit trial should skip chicken. The change is saved and counts in the trial record. Maybe a note for your vet.',
+    );
+    announce.mockRestore();
   });
 
   it('never twice: a remount after it showed shows nothing', async () => {

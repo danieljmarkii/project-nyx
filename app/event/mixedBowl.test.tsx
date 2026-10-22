@@ -39,6 +39,13 @@ jest.mock('expo-router', () => {
   };
 });
 
+// The platform's measurement is the one edge stubbed (the test renderer never answers
+// `measureInWindow`): the scroll frame, and the heads-up line wholly inside it.
+const mockMeasure = jest.fn((_n: unknown, cb: (r: unknown) => void) => cb({ x: 0, y: 100, width: 390, height: 120 }));
+jest.mock('../../lib/measureNode', () => ({
+  measureNodeInWindow: (n: unknown, cb: (r: unknown) => void) => mockMeasure(n, cb),
+}));
+
 const mockLoadMealBowls = jest.fn();
 jest.mock('../../lib/mealBowls', () => ({
   ...jest.requireActual('../../lib/mealBowls'),
@@ -184,6 +191,32 @@ describe('the trial heads-up for a food put in after the fact (CUL-2088)', () =>
     await waitFor(() => expect(view.getByText('This bowl has chicken in it, from Chicken Pâté.')).toBeTruthy());
     view.getByText('Biscuit’s rabbit trial should skip chicken. The change is saved and counts in the trial record. Maybe a note for your vet.');
     await waitFor(async () => expect(await hasFlaggedFoodInTrial('trial-1', 'f0')).toBe(true));
+  });
+
+  it('a line the screen cannot bring into view is not spent', async () => {
+    // The frame measures; the line sits below it and the scroll cannot move it in.
+    let call = 0;
+    mockMeasure.mockImplementation((_n, cb) => cb(call++ % 2 === 0
+      ? { x: 0, y: 100, width: 390, height: 480 }
+      : { x: 0, y: 700, width: 390, height: 120 }));
+    useMealScreenFlagStore.getState().put('evt-1', {
+      flag: {
+        kind: 'off_diet_protein', trialId: 'trial-1', foodId: 'f0', proteins: ['chicken'],
+        trialProteins: ['rabbit'], bowl: { foodLabel: 'Chicken Pâté', pastTarget: false },
+      },
+      food: null,
+    });
+    mockGetEventById.mockResolvedValue(row({ food_item_id: null }));
+    mockGetMealForEvent.mockResolvedValue({
+      food_item_id: null, food_brand: null, food_product_name: null, food_format: null, food_type: null, intake_rating: null,
+    });
+    mockLoadMealBowls.mockResolvedValue(new Map([['evt-1', BOWL]]));
+    const view = render(<EventDetailScreen />);
+    await waitFor(() => expect(view.getByText('This bowl has chicken in it, from Chicken Pâté.')).toBeTruthy());
+    await waitFor(() => expect(call).toBeGreaterThanOrEqual(4), { timeout: 2000 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await hasFlaggedFoodInTrial('trial-1', 'f0')).toBe(false);
+    mockMeasure.mockImplementation((_n, cb) => cb({ x: 0, y: 100, width: 390, height: 120 }));
   });
 
   it('nothing waiting: no line', async () => {

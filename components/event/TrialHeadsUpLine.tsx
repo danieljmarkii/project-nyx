@@ -7,14 +7,15 @@
 // is information and arrives still.
 //
 // THE LEDGER IS SPENT HERE, AND ONLY ONCE THE LINE IS ON SCREEN — the card's rule
-// (`noteTrialFlagShown`): the screen is focused, its own fresh read says the meal still
+// (`noteTrialFlagShown`): scrolled into view and measured there (`reveal`), the screen
+// focused, its own fresh read says the meal still
 // holds the food, and the food is still unspent for this trial at that moment (a card on
 // another meal may have spoken for it since). A food spoken for elsewhere drops the waiting
 // heads-up; one the meal does not hold keeps it waiting; neither spends. One line per
 // waiting heads-up: `take` hands it to this screen and forgets it, and the ledger write is
 // idempotent, so a food never speaks twice.
-import { useEffect, useState } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router, useIsFocused } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
@@ -40,9 +41,14 @@ interface Props {
   /** The foods the meal holds, from this screen's own read; null until it answers. The
    *  line waits for it, so a heads-up is never shown for a food an edit took back out. */
   mealFoodIds: readonly string[] | null;
+  /** Brings the line into the screen's view and answers whether it is now wholly on
+   *  screen (adversarial pass 1: rendered is not seen, and below the fold on a photo meal
+   *  it is not). The ledger is spent only on `true`. */
+  reveal: (node: View) => Promise<boolean>;
 }
 
-export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds }: Props) {
+export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal }: Props) {
+  const panelRef = useRef<View>(null);
   const focused = useIsFocused();
   const waiting = useMealScreenFlagStore((s) => s.pending[eventId] ?? null);
   const [shown, setShown] = useState<MealScreenFlag | null>(null);
@@ -70,13 +76,28 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds }: Props
     return () => { live = false; };
   }, [waiting, focused, mealFoodIds, eventId]);
 
-  // Spent after the commit that put the line on screen, never before.
+  // Spent once the line is ON SCREEN, never on render alone: the screen scrolls it into
+  // view and measures. A line the owner scrolls away from first stays unspent, and the
+  // food is warned about again at its next feeding (the loud direction). Announced on
+  // both platforms: the line carries no live region, and arriving still is no reason
+  // for VoiceOver to miss it.
   useEffect(() => {
     if (!shown) return;
-    noteTrialFlagShown(shown.flag, eventId).catch((e: unknown) => {
-      console.warn('[trial heads-up line] ledger write failed:', e);
-    });
-  }, [shown, eventId]);
+    let live = true;
+    const node = panelRef.current;
+    if (!node) return;
+    void reveal(node).then((seen) => {
+      if (!live || !seen) return;
+      const copy = mealScreenFlagCopy(shown.flag, petName);
+      AccessibilityInfo.announceForAccessibility(
+        [copy.eyebrow ? `${copy.eyebrow}.` : null, copy.headline, copy.detail].filter(Boolean).join(' '),
+      );
+      noteTrialFlagShown(shown.flag, eventId).catch((e: unknown) => {
+        console.warn('[trial heads-up line] ledger write failed:', e);
+      });
+    }).catch((e: unknown) => console.warn('[trial heads-up line] reveal failed:', e));
+    return () => { live = false; };
+  }, [shown, eventId, reveal, petName]);
 
   // A later edit can take the food back out while the line is up: it goes with the food.
   // While the screen re-reads on a refocus (ids null) the line holds still (Principle 9).
@@ -108,7 +129,7 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds }: Props
   }
 
   return (
-    <View style={styles.panel}>
+    <View ref={panelRef} collapsable={false} style={styles.panel}>
       <View style={styles.textBlock} accessibilityRole="summary" accessibilityLabel={label}>
         {copy.eyebrow ? <ThemedText style={styles.eyebrow}>{copy.eyebrow}</ThemedText> : null}
         <ThemedText style={styles.headline}>{copy.headline}</ThemedText>

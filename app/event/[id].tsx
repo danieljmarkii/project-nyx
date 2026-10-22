@@ -1,4 +1,8 @@
 import { useState, useCallback, useRef } from 'react';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import { isWhollyInView, scrollDeltaToReveal } from '../../lib/revealInScroll';
+import { measureNodeInWindow } from '../../lib/measureNode';
+import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -150,6 +154,11 @@ function ComboLinkRow({
   );
 }
 
+// CUL-2088 — the room left under the trial heads-up line when it is scrolled into view,
+// and how long a scroll takes to settle before the line is measured again.
+const REVEAL_MARGIN = theme.space2;
+const REVEAL_SETTLE_MS = 400;
+
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { removeFromToday } = useEventStore();
@@ -184,6 +193,34 @@ export default function EventDetailScreen() {
   // CUL-2088 — the foods this meal holds, from this load's own read (null until it answers),
   // so a trial heads-up waiting for this screen is shown only for a food still in the meal.
   const [mealFoodIds, setMealFoodIds] = useState<string[] | null>(null);
+  // CUL-2088 — the scroll the heads-up line asks to be brought into view in, so it is
+  // spent only once it is on screen (adversarial pass 1).
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollFrameRef = useRef<View>(null);
+  const scrollYRef = useRef(0);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollYRef.current = e.nativeEvent.contentOffset.y;
+  }, []);
+  const revealInScroll = useCallback((node: View) => {
+    // Through the shared helper: a node the platform will not measure is null, never a hang.
+    const rectOf = (n: View | null) => new Promise<{ top: number; bottom: number } | null>((done) =>
+      measureNodeInWindow(n, (r) => done(r && r.height > 0 ? { top: r.y, bottom: r.y + r.height } : null)));
+    const measure = async () => {
+      const [frame, line] = await Promise.all([rectOf(scrollFrameRef.current), rectOf(node)]);
+      return frame && line ? { frame, line } : null;
+    };
+    return measure().then(async (m) => {
+      if (!m) return false;
+      const dy = scrollDeltaToReveal(m.line, m.frame, REVEAL_MARGIN);
+      if (dy === 0) return true;
+      const still = reducedMotionNow();
+      scrollRef.current?.scrollTo({ y: Math.max(0, scrollYRef.current + dy), animated: !reducedMotionNow() });
+      // Measure again once the scroll has settled: only a line wholly in view is seen.
+      await new Promise((r) => setTimeout(r, still ? 0 : REVEAL_SETTLE_MS));
+      const after = await measure();
+      return after !== null && isWhollyInView(after.line, after.frame);
+    });
+  }, []);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   // Medication (dose) detail — B-117 PR 8. `dose` carries the drug-library display
   // fields; `adherence` is the mutable rating (the intakeRating analog); `doubleDose`
@@ -854,7 +891,8 @@ export default function EventDetailScreen() {
         onLeadingPress={() => router.back()}
       />
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <View ref={scrollFrameRef} collapsable={false} style={styles.scrollFrame}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} onScroll={onScroll} scrollEventThrottle={16}>
         {/* Hero photo — present when a photo exists; on symptom events without
             a photo, an empty-state tap-to-add hero. Meals skip the empty hero. */}
         {photoUri ? (
@@ -1048,6 +1086,7 @@ export default function EventDetailScreen() {
               petId={event.pet_id}
               petName={eventPetName}
               mealFoodIds={mealFoodIds}
+              reveal={revealInScroll}
             />
           ) : null}
 
@@ -1206,6 +1245,7 @@ export default function EventDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
+      </View>
 
       {/* Bottom actions — Edit is the filled primary; Remove is a subordinate,
           destructive text action below it (PM call: a single secondary action
@@ -1242,6 +1282,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
+  },
+  scrollFrame: {
+    flex: 1,
   },
   scroll: {
     paddingBottom: theme.space5,
