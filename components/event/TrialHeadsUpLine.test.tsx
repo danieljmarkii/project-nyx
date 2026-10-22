@@ -110,12 +110,16 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeDefined();
   });
 
-  it('a food the meal no longer holds is dropped unspent, so its next feeding is warned', async () => {
+  it('a food the screen\'s read does not show yet keeps waiting, unspent, until a fresh read does', async () => {
+    // Back from the edit screen, focus can arrive before the re-read replaces the old food.
     useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
     const view = render(line(['rabbit']));
-    await waitFor(() => expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined());
+    await act(async () => {});
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
+    expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeDefined();
     expect(await hasFlaggedFoodInTrial(TRIAL, 'chicken')).toBe(false);
+    view.rerender(line(['rabbit', 'chicken']));
+    await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
   });
 
   it('a food already spoken for since (a card elsewhere) stays quiet', async () => {

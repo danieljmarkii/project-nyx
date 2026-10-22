@@ -9,9 +9,9 @@
 // THE LEDGER IS SPENT HERE, AND ONLY ONCE THE LINE IS ON SCREEN — the card's rule
 // (`noteTrialFlagShown`): the screen is focused, its own fresh read says the meal still
 // holds the food, and the food is still unspent for this trial at that moment (a card on
-// another meal may have spoken for it since). Anything else drops the waiting heads-up
-// without spending, so the food is warned about at its next feeding. One line per waiting
-// heads-up: `take` hands it to this screen and forgets it, and the ledger write is
+// another meal may have spoken for it since). A food spoken for elsewhere drops the waiting
+// heads-up; one the meal does not hold keeps it waiting; neither spends. One line per
+// waiting heads-up: `take` hands it to this screen and forgets it, and the ledger write is
 // idempotent, so a food never speaks twice.
 import { useEffect, useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -52,15 +52,20 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds }: Props
 
   useEffect(() => {
     if (!waiting || !focused || mealFoodIds === null) return;
+    // Not held YET is not a verdict: back from the edit screen, focus can land a commit
+    // before this screen's re-read replaces the old food's ids, and dropping here would
+    // lose the heads-up for the food the edit just put in. It stays waiting; the next
+    // edit of this meal replaces or clears it.
+    if (!mealFoodIds.includes(waiting.flag.foodId)) return;
     let live = true;
     void (async () => {
       const { trialId, foodId } = waiting.flag;
-      const holds = mealFoodIds.includes(foodId);
-      const spent = holds ? await hasFlaggedFoodInTrial(trialId, foodId).catch(() => false) : false;
+      const spent = await hasFlaggedFoodInTrial(trialId, foodId).catch(() => false);
       // A newer edit's verdict, or a blur, while the ledger was read: the next run decides.
       if (!live || useMealScreenFlagStore.getState().pending[eventId] !== waiting) return;
       useMealScreenFlagStore.getState().take(eventId);
-      if (holds && !spent) setShown(waiting);
+      // Already spoken for since (a card on another meal): dropped, as the card would.
+      if (!spent) setShown(waiting);
     })();
     return () => { live = false; };
   }, [waiting, focused, mealFoodIds, eventId]);
