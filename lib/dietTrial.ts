@@ -2645,6 +2645,34 @@ function refusalHistoryOf(
   };
 }
 
+/** The widest gap between two IANA zones' calendar dates at one instant: UTC+14
+ *  (Kiritimati) against UTC−12 (Baker Island) is 26 hours, which spans two dates. */
+export const MAX_ZONE_DATE_LEAD_DAYS = 2;
+
+/**
+ * CUL-2094 — "today" on the OWNER's calendar, for a trial they have ended.
+ *
+ * `started_at` and `ended_at` are DATE columns written from the writing device's own
+ * local day, so both ends of a trial are owner-local and read zone-free. Today is the
+ * READER's local day. When the owner ends a trial just after midnight in a zone ahead
+ * of the reader's (another device, the web, a profile zone that lags the phone), the
+ * stored end is a day past the reader's today, and `min(today, end)` cut a trial run
+ * to its 56th day to 55: "Marked complete at day 55 — 1 day short of the 56-day
+ * window", in bold, on the vet report, over an owner who did everything asked.
+ *
+ * Having written that date, the owner's clock had reached it, so for an ENDED trial
+ * "now" is at least its end. Bounded at the widest real gap between two zones' dates:
+ * an end further ahead than any zone can be is not a clock, and keeps the reader's
+ * today — the shorter count, which can only say "short", never "complete".
+ *
+ * An active trial, or an end on or before the reader's today, returns the reader's
+ * today unchanged, so every other trial takes exactly the path it always did.
+ */
+export function ownerTodayIndex(readerToday: number, endDayIndex: number | null): number {
+  if (endDayIndex === null || endDayIndex <= readerToday) return readerToday;
+  return endDayIndex - readerToday <= MAX_ZONE_DATE_LEAD_DAYS ? endDayIndex : readerToday;
+}
+
 export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
   const empty: TrialExposureSummary = {
@@ -2940,7 +2968,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // arithmetic knew the two were different. A surface that states an
   // interpretability verdict reads this first: a view of a trial is not the trial,
   // and eleven days may not certify eighty-four.
-  const trialElapsedEnd = Math.min(todayIndex, ctx.endDayIndex ?? todayIndex);
+  //
+  // CUL-2094 — THE LENGTH IS COUNTED ON THE OWNER'S CALENDAR, THE EVIDENCE ON THE
+  // READER'S. `ownerTodayIndex` lets an ended trial's length reach the end date the
+  // owner's device wrote, even when that date is a day past the reader's today. It
+  // must not move `evidenceEnd`: the first cut lifted that too, and the adversarial
+  // pass priced it at once. The 14-day refusal window is anchored on `evidenceEnd`, so
+  // it slid onto days the reader's zone had not reached and dropped a cat's three
+  // refused bowls from 13 days before the report, with no real time passed; and the
+  // coverage denominator gained a day no meal could yet be bucketed on (55 of 56).
+  // So the record is read to the reader's today, as before, and the owner's last day
+  // shows as a trial day after it (`trialDaysOutsideRange.after`), which is true.
+  const trialElapsedEnd = Math.min(
+    ownerTodayIndex(todayIndex, ctx.endDayIndex),
+    ctx.endDayIndex ?? todayIndex,
+  );
   const trialDaysOutsideRange = {
     before: Math.max(0, scopedStart - ctx.startDayIndex),
     after: Math.max(0, trialElapsedEnd - evidenceEnd),
