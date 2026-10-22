@@ -417,8 +417,12 @@ function mapBowlRow(
   bowl: MealBowl<FoodItemJoin>,
   pairedEventIds: Set<string>,
 ): MealEvent {
+  // A bowl read as its last recorded foods (CUL-2096) hands the engine no protein, exactly
+  // as the all-tombstone bowl did before: the set is stale, and its proteins grew the
+  // candidate family, split collinear clusters and withheld forward cards (adversarial
+  // passes 1 and 2). It stays incomplete, so its window is still never a control.
   const proteins: string[] = []
-  for (const c of bowl.components) {
+  for (const c of bowl.lastRecorded ? [] : bowl.components) {
     for (const p of [c.food?.primary_protein ?? null, ...(c.food?.proteins ?? [])]) {
       if (p && !proteins.includes(p)) proteins.push(p)
     }

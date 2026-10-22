@@ -6,7 +6,10 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  bowlLabel,
+  buildDetectionInput,
   dedupeEvents,
+  resolveScope,
   type ReportEventInput,
   type ReportInput,
   type ReportMealComponent,
@@ -227,4 +230,33 @@ Deno.test('a report with no mixed bowl prints no switch row beyond what the reco
   const p = plain(renderReport(assembleReport(trialInput(dailyTrial()))))
   assert.ok(!p.includes('mixed bowl'))
   assert.ok(!p.includes('New foods after the trial'))
+})
+
+// CUL-2096: a bowl with no live component names its foods as last recorded, and says the
+// record is incomplete; every other bowl's label is as it was.
+Deno.test('a last recorded bowl is labelled as such; a mix and an incomplete bowl are unchanged', () => {
+  const comp = (productName: string): ReportMealComponent => ({
+    foodItemId: productName, snapshotLabel: productName, foodKey: `id:${productName}`, foodType: 'meal', format: null,
+    primaryProtein: null, proteins: null, brand: null, productName, share: 0.5, normalizedShare: 0.5,
+    shareSource: 'preset', amountValue: null, amountUnit: null,
+  } as unknown as ReportMealComponent)
+  const base = { components: [comp('Chicken Pâté'), comp('Rabbit Pâté')], compositionKey: 'k', compositionKeyWithRatio: 'k', writtenAtMs: null }
+  assert.equal(bowlLabel({ ...base, status: 'incomplete', lastRecorded: true }), 'Chicken Pâté + Rabbit Pâté, mixed (as last recorded; record incomplete)')
+  assert.equal(bowlLabel({ ...base, status: 'mix' }), 'Chicken Pâté + Rabbit Pâté, mixed')
+  assert.equal(bowlLabel({ ...base, status: 'incomplete' }), 'Chicken Pâté + Rabbit Pâté + another food, mixed (record incomplete)')
+})
+
+// CUL-2096, adversarial pass 2 Q1: the report's detection input gives a last recorded bowl
+// no protein, as the signal pipeline does, so the stale set never widens the vet report's
+// candidate family. A live bowl still hands over its proteins.
+Deno.test("the report's detection input gives a last recorded bowl no protein", () => {
+  const input = { ...cooperInput(), audience: { kind: 'owner' as const, includeLookNotes: true } }
+  const live = mixMeal('2026-06-20', [part(HP, 0.5), part(CHICKEN, 0.5)])
+  const stale = mixMeal('2026-06-21', [part(HP, 0.5), part(CHICKEN, 0.5)], { status: 'incomplete' })
+  stale.meal!.bowl!.lastRecorded = true
+  const det = buildDetectionInput(input, resolveScope(input), [live, stale].map((e) => ({ ...e, dupCount: 0 })), new Set())
+  const byId = new Map(det.mealEvents.map((m) => [m.id, m]))
+  assert.deepEqual(byId.get(stale.id)?.proteins, [])
+  assert.equal(byId.get(stale.id)?.bowl?.status, 'incomplete')
+  assert.ok((byId.get(live.id)?.proteins ?? []).length > 0)
 })

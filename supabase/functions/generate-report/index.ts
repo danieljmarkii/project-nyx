@@ -582,6 +582,7 @@ function mapMealDetail(meal: MealJoin, componentRows: MealComponentJoin<FoodItem
         compositionKey: bowl.compositionKey,
         compositionKeyWithRatio: bowl.compositionKeyWithRatio,
         writtenAtMs: bowl.writtenAtMs,
+        lastRecorded: bowl.lastRecorded,
       },
     }
   }

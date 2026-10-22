@@ -62,6 +62,9 @@ export interface AppBowl {
   compositionKey: string;
   /** The same with each food's share: a ratio step is a different key (§7.2). */
   compositionKeyWithRatio: string;
+  /** No component is live and these are the foods as last recorded (CUL-2096); the
+   *  bowl is then always `incomplete`. */
+  lastRecorded: boolean;
 }
 
 /** A `meal_components` row with its parent's fields and its food's, as the loader reads it. */
@@ -92,7 +95,7 @@ export function bowlFromRows(
     position: c.position,
     foodItemId: c.foodItemId,
     foodLabel: c.foodLabel,
-    food: byId.get(c.id)?.food ?? null,
+    food: composition.lastRecorded ? neverATreat(byId.get(c.id)?.food ?? null) : byId.get(c.id)?.food ?? null,
     share: c.share,
     normalizedShare: c.normalizedShare,
     shareSource: c.shareSource,
@@ -106,7 +109,15 @@ export function bowlFromRows(
     components,
     compositionKey: compositionKey(composition.components),
     compositionKeyWithRatio: compositionKey(composition.components, { withRatio: true }),
+    lastRecorded: composition.lastRecorded,
   };
+}
+
+/** A last recorded set is stale (CUL-2096): its foods' type never makes the bowl a
+ *  treat, which would set its rating aside. Unknown instead, as a type nobody recorded
+ *  reads (adversarial pass 1, F2). The server's `bowlOf` does the same. */
+function neverATreat(food: BowlFood | null): BowlFood | null {
+  return food && food.foodType === 'treat' ? { ...food, foodType: null } : food;
 }
 
 /**

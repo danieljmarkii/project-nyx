@@ -442,6 +442,9 @@ export interface ReportMealBowl {
   compositionKeyWithRatio: string
   /** When the current set was written; an edit more than 24h after the meal is disclosed. */
   writtenAtMs: number | null
+  /** No component is live: these are the foods as last recorded (CUL-2096), always
+   *  `incomplete`. Absent reads as false. */
+  lastRecorded?: boolean
 }
 
 /** One event row from reference query [4] (caller pre-filters deleted_at IS NULL). */
@@ -3230,10 +3233,13 @@ export function componentLabel(c: ReportMealComponent): string {
 /**
  * A mixed bowl's name (Mixed meals, CUL-2052): every food, in the order the owner logged
  * them, and "mixed" so no reader takes it for one food. An incomplete bowl says so: its
- * live components are fewer than it held, so the list is not the whole bowl (§3).
+ * live components are fewer than it held, so the list is not the whole bowl (§3). A bowl
+ * with no live component names its foods as last recorded (CUL-2096): the list may be
+ * stale, never complete.
  */
 export function bowlLabel(bowl: ReportMealBowl): string {
   const names = bowl.components.map(componentLabel)
+  if (bowl.lastRecorded) return `${names.join(' + ')}, mixed (as last recorded; record incomplete)`
   return bowl.status === 'incomplete'
     ? `${names.join(' + ')} + another food, mixed (record incomplete)`
     : `${names.join(' + ')}, mixed`
@@ -3673,7 +3679,11 @@ export function buildDetectionInput(
       // the exposure the engine misses (§5.3). No food id stands for the bowl (T2).
       ...(e.meal.bowl
         ? {
-            proteins: [...new Set(e.meal.bowl.components.map((c) => c.primaryProtein).filter((p): p is string => !!p))],
+            // A bowl read as its last recorded foods (CUL-2096) gives the engine no protein,
+            // as the signal pipeline's `mapBowlRow` does: the set is stale.
+            proteins: e.meal.bowl.lastRecorded
+              ? []
+              : [...new Set(e.meal.bowl.components.map((c) => c.primaryProtein).filter((p): p is string => !!p))],
             bowl: {
               status: e.meal.bowl.status,
               compositionKey: e.meal.bowl.compositionKey,
