@@ -101,7 +101,12 @@ describe('vet visit and vet document guards answer a stranger once (CUL-2105)', 
         ...sql.matchAll(new RegExp(`\\b(GRANT|REVOKE)\\s[^;]*?\\bON\\s+(?:TABLE\\s+)?(?:public\\.)?${table}\\b[^;]*?\\b(?:TO|FROM)\\s+[^;]*\\banon\\b[^;]*;`, 'gi')),
       ];
       expect(grants.length).toBeGreaterThan(0);
-      expect(grants[grants.length - 1][0]).toBe(`REVOKE ALL ON TABLE public.${table} FROM anon;`);
+      const revoke = grants[grants.length - 1];
+      expect(revoke[0]).toBe(`REVOKE ALL ON TABLE public.${table} FROM anon;`);
+      // A schema-wide grant names no table, so the replay above cannot see it:
+      // none may follow the revoke (rls-privacy-reviewer on 109).
+      const after = sql.slice((revoke.index ?? 0) + revoke[0].length);
+      expect(after).not.toMatch(/\bGRANT\s[^;]*\bON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+public\b[^;]*\bTO\s+[^;]*\banon\b/i);
     });
   });
 });

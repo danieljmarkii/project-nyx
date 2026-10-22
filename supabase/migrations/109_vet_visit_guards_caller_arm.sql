@@ -49,8 +49,9 @@
 -- an unchanged row re-pushed always passes the visit check again, and 045's
 -- group check excludes the row itself (d.id <> NEW.id).
 --
--- On vet_documents the caller arm sits ahead of the advisory lock too, so
--- another account can no longer take, or wait on, an owner's group lock.
+-- On vet_documents the caller arm sits ahead of the advisory lock too, so a
+-- write naming another account's pet never takes, or waits on, a group lock.
+-- A write naming the caller's OWN pet still does (below).
 --
 -- Posture B-520 kept: SECURITY DEFINER, search_path pinned to '', EXECUTE
 -- revoked from PUBLIC, anon and authenticated (restated; CREATE OR REPLACE
@@ -63,6 +64,14 @@
 --     real document_group_id (which equals the document's id on a one-page
 --     document) is refused 23514 where a made-up one inserts. It confirms that
 --     an id exists, never whose pet it is.
+--   * The group lock is keyed on document_group_id alone, so another account
+--     naming its OWN pet and a victim's group id takes that group's lock: it
+--     waits while the owner writes the group (which tells it the group is
+--     being written now) and, with an ON CONFLICT DO NOTHING insert of id =
+--     group id, holds the owner's next page off for one request
+--     (rls-privacy-reviewer on this file, measured: 1.5s lock timeouts). It
+--     needs the group's uuid, which RLS hides. Keying the lock on the pet
+--     would drop the cross-pet race 045 closed, so it is filed, not fixed here.
 --   * anon keeps the platform's default grants on the other public tables
 --     (events, pets, vet_visits and more). None of them has a DEFINER guard
 --     that reads before RLS, so none answers this question; RLS refuses every
@@ -170,8 +179,9 @@ AS $$
 DECLARE
   me uuid := auth.uid();
 BEGIN
-  -- The caller's own pet, when there is a caller. Another account lands here
-  -- whatever visit or group it names, before anything is read or locked.
+  -- The caller's own pet, when there is a caller. Another account naming a pet
+  -- not its own lands here whatever visit or group it names, before anything
+  -- is read or locked.
   IF me IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM public.pets p
      WHERE p.id = NEW.pet_id
@@ -234,7 +244,7 @@ REVOKE ALL ON FUNCTION public.enforce_vet_document_pet_scope() FROM anon;
 REVOKE ALL ON FUNCTION public.enforce_vet_document_pet_scope() FROM authenticated;
 
 COMMENT ON FUNCTION public.enforce_vet_document_pet_scope() IS
-  'B-478 VF-1 (044, hardened by 045 and B-520) / CUL-2105 (109): defense-at-rest guard over the references RLS cannot constrain on vet_documents: vet_visit_id (a bare FK) and document_group_id (no FK), plus storage_path immutability. For a signed-in caller NEW.pet_id must be the caller''s pet, checked first, ahead of the advisory lock and every read, so another account gets one 23514 whatever visit or group it names (109 closes the membership oracle both checks carried). anon holds no grant on vet_documents (109). SECURITY DEFINER because an INVOKER group check failed OPEN (045); an advisory lock closes that check''s TOCTOU race; search_path pinned to ''''; EXECUTE revoked from PUBLIC/anon/authenticated. Each RAISE names only NEW.* (C-31).';
+  'B-478 VF-1 (044, hardened by 045 and B-520) / CUL-2105 (109): defense-at-rest guard over the references RLS cannot constrain on vet_documents: vet_visit_id (a bare FK) and document_group_id (no FK), plus storage_path immutability. For a signed-in caller NEW.pet_id must be the caller''s pet, checked first, ahead of the advisory lock and every read, so another account naming a pet not its own gets one 23514 whatever visit or group it names (109 closes the membership oracle both checks carried). anon holds no grant on vet_documents (109). SECURITY DEFINER because an INVOKER group check failed OPEN (045); an advisory lock closes that check''s TOCTOU race; search_path pinned to ''''; EXECUTE revoked from PUBLIC/anon/authenticated. Each RAISE names only NEW.* (C-31).';
 
 
 -- ============================================================
