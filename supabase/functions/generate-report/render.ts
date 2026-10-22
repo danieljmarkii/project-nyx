@@ -2087,7 +2087,9 @@ function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: st
       // (cold read 2 on CUL-2101).
       const seenSpan = Math.min(c.windowDays, c.lookbackDays)
       const seen =
-        tail !== null && tail.days >= seenSpan
+        // Only when the check saw nothing: its lookback is 24-hour steps, so a tail landing on the
+        // lookback's first day can still hold an episode it counted (adversarial pass 2).
+        tail !== null && tail.days >= seenSpan && c.episodes === 0
           ? `none of ${
               c.windowDays < c.lookbackDays ? `this ${num(c.windowDays)}-day report` : `the last ${weeks(c.lookbackDays)}`
             } was logged: ${nothingLoggedFor(tail)}`
@@ -2115,7 +2117,7 @@ function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: st
       rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over the last ${num(
           c.windowDays,
-        )} days below the ${num(c.minEpisodes)} the flag needs.`,
+        )} days below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
       )
     } else if (c.state === 'too_few_days') {
       rest.push(
@@ -5407,7 +5409,7 @@ function unloggedTailOf(ag: AtAGlance): { days: number; after: string | null } |
  * and a date cannot overstate any window or lookback it sits beside.
  */
 function nothingLoggedAfter(t: { after: string | null }): string {
-  return t.after === null ? 'nothing of any kind logged in this window' : `nothing of any kind logged after ${fmtDay(t.after)}`
+  return t.after === null ? 'no event of any kind logged in this window' : `no event of any kind logged after ${fmtDay(t.after)}`
 }
 
 /** The same, with its length: a date alone left the reader to turn it into days (cold read 2). */
@@ -5433,7 +5435,7 @@ function trialTiles(snap: ReportSnapshot): string[] {
       ? ''
       : tail.after === null
         ? '<br/>nothing logged in this window'
-        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; nothing logged after ${fmtDay(tail.after)}`
+        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; no event logged after ${fmtDay(tail.after)}`
   tiles.push(
     tile(
       `${ag.totalSymptomIncidents}`,
@@ -5673,7 +5675,15 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
             `<span class="arw">not compared</span>`,
             `Entries, first vs last half<br/>${thinWeekList(thin.weeks)}`,
           )
-        : tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Entries, first &rarr; last half<br/>${sub}${thinSub}`),
+        : tileHtml(
+            `${firstCount} <span class="arw">&rarr;</span> ${lastCount}`,
+            // The last half runs to the window end, so a fall across a tail nobody logged is named
+            // on the tile that prints it (CUL-2101, adversarial pass 2).
+            `Entries, first &rarr; last half<br/>${sub}${thinSub}${(() => {
+              const tail = unloggedTailOf(ag)
+              return tail === null ? '' : `<br/>${nothingLoggedFor(tail)}`
+            })()}`,
+          ),
     )
   } else {
     tiles.push(weightTile(snap))

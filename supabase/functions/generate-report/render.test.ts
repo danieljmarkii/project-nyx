@@ -2161,10 +2161,10 @@ Deno.test('CUL-2101 — the since-onset count names an unlogged tail from the fl
     monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, unloggedTailDays: 7, lastLoggedDate: '2026-06-25' } }),
   )
   assert.ok(
-    named.includes('on <span class="num">18</span> of <span class="num">46</span> days<br/>nothing of any kind logged after Jun 25'),
+    named.includes('on <span class="num">18</span> of <span class="num">46</span> days<br/>no event of any kind logged after Jun 25'),
     'the tail is named, by date, on the count it spans',
   )
-  assert.ok(!none.includes('nothing of any kind logged'), 'no tail, no clause')
+  assert.ok(!none.includes('no event of any kind logged'), 'no tail, no clause')
 })
 
 Deno.test('CUL-2101 — "none logged" on a no-symptom monitoring report names a tail nobody logged anything in', () => {
@@ -2175,8 +2175,34 @@ Deno.test('CUL-2101 — "none logged" on a no-symptom monitoring report names a 
         atAGlance: { ...monitoringSnap().atAGlance, primarySymptom: null, totalSymptomIncidents: 0, sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, unloggedTailDays, lastLoggedDate: '2026-06-11' },
       }),
     )
-  assert.ok(quiet(21).includes('none logged in this window<br/>nothing of any kind logged after Jun 11'), 'the tail rides the empty count')
+  assert.ok(quiet(21).includes('none logged in this window<br/>no event of any kind logged after Jun 11'), 'the tail rides the empty count')
   assert.equal(quiet(UNLOGGED_TAIL_MIN_DAYS - 1), quiet(0), 'under the floor: the absence')
+})
+
+Deno.test('CUL-2101 adv 2 — the trend tile and a below-floor rise name a tail their last week spans', () => {
+  const tailed = { ...monitoringSnap().atAGlance, unloggedTailDays: 3, lastLoggedDate: '2026-06-29' }
+  const belowFloor = {
+    kind: 'worsening' as const,
+    symptomType: 'diarrhea' as const,
+    windowDays: 7,
+    state: 'below_card_floor' as const,
+    minEpisodes: 3,
+    currentLoggingDays: 4,
+    priorLoggingDays: 7,
+    minLoggingDays: 3,
+  }
+  const at = (atAGlance: typeof tailed) => renderReport(monitoringSnap({ atAGlance, safetyChecks: [belowFloor] }))
+  const html = at(tailed)
+  assert.ok(
+    /Entries, first &rarr; last half<br\/>[^<]*(<span[^>]*>[^<]*<\/span>[^<]*)*<br\/>no event of any kind logged after Jun 29 \(the last <span class="num">3<\/span> days\)/.test(html),
+    'the trend tile names the tail its last half spans',
+  )
+  assert.ok(
+    html.includes('below the <span class="num">3</span> the flag needs; no event of any kind logged after Jun 29 (the last <span class="num">3</span> days).'),
+    'a below-floor rise names the tail the missing episode could sit in',
+  )
+  const none = at({ ...tailed, unloggedTailDays: 0 })
+  assert.ok(!none.includes('no event of any kind logged'), 'no tail, no clause')
 })
 
 Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
