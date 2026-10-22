@@ -17,6 +17,7 @@ import { BowlEditor, type BowlPickerFood, type StagedBowlFood } from '../compone
 import { loadMealBowls, type AppBowl } from '../lib/mealBowls';
 import { componentRowName } from '../lib/mealBowlLabel';
 import { setMealComponents } from '../lib/mealComponents';
+import { forgetFlagsSpentByEvent } from '../lib/trialContaminant';
 import { AMOUNT_UNITS, type AmountUnit } from '../lib/mealComposition';
 import { mixFoodOf } from '../lib/mixCard';
 import { bowlDetailLine } from '../lib/mixDetail';
@@ -649,6 +650,14 @@ export default function EditEventModal() {
         }
       } else if (config.hasFood && currentFoodId && bowlReadOnly === null) {
         await updateMealFood(id, currentFoodId);
+        // CUL-2087: a food this meal spent its one trial heads-up on, and no longer holds,
+        // gets the heads-up back, so its real feeding later is still warned about. The food
+        // now on the meal is kept, so an unchanged food gives nothing back. The bowl branch
+        // above gives back through its own writer. Best-effort, never failing the save: a
+        // miss only leaves the food spent, as it was before this edit.
+        await forgetFlagsSpentByEvent(id, [currentFoodId]).catch((e: unknown) => {
+          console.warn('[edit-event] trial heads-up give-back failed:', e);
+        });
       }
 
       // Through the shared write path, which also refreshes the Signal (CUL-1087), and
