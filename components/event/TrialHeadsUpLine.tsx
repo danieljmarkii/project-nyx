@@ -79,12 +79,14 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds }: Props
   }, [shown, eventId]);
 
   // A later edit can take the food back out while the line is up: it goes with the food.
-  if (!shown || !mealFoodIds?.includes(shown.flag.foodId)) return null;
+  // While the screen re-reads on a refocus (ids null) the line holds still (Principle 9).
+  if (!shown || (mealFoodIds !== null && !mealFoodIds.includes(shown.flag.foodId))) return null;
 
   const { flag, food } = shown;
   const copy = mealScreenFlagCopy(flag, petName);
   const addable = copy.door === 'add_to_list' && flag.kind === 'off_trial_list' && food !== null;
-  const label = [copy.eyebrow, copy.headline, copy.detail].filter(Boolean).join('. ');
+  // Each part already ends its own sentence except the eyebrow.
+  const label = [copy.eyebrow ? `${copy.eyebrow}.` : null, copy.headline, copy.detail].filter(Boolean).join(' ');
 
   async function confirmAdd() {
     if (!food) return;
@@ -115,7 +117,11 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds }: Props
       {copy.door === 'end_trial' ? (
         <TouchableOpacity
           style={styles.doorRow}
-          onPress={() => router.push(trialScreenHref(petId, { open: 'end' }))}
+          onPress={() => {
+            // The line has done its work once the owner takes its door, as the card does.
+            setShown(null);
+            router.push(trialScreenHref(petId, { open: 'end' }));
+          }}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={END_TRIAL_LINE}
@@ -175,6 +181,8 @@ const styles = StyleSheet.create({
   textBlock: {
     gap: 2,
   },
+  // Frames 7a to 7c: the whole panel in the attention ink (7.3:1 on the wash), the
+  // headline and door in the heavier weight, the door underlined so it reads as one.
   eyebrow: {
     fontSize: theme.textXS,
     fontWeight: theme.weightSemibold,
@@ -184,13 +192,13 @@ const styles = StyleSheet.create({
   },
   headline: {
     fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAttentionInk,
   },
   detail: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: theme.colorTextSecondary,
+    color: theme.colorAttentionInk,
   },
   doorRow: {
     minHeight: 44,
@@ -198,7 +206,8 @@ const styles = StyleSheet.create({
   },
   doorText: {
     fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    fontWeight: theme.weightMedium,
+    color: theme.colorAttentionInk,
+    fontWeight: theme.weightSemibold,
+    textDecorationLine: 'underline',
   },
 });

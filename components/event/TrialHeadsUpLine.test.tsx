@@ -130,10 +130,12 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
   });
 
-  it('the line goes with the food when a later edit takes it out', async () => {
+  it('the line holds still through a refocus re-read, and goes with the food when an edit takes it out', async () => {
     useMealScreenFlagStore.getState().put(EVENT, { flag: CONTENTS, food: null });
     const view = render(line(['chicken']));
     await view.findByText('This bowl has chicken in it, from Chicken Pâté.');
+    view.rerender(line(null));
+    view.getByText('This bowl has chicken in it, from Chicken Pâté.');
     view.rerender(line(['rabbit']));
     expect(view.queryByText('This bowl has chicken in it, from Chicken Pâté.')).toBeNull();
   });
@@ -143,6 +145,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     const view = render(line(['turkey']));
     await view.findByText('This one isn’t on Pixel’s trial list.');
     view.getByText('Off the trial list');
+    view.getByLabelText('Off the trial list. This one isn’t on Pixel’s trial list. The change is saved and counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.');
     view.getByText('The change is saved and counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.');
     fireEvent.press(view.getByText('+ Add to the trial list'));
     view.getByText('Add to Pixel’s trial list?');
@@ -165,5 +168,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     view.getByText('The change is saved and counts in the trial record. If Pixel’s trial is over, ending it keeps the record straight.');
     fireEvent.press(view.getByText('+ End the trial'));
     expect(mockPush).toHaveBeenCalledWith('/trial/pet-1?open=end');
+    // Taken, the door leaves with its line: no live "End the trial" on an ended trial.
+    expect(view.queryByText('+ End the trial')).toBeNull();
   });
 });
