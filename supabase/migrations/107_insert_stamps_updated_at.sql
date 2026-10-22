@@ -62,7 +62,10 @@
 -- UPDATE arm now keeps OLD.deleted_at once it is set. Nothing in the app brings a
 -- component back (lib/mealComponents.ts only tombstones and inserts a new
 -- generation), so no real path loses a write. The rest of A's retry still lands,
--- and A converges on its next pull, where the tombstoned row is newer.
+-- and the server copy (what the report and the engines read) is right. A's own
+-- phone takes the tombstone on its next pull when the server's stamp is later
+-- than A's local updated_at; a phone clock running ahead of the server delays
+-- that until A's next edit of the row (the LWW skew 075 notes, not new here).
 --
 -- The guard keeps 105's posture exactly: SECURITY DEFINER, search_path =
 -- pg_catalog, pg_temp, EXECUTE revoked from PUBLIC, anon and authenticated, one
