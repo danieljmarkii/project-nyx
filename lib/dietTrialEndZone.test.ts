@@ -107,11 +107,11 @@ describe('CUL-2094 direction 1 — the end date is ahead of the reader’s today
     expect(localDayIndexOf(nowIso, tz)).toBe(dayIdx('2026-07-02'));
     const f = facts({ trial: FULL, nowIso, timeZone: tz, mealsFrom: '2026-05-09', mealsTo: '2026-07-01' });
     expect(f.trialDaysElapsed).toBe(56);
-    // Nothing of a full-record report falls "after" it: the end is the owner's, not a
-    // window the report closed early (the render's "as of" suffix keys on this).
-    expect(f.trialDaysOutsideRange).toEqual({ before: 0, after: 0 });
-    // The evidence end — the report's "N days, of a 56-day window" — reaches day 56.
-    expect(f.range!.endDayIndex).toBe(dayIdx('2026-07-03'));
+    // The record is still read to the reader's today: the owner's last day has not
+    // begun there, so it is one trial day after what this report can show. True, and
+    // the render says "as of Jul 2" rather than inventing a logged day.
+    expect(f.range!.endDayIndex).toBe(dayIdx('2026-07-02'));
+    expect(f.trialDaysOutsideRange).toEqual({ before: 0, after: 1 });
   });
 
   it('is unchanged when the same report runs a day later in the reader’s zone', () => {
@@ -126,7 +126,7 @@ describe('CUL-2094 direction 1 — the end date is ahead of the reader’s today
     expect(f.trialDaysOutsideRange).toEqual({ before: 0, after: 0 });
   });
 
-  it('still counts the owner’s days when the report window ends on the reader’s today', () => {
+  it('counts the owner’s days when the report window ends on the reader’s today', () => {
     // `resolveScope` closes every report at the reader's today; that bound is "now",
     // not a window the owner chose, so it must not cut the owner's last day off.
     const f = facts({
@@ -139,7 +139,7 @@ describe('CUL-2094 direction 1 — the end date is ahead of the reader’s today
       scopeEnd: '2026-07-02',
     });
     expect(f.trialDaysElapsed).toBe(56);
-    expect(f.trialDaysOutsideRange).toEqual({ before: 0, after: 0 });
+    expect(f.trialDaysOutsideRange).toEqual({ before: 0, after: 1 });
   });
 
   it('keeps a window the owner closed in the past as a window', () => {
@@ -181,6 +181,67 @@ describe('CUL-2094 direction 1 — the end date is ahead of the reader’s today
       mealsTo: '2026-07-01',
     });
     expect(f.trialDaysElapsed).toBe(55);
+  });
+});
+
+// ── The length moves; the evidence does not ─────────────────────────────────
+//
+// The first cut also lifted the evidence end to the owner's end date, and the
+// adversarial pass broke it twice: the 14-day refusal window (anchored on the evidence
+// end) slid onto days the reader's zone had not reached, dropping a cat's refused bowls
+// from 13 days back; and coverage gained an unloggable day (55 of 56). Every fact other
+// than the trial's own length must equal the reading with the end ON the reader's today.
+describe('CUL-2094 — only the trial’s length is read on the owner’s calendar', () => {
+  const NOW = '2026-07-02T23:30:00.000Z'; // Jul 2, 16:30 in Phoenix
+  const CAT: TrialSpec = { id: 't-cat', startedAt: '2026-05-09', targetDurationDays: 56, species: 'cat' };
+
+  /** Rated bowls to Jun 18, three refused bowls Jun 19–20 (Phoenix), then unrated:
+   *  the owner who stops rating, which is the cat the decline lane exists for. */
+  function catBowls(): TrialFeeding[] {
+    const bowls = dailyMeals('2026-05-09', '2026-07-02', MIDDAY_UTC[UTC_MINUS_7]).map((f) => ({
+      ...f,
+      intakeRating: f.occurredAt < '2026-06-19' ? 'all' : null,
+    }));
+    const refused = (eventId: string, iso: string): TrialFeeding => ({
+      ...bowls[0],
+      eventId,
+      occurredAt: iso,
+      intakeRating: 'refused',
+    });
+    return [
+      ...bowls.filter((b) => b.occurredAt < '2026-06-19' || b.occurredAt >= '2026-06-21'),
+      refused('r1', '2026-06-19T15:00:00.000Z'), // 08:00 Phoenix
+      refused('r2', '2026-06-20T03:00:00.000Z'), // 20:00 Jun 19 Phoenix
+      refused('r3', '2026-06-20T15:00:00.000Z'), // 08:00 Jun 20 Phoenix
+    ];
+  }
+
+  function read(endedAt: string): TrialFacts {
+    return computeTrialFacts({
+      trial: { ...CAT, endedAt },
+      allowedFoods: [DUCK],
+      feedings: catBowls(),
+      nowMs: Date.parse(NOW),
+      timeZone: UTC_MINUS_7,
+    });
+  }
+
+  it('keeps the cat’s refusal finding when the end date is a day past the reader’s today', () => {
+    const ahead = read('2026-07-03');
+    expect(ahead.trialDietRefusal).not.toBeNull();
+    expect(ahead.trialDaysElapsed).toBe(56);
+  });
+
+  it('reads every fact but the length exactly as an end on the reader’s today does', () => {
+    const ahead = read('2026-07-03');
+    const onToday = read('2026-07-02');
+    const strip = (f: TrialFacts) => {
+      const { trialDaysElapsed: _l, trialDaysOutsideRange: _o, ...rest } = f;
+      return rest;
+    };
+    expect(strip(ahead)).toEqual(strip(onToday));
+    expect(ahead.coverage).toEqual(onToday.coverage);
+    expect(onToday.trialDaysElapsed).toBe(55);
   });
 });
 

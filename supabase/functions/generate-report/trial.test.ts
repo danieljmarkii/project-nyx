@@ -5480,11 +5480,15 @@ for (const [tz, now] of [
       endedTrialInput({ startedAt: '2026-05-09', endedAt: '2026-07-03', target: 56, mealsTo: '2026-07-01', now, timezone: tz }),
     )
     assert.equal(snap.trial!.trialDaysElapsed, 56)
-    assert.equal(snap.trial!.dayCounter, 56)
-    assert.deepEqual(snap.trial!.trialDaysOutsideRange, { before: 0, after: 0 })
+    // The record is read to the report's today, where the owner's last day has not
+    // begun: the span is "as of" that day, and the length is the owner's 56.
+    assert.equal(snap.trial!.dayCounter, 55)
+    assert.deepEqual(snap.trial!.trialDaysOutsideRange, { before: 0, after: 1 })
     const text = plain(renderReport(snap))
+    assert.ok(/Completed: Royal Canin Hydrolyzed HP/.test(text), 'the headline lead')
+    assert.ok(/55 days as of Jul 2, of a 56-day window/.test(text), 'the span, as of the report\u2019s day')
+    assert.ok(/a trial that has run 56 — 1 trial day falls after it/.test(text), 'the owner\u2019s last day is named, not counted as a gap')
     assert.ok(/Ran its course — the full window was completed/.test(text), 'the stop row')
-    assert.ok(/56 days, of a 56-day window/.test(text), 'the span phrase, with no "as of"')
     assert.ok(!/short of the/.test(text), 'no shortfall')
     assert.ok(!/Marked complete early/.test(text), 'the headline lead')
     assert.ok(!/The trial ran \d+ of a planned/.test(text), 'the callout length sentence')

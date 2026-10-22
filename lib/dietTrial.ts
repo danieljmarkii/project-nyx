@@ -2740,16 +2740,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const scopeStartIndex = input.scopeStart
     ? localDayIndexOf(input.scopeStart, input.timeZone)
     : null;
-  // CUL-2094 — a scope that closes on (or past) the reader's today is "now", not a
-  // window anyone chose, so it reaches the owner's today below rather than the reader's.
-  // A scope closing in the past is a real window and stays where it is.
-  const rawScopeEndIndex = input.scopeEnd ? localDayIndexOf(input.scopeEnd, input.timeZone) : null;
-  const ownerToday = ownerTodayIndex(todayIndex, ctx.endDayIndex);
-  const scopeEndIndex =
-    rawScopeEndIndex !== null && rawScopeEndIndex >= todayIndex ? Math.max(rawScopeEndIndex, ownerToday) : rawScopeEndIndex;
+  const scopeEndIndex = input.scopeEnd ? localDayIndexOf(input.scopeEnd, input.timeZone) : null;
 
   const scopedStart = Math.max(ctx.startDayIndex, scopeStartIndex ?? ctx.startDayIndex);
-  const upperBounds = [ownerToday, ctx.endDayIndex, scopeEndIndex].filter(
+  const upperBounds = [todayIndex, ctx.endDayIndex, scopeEndIndex].filter(
     (v): v is number => v !== null,
   );
   // ── THE EVIDENCE END ────────────────────────────────────────────────────────
@@ -2974,7 +2968,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // arithmetic knew the two were different. A surface that states an
   // interpretability verdict reads this first: a view of a trial is not the trial,
   // and eleven days may not certify eighty-four.
-  const trialElapsedEnd = Math.min(ownerToday, ctx.endDayIndex ?? ownerToday);
+  //
+  // CUL-2094 — THE LENGTH IS COUNTED ON THE OWNER'S CALENDAR, THE EVIDENCE ON THE
+  // READER'S. `ownerTodayIndex` lets an ended trial's length reach the end date the
+  // owner's device wrote, even when that date is a day past the reader's today. It
+  // must not move `evidenceEnd`: the first cut lifted that too, and the adversarial
+  // pass priced it at once. The 14-day refusal window is anchored on `evidenceEnd`, so
+  // it slid onto days the reader's zone had not reached and dropped a cat's three
+  // refused bowls from 13 days before the report, with no real time passed; and the
+  // coverage denominator gained a day no meal could yet be bucketed on (55 of 56).
+  // So the record is read to the reader's today, as before, and the owner's last day
+  // shows as a trial day after it (`trialDaysOutsideRange.after`), which is true.
+  const trialElapsedEnd = Math.min(
+    ownerTodayIndex(todayIndex, ctx.endDayIndex),
+    ctx.endDayIndex ?? todayIndex,
+  );
   const trialDaysOutsideRange = {
     before: Math.max(0, scopedStart - ctx.startDayIndex),
     after: Math.max(0, trialElapsedEnd - evidenceEnd),
