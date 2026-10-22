@@ -242,7 +242,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       daysSinceLastEpisode: null,
       loggedDaysSinceLastEpisode: null,
       firstHalfLoggedDays: 0,
-      secondHalfLoggedDays: 0, unloggedTailDays: 0,
+      secondHalfLoggedDays: 0, unloggedTailDays: 0, lastLoggedDate: null,
     },
     symptoms: [],
     vomitPhenotype: null,
@@ -1018,7 +1018,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0 },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0, lastLoggedDate: null },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -2104,7 +2104,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       daysSinceLastEpisode: 9,
       loggedDaysSinceLastEpisode: 2,
       firstHalfLoggedDays: 3,
-      secondHalfLoggedDays: 37, unloggedTailDays: 0,
+      secondHalfLoggedDays: 37, unloggedTailDays: 0, lastLoggedDate: null,
     },
     diet: {
       trialTargetProtein: null,
@@ -2157,14 +2157,26 @@ Deno.test('CUL-2101 — the since-onset count names an unlogged tail from the fl
   const none = at(0)
   // Below the floor the tile is the feature's absence, byte for byte.
   assert.equal(at(UNLOGGED_TAIL_MIN_DAYS - 1), none, 'a tail under the floor renders nothing')
-  const named = at(7)
-  assert.ok(
-    named.includes('on <span class="num">18</span> of <span class="num">46</span> days<br/>the last <span class="num">7</span> days unlogged'),
-    'the tail is named on the count it spans',
+  const named = renderReport(
+    monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, unloggedTailDays: 7, lastLoggedDate: '2026-06-25' } }),
   )
-  assert.ok(!none.includes('days unlogged'), 'no tail, no clause')
-  // Capped at the count's own reach: a tail can never claim more days than the since-onset span.
-  assert.ok(at(500).includes('the last <span class="num">46</span> days unlogged'), 'the tail is capped at the since-onset days')
+  assert.ok(
+    named.includes('on <span class="num">18</span> of <span class="num">46</span> days<br/>nothing of any kind logged after Jun 25'),
+    'the tail is named, by date, on the count it spans',
+  )
+  assert.ok(!none.includes('nothing of any kind logged'), 'no tail, no clause')
+})
+
+Deno.test('CUL-2101 — "none logged" on a no-symptom monitoring report names a tail nobody logged anything in', () => {
+  const quiet = (unloggedTailDays: number) =>
+    renderReport(
+      monitoringSnap({
+        symptoms: [],
+        atAGlance: { ...monitoringSnap().atAGlance, primarySymptom: null, totalSymptomIncidents: 0, sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, unloggedTailDays, lastLoggedDate: '2026-06-11' },
+      }),
+    )
+  assert.ok(quiet(21).includes('none logged in this window<br/>nothing of any kind logged after Jun 11'), 'the tail rides the empty count')
+  assert.equal(quiet(UNLOGGED_TAIL_MIN_DAYS - 1), quiet(0), 'under the floor: the absence')
 })
 
 Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
@@ -5750,7 +5762,7 @@ Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about di
         daysSinceLastEpisode: 1,
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 18,
-        secondHalfLoggedDays: 18, unloggedTailDays: 0,
+        secondHalfLoggedDays: 18, unloggedTailDays: 0, lastLoggedDate: null,
       },
     }),
   )
@@ -5790,7 +5802,7 @@ Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it
         daysSinceLastEpisode: 1,
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 6,
-        secondHalfLoggedDays: 3, unloggedTailDays: 0,
+        secondHalfLoggedDays: 3, unloggedTailDays: 0, lastLoggedDate: null,
       },
     }),
   )

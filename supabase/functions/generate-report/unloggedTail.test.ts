@@ -45,27 +45,39 @@ Deno.test('CUL-2101 — the tail is the days after the last logged day, from the
   assert.equal(snap('trial-report-completed.html').atAGlance.unloggedTailDays, 7, 'Rosie: last log Jun 25')
   assert.equal(snap('trial-report-refused.html').atAGlance.unloggedTailDays, 13, 'Mira: last log Jun 19')
   assert.equal(snap('trial-report-clean.html').atAGlance.unloggedTailDays, 0, 'Cooper: logged on the last day')
+  assert.equal(snap('trial-report-completed.html').atAGlance.lastLoggedDate, '2026-06-25', 'the date the tail is named by')
 })
 
 Deno.test('CUL-2101 — Rosie: the safety band recency carries the tail', () => {
   const html = renderReport(snap('trial-report-completed.html'))
   assert.ok(
     html.includes(
-      'most recent <span class="num">10</span> days ago; the last <span class="num">7</span> days unlogged. A sustained pattern',
+      'most recent <span class="num">10</span> days ago; nothing of any kind logged after Jun 25 (the last <span class="num">7</span> days). A sustained pattern',
     ),
-    'the recency clause names the seven unlogged days',
+    'the recency clause names the silence as the record\'s, by date and count',
   )
-  // Capped at the recency figure: a tail longer than "days since" can never print beside it.
-  const long = renderReport({ ...snap('trial-report-completed.html'), atAGlance: { ...snap('trial-report-completed.html').atAGlance, unloggedTailDays: 40 } })
-  assert.ok(long.includes('ago; the last <span class="num">10</span> days unlogged'), 'the tail is capped at the recency')
+  // The count never outruns the recency (the engine's UTC fallback can differ by a day): the date stays.
+  const s = snap('trial-report-completed.html')
+  const long = renderReport({ ...s, atAGlance: { ...s.atAGlance, unloggedTailDays: 11 } })
+  assert.ok(long.includes('ago; nothing of any kind logged after Jun 25. A sustained'), 'a count past the recency is dropped, the date kept')
 })
 
 Deno.test('CUL-2101 — Tama: the headline count names its logged days where it is printed', () => {
   const html = renderReport(snap('trial-report-ended-early.html'))
   assert.ok(
-    html.includes('<span class="num">5</span> loose stool<br/><span class="num">23</span> of <span class="num">88</span> days logged; the last <span class="num">65</span> unlogged'),
+    html.includes('<span class="num">5</span> loose stool<br/><span class="num">23</span> of <span class="num">88</span> days logged; none after Apr 28'),
     'the count sits beside its logged days and the tail',
   )
+  // The ongoing check's "0 episodes in the last 8 weeks" was counted over eight weeks nobody logged.
+  assert.ok(
+    html.includes('</span> weeks; nothing of any kind logged after Apr 28)'),
+    'the safety check names the tail inside the count it qualifies',
+  )
+})
+
+Deno.test('CUL-2101 — Mira: "did not trigger" names the tail its recency floor ran over', () => {
+  const html = renderReport(snap('trial-report-refused.html'))
+  assert.ok(html.includes('all the check could see; nothing of any kind logged after Jun 19; it triggers at'), 'the not-triggered check names the tail')
 })
 
 Deno.test('CUL-2101 — the floor: one unlogged day (today) is never named, two is', () => {
@@ -73,11 +85,11 @@ Deno.test('CUL-2101 — the floor: one unlogged day (today) is never named, two 
   const at = (unloggedTailDays: number) => renderReport({ ...s, atAGlance: { ...s.atAGlance, unloggedTailDays } })
   assert.equal(at(UNLOGGED_TAIL_MIN_DAYS - 1), at(0), 'under the floor renders the absence')
   assert.notEqual(at(UNLOGGED_TAIL_MIN_DAYS), at(0), 'at the floor the tail is named')
-  assert.ok(!at(0).includes('unlogged'), 'no tail, no clause')
+  assert.ok(!at(0).includes('nothing of any kind logged'), 'no tail, no clause')
 })
 
 Deno.test('CUL-2101 — a window with nothing logged says so rather than "0 of N days logged"', () => {
   const s = snap('trial-report-completed.html')
-  const html = renderReport({ ...s, atAGlance: { ...s.atAGlance, loggedDays: 0, unloggedTailDays: s.atAGlance.windowDays } })
+  const html = renderReport({ ...s, atAGlance: { ...s.atAGlance, loggedDays: 0, unloggedTailDays: s.atAGlance.windowDays, lastLoggedDate: null } })
   assert.ok(html.includes('<br/>nothing logged in this window'), 'the empty window is named plainly')
 })

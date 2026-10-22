@@ -5635,7 +5635,7 @@ Deno.test('CUL-2003 — with no flag, the checks still show where the band sits,
   const p = readAs(renderReport(snap))
   assert.ok(!/Safety — flags for review/.test(p), 'still no band and no all-clear (§5.3)')
   assert.ok(!/No safety flag/.test(p), 'and no statement of none: the band shows only what this report renders')
-  assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in the last 8 weeks; it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
+  assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in the last 8 weeks; nothing of any kind logged after Jun 15; it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
   assert.ok(
     /Vomiting getting worse: not checked, too few days logged to compare \(0 of the last 7, 0 of the 7 before; it needs 3 in each\)\./.test(p),
   )
@@ -5724,7 +5724,7 @@ Deno.test('CUL-2003 adv 2 — a course the engine could not measure is "not chec
   const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
   assert.ok(c && c.kind === 'ongoing' && c.state === 'too_few_days', JSON.stringify(c))
   const p = readAs(renderReport(snap))
-  assert.ok(/Ongoing vomiting: not checked, too few episodes or logged days to measure a course \(6 episodes in the last 8 weeks\)\./.test(p))
+  assert.ok(/Ongoing vomiting: not checked, too few episodes or logged days to measure a course \(6 episodes in the last 8 weeks; nothing of any kind logged after Jun 30\)\./.test(p))
   assert.ok(!/ongoing vomiting \(6 episodes/.test(p))
   // The mutation: the same six with a third first-half day logged are measured, and fire.
   idSeq = 0

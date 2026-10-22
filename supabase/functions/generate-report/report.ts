@@ -2934,6 +2934,9 @@ export interface AtAGlance {
    * Required, not optional: a fixture that omits it would silently claim a fully logged window.
    */
   unloggedTailDays: number
+  /** The last local day with any log in the window ('YYYY-MM-DD'), null when nothing was logged.
+   *  The render names the tail by this DATE, which no window or lookback can overstate (C-19). */
+  lastLoggedDate: string | null
 }
 
 /**
@@ -6246,6 +6249,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     firstHalfLoggedDays,
     secondHalfLoggedDays,
     unloggedTailDays: lastLoggedDayNum === null ? windowDays : Math.max(0, endDayNum - lastLoggedDayNum),
+    lastLoggedDate: lastLoggedDayNum === null ? null : dayKeyFromNumber(lastLoggedDayNum),
   }
 
   // ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ───────────────
