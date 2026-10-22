@@ -459,7 +459,9 @@ Deno.test('§12 — a report generated the day after completion still renders th
 
   const html = renderReport(snap)
   const text = plain(html)
-  assert.ok(/Completed: Royal Canin Hydrolyzed HP/.test(text), 'past tense, not "Tracking"')
+  // CUL-2092: this trial was marked complete at day 31 of 56, so the past tense leads
+  // "Marked complete early", not "Completed" (a word a vet reads as a full course).
+  assert.ok(/Marked complete early: Royal Canin Hydrolyzed HP/.test(text), 'past tense, not "Tracking"')
   // The owner's read is rendered AS the owner's, and the words "confirmed",
   // "diagnosis" and "food allergy" may not appear near it (§7).
   assert.ok(/The owner reported Cooper was better/.test(text))

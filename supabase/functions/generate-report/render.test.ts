@@ -8549,17 +8549,17 @@ function endedTrialSnap(over: Partial<NonNullable<ReportSnapshot['trial']>> = {}
   })
 }
 
-Deno.test('CUL-2077 — a trial ended at day 23 of 56 keeps the coverage sentence and states the run beside it', () => {
+Deno.test('CUL-2077 — a trial ended at day 23 of 56 keeps the coverage sentence and states the run ahead of it', () => {
   const callout = text(interpretingCallout(renderReport(endedTrialSnap())))
   assert.ok(
-    /This record covers 23 of 23 days of the trial window and supports interpreting it\. The trial ran 23 of a planned 56 days\./.test(
+    /The trial ran 23 of a planned 56 days\. This record covers 23 of 23 days of the trial window and supports interpreting it\./.test(
       callout,
     ),
     callout,
   )
   // A trial stopped early (abandoned) is the same fact, said the same way.
   const stopped = text(interpretingCallout(renderReport(endedTrialSnap({ status: 'abandoned' }))))
-  assert.ok(/supports interpreting it\. The trial ran 23 of a planned 56 days\./.test(stopped), stopped)
+  assert.ok(/The trial ran 23 of a planned 56 days\. This record covers 23 of 23 days/.test(stopped), stopped)
   // And on the non-affirmative rungs, whose "N of N days of the trial window" reads as full too.
   const partial = text(
     interpretingCallout(
@@ -8572,7 +8572,7 @@ Deno.test('CUL-2077 — a trial ended at day 23 of 56 keeps the coverage sentenc
       ),
     ),
   )
-  assert.ok(/not enough to stand on its own\. The trial ran 23 of a planned 56 days\./.test(partial), partial)
+  assert.ok(/The trial ran 23 of a planned 56 days\. This record covers 12 of 23 days .*not enough to stand on its own\./.test(partial), partial)
 })
 
 Deno.test('CUL-2077 — every other trial prints the callout it printed before (before/after)', () => {
@@ -8606,4 +8606,25 @@ Deno.test('CUL-2077 — every other trial prints the callout it printed before (
     /Interpreting this record This record covers 23 of 23 days of the trial window and supports interpreting it\.$/.test(active.trim()),
     active,
   )
+})
+
+// ── CUL-2092 — the headline's first word does not claim a full course ─────────────────────
+const headlineOf = (html: string): string => text(/<div class="headline">[\s\S]*?<\/div>/.exec(html)![0])
+
+Deno.test('CUL-2092 — a trial marked complete at day 23 of 56 leads "Marked complete early", never "Completed"', () => {
+  const headline = headlineOf(renderReport(endedTrialSnap()))
+  assert.ok(/^Marked complete early: /.test(headline.trim()), headline)
+  assert.ok(!/Completed:/.test(headline), headline)
+})
+
+Deno.test('CUL-2092 — every other ended or active trial keeps its headline lead (before/after)', () => {
+  const lead = (over: Partial<NonNullable<ReportSnapshot['trial']>>): string =>
+    headlineOf(renderReport(endedTrialSnap(over))).trim().split(':')[0]
+  assert.equal(lead({ dayCounter: 56 }), 'Completed')
+  assert.equal(lead({ dayCounter: 70, trialDaysElapsed: 70 }), 'Completed')
+  // A full trial seen through a window closing 11 days before it ended is not "early".
+  assert.equal(lead({ dayCounter: 45, trialDaysElapsed: 56, trialDaysOutsideRange: { before: 0, after: 11 } }), 'Completed')
+  assert.equal(lead({ status: 'abandoned' }), 'Stopped early')
+  assert.equal(lead({ status: 'abandoned', dayCounter: 56 }), 'Stopped early')
+  assert.ok(/^Tracking /.test(headlineOf(renderReport(endedTrialSnap({ status: 'active', endedAt: null }))).trim()))
 })
