@@ -443,6 +443,7 @@ function mapBowlRow(
       status: bowl.status,
       compositionKey: bowl.compositionKey,
       components: bowl.components.map((c) => ({ foodItemId: c.foodItemId, foodLabel: labelOf(c) })),
+      lastRecorded: bowl.lastRecorded,
     },
   }
 }

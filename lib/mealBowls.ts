@@ -95,7 +95,7 @@ export function bowlFromRows(
     position: c.position,
     foodItemId: c.foodItemId,
     foodLabel: c.foodLabel,
-    food: byId.get(c.id)?.food ?? null,
+    food: composition.lastRecorded ? neverATreat(byId.get(c.id)?.food ?? null) : byId.get(c.id)?.food ?? null,
     share: c.share,
     normalizedShare: c.normalizedShare,
     shareSource: c.shareSource,
@@ -111,6 +111,13 @@ export function bowlFromRows(
     compositionKeyWithRatio: compositionKey(composition.components, { withRatio: true }),
     lastRecorded: composition.lastRecorded,
   };
+}
+
+/** A last recorded set is stale (CUL-2096): its foods' type never makes the bowl a
+ *  treat, which would set its rating aside. Unknown instead, as a type nobody recorded
+ *  reads (adversarial pass 1, F2). The server's `bowlOf` does the same. */
+function neverATreat(food: BowlFood | null): BowlFood | null {
+  return food && food.foodType === 'treat' ? { ...food, foodType: null } : food;
 }
 
 /**

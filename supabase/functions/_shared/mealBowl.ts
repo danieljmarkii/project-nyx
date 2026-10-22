@@ -74,6 +74,16 @@ function firstOf<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? v[0] ?? null : v
 }
 
+/** A last recorded set is stale (CUL-2096): its foods' type never makes the bowl a
+ *  treat, which would set its rating aside. Unknown instead, as a type nobody recorded
+ *  reads (adversarial pass 1, F2). The app's `bowlFromRows` does the same. */
+function neverATreat<F>(food: F | null): F | null {
+  if (food && typeof food === 'object' && (food as { food_type?: unknown }).food_type === 'treat') {
+    return { ...food, food_type: null }
+  }
+  return food
+}
+
 /**
  * What this meal is. Null for a plain meal (no live components and no count), which
  * every reader then reads exactly as it did before mixed meals existed. A meal row
@@ -93,7 +103,7 @@ export function bowlOf<F>(
     position: c.position,
     foodItemId: c.foodItemId,
     foodLabel: c.foodLabel,
-    food: firstOf(byId.get(c.id)?.food_items),
+    food: composition.lastRecorded ? neverATreat(firstOf(byId.get(c.id)?.food_items)) : firstOf(byId.get(c.id)?.food_items),
     share: c.share,
     normalizedShare: c.normalizedShare,
     shareSource: c.shareSource,

@@ -1,6 +1,6 @@
 // The server's one read of a mixed bowl (Mixed meals row 3, CUL-2052).
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from './mealBowl.ts'
+import { bowlFoodType, bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from './mealBowl.ts'
 
 interface Food { food_type: string | null }
 
@@ -65,6 +65,20 @@ Deno.test('a mix with no live components reads as its last recorded foods', () =
   assertEquals(b?.components.map((c) => c.food), [{ food_type: 'meal' }, { food_type: 'meal' }])
   assertStrictEquals(b?.compositionKey, 'id:x+id:y')
   assertStrictEquals(b?.writtenAtMs, MS + 5)
+})
+
+Deno.test('a last recorded set of treats is never a treat (pass 1, F2); a live one still is', () => {
+  const dead = '2026-10-21T09:00:00+00:00'
+  const treat = { food_type: 'treat' }
+  const rows = (deletedAt: string | null) => [
+    row({ id: genId(MS, 1, 'a'), position: 0, deleted_at: deletedAt, food_items: treat }),
+    row({ id: genId(MS, 1, 'b'), position: 1, deleted_at: deletedAt, food_items: treat }),
+  ]
+  const stale = bowlOf({ food_item_id: null, component_count: 2 }, rows(dead))
+  assertEquals(stale?.components.map((c) => c.food), [{ food_type: null }, { food_type: null }])
+  assertStrictEquals(bowlFoodType(stale!.components.map((c) => c.food?.food_type)), null)
+  const live = bowlOf({ food_item_id: null, component_count: 2 }, rows(null))
+  assertStrictEquals(bowlFoodType(live!.components.map((c) => c.food?.food_type)), 'treat')
 })
 
 Deno.test('before/after: back to one food over tombstones is plain; a count with no rows names nothing', () => {

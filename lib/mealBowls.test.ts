@@ -41,7 +41,7 @@ import { bowlFoodType, loadMealBowls, mealBowlsQuery, type AppBowl } from './mea
 import { bowlRowLabel } from './mealBowlLabel';
 import { bowlDetailLine } from './mixDetail';
 import { feedingOfBowl } from './dietTrialFacts';
-import { buildTrialContext, classifyFeeding, type AllowedFood, type TrialSpec } from './dietTrial';
+import { buildTrialContext, classifyFeeding, isTreatFeeding, type AllowedFood, type TrialSpec } from './dietTrial';
 import { toTrialFeeding, type TrialMealSource } from '../supabase/functions/generate-report/trial';
 import { bowlFoodType as serverBowlFoodType } from '../supabase/functions/_shared/mealBowl';
 
@@ -293,6 +293,28 @@ describe('the phone reads a bowl the way the vet report does (spec §8: one verd
     const c = classifyFeeding(buildTrialContext(TRIAL, [DUCK_ROW]), phone);
     expect(c.verdict).toBe('unclassifiable');
     expect(c.countsAsFeeding).toBe(false);
+  });
+
+  // Adversarial pass 1, F2: a stale all-treat set must not make the bowl a treat, which
+  // would set its refusal aside. A live all-treat mix still reads as a treat.
+  it('a last recorded set of treats is never a treat; a live one still is', async () => {
+    seedFood('treat2', 'Biscuits', { type: 'treat', primary: 'chicken', proteins: ['chicken'] });
+    const parts = [
+      { food: 'treat', label: 'Chews', share: 0.5 },
+      { food: 'treat2', label: 'Biscuits', share: 0.5 },
+    ];
+    seedMeal('stale', { count: 2 });
+    seedSet('stale', 1_760_000_000_000, parts, AT);
+    seedMeal('live', { count: 2 });
+    seedSet('live', 1_760_000_000_000, parts);
+    const bowls = await loadMealBowls(['stale', 'live']);
+    const stale = bowls.get('stale')!;
+    expect(stale.components.map((c) => c.food?.foodType)).toEqual([null, null]);
+    expect(stale.components.map((c) => c.food?.productName)).toEqual(['Chews', 'Biscuits']);
+    expect(isTreatFeeding(feedingOfBowl('stale', AT, 'refused', stale))).toBe(false);
+    const { phone, server } = await bothFeedings('stale');
+    expect(phone).toEqual(server);
+    expect(isTreatFeeding(feedingOfBowl('live', AT, 'refused', bowls.get('live')!))).toBe(true);
   });
 
   it('before/after: a meal back to one food over the same tombstones is still a plain meal', async () => {

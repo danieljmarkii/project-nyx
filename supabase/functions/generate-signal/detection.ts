@@ -377,6 +377,9 @@ export interface MealEventBowl {
   /** The sorted set of food keys: one mix's identity, whatever its ratio. */
   compositionKey: string
   components: { foodItemId: string | null; foodLabel: string }[]
+  /** No component is live and these are the foods as last recorded (CUL-2096): exposure,
+   *  never a candidate of its own. Absent reads as false. */
+  lastRecorded?: boolean
 }
 
 export interface MealEvent {
@@ -3555,6 +3558,16 @@ export function detectCorrelations(
   // The protein set a PRIMARY-ONLY engine would have seen — the pre-slice-6 candidate pool.
   // Its only consumer is the Bonferroni family floor below; nothing about candidacy,
   // exposure or attribution reads it.
+  // A protein seen ONLY in a bowl read as its last recorded foods (CUL-2096): the set is
+  // stale (the owner may have taken it out on another phone), so it counts as exposure in
+  // every window it falls in but never becomes a candidate. As a candidate it would add a
+  // comparison and could drop another protein's finding a tier (adversarial pass 1, F1).
+  const currentProteins = new Set(
+    input.mealEvents
+      .filter((m) => m.bowl?.lastRecorded !== true)
+      .flatMap((m) => readProteinSet(m.proteins, m.primaryProtein)),
+  )
+  const lastRecordedOnlyProteins = new Set(proteins.filter((p) => !currentProteins.has(p)))
   const primaryOnlyProteins = new Set(
     input.mealEvents
       .map((m) => canonicalizeProtein(m.primaryProtein))
@@ -3887,7 +3900,7 @@ export function detectCorrelations(
     // protein into a joint candidate with a protein that is not a candidate at all —
     // manufacturing a "chicken and duck" card out of an exclusion.
     const clusters = clusterCollinearProteins(
-      proteins.filter((p) => !freeFedProteins.has(p)),
+      proteins.filter((p) => !freeFedProteins.has(p) && !lastRecordedOnlyProteins.has(p)),
       pairs,
     )
 
