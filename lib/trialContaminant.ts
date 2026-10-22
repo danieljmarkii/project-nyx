@@ -111,6 +111,8 @@ import {
   buildTrialContext,
   classifyFeeding,
   contaminationNote,
+  dayIndexOf,
+  isInTrialWindow,
   isTrialRunning,
   narrowTrialFoodRole,
   proteinPhrase,
@@ -1300,6 +1302,33 @@ export async function isRunningTrialForPet(petId: string, trialId: string): Prom
     return ctx !== null && ctx.trialId === trialId && isTrialRunning(ctx.spec, Date.now());
   } catch (e) {
     console.warn('[trialContaminant] running-trial read failed:', e);
+    return true;
+  }
+}
+
+/**
+ * Is this meal, as it stands NOW, a feeding inside this pet's running trial (CUL-2106,
+ * adversarial pass 1)? A heads-up handed to the meal's screen was worked out when the food
+ * went in; the meal's time can have moved since (an edit backdating it to before the trial),
+ * and spending the food's one warning on a pre-trial feeding would silence its next real
+ * one. Read from the record, never a screen's copy of it, and through the same window
+ * `classifyFeeding` asks first. A deleted meal is not a feeding. A failed read answers
+ * true, as `isRunningTrialForPet` does: the line then shows as it did before this check.
+ */
+export async function isMealInRunningTrial(petId: string, trialId: string, eventId: string): Promise<boolean> {
+  try {
+    const [ctx, row] = await Promise.all([
+      loadTrialProteinContext(petId),
+      getDb().getFirstAsync<{ occurred_at: string }>(
+        'SELECT occurred_at FROM events WHERE id = ? AND deleted_at IS NULL',
+        [eventId],
+      ),
+    ]);
+    if (!ctx || ctx.trialId !== trialId || !isTrialRunning(ctx.spec, Date.now()) || !row) return false;
+    const trial = trialContextOf(ctx);
+    return isInTrialWindow(trial, dayIndexOf(trial, row.occurred_at));
+  } catch (e) {
+    console.warn('[trialContaminant] meal trial-window read failed:', e);
     return true;
   }
 }

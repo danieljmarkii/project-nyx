@@ -15,7 +15,7 @@ jest.mock('expo-router', () => ({
 const mockRunning = jest.fn();
 jest.mock('../../lib/trialContaminant', () => ({
   ...jest.requireActual('../../lib/trialContaminant'),
-  isRunningTrialForPet: (...a: unknown[]) => mockRunning(...a),
+  isMealInRunningTrial: (...a: unknown[]) => mockRunning(...a),
 }));
 const mockAddTrialFood = jest.fn();
 jest.mock('../../lib/dietTrialSetup', () => ({
@@ -164,7 +164,7 @@ describe('the heads-up line on the meal\'s screen (CUL-2088)', () => {
     const view = render(line(['chicken']));
     await waitFor(() => expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined());
     expect(view.queryByText('+ End the trial')).toBeNull();
-    expect(mockRunning).toHaveBeenCalledWith('pet-1', TRIAL);
+    expect(mockRunning).toHaveBeenCalledWith('pet-1', TRIAL, EVENT);
   });
 
   it('never twice: a remount after it showed shows nothing', async () => {

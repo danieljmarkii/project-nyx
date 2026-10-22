@@ -33,7 +33,7 @@ jest.mock('./trialContaminant', () => ({
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMomentStore, type MealPayload } from '../store/momentStore';
 import { useMealScreenFlagStore } from '../store/mealScreenFlagStore';
-import { applyMealScreenTrialFlag, applyMealTrialFlag, handLostLogFlagToMealScreen } from './mealTrialFlag';
+import { applyMealScreenTrialFlag, applyMealTrialFlag, claimLostLogHandOff } from './mealTrialFlag';
 import { clearTrialHeadsUpLedger, hasFlaggedFoodInTrial, type LogTimeTrialFlag } from './trialContaminant';
 
 const TRIAL = 'trial-1';
@@ -128,16 +128,25 @@ describe('a fresh log whose card is lost hands its heads-up to the meal\'s scree
 });
 
 describe('the photo-capture log hands a lost heads-up on too (CUL-2106)', () => {
-  it('handLostLogFlagToMealScreen hands it as a fresh log\'s and spends nothing', async () => {
-    await handLostLogFlagToMealScreen(EVENT, FLAG);
+  it('the claimed hand-off hands it as a fresh log\'s and spends nothing', async () => {
+    await claimLostLogHandOff(EVENT)(FLAG);
     expect(useMealScreenFlagStore.getState().pending[EVENT]).toEqual({ flag: FLAG, food: TURKEY, origin: 'log' });
     expect(await hasFlaggedFoodInTrial(TRIAL, 'turkey')).toBe(false);
   });
 
-  it('app/food-capture.tsx spends on a shown card and hands on a lost one', () => {
+  it('claimed at commit: an edit made while the card wait runs out wins over it', async () => {
+    const handOff = claimLostLogHandOff(EVENT);
+    // The owner changes the meal to a food with nothing to say before the wait times out.
+    mockEvaluateMeal.mockResolvedValueOnce(null);
+    await applyMealScreenTrialFlag(EVENT, 'rabbit');
+    await handOff(FLAG);
+    expect(useMealScreenFlagStore.getState().pending[EVENT]).toBeUndefined();
+  });
+
+  it('app/food-capture.tsx claims at commit, spends on a shown card and hands on a lost one', () => {
     const src = blankComments(readFileSync(join(__dirname, '..', 'app', 'food-capture.tsx'), 'utf8'));
     expect(src).toMatch(
-      /whenMealCardVisible\(loggedMeal\.eventId\)\s*\.then\(\(shown\) => \(shown\s*\?\s*noteTrialFlagShown\(cardTrialFlag, loggedMeal\.eventId\)\s*:\s*handLostLogFlagToMealScreen\(loggedMeal\.eventId, cardTrialFlag\)\)\)/,
+      /const handOff = claimLostLogHandOff\(loggedMeal\.eventId\);\s*void whenMealCardVisible\(loggedMeal\.eventId\)\s*\.then\(\(shown\) => \(shown\s*\?\s*noteTrialFlagShown\(cardTrialFlag, loggedMeal\.eventId\)\s*:\s*handOff\(cardTrialFlag\)\)\)/,
     );
   });
 });

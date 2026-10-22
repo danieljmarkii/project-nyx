@@ -240,16 +240,21 @@ async function handToMealScreen(
 }
 
 /**
- * A fresh log whose card never showed its heads-up (CUL-2106) — for a writer that put the
- * flag on the card itself at commit (`app/food-capture.tsx`) rather than through
- * `applyMealTrialFlag`. Same hand-off, same spend rule.
+ * A fresh log whose card may never show its heads-up (CUL-2106) — for a writer that puts
+ * the flag on the card itself at commit (`app/food-capture.tsx`) rather than through
+ * `applyMealTrialFlag`. Call it AT COMMIT and keep the returned hand-off for a lost card:
+ * the claim is taken now, so an edit of the meal made while the card wait runs out wins
+ * over it (adversarial pass 1). Same hand-off, same spend rule.
  */
-export async function handLostLogFlagToMealScreen(eventId: string, flag: LogTimeTrialFlag): Promise<void> {
-  try {
-    await handToMealScreen(eventId, flag, claimEdit(eventId), 'log');
-  } catch (e) {
-    console.warn('[mealTrialFlag] lost heads-up hand-off failed:', e);
-  }
+export function claimLostLogHandOff(eventId: string): (flag: LogTimeTrialFlag) => Promise<void> {
+  const current = claimEdit(eventId);
+  return async (flag) => {
+    try {
+      await handToMealScreen(eventId, flag, current, 'log');
+    } catch (e) {
+      console.warn('[mealTrialFlag] lost heads-up hand-off failed:', e);
+    }
+  };
 }
 
 /** The card is this meal's and refused for a reason that is not a lost card: Undo took the

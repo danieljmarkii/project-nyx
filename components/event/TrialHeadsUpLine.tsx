@@ -25,7 +25,7 @@ import { useMealScreenFlagStore, type MealScreenFlag } from '../../store/mealScr
 import {
   END_TRIAL_LINE,
   hasFlaggedFoodInTrial,
-  isRunningTrialForPet,
+  isMealInRunningTrial,
   mealScreenFlagCopy,
   noteTrialFlagShown,
 } from '../../lib/trialContaminant';
@@ -77,15 +77,18 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal,
     let live = true;
     void (async () => {
       const { trialId, foodId } = waiting.flag;
-      const [spent, running] = await Promise.all([
+      // `inTrial` also re-asks the meal's time (CUL-2106, adversarial pass 1): an edit can
+      // have moved the meal out of the trial since the heads-up was worked out.
+      const [spent, inTrial] = await Promise.all([
         hasFlaggedFoodInTrial(trialId, foodId).catch(() => false),
-        isRunningTrialForPet(petId, trialId),
+        isMealInRunningTrial(petId, trialId, eventId),
       ]);
       // A newer edit's verdict, or a blur, while the ledger was read: the next run decides.
       if (!live || useMealScreenFlagStore.getState().pending[eventId] !== waiting) return;
       useMealScreenFlagStore.getState().take(eventId);
-      // Already spoken for since (a card on another meal), or its trial is over: dropped.
-      if (!spent && running) setShown(waiting);
+      // Already spoken for since (a card on another meal), its trial is over, or the meal
+      // is no longer inside it: dropped, unspent.
+      if (!spent && inTrial) setShown(waiting);
     })();
     return () => { live = false; };
   }, [waiting, focused, mealFoodIds, eventId, petId]);
