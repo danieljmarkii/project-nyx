@@ -50,6 +50,7 @@ import {
   noteTrialFlagShown,
   type TrialProteinContext,
 } from '../lib/trialContaminant';
+import { handLostLogFlagToMealScreen } from '../lib/mealTrialFlag';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
 import { consentUnreadableNotice } from '../constants/aiConsentCopy';
@@ -765,9 +766,13 @@ export default function FoodCaptureScreen() {
         // revealed still burned the food's one-per-trial budget and the picker path
         // would then stay silent about it forever — "counted in heads-ups GIVEN"
         // has to mean given.
+        // A card a newer log replaced before it revealed hands its heads-up to the meal's
+        // own screen, which spends the ledger once the line is seen (CUL-2106).
         if (cardTrialFlag) {
           void whenMealCardVisible(loggedMeal.eventId)
-            .then((shown) => (shown ? noteTrialFlagShown(cardTrialFlag, loggedMeal.eventId) : undefined))
+            .then((shown) => (shown
+              ? noteTrialFlagShown(cardTrialFlag, loggedMeal.eventId)
+              : handLostLogFlagToMealScreen(loggedMeal.eventId, cardTrialFlag)))
             // A failed ledger write costs at most ONE extra heads-up later, never a
             // suppressed one — the safe direction, and the same one readHeadsUpLedger
             // already fails in. Never let it surface: the meal is saved and this is

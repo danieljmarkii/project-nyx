@@ -33,12 +33,20 @@
 //      Recording earlier re-opens "a suppressed heads-up consumed the budget for a
 //      heads-up that was never given" (`trialContaminant.ts`, evaluateMealLogTimeFlag).
 //
+// A CARD LOST AT STEP 2 OR 3 HANDS THE HEADS-UP ON (CUL-2106). A newer log can take the
+// card before this one reveals, or the owner can dismiss it first, and the card was the
+// heads-up's only surface: this feeding's warning was then shown nowhere. It now waits on
+// the meal's own screen (`handToMealScreen`, frame 7d), which spends the ledger only once
+// the line is seen. The one refusal that hands nothing is this meal's own card refusing
+// because it was undone (the meal is gone, and Undo gives its warning back) or because it
+// already shows a heads-up.
+//
 // Fire-and-forget by design at both call sites: the meal is written and the card is
 // up before this runs, and it is strictly additive information (Principle 1 — the
 // log never waits on it). The returned outcome exists so a test can assert which
 // gate stopped it; callers `void` it.
 import { useMomentStore, MEAL_FLAGGED_DURATION_MS, whenMealCardVisible } from '../store/momentStore';
-import { useMealScreenFlagStore } from '../store/mealScreenFlagStore';
+import { useMealScreenFlagStore, type HeadsUpOrigin } from '../store/mealScreenFlagStore';
 import { getDb } from './db';
 import type { TrialFoodSelection } from './dietTrialSetup';
 import {
@@ -72,24 +80,34 @@ export interface MealTrialFlagArgs {
  *  the food's heads-up budget. */
 export type MealTrialFlagOutcome =
   | 'no_flag'        // step 1: nothing to say about this meal
-  | 'card_gone'      // step 2: a newer log superseded the card before it revealed
-  | 'patch_refused'  // step 3: the card was dismissed / undone / not this meal's
+  | 'card_gone'      // step 2: a newer log superseded the card before it revealed; handed on
+  | 'patch_refused'  // step 3: the card was dismissed / undone / not this meal's; handed on
+                     //   unless undone or already flagged (CUL-2106)
   | 'shown';         // steps 3–5: on screen, dwell extended, budget spent
 
 export async function applyMealTrialFlag(args: MealTrialFlagArgs): Promise<MealTrialFlagOutcome> {
   const { eventId, petId, foodId, components, occurredAt } = args;
+  // The fresh log takes the meal's newest-edit slot, so an edit of this meal made before a
+  // hand-off lands wins over it (CUL-2106).
+  const current = claimEdit(eventId);
   const flag = components && components.length > 0
     ? await evaluateBowlLogTimeFlag({ petId, components, occurredAt })
     : foodId
       ? await evaluateMealLogTimeFlag({ petId, foodId, occurredAt })
       : null;
   if (!flag) return 'no_flag';
-  if (!(await whenMealCardVisible(eventId))) return 'card_gone';
+  if (!(await whenMealCardVisible(eventId))) {
+    await handToMealScreen(eventId, flag, current, 'log');
+    return 'card_gone';
+  }
   // Read the store at the moment of the patch, not through a render-time hook
   // binding: this runs after the calling screen may already have unmounted (the
   // picker path dismisses /log before the card reveals).
   const { patchTrialFlag, rescheduleHide } = useMomentStore.getState();
-  if (!patchTrialFlag(eventId, flag)) return 'patch_refused';
+  if (!patchTrialFlag(eventId, flag)) {
+    if (!cardHoldsThisMeal(eventId)) await handToMealScreen(eventId, flag, current, 'log');
+    return 'patch_refused';
+  }
   rescheduleHide(MEAL_FLAGGED_DURATION_MS);
   await noteTrialFlagShown(flag, eventId);
   return 'shown';
@@ -143,7 +161,7 @@ export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<Bo
   // A food put back by a LATER edit after this ran stays unspent: one extra heads-up.
   await forgetFlagsSpentByEvent(eventId, bowlFoodIds);
   if (args.surface === 'meal_screen') {
-    if (!(await handToMealScreen(eventId, flag, current))) return 'superseded';
+    if (!(await handToMealScreen(eventId, flag, current, 'edit'))) return 'superseded';
     return flag ? 'handed' : 'no_flag';
   }
   // The card may be between screens (the first mix returns it 450 ms after the picker
@@ -153,7 +171,7 @@ export async function applyBowlEditTrialFlag(args: BowlEditFlagArgs): Promise<Bo
     // The card never came back (a mix begun on the card, the card gone by the return):
     // the heads-up goes where an edit made off the card puts it, the meal's screen
     // (CUL-2088, adversarial pass 1), rather than nowhere.
-    if (flag && !(await handToMealScreen(eventId, flag, current))) return 'superseded';
+    if (flag && !(await handToMealScreen(eventId, flag, current, 'edit'))) return 'superseded';
     return flag ? 'card_gone' : 'no_flag';
   }
   if (!current()) return 'superseded';
@@ -196,7 +214,7 @@ export async function applyMealScreenTrialFlag(
     const flag = event
       ? await evaluateMealLogTimeFlag({ petId: event.pet_id, foodId, occurredAt: event.occurred_at })
       : null;
-    if (!(await handToMealScreen(eventId, flag, current))) return 'superseded';
+    if (!(await handToMealScreen(eventId, flag, current, 'edit'))) return 'superseded';
     return flag ? 'handed' : 'no_flag';
   } catch (e) {
     console.warn('[mealTrialFlag] meal-screen heads-up failed:', e);
@@ -213,11 +231,33 @@ async function handToMealScreen(
   eventId: string,
   flag: LogTimeTrialFlag | null,
   current: () => boolean,
+  origin: HeadsUpOrigin,
 ): Promise<boolean> {
   const food = flag ? await readTrialFoodSelection(flag.foodId) : null;
   if (!current()) return false;
-  useMealScreenFlagStore.getState().put(eventId, flag ? { flag, food } : null);
+  useMealScreenFlagStore.getState().put(eventId, flag ? { flag, food, origin } : null);
   return true;
+}
+
+/**
+ * A fresh log whose card never showed its heads-up (CUL-2106) — for a writer that put the
+ * flag on the card itself at commit (`app/food-capture.tsx`) rather than through
+ * `applyMealTrialFlag`. Same hand-off, same spend rule.
+ */
+export async function handLostLogFlagToMealScreen(eventId: string, flag: LogTimeTrialFlag): Promise<void> {
+  try {
+    await handToMealScreen(eventId, flag, claimEdit(eventId), 'log');
+  } catch (e) {
+    console.warn('[mealTrialFlag] lost heads-up hand-off failed:', e);
+  }
+}
+
+/** The card is this meal's and refused for a reason that is not a lost card: Undo took the
+ *  meal (it gives the warning back itself), or a heads-up is already on it. */
+function cardHoldsThisMeal(eventId: string): boolean {
+  const s = useMomentStore.getState();
+  if (s.payload?.kind !== 'meal' || s.payload.eventId !== eventId) return false;
+  return s.removed || s.undoing === eventId || (s.visible && !!s.payload.trialFlag);
 }
 
 /** The flagged food as the add-to-list sheet writes it. Null when its row is not on this

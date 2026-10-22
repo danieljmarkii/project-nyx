@@ -187,6 +187,7 @@ describe('the trial heads-up for a food put in after the fact (CUL-2088)', () =>
         trialProteins: ['rabbit'], bowl: { foodLabel: 'Chicken Pâté', pastTarget: false },
       },
       food: null,
+      origin: 'edit',
     });
     mockGetEventById.mockResolvedValue(row({ food_item_id: null }));
     mockGetMealForEvent.mockResolvedValue({
@@ -211,6 +212,7 @@ describe('the trial heads-up for a food put in after the fact (CUL-2088)', () =>
         trialProteins: ['rabbit'], bowl: { foodLabel: 'Chicken Pâté', pastTarget: false },
       },
       food: null,
+      origin: 'edit',
     });
     mockGetEventById.mockResolvedValue(row({ food_item_id: null }));
     mockGetMealForEvent.mockResolvedValue({

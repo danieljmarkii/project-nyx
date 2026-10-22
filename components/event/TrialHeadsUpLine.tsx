@@ -1,7 +1,8 @@
 // The trial heads-up on a meal's own screen (CUL-2088, PM ruling (a); mock frames 7a to 7c).
 //
 // A food that goes into a meal after the fact (Change on the edit screen, a mix from this
-// screen, a bowl-editor save) has no completion card to land on. Its writer hands the
+// screen, a bowl-editor save) has no completion card to land on, and a fresh log whose card a
+// newer log took before it showed has lost its own (CUL-2106, frame 7d). Its writer hands the
 // heads-up to `mealScreenFlagStore`, and this line shows it the next time the meal's
 // screen is in front of the owner, under the food and above Intake. Like every heads-up it
 // is information and arrives still.
@@ -106,7 +107,7 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal,
       const away = AppState.currentState === 'background' || AppState.currentState === 'inactive';
       if (!live || !seen || away || spentRef.current === shown) return;
       spentRef.current = shown;
-      const copy = mealScreenFlagCopy(shown.flag, petNameRef.current);
+      const copy = mealScreenFlagCopy(shown.flag, petNameRef.current, shown.origin);
       AccessibilityInfo.announceForAccessibility(
         [copy.eyebrow ? `${copy.eyebrow}.` : null, copy.headline, copy.detail].filter(Boolean).join(' '),
       );
@@ -121,8 +122,8 @@ export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal,
   // While the screen re-reads on a refocus (ids null) the line holds still (Principle 9).
   if (!shown || (mealFoodIds !== null && !mealFoodIds.includes(shown.flag.foodId))) return null;
 
-  const { flag, food } = shown;
-  const copy = mealScreenFlagCopy(flag, petName);
+  const { flag, food, origin } = shown;
+  const copy = mealScreenFlagCopy(flag, petName, origin);
   const addable = copy.door === 'add_to_list' && flag.kind === 'off_trial_list' && food !== null;
   // Each part already ends its own sentence except the eyebrow.
   const label = [copy.eyebrow ? `${copy.eyebrow}.` : null, copy.headline, copy.detail].filter(Boolean).join(' ');

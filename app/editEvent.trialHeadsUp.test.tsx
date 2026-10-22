@@ -196,7 +196,7 @@ describe('the food changed in gets its trial heads-up on the meal\'s screen (CUL
   });
 
   it('a food with nothing to say clears a heads-up an earlier change left waiting', async () => {
-    useMealScreenFlagStore.getState().put('evt-1', { flag: { ...OFF_LIST, foodId: 'food-1' }, food: null });
+    useMealScreenFlagStore.getState().put('evt-1', { flag: { ...OFF_LIST, foodId: 'food-1' }, food: null, origin: 'edit' });
     await changeToTurkey();
     await waitFor(() => expect(mockEvaluateMeal).toHaveBeenCalled());
     await waitFor(() => expect(useMealScreenFlagStore.getState().pending['evt-1']).toBeUndefined());

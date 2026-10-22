@@ -631,13 +631,21 @@ export type MealScreenFlagDoor = 'add_to_list' | 'end_trial' | null;
  * moves off "The meal's saved", which speaks for the moment of logging, to "The change is
  * saved". Like the card it reports and never asks, and it never says the meal is fine.
  */
-export function mealScreenFlagCopy(flag: LogTimeTrialFlag, petName: string): {
+export function mealScreenFlagCopy(
+  flag: LogTimeTrialFlag,
+  petName: string,
+  origin: 'log' | 'edit',
+): {
   eyebrow: string | null;
   headline: string;
   detail: string;
   door: MealScreenFlagDoor;
 } {
-  const saved = 'The change is saved and counts in the trial record.';
+  // A fresh log handed here because its card was lost (CUL-2106, frame 7d) changed nothing,
+  // so it keeps the card's own clause.
+  const saved = origin === 'log'
+    ? 'The meal’s saved, and it counts in the trial record.'
+    : 'The change is saved and counts in the trial record.';
   if (flag.bowl?.pastTarget) {
     const headline = flag.kind === 'off_diet_protein'
       ? mealFlagCopy(flag, petName).headline
