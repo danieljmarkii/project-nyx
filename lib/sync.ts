@@ -3957,6 +3957,14 @@ async function reconcileByAbsence(db: Db, table: 'meals' | 'meal_components', st
     return;
   }
   if (stale()) return; // FR-9: signed out mid-cycle — don't touch the wiped store.
+  // An empty server answer never deletes. When getSession() comes back empty (a retryable
+  // refresh failure, no SIGNED_OUT), supabase-js sends the anon key, and anon may SELECT
+  // meals: RLS answers count 0, [] and [] with no error, which would delete every synced
+  // meal. The cost is that an account whose every row really was removed keeps its ghosts.
+  if (count === 0 && local.some((r) => r.synced === 1)) {
+    console.warn(`[hydrate] ${table} server answered empty beside synced local rows, skipping absence pass`);
+    return;
+  }
   const candidates = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
   if (candidates.length === 0) return;
   // The id pull pages by offset, so a cascade delete and an insert landing between two pages

@@ -434,4 +434,42 @@ describe('the meals absence pass (CUL-2076)', () => {
     await hydrateFromCloud();
     expect(mealIds()).toContain('m-e1');
   });
+
+  it('never deletes on an empty server answer, the shape an anon-key fallback reads', async () => {
+    // A dropped session sends the anon key; RLS answers zero meals with no error.
+    mockServer = { events: [], meals: [], meal_components: [] };
+    seedEvent('e2');
+    seedMeal('e2');
+    await hydrateFromCloud();
+    expect(mealIds()).toEqual(['m-e1', 'm-e2']);
+  });
+
+  it('never deletes a ghost re-queued by an edit after the snapshot', async () => {
+    seedEvent('e2');
+    seedMeal('e2');
+    // The edit lands while the pass confirms its candidates by id.
+    const realFrom = jest.requireMock('./supabase').supabase.from as jest.Mock;
+    const inner = realFrom.getMockImplementation()!;
+    realFrom.mockImplementation((table: string) => {
+      const api = inner(table);
+      return {
+        ...api,
+        select: (cols: string, opts?: { head?: boolean }) => {
+          const q = api.select(cols, opts) as Record<string, unknown>;
+          const realIn = q.in as (c: string, v: string[]) => unknown;
+          q.in = (c: string, v: string[]) => {
+            if (table === 'meals') mockDb.prepare("UPDATE meals SET synced = 0, updated_at = '2026-10-21T09:00:00.000Z' WHERE id = 'm-e2'").run();
+            return realIn(c, v);
+          };
+          return q;
+        },
+      };
+    });
+    try {
+      await hydrateFromCloud();
+    } finally {
+      realFrom.mockImplementation(inner);
+    }
+    expect(mealIds()).toContain('m-e2');
+  });
 });
