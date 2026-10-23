@@ -33,7 +33,7 @@ Answers were derived from the **actual code and schema**, not from intent:
 | `supabase/functions/*` (Anthropic callers) | `extract-food-from-photo`, `extract-medication-from-photo`, `analyze-vomit`, `analyze-stool`, `generate-signal`, `ask`. `generate-report` uses **no AI**. |
 | `ai_usage` table (migration 031) | Per-account, per-feature, per-day AI-call counters (fair-use throttle) — the one app-generated, account-linked usage datum. |
 | `app/settings/feedback.tsx`, `lib/appInfo.ts`, `lib/support.ts` | Support + "Share feedback" compose a **`mailto:`** opened in the user's own mail app — app version + OS travel in that email, **never to our backend**. |
-| `supabase/migrations/037_ask_config.sql`, `lib/appConfig.ts` | **Ask** ships **dark** (`ask_enabled = {"enabled": false, "allowlist": []}`) and stores **no** conversation table — not a live data practice for v1 (see §5.4). |
+| `supabase/migrations/037_ask_config.sql`, `lib/appConfig.ts` | **Ask** ships in the binary, allowlisted to internal accounts (`ask_enabled`), and stores **no** conversation table. Named in policy §3 since CUL-1769 (see §5.5). |
 
 Grep receipts (reproducible):
 - No tracking/ad/analytics SDK: `grep -riE "sentry|firebase|analytics|amplitude|segment|admob|idfa|tracking-transparency" package.json` → **0 hits** (the `analytics.ts` in `lib/` is Culprit's own on-device pattern engine, not a vendor SDK).
@@ -109,7 +109,7 @@ Every one of the six: **Purposes → check "App Functionality" only** · **Linke
 - **Policy trace:** §1 "Your first and last name."
 
 ### 4.3 User Content → Photos or Videos — **Yes / Linked / No tracking / App Functionality**
-- **Source:** pet profile photos (`nyx-pet-photos`), event/symptom photos (`nyx-event-attachments`), food-package photos (`nyx-food-photos`), medication-label photos (`nyx-medication-photos`), vet-visit attachments + documents (`nyx-vet-attachments`, `nyx-vet-documents`). Some are sent to **Anthropic** for extraction/reads when the owner triggers that action (§8; policy §3).
+- **Source:** pet profile photos (`nyx-pet-photos`), event/symptom photos (`nyx-event-attachments`), food-package photos (`nyx-food-photos`), medication-label photos (`nyx-medication-photos`), vet-visit attachments + documents (`nyx-vet-attachments`, `nyx-vet-documents`). Some are sent to **Anthropic**: food/med label photos when the owner chooses add-by-photo; vomit/stool photos **automatically** on log or photo-add (CUL-1769; §8; policy §3).
 - **Purpose = App Functionality:** store/sync the photo, extract label data, produce the observational read. No ads/analytics/marketing.
 - **Location note:** re-encoded on upload → EXIF/GPS stripped before leaving the device (so this does **not** pull in "Location"; §5.3).
 - **Policy trace:** §1 "Photos and files," §3 AI features.
@@ -150,9 +150,9 @@ Photographing a food package reads the photo's **timestamp** (EXIF *date-taken*)
 ### 5.4 Support/feedback + app-version/OS → **not collected** (customer-service carve-out)
 "Contact support" and "Share feedback" build a **`mailto:`** and hand off to the user's own mail app (`app/settings/feedback.tsx`, `lib/support.ts`); the app version + OS string (`lib/appInfo.ts`) rides *inside that email*, which the user sends themselves. Nothing is transmitted to our backend, and it is optional customer-service content → Apple does not require disclosing it. Hence **Customer Support = No** and **Diagnostics = No**. (No crash/telemetry SDK exists; the policy commits to updating the label *before* adding one.)
 
-### 5.5 Ask is shipped **dark** → nothing to disclose for v1 (watch-item)
-The `ask` Edge Function can send a typed question + retrieved record context to Anthropic — but Ask ships **off for everyone** (`ask_enabled = {"enabled": false, "allowlist": []}`, migration 037) and persists **no** conversation table. In the submission build it is not a live data practice, so it adds **no** label entry and needs **no** new policy line today.
-- **Watch-item (not a v1 blocker):** if Ask (or its A8 live-photo path) is ever enabled for real users, re-confirm this sheet and add Ask to **policy §3** (which today names four AI flows: food, med, symptom, phrasing — all live — but not Ask). Flagged for the PM in §9.
+### 5.5 Ask → named in policy §3, no new label entry
+The `ask` Edge Function sends a typed question + retrieved record context (and, via A8, live photo reads) to Anthropic. It is allowlisted to internal accounts today but ships in the binary, so **policy §3 now names it** (CUL-1769). It persists **no** conversation table. Everything it sends is already-disclosed User Content (§4.3/§4.4) processed for App Functionality, so it adds **no** label entry.
+- **Watch-item:** if Ask ever gains a new data type or a stored transcript, re-confirm this sheet and policy §3.
 
 ---
 
@@ -161,7 +161,7 @@ The `ask` Edge Function can send a typed question + retrieved record context to 
 | Label answer | Privacy-policy anchor | Agree? |
 |---|---|:--:|
 | Email + Name collected, App Functionality, no marketing | §1 Account info; §2 "we send transactional email only … not marketing" | ✅ |
-| Photos collected (pet/symptom/food/med/vet), sent to Anthropic on the owner's action | §1 Photos and files; §3 AI features | ✅ |
+| Photos collected (pet/symptom/food/med/vet); label photos sent to Anthropic on the owner's action, vomit/stool photos automatically on log | §1 Photos and files; §3 AI features | ✅ |
 | Other User Content (the health log) collected, computed into trends/reports on our own servers | §1 Health log; §2 "To run the app" | ✅ |
 | User ID collected; per-account RLS | §4 "row-level security"; §10 Security | ✅ |
 | Product Interaction (usage metering) collected, internal only, never shared | §1 "Usage metering … never shared, never used for any other purpose" | ✅ |
@@ -171,7 +171,7 @@ The `ask` Edge Function can send a typed question + retrieved record context to 
 | **No** Device ID / push token (local notifications only) | §1 "What we do NOT collect"; policy silent on push (consistent — none exists) | ✅ |
 | Everything deletable in-app (hard delete) — supports "Data Linked to You" honesty | §7 Deleting your account | ✅ |
 
-**Mismatches found: none for v1.** One forward-looking gap (Ask not yet in policy §3) — harmless while Ask is dark; tracked as a watch-item (§5.5, §9).
+**Mismatches found:** policy §3 said every AI flow was "triggered by an action you take" and omitted Ask, while vomit/stool reads and Signal phrasing fire automatically. Corrected in CUL-1769 (repo copy; the hosted page updates on PM approval). No label answer changes.
 
 **Two policy placeholders that gate publishing the *policy* (not this label):** Operator legal name (§Operator) and email-provider name (§4) are still `[...]`. They do not change any label answer, but the hosted policy the label points to must have them filled before submission (guide step 3 / B-229).
 
@@ -202,7 +202,7 @@ The `ask` Edge Function can send a typed question + retrieved record context to 
 
 The questionnaire discloses **data types**, not processor names (that is the policy's job, §3/§4). Both third parties are **service providers/processors** acting on Culprit's behalf, which is why **Tracking = No** holds:
 - **Supabase** — auth, database, storage, Edge Functions (our infrastructure; TLS + at-rest encryption; per-account RLS). Not an independent collector, not an ad network.
-- **Anthropic** — processes only the specific inputs in policy §3, only when the owner triggers a feature. Under Anthropic's commercial API terms, inputs are **not used to train models** and are retained only briefly for abuse monitoring. Not an ad network or data broker.
+- **Anthropic** — processes only the specific inputs in policy §3, at the moments §3 names (label extraction and Ask on the owner's action; vomit/stool photo reads and Signal phrasing automatically — CUL-1769). Under Anthropic's commercial API terms, inputs are **not used to train models** and are retained only briefly for abuse monitoring. Not an ad network or data broker.
 
 Neither links Culprit's data with third-party data for advertising, and neither is a data broker — so nothing here is "tracking" in the ATT sense.
 
@@ -213,7 +213,7 @@ Neither links Culprit's data with third-party data for advertising, and neither 
 - [ ] **Ratify §5.2 (usage metering).** Recommended: disclose `ai_usage` as **Usage Data → Product Interaction** (the sheet assumes this). If you prefer to omit it, tell me and I'll soften the policy's "Usage metering" paragraph so the two still match — never change only one.
 - [ ] **Transcribe §7 into ASC** (App Privacy section) when ready — the six checks + identical purpose/linked/tracking answers.
 - [ ] **Before submission (policy, not label):** fill the two policy placeholders — Operator legal name and email-provider name (§4) — so the hosted privacy policy the label links to is complete (guide step 3 / B-229).
-- [ ] **Watch-item, not a v1 blocker:** if **Ask** is turned on for real users (flip `ask_enabled`), re-run this sheet and add Ask to **policy §3** before it goes live (§5.5).
+- [ ] **Watch-item, not a v1 blocker:** if **Ask** is turned on for real users (flip `ask_enabled`), re-run this sheet (§5.5); policy §3 already names it (CUL-1769).
 - [ ] After entering it in ASC, confirm step 14: `Guide step 14 complete: nutrition label entered in ASC.`
 
 ---
