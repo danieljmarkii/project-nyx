@@ -1,8 +1,8 @@
-// The first mix (Mixed meals row 5, CUL-2054; spec §7.1, §7.5 D-M1/D-M2, §10).
+// The first mix (Mixed meals row 5, CUL-2054; spec §7.1, §7.5 D-M1, §10; CUL-2133).
 //
 // Pinned: the route reads the bowl's first food from the record; the picker is the
-// mixable-only picker with that food locked; a chip tap writes the bowl through the one
-// writer; the step holds while the bar draws; from the card, the card comes back AS the
+// mixable-only picker with that food locked; the split rises as a sheet over the picker; a
+// chip tap only picks, and Save writes the bowl through the one writer; from the card, the card comes back AS the
 // mix carrying the card it left (its trial heads-up above all), and from the detail
 // screen nothing is shown. A failed write is said and nothing closes.
 
@@ -15,7 +15,7 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = jest.requireActual('react-native');
-  return { SafeAreaView: View };
+  return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 const mockGetMeal = jest.fn();
 jest.mock('../lib/db', () => ({ getMealForEvent: (...a: unknown[]) => mockGetMeal(...a) }));
@@ -29,10 +29,9 @@ jest.mock('../components/log/FoodPicker', () => ({
   },
 }));
 
-import { Alert } from 'react-native';
+import { Alert, Modal } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import MixRoute, { CARD_RETURN_DELAY_MS } from './mix';
-import { SPLIT_HOLD_MS } from '../components/log/MixSplitPanel';
 import { useMomentStore } from '../store/momentStore';
 import { usePetStore } from '../store/petStore';
 import { holdMixReturn } from '../lib/mixReturn';
@@ -46,6 +45,15 @@ async function openAndPick() {
   const view = render(<MixRoute />);
   await act(async () => {});
   return view;
+}
+
+function pickChicken() {
+  act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)(CHICKEN));
+}
+
+async function pickAndSave(view: ReturnType<typeof render>, chip: string) {
+  fireEvent.press(view.getByText(chip));
+  await act(async () => { fireEvent.press(view.getByTestId('mix-split-save')); });
 }
 
 beforeEach(() => {
@@ -82,20 +90,55 @@ it('the first food cannot be picked as the second', async () => {
   expect(view.queryByText('About how much of each?')).toBeNull();
 });
 
-it('from the card: a chip writes the bowl, holds, and the card returns as the mix with its heads-up', async () => {
+it('the split rises over the picker as a layer, never a second Modal (C-14)', async () => {
+  const view = await openAndPick();
+  pickChicken();
+  view.getByText('About how much of each?');
+  // The picker is still mounted beneath the sheet, and no RN Modal was presented.
+  expect(lastPickerProps).not.toBeNull();
+  expect(view.UNSAFE_queryAllByType(Modal)).toHaveLength(0);
+});
+
+it('a chip tap only picks: nothing is written until Save, and a mistap can be re-picked', async () => {
+  const view = await openAndPick();
+  pickChicken();
+  // Nothing preselected (§7.1), so Save starts off.
+  await act(async () => { fireEvent.press(view.getByTestId('mix-split-save')); });
+  expect(mockSet).not.toHaveBeenCalled();
+  fireEvent.press(view.getByText('¾·¼'));
+  fireEvent.press(view.getByText('½·½'));
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  expect(mockSet).not.toHaveBeenCalled();
+  expect(mockBack).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.press(view.getByTestId('mix-split-save')); });
+  expect(mockSet).toHaveBeenCalledTimes(1);
+  expect(mockSet.mock.calls[0][1][0]).toEqual(expect.objectContaining({ share: 1 / 2 }));
+});
+
+it('tapping the veil goes back to the picker with nothing written', async () => {
+  const view = await openAndPick();
+  pickChicken();
+  fireEvent.press(view.getByText('⅓·⅔'));
+  fireEvent.press(view.getByLabelText('Back to the foods'));
+  await act(async () => { jest.advanceTimersByTime(1000); });
+  expect(view.queryByText('About how much of each?')).toBeNull();
+  expect(mockSet).not.toHaveBeenCalled();
+  expect(mockBack).not.toHaveBeenCalled();
+  // And a second pick opens the sheet again.
+  pickChicken();
+  view.getByText('About how much of each?');
+});
+
+it('from the card: Save writes the bowl, closes, and the card returns as the mix with its heads-up', async () => {
   holdMixReturn({ eventId: 'e1', petId: 'p1', occurredAt: '2026-10-21T07:30:00.000Z', foodType: 'meal', intakeRating: 'all', trialFlag: FLAG });
   const view = await openAndPick();
-  act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)(CHICKEN));
-  view.getByText('About how much of each?');
-  // Nothing preselected (§7.1).
-  await act(async () => { fireEvent.press(view.getByText('⅓·⅔')); });
+  pickChicken();
+  await pickAndSave(view, '⅓·⅔');
   expect(mockSet).toHaveBeenCalledWith('e1', [
     expect.objectContaining({ foodItemId: 'rabbit', foodLabel: 'Weruva Rabbit Pâté', share: 1 / 3, shareSource: 'preset' }),
     expect.objectContaining({ foodItemId: 'chicken', foodLabel: 'Weruva Chicken Pâté', shareSource: 'preset' }),
   ], expect.any(Date), { headsUp: 'card' });
-  // D-M2: the step holds while the bar draws.
-  expect(mockBack).not.toHaveBeenCalled();
-  await act(async () => { jest.advanceTimersByTime(SPLIT_HOLD_MS); });
+  // The bar already answered the pick, so Save closes at once.
   expect(mockBack).toHaveBeenCalledTimes(1);
   await act(async () => { jest.advanceTimersByTime(CARD_RETURN_DELAY_MS + 10); });
   const p = useMomentStore.getState().payload;
@@ -106,31 +149,33 @@ it('from the card: a chip writes the bowl, holds, and the card returns as the mi
 it('from the detail screen: the route closes and no card shows', async () => {
   mockParams = { event: 'e1', pet: 'p1', from: 'detail' };
   const view = await openAndPick();
-  act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)(CHICKEN));
-  await act(async () => { fireEvent.press(view.getByText('½·½')); });
+  pickChicken();
+  await pickAndSave(view, '½·½');
   // CUL-2088: with no card to land on, the bowl's trial heads-up waits for the meal's screen.
   expect(mockSet).toHaveBeenCalledWith('e1', expect.any(Array), expect.any(Date), { headsUp: 'meal_screen' });
-  await act(async () => { jest.advanceTimersByTime(SPLIT_HOLD_MS + CARD_RETURN_DELAY_MS + 10); });
+  await act(async () => { jest.advanceTimersByTime(CARD_RETURN_DELAY_MS + 10); });
   expect(mockBack).toHaveBeenCalledTimes(1);
   expect(useMomentStore.getState().payload).toBeNull();
 });
 
-it('a failed write is said, and the step stays open', async () => {
+it('a failed write is said, the step stays open, and the pick is kept for another Save', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   mockSet.mockRejectedValueOnce(new Error('disk'));
   const view = await openAndPick();
-  act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)(CHICKEN));
-  await act(async () => { fireEvent.press(view.getByText('¾·¼')); });
-  await act(async () => { jest.advanceTimersByTime(SPLIT_HOLD_MS + 10); });
+  pickChicken();
+  await pickAndSave(view, '¾·¼');
   expect(alert).toHaveBeenCalledWith('Couldn’t save that', 'Something went wrong. Please try again.');
   expect(mockBack).not.toHaveBeenCalled();
   view.getByText('About how much of each?');
+  await act(async () => { fireEvent.press(view.getByTestId('mix-split-save')); });
+  expect(mockSet).toHaveBeenCalledTimes(2);
+  expect(mockBack).toHaveBeenCalledTimes(1);
   alert.mockRestore();
 });
 
 it('Other amounts: one unit for both, and no save until both are above zero', async () => {
   const view = await openAndPick();
-  act(() => (lastPickerProps!.onPickFood as (f: unknown) => void)(CHICKEN));
+  pickChicken();
   fireEvent.press(view.getByText('Other amounts…'));
   view.getByText('Amounts, as you measured them');
   fireEvent.press(view.getByText('Cans'));

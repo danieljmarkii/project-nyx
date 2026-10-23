@@ -1,15 +1,17 @@
 // "About how much of each?" — the split step of a first mix (Mixed meals row 5, CUL-2054;
-// spec §7.1, §7.5, §11, P-2, P-3).
+// spec §7.1, §7.5, §11, P-2, P-3; CUL-2133).
 //
 // A split bar and the five fraction chips, first food on the left, NOTHING preselected: a
-// default would be the app guessing the owner's bowl. The chip tap is the save (the
-// IntakeFirstMealSheet pattern): the bar draws in on the shipped "compare" kind and the
-// step holds about 540 ms so the bar answers the tap before the card returns (D-M2).
+// default would be the app guessing the owner's bowl. A chip tap PICKS: the bar draws in on
+// the shipped "compare" kind, and another tap redraws it. Save writes the bowl (PM,
+// 2026-10-23, CUL-2133: the chip tap used to be the save, and on device a mistap was
+// recorded before the owner could change their mind). The bar has already answered the
+// pick, so Save closes at once; the old 540 ms hold is gone with the tap-as-save.
 // "Other amounts…" takes what the owner measured, one unit for both foods, and its save
 // stays off until both amounts are above zero. There is no "Not sure" (P-3).
 //
-// A panel, not a Modal: it renders as a step of the mix route, which is itself the
-// platform modal, so nothing here stacks a second RN Modal (C-14).
+// A panel, not a Modal: the mix route renders it in its own sheet layer, and the route is
+// itself the platform modal, so nothing here stacks a second RN Modal (C-14).
 
 import { useMemo, useState } from 'react';
 import { Animated, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
@@ -19,7 +21,7 @@ import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
-import { DRAW_IN_MOTION, DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
+import { DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
 import {
   MIX_STOPS,
   MIX_UNITS,
@@ -31,12 +33,8 @@ import {
   type MixFood,
   type MixUnit,
 } from '../../lib/mixRatio';
+import { shareGlyph } from '../../lib/mealBowlLabel';
 import type { ComponentInput } from '../../lib/mealComposition';
-
-/** D-M2: the step holds while the bar draws, its two marks' beats end to end, so the tap
- *  is answered before the card comes back. Derived from the shipped compare kind, never a
- *  new number. */
-export const SPLIT_HOLD_MS = DRAW_IN_MOTION.compareMs + DRAW_IN_MOTION.compareStaggerMs;
 
 type Food = MixFood & { rowName: string };
 
@@ -45,7 +43,7 @@ interface Props {
   second: Food;
   /** Writes the bowl. Resolves false when the write failed (and said so). */
   onSave: (components: ComponentInput[]) => Promise<boolean>;
-  /** After the hold: the bowl is saved and the step can close. */
+  /** The bowl is saved and the step can close. */
   onDone: (components: ComponentInput[]) => void;
 }
 
@@ -77,21 +75,23 @@ export function MixSplitPanel({ first, second, onSave, onDone }: Props) {
     if (saving) return;
     setSaving(true);
     const ok = await onSave(components);
+    // A failed write keeps the pick: the owner already chose it, and Save is one tap again.
     if (!ok) {
       setSaving(false);
-      setStop(null);
       return;
     }
-    // The hold is not motion: under Reduce Motion the bar appears at its split, and the
-    // owner still gets the same beat to see it before the card returns.
-    setTimeout(() => onDone(components), SPLIT_HOLD_MS);
+    onDone(components);
   }
 
+  // A tap on the picked chip is not a way back to nothing: the pick stays.
   function pickStop(next: string | null) {
     if (next === null || saving) return;
-    const i = Number(next);
-    setStop(i);
-    void save(presetComponents(first, second, i));
+    setStop(Number(next));
+  }
+
+  function savePicked() {
+    if (stop === null) return;
+    void save(presetComponents(first, second, stop));
   }
 
   function saveMeasured() {
@@ -110,14 +110,23 @@ export function MixSplitPanel({ first, second, onSave, onDone }: Props) {
 
       {mode === 'chips' ? (
         <>
-          {/* The bar: empty until a split is chosen, then the two foods as two segments,
-              first on the left, drawing in from their left edges. Decorative to assistive
-              tech: the chip just chosen says the same thing in words. */}
-          <View style={styles.track} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+          {/* The bar: an outline until a split is picked (a grey fill read as a loading
+              skeleton on device, CUL-2133), then the two foods as two segments, first on
+              the left, drawing in from their left edges, each carrying its own fraction.
+              Decorative to assistive tech: the chip just picked says the same in words. */}
+          <View
+            style={[styles.track, firstShare === null && styles.trackEmpty]}
+            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden
+          >
             {firstShare !== null && (
               <>
-                <Animated.View style={[styles.segment, styles.segmentFirst, { flex: firstShare }, markStyle(0)]} />
-                <Animated.View style={[styles.segment, styles.segmentSecond, { flex: 1 - firstShare }, markStyle(1)]} />
+                <Animated.View style={[styles.segment, styles.segmentFirst, { flex: firstShare }, markStyle(0)]}>
+                  <ThemedText style={styles.segmentText}>{shareGlyph(firstShare)}</ThemedText>
+                </Animated.View>
+                <Animated.View style={[styles.segment, styles.segmentSecond, { flex: 1 - firstShare }, markStyle(1)]}>
+                  <ThemedText style={styles.segmentText}>{shareGlyph(1 - firstShare)}</ThemedText>
+                </Animated.View>
               </>
             )}
           </View>
@@ -131,6 +140,13 @@ export function MixSplitPanel({ first, second, onSave, onDone }: Props) {
             onChange={pickStop}
             disabled={saving}
             accessibilityLabel={`How much ${first.rowName} and ${second.rowName}`}
+          />
+          <PrimaryButton
+            label="Save"
+            onPress={savePicked}
+            disabled={stop === null}
+            loading={saving}
+            testID="mix-split-save"
           />
           <TouchableOpacity
             onPress={() => setMode('amounts')}
@@ -193,16 +209,29 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   track: {
-    height: 14,
-    borderRadius: 4,
-    backgroundColor: theme.colorBorder,
+    height: 22,
+    borderRadius: theme.radiusSmall,
     flexDirection: 'row',
     overflow: 'hidden',
     columnGap: 2,
   },
+  trackEmpty: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colorBorderStrong,
+  },
   segment: {
-    height: 14,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
     transformOrigin: DRAW_IN_ORIGIN.compare,
+  },
+  // Near-black on both fills: white on the meal teal fails contrast (PrimaryButton's
+  // accent note), and the tint needs the dark ink anyway.
+  segmentText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
   },
   // Two fills, never text (C-1): the meal colour and its light tint, so the two foods
   // read apart without a legend; the names beneath say which is which.
