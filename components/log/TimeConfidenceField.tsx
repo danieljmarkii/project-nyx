@@ -155,6 +155,9 @@ export function TimeConfidenceField({
           </View>
           {pointSheet && (
             <TimeEditSheet
+              // Keyed on the point: if the caller re-derives it while the sheet is open
+              // (log.tsx's foreground refresh), the draft re-seeds rather than going stale.
+              key={point.getTime()}
               value={point}
               title="When did this happen?"
               onCancel={() => setPointSheet(false)}

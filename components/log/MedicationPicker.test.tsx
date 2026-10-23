@@ -116,11 +116,13 @@ describe('MedicationPicker — the courses shelf (CUL-1908 P7)', () => {
     expect(tree.queryByText("Biscuit's courses")).toBeNull();
   });
 
-  it('a failed courses read is the same failed read the band says (C-12)', async () => {
+  it('a failed courses read costs only the shelf: the tiles still log', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     DB.getActiveCourseItemIds.mockRejectedValue(new Error('SQLITE_BUSY'));
     const tree = renderNamed();
-    expect(await tree.findByText(MED_READ_FAILED)).toBeTruthy();
+    expect(await tree.findByText('Maropitant')).toBeTruthy();
+    expect(tree.queryByText(MED_READ_FAILED)).toBeNull();
+    expect(tree.queryByText("Biscuit's courses")).toBeNull();
     warn.mockRestore();
   });
 });

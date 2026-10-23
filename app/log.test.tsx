@@ -489,6 +489,25 @@ describe('/log — the design pass (CUL-1908)', () => {
     expect(getByText('Log 43.1 lbs')).toBeTruthy();
   });
 
+  it('P9: a profile weight that differs from the last reading gets no caption under it', async () => {
+    mockTypeParam = 'weight_check';
+    // Profile edited to 21 kg after a 19.3 kg weighing: the caption would name a number
+    // the field does not hold.
+    usePetStore.setState({ activePet: { id: 'p1', name: 'Biscuit', weight_kg: 21 } as never });
+    mockGetLatestWeighing.mockResolvedValueOnce({ weightKg: 19.3, occurredAt: new Date(2026, 0, 2).toISOString() });
+    const { queryByText } = render(<LogScreen />);
+    await act(async () => {});
+    expect(mockGetLatestWeighing).toHaveBeenCalled();
+    expect(queryByText(/Last weighed/)).toBeNull();
+  });
+
+  it('P9: the button states the parsed number, never the raw keystrokes', () => {
+    mockTypeParam = 'weight_check';
+    const { getByPlaceholderText, getByRole } = render(<LogScreen />);
+    fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '012.40');
+    expect(getByRole('button', { name: /^Log 12\.4 lbs$/ })).toBeTruthy();
+  });
+
   it('P9: a pet never weighed gets no caption, as before', async () => {
     mockTypeParam = 'weight_check';
     const { queryByText } = render(<LogScreen />);
@@ -535,5 +554,20 @@ describe('/log — the dose step from the meal card (CUL-1908 P8)', () => {
     expect(await findByText(/^Mochi's meal · /)).toBeTruthy();
     expect(getByText('Indoor Cat Dry')).toBeTruthy();
     expect(getByText('What did Mochi take?')).toBeTruthy();
+  });
+
+  it('names the day too when the meal was not today (a retroactive add from its record)', async () => {
+    mockTypeParam = 'medication';
+    mockWidgetParams = { pairedEventId: 'meal-8', pairedPetId: 'p1', pairedFoodType: 'treat', comboSource: 'detail' };
+    const earlier = new Date();
+    earlier.setDate(earlier.getDate() - 3);
+    earlier.setHours(7, 42, 0, 0);
+    jest.spyOn(require('../lib/db'), 'getEventOccurredAt').mockResolvedValue(earlier.toISOString());
+    jest.spyOn(require('../lib/db'), 'getLibraryMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getRecentMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getActiveCourseItemIds').mockResolvedValue([]);
+    const day = earlier.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const { findByText } = render(<LogScreen />);
+    expect(await findByText(new RegExp(`^Biscuit's treat · ${day}`))).toBeTruthy();
   });
 });

@@ -209,6 +209,10 @@ export default function LogModal() {
   // said under the value so a number nobody re-took never reads as today's weighing.
   // Null until read, and when the pet was never weighed (then nothing is said, as before).
   const [lastWeighing, setLastWeighing] = useState<{ weightKg: number; occurredAt: string } | null>(null);
+  // The prefill as seeded, so the caption is said only when it describes that number: the
+  // profile weight has other writers (EditPetModal), and a caption naming a different
+  // reading under it would pass off a number nobody weighed as a weighing.
+  const [weightPrefill, setWeightPrefill] = useState('');
 
   // Shared
   const [notes, setNotes] = useState('');
@@ -339,7 +343,9 @@ export default function LogModal() {
   function seedWeightPrefill() {
     const pet = usePetStore.getState().activePet;
     const lastKg = pet?.weight_kg ?? null;
-    setWeightLbsStr(lastKg != null ? kgToLbs(lastKg) : '');
+    const seeded = lastKg != null ? kgToLbs(lastKg) : '';
+    setWeightLbsStr(seeded);
+    setWeightPrefill(seeded);
     setLastWeighing(null);
     if (!pet) return;
     // A local read; a failure only costs the caption, never the log.
@@ -1217,6 +1223,10 @@ export default function LogModal() {
         {renderTimeRow()}
         {timeSheetOpen && (
           <TimeEditSheet
+            // Keyed on the point: a foreground return can re-derive an untouched 'now'
+            // point while the sheet is open (CUL-576), and the sheet seeds its draft once,
+            // so a stale draft saved unchanged would read as an owner edit at the old time.
+            key={occurredAt.getTime()}
             value={occurredAt}
             title={sheetTitle}
             onCancel={() => setTimeSheetOpen(false)}
@@ -1340,7 +1350,11 @@ export default function LogModal() {
     const comboPetName = resolveRecordPetName(pets, pairedPetId);
     const comboKind = pairedFoodType === 'treat' ? 'treat' : 'meal';
     const comboFoodName = pairedFoodName?.trim() || null;
-    const comboWhen = pairedMealAt ? ` · ${formatTime(new Date(pairedMealAt))}` : '';
+    // A meal from an earlier day (a retroactive add from its record) names its day too.
+    const pairedMealDate = pairedMealAt ? new Date(pairedMealAt) : null;
+    const comboWhen = pairedMealDate
+      ? ` · ${pairedMealDate.toDateString() === new Date().toDateString() ? '' : `${shortDate(pairedMealDate)}, `}${formatTime(pairedMealDate)}`
+      : '';
     const headerPetName = isComboMode ? comboPetName : petName;
     // The Recent shelf is pet-scoped, so it should show the MEAL's pet's drugs in
     // combo mode; the Library is global so it's identical either way.
@@ -1400,8 +1414,9 @@ export default function LogModal() {
     // and a single Log button (Principle 1 / Jordan). The button only enables on a
     // real positive number (parseWeightLbsToKg), never a 0/NaN that would corrupt a
     // trend line.
-    const canConfirmWeight = parseWeightLbsToKg(weightLbsStr) != null;
-    const lastWeighedCaption = lastWeighing
+    const parsedWeightKg = parseWeightLbsToKg(weightLbsStr);
+    const canConfirmWeight = parsedWeightKg != null;
+    const lastWeighedCaption = lastWeighing && kgToLbs(lastWeighing.weightKg) === weightPrefill
       ? `Last weighed ${shortDate(new Date(lastWeighing.occurredAt))}: ${kgToLbs(lastWeighing.weightKg)} lbs`
       : null;
     return (
@@ -1426,7 +1441,8 @@ export default function LogModal() {
                 the label, so the label is the reason. */}
             <PrimaryButton
               // P9 — the button says the number it writes (Principle 8).
-              label={canConfirmWeight ? `Log ${weightLbsStr.trim()} lbs` : 'Enter a weight to log'}
+              // Formatted from the parsed value, so it is the number the write carries.
+              label={parsedWeightKg != null ? `Log ${kgToLbs(parsedWeightKg)} lbs` : 'Enter a weight to log'}
               onPress={() => { void guardSubmit(handleConfirmWeight); }}
               disabled={!canConfirmWeight}
             />

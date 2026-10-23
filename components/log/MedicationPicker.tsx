@@ -62,8 +62,8 @@ interface Props {
 export function MedicationPicker({ petId, petName, onPickMedication, onAddNew, onOpenDetail }: Props) {
   const [recent, setRecent] = useState<PickerMedication[]>([]);
   const [library, setLibrary] = useState<PickerMedication[]>([]);
-  // CUL-1908 P7 — the drugs this pet has a running course of. Read with the shelves, so a
-  // throw is the same failed read the band says (C-12).
+  // CUL-1908 P7 — the drugs this pet has a running course of. Read with the shelves; a
+  // throw costs only the shelf (an absent shelf claims nothing), never the tiles.
   const [courseIds, setCourseIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [read, setRead] = useState<LibraryRead>('reading');
@@ -80,7 +80,12 @@ export function MedicationPicker({ petId, petName, onPickMedication, onAddNew, o
           const [r, l, c] = await Promise.all([
             getRecentMedications(petId, RECENT_DAYS, RECENT_LIMIT),
             getLibraryMedications(),
-            getActiveCourseItemIds(petId),
+            // Ordering only, so its failure degrades to no shelf rather than failing the
+            // picker: the one-tap dose never waits on how its tiles are sorted.
+            getActiveCourseItemIds(petId).catch((err: unknown) => {
+              console.warn('[MedicationPicker] courses read failed; no courses shelf:', err);
+              return [] as string[];
+            }),
           ]);
           if (!cancelled) {
             setRecent(r);
