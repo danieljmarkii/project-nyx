@@ -12,6 +12,9 @@ import { ThemedText } from './ThemedText';
 // each already at the 44pt floor across its share of the width, so slop buys no reach
 // and only makes neighbours share a band where a tap resolves by z-order, not intent.
 // On a classifier (Saw it / Found it) the wrong segment is a wrong record.
+//
+// No `disabled` prop yet: neither copy it replaces locks, and `disabled` is a claim
+// that needs a reason beside it (C-7). The first caller that must lock adds both.
 
 export interface SegmentOption<T extends string> {
   value: T;

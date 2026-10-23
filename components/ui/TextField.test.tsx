@@ -83,9 +83,12 @@ describe('TextField', () => {
       expect(getByTestId('note').props.multiline).toBe(true);
       const field = flatStyle(getByTestId('note-field'));
       expect(field.minHeight as number).toBeGreaterThan(theme.space5);
-      expect(field.maxHeight as number).toBeGreaterThan(field.minHeight as number);
       expect(field.alignItems).toBe('flex-start');
-      expect(flatStyle(getByTestId('note')).textAlignVertical).toBe('top');
+      // The cap is the input's own, so iOS scrolls inside it rather than clipping.
+      const input = flatStyle(getByTestId('note'));
+      expect(input.maxHeight as number).toBeGreaterThan(field.minHeight as number);
+      expect(field.maxHeight).toBeUndefined();
+      expect(input.textAlignVertical).toBe('top');
     });
 
     it('stays one line by default', () => {
@@ -93,9 +96,8 @@ describe('TextField', () => {
         <TextField label="Email" value="" onChangeText={() => {}} testID="email" />,
       );
       expect(getByTestId('email').props.multiline).toBe(false);
-      const field = flatStyle(getByTestId('email-field'));
-      expect(field.maxHeight).toBeUndefined();
-      expect(field.alignItems).toBe('center');
+      expect(flatStyle(getByTestId('email')).maxHeight).toBeUndefined();
+      expect(flatStyle(getByTestId('email-field')).alignItems).toBe('center');
     });
 
     it('reports edits and draws no reveal toggle', () => {

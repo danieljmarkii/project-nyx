@@ -220,7 +220,6 @@ const styles = StyleSheet.create({
   fieldMultiline: {
     alignItems: 'flex-start',
     minHeight: MULTILINE_MIN_HEIGHT,
-    maxHeight: MULTILINE_MAX_HEIGHT,
   },
   input: {
     flex: 1,
@@ -234,8 +233,11 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
   },
   inputMultiline: {
-    // The box sets the height; the text starts at the top on both platforms.
+    // The cap sits on the input, not the box: an iOS multiline input scrolls only
+    // inside its own maxHeight, and a cap on the parent would clip it instead.
+    // The text starts at the top on both platforms.
     alignSelf: 'stretch',
+    maxHeight: MULTILINE_MAX_HEIGHT,
     textAlignVertical: 'top',
   },
   eyeButton: {
