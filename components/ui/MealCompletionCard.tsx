@@ -28,7 +28,7 @@ import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { END_TRIAL_LINE, mealFlagCopy, membershipFlagCopy } from '../../lib/trialContaminant';
 import { trialScreenHref } from '../../lib/trialRoute';
 import { bowlWithShares, cardBowlLabel, normalisedShares, type CardBowl } from '../../lib/mixCard';
-import { MIX_STOPS, stepStop, stopLabel, type StepToward } from '../../lib/mixRatio';
+import { MIX_STOPS, stepEndLine, stepStop, stopLabel, type StepToward } from '../../lib/mixRatio';
 import { shareGlyph } from '../../lib/mealBowlLabel';
 import { setMealComponents } from '../../lib/mealComponents';
 import { holdMixReturn } from '../../lib/mixReturn';
@@ -178,10 +178,10 @@ function MixStepper({ bowl, fade, onStep }: {
   const atSecondEnd = stepStop(firstShare, 'second') === null;
   const onStop = MIX_STOPS.some((st) => Math.abs(st - firstShare) <= 0.002);
   const value = onStop ? stopLabel(firstShare) : `${shareGlyph(firstShare)}·${shareGlyph(1 - firstShare)}`;
+  const endLine = stepEndLine(firstShare, a.rowName, b.rowName);
   const side = (food: typeof a, toward: StepToward, atEnd: boolean, glyph: string) => {
-    const share = toward === 'first' ? firstShare : 1 - firstShare;
-    const label = atEnd
-      ? `More ${food.rowName} in this bowl. Already at ${shareGlyph(share)}, the most the steps go.`
+    const label = atEnd && endLine
+      ? `More ${food.rowName} in this bowl. ${endLine}`
       : `More ${food.rowName} in this bowl`;
     return (
       <TouchableOpacity
@@ -201,14 +201,23 @@ function MixStepper({ bowl, fade, onStep }: {
     );
   };
   return (
-    <View style={styles.stepRow}>
-      {side(a, 'first', atFirstEnd, '‹')}
-      <Animated.View style={[styles.stepValueWrap, { opacity: fade }]}>
-        <ThemedText style={styles.stepValue} accessibilityLabel={`${shareGlyph(firstShare)} ${a.rowName}, ${shareGlyph(1 - firstShare)} ${b.rowName}`}>
-          {value}
-        </ThemedText>
-      </Animated.View>
-      {side(b, 'second', atSecondEnd, '›')}
+    <View>
+      <View style={styles.stepRow}>
+        {side(a, 'first', atFirstEnd, '‹')}
+        <Animated.View style={[styles.stepValueWrap, { opacity: fade }]}>
+          <ThemedText style={styles.stepValue} accessibilityLabel={`${shareGlyph(firstShare)} ${a.rowName}, ${shareGlyph(1 - firstShare)} ${b.rowName}`}>
+            {value}
+          </ThemedText>
+        </Animated.View>
+        {side(b, 'second', atSecondEnd, '›')}
+      </View>
+      {/* The dimmed side already speaks this line, so it is hidden from assistive tech
+          here rather than read twice. It fades with the split it explains. */}
+      {endLine ? (
+        <Animated.View style={{ opacity: fade }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <ThemedText style={styles.stepWhy} testID="mix-step-why">{endLine}</ThemedText>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -729,7 +738,10 @@ export function MealCompletionCard() {
   // The header always speaks the LOGGED sentence, derived from the payload, never from
   // `removed` (§2.3): through the collapse the old body is hidden from assistive tech,
   // and the Removed label belongs to the removal node and the announcement alone.
-  const headerLabel = `${headline}. ${occurredTime}`;
+  // CUL-2134 (mock M3): a bowl's subtitle says "one bowl", the cue that its two foods are
+  // one record and not two meals.
+  const subLine = meal?.bowl ? `${occurredTime} · one bowl` : occurredTime;
+  const headerLabel = `${headline}. ${subLine}`;
   // What VoiceOver is told: iOS speaks "Removed" through this hook on the `removed`
   // fact; Android through the removal node's live region when it mounts. Once each.
   const summaryLabel = notice ? notice.a11yLabel : headerLabel;
@@ -928,7 +940,7 @@ export function MealCompletionCard() {
                   {headline}
                 </ThemedText>
               </Animated.View>
-              <ThemedText style={styles.subLabel}>{occurredTime}</ThemedText>
+              <ThemedText style={styles.subLabel}>{subLine}</ThemedText>
             </Animated.View>
             {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
                 the header row rather than a footer of its own because everything
@@ -1392,6 +1404,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     fontWeight: theme.weightSemibold,
+  },
+  // The end stop's reason (CUL-2134): the card's quietest line, under the row it explains.
+  stepWhy: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    fontWeight: theme.weightRegular,
   },
 
 });
