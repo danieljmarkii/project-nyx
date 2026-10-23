@@ -250,6 +250,12 @@ describe('the Pet tab never shows another pet\'s records (CUL-2174)', () => {
 
     expect(biscuitRows(view)).toEqual([]);
     expect(view.queryByTestId('past-section')).toBeNull();
+    // No row action of Biscuit's is reachable under Mochi's name: the defect's write
+    // path (a dose for Mochi on Biscuit's course, Biscuit's condition resolved) is gone.
+    expect(view.queryByText('Resolve')).toBeNull();
+    expect(view.queryByText('End')).toBeNull();
+    expect(view.queryByText('Log a dose')).toBeNull();
+    expect(mockInsertMedicationDose).not.toHaveBeenCalled();
     expect(view.getByText('Mochi’s conditions could not be read just now.')).toBeTruthy();
     expect(view.getByText('Mochi’s medications could not be read just now.')).toBeTruthy();
     expect(view.getByText('Mochi’s past medications could not be read just now.')).toBeTruthy();
