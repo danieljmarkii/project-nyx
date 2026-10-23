@@ -153,6 +153,39 @@ describe('getPickerRotationItems', () => {
     expect(items.map((i) => i.id)).toEqual(['rabbit', 'chicken']);
   });
 
+  it('a food is placed by its latest feeding, plain or in a bowl', async () => {
+    mix('2026-10-18T08:00:00.000Z', [['chicken', 0.5], ['rabbit', 0.5]]);
+    meal('2026-10-19T08:00:00.000Z', 'duck');
+    meal('2026-10-20T08:00:00.000Z', 'chicken');
+    const items = await getPickerRotationItems(PET, 30, 12, mockNow);
+    expect(items.map((i) => i.id)).toEqual(['chicken', 'duck', 'mix:chicken|rabbit', 'rabbit']);
+  });
+
+  // The review's case: after a sync an older generation of a bowl can still be live. Only
+  // the newest generation is the bowl (the read rule), so its foods alone are fed.
+  it('an older generation still live after a sync puts none of its foods on the shelf', async () => {
+    // The older bowl holds three foods (the schema allows it, R3), so its stale Rabbit
+    // sits at a position the newer bowl does not fill.
+    const id = mix('2026-10-20T08:00:00.000Z', [['chicken', 0.4], ['duck', 0.3], ['rabbit', 0.3]]);
+    const later = new Date('2026-10-20T09:00:00.000Z').getTime();
+    [['chicken', 0.5], ['duck', 0.5]].forEach(([foodId, share], i) => {
+      mockDb.prepare(
+        `INSERT INTO meal_components (id, pet_id, event_id, position, food_item_id, food_label, share, share_source, created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'preset', ?, ?, 1)`,
+      ).run(mintGenerationId(later, 9, () => (i + 1) / 10), PET, id, i, foodId, foodId, share, '2026-10-20T09:00:00.000Z', '2026-10-20T09:00:00.000Z');
+    });
+    mockDb.prepare('UPDATE meals SET component_count = 2 WHERE event_id = ?').run(id);
+    const ids = (await getPickerRotationItems(PET, 30, 12, mockNow)).map((i) => i.id);
+    expect(ids).toEqual(['mix:chicken|duck', 'chicken', 'duck']);
+    expect(ids).not.toContain('rabbit');
+  });
+
+  it('a bowl with nothing live names no food as fed', async () => {
+    const id = mix('2026-10-20T08:00:00.000Z', [['chicken', 0.5], ['rabbit', 0.5]]);
+    mockDb.prepare('UPDATE meal_components SET deleted_at = ? WHERE event_id = ?').run('2026-10-20T09:00:00.000Z', id);
+    expect(await getPickerRotationItems(PET, 30, 12, mockNow)).toEqual([]);
+  });
+
   it('caps foods and mixes together at the limit', async () => {
     meal('2026-10-15T08:00:00.000Z', 'duck');
     mix('2026-10-18T08:00:00.000Z', [['chicken', 0.5], ['rabbit', 0.5]]);

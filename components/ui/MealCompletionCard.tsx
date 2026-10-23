@@ -941,7 +941,7 @@ export function MealCompletionCard() {
               hitSlop={HITSLOP_ACTION_LEFT}
               style={styles.actionBtn}
               accessibilityRole="button"
-              accessibilityLabel={payload.bowl ? 'Undo — remove this whole bowl, every food in it' : 'Undo — remove this log'}
+              accessibilityLabel={payload.bowl ? 'Undo bowl — remove every food in it' : 'Undo — remove this log'}
             >
               {/* CUL-2090: on a mixed bowl a bare "Undo" two seconds after mixing reads as
                   "undo the mix". The reversal is the same (the whole bowl goes, §7.1); the

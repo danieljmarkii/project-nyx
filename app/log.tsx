@@ -365,17 +365,6 @@ export default function LogModal() {
     setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
   }
 
-  // One-tap log path from the new picker — bypasses state so it works
-  // even before `selectedFoodId` has propagated through React. Provenance
-  // is forced to 'now' (with a fresh new Date()) because the user never
-  // saw the time picker on this path; the meal completion card offers the
-  // "Change time" escape hatch. Exception: if a photo with EXIF was
-  // attached before reaching the picker, preserve that provenance and
-  // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
-  // clinical trust, and clobbering it here would silently drop that.
-  // Returns whether an event was COMMITTED — the double-submit guard's contract
-  // (B-336). A null result means handleConfirm wrote nothing and already alerted,
-  // so the tiles must stay live for the retry.
   // Meals are inherently witnessed — you see yourself put the bowl down.
   // The B-010 found path does not apply (you don't "discover" a meal).
   function mealTimeFields(): TimeFields {
@@ -433,6 +422,17 @@ export default function LogModal() {
     return true;
   }
 
+  // One-tap log path from the new picker — bypasses state so it works
+  // even before `selectedFoodId` has propagated through React. Provenance
+  // is forced to 'now' (with a fresh new Date()) because the user never
+  // saw the time picker on this path; the meal completion card offers the
+  // "Change time" escape hatch. Exception: if a photo with EXIF was
+  // attached before reaching the picker, preserve that provenance and
+  // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
+  // clinical trust, and clobbering it here would silently drop that.
+  // Returns whether an event was COMMITTED — the double-submit guard's contract
+  // (B-336). A null result means handleConfirm wrote nothing and already alerted,
+  // so the tiles must stay live for the retry.
   async function handlePickFood(food: PickerFood): Promise<boolean> {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);

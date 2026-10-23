@@ -361,9 +361,10 @@ describe('recentFoodsQuery — the FAB’s fixed span, and everyone else’s unc
 
 // ── CUL-2090 ─────────────────────────────────────────────────────────────────
 //
-// The picker's rotation read, run for real over the production DDL: a food fed only inside
-// mixed bowls is still "fed lately" (spec §7.4, T2: a mix names no food on its row).
-describe('rotationFoodsQuery — foods fed inside mixed bowls stay on the shelf', () => {
+// The picker's rotation read, run for real over the production DDL: the plain meals' foods
+// with when each was last fed. The foods inside mixed bowls join it in
+// getPickerRotationItems, through the bowl read rule (lib/fabRecentItems.test.ts).
+describe('rotationFoodsQuery — plain foods with when each was last fed', () => {
   const PET = 'p1';
   const NOW = Date.parse('2026-10-23T12:00:00.000Z');
 
@@ -377,7 +378,7 @@ describe('rotationFoodsQuery — foods fed inside mixed bowls stay on the shelf'
         // A table outside BASE_SCHEMA_SQL, or a column already present: not this read's.
       }
     }
-    for (const id of ['kibble', 'chicken', 'rabbit', 'gone']) {
+    for (const id of ['kibble', 'chicken', 'gone']) {
       d.prepare(
         `INSERT INTO food_items_cache (id, brand, product_name, format, archived_at) VALUES (?, 'Acme', ?, 'wet_canned', ?)`,
       ).run(id, id, id === 'gone' ? '2026-10-01T00:00:00.000Z' : null);
@@ -392,64 +393,28 @@ describe('rotationFoodsQuery — foods fed inside mixed bowls stay on the shelf'
     d.prepare(`INSERT INTO meals (id, event_id, pet_id, food_item_id) VALUES (?, ?, ?, ?)`).run(`m-${eventId}`, eventId, pet, foodId);
   }
 
-  function component(d: ReturnType<typeof db>, eventId: string, position: number, foodId: string, opts?: { tombstoned?: boolean; pet?: string }) {
-    d.prepare(
-      `INSERT INTO meal_components (id, pet_id, event_id, position, food_item_id, food_label, share, share_source, updated_at, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0.5, 'preset', '2026-10-22T00:00:00.000Z', ?)`,
-    ).run(`c-${eventId}-${position}-${foodId}`, opts?.pet ?? PET, eventId, position, foodId, foodId, opts?.tombstoned ? '2026-10-22T01:00:00.000Z' : null);
+  function rows(d: ReturnType<typeof db>) {
+    const { sql, params } = rotationFoodsQuery(PET, 30, 12, NOW);
+    return d.prepare(sql).all(...params) as Array<{ id: string; last_fed_jd: number }>;
   }
 
-  function ids(d: ReturnType<typeof db>, limit = 12): string[] {
-    const { sql, params } = rotationFoodsQuery(PET, 30, limit, NOW);
-    return (d.prepare(sql).all(...params) as Array<{ id: string }>).map((r) => r.id);
-  }
-
-  it('a food fed only in mixes is on the shelf, by its last bowl', () => {
+  it('newest first, each food once, with its last feeding as an instant', () => {
     const d = db();
     meal(d, 'e1', '2026-10-20T08:00:00.000Z', 'kibble');
-    meal(d, 'e2', '2026-10-22T08:00:00.000Z', null);
-    component(d, 'e2', 0, 'chicken');
-    component(d, 'e2', 1, 'rabbit');
-    expect(ids(d).sort()).toEqual(['chicken', 'kibble', 'rabbit']);
-    expect(ids(d).slice(-1)).toEqual(['kibble']);
+    meal(d, 'e2', '2026-10-21T08:00:00.000Z', 'chicken');
+    meal(d, 'e3', '2026-10-22T08:00:00+00:00', 'kibble');
+    const r = rows(d);
+    expect(r.map((x) => x.id)).toEqual(['kibble', 'chicken']);
+    expect((r[0].last_fed_jd - 2440587.5) * 86400000).toBeCloseTo(Date.parse('2026-10-22T08:00:00.000Z'), -1);
   });
 
-  it('newest feeding wins, plain or mixed', () => {
+  it('an undone meal, another pet, an archived food, an old meal and a bowl (no food) stay off', () => {
     const d = db();
-    meal(d, 'e1', '2026-10-21T08:00:00.000Z', null);
-    component(d, 'e1', 0, 'chicken');
-    component(d, 'e1', 1, 'rabbit');
-    meal(d, 'e2', '2026-10-22T08:00:00+00:00', 'chicken');
-    expect(ids(d)).toEqual(['chicken', 'rabbit']);
-  });
-
-  it('a food taken out of a bowl (its row tombstoned) leaves with it', () => {
-    const d = db();
-    meal(d, 'e1', '2026-10-22T08:00:00.000Z', null);
-    component(d, 'e1', 0, 'chicken', { tombstoned: true });
-    component(d, 'e1', 1, 'rabbit', { tombstoned: true });
-    component(d, 'e1', 0, 'rabbit');
-    expect(ids(d)).toEqual(['rabbit']);
-  });
-
-  it('an undone bowl, another pet’s bowl, an archived food and an old bowl stay off', () => {
-    const d = db();
-    meal(d, 'e1', '2026-10-22T08:00:00.000Z', null, { deleted: true });
-    component(d, 'e1', 0, 'chicken');
-    meal(d, 'e2', '2026-10-22T08:00:00.000Z', null, { pet: 'p2' });
-    component(d, 'e2', 0, 'rabbit', { pet: 'p2' });
-    meal(d, 'e3', '2026-10-22T08:00:00.000Z', null);
-    component(d, 'e3', 0, 'gone');
-    meal(d, 'e4', '2026-09-01T08:00:00.000Z', null);
-    component(d, 'e4', 0, 'kibble');
-    expect(ids(d)).toEqual([]);
-  });
-
-  it('carries when each food was last fed, for slotting a mix in among them', () => {
-    const d = db();
-    meal(d, 'e1', '2026-10-22T08:00:00.000Z', 'kibble');
-    const { sql, params } = rotationFoodsQuery(PET, 30, 12, NOW);
-    const [row] = d.prepare(sql).all(...params) as Array<{ last_fed_jd: number }>;
-    expect((row.last_fed_jd - 2440587.5) * 86400000).toBeCloseTo(Date.parse('2026-10-22T08:00:00.000Z'), -1);
+    meal(d, 'e1', '2026-10-22T08:00:00.000Z', 'kibble', { deleted: true });
+    meal(d, 'e2', '2026-10-22T08:00:00.000Z', 'chicken', { pet: 'p2' });
+    meal(d, 'e3', '2026-10-22T08:00:00.000Z', 'gone');
+    meal(d, 'e4', '2026-09-01T08:00:00.000Z', 'kibble');
+    meal(d, 'e5', '2026-10-22T08:00:00.000Z', null);
+    expect(rows(d)).toEqual([]);
   });
 });

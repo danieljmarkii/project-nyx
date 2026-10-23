@@ -213,7 +213,7 @@ describe('MealCompletionCard — mixing (row 5)', () => {
     const { getByText, queryByText, getByLabelText } = render(<MealCompletionCard />);
     getByText('Undo bowl');
     expect(queryByText('Undo')).toBeNull();
-    getByLabelText('Undo — remove this whole bowl, every food in it');
+    getByLabelText('Undo bowl — remove every food in it');
   });
 
   it('a step moves one stop toward the named food and writes the bowl', async () => {

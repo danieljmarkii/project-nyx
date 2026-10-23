@@ -903,8 +903,8 @@ export async function getRecentFoods(
   return db.getAllAsync<PickerFood>(sql, params);
 }
 
-// The picker's rotation shelf: `getRecentFoods` plus the foods fed inside mixed bowls
-// (CUL-2090; the SQL and its reasons are in ./foodQueries).
+// The picker's rotation shelf's plain foods, with when each was last fed (CUL-2090; the
+// SQL and its reasons are in ./foodQueries).
 export type RotationFood = PickerFood & { last_fed_jd: number };
 
 export async function getRotationFoods(petId: string, daysBack: number, limit: number): Promise<RotationFood[]> {

@@ -123,10 +123,11 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
     if (next) onChange(next);
   }
 
-  // The card's stepper, staged (see the header). Only on a two-food bowl, and not while a
-  // food is folding away (the bowl it would step is about to be one food).
+  // The card's stepper, staged (see the header). Only on a two-food bowl, not while a food
+  // is folding away (the bowl it would step is about to be one food), and not while a
+  // food's Change list is open (one edit at a time).
   const stepper = (() => {
-    if (foods.length !== 2 || total <= 0 || leaving !== null) return null;
+    if (foods.length !== 2 || total <= 0 || leaving !== null || changing !== null) return null;
     const firstShare = foods[0].share / total;
     const value = stopIndexOf(firstShare) !== null
       ? stopLabel(firstShare)

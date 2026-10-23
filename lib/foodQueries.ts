@@ -129,18 +129,13 @@ export function recentFoodsQuery(
   return { sql, params };
 }
 
-// The picker's rotation shelf (CUL-2090; mixed meals spec §7.4, T2). `recentFoodsQuery`
-// reads a meal's own food, and a mixed bowl names none, so a food fed only inside mixes
-// fell off "{Pet}'s rotation" for the whole of a switch, and the day it ended the owner
-// hunted for plain Rabbit in the library. This read also counts a food as fed when a live
-// component row of a live meal names it. It is the picker's alone: the FAB keeps its own
-// read (a mix is its own pill there) and the intake prefill keeps the plain meal's food.
-//
-// Live rows only: the one writer tombstones every row of the old bowl when it is edited,
-// so a food changed or taken out of a bowl leaves the shelf with its row. Instants compare
-// through julianday() on both sides (C-40): a hydrated row and a local one spell the same
-// instant two ways. Each row carries `last_fed_jd` (a Julian day) so a mix can slot in
-// among the foods by when it was last fed.
+// The picker's rotation shelf (CUL-2090): the plain meals' foods, as `recentFoodsQuery`
+// reads them, each with `last_fed_jd` (a Julian day) so the foods fed inside mixed bowls,
+// and the mixes themselves, can slot in among them by when they were last fed. Those come
+// from `getPickerRotationItems` (lib/fabRecentItems.ts), through the bowl read rule: a raw
+// component row is not a bowl (an older generation can still be live after a sync), so
+// this query never reads `meal_components`. Instants compare through julianday() on both
+// sides (C-40): a hydrated row and a local one spell the same instant two ways.
 export function rotationFoodsQuery(
   petId: string,
   daysBack: number,
@@ -149,25 +144,16 @@ export function rotationFoodsQuery(
 ): { sql: string; params: (string | number)[] } {
   const after = new Date(nowMs - daysBack * 24 * 60 * 60 * 1000).toISOString();
   const sql = `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path,
-            MAX(julianday(fed.at)) AS last_fed_jd
-     FROM (
-       SELECT m.food_item_id AS food_id, e.occurred_at AS at
-         FROM meals m
-         JOIN events e ON e.id = m.event_id
-        WHERE m.pet_id = ? AND e.deleted_at IS NULL AND m.food_item_id IS NOT NULL
-       UNION ALL
-       SELECT c.food_item_id AS food_id, e.occurred_at AS at
-         FROM meal_components c
-         JOIN meals m ON m.event_id = c.event_id
-         JOIN events e ON e.id = c.event_id
-        WHERE m.pet_id = ? AND e.deleted_at IS NULL AND c.deleted_at IS NULL
-          AND c.food_item_id IS NOT NULL
-     ) fed
-     JOIN food_items_cache f ON f.id = fed.food_id
-     WHERE f.archived_at IS NULL
-       AND julianday(fed.at) >= julianday(?)
+            MAX(julianday(e.occurred_at)) AS last_fed_jd
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+       AND f.archived_at IS NULL
+       AND julianday(e.occurred_at) >= julianday(?)
      GROUP BY f.id
      ORDER BY last_fed_jd DESC
      LIMIT ?`;
-  return { sql, params: [petId, petId, after, limit] };
+  return { sql, params: [petId, after, limit] };
 }
