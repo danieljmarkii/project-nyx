@@ -60,7 +60,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>
 
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width: 400, height: 400 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 400, height: 400 }, deviceScaleFactor: 2 });
   await page.setContent(html, { waitUntil: 'load' });
   await page.screenshot({ path: out, fullPage: true });
 } finally {
