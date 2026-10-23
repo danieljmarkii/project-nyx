@@ -72,11 +72,18 @@ export interface SameMinuteEvent {
   /** `meals.food_item_id`. Read only for a meal; a meal with no food groups with every
    *  other food-less meal, as the report's `meal|null` key does. */
   foodItemId: string | null;
+  /** A MIXED BOWL's composition key (the sorted set of its foods, `lib/mealComposition.ts`),
+   *  or absent for a single food. A bowl groups with the same mix only, whatever its ratio,
+   *  and never with a plain meal of one of its foods: collapsing a rabbit meal into a
+   *  rabbit-and-chicken bowl a minute apart would lose the chicken (Mixed meals, CUL-2053,
+   *  in lockstep with the report's `dedupeEvents`). */
+  bowlKey?: string | null;
 }
 
 /** The group an event can collapse within. Exported so the report's key shape is pinned
  *  against this one by source text, not only by behaviour. */
 export function sameMinuteGroupKey(e: SameMinuteEvent): string {
+  if (e.type === 'meal' && e.bowlKey) return `meal|bowl|${e.bowlKey}`;
   if (e.type === 'meal') return `meal|${e.foodItemId ?? 'null'}`;
   if (SAME_MINUTE_OBSERVATION_TYPES.has(e.type)) return e.type;
   return `keep|${e.id}`;

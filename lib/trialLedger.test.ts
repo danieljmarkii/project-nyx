@@ -868,10 +868,13 @@ describe('an unfinished bowl in the current trial week, below the refusal floor'
         nowHour: 20,
       });
       // The premise, asserted: the narrow set misses these rows and no fact fired.
+      // Since CUL-60(b) (R1) a record with no matched feeding speaks from the meal
+      // record, so the lane's own day set holds the day, as it does when the food
+      // resolves (the case above).
       expect(facts!.trialDietRefusal).toBeNull();
       expect(facts!.rangeRefusal).toBeNull();
       expect(withholdingReasons(input)).toEqual([]);
-      expect(facts!.unfinishedDayIndices).toEqual([]);
+      expect(facts!.unfinishedDayIndices).toEqual([idx(1)]);
       expect(facts!.coveredDayIndices).toEqual([idx(1)]); // the day WOULD draw filled
       expect(facts!.unfinishedMealDayIndices).toEqual([idx(1)]);
       expect(ledger).toBeNull();

@@ -51,6 +51,26 @@ interface FavoriteRow {
  * hepatic-lipidosis path); it is the active pet's species, passed by the caller so
  * lib/ stays free of the pet store.
  */
+/**
+ * Every single-food meal of this pet, with its food. A MIXED BOWL is never here (spec
+ * §5.4): its rating is a fact about the bowl, and "reliable favorite" is an acceptance
+ * claim about one food. A mix names no food (T2), so the food join drops it; a meal with
+ * a component count or any live component is dropped too, because live components win
+ * over the parent (§3) and an older build can leave a food on a meal that is a mix.
+ * EXPORTED so `foodFavorites.test.ts` runs the production string on a real engine.
+ */
+export const FAVORITE_MEALS_SQL = `SELECT f.id AS food_item_id, f.brand, f.product_name, f.food_type,
+              m.intake_rating, e.occurred_at
+       FROM meals m
+       JOIN events e ON e.id = m.event_id
+       JOIN food_items_cache f ON f.id = m.food_item_id
+       WHERE m.pet_id = ?
+         AND e.deleted_at IS NULL
+         AND m.component_count IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM meal_components mc WHERE mc.event_id = m.event_id AND mc.deleted_at IS NULL
+         )`;
+
 export async function getReliableFavorites(petId: string, species: Species): Promise<ReliableFavorite[]> {
   const db = getDb();
   // All reads in parallel — the common (no-watch) path pays one round-trip, not
@@ -59,16 +79,7 @@ export async function getReliableFavorites(petId: string, species: Species): Pro
   // SQLite reads, so optimizing the common case wins over saving them.
   const [decline, rows, arrangements] = await Promise.all([
     getIntakeDecline(petId, species),
-    db.getAllAsync<FavoriteRow>(
-      `SELECT f.id AS food_item_id, f.brand, f.product_name, f.food_type,
-              m.intake_rating, e.occurred_at
-       FROM meals m
-       JOIN events e ON e.id = m.event_id
-       JOIN food_items_cache f ON f.id = m.food_item_id
-       WHERE m.pet_id = ?
-         AND e.deleted_at IS NULL`,
-      [petId],
-    ),
+    db.getAllAsync<FavoriteRow>(FAVORITE_MEALS_SQL, [petId]),
     getActiveArrangementsForPet(petId),
   ]);
 

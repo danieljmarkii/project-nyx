@@ -25,6 +25,7 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { InsightCard } from './InsightCard';
 import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
+import { SIGNAL_RAIL } from '../surfaces/signal/railTint';
 import { flat } from '../../testUtils/tree';
 import { theme } from '../../constants/theme';
 import { FOLD_CONTROL_LABEL } from '../../lib/signalCopy';
@@ -143,7 +144,7 @@ describe('the idle tree (§12.4: nothing in flight adds nothing)', () => {
     const rail = flat(railOf(row));
     expect(rail.height).toBe(TICK);
     expect(rail.alignSelf).toBe('center');
-    expect(rail.opacity).toBe(0.85);
+    expect(rail.opacity).toBe(SIGNAL_RAIL.insight.opacity);
     expect(rail.width).toBe(3);
     expect(queryByTestId('insight-strip-stage')).toBeNull();
     // Folded, the content column listens for its layout (the tick's centre, the next unfold's start).
@@ -189,7 +190,7 @@ describe('fold — §12.1: the words leave, the box closes around the line, the 
     expect(flat(rail).position).toBe('absolute');
     expect(flat(rail).height).toBe(FACE_H);
     expect(flat(rail).top).toBe(theme.space2);
-    expect(flat(rail).opacity).toBe(0.85);
+    expect(flat(rail).opacity).toBe(SIGNAL_RAIL.insight.opacity);
     expect(flat(rail).width).toBe(3);
     // The content column stands in for the rail's width + the gap, so nothing moves sideways.
     expect(flat(contentOf(row)).marginLeft).toBe(3 + theme.space2);
@@ -552,7 +553,7 @@ describe('a transition is one-shot: blur finishes it, a re-keyed row abandons it
 });
 
 describe('the rail’s contract (§12.3): height only — never colour, opacity or width; identical on every class', () => {
-  it('through a fold the rail keeps its colour, 0.85 opacity and 3pt width at every phase', () => {
+  it('through a fold the rail keeps its colour, opacity (SIGNAL_RAIL.insight) and 3pt width at every phase', () => {
     const view = render(<Host />);
     const row = view.getByTestId('insight-row');
     const before = flat(railOf(row));
@@ -569,8 +570,8 @@ describe('the rail’s contract (§12.3): height only — never colour, opacity 
     });
     const after = flat(railOf(row));
     for (const s of [before, leaving, closing, after]) {
-      expect(s.backgroundColor).toBe(theme.colorAccent);
-      expect(s.opacity).toBe(0.85);
+      expect(s.backgroundColor).toBe(SIGNAL_RAIL.insight.color);
+      expect(s.opacity).toBe(SIGNAL_RAIL.insight.opacity);
       expect(s.width).toBe(3);
     }
   });

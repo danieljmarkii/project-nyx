@@ -3,6 +3,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, shadows } from '../../constants/theme';
+import { NODE_TINT_NIGHT } from '../recap/nodeTints';
 import { PrimaryButton } from '../ui';
 import {
   NOTIFICATION_CATEGORIES,
@@ -40,10 +41,12 @@ import {
 // Night-ground dot tint per node kind. The med tint is the DR-4-minted night
 // sibling (colorEventMedicationOnNight); meal/symptom reuse the shipped night event
 // tints. Kept here (not in the descriptor) so the registry stays theme-free.
+// Read off the recap's own night map, so the preview and the spine it previews cannot
+// drift; its ground and ratios are pinned there (`NODE_TINT_NIGHT_GROUND`, CUL-1666).
 const NODE_DOT_COLOR: Record<NotificationPrimerNode['kind'], string> = {
-  meal: theme.colorEventMeal,
-  medication: theme.colorEventMedicationOnNight,
-  symptom: theme.colorEventSymptomOnNight,
+  meal: NODE_TINT_NIGHT.meal,
+  medication: NODE_TINT_NIGHT.medication,
+  symptom: NODE_TINT_NIGHT.symptom,
 };
 
 interface NotificationPrimerProps {

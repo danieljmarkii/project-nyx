@@ -227,3 +227,32 @@ describe('WeeklyBars — a masking span (CUL-1440)', () => {
     expect(getByTestId('weekly-count-1').props.children).toBe(0);
   });
 });
+
+describe('WeeklyBars — a bout carried in from an earlier week (Q12)', () => {
+  // Rolling blocks ending Thu Sep 17; a bout from Sep 2 runs to Sep 17: blocks 2 and 3 carried.
+  const carried = weeklyBuckets({
+    episodeDays: ['2026-09-02'],
+    boutSpans: [{ startDay: '2026-09-02', endDay: '2026-09-17' }],
+    loggedDays: [],
+    weeksEnding: '2026-09-17',
+    today: '2026-09-17',
+    weeks: 3,
+    endAligned: true,
+  });
+
+  it('draws the carried weeks in words under the bars, and speaks them', () => {
+    const { getByTestId } = render(<WeeklyBars model={carried} noun="vomiting" />);
+    expect(getByTestId('weekly-carried-line').props.children).toBe('A bout that began earlier continues into the 7 days from Sep 4 and the last 7 days');
+    expect(getByTestId('weekly-bars').props.accessibilityLabel).toContain('A bout that began earlier continues into the 7 days from Sep 4 and the last 7 days.');
+  });
+
+  it('beside a line that names the last block (the Home card), only the earlier weeks are drawn', () => {
+    const { getByTestId } = render(<WeeklyBars model={carried} noun="vomiting" lastCarriedSaidBeside />);
+    expect(getByTestId('weekly-carried-line').props.children).toBe('A bout that began earlier continues into the 7 days from Sep 4');
+  });
+
+  it('nothing carried draws no line', () => {
+    const { queryByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
+    expect(queryByTestId('weekly-carried-line')).toBeNull();
+  });
+});

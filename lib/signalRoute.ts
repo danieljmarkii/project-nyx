@@ -2,7 +2,7 @@
 // finding's identity (`foldIdentity` — the key that survives a re-rank) and `pet` is the
 // finding's pet (C-9: the screen names the RECORD's pet, so the route carries it; the
 // active pet is never consulted). A helper, not a component, so it lives in `lib/` — a
-// non-component export inside `components/designV2/` would be wrapped into a component
+// non-component export inside `components/surfaces/` would be wrapped into a component
 // by the flag-off guard's switch.
 
 export const SIGNAL_ROUTE_PREFIX = '/signal/';

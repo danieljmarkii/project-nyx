@@ -77,7 +77,7 @@ jest.mock('../../lib/weight', () => {
 // never a read that had nothing to say.
 const SOME_FACTS: import('../../lib/monthReads').MonthFacts = {
   episodeDays: ['2026-09-02'],
-  continuationDays: [],
+  continuationDays: [], boutSpans: [],
   loggedDays: ['2026-09-01', '2026-09-02', '2026-09-03'],
   answeringDays: ['2026-09-01', '2026-09-02', '2026-09-03'],
   leftSomeDays: [],
@@ -155,7 +155,7 @@ describe('Patterns × Design v2', () => {
     weight.getWeightHistory.mockResolvedValueOnce([]);
     weight.getWeightReadingCount.mockResolvedValueOnce(0);
     // Every read (the mount's and the focus refresh's) answers an empty record.
-    mockReadMonthFacts.mockResolvedValue({ episodeDays: [], continuationDays: [], loggedDays: [], answeringDays: [], leftSomeDays: [], ratedMealDays: [], refusedMealDays: [], leftSomeMealDays: [], symptomEntryDays: {}, dosedDays: [], photoDays: [], recordStart: null });
+    mockReadMonthFacts.mockResolvedValue({ episodeDays: [], continuationDays: [], boutSpans: [], loggedDays: [], answeringDays: [], leftSomeDays: [], ratedMealDays: [], refusedMealDays: [], leftSomeMealDays: [], symptomEntryDays: {}, dosedDays: [], photoDays: [], recordStart: null });
     const { getByText, getByTestId, toJSON } = render(<PatternsScreen />);
     await waitFor(() => expect(getByText(/still getting to know/i)).toBeTruthy());
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());

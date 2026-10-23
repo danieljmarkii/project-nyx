@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Alert, Switch } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card } from '../ui';
 import { SettingsRow } from './SettingsRow';
 import { ensurePermission } from '../../lib/notifications';
@@ -74,7 +74,7 @@ export function FollowUpNotificationRow({ denied }: { denied: boolean }) {
             value={on && !denied}
             onValueChange={(v) => void toggle(v)}
             disabled={denied || busy}
-            trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+            trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
             ios_backgroundColor={theme.colorBorderStrong}
             accessibilityLabel={FOLLOW_UP_ROW_LABEL}
           />

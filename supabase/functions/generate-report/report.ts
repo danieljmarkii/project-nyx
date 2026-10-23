@@ -42,7 +42,8 @@
 // same-minute symptom duplicates for the correlation/chronicity/worsening EPISODE counts,
 // and meal exposures are protein-keyed sets, so the divergence is bounded and, where it
 // exists, the report's de-duped version is the intended clinical truth). The report reads
-// ONLY `Established`-tier correlations (spec §8.5 — `Early` implies rigor the data lacks)
+// `Established`-tier correlations as findings, `Early` ones only as a qualifier on the null
+// line (CUL-1978, PM 2026-10-18, unseating spec §8.5's "Early never reaches the report")
 // and the safety-class findings (chronicity / intake-decline / worsening) for the
 // safety-leads slot; it NEVER reads the rolling Signal cache (the windows differ).
 // Window-consistency is load-bearing (Data Scientist sign-off, spec §7): see
@@ -54,6 +55,13 @@ import {
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   EN11_CONFIG,
+  LANE_SYMPTOM_TYPES,
+  chronicityFloorsFor,
+  computeChronicityCompare,
+  computeReflectionDensity,
+  detectChronicity,
+  detectWorsening,
+  risingBelowCardFloor,
   type DetectionConfig,
   CORRELATION_SYMPTOM_TYPES,
   type Species,
@@ -70,6 +78,10 @@ import {
   type IntakeDeclineFinding,
   type SymptomChronicityFinding,
   type SymptomWorseningFinding,
+  type SymptomBurdenFinding,
+  detectWeightLoss,
+  type WeightLossFinding,
+  type WeightLaneInput,
   type PostprandialTimingFinding,
   type TimeOfDayClusteringFinding,
   type EmptyStomachTimingFinding,
@@ -143,7 +155,7 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
+import { carriesTrialDiet, COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
@@ -152,6 +164,9 @@ export type {
   TrialMedicationOverlap,
   TrialPermittedFood,
 } from './trial.ts'
+// CUL-1979 — lives in trial.ts (which this file imports) so both can stamp a food's source.
+export { proteinSourceOf, type ProteinSource } from './trial.ts'
+import { proteinSourceOf, type ProteinSource } from './trial.ts'
 // CUL-875 (Noticed N-6) — the daily look's block. Pure assembly, like `trial.ts`.
 // The types are re-exported below so the I/O shell has one import surface for the
 // report's inputs, exactly as it does for every other row shape.
@@ -394,6 +409,42 @@ export interface ReportMealDetail extends ReportFoodProteinInput {
   primaryProtein: string | null
   brand: string | null
   productName: string | null
+  /** Present only for a mixed bowl. Then the fields above describe the BOWL: no single
+   *  food id, brand, primary or format (T2), and no reader may read them as one food. */
+  bowl?: ReportMealBowl | null
+}
+
+/** One food in a mixed bowl (Mixed meals, CUL-2052): the component's OWN food row. */
+export interface ReportMealComponent extends ReportFoodProteinInput {
+  foodItemId: string | null
+  /** `meal_components.food_label`: the name at logging time; survives a purged food. */
+  snapshotLabel: string
+  /** The component's food identity (id, else folded snapshot name). */
+  foodKey: string
+  foodType: 'meal' | 'treat' | 'other' | null
+  format: FoodFormat | null
+  primaryProtein: string | null
+  brand: string | null
+  productName: string | null
+  /** The owner's estimate, as entered and normalised (null when unknown: never 50/50, T8). */
+  share: number | null
+  normalizedShare: number | null
+  shareSource: string
+  amountValue: number | null
+  amountUnit: string | null
+}
+
+/** A mixed bowl, as `_shared/mealBowl.ts` read it. `incomplete` is never one food. */
+export interface ReportMealBowl {
+  status: 'mix' | 'incomplete'
+  components: ReportMealComponent[]
+  compositionKey: string
+  compositionKeyWithRatio: string
+  /** When the current set was written; an edit more than 24h after the meal is disclosed. */
+  writtenAtMs: number | null
+  /** No component is live: these are the foods as last recorded (CUL-2096), always
+   *  `incomplete`. Absent reads as false. */
+  lastRecorded?: boolean
 }
 
 /** One event row from reference query [4] (caller pre-filters deleted_at IS NULL). */
@@ -436,6 +487,10 @@ export interface ReportWeightCheckInput {
   eventId: string
   weightKg: number
   occurredAt: string // ISO, from the parent event
+  /** weight_checks.source / source_basis (CUL-2026): what the weight lane reads to decide which
+   *  readings count. Optional so older fixtures compile; a reading without one never reaches it. */
+  source?: WeightLaneInput['readings'][number]['source']
+  sourceBasis?: WeightLaneInput['readings'][number]['sourceBasis']
 }
 
 /** medication_administrations row (migration 020/023) joined to its parent event. */
@@ -671,6 +726,13 @@ export interface ReportInput {
   events: ReportEventInput[]
   aiAnalyses: ReportAiAnalysisInput[]
   weightChecks: ReportWeightCheckInput[]
+  /**
+   * CUL-2026 — every live weigh-in, UNTRIMMED by the lookback, for the engine's weight lane (its
+   * own window is a year, wider than any report's lookback). Read under `engines_v3_en8` only, the
+   * key Home's weight card sits behind, so the report and Home flag the same loss. Passed even on
+   * an incomplete pull (the incomplete-read note says so). Absent (an older caller) ⇒ no lane.
+   */
+  weightHistory?: ReportWeightCheckInput[]
   doses: ReportDoseInput[]
   /**
    * B-140 PR 5 — the pet's ENTIRE live dose history, UNTRIMMED by the lookback, for the
@@ -1044,7 +1106,7 @@ export function resolveScope(input: ScopeResolutionInput): ReportScope {
       startDayNum: startNum,
       endDayNum: endNum,
       windowDays: endNum - startNum + 1,
-      detectionNowIso: detectionNowFor(endNum, todayNum, input.now),
+      detectionNowIso: detectionNowFor(endNum, todayNum, input.now, tz),
       lastVisitDate: null,
       trialStartDate: null,
       isCustomOverride: true,
@@ -1182,13 +1244,42 @@ function scopeFromRange(
 /**
  * The instant handed to detection as `now`. For the default cascade the window
  * ends today, so it is input.now (the live reference). For a custom window ending
- * in the PAST, it is the end of that last day (UTC end-of-day) so the report reads
- * "as of the window end" — chronicity's "still ongoing" recency floor and its
+ * in the PAST, it is the last instant of that day IN THE OWNER'S ZONE, so the report
+ * reads "as of the window end" — chronicity's "still ongoing" recency floor and its
  * lookback are then measured from the window end, not real-now.
+ *
+ * CUL-2027: this was `endDay T23:59:59.999Z`, the end of the UTC day. West of UTC that
+ * instant falls in the owner's last afternoon, so an 8 pm vomit on the last day sat in
+ * the window's counts (its LOCAL day is inside) but after the detectors' `now`, and every
+ * safety check, and the "Not triggered" row beside them, ran without it.
  */
-function detectionNowFor(endNum: number, todayNum: number, nowIso: string): string {
+function detectionNowFor(endNum: number, todayNum: number, nowIso: string, tz: string | null): string {
   if (endNum >= todayNum) return nowIso
-  return `${dayKeyFromNumber(endNum)}T23:59:59.999Z`
+  const end = localDayEndMs(endNum, tz)
+  const nowMs = parseMs(nowIso)
+  // A past last day ends before real-now by construction; the min only keeps a bad clock from
+  // ever handing detection a future `now`.
+  return new Date(nowMs === null ? end : Math.min(end, nowMs)).toISOString()
+}
+
+/**
+ * The last millisecond of local calendar day `dayNum` in `tz` (UTC when the zone is absent or
+ * invalid, the same fallback `localDayKey` takes, so the window's days and its end agree).
+ * Searched rather than computed from an offset: the next local midnight lies within ±15 h of
+ * the UTC one in every zone, a local day number never decreases as the instant grows, and a
+ * search needs no DST arithmetic to land on the exact boundary.
+ */
+function localDayEndMs(dayNum: number, tz: string | null): number {
+  const utcNextMidnight = (dayNum + 1) * MS_PER_DAY
+  const past = (ms: number): boolean => (eventDayNumber(new Date(ms).toISOString(), tz) ?? dayNum + 1) > dayNum
+  let lo = utcNextMidnight - 15 * MS_PER_HOUR // still on the day (or earlier)
+  let hi = utcNextMidnight + 15 * MS_PER_HOUR // past it
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (past(mid)) hi = mid
+    else lo = mid
+  }
+  return hi - 1
 }
 
 // ── §5.11 de-duplication ─────────────────────────────────────────────────────
@@ -1240,6 +1331,11 @@ export function dedupeEvents(
   // row, so a type-and-minute collapse would silently drop a real dose/reading (the B-156
   // "two drugs together" data-loss bug this narrow scope closes).
   const groupKey = (e: ReportEventInput): string => {
+    // A MIXED BOWL keys on its composition (the sorted set of its foods), never on a
+    // food id it does not have (T2): a plain rabbit meal and a rabbit-and-chicken bowl a
+    // minute apart are two feedings, and collapsing them would lose the chicken. Kept in
+    // lockstep with the client's same-minute collapse (`lib/sameMinuteDuplicates.ts`).
+    if (e.type === 'meal' && e.meal?.bowl) return `meal|bowl|${e.meal.bowl.compositionKey}`
     if (e.type === 'meal') return `meal|${e.meal?.foodItemId ?? 'null'}`
     if (DEDUP_OBSERVATION_TYPES.has(e.type)) return e.type
     return `keep|${e.id}`
@@ -1482,6 +1578,14 @@ export interface ClinicalQuestion {
   primarySymptom: ReportSymptomType | null
 }
 
+/** One reading on the weight flag (CUL-2026). `day` is the owner's local 'YYYY-MM-DD'. */
+export interface WeightFlagReading {
+  kg: number
+  source: WeightLossFinding['latest']['source']
+  single: boolean
+  day: string
+}
+
 export type SafetyFlag =
   | {
       kind: 'present_blood'
@@ -1595,6 +1699,42 @@ export type SafetyFlag =
       coughVomitAdjacent?: true
     }
   | {
+      /** CUL-1410's absolute-burden card: a high count, or a run of days, with no earlier week
+       *  needed. Counts only, never causal. */
+      kind: 'symptom_burden'
+      symptomType: SymptomType
+      count: number
+      days: number
+      runDays: number
+      windowDays: number
+      tier: SymptomBurdenFinding['tier']
+    }
+  | {
+      /** Home's weight card (CUL-2026): the latest reading and the highest before it, each with its
+       *  local day, its source and whether it stands alone, and the ask the owner was given. */
+      kind: 'weight_loss'
+      /** `now`: the card Home shows today (the owner was told). `window_end`: found only as of a
+       *  past window's end, which Home may never have shown. */
+      asOf: 'now' | 'window_end'
+      latest: WeightFlagReading
+      highBefore: WeightFlagReading
+      tier: WeightLossFinding['tier']
+      planned: boolean
+      /** One reading at the clinic, the other on a home scale: the lane widened its band for it. */
+      mixedInstruments: boolean
+      windowDays: number
+    }
+  | {
+      /** The weight check ran on a weigh-in record that did not load in full (CUL-2026). */
+      kind: 'weight_unchecked'
+    }
+  | {
+      /** A safety finding the report does not detail (e.g. `incident_red_flag`), named so the band
+       *  never implies nothing else fired. */
+      kind: 'engine_other'
+      findingTypes: string[]
+    }
+  | {
       kind: 'symptom_worsening'
       symptomType: SymptomType
       currentCount: number
@@ -1663,6 +1803,29 @@ export interface SymptomAggregate {
    * right denominator for "was this week observed at all".
    */
   loggedDaysByBucket: number[]
+  /** The window days each bucket covers: 7, except a trailing part week (1–7). The `/7 d` under
+   *  each column, so a column's logged days are always read over the days it actually spans. */
+  bucketDays: number[]
+  /**
+   * The entries of this type logged a day or more after the time given for them (CUL-2001).
+   *
+   * Every count, date and timing read on page 1 rests on `occurredAt`, and only appendix A
+   * printed `created_at`. The demo record's four vomits were all entered in one sitting, 3 to 16
+   * days late, and page 1 read them as caught as they happened — so a vet trusted the trend and
+   * the food timing as observed when they were recalled, and a recalled record can miss
+   * episodes. A de-duplicated bout counts as late only when NO row of it was logged within
+   * `LATE_LOG_MIN_HOURS`: one prompt log of the bout means it was seen as it happened.
+   * Null when none was late, so the page is silent rather than claiming "all logged on time".
+   */
+  lateLogged: {
+    count: number
+    minDays: number
+    maxDays: number
+    /** The local day every late entry was entered on, when there are two or more and all were
+     *  entered within `ONE_SITTING_HOURS` of each other — a reconstruction, not a lagging log
+     *  (cold read r2). Null otherwise. */
+    oneSittingDay: string | null
+  } | null
   /**
    * The first-vs-last-half comparison, over EQUAL-LENGTH halves (B-532).
    *
@@ -1712,8 +1875,84 @@ export interface SymptomAggregate {
     middleCount: number
     /** The excluded day, when the window is odd; null when it is even. */
     middleDate: string | null
+    /**
+     * Weeks overlapping each half whose logging is under `SYMPTOM_WEEK_MIN_LOGGED_DAYS` (CUL-1995).
+     *
+     * The chart refuses to draw a `0` for such a week, so the comparison above it must not quietly
+     * count one as a measured absence. The demo record's first half held Sep 20–26, logged on 2 of
+     * 7 days, under a "1 → 3" the cold read took as "the vomiting began on the new diet". The
+     * render decides by direction what that costs: a fall is withheld, a rise or a flat pair keeps
+     * its numbers and names the week (PM, 2026-10-19).
+     */
+    thinWeeks: { first: ThinWeek[]; last: ThinWeek[] }
   } | null
 }
+
+/** One safety check that did not flag, with the floors it applied (CUL-2003). */
+export type SafetyCheck =
+  | {
+      kind: 'ongoing'
+      symptomType: SymptomType
+      /** `not_triggered`: the engine measured a course and it stayed under a floor.
+       *  `too_few_days`: the engine could not measure one (too few logged days across the
+       *  episodes' span, or a single episode). `window_short`: the report window is shorter than
+       *  the span floor, so the check cannot fire on what this report holds. */
+      state: 'not_triggered' | 'too_few_days' | 'window_short'
+      /** Collapsed episodes the check counted: over its lookback, or the report window when that
+       *  is shorter (the engine only sees the window's entries). */
+      episodes: number
+      /** The engine's lookback, and the report window it was handed. */
+      lookbackDays: number
+      windowDays: number
+      minEpisodes: number
+      minSpanDays: number
+      minActiveWeeks: number
+      ongoingRecencyDays: number
+    }
+  | {
+      kind: 'worsening'
+      symptomType: SymptomType
+      windowDays: number
+      /** `not_flagged`: both weeks were logged enough to compare and no sign reached the floor.
+       *  `too_few_days`: the engine could not compare them. `not_separate`: the engine reports
+       *  one getting-worse finding, the steepest rise among the symptoms not flagged as ongoing
+       *  (CUL-2022), and it was another symptom's, so this one was not assessed apart.
+       *  `below_card_floor`: a sign rose in the last week but under the flag's floor (EN-11). */
+      state: 'not_flagged' | 'too_few_days' | 'not_separate' | 'below_card_floor'
+      /** The current-week count the flag needs. */
+      minEpisodes: number
+      currentLoggingDays: number
+      priorLoggingDays: number
+      minLoggingDays: number
+    }
+
+/** An entry logged this many hours or more after the time given for it is "logged late"
+ *  (CUL-2001). A day: a vomit at night logged the next morning is still a same-day record. */
+export const LATE_LOG_MIN_HOURS = 24
+
+/** Late entries all logged within this many hours of each other were entered in one sitting. */
+export const ONE_SITTING_HOURS = 3
+
+/** One under-floor week of the symptom chart, as the half trend names it (CUL-1995). */
+export interface ThinWeek {
+  startDate: string
+  endDate: string
+  loggedDays: number
+  days: number
+}
+
+/**
+ * The fewest logged days a week of the symptom chart needs before an empty week may print `0`
+ * (CUL-1995). Below it the week reads "not read", never a measured zero.
+ *
+ * MIRRORED from `COVERAGE_FLOOR` (`lib/dietTrial.ts`) for the reason the off-diet chart's
+ * `OFF_DIET_ZERO_MIN_MEAL_DAYS` mirrors it: both ask whether a week is logged densely enough that
+ * an absence may be read. Same question, same value; the off-diet chart counts meal days and this
+ * one counts days with any log, because a symptom can be logged on a day no meal was. Held
+ * ABSOLUTE rather than scaled to a part week, so a three-day tail can never print a `0` that looks
+ * like a full week's.
+ */
+export const SYMPTOM_WEEK_MIN_LOGGED_DAYS = Math.ceil(COVERAGE_FLOOR * 7)
 
 export type VomitContentCategory = 'food' | 'bile' | 'hairball' | 'foam_liquid' | 'grass' | 'unsure'
 
@@ -1892,9 +2131,23 @@ export interface ProteinSetView {
   /** Off-trial proteins present in THIS food, prominence-ordered. Empty when there
    *  is no active trial, no resolvable target protein, or none are present. */
   offTrial: string[]
+  /**
+   * CUL-1979 — where this set came from, so a protein claim promoted to page 1 names its
+   * real source instead of a constant "read from the owner's photo of the label".
+   * Optional for the fixture corpus; absent renders the neutral either-source wording,
+   * never the photo line.
+   */
+  source?: ProteinSource
 }
 
+
 export interface DietSummary {
+  /**
+   * CUL-1979 — how many distinct foods fed in this window had their proteins read from a
+   * label photo vs entered by the owner. The antigen tally pools every food fed, so its
+   * provenance note is decided over this. Optional for the fixture corpus.
+   */
+  proteinSources?: { photo: number; owner: number }
   /**
    * The active trial's canonical target protein — the one key every `offTrial` on this
    * snapshot was computed against, resolved once (B-351 slice 5).
@@ -1989,6 +2242,14 @@ export interface DietSummary {
     ratedMeals: number
     finishedMeals: number
     rate: number
+    /**
+     * CUL-1978 — how many of the MOST RECENT rated meals, in a row, were not fully eaten.
+     * `40 of 44` over a window whose last four meals were the four left reads as a dog who
+     * eats fine; the run is what a vet acts on, so the page leads with it. Same predicate
+     * as `finishedMeals` (`intakeRating === 'all'`), so the two never disagree. Optional
+     * only for the fixture corpus: `buildSnapshot` always sets it.
+     */
+    recentNotFullyEatenRun?: number
     /** The ratings behind the figures, for `summariseIntake` — the one predicate both
      *  surfaces read. Replaces the pre-CUL-497 `intakeMode`, whose null could not tell a
      *  tie from an empty set. */
@@ -2046,6 +2307,9 @@ export interface DietSummary {
     proteinSet: ProteinSetView
     /** CUL-292 — decides WHICH incompleteness marker is true of this row, nothing else. */
     format: FoodFormat | null
+    /** A MIXED BOWL row (CUL-2052): one row per composition, every share named. Its
+     *  ratings are the bowl's and belong to neither food (§5.4). */
+    mix?: MixRow
   }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
@@ -2279,8 +2543,15 @@ export type TimingFinding =
     }
 
 export interface CorrelationSummary {
-  /** ONLY `Established`-tier (spec §8.5); `Early` never reaches the report. */
+  /** `Established`-tier: the only tier the report states as a finding (spec §8.5). */
   established: EstablishedCorrelation[]
+  /**
+   * CUL-1978 — `Early`-tier correlations over the same window. Not a finding: the null line
+   * names them, with their counts and "short of the established threshold, so not confirmed", because "no food reached
+   * the established threshold" alone read as a negative over a record whose beef weeks
+   * mirrored its vomit weeks. Optional for the fixture corpus; `buildSnapshot` always sets it.
+   */
+  early?: EstablishedCorrelation[]
   hasEstablished: boolean
   /** Honest "no established threshold over this window" state when established is empty. */
   noThreshold: boolean
@@ -2471,6 +2742,12 @@ export interface ConfounderExposure {
   /** This same food became permitted on a LATER date, so the row is here because the
    *  feeding predates permission — the reason that outranks the rung. */
   permittedLaterFrom?: string | null
+  /** A mixed bowl whose foods were edited more than 24h after the meal: the day of the
+   *  edit (CUL-2052, §7.3). The record changed after the fact, so the row says when. */
+  editedOn?: string | null
+  /** A mixed bowl's recorded intake (the bowl's, never a food's); null when unrated.
+   *  Absent on a plain feeding. */
+  bowlIntake?: IntakeRating | null
 }
 
 /**
@@ -2648,7 +2925,27 @@ export interface AtAGlance {
    */
   firstHalfLoggedDays: number
   secondHalfLoggedDays: number
+  /**
+   * The UNLOGGED TAIL (CUL-2101): local days after the last day with ANY log, through the window
+   * end; the whole window when nothing was logged. A recency or count claim that spans this stretch
+   * reads the silence as quiet days ("most recent 10 days ago" over seven days nobody logged), so
+   * the render names it where each such claim is printed, from at least `UNLOGGED_TAIL_MIN_DAYS`.
+   * Same `loggedDayNums` as `loggedDays`, so the tail can never disagree with "N of M days logged".
+   * Required, not optional: a fixture that omits it would silently claim a fully logged window.
+   */
+  unloggedTailDays: number
+  /** The last local day with any log in the window ('YYYY-MM-DD'), null when nothing was logged.
+   *  The render names the tail by this DATE, which no window or lookback can overstate (C-19). */
+  lastLoggedDate: string | null
 }
+
+/**
+ * The shortest unlogged tail the report names (CUL-2101, PM ruling 2026-10-22). One day is the
+ * window's own last day, which on the default basis is TODAY and is unlogged on almost every report
+ * made before the owner's first log of the day; naming it would say nothing about the pet and would
+ * change most reports. Two days is the first tail that includes a whole elapsed day nobody logged.
+ */
+export const UNLOGGED_TAIL_MIN_DAYS = 2
 
 /**
  * Off-diet protein exposure binned by the SAME weekly buckets as the symptom chart (#9) — the
@@ -2835,6 +3132,9 @@ export interface ReportSnapshot {
   clinicalQuestion: ClinicalQuestion
   /** §5.3: EMPTY when no flag is present — never a fabricated "all clear". Ordered: present blood/foreign lead, then engine safety order. */
   safetyFlags: SafetyFlag[]
+  /** The ongoing and getting-worse checks that ran on a symptom in the window and did not flag
+   *  (CUL-2003). Rendered with the band, or in its place when no flag fired; never a clearance. */
+  safetyChecks: SafetyCheck[]
   weight: WeightSection
   atAGlance: AtAGlance
   symptoms: SymptomAggregate[]
@@ -2930,12 +3230,86 @@ function kgToLbsNum(kg: number): number {
  * single group when the id is absent. An unspecified/unmapped form adds nothing (null tag).
  */
 function mealFoodLabel(
-  meal: { brand: string | null; productName: string | null; format?: FoodFormat | null },
+  meal: { brand: string | null; productName: string | null; format?: FoodFormat | null; bowl?: ReportMealBowl | null },
 ): string | null {
+  if (meal.bowl) return bowlLabel(meal.bowl)
   const name = `${meal.brand ?? ''} ${meal.productName ?? ''}`.trim()
   const form = foodFormatWord(meal.format ?? null)
   if (!name) return form ? form : null
   return form ? `${name} (${form})` : name
+}
+
+/** Off a trial, the heuristic's off-diet test, per component: a treat or human food. */
+function isHeuristicConfounder(c: ReportMealComponent): boolean {
+  return c.foodType === 'treat' || c.format === 'treat' || c.format === 'human_food'
+}
+
+/** One component's name: its food's label, else the snapshot taken when it was logged
+ *  (a purged food keeps its name, §3). */
+export function componentLabel(c: ReportMealComponent): string {
+  return mealFoodLabel({ brand: c.brand, productName: c.productName, format: c.format }) ?? c.snapshotLabel
+}
+
+/**
+ * A mixed bowl's name (Mixed meals, CUL-2052): every food, in the order the owner logged
+ * them, and "mixed" so no reader takes it for one food. An incomplete bowl says so: its
+ * live components are fewer than it held, so the list is not the whole bowl (§3). A bowl
+ * with no live component names its foods as last recorded (CUL-2096): the list may be
+ * stale, never complete.
+ */
+export function bowlLabel(bowl: ReportMealBowl): string {
+  const names = bowl.components.map(componentLabel)
+  if (bowl.lastRecorded) return `${names.join(' + ')}, mixed (as last recorded; record incomplete)`
+  return bowl.status === 'incomplete'
+    ? `${names.join(' + ')} + another food, mixed (record incomplete)`
+    : `${names.join(' + ')}, mixed`
+}
+
+type MixPhase = 'none' | 'before' | 'during' | 'after'
+const MIX_PHASE_SUFFIX: Record<MixPhase, string> = {
+  none: '',
+  before: ', before Day 1 (the switch)',
+  during: ', during the trial',
+  after: ', after the trial',
+}
+
+interface MixRowBuild {
+  incomplete: boolean
+  first: ReportMealBowl
+  last: ReportMealBowl
+  firstMs: number
+  lastMs: number
+}
+
+/** The owner's ratio for one food in one bowl, as entered (T8): never filled in. */
+export interface MixShare {
+  normalizedShare: number | null
+  shareSource: string
+  amountValue: number | null
+  amountUnit: string | null
+}
+
+/** Appendix E's mix row: each food with its share in the first and the last bowl. */
+export interface MixRow {
+  incomplete: boolean
+  foods: Array<{ label: string; first: MixShare | null; last: MixShare | null }>
+}
+
+function mixRowOf(b: MixRowBuild): MixRow {
+  const shareOf = (bowl: ReportMealBowl, key: string): MixShare | null => {
+    const c = bowl.components.find((x) => x.foodKey === key)
+    return c
+      ? { normalizedShare: c.normalizedShare, shareSource: c.shareSource, amountValue: c.amountValue, amountUnit: c.amountUnit }
+      : null
+  }
+  return {
+    incomplete: b.incomplete,
+    foods: b.first.components.map((c) => ({
+      label: componentLabel(c),
+      first: shareOf(b.first, c.foodKey),
+      last: shareOf(b.last, c.foodKey),
+    })),
+  }
 }
 
 export type { IntakeRating }
@@ -3023,6 +3397,21 @@ function leftMostOfIt(rating: IntakeRating): boolean {
  * feedings are omitted — a "0 refused" cell is a negative claim, and this report does not
  * make those.
  */
+/**
+ * CUL-1978 — the trailing run of rated meals not fully eaten, newest first. Sorted here
+ * rather than trusted from the caller, because the window's events are not guaranteed to
+ * arrive in time order and a run read off an unsorted list is a run of nothing.
+ */
+export function recentNotFullyEatenRun(rated: Array<{ occurredAt: string; meal: { intakeRating: IntakeRating | null } | null }>): number {
+  const newestFirst = [...rated].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
+  let run = 0
+  for (const e of newestFirst) {
+    if (e.meal?.intakeRating === 'all') break
+    run++
+  }
+  return run
+}
+
 function intakeBreakdownOf(ratings: IntakeRating[]): Array<{ rating: IntakeRating; count: number }> {
   const counts = new Map<IntakeRating, number>()
   for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
@@ -3233,6 +3622,9 @@ function buildIncidentPhenotype(
 
 export interface DetectionExtract {
   established: EstablishedCorrelation[]
+  /** CUL-1978 — Early-tier correlations, carried ONLY so the null line can stop reading
+   *  as a negative result. Never rendered as a finding. */
+  early: EstablishedCorrelation[]
   timing: TimingFinding[]
   intakeDecline: IntakeDeclineFinding | null
   /** EVERY chronic course, not just the longest (R4 both-stated, CUL-676). Was a
@@ -3241,6 +3633,15 @@ export interface DetectionExtract {
    *  `worsening`, which has always been a list. */
   chronicity: SymptomChronicityFinding[]
   worsening: SymptomWorseningFinding[]
+  /** The absolute-burden safety card (CUL-1410), carried as a flag since adversarial pass 2 of
+   *  CUL-1995's row: the report had no case for it, so a cat vomiting three days running got a
+   *  silent band, and that row's "Not triggered" line then spoke over it. */
+  burden: SymptomBurdenFinding[]
+  /** Home's weight card (CUL-2026), present only when the lane ran (see `weightLaneFor`). */
+  weightLoss: WeightLossFinding[]
+  /** Any other SAFETY-class finding type the report does not detail, named in the band so its
+   *  absence is never read as "nothing flagged". */
+  otherSafety: string[]
   stapleProtein: string | null
 }
 
@@ -3293,6 +3694,23 @@ export function buildDetectionInput(
       // currently shows a wider exposure picture than it correlates over, which is the
       // spec's intended phase boundary, not an oversight.
       primaryProtein: e.meal.primaryProtein,
+      // A MIXED BOWL (CUL-2052): the union of its components' primaries, on the same
+      // primary-only footing as every plain meal above, so a minor component is never
+      // the exposure the engine misses (§5.3). No food id stands for the bowl (T2).
+      ...(e.meal.bowl
+        ? {
+            // A bowl read as its last recorded foods (CUL-2096) gives the engine no protein,
+            // as the signal pipeline's `mapBowlRow` does: the set is stale.
+            proteins: e.meal.bowl.lastRecorded
+              ? []
+              : [...new Set(e.meal.bowl.components.map((c) => c.primaryProtein).filter((p): p is string => !!p))],
+            bowl: {
+              status: e.meal.bowl.status,
+              compositionKey: e.meal.bowl.compositionKey,
+              components: e.meal.bowl.components.map((c) => ({ foodItemId: c.foodItemId, foodLabel: componentLabel(c) })),
+            },
+          }
+        : {}),
       intakeRating: e.meal.intakeRating,
       foodType: e.meal.foodType,
       format: e.meal.format,
@@ -3379,9 +3797,41 @@ export function buildDetectionInput(
     mealEvents,
     feedingArrangements,
     medicationWindows,
+    ...weightLaneFor(input, droppedEventIds, scope.detectionNowIso === input.now ? undefined : scope.detectionNowIso),
     timezone: input.timezone ?? undefined,
     now: scope.detectionNowIso,
   }
+}
+
+/**
+ * CUL-2026 — the weight lane's input, under the key Home's weight card sits behind
+ * (`engines_v3_en8`, generate-signal/index.ts 1f), so a loss Home shows leads the band too and a
+ * loss Home cannot show yet stays off both. Every live reading with a source, not the window's:
+ * the lane anchors on the highest reading in its own year, measured back from `now`. On a past
+ * window `cutoffIso` (the window's end) drops later readings; assembly runs it again at real-now.
+ */
+export function weightLaneFor(
+  input: ReportInput,
+  droppedEventIds: Set<string>,
+  cutoffIso?: string,
+): { weight?: WeightLaneInput } {
+  if (!isEngineKeyOn(input.engineFlags, 'engines_v3_en8') || !input.weightHistory) return {}
+  // As of a past window's end, a reading after that end is not the window's (the lane's own
+  // 10-minute future slack would otherwise date a flag on the next local day: adversarial pass).
+  const cutoffMs = cutoffIso === undefined ? null : parseMs(cutoffIso)
+  const readings: WeightLaneInput['readings'] = []
+  for (const w of input.weightHistory) {
+    if (droppedEventIds.has(w.eventId) || w.source === undefined) continue
+    const ms = parseMs(w.occurredAt)
+    if (cutoffMs !== null && ms !== null && ms > cutoffMs) continue
+    readings.push({
+      kg: w.weightKg,
+      occurredAt: w.occurredAt,
+      source: w.source,
+      ...(w.sourceBasis !== undefined ? { sourceBasis: w.sourceBasis } : {}),
+    })
+  }
+  return { weight: { readings, dateOfBirth: input.pet.dateOfBirth } }
 }
 
 /** A regimen's DATE end is inclusive of the whole day → push to end-of-day (mirrors generate-signal/index.ts). */
@@ -3403,18 +3853,23 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
   // Appendix A + the §3.5 trend chart already carry the cadence — Dr. Chen 2026-08-21).
   const ranked = detectSignals(detInput, config)
   const established: EstablishedCorrelation[] = []
+  const early: EstablishedCorrelation[] = []
   const timing: TimingFinding[] = []
   let intakeDecline: IntakeDeclineFinding | null = null
   const chronicity: SymptomChronicityFinding[] = []
   const worsening: SymptomWorseningFinding[] = []
+  const burden: SymptomBurdenFinding[] = []
+  const weightLoss: WeightLossFinding[] = []
+  const otherSafety: string[] = []
 
   for (const { finding } of ranked) {
     switch (finding.type) {
       case 'food_symptom_correlation': {
         const f = finding as CorrelationFinding
-        // §8.5: ONLY Established reaches the report; Early is dropped here, deterministically.
-        if (f.tier !== 'established') break
-        established.push({
+        // §8.5 as amended by CUL-1978 (PM, 2026-10-18): Established is a finding; Early is
+        // carried apart, so the null line can name it instead of telling a vet to stop
+        // looking while Home shows the same protein as an early pattern.
+        ;(f.tier === 'established' ? established : early).push({
           symptomType: f.symptomType,
           protein: f.protein,
           proteins: f.proteins,
@@ -3523,8 +3978,16 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
       case 'trial_response':
       case 'gap_shortening':
         break
-      // 'reflection' is owner-side only — never on the clinical report.
+      case 'symptom_burden':
+        burden.push(finding as SymptomBurdenFinding)
+        break
+      case 'weight_loss':
+        weightLoss.push(finding as WeightLossFinding)
+        break
+      // 'reflection' is owner-side only — never on the clinical report. A SAFETY finding that
+      // lands here is one the report does not detail; it is still named in the band.
       default:
+        if (finding.priorityClass === 'safety' && !otherSafety.includes(finding.type)) otherSafety.push(finding.type)
         break
     }
   }
@@ -3543,7 +4006,7 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
     }
   }
 
-  return { established, timing, intakeDecline, chronicity, worsening, stapleProtein }
+  return { established, early, timing, intakeDecline, chronicity, worsening, burden, weightLoss, otherSafety, stapleProtein }
 }
 
 // ── Top-level assembly ────────────────────────────────────────────────────────
@@ -3646,6 +4109,57 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const inFirstHalf = (dn: number): boolean => halfDays > 0 && dn <= firstHalfEndDayNum
   const inLastHalf = (dn: number): boolean => halfDays > 0 && dn >= lastHalfStartDayNum
 
+  // The days each bucket spans, and the under-floor weeks overlapping each half (CUL-1995). One
+  // derivation, shared by every symptom like `loggedDaysByBucket`, so the chart's "not read" mark
+  // and the half trend's named week cannot disagree about which weeks are thin.
+  const bucketDays = Array.from({ length: numBuckets }, (_, i) => Math.min(WEEK_DAYS, windowDays - i * WEEK_DAYS))
+  const thinWeeksIn = (fromDn: number, toDn: number): ThinWeek[] => {
+    const out: ThinWeek[] = []
+    for (let i = 0; i < numBuckets; i++) {
+      const bStart = startDayNum + i * WEEK_DAYS
+      const bEnd = bStart + bucketDays[i] - 1
+      if (bEnd < fromDn || bStart > toDn) continue
+      // A part week (the window's 1–3-day tail) is held to the same SHARE, not the absolute 4:
+      // fully logged, it is not thin, or every falling pair on a 7k+1..7k+3-day window would be
+      // withheld for ever (adversarial pass 1, finding 6). The chart's bar keeps the absolute
+      // floor, so a short tail still never draws a `0` that looks like a full week's.
+      const floor = Math.min(SYMPTOM_WEEK_MIN_LOGGED_DAYS, Math.ceil(COVERAGE_FLOOR * bucketDays[i]))
+      if ((loggedDaysByBucket[i] ?? 0) >= floor) continue
+      out.push({
+        startDate: dayKeyFromNumber(bStart),
+        endDate: dayKeyFromNumber(bEnd),
+        loggedDays: loggedDaysByBucket[i] ?? 0,
+        days: bucketDays[i],
+      })
+    }
+    return out
+  }
+  const thinWeeks =
+    halfDays > 0
+      ? { first: thinWeeksIn(startDayNum, firstHalfEndDayNum), last: thinWeeksIn(lastHalfStartDayNum, endDayNum) }
+      : { first: [], last: [] }
+
+  // ── Late logging (CUL-2001) ──────────────────────────────────────────────────
+  // Each kept entry's EARLIEST logged instant across the raw rows it stands for, so a bout one
+  // row of which was logged promptly reads as prompt (the record did catch it as it happened).
+  const loggedAtById = new Map(countableEvents.map((e) => [e.id, e.loggedAt]))
+  const lateLagDays = (e: (typeof windowEvents)[number]): { days: number; loggedMs: number } | null => {
+    // A found entry ("sometime in this window") is measured from the window's LATEST edge: a pile
+    // found this morning and logged ten minutes later was recorded when it was found, and its
+    // midpoint `occurredAt` would call it a day late (adversarial pass 1, finding 7).
+    const anchor = e.occurredAtConfidence === 'window' && e.occurredAtLatest ? e.occurredAtLatest : e.occurredAt
+    const occurredMs = Date.parse(anchor)
+    if (!Number.isFinite(occurredMs)) return null
+    let firstLoggedMs: number | null = null
+    for (const id of e.memberEventIds.length > 0 ? e.memberEventIds : [e.id]) {
+      const ms = Date.parse(loggedAtById.get(id) ?? '')
+      if (Number.isFinite(ms) && (firstLoggedMs === null || ms < firstLoggedMs)) firstLoggedMs = ms
+    }
+    if (firstLoggedMs === null) return null
+    const lagMs = firstLoggedMs - occurredMs
+    return lagMs >= LATE_LOG_MIN_HOURS * 3_600_000 ? { days: Math.floor(lagMs / 86_400_000), loggedMs: firstLoggedMs } : null
+  }
+
   // ── Per-symptom aggregates (§3.5, §5.1) ──────────────────────────────────────
   const symptoms: SymptomAggregate[] = []
   for (const type of REPORT_SYMPTOM_TYPES) {
@@ -3658,7 +4172,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let firstHalfCount = 0
     let lastHalfCount = 0
     let middleCount = 0
+    let lateCount = 0
+    let lateMin = Infinity
+    let lateMax = 0
+    let lateLoggedFirstMs = Infinity
+    let lateLoggedLastMs = -Infinity
     for (const e of incidents) {
+      const lag = lateLagDays(e)
+      if (lag !== null) {
+        lateCount++
+        lateMin = Math.min(lateMin, lag.days)
+        lateMax = Math.max(lateMax, lag.days)
+        lateLoggedFirstMs = Math.min(lateLoggedFirstMs, lag.loggedMs)
+        lateLoggedLastMs = Math.max(lateLoggedLastMs, lag.loggedMs)
+      }
       const dn = eventDayNumber(e.occurredAt, tz)
       if (dn !== null) {
         dayNums.add(dn)
@@ -3682,6 +4209,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       weeklyBuckets,
       bucketStartDates,
       loggedDaysByBucket,
+      bucketDays,
+      lateLogged:
+        lateCount > 0
+          ? {
+              count: lateCount,
+              minDays: lateMin,
+              maxDays: lateMax,
+              oneSittingDay: (() => {
+                if (lateCount < 2 || lateLoggedLastMs - lateLoggedFirstMs > ONE_SITTING_HOURS * 3_600_000) return null
+                const dn = eventDayNumber(new Date(lateLoggedFirstMs).toISOString(), tz)
+                return dn === null ? null : dayKeyFromNumber(dn)
+              })(),
+            }
+          : null,
       trendHalves:
         halfDays > 0
           ? {
@@ -3694,6 +4235,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
               lastEndDate: dayKeyFromNumber(endDayNum),
               middleCount,
               middleDate: windowDays % 2 === 1 ? dayKeyFromNumber(firstHalfEndDayNum + 1) : null,
+              thinWeeks,
             }
           : null,
     })
@@ -4063,9 +4605,41 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
+      source: proteinSourceOf(food.extractionConfidence),
       offTrial: opts?.isTrialDiet
         ? offTrialProteinsInTrialFood(proteins, trialProteinTarget)
         : offTrialProteins(proteins, trialProteinTarget),
+    }
+  }
+
+  // Where a mixed bowl falls against the selected trial: the switch before Day 1, inside
+  // the trial, or after it ended. No trial: one phase.
+  const trialStartNum = reportTrialInput ? dayNumber(reportTrialInput.startedAt) : null
+  const trialEndRaw = reportTrialInput ? reportTrialInput.endedAt ?? reportTrialInput.completedAt ?? null : null
+  const trialEndNum = trialEndRaw ? dayNumber(localDayKey(trialEndRaw, tz) ?? trialEndRaw) : null
+  const mixPhaseOf = (dayKey: string | null): MixPhase => {
+    const dn = dayKey === null ? null : dayNumber(dayKey)
+    if (trialStartNum === null || dn === null) return 'none'
+    if (dn < trialStartNum) return 'before'
+    if (trialEndNum !== null && dn > trialEndNum) return 'after'
+    return 'during'
+  }
+
+  /** A mixed bowl's protein view: the union of its components' own views, each taking
+   *  the trial-diet rule only for the component that IS the trial diet. Complete only
+   *  when every component's set is (D10): one unread component leaves the bowl open. */
+  function bowlProteinView(bowl: ReportMealBowl): ProteinSetView {
+    const views = bowl.components.map((c) =>
+      proteinView(c, {
+        isTrialDiet: isReportTrialFood({ foodItemId: c.foodItemId, brand: c.brand, productName: c.productName, format: c.format }),
+      }),
+    )
+    const union = (xs: string[][]): string[] => [...new Set(xs.flat())]
+    return {
+      proteins: union(views.map((v) => v.proteins)),
+      complete: bowl.status === 'mix' && views.every((v) => v.complete),
+      source: views[0]?.source,
+      offTrial: union(views.map((v) => v.offTrial)),
     }
   }
 
@@ -4074,7 +4648,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // meal rows' protein view below, and the previous-diet derivation that must never name it.
   const trialFoodId = reportTrialInput?.foodItemId ?? null
   const trialFoodLabel = reportTrialInput?.foodLabel?.trim().toLowerCase() ?? null
-  const isReportTrialFood = (m: NonNullable<ReportEventInput['meal']>): boolean => {
+  const isReportTrialFood = (
+    m: { foodItemId: string | null; brand: string | null; productName: string | null; format?: FoodFormat | null },
+  ): boolean => {
     if (trialFoodId && m.foodItemId === trialFoodId) return true
     const label = mealFoodLabel(m)?.trim().toLowerCase()
     return !!trialFoodLabel && !!label && label === trialFoodLabel
@@ -4115,6 +4691,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           ratedMeals: ratedMeals.length,
           finishedMeals,
           rate: finishedMeals / ratedMeals.length,
+          recentNotFullyEatenRun: recentNotFullyEatenRun(ratedMeals),
           intakeBreakdown: mealCompletionBreakdown,
         }
       : null
@@ -4137,10 +4714,52 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastRatedDate: string | null
       intakes: IntakeRating[]
       proteinSet: ProteinSetView
+      mix?: MixRowBuild
     }
   >()
   for (const e of loggedMeals) {
     const m = e.meal!
+    // A MIXED BOWL is its own row (spec §7.3), keyed on its composition whatever the
+    // ratio, so it adds to NEITHER food's row and to neither food's intake (§5.4). Every
+    // share is NAMED, first bowl to last, so a ramp cannot print inverted when the food
+    // logged first differs between bowls.
+    if (m.bowl) {
+      // SPLIT BY THE TRIAL'S PHASE (cold read, CUL-2052): the switch bowls before Day 1 and
+      // an off-diet bowl inside the trial are different clinical facts, and one row with
+      // one ramp let a vet read the in-trial bowl as where the switch ended.
+      const dayKey = localDayKey(e.occurredAt, tz)
+      const phase = mixPhaseOf(dayKey)
+      const key = `mix|${phase}|${m.bowl.compositionKey}`
+      const ms = Date.parse(e.occurredAt)
+      const g = mealGroups.get(key)
+      if (g) {
+        g.count++
+        if (dayKey && (g.firstDate === null || dayKey < g.firstDate)) g.firstDate = dayKey
+        if (dayKey && (g.lastDate === null || dayKey > g.lastDate)) g.lastDate = dayKey
+        if (m.intakeRating != null) {
+          g.intakes.push(m.intakeRating)
+          if (dayKey && (g.lastRatedDate === null || dayKey > g.lastRatedDate)) g.lastRatedDate = dayKey
+        }
+        const mix = g.mix!
+        if (m.bowl.status === 'incomplete') mix.incomplete = true
+        if (ms < mix.firstMs) { mix.firstMs = ms; mix.first = m.bowl }
+        if (ms > mix.lastMs) { mix.lastMs = ms; mix.last = m.bowl }
+      } else {
+        mealGroups.set(key, {
+          foodLabel: `${bowlLabel(m.bowl)}${MIX_PHASE_SUFFIX[phase]}`,
+          format: null,
+          primaryProtein: null,
+          count: 1,
+          firstDate: dayKey,
+          lastDate: dayKey,
+          lastRatedDate: m.intakeRating != null ? dayKey : null,
+          intakes: m.intakeRating != null ? [m.intakeRating] : [],
+          proteinSet: bowlProteinView(m.bowl),
+          mix: { incomplete: m.bowl.status === 'incomplete', first: m.bowl, last: m.bowl, firstMs: ms, lastMs: ms },
+        })
+      }
+      continue
+    }
     // Group by food identity: the library item id when present, else the brand/product label.
     // A meal with NEITHER collapses into ONE "unlabeled" bucket (a fixed key, not the unique
     // event id) so N unlabeled meals never fragment into N singleton "—" rows (code-reviewer).
@@ -4212,6 +4831,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastRatedDate: g.lastRatedDate,
       intakeBreakdown: intakeBreakdownOf(g.intakes),
       proteinSet: g.proteinSet,
+      ...(g.mix ? { mix: mixRowOf(g.mix) } : {}),
     }))
     .sort((a, b) => b.count - a.count || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''))
 
@@ -4221,9 +4841,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // feeding was summed on BOTH the page-1 human-food line and the treats line (adversarial
   // finding A3 — page 1 disagreed with the de-duplicated Appendix B). Appendix B's category
   // ternary is ordered human_food-first to match.
-  const humanFoodFeedings = windowMeals.filter((e) => e.meal!.format === 'human_food')
-  const treatFeedings = windowMeals.filter(
-    (e) => (e.meal!.foodType === 'treat' || e.meal!.format === 'treat') && e.meal!.format !== 'human_food',
+  // A MIXED BOWL is read per component (spec §8): a human-food or treat component is that
+  // feeding, whatever the bowl's other food. The picker only mixes meals today, but a
+  // synced or future mix may not obey it, and missing one here loses an exposure.
+  const humanFoodFeedings = windowMeals.filter((e) =>
+    e.meal!.bowl ? e.meal!.bowl.components.some((c) => c.format === 'human_food') : e.meal!.format === 'human_food',
+  )
+  const treatFeedings = windowMeals.filter((e) =>
+    e.meal!.bowl
+      ? !e.meal!.bowl.components.some((c) => c.format === 'human_food') &&
+        e.meal!.bowl.components.some((c) => c.foodType === 'treat' || c.format === 'treat')
+      : (e.meal!.foodType === 'treat' || e.meal!.format === 'treat') && e.meal!.format !== 'human_food',
   )
   const treatItemIds = new Set(treatFeedings.map((e) => e.meal!.foodItemId ?? e.id))
   const humanFoodDays = new Set<number>()
@@ -4249,6 +4877,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // classifier a different set is how "one definition of off-diet across page
         // 1, the tile and the appendix" quietly stops being true.
         meals: windowMeals,
+        // §6 (CUL-2052): the switch onto the diet precedes Day 1 and new foods follow the
+        // end, so the derivation reads every deduped meal and symptom in the pull.
+        recordMeals: dedupedAll.filter((e) => e.type === 'meal' && e.meal),
+        recordSymptoms: dedupedAll
+          .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
+          .map((e) => ({ occurredAt: e.occurredAt, eventType: e.type })),
         eventsById: new Map(dedupedAll.map((e) => [e.id, e])),
         doses: windowLookbackDoses,
         medicationItems: input.medicationItems ?? [],
@@ -4329,8 +4963,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let firstDay: string | null = null
     let lastDay: string | null = null
     for (const e of dedupedAll) {
-      if (e.type !== 'meal' || !e.meal || e.meal.foodType !== 'meal') continue
-      if (isReportTrialFood(e.meal)) continue
+      if (e.type !== 'meal' || !e.meal) continue
+      // A MIXED BOWL counts its NON-TRIAL components here, each by its own name, and the
+      // dominant food decides nothing (spec §6.1; CUL-1997's half this closes): a bowl of
+      // the old food with a quarter of the trial diet is a previous-diet feeding, and the
+      // trial food inside it is the transition, which page 1 states from §6.
+      const oldFoods: string[] = []
+      if (e.meal.bowl) {
+        for (const c of e.meal.bowl.components) {
+          if (c.foodType !== 'meal') continue
+          if (isReportTrialFood({ foodItemId: c.foodItemId, brand: c.brand, productName: c.productName, format: c.format })) continue
+          oldFoods.push(componentLabel(c))
+        }
+        if (oldFoods.length === 0) continue
+      } else {
+        if (e.meal.foodType !== 'meal') continue
+        if (isReportTrialFood(e.meal)) continue
+      }
       const key = localDayKey(e.occurredAt, tz)
       if (key === null) continue
       // The BOUND is numeric, on day numbers parsed from both sides — never a text compare
@@ -4341,8 +4990,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       feedings++
       if (firstDay === null || key < firstDay) firstDay = key
       if (lastDay === null || key > lastDay) lastDay = key
-      const label = mealFoodLabel(e.meal)
-      if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+      for (const label of e.meal.bowl ? oldFoods : [mealFoodLabel(e.meal)]) {
+        if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
+      }
     }
     if (feedings === 0 || firstDay === null || lastDay === null) return null
     const labels = [...counts.entries()]
@@ -4358,15 +5008,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // under the same key, so the report and Home cannot disagree about which worsening and which
   // food lines exist. Under it the report loses ④'s rows below the card floor and any
   // Established or timing line the reversed-in-time control withholds; Early never reached it.
-  const detection = runDetection(
-    detInput,
-    isEngineKeyOn(input.engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG,
-  )
+  const detConfig = isEngineKeyOn(input.engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG
+  const detection = runDetection(detInput, detConfig)
 
   const correlation: CorrelationSummary = {
     established: detection.established,
     hasEstablished: detection.established.length > 0,
     noThreshold: detection.established.length === 0,
+    early: detection.early,
     stapleProtein: detection.stapleProtein,
     timing: detection.timing,
   }
@@ -4492,6 +5141,69 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
             : [],
     })
   }
+  for (const f of detection.burden) {
+    safetyFlags.push({
+      kind: 'symptom_burden',
+      symptomType: f.symptomType,
+      count: f.count,
+      days: f.days,
+      runDays: f.runDays,
+      windowDays: f.windowDays,
+      tier: f.tier,
+    })
+  }
+  // CUL-2026 — Home's weight card, placed where Home ranks it (SAFETY_TYPE_ORDER: below burden,
+  // above chronicity), carrying the card's two readings, their days and sources, and its ask.
+  //
+  // AS OF TODAY FIRST (adversarial pass). A weight card is about the pet now, and Home reads it at
+  // real-now. A window that ended in the past ran the lane at its end, so a loss weighed after it
+  // (Home's card, live) left the band silent. So on a past window the lane also runs at real-now
+  // over every reading, and that card, the one Home shows, wins; the window-end card is the
+  // fallback, and is never said to be what the owner was told.
+  //
+  // BOTH WHEN THEY DIFFER (adversarial pass 2). A partial recovery after the window can make
+  // today's card SOFTER than the window's (firm 5.00 → 4.30 kg at the window's end, soft 5.00 →
+  // 4.50 today), and letting today's win softened the band's ask. So on a past window each run
+  // that fires is carried, firmest first (today's leads a tie); one that names the same two
+  // readings as today's is the same card and is carried once.
+  const weightFindings: Array<{ f: WeightLossFinding; asOf: 'now' | 'window_end' }> = []
+  if (scope.detectionNowIso === input.now) {
+    for (const f of detection.weightLoss) weightFindings.push({ f, asOf: 'now' })
+  } else {
+    const lane = weightLaneFor(input, droppedEventIds)
+    const live = lane.weight ? detectWeightLoss({ ...detInput, ...lane, now: input.now }) : []
+    for (const f of live) weightFindings.push({ f, asOf: 'now' })
+    const same = (a: WeightLossFinding, b: WeightLossFinding): boolean =>
+      a.latest.occurredAt === b.latest.occurredAt && a.highBefore.occurredAt === b.highBefore.occurredAt
+    for (const f of detection.weightLoss) {
+      if (!live.some((l) => same(l, f))) weightFindings.push({ f, asOf: 'window_end' })
+    }
+    const rank = (x: { f: WeightLossFinding; asOf: 'now' | 'window_end' }): number =>
+      (x.f.tier === 'firm' ? 0 : 2) + (x.asOf === 'now' ? 0 : 1)
+    weightFindings.sort((a, b) => rank(a) - rank(b))
+  }
+  // A weigh-in pull that did not load in full can lose the year's high, and the lane then reads
+  // quieter (adversarial pass 2: never louder, often quieter). Home carries its earlier card over
+  // such a read; the report has none to carry, so the band says the check ran on part of the record.
+  if (
+    weightFindings.length === 0 &&
+    isEngineKeyOn(input.engineFlags, 'engines_v3_en8') &&
+    (input.incompletePulls ?? []).includes('weight_checks')
+  ) {
+    safetyFlags.push({ kind: 'weight_unchecked' })
+  }
+  for (const { f, asOf } of weightFindings) {
+    safetyFlags.push({
+      kind: 'weight_loss',
+      asOf,
+      latest: { kg: f.latest.kg, source: f.latest.source, single: !f.latest.confirmed, day: f.latestDay },
+      highBefore: { kg: f.highBefore.kg, source: f.highBefore.source, single: !f.highBefore.confirmed, day: f.highBeforeDay },
+      tier: f.tier,
+      planned: f.planned,
+      mixedInstruments: f.mixedInstruments,
+      windowDays: f.windowDays,
+    })
+  }
   for (const f of detection.chronicity) {
     // The engine buckets by UTC day — deliberate for the rolling Signal (detection.ts §2:
     // chronicity is timezone-independent), but on THIS artifact the numbers sit one page from
@@ -4599,6 +5311,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ...(f.coughVomitAdjacent ? { coughVomitAdjacent: true as const } : {}),
     })
   }
+  {
+    // An incident red flag is the engine's view of the same photo reads the present-only flags
+    // above are built from; named only when the report raised none of its own.
+    const hasPresent = safetyFlags.some((f) => f.kind === 'present_blood' || f.kind === 'present_foreign')
+    const other = detection.otherSafety.filter((t) => !(t === 'incident_red_flag' && hasPresent))
+    if (other.length > 0) safetyFlags.push({ kind: 'engine_other', findingTypes: other })
+  }
   for (const f of detection.worsening) {
     safetyFlags.push({
       kind: 'symptom_worsening',
@@ -4610,6 +5329,89 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       trigger: f.trigger,
       tier: f.tier,
       windowDays: f.windowDays,
+    })
+  }
+
+  // ── The checks that ran and did not flag (CUL-2003) ──────────────────────────
+  // The band used to show only what fired, so a vet scanning it could not tell "the ongoing and
+  // getting-worse checks ran and stayed under their floors" from "they never ran". Named per
+  // symptom in the window that the check's lane covers, with the floors the engine applied, read
+  // from the engine's own resolver and config (never retyped here). Absence ≠ wellness: the
+  // render says "not ruled out" beside every one of them.
+  const safetyChecks: SafetyCheck[] = []
+  const flagged = (kind: SafetyFlag['kind'], type: string): boolean =>
+    safetyFlags.some((f) => f.kind === kind && 'symptomType' in f && f.symptomType === type)
+  // Every verdict below is the ENGINE's, read through its exported entry points, never a re-derived
+  // predicate (adversarial pass 1 broke five inferences from the flag list alone):
+  //   • getting worse: `detectWorsening` over the signs NOT flagged as ongoing, the pick the
+  //     engine flags (CUL-2022: `repickWorseningPastChronic`). It returns one card, the steepest
+  //     rise among them, so any other of them was not assessed apart; with none, every one of
+  //     them was assessed and stayed under the floor.
+  //   • ongoing: whether the engine could MEASURE a course at all is its own `loggingEligible`
+  //     gate, read by running `detectChronicity` with every floor at its minimum: a type that
+  //     still does not come back was not measured, so "did not trigger" would over-claim.
+  const worseningCards = detectWorsening(
+    detInput,
+    detConfig,
+    new Set(detection.chronicity.map((f) => f.symptomType)),
+  )
+  const belowCardFloor = risingBelowCardFloor(detInput, detConfig)
+  const density = computeReflectionDensity(detInput, detConfig)
+  const measurable = new Set(
+    detectChronicity(detInput, {
+      ...detConfig,
+      chronicity: {
+        ...detConfig.chronicity,
+        minSpanDays: 0,
+        minEpisodes: 1,
+        minActiveWeeks: 1,
+        ongoingRecencyDays: Number.MAX_SAFE_INTEGER,
+        perType: undefined,
+      },
+    }).map((f) => f.symptomType as string),
+  )
+  for (const s of symptoms) {
+    const type = s.type as SymptomType
+    const chronicFlag = flagged('chronicity', type)
+    if ((LANE_SYMPTOM_TYPES.chronicity as readonly string[]).includes(type) && !chronicFlag) {
+      const fl = chronicityFloorsFor(type, detInput.pet.species, detConfig.chronicity)
+      const compare = computeChronicityCompare(detInput, type, detConfig)
+      safetyChecks.push({
+        kind: 'ongoing',
+        symptomType: type,
+        // A span is measured between onsets INSIDE the window, so it is at most windowDays − 1:
+        // a window equal to the floor cannot fire either (adversarial pass 2, Q2).
+        state: windowDays <= fl.minSpanDays ? 'window_short' : measurable.has(type) ? 'not_triggered' : 'too_few_days',
+        episodes: compare ? compare.recentCount + compare.priorCount : 0,
+        lookbackDays: detConfig.chronicity.windowDays,
+        windowDays,
+        minEpisodes: fl.minEpisodes,
+        minSpanDays: fl.minSpanDays,
+        minActiveWeeks: fl.minActiveWeeks,
+        ongoingRecencyDays: fl.ongoingRecencyDays,
+      })
+    }
+    // Where the ongoing flag fired, the engine folds this symptom's getting-worse card into it
+    // (`suppressWorseningWhenChronic`), so a "did not flag" here would be false.
+    if (!(LANE_SYMPTOM_TYPES.symptomDelta as readonly string[]).includes(type) || chronicFlag) continue
+    if (flagged('symptom_worsening', type) || worseningCards.some((c) => c.symptomType === type)) continue
+    const minLoggingDays = detConfig.reflection.minLoggingDaysPerWindow
+    safetyChecks.push({
+      kind: 'worsening',
+      symptomType: type,
+      windowDays: detConfig.reflection.windowDays,
+      state:
+        density === null || density.currentLoggingDays < minLoggingDays || density.priorLoggingDays < minLoggingDays
+          ? 'too_few_days'
+          : worseningCards.length > 0
+            ? 'not_separate'
+            : belowCardFloor
+              ? 'below_card_floor'
+              : 'not_flagged',
+      minEpisodes: Math.max(detConfig.reflection.worseningMinEpisodes, detConfig.en11?.worseningCardMinEpisodes ?? 0),
+      currentLoggingDays: density?.currentLoggingDays ?? 0,
+      priorLoggingDays: density?.priorLoggingDays ?? 0,
+      minLoggingDays,
     })
   }
 
@@ -4718,13 +5520,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // trial-breaking antigen (adversarial finding: a `format==='treat'` item with a non-'treat'
         // foodType was in page-1 treats but absent from the reconciliation). `format==='treat'` is a
         // legitimate FoodFormat, so the treat arm needs BOTH predicates here too.
-        (e) => e.meal!.foodType === 'treat' || e.meal!.format === 'treat' || e.meal!.format === 'human_food',
+        (e) =>
+          e.meal!.bowl
+            ? e.meal!.bowl.components.some(isHeuristicConfounder)
+            : e.meal!.foodType === 'treat' || e.meal!.format === 'treat' || e.meal!.format === 'human_food',
       )
   const trialExposureByEvent = new Map(
     (trialBlock?.exposures.items ?? []).map((x) => [x.eventId, x]),
   )
   const confounders: ConfounderExposure[] = confounderFeedings.map((e) => {
     const x = trialClassified ? trialExposureByEvent.get(e.id) ?? null : null
+    if (e.meal!.bowl) return bowlConfounder(e, e.meal!.bowl, x)
     return {
       eventId: e.id,
       occurredAt: e.occurredAt,
@@ -4745,6 +5551,76 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })
+  /**
+   * A MIXED BOWL's appendix C row (spec §7.3). The row names the OFFENDING component, never
+   * the bowl's dominant food: `mealFoodLabel` on a rabbit-dominant bowl would list Rabbit as
+   * the off-diet food. Off a trial, the components the heuristic keeps. A bowl that held
+   * the trial diet says so, and an edit to its foods made more than 24h after the meal is
+   * disclosed with its date, since a late edit is the record changing after the fact.
+   */
+  function bowlConfounder(
+    e: (typeof windowMeals)[number],
+    bowl: ReportMealBowl,
+    x: TrialBlock['exposures']['items'][number] | null,
+  ): ConfounderExposure {
+    const c = x?.classification ?? null
+    const parts = c?.components ?? []
+    const foods = c?.componentFoods ?? []
+    const byRef = new Map(bowl.components.map((b) => [b.foodKey, b]))
+    const named: ReportMealComponent[] = []
+    const alsoOff: ReportMealComponent[] = []
+    if (c) {
+      parts.forEach((p, i) => {
+        const comp = byRef.get(foods[i]?.ref ?? '')
+        if (!comp || !p.offDiet) return
+        ;(p.verdict === c.verdict ? named : alsoOff).push(comp)
+      })
+    } else {
+      named.push(...bowl.components.filter(isHeuristicConfounder))
+    }
+    if (named.length === 0) named.push(...bowl.components)
+    const withTrialDiet = c ? carriesTrialDiet(c) : false
+    const label =
+      named.map(componentLabel).join(' + ') +
+      (alsoOff.length > 0 ? `; also off the list: ${alsoOff.map(componentLabel).join(' + ')}` : '') +
+      (withTrialDiet ? ', in a mixed bowl with the trial diet' : ', in a mixed bowl')
+    const lead = named[0]
+    const views = named.map((n) =>
+      proteinView(n, { isTrialDiet: isReportTrialFood({ foodItemId: n.foodItemId, brand: n.brand, productName: n.productName, format: n.format }) }),
+    )
+    const editedAfter =
+      bowl.writtenAtMs !== null && bowl.writtenAtMs - Date.parse(e.occurredAt) > 24 * 60 * 60 * 1000
+        ? localDayKey(new Date(bowl.writtenAtMs).toISOString(), tz)
+        : null
+    return {
+      eventId: e.id,
+      occurredAt: e.occurredAt,
+      dayKey: localDayKey(e.occurredAt, tz),
+      foodLabel: label,
+      primaryProtein: canonicalizeProtein(lead.primaryProtein) ? lead.primaryProtein : null,
+      format: lead.format,
+      foodType: lead.foodType,
+      note: e.notes,
+      proteinSet: {
+        proteins: [...new Set(views.flatMap((v) => v.proteins))],
+        complete: views.every((v) => v.complete),
+        source: views[0]?.source,
+        offTrial: [...new Set(views.flatMap((v) => v.offTrial))],
+      },
+      rung: x ? (x.classification.rung === 'derived_protein' ? 'derived_protein' : 'unrecognised') : null,
+      antigens: x?.classification.antigens ?? [],
+      symptomInChallengeWindow: x?.symptomInChallengeWindow ?? false,
+      panelWasRead: x?.panelWasRead ?? false,
+      attributionChecked: x?.attributionChecked ?? true,
+      permittedLaterFrom: x?.permittedLaterFrom ?? null,
+      editedOn: editedAfter,
+      // The bowl was OFFERED; what was eaten of it is unknown, and a refused bowl may mean
+      // little of the off-list food was eaten (cold read). Counted as an exposure all the
+      // same (presence, §5.1): the row says which, so the vet can weigh it.
+      bowlIntake: e.meal!.intakeRating ?? null,
+    }
+  }
+
   // CUL-852 — the WSAVA "Food used to give medication" row.
   //
   // THE TALLY IS NOT WIDENED HERE. Whether a vehicle feeding's protein reaches the antigen
@@ -4803,6 +5679,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
     previousDiet,
     medicationVehicles,
+    proteinSources: (() => {
+      const byFood = new Map<string, ProteinSource>()
+      for (const e of windowMeals) {
+        const key = e.meal!.foodItemId ?? `${e.meal!.brand ?? ''}|${e.meal!.productName ?? ''}`
+        byFood.set(key, proteinSourceOf(e.meal!.extractionConfidence))
+      }
+      // The window's free-fed bowls: they reach the tally without a meal event.
+      for (const f of freeFed) byFood.set(`bowl:${f.foodLabel ?? ''}`, f.proteinSet.source ?? 'owner')
+      const all = [...byFood.values()]
+      return { photo: all.filter((x) => x === 'photo').length, owner: all.filter((x) => x === 'owner').length }
+    })(),
   }
 
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"
@@ -5361,6 +6248,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     loggedDaysSinceLastEpisode,
     firstHalfLoggedDays,
     secondHalfLoggedDays,
+    unloggedTailDays: lastLoggedDayNum === null ? windowDays : Math.max(0, endDayNum - lastLoggedDayNum),
+    lastLoggedDate: lastLoggedDayNum === null ? null : dayKeyFromNumber(lastLoggedDayNum),
   }
 
   // ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ───────────────
@@ -5449,6 +6338,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     signalment,
     clinicalQuestion,
     safetyFlags,
+    safetyChecks,
     weight,
     atAGlance,
     symptoms,

@@ -128,6 +128,12 @@ CREATE INDEX idx_medication_administrations_paired_event
 -- writes pay only a NULL test (no subquery); a linked write pays one indexed PK
 -- lookup on events.id. Fires on INSERT and UPDATE so a retroactively-linked dose
 -- (the combo built from an already-logged treat) is validated too.
+-- CORRECTED by 108 (CUL-2064): "NEW.pet_id was already RLS-verified" does not
+-- hold (a BEFORE trigger runs ahead of RLS WITH CHECK, which left a 42501-vs-
+-- 23514 membership oracle), and re-checking every write, the sync upsert
+-- included, bricked a dose for good once its paired event moved pet (C-38).
+-- 108 adds the caller arm, reads nothing for an unchanged pairing and pet, and
+-- passes an upsert of the row already stored.
 -- search_path is pinned to '' (and events is schema-qualified as public.events)
 -- so this cross-table lookup can't be redirected by a caller-controlled
 -- search_path — the function_search_path_mutable hardening, applied here because

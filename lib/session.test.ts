@@ -24,6 +24,7 @@ jest.mock('./db', () => ({
 }));
 jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
+jest.mock('./widgetSnapshot', () => ({ fenceWidgetPublish: jest.fn() }));
 // lib/notifications imports expo-notifications (throws at import without the
 // native module). Mock it — this test only cares that wipeLocalSession CALLS the
 // sign-out cancellation; the primitive's own behavior is covered by
@@ -61,6 +62,7 @@ import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
+import { fenceWidgetPublish } from './widgetSnapshot';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
 import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContaminant';
@@ -111,6 +113,22 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(clearNotificationInteractions).toHaveBeenCalled();
   });
 
+  // CUL-1952: the widget fence moves BEFORE the first await, so a publish already
+  // reading SQLite cannot write past it, and BEFORE the clears, which then erase
+  // anything it wrote earlier.
+  it('fences the widget publisher synchronously, before the widget clears', () => {
+    (fenceWidgetPublish as jest.Mock).mockClear();
+    (clearWidgetData as jest.Mock).mockClear();
+    const done = wipeLocalSession();
+    expect(fenceWidgetPublish).toHaveBeenCalledTimes(1);
+    expect(clearWidgetData).not.toHaveBeenCalled();
+    return done.then(() => {
+      expect((fenceWidgetPublish as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        (clearWidgetData as jest.Mock).mock.invocationCallOrder[0],
+      );
+    });
+  });
+
   // B-661 (Trust & Safety, non-negotiable). A scheduled local notification lives
   // in the OS, outside the app sandbox clearLocalData wipes — so an opted-in 9pm
   // Day Summary scheduled by the account signing out would still fire on a shared
@@ -153,8 +171,6 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
       allowlist: {
         ask_enabled: ['11111111-2222-3333-4444-555555555555'],
         ask_general_enabled: false,
-        // widget_enabled (B-712) also carries account UUIDs — it must be wiped too.
-        widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         engines_v3_en14: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         engines_v3_en3: undefined,
         engines_v3_en4: undefined,
@@ -168,9 +184,9 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
 
   // B-712 (Gate 2 / D4). The local beta opt-ins are AsyncStorage-resident device
   // state; on a shared device the prior owner's choices must not carry to the next
-  // person, and a widget left "on" must fall back to the neutral door.
+  // person.
   it('clears the beta opt-ins — memory and the persisted key', async () => {
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
     await Promise.resolve(); // let the fire-and-forget write-through flush
     expect(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY)).not.toBeNull();
 
@@ -441,7 +457,7 @@ describe('wipeLocalSession — the Signal regen teardown (CUL-642)', () => {
     await jest.advanceTimersByTimeAsync(5000);
 
     expect(invoke).toHaveBeenCalledWith('generate-signal', {
-      body: { petId: 'pet-of-account-a' },
+      body: { petId: 'pet-of-account-a', unsentRows: expect.any(Boolean), refusedRows: expect.any(Boolean), reason: 'log' },
     });
   });
 });
@@ -652,6 +668,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
     askStore: 'useAskStore',
     eventStore: 'useEventStore',
     historyListStore: 'useHistoryListStore',
+    mealScreenFlagStore: 'useMealScreenFlagStore',
     momentStore: 'useMomentStore',
     onboardingDraftStore: 'useOnboardingDraftStore',
     petStore: 'usePetStore',
@@ -668,6 +685,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
       '(CUL-1174 split the state out so Home imports no consent writer)',
     authStore: 'the session itself, nulled by the SIGNED_OUT handler; its recovery state ' +
       'must SURVIVE this wipe, which the reset handler calls mid-attempt (spec §6.3, FR-12)',
+    crashStore: 'one boolean, whether the app has failed (CUL-1841); holds nothing of the account',
     foodLibraryStore: 'a version counter that tells screens to re-read; holds no rows',
     recordChangeStore: 'a version counter a removal raises so screens re-read; holds no rows (CUL-1665)',
     reducedMotionStore: 'the OS Reduce Motion setting, a device fact (C-43)',

@@ -6,7 +6,7 @@
 //
 // Design v2 (D2-5 / CUL-1067; GA by CUL-1071) retired the KPI column: the symptom count
 // cards, the Calendar card, the Meals-finished card and the old weight card. The month
-// (`components/designV2/patterns/MonthInstrument`) carries the symptoms as layers and the
+// (`components/surfaces/patterns/MonthInstrument`) carries the symptoms as layers and the
 // weight is drawn as dots by date, both read on their own. What this module still builds
 // is the Noticed card and the three descriptive cards.
 

@@ -259,11 +259,6 @@ export async function uploadPhoto(
   if (error) throw error;
 }
 
-export function getPublicUrl(bucket: string, storagePath: string): string {
-  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-  return data.publicUrl;
-}
-
 // For private buckets (RLS-gated reads), getPublicUrl returns a URL that
 // 400s for unauthenticated GETs. Use signed URLs instead — the token is
 // embedded in the URL so Image components don't need auth headers.
@@ -328,4 +323,126 @@ export async function getSignedUrls(
     console.warn('[storage] batch signed URLs threw:', bucket, e);
   }
   return out;
+}
+
+// ── Pet photos (CUL-1856) ───────────────────────────────────────────────────
+// Every pet photo is read through a short-lived signed link, never a public URL,
+// so the bucket can go private (CUL-594, ruled private 2026-10-12) without a
+// single disc going blank. A signed link also works on today's public bucket,
+// which is what lets this ship ahead of the bucket change. `getPublicUrl` was
+// deleted with this change: `guards/petPhotoSignedOnly.test.ts` fails the build
+// if a public read comes back.
+//
+// Cached per PATH because one pet's face is on screen up to nine times at once
+// (tab bar, Home header, switcher, FAB, …): without the cache and the in-flight
+// dedupe, every disc would sign its own link on every mount.
+export const PET_PHOTOS_BUCKET = 'nyx-pet-photos';
+export const PET_PHOTO_LINK_TTL_SEC = 60 * 60;
+// A link is handed out only while it has this much life left, so an image that
+// mounts on a nearly-dead link does not fail its fetch a minute later.
+export const PET_PHOTO_LINK_MIN_REMAINING_MS = 5 * 60 * 1000;
+
+const petPhotoLinks = new Map<string, { url: string; expiresAt: number }>();
+const petPhotoInFlight = new Map<string, Promise<string | null>>();
+// Bumped when the account changes, so a signing that started under the previous
+// account can never land in the next one's cache.
+let petPhotoGeneration = 0;
+let petPhotoAuthUserId: string | null | undefined;
+let petPhotoAuthWatched = false;
+
+// The path is fixed per pet (`<pet id>/profile.jpg`, overwritten in place), so a
+// new photo arrives under the SAME key. A version per path is what tells every
+// mounted disc to sign again; the new link's token is a new URL, which is also a
+// new key for the image cache, so the old face is never served from memory.
+const petPhotoVersions = new Map<string, number>();
+const petPhotoVersionListeners = new Set<() => void>();
+
+// Cleared on sign-out and on a change of user. lib/session.ts's wipe is the usual
+// home for account state outside SQLite, and it does not call this yet (that file
+// belonged to a parallel row when this shipped); this listener is what clears it.
+// Registered lazily by the first signing, before the first entry can exist, so an
+// account that never signed a pet photo has nothing to clear.
+function watchAuthForPetPhotos(): void {
+  if (petPhotoAuthWatched) return;
+  petPhotoAuthWatched = true;
+  supabase.auth.onAuthStateChange((_event, session) => {
+    const userId = session?.user?.id ?? null;
+    if (petPhotoAuthUserId !== undefined && userId !== petPhotoAuthUserId) clearPetPhotoLinks();
+    petPhotoAuthUserId = userId;
+  });
+}
+
+/** The cached link for this path, if it still has enough life; never signs. */
+export function peekPetPhotoUrl(storagePath: string, now: number = Date.now()): string | null {
+  const entry = petPhotoLinks.get(storagePath);
+  return entry && entry.expiresAt - now > PET_PHOTO_LINK_MIN_REMAINING_MS ? entry.url : null;
+}
+
+/**
+ * A signed link for a pet photo, or null when it could not be signed (offline, no
+ * session, an object the caller may not read). Never throws: the caller's answer
+ * to null is the pet's initial, which is also its loading state.
+ */
+export function getPetPhotoUrl(storagePath: string): Promise<string | null> {
+  const cached = peekPetPhotoUrl(storagePath);
+  if (cached) return Promise.resolve(cached);
+  const pending = petPhotoInFlight.get(storagePath);
+  if (pending) return pending;
+
+  watchAuthForPetPhotos();
+  const generation = petPhotoGeneration;
+  // Stamped BEFORE the request: the token's clock starts at signing, so a slow
+  // round-trip must shorten the cached life, never extend it.
+  const signedAt = Date.now();
+  const request = getSignedUrl(PET_PHOTOS_BUCKET, storagePath, PET_PHOTO_LINK_TTL_SEC)
+    .catch((e: unknown) => {
+      console.warn('[storage] pet photo signing threw:', storagePath, e);
+      return null;
+    })
+    .then((url) => {
+      // A signing overtaken by an account change, or by a new photo at this
+      // path (markPetPhotoChanged drops it from the in-flight map), must not
+      // land: its link would be the old face under the image cache's old key.
+      if (generation !== petPhotoGeneration || petPhotoInFlight.get(storagePath) !== request) return null;
+      if (url) petPhotoLinks.set(storagePath, { url, expiresAt: signedAt + PET_PHOTO_LINK_TTL_SEC * 1000 });
+      return url;
+    })
+    .finally(() => {
+      if (petPhotoInFlight.get(storagePath) === request) petPhotoInFlight.delete(storagePath);
+    });
+  petPhotoInFlight.set(storagePath, request);
+  return request;
+}
+
+/**
+ * Drop one link that failed to load (expired under a long-mounted disc), so the
+ * next ask signs a fresh one. Only that URL: another disc may already have
+ * replaced it with a good one. Silent on purpose: notifying would re-key every
+ * disc, and a photo that fails for every link would then loop.
+ */
+export function evictPetPhotoUrl(storagePath: string, failedUrl: string): void {
+  if (petPhotoLinks.get(storagePath)?.url === failedUrl) petPhotoLinks.delete(storagePath);
+}
+
+/** A new photo was written at this path: every mounted disc signs again. */
+export function markPetPhotoChanged(storagePath: string): void {
+  petPhotoLinks.delete(storagePath);
+  petPhotoInFlight.delete(storagePath);
+  petPhotoVersions.set(storagePath, (petPhotoVersions.get(storagePath) ?? 0) + 1);
+  petPhotoVersionListeners.forEach((listener) => listener());
+}
+
+export function petPhotoVersion(storagePath: string | null): number {
+  return storagePath ? (petPhotoVersions.get(storagePath) ?? 0) : 0;
+}
+
+export function subscribePetPhotoVersions(onChange: () => void): () => void {
+  petPhotoVersionListeners.add(onChange);
+  return () => { petPhotoVersionListeners.delete(onChange); };
+}
+
+export function clearPetPhotoLinks(): void {
+  petPhotoGeneration += 1;
+  petPhotoLinks.clear();
+  petPhotoInFlight.clear();
 }

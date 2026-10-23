@@ -32,8 +32,8 @@ jest.mock('../../components/home/CrossPetSafetyBanner', () => ({ CrossPetSafetyB
 jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
 jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
-jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
-jest.mock('../../components/designV2/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
+jest.mock('../../components/surfaces/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
+jest.mock('../../components/surfaces/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }),
 }));
@@ -41,6 +41,12 @@ jest.mock('../../hooks/useEvents', () => ({
 const mockDietTrial: { current: { input: unknown; inputIsForPet: boolean; loadedPetId: string | null } } = {
   current: { input: null, inputIsForPet: false, loadedPetId: null },
 };
+// CUL-1975: Home's own eating check, answered "no decline" so this suite keeps its subject
+// and never touches SQLite. `index.intakeDecline.test.tsx` owns what the read does.
+jest.mock('../../lib/dietTrialFacts', () => ({
+  readIntakeDecline: jest.fn(async () => []),
+  vomitLineMayReassure: jest.requireActual('../../lib/dietTrialFacts').vomitLineMayReassure,
+}));
 jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => mockDietTrial.current }));
 jest.mock('../../lib/sync', () => ({ syncNow: jest.fn() }));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));

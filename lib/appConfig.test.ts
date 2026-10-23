@@ -264,61 +264,24 @@ describe('coerceAllowlistFlags — cache decode, legacy-tolerant', () => {
   });
 });
 
-// ── widget_enabled — the Beta-features eligibility gate (B-712 PR 1) ─────────────
-// The widget rides the SAME primitive as the Ask keys (migration 054 seeds it dark:
-// {"enabled": false, "allowlist": []}). PR 1 is schema-only, so the contract to pin
-// here is the two properties the later publish gate (PR 2) depends on: widget_enabled
-// is EXTRACTED off an app_config SELECT, and it resolves FAIL-CLOSED (off) for both
-// ship-dark cases — the seed unreached (undefined ⇒ fallback) and a signed-out caller
-// against the dark seed. No client gate is wired in this PR; these are unit facts.
-describe('widget_enabled — Beta-features eligibility (B-712 PR 1)', () => {
-  it('is part of the unset baseline (undefined until the row is fetched)', () => {
-    expect(ALLOWLIST_FLAGS_UNSET.widget_enabled).toBeUndefined();
-  });
-
-  it('extracts raw off an app_config SELECT, alongside the Ask keys', () => {
-    const rows = [
-      { key: 'ask_enabled', value: { enabled: false, allowlist: ['a-uid'] } },
+// ── widget_enabled — RETIRED (the widget at 1.2.0, CUL-1842, D8) ─────────────────
+// Every signed-in account publishes the widget's real data, so the client no longer reads
+// the key. Its `app_config` row stays until the PM retires it; a SELECT that returns it
+// must not resurrect the key in the union.
+describe('widget_enabled — retired client-side (CUL-1842)', () => {
+  it('is not an allowlist key, and an app_config row for it is ignored', () => {
+    expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('widget_enabled');
+    expect(Object.keys(ALLOWLIST_FLAGS_UNSET)).not.toContain('widget_enabled');
+    const flags = extractAllowlistFlags([
       { key: 'widget_enabled', value: { enabled: false, allowlist: ['pm-uid'] } },
-    ];
-    const flags = extractAllowlistFlags(rows);
-    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['pm-uid'] });
-    // The new key does not disturb the Ask keys travelling in the same SELECT.
+      { key: 'ask_enabled', value: { enabled: false, allowlist: ['a-uid'] } },
+    ]);
+    expect(Object.keys(flags)).not.toContain('widget_enabled');
+    // The retired row does not disturb a live key travelling in the same SELECT.
     expect(flags.ask_enabled).toEqual({ enabled: false, allowlist: ['a-uid'] });
-  });
-
-  it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
-    // A SELECT without the widget row leaves it undefined; the fallback=false
-    // convention (how every allowlist gate is called) then hides the feature.
-    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).widget_enabled;
-    expect(unset).toBeUndefined();
-    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
-  });
-
-  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
-    const darkSeed = { enabled: false, allowlist: [] };
-    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
-    // …and off signed-out, never leaking to the fallback.
-    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
-  });
-
-  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
-    const gated = { enabled: false, allowlist: ['pm-uid'] };
-    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
-    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
-    expect(resolveAllowlistFlag(gated, null, false)).toBe(false); // signed out → off
-  });
-
-  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
-    // The third code path beyond extract + resolve: coerceAllowlistFlags decodes a
-    // persisted (AsyncStorage) bundle. A stored widget value must round-trip intact,
-    // and a legacy cache without the key leaves it undefined ⇒ resolves fail-closed.
-    const stored = { widget_enabled: { enabled: false, allowlist: ['pm-uid'] } };
-    expect(coerceAllowlistFlags(stored).widget_enabled).toEqual({
-      enabled: false,
-      allowlist: ['pm-uid'],
-    });
-    expect(coerceAllowlistFlags({ ask_enabled: true }).widget_enabled).toBeUndefined();
+    expect(Object.keys(coerceAllowlistFlags({ widget_enabled: { enabled: true } }))).not.toContain(
+      'widget_enabled',
+    );
   });
 });
 
@@ -347,11 +310,11 @@ describe('design_v2 — retired client-side (CUL-1071)', () => {
     const flags = extractAllowlistFlags([
       { key: 'design_v2', value: { enabled: true } },
       { key: 'signal_design_v2', value: { enabled: true, allowlist: [] } },
-      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+      { key: 'ask_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
     ]);
     expect(Object.keys(flags)).not.toContain('design_v2');
     expect(Object.keys(flags)).not.toContain('signal_design_v2');
-    expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
+    expect(flags.ask_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
   });
 });
 

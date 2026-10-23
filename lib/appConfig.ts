@@ -44,14 +44,9 @@ export type AppConfigKey = keyof AppConfigValues;
 // never dark-holes or half-enables. Implemented once; reusable for every future
 // experiment (zero schema — the shape rides the existing JSONB `value`).
 
-// `ask_enabled` / `ask_general_enabled` gate the Ask surface (037). `widget_enabled`
-// is the Home-Screen-widget eligibility gate for the Beta features program (B-712,
-// migration 054) — the SAME shape and the same fail-closed resolution, zero new
-// mechanism. It gates the widget's *data* server-side; the owner's local opt-in is a
-// separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
-// the future Premium swap is one line).
+// `ask_enabled` / `ask_general_enabled` gate the Ask surface (037).
 //
-// Nine keys that once lived here have GRADUATED to GA and been retired client-side.
+// Ten keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
 // CUL-548): the uplift + the v2 lanes now render unconditionally. Their `app_config`
@@ -82,8 +77,11 @@ export type AppConfigKey = keyof AppConfigValues;
 // own screen, the month on Patterns and the waits are the app for every account, and the
 // old surfaces are deleted. Its row stays for builds that still read it and goes with the
 // same data-only clean-up; it was never read server-side. Not to be confused with
-// `signal_design_v2` above, the 2026-08 uplift. None of the nine belongs in this
-// client-side union any more.
+// `signal_design_v2` above, the 2026-08 uplift. The Home Screen widget's `widget_enabled`
+// (migration 054) graduated at 1.2.0 (CUL-1842, D8): every signed-in account publishes
+// its real data, and the local beta opt-in retired with it. Its row is retired by the PM
+// once this client is the installed build; it was never read server-side. None of the ten
+// belongs in this client-side union any more.
 //
 // `engines_v3_en14` (Engines v3 PR-36, CUL-1419) is EN-14's client half: "I've called" on a
 // call-tier read, the call record in Vet visits and History, the follow-up and its
@@ -107,7 +105,6 @@ export type AppConfigKey = keyof AppConfigValues;
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
-  'widget_enabled',
   'engines_v3_en14',
   'engines_v3_en3',
   'engines_v3_en4',
@@ -126,7 +123,6 @@ export type AllowlistFlagValues = Record<AllowlistFlagKey, unknown>;
 export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
-  widget_enabled: undefined,
   engines_v3_en14: undefined,
   engines_v3_en3: undefined,
   engines_v3_en4: undefined,

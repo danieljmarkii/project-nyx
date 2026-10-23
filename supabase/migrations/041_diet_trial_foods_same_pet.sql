@@ -68,6 +68,14 @@
 -- Cost: one indexed PK lookup on `diet_trials.id` per write. `diet_trial_id` is
 -- NOT NULL, so unlike `023` there is no null fast-path to guard.
 --
+-- CORRECTED by 108 (CUL-2064): "NEW.pet_id has already been RLS-verified" does
+-- not hold, because a BEFORE trigger runs ahead of RLS WITH CHECK (another
+-- account naming a real trial got 42501, a made-up one 23514: a membership
+-- oracle). And re-checking on every write, the sync upsert included, bricked a
+-- row for good once its trial's pet_id moved (C-38). 108 adds the caller arm,
+-- reads nothing for an unchanged trial and pet, and passes an upsert of the row
+-- already stored.
+--
 -- ------------------------------------------------------------
 -- WHAT THIS MIGRATION DELIBERATELY DOES NOT DO
 -- ------------------------------------------------------------

@@ -12,14 +12,8 @@ import {
   type CachedFinding,
   type CoverageDiagnostic,
 } from '../lib/signal';
-import {
-  bannerCopy,
-  buildingDayNumber,
-  deriveDisplayState,
-  selectCrossPetSafetyFinding,
-  validateBannerPhrasing,
-  type DisplayState,
-} from '../lib/signalCopy';
+import { bannerCopy, selectCrossPetSafetyFinding, validateBannerPhrasing } from '../lib/signalCopy';
+import { QUIET_STRETCH_MS } from '../lib/signalWatching';
 
 export interface SignalState {
   /** The pet these findings belong to, or null before a pet is loaded. Exposed so a
@@ -29,22 +23,29 @@ export interface SignalState {
    *  prevent — one pet's state written under another pet's key. */
   petId: string | null;
   findings: CachedFinding[];
-  /** Ranked "why no signal yet?" diagnostics (B-053); rendered only on no_pattern. */
+  /** Ranked "why no signal yet?" diagnostics (B-053). No Home surface draws them since the
+   *  quiet line (CUL-1838 ruled the nothing-found card to a header and a subtitle); kept on
+   *  the hook because the cache row carries them. */
   coverage: CoverageDiagnostic[];
-  displayState: DisplayState;
   signalText: string | null;
   petName: string;
   isLoading: boolean;
-  /** E1 building-state headline inputs (B-721 SR-2, §6): the B-421 local-day count
-   * from the pet's first logged event (day-1-inclusive, min 1) and the total
-   * non-deleted event count, daily looks excluded (a look counts toward recency only,
-   * CUL-1468). Computed from the pet's local events for EVERY state (only E1 renders
-   * them today), from the same SQLite read as the presence split. They hold Day 1 /
-   * 0 events before the first read lands (EMPTY_LOCAL_CONTEXT) and for a record of
-   * looks alone (CUL-1484), which is why BuildingStateV2 holds the day-count clause
-   * back at eventCount 0. */
-  dayNumber: number;
+  /** The quiet line's inputs (CUL-1838), from one local read; the zone derives its state from
+   *  these and the findings it can draw (`deriveDisplayState`). Daily looks are excluded from
+   *  every one of them but `lookSinceLastLogged`: a look is never coverage (daily-look spec
+   *  R1), so it never counts an event, never keeps a record "recent" and never ages a record
+   *  of looks alone past "Too early to tell" (CUL-1484). They hold the empty sentinel
+   *  (0 events, not recent) before the first read lands. */
   eventCount: number;
+  /** A meal, symptom or any other non-look log inside the last 48h (`QUIET_STRETCH_MS`). */
+  hasRecentActivity: boolean;
+  /** 8+ events over 7+ days (B-051) — the nothing-found floor. */
+  hasSubstantialHistory: boolean;
+  /** The newest non-look log's `occurred_at`, or null — the gone-quiet header's {day}. */
+  lastLoggedAt: string | null;
+  /** A daily look was logged after `lastLoggedAt`: the header then names meals and
+   *  symptoms, so it never contradicts the look the owner can see in Today. */
+  lookSinceLastLogged: boolean;
   /** B-721 SR-3 (§5.3) — true while a fresh log's debounced regen is in flight for the
    * active pet (raised at log time in triggerSignalRegenDebounced, cleared when that
    * regen settles). Drives the Home Signal's quiet "Noted — updating {pet}'s picture…"
@@ -65,47 +66,40 @@ export interface SignalState {
   answered: boolean;
 }
 
-// Window for "recent activity" — distinguishes building/no_pattern (still active)
-// from stale (gone quiet) when there are no findings. 48h mirrors the Edge
-// Function's own split and the feline intake-decline concern window.
-const RECENT_ACTIVITY_MS = 48 * 60 * 60 * 1000;
-
 // "Substantial history" floor (B-051): a pet with this much logged history that
-// still has no findings gets the honest "no clear patterns yet" copy rather than
-// the early "still getting to know you" copy. Deliberately modest — a couple of
-// weeks of real logging shouldn't read as "not enough data".
+// still has no findings reads "No pattern right now" rather than "Too early to tell".
+// Deliberately modest — a couple of weeks of real logging shouldn't read as "too early".
 const SUBSTANTIAL_MIN_EVENTS = 8;
 const SUBSTANTIAL_MIN_DAYS = 7;
 
 interface LocalSignalContext {
+  eventCount: number;
   hasRecentActivity: boolean;
   hasSubstantialHistory: boolean;
-  // E1 building-state headline inputs (B-721 SR-2) — the pet's total non-deleted
-  // event count and the B-421 local-day count from its first logged event. Read
-  // from the SAME query as the presence-state split (no extra round-trip).
-  eventCount: number;
-  dayNumber: number;
+  lastLoggedAt: string | null;
+  lookSinceLastLogged: boolean;
 }
 
 const EMPTY_LOCAL_CONTEXT: LocalSignalContext = {
+  eventCount: 0,
   hasRecentActivity: false,
   hasSubstantialHistory: false,
-  eventCount: 0,
-  dayNumber: 1,
+  lastLoggedAt: null,
+  lookSinceLastLogged: false,
 };
 
 // Read straight from local SQLite (fast, offline-capable, same pattern as
-// useTrend) so the empty-state distinctions work without a network round-trip.
+// useTrend) so the quiet line's states work without a network round-trip.
 //
-// A daily look (`check_in`) is in this read for ONE question only, recency. A look never
-// enters the engine, a count or a floor (daily-look spec R1, §5.6): it must not lift a
-// record over the "substantial history" floor into "no clear patterns" (a claim about
-// data the engine never had), add to "{k} events so far", or move Day 1 earlier, so
-// `total` and `earliest` skip it (`lib/signalScreen.ts`'s `readLoggedDays` is the
-// precedent). But `recent` keeps it: `stale` turns the watching read off, and with it
-// the escalate-only gap row, so an owner who answers the look every day while the
-// gaps between vomits shorten must not be told the record has gone quiet
-// (adversarial-reviewer; the same hole for an owner who logs nothing is CUL-1468).
+// A daily look (`check_in`) is in this read for ONE question only: was one logged after the
+// last real log (the gone-quiet header's wording). A look never enters the engine, a count,
+// a floor or recency (daily-look spec R1, §5.6). Recency used to keep looks, because `stale`
+// switched the gap warning off and an owner answering the look daily would have lost it;
+// CUL-1838 keeps the warning up in `stale` (CUL-1468), so a look no longer has to stand in.
+//
+// Every bound is applied after parsing, never as an ISO text comparison (C-40): MAX over the
+// column is safe (both spellings share their first 19 characters, so only a same-second tie
+// could order wrong, and a tie changes nothing here), a `>=` bound is not.
 //
 // The look's type mirrors `lib/monthReads.ts`'s LOOK_EVENT_TYPE (same value, same question:
 // the one row that is never coverage), not imported: that module's import chain reaches the
@@ -115,28 +109,34 @@ const LOOK_EVENT_TYPE: EventTypeKey = 'check_in';
 function getLocalSignalContext(petId: string): LocalSignalContext {
   try {
     const now = Date.now();
-    const recentCutoff = new Date(now - RECENT_ACTIVITY_MS).toISOString();
-    const rows = getDb().getAllSync<{ total: number; recent: number; earliest: string | null }>(
+    const rows = getDb().getAllSync<{
+      total: number;
+      earliest: string | null;
+      latest: string | null;
+      latestLook: string | null;
+    }>(
       `SELECT COUNT(CASE WHEN event_type != ? THEN 1 END) AS total,
-              COUNT(CASE WHEN occurred_at >= ? THEN 1 END) AS recent,
-              MIN(CASE WHEN event_type != ? THEN occurred_at END) AS earliest
+              MIN(CASE WHEN event_type != ? THEN occurred_at END) AS earliest,
+              MAX(CASE WHEN event_type != ? THEN occurred_at END) AS latest,
+              MAX(CASE WHEN event_type = ? THEN occurred_at END) AS latestLook
        FROM events WHERE pet_id = ? AND deleted_at IS NULL`,
-      [LOOK_EVENT_TYPE, recentCutoff, LOOK_EVENT_TYPE, petId],
+      [LOOK_EVENT_TYPE, LOOK_EVENT_TYPE, LOOK_EVENT_TYPE, LOOK_EVENT_TYPE, petId],
     );
     const r = rows[0];
     const total = r?.total ?? 0;
-    const spanDays = r?.earliest
-      ? (now - Date.parse(r.earliest)) / (24 * 60 * 60 * 1000)
-      : 0;
+    const earliestMs = r?.earliest ? Date.parse(r.earliest) : NaN;
+    const latestMs = r?.latest ? Date.parse(r.latest) : NaN;
+    const latestLookMs = r?.latestLook ? Date.parse(r.latestLook) : NaN;
+    const spanDays = Number.isFinite(earliestMs) ? (now - earliestMs) / (24 * 60 * 60 * 1000) : 0;
     return {
-      hasRecentActivity: (r?.recent ?? 0) > 0,
-      hasSubstantialHistory: total >= SUBSTANTIAL_MIN_EVENTS && spanDays >= SUBSTANTIAL_MIN_DAYS,
       eventCount: total,
-      // One day definition (B-421): the local-day counter, device zone. The floor
-      // is Day 1, so a pet logged for the first time today never reads "Day 0".
-      dayNumber: buildingDayNumber(r?.earliest ?? null, now),
+      hasRecentActivity: Number.isFinite(latestMs) && now - latestMs < QUIET_STRETCH_MS,
+      hasSubstantialHistory: total >= SUBSTANTIAL_MIN_EVENTS && spanDays >= SUBSTANTIAL_MIN_DAYS,
+      lastLoggedAt: Number.isFinite(latestMs) ? (r?.latest ?? null) : null,
+      lookSinceLastLogged: Number.isFinite(latestMs) && Number.isFinite(latestLookMs) && latestLookMs > latestMs,
     };
-  } catch {
+  } catch (e) {
+    console.warn('[useSignal] local context read failed:', e);
     return EMPTY_LOCAL_CONTEXT;
   }
 }
@@ -184,10 +184,9 @@ export function useSignal(): SignalState {
     setCoverage([]);
     setSignalText(null);
     // B-734 (CUL-72): localCtx resets WITH the findings — it is per-pet data too. Without
-    // this, the switch window pairs the NEW pet's name with the PREVIOUS pet's day/event
-    // counts in the E1 headline ("We're getting to know {new pet}. Day 34 — 212 events so
-    // far." over a day-1 pet). The sentinel's eventCount 0 also holds the day-count clause
-    // back until the new pet's own read lands (BuildingStateV2's existing guard).
+    // this, the switch window pairs the NEW pet's name with the PREVIOUS pet's record (a
+    // "Nothing logged since Tue" over a pet that has never been logged). The sentinel is
+    // 0 events, which reads "Too early to tell" until the new pet's own read lands.
     setLocalCtx(EMPTY_LOCAL_CONTEXT);
     // CUL-784: `answered` is per pet too — the previous pet's "read landed" must not
     // license a fold reconcile against the new pet's not-yet-read set.
@@ -242,11 +241,6 @@ export function useSignal(): SignalState {
     }, [petId, signalTick]),
   );
 
-  const displayState = deriveDisplayState(
-    findings,
-    localCtx.hasRecentActivity,
-    localCtx.hasSubstantialHistory,
-  );
   // B-721 SR-3 (§5.3) — the acknowledgment flag is owned entirely by the regen lifecycle
   // (raised in triggerSignalRegenDebounced, cleared when the LATEST log's regen settles,
   // with a fail-quiet ceiling there for a hung regen), so the hook only READS it. Keyed
@@ -256,12 +250,14 @@ export function useSignal(): SignalState {
     petId,
     findings,
     coverage,
-    displayState,
     signalText,
     petName,
     isLoading,
-    dayNumber: localCtx.dayNumber,
     eventCount: localCtx.eventCount,
+    hasRecentActivity: localCtx.hasRecentActivity,
+    hasSubstantialHistory: localCtx.hasSubstantialHistory,
+    lastLoggedAt: localCtx.lastLoggedAt,
+    lookSinceLastLogged: localCtx.lookSinceLastLogged,
     acknowledging,
     generatedAt,
     answered,

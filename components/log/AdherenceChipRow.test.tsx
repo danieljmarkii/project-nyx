@@ -83,6 +83,14 @@ describe('AdherenceChipRow', () => {
         .toBeGreaterThanOrEqual(TAP_TARGET_FLOOR);
     });
 
+    // CUL-658 moved the slop from a typed literal onto lib/tapTarget's computation.
+    // The hit area it measured before the move was this box plus { top: 6, bottom: 6 };
+    // a move is only a refactor if that is still exactly what the chip gets.
+    it('the computed slop equals the literal it replaced (no change to the hit area)', () => {
+      expect(CHIP_HITSLOP).toEqual({ top: 6, bottom: 6 });
+      expect(CHIP_ROW_GAP).toBe(12);
+    });
+
     // Horizontal neighbours (Missed | Refused) are 6pt apart. Any horizontal slop
     // at all would have both reach into that gap and the boundary tap would
     // resolve by z-order — a pet-driven refusal recorded as an owner-driven miss.

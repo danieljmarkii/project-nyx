@@ -6,7 +6,7 @@ import { Check } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { usePetStore } from '../../store/petStore';
 import { markOnboardingComplete } from '../../lib/profile';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { ThemedText } from '../../components/ui/ThemedText';
 
@@ -74,7 +74,7 @@ export default function DoneScreen() {
         <View style={styles.grow} />
 
         <View style={styles.orb}>
-          <Check size={48} color={theme.colorAccent} strokeWidth={2} />
+          <Check size={48} color={colorRoles.positive.glyphOnLight} strokeWidth={2} />
         </View>
 
         <Text style={styles.title}>You&apos;re all set.</Text>

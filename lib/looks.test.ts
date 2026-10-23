@@ -61,7 +61,7 @@ jest.mock('./db', () => ({
 }));
 
 import { BASE_SCHEMA_SQL, COLUMN_UPGRADES, applyColumnUpgrades } from './localSchema';
-import { NOT_QUARANTINED_SQL } from './syncQueue';
+import { NOT_QUARANTINED_SQL, parentLandedSql } from './syncQueue';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 
 const MS_PER_DAY = 86_400_000;
@@ -276,12 +276,13 @@ describe('drainLooksQueue — the parent gate', () => {
    *  approximation of a statement proves nothing about the one that ships. */
   function drainSelect(): string {
     const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
-    const start = src.indexOf('`SELECT l.* FROM looks l');
+    const start = src.indexOf('`SELECT * FROM looks WHERE synced = 0');
     const end = src.indexOf('LIMIT 100`', start);
     if (start === -1 || end === -1) throw new Error('drainLooksQueue SELECT not found — did it move?');
     return src
       .slice(start + 1, end + 'LIMIT 100'.length)
-      .replace('${NOT_QUARANTINED_SQL}', NOT_QUARANTINED_SQL);
+      .replace('${NOT_QUARANTINED_SQL}', NOT_QUARANTINED_SQL)
+      .replace("${parentLandedSql('looks')}", parentLandedSql('looks'));
   }
 
   function seed(eventId: string, lookId: string, parentSynced: 0 | 1) {

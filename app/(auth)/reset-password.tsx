@@ -12,7 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MailOpen, Smartphone, RefreshCw } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
-import { theme } from '../../constants/theme';
+import { abandonRecovery } from '../../lib/recoveryDeepLink';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -41,6 +42,25 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // Generous — a normal exchange resolves in ~1-2s; this only catches a stalled-open
 // connection RN's fetch won't time out on, so the owner is never stranded.
 const WORKING_WATCHDOG_MS = 20_000;
+
+// Whether auth-js holds the user this reset is for. `updateUser` writes to whoever
+// auth-js holds, and once the exchange window closes the root listener adopts any
+// sign-in (a Change password re-auth, a login from the failed screen), so the store
+// can agree with auth-js on the wrong account (rls-privacy-reviewer, reproduced).
+// The exchange pinned `recoveryUserId`; a resume after a force-quit has none, and
+// falls back to the store's user (CUL-1973 owns that path).
+async function authHoldsRecoveryUser(): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const st = useAuthStore.getState();
+    const expected = st.recoveryUserId ?? st.session?.user.id ?? null;
+    return !!expected && data.session?.user.id === expected;
+  } catch (e) {
+    // A read that fails counts as a mismatch: refusing the write is the safe direction.
+    console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
 
 export default function ResetPasswordScreen() {
   const recoveryScreen = useAuthStore((s) => s.recoveryScreen);
@@ -82,6 +102,14 @@ export default function ResetPasswordScreen() {
     setSubmitted(true);
     if (passwordError(password)) return;
     setSaving(true);
+    // Write only to the account this reset is for (CUL-1205). Otherwise end the reset
+    // as every failure does (FR-15): failed state, local sign-out, gate released, so
+    // nothing armed is left behind a screen that says the reset failed.
+    if (!(await authHoldsRecoveryUser())) {
+      setSaving(false);
+      await abandonRecovery('failed');
+      return;
+    }
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
       setSaving(false);
@@ -154,7 +182,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'wrong_device') {
     return (
       <StateScreen
-        icon={<Smartphone size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<Smartphone size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="Open this link on the phone you asked from"
         body="For your security, a reset link only works on the device that asked for it. You can send a fresh one from this device instead."
         primaryLabel="Send a link from this device"
@@ -169,7 +197,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'link_unusable') {
     return (
       <StateScreen
-        icon={<MailOpen size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<MailOpen size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="That link no longer works"
         body="Reset links only work once, and they don't last long. Send yourself a fresh one."
         primaryLabel="Send a new link"
@@ -189,7 +217,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'failed') {
     return (
       <StateScreen
-        icon={<RefreshCw size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<RefreshCw size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="Couldn't finish that"
         body="Something interrupted the connection, and a reset link can't be tried twice. Send yourself a fresh one."
         primaryLabel="Send a new link"

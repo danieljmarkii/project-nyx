@@ -404,6 +404,10 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
 
   it('deletes child tables before their parents (FK-safe)', () => {
     expect(order('meals')).toBeLessThan(order('events'));
+    // CUL-2051 — meal_components declares no local FK, so only this line pins the
+    // children-first position its entry's comment claims (ahead of meals and events).
+    expect(order('meal_components')).toBeLessThan(order('meals'));
+    expect(order('meal_components')).toBeLessThan(order('events'));
     expect(order('event_attachments')).toBeLessThan(order('events'));
     expect(order('vet_visit_attachments')).toBeLessThan(order('vet_visits'));
     // B-117 — medication_administrations FK→events ON DELETE CASCADE locally, so

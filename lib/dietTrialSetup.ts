@@ -748,12 +748,25 @@ export async function endActiveTrial(params: {
   // tells the caller WHICH refusal: a row that is there and no longer running, or no
   // row at all. It never decides whether to write — the predicate already did.
   if (result.changes === 0) {
-    const row = await db.getFirstAsync<{ status: string; ended_at: string | null }>(
-      `SELECT status, ended_at FROM diet_trials WHERE id = ?`,
+    const row = await db.getFirstAsync<{
+      status: string;
+      ended_at: string | null;
+      stopped_reason: string | null;
+      outcome: string | null;
+      outcome_notes: string | null;
+    }>(
+      `SELECT status, ended_at, stopped_reason, outcome, outcome_notes FROM diet_trials WHERE id = ?`,
       [params.trialId],
     );
     throw row
-      ? new TrialEndRefused({ reason: 'not_running', status: row.status, endedOn: row.ended_at })
+      ? new TrialEndRefused({
+          reason: 'not_running',
+          status: row.status,
+          endedOn: row.ended_at,
+          storedReason: row.stopped_reason,
+          storedOutcome: row.outcome,
+          storedOutcomeNotes: row.outcome_notes,
+        })
       : new TrialEndRefused({ reason: 'not_found' });
   }
 
@@ -787,18 +800,110 @@ export class TrialEndRefused extends Error {
   /** The row's stored `ended_at` ('YYYY-MM-DD'), the day the FIRST ending recorded.
    *  Null on `not_found`, and on a row that is not running yet carries no end date. */
   readonly endedOn: string | null;
+  /** The row's stored `stopped_reason` — the FIRST ending's reason on an abandoned
+   *  trial, null on a completed one and on `not_found`. Read so a host can tell the
+   *  owner when the reason they just gave is not the one on the record (CUL-2012). */
+  readonly storedReason: string | null;
+  /** The row's stored `outcome` and `outcome_notes` — the FIRST ending's verdict on a
+   *  completed trial. A reason match alone hides a different verdict (CUL-2035), so a
+   *  host compares these too. Null on `not_found` and wherever nothing was recorded. */
+  readonly storedOutcome: string | null;
+  readonly storedOutcomeNotes: string | null;
 
   constructor(args: {
     reason: 'not_found' | 'not_running';
     status?: string | null;
     endedOn?: string | null;
+    storedReason?: string | null;
+    storedOutcome?: string | null;
+    storedOutcomeNotes?: string | null;
   }) {
     super(`endActiveTrial refused (${args.reason})`);
     this.name = 'TrialEndRefused';
     this.reason = args.reason;
     this.status = args.status ?? null;
     this.endedOn = args.endedOn ?? null;
+    this.storedReason = args.storedReason ?? null;
+    this.storedOutcome = args.storedOutcome ?? null;
+    this.storedOutcomeNotes = args.storedOutcomeNotes ?? null;
   }
+}
+
+/**
+ * What a host says when the record refused an ending because another one got there
+ * first — CUL-2012. CUL-1329 made the FIRST ending the record, and every host settles
+ * on it; before this, each settled silently, so an owner who answered "wouldn't eat
+ * it" on a trial another phone had already ended as "the vet advised it" believed
+ * the refusal had reached the vet. It had not: the report's refusal lines and the
+ * card's `wasRefused` key on the stored `stopped_reason`.
+ *
+ * Null — say nothing — only when the record already holds the owner's answer:
+ * `completed` on a completed row, or the same stopped-early token on an abandoned
+ * one. Any other stored state, unreadable included, is a reason the record does not
+ * hold, and the notice is said: it errs loud. `not_found` is not this case (no
+ * ending exists to have won) and stays the host's own re-read.
+ *
+ * COMPLETED OVER COMPLETED IS NOT ALWAYS THE SAME ANSWER (CUL-2035). The reason
+ * matches, but the owner may also have said how it went ("worse", plus a note) while
+ * the first ending recorded another verdict or none — and the report's owner-verdict
+ * and "owner added" lines print the stored one. So the verdict and the note are
+ * compared too, and a difference is said in its own variant ("the reason you gave"
+ * is false of an outcome). Only what the OWNER gave is weighed: no verdict and no
+ * note on this sheet loses nothing, whatever the record holds. A note compares
+ * trimmed, the way `endActiveTrial` writes it; anything else that differs, a stored
+ * spelling variant included, errs loud.
+ *
+ * The notice changes nothing on the record. The first ending stays; the copy only
+ * stops the owner's answer vanishing without a word.
+ */
+export function trialEndRefusedNotice(args: {
+  refusal: TrialEndRefused;
+  /** The reason the owner gave on this sheet — 'completed' or a stopped-early token. */
+  ownerReason: string;
+  /** The verdict and note the owner gave on this sheet — only *This trial is done*
+   *  collects them. Omitted, nothing about how it went was said. */
+  ownerOutcome?: TrialOutcome | null;
+  ownerOutcomeNotes?: string | null;
+  petName: string | null | undefined;
+  now?: Date;
+}): { title: string; body: string } | null {
+  const { refusal, ownerReason } = args;
+  if (refusal.reason !== 'not_running') return null;
+  const stored =
+    refusal.status === 'completed'
+      ? 'completed'
+      : refusal.status === 'abandoned'
+        ? refusal.storedReason
+        : null;
+  const ownerOutcome = args.ownerOutcome ?? null;
+  const ownerNotes = args.ownerOutcomeNotes?.trim() || null;
+  let lost: 'reason' | 'outcome' | null = stored !== null && stored === ownerReason ? null : 'reason';
+  if (lost === null && stored === 'completed') {
+    const storedNotes = refusal.storedOutcomeNotes?.trim() || null;
+    if (
+      (ownerOutcome !== null && ownerOutcome !== refusal.storedOutcome) ||
+      (ownerNotes !== null && ownerNotes !== storedNotes)
+    ) lost = 'outcome';
+  }
+  // *This trial is done* over a trial stopped early elsewhere: the owner gave no
+  // stopped-early reason, so "the reason you gave" undersells it. When they also said
+  // how it went, that verdict is the larger loss and the sentence names it.
+  if (lost === 'reason' && ownerReason === 'completed' && (ownerOutcome !== null || ownerNotes !== null)) {
+    lost = 'outcome';
+  }
+  if (lost === null) return null;
+  // `resolveRecordPetName` falls back to a lower-case 'your pet'; this sentence opens
+  // with the name, so the fallback is capitalised here rather than printed mid-case.
+  const name = args.petName?.trim();
+  const whose = name && name.toLowerCase() !== 'your pet' ? `${name}’s` : 'Your pet’s';
+  const day = refusal.endedOn ? formatTrialEndDate(refusal.endedOn, args.now) : null;
+  return {
+    title: 'Already ended',
+    body:
+      `${whose} trial was already ended on another phone${day ? `, on ${day}` : ''}. ` +
+      `That ending stays on the record, so ${lost === 'outcome' ? 'what you said about how it went' : 'the reason you gave'} wasn’t saved. ` +
+      'You can tell your vet yourself.',
+  };
 }
 
 /**

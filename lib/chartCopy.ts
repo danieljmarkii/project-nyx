@@ -13,6 +13,7 @@ import { isCallDisplay, TIER_WORDS, type CallDisplay } from './incidentTierWords
 import { formatCalendarDate } from './utils';
 import {
   daysSoFarLabel,
+  lanesEarlierLine,
   lanesUntimedLine,
   type CompareWindowsModel,
   type LaneModel,
@@ -49,6 +50,37 @@ export function weeklyOutsideLine(model: WeeklyBucketsModel): string | null {
   if (model.before > 0) parts.push(`${model.before} earlier ${pluralize(model.before, 'episode')} not in these weeks`);
   if (model.after > 0) parts.push(`${model.after} ${pluralize(model.after, 'episode')} dated after what is drawn`);
   return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function listWords(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/**
+ * "A bout that began earlier continues into the week of Sep 13" (Q12, CUL-1539 / CUL-1791):
+ * the weeks a bout carries into from before them. A bar counts bouts that BEGAN in its week,
+ * so it reads 0 over a bout still going; this says so, under the bars and in their label.
+ * "Earlier", never "the week before": on a bout's third week the week before is not where it
+ * began. Null when no drawn week is carried into.
+ */
+export function weeklyCarriedLine(
+  model: WeeklyBucketsModel,
+  /** The last week's carry is said by a line beside the chart (the Home card's week line), so
+   *  only the earlier weeks are named here. */
+  lastSaidBeside: boolean = false,
+): string | null {
+  const n = model.weeks.length;
+  const carried = model.weeks.map((w, i) => ({ w, i })).filter(({ w, i }) => w.carriedIn && !(lastSaidBeside && i === n - 1));
+  if (carried.length === 0) return null;
+  let where: string;
+  if (model.endAligned === true) {
+    where = listWords(carried.map(({ w, i }) => (i === n - 1 ? 'the last 7 days' : `the 7 days from ${dateWord(w.startKey)}`)));
+  } else {
+    const dates = carried.map(({ w }) => dateWord(w.startKey));
+    where = dates.length === 1 ? `the week of ${dates[0]}` : `the weeks of ${listWords(dates)}`;
+  }
+  return `A bout that began earlier continues into ${where}`;
 }
 
 /**
@@ -90,6 +122,8 @@ export function weeklyBarsA11yLabel(
   if (model.mark) parts.push(`${capitalize(markWord(model.mark))}.`);
   const outside = weeklyOutsideLine(model);
   if (outside) parts.push(`${capitalize(outside)}.`);
+  const carried = weeklyCarriedLine(model);
+  if (carried) parts.push(`${carried}.`);
   return parts.join(' ');
 }
 
@@ -137,7 +171,8 @@ export function timingLanesA11yLabel(
     return `${l.label}${shaded}: ${l.timedLine}.${said.length > 0 ? ` ${said.join(', ')}.` : ''}`;
   });
   const masked = lanes.some((l) => l.masked === true) && maskCaption ? ` Shaded: ${maskCaption}` : '';
-  return `Timed from meals. ${per.join(' ')} ${lanesUntimedLine(lanes)}${masked}`;
+  const earlier = lanesEarlierLine(lanes);
+  return `Timed from meals. ${per.join(' ')} ${lanesUntimedLine(lanes)}${earlier ? ` ${earlier}` : ''}${masked}`;
 }
 
 export type DayMarkCoverage = 'logged' | 'left_some' | 'unlogged' | 'ahead';

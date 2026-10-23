@@ -16,14 +16,14 @@ import { ChevronLeft, Mail } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { updateOwnerName } from '../../lib/profile';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SOCIAL_AUTH_ENABLED } from '../../constants/flags';
 import { PRIVACY_POLICY_URL, TERMS_URL } from '../../constants/links';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { Divider } from '../../components/ui/Divider';
-import { emailError, passwordError, requiredNameError } from '../../lib/authValidation';
+import { emailError, passwordError } from '../../lib/authValidation';
 import { authErrorCopy } from '../../lib/authErrors';
 import { confirmRedirectUrl } from '../../lib/emailConfirm';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -40,6 +40,12 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // so the vet report printed "Owner: not recorded". updateOwnerName persists
 // first/last + a derived display_name = "First Last" so generate-report's existing
 // display_name read keeps working with no report-side change.
+//
+// Why the name is asked, never required (CUL-1840, D10 on CUL-1825): App Review
+// 5.1.1 says an account asks only for what the app needs to run, and nothing runs
+// on the owner's name. Its one job is the vet report's owner line, which falls
+// back to the account email and then to "Owner: not recorded" (generate-report),
+// so a blank name signs up cleanly and the report still files.
 
 export default function SignupScreen() {
   const [firstName, setFirstName] = useState('');
@@ -56,8 +62,6 @@ export default function SignupScreen() {
   const [resending, setResending] = useState(false);
 
   // Computed live once submitted; before the first submit they're all null.
-  const firstErr = submitted ? requiredNameError(firstName, 'first name') : null;
-  const lastErr = submitted ? requiredNameError(lastName, 'last name') : null;
   const emailErr = submitted ? emailError(email) : null;
   const passwordErr = submitted ? passwordError(password) : null;
 
@@ -65,14 +69,7 @@ export default function SignupScreen() {
     setSubmitted(true);
     // Validate everything before a network round-trip. If anything's off, the
     // inline errors are already rendering (submitted=true) — just stop.
-    if (
-      requiredNameError(firstName, 'first name') ||
-      requiredNameError(lastName, 'last name') ||
-      emailError(email) ||
-      passwordError(password)
-    ) {
-      return;
-    }
+    if (emailError(email) || passwordError(password)) return;
 
     const cleanEmail = email.trim();
     setLoading(true);
@@ -138,7 +135,9 @@ export default function SignupScreen() {
     // best-effort — a network hiccup on it must not trap the user on this screen;
     // the name is re-enterable in Profile, and updateOwnerName logs its own failure
     // (no silent failure). display_name is derived inside the helper.
-    if (data.user) {
+    // A blank name skips the write: the trigger's row already holds nulls, and a
+    // write of nothing is a network call that can only fail.
+    if (data.user && (firstName.trim() || lastName.trim())) {
       await updateOwnerName(data.user.id, firstName, lastName);
     }
     // The user_profiles row itself is created by the Supabase trigger on the
@@ -219,7 +218,7 @@ export default function SignupScreen() {
           </View>
           <View style={styles.grow} />
           <View style={styles.verifyIcon}>
-            <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
+            <Mail size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />
           </View>
           <ThemedText style={styles.title}>Check your inbox</ThemedText>
           {/* B-401 wrote this line to promise only the manual return trip the app
@@ -310,14 +309,15 @@ export default function SignupScreen() {
           </View>
 
           <ThemedText style={styles.title}>Create your account</ThemedText>
-          <ThemedText style={styles.subtitle}>This is you — we'll set up your pet next.</ThemedText>
+          <ThemedText style={styles.subtitle}>
+            This is you, then your pet. Your name is optional; it goes on the vet report.
+          </ThemedText>
 
           <View style={styles.nameRow}>
             <TextField
               label="First name"
               value={firstName}
               onChangeText={setFirstName}
-              error={firstErr}
               autoCapitalize="words"
               autoComplete="name-given"
               textContentType="givenName"
@@ -329,7 +329,6 @@ export default function SignupScreen() {
               label="Last name"
               value={lastName}
               onChangeText={setLastName}
-              error={lastErr}
               autoCapitalize="words"
               autoComplete="name-family"
               textContentType="familyName"

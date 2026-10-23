@@ -38,7 +38,7 @@ jest.mock('expo-router', () => ({
 }));
 // The screen is never drawn without a session; stubbed so its read graph (which reaches
 // lib/supabase's import-time env guard) is not loaded at all.
-jest.mock('../components/designV2/signal/SignalScreen', () => ({ SignalScreen: () => null }));
+jest.mock('../components/surfaces/signal/SignalScreen', () => ({ SignalScreen: () => null }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };

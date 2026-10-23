@@ -117,6 +117,13 @@ const CASES: Record<HistoryDoorId, Case[]> = {
       lands: { filter: { kind: 'course', courseKey: 'reg-1' }, window: ALL },
     },
   ],
+  'food-mixed-bowls': [
+    {
+      name: 'historyDayHref, as `app/food/[id].tsx` calls it with a line\'s newest local day',
+      params: paramsOf(historyDayHref('2026-10-22', NOW)),
+      lands: { filter: ALL, window: ALL, landOn: '2026-10-22' },
+    },
+  ],
   rundown: [
     {
       name: 'rundownHistoryHref, since the last visit',

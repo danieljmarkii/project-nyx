@@ -1,3 +1,4 @@
+import type { AppBowl } from '../lib/mealBowls';
 import { create } from 'zustand';
 import { EventTypeKey } from '../constants/eventTypes';
 import type { DoseVehicle } from '../lib/medications';
@@ -19,6 +20,8 @@ export interface NyxEvent {
   updated_at: string;
   // meal join
   food_item_id?: string | null;
+  /** A MIXED BOWL (CUL-2053), from Home's today read; see `TimelineRow.meal_bowl`. */
+  meal_bowl?: AppBowl | null;
   food_brand?: string | null;
   food_product_name?: string | null;
   food_type?: string | null;

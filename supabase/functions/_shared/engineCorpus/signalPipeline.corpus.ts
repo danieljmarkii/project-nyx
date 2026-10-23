@@ -416,6 +416,21 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
     expectedTypes: ['symptom_burden'],
   },
   {
+    // CUL-2022: the same burden week with loose stool going from 0 to 3 behind it. ④'s one card
+    // is vomiting's and Home drops it under the burden card, so before the re-pick the loose-stool
+    // rise was flagged nowhere. Now its card takes the dropped one's slot.
+    name: 'a burden week of vomiting with loose stool rising behind it (the re-picked worsening)',
+    nowIso: NOW,
+    rows: {
+      pet: dog,
+      ...EMPTY,
+      symptoms: [...[1, 2, 3, 4, 5, 10].map((d) => symptom('vomit', d)), ...[1, 3, 5].map((d) => symptom('diarrhea', d, 20))],
+      meals: mealsDaily(0, 29),
+    },
+    prior: null,
+    expectedTypes: ['symptom_burden', 'symptom_worsening'],
+  },
+  {
     // A rise below both burden arms: three vomits on separate, non-consecutive days against one.
     // ④ keeps its card here, so the corpus still holds the worsening an incomplete read floors.
     name: 'three vomits on separate days after one last week (the worsening an incomplete read floors)',

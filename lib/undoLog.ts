@@ -93,6 +93,7 @@
 // only ever reduce what the record claims.
 
 import { useRecordChangeStore } from '../store/recordChangeStore';
+import { useSyncStore } from '../store/syncStore';
 import { getEventPetId, softDeleteEvent } from './db';
 import { noteRemoval } from './removalNotice';
 import { triggerSignalRegenDebounced } from './signal';
@@ -100,6 +101,7 @@ import { syncPendingAttachments, syncPendingEvents } from './sync';
 import { queueRemovedLogPhotosForPurge } from './attachments';
 import { writeOwingFloorCheck } from './incidentFloorQueue';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
+import { forgetFlagsSpentByEvent } from './trialContaminant';
 
 /**
  * Soft-delete `eventId`, settle the side-effects that removal implies, and queue
@@ -132,7 +134,16 @@ export async function reverseLoggedEvent(
   // Engines v3 PR-28b (CUL-1436, §8.3): deleting a vomit, lethargy or meal log re-checks
   // the reads around it, and the marker shares the soft delete's transaction. The server's
   // re-floor is raise-only, so the delete lowers nothing it showed (§8.8).
-  await writeOwingFloorCheck(eventId, () => softDeleteEvent(eventId));
+  try {
+    await writeOwingFloorCheck(eventId, () => softDeleteEvent(eventId));
+  } catch (e) {
+    // CUL-1947 (adversarial pass 2) — the soft delete can land and its floor marker then
+    // throw, skipping the regen trigger below that re-reads Home's gap warning. Re-read
+    // anyway before the failure propagates: after a delete that never landed it is only
+    // an extra read of unchanged rows.
+    useSyncStore.getState().bumpRecordTick();
+    throw e;
+  }
   // HV-10 (CUL-1167) — the list the owner returns to folds this row away rather than
   // letting it vanish (History v2 §4). Noted only once the local write has landed: a
   // reversal that failed must never fold a row that is still in the record.
@@ -141,6 +152,17 @@ export async function reverseLoggedEvent(
   // a row left the record (the FAB's recent foods: a past-day meal is in no list
   // `todayEvents` drives). Same rule as the line above: only after the write landed.
   useRecordChangeStore.getState().notifyChanged();
+  // CUL-2087 — give back every trial heads-up THIS feeding spent: it never happened, or
+  // never happened as logged, so the food's real feeding later must still be warned about.
+  // Here, not on the card, so History's and the record screen's Remove give it back too
+  // (the card's own Undo also forgets its shown flag, which covers a spend made before the
+  // ledger recorded which meal spent it). Any event reaches this; one that spent nothing
+  // owns no entry. Best-effort, after the write landed, like the reconcile below.
+  try {
+    await forgetFlagsSpentByEvent(eventId, []);
+  } catch (e) {
+    console.warn('[undo] trial heads-up give-back failed:', e);
+  }
   // CUL-641 — unconditional: the helper decides for itself whether this event was
   // a weigh-in. Awaited, but only its local half is (the server write inside is
   // fired and not waited on), so a reversal still resolves at local-write speed.

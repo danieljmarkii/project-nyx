@@ -36,7 +36,9 @@
 // own window (report.ts) and never reads the Signal's cache.
 
 import {
+  chronicSymptomTypes,
   detectSignals,
+  detectWorsening,
   detectCoverage,
   chronicityFloorsFor,
   risingBelowCardFloor,
@@ -88,6 +90,7 @@ import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
+import { bowlFoodType, bowlOf, MEAL_BOWL_SELECT, type MealBowl, type MealComponentJoin } from '../_shared/mealBowl.ts'
 import {
   buildBuildingText,
   canRenderCarried,
@@ -156,6 +159,8 @@ export type FoodItemJoin = {
 export type MealJoin = {
   food_item_id: string | null
   intake_rating: string | null
+  /** Mixed meals (migration 105): NULL for a single food; the components decide. */
+  component_count?: number | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
 }
 export interface MealEventRow {
@@ -163,7 +168,17 @@ export interface MealEventRow {
   occurred_at: string
   occurred_at_confidence: string | null
   meals: MealJoin | MealJoin[] | null
+  /** A mixed bowl's component rows, tombstones included (CUL-2052). */
+  meal_components?: MealComponentJoin<FoodItemJoin>[] | null
 }
+
+/** The food columns every meal read selects, for a meal's food and a component's alike. */
+export const MEAL_FOOD_COLUMNS = 'primary_protein, proteins, food_type, format, brand, product_name'
+
+/** The meals pull's select: the meal, its food, and a mixed bowl's components. */
+export const MEAL_EVENTS_SELECT =
+  `id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, component_count, food_items(${MEAL_FOOD_COLUMNS})), ` +
+  MEAL_BOWL_SELECT(MEAL_FOOD_COLUMNS)
 
 export function first<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null
@@ -359,6 +374,8 @@ export function mapMedDoseFacts(
 export function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEvent[] {
   return rows.map((r) => {
     const meal = first(r.meals)
+    const bowl = bowlOf(meal, r.meal_components)
+    if (bowl) return mapBowlRow(r, meal, bowl, pairedEventIds)
     const fi = first(meal?.food_items)
     return {
       id: r.id,
@@ -386,6 +403,52 @@ export function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): 
       // semantics). B-040 will supply 'low' for shared / free-fed bowls.
     }
   })
+}
+
+/**
+ * A MIXED BOWL (CUL-2052, spec §5.3). Exposure is presence: the bowl's protein set is the
+ * UNION of every component's, so a minor component never turns an exposed day into a
+ * control day. No single food stands for the bowl (T2): no food id, no primary, no
+ * format. The food type is the bowl's: a treat only when every component is one.
+ */
+function mapBowlRow(
+  r: MealEventRow,
+  meal: MealJoin | null,
+  bowl: MealBowl<FoodItemJoin>,
+  pairedEventIds: Set<string>,
+): MealEvent {
+  // A bowl read as its last recorded foods (CUL-2096) hands the engine no protein, exactly
+  // as the all-tombstone bowl did before: the set is stale, and its proteins grew the
+  // candidate family, split collinear clusters and withheld forward cards (adversarial
+  // passes 1 and 2). It stays incomplete, so its window is still never a control.
+  const proteins: string[] = []
+  for (const c of bowl.lastRecorded ? [] : bowl.components) {
+    for (const p of [c.food?.primary_protein ?? null, ...(c.food?.proteins ?? [])]) {
+      if (p && !proteins.includes(p)) proteins.push(p)
+    }
+  }
+  const foodType = bowlFoodType(bowl.components.map((c) => c.food?.food_type)) as 'meal' | 'treat' | 'other' | null
+  const labelOf = (c: MealBowl<FoodItemJoin>['components'][number]): string =>
+    (c.food ? `${c.food.brand} ${c.food.product_name}`.trim() : '') || c.foodLabel
+  const labels = bowl.components.map(labelOf)
+  return {
+    id: r.id,
+    occurredAt: r.occurred_at,
+    isMedicationVehicle: pairedEventIds.has(r.id),
+    occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
+    foodItemId: null,
+    primaryProtein: null,
+    proteins,
+    intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
+    foodType,
+    format: null,
+    foodLabel: labels.length > 1 ? `${labels.slice(0, -1).join(', ')} mixed with ${labels[labels.length - 1]}` : labels[0] ?? null,
+    bowl: {
+      status: bowl.status,
+      compositionKey: bowl.compositionKey,
+      components: bowl.components.map((c) => ({ foodItemId: c.foodItemId, foodLabel: labelOf(c) })),
+    },
+  }
 }
 
 // ── Per-incident visual red flags (B-340) ─────────────────────────────────────
@@ -744,7 +807,9 @@ export function runSignalPipeline(
   // unless `engines_v3_en11` is on, so flag off is the same object as before.
   const config = signalDetectionConfig(engineFlags, en11Config)
   // Engines v3 PR-14d (CUL-1410): one card per sign where the burden card and ④ say the same week.
-  const detected = suppressWorseningUnderBurden(detectSignals(input, config))
+  const detected = suppressWorseningUnderBurden(detectSignals(input, config), (exclude) =>
+    detectWorsening(input, config, exclude),
+  )
   // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
   const ranked = readIncomplete ? withholdOverIncompleteRead(detected) : detected
 
@@ -1261,14 +1326,29 @@ function carryPriorSafety(prior: readonly PriorSafetyEntry[], current: readonly 
  * off the vet report with nothing in its place. Chronicity is NOT dropped (duration and this
  * week's burden are different statements, and the ⑦ valve and stand-down depend on it).
  */
-export function suppressWorseningUnderBurden<T extends { rank: number; finding: Finding }>(ranked: readonly T[]): T[] {
-  const burdenSigns = new Set<string>(
+export function suppressWorseningUnderBurden<T extends { rank: number; finding: Finding }>(
+  ranked: readonly T[],
+  repick?: (exclude: ReadonlySet<SymptomType>) => Finding[],
+): T[] {
+  const burdenSigns = new Set<SymptomType>(
     ranked.flatMap((r) => (r.finding.type === 'symptom_burden' ? [r.finding.symptomType] : [])),
   )
   if (burdenSigns.size === 0) return [...ranked]
-  return ranked
-    .filter((r) => !(r.finding.type === 'symptom_worsening' && burdenSigns.has(r.finding.symptomType)))
-    .map((r, i) => ({ ...r, rank: i }))
+  // CUL-2022: the dropped ④ was the ONE getting-worse card, so a second sign rising behind it
+  // was flagged nowhere. Its slot goes to ④'s pick over the signs no other card speaks for (not
+  // under a burden card, not ongoing: those ④s were folded already). Same type, so the same
+  // place in the safety band rankFindings would give it; never a second ④ card.
+  const absorbed = new Set<SymptomType>([...burdenSigns, ...chronicSymptomTypes(ranked.map((r) => r.finding))])
+  const out: T[] = []
+  for (const r of ranked) {
+    if (!(r.finding.type === 'symptom_worsening' && burdenSigns.has(r.finding.symptomType))) {
+      out.push(r)
+      continue
+    }
+    const next = repick?.(absorbed)[0]
+    if (next) out.push({ ...r, finding: next })
+  }
+  return out.map((r, i) => ({ ...r, rank: i }))
 }
 
 // ── After the phrasing ────────────────────────────────────────────────────────

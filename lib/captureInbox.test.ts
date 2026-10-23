@@ -50,6 +50,8 @@ import {
 } from './captureInbox';
 import { getCaptureInboxDirectory } from './appGroup';
 import { getDb } from './db';
+import { notifySignedOut } from './signOutEpoch';
+import { triggerSignalRegenDebounced } from './signal';
 
 type RawDb = InstanceType<typeof DatabaseSync>;
 
@@ -587,5 +589,214 @@ describe('ingestCaptureInbox (wrapper: ordering + file lifecycle)', () => {
     expect(newestEntry.deleted).toBe(false);
     const newestRow = raw.prepare('SELECT id FROM events WHERE id = ?').get(uuidAt(count - 1, 'a'));
     expect(newestRow).toBeUndefined();
+  });
+});
+
+// ── A pass already running at sign-out (CUL-1968) ─────────────────────────────
+//
+// `wipeLocalSession` bumps the sign-out epoch, then awaits `clearLocalData`, and
+// only then resets the pet store, so the allowlist still names the old pets for the
+// whole wipe. The fence is landed from INSIDE a write's await, which is where a real
+// sign-out lands, and the assertion is over the real tables: nothing after it.
+describe('a capture-inbox pass already running at sign-out stops before its next write', () => {
+  let raw: RawDb;
+  const SECOND_EVT = '55555555-5555-4555-9555-555555555555';
+  const SECOND_MEAL = '66666666-6666-4666-9666-666666666666';
+  const count = (table: string) =>
+    (raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  const lastUsed = () =>
+    (raw.prepare('SELECT last_used_at FROM food_items_cache WHERE id = ?').get(FOOD) as {
+      last_used_at: string | null;
+    }).last_used_at;
+
+  // The real adapter, with `onSql` run inside the matching statement's await.
+  function fencingDb(match: RegExp, onSql: () => void): InboxDb {
+    const real = asyncAdapter(raw);
+    let fired = false;
+    return {
+      ...real,
+      async runAsync(sql, params) {
+        const out = await real.runAsync(sql, params);
+        if (!fired && match.test(sql)) {
+          fired = true;
+          onSql();
+        }
+        return out;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    raw = freshDb();
+    raw
+      .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'Hill''s', 'z/d', 'wet')`)
+      .run(FOOD);
+    (triggerSignalRegenDebounced as jest.Mock).mockClear();
+  });
+
+  const twoRecords = () => [
+    { name: 'a.json', raw: JSON.stringify(validRecord()) },
+    { name: 'b.json', raw: JSON.stringify(validRecord({ id: SECOND_EVT, mealId: SECOND_MEAL })) },
+  ];
+
+  it("fenced between a record's events and meals inserts: no meal, no cache touch, no later record", async () => {
+    let signedOut = false;
+    const db = fencingDb(/INTO events/, () => {
+      signedOut = true;
+    });
+    const decisions = await ingestCaptureRecords(
+      db, twoRecords(), new Set([PET]), NOW, MAX_INGEST_PER_PASS, () => signedOut,
+    );
+    expect(count('events')).toBe(1); // issued before the fence: the wipe's DELETE erases it
+    expect(count('meals')).toBe(0);
+    expect(lastUsed()).toBeNull();
+    expect(raw.prepare('SELECT id FROM events WHERE id = ?').get(SECOND_EVT)).toBeUndefined();
+    expect(decisions).toEqual([
+      { name: 'a.json', action: 'deferred', reason: 'signed out' },
+      { name: 'b.json', action: 'deferred', reason: 'signed out' },
+    ]);
+  });
+
+  it("fenced between a record's meals insert and its cache touch: the touch never runs", async () => {
+    let signedOut = false;
+    const db = fencingDb(/INTO meals/, () => {
+      signedOut = true;
+    });
+    await ingestCaptureRecords(db, twoRecords(), new Set([PET]), NOW, MAX_INGEST_PER_PASS, () => signedOut);
+    expect(count('meals')).toBe(1);
+    expect(lastUsed()).toBeNull();
+    expect(count('events')).toBe(1);
+  });
+
+  it('fenced between two bowl top-up writes: the second arrangement is never touched', async () => {
+    for (const id of ['a1111111-1111-4111-9111-111111111111', 'a2222222-2222-4222-9222-222222222222']) {
+      raw
+        .prepare(
+          `INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, created_at, updated_at, synced)
+           VALUES (?, ?, ?, 'free_choice', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z', 1)`,
+        )
+        .run(id, PET, FOOD);
+    }
+    let signedOut = false;
+    const db = fencingDb(/UPDATE feeding_arrangements/, () => {
+      signedOut = true;
+    });
+    const decisions = await ingestCaptureRecords(
+      db,
+      [{ name: 't.json', raw: JSON.stringify(topUpRecord()) }],
+      new Set([PET]),
+      NOW,
+      MAX_INGEST_PER_PASS,
+      () => signedOut,
+    );
+    const queued = (raw.prepare('SELECT COUNT(*) AS n FROM feeding_arrangements WHERE synced = 0').get() as {
+      n: number;
+    }).n;
+    expect(queued).toBe(1);
+    expect(decisions).toEqual([{ name: 't.json', action: 'deferred', reason: 'signed out' }]);
+  });
+
+  it('fenced during the food lookup (no write yet): the record writes nothing at all', async () => {
+    let signedOut = false;
+    const real = asyncAdapter(raw);
+    const db: InboxDb = {
+      ...real,
+      async getFirstAsync<T>(sql: string, params: (string | number | null)[]) {
+        const out = await real.getFirstAsync<T>(sql, params);
+        if (/food_items_cache/.test(sql)) signedOut = true;
+        return out;
+      },
+    };
+    const decisions = await ingestCaptureRecords(
+      db, twoRecords(), new Set([PET]), NOW, MAX_INGEST_PER_PASS, () => signedOut,
+    );
+    expect(count('events')).toBe(0);
+    expect(count('meals')).toBe(0);
+    expect(decisions.map((d) => d.action)).toEqual(['deferred', 'deferred']);
+  });
+
+  it('an unfenced live pass still writes every record', async () => {
+    const decisions = await ingestCaptureRecords(
+      asyncAdapter(raw), twoRecords(), new Set([PET]), NOW, MAX_INGEST_PER_PASS, () => false,
+    );
+    expect(count('events')).toBe(2);
+    expect(count('meals')).toBe(2);
+    expect(lastUsed()).toBe(NOW.toISOString());
+    expect(decisions.map((d) => d.action)).toEqual(['applied', 'applied']);
+  });
+
+  describe('through the wrapper both callers run', () => {
+    const freshIso = () => new Date(Date.now() - 60_000).toISOString();
+    const freshFiles = () => [
+      fakeFile('a.json', JSON.stringify(validRecord({ occurredAt: freshIso(), createdAt: freshIso() }))),
+      fakeFile(
+        'b.json',
+        JSON.stringify(
+          validRecord({ id: SECOND_EVT, mealId: SECOND_MEAL, occurredAt: freshIso(), createdAt: freshIso() }),
+        ),
+      ),
+    ];
+
+    function runWith(onEventsInsert: () => void) {
+      (getDb as jest.Mock).mockReturnValue(fencingDb(/INTO events/, onEventsInsert));
+      const entries = freshFiles();
+      (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => entries });
+      return entries;
+    }
+
+    afterEach(() => {
+      (getCaptureInboxDirectory as jest.Mock).mockReturnValue(null);
+    });
+
+    it("the sync cycle's pre-sync ingest: a sign-out mid-record writes nothing more, deletes no file, arms no regen", async () => {
+      const entries = runWith(() => notifySignedOut());
+      // What hooks/useSync.ts passes: a plain Set and no fence of its own.
+      await ingestCaptureInbox(new Set([PET]));
+      expect(count('meals')).toBe(0);
+      expect(count('events')).toBe(1);
+      expect(entries.map((e) => e.deleted)).toEqual([false, false]);
+      expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+    });
+
+    it("the residual drain's ingest: its own fence stops the record already past the allowlist", async () => {
+      let drainFenced = false;
+      const entries = runWith(() => {
+        drainFenced = true;
+      });
+      // What lib/widgetBridge.ts passes: the allowlist AND the fence. A plain Set here
+      // isolates the second argument, which is what reaches the in-flight record.
+      await ingestCaptureInbox(new Set([PET]), () => drainFenced);
+      expect(count('meals')).toBe(0);
+      expect(count('events')).toBe(1);
+      expect(entries.map((e) => e.deleted)).toEqual([false, false]);
+      expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+    });
+
+    it('a sign-out after an earlier record applied: that record arms no regen and keeps its file', async () => {
+      let n = 0;
+      const real = asyncAdapter(raw);
+      (getDb as jest.Mock).mockReturnValue({
+        ...real,
+        async runAsync(sql: string, params: (string | number | null)[]) {
+          const out = await real.runAsync(sql, params);
+          if (/INTO events/.test(sql) && ++n === 2) notifySignedOut(); // the SECOND record's insert
+          return out;
+        },
+      });
+      const entries = freshFiles();
+      (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => entries });
+      await ingestCaptureInbox(new Set([PET]));
+      expect(count('meals')).toBe(1); // the first record, before the fence; the wipe erases it
+      expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+      expect(entries.map((e) => e.deleted)).toEqual([false, false]);
+    });
+
+    it('a live session still ingests, deletes the files and arms the regen', async () => {
+      const entries = runWith(() => undefined);
+      await ingestCaptureInbox(new Set([PET]), () => false);
+      expect(count('meals')).toBe(2);
+      expect(entries.map((e) => e.deleted)).toEqual([true, true]);
+      expect(triggerSignalRegenDebounced).toHaveBeenCalledWith(PET);
+    });
   });
 });

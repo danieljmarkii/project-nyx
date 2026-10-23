@@ -46,6 +46,7 @@ import {
   laneDots,
   timingLanesAxis,
   weeklyBuckets,
+  type BoutSpan,
   type CompareWindowsModel,
   type LaneAxis,
   type LaneInput,
@@ -246,10 +247,19 @@ export interface SignalWeeksInput {
   trial: SignalTrialWindow | null;
   /** One key per EPISODE (after `episodeDaysOf`). */
   episodeDays: readonly string[];
+  /** Each bout's first and last day, so a block a bout carries into says so (Q12, CUL-1791).
+   *  Required: an omitted span is the silent zero this exists to end. */
+  boutSpans: readonly BoutSpan[];
   /** Every local day with any log at all — never derived from the episodes (C-3). */
   loggedDays: readonly string[];
   /** The pet's first logged day, so days before it are not "unlogged". */
   recordStart?: string | null;
+}
+
+/** Each episode's bout span, for `SignalWeeksInput.boutSpans` (Q12, CUL-1791): from its
+ *  onset day to its last row's day (`SignalScreenEpisode.endDayKey`). */
+export function boutSpansOfEpisodes(episodes: readonly { dayKey: string; endDayKey: string }[]): BoutSpan[] {
+  return episodes.map((e) => ({ startDay: e.dayKey, endDay: e.endDayKey }));
 }
 
 /** The weekly bars: the card's and the screen's are the same call. */
@@ -257,6 +267,7 @@ export function signalWeeks(input: SignalWeeksInput): WeeklyBucketsModel {
   const weeks = signalWeekCount(input.finding, input.today, input.trial);
   return weeklyBuckets({
     episodeDays: input.episodeDays,
+    boutSpans: input.boutSpans,
     loggedDays: input.loggedDays,
     weeksEnding: input.today,
     today: input.today,
@@ -268,22 +279,26 @@ export function signalWeeks(input: SignalWeeksInput): WeeklyBucketsModel {
 }
 
 /** The two numbers the card's line states, read off the buckets the bars draw. */
-export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; lastWeek: number | null; soFar: boolean } {
+export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; lastWeek: number | null; soFar: boolean; carried: boolean } {
   const n = model.weeks.length;
   const last = model.weeks[n - 1];
   const prev = n >= 2 ? model.weeks[n - 2] : null;
-  return { thisWeek: last.count, lastWeek: prev ? prev.count : null, soFar: last.partial };
+  return { thisWeek: last.count, lastWeek: prev ? prev.count : null, soFar: last.partial, carried: last.carriedIn };
 }
 
-/** "2 in the last 7 days · 3 in the 7 before" — the card's one line, read off the last two
+/** "2 in the last 7 days · 3 in the 7 before" — the card's one line (led by "A bout from earlier
+ *  ran into the last 7 days ·" when the last block holds a bout that began earlier, Q12), read off the last two
  *  blocks the bars draw (CUL-1217: the engine's rolling week, never a calendar week, so the
  *  line and the sentence on the screen it opens name one window). A count, never a direction
  *  word. `withholdPrior` drops the earlier count when the pair may not be printed
  *  (`lib/signalWithhold.ts`, CUL-1216) — the recent count alone, the shipped face's density
  *  swap. */
 export function weekLine(model: WeeklyBucketsModel, withholdPrior: boolean = false): string {
-  const { thisWeek, lastWeek } = weekLineNumbers(model);
-  const head = `${thisWeek} in the last 7 days`;
+  const { thisWeek, lastWeek, carried } = weekLineNumbers(model);
+  // Q12 (CUL-1791): the count is bouts that BEGAN in the window, so a bout that began earlier
+  // and ran into it reads 0 there. That bout leads, and "new" names the unit.
+  // "Ran into", never "continues": the bout may have ended days ago (the adversarial pass, R2).
+  const head = carried ? `A bout from earlier ran into the last 7 days · ${thisWeek} new` : `${thisWeek} in the last 7 days`;
   return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} in the 7 before`;
 }
 
@@ -345,7 +360,7 @@ export function signalCompareSpec(
   ];
 }
 
-export interface SignalCompareInput extends SignalWeeksInput {}
+export interface SignalCompareInput extends Omit<SignalWeeksInput, 'boutSpans'> {}
 
 /**
  * Whether the screen may draw its own compare for this finding at all (CUL-1359, CUL-1218).
@@ -364,6 +379,17 @@ export function signalCompare(input: SignalCompareInput): CompareWindowsModel | 
   const [before, during] = signalCompareSpec(input.finding, input.today, input.trial);
   const shared = { episodeDays: input.episodeDays, loggedDays: input.loggedDays, recordStart: input.recordStart ?? undefined };
   return compareWindows({ ...before, ...shared }, { ...during, ...shared });
+}
+
+/** Whether the trial outruns the compare's cap, so its windows hold only its last
+ *  `MAX_COMPARE_DAYS` (the same test `signalCompareSpec` applies). */
+function signalTrialCapped(trial: SignalTrialWindow): boolean {
+  return !trialTooYoungToCompare(trial) && Math.max(1, Math.floor(trial.dayCounter)) > MAX_COMPARE_DAYS;
+}
+
+/** The trial's own first day, anchored on today and the day counter like the compare. */
+function trialFirstDayIndex(today: string, trial: SignalTrialWindow): number {
+  return indexOf(today, 'today') - Math.max(1, Math.floor(trial.dayCounter)) + 1;
 }
 
 /** One lane's window, before its episodes are laid. */
@@ -397,14 +423,18 @@ export function signalLaneSpec(
     const from = indexOf(during.startDay, 'startDay');
     const to = indexOf(endOf(during), 'endDay');
     const at = split ? indexOf(split.day, 'split.day') : null;
+    // Past MAX_COMPARE_DAYS the lane draws only the trial's last days (CUL-2154): it says so in
+    // the compare's own words, never "In the trial", which would claim the whole run.
+    const capped = signalTrialCapped(trial);
     if (split && at !== null && at > from && at <= to) {
       const word = (k: string) => formatCalendarDate(k) ?? k;
+      const head = capped ? `In ${lowerFirst(during.label)}` : 'In the trial';
       lanes.push(
-        { label: `In the trial, ${word(during.startDay)} to ${word(dayKeyFromIndex(at - 1))}`, startDay: during.startDay, endDay: dayKeyFromIndex(at - 1) },
+        { label: `${head}, ${word(during.startDay)} to ${word(dayKeyFromIndex(at - 1))}`, startDay: during.startDay, endDay: dayKeyFromIndex(at - 1) },
         { label: `In the trial, on ${split.drug} from ${word(split.day)}`, startDay: split.day, endDay: endOf(during) },
       );
     } else {
-      lanes.push({ label: 'In the trial', startDay: during.startDay, endDay: endOf(during) });
+      lanes.push({ label: capped ? during.label : 'In the trial', startDay: during.startDay, endDay: endOf(during) });
     }
     return lanes;
   }
@@ -434,8 +464,24 @@ export interface SignalLanesModel {
 
 /** The timing lanes, laid with the shipped panel's own geometry (`laneDots`). */
 export function signalLanes(input: SignalLanesInput): SignalLanesModel {
-  const specs = signalLaneSpec(input.finding, input.today, input.trial, input.undivided ?? false, input.split ?? null);
-  const lanes = specs.map((spec) => {
+  const undivided = input.undivided ?? false;
+  const specs = signalLaneSpec(input.finding, input.today, input.trial, undivided, input.split ?? null);
+  // A capped trial's lanes start inside it (CUL-2154): the episodes from its first day up to
+  // the lanes' window are on no lane, so the first in-trial lane carries their count and the
+  // chart says it. Every episode, timed or not, as the lanes' own totals count.
+  const trial = input.trial;
+  const earlier =
+    trial && !undivided && signalTrialCapped(trial) && specs.length >= 2
+      ? (() => {
+          const from = trialFirstDayIndex(input.today, trial);
+          const to = indexOf(specs[1].startDay, 'lane.startDay');
+          return input.episodes.filter((e) => {
+            const idx = indexOf(e.dayKey, 'episodes[].dayKey');
+            return idx >= from && idx < to;
+          }).length;
+        })()
+      : null;
+  const lanes = specs.map((spec, i) => {
     const start = indexOf(spec.startDay, 'lane.startDay');
     const end = indexOf(spec.endDay, 'lane.endDay');
     const laneInput: LaneInput = {
@@ -447,7 +493,8 @@ export function signalLanes(input: SignalLanesInput): SignalLanesModel {
         })
         .map((e) => e.minutesSinceMeal),
     };
-    const lane = laneDots(laneInput);
+    const laid = laneDots(laneInput);
+    const lane = i === 1 && earlier !== null ? { ...laid, earlierCount: earlier } : laid;
     return input.laneMasked?.(spec.startDay, spec.endDay)
       ? { ...lane, masked: true, window: { startDay: spec.startDay, endDay: spec.endDay } }
       : lane;

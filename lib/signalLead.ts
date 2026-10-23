@@ -16,7 +16,7 @@ import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
 import { signalTrialWindowFor } from './signalTrialAnchor';
-import { signalChartSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
+import { boutSpansOfEpisodes, signalChartSymptomOf, signalWeeks, weekLine, type SignalTrialWindow } from './signalWindows';
 import { weekLineWithheld, type NotEatingFact, type WeekLineWithheld } from './signalWithhold';
 import type { WeeklyBucketsModel } from './chartModels';
 import { toLocalDayKey } from './utils';
@@ -77,6 +77,7 @@ export async function loadSignalLead(
     today,
     trial,
     episodeDays: episodes.map((e) => e.dayKey),
+    boutSpans: boutSpansOfEpisodes(episodes),
     loggedDays: logged.loggedDays,
     recordStart: logged.recordStart,
   });

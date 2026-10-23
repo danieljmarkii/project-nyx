@@ -109,6 +109,37 @@ export function episodeDaysOf(
   return collapseEpisodes(rows.filter((r) => Number.isFinite(r.ms)), config.episodeGapHours).map((r) => keyOf(r.ms));
 }
 
+/** One bout's first and last day, as local day keys. */
+export interface BoutSpan {
+  startDay: string;
+  endDay: string;
+}
+
+/**
+ * Each bout's first and last day, through the same collapse `episodeDaysOf` uses, so a span
+ * starts on exactly the day its episode is counted (Q12, CUL-1539 / CUL-1791). A row belongs
+ * to the latest episode start at or before it: bouts are disjoint in time, and the collapse
+ * chains its gap through every row, so the rows between two starts are the earlier bout's.
+ * Ordered by start.
+ */
+export function boutSpansOf(
+  rows: readonly { ms: number }[],
+  keyOf: (ms: number) => string,
+  config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
+): BoutSpan[] {
+  const valid = rows.filter((r) => Number.isFinite(r.ms));
+  const starts = collapseEpisodes(valid, config.episodeGapHours).map((r) => r.ms);
+  if (starts.length === 0) return [];
+  const ends = [...starts];
+  const sorted = [...valid].sort((a, b) => a.ms - b.ms);
+  let s = 0;
+  for (const r of sorted) {
+    while (s + 1 < starts.length && starts[s + 1] <= r.ms) s += 1;
+    if (r.ms > ends[s]) ends[s] = r.ms;
+  }
+  return starts.map((ms, i) => ({ startDay: keyOf(ms), endDay: keyOf(ends[i]) }));
+}
+
 // ── Weekly bars ───────────────────────────────────────────────────────────────
 
 /** One of a week's seven days: logged (a filled tick), unlogged (a hollow tick), not yet
@@ -133,6 +164,10 @@ export interface WeekBucket {
   daysSoFar: number;
   /** Logged days among those that have arrived. */
   loggedCount: number;
+  /** A bout that began before this week's first day still had a row on or after it, on a
+   *  day that has arrived (Q12, CUL-1539 / CUL-1791). The count stays onsets, so a week can
+   *  read 0 over a bout still going; this is what the words disclose. */
+  carriedIn: boolean;
 }
 
 export interface WeeklyMark {
@@ -152,6 +187,10 @@ export interface WeeklyMark {
 export interface WeeklyBucketsInput {
   /** One entry PER EPISODE (a day with two episodes appears twice). */
   episodeDays: readonly string[];
+  /** Each bout's first and last day (`boutSpansOf`), so a week a bout carries into from an
+   *  earlier one is marked `carriedIn` (Q12). Omitted → no week is: only for a count whose
+   *  unit is not a bout (the month's entry lenses). */
+  boutSpans?: readonly BoutSpan[];
   /** The days with any logging at all — the coverage denominator. Duplicates are fine. */
   loggedDays: readonly string[];
   /** The last week drawn is the one containing this day. */
@@ -221,6 +260,11 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
   const loggedSet = new Set<number>();
   for (const key of input.loggedDays) loggedSet.add(indexOfKey(key, 'loggedDays[]'));
 
+  const spans = (input.boutSpans ?? []).map((b) => ({
+    start: indexOfKey(b.startDay, 'boutSpans[].startDay'),
+    end: indexOfKey(b.endDay, 'boutSpans[].endDay'),
+  }));
+
   const counts = new Array<number>(weeks).fill(0);
   let before = 0;
   let after = 0;
@@ -267,6 +311,8 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
       partial: arrived > 0 && arrived < 7,
       daysSoFar,
       loggedCount,
+      // Only an arrived day can hold the row (a future-dated row is never a bout going on).
+      carriedIn: start <= todayIdx && spans.some((b) => b.start < start && b.end >= start),
     });
   }
 
@@ -445,6 +491,9 @@ export interface LaneModel {
   /** The lane's dates (inclusive day keys), set alongside `masked` so a caption can name only the
    *  spans that touch a hatched lane. */
   window?: { startDay: string; endDay: string };
+  /** On the first in-trial lane of a trial longer than the lanes draw (CUL-2154): the episodes
+   *  earlier in the trial, on no lane. Set by the caller, which knows dates; absent otherwise. */
+  earlierCount?: number;
 }
 
 export interface LaneAxis {
@@ -512,6 +561,25 @@ export function lanesUntimedLine(lanes: readonly LaneModel[]): string {
   const laneWord = lanes.length > 1 ? 'the lanes' : 'the lane';
   const verb = sum === 1 ? `it isn't on ${laneWord}` : `they aren't on ${laneWord}`;
   return `${joined} ${noun} couldn't be timed against a meal — ${verb}.`;
+}
+
+/**
+ * The line for a trial longer than the lanes draw (CUL-2154): the episodes earlier in the
+ * trial, on no lane, counted in words. Null when no lane carries the count (the lanes hold the
+ * whole trial, or there is none) AND at zero: unlike the untimed line, a zero here is a claim
+ * about days no chart on the screen draws, where a masking course (CUL-1440 D2) or a logging
+ * gap can sit unshown, so it reads as "the trial worked" with nothing to check it against
+ * (adversarial pass on CUL-2154). The lane's label already names the cap, so silence claims
+ * nothing; a count above zero errs toward a look and always speaks.
+ */
+export function lanesEarlierLine(lanes: readonly LaneModel[]): string | null {
+  const lane = lanes.find((l) => l.earlierCount !== undefined);
+  if (lane?.earlierCount === undefined) return null;
+  const n = lane.earlierCount;
+  if (n === 0) return null;
+  return n === 1
+    ? '1 episode earlier in the trial is not on these lanes.'
+    : `${n} episodes earlier in the trial are not on these lanes.`;
 }
 
 // ── Weight, dots by date ──────────────────────────────────────────────────────

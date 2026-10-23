@@ -13,7 +13,7 @@ jest.mock('./sync', () => ({
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
   timeEditPrompt, removedNoticeCopy,
-  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, HITSLOP_ACTION_SOLO, undoGateCopy,
+  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, HITSLOP_ACTION_SOLO, ACTION_PAIR_GAP, undoGateCopy,
   eventHasNote, removeConfirmCopy,
   type LoggedRecord,
 } from './completionCard';
@@ -392,7 +392,16 @@ describe('HITSLOP_ACTION_LEFT / _RIGHT', () => {
   it('yield opposing edges, and only the facing one', () => {
     expect(HITSLOP_ACTION_LEFT.right).toBeLessThan(HITSLOP_ACTION_LEFT.left);
     expect(HITSLOP_ACTION_RIGHT.left).toBeLessThan(HITSLOP_ACTION_RIGHT.right);
-    expect(HITSLOP_ACTION_LEFT.right + HITSLOP_ACTION_RIGHT.left).toBeLessThanOrEqual(8);
+    expect(HITSLOP_ACTION_LEFT.right + HITSLOP_ACTION_RIGHT.left).toBeLessThanOrEqual(ACTION_PAIR_GAP);
+  });
+
+  // CUL-658 moved the yielded edge from a typed 4 onto facingReach(gap). The hit
+  // areas the cards measured before the move must be exactly what they get after.
+  it('the computed geometry equals the literals it replaced (no change to the hit areas)', () => {
+    expect(HITSLOP_ACTION_LEFT).toEqual({ top: 12, bottom: 12, left: 12, right: 4 });
+    expect(HITSLOP_ACTION_RIGHT).toEqual({ top: 12, bottom: 12, left: 4, right: 12 });
+    expect(HITSLOP_ACTION_SOLO).toEqual({ top: 12, bottom: 12, left: 12, right: 12 });
+    expect(ACTION_PAIR_GAP).toBe(8);
   });
 });
 

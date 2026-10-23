@@ -30,6 +30,7 @@
 import { getDb } from './db';
 import { getCaptureInboxDirectory } from './appGroup';
 import { triggerSignalRegenDebounced } from './signal';
+import { currentSignOutEpoch } from './signOutEpoch';
 import { isInboxLoggedVia } from './loggedVia';
 import {
   CAPTURE_INBOX_SCHEMA_VERSION,
@@ -215,12 +216,26 @@ export interface InboxDecision {
 //     transient-until-aged-out reason (the cache hydrates each cycle).
 // An empty validPetIds set skips the whole pass — it almost always means the
 // pet list hasn't loaded, and running would wrongly defer/age every record.
+//
+// SIGN-OUT (CUL-1968, FR-9 parity with hydrateFromCloud): `fenced` answers true
+// once a sign-out has started. The wipe runs `clearLocalData` before it resets
+// the pet store, so the allowlist alone cannot stop a pass already running: it
+// still names the old account's pets. The fence is read immediately before
+// EVERY write, never once per record, because a record awaits three times
+// between its food lookup and its last write. Once it trips the pass writes
+// nothing more; the current record and every later one come back deferred (the
+// wipe deletes their files anyway). A write issued before the fence is erased
+// by the wipe's DELETE, which lands after it by MARGIN, not by queue order:
+// expo-sqlite runs statements on a concurrent native queue, and clearLocalData
+// makes several native round trips (two reads, file deletes) before its first
+// DELETE, while an issued write needs one more.
 export async function ingestCaptureRecords(
   db: InboxDb,
   files: InboxFilePayload[],
   validPetIds: ReadonlySet<string>,
   now: Date = new Date(),
   maxApplies: number = MAX_INGEST_PER_PASS,
+  fenced: () => boolean = () => false,
 ): Promise<InboxDecision[]> {
   if (validPetIds.size === 0) {
     return files.map((f) => ({ name: f.name, action: 'deferred', reason: 'no pets loaded' }));
@@ -229,8 +244,10 @@ export async function ingestCaptureRecords(
   const decisions: InboxDecision[] = [];
   const maxAgeMs = INBOX_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
   let applied = 0;
+  // Index of the first record the fence stopped; everything from it on defers.
+  let stoppedAt = -1;
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     const classified = classifyInboxPayload(file.raw);
     if (classified.status === 'drop') {
       decisions.push({ name: file.name, action: 'dropped', reason: classified.reason });
@@ -292,6 +309,7 @@ export async function ingestCaptureRecords(
         return Number.isNaN(storedMs) || storedMs < tapMs;
       });
       for (const a of stale) {
+        if (fenced()) break;
         await db.runAsync(
           'UPDATE feeding_arrangements SET updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL WHERE id = ?',
           [record.occurredAt, a.id],
@@ -301,6 +319,10 @@ export async function ingestCaptureRecords(
       // (mirrors confirmArrangementFresh's result.changes gate). Either way the
       // record is consumed ('applied' → the wrapper deletes the file); staying
       // idempotent is exactly why the no-op is still a clean apply.
+      if (fenced()) {
+        stoppedAt = index;
+        break;
+      }
       if (stale.length > 0) applied++;
       // No petId on the decision: petId there means "regen this pet's Signal",
       // and a top-up must not trigger one.
@@ -339,6 +361,10 @@ export async function ingestCaptureRecords(
     // occurred_at_confidence 'witnessed' + occurred_at_source 'now': a widget
     // tap is the owner logging in the moment; the surface stamps the clock.
     const nowIso = now.toISOString();
+    if (fenced()) {
+      stoppedAt = index;
+      break;
+    }
     await db.runAsync(
       `INSERT OR IGNORE INTO events
          (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
@@ -350,12 +376,20 @@ export async function ingestCaptureRecords(
     // Assumed portion, unrated (spec §2.3): quantity 'unknown', no
     // intake_rating — a widget tap is not a witnessed rating, and the engine
     // must never conflate the two (§3).
+    if (fenced()) {
+      stoppedAt = index;
+      break;
+    }
     await db.runAsync(
       `INSERT OR IGNORE INTO meals
          (id, event_id, pet_id, food_item_id, quantity, logged_via, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, 'unknown', ?, ?, ?, 0)`,
       [record.mealId, record.id, record.petId, record.foodItemId, record.loggedVia, record.createdAt, nowIso],
     );
+    if (fenced()) {
+      stoppedAt = index;
+      break;
+    }
     await db.runAsync('UPDATE food_items_cache SET last_used_at = ? WHERE id = ?', [
       nowIso,
       record.foodItemId,
@@ -365,6 +399,11 @@ export async function ingestCaptureRecords(
     decisions.push({ name: file.name, action: 'applied', petId: record.petId });
   }
 
+  if (stoppedAt >= 0) {
+    for (const file of files.slice(stoppedAt)) {
+      decisions.push({ name: file.name, action: 'deferred', reason: 'signed out' });
+    }
+  }
   return decisions;
 }
 
@@ -387,7 +426,19 @@ export function inboxFileSortKey(raw: string): number {
 // inbox, runs the core ingest, deletes applied+dropped files, leaves deferred
 // ones, and refreshes the Signal for each pet that gained a record. Every step
 // is best-effort per file — one unreadable file must not strand the rest.
-export async function ingestCaptureInbox(validPetIds: ReadonlySet<string>): Promise<void> {
+//
+// SIGN-OUT (CUL-1968): the sign-out epoch is captured HERE, synchronously, before
+// the first await, and ORed with the caller's own fence (the residual v1 drain
+// passes the widget publish epoch's). Once either moves the pass writes nothing,
+// deletes no file and arms no Signal regen: `wipeLocalSession` cancels the regen
+// timers before its first await, so a timer armed after that would fire under the
+// next account carrying this one's pet id (CUL-642's class).
+export async function ingestCaptureInbox(
+  validPetIds: ReadonlySet<string>,
+  callerFenced: () => boolean = () => false,
+): Promise<void> {
+  const epoch = currentSignOutEpoch();
+  const fenced = () => currentSignOutEpoch() !== epoch || callerFenced();
   const inbox = getCaptureInboxDirectory();
   if (!inbox) return; // Android / no entitlement — the surface doesn't exist here.
 
@@ -421,13 +472,23 @@ export async function ingestCaptureInbox(validPetIds: ReadonlySet<string>): Prom
 
   let decisions: InboxDecision[];
   try {
-    decisions = await ingestCaptureRecords(getDb(), files, validPetIds);
+    decisions = await ingestCaptureRecords(
+      getDb(),
+      files,
+      validPetIds,
+      new Date(),
+      MAX_INGEST_PER_PASS,
+      fenced,
+    );
   } catch (e) {
     // A throw mid-pass leaves every file in place; the next foreground retries
     // and INSERT OR IGNORE makes any half-applied record a no-op.
     console.warn('[captureInbox] ingest failed:', e);
     return;
   }
+
+  // Signed out mid-pass: the wipe owns the inbox and the regen timers now.
+  if (fenced()) return;
 
   const regenPets = new Set<string>();
   for (const d of decisions) {

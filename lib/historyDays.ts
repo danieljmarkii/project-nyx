@@ -149,6 +149,9 @@ export interface PopulationRow {
   eventType: string;
   occurredAt: string;
   foodItemId: string | null;
+  /** A MIXED BOWL's composition key (CUL-2053), the report's same-minute group for it;
+   *  absent for a single food. */
+  bowlKey?: string | null;
   /** `food_items.food_type`: 'meal' | 'treat' | 'other' | null. */
   foodType: string | null;
   intakeRating: string | null;
@@ -560,7 +563,7 @@ export function duplicateCountsOf(rows: readonly PopulationRow[], range: DayRang
     if (day !== null && inRange(day, range)) inWindow.add(r.id);
   }
   const { droppedEventIds } = collapseSameMinute(
-    rows.map((r) => ({ id: r.id, type: r.eventType, occurredAt: r.occurredAt, foodItemId: r.foodItemId })),
+    rows.map((r) => ({ id: r.id, type: r.eventType, occurredAt: r.occurredAt, foodItemId: r.foodItemId, bowlKey: r.bowlKey ?? null })),
     { isInWindow: (e) => inWindow.has(e.id) },
   );
   const out: DuplicateCounts = { total: 0, byType: {} };

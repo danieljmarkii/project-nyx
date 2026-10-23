@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { ScanEye, ScanText, MessageCircle } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card, Header, PrimaryButton, ThemedText } from '../../components/ui';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { WhatsSentPanel } from '../../components/consent/AiConsentSheet';
@@ -183,7 +183,7 @@ export default function AiReadingSettingsScreen() {
                   value={load.row.granted}
                   onValueChange={(next) => { write(next).catch(() => setWriteError(CONSENT_WRITE_FAILED)); }}
                   disabled={saving !== null}
-                  trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                  trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
                   ios_backgroundColor={theme.colorBorderStrong}
                   accessibilityLabel={SETTINGS_SCREEN_TITLE}
                   testID="ai-reading-switch"

@@ -209,15 +209,43 @@ function metaLine(occurredAt: string, tag: string | null, today: string): string
   return [when, tag].filter((p): p is string => p !== null && p !== '').join(' · ');
 }
 
+/**
+ * The food an exposure row names, and the classification its reason explains. A plain
+ * feeding is itself. A MIXED BOWL (spec §5.2, §7.3) names its OFFENDING component, the
+ * first whose verdict is the bowl's, never the bowl's dominant food: a rabbit-dominant
+ * bowl with chicken in it is an exposure to the chicken. EXPORTED so the card's
+ * most-recent line names the same food this list does.
+ */
+export function offendingFood(item: Pick<TrialExposureItem, 'label' | 'classification'>): {
+  label: string | null;
+  classification: TrialExposureItem['classification'];
+  inBowl: boolean;
+} {
+  const c = item.classification;
+  if (!c.components || !c.componentFoods) return { label: item.label, classification: c, inBowl: false };
+  const i = c.components.findIndex((part) => part.verdict === c.verdict);
+  if (i < 0) return { label: item.label, classification: c, inBowl: true };
+  return { label: c.componentFoods[i]?.label ?? null, classification: c.components[i], inBowl: true };
+}
+
+/** "Chicken Pâté, in a mixed bowl": the offending food first, then where it was. */
+export function offendingFoodLabel(item: Pick<TrialExposureItem, 'label' | 'classification'>): string | null {
+  const o = offendingFood(item);
+  if (!o.inBowl) return o.label;
+  return o.label ? `${o.label}, in a mixed bowl` : 'A mixed bowl';
+}
+
 function feedingRow(item: TrialExposureItem, today: string): TrialExposureRow {
-  const label = item.label ?? 'A food with no name recorded';
+  const offending = offendingFood(item);
+  const label = offendingFoodLabel(item) ?? 'A food with no name recorded';
   return {
     key: item.eventId,
     label,
     meta: metaLine(item.occurredAt, rungTag(item.classification.rung, item.classification.antigens), today),
     // The food label is passed through so the reason names the same food the row
-    // does; `explainVerdict` falls back to "This food" on a null.
-    reason: explainVerdict(item.classification, item.label),
+    // does; `explainVerdict` falls back to "This food" on a null. For a bowl it explains
+    // the offending component's own verdict, with that component's name.
+    reason: explainVerdict(offending.classification, offending.label),
   };
 }
 

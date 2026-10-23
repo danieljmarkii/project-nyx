@@ -8,12 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { AUTH_STORAGE_KEY, supabase } from '../../lib/supabase';
-import { ChunkedSecureStoreAdapter } from '../../lib/secureStore';
+import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useIsOnline } from '../../hooks/useIsOnline';
 import { getIsOnline } from '../../lib/network';
-import { wipeLocalSession } from '../../lib/session';
+import { purgeStoredAuthSession, wipeLocalSession } from '../../lib/session';
 import {
   DELETE_CONFIRM_PHRASE,
   canConfirmAccountDeletion,
@@ -109,8 +108,12 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       // handler's own order: wipe, then the session.
       const teardown = async (e: unknown) => {
         console.warn('[DeleteAccountSheet] local signOut after delete failed:', e);
-        await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
-        await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
+        // The shared purge reads the keychain back (CUL-1974). A credential that survives
+        // it is already dead (the server deleted the account and its sessions), so the
+        // teardown still finishes rather than stranding the owner on this sheet.
+        if (!(await purgeStoredAuthSession())) {
+          console.warn('[DeleteAccountSheet] the deleted account\'s stored session may survive');
+        }
         await wipeLocalSession();
         useAuthStore.getState().setSession(null);
         router.replace('/(auth)/login');

@@ -6,7 +6,7 @@ import * as Linking from 'expo-linking';
 import { MailCheck, MailOpen } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { updateOwnerName } from '../../lib/profile';
@@ -160,9 +160,9 @@ export default function ConfirmScreen() {
         <View style={styles.grow} />
         <View style={styles.icon}>
           {state === 'link_dead' ? (
-            <MailOpen size={44} color={theme.colorAccent} strokeWidth={1.5} />
+            <MailOpen size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />
           ) : (
-            <MailCheck size={44} color={theme.colorAccent} strokeWidth={1.5} />
+            <MailCheck size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />
           )}
         </View>
         <ThemedText style={styles.title}>{content.title}</ThemedText>

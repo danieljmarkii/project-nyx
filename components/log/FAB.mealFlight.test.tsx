@@ -15,7 +15,15 @@
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/' }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
-jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
+jest.mock('../../lib/storage', () => ({
+  // CUL-1856: pet photos sign through lib/storage.ts. A signing that never
+  // answers keeps every disc on its initial, which is all this suite needs.
+  getPetPhotoUrl: () => new Promise(() => {}),
+  peekPetPhotoUrl: () => null,
+  evictPetPhotoUrl: () => {},
+  petPhotoVersion: () => 0,
+  subscribePetPhotoVersions: () => () => {},
+}));
 jest.mock('../../lib/haptics', () => ({
   openMenu: jest.fn(),
   commitRoutine: jest.fn(),

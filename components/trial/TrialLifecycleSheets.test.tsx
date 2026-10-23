@@ -53,6 +53,9 @@ jest.mock('../../lib/dietTrialOutcomeFacts', () => ({
   loadTrialOutcomeFacts: jest.fn(() => new Promise(() => {})),
 }));
 
+// The network client is never reached; stubbed so the real notice rule below can load.
+jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+
 // The write path. `TrialWindowRefused` is a stand-in with the real class's structured
 // fields; the screen's `instanceof` reads the same (mocked) export this file constructs.
 jest.mock('../../lib/dietTrialSetup', () => {
@@ -78,14 +81,23 @@ jest.mock('../../lib/dietTrialSetup', () => {
   // `TrialCompletionSheet` switches on this export with `instanceof`.
   class TrialEndRefused extends Error {
     reason: string;
-    constructor(args: { reason: string }) {
+    status: string | null;
+    endedOn: string | null;
+    storedReason: string | null;
+    constructor(args: { reason: string; status?: string | null; endedOn?: string | null; storedReason?: string | null }) {
       super(`end refused: ${args.reason}`);
       this.reason = args.reason;
+      this.status = args.status ?? null;
+      this.endedOn = args.endedOn ?? null;
+      this.storedReason = args.storedReason ?? null;
     }
   }
+  // CUL-2012 — the notice rule is the REAL one (C-34: stub the write, never the rule).
+  // It reads only the refusal's structured fields, which this stand-in carries.
   return {
     TrialWindowRefused,
     TrialEndRefused,
+    trialEndRefusedNotice: jest.requireActual('../../lib/dietTrialSetup').trialEndRefusedNotice,
     extendTrial: jest.fn(() => Promise.resolve()),
     changeTrialWindow: jest.fn(() => Promise.resolve()),
     endActiveTrial: jest.fn(() => Promise.resolve()),
@@ -284,11 +296,15 @@ describe('the completion sheets (This trial is done, Stopped early, the mileston
     expect(visibleModals(r)).toBe(0);
   });
 
-  it('a trial ended elsewhere: the sheet’s refused end re-reads the HOST and closes, with no alert (CUL-1329)', async () => {
+  it('a trial ended elsewhere with the SAME reason: the sheet’s refused end re-reads the HOST and closes, with no alert (CUL-1329)', async () => {
     // Driven through the REAL sheet's Save, so the path under test is the sheet's own
     // catch → the host's `onChanged` (this host's `reload`) → `onClose`.
     mockEnd.mockImplementation(() =>
-      Promise.reject(new TrialEndRefused({ reason: 'not_running' } as never)));
+      // The other phone's ending already holds this same refusal, so there is nothing
+      // the owner needs telling (CUL-2012); the differing case is pinned below.
+      Promise.reject(new TrialEndRefused({
+        reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: 'refused',
+      } as never)));
     const r = await renderSettled();
     fireEvent.press(r.getByTestId('action-trial_stopped_early'));
     fireEvent.press(r.getByTestId('trial-stop-refused'));
@@ -297,6 +313,24 @@ describe('the completion sheets (This trial is done, Stopped early, the mileston
     expect(mockEnd).toHaveBeenCalledTimes(1);
     expect(mockReload).toHaveBeenCalledTimes(1);
     expect(alertSpy).not.toHaveBeenCalled();
+    expect(mockSheetProps.completion.entry).toBeNull();
+    expect(visibleModals(r)).toBe(0);
+  });
+
+  it('a trial ended elsewhere with a DIFFERENT reason: the refusal is said once, then the same re-read and close (CUL-2012)', async () => {
+    mockEnd.mockImplementation(() =>
+      Promise.reject(new TrialEndRefused({
+        reason: 'not_running', status: 'abandoned', endedOn: '2026-09-20', storedReason: 'vet_advised',
+      } as never)));
+    const r = await renderSettled();
+    fireEvent.press(r.getByTestId('action-trial_stopped_early'));
+    fireEvent.press(r.getByTestId('trial-stop-refused'));
+    await act(async () => { fireEvent.press(r.getByText('Save')); });
+
+    expect(mockEnd).toHaveBeenCalledTimes(1);
+    expect(mockReload).toHaveBeenCalledTimes(1);
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(alertSpy.mock.calls[0][0]).toBe('Already ended');
     expect(mockSheetProps.completion.entry).toBeNull();
     expect(visibleModals(r)).toBe(0);
   });

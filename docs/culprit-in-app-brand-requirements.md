@@ -85,7 +85,7 @@ PM (r3): "Genuinely genius. We need to ship this." Iteration 3: **"Perfection if
 
 **AC-N3:** no `ActivityIndicator` remains in `app/` or `components/` (grep gate) except inside `PrimaryButton`'s existing loading prop (its own shipped pattern — swap is optional polish); spinner loops pause on blur; reduced-motion shows the static Whorl frame (arcs at rest, dot static); PTR band respects safe-area; PTR copy is the §9 string verbatim or absent.
 
-**⚠ GA (2026-10-05, CUL-1071): the Whorl has left the working app's redesigned waits.** Design v2 (D2-7, CUL-1068) replaced the spinner and the night moment on the waits it redesigned with **silhouettes** (the shape of the screen that is coming) and **the breathing tick**, the one looping motion Design v2 allows, shown only while a request is outstanding (`components/designV2/waits/`):
+**⚠ GA (2026-10-05, CUL-1071): the Whorl has left the working app's redesigned waits.** Design v2 (D2-7, CUL-1068) replaced the spinner and the night moment on the waits it redesigned with **silhouettes** (the shape of the screen that is coming) and **the breathing tick**, the one looping motion Design v2 allows, shown only while a request is outstanding (`components/surfaces/waits/`):
 - **Cold start** → Home's silhouette (`ColdStartOverlay` renders `ColdStartSilhouette`), crossfading into Home when the store hydrates; no night screen.
 - **The vet report's build** → its silhouette plus the tick (`app/report.tsx`: `ReportSilhouette` while building, `Tick` while regenerating).
 - **The event screen's load** → its silhouette (`EventSilhouette` in `app/event/[id].tsx`).

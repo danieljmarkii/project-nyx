@@ -2,7 +2,10 @@ import {
   coldStartDecision,
   navigateAfterSignOut,
   signedOutRoute,
-  shouldAdoptSessionDuringRecovery,
+  recoveryAdoption,
+  coldStartResume,
+  readUnlessSignedOut,
+  recoveryOwnsColdStart,
 } from './authRouting';
 import type { Session, AuthError } from '@supabase/supabase-js';
 
@@ -59,23 +62,79 @@ describe('signedOutRoute (B-280 FR-20)', () => {
   });
 });
 
-describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review)', () => {
-  it('adopts everything when no exchange window is open (normal auth untouched)', () => {
-    expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', false)).toBe(true);
-    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', false)).toBe(true);
-    expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', false)).toBe(true);
+describe('recoveryAdoption (CUL-1205, CUL-1973)', () => {
+  const base = {
+    recoveryExchangePending: false,
+    recoveryInProgress: false,
+    recoveryUserId: null as string | null,
+    sessionUserId: 'user-a',
+  };
+
+  it('adopts when no reset is under way (normal auth untouched)', () => {
+    expect(recoveryAdoption(base)).toBe('adopt');
   });
 
-  it('during the exchange window, adopts ONLY the exchange emission — never A re-emitted', () => {
-    // The Trap-2 sub-window: auth-js autoRefresh re-emits the pre-recovery owner A.
-    expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', true)).toBe(false);
-    expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', true)).toBe(false);
-    expect(shouldAdoptSessionDuringRecovery('USER_UPDATED', true)).toBe(false);
-    // _recoverAndRefresh emits SIGNED_IN carrying the STORED session, which on a cold
-    // start from a reset link is A (CUL-1886 rls review).
-    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(false);
-    // The reset link exchange's PASSWORD_RECOVERY(B) is the one session recovery adopts.
-    expect(shouldAdoptSessionDuringRecovery('PASSWORD_RECOVERY', true)).toBe(true);
+  it('during the exchange window adopts nothing: the handler adopts the returned session', () => {
+    // No event name can open it, PASSWORD_RECOVERY included: an emission carrying A
+    // under that name would otherwise render the form against A (O2). Even the pinned
+    // user waits for the handler.
+    expect(recoveryAdoption({ ...base, recoveryExchangePending: true })).toBe('refuse');
+    expect(
+      recoveryAdoption({ ...base, recoveryExchangePending: true, recoveryInProgress: true, recoveryUserId: 'user-a' }),
+    ).toBe('refuse');
+  });
+
+  it('with the gate armed adopts the pinned user only', () => {
+    expect(recoveryAdoption({ ...base, recoveryInProgress: true, recoveryUserId: 'user-b', sessionUserId: 'user-b' }))
+      .toBe('adopt');
+  });
+
+  // The retain instance: a resume sets no window, and autoRefresh's later
+  // TOKEN_REFRESHED carries whoever the keychain held.
+  it('with the gate armed ends the reset for anyone else, or when no user is pinned', () => {
+    expect(recoveryAdoption({ ...base, recoveryInProgress: true, recoveryUserId: 'user-b', sessionUserId: 'user-a' }))
+      .toBe('abandon');
+    expect(recoveryAdoption({ ...base, recoveryInProgress: true, recoveryUserId: null, sessionUserId: 'user-a' }))
+      .toBe('abandon');
+  });
+});
+
+// CUL-1973: a cold start with the gate armed. A process death between arming and the
+// exchange adopting B leaves gate + A in the keychain; the form must never render on A.
+describe('coldStartResume (CUL-1973)', () => {
+  const exchangedB = { kind: 'exchanged', userId: 'user-b' } as const;
+  const exchanging = { kind: 'exchanging' } as const;
+
+  it('renders the form only for the user the exchange adopted', () => {
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: 'user-b', decision: 'proceed', phase: exchangedB }))
+      .toEqual({ action: 'resume-form', userId: 'user-b' });
+  });
+
+  it('reconciles a live session the exchange never adopted (death before the exchange saved B)', () => {
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: 'user-a', decision: 'proceed', phase: exchanging }))
+      .toEqual({ action: 'reconcile' });
+  });
+
+  it('reconciles a live session that is not the adopted user', () => {
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: 'user-a', decision: 'proceed', phase: exchangedB }))
+      .toEqual({ action: 'reconcile' });
+  });
+
+  it('retain waits for the refresh only after an adopted exchange, pinning that user', () => {
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'retain', phase: exchangedB }))
+      .toEqual({ action: 'await-refresh', userId: 'user-b', dropStoreSession: false });
+  });
+
+  it('retain before the exchange adopted anyone reconciles instead of waiting on A', () => {
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'retain', phase: exchanging }))
+      .toEqual({ action: 'reconcile' });
+  });
+
+  it('nothing stored releases the gate', () => {
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'to-auth', phase: exchanging }))
+      .toEqual({ action: 'release' });
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'to-auth', phase: exchangedB }))
+      .toEqual({ action: 'release' });
   });
 });
 
@@ -102,5 +161,55 @@ describe('navigateAfterSignOut (MFU-9, CUL-1071)', () => {
     const { calls, n } = nav(false);
     navigateAfterSignOut(n, '/(auth)');
     expect(calls).toEqual(['replace:/(auth)']);
+  });
+});
+
+// CUL-1971: a sign-out landing during the cold start's Promise.all never adopts the
+// session read before it.
+describe('readUnlessSignedOut (CUL-1971)', () => {
+  it('hands back the reads when no sign-out began while they ran', async () => {
+    const epoch = 3;
+    await expect(readUnlessSignedOut(() => epoch, async () => ['gate', 'session-a'])).resolves.toEqual([
+      'gate',
+      'session-a',
+    ]);
+  });
+
+  it('drops them when a sign-out began mid-read: the SIGNED_OUT handler owns the session', async () => {
+    let epoch = 3;
+    const result = await readUnlessSignedOut(
+      () => epoch,
+      async () => {
+        // getSession resolved with A; the wipe starts before the gate read resolves.
+        epoch++;
+        return ['gate', 'session-a'];
+      },
+    );
+    expect(result).toBeNull();
+  });
+});
+
+describe('coldStartResume: a session adopted before the gate loaded (rls-privacy-reviewer)', () => {
+  const exchangedB = { kind: 'exchanged', userId: 'user-b' } as const;
+  it('retain drops a store session that is not the pinned user', () => {
+    expect(coldStartResume({ storeSessionUserId: 'user-a', sessionUserId: null, decision: 'retain', phase: exchangedB }))
+      .toEqual({ action: 'await-refresh', userId: 'user-b', dropStoreSession: true });
+  });
+  it('retain keeps the pinned user', () => {
+    expect(coldStartResume({ storeSessionUserId: 'user-b', sessionUserId: null, decision: 'retain', phase: exchangedB }))
+      .toEqual({ action: 'await-refresh', userId: 'user-b', dropStoreSession: false });
+  });
+});
+
+// A warm reset link landing while the cold start's getSession is still in flight: its
+// wipe can come after the reads resolve, so the epoch fence cannot see it.
+describe('recoveryOwnsColdStart (rls-privacy-reviewer, CUL-1973)', () => {
+  it('yields to a reset running in this process, window open or gate armed', () => {
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: true, recoveryInProgress: true })).toBe(true);
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: true, recoveryInProgress: false })).toBe(true);
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: false, recoveryInProgress: true })).toBe(true);
+  });
+  it('owns nothing with no reset under way', () => {
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: false, recoveryInProgress: false })).toBe(false);
   });
 });

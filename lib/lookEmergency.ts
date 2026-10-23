@@ -55,6 +55,14 @@ import type { LookSpecies } from '../constants/lookWords';
 export const EMERGENCY_SHEET_TITLE = 'When to call the vet';
 export const EMERGENCY_DOOR_LABEL = 'Signs that mean call today ›';
 
+/** The Signal's door to the same sheet (CUL-1838, the quiet line's foot). At rest it is
+ *  labelled for the sheet; once the record meets a call sign it says the imperative the
+ *  sheet would collapse to (Dr. Chen, ruled by the PM 2026-10-15), so a worried owner
+ *  does not have to open the door to learn what is behind it. `signalDoorLabel` picks. */
+export const SIGNAL_DOOR_LABEL = 'When to call the vet ›';
+export const SIGNAL_DOOR_CALL_TODAY = 'Call your vet today ›';
+export const SIGNAL_DOOR_CALL_NOW = 'Call your vet now ›';
+
 /** The imperative a met condition collapses to. One string, one place. */
 export const CALL_TODAY_IMPERATIVE = 'Call your vet today.';
 /** The call-now block's own collapse (Engines v3 PR-28b, CUL-1436): a record-dependent
@@ -260,6 +268,23 @@ export function resolveEmergencyDoor(
   };
 }
 
+/**
+ * The Signal door's words, from the SAME resolver the sheet renders from, so the door and
+ * the page behind it cannot disagree about whether the record meets a call sign.
+ *
+ * Only a READY read may change the words. The sheet fails closed on an unanswered read
+ * ("Call your vet today." over unknown facts) because the owner has asked; a door that did
+ * the same would shout at every owner whose facts failed to load once (T-20), so here an
+ * unanswered read keeps the resting label and the page behind it still fails closed.
+ */
+export function signalDoorLabel(species: LookSpecies, read: EmergencyRead, floorOn = false): string {
+  if (read.status !== 'ready') return SIGNAL_DOOR_LABEL;
+  const door = resolveEmergencyDoor(species, read.facts, floorOn);
+  if (door.nowImperative !== null) return SIGNAL_DOOR_CALL_NOW;
+  if (door.imperative !== null) return SIGNAL_DOOR_CALL_TODAY;
+  return SIGNAL_DOOR_LABEL;
+}
+
 /** Every string this module can put on screen, for the guardrail screens to sweep.
  *  Derived from the same tables the door renders from, so a row added without a
  *  voice/guardrail pass fails the test rather than shipping unread. */
@@ -267,6 +292,9 @@ export function allEmergencyStrings(): string[] {
   const out: string[] = [
     EMERGENCY_SHEET_TITLE,
     EMERGENCY_DOOR_LABEL,
+    SIGNAL_DOOR_LABEL,
+    SIGNAL_DOOR_CALL_TODAY,
+    SIGNAL_DOOR_CALL_NOW,
     CALL_TODAY_IMPERATIVE,
     CALL_NOW_IMPERATIVE,
     CALL_NOW_HEADER,

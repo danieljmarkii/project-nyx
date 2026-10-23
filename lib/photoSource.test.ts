@@ -58,8 +58,18 @@ describe('pickPhotoSource — the chooser comes first', () => {
     const p = pickPhotoSource('Add a photo');
     pressAlert('Choose from library');
     await expect(p).resolves.toBe('library');
-    expect(askLibrary).toHaveBeenCalled();
     expect(askCamera).not.toHaveBeenCalled();
+  });
+
+  it('the library opens with no permission ask at all (CUL-1840, App Review 5.1.1(iii))', async () => {
+    // The system picker hands back only the chosen photo, so a whole-library grant
+    // is data never used. Even a library the owner once denied still opens.
+    askLibrary.mockResolvedValue({ status: 'denied' });
+    const p = pickPhotoSource('Add a photo');
+    pressAlert('Choose from library');
+    await expect(p).resolves.toBe('library');
+    expect(askLibrary).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledTimes(1); // the chooser, and no denial after it
   });
 
   it('asks for nothing at all when the owner cancels', async () => {
@@ -104,13 +114,11 @@ describe('ensurePhotoPermission — the denial points somewhere useful', () => {
     );
   });
 
-  it('library denial offers the camera', async () => {
+  it('the library is always usable and asks nothing', async () => {
     askLibrary.mockResolvedValue({ status: 'denied' });
-    await expect(ensurePhotoPermission('library')).resolves.toBe(false);
-    expect(Alert.alert).toHaveBeenCalledWith(
-      'Photo access needed',
-      'Allow photo access in Settings, or take a photo instead.',
-    );
+    await expect(ensurePhotoPermission('library')).resolves.toBe(true);
+    expect(askLibrary).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it('says nothing when the grant is there', async () => {

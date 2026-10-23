@@ -13,8 +13,10 @@ import {
   raisedReadLine,
   readLandedLine,
   stoolFindings,
+  stoolRedFlagPresent,
   tellThem,
   vomitFindings,
+  vomitRedFlagPresent,
   watchForClauses,
   watchForList,
   type WatchForInput,
@@ -297,6 +299,28 @@ describe('what to tell them (§2 rule 2)', () => {
     // `description` and `read_text` cannot reach the line (Pattern 10).
     const row = { blood_present: 'fresh_red', foreign_material_present: 'yes', foreign_material_note: 'a hair tie', description: 'x' };
     expect(vomitFindings(row).join(' ')).not.toMatch(/hair tie|x$/);
+  });
+});
+
+describe('an owner-set red flag keeps the facts open (CUL-2142)', () => {
+  it('vomit: blood (fresh or older) or foreign material, present-only', () => {
+    expect(vomitRedFlagPresent({ blood_present: 'fresh_red' })).toBe(true);
+    expect(vomitRedFlagPresent({ blood_present: 'coffee_ground' })).toBe(true);
+    expect(vomitRedFlagPresent({ foreign_material_present: 'yes' })).toBe(true);
+    for (const blood of ['none_visible', 'unsure', null, undefined]) {
+      for (const foreign of ['no', 'unsure', null, undefined]) {
+        expect(vomitRedFlagPresent({ blood_present: blood, foreign_material_present: foreign })).toBe(false);
+      }
+    }
+  });
+
+  it('stool: blood, mucus or foreign material, present-only', () => {
+    expect(stoolRedFlagPresent({ stool_blood_present: 'yes' })).toBe(true);
+    expect(stoolRedFlagPresent({ stool_mucus_present: 'yes' })).toBe(true);
+    expect(stoolRedFlagPresent({ foreign_material_present: 'yes' })).toBe(true);
+    for (const v of ['no', 'unsure', null, undefined]) {
+      expect(stoolRedFlagPresent({ stool_blood_present: v, stool_mucus_present: v, foreign_material_present: v })).toBe(false);
+    }
   });
 });
 

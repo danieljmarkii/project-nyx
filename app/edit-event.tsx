@@ -8,18 +8,33 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, ChevronRight } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { BowlEditor, type BowlPickerFood, type StagedBowlFood } from '../components/log/BowlEditor';
+import { loadMealBowls, type AppBowl } from '../lib/mealBowls';
+import { componentRowName } from '../lib/mealBowlLabel';
+import { setMealComponents } from '../lib/mealComponents';
+import { applyMealScreenTrialFlag } from '../lib/mealTrialFlag';
+import { forgetFlagsSpentByEvent } from '../lib/trialContaminant';
+import { AMOUNT_UNITS, type AmountUnit } from '../lib/mealComposition';
+import { mixFoodOf } from '../lib/mixCard';
+import { bowlDetailLine } from '../lib/mixDetail';
+import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { writeOwingFloorCheck } from '../lib/incidentFloorQueue';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../lib/analysis';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
-import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
+import { uploadPhoto, compressForUpload, persistCapture, getSignedUrl } from '../lib/storage';
+import { localFileExists } from '../lib/localFile';
+import {
+  resolveEditorPhoto, needsSignedUrl, priorsToDetach, photoPickerCopy, EDITOR_PHOTO_OFFLINE_LABEL,
+  EDITOR_PHOTO_UNKNOWN_LABEL,
+  type EditorAttachmentRow,
+} from '../lib/editEventPhoto';
 import { supabase } from '../lib/supabase';
 import { foodFormatTag } from '../lib/food';
 import { useEventStore } from '../store/eventStore';
@@ -41,6 +56,30 @@ import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel 
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
 import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer } from '../components/ui';
+
+/** A bowl as the editor stages it, in position order. */
+function stagedFromBowl(bowl: AppBowl): StagedBowlFood[] {
+  return bowl.components
+    .filter((c) => c.foodItemId !== null)
+    .map((c) => ({
+      foodItemId: c.foodItemId as string,
+      foodLabel: c.foodLabel,
+      rowName: componentRowName(c),
+      share: c.share ?? c.normalizedShare ?? 0,
+      shareSource: c.shareSource === 'preset' || c.shareSource === 'amounts' ? c.shareSource : 'custom',
+      amountValue: c.amountValue,
+      amountUnit: c.amountUnit,
+    }));
+}
+
+/** What Save compares against the loaded bowl: the foods, in order, and their shares. */
+function bowlSignature(foods: readonly StagedBowlFood[]): string {
+  return foods.map((f) => `${f.foodItemId}:${f.share}`).join('|');
+}
+
+function isAmountUnit(u: string | null): u is AmountUnit {
+  return u !== null && (AMOUNT_UNITS as readonly string[]).includes(u);
+}
 
 interface CachedFood {
   id: string;
@@ -139,7 +178,15 @@ export default function EditEventModal() {
   const confidenceTouched = useRef(false);
 
   // Photo attachment
-  const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
+  // CUL-2176: the row the editor shows, whatever its local_uri. `attachmentsLoaded` gates
+  // the photo row until the read answers; `shownAttachmentIdsRef` is every row present at
+  // load, the only rows Save may remove, and the count the Replace sheet names.
+  const [existingAttachment, setExistingAttachment] = useState<EditorAttachmentRow | null>(null);
+  const [existingLocalUsable, setExistingLocalUsable] = useState(false);
+  const [existingRemoteUrl, setExistingRemoteUrl] = useState<string | null>(null);
+  const [attachmentsLoaded, setAttachmentsLoaded] = useState(false);
+  const [attachmentsFailed, setAttachmentsFailed] = useState(false);
+  const shownAttachmentIdsRef = useRef<ReadonlySet<string>>(new Set());
   const [newAttachmentUri, setNewAttachmentUri] = useState<string | null>(null);
   // Source pixel dimensions from the picker asset, kept only so the pre-upload
   // resize can cap the photo's true longest edge (B-352).
@@ -154,6 +201,14 @@ export default function EditEventModal() {
   // brand + product alone cannot say whether that is the wet or the dry of one product.
   const [currentFoodFormat, setCurrentFoodFormat] = useState<string | null>(null);
   const [showFoodPicker, setShowFoodPicker] = useState(false);
+  // Mixed meals row 5 (spec §7.1, D-M4) — a mixed bowl's foods, staged until Save. Null
+  // for a plain meal, which keeps the single food row below exactly as it was.
+  const [bowlFoods, setBowlFoods] = useState<StagedBowlFood[] | null>(null);
+  const loadedBowlRef = useRef<string | null>(null);
+  // A mix this screen must not rewrite: a food in it is gone from the library (its id was
+  // purged), the bowl is incomplete on this phone, or its read failed. Saving a staged set
+  // there would drop a food, and with it an exposure, so the foods are shown and kept.
+  const [bowlReadOnly, setBowlReadOnly] = useState<string | null>(null);
   const [foods, setFoods] = useState<CachedFood[]>([]);
 
   // WSAVA intake (B-014). Held in local state and persisted on Save —
@@ -222,7 +277,25 @@ export default function EditEventModal() {
     if (!id) return;
 
     if (config.hasFood) {
-      getMealForEvent(id).then((meal) => {
+      getMealForEvent(id).then(async (meal) => {
+        if (meal && !meal.food_item_id) {
+          // A mix names no food on its row (T2): read its bowl. A failed read leaves the
+          // bowl editor out, and Save then writes no food at all, never a single food over
+          // a mix.
+          try {
+            const bowl = (await loadMealBowls([id])).get(id) ?? null;
+            if (bowl && bowl.status === 'mix' && bowl.components.every((c) => c.foodItemId !== null)) {
+              const staged = stagedFromBowl(bowl);
+              setBowlFoods(staged);
+              loadedBowlRef.current = bowlSignature(staged);
+            } else if (bowl) {
+              setBowlReadOnly(bowlDetailLine(bowl));
+            }
+          } catch (e) {
+            console.warn('[edit-event] bowl read failed:', e);
+            setBowlReadOnly('');
+          }
+        }
         if (meal) {
           setCurrentFoodId(meal.food_item_id);
           loadedFoodRef.current = meal.food_item_id;
@@ -281,14 +354,28 @@ export default function EditEventModal() {
       }).catch(console.error);
     }
 
-    getEventAttachment(id).then((att) => {
+    getEventAttachments(id).then((rows) => {
       // FR-10 (B-054): a hydrated attachment row carries an empty local_uri (no
-      // on-device file). Don't hand '' to <Image> — treat it as absent so the
-      // edit screen shows no broken thumbnail. (The detail screen resolves the
-      // Storage signed URL; editing the photo on a download-only device is out
-      // of Phase 1 scope.)
-      if (att && att.local_uri.length > 0) setExistingAttachmentUri(att.local_uri);
-    }).catch(console.error);
+      // on-device file). It is still the record's photo (CUL-2176): treating it as
+      // absent drew "Attach a photo" over it, and Save then deleted it unseen. A
+      // missing on-device file resolves the Storage signed URL, as the record
+      // screen does; the row reads as attached while that resolves or fails.
+      shownAttachmentIdsRef.current = new Set(rows.map((r) => r.id));
+      const att = rows[0] ?? null;
+      setExistingAttachment(att);
+      const usable = att != null && att.local_uri.length > 0 && localFileExists(att.local_uri);
+      setExistingLocalUsable(usable);
+      setAttachmentsLoaded(true);
+      if (att && needsSignedUrl(att, usable)) {
+        getSignedUrl('nyx-event-attachments', att.storage_path, 60 * 60)
+          .then(setExistingRemoteUrl)
+          .catch((e) => console.warn('[edit-event] could not sign the attached photo', e));
+      }
+    }).catch((e) => {
+      // Say so rather than hide the row: the editor cannot tell attached from absent.
+      console.error(e);
+      setAttachmentsFailed(true);
+    });
 
     getEventSource(id).then(setOccurredAtSource).catch(console.error);
 
@@ -313,6 +400,18 @@ export default function EditEventModal() {
     loadFoods();
   }, [showFoodPicker]);
 
+  // The bowl editor's "Change" list: meal foods only (R1), the picker's own archive rule.
+  async function loadMixableFoods(): Promise<BowlPickerFood[]> {
+    return getDb().getAllAsync<BowlPickerFood>(
+      `SELECT id, brand, product_name, format
+       FROM food_items_cache
+       WHERE archived_at IS NULL AND food_type = 'meal' AND COALESCE(format, '') <> 'topper'
+       GROUP BY LOWER(brand), LOWER(product_name)
+       ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
+       LIMIT 30`,
+    );
+  }
+
   async function loadFoods() {
     const db = getDb();
     const rows = await db.getAllAsync<CachedFood>(
@@ -331,7 +430,8 @@ export default function EditEventModal() {
   }
 
   async function handlePickPhoto() {
-    Alert.alert('Attach photo', 'Choose a source', [
+    const copy = photoPickerCopy(shownAttachmentIdsRef.current.size);
+    Alert.alert(copy.title, copy.message, [
       {
         text: 'Take photo',
         onPress: async () => {
@@ -563,8 +663,37 @@ export default function EditEventModal() {
         });
       }
 
-      if (config.hasFood && currentFoodId) {
+      // A mixed bowl saves its whole staged set through the bowl's one writer, and only
+      // when it changed; it never takes `updateMealFood`, which would name one food on a
+      // row whose components say otherwise.
+      const bowlChanged = bowlFoods !== null && bowlSignature(bowlFoods) !== loadedBowlRef.current;
+      if (config.hasFood && bowlFoods !== null) {
+        if (bowlChanged) {
+          // CUL-2088: no card is up here, so the bowl's heads-up waits for the meal's screen.
+          await setMealComponents(id, bowlFoods.map((f) => ({
+            foodItemId: f.foodItemId,
+            foodLabel: f.foodLabel,
+            share: f.share,
+            shareSource: f.shareSource,
+            amountValue: f.amountValue,
+            amountUnit: isAmountUnit(f.amountUnit) ? f.amountUnit : null,
+          })), new Date(), { headsUp: 'meal_screen' });
+        }
+      } else if (config.hasFood && currentFoodId && bowlReadOnly === null) {
         await updateMealFood(id, currentFoodId);
+        // CUL-2087: a food this meal spent its one trial heads-up on, and no longer holds,
+        // gets the heads-up back, so its real feeding later is still warned about. The food
+        // now on the meal is kept, so an unchanged food gives nothing back. The bowl branch
+        // above gives back through its own writer. Best-effort, never failing the save: a
+        // miss only leaves the food spent, as it was before this edit.
+        await forgetFlagsSpentByEvent(id, [currentFoodId]).catch((e: unknown) => {
+          console.warn('[edit-event] trial heads-up give-back failed:', e);
+        });
+        // CUL-2088: a food changed in after the fact gets the heads-up the card would have
+        // given, as a line on the meal's screen this one returns to. Only when the food
+        // changed; after the give-back, so it reads today's ledger. Fire-and-forget: the
+        // save never waits on it.
+        if (currentFoodId !== loadedFoodRef.current) void applyMealScreenTrialFlag(id, currentFoodId);
       }
 
       // Through the shared write path, which also refreshes the Signal (CUL-1087), and
@@ -621,7 +750,9 @@ export default function EditEventModal() {
           // B-105 — capture the rows this photo supersedes before inserting it.
           // "Add" here is really a replace: the event carries one photo, and the
           // old row/file/Storage object used to be left behind entirely.
-          const priors = await getEventAttachments(id);
+          // CUL-2176: only the rows present at load, the count the Replace sheet named. A
+          // row that arrived after the editor opened stays; Save cannot remove it unseen.
+          const priors = priorsToDetach(await getEventAttachments(id), shownAttachmentIdsRef.current, attId);
           await db.runAsync(
             `INSERT OR REPLACE INTO event_attachments
                (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
@@ -702,10 +833,17 @@ export default function EditEventModal() {
         // outcomes are not editable — an absence is a different observation, not a
         // correction), so it is not restated here.
         ...(isLook ? { look_note: lookNote.trim() || null } : {}),
-        food_item_id: currentFoodId,
-        food_brand: currentFoodBrand,
-        food_product_name: currentFoodProduct,
-        food_format: currentFoodFormat,
+        // A bowl left with one food is a plain meal of it; a mix names none (T2).
+        ...(bowlFoods !== null
+          ? bowlFoods.length === 1
+            ? { food_item_id: bowlFoods[0].foodItemId }
+            : { food_item_id: null, food_brand: null, food_product_name: null, food_format: null }
+          : {
+              food_item_id: currentFoodId,
+              food_brand: currentFoodBrand,
+              food_product_name: currentFoodProduct,
+              food_format: currentFoodFormat,
+            }),
         intake_rating: intakeRating,
         ...(isMedication && dose ? { adherence, how_given: howGiven } : {}),
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
@@ -725,7 +863,8 @@ export default function EditEventModal() {
         (newAttachmentUri != null && !isReadable) ||
         // A food cleared to none writes nothing (`updateMealFood` is skipped above), so only
         // a food set to another one counts.
-        (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current);
+        (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current) ||
+        bowlChanged;
       if (!isLook && engineInputMoved) {
         // Best effort, after the edit is stored: a failed lookup never reports the save failed.
         try {
@@ -761,7 +900,15 @@ export default function EditEventModal() {
     }
   }
 
-  const displayAttachmentUri = newAttachmentUri ?? existingAttachmentUri;
+  const photoState = resolveEditorPhoto({
+    loaded: attachmentsLoaded,
+    failed: attachmentsFailed,
+    existing: existingAttachment,
+    localFileUsable: existingLocalUsable,
+    remoteUrl: existingRemoteUrl,
+    newUri: newAttachmentUri,
+  });
+  const displayAttachmentUri = photoState.kind === 'attached' ? photoState.thumbUri : null;
 
   // CUL-869 — the look's chip options, or null when there are none to draw: an
   // absence row (no words by definition), a child that has not loaded, or a pet with
@@ -898,9 +1045,19 @@ export default function EditEventModal() {
           {isLook ? null : (
             <>
           <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-          {displayAttachmentUri ? (
+          {photoState.kind === 'loading' ? null : photoState.kind === 'unknown' ? (
+            <View style={styles.photoRow}>
+              <ThemedText style={styles.photoRowText}>{EDITOR_PHOTO_UNKNOWN_LABEL}</ThemedText>
+            </View>
+          ) : photoState.kind === 'attached' ? (
             <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
-              <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+              {displayAttachmentUri ? (
+                <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+              ) : (
+                <View style={[styles.photoThumb, styles.photoThumbPending]}>
+                  <Camera size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                </View>
+              )}
               <View style={styles.photoAttachedMeta}>
                 <ThemedText style={styles.photoAttachedText}>Photo attached</ThemedText>
                 <ThemedText style={styles.photoChangeText}>Tap to view</ThemedText>
@@ -915,8 +1072,37 @@ export default function EditEventModal() {
             </>
           )}
 
+          {/* Mixed meals row 5 — a mixed bowl's foods, each with Change and Take out,
+              staged until Save (spec §7.1, D-M4). */}
+          {config.hasFood && bowlFoods !== null ? (
+            <>
+              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <BowlEditor
+                foods={bowlFoods}
+                onChange={setBowlFoods}
+                loadChoices={loadMixableFoods}
+                toStaged={(food, replacing) => ({
+                  ...replacing,
+                  ...mixFoodOf({ id: food.id, brand: food.brand, product_name: food.product_name, format: food.format }),
+                })}
+              />
+            </>
+          ) : null}
+
+          {config.hasFood && bowlReadOnly !== null ? (
+            <>
+              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              {bowlReadOnly ? <ThemedText style={styles.foodProduct}>{bowlReadOnly}</ThemedText> : null}
+              <ThemedText style={styles.foodBrand}>
+                {bowlReadOnly
+                  ? 'One of these foods isn’t on this phone, so the bowl’s foods can’t be changed here. Everything else saves as usual.'
+                  : 'This bowl’s foods didn’t load, so they can’t be changed here. Everything else saves as usual.'}
+              </ThemedText>
+            </>
+          ) : null}
+
           {/* Food (meal events only) */}
-          {config.hasFood ? (
+          {config.hasFood && bowlFoods === null && bowlReadOnly === null ? (
             <>
               <SectionLabel label="Food" style={{ marginTop: theme.space3, marginBottom: 4 }} />
               <TouchableOpacity
@@ -1020,7 +1206,7 @@ export default function EditEventModal() {
                       </ThemedText>
                     ) : null}
                   </View>
-                  <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                  <ChevronRight size={18} color={colorRoles.action.onLight} strokeWidth={2} />
                 </TouchableOpacity>
               ) : (
                 <View style={styles.foodRow}>
@@ -1160,6 +1346,7 @@ export default function EditEventModal() {
       <PhotoViewer
         visible={photoViewerVisible}
         uris={[displayAttachmentUri ?? null]}
+        unavailableLabel={EDITOR_PHOTO_OFFLINE_LABEL}
         onClose={() => setPhotoViewerVisible(false)}
         onReplace={() => { setPhotoViewerVisible(false); handlePickPhoto(); }}
       />
@@ -1243,6 +1430,12 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: theme.radiusSmall,
+  },
+  photoThumbPending: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
   },
   photoAttachedMeta: {
     flex: 1,

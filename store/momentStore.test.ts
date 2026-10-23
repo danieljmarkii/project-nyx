@@ -270,6 +270,21 @@ describe('momentStore', () => {
     expect(p.trialFlag.proteins).toEqual(['chicken']);
   });
 
+  it('patchTrialFlag never replaces a heads-up the card already shows (CUL-2053)', () => {
+    // A bowl edited on a showing card re-runs the heads-up; replacing the first flag would
+    // leave its food spent with nothing for Undo to forget.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-two' }));
+    expect(useMomentStore.getState().patchTrialFlag('e-two', {
+      kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'a',
+    })).toBe(true);
+    expect(useMomentStore.getState().patchTrialFlag('e-two', {
+      kind: 'off_diet_protein', proteins: ['beef'], trialProteins: ['duck'], trialId: 't1', foodId: 'b',
+    })).toBe(false);
+    const p = useMomentStore.getState().payload;
+    if (p?.kind !== 'meal') throw new Error('expected meal payload');
+    expect(p.trialFlag?.foodId).toBe('a');
+  });
+
   it('patchTrialFlag lands a MEMBERSHIP flag (B-693) with its trial day-math intact', () => {
     // The rung-3 flag rides the same store path as the contents one; it carries the
     // trial's start/target so the card can build the shipped add sheet. The store

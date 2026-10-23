@@ -29,13 +29,13 @@ jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet:
 // Design v2's month is drawn by its own suites; here it only reports the trial mark it
 // was handed, which is the one thing it reads from the trial loader.
 const mockTrialMarks: unknown[] = [];
-jest.mock('../../components/designV2/patterns/MonthInstrument', () => ({
+jest.mock('../../components/surfaces/patterns/MonthInstrument', () => ({
   MonthInstrument: ({ trialMark }: { trialMark: unknown }) => {
     mockTrialMarks.push(trialMark);
     return null;
   },
 }));
-jest.mock('../../components/designV2/patterns/WeightCard', () => ({ WeightCard: () => null }));
+jest.mock('../../components/surfaces/patterns/WeightCard', () => ({ WeightCard: () => null }));
 
 // The trial loader's READ. The hook around it is the real one.
 const mockLoadTrialFacts = jest.fn();

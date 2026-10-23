@@ -117,7 +117,7 @@ jest.mock('../../lib/dietTrialSetup', () => ({
   changeTrialWindow: jest.fn(),
 }));
 // The sheets are TS-3's and tested there; stubbed so this suite can drive the hand-off.
-let lastSheetsProps: { onReplaceTrial: () => void; lifecycle: { manageVisible: boolean } } | null = null;
+let lastSheetsProps: { onReplaceTrial: () => void; lifecycle: { manageVisible: boolean; completionEntry?: string | null } } | null = null;
 jest.mock('../trial/TrialLifecycleSheets', () => ({
   TrialLifecycleSheets: (props: { onReplaceTrial: () => void; lifecycle: { manageVisible: boolean } }) => {
     lastSheetsProps = props;
@@ -250,6 +250,26 @@ describe('the route, app/trial/[pet]', () => {
 });
 
 // ── S1: the pet comes from the route ─────────────────────────────────────────
+
+// CUL-2084 — the meal card's "+ End the trial" arrives with ?open=end and lands on the
+// completion sheet's outcome step, once; a plain arrival opens nothing.
+describe('the end-trial door from the meal card', () => {
+  it('?open=end opens the completion sheet on its outcome step, and only once', async () => {
+    mockParams = { pet: 'p1', open: 'end' };
+    const view = await renderRoute();
+    expect(lastSheetsProps?.lifecycle.completionEntry).toBe('complete');
+    act(() => (lastSheetsProps!.lifecycle as unknown as { closeCompletion: () => void }).closeCompletion());
+    view.rerender(<TrialRoute />);
+    await act(async () => {});
+    expect(lastSheetsProps?.lifecycle.completionEntry).toBeNull();
+  });
+
+  it('a plain arrival opens no sheet', async () => {
+    mockParams = { pet: 'p1' };
+    await renderRoute();
+    expect(lastSheetsProps?.lifecycle.completionEntry ?? null).toBeNull();
+  });
+});
 
 describe('the route’s pet (S1, C-9)', () => {
   it('reads and names the route’s pet while another is active, and never switches the active pet', async () => {

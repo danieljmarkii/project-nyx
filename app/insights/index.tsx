@@ -35,15 +35,15 @@ import { TrialSoFarCard } from '../../components/dashboard/TrialSoFarCard';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhatYouNoticedCard } from '../../components/dashboard/WhatYouNoticedCard';
 import { useDietTrial } from '../../hooks/useDietTrial';
-import { isAnimalNotEating } from '../../lib/dietTrialCard';
+import { notEatingFact } from '../../lib/dietTrialCard';
 import { lookCardLive } from '../../lib/lookCard';
 import { loadLookDays, loadVomitLocalDays } from '../../lib/looks';
 import { LOOK_PAIRING_ON_PATTERNS } from '../../lib/lookPairing';
 import { loadLookWithheldFacts, lookWithheld } from '../../lib/lookWithheld';
 import { buildNoticedCard, noticedCardHref, type NoticedCardModel } from '../../lib/lookPatterns';
 import { localDayIndex, dayKeyFromIndex, toLocalDayKey } from '../../lib/utils';
-import { MonthInstrument } from '../../components/designV2/patterns/MonthInstrument';
-import { WeightCard } from '../../components/designV2/patterns/WeightCard';
+import { MonthInstrument } from '../../components/surfaces/patterns/MonthInstrument';
+import { WeightCard } from '../../components/surfaces/patterns/WeightCard';
 import { trialStartDayKey } from '../../lib/trialWindowDates';
 import { dateWord } from '../../lib/chartCopy';
 import type { WeightReading } from '../../lib/weight';
@@ -108,7 +108,10 @@ export default function PatternsScreen() {
   // Null whenever Noticed is not live, where nothing reads it: it is one of `load`'s
   // deps, so a trial read answering for the month's mark alone would otherwise re-key
   // `load` and re-run the whole dashboard read through the focus effect.
-  const trialNotEating = noticedLive && trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
+  // `notEatingFact`, as Home's: a trial read whose eating check did not answer is null
+  // (CUL-2006), so the withheld predicate fails closed on it while the door, reading
+  // `=== true`, stays shut.
+  const trialNotEating = noticedLive && trialFactsFresh && trialInput ? notEatingFact(trialInput) : null;
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [cards, setCards] = useState<DashboardCard[]>([]);

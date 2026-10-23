@@ -2,7 +2,6 @@ import {
   isValidEmail,
   emailError,
   passwordError,
-  requiredNameError,
   MIN_PASSWORD_LENGTH,
 } from './authValidation';
 
@@ -52,17 +51,5 @@ describe('passwordError', () => {
     // A password of exactly MIN spaces is long enough; we never strip it, unlike
     // the email/name fields where surrounding whitespace is noise.
     expect(passwordError(' '.repeat(MIN_PASSWORD_LENGTH))).toBeNull();
-  });
-});
-
-describe('requiredNameError', () => {
-  it('is null once a non-blank name is present', () => {
-    expect(requiredNameError('Jordan', 'first name')).toBeNull();
-    expect(requiredNameError('  Rivera  ', 'last name')).toBeNull();
-  });
-
-  it('names the specific field so a two-field row is unambiguous', () => {
-    expect(requiredNameError('', 'first name')).toBe('Add your first name');
-    expect(requiredNameError('   ', 'last name')).toBe('Add your last name');
   });
 });

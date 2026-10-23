@@ -12,6 +12,13 @@
 //   • .../generate-signal/demoStory.detection.test.ts — proves ①+② fire (Deno)
 //   • scripts/demo/demoStory.test.ts         — proves off-diet + SQL shape (jest)
 //
+// NO PHOTO, NO AI READ (D13 (a), PM 2026-10-12, CUL-1825 / CUL-1848). The demo
+// account never answers the AI consent screen (no role can delete a consent row,
+// migration 100), so the reviewer meets it live; a read on an account that never
+// said yes would look like one made without consent. The story therefore seeds no
+// photo, and `retired` names the photo slot the 2026-08 story carried so the
+// emitter can remove what the first live run left behind (see emitSeedSql.ts).
+//
 // It is deliberately SELF-CONTAINED — it imports nothing from the detection
 // engine or lib/dietTrial, and defines its own row types. That keeps it valid in
 // BOTH type-check graphs it lives in (the app's `tsc`, which includes
@@ -130,6 +137,8 @@ export interface DemoTrial {
   targetProteinSetDayOffset: number;
   /** Legacy display food_item_id (§4.1 — no computation reads it). */
   primaryFoodId: string;
+  /** diet_trials.vet_visit_id — provenance only; no count or engine input reads it (066). */
+  vetVisitId: string;
 }
 
 export interface DemoAllowedFood {
@@ -141,11 +150,38 @@ export interface DemoAllowedFood {
   allowedFromDayOffset: number;
 }
 
-export interface DemoPhoto {
+/**
+ * The photo slot the 2026-08 story seeded on the D-3 vomit, retired by D13 (a). Its
+ * metadata row reached production (pointing at an object that was never uploaded)
+ * and an analyze-vomit call on that event left one read. The emitter deletes both,
+ * by these exact ids, every run; on any run after the first it deletes nothing.
+ */
+export interface DemoRetiredPhoto {
+  /** The old event_attachments id: uuidV5('attachment:vomit-d-3', petId). */
   attachmentId: string;
-  /** Stable, deterministic bucket path — survives every re-seed (§8, R-7). */
-  storagePath: string;
-  mimeType: string;
+  /** The vomit whose event_ai_analysis row goes with it. */
+  eventId: string;
+}
+
+/** The logged visit that started the trial (vet_visits). `visited_at` is a DATE. */
+export interface DemoVetVisit {
+  id: string;
+  visitedDayOffset: number;
+  clinicName: string;
+  vetName: string;
+  reason: string;
+  notes: string;
+  /** vet_visits.next_visit_at — the booked recheck's day. */
+  nextVisitDayOffset: number;
+}
+
+/** The booked recheck (vet_appointments). Upcoming, so `vet_visit_id` stays NULL. */
+export interface DemoAppointment {
+  id: string;
+  scheduled: TimeSpec;
+  clinicName: string;
+  vetName: string;
+  reason: string;
 }
 
 export interface DemoMealDetail {
@@ -172,8 +208,6 @@ export interface DemoEvent {
   meal?: DemoMealDetail;
   /** Present iff kind === 'weight_check'. */
   weight?: { weightCheckId: string; weightKg: number };
-  /** The one Tier-2 benign photo (D-3 vomit only). Its bytes + AI read land LIVE (§9, R-9). */
-  photo?: DemoPhoto;
 }
 
 export interface DemoStory {
@@ -185,6 +219,9 @@ export interface DemoStory {
   trial: DemoTrial;
   allowedFoods: DemoAllowedFood[];
   events: DemoEvent[];
+  visit: DemoVetVisit;
+  appointment: DemoAppointment;
+  retired: DemoRetiredPhoto;
 }
 
 export interface DemoStoryParams {
@@ -217,8 +254,8 @@ const TRIAL_TARGET_DURATION_DAYS = 42;
 const BEEF_EXPOSURE_DAYS = [-16, -12, -8, -3];
 /**
  * Per-vomit occurred-at confidence (§5 realism — some witnessed, some discovered).
- * D-3 stays `witnessed` (it carries the photo). Inert to the two committed findings
- * (①–④ ignore confidence) and keeps the timing lanes ⑤/⑥ silent (≥3/≥5 witnessed).
+ * D-3 stays `witnessed` (it carried the retired photo slot; kept so the live row does
+ * not move). Inert to the two committed findings (①–④ ignore confidence) and keeps the timing lanes ⑤/⑥ silent (≥3/≥5 witnessed).
  */
 const VOMIT_CONFIDENCE = new Map<number, OccurredAtConfidenceValue>([
   [-16, 'estimated'],
@@ -230,8 +267,23 @@ const VOMIT_CONFIDENCE = new Map<number, OccurredAtConfidenceValue>([
 const DIP_DAYS = [-1, 0];
 const WEIGHT_DAYS = [-20, -6];
 const STOOL_DAYS = [-14, -7];
-/** The one photographed vomit (§3.2) — benign, feeds the Tier-2 per-incident read. */
-const PHOTO_VOMIT_DAY = -3;
+/** The vomit that carried the retired photo slot (D13 (a)); its leftovers are removed. */
+const RETIRED_PHOTO_VOMIT_DAY = -3;
+/**
+ * The visit that started the trial: before the transition (D-25) and before every
+ * seeded event (D-21), because the report's "since your visit" window starts on the
+ * latest visit before today (lib/visitWindow.ts). A visit inside the record would cut
+ * the D-20 weight and the first venison days out of the vet report.
+ */
+const VISIT_DAY = -26;
+/**
+ * The booked recheck, three days out: inside Home's five-day appointment window
+ * (APPOINTMENT_WINDOW_DAYS, lib/vetVisits.ts) on the seed day and still upcoming after
+ * the 24–48h re-seed cadence (§8). 14:00 UTC is a morning in every US zone.
+ */
+const APPOINTMENT = { dayOffset: 3, hour: 14, minute: 0 };
+const CLINIC_NAME = 'Maple Street Veterinary Clinic';
+const VET_NAME = 'Dr. Rivera';
 
 /** Meal times of day (UTC). 08:00 + 18:00 both sit inside a 19:00 vomit's 12h window. */
 const MEAL_AM = { hour: 8, minute: 0 };
@@ -292,6 +344,7 @@ export function buildDemoStory(params: DemoStoryParams): DemoStory {
     targetProtein: 'venison',
     targetProteinSetDayOffset: TRIAL_STARTED_DAY,
     primaryFoodId: venison.id,
+    vetVisitId: id(petId, 'vet-visit-start'),
   };
 
   const allowedFoods: DemoAllowedFood[] = [
@@ -359,29 +412,18 @@ export function buildDemoStory(params: DemoStoryParams): DemoStory {
     });
 
     const vomitSlot = `vomit-d${d}`;
-    const vomit: DemoEvent = {
+    events.push({
       eventId: id(petId, `event:${vomitSlot}`),
       slotKey: vomitSlot,
       kind: 'vomit',
       time: { dayOffset: d, ...VOMIT_TIME },
       // §5 asks for a realistic mix (some witnessed, some discovered). A vomit is
-      // often found later, so alternate — the photographed D-3 vomit stays
+      // often found later, so alternate — the D-3 vomit (the retired photo slot) stays
       // 'witnessed'. This is inert to ①/② (detectors ①–④ ignore confidence) and
       // keeps ⑤/⑥ suppressed (they need ≥3/≥5 WITNESSED onsets; this leaves 2).
       occurredAtConfidence: VOMIT_CONFIDENCE.get(d) ?? 'witnessed',
       severity: 2,
-    };
-    if (d === PHOTO_VOMIT_DAY) {
-      // The one Tier-2 photo slot. The seed writes only this METADATA row + stable
-      // path; the benign image bytes + the analyze-vomit read land LIVE, in-app, at
-      // runbook step 3 (§9, R-9) — the seed never fabricates an AI verdict (§5).
-      vomit.photo = {
-        attachmentId: id(petId, `attachment:${vomitSlot}`),
-        storagePath: `${petId}/demo-seed/vomit-d3.jpg`,
-        mimeType: 'image/jpeg',
-      };
-    }
-    events.push(vomit);
+    });
   }
 
   // ── Two weights (a trend + a coloured verdict) (§3.2) ──────────────────────
@@ -412,6 +454,35 @@ export function buildDemoStory(params: DemoStoryParams): DemoStory {
     });
   }
 
+  // ── The visit that started the trial, and the booked recheck ───────────────
+  // Owner-written text, as an owner would type it after the visit. It states the
+  // plan, never an exam verdict: a visit note that said "all normal" would be a
+  // reassurance the record cannot check.
+  const visit: DemoVetVisit = {
+    id: trial.vetVisitId,
+    visitedDayOffset: VISIT_DAY,
+    clinicName: CLINIC_NAME,
+    vetName: VET_NAME,
+    reason: 'Vomiting on and off for about a month',
+    notes:
+      'Start a venison elimination diet. Switch over about a week, then venison food only: ' +
+      'no treats, chews or table food. Log meals and any vomiting. Recheck in about four weeks.',
+    nextVisitDayOffset: APPOINTMENT.dayOffset,
+  };
+  const appointment: DemoAppointment = {
+    id: id(petId, 'vet-appointment-recheck'),
+    scheduled: APPOINTMENT,
+    clinicName: CLINIC_NAME,
+    vetName: VET_NAME,
+    reason: 'Diet trial recheck',
+  };
+
+  const retiredVomitSlot = `vomit-d${RETIRED_PHOTO_VOMIT_DAY}`;
+  const retired: DemoRetiredPhoto = {
+    attachmentId: id(petId, `attachment:${retiredVomitSlot}`),
+    eventId: id(petId, `event:${retiredVomitSlot}`),
+  };
+
   return {
     userId,
     petId,
@@ -421,5 +492,8 @@ export function buildDemoStory(params: DemoStoryParams): DemoStory {
     trial,
     allowedFoods,
     events,
+    visit,
+    appointment,
+    retired,
   };
 }

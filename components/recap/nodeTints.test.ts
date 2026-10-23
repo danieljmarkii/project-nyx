@@ -16,9 +16,9 @@ describe('recap node tints', () => {
     expect(NODE_TINT_DAY.symptom).toBe(theme.colorEventSymptom);
   });
 
-  it('meal teal carries over to night unchanged', () => {
+  it('meal is the bright teal on night and the glyph teal on day (CUL-1666)', () => {
     expect(NODE_TINT_NIGHT.meal).toBe(theme.colorEventMeal);
-    expect(NODE_TINT_DAY.meal).toBe(theme.colorEventMeal);
+    expect(NODE_TINT_DAY.meal).toBe(theme.colorAccentGlyph);
   });
 
   it('every category has a day and a night tint', () => {

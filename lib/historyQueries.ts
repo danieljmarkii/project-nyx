@@ -43,6 +43,8 @@
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { getDb, type TimelineRow } from './db';
+import { bowlFoodType, loadMealBowls } from './mealBowls';
+import { withMealBowls } from './todayEventsQuery';
 import { readFreeFedIntakeSpans } from './analytics';
 import {
   buildDayFacts,
@@ -250,7 +252,15 @@ async function readDayFactsInput(
     readRegimens(petId),
     readFreeFedIntakeSpans(petId),
   ]);
-  const population = rows.map(toPopulationRow);
+  // MIXED BOWLS (CUL-2053): a mix's food type is the bowl's, and its same-minute group is
+  // its composition, the report's key (`lib/sameMinuteDuplicates.ts`).
+  const bowls = await loadMealBowls(rows.filter((r) => r.event_type === 'meal').map((r) => r.id), db);
+  const population = rows.map((r) => {
+    const row = toPopulationRow(r);
+    const bowl = bowls.get(r.id);
+    if (!bowl) return row;
+    return { ...row, foodType: bowlFoodType(bowl.components.map((c) => c.food?.foodType ?? null)), bowlKey: bowl.compositionKey };
+  });
   return {
     population,
     input: {
@@ -627,8 +637,10 @@ async function readDays(
       })),
     regimens,
   );
+  // MIXED BOWLS (CUL-2053): each mix carries its bowl, the row's one source for its foods.
+  const rows = await withMealBowls(getDb(), raw);
   const byDay = new Map<string, HistoryRow[]>();
-  for (const r of raw) {
+  for (const r of rows) {
     // A look sits on its own `local_day`, the day the facts' `looked` reads; every other
     // row on the local day of its parsed instant.
     const day = r.event_type === LOOK_EVENT_TYPE && isDayKey(r.look_local_day) ? r.look_local_day : dayOfInstant(r.occurred_at);

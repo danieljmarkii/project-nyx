@@ -53,28 +53,109 @@ export type SignedOutRoute = {
   armBanner: boolean;
 };
 
-// During the recovery EXCHANGE WINDOW — from when the handler nulls the store
-// session (§6.4 step 3) until the exchange resolves — the ONLY session that may enter
-// the store is the exchange's own (the new owner, B). auth-js emits it as
-// `PASSWORD_RECOVERY`: `resetPasswordForEmail` stores the PKCE verifier with a
-// `/recovery` suffix, and the exchange names its event from that suffix (CUL-1886;
-// admitting only `SIGNED_IN` dropped B, so every reset timed out). Every auth-js path
-// that emits `PASSWORD_RECOVERY` carries a session the server just minted for the
-// presented code, never the stored one. `SIGNED_IN` is refused: `_recoverAndRefresh`
-// emits it carrying the STORED session, so on a cold start from a reset link it can be
-// the pre-recovery owner (A), and a successful recovery exchange never emits it (its
-// code only matches a `/recovery` verifier). `TOKEN_REFRESHED` / `INITIAL_SESSION` in
-// that window are A too, whose auth-js tokens are still live and whose `autoRefresh`
-// can fire mid-flush. Adopting any of them would render the set-password form against
-// A, the Trap-2 sub-window (rls-privacy re-reviews, B-280, CUL-1886). Pure +
-// unit-tested. The window is bounded by `recoveryExchangePending`, which a RESUME
-// (row 21) never sets, so a resumed session is adopted normally.
-export function shouldAdoptSessionDuringRecovery(
-  event: string,
-  recoveryExchangePending: boolean,
-): boolean {
-  if (!recoveryExchangePending) return true;
-  return event === 'PASSWORD_RECOVERY';
+// What the root listener does with a session auth-js emits while a reset may be under
+// way. Pure + unit-tested.
+//
+// - Inside the EXCHANGE WINDOW (from when the handler nulls the store session, §6.4
+//   step 3, until the exchange resolves) it adopts NOTHING ('refuse'). The only session
+//   that may enter the store is the one `exchangeCodeForSession` RETURNED, and the
+//   recovery handler adopts that itself (`lib/recoveryDeepLink.ts`), so adoption no
+//   longer rests on what an event is called. Keying on the name failed twice: admitting
+//   only `SIGNED_IN` dropped B, because auth-js names a reset exchange
+//   `PASSWORD_RECOVERY` (CUL-1886), and admitting a name admits ANY emission carrying
+//   it, so a `SIGNED_IN` / `PASSWORD_RECOVERY` for the pre-recovery owner (A) resolving
+//   inside the window would render the set-password form against A (CUL-1205 O2).
+// - With the gate armed and the window closed, it adopts only the user the reset is
+//   for (`recoveryUserId`, pinned by the exchange or by a resume). A RESUME sets no
+//   window, so this is what keeps the retain branch's later `TOKEN_REFRESHED` for A off
+//   the form (CUL-1973): anyone else ends the reset ('abandon') rather than waiting.
+// - Otherwise normal auth, untouched ('adopt').
+export type RecoveryAdoption = 'adopt' | 'refuse' | 'abandon';
+
+export function recoveryAdoption(input: {
+  recoveryExchangePending: boolean;
+  recoveryInProgress: boolean;
+  recoveryUserId: string | null;
+  sessionUserId: string;
+}): RecoveryAdoption {
+  if (input.recoveryExchangePending) return 'refuse';
+  if (input.recoveryInProgress && input.sessionUserId !== input.recoveryUserId) return 'abandon';
+  return 'adopt';
+}
+
+// CUL-1971: run the cold start's reads behind the sign-out epoch. A sign-out that
+// starts while they are in flight (a revoked token's SIGNED_OUT landing between
+// getSession resolving and the gate read) has already begun the wipe; adopting what
+// was read before it would put the old account back mid-wipe and start a sync the
+// per-session fence cannot see, since it captures the already-bumped epoch.
+// `wipeLocalSession` bumps the epoch synchronously, before its first await, so a moved
+// epoch means the SIGNED_OUT handler owns the session and the routing: resolves null,
+// and the caller adopts nothing. The epoch reader is injected so this stays testable.
+export async function readUnlessSignedOut<T>(
+  epoch: () => number,
+  reads: () => Promise<T>,
+): Promise<T | null> {
+  const before = epoch();
+  const result = await reads();
+  return epoch() === before ? result : null;
+}
+
+// Whether a reset running in THIS process owns the session, so the cold start writes
+// and routes nothing (rls-privacy-reviewer, CUL-1973). A warm recovery link that lands
+// while the cold start's reads are in flight has its flush queued on auth-js's lock
+// behind the cold start's getSession, so its wipe (and the epoch bump) can come after
+// the reads resolve; adopting their session then would land inside its exchange window.
+export function recoveryOwnsColdStart(store: {
+  recoveryExchangePending: boolean;
+  recoveryInProgress: boolean;
+}): boolean {
+  return store.recoveryExchangePending || store.recoveryInProgress;
+}
+
+// CUL-1973: the persisted recovery gate says a reset is under way, not whose session the
+// keychain holds. The phase beside it (`lib/recoveryDeepLink.ts`) does: `exchanging`
+// until the handler adopts B, then `exchanged` naming B. A missing or unreadable phase
+// is read as `exchanging`.
+export type RecoveryPhase = { kind: 'exchanging' } | { kind: 'exchanged'; userId: string };
+
+// What a cold start with the gate ARMED does. Pure + unit-tested; `initColdStart`
+// (app/_layout.tsx) only carries it out.
+//
+// - 'resume-form'   — a live session that IS the user the exchange adopted: the
+//                     set-password form, with that user pinned (§10 row 21).
+// - 'await-refresh' — the retain case (a transient refresh failure) after an adopted
+//                     exchange: wait for autoRefresh, adopting only that user.
+// - 'reconcile'     — anything else, the process death between arming and adopting
+//                     among them: the keychain may hold the previous owner, so end the
+//                     reset the FR-15 way and never render the form.
+// - 'release'       — nothing stored at all: nothing to resume or to purge.
+export type ColdStartResume =
+  | { action: 'resume-form'; userId: string }
+  | { action: 'await-refresh'; userId: string; dropStoreSession: boolean }
+  | { action: 'reconcile' }
+  | { action: 'release' };
+
+// `storeSessionUserId` is whoever the store already holds: the listener can adopt the
+// stored session before the gate has loaded, and on 'await-refresh' anyone but the
+// pinned user is dropped so the form waits for the pinned user's refresh.
+export function coldStartResume(input: {
+  sessionUserId: string | null;
+  storeSessionUserId: string | null;
+  decision: ColdStartDecision;
+  phase: RecoveryPhase;
+}): ColdStartResume {
+  const { sessionUserId, storeSessionUserId, decision, phase } = input;
+  if (decision === 'to-auth') return { action: 'release' };
+  if (phase.kind !== 'exchanged') return { action: 'reconcile' };
+  if (decision === 'retain') {
+    return {
+      action: 'await-refresh',
+      userId: phase.userId,
+      dropStoreSession: storeSessionUserId !== null && storeSessionUserId !== phase.userId,
+    };
+  }
+  if (sessionUserId === phase.userId) return { action: 'resume-form', userId: phase.userId };
+  return { action: 'reconcile' };
 }
 
 export function signedOutRoute(input: {

@@ -152,6 +152,8 @@ export default function PaywallScreen() {
         <View style={styles.features}>
           {PREMIUM_FEATURES.map((feature) => (
             <View key={feature} style={styles.featureRow}>
+              {/* Ground: colorSurfaceDark, where the bright teal reads (8.26:1, pinned in
+                  theme.contrast.test.ts). A fact about what Plus holds, so teal (CUL-1666). */}
               <Check size={18} color={theme.colorAccent} strokeWidth={2.5} />
               <ThemedText style={styles.featureText}>{feature}</ThemedText>
             </View>

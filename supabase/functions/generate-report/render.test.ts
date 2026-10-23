@@ -21,7 +21,7 @@ import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { deriveWindowChange } from './trial.ts'
 import { expectedFailure } from './expectedFailure.testutil.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
-import { REPORT_SYMPTOM_TYPES } from './report.ts'
+import { REPORT_SYMPTOM_TYPES, UNLOGGED_TAIL_MIN_DAYS } from './report.ts'
 import type {
   ReportSnapshot,
   SafetyFlag,
@@ -228,6 +228,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     },
     clinicalQuestion: { question: 'symptom_monitoring', primarySymptom: null },
     safetyFlags: [],
+    safetyChecks: [],
     weight: { isEmpty: true, latest: null, trend: null },
     atAGlance: {
       primarySymptom: null,
@@ -241,7 +242,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       daysSinceLastEpisode: null,
       loggedDaysSinceLastEpisode: null,
       firstHalfLoggedDays: 0,
-      secondHalfLoggedDays: 0,
+      secondHalfLoggedDays: 0, unloggedTailDays: 0, lastLoggedDate: null,
     },
     symptoms: [],
     vomitPhenotype: null,
@@ -310,7 +311,18 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
   }
 }
 
-function aggregate(over: Partial<SymptomAggregate> & { type: SymptomAggregate['type'] }): SymptomAggregate {
+// CUL-1995 — a hand-built pair may omit `thinWeeks`, which defaults to none: every pre-CUL-1995
+// fixture describes a report whose weeks were all logged. A fixture exercising the thin-week rule
+// states its own.
+type HalvesFixture = Omit<NonNullable<SymptomAggregate['trendHalves']>, 'thinWeeks'> & {
+  thinWeeks?: NonNullable<SymptomAggregate['trendHalves']>['thinWeeks']
+}
+type AggregateFixture = Omit<Partial<SymptomAggregate>, 'trendHalves'> & {
+  type: SymptomAggregate['type']
+  trendHalves?: HalvesFixture | null
+}
+
+function aggregate(over: AggregateFixture): SymptomAggregate {
   return {
     type: over.type,
     count: over.count ?? 1,
@@ -329,7 +341,9 @@ function aggregate(over: Partial<SymptomAggregate> & { type: SymptomAggregate['t
     // B-532 — the delta no longer derives itself from `weeklyBuckets`, so a fixture that
     // wants one states it. Default null (no delta), which is the honest default for a
     // hand-built aggregate: the halves are a window partition, not a property of the bars.
-    trendHalves: over.trendHalves ?? null,
+    trendHalves: over.trendHalves ? { thinWeeks: { first: [], last: [] }, ...over.trendHalves } : null,
+    bucketDays: over.bucketDays ?? (over.weeklyBuckets ?? [1]).map(() => 7),
+    lateLogged: over.lateLogged ?? null,
   }
 }
 
@@ -1004,7 +1018,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0, lastLoggedDate: null },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -2090,7 +2104,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       daysSinceLastEpisode: 9,
       loggedDaysSinceLastEpisode: 2,
       firstHalfLoggedDays: 3,
-      secondHalfLoggedDays: 37,
+      secondHalfLoggedDays: 37, unloggedTailDays: 0, lastLoggedDate: null,
     },
     diet: {
       trialTargetProtein: null,
@@ -2135,6 +2149,60 @@ Deno.test('R2-2 ADVERSARIAL — the days-since-last-episode tile never reads as 
   // A LONG, fully-logged gap gets the MOST emphatic caveat, never the thinnest (adversarial residual).
   const longGap = renderReport(monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, daysSinceLastEpisode: 40, loggedDaysSinceLastEpisode: 40 } }))
   assert.ok(/a gap is not evidence the signs resolved/.test(longGap), 'a long well-logged gap gets the strongest non-recovery caveat')
+})
+
+Deno.test('CUL-2101 — the since-onset count names an unlogged tail from the floor, and only from it', () => {
+  const at = (unloggedTailDays: number) =>
+    renderReport(monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, unloggedTailDays } }))
+  const none = at(0)
+  // Below the floor the tile is the feature's absence, byte for byte.
+  assert.equal(at(UNLOGGED_TAIL_MIN_DAYS - 1), none, 'a tail under the floor renders nothing')
+  const named = renderReport(
+    monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, unloggedTailDays: 7, lastLoggedDate: '2026-06-25' } }),
+  )
+  assert.ok(
+    named.includes('on <span class="num">18</span> of <span class="num">46</span> days<br/>no event of any kind logged after Jun 25'),
+    'the tail is named, by date, on the count it spans',
+  )
+  assert.ok(!none.includes('no event of any kind logged'), 'no tail, no clause')
+})
+
+Deno.test('CUL-2101 — "none logged" on a no-symptom monitoring report names a tail nobody logged anything in', () => {
+  const quiet = (unloggedTailDays: number) =>
+    renderReport(
+      monitoringSnap({
+        symptoms: [],
+        atAGlance: { ...monitoringSnap().atAGlance, primarySymptom: null, totalSymptomIncidents: 0, sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, unloggedTailDays, lastLoggedDate: '2026-06-11' },
+      }),
+    )
+  assert.ok(quiet(21).includes('none logged in this window<br/>no event of any kind logged after Jun 11'), 'the tail rides the empty count')
+  assert.equal(quiet(UNLOGGED_TAIL_MIN_DAYS - 1), quiet(0), 'under the floor: the absence')
+})
+
+Deno.test('CUL-2101 adv 2 — the trend tile and a below-floor rise name a tail their last week spans', () => {
+  const tailed = { ...monitoringSnap().atAGlance, unloggedTailDays: 3, lastLoggedDate: '2026-06-29' }
+  const belowFloor = {
+    kind: 'worsening' as const,
+    symptomType: 'diarrhea' as const,
+    windowDays: 7,
+    state: 'below_card_floor' as const,
+    minEpisodes: 3,
+    currentLoggingDays: 4,
+    priorLoggingDays: 7,
+    minLoggingDays: 3,
+  }
+  const at = (atAGlance: typeof tailed) => renderReport(monitoringSnap({ atAGlance, safetyChecks: [belowFloor] }))
+  const html = at(tailed)
+  assert.ok(
+    /Entries, first &rarr; last half<br\/>[^<]*(<span[^>]*>[^<]*<\/span>[^<]*)*<br\/>no event of any kind logged after Jun 29 \(the last <span class="num">3<\/span> days\)/.test(html),
+    'the trend tile names the tail its last half spans',
+  )
+  assert.ok(
+    html.includes('below the <span class="num">3</span> the flag needs; no event of any kind logged after Jun 29 (the last <span class="num">3</span> days).'),
+    'a below-floor rise names the tail the missing episode could sit in',
+  )
+  const none = at({ ...tailed, unloggedTailDays: 0 })
+  assert.ok(!none.includes('no event of any kind logged'), 'no tail, no clause')
 })
 
 Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
@@ -2285,7 +2353,7 @@ Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲
 
 /** The chart SVG only — a page-wide `includes` cannot tell a chart glyph from a prose word. */
 function firstChart(html: string): string {
-  const m = /<svg viewBox="0 0 648 158".*?<\/svg>/s.exec(html)
+  const m = /<svg viewBox="0 0 648 162".*?<\/svg>/s.exec(html)
   assert.ok(m, 'the fixture renders a symptom chart')
   return m[0]
 }
@@ -2972,7 +3040,7 @@ Deno.test('B-499 — the correlation line never dead-ends at appendix C (no corr
   assert.ok(/established association threshold/.test(text(established)), 'the finding still renders, with its inline stats')
   assert.ok(!/Detail in appendix/.test(established), 'the established correlation line has no dead-end appendix-C pointer')
   const nullResult = renderReport(base({ correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] } }))
-  assert.ok(/No single food\/protein reached the established correlation threshold/.test(text(nullResult)), 'the null line renders')
+  assert.ok(/No food or protein reached the established association threshold over this window/.test(text(nullResult)), 'the null line renders')
   assert.ok(!/Detail in appendix/.test(nullResult), 'the null correlation line has no dead-end appendix-C pointer either')
 })
 
@@ -3794,7 +3862,7 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
   // Names the real provenance — an automated read of an owner's photo, not a human
   // transcription — and tells the reader to confirm against the bag.
   assert.ok(/automated read of the owner&rsquo;s photo/.test(html), 'provenance stated (§9 condition 1)')
-  assert.ok(/label-derived, not lab-verified/.test(html))
+  assert.ok(/not lab-verified/.test(html))
 })
 
 Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the completeness line', () => {
@@ -3889,7 +3957,7 @@ Deno.test('B-351 — the off-trial `*` is defined on the sheet where it appears,
   )
   assert.ok(/a protein other than the trial protein \(Duck\)/.test(withMark), 'the marker is explained')
   // "does not BY ITSELF mean it caused anything" conceded that it might in combination.
-  assert.ok(/records exposure only; Culprit draws no link between it and any symptom/.test(withMark), 'explicitly non-causal')
+  assert.ok(/records exposure only and is not an association test/.test(withMark), 'explicitly non-causal')
 
   const noTrial = renderReport(base({}))
   assert.ok(!/a protein other than the trial protein/.test(noTrial), 'no legend for a symbol that never appears')
@@ -4267,9 +4335,34 @@ Deno.test('B-351 — a CLEAN trial keeps the headline unqualified', () => {
 Deno.test('B-351 — the promoted page-1 protein claim carries its provenance with it', () => {
   // The full provenance note lives in appendix B. Promoting the claim to page 1 without a
   // qualifier invites a vet to change a prescription diet on an unverified automated read.
+  // CUL-1979: a fixture that does not say where its sets came from gets the either-source
+  // wording, never the photo sentence.
   const p1 = text(pageOne(renderReport(breachedTrialSnap())))
-  assert.ok(/Read automatically from the owner&rsquo;s photo of the label/.test(p1))
+  assert.ok(/either read automatically from a label photo or entered by the owner/.test(p1))
+  assert.ok(!/Read automatically from the owner&rsquo;s photo of the label/.test(p1))
   assert.ok(/worth confirming against the bag/.test(p1))
+})
+
+/** CUL-1979 — `breachedTrialSnap` with every food behind the page-1 claim stamped one source. */
+function breachedWithSource(src: 'photo' | 'owner'): ReportSnapshot {
+  const snap = breachedTrialSnap()
+  snap.diet.trial!.proteinSet = { ...snap.diet.trial!.proteinSet, source: src }
+  snap.diet.freeFed = snap.diet.freeFed.map((f) => ({ ...f, proteinSet: { ...f.proteinSet, source: src } }))
+  return snap
+}
+
+Deno.test('CUL-1979 — the photo sentence prints only when every food behind the claim was photo-read', () => {
+  const photo = text(pageOne(renderReport(breachedWithSource('photo'))))
+  assert.ok(/Read automatically from the owner&rsquo;s photo of the label &mdash; worth confirming against the bag/.test(photo))
+  const owner = text(pageOne(renderReport(breachedWithSource('owner'))))
+  assert.ok(/Entered by the owner, not read from a label photo &mdash; worth confirming against the bag/.test(owner))
+  assert.ok(!/photo of the label/.test(owner), 'a typed-in food is never said to be read from a photo')
+  // Mixed: one photo-read, one typed. Neither single-source sentence is true of the pair.
+  const mixedSnap = breachedWithSource('photo')
+  mixedSnap.diet.freeFed = mixedSnap.diet.freeFed.map((f) => ({ ...f, proteinSet: { ...f.proteinSet, source: 'owner' as const } }))
+  const mixed = text(pageOne(renderReport(mixedSnap)))
+  assert.ok(/either read automatically from a label photo or entered by the owner/.test(mixed))
+  assert.ok(!/photo of the label/.test(mixed) && !/Entered by the owner, not/.test(mixed))
 })
 
 Deno.test('B-351 — the exposure chart does not contradict the diet line about a standing exposure', () => {
@@ -5695,7 +5788,7 @@ Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about di
         daysSinceLastEpisode: 1,
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 18,
-        secondHalfLoggedDays: 18,
+        secondHalfLoggedDays: 18, unloggedTailDays: 0, lastLoggedDate: null,
       },
     }),
   )
@@ -5735,7 +5828,7 @@ Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it
         daysSinceLastEpisode: 1,
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 6,
-        secondHalfLoggedDays: 3,
+        secondHalfLoggedDays: 3, unloggedTailDays: 0, lastLoggedDate: null,
       },
     }),
   )
@@ -5800,10 +5893,10 @@ Deno.test('B-532 COLD⑦ — an unobserved week is never drawn as a zero week', 
   assert.ok(
     // HR-7 (CUL-676): "entries" — this marker annotates the §3.5 weekly buckets, which
     // count minute-deduped entries, not chained episodes.
-    /nothing logged that week \(not a week without entries\)/.test(plain(html)),
+    /under 4 days logged that week: not read as a week without entries/.test(plain(html)),
     'the marker is defined on the same sheet it appears on',
   )
-  assert.ok(/not logged/.test(html), 'and the alt text draws the same distinction the bars do')
+  assert.ok(/not read \(0 of 7 days logged\)/.test(html), 'and the alt text draws the same distinction the bars do')
 })
 
 Deno.test('B-532 COLD⑦ — a genuinely quiet, well-logged week keeps its measured zero', () => {
@@ -5816,7 +5909,7 @@ Deno.test('B-532 COLD⑦ — a genuinely quiet, well-logged week keeps its measu
   )
   assert.ok(/class="nub"/.test(html), 'a week the owner logged with no episodes is still a zero')
   assert.ok(!/class="nolog"/.test(html), 'and never the no-data marker')
-  assert.ok(!/nothing logged that week/.test(plain(html)), 'nor its legend')
+  assert.ok(!/days logged that week: not read/.test(plain(html)), 'nor its legend')
 })
 
 Deno.test('B-532 COLD⑦ — the active problem list reaches page 1', () => {
@@ -6044,7 +6137,7 @@ Deno.test('CUL-982 item 4 — the marker legend precedes the first chart and nam
     }),
   )
   const legendAt = html.indexOf('class="chartlegend"')
-  const chartAt = html.indexOf('<svg viewBox="0 0 648 158"')
+  const chartAt = html.indexOf('<svg viewBox="0 0 648 162"')
   assert.ok(legendAt > 0 && chartAt > 0 && legendAt < chartAt, 'the legend sits above the first chart that uses it')
   assert.ok(
     /one stopped: the trial diet RC HP on May 2; the medication Metronidazole on May 4\. Timing and overlap are in &ldquo;Reading the trend&rdquo; below\./.test(html),
@@ -6284,7 +6377,7 @@ Deno.test('CUL-993 A.3 — the marker line is drawn in two segments that leave t
     }),
   )
   // The chart's own closing tag, not the letterhead brand mark's (the first </svg> in the document).
-  const chartAt = html.indexOf('<svg viewBox="0 0 648 158"')
+  const chartAt = html.indexOf('<svg viewBox="0 0 648 162"')
   const svg = html.slice(chartAt, html.indexOf('</svg>', chartAt))
   const marks = [...svg.matchAll(/<line class="mark" x1="([\d.]+)" y1="([\d.]+)" x2="[\d.]+" y2="([\d.]+)"\/>/g)].map((m) => ({ x: m[1], y1: Number(m[2]), y2: Number(m[3]) }))
   const caps = [...svg.matchAll(/<text class="(?:cap|z) num" x="([\d.]+)" y="([\d.]+)"/g)].map((m) => ({ x: m[1], y: Number(m[2]) }))
@@ -8306,4 +8399,286 @@ Deno.test('stool: ruling 2a — a change before the window says so, naming the s
   assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
   const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
   assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
+})
+
+// ── CUL-1978 — the report says what the record cannot show ───────────────────────────────
+// One class: absence or thin coverage rendered as a clean result. One test per instance, each
+// with its control, so a mutation that restores the old line reds it.
+
+const NO_HOUSEHOLD: Household = { others: [], complete: true }
+
+Deno.test('CUL-1978 ① — off-diet feedings take the affirmative out of the callout and put the count in the headline', () => {
+  const breached = renderReport(
+    cleanTrialSnap(NO_HOUSEHOLD, {
+      exposures: { totalFeedings: 44, offDiet: 4, byRung: { derived_protein: 4, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      mayClaimAllMatched: false,
+    }),
+  )
+  const callout = text(interpretingCallout(breached))
+  assert.ok(!/supports interpreting it/.test(callout), callout)
+  assert.ok(/4 of 44 feedings during the trial did not match the trial diet .*cannot establish that the elimination was clean/.test(callout), callout)
+  const headline = text(/<div class="headline">[\s\S]*?<\/div>/.exec(breached)![0])
+  assert.ok(/4 of 44 logged feedings did not match the trial diet/.test(headline), headline)
+  assert.ok(/see the diet section before reading the trial as a result/.test(headline), headline)
+  // Control: the same trial with nothing off the diet keeps its earned sentence and a plain headline.
+  const clean = renderReport(cleanTrialSnap(NO_HOUSEHOLD))
+  assert.ok(/supports interpreting it/.test(text(interpretingCallout(clean))), 'the affirmative was there to be suppressed')
+  assert.ok(!/did not match the trial diet/.test(text(/<div class="headline">[\s\S]*?<\/div>/.exec(clean)![0])))
+})
+
+Deno.test('CUL-1978 ① — a feeding naming no food and a dose by mouth are the same class, each said', () => {
+  const callout = text(
+    interpretingCallout(
+      renderReport(
+        cleanTrialSnap(NO_HOUSEHOLD, {
+          exposures: { totalFeedings: 30, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 2, items: [] },
+          oralRoute: [{ eventId: 'd1', occurredAt: '2026-06-01T12:00:00Z', drugLabel: 'Chewable', trigger: 'chewable' as never }],
+          mayClaimAllMatched: false,
+        }),
+      ),
+    ),
+  )
+  assert.ok(!/supports interpreting it/.test(callout), callout)
+  assert.ok(/2 logged feedings during the trial name no food, so they could not be checked against the trial/.test(callout), callout)
+  assert.ok(/1 dose by mouth during the trial may carry a protein/.test(callout), callout)
+})
+
+Deno.test('CUL-1978 ② — the recent run of meals not fully eaten leads the feeding line and the tile', () => {
+  const snap = mealsSnap({ logged: 44, breakdown: [{ rating: 'all', count: 40 }, { rating: 'some', count: 4 }], freeFed: false })
+  snap.diet.mealCompletion = { ...snap.diet.mealCompletion!, recentNotFullyEatenRun: 4 }
+  const html = renderReport(snap)
+  assert.ok(/^The last 4 rated meals in a row were not fully eaten; 40 of 44 rated meals fully eaten over the window \(owner-observed\)/.test(feedingRow(html)), feedingRow(html))
+  // The meals tile renders on a trial report without a coverage figure; it carries the run too.
+  const trialSnap = cleanTrialSnap(NO_HOUSEHOLD)
+  trialSnap.diet.mealCompletion = { ...snap.diet.mealCompletion! }
+  const tiles = pageOne(renderReport(trialSnap))
+  assert.ok(/Meals fully eaten \(rated meals only\)<br\/><b>last <span class="num">4<\/span> in a row not fully eaten<\/b>|Meals fully eaten \(rated meals only\)<br\/><b>last 4 in a row not fully eaten<\/b>/.test(tiles), 'the tile carries the run')
+  // Control: the four left were spread out, so the ratio stands alone.
+  const spread = mealsSnap({ logged: 44, breakdown: [{ rating: 'all', count: 40 }, { rating: 'some', count: 4 }], freeFed: false })
+  spread.diet.mealCompletion = { ...spread.diet.mealCompletion!, recentNotFullyEatenRun: 0 }
+  assert.ok(/^40 of 44 rated meals fully eaten \(owner-observed\)/.test(feedingRow(renderReport(spread))))
+  // A run of every rated meal is already the ratio; a run of one is one meal.
+  for (const run of [1, 44]) {
+    const s = mealsSnap({ logged: 44, breakdown: [{ rating: 'all', count: 40 }, { rating: 'some', count: 4 }], freeFed: false })
+    s.diet.mealCompletion = { ...s.diet.mealCompletion!, recentNotFullyEatenRun: run }
+    assert.ok(!/in a row/.test(feedingRow(renderReport(s))), `run ${run}`)
+  }
+})
+
+Deno.test('CUL-1978 ③ — two stool logs in 27 days are not a loose-stool count of zero', () => {
+  const thin = text(renderReport(base({ stool: { total: 2, normalCount: 2, looseCount: 0, windowDays: 27, loggedDays: 22, normalShortcut: null, ai: null } })))
+  assert.ok(/Stool logged 2 times in 27 days &mdash; not enough to assess diarrhea\./.test(thin), 'the thin record says so')
+  assert.ok(!/Loose \/ watery &times;0/.test(thin), 'no ×0 from two looks')
+  assert.ok(/Normal \/ formed &times;2/.test(thin), 'what was logged still prints')
+  // Control: a loose stool is a finding at any density, and a dense record keeps its zero.
+  const loose = text(renderReport(base({ stool: { total: 2, normalCount: 1, looseCount: 1, windowDays: 27, loggedDays: 22, normalShortcut: null, ai: null } })))
+  assert.ok(/Loose \/ watery &times;1/.test(loose) && !/not enough to assess diarrhea/.test(loose))
+  const dense = text(renderReport(base({ stool: { total: 40, normalCount: 40, looseCount: 0, windowDays: 27, loggedDays: 27, normalShortcut: null, ai: null } })))
+  assert.ok(/Loose \/ watery &times;0/.test(dense) && !/not enough to assess diarrhea/.test(dense))
+})
+
+Deno.test('CUL-1978 ④ — no medication logged is never read as none given', () => {
+  const html = text(pageOne(renderReport(base())))
+  assert.ok(/None logged in this window &mdash; not checked with the owner\./.test(html), 'page 1 says the gap is unasked')
+  // The trial block's own medication line, the one §7.2's drug caveat is read beside.
+  const trial = text(renderReport(cleanTrialSnap(NO_HOUSEHOLD)))
+  assert.ok(/No medication or supplement is recorded as overlapping the trial window &mdash; not checked with the owner\./.test(trial), 'the trial block says it too')
+})
+
+Deno.test('CUL-1978 ⑤ — vomit with no photo read says the blood check had nothing to look at', () => {
+  const none = text(renderReport(base({ vomitPhenotype: emptyPhenotype({ totalIncidents: 4, withAnalysis: 0 }) })))
+  assert.ok(/No photo of any incident was read, so the automated blood and foreign-material check had nothing to look at and could not flag either\./.test(none))
+  assert.ok(/Not a clearance:/.test(none), 'the caveat stays beside it')
+})
+
+Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association and never reads as a negative', () => {
+  const corr = (early: ReportSnapshot['correlation']['early']) =>
+    text(renderReport(base({ correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [], early } })))
+  const withEarly = corr([
+    { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 3, controlExposed: 1, riskDifference: 0.5, pValue: 0.2, symptomEventCount: 4, correlationWindowHours: 24 },
+  ])
+  assert.ok(
+    /^Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; short of the established threshold, so not confirmed; no food or protein reached that threshold over this window\. Not a negative result\./m.test(withEarly.replace(/Timing vs symptoms/g, '\n')),
+    'the Early finding is named with its counts and its limit',
+  )
+  assert.ok(!/p&nbsp;=&nbsp;0\.200/.test(withEarly), 'no p value rides with an Early association')
+  // Adversarial pass 1: TWO Early findings, the top-ranked on another symptom. Both are named,
+  // the primary sign's first; naming only the top one exonerated beef by omission.
+  const two = text(
+    renderReport(
+      base({
+        clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
+        correlation: {
+          established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [],
+          early: [
+            { symptomType: 'diarrhea', protein: 'lamb', proteins: ['lamb'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.06, symptomEventCount: 4, correlationWindowHours: 24 },
+            { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 3, caseExposed: 3, controlExposed: 0, riskDifference: 1, pValue: 0.12, symptomEventCount: 3, correlationWindowHours: 12 },
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/Beef shows an early association with vomiting \(.*?\); and Lamb shows an early association with loose stool/.test(two), 'both named, the primary sign first')
+  assert.ok(two.indexOf('Beef shows an early association') < two.indexOf('no food or protein reached that threshold'), 'the association leads, the null clause follows')
+  const without = corr([])
+  assert.ok(/No food or protein reached the established association threshold over this window &mdash; not a negative result: a record this size cannot rule a food out\./.test(without))
+  assert.ok(!/No single food\/protein reached/.test(without), 'the old negative-reading line is gone')
+})
+
+Deno.test('CUL-1979 — the label-contamination row names the source of the food it accuses', () => {
+  const chew = { foodItemId: 'fi-chew', foodKey: null, label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck', proteins: ['duck', 'chicken'] }
+  const permitted = (source: 'photo' | 'owner') => [
+    { label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, feedings: 6, addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['duck', 'chicken'], panelRead: true, source },
+  ]
+  const row = (source: 'photo' | 'owner') => {
+    const html = text(
+      renderReport(
+        cleanTrialSnap(NO_HOUSEHOLD, {
+          contamination: [{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }],
+          permittedFoods: permitted(source),
+        }),
+      ),
+    )
+    const i = html.indexOf('Label contamination')
+    assert.ok(i >= 0, 'the row renders')
+    return html.slice(i, i + 600)
+  }
+  assert.ok(/Read automatically from the owner&rsquo;s photo of the label/.test(row('photo')))
+  const owner = row('owner')
+  assert.ok(/Entered by the owner, not read from a label photo/.test(owner), owner)
+  assert.ok(!/photo of the label/.test(owner))
+})
+
+Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and the off-trial legend never says "no link"', () => {
+  const sheet = (src: { photo: number; owner: number } | undefined) => {
+    const snap = breachedTrialSnap()
+    snap.diet.proteinSources = src
+    return text(renderReport(snap))
+  }
+  assert.ok(/Proteins are as the owner entered them, not read from a label photo/.test(sheet({ photo: 0, owner: 2 })))
+  assert.ok(!/automated read of the owner&rsquo;s photo/.test(sheet({ photo: 0, owner: 2 })), 'typed-in sets are not called photo reads')
+  assert.ok(/Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel/.test(sheet({ photo: 3, owner: 0 })))
+  assert.ok(/either an automated read of the owner&rsquo;s photo of a product&rsquo;s ingredient panel or entered by the owner/.test(sheet(undefined)))
+  // CUL-1978 — page 1 may now name an association; the legend must not deny one exists.
+  const html = sheet({ photo: 0, owner: 2 })
+  assert.ok(!/draws no link/.test(html))
+  assert.ok(/not an association test &mdash; the food&ndash;symptom associations this report states are on page&nbsp;1/.test(html))
+})
+
+Deno.test('CUL-1978 ⑥ — an Established finding never silences a second one or any Early one (adversarial pass 2)', () => {
+  const corr = (established: ReportSnapshot['correlation']['established'], early: ReportSnapshot['correlation']['early']) =>
+    text(
+      renderReport(
+        base({
+          clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
+          correlation: { established, hasEstablished: established.length > 0, noThreshold: established.length === 0, stapleProtein: null, timing: [], early },
+        }),
+      ),
+    )
+  const lamb: ReportSnapshot['correlation']['established'][number] = { symptomType: 'diarrhea', protein: 'lamb', proteins: ['lamb'], matchedPairs: 8, caseExposed: 7, controlExposed: 1, riskDifference: 0.75, pValue: 0.03, symptomEventCount: 8, correlationWindowHours: 24 }
+  const beef: ReportSnapshot['correlation']['established'][number] = { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 8, caseExposed: 7, controlExposed: 1, riskDifference: 0.75, pValue: 0.03, symptomEventCount: 8, correlationWindowHours: 12 }
+  const chickenEarly: ReportSnapshot['correlation']['established'][number] = { symptomType: 'vomit', protein: 'chicken', proteins: ['chicken'], matchedPairs: 5, caseExposed: 5, controlExposed: 0, riskDifference: 1, pValue: 0.06, symptomEventCount: 5, correlationWindowHours: 12 }
+  // An Established finding on another symptom beside an Early one on the primary sign.
+  const mixed = corr([lamb], [chickenEarly])
+  assert.ok(/lamb reached the established association threshold for loose stool/.test(mixed))
+  assert.ok(/Chicken shows an early association with vomiting \(Chicken in the 12&nbsp;h before 5 of 5 episodes, vs 0 of 5 matched control windows\) &mdash; short of the established threshold, so not confirmed\./.test(mixed), 'the Early finding survives an Established one')
+  // Two Established findings, the primary sign's ranked second by the engine: both print, it first.
+  const two = corr([lamb, beef], [])
+  assert.ok(two.indexOf('beef reached the established association threshold for vomiting') >= 0, 'the second Established finding prints')
+  assert.ok(two.indexOf('beef reached') < two.indexOf('lamb reached'), 'the primary sign leads')
+})
+
+// ── CUL-2077 — an ended trial short of its target says how long it ran ───────────────────
+// The §7.2 coverage sentence is true of the record and silent about the trial's length, so a
+// trial ended at day 23 of 56 read "23 of 23 days … supports interpreting it" with nothing
+// beside it. PM ruling (a): keep the sentence, state the run's length after it.
+
+function endedTrialSnap(over: Partial<NonNullable<ReportSnapshot['trial']>> = {}): ReportSnapshot {
+  return cleanTrialSnap(NO_HOUSEHOLD, {
+    status: 'completed',
+    endedAt: '2026-05-30',
+    dayCounter: 23,
+    interpretabilityStatement: 'This record covers 23 of 23 days of the trial window and supports interpreting it.',
+    ...over,
+  })
+}
+
+Deno.test('CUL-2077 — a trial ended at day 23 of 56 keeps the coverage sentence and states the run ahead of it', () => {
+  const callout = text(interpretingCallout(renderReport(endedTrialSnap())))
+  assert.ok(
+    /The trial ran 23 of a planned 56 days\. This record covers 23 of 23 days of the trial window and supports interpreting it\./.test(
+      callout,
+    ),
+    callout,
+  )
+  // A trial stopped early (abandoned) is the same fact, said the same way.
+  const stopped = text(interpretingCallout(renderReport(endedTrialSnap({ status: 'abandoned' }))))
+  assert.ok(/The trial ran 23 of a planned 56 days\. This record covers 23 of 23 days/.test(stopped), stopped)
+  // And on the non-affirmative rungs, whose "N of N days of the trial window" reads as full too.
+  const partial = text(
+    interpretingCallout(
+      renderReport(
+        endedTrialSnap({
+          interpretability: 'partially_supports',
+          interpretabilityStatement:
+            'This record covers 12 of 23 days of the trial window — enough to read alongside the rest of the history, not enough to stand on its own.',
+        }),
+      ),
+    ),
+  )
+  assert.ok(/The trial ran 23 of a planned 56 days\. This record covers 12 of 23 days .*not enough to stand on its own\./.test(partial), partial)
+})
+
+Deno.test('CUL-2077 — every other trial prints the callout it printed before (before/after)', () => {
+  // The callout with the new sentence removed must equal the callout of the same trial with
+  // no reason to print it, and those reasons are exactly: still active, ran its full target,
+  // ran past it, or no coverage sentence shown. Each control is rendered and compared byte
+  // for byte against the pre-change expectation: no "The trial ran" anywhere.
+  const cases: Array<[string, Partial<NonNullable<ReportSnapshot['trial']>>]> = [
+    ['active at day 23', { status: 'active', endedAt: null }],
+    ['completed on target', { dayCounter: 56, interpretabilityStatement: 'This record covers 56 of 56 days of the trial window and supports interpreting it.' }],
+    ['completed past target', { dayCounter: 70, trialDaysElapsed: 70 }],
+    ['abandoned on target', { status: 'abandoned', dayCounter: 56 }],
+    // A since-visit window over a full trial: the window ends early, the trial did not.
+    ['full trial viewed through an earlier window', { dayCounter: 45, trialDaysElapsed: 56, trialDaysOutsideRange: { before: 0, after: 11 } }],
+  ]
+  for (const [label, over] of cases) {
+    const html = renderReport(endedTrialSnap(over))
+    assert.ok(!/The trial ran/.test(html), `${label}: ${text(interpretingCallout(html))}`)
+  }
+  // No statement shown (a caveat suppresses the affirmative): nothing to sit beside.
+  const suppressed = renderReport(
+    endedTrialSnap({
+      exposures: { totalFeedings: 44, offDiet: 4, byRung: { derived_protein: 4, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      mayClaimAllMatched: false,
+    }),
+  )
+  assert.ok(!/The trial ran/.test(suppressed), text(interpretingCallout(suppressed)))
+  // Before/after on the active trial: the callout is exactly the statement, unchanged.
+  const active = text(interpretingCallout(renderReport(endedTrialSnap({ status: 'active', endedAt: null }))))
+  assert.ok(
+    /Interpreting this record This record covers 23 of 23 days of the trial window and supports interpreting it\.$/.test(active.trim()),
+    active,
+  )
+})
+
+// ── CUL-2092 — the headline's first word does not claim a full course ─────────────────────
+const headlineOf = (html: string): string => text(/<div class="headline">[\s\S]*?<\/div>/.exec(html)![0])
+
+Deno.test('CUL-2092 — a trial marked complete at day 23 of 56 leads "Marked complete early", never "Completed"', () => {
+  const headline = headlineOf(renderReport(endedTrialSnap()))
+  assert.ok(/^Marked complete early: /.test(headline.trim()), headline)
+  assert.ok(!/Completed:/.test(headline), headline)
+})
+
+Deno.test('CUL-2092 — every other ended or active trial keeps its headline lead (before/after)', () => {
+  const lead = (over: Partial<NonNullable<ReportSnapshot['trial']>>): string =>
+    headlineOf(renderReport(endedTrialSnap(over))).trim().split(':')[0]
+  assert.equal(lead({ dayCounter: 56 }), 'Completed')
+  assert.equal(lead({ dayCounter: 70, trialDaysElapsed: 70 }), 'Completed')
+  // A full trial seen through a window closing 11 days before it ended is not "early".
+  assert.equal(lead({ dayCounter: 45, trialDaysElapsed: 56, trialDaysOutsideRange: { before: 0, after: 11 } }), 'Completed')
+  assert.equal(lead({ status: 'abandoned' }), 'Stopped early')
+  assert.equal(lead({ status: 'abandoned', dayCounter: 56 }), 'Stopped early')
+  assert.ok(/^Tracking /.test(headlineOf(renderReport(endedTrialSnap({ status: 'active', endedAt: null }))).trim()))
 })

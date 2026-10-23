@@ -8,7 +8,7 @@
 //   • a run opens in place (`openInPlace`), the one choreography History's cards and the
 //     Patterns month use.
 //
-// Design v2's first spine (`components/designV2/home/Spine.tsx`) drew the same nodes with
+// Design v2's first spine (`components/surfaces/home/Spine.tsx`) drew the same nodes with
 // neither motion; it retired when History v2 went to every account (HV-14 / CUL-1175). The
 // open state is per node id and per mount (the fold's rule for what a disclosure is).
 //

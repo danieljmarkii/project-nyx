@@ -1,7 +1,7 @@
 // The cold start's wait (D2-7 / CUL-1068; GA by CUL-1071): Home's silhouette, never without
 // a pet (the overlay can never sit over onboarding, B-054 §6). The silhouette is mocked to
 // a marker so what this host hands it is what is asserted.
-jest.mock('./designV2/waits/ColdStartSilhouette', () => {
+jest.mock('./surfaces/waits/ColdStartSilhouette', () => {
   const { Text } = require('react-native');
   const React = require('react');
   return {

@@ -25,7 +25,13 @@ import {
 // multi-pet chrome.
 
 jest.mock('../../lib/storage', () => ({
-  getPublicUrl: (bucket: string, path: string) => `https://example.test/${bucket}/${path}`,
+  // CUL-1856: a warm signed-link cache, so the photo renders on the first frame
+  // from a SIGNED url; the public shape (/object/public/) never appears.
+  getPetPhotoUrl: () => new Promise(() => {}),
+  peekPetPhotoUrl: (path: string) => `https://signed.test/object/sign/nyx-pet-photos/${path}?token=t`,
+  evictPetPhotoUrl: () => {},
+  petPhotoVersion: () => 0,
+  subscribePetPhotoVersions: () => () => {},
 }));
 
 jest.mock('expo-router', () => ({
@@ -104,7 +110,7 @@ describe('one row, and the pet leads it (D3)', () => {
     getByText('Biscuit');
     const images = collect(toJSON(), 'Image');
     expect(images).toHaveLength(1);
-    expect(images[0].props.source.uri).toContain('pet-a/photo.jpg');
+    expect(images[0].props.source.uri).toBe('https://signed.test/object/sign/nyx-pet-photos/pet-a/photo.jpg?token=t');
     // The size moved off the <Image> and onto the disc that clips it when the
     // initial became the layer underneath (CUL-617): the photo now fills its
     // container absolutely, so the container is what has to be header-sized.

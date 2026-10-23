@@ -10,7 +10,7 @@
 // jest run (probed before adding this test).
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY, recentFoodsQuery } from './foodQueries';
+import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY, recentFoodsQuery, rotationFoodsQuery } from './foodQueries';
 import { BASE_SCHEMA_SQL, COLUMN_UPGRADES } from './localSchema';
 
 interface LibRow {
@@ -356,5 +356,65 @@ describe('recentFoodsQuery — the FAB’s fixed span, and everyone else’s unc
       ['e3', 'old', '2026-10-01T09:00:00.000Z'],
     ]);
     expect(ids(db, { after: AFTER, before: BEFORE })).toEqual(['old']);
+  });
+});
+
+// ── CUL-2090 ─────────────────────────────────────────────────────────────────
+//
+// The picker's rotation read, run for real over the production DDL: the plain meals' foods
+// with when each was last fed. The foods inside mixed bowls join it in
+// getPickerRotationItems, through the bowl read rule (lib/fabRecentItems.test.ts).
+describe('rotationFoodsQuery — plain foods with when each was last fed', () => {
+  const PET = 'p1';
+  const NOW = Date.parse('2026-10-23T12:00:00.000Z');
+
+  function db() {
+    const d = new DatabaseSync(':memory:');
+    d.exec(BASE_SCHEMA_SQL);
+    for (const u of COLUMN_UPGRADES) {
+      try {
+        d.exec(`ALTER TABLE ${u.table} ADD COLUMN ${u.column} ${u.type}`);
+      } catch {
+        // A table outside BASE_SCHEMA_SQL, or a column already present: not this read's.
+      }
+    }
+    for (const id of ['kibble', 'chicken', 'gone']) {
+      d.prepare(
+        `INSERT INTO food_items_cache (id, brand, product_name, format, archived_at) VALUES (?, 'Acme', ?, 'wet_canned', ?)`,
+      ).run(id, id, id === 'gone' ? '2026-10-01T00:00:00.000Z' : null);
+    }
+    return d;
+  }
+
+  function meal(d: ReturnType<typeof db>, eventId: string, at: string, foodId: string | null, opts?: { deleted?: boolean; pet?: string }) {
+    const pet = opts?.pet ?? PET;
+    d.prepare(`INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, 'meal', ?, ?)`)
+      .run(eventId, pet, at, opts?.deleted ? '2026-10-22T00:00:00.000Z' : null);
+    d.prepare(`INSERT INTO meals (id, event_id, pet_id, food_item_id) VALUES (?, ?, ?, ?)`).run(`m-${eventId}`, eventId, pet, foodId);
+  }
+
+  function rows(d: ReturnType<typeof db>) {
+    const { sql, params } = rotationFoodsQuery(PET, 30, 12, NOW);
+    return d.prepare(sql).all(...params) as Array<{ id: string; last_fed_jd: number }>;
+  }
+
+  it('newest first, each food once, with its last feeding as an instant', () => {
+    const d = db();
+    meal(d, 'e1', '2026-10-20T08:00:00.000Z', 'kibble');
+    meal(d, 'e2', '2026-10-21T08:00:00.000Z', 'chicken');
+    meal(d, 'e3', '2026-10-22T08:00:00+00:00', 'kibble');
+    const r = rows(d);
+    expect(r.map((x) => x.id)).toEqual(['kibble', 'chicken']);
+    expect((r[0].last_fed_jd - 2440587.5) * 86400000).toBeCloseTo(Date.parse('2026-10-22T08:00:00.000Z'), -1);
+  });
+
+  it('an undone meal, another pet, an archived food, an old meal and a bowl (no food) stay off', () => {
+    const d = db();
+    meal(d, 'e1', '2026-10-22T08:00:00.000Z', 'kibble', { deleted: true });
+    meal(d, 'e2', '2026-10-22T08:00:00.000Z', 'chicken', { pet: 'p2' });
+    meal(d, 'e3', '2026-10-22T08:00:00.000Z', 'gone');
+    meal(d, 'e4', '2026-09-01T08:00:00.000Z', 'kibble');
+    meal(d, 'e5', '2026-10-22T08:00:00.000Z', null);
+    expect(rows(d)).toEqual([]);
   });
 });

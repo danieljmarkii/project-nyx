@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
+  ScrollView, StyleSheet, View,
 } from 'react-native';
+import { ChipGroup } from '../ui/ChipGroup';
+import { FieldLabel } from '../ui/FieldLabel';
+import { Header } from '../ui/Header';
+import { HeaderAction } from '../ui/HeaderAction';
+import { PickerRow } from '../ui/PickerRow';
+import { PrimaryButton } from '../ui/PrimaryButton';
+import { TextField } from '../ui/TextField';
+import { TextLink } from '../ui/TextLink';
 import { ThemedText } from '../ui/ThemedText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
+import { useIsOnline } from '../../hooks/useIsOnline';
+import { SAVE_FAILED_LINE } from './EditPetModal';
+import { QuietBand } from '../ui/QuietBand';
 
 export interface Condition {
   id: string;
@@ -30,22 +40,44 @@ export function diagnosedMonthLabel(diagnosedAt: string | null): string | null {
   return day ? day.toLocaleDateString([], { year: 'numeric', month: 'short' }) : null;
 }
 
-const STATUS_OPTIONS: { value: ConditionStatus; label: string; description: string }[] = [
-  { value: 'active', label: 'Active', description: 'Currently affecting the pet' },
-  { value: 'monitoring', label: 'Monitoring', description: 'Under observation' },
+const STATUS_OPTIONS: { value: ConditionStatus; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'monitoring', label: 'Monitoring' },
 ];
+
+/**
+ * What the chosen status means, naming the pet (round P6, C-9: a record surface says whose
+ * record it writes to). "Not active right now" rather than the round's "not treated": a
+ * watched condition can still be on a medicine, and the record does not say it is not.
+ */
+export function conditionStatusCaption(status: ConditionStatus, petName: string): string {
+  return status === 'active' ? `Currently affecting ${petName}` : 'Being watched, not active right now';
+}
+
+/** Round P8: the form writes straight to the server, so offline is said before typing. */
+export function conditionOfflineLine(petName: string): string {
+  return `You’re offline. ${petName}’s conditions can be saved once you’re back.`;
+}
+
+/** The resolve confirm's lines, word for word from the Pet tab's row (round P3). */
+export const RESOLVE_CONFIRM_TITLE = 'Mark as resolved';
+export const RESOLVE_REPORT_LINE = 'It will still appear in vet reports for the relevant date range.';
 
 interface Props {
   visible: boolean;
   petId: string;
+  /** The pet this form writes for, named in its title and caption (round P6). */
+  petName: string;
   existingCondition?: Condition;
   onClose: () => void;
   onAdded: (condition: Condition) => void;
   onUpdated?: (condition: Condition) => void;
+  /** Resolves the condition being edited, once the owner has confirmed (round P3). */
+  onResolve?: (condition: Condition) => void;
 }
 
 export function AddConditionModal({
-  visible, petId, existingCondition, onClose, onAdded, onUpdated,
+  visible, petId, petName, existingCondition, onClose, onAdded, onUpdated, onResolve,
 }: Props) {
   const isEditing = existingCondition != null;
 
@@ -54,6 +86,8 @@ export function AddConditionModal({
   const [diagnosedAt, setDiagnosedAt] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const online = useIsOnline();
 
   useEffect(() => {
     if (visible) {
@@ -75,6 +109,7 @@ export function AddConditionModal({
         setDiagnosedAt(null);
       }
       setShowDatePicker(false);
+      setSaveFailed(false);
     }
   }, [visible, existingCondition]);
 
@@ -86,6 +121,7 @@ export function AddConditionModal({
     const trimmed = conditionName.trim();
     if (!trimmed) return;
     setSaving(true);
+    setSaveFailed(false);
     try {
       const payload = {
         condition_name: trimmed,
@@ -117,7 +153,7 @@ export function AddConditionModal({
       onClose();
     } catch (e) {
       console.error('[AddConditionModal] save failed:', e);
-      Alert.alert('Could not save', 'Something went wrong. Try again.');
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -125,87 +161,111 @@ export function AddConditionModal({
 
   const canSave = conditionName.trim().length > 0;
 
+  function confirmResolve() {
+    const condition = existingCondition;
+    if (!condition || !onResolve) return;
+    Alert.alert(
+      RESOLVE_CONFIRM_TITLE,
+      `Mark "${condition.condition_name}" as resolved? ${RESOLVE_REPORT_LINE}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Mark resolved', onPress: () => { onClose(); onResolve(condition); } },
+      ],
+    );
+  }
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleClose} hitSlop={8}>
-            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-          </TouchableOpacity>
-          <ThemedText style={styles.headerTitle}>{isEditing ? 'Edit condition' : 'Add condition'}</ThemedText>
-          <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
-            {saving
-              ? <WhorlSpinner size="sm" ground="day" />
-              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
-                  {isEditing ? 'Save' : 'Add'}
-                </ThemedText>
-            }
-          </TouchableOpacity>
-        </View>
+        <Header
+          title={isEditing ? 'Edit condition' : `Add a condition for ${petName}`}
+          left={<HeaderAction label="Cancel" tone="quiet" onPress={handleClose} />}
+          right={
+            <HeaderAction
+              label={isEditing ? 'Save' : 'Add'}
+              onPress={handleSave}
+              disabled={!canSave || !online}
+              disabledReason={!online ? 'you’re offline' : 'name the condition first'}
+              working={saving}
+              testID="condition-save"
+            />
+          }
+        />
 
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
-            <ThemedText style={styles.label}>Condition name</ThemedText>
-            <TextInput
-              style={styles.input}
+            {!online ? (
+              <QuietBand testID="condition-offline">
+                <ThemedText variant="caption" style={styles.bandText}>{conditionOfflineLine(petName)}</ThemedText>
+              </QuietBand>
+            ) : saveFailed ? (
+              <QuietBand testID="condition-save-failed">
+                <ThemedText variant="caption" style={styles.bandText}>{SAVE_FAILED_LINE}</ThemedText>
+              </QuietBand>
+            ) : null}
+
+            <TextField
+              label="Condition name"
               value={conditionName}
               onChangeText={setConditionName}
               placeholder="e.g. Food sensitivity, IBD, atopy"
-              placeholderTextColor={theme.colorTextSecondary}
               autoCapitalize="sentences"
               returnKeyType="done"
               autoFocus={!isEditing}
             />
 
-            <ThemedText style={styles.label}>Status</ThemedText>
-            <View style={styles.chipRow}>
-              {STATUS_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, status === opt.value && styles.chipActive]}
-                  onPress={() => setStatus(opt.value)}
-                >
-                  <ThemedText style={[styles.chipText, status === opt.value && styles.chipTextActive]}>
-                    {opt.label}
-                  </ThemedText>
-                  <ThemedText style={[styles.chipDesc, status === opt.value && styles.chipDescActive]}>
-                    {opt.description}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+            <View>
+              <FieldLabel label="Status" />
+              <ChipGroup
+                options={STATUS_OPTIONS}
+                value={status}
+                onChange={(next) => { if (next) setStatus(next as ConditionStatus); }}
+                allowDeselect={false}
+                variant="default"
+                accessibilityLabel="Status"
+              />
+              {/* The kit chip carries one line, so the chosen status's meaning is one
+                  caption under the group (round F7). */}
+              <ThemedText variant="caption" style={styles.caption}>{conditionStatusCaption(status, petName)}</ThemedText>
             </View>
 
-            <ThemedText style={styles.label}>Diagnosed (optional)</ThemedText>
-            <TouchableOpacity
-              style={styles.fieldBtn}
-              onPress={() => setShowDatePicker(!showDatePicker)}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={diagnosedAt ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                {diagnosedAt
+            <View>
+              <PickerRow
+                label="Diagnosed (optional)"
+                value={diagnosedAt
                   ? diagnosedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })
-                  : 'Not known'}
-              </ThemedText>
-              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Set date'}</ThemedText>
-            </TouchableOpacity>
-            {diagnosedAt && !showDatePicker && (
-              <TouchableOpacity onPress={() => setDiagnosedAt(null)} style={styles.clearBtn} hitSlop={8}>
-                <ThemedText style={styles.clearBtnText}>Clear date</ThemedText>
-              </TouchableOpacity>
-            )}
-            {showDatePicker && (
-              <DateTimePicker
-                value={diagnosedAt ?? new Date()}
-                mode="date"
-                display="spinner"
-                maximumDate={new Date()}
-                onChange={(_e: unknown, date?: Date) => {
-                  if (Platform.OS === 'android') setShowDatePicker(false);
-                  if (date) setDiagnosedAt(date);
-                }}
+                  : null}
+                placeholder="Not known"
+                actionLabel={showDatePicker ? 'Done' : 'Set date'}
+                onPress={() => setShowDatePicker(!showDatePicker)}
               />
-            )}
+              {diagnosedAt && !showDatePicker && (
+                <TextLink label="Clear date" tone="quiet" variant="caption" onPress={() => setDiagnosedAt(null)} />
+              )}
+              {showDatePicker && (
+                <DateTimePicker
+                  value={diagnosedAt ?? new Date()}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_e: unknown, date?: Date) => {
+                    if (Platform.OS === 'android') setShowDatePicker(false);
+                    if (date) setDiagnosedAt(date);
+                  }}
+                />
+              )}
+            </View>
+
+            {/* Round P3 — resolving lives here, one step from a stray tap on the tab,
+                and its report line is said before the confirm, not only inside it. */}
+            {/* Withdrawn while a save is in flight rather than dimmed (C-7: no reason to give). */}
+            {isEditing && onResolve && !saving ? (
+              <View style={styles.resolve}>
+                <PrimaryButton label="Mark resolved" variant="secondary" onPress={confirmResolve} />
+                <ThemedText variant="caption" style={styles.caption}>{RESOLVE_REPORT_LINE}</ThemedText>
+              </View>
+            ) : null}
 
           </ScrollView>
         </KeyboardAvoidingView>
@@ -219,123 +279,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  saveText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
-  },
-  saveTextDisabled: {
-    opacity: theme.opacityDisabled,
+  flex: {
+    flex: 1,
   },
   form: {
     padding: theme.space3,
     paddingBottom: theme.space6,
-    gap: theme.space1,
+    gap: theme.space2,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: theme.fontWeightMedium,
+  caption: {
     color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 4,
-    marginTop: theme.space2,
+    marginTop: theme.space1,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    fontFamily: theme.fontBody,
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: theme.space1,
-  },
-  chip: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: theme.space1,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    backgroundColor: theme.colorNeutralLight,
-    alignItems: 'center',
-    gap: 2,
-  },
-  chipActive: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-  },
-  chipTextActive: {
-    color: theme.colorTextOnDark,
-  },
-  chipDesc: {
-    fontSize: 11,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-  },
-  chipDescActive: {
-    color: theme.colorTextOnDarkSubtle,
-  },
-  fieldBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  fieldBtnText: {
-    fontSize: 16,
+  bandText: {
     color: theme.colorTextPrimary,
   },
-  fieldBtnPlaceholder: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  changeLabel: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
-    fontWeight: theme.fontWeightMedium,
-  },
-  clearBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  clearBtnText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    textDecorationLine: 'underline',
+  resolve: {
+    marginTop: theme.space3,
+    paddingTop: theme.space3,
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
   },
 });

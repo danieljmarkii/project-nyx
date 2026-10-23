@@ -3,9 +3,11 @@ import { AppState, AppStateStatus } from 'react-native';
 import * as Network from 'expo-network';
 import { syncNow } from '../lib/sync';
 import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
+import { hasHydratedRecord, holdColdStartWait, shouldShowColdStartWait } from '../lib/coldStart';
 import { consumeForcedColdStart } from '../lib/devColdStart';
 import { ingestCaptureInbox } from '../lib/captureInbox';
-import { isOnlineFromState } from '../lib/network';
+import { currentSignOutEpoch } from '../lib/signOutEpoch';
+import { getIsOnline, isOnlineFromState } from '../lib/network';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
@@ -16,9 +18,27 @@ export function useSync() {
   const appState = useRef<AppStateStatus>(AppState.currentState);
   // Tracks whether we were last known to be online so we can detect transitions.
   const wasOnline = useRef<boolean>(true);
+  // CUL-1214 — the account whose first sync this launch already ran. The effect re-runs
+  // on every session object (a token refresh is a new one), and a re-run must not raise
+  // the wait a second time over an owner already using the app.
+  const initialRunFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!session) return;
+    const userId = session.user.id;
+    // CUL-1968 (rls-privacy-reviewer): the sign-out epoch this session's cycles run
+    // under, captured once per session like useWidgetSnapshots' publish epoch. The
+    // ingest also captures the epoch when it starts, which stops a pass already
+    // running at sign-out but not one STARTED during the wipe: _layout.tsx awaits the
+    // wipe before setSession(null), so the foreground and reconnect listeners below
+    // stay live through it, and a pass they start then would take the bumped epoch
+    // as its own while the pet store still names the old pets.
+    const sessionEpoch = currentSignOutEpoch();
+
+    // Idempotent: the ceiling, the settle and an offline transition may each call it.
+    const releaseColdStartWait = () => {
+      if (useSyncStore.getState().coldStartHydrating) setColdStartHydrating(false);
+    };
 
     // A full sync cycle (push-before-pull, B-054 FR-2) lives in syncNow(), shared
     // with the History pull-to-refresh; the in-flight guard is module-level there
@@ -27,22 +47,31 @@ export function useSync() {
     // bump the hydration tick so screens re-read what just landed locally.
     //
     // B-054 §6 (block-only-when-empty): only the FIRST run after a session is
-    // established can put up the blocking "Catching up…" overlay, and only if the
-    // local store is genuinely empty (true cold start). Foreground/reconnect
-    // re-syncs never block — local is already populated, so they reconcile silently.
+    // established can put up the blocking cold-start wait, and only on a device that
+    // has never read this account's record. Foreground/reconnect re-syncs never block.
+    //
+    // CUL-1214: "never read" is decided from the watermark, not a row count, so an
+    // owner with a pet and nothing logged reconciles silently like any returning
+    // device; the wait lets go at a ceiling; and an offline launch never blocks
+    // (lib/coldStart.ts holds all three rules).
     //
     // Account-switch ordering: on sign-out, _layout.tsx awaits clearLocalData()
     // BEFORE setSession(null), and this effect keys on `session`, so by the time a
     // new session triggers a fresh initial run the wipe has already completed —
-    // isLocalDataEmpty() reads a fully-cleared store, not one mid-wipe. (A switch
+    // the watermarks and the store read fully cleared, not mid-wipe. (A switch
     // is also a multi-second UI flow, far longer than the wipe.)
     async function runSync(isInitial: boolean) {
       let blocking = false;
       if (isInitial) {
         try {
-          blocking = await isLocalDataEmpty();
+          const [hydrated, localEmpty, online] = await Promise.all([
+            hasHydratedRecord(userId),
+            isLocalDataEmpty(),
+            getIsOnline(),
+          ]);
+          blocking = shouldShowColdStartWait({ hydrated, localEmpty, online });
         } catch (e) {
-          console.warn('[sync] cold-start emptiness check failed:', e);
+          console.warn('[sync] cold-start check failed:', e);
         }
         // CUL-1222 — a developer's armed cold start (`__forceColdStart`) blocks this one
         // first sync over a populated store, so the device pass can see the wait. Read
@@ -50,7 +79,7 @@ export function useSync() {
         if (__DEV__ && (await consumeForcedColdStart())) blocking = true;
         if (blocking) setColdStartHydrating(true);
       }
-      try {
+      const cycle = async () => {
         // B-290 — drain the App Group capture inbox BEFORE the cycle, so a
         // widget/intent tap made while the app was backgrounded lands in local
         // SQLite as synced=0 and rides THIS cycle's push (§4.1 Q4: the ingest is
@@ -60,11 +89,16 @@ export function useSync() {
         // records. Best-effort: an ingest failure must never block the sync.
         await ingestCaptureInbox(
           new Set(usePetStore.getState().pets.map((p) => p.id)),
+          () => currentSignOutEpoch() !== sessionEpoch,
         ).catch((e) => console.warn('[sync] inbox ingest failed:', e));
         await syncNow();
+      };
+      try {
+        // The wait lets go when the cycle settles (succeeded or threw — never strand
+        // it) or at the ceiling, whichever comes first.
+        if (blocking) await holdColdStartWait(cycle, releaseColdStartWait);
+        else await cycle();
       } finally {
-        // Clear the overlay whether the cycle succeeded or threw — never strand it.
-        if (blocking) setColdStartHydrating(false);
         // Reactive refresh-after-hydrate: bump even on a throw. A cycle that
         // failed partway may still have written some hydrated rows before the
         // error (hydrateFromCloud isolates each table), so the screens should
@@ -79,11 +113,13 @@ export function useSync() {
     // unhandled promise rejection (and can't leave the cold-start overlay stuck).
     const safeRunSync = (isInitial = false) =>
       runSync(isInitial).catch((e) => {
-        if (isInitial) setColdStartHydrating(false);
+        if (isInitial) releaseColdStartWait();
         console.warn('[sync] cycle failed:', e);
       });
 
-    safeRunSync(true);
+    const isInitialForAccount = initialRunFor.current !== userId;
+    initialRunFor.current = userId;
+    safeRunSync(isInitialForAccount);
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
@@ -97,6 +133,9 @@ export function useSync() {
     // rule the account-deletion offline guard uses, kept in one place.
     const networkSub = Network.addNetworkStateListener((state) => {
       const isOnline = isOnlineFromState(state);
+      // CUL-1214 — offline never blocks: a connection lost during the wait lets go of
+      // the screen now rather than at the ceiling. Home shows what has landed.
+      if (!isOnline) releaseColdStartWait();
       if (!wasOnline.current && isOnline) {
         safeRunSync();
       }

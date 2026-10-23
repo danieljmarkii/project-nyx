@@ -1,3 +1,4 @@
+import type { AppBowl } from './mealBowls';
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
@@ -5,6 +6,7 @@ import {
   LIBRARY_FOODS_QUERY,
   ARCHIVED_FOODS_QUERY,
   recentFoodsQuery,
+  rotationFoodsQuery,
   RecentFoodsBounds,
 } from './foodQueries';
 import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY } from './eventAttachmentQueries';
@@ -26,7 +28,7 @@ import {
   localUriUnionSql,
   applyColumnUpgrades,
 } from './localSchema';
-import { pendingStatusSql, quarantineCountSql } from './syncQueue';
+import { pendingStatusSql, quarantineCountSql, recordGapsForAskSql } from './syncQueue';
 import { uuid } from './utils';
 import { clearTransientFiles } from './transientFiles';
 
@@ -94,6 +96,8 @@ export async function flushLegacyCatalogCachesIfNeeded(
     `DELETE FROM food_items_cache
        WHERE id NOT IN (
          SELECT food_item_id FROM meals WHERE synced = 0 AND food_item_id IS NOT NULL
+         UNION
+         SELECT food_item_id FROM meal_components WHERE synced = 0 AND food_item_id IS NOT NULL
          UNION
          SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL
        );
@@ -328,11 +332,10 @@ export async function clearLocalData(): Promise<void> {
   }
 }
 
-// B-054 §6 — is the local pet-data store empty? Used to gate the block-only-when-empty
-// cold-start overlay: an empty events+vet_visits store means this is a true cold
-// start (fresh device / reinstall / different account after the sign-out wipe),
-// so the first hydration should block behind "Catching up…". A populated store
-// reconciles silently. Soft-deleted events still count as "has data" — the row
+// B-054 §6 — is the local pet-data store empty? One of the cold-start wait's three
+// facts (lib/coldStart.ts): a populated store reconciles silently. Since CUL-1214 an
+// empty store alone no longer puts up the wait — an owner who has logged nothing is
+// empty too — so the watermark decides whether the record was ever read. Soft-deleted events still count as "has data" — the row
 // exists locally, so this isn't a cold start. meals hang off events, so checking
 // the two record tables is sufficient.
 //
@@ -390,6 +393,11 @@ export interface TimelineRow {
   created_at: string;
   updated_at: string;
   food_item_id: string | null;
+  /** A MIXED BOWL (Mixed meals, CUL-2053): set by the History and Home reads through
+   *  `loadMealBowls`; absent on a plain meal and on reads that do not ask (month reads may read a
+   *  mix as a meal naming no food, spec §8). Every row surface reads the bowl from here,
+   *  never `food_item_id`, which is NULL for a mix (T2). */
+  meal_bowl?: AppBowl | null;
   quantity: string | null;
   food_brand: string | null;
   food_product_name: string | null;
@@ -870,8 +878,9 @@ export interface PickerFood {
 export interface FoodIntakeStat {
   brand_key: string;   // LOWER(brand) — grouping key, never displayed
   product_key: string; // LOWER(product_name)
-  meal_count: number;  // logged, non-deleted meals of this food for the pet (≥1)
+  meal_count: number;  // logged, non-deleted meals of this food for the pet (≥1), mixed bowls included
   last_fed_at: string; // MAX(occurred_at) — most recent logged meal, ISO/UTC
+  mix_count: number;   // of meal_count: mixed bowls that held this food (Mixed meals, spec §7.4)
 }
 
 // The pet's most-recently-eaten distinct foods, newest first — ordered by this
@@ -892,6 +901,15 @@ export async function getRecentFoods(
   // is the FAB's fixed day span (CUL-1647), and every other caller omits it.
   const { sql, params } = recentFoodsQuery(petId, daysBack, limit, bounds);
   return db.getAllAsync<PickerFood>(sql, params);
+}
+
+// The picker's rotation shelf's plain foods, with when each was last fed (CUL-2090; the
+// SQL and its reasons are in ./foodQueries).
+export type RotationFood = PickerFood & { last_fed_jd: number };
+
+export async function getRotationFoods(petId: string, daysBack: number, limit: number): Promise<RotationFood[]> {
+  const { sql, params } = rotationFoodsQuery(petId, daysBack, limit);
+  return getDb().getAllAsync<RotationFood>(sql, params);
 }
 
 // ONE food, in the picker's own shape, by id.
@@ -969,10 +987,13 @@ export async function getArchivedFoods(): Promise<ArchivedFood[]> {
 // preference or wellness read — no "favorite", no "picky", no rate needing
 // statistical sign-off (that's PR 5's positive rate-over-N favorites shelf; the
 // AI Signal's detector ② owns decline routing). This only states what was logged.
-export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[]> {
-  const db = getDb();
-  return db.getAllAsync<FoodIntakeStat>(
-    `SELECT LOWER(f.brand)        AS brand_key,
+//
+// MIXED BOWLS (Mixed meals row 4, CUL-2053; spec §7.4): a mix counts toward each food it
+// held, and the note discloses how many ("· 8 in a mix"). This is recency and a count, not
+// a rate, so counting the bowl is honest; every rate keeps it out (§5.4). A mix names no
+// food (T2), so the SQL below counts single-food meals only, and every bowl is read
+// through the one composition read (`lib/mealBowls.ts`), never by its parent's food.
+export const PLAIN_INTAKE_STATS_SQL = `SELECT LOWER(f.brand)        AS brand_key,
             LOWER(f.product_name) AS product_key,
             COUNT(*)              AS meal_count,
             MAX(e.occurred_at)    AS last_fed_at
@@ -981,9 +1002,102 @@ export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[
      JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE m.pet_id = ?
        AND e.deleted_at IS NULL
-     GROUP BY LOWER(f.brand), LOWER(f.product_name)`,
-    [petId],
-  );
+       AND m.component_count IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM meal_components mc WHERE mc.event_id = m.event_id AND mc.deleted_at IS NULL
+       )
+     GROUP BY LOWER(f.brand), LOWER(f.product_name)`;
+
+/** The meals that may be bowls: a count, or any live component (§3: components win). */
+export const MIX_CANDIDATES_SQL = `SELECT m.event_id, e.occurred_at
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+       AND (m.component_count IS NOT NULL OR EXISTS (
+         SELECT 1 FROM meal_components mc WHERE mc.event_id = m.event_id AND mc.deleted_at IS NULL
+       ))`;
+
+/** SQLite's `LOWER()`: ASCII letters only, so a key built here meets the SQL's own key for
+ *  a name with a non-ASCII capital ("Éclair"), rather than splitting one food in two. */
+function sqliteLower(s: string): string {
+  return s.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
+/** The library foods one bowl held, by the library's case-folded brand+product (the key
+ *  `indexIntakeStats` and `foodIntakeKey` meet). A component with no cached food row has
+ *  no library row to annotate. The ONE rule both the Foods tab's "in a mix" count and food
+ *  detail's "In mixed bowls" section read (CUL-2085), so the two always count one set. */
+export function mixedBowlFoodKeys(bowl: Pick<AppBowl, 'components'>): Set<string> {
+  const keys = new Set<string>();
+  for (const c of bowl.components) {
+    const key = componentLibraryKey(c);
+    if (key !== null) keys.add(key);
+  }
+  return keys;
+}
+
+/** One component's library key (see `mixedBowlFoodKeys`), or null with no cached food row. */
+export function componentLibraryKey(c: AppBowl['components'][number]): string | null {
+  if (!c.food || c.food.brand === null || c.food.productName === null) return null;
+  return `${sqliteLower(c.food.brand)}\u001F${sqliteLower(c.food.productName)}`;
+}
+
+/** Folds each bowl into the stats of every food it held, once per bowl per food
+ *  (`mixedBowlFoodKeys`). Instants are compared parsed (C-40). EXPORTED for its test. */
+export function mergeMixedBowlStats(
+  plain: readonly Omit<FoodIntakeStat, 'mix_count'>[],
+  bowls: readonly MixedBowlAt[],
+): FoodIntakeStat[] {
+  const byKey = new Map<string, FoodIntakeStat>();
+  for (const s of plain) byKey.set(`${s.brand_key}\u001F${s.product_key}`, { ...s, mix_count: 0 });
+  for (const { occurredAt, bowl } of bowls) {
+    for (const key of mixedBowlFoodKeys(bowl)) {
+      const [brand_key, product_key] = key.split('\u001F');
+      const held = byKey.get(key);
+      if (!held) {
+        byKey.set(key, { brand_key, product_key, meal_count: 1, last_fed_at: occurredAt, mix_count: 1 });
+        continue;
+      }
+      held.meal_count += 1;
+      held.mix_count += 1;
+      if (Date.parse(occurredAt) > Date.parse(held.last_fed_at)) held.last_fed_at = occurredAt;
+    }
+  }
+  return [...byKey.values()];
+}
+
+/** One mixed (or incomplete) bowl with the instant it was fed. */
+export interface MixedBowlAt {
+  occurredAt: string;
+  bowl: AppBowl;
+}
+
+/** Every mixed bowl one pet was fed (live meals only), through the one composition read.
+ *  Throws on a failed read: an unread bowl is never "no bowls". */
+export async function getMixedBowls(
+  petId: string,
+  db: Pick<ReturnType<typeof getDb>, 'getAllAsync'> = getDb(),
+): Promise<MixedBowlAt[]> {
+  const candidates = (await db.getAllAsync<{ event_id: string; occurred_at: string }>(MIX_CANDIDATES_SQL, [petId])) ?? [];
+  if (candidates.length === 0) return [];
+  // Lazy: `lib/mealBowls.ts` imports this module at runtime (this one imports only its type).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { loadMealBowls } = require('./mealBowls') as typeof import('./mealBowls');
+  const bowls = await loadMealBowls(candidates.map((c) => c.event_id), db);
+  return candidates.flatMap((c) => {
+    const bowl = bowls.get(c.event_id);
+    return bowl ? [{ occurredAt: c.occurred_at, bowl }] : [];
+  });
+}
+
+export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[]> {
+  const db = getDb();
+  const [plain, bowls] = await Promise.all([
+    db.getAllAsync<Omit<FoodIntakeStat, 'mix_count'>>(PLAIN_INTAKE_STATS_SQL, [petId]).then((r) => r ?? []),
+    getMixedBowls(petId, db),
+  ]);
+  return mergeMixedBowlStats(plain, bowls);
 }
 
 /**
@@ -1021,6 +1135,14 @@ export async function getSyncStatus(): Promise<{
     oldestPendingAt: pending?.oldest ?? null,
     quarantinedCount: quarantined?.count ?? 0,
   };
+}
+
+/** Q14 (CUL-772) / CUL-2037: rows a Signal rebuild must treat as missing from the server, from
+ *  ONE statement (`recordGapsForAskSql`, Ask's): `unsent` a drain will still send, `refused` the
+ *  server refused. One read, so a drain re-arming a refused row cannot make both answer no. */
+export async function countRecordGaps(): Promise<{ unsent: number; refused: number }> {
+  const row = await getDb().getFirstAsync<{ unsent: number; refused: number }>(recordGapsForAskSql());
+  return { unsent: row?.unsent ?? 0, refused: row?.refused ?? 0 };
 }
 
 export async function getMealForEvent(eventId: string): Promise<{

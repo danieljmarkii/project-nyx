@@ -17,6 +17,8 @@ const mockFrom = jest.fn((..._a: unknown[]) => ({ update: (...b: unknown[]) => m
 jest.mock('../../lib/supabase', () => ({ supabase: { from: (...a: unknown[]) => mockFrom(...a) } }));
 
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+let mockOnline = true;
+jest.mock('../../hooks/useIsOnline', () => ({ useIsOnline: () => mockOnline }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { EditPetModal } from './EditPetModal';
@@ -53,6 +55,7 @@ beforeAll(() => {
 }, 60000);
 
 beforeEach(() => {
+  mockOnline = true;
   mockFrom.mockClear();
   mockUpdate.mockClear();
   mockEq.mockClear().mockResolvedValue({ error: null });
@@ -116,5 +119,50 @@ describe('EditPetModal weight on save', () => {
 
     expect(sentUpdate()).toHaveProperty('weight_kg', null);
     expect(usePetStore.getState().activePet?.weight_kg).toBeNull();
+  });
+});
+
+// CUL-1911 — the design round's P9: the field says it is the profile weight, not a weigh-in.
+describe('EditPetModal weight note', () => {
+  it('says the profile weight is not a weigh-in, naming the pet', () => {
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    expect(
+      screen.getByText('This is Nyx’s profile weight. To track a change over time, log a weigh-in.'),
+    ).toBeTruthy();
+  });
+
+  it('an emptied name leaves Save disabled, and its label says why', () => {
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    fireEvent.changeText(screen.getByDisplayValue('Nyx'), '  ');
+    const save = screen.getByLabelText('Save, add a name first');
+    expect(save.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(save);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-1911 — the design round's P8: offline is said before the owner types, and a failed
+// save is said in place, never as an alert after the tap.
+describe('EditPetModal offline and failed saves', () => {
+  it('offline: the band names the pet, and Save waits with that reason', () => {
+    mockOnline = false;
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    expect(screen.getByText('You’re offline. Changes to Nyx’s profile can be saved once you’re back.')).toBeTruthy();
+    const save = screen.getByLabelText('Save, you’re offline');
+    fireEvent.press(save);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('a failed save keeps every typed value and says so in the band', async () => {
+    mockEq.mockResolvedValueOnce({ error: { message: 'boom' } });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const onClose = jest.fn();
+    render(<EditPetModal visible onClose={onClose} />);
+    fireEvent.changeText(screen.getByDisplayValue('Nyx'), 'Nyx II');
+    fireEvent.press(screen.getByText('Save'));
+    await waitFor(() => expect(screen.getByText('Couldn’t save. Your changes are still here.')).toBeTruthy());
+    expect(screen.getByDisplayValue('Nyx II')).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

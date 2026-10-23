@@ -3,8 +3,11 @@
 The permanent home for every brand-direction artifact (PM directive, 2026-07-09:
 these review documents are durable records, kept in-repo so future sessions can
 refer back to them). Each is a self-contained interactive HTML page — open in a
-browser, no build step. Newest rounds iterate, they never overwrite: earlier
-rounds stay intact as the decision record.
+browser, no build step. The three in-app rounds below are separate files from July
+2026 and stay as the frozen record of those decisions. A new brand round follows
+`.claude/rules/docs.md` instead (reconciled 2026-10-23, CUL-1899): it republishes to
+the current page's URL with its frames replaced in place (git is the history), and
+splits a current page from an archive only when rounds stop being legible.
 
 | Artifact | What it is | Date |
 |---|---|---|

@@ -17,10 +17,9 @@ jest.mock('../../lib/signalLead', () => ({
 }));
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
-jest.mock('../../hooks/useWatchingRows', () => ({
-  useWatchingRows: () => [],
-  useWatchingRowsRead: () => ({ rows: [], answered: true }),
-}));
+jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true, failed: false, retry: () => {}, reading: false }) }));
+jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true, markArrivalPlayed: async () => {} }));
@@ -32,9 +31,9 @@ jest.mock('../../lib/measureNode', () => ({ measureNodeInWindow: (_n: unknown, c
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { FOOT_LINK_HITSLOP, FOOT_MARGIN_TOP } from '../designV2/signal/SignalZoneFoot';
+import { FOOT_LINK_HITSLOP, FOOT_MARGIN_TOP } from '../surfaces/signal/SignalZoneFoot';
 import { SignalZone } from './SignalZone';
-import { DOOR_A11Y_HINT } from '../designV2/signal/SignalRow';
+import { DOOR_A11Y_HINT } from '../surfaces/signal/SignalRow';
 import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding } from '../../lib/signal';
 import type { TrialCardTrial } from '../../lib/dietTrialCard';
@@ -83,11 +82,13 @@ function state(findings: CachedFinding[]): SignalState {
     petId: 'pet-1',
     findings,
     coverage: [],
-    displayState: 'live',
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    dayNumber: 30,
+    hasRecentActivity: true,
+    hasSubstantialHistory: false,
+    lastLoggedAt: null,
+    lookSinceLastLogged: false,
     eventCount: 80,
     acknowledging: false,
     generatedAt: null,
@@ -97,7 +98,7 @@ function state(findings: CachedFinding[]): SignalState {
 
 function leadModel() {
   const today = toLocalDayKey(new Date());
-  const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], loggedDays: [today] });
+  const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], boutSpans: [], loggedDays: [today] });
   return { title: 'Vomiting, week over week', weekly, line: weekLine(weekly), lineWithheld: null, noun: 'vomiting', trial: null };
 }
 

@@ -1,5 +1,8 @@
 // Choosing a photo source for an event log, and asking for that source's
-// permission — only that one (CUL-577).
+// permission — only that one (CUL-577). The library asks for nothing at all
+// (CUL-1840): the system photo picker runs out of process and hands back only the
+// photo the owner chose, so a whole-library grant is data we would never use, and
+// App Review 5.1.1(iii) treats asking for it as collecting more than we need.
 //
 // The defect this exists to make unrepeatable: both log photo paths asked for the
 // MEDIA LIBRARY grant up front and bailed before the source chooser ever appeared,
@@ -21,26 +24,16 @@ import * as ImagePicker from 'expo-image-picker';
 
 export type PhotoSource = 'camera' | 'library';
 
-// Each denial names the OTHER source, because after this change there always is
-// one: a denial on one path is no longer a denial on both. `false` means the
-// owner has already been told; the caller's job is just to stop quietly.
+// Only the camera has a grant to ask for. A camera denial names the library,
+// which needs no grant and so always works. `false` means the owner has already
+// been told; the caller's job is just to stop quietly.
 export async function ensurePhotoPermission(source: PhotoSource): Promise<boolean> {
-  if (source === 'camera') {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Camera access needed',
-        'Allow camera access in Settings, or choose a photo from your library instead.',
-      );
-      return false;
-    }
-    return true;
-  }
-  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (source === 'library') return true;
+  const { status } = await ImagePicker.requestCameraPermissionsAsync();
   if (status !== 'granted') {
     Alert.alert(
-      'Photo access needed',
-      'Allow photo access in Settings, or take a photo instead.',
+      'Camera access needed',
+      'Allow camera access in Settings, or choose a photo from your library instead.',
     );
     return false;
   }

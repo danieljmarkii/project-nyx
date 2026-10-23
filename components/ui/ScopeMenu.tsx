@@ -2,7 +2,7 @@ import { ComponentType, Fragment, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SectionLabel } from './SectionLabel';
 import { ThemedText } from './ThemedText';
 
@@ -165,7 +165,7 @@ export function ScopeMenu({
         ) : null}
         <ChevronDown
           size={15}
-          color={filtered ? theme.colorAccent : theme.colorTextTertiary}
+          color={filtered ? colorRoles.selected.ink : theme.colorTextTertiary}
           strokeWidth={2}
         />
       </TouchableOpacity>
@@ -204,7 +204,7 @@ export function ScopeMenu({
                 const selected = overrideLabel == null && o.key === value;
                 const isLast = i === options.length - 1;
                 const Icon = o.icon;
-                const check = selected ? <Check size={18} color={theme.colorAccent} strokeWidth={2.5} /> : null;
+                const check = selected ? <Check size={18} color={colorRoles.selected.ink} strokeWidth={2.5} /> : null;
                 const label = (
                   <ThemedText
                     style={
@@ -239,7 +239,7 @@ export function ScopeMenu({
                           {Icon ? (
                             <Icon
                               size={18}
-                              color={selected ? theme.colorAccent : theme.colorTextSecondary}
+                              color={selected ? colorRoles.selected.ink : theme.colorTextSecondary}
                               strokeWidth={1.75}
                             />
                           ) : null}
@@ -302,8 +302,8 @@ const styles = StyleSheet.create({
   // Mirrors FilterChip's default active state so "this control is filtering"
   // reads in the same visual language everywhere.
   pillActive: {
-    borderColor: theme.colorAccent,
-    backgroundColor: theme.colorAccentLight,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ground,
   },
   pillLabel: {
     fontSize: theme.textSM,
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   pillLabelActive: {
-    color: theme.colorAccentInk,
+    color: colorRoles.selected.ink,
   },
   pillCount: {
     fontWeight: theme.weightSemibold,
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   optionLabelSelected: {
-    color: theme.colorAccentInk,
+    color: colorRoles.selected.ink,
     fontWeight: theme.weightMedium,
   },
   // ── History v2's rows (HV-9): each drawn only when its option field is set ──
@@ -433,6 +433,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   optionCountSelected: {
-    color: theme.colorAccentInk,
+    color: colorRoles.selected.ink,
   },
 });

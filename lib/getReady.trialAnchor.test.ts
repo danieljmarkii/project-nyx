@@ -88,6 +88,7 @@ const input = (findings: CachedFinding[], signalAnchor: SignalTrialAnchor): Wort
   trialFacts: { status: 'unknown' },
   trialResponseCounts: null,
   intakeDecline: [],
+  intakeUnavailable: false,
   rundown,
   nowMs: NOW,
 });

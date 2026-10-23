@@ -22,10 +22,9 @@ jest.mock('../../lib/signalLead', () => ({
 }));
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
-jest.mock('../../hooks/useWatchingRows', () => ({
-  useWatchingRows: () => [],
-  useWatchingRowsRead: () => ({ rows: [], answered: true }),
-}));
+jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true, failed: false, retry: () => {}, reading: false }) }));
+jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 // The moment has never played for this pet: the arrival is live.
@@ -34,6 +33,8 @@ jest.mock('../../lib/haptics', () => ({ insightArrival: jest.fn() }));
 jest.mock('../../lib/measureNode', () => ({ measureNodeInWindow: (_n: unknown, cb: (r: null) => void) => cb(null) }));
 
 import { act, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { RAIL_GUTTER } from '../surfaces/home/HomeCard';
 import { SignalZone } from './SignalZone';
 import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding } from '../../lib/signal';
@@ -46,16 +47,18 @@ const benignLead: CachedFinding = {
   finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 3, direction: 'flat', windowDays: 14 },
 };
 
-function state(over: Partial<SignalState>): SignalState {
+function state({ displayState: _ignored, ...over }: Partial<SignalState> & { displayState?: string }): SignalState {
   return {
     petId: 'pet-1',
     findings: [],
     coverage: [],
-    displayState: 'building',
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    dayNumber: 30,
+    hasRecentActivity: true,
+    hasSubstantialHistory: false,
+    lastLoggedAt: null,
+    lookSinceLastLogged: false,
     eventCount: 80,
     acknowledging: false,
     generatedAt: null,
@@ -66,7 +69,7 @@ function state(over: Partial<SignalState>): SignalState {
 
 function leadModel() {
   const today = toLocalDayKey(new Date());
-  const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], loggedDays: [today] });
+  const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], boutSpans: [], loggedDays: [today] });
   return { title: 'Vomiting, week over week', weekly, line: weekLine(weekly), lineWithheld: null, noun: 'vomiting', trial: null };
 }
 
@@ -118,5 +121,38 @@ describe('the first-pattern arrival (CUL-1223, BRK-49)', () => {
     // And the card the owner is left with is the drawn card, not its skeleton.
     expect(view.getByTestId('signal-lead-card')).toBeTruthy();
     expect(view.queryByTestId('signal-lead-skeleton')).toBeNull();
+  });
+
+  // CUL-1525: the rails hang in the card's gutter, LEFT of the stage's content box. The stage
+  // clips for the moment's 1.2s, so its clip must reach into the gutter or the first live
+  // row's rail (a safety row's included) is cut off while the owner watches it arrive.
+  it('keeps every rail inside the stage’s clip while the moment plays', async () => {
+    mockUseSignal.mockReturnValue(state({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    // The quiet line's rail is already in the gutter before the moment.
+    const quiet = StyleSheet.flatten(view.getByTestId('signal-quiet-rail').props.style);
+    expect(quiet.position).toBe('absolute');
+    expect(quiet.left).toBe(-RAIL_GUTTER);
+    mockUseSignal.mockReturnValue(state({ displayState: 'live', findings: [benignLead] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    // Non-vacuity: the moment is playing, so the stage is clipping.
+    expect(view.queryByTestId('signal-arrival-wash')).not.toBeNull();
+    const stage = StyleSheet.flatten(view.getByTestId('signal-arrival-stage').props.style);
+    expect(stage.overflow).toBe('hidden');
+    // The clip box starts a gutter's width left of the text edge, and the padding hands the
+    // content its edge back: a rail at -RAIL_GUTTER lands at the clip's own x = 0.
+    expect(stage.marginLeft).toBe(-RAIL_GUTTER);
+    expect(stage.paddingLeft).toBe(RAIL_GUTTER);
+    // The outgoing frame is absolute, so the padding does not reach it: it sits on the
+    // text edge itself, and its own rail lands at x = 0 too.
+    const outgoing = StyleSheet.flatten(view.getByTestId('signal-arrival-outgoing', { includeHiddenElements: true }).props.style);
+    expect(outgoing.left).toBe(RAIL_GUTTER);
+    // The card itself never clips, so its shadow stays through the moment.
+    const wash = StyleSheet.flatten(view.getByTestId('signal-arrival-wash').props.style);
+    expect(wash.overflow).toBe('hidden');
   });
 });

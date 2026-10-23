@@ -459,7 +459,9 @@ Deno.test('§12 — a report generated the day after completion still renders th
 
   const html = renderReport(snap)
   const text = plain(html)
-  assert.ok(/Completed: Royal Canin Hydrolyzed HP/.test(text), 'past tense, not "Tracking"')
+  // CUL-2092: this trial was marked complete at day 31 of 56, so the past tense leads
+  // "Marked complete early", not "Completed" (a word a vet reads as a full course).
+  assert.ok(/Marked complete early: Royal Canin Hydrolyzed HP/.test(text), 'past tense, not "Tracking"')
   // The owner's read is rendered AS the owner's, and the words "confirmed",
   // "diagnosis" and "food allergy" may not appear near it (§7).
   assert.ok(/The owner reported Cooper was better/.test(text))
@@ -969,6 +971,9 @@ Deno.test('the challenge-window marker is forward-only, species-keyed, and never
   assert.ok(/the published time-to-flare window in dogs/.test(text))
   assert.ok(/Timing only\./.test(text))
   assert.ok(/not an attribution/.test(text))
+  // CUL-1978 cold read 2 — its same-day exclusion is the MARKER's rule, not page 1's test,
+  // which now names associations over a 12–24 h window.
+  assert.ok(/not the association test on page.1: .*this marker deliberately excludes same-day pairs/.test(text), text.slice(text.indexOf('Timing only'), text.indexOf('Timing only') + 300))
 })
 
 Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Mueller)', () => {
@@ -5425,4 +5430,142 @@ Deno.test('CUL-1041 — the unattested clause names the CAPABILITY, not just the
   assert.ok(!/the owner (changed|extended|moved) (it|this|the window)/i.test(page))
   assert.ok(!/on their own|owner decided/i.test(page))
   assert.ok(!/Dr\. Sarah Kim (asked|extended|changed)/.test(page))
+})
+
+// ── CUL-2094 — a trial's length is counted in the OWNER's days ──────────────
+//
+// `ended_at` is a DATE the writing device stamps from its own local day; the report's
+// "today" is the report zone's. When the owner's end date sat a day past the report's
+// today, the trial was cut to the report's today and a full 56-day trial printed
+// "Marked complete at day 55 — 1 day short of the 56-day window" in bold. Both report
+// zones are fixed-offset (America/Phoenix UTC−7, Pacific/Noumea UTC+11), and each
+// meal sits at local midday in its zone, so nothing here rides on DST or the runner.
+const ZONE_MINUS_7 = 'America/Phoenix'
+const ZONE_PLUS_11 = 'Pacific/Noumea'
+const MIDDAY_UTC_IN: Record<string, string> = { [ZONE_MINUS_7]: '19:00:00', [ZONE_PLUS_11]: '01:00:00' }
+
+function endedTrialInput(o: {
+  startedAt: string
+  endedAt: string
+  target: number
+  mealsTo: string
+  now: string
+  timezone: string
+}): ReportInput {
+  const input = wellLoggedTrialInput({ events: [], now: o.now, timezone: o.timezone })
+  const t = input.dietTrials[0]
+  t.startedAt = o.startedAt
+  t.targetDurationDays = o.target
+  t.status = 'completed'
+  t.completedAt = o.endedAt
+  t.endedAt = o.endedAt
+  t.stoppedReason = 'completed'
+  t.allowedFoods = [{ ...TRIAL_FOOD, allowedFrom: o.startedAt }]
+  for (const d of days(o.startedAt, o.mealsTo)) {
+    input.events.push(
+      meal({ date: d, time: MIDDAY_UTC_IN[o.timezone], brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }),
+    )
+  }
+  return input
+}
+
+for (const [tz, now] of [
+  // A Noumea tap at 09:30 Jul 3 (22:30Z Jul 2) read in Phoenix at 16:30 Jul 2.
+  [ZONE_MINUS_7, '2026-07-02T23:30:00Z'],
+  // A Kiritimati tap at 00:30 Jul 3 (10:30Z Jul 2) read in Noumea at 21:45 Jul 2.
+  [ZONE_PLUS_11, '2026-07-02T10:45:00Z'],
+] as const) {
+  Deno.test(`CUL-2094 — a trial run to day 56 of 56 is never called short when the report runs in ${tz}`, () => {
+    const snap = assembleReport(
+      endedTrialInput({ startedAt: '2026-05-09', endedAt: '2026-07-03', target: 56, mealsTo: '2026-07-01', now, timezone: tz }),
+    )
+    assert.equal(snap.trial!.trialDaysElapsed, 56)
+    // The record is read to the report's today, where the owner's last day has not
+    // begun: the span is "as of" that day, and the length is the owner's 56.
+    assert.equal(snap.trial!.dayCounter, 55)
+    assert.deepEqual(snap.trial!.trialDaysOutsideRange, { before: 0, after: 1 })
+    const text = plain(renderReport(snap))
+    assert.ok(/Completed: Royal Canin Hydrolyzed HP/.test(text), 'the headline lead')
+    assert.ok(/55 days as of Jul 2, of a 56-day window/.test(text), 'the span, as of the report\u2019s day')
+    assert.ok(/a trial that has run 56 — 1 trial day falls after it/.test(text), 'the owner\u2019s last day is named, not counted as a gap')
+    assert.ok(/Ran its course — the full window was completed/.test(text), 'the stop row')
+    assert.ok(!/short of the/.test(text), 'no shortfall')
+    assert.ok(!/Marked complete early/.test(text), 'the headline lead')
+    assert.ok(!/The trial ran \d+ of a planned/.test(text), 'the callout length sentence')
+  })
+}
+
+for (const [tz, now] of [
+  // A Pago Pago tap at 22:00 Jul 2 (09:00Z Jul 3) read in Phoenix at 02:05 Jul 3.
+  [ZONE_MINUS_7, '2026-07-03T09:05:00Z'],
+  // A New York tap at 22:00 Jul 2 (02:00Z Jul 3) read in Noumea at 13:05 Jul 3.
+  [ZONE_PLUS_11, '2026-07-03T02:05:00Z'],
+] as const) {
+  Deno.test(`CUL-2094 — a trial ended at day 27 of 28 is never called complete when the report runs in ${tz}`, () => {
+    const snap = assembleReport(
+      endedTrialInput({ startedAt: '2026-06-06', endedAt: '2026-07-02', target: 28, mealsTo: '2026-07-02', now, timezone: tz }),
+    )
+    assert.equal(snap.trial!.trialDaysElapsed, 27)
+    const text = plain(renderReport(snap))
+    assert.ok(/Marked complete at day 27 — 1 day short of the 28-day window/.test(text), 'the stop row')
+    assert.ok(/Marked complete early/.test(text), 'the headline lead')
+    assert.ok(!/Ran its course/.test(text), 'no full-window claim')
+  })
+}
+
+// Before/after: a trial whose end is on or before the report's today, or that has no
+// end, renders exactly what it rendered before CUL-2094. Digests were captured from
+// `main` at a8efdd9 by running this grid there.
+const CUL_2094_GOLDEN: Record<string, string> = {
+  'endedPast/America/Phoenix': 'eb3be69a636edfc6',
+  'endedPast/window/America/Phoenix': '1589209a7f9bd3ee',
+  'endedToday/America/Phoenix': '07ad0bcf16efd92b',
+  'endedToday/window/America/Phoenix': 'd178b78c1ab4a7e7',
+  'endedOnTarget/America/Phoenix': '0122bb4a0b3de7f7',
+  'endedOnTarget/window/America/Phoenix': '4940389b68dd2f7b',
+  'active/America/Phoenix': '4198c96781bd3486',
+  'endedPast/Pacific/Noumea': 'eb3be69a636edfc6',
+  'endedPast/window/Pacific/Noumea': '1589209a7f9bd3ee',
+  'endedToday/Pacific/Noumea': '07ad0bcf16efd92b',
+  'endedToday/window/Pacific/Noumea': 'd178b78c1ab4a7e7',
+  'endedOnTarget/Pacific/Noumea': '0122bb4a0b3de7f7',
+  'endedOnTarget/window/Pacific/Noumea': '4940389b68dd2f7b',
+  'active/Pacific/Noumea': '9021197ecc737c42',
+  'endedPast/UTC': 'eb3be69a636edfc6',
+  'endedPast/window/UTC': '1589209a7f9bd3ee',
+  'endedToday/UTC': '07ad0bcf16efd92b',
+  'endedToday/window/UTC': 'd178b78c1ab4a7e7',
+  'endedOnTarget/UTC': '0122bb4a0b3de7f7',
+  'endedOnTarget/window/UTC': '4940389b68dd2f7b',
+  'active/UTC': '4198c96781bd3486',
+}
+
+Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {
+  const cases: Array<[string, ReportInput]> = []
+  for (const tz of [ZONE_MINUS_7, ZONE_PLUS_11, 'UTC']) {
+    const now = `2026-07-02T${tz === ZONE_PLUS_11 ? '01' : tz === 'UTC' ? '12' : '19'}:30:00Z`
+    for (const [name, endedAt, target] of [
+      ['endedPast', '2026-06-20', 56],
+      ['endedToday', '2026-07-02', 56],
+      ['endedOnTarget', '2026-07-02', 55],
+    ] as const) {
+      const input = endedTrialInput({ startedAt: '2026-05-09', endedAt, target, mealsTo: '2026-07-02', now, timezone: tz })
+      cases.push([`${name}/${tz}`, input])
+      cases.push([`${name}/window/${tz}`, { ...input, requestedWindow: { startDate: '2026-05-20', endDate: '2026-06-15' } }])
+    }
+    cases.push([`active/${tz}`, wellLoggedTrialInput({ now, timezone: tz })])
+  }
+  const digests: Record<string, string> = {}
+  for (const [key, input] of cases) {
+    seq = 0
+    const html = renderReport(assembleReport(input))
+    const bytes = new TextEncoder().encode(html)
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+    digests[key] = [...hash.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  if (Object.keys(CUL_2094_GOLDEN).length === 0) {
+    console.log(JSON.stringify(digests, null, 2))
+    assert.fail('no golden digests recorded')
+  }
+  assert.deepEqual(digests, CUL_2094_GOLDEN)
 })

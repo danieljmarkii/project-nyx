@@ -24,4 +24,12 @@ config.resolver.blockList = Array.isArray(existing)
     ? [existing, TEST_FILES]
     : [TEST_FILES];
 
+// CUL-1895 (the layout-screenshot spike): `NYX_WEB_CAPTURE=1` swaps a few native-only
+// modules for web stubs in scripts/web-capture/stubs, on the web platform only. Unset —
+// every phone build, every `expo start` — this block does nothing and the app resolves
+// exactly as before.
+if (process.env.NYX_WEB_CAPTURE === '1') {
+  require('./scripts/web-capture/metroWebCapture')(config);
+}
+
 module.exports = config;

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
+import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 import { uploadPhoto, compressForUpload } from './storage';
@@ -43,10 +44,17 @@ import {
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
   parentLandedSql,
+  parentCausedRefusalSql,
   visitLandedSql,
   incidentFloorPushQueueSql,
+  mealComponentsPushQueueSql,
+  PARENT_LINKS,
+  REARM_LINKS,
+  REARM_ONLY_LINKS,
+  type ParentLink,
   classifyFloorCheckFailure,
   formatFloorCheckError,
+  functionsErrorStatus,
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
@@ -62,19 +70,14 @@ import {
 } from './vetDocuments';
 import { pullReadCopies, pullReadCopyFor } from './readCopy';
 import { useAuthStore } from '../store/authStore';
+import { currentSignOutEpoch } from './signOutEpoch';
 
 type Db = ReturnType<typeof getDb>;
 
-// Sign-out epoch (FR-9 Trust & Safety gate). Bumped on sign-out. An in-flight
-// hydration captures the epoch at the start of the cycle and re-checks it right
-// before each table's write loop (the network fetch beforehand can take
-// seconds — long enough for a sign-out + clearLocalData to land mid-cycle). If
-// the epoch changed, the hydration bails instead of re-populating the local
-// store that the wipe just cleared with the previous account's data.
-let signOutEpoch = 0;
-export function notifySignedOut(): void {
-  signOutEpoch++;
-}
+// Sign-out epoch (FR-9): the counter lives in lib/signOutEpoch.ts so a writer
+// outside this file can read it without importing this graph (CUL-1968). Every
+// hydration and drain here captures it at the start and re-checks before writing.
+export { notifySignedOut, currentSignOutEpoch } from './signOutEpoch';
 
 // Which local meta column the reconcile strategy needs: 'updated_at' for LWW
 // (events, meals, vet_visits), 'none' for pure insert-only (attachments).
@@ -124,6 +127,7 @@ type QueueTable =
   | 'weight_checks'
   | 'looks'
   | 'intake_checks'
+  | 'meal_components'
   | 'events'
   | 'event_attachments'
   | 'vet_visits'
@@ -314,6 +318,10 @@ export async function markSynced(
       [row.id, row.updated_at ?? null],
     );
   }
+  // CUL-2032 — every row here LANDED, whether or not the guard above matched (an edit
+  // inside the gap leaves the newer version queued, but the server holds this one), so
+  // its parked children get their fresh try.
+  await rearmChildrenOf(db, table, rows.map((r) => r.id));
 }
 
 // The same sweep for the two queues that need no guard, because their rows cannot
@@ -346,6 +354,8 @@ export async function markSyncedInsertOnly(
       chunk,
     );
   }
+  // CUL-2032 — a landed call or care answer re-arms the rows that name it.
+  await rearmChildrenOf(db, table, ids);
 }
 
 // Record ONE row's failed push (B-398). The whole retry-budget policy is here, in
@@ -517,6 +527,331 @@ type RemoteUpsertRow = object;
 //    stuck, which is normally one row.
 //
 // 3. A GIVE-UP, via recordPushFailure. See there for the policy.
+/** A parent this phone holds REFUSED (`synced = 0`, `sync_error` set), as a child's queue read
+ *  saw it: the link it is reached through, and the refused VERSION (`updated_at`) on a parent
+ *  that has one. An insert-only parent has no version: its row never changes. */
+type RefusedParent = { link: ParentLink; id: string; version: string | null };
+type LinkedParent = { link: ParentLink; id: string };
+
+/**
+ * What a child drain knows about its rows' parents (CUL-2032): the mark taken BEFORE its queue
+ * read (`landingMark`), the parents each row names, and which of them this phone held refused.
+ */
+type ChildPushContext = {
+  readonly mark: number;
+  readonly linked: ReadonlyMap<string, readonly LinkedParent[]>;
+  readonly refused: ReadonlyMap<string, readonly RefusedParent[]>;
+};
+
+/**
+ * CUL-2032 — the parents that landed in this process, each with the landing's sequence number.
+ * A child drain takes a mark before its queue read; a parent-caused refusal whose parent landed
+ * after that mark is never parked, because the re-arm that landing ran could not see a row still
+ * in flight (adversarial review pass 1, CUL-2032: the owner fixed the vomit log after the answer
+ * was read, the log landed while the answer was on the wire, and the answer's 23514 parked it
+ * for good). In memory on purpose: a read and its answer happen in one process, and a restart
+ * runs `rearmLegacyChildren`. Bounded: only the newest entries matter to a drain in flight.
+ */
+let landingSeq = 0;
+const landedAt = new Map<string, number>();
+const LANDED_AT_CAP = 5000;
+
+function noteLanded(parent: string, ids: readonly string[]): void {
+  landingSeq += 1;
+  for (const id of ids) {
+    const key = `${parent}:${id}`;
+    landedAt.delete(key); // re-insert, so insertion order stays oldest-first for the prune
+    landedAt.set(key, landingSeq);
+  }
+  if (landedAt.size > LANDED_AT_CAP) {
+    const drop = landedAt.size - LANDED_AT_CAP / 2;
+    let n = 0;
+    for (const key of landedAt.keys()) {
+      if (n++ >= drop) break;
+      landedAt.delete(key);
+    }
+  }
+}
+
+/** Taken by a child drain immediately BEFORE its queue read. */
+function landingMark(): number {
+  return landingSeq;
+}
+
+function landedSince(parent: LinkedParent, mark: number): boolean {
+  return (landedAt.get(`${parent.link.parent}:${parent.id}`) ?? 0) > mark;
+}
+
+/**
+ * CUL-1986, widened to every link by CUL-2032 — which parents these children name, and which
+ * of them this phone holds REFUSED. `parentLandedSql` / `visitLandedSql` let a child behind a
+ * refused parent go up; this map is what tells the push that a refusal the missing parent
+ * explains is not "wait for the parent" but final, because no landing is coming. Read after the
+ * queue read, so it can be stale by the time the answer comes back: the mark catches a parent
+ * that landed since (`recordChildPushFailure`), and `recordRefusedParentFailure` re-checks the
+ * refused version in the statement that parks the row.
+ */
+async function childPushContext<R extends { id: string }>(
+  db: Db,
+  child: QueueTable,
+  rows: readonly R[],
+  mark: number,
+): Promise<ChildPushContext> {
+  const linked = new Map<string, LinkedParent[]>();
+  const refused = new Map<string, RefusedParent[]>();
+  for (const link of PARENT_LINKS) {
+    if (link.child !== child || rows.length === 0) continue;
+    const idOf = (r: R) => (r as unknown as Record<string, unknown>)[link.column];
+    for (const r of rows) {
+      const parentId = idOf(r);
+      if (typeof parentId === 'string') linked.set(r.id, [...(linked.get(r.id) ?? []), { link, id: parentId }]);
+    }
+    const parentIds = [...new Set(rows.map(idOf).filter((v): v is string => typeof v === 'string'))];
+    if (parentIds.length === 0) continue;
+    const versioned = pushGuardColumn(link.parent) === 'updated_at';
+    const held = await db.getAllAsync<{ id: string; version: string | null }>(
+      `SELECT id, ${versioned ? 'updated_at' : 'NULL'} AS version FROM ${link.parent}
+        WHERE synced = 0 AND sync_error IS NOT NULL
+          AND id IN (${parentIds.map(() => '?').join(',')})`,
+      parentIds,
+    );
+    const versionOf = new Map(held.map((p) => [p.id, p.version]));
+    for (const r of rows) {
+      const parentId = idOf(r);
+      if (typeof parentId !== 'string' || !versionOf.has(parentId)) continue;
+      refused.set(r.id, [...(refused.get(r.id) ?? []), { link, id: parentId, version: versionOf.get(parentId)! }]);
+    }
+  }
+  return { mark, linked, refused };
+}
+
+/**
+ * CUL-2046 — the same context for a child the push never holds or parks (`REARM_ONLY_LINKS`):
+ * the parents each row names, and no refused set, so a refusal behind a refused parent keeps
+ * the ordinary budget. What it adds is the mark. A course or a log that lands while a dose's or
+ * a photo's refusal is in flight re-arms before that refusal is recorded, so without the mark
+ * the row parked on its last attempt (or on 023's terminal 23514) until the next app launch
+ * (adversarial review, CUL-2046). With it, that refusal is re-armed instead (`rearmAfterLandedParent`).
+ */
+function rearmOnlyPushContext<R extends { id: string }>(
+  child: QueueTable,
+  rows: readonly R[],
+  mark: number,
+): ChildPushContext {
+  const linked = new Map<string, LinkedParent[]>();
+  for (const link of REARM_ONLY_LINKS) {
+    if (link.child !== child) continue;
+    for (const r of rows) {
+      const parentId = (r as unknown as Record<string, unknown>)[link.column];
+      if (typeof parentId === 'string') linked.set(r.id, [...(linked.get(r.id) ?? []), { link, id: parentId }]);
+    }
+  }
+  return { mark, linked, refused: new Map() };
+}
+
+/**
+ * A refusal one of these refused parents can explain: a same-pet guard's 23514, or a 23503
+ * that names the link's column. A meal's 23503 on its FOOD names `food_item_id`, which no
+ * refused parent's link does: that wait can end (the food pre-sync lands next cycle), so it
+ * keeps the ordinary budget even behind a refused log. A message this does not recognise
+ * keeps the budget too, which only delays the stuck count; it never parks a row that could land.
+ */
+function isParentCausedRefusal(
+  error: { code?: string | null; message?: string | null; details?: string | null },
+  parents: readonly LinkedParent[],
+): boolean {
+  if (error.code === '23514') return true;
+  if (error.code !== '23503') return false;
+  const text = `${error.message ?? ''} ${error.details ?? ''}`;
+  return parents.some((p) => text.includes(p.link.column));
+}
+
+/**
+ * CUL-1986 — a refusal behind a refused parent is final only while the parent is STILL the
+ * refused version the queue read saw, checked in the same statement that parks the row.
+ * Between the queue read and this answer the owner may have fixed the parent and it landed,
+ * re-arming children that were quarantined then; this row was not yet, so parking it now
+ * would strand it with its parent on the server (adversarial review pass 1, CUL-1986). The
+ * parent may even have landed and been refused AGAIN on a newer edit, with its earlier
+ * version now on the server, which is why the version is pinned and not just the state
+ * (pass 2). A child with two refused parents parks while either still holds. If none does,
+ * or the row changed under the push, nothing is parked here and the ordinary budget applies:
+ * one attempt, and the next drain sends it again. CUL-2032 carries it to every link.
+ */
+async function recordRefusedParentFailure(
+  db: Db,
+  table: QueueTable,
+  row: PushedRow,
+  parents: readonly RefusedParent[],
+  error: PushError,
+): Promise<void> {
+  const reason = formatSyncError(error);
+  const versioned = pushGuardColumn(table) === 'updated_at';
+  const stillRefused = parents.map((p) =>
+    `EXISTS (SELECT 1 FROM ${p.link.parent} gate_p WHERE gate_p.id = ?
+               AND gate_p.synced = 0 AND gate_p.sync_error IS NOT NULL
+               ${p.version === null ? '' : 'AND gate_p.updated_at IS ?'})`);
+  const parked = await db.runAsync(
+    `UPDATE ${table} SET sync_error = ?
+      WHERE id = ? ${versioned ? 'AND updated_at IS ?' : ''}
+        AND (${stillRefused.join(' OR ')})`,
+    [
+      reason,
+      row.id,
+      ...(versioned ? [row.updated_at ?? null] : []),
+      ...parents.flatMap((p) => (p.version === null ? [p.id] : [p.id, p.version])),
+    ],
+  );
+  if (parked.changes > 0) {
+    console.warn(`[sync] ${table} ${row.id} refused behind a refused parent: ${reason}`);
+    return;
+  }
+  await applyFailurePolicy(db, table, row, 'rejected', reason);
+}
+
+/**
+ * A refusal its parent explains, from a parent that landed after the drain's mark: the
+ * landing's re-arm ran while this row was in flight and could not see it, so this does it
+ * instead. The row keeps a clean budget rather than spending an attempt, because an attempt
+ * here can be the one that parks it, with no landing left to re-arm it (adversarial pass 2,
+ * CUL-2032). Bounded: once per landing of its parent. Version-guarded like every write to a
+ * queued row, so an edit inside the gap keeps its own state.
+ */
+async function rearmAfterLandedParent(db: Db, table: QueueTable, row: PushedRow, reason: string): Promise<void> {
+  const versioned = pushGuardColumn(table) === 'updated_at';
+  await db.runAsync(
+    `UPDATE ${table} SET sync_attempts = 0, sync_error = NULL
+      WHERE id = ? ${versioned ? 'AND updated_at IS ?' : ''}`,
+    versioned ? [row.id, row.updated_at ?? null] : [row.id],
+  );
+  console.warn(`[sync] ${table} ${row.id} refused while its parent landed; sending again: ${reason}`);
+}
+
+/**
+ * A row's push failure, routed by what its parents did (CUL-2032). A refusal a parent can
+ * explain, from a parent that landed since the drain's mark, is re-armed and never parked
+ * (`rearmAfterLandedParent`). Behind a parent still held refused, it parks while that parent
+ * stays refused (`recordRefusedParentFailure`). Anything else takes the ordinary policy.
+ */
+async function recordChildPushFailure(
+  db: Db,
+  table: QueueTable,
+  row: PushedRow,
+  error: PushError & { details?: string | null },
+  ctx: ChildPushContext | null,
+): Promise<void> {
+  const reason = formatSyncError(error);
+  const linked = ctx?.linked.get(row.id) ?? [];
+  if (ctx && isParentCausedRefusal(error, linked) && linked.some((p) => landedSince(p, ctx.mark))) {
+    await rearmAfterLandedParent(db, table, row, reason);
+    return;
+  }
+  const refused = ctx?.refused.get(row.id);
+  if (refused && isParentCausedRefusal(error, refused)) {
+    await recordRefusedParentFailure(db, table, row, refused, error);
+    return;
+  }
+  await applyFailurePolicy(db, table, row, classifySyncFailure(error), reason);
+}
+
+/**
+ * CUL-1986, widened to every link by CUL-2032 — when parents land, their children parked on
+ * a refusal the missing parent explains get one fresh try. A child behind a refused parent
+ * the server has never seen is refused itself; if the owner then fixes the parent and it
+ * lands, the child would otherwise stay parked for good. Clears the quarantine only:
+ * `synced` is already 0, and `updated_at` does not move, because no owner changed the row
+ * (it is the version markSynced compares and the server's LWW reads). Only a refusal the
+ * missing parent can explain is cleared (`parentCausedRefusalSql`, per link), so a row
+ * parked for a fault of its own (a 42501, a 22P02) stays parked. Called from markSynced and
+ * markSyncedInsertOnly, so every landing re-arms whatever its drain, and before the
+ * children's drains run in pushAllQueues, so the re-armed rows go up in the same cycle.
+ */
+async function rearmChildrenOf(db: Db, parent: QueueTable, ids: readonly string[]): Promise<void> {
+  // CUL-2046 — REARM_LINKS, not PARENT_LINKS: a dose or a photo is never held for its
+  // parent, but parks behind a refused one all the same.
+  const links = REARM_LINKS.filter((l) => l.parent === parent);
+  if (links.length === 0 || ids.length === 0) return;
+  noteLanded(parent, ids);
+  for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = ids.slice(i, i + MARK_SYNCED_CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    for (const link of links) {
+      await db.runAsync(
+        `UPDATE ${link.child} SET sync_attempts = 0, sync_error = NULL
+          WHERE synced = 0 AND ${parentCausedRefusalSql(link)} AND ${link.column} IN (${placeholders})`,
+        chunk,
+      );
+    }
+  }
+}
+
+/**
+ * CUL-2032 — the other-device half. Another phone of the household fixes a parent and it
+ * lands; this phone's copy stays refused (hydration never rewrites a row at `synced = 0`),
+ * so no local landing ever re-arms its children. When a pull shows the server holding a
+ * parent this phone holds refused, its parked children get the same fresh try. Once per
+ * server VERSION of that parent in this process: a pull re-reads the rows inside its
+ * watermark overlap every cycle, and a child refused for a fault of its own would otherwise
+ * be re-sent, and read as pending, on every pull (adversarial review pass 1, LOUD).
+ */
+const serverParentsRearmed = new Set<string>();
+
+async function rearmChildrenOfServerParents(
+  db: Db,
+  parent: 'events' | 'vet_visits' | 'medications' | 'diet_trials',
+  serverRows: readonly { id: string; updated_at: string }[],
+): Promise<void> {
+  const fresh = serverRows.filter((r) => !serverParentsRearmed.has(`${parent}:${r.id}:${r.updated_at}`));
+  for (let i = 0; i < fresh.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = fresh.slice(i, i + MARK_SYNCED_CHUNK);
+    const refused = await db.getAllAsync<{ id: string }>(
+      `SELECT id FROM ${parent} WHERE synced = 0 AND sync_error IS NOT NULL
+          AND id IN (${chunk.map(() => '?').join(',')})`,
+      chunk.map((r) => r.id),
+    );
+    if (refused.length === 0) continue;
+    const refusedIds = new Set(refused.map((r) => r.id));
+    for (const r of chunk) if (refusedIds.has(r.id)) serverParentsRearmed.add(`${parent}:${r.id}:${r.updated_at}`);
+    await rearmChildrenOf(db, parent, [...refusedIds]);
+  }
+}
+
+/**
+ * CUL-2032 — once per process, before the first push: children parked on a refusal their
+ * parent explains, whose parent this phone now holds as landed. Two ways a row gets there:
+ * parked by a build before CUL-2032, when only meals, weigh-ins and looks were re-armed (an
+ * answer under a vomit parked then stays parked after its log landed); and any landing whose
+ * re-arm missed a row this file did not foresee. A child refused for a fault of its own is
+ * sent once more per app launch and parked again: the cost of never stranding one that could
+ * land.
+ */
+let legacyChildrenRearmed = false;
+
+async function rearmLegacyChildren(db: Db): Promise<void> {
+  if (legacyChildrenRearmed) return;
+  try {
+    for (const link of REARM_LINKS) {
+      await db.runAsync(
+        `UPDATE ${link.child} SET sync_attempts = 0, sync_error = NULL
+          WHERE synced = 0 AND ${parentCausedRefusalSql(link)}
+            AND ${link.column} IN (SELECT id FROM ${link.parent} WHERE synced = 1)`,
+      );
+    }
+    legacyChildrenRearmed = true;
+  } catch (e) {
+    // Never blocks the push; the next cycle tries again.
+    console.warn('[sync] re-arming parked children failed (retrying next cycle):', e);
+  }
+}
+
+/** Test seam: a fresh process, for the in-memory state above. */
+export function __resetChildRearmStateForTests(): void {
+  landingSeq = 0;
+  landedAt.clear();
+  serverParentsRearmed.clear();
+  legacyChildrenRearmed = false;
+}
+
 async function pushRows<L extends { id: string; updated_at: string }>(
   db: Db,
   // LWW only: every batch writer in this file pushes a table an owner can rewrite,
@@ -525,15 +860,32 @@ async function pushRows<L extends { id: string; updated_at: string }>(
   table: LwwQueueTable,
   rows: L[],
   toRemote: (row: L) => RemoteUpsertRow,
+  // CUL-1986 / CUL-2032 — the rows whose parent this phone holds refused (`childPushContext`).
+  // A 23503 costs a row one attempt because "the parent has not landed yet"; behind a
+  // refused parent that wait has no end, so the 23503 is final instead, and the row is
+  // counted as needing the owner within one cycle rather than reading pending for 25. A
+  // same-pet 23514 parks only while that parent is still refused (`recordRefusedParentFailure`).
+  // Empty for a queue with no parent, which keeps the ordinary policy.
+  childCtx: ChildPushContext | null = null,
+  // CUL-2051 — send every batch TWICE, so the second send is the ON CONFLICT update and the
+  // table's BEFORE UPDATE trigger stamps updated_at with server NOW. A fresh INSERT keeps the
+  // phone's updated_at, and an incremental pull's floor is a server time (lib/hydration.ts
+  // FR-3), so a row written offline and pushed later than the overlap sat below every other
+  // phone's watermark for good. Only for a table whose rows are born and changed by this
+  // push (meal_components); a row is marked synced only on the second send's answer.
+  opts: { serverStamp?: boolean } = {},
   // Returns the ids that ACTUALLY LANDED server-side. Callers that order two
   // pushes against each other (syncPendingDietTrials) need this, not just "did it
   // throw" — "ordered" is only true if the second push can be held back when the
   // first did not land.
 ): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from(table)
-    .upsert(rows.map(toRemote), { onConflict: 'id' })
-    .select('id');
+  const send = async (payload: RemoteUpsertRow[]) => {
+    const once = () => supabase.from(table).upsert(payload, { onConflict: 'id' }).select('id');
+    if (!opts.serverStamp) return once();
+    const first = await once();
+    return first.error ? first : once();
+  };
+  const { data, error } = await send(rows.map(toRemote));
 
   if (error) {
     if (classifySyncFailure(error) === 'transient') {
@@ -547,12 +899,9 @@ async function pushRows<L extends { id: string; updated_at: string }>(
     );
     const landed = new Set<string>();
     for (const row of rows) {
-      const { data: one, error: rowError } = await supabase
-        .from(table)
-        .upsert([toRemote(row)], { onConflict: 'id' })
-        .select('id');
+      const { data: one, error: rowError } = await send([toRemote(row)]);
       if (rowError) {
-        await recordPushFailure(db, table, row, rowError);
+        await recordChildPushFailure(db, table, row, rowError, childCtx);
         continue;
       }
       if (!((one ?? []) as { id: string }[]).some((r) => r.id === row.id)) {
@@ -886,13 +1235,18 @@ async function drainMealsQueue(): Promise<void> {
 
   const db = getDb();
 
-  // Only push meals whose PARENT event has already landed in Supabase (events.synced
-  // = 1). The meal→event FK is enforced server-side, so a meal that flushes ahead of
-  // its event fails with 23503 ("Key is not present in table events"). The unsynced
-  // callers (insertMeal, signal regen, completion-card edits) aren't serialised, so a
-  // meal can otherwise out-race its own event; gating on the parent here makes the
-  // order safe by construction — a meal simply waits for the next cycle, after its
-  // event syncs. (B-027 FK-ordering class; same reasoning as medication_administrations.)
+  // A meal never goes up ahead of its PARENT event (`parentLandedSql`). The meal→event FK
+  // is enforced server-side, so a meal that flushes ahead of its event fails with 23503
+  // ("Key is not present in table events"). The unsynced callers (insertMeal, signal
+  // regen, completion-card edits) aren't serialised, so a meal can otherwise out-race its
+  // own event; the gate makes the order safe by construction, and a meal simply waits for
+  // the next cycle, after its event syncs. (B-027 FK-ordering class.)
+  //
+  // A REFUSED event holds nothing (CUL-1986). This gate used to be `e.synced = 1`, which a
+  // refused event never reaches, so a meal re-rated to refused (an intake signal) stayed
+  // on this phone for good even when the log's earlier version was on the server and the
+  // rating would land. It now goes up and takes its own answer (`childPushContext`).
+  const mark = landingMark();
   const unsyncedMeals = await db.getAllAsync<{
     id: string;
     event_id: string;
@@ -905,14 +1259,19 @@ async function drainMealsQueue(): Promise<void> {
     updated_at: string;
     intake_rating: string | null;
     logged_via: string;
+    component_count: number | null;
   }>(
-    `SELECT m.* FROM meals m
-       JOIN events e ON e.id = m.event_id
-      WHERE m.synced = 0 AND m.${NOT_QUARANTINED_SQL} AND e.synced = 1
+    `SELECT * FROM meals WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('meals')}
       LIMIT 100`,
   );
 
-  if (unsyncedMeals.length === 0) return;
+  // Mixed meals row 2 (CUL-2051): a bowl's components go up after its meal, in this same
+  // drain, so they run even when no meal is pending (a ratio edit writes components only).
+  if (unsyncedMeals.length === 0) {
+    await drainMealComponents(db, session.user.id);
+    return;
+  }
 
   // Ensure every referenced food item exists in Supabase before syncing meals.
   // The local best-effort insert at food-creation time may have failed — this
@@ -920,6 +1279,7 @@ async function drainMealsQueue(): Promise<void> {
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
+  const childCtx = await childPushContext(db, 'meals', unsyncedMeals, mark);
   await pushRows(db, 'meals', unsyncedMeals, (m) => ({
     id: m.id,
     event_id: m.event_id,
@@ -938,13 +1298,60 @@ async function drainMealsQueue(): Promise<void> {
     // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
     // local default, the record's own value for inbox-ingested rows.
     logged_via: m.logged_via ?? 'app',
-  }));
+    // Migration 105: NULL = one food, 2+ = a mix (whose food_item_id is NULL, T2).
+    component_count: m.component_count ?? null,
+  }), childCtx);
+
+  await drainMealComponents(db, session.user.id);
+}
+
+/**
+ * The foods in a mixed bowl (Mixed meals row 2, CUL-2051; spec §3). Called only from
+ * drainMealsQueue, after the meals push, so the order is events → meals → components and
+ * the queue shares the meals slot (one drain at a time, C-24). A row waits until its event
+ * and its meal row have landed (`mealComponentsLandedSql`). The set is replace-whole-set:
+ * a write tombstones the old rows and inserts a new generation, so every push here is
+ * either a fresh insert or a tombstone, and a re-push of a live row changes nothing the
+ * read rule looks at (its generation lives in its id, lib/mealComposition.ts). Sent with
+ * `serverStamp`, so every row carries the server's time once it lands (pushRows says why).
+ */
+async function drainMealComponents(db: Db, userId: string): Promise<void> {
+  const mark = landingMark();
+  const unsynced = await db.getAllAsync<{
+    id: string; pet_id: string; event_id: string; position: number;
+    food_item_id: string | null; food_label: string; share: number | null; share_source: string;
+    amount_value: number | null; amount_unit: string | null;
+    updated_at: string; deleted_at: string | null;
+  }>(mealComponentsPushQueueSql());
+  if (unsynced.length === 0) return;
+
+  // Pattern 6: a component can name a food captured offline, which the FK would refuse.
+  const foodIds = [...new Set(unsynced.map((c) => c.food_item_id).filter(Boolean))] as string[];
+  await presyncFoodItems(db, userId, foodIds, 'meal components');
+
+  const childCtx = await childPushContext(db, 'meal_components', unsynced, mark);
+  await pushRows(db, 'meal_components', unsynced, (c) => ({
+    id: c.id,
+    pet_id: c.pet_id,
+    event_id: c.event_id,
+    position: c.position,
+    food_item_id: c.food_item_id,
+    food_label: c.food_label,
+    share: c.share,
+    share_source: c.share_source,
+    amount_value: c.amount_value,
+    amount_unit: c.amount_unit,
+    // created_at is the server's (105 grants no client write to it).
+    updated_at: c.updated_at,
+    deleted_at: c.deleted_at,
+  }), childCtx, { serverStamp: true });
 }
 
 // Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
-// exactly: only push a weight row whose PARENT event has already landed
-// (events.synced = 1), because the weight_checks→events FK is enforced server-side
-// and a child that flushes ahead of its event fails with 23503. The unsynced
+// exactly: a weight row never goes up while its PARENT event is still waiting to land
+// (`parentLandedSql`), because the weight_checks→events FK is enforced server-side
+// and a child that flushes ahead of its event fails with 23503; a REFUSED event holds
+// nothing (CUL-1986), as the meals drain says. The unsynced
 // callers (insertWeightCheck) aren't serialised against the event push, so gating
 // on the parent here makes the order safe by construction — a weight row simply
 // waits for the next cycle, after its event syncs. No food_items pre-sync (a weight
@@ -960,6 +1367,7 @@ async function drainWeightChecksQueue(): Promise<void> {
 
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<{
     id: string;
     event_id: string;
@@ -971,14 +1379,14 @@ async function drainWeightChecksQueue(): Promise<void> {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT w.* FROM weight_checks w
-       JOIN events e ON e.id = w.event_id
-      WHERE w.synced = 0 AND w.${NOT_QUARANTINED_SQL} AND e.synced = 1
+    `SELECT * FROM weight_checks WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('weight_checks')}
       LIMIT 100`,
   );
 
   if (unsynced.length === 0) return;
 
+  const childCtx = await childPushContext(db, 'weight_checks', unsynced, mark);
   const landed = await pushRows(db, 'weight_checks', unsynced, (w) => ({
     id: w.id,
     event_id: w.event_id,
@@ -995,7 +1403,7 @@ async function drainWeightChecksQueue(): Promise<void> {
     // value is authoritative only for a brand-new INSERT; either way the row
     // lands with a usable updated_at for the next device to compare.
     updated_at: w.updated_at,
-  }));
+  }), childCtx);
 
   // CUL-293 — reconcile the denormalized pets.weight_kg snapshot for each pet whose
   // reading just landed. The inline snapshot write at log/edit time (app/log.tsx and
@@ -1017,14 +1425,21 @@ async function drainWeightChecksQueue(): Promise<void> {
  * (migration 064) reads the parent row and requires it to exist, to belong to the same
  * pet, and to BE a `check_in` — so a child that flushes ahead of its event is not just
  * an FK violation, it is refused as a check_violation (23514) that the row can never
- * recover from on its own. Gating on `e.synced = 1` makes the order safe by
- * construction: a look simply waits for the next cycle, after its event lands.
+ * recover from on its own. Gating on the parent (`parentLandedSql`) makes the order safe
+ * by construction: a look simply waits for the next cycle, after its event lands.
  *
  * 23514 is already in TERMINAL_SYNC_ERROR_CODES, which is the right policy for this
  * table and is why nothing is added here: with the parent gate in place, a
  * check_violation from `looks` means a genuinely malformed row (a forged pet_id, a
  * local_day two days from its parent) — a permanent, client-side fault, not something
  * to retry into. Verified against lib/syncQueue.ts rather than assumed.
+ *
+ * Behind a REFUSED check_in the look goes up too (CUL-1986; it used to wait on
+ * `e.synced = 1`, which a refused event never reaches). It lands when the check_in's
+ * earlier version is on the server; when the server has never seen the check_in, the
+ * same 23514 quarantines it on the first try, and it is counted as needing the owner.
+ * When the check_in is fixed and lands, the look gets a fresh try
+ * (`rearmChildrenOf`).
  */
 export function syncPendingLooks(): Promise<void> {
   return serializeQueuePush('looks', drainLooksQueue);
@@ -1050,6 +1465,7 @@ async function drainIntakeChecksQueue(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<{
     id: string; pet_id: string; event_id: string; since: string; form: string; answer: string;
     answered_at: string; updated_at: string; deleted_at: string | null;
@@ -1059,6 +1475,7 @@ async function drainIntakeChecksQueue(): Promise<void> {
       LIMIT 100`,
   );
   if (unsynced.length === 0) return;
+  const childCtx = await childPushContext(db, 'intake_checks', unsynced, mark);
   await pushRows(db, 'intake_checks', unsynced, (r) => ({
     id: r.id,
     pet_id: r.pet_id,
@@ -1069,7 +1486,7 @@ async function drainIntakeChecksQueue(): Promise<void> {
     answered_at: r.answered_at,
     updated_at: r.updated_at,
     deleted_at: r.deleted_at,
-  }));
+  }), childCtx);
 }
 
 async function drainLooksQueue(): Promise<void> {
@@ -1079,6 +1496,7 @@ async function drainLooksQueue(): Promise<void> {
 
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<{
     id: string;
     event_id: string;
@@ -1091,14 +1509,14 @@ async function drainLooksQueue(): Promise<void> {
     created_at: string;
     updated_at: string;
   }>(
-    `SELECT l.* FROM looks l
-       JOIN events e ON e.id = l.event_id
-      WHERE l.synced = 0 AND l.${NOT_QUARANTINED_SQL} AND e.synced = 1
+    `SELECT * FROM looks WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('looks')}
       LIMIT 100`,
   );
 
   if (unsynced.length === 0) return;
 
+  const childCtx = await childPushContext(db, 'looks', unsynced, mark);
   await pushRows(db, 'looks', unsynced, (l) => ({
     id: l.id,
     event_id: l.event_id,
@@ -1119,7 +1537,7 @@ async function drainLooksQueue(): Promise<void> {
     // for a brand-new INSERT; either way the row lands with a usable updated_at for
     // the next device to compare.
     updated_at: l.updated_at,
-  }));
+  }), childCtx);
 }
 
 // Re-point the server-side pets.weight_kg snapshot at a pet's LATEST reading (by
@@ -1205,6 +1623,9 @@ async function drainEventsQueue(): Promise<void> {
     // B-289 — capture-surface provenance (see the meals payload note).
     logged_via: e.logged_via ?? 'app',
   }));
+
+  // CUL-1986 / CUL-2032 — a log that lands gives its parked children a fresh try: markSynced
+  // re-arms them (`rearmChildrenOf`), before the children's drains run in pushAllQueues.
 
   // CUL-641 — the RETRY half of the delete-side snapshot reconcile, and the exact
   // mirror of the CUL-293 loop in syncPendingWeightChecks above. Removing a weigh-in
@@ -1457,12 +1878,14 @@ export function syncPendingVetDocuments(): Promise<void> {
 async function drainVetDocumentsQueue(): Promise<void> {
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<LocalVetDocument>(
     `SELECT * FROM vet_documents WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
         AND ${visitLandedSql('vet_documents')}
       ORDER BY created_at LIMIT 20`,
   );
 
+  const childCtx = await childPushContext(db, 'vet_documents', unsynced, mark);
   for (const doc of unsynced) {
     try {
       if (needsObjectUpload(doc.local_uri)) {
@@ -1520,7 +1943,7 @@ async function drainVetDocumentsQueue(): Promise<void> {
       // and vet-visit attachments). Leave synced = 0 so the queue retries.
       if (error) {
         console.warn('[sync] vet_document upsert failed:', error.message);
-        await recordPushFailure(db, 'vet_documents', doc, error);
+        await recordChildPushFailure(db, 'vet_documents', doc, error, childCtx);
         continue;
       }
       if (!((data ?? []) as { id: string }[]).some((r) => r.id === doc.id)) {
@@ -1581,6 +2004,7 @@ export function syncPendingVetAppointments(): Promise<void> {
 async function drainVetAppointmentsQueue(): Promise<void> {
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<{
     id: string; pet_id: string; scheduled_at: string;
     clinic_name: string | null; vet_name: string | null; reason: string | null;
@@ -1594,6 +2018,7 @@ async function drainVetAppointmentsQueue(): Promise<void> {
 
   if (unsynced.length === 0) return;
 
+  const childCtx = await childPushContext(db, 'vet_appointments', unsynced, mark);
   await pushRows(db, 'vet_appointments', unsynced, (a) => ({
     id: a.id, pet_id: a.pet_id, scheduled_at: a.scheduled_at,
     clinic_name: a.clinic_name, vet_name: a.vet_name, reason: a.reason,
@@ -1607,7 +2032,7 @@ async function drainVetAppointmentsQueue(): Promise<void> {
     vet_visit_id: a.vet_visit_id,
     cancelled_at: a.cancelled_at, deleted_at: a.deleted_at,
     created_at: a.created_at, updated_at: a.updated_at,
-  }));
+  }), childCtx);
 }
 
 /**
@@ -1721,6 +2146,7 @@ async function drainEventAttachmentsQueue(): Promise<void> {
 
   // Only a live log's photo is pushed. LEFT JOIN, so a photo whose event row is
   // not on this device still goes up as it always did; only a KNOWN removal holds it.
+  const mark = landingMark();
   const pending = await db.getAllAsync<{
     id: string; event_id: string; pet_id: string;
     local_uri: string; storage_path: string;
@@ -1731,6 +2157,7 @@ async function drainEventAttachmentsQueue(): Promise<void> {
       WHERE a.synced = 0 AND a.${NOT_QUARANTINED_SQL} AND e.deleted_at IS NULL
       LIMIT 20`,
   );
+  const childCtx = rearmOnlyPushContext('event_attachments', pending, mark);
 
   for (const att of pending) {
     try {
@@ -1747,7 +2174,7 @@ async function drainEventAttachmentsQueue(): Promise<void> {
       // read them back. supabase-js returns errors, it does not throw.
       if (error) {
         console.warn('[sync] event_attachment upsert failed:', error.message);
-        await recordPushFailure(db, 'event_attachments', att, error);
+        await recordChildPushFailure(db, 'event_attachments', att, error, childCtx);
         continue;
       }
       // Marked only while the log is live, in one statement (lib/attachments.ts).
@@ -2133,6 +2560,7 @@ async function drainMedicationsQueue(): Promise<void> {
 
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<LocalMedication>(
     `SELECT * FROM medications WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
        AND ${visitLandedSql('medications')} LIMIT 100`,
@@ -2142,7 +2570,7 @@ async function drainMedicationsQueue(): Promise<void> {
   const itemIds = [...new Set(unsynced.map((m) => m.medication_item_id).filter(Boolean))] as string[];
   await presyncMedicationItems(db, session.user.id, itemIds);
 
-  await pushRows(db, 'medications', unsynced, medicationRowToRemote);
+  await pushRows(db, 'medications', unsynced, medicationRowToRemote, await childPushContext(db, 'medications', unsynced, mark));
 }
 
 // Flush unsynced medication dose-event children (B-117). Mirrors syncPendingMeals
@@ -2174,6 +2602,7 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
 
   const db = getDb();
 
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<LocalMedicationAdministration>(
     `SELECT * FROM medication_administrations WHERE synced = 0 AND ${NOT_QUARANTINED_SQL} LIMIT 100`,
   );
@@ -2182,7 +2611,8 @@ async function drainMedicationAdministrationsQueue(): Promise<void> {
   const itemIds = [...new Set(unsynced.map((a) => a.medication_item_id).filter(Boolean))] as string[];
   await presyncMedicationItems(db, session.user.id, itemIds);
 
-  await pushRows(db, 'medication_administrations', unsynced, administrationRowToRemote);
+  await pushRows(db, 'medication_administrations', unsynced, administrationRowToRemote,
+    rearmOnlyPushContext('medication_administrations', unsynced, mark));
 }
 
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────
@@ -2208,13 +2638,14 @@ async function drainDietTrialsQueue(): Promise<void> {
   if (!session) return;
 
   const db = getDb();
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<LocalDietTrial>(DIET_TRIAL_PUSH_QUEUE_SQL);
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds, 'diet trial');
 
-  const landed = await pushEndingTrialsFirst(db, unsynced);
+  const landed = await pushEndingTrialsFirst(db, unsynced, mark);
 
   // An allowed food waits for its trial to land (`parentLandedSql`), and only this drain
   // knows when one has. A trial the server already holds still reads unsent while an edit
@@ -2233,7 +2664,7 @@ async function drainDietTrialsQueue(): Promise<void> {
 
 /** The trials push, in the two ordered passes below. Returns every trial that landed,
  *  from either pass. */
-async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promise<Set<string>> {
+async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[], mark: number): Promise<Set<string>> {
   // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
   // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
   // an owner who ends one trial and starts another while offline queues two rows
@@ -2256,12 +2687,13 @@ async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promis
   // starting rows costs one cycle; they are still queued and retry next flush,
   // by which time the ending row has either landed or been quarantined (and a
   // quarantined row drops out of the queue, so this cannot starve).
+  const childCtx = await childPushContext(db, 'diet_trials', unsynced, mark);
   const ending = unsynced.filter((t) => t.status !== 'active');
   const starting = unsynced.filter((t) => t.status === 'active');
   const landed = new Set<string>();
 
   if (ending.length > 0) {
-    const endingLanded = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+    const endingLanded = await pushRows(db, 'diet_trials', ending, dietTrialRowToRemote, childCtx);
     endingLanded.forEach((id) => landed.add(id));
     const stuck = ending.filter((t) => !endingLanded.has(t.id));
     if (stuck.length > 0) {
@@ -2273,7 +2705,7 @@ async function pushEndingTrialsFirst(db: Db, unsynced: LocalDietTrial[]): Promis
     }
   }
   if (starting.length > 0) {
-    (await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote)).forEach((id) => landed.add(id));
+    (await pushRows(db, 'diet_trials', starting, dietTrialRowToRemote, childCtx)).forEach((id) => landed.add(id));
   }
   return landed;
 }
@@ -2297,13 +2729,14 @@ async function drainDietTrialFoodsQueue(): Promise<void> {
   if (!session) return;
 
   const db = getDb();
+  const mark = landingMark();
   const unsynced = await db.getAllAsync<LocalDietTrialFood>(DIET_TRIAL_FOOD_PUSH_QUEUE_SQL);
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((f) => f.food_item_id))];
   await presyncFoodItems(db, session.user.id, foodIds, 'diet trial foods');
 
-  await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
+  await pushRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote, await childPushContext(db, 'diet_trial_foods', unsynced, mark));
 }
 
 // ── Notification-preferences mirror push (B-661 PR 2) ────────────────────────
@@ -2385,6 +2818,13 @@ interface RemoteMeal {
   quantity: string | null; is_full_portion: boolean | null; notes: string | null;
   created_at: string; updated_at: string; intake_rating: string | null;
   logged_via: string | null; // B-289
+  component_count: number | null; // migration 105
+}
+interface RemoteMealComponent {
+  id: string; pet_id: string; event_id: string; position: number;
+  food_item_id: string | null; food_label: string; share: number | string | null;
+  share_source: string; amount_value: number | string | null; amount_unit: string | null;
+  created_at: string; updated_at: string; deleted_at: string | null;
 }
 interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
@@ -2489,7 +2929,7 @@ interface RemoteNotificationPreference {
   created_at: string; updated_at: string;
 }
 
-async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
+async function hydrateEvents(db: Db, stale: () => boolean): Promise<boolean> {
   // FR-3: pull only events changed since the last successful pull, with the
   // commit-skew safety overlap (see watermarkQueryFloor).
   const since = await getWatermark('events');
@@ -2501,14 +2941,17 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
       'deleted_at, created_at, updated_at, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
-  if (!rows || rows.length === 0) return;
+  if (!rows) return false;
+  if (rows.length === 0) return true; // read, and the server holds none: still a pull
 
   const localById = await loadLocalRowMeta(db, 'events', rows.map((r) => r.id), 'updated_at');
+  if (stale()) return false;
+  await rearmChildrenOfServerParents(db, 'events', rows);
   // FR-4: server-time LWW — replace only when remote is strictly newer (see
   // lib/hydration.ts header for the accepted failure mode). FR-7: soft-deletes
   // ride along on the deleted_at column, hidden by the WHERE deleted_at IS NULL reads.
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
-  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  if (stale()) return false; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const e of toWrite) {
     await db.runAsync(
       `INSERT INTO events
@@ -2544,8 +2987,9 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
   // write and here can't re-insert the old account's watermark into the just-
   // cleared table (which would make the next account's login a wrong incremental).
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
-  if (stale()) return;
+  if (stale()) return false;
   if (wm) await setWatermark('events', wm);
+  return true;
 }
 
 async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
@@ -2563,7 +3007,7 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMeal>(
     'meals',
-    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, logged_via',
+    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, logged_via, component_count',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -2581,24 +3025,69 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
     // it's safe to compare in SQL — no parseTs format trap).
     await db.runAsync(
       `INSERT INTO meals
-        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, logged_via, created_at, updated_at, intake_rating, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, logged_via, created_at, updated_at, intake_rating, component_count, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, quantity=excluded.quantity,
          is_full_portion=excluded.is_full_portion, notes=excluded.notes,
          logged_via=excluded.logged_via,
-         intake_rating=excluded.intake_rating, updated_at=excluded.updated_at, synced=1
+         intake_rating=excluded.intake_rating, component_count=excluded.component_count,
+         updated_at=excluded.updated_at, synced=1
        WHERE meals.synced = 1`,
       [
         m.id, m.event_id, m.pet_id, m.food_item_id ?? null, m.quantity ?? 'unknown',
         m.is_full_portion === null || m.is_full_portion === undefined ? null : (m.is_full_portion ? 1 : 0),
         m.notes ?? null, m.logged_via ?? 'app', m.created_at, m.updated_at, m.intake_rating ?? null,
+        m.component_count ?? null,
       ],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('meals', wm);
+}
+
+async function hydrateMealComponents(db: Db, stale: () => boolean): Promise<void> {
+  // Mixed meals row 2 (CUL-2051): incremental on updated_at, the intake_checks shape. Runs
+  // after hydrateMeals, so a bowl's parent rows are present for the readers that join them
+  // (spec §3 point 4). A food taken out travels as deleted_at; a hard delete (the events
+  // and pets cascades) is caught by reconcileDeletedMealComponents. EXPLICIT COLUMN LIST.
+  const since = await getWatermark('meal_components');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteMealComponent>(
+    'meal_components',
+    'id, pet_id, event_id, position, food_item_id, food_label, share, share_source, amount_value, amount_unit, created_at, updated_at, deleted_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+  const localById = await loadLocalRowMeta(db, 'meal_components', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return;
+  const num = (v: number | string | null) => (v === null || v === undefined ? null : Number(v));
+  for (const r of toWrite) {
+    // The mutable fields only (105 freezes id, pet_id, event_id and position). The
+    // `WHERE ...synced = 1` backstop never clobbers a row with an unpushed local edit.
+    await db.runAsync(
+      `INSERT INTO meal_components
+        (id, pet_id, event_id, position, food_item_id, food_label, share, share_source,
+         amount_value, amount_unit, created_at, updated_at, deleted_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         food_item_id=excluded.food_item_id, food_label=excluded.food_label,
+         share=excluded.share, share_source=excluded.share_source,
+         amount_value=excluded.amount_value, amount_unit=excluded.amount_unit,
+         updated_at=excluded.updated_at, deleted_at=excluded.deleted_at, synced=1
+       WHERE meal_components.synced = 1`,
+      [
+        r.id, r.pet_id, r.event_id, r.position, r.food_item_id ?? null, r.food_label,
+        num(r.share), r.share_source, num(r.amount_value), r.amount_unit ?? null,
+        r.created_at, r.updated_at, r.deleted_at ?? null,
+      ],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('meal_components', wm);
 }
 
 async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> {
@@ -2792,7 +3281,7 @@ async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<vo
   if (wm) await setWatermark('event_attachments', wm);
 }
 
-async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
+async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> {
   // FR-3: incremental on updated_at, with overlap.
   const since = await getWatermark('vet_visits');
   const floor = watermarkQueryFloor(since);
@@ -2809,11 +3298,13 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
     'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
-  if (!rows || rows.length === 0) return;
+  if (!rows) return false;
+  if (rows.length === 0) return true; // read, and the server holds none: still a pull
 
   const localById = await loadLocalRowMeta(db, 'vet_visits', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
-  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  if (stale()) return false; // FR-9: signed out during the fetch — don't write to a wiped store.
+  await rearmChildrenOfServerParents(db, 'vet_visits', rows);
   for (const v of toWrite) {
     await db.runAsync(
       `INSERT INTO vet_visits
@@ -2831,8 +3322,9 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
-  if (stale()) return;
+  if (stale()) return false;
   if (wm) await setWatermark('vet_visits', wm);
+  return true;
 }
 
 async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise<void> {
@@ -3093,6 +3585,7 @@ async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
   const localById = await loadLocalRowMeta(db, 'medications', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  await rearmChildrenOfServerParents(db, 'medications', rows);
   for (const m of toWrite) {
     await db.runAsync(
       `INSERT INTO medications
@@ -3221,6 +3714,7 @@ async function hydrateDietTrials(db: Db, stale: () => boolean): Promise<void> {
   const localById = await loadLocalRowMeta(db, 'diet_trials', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  await rearmChildrenOfServerParents(db, 'diet_trials', rows);
   for (const t of toWrite) {
     await db.runAsync(
       `INSERT INTO diet_trials
@@ -3421,44 +3915,88 @@ async function hydrateNotificationPreferences(db: Db, stale: () => boolean): Pro
 // local meal (synced = 0) is NOT yet on the server and must never be reconciled
 // away.
 async function reconcileDeletedMeals(db: Db, stale: () => boolean): Promise<void> {
+  await reconcileByAbsence(db, 'meals', stale);
+}
+
+// The same verified absence pass for a bowl's components (Mixed meals row 2, spec §3
+// point 4). A component is never hard-deleted by a client (105 grants no DELETE), but the
+// events and pets cascades remove it server-side, which no incremental pull can observe;
+// left here, a ghost row would keep a deleted bowl reading as a mix.
+async function reconcileDeletedMealComponents(db: Db, stale: () => boolean): Promise<void> {
+  await reconcileByAbsence(db, 'meal_components', stale);
+}
+
+// The one absence pass both tables run (CUL-2076: the meals copy had drifted from the
+// components one and could delete a meal a push landed mid-pass). Skipping is always the
+// safe direction, so every step that cannot vouch for its read returns without deleting.
+async function reconcileByAbsence(db: Db, table: 'meals' | 'meal_components', stale: () => boolean): Promise<void> {
+  // The local set is read FIRST: a push running beside this pass (insertMeal and
+  // setMealComponents each fire one) can land a row and mark it synced after the server's
+  // id list was read, and that row must not look like a ghost. Only a row already synced
+  // before the server read can be.
+  const local = await db.getAllAsync<{ id: string; synced: number }>(`SELECT id, synced FROM ${table}`);
   // ⚠️ Verified full pull. This pass DELETEs by absence, so a SILENTLY truncated
   // read (PostgREST can return data:[] with no error under load / statement
-  // timeout) would make every synced local meal look like a ghost and mass-delete
+  // timeout) would make every synced local row look like a ghost and mass-delete
   // real data — the highest-blast-radius line in hydration. Guard: get the exact
-  // server count first, then the full id set, and proceed ONLY if they match. A
-  // count/length mismatch (truncation, or a meal added between the two queries)
-  // skips the pass and retries next cycle. Skipping is always the safe direction.
+  // server count first, then the full id set, and proceed ONLY if they match.
   const { count, error: countErr } = await supabase
-    .from('meals')
+    .from(table)
     .select('id', { count: 'exact', head: true });
   if (countErr || count === null) {
-    console.warn('[hydrate] meals count failed, skipping absence pass:', countErr?.message);
+    console.warn(`[hydrate] ${table} count failed, skipping absence pass:`, countErr?.message);
     return;
   }
-  const remote = await fetchAllRows<{ id: string }>('meals', 'id');
+  const remote = await fetchAllRows<{ id: string }>(table, 'id');
   // null = couldn't read the server set (error). Do NOT delete blind on a failed
-  // read — an empty [] (genuinely no server meals) is a valid set to reconcile
+  // read — an empty [] (genuinely no server rows) is a valid set to reconcile
   // against, but a null is "we don't know", so skip this cycle.
   if (remote === null) return;
   if (remote.length !== count) {
-    console.warn(`[hydrate] meals id pull incomplete (${remote.length}/${count}), skipping absence pass`);
+    console.warn(`[hydrate] ${table} id pull incomplete (${remote.length}/${count}), skipping absence pass`);
     return;
   }
   if (stale()) return; // FR-9: signed out mid-cycle — don't touch the wiped store.
-
-  const serverIds = new Set(remote.map((r) => r.id));
-  const localMeals = await db.getAllAsync<{ id: string; synced: number }>(
-    'SELECT id, synced FROM meals',
-  );
-  const toDelete = mealsToDeleteByAbsence(serverIds, localMeals);
-  if (toDelete.length === 0) return;
-  if (stale()) return; // re-check after the local read (another async hop).
-
+  // An empty server answer never deletes. When getSession() comes back empty (a retryable
+  // refresh failure, no SIGNED_OUT), supabase-js sends the anon key, and anon may SELECT
+  // meals: RLS answers count 0, [] and [] with no error, which would delete every synced
+  // meal. The cost is that an account whose every row really was removed keeps its ghosts.
+  if (count === 0 && local.some((r) => r.synced === 1)) {
+    console.warn(`[hydrate] ${table} server answered empty beside synced local rows, skipping absence pass`);
+    return;
+  }
+  const candidates = mealsToDeleteByAbsence(new Set(remote.map((r) => r.id)), local);
+  if (candidates.length === 0) return;
+  // The id pull pages by offset, so a cascade delete and an insert landing between two pages
+  // can shift a page and skip live rows while the total still matches the count (adversarial
+  // pass 2). Ask the server about each candidate by id before deleting it; a row the targeted
+  // read still finds is not a ghost, and a failed read deletes nothing. Each read also asks for
+  // one id the pull just saw (the canary): a re-check that went out on the anon key answers []
+  // with no error, and only a missing canary tells that apart from a chunk of real ghosts.
+  const canary = remote[0]?.id;
+  if (canary === undefined) return;
   const CHUNK = 400;
+  const toDelete: string[] = [];
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const chunk = candidates.slice(i, i + CHUNK);
+    const { data: still, error: checkErr } = await supabase.from(table).select('id').in('id', [...chunk, canary]);
+    if (checkErr || !still) {
+      console.warn(`[hydrate] ${table} absence re-check failed, skipping absence pass:`, checkErr?.message);
+      return;
+    }
+    const present = new Set((still as { id: string }[]).map((r) => r.id));
+    if (!present.has(canary)) {
+      console.warn(`[hydrate] ${table} absence re-check lost a live row, skipping absence pass`);
+      return;
+    }
+    toDelete.push(...chunk.filter((id) => !present.has(id)));
+  }
+  if (toDelete.length === 0) return;
+  if (stale()) return;
   for (let i = 0; i < toDelete.length; i += CHUNK) {
     const chunk = toDelete.slice(i, i + CHUNK);
-    const placeholders = chunk.map(() => '?').join(',');
-    await db.runAsync(`DELETE FROM meals WHERE id IN (${placeholders})`, chunk);
+    // `synced = 1` again: a row re-queued by an edit since the snapshot is pending, not a ghost.
+    await db.runAsync(`DELETE FROM ${table} WHERE synced = 1 AND id IN (${chunk.map(() => '?').join(',')})`, chunk);
   }
 }
 
@@ -3484,11 +4022,18 @@ export async function hydrateFromCloud(): Promise<void> {
   // FR-9: capture the sign-out epoch; each step re-checks it before writing so a
   // sign-out + local wipe landing mid-cycle aborts the rest instead of
   // re-populating the just-cleared store.
-  const epoch = signOutEpoch;
-  const stale = () => signOutEpoch !== epoch;
+  const epoch = currentSignOutEpoch();
+  const stale = () => currentSignOutEpoch() !== epoch;
 
   const db = getDb();
-  await runHydrationStep('events', () => hydrateEvents(db, stale));
+  // CUL-1214 — whether this cycle READ the two record tables (an empty answer counts).
+  // An account with nothing logged never earns a watermark on either, so these two
+  // reads, not a row count, are what retire the cold-start wait (lib/coldStart.ts).
+  let eventsPulled = false;
+  let visitsPulled = false;
+  await runHydrationStep('events', async () => {
+    eventsPulled = await hydrateEvents(db, stale);
+  });
   if (stale()) return;
   await runHydrationStep('meals', () => hydrateMeals(db, stale));
   if (stale()) return;
@@ -3496,6 +4041,12 @@ export async function hydrateFromCloud(): Promise<void> {
   // just-inserted meal is already present in the local set (and in the server
   // set, so it won't be flagged).
   await runHydrationStep('meals:absence', () => reconcileDeletedMeals(db, stale));
+  if (stale()) return;
+  // Mixed meals row 2 (CUL-2051): a bowl's components after its meals (spec §3 point 4),
+  // then their own absence pass.
+  await runHydrationStep('meal_components', () => hydrateMealComponents(db, stale));
+  if (stale()) return;
+  await runHydrationStep('meal_components:absence', () => reconcileDeletedMealComponents(db, stale));
   if (stale()) return;
   // B-186: weight_checks.event_id → events (CASCADE), so it must follow
   // hydrateEvents (run first, above). LWW child like meals; no absence pass.
@@ -3520,8 +4071,20 @@ export async function hydrateFromCloud(): Promise<void> {
   // the step's label (`guards/readState.test.ts` keeps it that way).
   await runHydrationStep('verdict copy', () => pullReadCopies(db, stale));
   if (stale()) return;
-  await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
+  await runHydrationStep('vet_visits', async () => {
+    visitsPulled = await hydrateVetVisits(db, stale);
+  });
   if (stale()) return;
+  // Written as soon as both reads are known, not after the ~20 steps that follow, so an
+  // app killed mid-cycle (or a slow late step) costs no extra wait on the next launch.
+  // The account's id rides in the value: a marker that survived a failed wipe never
+  // vouches for the next account on this phone.
+  if (eventsPulled && visitsPulled) {
+    await runHydrationStep('cold-start marker', async () => {
+      if (!stale()) await markRecordHydrated(session.user.id);
+    });
+    if (stale()) return;
+  }
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
   if (stale()) return;
   // B-478: vet_documents declares no local FK (its vet_visit_id link is optional
@@ -3602,15 +4165,15 @@ export async function refreshReadCopyOutcome(eventId: string): Promise<ReadCopyO
   // epoch, it is `skipped`, so nobody starts a watch carrying the previous account's
   // event id into the next one (CUL-1127's class).
   let epoch: number | null = null;
-  const failed = (): ReadCopyOutcome => (epoch !== null && signOutEpoch === epoch ? 'failed' : 'skipped');
+  const failed = (): ReadCopyOutcome => (epoch !== null && currentSignOutEpoch() === epoch ? 'failed' : 'skipped');
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return 'skipped';
     const appSession = useAuthStore.getState().session;
     if (!appSession || appSession.user.id !== session.user.id) return 'skipped';
-    const asked = signOutEpoch;
+    const asked = currentSignOutEpoch();
     epoch = asked;
-    const changed = await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== asked);
+    const changed = await pullReadCopyFor(getDb(), eventId, () => currentSignOutEpoch() !== asked);
     if (changed === null) return failed();
     return changed > 0 ? 'changed' : 'unchanged';
   } catch (e) {
@@ -3673,14 +4236,15 @@ export function syncPendingCareAcknowledgements(): Promise<void> {
 const CARE_ACK_MAX_PASSES = 5;
 
 async function drainCareAcknowledgementsQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   const landedPets = new Set<string>();
   try {
     for (let pass = 0; pass < CARE_ACK_MAX_PASSES; pass++) {
-      if (epoch !== signOutEpoch) return;
+      if (epoch !== currentSignOutEpoch()) return;
+      const mark = landingMark();
       const rows = await db.getAllAsync<{
         id: string; pet_id: string; symptom_type: string; source: string; anchor_on: string;
         vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null;
@@ -3692,6 +4256,7 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
      ORDER BY created_at ASC, rowid ASC LIMIT 50`,
       );
       let landedThisPass = 0;
+      const childCtx = await childPushContext(db, 'care_acknowledgements', rows, mark);
       for (const r of rows) {
         const { data, error } = await supabase
           .from('care_acknowledgements')
@@ -3703,13 +4268,13 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
           .select('id');
         // A sign-out landed while the request was in the air: this account's rows are gone
         // from the phone, and nothing more may be marked or armed for them.
-        if (epoch !== signOutEpoch) return;
+        if (epoch !== currentSignOutEpoch()) return;
         if (error && error.code !== '23505') {
           if (classifySyncFailure(error) === 'transient') {
             console.warn('[sync] care_acknowledgements push failed (retrying next cycle):', error.message);
             return;
           }
-          await recordPushFailure(db, 'care_acknowledgements', r, error);
+          await recordChildPushFailure(db, 'care_acknowledgements', r, error, childCtx);
           continue;
         }
         if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
@@ -3724,7 +4289,7 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
       if (landedThisPass === 0) break;
     }
   } finally {
-    if (landedPets.size > 0 && epoch === signOutEpoch) {
+    if (landedPets.size > 0 && epoch === currentSignOutEpoch()) {
       // Required lazily: lib/signal.ts imports this module, so a top-level import would be
       // a cycle. By the time a row has landed, both modules are long loaded.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -3779,18 +4344,20 @@ async function insertQueuedRows<T extends { id: string }>(
   rows: readonly T[],
   payload: (r: T) => object,
   epoch: number,
+  mark: number,
 ): Promise<'stop' | number> {
   const db = getDb();
+  const childCtx = await childPushContext(db, table, rows, mark);
   let landed = 0;
   for (const r of rows) {
     const { data, error } = await supabase.from(table).insert(payload(r)).select('id');
-    if (epoch !== signOutEpoch) return 'stop';
+    if (epoch !== currentSignOutEpoch()) return 'stop';
     if (error && error.code !== '23505') {
       if (classifySyncFailure(error) === 'transient') {
         console.warn(`[sync] ${table} push failed (retrying next cycle):`, error.message);
         return 'stop';
       }
-      await recordPushFailure(db, table, r, error);
+      await recordChildPushFailure(db, table, r, error, childCtx);
       continue;
     }
     if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
@@ -3807,14 +4374,15 @@ async function insertQueuedRows<T extends { id: string }>(
 const CALL_QUEUE_MAX_PASSES = 5;
 
 async function drainVetCallsQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   // Re-selects until nothing moves: an edited note or an Undo names its call and is held
   // behind it, so one read sends the call and the next sends what waited on it.
   for (let pass = 0; pass < CALL_QUEUE_MAX_PASSES; pass++) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
+    const mark = landingMark();
     const rows = await db.getAllAsync<{
       id: string; pet_id: string; called_on: string; event_id: string; note: string | null;
       supersedes: string | null; withdrawn: number; covers_rank: number | null; covers_from: string | null;
@@ -3830,18 +4398,19 @@ async function drainVetCallsQueue(): Promise<void> {
       // refuses a root without it, so a row written by an earlier build of this branch is
       // terminal there, never silently coverless.
       covers_rank: r.covers_rank, covers_from: r.covers_from,
-    }), epoch);
+    }), epoch, mark);
     if (landed === 'stop' || landed === 0) return;
   }
 }
 
 async function drainVetCallFollowUpsQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   for (let pass = 0; pass < CALL_QUEUE_MAX_PASSES; pass++) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
+    const mark = landingMark();
     const rows = await db.getAllAsync<{
       id: string; pet_id: string; vet_call_id: string | null; event_id: string; reason: string;
       status: string; answer: string | null; worth_it: string | null; due_at: string; expires_at: string;
@@ -3854,7 +4423,7 @@ async function drainVetCallFollowUpsQueue(): Promise<void> {
       id: r.id, pet_id: r.pet_id, vet_call_id: r.vet_call_id, event_id: r.event_id,
       reason: r.reason, status: r.status, answer: r.answer, worth_it: r.worth_it,
       due_at: r.due_at, expires_at: r.expires_at,
-    }), epoch);
+    }), epoch, mark);
     if (landed === 'stop' || landed === 0) return;
   }
 }
@@ -3888,7 +4457,7 @@ export function syncPendingCaptureChanges(): Promise<void> {
 }
 
 async function drainCaptureChangesQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
@@ -3900,11 +4469,11 @@ async function drainCaptureChangesQueue(): Promise<void> {
      ORDER BY created_at ASC, rowid ASC LIMIT 50`,
   );
   for (const r of rows) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     const { error } = await supabase.rpc('record_capture_change', {
       p_id: r.id, p_pet_id: r.pet_id, p_change_key: r.change_key, p_first_seen_at: r.first_seen_at,
     });
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     if (error) {
       if (classifySyncFailure(error) === 'transient') {
         console.warn('[sync] capture_changes push failed (retrying next cycle):', error.message);
@@ -3949,14 +4518,16 @@ export function syncPendingIncidentFloors(): Promise<void> {
 }
 
 const FLOOR_QUEUE_MAX_PASSES = 3;
+const FLOOR_EVENT_LINK = PARENT_LINKS.find((l) => l.child === 'incident_floor_queue' && l.parent === 'events')!;
 
 async function drainIncidentFloorQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   for (let pass = 0; pass < FLOOR_QUEUE_MAX_PASSES; pass++) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
+    const mark = landingMark();
     const rows = await db.getAllAsync<{ id: string; pet_id: string; event_id: string; device_claim: string | null }>(
       incidentFloorPushQueueSql(),
     );
@@ -3969,7 +4540,7 @@ async function drainIncidentFloorQueue(): Promise<void> {
       // Before each request, not only after: a sign-out during the previous trigger's
       // marking or arrival must not send the next trigger's id and claim under whatever
       // session follows (the privacy pass on PR-28b; CUL-642's class).
-      if (epoch !== signOutEpoch) return;
+      if (epoch !== currentSignOutEpoch()) return;
       const claim = [...group].reverse().find((r) => r.device_claim !== null)?.device_claim ?? null;
       let parsedClaim: unknown = null;
       try {
@@ -3990,15 +4561,21 @@ async function drainIncidentFloorQueue(): Promise<void> {
       } catch (e) {
         error = e;
       }
-      if (epoch !== signOutEpoch) return;
+      if (epoch !== currentSignOutEpoch()) return;
       if (error) {
         const failure = classifyFloorCheckFailure(error);
         if (failure === 'transient') {
           console.warn('[sync] re-check failed (retrying next cycle):', error);
           return;
         }
+        // CUL-2032: a 404 is the missing log's, and a log that landed after this pass's read
+        // was re-armed while the request was in flight; spending an attempt here could park the
+        // marker with nothing left to re-arm it.
+        const logLanded = functionsErrorStatus(error) === 404
+          && landedSince({ link: FLOOR_EVENT_LINK, id: eventId }, mark);
         for (const r of group) {
-          await applyFailurePolicy(db, 'incident_floor_queue', r, failure, formatFloorCheckError(error));
+          if (logLanded) await rearmAfterLandedParent(db, 'incident_floor_queue', r, formatFloorCheckError(error));
+          else await applyFailurePolicy(db, 'incident_floor_queue', r, failure, formatFloorCheckError(error));
         }
         continue;
       }
@@ -4014,7 +4591,7 @@ async function drainIncidentFloorQueue(): Promise<void> {
         // request's answer is said after this one's.
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { onFloorLanded } = require('./incidentFloorArrival') as typeof import('./incidentFloorArrival');
-        await onFloorLanded({ triggerEventId: eventId, petId: group[0].pet_id, eventIds: floored, stale: () => epoch !== signOutEpoch });
+        await onFloorLanded({ triggerEventId: eventId, petId: group[0].pet_id, eventIds: floored, stale: () => epoch !== currentSignOutEpoch() });
       }
     }
     if (landed === 0) return;
@@ -4100,6 +4677,8 @@ async function hydrateVetCallFollowUps(db: Db, stale: () => boolean): Promise<vo
 }
 
 async function pushAllQueues(): Promise<void> {
+  // CUL-2032: children a landed parent left parked (an earlier build's, or a missed re-arm).
+  await rearmLegacyChildren(getDb());
   // FAB PR-29b (CUL-1657): FIRST. It names only its pet, which is written remote-first,
   // so it waits on nothing, and going first means this phone's change date reaches the
   // server before any event logged after it. A push cut off between the two would
@@ -4111,8 +4690,8 @@ async function pushAllQueues(): Promise<void> {
   // B-186: weight_checks FK→events; pushed after events (parents land first).
   await syncPendingWeightChecks();
   // CUL-868: looks FK→events AND trg_looks_same_pet requires the parent check_in to
-  // be visible, so the parent must land first. The drain gates on e.synced = 1
-  // regardless — this ordering only saves a cycle.
+  // be visible, so the parent must land first. The drain holds it behind a parent still
+  // waiting to land regardless (`parentLandedSql`); this ordering only saves a cycle.
   await syncPendingLooks();
   // Engines v3 PR-30q: an answer waits on its vomit (pushed above); the drain holds it
   // otherwise, because 097's guard refuses an unseen parent with a TERMINAL 23514.

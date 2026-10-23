@@ -16,7 +16,7 @@ import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
 import { resolveRecordPetName, usePetStore, type Pet } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { rundownHistoryHref } from '../lib/historyDoors';
-import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
+import { buildWorthRaising, getReadyIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
 import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
@@ -25,6 +25,8 @@ import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
 import {
   loadDietTrialFacts,
   loadTrialPredicateFacts,
+  readIntakeDecline,
+  vomitLineMayReassure,
   type TrialPredicateFacts,
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
@@ -545,7 +547,7 @@ async function buildForAppointment(
 
   // One clock for every read and the build, so the two trial reads bound the same window.
   const nowMs = Date.now();
-  const [signalRow, trialInput, recheckRead] = await Promise.all([
+  const [signalRow, trialInput, recheckRead, petDeclines] = await Promise.all([
     answeredWithin(
       readSignalCache(subjectId)
         // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
@@ -578,10 +580,19 @@ async function buildForAppointment(
       : Promise.resolve(null),
     // For the appointment's pet (C-9).
     pet ? readRecheckFacts(pet, nowMs) : Promise.resolve('unreadable' as const),
+    // CUL-1093: the device's intake declines for EVERY pet, trial or not. The trial
+    // loader returns before its own decline read when there is no trial, so a cat that
+    // stopped eating with no trial running reached this page with nothing to say.
+    // The appointment's pet (C-9), on the build's one clock. `null` is a check that did
+    // not answer (CUL-1972), kept apart from `[]` all the way to the page.
+    pet
+      ? readIntakeDecline({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs)
+      : // No pet to check is a check that did not answer, never "no decline".
+        Promise.resolve(null),
   ]);
 
   if (loadIdRef.current !== myId) {
-    return { rows: [], signalUnavailable: false };
+    return { rows: [], signalUnavailable: false, intakeUnavailable: false };
   }
 
   // TS-8: the screen's model over the SAME input this page already read, for the same pet.
@@ -613,10 +624,24 @@ async function buildForAppointment(
   const counts = trialInput?.trialResponse ?? null;
   const running = trialScreenModel && trialScreenModel.kind === 'trial' ? trialScreenModel : null;
   const vomitMasking = maskingFor(maskRecord, 'vomit', symptomWord('vomit'), today);
-  const trialScreen =
+  // The pet's own read is the one that covers every pet, so ITS silence is the unknown:
+  // the trial input's declines come from a second read of the same detector, and its
+  // `[]` cannot tell "no decline" from "did not answer" (CUL-1972).
+  const intakeUnavailable = petDeclines === null;
+  const intakeDecline = getReadyIntakeDeclines(petDeclines ?? [], trialInput);
+  const maskedScreen =
     running && vomitMasking && counts
       ? { ...running, vomiting: maskedTrialSentence(vomitMasking, counts, running.vomiting, today) }
       : trialScreenModel;
+  // The recheck quotes the strip's vomiting sentence verbatim, and the strip withholds it
+  // only on the TRIAL input's declines — `[]` when that read threw. So a fall printed
+  // beside "couldn't check how Mochi has been eating" (or beside the pet read's decline)
+  // while the Signal's own falling pair was withheld (the adversarial pass, CUL-1972 #6).
+  // The fall only: a rise or the trial-so-far count stays, as on Home.
+  const trialScreen =
+    maskedScreen && maskedScreen.kind === 'trial' && (intakeUnavailable || intakeDecline.length > 0) && vomitLineMayReassure(counts)
+      ? { ...maskedScreen, vomiting: null }
+      : maskedScreen;
   // The Signal rows are quoted VERBATIM, so a row whose own sentence compares a window a masking
   // span touches (a trial pair, a falling reflection, a stood-down line) is dropped rather than
   // rewritten (the adversarial pass, findings 1 and 2). Dropping can only empty the list, never
@@ -642,7 +667,7 @@ async function buildForAppointment(
     (findings ? await answeredWithin(readScreenSentences(subjectId, findings, nowMs), SIGNAL_CACHE_WAIT_MS) : null) ??
     new Map<string, string>();
   if (loadIdRef.current !== myId) {
-    return { rows: [], signalUnavailable: false };
+    return { rows: [], signalUnavailable: false, intakeUnavailable: false };
   }
 
   return buildWorthRaising({
@@ -656,7 +681,12 @@ async function buildForAppointment(
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
-    withholdFallingVomit: trialInput ? isAnimalNotEating(trialInput) : true,
+    // And a decline this page states is a not-eating register on its own (CUL-1093):
+    // a pet with no trial has no trial register, so without this its falling vomit
+    // pair printed beside "has eaten less than usual today".
+    // And a check that did not answer withholds too (CUL-1972): unknown is not eating.
+    withholdFallingVomit:
+      (trialInput ? isAnimalNotEating(trialInput) : true) || intakeDecline.length > 0 || intakeUnavailable,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
     // Accepted only when it answered for the trial the input above is about.
@@ -669,7 +699,9 @@ async function buildForAppointment(
     // default here would have handed that over silently (C-37: a default on a
     // safety-relevant parameter is the decision). EVERY flag, structured, so
     // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
-    intakeDecline: localIntakeDeclines(trialInput),
+    // Read for every pet, not only through the trial input (CUL-1093).
+    intakeDecline,
+    intakeUnavailable,
     rundown: built,
     nowMs,
   });

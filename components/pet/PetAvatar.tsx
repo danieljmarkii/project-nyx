@@ -1,13 +1,12 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import * as Network from 'expo-network';
 import { ThemedText } from '../ui/ThemedText';
 import { theme } from '../../constants/theme';
-import { getPublicUrl } from '../../lib/storage';
+import {
+  evictPetPhotoUrl, getPetPhotoUrl, peekPetPhotoUrl, petPhotoVersion, subscribePetPhotoVersions,
+} from '../../lib/storage';
 import { isOnlineFromState } from '../../lib/network';
-
-// Same bucket the Pet tab uploads to — every avatar surface reads from it.
-const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
 // ── The reconnect epoch (CUL-617) ───────────────────────────────────────────
 // A photo that failed has to be able to come BACK. The tab bar mounts once for
@@ -68,6 +67,69 @@ function subscribeToReconnect(onChange: () => void): () => void {
 
 const readEpoch = () => reconnectEpoch;
 
+export interface PetPhoto {
+  /** The signed link to render, or null: show the designed fallback. */
+  uri: string | null;
+  /** Key the <Image> on this, so a new link is a fresh fetch. */
+  attempt: string;
+  onError: () => void;
+}
+
+// The one way a pet photo reaches the screen (CUL-1856): a signed link from
+// lib/storage.ts, never a public URL. Shared by the avatar disc and the Pet
+// profile hero, so the two can never disagree about which link, or about what a
+// failure looks like.
+//
+// One attempt is the path, its photo version (a re-upload) and the reconnect
+// epoch. A load error on a signed link earns ONE re-sign inside that attempt:
+// a link the tab bar has held for over an hour has expired, and that is the
+// failure a fresh link fixes. A second error is a real one (the object is gone,
+// the bucket refuses it), and the caller falls back to the pet's initial until
+// the next attempt. Signing that returns null lands on the same fallback.
+export function usePetPhotoUri(photoPath: string | null): PetPhoto {
+  const epoch = useSyncExternalStore(subscribeToReconnect, readEpoch, readEpoch);
+  const version = useSyncExternalStore(
+    subscribePetPhotoVersions,
+    () => petPhotoVersion(photoPath),
+    () => petPhotoVersion(photoPath),
+  );
+  const base = `${photoPath ?? ''}#${version}#${epoch}`;
+  const [resignedFor, setResignedFor] = useState<string | null>(null);
+  const attempt = `${base}#${resignedFor === base ? 1 : 0}`;
+
+  const [signed, setSigned] = useState<{ attempt: string; url: string | null } | null>(null);
+  const [failedAttempt, setFailedAttempt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!photoPath) return;
+    let live = true;
+    void getPetPhotoUrl(photoPath).then((url) => {
+      if (live) setSigned({ attempt, url });
+    });
+    return () => { live = false; };
+  }, [attempt, photoPath]);
+
+  // A warm cache renders on the first frame, so moving between screens never
+  // flashes the initial over a face the app already has a good link for. Read
+  // only before this attempt's own signing has answered.
+  const uri = !photoPath
+    ? null
+    : signed?.attempt === attempt
+      ? signed.url
+      : peekPetPhotoUrl(photoPath);
+
+  const onError = () => {
+    if (photoPath && uri && resignedFor !== base) {
+      evictPetPhotoUrl(photoPath, uri);
+      setResignedFor(base);
+      return;
+    }
+    setFailedAttempt(attempt);
+  };
+
+  return { uri: failedAttempt === attempt ? null : uri, attempt, onError };
+}
+
 interface PetAvatarProps {
   name: string;
   photoPath: string | null;
@@ -97,19 +159,15 @@ interface PetAvatarProps {
 // would erode trust in the app rather than in the photo. That question is
 // answerable on the Pet profile's hero, where "Change photo" sits underneath it.
 export function PetAvatar({ name, photoPath, size }: PetAvatarProps) {
-  const photoUri = photoPath ? getPublicUrl(PET_PHOTO_BUCKET, photoPath) : null;
   const round = { width: size, height: size, borderRadius: theme.radiusFull };
-  const epoch = useSyncExternalStore(subscribeToReconnect, readEpoch, readEpoch);
 
   // The failure is remembered against the ATTEMPT it belongs to, not as a bare
-  // boolean, so both retry triggers fall out of the derivation instead of
-  // needing a reset effect: a new photo path (pet switch, re-upload) or a
-  // reconnect changes the key, which makes `failed` false again on the very same
-  // render. Keying the <Image> on it is what makes RN actually re-fetch rather
-  // than hold its own failed state.
-  const attempt = `${photoUri ?? ''}#${epoch}`;
-  const [failedAttempt, setFailedAttempt] = useState<string | null>(null);
-  const showPhoto = photoUri !== null && failedAttempt !== attempt;
+  // boolean, so every retry trigger falls out of the derivation instead of
+  // needing a reset effect: a new photo path (pet switch), a re-upload, a
+  // reconnect or a re-signed link changes the key, which clears the failure on
+  // the very same render. Keying the <Image> on it is what makes RN actually
+  // re-fetch rather than hold its own failed state.
+  const { uri: photoUri, attempt, onError } = usePetPhotoUri(photoPath);
 
   return (
     <View
@@ -138,7 +196,7 @@ export function PetAvatar({ name, photoPath, size }: PetAvatarProps) {
         {[...name][0]?.toUpperCase() ?? ''}
       </ThemedText>
 
-      {showPhoto && (
+      {photoUri !== null && (
         <Image
           testID="pet-avatar-photo"
           key={attempt}
@@ -149,7 +207,7 @@ export function PetAvatar({ name, photoPath, size }: PetAvatarProps) {
           // broken-looking disc this file exists to prevent.
           style={[StyleSheet.absoluteFill, { borderRadius: theme.radiusFull }]}
           resizeMode="cover"
-          onError={() => setFailedAttempt(attempt)}
+          onError={onError}
         />
       )}
     </View>

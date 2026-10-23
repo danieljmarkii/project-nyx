@@ -51,7 +51,7 @@ export function WorthRaisingList({
   petName,
   renderRecheck,
 }: Props) {
-  const { rows, signalUnavailable } = worthRaising;
+  const { rows, signalUnavailable, intakeUnavailable } = worthRaising;
   const heading = rows.length > 0 ? 'Worth raising' : 'Your questions';
 
   return (
@@ -90,8 +90,28 @@ export function WorthRaisingList({
         {signalUnavailable ? (
           <View style={styles.gap}>
             <ThemedText style={styles.gapText}>
+              {/* "and is complete" only while the eating check answered: beside a check
+                  that did not, a completeness claim is the calm this page may not lend. */}
               {petName}’s Signal couldn’t be read on this device, so anything it has flagged
-              isn’t in this list. The rundown below is from this device and is complete.
+              isn’t in this list. The rundown below is from this device
+              {intakeUnavailable ? '.' : ' and is complete.'}
+            </ThemedText>
+          </View>
+        ) : null}
+
+        {/* The device's own eating check did not answer (CUL-1972). Its own line, never
+            folded into the Signal's: the two fail for different reasons, and this one
+            fails on a page whose Signal may have answered empty — exactly where the
+            list would otherwise read as a quiet record before the vet. Worded to stay
+            true beside a decline row the page DID find (the trial's read, or the
+            Signal's): "may not show everything", never "isn't in this list". It points
+            the owner at the one witness the page has left: what they saw at the bowl. */}
+        {intakeUnavailable ? (
+          <View style={styles.gap}>
+            <ThemedText style={styles.gapText}>
+              This device couldn’t check how {petName} has been eating, so this list may not
+              show everything about {petName}’s appetite. Tell your vet what you’ve seen at
+              the bowl.
             </ThemedText>
           </View>
         ) : null}
