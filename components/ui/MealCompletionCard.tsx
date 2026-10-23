@@ -941,9 +941,12 @@ export function MealCompletionCard() {
               hitSlop={HITSLOP_ACTION_LEFT}
               style={styles.actionBtn}
               accessibilityRole="button"
-              accessibilityLabel="Undo — remove this log"
+              accessibilityLabel={payload.bowl ? 'Undo — remove this whole bowl, every food in it' : 'Undo — remove this log'}
             >
-              <ThemedText style={styles.action}>Undo</ThemedText>
+              {/* CUL-2090: on a mixed bowl a bare "Undo" two seconds after mixing reads as
+                  "undo the mix". The reversal is the same (the whole bowl goes, §7.1); the
+                  label says so. A plain meal keeps "Undo". */}
+              <ThemedText style={styles.action}>{payload.bowl ? 'Undo bowl' : 'Undo'}</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={openPicker}

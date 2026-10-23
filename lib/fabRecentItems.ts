@@ -17,7 +17,7 @@
 // library (not archived, still a meal food) and the bowl complete on this phone. Anything
 // else is left out, which costs one trip through the picker, never a wrong bowl.
 
-import { getDb, getRecentFoods, type PickerFood } from './db';
+import { getDb, getRecentFoods, getRotationFoods, type PickerFood } from './db';
 import type { RecentFoodsBounds } from './foodQueries';
 import { AMOUNT_UNITS, readMealComposition, type AmountUnit, type MealComponentRow, type ShareSource } from './mealComposition';
 import { shareGlyph } from './mealBowlLabel';
@@ -161,6 +161,19 @@ export async function withRecentMixes(
   }
 }
 
+/** A mix in the food's own shape, so a fan or a shelf lays it out as a food. */
+function mixItem(mix: FabMix): FabRecentItem {
+  return {
+    id: `${MIX_ITEM_PREFIX}${mix.key}`,
+    brand: '',
+    product_name: fabMixLabel(mix),
+    format: '',
+    food_type: 'meal',
+    photo_path: null,
+    mix,
+  };
+}
+
 async function mergeRecentMixes(
   petId: string,
   foods: PickerFood[],
@@ -183,20 +196,54 @@ async function mergeRecentMixes(
   }
   const items: { item: FabRecentItem; at: number }[] = [
     ...foods.map((f) => ({ item: f as FabRecentItem, at: new Date(lastAt.get(f.id) ?? 0).getTime() || 0 })),
-    ...mixes.map(({ mix, at }) => ({
-      item: {
-        id: `${MIX_ITEM_PREFIX}${mix.key}`,
-        brand: '',
-        product_name: fabMixLabel(mix),
-        format: '',
-        food_type: 'meal',
-        photo_path: null,
-        mix,
-      } as FabRecentItem,
-      at: new Date(at).getTime(),
-    })),
+    ...mixes.map(({ mix, at }) => ({ item: mixItem(mix), at: new Date(at).getTime() })),
   ];
   // Parse both sides (C-40): a hydrated and a local timestamp spell one instant two ways.
+  items.sort((a, b) => b.at - a.at);
+  return items.slice(0, limit).map((x) => x.item);
+}
+
+/** A Julian day as epoch milliseconds (SQLite's julianday(), the rotation read's clock). */
+function julianToMs(jd: number): number {
+  return (jd - 2440587.5) * 86400000;
+}
+
+/**
+ * The picker's "{Pet}'s rotation" shelf (CUL-2090; spec §7.4): the second place a mix
+ * lives as a thing you can repeat. The foods this pet was fed in the last `daysBack` days,
+ * mixed bowls included (`rotationFoodsQuery`), and the recent mixes as items of their own,
+ * one per set of foods, logging the latest split, by the FAB's own read and rules. One
+ * recency order, newest first, at most `limit`. A mix read that fails leaves the foods.
+ */
+export async function getPickerRotationItems(
+  petId: string,
+  daysBack: number,
+  limit: number,
+  nowMs: number = Date.now(),
+): Promise<FabRecentItem[]> {
+  const foods = await getRotationFoods(petId, daysBack, limit);
+  const strip = (f: (typeof foods)[number]): PickerFood => {
+    const { last_fed_jd: _jd, ...picker } = f;
+    return picker;
+  };
+  let mixes: { mix: FabMix; at: string }[] = [];
+  try {
+    // The shelf is "fed lately", so the span runs to now (a bowl logged this morning
+    // counts), unlike the FAB's fixed day order. The upper bound is a day ahead so a
+    // phone clock a little behind the write never drops it.
+    mixes = await getRecentMixes(
+      petId,
+      { after: new Date(nowMs - daysBack * 86400000).toISOString(), before: new Date(nowMs + 86400000).toISOString() },
+      limit,
+    );
+  } catch (e) {
+    console.warn('[picker] recent mixes read failed; foods only:', e);
+  }
+  if (mixes.length === 0) return foods.map(strip);
+  const items: { item: FabRecentItem; at: number }[] = [
+    ...foods.map((f) => ({ item: strip(f) as FabRecentItem, at: julianToMs(f.last_fed_jd) })),
+    ...mixes.map(({ mix, at }) => ({ item: mixItem(mix), at: new Date(at).getTime() })),
+  ];
   items.sort((a, b) => b.at - a.at);
   return items.slice(0, limit).map((x) => x.item);
 }

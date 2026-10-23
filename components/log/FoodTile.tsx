@@ -35,6 +35,10 @@ interface Props {
   // checkbox with its checked state instead of a button whose hint says "Logs this
   // food" — a lie in a surface where a tap adds a food to a list and logs nothing.
   selected?: boolean;
+  // CUL-2090 (mixed meals spec §7.4) — a recent mix on the rotation shelf. It names no
+  // brand or format of its own, so the eyebrow reads "MIX" (the FAB pill's tag) and the
+  // label says what a tap writes: the whole bowl, at its latest split.
+  mix?: boolean;
 }
 
 // Text-only food tile. Product name is the primary line — for a single-brand
@@ -54,7 +58,7 @@ interface Props {
 // FoodRow tap navigates to detail.
 export function FoodTile({
   brand, productName, format, onPress, onLongPress,
-  hideBrand = false, compact = false, selected,
+  hideBrand = false, compact = false, selected, mix = false,
 }: Props) {
   const selecting = selected !== undefined;
   const typeLabel = FORMAT_LABEL[format] ?? '';
@@ -62,7 +66,9 @@ export function FoodTile({
   // Under a brand header the brand is redundant — show the format alone (or
   // nothing when unspecified). Otherwise the brand leads, with the format chip
   // when there is one. Identical shape to FoodRow's meta line.
-  const metaLine = hideBrand
+  const metaLine = mix
+    ? 'MIX'
+    : hideBrand
     ? formatMeta
     : typeLabel
       ? `${brand.toUpperCase()} · ${formatMeta}`
@@ -76,9 +82,9 @@ export function FoodTile({
       delayLongPress={350}
       activeOpacity={0.7}
       accessibilityRole={selecting ? 'checkbox' : 'button'}
-      accessibilityLabel={`${brand} ${productName}`}
+      accessibilityLabel={mix ? `Mixed bowl, ${productName}` : `${brand} ${productName}`}
       accessibilityState={selecting ? { checked: selected } : undefined}
-      accessibilityHint={selecting ? undefined : 'Logs this food'}
+      accessibilityHint={selecting ? undefined : mix ? 'Logs this bowl again' : 'Logs this food'}
     >
       {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
           render an empty eyebrow line above the product name. */}
