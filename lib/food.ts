@@ -159,10 +159,10 @@ export function filterFoodsByScope<T extends { food_type: string | null; format:
 // 2-col grid with matching tile heights (driven by the tallest tile in the
 // row). A trailing odd tile lands in a one-element row, which the caller pads
 // with a spacer. Empty in → empty out; order is preserved row-major.
-export function toFoodRows<T extends PickerFood>(foods: T[]): T[][] {
+export function toFoodRows<T extends PickerFood>(foods: T[], columns: 1 | 2 = 2): T[][] {
   const rows: T[][] = [];
-  for (let i = 0; i < foods.length; i += 2) {
-    rows.push(foods.slice(i, i + 2));
+  for (let i = 0; i < foods.length; i += columns) {
+    rows.push(foods.slice(i, i + columns));
   }
   return rows;
 }

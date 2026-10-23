@@ -159,7 +159,6 @@ export const REGISTRY: Record<string, readonly string[]> = {
     `radioDot · ${CHOICE}`,
     `summaryPill · ${CHOICE}`,
   ],
-  'components/log/TimeConfidenceField.tsx': [`picker accentColor · ${CHOICE}`, `radioOn · ${CHOICE}`, `radioDot · ${CHOICE}`],
   'components/nav/NyxTabBar.tsx': [`avatarRingActive · ${FILL}`, `tickActive · ${FILL}`],
   'components/notifications/NotificationPrimer.tsx': [
     'heroLabel · night ground: the primer\'s night miniature, a decorative eyebrow, not positive.onNight\'s good fact',
@@ -192,10 +191,11 @@ export const REGISTRY: Record<string, readonly string[]> = {
 
 /**
  * The registry's total, measured 2026-10-23 on c4b75d5 after this PR moved the ten
- * colorAccentGlyph sites onto colorRoles.positive.glyphOnLight. A RATCHET: lower it
+ * colorAccentGlyph sites onto colorRoles.positive.glyphOnLight; 75 after CUL-1908 moved
+ * TimeConfidenceField's picker and radios onto colorRoles.action. A RATCHET: lower it
  * whenever an entry goes, and never raise it.
  */
-const REGISTRY_CEILING = 78;
+const REGISTRY_CEILING = 75;
 
 /** A justified entry names its key, then a ground or the issue that owns its move. */
 const JUSTIFIED = /^\S.* · (?:(?:night|dark) ground: \S|brand mark: \S|tint map: \S|CUL-\d+: \S)/;

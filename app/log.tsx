@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { parseFoodScope } from '../lib/food';
@@ -20,6 +19,10 @@ import { insertSimpleEvent } from '../lib/simpleEvent';
 import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
+import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { TextField } from '../components/ui/TextField';
+import { NumberField } from '../components/ui/NumberField';
+import { TimeEditSheet } from '../components/ui/TimeEditSheet';
 import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
 import { commitToneOf } from '../lib/commitTone';
 import { usePetStore, resolveRecordPetName } from '../store/petStore';
@@ -48,6 +51,10 @@ import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, O
 import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 
 type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
+
+// The attached photo's thumbnail: a 40pt square inside the 44pt row (F7, off the scale's
+// own steps rather than typed).
+const PHOTO_THUMB = theme.space4 + theme.space1;
 
 // The `?type=` param is untrusted (a deep link, the widget's door), so it opens a step
 // only for a type this screen can log. Own keys only, never `in`: an inherited key
@@ -183,7 +190,7 @@ export default function LogModal() {
   // chose this timestamp. Nobody chose it: the app did, at mount. Every symptom
   // and weight logged on the default clock has been claiming otherwise.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('now');
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
 
   // B-010 confidence state — used on the simple step (discovery-prone events).
   // 'saw' keeps the witnessed one-tap default; 'found' opens the window/estimate
@@ -1069,14 +1076,24 @@ export default function LogModal() {
   function renderPhotoAttachRow() {
     if (attachmentUri) {
       return (
-        <TouchableOpacity style={styles.photoAttachedRow} onPress={handlePickPhoto} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.photoAttachedRow}
+          onPress={handlePickPhoto}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+        >
           <Image source={{ uri: attachmentUri }} style={styles.photoThumb} resizeMode="cover" />
           <ThemedText style={styles.photoAttachedText}>Photo attached · tap to replace</ThemedText>
         </TouchableOpacity>
       );
     }
     return (
-      <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.8}>
+      <TouchableOpacity
+        style={styles.photoRow}
+        onPress={handlePickPhoto}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+      >
         <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
         <ThemedText style={styles.photoRowText}>Attach photo</ThemedText>
       </TouchableOpacity>
@@ -1142,24 +1159,22 @@ export default function LogModal() {
     });
   }
 
-  // The witnessed time section — the plain "date · time / Change" row plus its
-  // inline point picker. ONE implementation for the two steps that render it
-  // (weight, and the witnessed-by-construction simple branch — a code-review
-  // cleanup: the block had been copy-pasted per step, so the picker wiring could
-  // drift between copies. The severity step was the third copy until CUL-506
-  // pruned it as unreachable: `hasSeverity` is false for every event type).
-  function renderTimeRowWithPicker() {
+  // The witnessed time section — the plain "date · time / Change time" row plus the kit's
+  // one time sheet (CUL-1908 F3; the inline DateTimePicker it replaces is retired). ONE
+  // implementation for the two steps that render it (weight, and the witnessed-by-
+  // construction simple branch). The sheet mounts only while open, which is what pins
+  // its maximum to the moment it opened (TimeEditSheet's contract).
+  function renderTimeRowWithPicker(sheetTitle: string) {
     return (
       <>
         {renderTimeRow()}
-        {showTimePicker && (
-          <DateTimePicker
+        {timeSheetOpen && (
+          <TimeEditSheet
             value={occurredAt}
-            mode="datetime"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            maximumDate={new Date()}
-            onChange={(_e, date) => {
-              if (Platform.OS === 'android') setShowTimePicker(false);
+            title={sheetTitle}
+            onCancel={() => setTimeSheetOpen(false)}
+            onSave={(date) => {
+              setTimeSheetOpen(false);
               handleTimePickerChange(date);
             }}
           />
@@ -1188,8 +1203,12 @@ export default function LogModal() {
             </Text>
           )}
         </ThemedText>
-        <TouchableOpacity onPress={() => setShowTimePicker(!showTimePicker)} hitSlop={12}>
-          <ThemedText style={styles.changeTimeBtn}>Change</ThemedText>
+        <TouchableOpacity
+          onPress={() => setTimeSheetOpen(true)}
+          style={styles.changeTimeBtn}
+          accessibilityRole="button"
+        >
+          <ThemedText style={styles.changeTimeText}>Change time</ThemedText>
         </TouchableOpacity>
       </View>
     );
@@ -1197,13 +1216,12 @@ export default function LogModal() {
 
   function renderNotesInput() {
     return (
-      <TextInput
-        style={styles.notesInput}
+      <TextField
+        multiline
         placeholder="Add a note (optional)"
-        placeholderTextColor={theme.colorTextSecondary}
+        accessibilityLabel="Note"
         value={notes}
         onChangeText={setNotes}
-        multiline
         maxLength={300}
       />
     );
@@ -1325,32 +1343,27 @@ export default function LogModal() {
     return (
       <SafeAreaView style={styles.container}>
         <Header title={`What does ${petName} weigh?`} leading="back" onLeadingPress={handleBack} />
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
-            <View style={styles.weightInputRow}>
-              <TextInput
-                style={styles.weightInput}
-                value={weightLbsStr}
-                onChangeText={setWeightLbsStr}
-                placeholder="e.g. 12.5"
-                placeholderTextColor={theme.colorTextTertiary}
-                keyboardType="decimal-pad"
-                returnKeyType="done"
-                autoFocus
-              />
-              <ThemedText style={styles.weightUnit}>lbs</ThemedText>
-            </View>
+            <NumberField
+              value={weightLbsStr}
+              onChangeText={setWeightLbsStr}
+              unit="lbs"
+              accessibilityLabel="Weight in pounds"
+              placeholder="e.g. 12.5"
+              autoFocus
+            />
             {renderNotesInput()}
-            {renderTimeRowWithPicker()}
+            {renderTimeRowWithPicker('When was this weight taken?')}
           </ScrollView>
           <View style={styles.bottomAction}>
-            <TouchableOpacity
-              style={[styles.confirmBtn, !canConfirmWeight && styles.confirmBtnDisabled]}
+            {/* Disabled says why in its own words (C-7): VoiceOver reads "dimmed" over
+                the label, so the label is the reason. */}
+            <PrimaryButton
+              label={canConfirmWeight ? 'Log weight' : 'Enter a weight to log'}
               onPress={() => { void guardSubmit(handleConfirmWeight); }}
               disabled={!canConfirmWeight}
-            >
-              <ThemedText style={styles.confirmBtnText}>Log weight</ThemedText>
-            </TouchableOpacity>
+            />
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1373,12 +1386,12 @@ export default function LogModal() {
     return (
       <SafeAreaView style={styles.container}>
         <Header title={eventLabel} leading="back" onLeadingPress={handleBack} />
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
             {offersPhoto && renderPhotoAttachRow()}
             {renderNotesInput()}
             {witnessedOnly ? (
-              renderTimeRowWithPicker()
+              renderTimeRowWithPicker('When did this happen?')
             ) : (
               <TimeConfidenceField
                 mode={timeMode}
@@ -1398,14 +1411,10 @@ export default function LogModal() {
             )}
           </ScrollView>
           <View style={styles.bottomAction}>
-            <TouchableOpacity
-              style={styles.confirmBtn}
+            <PrimaryButton
+              label={eventLabel === 'Other' ? 'Log event' : `Log ${eventLabel.toLowerCase()}`}
               onPress={() => { void guardSubmit(async () => (await handleConfirm()) !== null); }}
-            >
-              <ThemedText style={styles.confirmBtnText}>
-                {eventLabel === 'Other' ? 'Log event' : `Log ${eventLabel.toLowerCase()}`}
-              </ThemedText>
-            </TouchableOpacity>
+            />
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1420,96 +1429,47 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
+  fill: {
+    flex: 1,
+  },
 
   // The log's five step headers now use the shared Header (B-075); their
   // hand-rolled bar + the flat type grid moved out (to Header + EventTypePicker),
   // so those styles retired with B-745 PR 1.
-
-  // ── Notes input ──
-  notesInput: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: 15,
-    color: theme.colorTextPrimary,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space1,
-    minHeight: 44,
-    maxHeight: 88,
-  },
 
   // ── Time row ──
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: theme.space2,
+    minHeight: theme.hitTarget,
   },
   timeLabel: {
-    fontSize: 14,
+    flexShrink: 1,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
+  // The link owns the row's height, so it reaches the 44pt floor with no slop.
   changeTimeBtn: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+  },
+  // A control speaks the action colour; the teal is a good fact, never a link (F5).
+  changeTimeText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
   },
   exifAttribution: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-  },
-
-  // ── Confirm button ──
-  confirmBtn: {
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: theme.space2,
-    alignItems: 'center',
-  },
-  confirmBtnDisabled: {
-    backgroundColor: theme.colorBorder,
-  },
-  confirmBtnText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextOnDark,
   },
 
   // ── Simple events ──
   simpleScroll: {
     padding: theme.space3,
     gap: theme.space2,
-  },
-
-  // ── Weight input (B-186) ──
-  // A large, centred number with a quiet unit suffix — the value IS the screen,
-  // so it reads as the primary input, not a buried field.
-  weightInputRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
-    gap: theme.space1,
-    paddingVertical: theme.space3,
-  },
-  weightInput: {
-    // text2XL is the type-scale's documented "hero number" token — the right size
-    // for a single-value entry where the number is the screen (no new magic size).
-    fontSize: theme.text2XL,
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBodyMedium,
-    color: theme.colorNeutralDark,
-    // A layout floor so the number doesn't collapse when the field is empty — a
-    // dimension like the other width literals in this file (photoThumb 40), not
-    // a type/spacing token.
-    minWidth: 120,
-    textAlign: 'right',
-    padding: 0,
-  },
-  weightUnit: {
-    fontSize: theme.textLG,
-    color: theme.colorTextSecondary,
   },
 
   // ── Bottom action bar ──
@@ -1520,41 +1480,43 @@ const styles = StyleSheet.create({
   },
 
   // ── Photo attachment ──
+  // Both photo rows hold the 44pt floor (F9; the bare row was about 36pt, C-5).
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    paddingVertical: theme.space1,
+    minHeight: theme.hitTarget,
   },
   photoRowText: {
-    fontSize: 14,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
   photoAttachedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
-    paddingVertical: theme.space1,
+    minHeight: theme.hitTarget,
   },
   photoThumb: {
-    width: 40,
-    height: 40,
+    width: PHOTO_THUMB,
+    height: PHOTO_THUMB,
     borderRadius: theme.radiusSmall,
   },
   photoAttachedText: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     flex: 1,
   },
   // ── Combo context banner (B-156 PR B2b) ──
-  // A tinted strip above the medication picker naming the pet + food this dose is
-  // being logged together with. accentLight signals "linked".
+  // The strip above the medication picker naming the pet + food this dose is being
+  // logged together with. It is context, not a good fact, so it sits on the quiet band
+  // rather than the teal wash (F8).
   comboBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: theme.space3,
     paddingVertical: theme.space2,
-    backgroundColor: theme.colorAccentLight,
+    backgroundColor: theme.colorSurfaceSubtle,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
   },

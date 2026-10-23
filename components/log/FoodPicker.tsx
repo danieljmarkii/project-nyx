@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, StyleSheet, ScrollView, TextInput, TouchableOpacity,
+  View, StyleSheet, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Camera } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroup } from '../ui/ChipGroup';
+import { SearchField } from '../ui/SearchField';
 import { getLibraryFoods, PickerFood } from '../../lib/db';
 import { getPickerRotationItems, type FabMix, type FabRecentItem } from '../../lib/fabRecentItems';
 import {
@@ -25,6 +25,8 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { trialListMembership } from '../../lib/trialAllowedSet';
 import { FoodTile } from './FoodTile';
 import { PickerReadFailed } from './PickerReadFailed';
+import { PickerAddDoor } from './PickerAddDoor';
+import { usePickerColumns } from './pickerColumns';
 import { PickerSilhouette } from '../surfaces/waits/PickerSilhouette';
 
 interface Props {
@@ -378,16 +380,10 @@ export function FoodPicker({
           keyboard would cover the rotation tiles that serve the 80% confirm-don't-
           search case (Designer — search is the fallback lane, not the hero). */}
       <View style={styles.pin}>
-        <TextInput
-          style={styles.search}
+        <SearchField
           placeholder="Search brand or product"
-          placeholderTextColor={theme.colorTextTertiary}
           value={search}
           onChangeText={setSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
         />
         {/* Scope chips for the no-typing, one-handed case (All/Meals/Treats/Wet/
             Dry) — a closed single-select set rendered through the wrapping ChipGroup
@@ -623,30 +619,11 @@ export function FoodPicker({
   );
 }
 
-// The photo-first "Snap a new food" CTA — rendered at the top of the browse
-// layout and again inside the no-matches search empty state, so it's one block
-// with one a11y contract in both places.
+// The photo-first "Snap a new food" door — rendered in the browse layout and again
+// inside the no-matches search empty state, so it's one block with one a11y contract in
+// both places. The kit's card door row, shared with MedicationPicker (CUL-1908 F5).
 function AddFoodCta({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity
-      style={styles.addCta}
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel="Snap a new food"
-    >
-      {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
-          identical "Add" CTA so the two pickers read as one family of vector
-          glyphs rather than mixed emoji/icon. */}
-      <View style={styles.addCtaIcon}>
-        <Camera size={20} color={colorRoles.action.onLight} strokeWidth={2} />
-      </View>
-      <View style={styles.addCtaText}>
-        <ThemedText style={styles.addCtaTitle}>Snap a new food</ThemedText>
-        <ThemedText style={styles.addCtaHint}>Or choose from your photos</ThemedText>
-      </View>
-    </TouchableOpacity>
-  );
+  return <PickerAddDoor title="Snap a new food" hint="Or choose from your photos" onPress={onPress} />;
 }
 
 // Renders one type section of the library (Meals / Treats / Unclassified). Hidden
@@ -731,12 +708,13 @@ function TileGrid({
   onOpenDetail?: (food: PickerFood) => void;
   selectedFoodIds?: readonly string[];
 }) {
+  const columns = usePickerColumns();
   return (
     <View style={styles.grid}>
       {/* Key on the row's first food id (rows are never empty) rather than the
           index, so a search filter that changes the list can't make React reuse a
           row view and miss a re-layout. */}
-      {toFoodRows(foods).map((row) => (
+      {toFoodRows(foods, columns).map((row) => (
         <View key={row[0].id} style={styles.gridRow}>
           {row.map((f) => {
             const tile: BowlTile = mixableOnly && !f.mix ? bowlTile(f, !!onOpenDetail) : { kind: 'pick' };
@@ -775,7 +753,7 @@ function TileGrid({
             />
             );
           })}
-          {row.length === 1 && <View style={styles.gridSpacer} />}
+          {columns === 2 && row.length === 1 && <View style={styles.gridSpacer} />}
         </View>
       ))}
     </View>
@@ -809,17 +787,6 @@ const styles = StyleSheet.create({
   zone: {
     gap: theme.space2,
   },
-  search: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    height: 44,
-  },
   empty: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
@@ -828,7 +795,7 @@ const styles = StyleSheet.create({
   alwaysEmpty: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 19,
+    lineHeight: theme.lineHeightSMLoose,
   },
   alwaysList: {
     gap: theme.space1,
@@ -841,7 +808,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
     paddingVertical: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   freshnessChoices: {
     paddingLeft: theme.space2,
@@ -857,13 +824,13 @@ const styles = StyleSheet.create({
     gap: theme.space3,
   },
   freshnessChoiceBtn: {
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   choiceYes: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   choiceNo: {
     fontSize: theme.textSM,
@@ -874,21 +841,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   alwaysConfirm: {
     paddingVertical: theme.space1,
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
+  // A control speaks the action colour; the teal is a good fact, never a link (F5).
   alwaysConfirmText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
   },
   alwaysConfirmed: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     textAlignVertical: 'center',
     paddingVertical: theme.space1,
   },
@@ -908,7 +877,7 @@ const styles = StyleSheet.create({
   alwaysRowMeta: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   groups: {
     gap: theme.space3,
@@ -956,31 +925,5 @@ const styles = StyleSheet.create({
   },
   gridSpacer: {
     flex: 1,
-  },
-  addCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    backgroundColor: theme.colorAccentLight,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    minHeight: 56,
-  },
-  addCtaIcon: {
-    width: 24,
-    alignItems: 'center',
-  },
-  addCtaText: {
-    flex: 1,
-  },
-  addCtaTitle: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  addCtaHint: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
   },
 });

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { SegmentedControl, type SegmentOption } from '../ui/SegmentedControl';
+import { TimeEditSheet } from '../ui/TimeEditSheet';
 import { formatTime, formatExifAttribution } from '../../lib/utils';
 
 // B-010 Direction 2 — explicit "Saw it / Found it" capture for discovery-prone
@@ -14,7 +16,14 @@ import { formatTime, formatExifAttribution } from '../../lib/utils';
 
 export type TimeMode = 'saw' | 'found';
 export type FoundMode = 'before' | 'around' | 'between';
-type OpenPicker = 'point' | 'estimated' | 'earliest' | 'latest' | null;
+// The witnessed point edits in the kit's one time sheet (CUL-1908 F3); the found panel's
+// bounds keep their inline pickers, which the log form round drew unchanged.
+type OpenPicker = 'estimated' | 'earliest' | 'latest' | null;
+
+const MODE_OPTIONS: ReadonlyArray<SegmentOption<TimeMode>> = [
+  { value: 'saw', label: 'Saw it happen' },
+  { value: 'found', label: 'Found it' },
+];
 
 interface Props {
   // null = unclassified: a stored row with no recorded confidence (migration 012
@@ -83,6 +92,7 @@ export function TimeConfidenceField({
   earliest, latest, onEarliestChange, onLatestChange,
 }: Props) {
   const [open, setOpen] = useState<OpenPicker>(null);
+  const [pointSheet, setPointSheet] = useState(false);
 
   const pickerDisplay = Platform.OS === 'ios' ? 'inline' : 'default';
 
@@ -98,7 +108,7 @@ export function TimeConfidenceField({
         // Force light theme + brand accent so the picker stays readable when
         // the device is in OS dark mode against our white surfaces (cf. #28).
         themeVariant="light"
-        accentColor={theme.colorAccent}
+        accentColor={colorRoles.action.onLight}
         onChange={(_e, d) => {
           if (Platform.OS === 'android') setOpen(null);
           if (d) onPick(d);
@@ -109,34 +119,13 @@ export function TimeConfidenceField({
 
   return (
     <View style={styles.container}>
-      {/* The two segments carry NO hitSlop, deliberately (CUL-657). `segItem` is
-          flex: 1 and minHeight 44, so each is already at the floor across half the
-          width — slop bought no reach it did not already have. What it bought was
-          an OVERLAP: the pair sits FLUSH (no gap, inside an overflow-hidden bordered
-          box), so 8pt of inward slop each made them share a 16pt band centred on the
-          divider, where a tap resolves by z-order rather than by intent (CUL-612).
-          Dead centre of a two-option control is exactly where a thumb lands, and
-          this is the top-level witnessed-vs-discovered classifier: the wrong segment
-          records a witnessed event as a discovery window or the reverse (the B-448
-          confidence-leak class), and the vet report prints the difference. Flush
-          siblings get no slop at all — there is no gap to spend, so every point of
-          it reaches into the neighbour. Don't add it back. */}
-      <View style={styles.seg}>
-        <TouchableOpacity
-          style={[styles.segItem, mode === 'saw' && styles.segItemOn]}
-          onPress={() => onModeChange('saw')}
-          activeOpacity={0.7}
-        >
-          <ThemedText style={[styles.segText, mode === 'saw' && styles.segTextOn]}>Saw it happen</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.segItem, mode === 'found' && styles.segItemOn]}
-          onPress={() => onModeChange('found')}
-          activeOpacity={0.7}
-        >
-          <ThemedText style={[styles.segText, mode === 'found' && styles.segTextOn]}>Found it</ThemedText>
-        </TouchableOpacity>
-      </View>
+      {/* The kit's SegmentedControl (CUL-1908 F4), which carries no hitSlop for the
+          reason this control first dropped it (CUL-657): two segments at the 44pt floor
+          a hairline apart, where any slop is an overlap and a tap at the divider would
+          resolve by z-order. On this classifier the wrong segment records a witnessed
+          event as a discovery window or the reverse (B-448), and the vet report prints
+          the difference. */}
+      <SegmentedControl options={MODE_OPTIONS} value={mode} onChange={onModeChange} />
 
       {/* 'saw' shows the witnessed point; unclassified (null) shows the SAME
           neutral point row — the row itself asserts nothing, only the highlighted
@@ -156,11 +145,25 @@ export function TimeConfidenceField({
                 <Text style={styles.exif}>{'  ·  '}{formatExifAttribution(point.toISOString())}</Text>
               )}
             </ThemedText>
-            <TouchableOpacity onPress={() => setOpen(open === 'point' ? null : 'point')} hitSlop={12}>
-              <ThemedText style={styles.change}>Change</ThemedText>
+            <TouchableOpacity
+              onPress={() => setPointSheet(true)}
+              style={styles.changeBtn}
+              accessibilityRole="button"
+            >
+              <ThemedText style={styles.change}>Change time</ThemedText>
             </TouchableOpacity>
           </View>
-          {renderPicker('point', point, onPointChange, new Date())}
+          {pointSheet && (
+            <TimeEditSheet
+              value={point}
+              title="When did this happen?"
+              onCancel={() => setPointSheet(false)}
+              onSave={(d) => {
+                setPointSheet(false);
+                onPointChange(d);
+              }}
+            />
+          )}
           {mode === null && (
             <ThemedText style={styles.hint}>Not recorded as seen or found — choose one if you'd like.</ThemedText>
           )}
@@ -252,36 +255,17 @@ const styles = StyleSheet.create({
     gap: theme.space1,
   },
   // Segmented control
-  seg: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: theme.colorBorderStrong,
-    borderRadius: theme.radiusSmall,
-    overflow: 'hidden',
-  },
-  segItem: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segItemOn: {
-    backgroundColor: theme.colorNeutralDark,
-  },
-  segText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-  },
-  segTextOn: {
-    color: theme.colorSurface,
-  },
-  // Witnessed time row
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
+    gap: theme.space2,
+    minHeight: theme.hitTarget,
+  },
+  // The link owns the row's full height, so it needs no slop to reach the floor.
+  changeBtn: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
   },
   timeLabel: {
     fontSize: theme.textSM,
@@ -293,7 +277,8 @@ const styles = StyleSheet.create({
   },
   change: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
   },
   // Found panel
   panel: {
@@ -313,7 +298,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     backgroundColor: theme.colorSurface,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -336,7 +321,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   radio: {
     width: 18,
@@ -347,14 +332,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // A chosen option is the action colour, never the teal (a good fact, #1294; F5).
   radioOn: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.action.onLight,
   },
   radioDot: {
     width: 8,
     height: 8,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.action.onLight,
   },
   radioLab: {
     fontSize: theme.textMD,

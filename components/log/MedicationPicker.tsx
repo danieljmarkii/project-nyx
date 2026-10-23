@@ -1,15 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, StyleSheet, ScrollView, TextInput, TouchableOpacity,
+  View, StyleSheet, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Camera } from 'lucide-react-native';
-import { colorRoles, theme } from '../../constants/theme';
+import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
+import { SearchField } from '../ui/SearchField';
 import { getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
 import { PickerSilhouette } from '../surfaces/waits/PickerSilhouette';
 import { PickerReadFailed } from './PickerReadFailed';
+import { PickerAddDoor } from './PickerAddDoor';
+import { usePickerColumns } from './pickerColumns';
 
 // The medication twin of FoodPicker (spec §9), deliberately leaner: a drug
 // library has no "always available" free-choice facts and no wall-of-Fancy-Feast
@@ -112,21 +114,7 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
         {read === 'failed' && <PickerReadFailed message={MED_READ_FAILED} onRetry={retry} />}
 
         <View style={styles.zone}>
-          <TouchableOpacity
-            style={styles.addCta}
-            onPress={onAddNew}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Add a medication"
-          >
-            <View style={styles.addCtaIcon}>
-              <Camera size={20} color={colorRoles.action.onLight} strokeWidth={2} />
-            </View>
-            <View style={styles.addCtaText}>
-              <ThemedText style={styles.addCtaTitle}>Add a medication</ThemedText>
-              <ThemedText style={styles.addCtaHint}>Snap the label, or enter it by hand</ThemedText>
-            </View>
-          </TouchableOpacity>
+          <PickerAddDoor title="Add a medication" hint="Snap the label, or enter it by hand" onPress={onAddNew} />
         </View>
 
         {read === 'reading' && <PickerSilhouette />}
@@ -151,17 +139,7 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
         {read === 'answered' && (
           <View style={styles.zone}>
             {library.length > 0 && (
-              <TextInput
-                style={styles.search}
-                placeholder="Search medications"
-                placeholderTextColor={theme.colorTextTertiary}
-                value={search}
-                onChangeText={setSearch}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-              />
+              <SearchField placeholder="Search medications" value={search} onChangeText={setSearch} />
             )}
             {filteredLibrary.length === 0 ? (
               <ThemedText style={styles.empty}>
@@ -196,12 +174,13 @@ function MedGrid({
   onPickMedication: (med: PickerMedication) => void;
   onOpenDetail?: (med: PickerMedication) => void;
 }) {
+  const columns = usePickerColumns();
   return (
     <View style={styles.grid}>
       {/* Key on the row's first med id (rows are never empty) rather than the index,
           so a search filter that changes the list can't make React reuse a row view
           and miss a re-layout. */}
-      {chunkPairs(meds).map((row) => (
+      {chunkRows(meds, columns).map((row) => (
         <View key={row[0].id} style={styles.gridRow}>
           {row.map((m) => (
             <MedTile
@@ -212,7 +191,7 @@ function MedGrid({
               onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
             />
           ))}
-          {row.length === 1 && <View style={styles.gridSpacer} />}
+          {columns === 2 && row.length === 1 && <View style={styles.gridSpacer} />}
         </View>
       ))}
     </View>
@@ -263,11 +242,12 @@ function formatForm(form: string | null): string {
   return form.charAt(0).toUpperCase() + form.slice(1);
 }
 
-// Chunk into 2-up rows so tiles in a row share a height; a trailing odd tile gets
-// a spacer to keep the last row left-aligned (the FoodPicker grid shape).
-function chunkPairs<T>(items: T[]): T[][] {
+// Chunk into rows (two up, or one at the largest text sizes) so tiles in a row share a
+// height; a trailing odd tile gets a spacer to keep the last row left-aligned (the
+// FoodPicker grid shape).
+function chunkRows<T>(items: T[], columns: 1 | 2): T[][] {
   const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
+  for (let i = 0; i < items.length; i += columns) rows.push(items.slice(i, i + columns));
   return rows;
 }
 
@@ -283,47 +263,10 @@ const styles = StyleSheet.create({
   zone: {
     gap: theme.space2,
   },
-  addCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    backgroundColor: theme.colorAccentLight,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    minHeight: 56,
-  },
-  addCtaIcon: {
-    width: 24,
-    alignItems: 'center',
-  },
-  addCtaText: {
-    flex: 1,
-  },
-  addCtaTitle: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  addCtaHint: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
-  },
-  search: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    height: 44,
-  },
   empty: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 19,
+    lineHeight: theme.lineHeightSMLoose,
     paddingVertical: theme.space2,
   },
   grid: {
@@ -338,7 +281,7 @@ const styles = StyleSheet.create({
   },
   tile: {
     flex: 1,
-    minHeight: 88,
+    minHeight: theme.space6 + theme.space3,
     borderWidth: 1,
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusMedium,
@@ -351,7 +294,7 @@ const styles = StyleSheet.create({
   // paddingVertical wins over the base `padding` shorthand in RN's style merge, so
   // horizontal padding is kept.
   tileCompact: {
-    minHeight: 62,
+    minHeight: theme.space6,
     paddingVertical: theme.space1,
     gap: theme.spaceMicro,
   },

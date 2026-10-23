@@ -174,7 +174,7 @@ export function FoodTile({
 const styles = StyleSheet.create({
   tile: {
     flex: 1,
-    minHeight: 96,
+    minHeight: theme.space6 + theme.space4,
     borderWidth: 1,
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusMedium,
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     right: theme.space1,
   },
   tileCompact: {
-    minHeight: 62,
+    minHeight: theme.space6,
     paddingVertical: theme.space1,
     gap: theme.spaceMicro,
   },

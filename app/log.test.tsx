@@ -337,6 +337,29 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
   });
 });
 
+// CUL-1908 F1 / F3 — the weight step on the kit: the commit is PrimaryButton, whose
+// disabled state says why in its label (C-7), and the time edits in TimeEditSheet.
+describe('/log — the weight step on the kit (CUL-1908)', () => {
+  it('a blank weight disables the commit and the label says why', () => {
+    mockTypeParam = 'weight_check';
+    const { getByRole } = render(<LogScreen />);
+    const commit = getByRole('button', { name: 'Enter a weight to log' });
+    expect(commit.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(commit);
+    expect(mockInsertWeightCheck).not.toHaveBeenCalled();
+  });
+
+  it('Change time opens the one time sheet, asking about the weighing', () => {
+    mockTypeParam = 'weight_check';
+    const { getByText, queryByText } = render(<LogScreen />);
+    expect(queryByText('When was this weight taken?')).toBeNull();
+    fireEvent.press(getByText('Change time'));
+    expect(getByText('When was this weight taken?')).toBeTruthy();
+    fireEvent.press(getByText('Cancel'));
+    expect(queryByText('When was this weight taken?')).toBeNull();
+  });
+});
+
 // CUL-1119 — the REAL `useWidgetPetLink` runs here (this suite never stubbed it). The
 // widget opens this modal on its own pet; the owner may still switch on the way to Save,
 // and that switch has to stick, or the log lands on the widget's pet.
