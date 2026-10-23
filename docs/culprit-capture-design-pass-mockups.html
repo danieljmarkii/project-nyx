@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mock-round" content="build-ready">
+<title>Food Capture Design Pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+/* A build ready round (.claude/rules/docs.md, the mock round contract). Every colour on this
+   page, chrome included, is a var(--token) from mockups/theme.css, which is generated from
+   constants/theme.ts. The page chrome maps its roles onto those tokens: daylight tokens in
+   light mode, the night tokens in dark mode. The phones are pictures of the app and keep the
+   app's daylight tokens in both modes. Inside a phone every size is a token times --k (the
+   drawing scale); the exceptions are named: the device frame (390 × 844pt, 320pt), and the
+   1px hairline the app itself writes as borderWidth: 1. */
+:root {
+  --bg: var(--colorNeutralLight); --paper: var(--colorSurface); --ink: var(--colorTextPrimary);
+  --ink-2: var(--colorTextSecondary); --ink-3: var(--colorTextTertiary); --rule: var(--colorBorder);
+  --act: var(--colorAction); --act-wash: var(--colorTextOnNight);
+  --pos: var(--colorAccentInk); --pos-wash: var(--colorAccentLight);
+  --con: var(--colorEventSymptomInk); --con-wash: var(--colorEventSymptomLight);
+  --att: var(--colorAttentionInk); --att-wash: var(--colorAttentionLight);
+  --tagbg: var(--colorBrandNightElevated); --tagfg: var(--colorTextOnNight);
+  --page-shadow: var(--shadow-card);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: var(--colorBrandNight); --paper: var(--colorBrandNightElevated); --ink: var(--colorTextOnNight);
+  --ink-2: var(--colorTextOnNightMuted); --ink-3: var(--colorTextOnNightMuted); --rule: var(--colorBorderOnNight);
+  --act: var(--colorMoonlight); --act-wash: var(--colorAuroraViolet);
+  --pos: var(--colorMoonlitTeal); --pos-wash: var(--colorAuroraIndigo);
+  --con: var(--colorEventSymptomOnNight); --con-wash: var(--colorAuroraIndigo);
+  --att: var(--colorMomentGlow); --att-wash: var(--colorAuroraIndigo);
+  --tagbg: var(--colorMoonlight); --tagfg: var(--colorBrandNight);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: var(--colorBrandNight); --paper: var(--colorBrandNightElevated); --ink: var(--colorTextOnNight);
+  --ink-2: var(--colorTextOnNightMuted); --ink-3: var(--colorTextOnNightMuted); --rule: var(--colorBorderOnNight);
+  --act: var(--colorMoonlight); --act-wash: var(--colorAuroraViolet);
+  --pos: var(--colorMoonlitTeal); --pos-wash: var(--colorAuroraIndigo);
+  --con: var(--colorEventSymptomOnNight); --con-wash: var(--colorAuroraIndigo);
+  --att: var(--colorMomentGlow); --att-wash: var(--colorAuroraIndigo);
+  --tagbg: var(--colorMoonlight); --tagfg: var(--colorBrandNight);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif; font-size: 15px; line-height: 1.5; overflow-x: hidden; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { text-wrap: balance; }
+h1 { font-family: "Newsreader", Georgia, serif; font-weight: 400; font-size: clamp(30px, 5vw, 44px); line-height: 1.1; margin: 6px 0 12px; }
+h2 { font-family: "Newsreader", Georgia, serif; font-weight: 400; font-size: 26px; line-height: 1.2; margin: 0; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+p { margin: 0 0 10px; max-width: 72ch; }
+a { color: var(--act); }
+code { font-family: "Geist Mono", ui-monospace, Menlo, monospace; font-size: 0.86em; background: var(--act-wash); color: var(--ink); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.lede { font-size: 17px; color: var(--ink-2); max-width: 70ch; }
+.boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 20px 0; }
+.box { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.box p { font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
+.box.floor { border-left: 3px solid var(--con); }
+.box.pend { border-left: 3px solid var(--att); }
+.box.ask { border-left: 3px solid var(--act); }
+.controls { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--paper); }
+.seg button { font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px; cursor: pointer; min-height: 32px; }
+.seg button[aria-pressed="true"] { background: var(--act-wash); color: var(--act); font-weight: 600; }
+.seg button:focus-visible, .toc a:focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin: 4px 0 0; width: 100%; }
+.toc a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+
+section.state { margin-top: 56px; scroll-margin-top: 110px; }
+.sec-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; border-top: 1px solid var(--rule); padding-top: 18px; margin-bottom: 8px; }
+.sec-id { font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; color: var(--ink-3); }
+.why { color: var(--ink-2); font-size: 14.5px; }
+.frames { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 14px; align-items: start; }
+@media (max-width: 1040px) { .frames { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .frames { grid-template-columns: minmax(0, 1fr); } }
+.slot { min-width: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.slot .tag { align-self: flex-start; }
+.tag { display: inline-block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.tag.today { background: var(--rule); color: var(--ink-2); }
+.tag.faith { background: var(--pos-wash); color: var(--pos); }
+.tag.pass { background: var(--act-wash); color: var(--act); }
+.cap { font-size: 13px; color: var(--ink-2); align-self: stretch; margin: 0; max-width: none; }
+.cap b { color: var(--ink); display: block; font-weight: 600; }
+.cap .bref { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; color: var(--act); }
+.note { margin-top: 14px; font-size: 14px; color: var(--ink-2); border-left: 3px solid var(--con); padding: 4px 0 4px 12px; max-width: 90ch; }
+.note b { color: var(--ink); }
+
+/* ── The phone: a picture of the app in its daylight tokens. 1pt = var(--k) px. ── */
+.ph { --k: 0.8; --t: 1; width: calc(390px * var(--k)); max-width: 100%; background: var(--colorSurface); color: var(--colorTextPrimary);
+  border-radius: calc((var(--space5) - var(--space0_5)) * var(--k)); border: 1px solid var(--colorBorderStrong); box-shadow: var(--shadow-lg);
+  overflow: hidden; position: relative; display: flex; flex-direction: column; font-family: var(--fontBody), "Geist", system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.ph.w320 { width: calc(320px * var(--k)); }
+.ph.ax5 { --t: 3.1; }
+.ph.vp { height: calc(844px * var(--k)); }
+.ph .sb { height: calc((var(--space5) - var(--spaceMicro)) * var(--k)); flex-shrink: 0; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 calc((var(--space3) + var(--space0_5)) * var(--k)) calc(var(--space0_75) * var(--k)); font-size: calc(var(--textSM) * var(--k)); font-weight: var(--weightSemibold); }
+.ph .scr { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; position: relative; }
+.ph .scr::-webkit-scrollbar { display: none; }
+.ph:not(.vp) .scr { overflow: visible; }
+.ph .ground { background: var(--colorNeutralLight); }
+.ph .homeind { height: calc((var(--space4) + var(--spaceMicro)) * var(--k)); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.ph .homeind i { width: calc((var(--space6) * 2 + var(--space0_75)) * var(--k)); height: calc(var(--space0_5) * var(--k)); border-radius: var(--radiusFull); background: var(--colorNeutralDark); display: block; }
+
+.tXS { font-size: calc(var(--textXS) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXS) * var(--k) * var(--t)); }
+.tSM { font-size: calc(var(--textSM) * var(--k) * var(--t)); line-height: calc(var(--lineHeightSM) * var(--k) * var(--t)); }
+.tMD { font-size: calc(var(--textMD) * var(--k) * var(--t)); line-height: calc(var(--lineHeightBody) * var(--k) * var(--t)); }
+.tLG { font-size: calc(var(--textLG) * var(--k) * var(--t)); line-height: calc(var(--lineHeightLG) * var(--k) * var(--t)); }
+.tXL { font-size: calc(var(--textXL) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXL) * var(--k) * var(--t)); }
+.wM { font-weight: var(--weightMedium); } .wS { font-weight: var(--weightSemibold); }
+.cP { color: var(--colorTextPrimary); } .c2 { color: var(--colorTextSecondary); } .c3 { color: var(--colorTextTertiary); }
+.cAct { color: var(--colorAction); } .cPos { color: var(--colorAccentInk); } .cOD { color: var(--colorTextOnDark); } .cODm { color: var(--colorTextOnDarkMuted); }
+.trk { letter-spacing: var(--trackingWidest); text-transform: uppercase; }
+.ctr { text-align: center; }
+
+.hd { min-height: calc(var(--hitTarget) * var(--k)); flex-shrink: 0; display: grid; grid-template-columns: calc(var(--space6) * var(--k)) 1fr calc(var(--space6) * var(--k)); align-items: center; border-bottom: 1px solid var(--colorBorder); background: var(--colorSurface); }
+.hd .lead { padding-left: calc(var(--space1_5) * var(--k)); font-size: calc(var(--textXL) * var(--k)); line-height: 1; }
+.hd .ti { text-align: center; font-weight: var(--weightSemibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad { padding: calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space2) * var(--k)); }
+.pad.tight { padding: calc(var(--space2) * var(--k)) calc(var(--space2) * var(--k)) calc(var(--space3) * var(--k)); }
+
+.btn { background: var(--colorNeutralDark); color: var(--colorTextOnDark); border-radius: calc(var(--radiusMedium) * var(--k)); padding: calc(var(--space2) * var(--k)); display: flex; align-items: center; justify-content: center; gap: calc(var(--space1) * var(--k)); font-weight: var(--weightMedium); text-align: center; }
+.btn.outl { background: var(--colorSurface); border: 1px solid var(--colorBorderStrong); color: var(--colorTextPrimary); }
+.btn.sec { background: transparent; border: 1px solid var(--colorBorder); color: var(--colorTextSecondary); }
+.btn.dis { background: var(--colorBorder); color: var(--colorTextTertiary); }
+.btn.plain { background: transparent; color: var(--colorTextSecondary); min-height: calc(var(--hitTarget) * var(--k)); padding: 0; }
+.lnk { min-height: calc(var(--hitTarget) * var(--k)); display: flex; align-items: center; justify-content: center; font-weight: var(--weightMedium); }
+.cam { width: calc((var(--space2) + var(--space0_5)) * var(--k)); height: calc(var(--space2) * var(--k)); border: calc(var(--spaceMicro) * var(--k)) solid currentColor; border-radius: calc(var(--radiusXS) * var(--k)); position: relative; flex-shrink: 0; }
+.cam::after { content: ""; position: absolute; left: 50%; top: 50%; width: calc(var(--space0_75) * var(--k)); height: calc(var(--space0_75) * var(--k)); transform: translate(-50%, -50%); border: calc(var(--spaceMicro) * var(--k)) solid currentColor; border-radius: var(--radiusFull); }
+
+.chips { display: flex; flex-wrap: wrap; column-gap: calc(var(--space1) * var(--k)); row-gap: calc(var(--space2) * var(--k)); }
+.chip { border: 1px solid var(--colorBorder); background: var(--colorSurface); color: var(--colorTextSecondary); border-radius: var(--radiusFull); padding: 0 calc(var(--space2) * var(--k)); min-height: calc(var(--hitTarget) * var(--k)); display: inline-flex; align-items: center; font-weight: var(--weightMedium); }
+.chip.on-filled { background: var(--colorNeutralDark); border-color: var(--colorNeutralDark); color: var(--colorTextOnDark); }
+.chip.on-accent { background: var(--colorAccentLight); border-color: var(--colorAccent); color: var(--colorAccentInk); }
+.chip.on-sel { background: var(--colorTextOnNight); border-color: var(--colorAction); color: var(--colorAction); }
+.chip .tickmark { margin-right: calc(var(--space0_5) * var(--k)); }
+
+.label { font-size: calc(var(--textXS) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXS) * var(--k) * var(--t)); font-weight: var(--weightMedium); color: var(--colorTextSecondary); letter-spacing: var(--trackingWidest); text-transform: uppercase; }
+.field { border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusSmall) * var(--k)); min-height: calc(var(--space5) * var(--k)); padding: 0 calc(var(--space2) * var(--k)); display: flex; align-items: center; background: var(--colorSurface); }
+.fieldlab { font-size: calc(var(--textSM) * var(--k) * var(--t)); line-height: calc(var(--lineHeightSM) * var(--k) * var(--t)); font-weight: var(--weightMedium); color: var(--colorTextSecondary); margin-bottom: calc(var(--space1) * var(--k)); }
+
+/* the label photo: a stand-in drawn from tokens (no real package on this page) */
+.photo { position: relative; overflow: hidden; background: linear-gradient(160deg, var(--colorBrandNightElevated), var(--colorBrandNight)); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--space1) * var(--k)); }
+.photo .pband { width: 62%; padding: calc(var(--space1) * var(--k)) 0; background: var(--colorMoonlight); color: var(--colorBrandNight); text-align: center; font-weight: var(--weightSemibold); letter-spacing: var(--trackingWide); font-size: calc(var(--textXS) * var(--k)); border-radius: calc(var(--radiusXS) * var(--k)); }
+.photo .fish { width: 34%; height: calc(var(--space4) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAttentionRail); opacity: 0.85; }
+.photo.ingr { background: var(--colorMoonlight); }
+.photo.ingr .ln { width: 70%; height: calc(var(--space0_5) * var(--k)); background: var(--colorTextTertiary); border-radius: var(--radiusFull); }
+.photo .ph-note { position: absolute; left: calc(var(--space1) * var(--k)); bottom: calc(var(--space0_75) * var(--k)); font-size: calc(var(--textMicro) * var(--k)); color: var(--colorTextOnDarkSubtle); letter-spacing: var(--trackingWide); text-transform: uppercase; }
+.hero43 { aspect-ratio: 4 / 3; border-radius: calc(var(--radiusMedium) * var(--k)); }
+.heroFull { aspect-ratio: 4 / 3; }
+.heroWide { aspect-ratio: 16 / 9; }
+.scrimBar { position: absolute; left: 0; right: 0; bottom: 0; padding: calc(var(--space2) * var(--k)); background: var(--colorScrimDark); display: flex; flex-direction: column; gap: calc(var(--spaceMicro) * var(--k)); }
+
+.tiles { display: flex; gap: calc(var(--space2) * var(--k)); }
+.tile { flex: 1; display: flex; flex-direction: column; align-items: center; gap: calc(var(--space0_75) * var(--k)); min-width: 0; }
+.thumb { width: 100%; aspect-ratio: 1; border-radius: calc(var(--radiusSmall) * var(--k)); background: var(--colorNeutralLight); }
+.thumb.empty { border: 1px dashed var(--colorBorder); display: flex; align-items: center; justify-content: center; color: var(--colorTextTertiary); font-size: calc(var(--textXL) * var(--k)); }
+.thumb.photo { padding: 0; }
+
+/* the design pass: Home's card language (HomeCard: colorSurface, radiusMedium, shadow-card, rail in the gutter) */
+.hc { position: relative; background: var(--colorSurface); border-radius: calc(var(--radiusMedium) * var(--k)); box-shadow: var(--shadow-card); padding: calc(var(--space2) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1) * var(--k)); }
+.hc .rail { position: absolute; left: calc(var(--space0_75) * var(--k)); top: calc(var(--space2) * var(--k)); bottom: calc(var(--space2) * var(--k)); width: calc(var(--railWidth) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAccentGlyph); }
+.hc .rail.tk { bottom: auto; height: calc(var(--space2) * var(--k)); background: var(--colorBorderStrong); animation: breath 1.4s ease-in-out infinite; }
+.hc.flush { padding: 0; overflow: hidden; }
+.rows { display: flex; flex-direction: column; }
+.rows .r { display: flex; justify-content: space-between; align-items: baseline; gap: calc(var(--space1_5) * var(--k)); padding: calc(var(--space1) * var(--k)) 0; min-width: 0; }
+.rows .r + .r { border-top: 1px solid var(--colorBorder); }
+.rows .r > span:last-child { text-align: right; min-width: 0; overflow-wrap: break-word; }
+.ph.ax5 .rows .r { flex-direction: column; align-items: flex-start; gap: 0; }
+.ph.ax5 .rows .r > span:last-child { text-align: left; }
+.band { border-radius: calc(var(--radiusSmall) * var(--k)); padding: calc(var(--space2) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1) * var(--k)); }
+.band.rose { background: var(--colorEventSymptomLight); }
+.band.quiet { background: var(--colorSurfaceSubtle); border: 1px solid var(--colorBorder); }
+.timerow { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space1) * var(--k)); padding: calc(var(--space2) * var(--k)); border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusSmall) * var(--k)); background: var(--colorNeutralLight); min-height: calc(var(--hitTarget) * var(--k)); }
+.timerow.pass { background: transparent; border: 0; padding: 0; flex-wrap: wrap; }
+.sil { background: var(--colorChartEmpty); border-radius: calc(var(--radiusSmall) * var(--k)); }
+.sil.line { border-radius: calc(var(--space0_75) * var(--k)); height: calc((var(--space1) + var(--spaceMicro)) * var(--k)); }
+.tick { width: calc(var(--railWidth) * var(--k)); height: calc(var(--space2) * var(--k)); background: var(--colorBorderStrong); border-radius: var(--radiusFull); flex-shrink: 0; animation: breath 1.4s ease-in-out infinite; }
+@keyframes breath { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .tick, .hc .rail.tk { animation: none; } }
+.night { background: var(--colorBrandNight); color: var(--colorTextOnNight); flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--space1) * var(--k)); min-height: calc(var(--space6) * 6 * var(--k)); position: relative; }
+.night .moon { width: calc(var(--space5) * var(--k)); height: calc(var(--space5) * var(--k)); border-radius: var(--radiusFull); box-shadow: inset calc(var(--space1_5) * var(--k)) calc(var(--space0_5) * -1 * var(--k)) 0 0 var(--colorMoonlight); }
+.night .star { position: absolute; width: calc(var(--spaceMicro) * var(--k)); height: calc(var(--spaceMicro) * var(--k)); border-radius: var(--radiusFull); background: var(--colorStar); }
+.whorl { width: calc(var(--space3) * var(--k)); height: calc(var(--space3) * var(--k)); border-radius: var(--radiusFull); border: calc(var(--spaceMicro) * var(--k)) solid var(--colorWhorlRidgeDay); border-right-color: transparent; }
+.check80 { width: calc((var(--space6) + var(--space2)) * var(--k)); height: calc((var(--space6) + var(--space2)) * var(--k)); border-radius: var(--radiusFull); background: var(--colorNeutralDark); color: var(--colorTextOnDark); display: flex; align-items: center; justify-content: center; font-size: calc((var(--space4) + var(--space0_5)) * var(--k)); }
+.mark32 { width: calc(var(--space4) * var(--k)); height: calc(var(--space4) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAccentGlyph); color: var(--colorSurface); display: flex; align-items: center; justify-content: center; font-size: calc(var(--textMD) * var(--k)); font-weight: var(--weightSemibold); flex-shrink: 0; }
+.center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--space2) * var(--k)); padding: calc(var(--space3) * var(--k)); min-height: calc(var(--space6) * 6 * var(--k)); }
+
+/* sheets */
+.scrim { position: absolute; inset: 0; background: var(--colorScrim); z-index: 3; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; background: var(--colorSurface); border-radius: calc(var(--radiusLarge) * var(--k)) calc(var(--radiusLarge) * var(--k)) 0 0; box-shadow: var(--shadow-lg); padding: calc(var(--space1) * var(--k)) calc(var(--space3) * var(--k)) calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1_5) * var(--k)); }
+.ph:not(.vp) .sheet { position: relative; }
+.ph:not(.vp) .scrim { display: none; }
+.grab { align-self: center; width: calc(var(--space5) * 0.75 * var(--k)); height: calc(var(--space0_5) * var(--k)); border-radius: var(--radiusFull); background: var(--colorBorderStrong); }
+.ben { display: flex; gap: calc(var(--space1_5) * var(--k)); align-items: flex-start; }
+.ben i { width: calc(var(--space4) * var(--k)); height: calc(var(--space4) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAccentLight); flex-shrink: 0; }
+.pair { display: flex; gap: calc(var(--space1_5) * var(--k)); }
+.pair > * { flex: 1; }
+
+/* part tags */
+body.parts .ph [data-kit] { outline: 1px dashed var(--colorAction); outline-offset: -1px; position: relative; }
+body.parts .ph [data-kit]::before { content: attr(data-kit); position: absolute; top: 0; left: 0; z-index: 6; font: 500 9px/1.25 "Geist Mono", ui-monospace, monospace; color: var(--colorTextOnNight); background: var(--colorBrandNightElevated); padding: 1px 4px; border-radius: 0 0 4px 0; max-width: 100%; white-space: normal; letter-spacing: 0; text-transform: none; pointer-events: none; }
+body.parts .ph [data-kit^="drift"] { outline-color: var(--colorDestructive); }
+body.parts .ph [data-kit^="drift"]::before { background: var(--colorEventSymptomInk); color: var(--colorTextOnDark); }
+body.parts .ph [data-kit^="new"] { outline-color: var(--colorAttentionRail); }
+body.parts .ph [data-kit^="new"]::before { background: var(--colorAttentionInk); color: var(--colorTextOnDark); }
+
+/* tables, VoiceOver, ledger */
+.tscroll { overflow-x: auto; margin-top: 12px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 720px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; color: var(--ink); background: var(--bg); }
+td { color: var(--ink-2); }
+.ok { color: var(--pos); font-weight: 600; } .no { color: var(--con); font-weight: 600; }
+.vo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+@media (max-width: 700px) { .vo { grid-template-columns: minmax(0, 1fr); } }
+.vo ol { margin: 6px 0 0; padding-left: 22px; font-size: 13.5px; color: var(--ink-2); }
+.vo li { margin-bottom: 2px; }
+.vo li.key { color: var(--act); font-weight: 600; }
+.ledger { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.brief { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 4px 16px; }
+@media (max-width: 640px) { .brief { grid-template-columns: minmax(0, 1fr); } }
+.brief .bid { font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; color: var(--act); font-weight: 500; }
+.brief .bid small { display: block; font-family: "Geist", sans-serif; color: var(--ink-3); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
+.brief p { font-size: 14px; margin: 0 0 5px; color: var(--ink-2); max-width: 86ch; }
+.brief p strong { color: var(--ink); }
+.rec { color: var(--pos); font-weight: 600; }
+.gate { color: var(--con); font-weight: 600; }
+.lens { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 16px; font-size: 13px; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Culprit · Design system · Milestone 2 · Pass 2 · Round 1 · 2026-10-23 · build ready</div>
+  <h1>Adding a food from its label, three ways</h1>
+  <p class="lede">The flow an owner walks to put a new food in the library: snap the front of the bag, add the ingredients if they like, wait while the label is read, confirm what was read, and (from the log sheet) log the meal. Every state is drawn as it ships today, as a faithful move onto the shared parts, and as a design pass under Principles 2, 8 and 9 with Home's card language. You rule per screen or per element in the ledger at the foot. Issue: <a href="https://linear.app/projectnyx/issue/CUL-1987">CUL-1987</a>; the build that follows your picks is <a href="https://linear.app/projectnyx/issue/CUL-1910">CUL-1910</a>.</p>
+  <div class="box ask" style="margin-top:16px;border-left-color:var(--pos)"><h3>Ruled 2026-10-23: every recommendation taken</h3>
+    <p>The PM, in session: "Take all the recommendations." F1 to F7 stand; P1 to P4 and P6 to P10 are taken as (B); P5 is ruled no segmented control (Type stays a radio <code>ChipGroup</code>); D-1 is ruled (A), true copy now. The build is CUL-1910. Carried into it: the <code>new:</code> parts (the <code>PrimaryButton</code> icon slot, PhotoSlots, SlotRow, FactRows, CaptureSilhouette, PhotoThumb, the quiet band) are built as kit parts; P2's and P9's copy take a nyx-voice read, and P9's waits on the release track; the tick into the rail takes one filmed sitting. Not settled by this ruling: the PM's real payload frame stays undrawn.</p></div>
+  <div class="boxes">
+    <div class="box ask"><h3>Food capture only</h3>
+      <p>The medication revamp (<a href="https://linear.app/projectnyx/issue/CUL-1903">CUL-1903</a>, <a href="https://linear.app/projectnyx/issue/CUL-1698">CUL-1698</a>) redraws medication capture in its round 4 ("You snap the label", the label photo per box), so this round leaves <code>app/medication-capture.tsx</code> to it, as the issue asked. One defect below (D-1) is shared by both screens and is filed as one class.</p></div>
+    <div class="box floor"><h3>AI consent is drawn as the release track ruled it</h3>
+      <p>The permission sheet before a label photo (<a href="https://linear.app/projectnyx/issue/CUL-1834">CUL-1834</a>, App Store 1.2.0) is drawn verbatim from <code>constants/aiConsentCopy.ts</code> in all three columns. This round proposes nothing on it; where a design pass frame meets the sheet, the sheet wins.</p></div>
+    <div class="box pend"><h3>The mock round contract</h3>
+      <p>Build ready (ruled D1 (a), #1297). Every element names its part and token in <code>data-kit</code>: switch on <b>Show parts</b>. Red tags are drift (a hand built part or a typed value the faithful column replaces); amber tags are <code>new:</code> parts the kit lacks, each a gate for the build. Every colour on this page is a token from <code>mockups/theme.css</code>.</p></div>
+  </div>
+  <p class="why">The record in every frame is a fixture. Biscuit, a dog, is the active pet; Mochi, a cat, is the second. The food is invented (<b>Hillside Kitchen · Sensitive Stomach Salmon &amp; Rice</b>, dry kibble, salmon with whitefish) and the label photo is a stand-in drawn from tokens, so no real package or real owner's library is on this page. Every shipped string is verbatim from <code>app/food-capture.tsx</code>, <code>constants/aiConsentCopy.ts</code>, <code>constants/monetizationCopy.ts</code> and <code>components/food/ProteinDisclosure.tsx</code>. Design pass copy that differs is marked and briefed. <b>Not drawn:</b> the PM's real payload. Drawing it means reading your food library from production, a privacy read this session did not take without your word; say so and the next round draws it.</p>
+</header>
+
+<nav class="controls" aria-label="Page controls">
+  <span class="seg" role="group" aria-label="Part tags"><button type="button" id="b-parts-off" aria-pressed="true">Pictures</button><button type="button" id="b-parts-on" aria-pressed="false">Show parts</button></span>
+  <span class="seg" role="group" aria-label="Phone height"><button type="button" id="b-vp" aria-pressed="true">Phone height</button><button type="button" id="b-full" aria-pressed="false">Full length</button></span>
+  <div class="toc">
+    <a href="#s01">01 First food</a><a href="#s02">02 Consent asked</a><a href="#s03">03 Consent not given</a><a href="#s04">04 More photos</a><a href="#s05">05 The wait</a><a href="#s06">06 Confirm</a><a href="#s07">07 Front only</a><a href="#s08">08 Read failed</a><a href="#s09">09 Offline</a><a href="#s10">10 Cap</a><a href="#s11">11 Saved</a><a href="#s12">12 320pt</a><a href="#s13">13 Largest text</a><a href="#s14">14 Two pets</a><a href="#vo">VoiceOver</a><a href="#motion">Motion</a><a href="#qa">State set</a><a href="#ledger">Ledger</a><a href="#lenses">Lenses</a>
+  </div>
+</nav>
+
+<main id="states"></main>
+
+<section class="state" id="vo">
+  <div class="sec-head"><span class="sec-id">§15</span><h2>VoiceOver order on the confirm step</h2></div>
+  <p class="why">Read in swipe order, from the log sheet. The facts the owner is confirming (indigo) must come before the commit.</p>
+  <div class="vo">
+    <div class="box"><h3>Today and faithful</h3><ol>
+      <li>Back, button</li><li>Confirm, heading</li><li>Image (no label)</li><li class="key">Hillside Kitchen</li><li class="key">Sensitive Stomach Salmon &amp; Rice</li><li>Is this right?</li><li class="key">Salmon · also contains whitefish</li><li>TYPE</li><li>Meal, button, selected <i>(today: no radio role; faithful: radio button, 1 of 3)</i></li><li>Treat, button</li><li>Other, button</li><li>07:42 AM · from your photo, Change, button</li><li>Looks right, button</li><li>Edit, button</li></ol>
+      <p style="margin-top:8px">Format was read but is never announced or shown: the owner confirms a food whose format they have not seen.</p></div>
+    <div class="box"><h3>Design pass</h3><ol>
+      <li>Back, button</li><li>Confirm, heading</li><li>Your photo of the front of the package, image button. Opens the photo full screen</li><li>Read from your photo, heading</li><li class="key">Brand, Hillside Kitchen</li><li class="key">Product, Sensitive Stomach Salmon &amp; Rice</li><li class="key">Format, Dry kibble</li><li class="key">Protein, Salmon · also contains whitefish</li><li>Read from the ingredient list on the label.</li><li>Type, radio group. Meal, radio button, selected, 1 of 3</li><li>Treat, radio button, 2 of 3</li><li>Other, radio button, 3 of 3</li><li>Biscuit's meal, 7:42 AM, from your photo. Change time, button</li><li>Looks right, button</li><li>Edit, button</li></ol>
+      <p style="margin-top:8px">Each fact is one label/value element (C-8: one string, no rejoining label). The pet's name reaches the ear before the commit (P6).</p></div>
+  </div>
+</section>
+
+<section class="state" id="motion">
+  <div class="sec-head"><span class="sec-id">§16</span><h2>The wait, in motion</h2></div>
+  <p class="why"><b>Today:</b> a <code>WhorlSpinner</code> while the photos upload, then <code>NightMoment</code> (a night ground, a moon and stars) crossfades in for the read: two waits and a ground change, both on the retiring list (CUL-1593). <b>Design pass (P3):</b> one wait. The confirm screen's silhouette appears at once with the owner's own photo already standing in the hero (it is on the phone), the tick breathes at the card's rail where the read will land, and "Reading the label…" names the request. When the read answers, the tick grows into the card's rail and the rows fill in place: the arrival's constants from <code>components/motion/arrivalMotion.ts</code>, unchanged. Reduce Motion: the tick is still at full opacity and the rows crossfade in. Upload and read are one request from the owner's side, so the tick does not change its name between them.</p>
+  <p class="why"><b>Motion &amp; IA:</b> nothing new moves. Chrome stays still; the one loop is the tick, named; the photo does not move between the wait and the confirm, so nothing has to fly. A filmed sitting on a phone is owed at build for the tick into the rail.</p>
+</section>
+
+<section class="state" id="qa">
+  <div class="sec-head"><span class="sec-id">§17</span><h2>The state set, against the contract</h2></div>
+  <div class="tscroll"><table>
+    <thead><tr><th>State</th><th>Where</th><th>Today</th><th>Faithful</th><th>Design pass</th></tr></thead>
+    <tbody>
+      <tr><td>Empty (first food, empty library)</td><td>§01</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>The extraction's wait, as the screen's silhouette</td><td>§05</td><td class="no">night moment</td><td class="ok">confirm silhouette</td><td class="ok">confirm silhouette + photo</td></tr>
+      <tr><td>Extraction failed</td><td>§08</td><td class="ok">drawn (D-1)</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Offline</td><td>§09</td><td class="ok">drawn: lands on §08</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Consent asked · consent not given</td><td>§02 · §03</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Daily cap reached</td><td>§10</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>320pt</td><td>§12</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Largest text (fontScale 3.1, AX5; the app sets no cap)</td><td>§13</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Two pets</td><td>§14</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>VoiceOver order</td><td>§15</td><td class="ok">listed</td><td class="ok">listed</td><td class="ok">listed</td></tr>
+      <tr><td>The PM's real payload</td><td>header</td><td class="no" colspan="3">not drawn: needs a production read of your library, which waits on your word</td></tr>
+      <tr><td>Trial heads up sheet (add time)</td><td>—</td><td colspan="3">not redrawn: the trial track's sheet, unchanged in every column; it opens over §06 and §08 exactly as today</td></tr>
+    </tbody></table></div>
+</section>
+
+<section class="state" id="ledger">
+  <div class="sec-head"><span class="sec-id">§18</span><h2>The ledger: every visible change, as a brief</h2></div>
+  <p class="why">Faithful briefs (F) are team calls under the kit and the ruled colour roles; veto any you disagree with. Design pass briefs (P) are yours. D-1 is a defect in shipped code. <b>Forecast:</b> 1 row (this page); the build is CUL-1910.</p>
+  <div class="ledger">
+    <div class="brief"><div class="bid">F1<small>faithful</small></div><div>
+      <p><strong>Every button onto <code>PrimaryButton</code>.</strong> Take a photo, Looks right and Save are <code>primary</code>; Choose from library and Edit are <code>secondary</code>; Save waits disabled with its reason (C-7). Four hand rolled button styles and a typed 52pt height leave.</p>
+      <p><strong>Gate:</strong> the camera glyph needs <code>new: PrimaryButton icon slot</code>; without it the faithful column drops the glyphs. <span class="rec">Recommended:</span> add the slot (two screens use it).</p></div></div>
+    <div class="brief"><div class="bid">F2<small>faithful</small></div><div>
+      <p><strong>Brand and Product name onto <code>TextField</code></strong> with its own label, in place of a raw <code>TextInput</code> under a <code>SectionLabel</code>. Same 48pt box, the kit's focus and error states. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F3<small>faithful</small></div><div>
+      <p><strong>Type (Meal, Treat, Other) onto <code>ChipGroup</code>,</strong> a radio group. Today it is three <code>FilterChip</code>s with no radio role, so VoiceOver hears three buttons and no choice (the audit's finding). The chosen chip takes the <code>selected</code> role (indigo edge and ink on the lavender wash), the same as Format beside it, instead of a near black pill. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F4<small>faithful</small></div><div>
+      <p><strong>The wait onto the house rule:</strong> <code>WhorlSpinner</code> and <code>NightMoment</code> leave (both retiring, CUL-1593) for the confirm screen's silhouette and the <code>Tick</code>. Required by the loaders rule, so drawn in the faithful column too. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F5<small>faithful</small></div><div>
+      <p><strong>Links speak the action colour.</strong> Enter manually and Change move from the teal ink to <code>action.onLight</code> (indigo, 9.42:1), per the ruled roles (#1294): teal is a good fact, never a control. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F6<small>faithful</small></div><div>
+      <p><strong>The failed band leaves the rose.</strong> "Couldn't read the label" sits on <code>colorEventSymptomLight</code>, the concern wash; a failed read is not a symptom. It moves to the quiet band the cap state already uses (<code>colorSurfaceSubtle</code>, <code>colorBorder</code>). Neither louder nor quieter about the pet. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F7<small>faithful</small></div><div>
+      <p><strong>Saved onto <code>CompletionMark</code>.</strong> The 80pt black disc with a raw ✓ glyph and a 20pt <code>Animated.Text</code> become the kit's mark and a <code>ThemedText</code> heading. Typed values (52, 80, 36, 20, 18, 16, 6) leave for the scale. <span class="rec">Recommended.</span></p></div></div>
+
+    <div class="brief"><div class="bid">P1<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> whether the first screen shows the whole job before the camera opens. <strong>(A)</strong> As today: heading, paragraph, buttons; the three slots appear only after the first photo. <strong>(B) The three slots up front</strong> (Front, needed; Ingredients and Barcode, optional), then the buttons. <span class="rec">Recommended (B):</span> the owner sees it is one photo, not three, before they start, and the same slots carry into the next step, so nothing on screen is new after the first shot.</p>
+      <p><strong>Consequence:</strong> the intro paragraph shortens to one line (copy, nyx-voice read at build). The early access line stays verbatim: it is a Pets &gt; $ disclosure (D-M6).</p></div></div>
+    <div class="brief"><div class="bid">P2<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> what the step after the front photo asks for. <strong>(A)</strong> As today: the main button changes per slot (Add ingredients photo, then Add barcode photo, then Continue) with Skip under it. <strong>(B) "Read the label" is the main button from the first photo on;</strong> the optional shots are two quiet rows, and the ingredients row says why it matters: "Lets us read every protein, not just the main one." <span class="rec">Recommended (B):</span> two taps fewer on the common path, and the one optional shot that changes the record (without the ingredients panel the protein set is "ingredient list not read") is the one the screen argues for.</p>
+      <p><strong>Direction:</strong> LOUD. It asks for the panel that lets the trial heads up see every protein.</p></div></div>
+    <div class="brief"><div class="bid">P3<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> what the wait looks like. <strong>(A)</strong> The faithful silhouette (F4). <strong>(B) The silhouette with the owner's photo already standing</strong> and the tick at the card's rail, named "Reading the label…" (§16). <span class="rec">Recommended (B):</span> the wait is the shape of the screen to come, and the one real thing on it (their photo) is there from the first frame.</p></div></div>
+    <div class="brief"><div class="bid">P4<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> how the read is shown on confirm. <strong>(A)</strong> As today: brand and product on a dark scrim over the photo, "Is this right?", a centred protein line; format is read but never shown. <strong>(B) The photo clean, the read below it as a card on Home's surface:</strong> four label/value rows (Brand, Product, Format, Protein) under "Read from your photo", the provenance line under them, a teal rail for the good fact that the label was read. <span class="rec">Recommended (B):</span> Principle 8 (the display as magical as the capture: every field the read produced, each checkable against the photo above it) and Principle 2 (confirm everything that was read, including the format the owner never saw).</p>
+      <p><strong>Consequence:</strong> the photo goes from 4:3 to 16:9 so the commit stays reachable; at 390pt Looks right sits at the fold and Edit just under it (§06), so the build pins a check at 390pt (PR-09b's capture). The scrim overlay retires on this screen.</p></div></div>
+    <div class="brief"><div class="bid">P5<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> Type as a <code>SegmentedControl</code> instead of a chip group. <span class="rec">Recommended against:</span> the kit keeps the segmented control for 2 to 3 views of one thing; Meal, Treat and Other are a choice about the food, and <code>ChipGroup</code> (F3) is the kit's part for that. Drawn as F3 in the design pass column; recorded so silence is not read as a choice.</p></div></div>
+    <div class="brief"><div class="bid">P6<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> whether the meal time row names whose meal it is. <strong>(A)</strong> As today: "07:42 AM · from your photo · Change". <strong>(B) "Biscuit's meal · 7:42 AM · from your photo", with "Change time"</strong> opening <code>TimeEditSheet</code>, the kit's one time editor. <span class="rec">Recommended (B):</span> with two pets the confirm step logs a meal for the active pet without ever saying which (§14), and a record surface names its pet (C-9). The EXIF attribution (spec §4.4) is kept word for word.</p></div></div>
+    <div class="brief"><div class="bid">P7<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> whether the typed form keeps the photo in view. <strong>(A)</strong> As today: fields only. <strong>(B) A 64pt thumbnail of the front photo above the fields,</strong> tap to open full screen (<code>PhotoViewer</code>). <span class="rec">Recommended (B):</span> after a failed read, the owner is typing from the bag they just photographed; the photo is on the phone already.</p></div></div>
+    <div class="brief"><div class="bid">P8<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> what an offline owner sees. <strong>(A)</strong> As today: Continue, the upload spinner, the night moment, then the failed form (§09 today). <strong>(B) Say it before they wait:</strong> on the photos step, a quiet band ("You're offline. Reading the label needs a connection.") and two ways on: Type it in now, or stay and tap Read the label once connected (<code>useIsOnline</code>). <span class="rec">Recommended (B):</span> no wait that can only fail.</p></div></div>
+    <div class="brief"><div class="bid">P9<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> what the first screen says when label reading is off. <strong>(A)</strong> As today: Take a photo opens the typed form with no word of why. <strong>(B) The screen says so:</strong> "Label reading is off, so you'll type this one in." with Type it in as the main button and a Settings link. <span class="rec">Recommended (B):</span> the owner who said Don't allow is not surprised by their own answer. Copy waits on the release track (<a href="https://linear.app/projectnyx/issue/CUL-1834">CUL-1834</a>), which wins any conflict.</p></div></div>
+    <div class="brief"><div class="bid">P10<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the saved beat on the library path. <strong>(A)</strong> Faithful (F7): the mark and "Saved to your foods". <strong>(B) The mark, "Saved to your foods", and the food's name under it,</strong> so the beat speaks the record (C-17). <span class="rec">Recommended (B).</span> No haptic change; no event is written on this path.</p></div></div>
+
+    <div class="brief"><div class="bid">D-1<small>defect · live</small></div><div>
+      <p><strong>The failed band promises a retry that never comes.</strong> "We'll retry extraction in the background": nothing retries; the only retry is the button on the food's own page. Offline, the photos never uploaded, so that button cannot read them either. Medication capture's twin ("the label photo is saved either way") is untrue when the upload is what failed. An owner who waits for the read leaves the protein set empty, and the add time trial heads up has nothing to compare. Filed as one class, Live harm: <a href="https://linear.app/projectnyx/issue/CUL-2164">CUL-2164</a>.</p>
+      <p><strong>Options:</strong> <strong>(A) Say what is true:</strong> "Couldn't read the label. Fill in what you know below; you can try reading it again from the food's page." (and offline: P8). <strong>(B)</strong> Build the background retry the sentence promises. <span class="rec">Recommended (A)</span> now; (B) is new behaviour for a later row. <strong>Direction:</strong> QUIET today (it can delay a warning); (A) removes the false promise and adds nothing quieter.</p></div></div>
+  </div>
+</section>
+
+<section class="state" id="lenses">
+  <div class="sec-head"><span class="sec-id">§19</span><h2>The lenses</h2></div>
+  <div class="lens">
+    <div class="box"><h3>Jordan (diet trial dog)</h3><p>The trial vet said "check every protein". P2's ingredients line is the first time the app tells me why the second photo matters. P4 shows me the format I'd otherwise discover was wrong a week later.</p></div>
+    <div class="box"><h3>Sam (two cats)</h3><p>§14 today: I'm in Mochi's log sheet but nothing on confirm says Mochi. P6 fixes the one thing I'd get wrong at 6am.</p></div>
+    <div class="box"><h3>Designer</h3><p>Principles 2, 8, 9 checked per frame. The confirm card reuses <code>HomeCard</code>'s surface and rail instead of a new card. One open part: <code>new: PrimaryButton icon slot</code> (F1).</p></div>
+    <div class="box"><h3>Dr. Chen</h3><p>Not a clinical read, and no frame touches a refusal or a decline. The protein provenance line stays verbatim; P4 never shows a protein set as complete when the panel wasn't read (§07).</p></div>
+    <div class="box"><h3>QA</h3><p>State set in §17; the real payload is the one gap and it is named. 44pt floors held at 320pt; largest text wraps without clipping in the pass column (§13).</p></div>
+    <div class="box"><h3>Trust &amp; Safety</h3><p>No change to what is sent, stored or when: the consent sheet is the release track's. P9 adds a sentence and a Settings link, nothing else.</p></div>
+  </div>
+</section>
+
+<footer class="end">Round 1 · drawn 2026-10-23 for CUL-1987 · colours from <code>docs/mockups/theme.css</code> (generated from <code>constants/theme.ts</code>) · supersedes nothing.</footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  // ── copy, verbatim from the shipped modules ──
+  var PET = 'Biscuit';
+  var BRAND = 'Hillside Kitchen', PRODUCT = 'Sensitive Stomach Salmon & Rice';
+  var INTRO_H = 'Add the front of the package';
+  var INTRO_B = 'A clear shot of the front lets us read the label. The ingredients and barcode are optional but make the entry more useful later.';
+  var EARLY = 'Label reading is free during early access — it may become part of Premium later.';
+  var FAILED = "Couldn't read the label automatically. You can fill it in below — we'll retry extraction in the background.";
+  var CAP = "You've hit today's limit for label reading. The photo is saved — fill in what you know below, and reading picks back up tomorrow.";
+  var CARE = function (p) { return p + "'s care is never behind this door — logging, health alerts, trends and the vet report are free, always."; };
+  var PROV_READ = 'Read from the ingredient list on the label.';
+  var PROV_PARTIAL = "The ingredient list hasn't been read, so there may be more proteins in here than these.";
+  var PROV_NONE = "No proteins have been picked out of this food's label yet, so what's in it isn't known.";
+  var SUM_READ = 'Salmon · also contains whitefish', SUM_PARTIAL = 'Salmon · ingredient list not read';
+  var FORMATS = ['Dry kibble', 'Wet / canned', 'Raw', 'Freeze-dried', 'Jerky', 'Fresh cooked', 'Human food', 'Topper'];
+  var PROTEINS = ['Chicken', 'Beef', 'Salmon', 'Lamb', 'Turkey', 'Other'];
+  // design pass copy (briefed; nyx-voice read at build)
+  var P_REVIEW_H = 'Ready to read the label';
+  var P_INGR = 'Lets us read every protein, not just the main one.';
+  var P_FAILED = "Couldn't read the label. Fill in what you know below; you can try reading it again from the food's page.";
+  var P_OFFLINE = "You're offline. Reading the label needs a connection: type it in now, or tap Read the label once you're back.";
+  var P_OFF = "Label reading is off, so you'll type this one in.";
+
+  function k(kit) { return ' data-kit="' + kit.replace(/"/g, '&quot;') + '"'; }
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+  // ── phone pieces ──
+  function statusBar() { return '<div class="sb"' + k('system status bar') + '><span>7:54</span><span>●●● ▮</span></div>'; }
+  function homeInd() { return '<div class="homeind"' + k('system home indicator') + '><i></i></div>'; }
+  function header(title, lead) {
+    var g = lead === 'close' ? '✕' : lead === 'none' ? '' : '‹';
+    return '<div class="hd"' + k('Header · colorSurface, colorBorder, hitTarget') + '><span class="lead"' + k('Header leading · ' + (lead || 'back')) + '>' + g + '</span><span class="ti tLG"' + k('Header title · textLG, weightSemibold') + '>' + title + '</span><span></span></div>';
+  }
+  function photo(cls, note, kit) {
+    return '<div class="photo ' + cls + '"' + k(kit || 'Image · label photo stand-in, drawn from tokens') + '><span class="pband">HILLSIDE KITCHEN</span><span class="fish"></span><span class="ph-note">' + (note || 'front photo') + '</span></div>';
+  }
+  function btn(col, label, variant, opts) {
+    opts = opts || {};
+    var icon = opts.icon ? '<span class="cam" aria-hidden="true"' + k(col === 'today' ? 'lucide Camera · size 20 literal' : 'new: PrimaryButton icon slot') + '></span>' : '';
+    if (col === 'today') {
+      var map = { primary: ['btn tMD', 'drift: TouchableOpacity primaryBtn · colorNeutralDark, minHeight 52 literal'], secondary: ['btn outl tMD', 'drift: TouchableOpacity outlineBtn · colorBorderStrong, minHeight 52 literal'], text: ['btn plain tMD', 'drift: TouchableOpacity secondaryBtn · textMD, colorTextSecondary'], disabled: ['btn dis tMD', 'drift: primaryBtnDisabled · colorBorder, no reason given'] };
+      var m = map[variant];
+      return '<div class="' + m[0] + '"' + k(m[1]) + '>' + icon + '<span>' + label + '</span></div>';
+    }
+    var cls = variant === 'secondary' ? 'btn sec tMD' : variant === 'disabled' ? 'btn dis tMD' : variant === 'text' ? 'btn plain tMD' : 'btn tMD';
+    var kit = variant === 'secondary' ? 'PrimaryButton secondary · colorBorder, colorTextSecondary, radiusMedium' : variant === 'disabled' ? 'PrimaryButton disabled · colorBorder, colorTextTertiary, reason in label (C-7)' : variant === 'text' ? 'new: PrimaryButton plain variant · colorTextSecondary, hitTarget' : 'PrimaryButton primary · colorNeutralDark, colorTextOnDark, radiusMedium';
+    return '<div class="' + cls + '"' + k(kit) + '>' + icon + '<span>' + label + '</span></div>';
+  }
+  function link(col, label) {
+    if (col === 'today') return '<div class="lnk tMD cPos"' + k('drift: TouchableOpacity linkBtn · colorAccentInk (teal as a control)') + '>' + label + '</div>';
+    return '<div class="lnk tMD cAct"' + k('text link · action.onLight (colorAction), hitTarget') + '>' + label + '</div>';
+  }
+  function sectionLabel(t) { return '<div class="label"' + k('SectionLabel · textXS, weightMedium, trackingWidest, colorTextSecondary') + '>' + t + '</div>'; }
+  function early(col) { return '<div class="tSM c3"' + k(col === 'today' ? 'ThemedText earlyAccessLabel · textSM, colorTextTertiary, lineHeightSM' : 'ThemedText caption · textSM, colorTextTertiary') + '>' + EARLY + '</div>'; }
+
+  function typeChips(col, chosen) {
+    chosen = chosen || 'Meal';
+    var out = '<div class="chips"' + k(col === 'today' ? 'drift: View foodTypeRow · three FilterChip filled, no radio role' : 'ChipGroup · radiogroup, columnGap space1, rowGap space2') + '>';
+    ['Meal', 'Treat', 'Other'].forEach(function (t) {
+      var on = t === chosen;
+      if (col === 'today') out += '<span class="chip tSM ' + (on ? 'on-filled' : '') + '"' + k(on ? 'FilterChip filled active · colorNeutralDark' : 'FilterChip filled · colorBorder') + '>' + t + '</span>';
+      else out += '<span class="chip tSM ' + (on ? 'on-sel' : '') + '"' + k(on ? 'ChipGroup radio selected · selected.ground, selected.edge, selected.ink' : 'ChipGroup radio · colorBorder, colorTextSecondary') + '>' + t + '</span>';
+    });
+    return out + '</div>';
+  }
+  function formatChips(col, chosen, limit) {
+    var out = '<div class="chips"' + k('ChipGroup · radiogroup "Format"') + '>';
+    FORMATS.slice(0, limit || FORMATS.length).forEach(function (t) {
+      var on = t === chosen;
+      if (col === 'today') out += '<span class="chip tSM ' + (on ? 'on-accent' : '') + '"' + k(on ? 'FilterChip active · colorAccent edge, colorAccentLight, colorAccentInk (pre-roles)' : 'FilterChip · colorBorder') + '>' + t + '</span>';
+      else out += '<span class="chip tSM ' + (on ? 'on-sel' : '') + '"' + k(on ? 'ChipGroup radio selected · selected.*' : 'ChipGroup radio · colorBorder') + '>' + t + '</span>';
+    });
+    return out + '</div>';
+  }
+  function proteinPicker(col, main) {
+    var out = sectionLabel('Main protein') + '<div class="chips"' + k('ProteinSetPicker main · ChipGroup') + '>';
+    PROTEINS.forEach(function (t) {
+      var on = t === main;
+      var cls = on ? (col === 'today' ? 'on-accent' : 'on-sel') : '';
+      out += '<span class="chip tSM ' + cls + '"' + k(on ? (col === 'today' ? 'FilterChip active · accent (pre-roles)' : 'ChipGroup radio selected · selected.*') : 'ChipGroup radio · colorBorder') + '>' + t + '</span>';
+    });
+    return out + '</div>' + sectionLabel('Also contains') + '<div class="chips"' + k('ProteinSetPicker also · MultiChipGroup') + '><span class="chip tSM"' + k('MultiChipGroup option · colorBorder') + '>Chicken</span><span class="chip tSM"' + k('MultiChipGroup option · colorBorder') + '>Beef</span><span class="chip tSM"' + k('MultiChipGroup option · colorBorder') + '>Other</span></div>';
+  }
+  function field(col, label, value, placeholder) {
+    var v = value ? '<span class="tMD cP">' + esc(value) + '</span>' : '<span class="tMD c2">' + placeholder + '</span>';
+    if (col === 'today') return sectionLabel(label) + '<div class="field"' + k('drift: raw TextInput textInput · colorBorder, radiusSmall, height 48 literal') + '>' + v + '</div>';
+    return '<div' + k('TextField · label, minHeight space5, radiusSmall, colorBorder') + '><div class="fieldlab">' + label + '</div><div class="field">' + v + '</div></div>';
+  }
+  function tiles(col, filled, pass) {
+    var slots = [['Front', filled.indexOf('front') >= 0], ['Label', filled.indexOf('ingr') >= 0], ['Barcode', filled.indexOf('bar') >= 0]];
+    if (pass) slots = [['Front · needed', slots[0][1]], ['Ingredients · optional', slots[1][1]], ['Barcode · optional', slots[2][1]]];
+    var out = '<div class="tiles"' + k(col === 'today' ? 'drift: PhotoChecklist · hand rolled tiles, gap 6 literal' : (pass ? 'new: PhotoSlots · three slots, each a 44pt button, state in its label' : 'PhotoChecklist on tokens · gap space0_75')) + '>';
+    slots.forEach(function (s) {
+      var th = s[1] ? '<div class="thumb photo"' + k('Image · thumbnail, radiusSmall') + '><span class="pband" style="width:80%">HK</span></div>' : '<div class="thumb empty"' + k('empty slot · colorBorder dashed, colorNeutralLight') + '>+</div>';
+      out += '<div class="tile">' + th + '<span class="tXS c2 ctr"' + k('ThemedText label · textXS, colorTextSecondary') + '>' + s[0] + '</span></div>';
+    });
+    return out + '</div>';
+  }
+  function shell(inner, opts) {
+    opts = opts || {};
+    return '<div class="ph ' + (opts.cls || 'vp') + '"' + k('device · iPhone 390 × 844pt') + '>' + statusBar() + inner + homeInd() + '</div>';
+  }
+  function scr(inner, ground) {
+    var padKit = k('ScrollView contentContainer · padding space3, gap space2');
+    inner = inner.replace(/^<div class="pad( tight)?"(?=>)/, function (m, t) { return m + (t ? k('ScrollView contentContainer · padding space2, gap space2') : padKit); });
+    return '<div class="scr' + (ground ? ' ground' : '') + '"' + k(ground ? 'ScrollView · colorNeutralLight (Home\'s ground)' : 'ScrollView · colorSurface') + '>' + inner + '</div>';
+  }
+
+  // ── screens ──
+  function intro(col, o) {
+    o = o || {};
+    var h = header('Add a food', 'close');
+    if (col === 'pass') {
+      if (o.off) {
+        return h + scr('<div class="pad">' +
+          '<div class="tXL wM"' + k('ThemedText heading · textXL, weightMedium') + '>' + INTRO_H + '</div>' +
+          '<div class="band quiet"' + k('new: quiet band · colorSurfaceSubtle, colorBorder (the cap band, lifted)') + '><span class="tSM cP">' + P_OFF + '</span><span class="tSM cAct wM"' + k('text link · action.onLight') + '>Turn it on in Settings</span></div>' +
+          btn(col, 'Type it in', 'primary') + btn(col, 'Take a photo anyway', 'secondary', { icon: true }) + '<div class="tSM c3"' + k('ThemedText caption · textSM, colorTextTertiary') + '>The photo is kept with the food and not read.</div></div>');
+      }
+      return h + scr('<div class="pad">' +
+        '<div class="tXL wM"' + k('ThemedText heading · textXL, weightMedium') + '>' + INTRO_H + '</div>' +
+        '<div class="tMD c2"' + k('ThemedText body · textMD, colorTextSecondary') + '>Only the front is needed. We read the rest from it.</div>' +
+        tiles(col, [], true) + early(col) +
+        btn(col, 'Take a photo', 'primary', { icon: true }) + btn(col, 'Choose from library', 'secondary') + link(col, 'Type it in instead') + '</div>');
+    }
+    return h + scr('<div class="pad">' +
+      '<div class="tXL wM"' + k(col === 'today' ? 'ThemedText introHeading · textXL, weightMedium, marginTop space2' : 'ThemedText heading · textXL, weightMedium') + '>' + INTRO_H + '</div>' +
+      '<div class="tMD c2"' + k('ThemedText introBody · textMD, colorTextSecondary, lineHeightBody') + '>' + INTRO_B + '</div>' + early(col) +
+      btn(col, 'Take a photo', 'primary', { icon: true }) + btn(col, 'Choose from library', 'secondary', { icon: true }) + link(col, 'Enter manually') + '</div>');
+  }
+  function consentSheet() {
+    return '<div class="scrim"' + k('Modal backdrop · colorScrim') + '></div><div class="sheet"' + k('AiConsentSheet · colorSurface, radiusLarge, shadow-lg (release track, unchanged)') + '>' +
+      '<span class="grab"' + k('grabber · colorBorderStrong, radiusFull') + '></span>' +
+      '<div class="tXL wS"' + k('ThemedText headline · textXL') + '>Snap the label, skip the typing</div>' +
+      '<div class="ben"' + k('BenefitRow · colorAccentLight disc') + '><i></i><div><div class="tMD wM">Foods and medicines filled in</div><div class="tSM c2">Name, brand, ingredients or dose, read from the photo.</div></div></div>' +
+      '<div class="ben"' + k('BenefitRow · colorAccentLight disc') + '><i></i><div><div class="tMD wM">A read on ' + PET + '\'s photos</div><div class="tSM c2">Says what\'s in a vomit or stool photo and points out some signs to call your vet about. It can\'t tell you ' + PET + ' is fine.</div></div></div>' +
+      '<div class="tSM c2"' + k('ThemedText disclosure · textSM, colorTextSecondary') + '>To do this, Culprit sends these photos to <b class="cP">Claude, an AI made by Anthropic</b>. It also sends ' + PET + '\'s name with the patterns Culprit spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. One answer covers all of this; change it in Settings. <span class="cAct wM">What\'s sent</span></div>' +
+      '<div class="tSM c2"' + k('ThemedText without · textSM') + '>Without it, you type labels in and ' + PET + '\'s photos are kept but not read. Checks that need no photo, like repeated vomiting, still work.</div>' +
+      '<div class="pair">' + btn('faith', 'Don\'t allow', 'secondary') + btn('faith', 'Allow', 'primary') + '</div>' +
+      '<div class="lnk tMD c2"' + k('TouchableOpacity notNow · textMD, colorTextSecondary') + '>Not now, I\'ll type it in</div></div>';
+  }
+  function review(col, o) {
+    o = o || {};
+    if (col === 'pass') {
+      var off = o.offline;
+      return header('Add a food', 'back') + scr('<div class="pad">' +
+        '<div class="hc flush"' + k('HomeCard flush · colorSurface, radiusMedium, shadow-card') + '>' + photo('heroFull', 'front photo') + '</div>' +
+        '<div class="tXL wM"' + k('ThemedText heading · textXL, weightMedium') + '>' + P_REVIEW_H + '</div>' +
+        (off ? '<div class="band quiet"' + k('new: quiet band · colorSurfaceSubtle, colorBorder') + '><span class="tSM cP">' + P_OFFLINE + '</span></div>' : '') +
+        btn(col, off ? 'Read the label · needs a connection' : 'Read the label', off ? 'disabled' : 'primary') +
+        (off ? btn(col, 'Type it in now', 'secondary') : '') +
+        '<div class="hc"' + k('HomeCard · colorSurface, radiusMedium, shadow-card') + '><div class="rows"' + k('new: SlotRow list · hitTarget rows, hairline colorBorder') + '>' +
+          '<div class="r"><span><span class="tMD wM cP">Add the ingredients</span><br><span class="tSM c2">' + P_INGR + '</span></span><span class="tMD cAct">›</span></div>' +
+          '<div class="r"><span class="tMD wM cP">Add the barcode</span><span class="tMD cAct">›</span></div>' +
+        '</div></div>' + '</div>', true);
+    }
+    var head = o.offline ? 'Ready to read the label' : 'Add the ingredients label';
+    var body = o.offline ? 'We\'ll read the front of the package and confirm with you.' : 'Optional, but lets us extract the full ingredients list. You can skip and add it later.';
+    var cta = o.offline ? btn(col, 'Continue', 'primary') : btn(col, 'Add ingredients photo', 'primary', { icon: true }) + btn(col, 'Skip', 'text');
+    return header('Add a food', 'back') + scr('<div class="pad">' + tiles(col, o.offline ? ['front', 'ingr', 'bar'] : ['front']) +
+      '<div class="tXL wM"' + k('ThemedText introHeading · textXL, weightMedium') + '>' + head + '</div>' +
+      '<div class="tMD c2"' + k('ThemedText introBody · textMD, colorTextSecondary') + '>' + body + '</div>' + cta + '</div>');
+  }
+  function wait(col) {
+    if (col === 'today') {
+      return header('Add a food', 'none') + '<div class="night"' + k('drift: NightMoment · colorBrandNight, retiring (CUL-1593)') + '>' +
+        '<span class="star" style="top:18%;left:22%"></span><span class="star" style="top:30%;left:74%"></span><span class="star" style="top:62%;left:16%"></span><span class="star" style="top:70%;left:82%"></span>' +
+        '<span class="moon"' + k('NightMoment moon · colorMoonlight') + '></span><span class="tLG wM"' + k('ThemedText · textLG, colorTextOnNight') + '>Reading the label…</span><span class="tSM"' + k('ThemedText · textSM, colorTextOnNightMuted') + ' style="color:var(--colorTextOnNightMuted)">A few seconds.</span></div>';
+    }
+    var hero = col === 'pass' ? '<div class="hc flush"' + k('HomeCard flush · the owner\'s photo, on screen from the first frame') + '>' + photo('heroWide', 'front photo') + '</div>' : '<div class="sil hero43"' + k('Silhouette Block · colorChartEmpty, radiusMedium (the hero)') + '></div>';
+    var name = '<div style="display:flex;align-items:center;gap:calc(var(--space1) * var(--k))"' + k('Tick + named request · colorBorderStrong, railWidth') + '><span class="tick"></span><span class="tSM c2">Reading the label…</span></div>';
+    var lines = '<div class="sil line" style="width:70%"></div><div class="sil line" style="width:90%"></div><div class="sil line" style="width:55%"></div><div class="sil line" style="width:80%"></div>';
+    var card = col === 'pass'
+      ? '<div class="hc" style="padding-left:calc((var(--space2) + var(--space1)) * var(--k))"' + k('HomeCard · rail in the gutter; the tick stands where the rail will grow') + '><span class="rail tk"></span><span class="tSM c2" style="margin-bottom:calc(var(--space0_5) * var(--k))">Reading the label…</span>' + lines + '</div>'
+      : name + '<div' + k('Silhouette Surface · colorSurface, colorBorder, radiusMedium') + ' style="display:flex;flex-direction:column;gap:calc(var(--space1) * var(--k));border:1px solid var(--colorBorder);border-radius:calc(var(--radiusMedium) * var(--k));padding:calc(var(--space2) * var(--k))">' + lines + '</div>';
+    var chips = '<div style="display:flex;gap:calc(var(--space1) * var(--k))"' + k('Silhouette Blocks · chip row') + '><span class="sil" style="width:22%;height:calc(var(--hitTarget) * var(--k));border-radius:var(--radiusFull)"></span><span class="sil" style="width:22%;height:calc(var(--hitTarget) * var(--k));border-radius:var(--radiusFull)"></span><span class="sil" style="width:22%;height:calc(var(--hitTarget) * var(--k));border-radius:var(--radiusFull)"></span></div>';
+    return header('Confirm', 'none') + scr('<div class="pad" aria-hidden="true"' + k('new: CaptureSilhouette · one hidden unit (Silhouette.tsx blocks)') + '>' + hero + card + chips + '<div class="sil" style="height:calc(var(--space5) * var(--k));border-radius:calc(var(--radiusMedium) * var(--k))"></div></div>', col === 'pass');
+  }
+  function confirm(col, o) {
+    o = o || {};
+    var pet = o.pet || PET;
+    var sum = o.partial ? SUM_PARTIAL : SUM_READ;
+    if (col === 'pass') {
+      var prov = o.partial ? PROV_PARTIAL : PROV_READ;
+      return header('Confirm', 'none') + scr('<div class="pad tight">' +
+        '<div class="hc flush"' + k('HomeCard flush · photo 16:9, tap opens PhotoViewer') + '>' + photo('heroWide', 'front photo') + '</div>' +
+        '<div class="hc" style="padding-left:calc((var(--space2) + var(--space1)) * var(--k))"' + k('HomeCard · colorSurface, radiusMedium, shadow-card, rail positive.glyphOnLight') + '><span class="rail"' + k('rail · positive.glyphOnLight (colorAccentGlyph), railWidth') + '></span>' +
+          sectionLabel('Read from your photo') +
+          '<div class="rows"' + k('new: FactRows · label/value, hairline colorBorder (event detail P7)') + '>' +
+            '<div class="r"><span class="tSM c2">Brand</span><span class="tMD wM cP">' + BRAND + '</span></div>' +
+            '<div class="r"><span class="tSM c2">Product</span><span class="tMD cP">' + esc(PRODUCT) + '</span></div>' +
+            '<div class="r"><span class="tSM c2">Format</span><span class="tMD cP">Dry kibble</span></div>' +
+            '<div class="r"><span class="tSM c2">Protein</span><span class="tMD cP">' + sum + '</span></div>' +
+          '</div><div class="tSM c2"' + k('ProteinDisclosure · textSM, colorTextSecondary') + '>' + prov + '</div></div>' +
+        sectionLabel('Type') + typeChips(col) +
+        '<div class="timerow pass"' + k('TimeEditSheet trigger row · names the record\'s pet (C-9)') + '><span class="tMD cP" style="flex:1;min-width:0">' + pet + '\'s meal · 7:42 AM <span class="tSM c3">· from your photo</span></span><span class="lnk tSM cAct" style="justify-content:flex-end">Change time</span></div>' +
+        btn(col, 'Looks right', 'primary') + btn(col, 'Edit', 'secondary') + '</div>', true);
+    }
+    var hero = '<div class="hc flush" style="box-shadow:none"' + k(col === 'today' ? 'drift: View confirmHero · radiusMedium, aspectRatio 4/3' : 'Card flush · radiusMedium, aspectRatio 4/3') + '>' + photo('hero43', 'front photo') +
+      '<div class="scrimBar"' + k('overlay · colorScrimDark') + '><span class="tLG wS cOD">' + BRAND + '</span><span class="tMD cODm">' + esc(PRODUCT) + '</span></div></div>';
+    return header('Confirm', 'none') + scr('<div class="pad">' + hero +
+      '<div class="tMD c2 ctr"' + k('ThemedText confirmCaption · textMD, colorTextSecondary') + '>Is this right?</div>' +
+      '<div class="tSM c2 ctr"' + k(col === 'today' ? 'drift: proteinSummary · textSM, lineHeight textSM×1.4, marginTop −space1' : 'ThemedText caption · textSM, colorTextSecondary') + '>' + sum + '</div>' +
+      sectionLabel('Type') + typeChips(col) +
+      '<div class="timerow"' + k(col === 'today' ? 'drift: TouchableOpacity mealTimeRow · colorNeutralLight, colorBorder, hitSlop 12' : 'row · colorNeutralLight, colorBorder, radiusSmall, hitTarget') + '><span class="tMD cP" style="flex:1;min-width:0">07:42 AM <span class="tSM c3">· from your photo</span></span><span class="tSM wM ' + (col === 'today' ? 'cPos' : 'cAct') + '"' + k(col === 'today' ? 'drift: mealTimeChange · colorAccentInk (teal as a control)' : 'text link · action.onLight') + '>Change</span></div>' +
+      btn(col, 'Looks right', 'primary') + btn(col, 'Edit', col === 'today' ? 'text' : 'secondary') + '</div>');
+  }
+  function edit(col, o) {
+    o = o || {};
+    var bandHtml = '';
+    if (o.cap) {
+      bandHtml = '<div class="band quiet"' + k(col === 'today' ? 'View capBand · colorSurfaceSubtle, colorBorder, lineHeight 18 literal' : 'quiet band · colorSurfaceSubtle, colorBorder') + '><span class="tSM cP">' + CAP + '</span><span class="tXS c2">' + CARE(PET) + '</span></div>';
+    } else if (o.failed) {
+      if (col === 'today') bandHtml = '<div class="band rose"' + k('drift: View failedBanner · colorEventSymptomLight (concern wash on a non-symptom)') + '><span class="tSM cP">' + FAILED + '</span></div>';
+      else bandHtml = '<div class="band quiet"' + k('quiet band · colorSurfaceSubtle, colorBorder (F6)') + '><span class="tSM cP">' + (col === 'pass' ? P_FAILED : FAILED) + '</span></div>';
+    }
+    var thumb = '';
+    if (col === 'pass' && o.photo) {
+      thumb = '<div style="display:flex;gap:calc(var(--space1_5) * var(--k));align-items:center"' + k('new: PhotoThumb · space6 square, radiusSmall, opens PhotoViewer') + '><div class="photo" style="width:calc(var(--space6) * var(--k));height:calc(var(--space6) * var(--k));border-radius:calc(var(--radiusSmall) * var(--k));flex-shrink:0"><span class="pband" style="width:80%">HK</span></div><span class="tSM c2">Your photo. Tap to see it full size.</span></div>';
+    }
+    var save = o.fromLog ? 'Save and log food' : 'Save';
+    var canSave = !!o.values;
+    return header(o.title || 'Edit food', 'back') + scr('<div class="pad">' + bandHtml + thumb +
+      field(col, 'Brand', o.values ? BRAND : '', 'e.g. Royal Canin') + field(col, 'Product name', o.values ? PRODUCT : '', 'e.g. Gastrointestinal Adult') +
+      sectionLabel('Format') + formatChips(col, o.values ? 'Dry kibble' : 'Dry kibble') +
+      proteinPicker(col, o.values ? 'Salmon' : null) +
+      '<div class="tSM c2"' + k('ProteinDisclosure · textSM, colorTextSecondary') + '>' + (o.values ? PROV_READ : PROV_NONE) + '</div>' +
+      sectionLabel('Type') + typeChips(col) +
+      (canSave ? btn(col, save, 'primary') : btn(col, col === 'today' ? save : save + ' · add a brand and product', 'disabled')) + '</div>', col === 'pass');
+  }
+  function saved(col) {
+    if (col === 'today') return '<div class="center"' + k('drift: View completeContainer') + '><div class="check80"' + k('drift: Animated.View checkCircle · 80 literal, raw ✓ Text 36') + '>✓</div><div class="tXL wM"' + k('drift: Animated.Text loggedText · fontSize 20 literal') + '>Saved to your foods</div></div>';
+    var name = col === 'pass' ? '<div class="tMD c2 ctr"' + k('ThemedText body · textMD, colorTextSecondary') + '>' + BRAND + ' · ' + esc(PRODUCT) + '</div>' : '';
+    return '<div class="center"' + k('completion beat · colorSurface') + '><div class="mark32"' + k('CompletionMark · colorAccentGlyph disc, MARK_SIZE 32') + '>✓</div><div class="tXL wM"' + k('ThemedText heading · textXL, weightMedium') + '>Saved to your foods</div>' + name + '</div>';
+  }
+  function offlineToday() {
+    // Today, offline: Continue runs the upload, which fails, and the owner lands on the failed form (§08).
+    return review('today', { offline: true });
+  }
+
+  // ── states ──
+  var COLS = [['today', 'Today'], ['faith', 'Faithful'], ['pass', 'Design pass']];
+  var STATES = [
+    { id: 's01', n: '§01', t: 'First food: the empty library\'s way in', why: 'The owner opens Add a food from Foods or from the log sheet\'s food picker. Nothing is in the library yet.',
+      f: function (c) { return shell(intro(c)); },
+      cap: ['Three buttons, two paragraphs. The camera glyph is a hand set Lucide icon; Enter manually is teal.', 'F1 buttons on PrimaryButton (icon slot is new), F5 the link in the action colour.', '<span class="bref">P1</span> The three slots up front so the job reads as one photo; Type it in instead.'] },
+    { id: 's02', n: '§02', t: 'Consent asked: the permission sheet before a label photo', why: 'First tap on Take a photo with AI reading never answered. The sheet is the release track\'s (CUL-1834), drawn verbatim; nothing here proposes a change to it.',
+      f: function (c) { return shell(intro(c) + consentSheet()); },
+      cap: ['As shipped by the release track.', 'Unchanged.', 'Unchanged: the release track wins any conflict.'] },
+    { id: 's03', n: '§03', t: 'Consent not given', why: 'The owner said Don\'t allow (or Not now) earlier. Today, Take a photo opens the typed form with no word of why, and no photo is taken.',
+      f: function (c) { return c === 'pass' ? shell(intro(c, { off: true })) : shell(edit(c, { title: 'Edit food', fromLog: true })); },
+      cap: ['After tapping Take a photo: the typed form, titled Edit food, nothing filled, no reason.', 'Same route, on TextField and ChipGroup (F2, F3).', '<span class="bref">P9</span> The first screen says reading is off; Type it in leads; a photo is kept unread. Copy waits on CUL-1834.'] },
+    { id: 's04', n: '§04', t: 'After the front photo: the optional shots', why: 'The front is in. Today the main button walks the owner through each optional slot, then Continue.',
+      f: function (c) { return shell(review(c)); },
+      cap: ['The button changes per slot; Skip under it; tiles at the top.', 'Same flow on PrimaryButton; tiles on tokens.', '<span class="bref">P2</span> Read the label is the main button from here; the ingredients row says why it matters (LOUD).'] },
+    { id: 's05', n: '§05', t: 'The wait: the label being read', why: 'Upload, then the read (2 to 4 seconds, longer on a slow network). Today a whorl, then the night moment.',
+      f: function (c) { return shell(wait(c)); },
+      cap: ['The night ground, a moon and stars: retiring (CUL-1593).', '<span class="bref">F4</span> The confirm screen\'s silhouette and the tick, named.', '<span class="bref">P3</span> Same, with the owner\'s photo standing from the first frame and the tick where the rail will grow.'] },
+    { id: 's06', n: '§06', t: 'Confirm: the read lands (from the log sheet)', why: 'The read came back with brand, product, format and a full protein set. The owner came from the log sheet, so Looks right also logs the meal.',
+      f: function (c) { return shell(confirm(c)); },
+      cap: ['Brand and product on a scrim; format read but never shown; Type as three buttons; Change is teal.', 'F1, F3, F5. Same layout.', '<span class="bref">P4</span> The read as a card of facts under a clean photo. <span class="bref">P6</span> Biscuit\'s meal, Change time.'] },
+    { id: 's07', n: '§07', t: 'Confirm: front photo only, ingredient list not read', why: 'The owner skipped the ingredients panel. The protein set is not complete, and every column must say so.',
+      f: function (c) { return shell(confirm(c, { partial: true })); },
+      cap: ['"Salmon · ingredient list not read", centred under the question.', 'Same line.', 'The row says it and the provenance line under the card says why. Never drawn as complete.'] },
+    { id: 's08', n: '§08', t: 'The read failed', why: 'The read errored. The owner lands on the form with the photo saved and nothing filled.',
+      f: function (c) { return shell(edit(c, { failed: true, fromLog: true, photo: true })); },
+      cap: ['A rose band promising a background retry that never runs (<span class="bref">D-1</span>).', '<span class="bref">F6</span> The quiet band; copy unchanged until D-1 is ruled.', '<span class="bref">D-1 (A)</span> copy that is true. <span class="bref">P7</span> the photo stays in view.'] },
+    { id: 's09', n: '§09', t: 'Offline', why: 'No connection when the owner is ready to read. Today the screen does not know: Continue runs the upload, it fails, and the owner lands on §08\'s form, after the wait.',
+      f: function (c) { return c === 'pass' ? shell(review(c, { offline: true })) : shell(offlineToday()); },
+      cap: ['Looks ready; Continue leads to a wait that can only fail, then §08.', 'Same.', '<span class="bref">P8</span> Said before the wait; Read the label waits with its reason; Type it in now.'] },
+    { id: 's10', n: '§10', t: 'Daily cap reached', why: 'The read answered "cap reached". Calm, not an error; the care first line names the pet (Pets > $).',
+      f: function (c) { return shell(edit(c, { cap: true, fromLog: true, photo: true })); },
+      cap: ['A quiet band, the care line under it. The right register already.', 'Unchanged band on tokens.', 'Unchanged band; <span class="bref">P7</span> photo in view.'] },
+    { id: 's11', n: '§11', t: 'Saved (from Foods, not the log sheet)', why: 'The library path writes no event, so there is no meal card; the screen shows a beat and closes.',
+      f: function (c) { return shell(saved(c)); },
+      cap: ['80pt black disc, raw ✓, 20pt text.', '<span class="bref">F7</span> CompletionMark.', '<span class="bref">P10</span> Names the food.'] },
+    { id: 's12', n: '§12', t: 'Stress: 320pt, the confirm step', why: 'iPhone SE width. 44pt floors and the protein line must hold.',
+      f: function (c) { return shell(confirm(c), { cls: 'vp w320' }); },
+      cap: ['Fits; the product wraps to two lines on the scrim.', 'Fits.', 'Fits: the Protein value wraps right aligned; Change time stays on the row.'] },
+    { id: 's13', n: '§13', t: 'Stress: largest text, the confirm step', why: 'fontScale 3.1 (AX5); the app sets no cap. Drawn full length: what matters is what clips.',
+      f: function (c) { return shell(confirm(c), { cls: 'ax5' }); },
+      cap: ['The scrim grows over most of the photo; Change pushes the time to wrap.', 'Same.', 'Rows wrap label over value at this size (build note); nothing sits on the photo.'] },
+    { id: 's14', n: '§14', t: 'Stress: two pets, logging for Mochi', why: 'Biscuit and Mochi; the owner opened the log sheet for Mochi. Today nothing on confirm names the pet the meal is written to.',
+      f: function (c) { return shell(confirm(c, { pet: 'Mochi' })); },
+      cap: ['No pet named before Looks right writes Mochi\'s meal.', 'Same.', '<span class="bref">P6</span> "Mochi\'s meal · 7:42 AM", the record\'s pet (C-9).'] }
+  ];
+
+  var html = '';
+  STATES.forEach(function (S) {
+    html += '<section class="state" id="' + S.id + '"><div class="sec-head"><span class="sec-id">' + S.n + '</span><h2>' + S.t + '</h2></div><p class="why">' + S.why + '</p><div class="frames">';
+    COLS.forEach(function (C, i) {
+      html += '<div class="slot"><span class="tag ' + C[0] + '">' + C[1] + '</span>' + S.f(C[0]) + '<p class="cap"><b>' + C[1] + '</b>' + S.cap[i] + '</p></div>';
+    });
+    html += '</div></section>';
+  });
+  document.getElementById('states').innerHTML = html;
+
+  function wire(onId, offId, apply) {
+    var on = document.getElementById(onId), off = document.getElementById(offId);
+    function set(v) { on.setAttribute('aria-pressed', String(v)); off.setAttribute('aria-pressed', String(!v)); apply(v); }
+    on.addEventListener('click', function () { set(true); });
+    off.addEventListener('click', function () { set(false); });
+  }
+  wire('b-parts-on', 'b-parts-off', function (v) { document.body.classList.toggle('parts', v); });
+  wire('b-full', 'b-vp', function (v) {
+    Array.prototype.forEach.call(document.querySelectorAll('.ph'), function (p) { if (!p.classList.contains('ax5')) p.classList.toggle('vp', !v); });
+  });
+})();
+</script>
+</body>
+</html>
