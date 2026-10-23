@@ -1,6 +1,6 @@
 # Design pass 1, round 1: the event detail screen, three ways
 
-**Date:** 2026-10-23 · **Issue:** [CUL-1907](https://linear.app/projectnyx/issue/CUL-1907) · **Branch:** `claude/design-system-pr10-10231306` · **Mode:** DISCOVERY · shipped via #PR
+**Date:** 2026-10-23 · **Issue:** [CUL-1907](https://linear.app/projectnyx/issue/CUL-1907) · **Branch:** `claude/design-system-pr10-10231306` · **Mode:** DISCOVERY · shipped via #1291
 
 ## What happened
 Dispatched as PR-10 of *Design system · one kit, every screen*. Posted the plan on the issue, got the PM's go in session, then drew `docs/culprit-event-detail-design-pass-mockups.html` from the shipped code: fifteen states (pending, call now, call today, an earlier-rule Worth a call, Keep an eye out, Not enough, unreached, failed, AI off, cap, folded, completion card, stool, no photo, loading) plus 320pt, largest text and two pets, each in three columns: today, faithful, design pass. Every element carries its part and token (D1 is unruled, so the page says the contract is pending). Published at https://claude.ai/artifact/Af8aerwLnD4k3cFgApWfXr.
