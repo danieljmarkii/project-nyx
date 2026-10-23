@@ -1,0 +1,421 @@
+<title>Colour Roles</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Colour Roles, ROUND 1 (CUL-2145, row 1 of CUL-1898's D4, ruled (a) 2026-10-23).
+     Layout: the house mock page (paper, serif section heads, phone frames in
+     wrapping rows). Page chrome follows the viewer's theme; the PHONE FRAMES never
+     do: they paint the app's real tokens from constants/theme.ts, so a frame looks
+     the same in either page theme. Every frame is built by the script at the foot
+     from one set of parts, so a before and its after differ only in the role that
+     paints each mark.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --tag: #3F35A0; --tag-wash: #ECEAF6;
+    --warn: #9F1239; --warn-wash: #FFE4E6;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+      --warn: #FB7185; --warn-wash: rgba(251,113,133,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+    --warn: #FB7185; --warn-wash: rgba(251,113,133,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  @media (min-width: 640px) { .wrap { padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .roundtag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--tag); background: var(--tag-wash); border-radius: 999px; padding: 4px 11px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(24px, 3vw, 31px); line-height: 1.15; margin: 0 0 10px; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .standfirst strong, .col strong { color: var(--ink); font-weight: 600; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--ink-2); }
+  a { color: var(--tag); }
+  section { padding-top: 52px; display: flex; flex-direction: column; gap: 18px; }
+  .secno { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--ink-3); text-transform: uppercase; }
+  .box { border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 16px 20px; font-size: 14.5px; color: var(--ink-2); max-width: 82ch; }
+  .box b { color: var(--ink); }
+  .box ul, .box ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 3px; background: var(--paper-2); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  tr:last-child td { border-bottom: 0; }
+  td code, p code, li code { font-family: var(--mono); font-size: 12.5px; }
+  .num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; border: 1px solid rgba(0,0,0,0.12); }
+  .pass { color: var(--ink); }
+  .fail { color: var(--warn); }
+  .proposed { border-left: 3px solid var(--tag); background: var(--paper-2); padding: 18px 22px; max-width: 82ch; border-radius: 0 3px 3px 0; }
+  .proposed .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--tag); margin-bottom: 8px; }
+  .proposed h4 { font-family: var(--serif); font-weight: 500; font-size: 20px; margin: 0 0 8px; }
+  .proposed table { font-size: 13.5px; }
+  .del { text-decoration: line-through; color: var(--ink-3); }
+
+  /* Frames */
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .pair { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 8px; width: 262px; max-width: 100%; }
+  figcaption { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  .ftag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; align-self: flex-start; }
+  .ftag.now { color: var(--ink-2); background: var(--rule-soft); }
+  .ftag.cur { color: var(--tag); background: var(--tag-wash); }
+  .ftag.opt { color: var(--ink-2); border: 1px dashed var(--ink-3); }
+  .rec { color: var(--tag); font-weight: 600; }
+  .phone { width: 262px; max-width: 100%; border-radius: 30px; border: 1px solid rgba(0,0,0,0.14); overflow: hidden; background: #FFFFFF; color: #0A0A0A; font-family: var(--sans); font-size: 13px; line-height: 1.4; box-shadow: 0 1px 2px rgba(20,18,50,0.06), 0 8px 24px rgba(20,18,50,0.07); }
+  .phone.night { background: #13112E; color: #ECEAF6; border-color: rgba(196,190,255,0.25); }
+  .phone.dark { background: #101312; color: #FFFFFF; }
+  .status { height: 30px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-size: 11px; font-weight: 600; }
+  .scr { padding: 6px 16px 22px; display: flex; flex-direction: column; gap: 12px; min-height: 380px; }
+  .scr.short { min-height: 0; }
+  .t-title { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  .t-sec { color: #525252; font-size: 12.5px; }
+  .night .t-sec { color: #A6A2CE; }
+  .t-ter { color: #737373; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+  .hero { display: flex; justify-content: center; padding: 26px 0 8px; }
+  .btn { height: 44px; border-radius: 12px; background: #0A0A0A; color: #FFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+  .field { height: 42px; border-radius: 10px; border: 1px solid #EAEAEA; padding: 0 12px; display: flex; align-items: center; color: #737373; }
+  .link { font-weight: 600; font-size: 13px; text-align: center; }
+  .sheet { border-radius: 16px; border: 1px solid #EAEAEA; overflow: hidden; }
+  .srow { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid #EAEAEA; gap: 10px; }
+  .srow:last-child { border-bottom: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { height: 32px; padding: 0 13px; border-radius: 999px; border: 1px solid #EAEAEA; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #525252; background: #FFF; }
+  .card { border-radius: 16px; border: 1px solid #EAEAEA; padding: 14px; display: flex; gap: 12px; }
+  .rail { width: 3px; border-radius: 2px; flex: none; }
+  .switch { width: 44px; height: 26px; border-radius: 13px; position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; background: #FFF; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }
+  .pill { height: 46px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; border: 1px solid transparent; }
+  .radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #D4D4D4; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .radio i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+  .ratio { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+  svg { display: block; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · reacted</span><span>CUL-2145 · D4 (a), ruled 2026-10-23</span><span>Design system · M1</span></p>
+    <h1>Colour roles: each colour named for its job and its ground</h1>
+    <p class="standfirst">Today a screen picks <strong>the teal</strong> and decides on its own whether it can be read where it sits. This round names colours by <strong>what they do</strong> (act, state a good fact, flag a concern) and <strong>where they sit</strong> (light or night), so the readable choice is the default. It starts from the ruling of 2026-10-03: <strong>indigo is the action colour, teal means a good fact.</strong></p>
+    <div class="box" style="margin-top:22px">
+      <b>Ledger · the PM's reaction, 2026-10-23.</b> Every call took the recommendation; the options not taken left the page (they are in commit 7f803f5).
+      <ul>
+        <li><b>R1:</b> the action indigo on light is <code>#3F35A0</code>.</li>
+        <li><b>R2:</b> selected is indigo on the lavender wash.</li>
+        <li><b>R3:</b> the action colour on night is moonlight.</li>
+        <li><b>R4:</b> the §01 wording is approved and written to the principles as v2.1.</li>
+        <li><b>R5:</b> the symptom save moves to solid indigo.</li>
+      </ul>
+    </div>
+    <div class="box" style="margin-top:12px">
+      <b>How to read this round.</b>
+      <ul>
+        <li>Phone frames paint the app's real tokens and ignore this page's theme. Every <span class="ftag now">now</span> frame is main today; every <span class="ftag cur">proposed</span> frame is the same screen after the migration row (CUL-1666's walk), which this round only shows. No app code changes in this row until you react.</li>
+        <li>The three choices, now ruled, are in <a href="#forks">§03</a>. The proposed wording for the design principles is in <a href="#hues">§01</a>; it is approved and written (v2.1).</li>
+        <li>No safety colour gets quieter anywhere on this page. Every rose role keeps its value today (<a href="#safety">§05</a>).</li>
+        <li>The five calls you answered are kept in <a href="#react">§06</a>.</li>
+      </ul>
+    </div>
+  </header>
+
+  <section id="hues">
+    <span class="secno">§01 · The hue table</span>
+    <h2>One meaning per hue</h2>
+    <p class="col muted">Proposed as a Tier 2 edit to <code>docs/nyx-design-principles-v1_0.md</code> § Color (v2.0 → v2.1). The first paragraph is replaced; the trend line and chart paragraphs stay as they are. This is the exact text that would be written.</p>
+    <div class="proposed">
+      <div class="lbl">Proposed wording · § Color</div>
+      <p class="del">One dominant neutral (dark or light depending on theme). One accent — used sparingly, only for interactive elements and the primary trend line in charts. Never decorative. Never used to fill space.</p>
+      <p>One dominant neutral. One action colour, indigo, used only for what the owner can tap or change. Never decorative. Never used to fill space.</p>
+      <p>Each hue has one meaning, and a screen picks a colour by its job and its ground, never by its hue: the roles in <code>constants/theme.ts</code> (action, positive, selected, concern, attention, medication, destructive, text), each on light and on night, every one pinned to its ground by a contrast test.</p>
+      <div class="tablewrap" style="margin:6px 0 12px">
+        <table>
+          <thead><tr><th>Hue</th><th>Means</th><th>Never</th></tr></thead>
+          <tbody>
+            <tr><td><span class="sw" style="background:#3F35A0"></span>Indigo</td><td>You can act: a link, a control, a selection. The brand night is its ground form.</td><td>A fact or a state</td></tr>
+            <tr><td><span class="sw" style="background:#00C2A8"></span>Teal</td><td>A good fact: a meal eaten, a dose given, a clean day.</td><td>A control</td></tr>
+            <tr><td><span class="sw" style="background:#F43F5E"></span>Rose</td><td>A symptom or a concern, and every safety surface.</td><td>Decoration. A rose role may keep or raise its contrast, never lower it</td></tr>
+            <tr><td><span class="sw" style="background:#DC2626"></span>Red</td><td>Destructive: delete, remove, end.</td><td>A symptom</td></tr>
+            <tr><td><span class="sw" style="background:#B7791F"></span>Amber</td><td>A heads up, as strong as the record knows. Not danger.</td><td>A warning of harm</td></tr>
+            <tr><td><span class="sw" style="background:#FBBF24"></span>Gold</td><td>The completion moment, while it happens.</td><td>A lasting state</td></tr>
+            <tr><td><span class="sw" style="background:#5B7A9E"></span>Slate blue</td><td>Medication.</td><td>Any other category</td></tr>
+            <tr><td><span class="sw" style="background:#0A0A0A"></span>Neutral ink</td><td>Text and structure. Chart text always.</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted" style="margin:0">The trend line keeps its colour in this round: the next paragraph of § Color already governs it, and moving it is not part of D4.</p>
+    </div>
+  </section>
+
+  <section id="roles">
+    <span class="secno">§02 · The role layer</span>
+    <h2>Roles, each on its ground</h2>
+    <p class="col muted">Additive in <code>constants/theme.ts</code>: every role points at a token that exists today, except the one new value F1 picks. No call site moves in this row. Ratios are WCAG 2.1, measured on the ground named; text targets 4.5:1, glyphs and control edges 3:1.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Role</th><th>Resolves to</th><th>Ground</th><th>Ratio</th><th>Target</th></tr></thead>
+        <tbody id="roleRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="forks">
+    <span class="secno">§03 · The three choices</span>
+    <h2>Ruled 2026-10-23</h2>
+    <div class="col"><h3>F1 · The action indigo on light grounds</h3><p class="muted">Indigo needs one value a link can wear. The button disc's own indigo reads as black text at link size; the round 2 Home value (2026-10-03) reads as a link. <span class="rec">Recommended: #3F35A0.</span> It is the one new value in the layer.</p></div>
+    <div class="row" id="f1"></div>
+    <div class="col"><h3>F2 · What colour is "selected"</h3><p class="muted">Today a chosen chip is teal. Under the ruling, choosing is acting, and teal would tell the owner that "Found it" is a good fact. <span class="rec">Recommended: indigo</span>, with a lavender wash that already exists as a token (the night text colour).</p></div>
+    <div class="row" id="f2"></div>
+    <div class="col"><h3>F3 · The action colour on night grounds</h3><p class="muted">Indigo cannot show on the indigo night (1.94:1). Something else has to say "you can tap this" there. <span class="rec">Recommended: moonlight</span>, the night's own white; lavender is the softer option, and sits close to the muted text colour.</p></div>
+    <div class="row" id="f3"></div>
+  </section>
+
+  <section id="screens">
+    <span class="secno">§04 · The repointed screens</span>
+    <h2>Before and after, with the ruled choices</h2>
+    <p class="col muted">Seven screens from CUL-1666's measured set, one per kind of site. The migration row walks all 51.</p>
+    <div class="row" id="screensRow"></div>
+  </section>
+
+  <section id="safety">
+    <span class="secno">§05 · What does not move</span>
+    <h2>Safety keeps or gains contrast</h2>
+    <p class="col muted">Every concern role keeps today's value. The contrast test pins each one at its ratio as a floor, so a later edit that lowers any of them fails the build.</p>
+    <div class="row" id="safetyRow"></div>
+  </section>
+
+  <section id="react">
+    <span class="secno">§06 · Your reaction</span>
+    <h2>Five calls</h2>
+    <div class="box">
+      <ol>
+        <li><b>R1 · F1:</b> the action indigo on light is #3F35A0 (recommended) or the disc #251F57.</li>
+        <li><b>R2 · F2:</b> selected is indigo on the lavender wash (recommended) or stays teal.</li>
+        <li><b>R3 · F3:</b> the action colour on night is moonlight (recommended) or lavender.</li>
+        <li><b>R4 · The hue table:</b> approve the wording in §01 as written, or name the change. Nothing is written to the principles until you do.</li>
+        <li><b>R5 · The symptom save:</b> the Vomit and Loose stool confirm moves from the teal wash to indigo (§04, frame 6). It is the one place this round changes what a symptom screen feels like; say if it reads wrong.</li>
+      </ol>
+    </div>
+  </section>
+</div>
+
+<script>
+// Real tokens from constants/theme.ts (main @ 37ae62d), plus the F1 candidate.
+const T = {
+  accent: '#00C2A8', accentGlyph: '#0FA08B', accentInk: '#0B7B6C', accentLight: '#E0FBF7',
+  washDeep: '#CDF5EC', inkSelected: '#08685B', moonlitTeal: '#4FD8C4',
+  action: '#3F35A0', disc: '#251F57', night: '#13112E', nightEl: '#251F57',
+  lavWash: '#ECEAF6', lav: '#A6A2CE', moon: '#F2EEE4', textOnNight: '#ECEAF6',
+  surface: '#FFFFFF', subtle: '#F5F5F5', border: '#EAEAEA', borderStrong: '#D4D4D4',
+  text: '#0A0A0A', text2: '#525252', text3: '#737373',
+  rose: '#F43F5E', roseInk: '#9F1239', roseLight: '#FFE4E6', roseNight: '#FB7185', roseBorder: '#FBCFD6',
+  attnInk: '#6B4A0E', attnLight: '#FDF3DC', attnRail: '#B7791F',
+  med: '#5B7A9E', medInk: '#3D5875', medNight: '#93ADCB', destr: '#DC2626', destrDark: '#ff6b6b',
+  surfDark: '#101312',
+};
+function lum(h){h=h.replace('#','');return [0,2,4].map(i=>parseInt(h.slice(i,i+2),16)/255).map(v=>v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)).reduce((a,v,i)=>a+v*[0.2126,0.7152,0.0722][i],0);}
+function cr(a,b){const x=[lum(a),lum(b)].sort((p,q)=>q-p);return (x[0]+0.05)/(x[1]+0.05);}
+const fmt = (r) => r.toFixed(2) + ':1';
+
+// ── §02 role table ─────────────────────────────────────────────
+const ROLES = [
+  ['action.onLight', 'new #3F35A0 (F1)', T.action, 'colorSurface', T.surface, 4.5],
+  ['action.onNight', 'colorMoonlight (F3)', T.moon, 'colorBrandNight', T.night, 4.5],
+  ['positive.glyph.onLight', 'colorAccentGlyph', T.accentGlyph, 'colorSurface', T.surface, 3],
+  ['positive.text.onLight', 'colorAccentInk', T.accentInk, 'colorSurface', T.surface, 4.5],
+  ['positive.text.onWash', 'colorAccentInk', T.accentInk, 'colorAccentLight', T.accentLight, 4.5],
+  ['positive.onNight', 'colorMoonlitTeal', T.moonlitTeal, 'colorBrandNight', T.night, 4.5],
+  ['selected.ink', 'new #3F35A0 (F2)', T.action, 'colorTextOnNight as wash', T.lavWash, 4.5],
+  ['concern.glyph.onLight', 'colorEventSymptom', T.rose, 'colorSurface', T.surface, 3],
+  ['concern.text.onLight', 'colorEventSymptomInk', T.roseInk, 'colorSurface', T.surface, 4.5],
+  ['concern.text.onWash', 'colorEventSymptomInk', T.roseInk, 'colorEventSymptomLight', T.roseLight, 4.5],
+  ['concern.onNight', 'colorEventSymptomOnNight', T.roseNight, 'colorBrandNight', T.night, 4.5],
+  ['attention.text', 'colorAttentionInk', T.attnInk, 'colorAttentionLight', T.attnLight, 4.5],
+  ['attention.rail', 'colorAttentionRail', T.attnRail, 'colorAttentionLight', T.attnLight, 3],
+  ['medication.glyph.onLight', 'colorEventMedication', T.med, 'colorSurface', T.surface, 3],
+  ['medication.text.onLight', 'colorEventMedicationInk', T.medInk, 'colorSurface', T.surface, 4.5],
+  ['medication.onNight', 'colorEventMedicationOnNight', T.medNight, 'colorBrandNight', T.night, 4.5],
+  ['destructive.onLight', 'colorDestructive', T.destr, 'colorSurface', T.surface, 4.5],
+  ['destructive.onDark', 'colorDestructiveOnDark', T.destrDark, 'colorSurfaceDark', T.surfDark, 4.5],
+  ['text.primary.onNight', 'colorTextOnNight', T.textOnNight, 'colorBrandNight', T.night, 4.5],
+];
+document.getElementById('roleRows').innerHTML = ROLES.map(([role, tok, fg, gname, bg, target]) => {
+  const r = cr(fg, bg); const ok = r >= target;
+  return `<tr><td><code>${role}</code></td><td><span class="sw" style="background:${fg}"></span>${tok}</td><td><span class="sw" style="background:${bg}"></span>${gname}</td><td class="num ${ok ? 'pass' : 'fail'}">${fmt(r)}</td><td class="num">${target}:1</td></tr>`;
+}).join('');
+
+// ── Frame parts ────────────────────────────────────────────────
+const ICON = {
+  mail: (c, s = 44) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" fill="none"/><path d="m22 7-10 6L2 7" fill="none"/></svg>`,
+  check: (c, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" fill="none"/></svg>`,
+  chev: (c, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6" fill="none"/></svg>`,
+};
+const statusBar = (light = true) => `<div class="status"><span>9:41</span><span style="opacity:.7">${light ? '●●●' : '●●●'}</span></div>`;
+function phone(inner, kind = '', short = false) {
+  return `<div class="phone ${kind}">${statusBar(kind === '')}<div class="scr ${short ? 'short' : ''}">${inner}</div></div>`;
+}
+function fig(tag, title, body, caption, ratio) {
+  const cls = tag === 'now' ? 'now' : tag === 'option' ? 'opt' : 'cur';
+  const label = tag === 'now' ? 'now' : tag === 'option' ? 'option' : 'proposed';
+  return `<figure><span class="ftag ${cls}">${label}</span>${body}<figcaption><b>${title}</b> ${caption}${ratio ? `<br><span class="ratio">${ratio}</span>` : ''}</figcaption></figure>`;
+}
+
+// Screen builders take a palette so a before and an after differ only in roles.
+function authScreen(glyph) {
+  return phone(`
+    <div class="hero">${ICON.mail(glyph)}</div>
+    <div class="t-title" style="text-align:center">Check your email</div>
+    <div class="t-sec" style="text-align:center">We sent a link to jordan@example.com. It expires in an hour.</div>
+    <div class="btn" style="margin-top:10px">Open mail</div>
+    <div class="link" style="color:${glyph === T.accent ? T.accentInk : T.action}">Send it again</div>`);
+}
+function scopeScreen(p) {
+  const chip = (label, on) => on
+    ? `<span class="chip" style="border-color:${p.selBorder};background:${p.selWash};color:${p.selInk};font-weight:600">${ICON.check(p.selInk, 13)}${label}</span>`
+    : `<span class="chip">${label}</span>`;
+  const row = (label, on) => `<div class="srow"><span>${label}</span>${on ? ICON.check(p.check) : ''}</div>`;
+  return phone(`
+    <div class="t-ter">Show</div>
+    <div class="chips">${chip('All', false)}${chip('Meals', true)}${chip('Symptoms', false)}${chip('Meds', false)}</div>
+    <div class="t-ter" style="margin-top:6px">Range</div>
+    <div class="sheet">${row('Last 7 days', false)}${row('Last 30 days', true)}${row('Since the trial began', false)}</div>`);
+}
+function signalScreen(p) {
+  return phone(`
+    <div class="t-title">Nyx</div>
+    <div class="card"><span class="rail" style="background:${p.rail}"></span><div style="display:flex;flex-direction:column;gap:6px">
+      <span class="t-ter" style="color:${p.factInk}">Day 9 of the trial</span>
+      <span style="font-family:var(--serif);font-size:16.5px;line-height:1.3">No loose stool in 6 days, the longest run since the trial began.</span>
+      <span style="font-weight:600;font-size:13px;color:${p.link}">See the days</span></div></div>
+    <div class="card" style="flex-direction:column;gap:4px"><span class="t-ter">Today</span>
+      <div class="srow" style="padding:6px 0;border:0"><span>Breakfast · Hydrolyzed salmon</span>${ICON.check(p.fact)}</div>
+      <div class="srow" style="padding:6px 0;border:0"><span>Apoquel · given</span>${ICON.check(p.fact)}</div></div>`);
+}
+function detailScreen(chev) {
+  const r = (a, b) => `<div class="srow"><span class="t-sec" style="font-size:13px">${a}</span><span style="display:flex;align-items:center;gap:6px">${b}${ICON.chev(chev)}</span></div>`;
+  return phone(`
+    <div class="t-title">Loose stool</div>
+    <div class="t-sec">Thu 22 Oct · 7:40 pm</div>
+    <div class="sheet">${r('Time', '7:40 pm')}${r('Consistency', 'Soft, formed')}${r('Photo', '1')}${r('Note', 'After the park')}</div>`);
+}
+function switchScreen(track) {
+  const r = (a, b, on) => `<div class="srow"><div style="display:flex;flex-direction:column"><span>${a}</span><span class="t-sec">${b}</span></div><span class="switch" style="background:${on ? track : T.borderStrong}"></span></div>`;
+  return phone(`
+    <div class="t-title">Notifications</div>
+    <div class="sheet">${r('Evening summary', 'At 8:00 pm', true)}${r('Dose reminders', 'For active courses', true)}${r('Weekly look back', 'Sundays', false)}</div>`);
+}
+function confirmScreen(p) {
+  const chip = (label, on) => on
+    ? `<span class="chip" style="border-color:${p.selBorder};background:${p.selWash};color:${p.selInk};font-weight:600">${label}</span>`
+    : `<span class="chip">${label}</span>`;
+  return phone(`
+    <div class="t-ter" style="color:${T.roseInk}">Vomit</div>
+    <div class="t-title">How did you come across it?</div>
+    <div class="chips">${chip('Saw it', false)}${chip('Found it', true)}</div>
+    <div class="field">Add a note</div>
+    <div style="flex:1"></div>
+    <div class="pill" style="background:${p.saveBg};border-color:${p.saveBorder};color:${p.saveInk}">Save</div>`);
+}
+function paywallScreen(glyph) {
+  const r = (a) => `<div style="display:flex;gap:10px;align-items:center">${ICON.check(glyph)}<span style="color:#FFF">${a}</span></div>`;
+  return phone(`
+    <div class="t-title" style="color:#FFF;margin-top:10px">Culprit Plus</div>
+    <div style="color:#B4B8B4;font-size:12.5px">Logging, alerts, trends and the vet report stay free.</div>
+    ${r('Photo reads on every incident')}${r('Ask about the record')}${r('The widget')}`, 'dark');
+}
+
+// Palettes
+const NOW = { selBorder: T.accent, selWash: T.accentLight, selInk: T.accentInk, check: T.accent,
+  rail: T.accent, fact: T.accent, factInk: T.accentInk, link: T.accentInk,
+  saveBg: T.accentLight, saveBorder: T.accent, saveInk: T.accentInk };
+const NEXT = { selBorder: T.action, selWash: T.lavWash, selInk: T.action, check: T.action,
+  rail: T.accentGlyph, fact: T.accentGlyph, factInk: T.accentInk, link: T.action,
+  saveBg: T.action, saveBorder: T.action, saveInk: '#FFFFFF' };
+
+// ── §03 forks ──────────────────────────────────────────────────
+function linkCard(c) {
+  return phone(`<div class="t-title">Foods</div>
+    <div class="card" style="flex-direction:column;gap:6px"><span>Hydrolyzed salmon kibble</span><span class="t-sec">On the trial · eaten 9 of 9 days</span><span style="font-weight:600;color:${c}">See every meal</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="t-sec">3 foods</span><span style="font-weight:600;color:${c}">Add a food</span></div>`, '', true);
+}
+document.getElementById('f1').innerHTML =
+  fig('cur', '#3F35A0 · ruled R1.', linkCard(T.action), 'Reads as a link next to near black body text.', `${fmt(cr(T.action, T.surface))} on white`);
+
+document.getElementById('f2').innerHTML =
+  fig('cur', 'Indigo · ruled R2.', scopeScreen(NEXT), 'The chosen chip and the chosen row speak the action colour. The lavender wash is the existing night text token.', `ink ${fmt(cr(T.action, T.lavWash))} on the wash`);
+
+function nightCard(c) {
+  return phone(`<span class="t-ter" style="color:${T.moonlitTeal}">Evening summary</span>
+    <span style="font-family:var(--serif);font-size:18px;line-height:1.3;color:${T.moon}">Nyx ate both meals and kept them down.</span>
+    <span class="t-sec">2 meals · 1 dose given · no symptoms logged</span>
+    <span style="font-weight:600;color:${c};display:flex;align-items:center;gap:4px">Open today ${ICON.chev(c, 14)}</span>`, 'night', true);
+}
+document.getElementById('f3').innerHTML =
+  fig('cur', 'Moonlight · ruled R3.', nightCard(T.moon), 'The tap target is the brightest thing after the headline; the teal eyebrow keeps meaning a good fact.', `${fmt(cr(T.moon, T.night))} on the night`);
+
+// ── §04 screens ────────────────────────────────────────────────
+const SCREENS = [
+  ['1 · Sign in hero', authScreen(T.accent), authScreen(T.accentGlyph),
+    'The mail glyph is a good fact (the link went out), so it stays teal, one notch darker. "Send it again" is an action: indigo.',
+    `glyph ${fmt(cr(T.accent, T.surface))} → ${fmt(cr(T.accentGlyph, T.surface))}`],
+  ['2 · Filter menu', scopeScreen(NOW), scopeScreen(NEXT),
+    'Checks and the chosen chip are selections: indigo (F2).',
+    `check ${fmt(cr(T.accent, T.surface))} → ${fmt(cr(T.action, T.surface))}`],
+  ['3 · Home Signal card', signalScreen(NOW), signalScreen(NEXT),
+    'The run of clean days and the given dose are good facts: teal glyph. "See the days" is an action: indigo.',
+    `rail and checks ${fmt(cr(T.accent, T.surface))} → ${fmt(cr(T.accentGlyph, T.surface))}`],
+  ['4 · Event detail', detailScreen(T.accent), detailScreen(T.action),
+    'A chevron says the row opens: action, indigo.',
+    `chevron ${fmt(cr(T.accent, T.surface))} → ${fmt(cr(T.action, T.surface))}`],
+  ['5 · Settings switch', switchScreen(T.accent), switchScreen(T.action),
+    'A switch is a control: indigo. The white knob now has an edge to sit against.',
+    `track ${fmt(cr(T.accent, T.surface))} → ${fmt(cr(T.action, T.surface))}`],
+  ['6 · Vomit confirm', confirmScreen(NOW), confirmScreen(NEXT),
+    'Today a symptom save sits on the good fact colour. Save is an action: solid indigo, white label. "Found it" is a selection (F2). R5.',
+    `save label ${fmt(cr(T.accentInk, T.accentLight))} → ${fmt(cr('#FFFFFF', T.action))}`],
+  ['7 · Paywall', paywallScreen(T.accent), paywallScreen(T.accent),
+    'On the dark canvas the teal already reads; the checks are facts about what Plus includes. No change: the walk confirms the ground.',
+    `check ${fmt(cr(T.accent, T.surfDark))} on colorSurfaceDark`],
+];
+document.getElementById('screensRow').innerHTML = SCREENS.map(([t, a, b, cap, ratio]) =>
+  `<div style="display:flex;flex-direction:column;gap:10px;max-width:100%"><h3>${t}</h3><div class="pair">${fig('now', 'Main today.', a, '', null)}${fig('cur', 'After the walk.', b, cap, ratio)}</div></div>`
+).join('');
+
+// ── §05 safety ─────────────────────────────────────────────────
+function concernLight() {
+  return phone(`<div style="border-radius:14px;background:${T.roseLight};border:1px solid ${T.roseBorder};padding:12px 14px;display:flex;flex-direction:column;gap:4px">
+    <span class="t-ter" style="color:${T.roseInk}">Call your vet today</span>
+    <span>Three vomits in 24 hours, the last with blood.</span>
+    <span style="font-weight:600;color:${T.roseInk}">I've called</span></div>
+    <div class="srow" style="padding:4px 0;border:0"><span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:${T.rose}"></span>Vomit · 6:10 am</span></div>`, '', true);
+}
+function concernNight() {
+  return phone(`<div style="border-left:3px solid ${T.roseNight};padding-left:12px;display:flex;flex-direction:column;gap:4px">
+    <span class="t-ter" style="color:${T.roseNight}">Worth a call</span>
+    <span style="color:${T.moon}">Nyx has refused two meals in a row.</span></div>`, 'night', true);
+}
+document.getElementById('safetyRow').innerHTML =
+  fig('cur', 'Concern on light.', concernLight(), 'Unchanged: rose wash, rose ink, rose glyph.', `ink ${fmt(cr(T.roseInk, T.roseLight))} · glyph ${fmt(cr(T.rose, T.surface))}`) +
+  fig('cur', 'Concern on night.', concernNight(), 'Unchanged: the night rose.', `${fmt(cr(T.roseNight, T.night))} on the night`);
+</script>
