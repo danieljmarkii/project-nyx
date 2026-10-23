@@ -267,10 +267,10 @@ export const theme = {
   // (DayEventsSheet), where a med row previously fell back to the neutral fg-2.
   // A muted slate-blue: its own hue family, so a med row reads distinctly from a
   // symptom (rose) or a meal (teal) at a glance. Deliberately NOT indigo/violet —
-  // §1.3 reserves the brand indigo (#13112E family) for world/ground use only, so a
-  // med tint in that family would read as breaking the accent rule (this is why the
-  // N5b mock's #EEF0FF/#5B63C4 indigo chip was rejected). NOT teal — teal is the
-  // sole interactive accent; NOT rose — rose is the safety/symptom colour. This is a
+  // indigo is the action colour (principles v2.1 hue table, CUL-2145), so a med tint
+  // in that family would read as tappable (this is why the N5b mock's #EEF0FF/#5B63C4
+  // indigo chip was rejected). NOT teal — teal is a good fact; NOT rose — rose is the
+  // safety/symptom colour. This is a
   // category identity tint, never a verdict (medication is not a "warning" — no
   // amber/red). Contrast on this glyph (WCAG graphical target 3:1): 4.45:1 on
   // #FFFFFF, 4.08:1 on colorSurfaceSubtle #F5F5F5, 4.23:1 on colorNeutralLight
@@ -440,6 +440,9 @@ export const colorRoles = {
     wash: theme.colorEventMedicationLight,
     onNight: theme.colorEventMedicationOnNight,
   },
+  // White grounds only: on its own banner wash (colorDestructiveLight) the red is
+  // 3.95:1, under text AA, so a destructive label there needs an ink this layer does
+  // not have yet.
   destructive: {
     onLight: theme.colorDestructive,
     onDark: theme.colorDestructiveOnDark,

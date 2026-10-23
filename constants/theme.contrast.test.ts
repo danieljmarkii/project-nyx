@@ -395,7 +395,9 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     glyphOnLight: 3.67,
     textOnLight: 8.01,
     textOnWash: 6.67,
+    glyphOnWash: 3.05,
     onNight: 6.80,
+    onNightElevated: 5.52,
   } as const;
 
   type Leaf = string;
@@ -411,6 +413,7 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     ['positive.glyphOnLight', 'colorSurface', NON_TEXT],
     ['positive.textOnLight', 'colorSurface', TEXT],
     ['positive.textOnLight', 'positive.wash', TEXT],
+    ['positive.glyphOnLight', 'positive.wash', NON_TEXT],
     ['positive.onNight', 'colorBrandNight', TEXT],
     ['positive.onNight', 'colorBrandNightElevated', TEXT],
     ['selected.ink', 'selected.ground', TEXT],
@@ -418,13 +421,17 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     ['concern.glyphOnLight', 'colorSurface', CONCERN_FLOOR.glyphOnLight],
     ['concern.textOnLight', 'colorSurface', CONCERN_FLOOR.textOnLight],
     ['concern.textOnLight', 'concern.wash', CONCERN_FLOOR.textOnWash],
+    ['concern.glyphOnLight', 'concern.wash', CONCERN_FLOOR.glyphOnWash],
     ['concern.onNight', 'colorBrandNight', CONCERN_FLOOR.onNight],
+    ['concern.onNight', 'colorBrandNightElevated', CONCERN_FLOOR.onNightElevated],
     ['attention.text', 'attention.wash', TEXT],
     ['attention.rail', 'attention.wash', NON_TEXT],
     ['medication.glyphOnLight', 'colorSurface', NON_TEXT],
     ['medication.textOnLight', 'colorSurface', TEXT],
     ['medication.textOnLight', 'medication.wash', TEXT],
+    ['medication.glyphOnLight', 'medication.wash', NON_TEXT],
     ['medication.onNight', 'colorBrandNight', TEXT],
+    ['medication.onNight', 'colorBrandNightElevated', TEXT],
     ['destructive.onLight', 'colorSurface', TEXT],
     ['destructive.onDark', 'colorSurfaceDark', TEXT],
     ['text.primaryOnLight', 'colorSurface', TEXT],
@@ -478,6 +485,19 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
       theme.colorAccentGlyph,
       theme.colorAccentInk,
     ]);
+  });
+
+  // A ratio floor alone lets a concern role stop being rose: the destructive red clears
+  // the rose's floor on white (4.83 against 3.67) and black text clears every one. A
+  // brighter hue that is no longer the symptom colour is a quieter warning by another
+  // route, so the concern roles are pinned to the rose tokens themselves.
+  it('keeps every concern role on the rose family', () => {
+    expect(colorRoles.concern).toEqual({
+      glyphOnLight: theme.colorEventSymptom,
+      textOnLight: theme.colorEventSymptomInk,
+      wash: theme.colorEventSymptomLight,
+      onNight: theme.colorEventSymptomOnNight,
+    });
   });
 
   // The failing halves, each the shortcut a later edit would reach for. Without these
