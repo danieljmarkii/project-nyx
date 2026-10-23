@@ -15,3 +15,5 @@ Dispatched DISCOVERY row for CUL-1987, shipped via #1308. Page: https://claude.a
 **Found along the way.** CUL-2164 (Live harm, QUIET): the failed read band promises "we'll retry extraction in the background"; nothing retries. Medication's twin says the photo is saved either way, untrue when the upload failed. Copy only stopgap described on the issue.
 
 **Residual.** The PM's real payload is not drawn (a production read of the library waits on the PM's word). The round merges once ruled; the build is CUL-1910.
+
+**Ruled in session (PM, 2026-10-23): "Take all the recommendations."** F1 to F7; P1 to P4 and P6 to P10 as (B); P5 no segmented control; D-1 (A). The picks are written onto CUL-1910; the page is marked ruled and republished to the same URL.
