@@ -116,16 +116,26 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 1</span><span>CUL-2145 · D4 (a), ruled 2026-10-23</span><span>Design system · M1</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 1 · reacted</span><span>CUL-2145 · D4 (a), ruled 2026-10-23</span><span>Design system · M1</span></p>
     <h1>Colour roles: each colour named for its job and its ground</h1>
     <p class="standfirst">Today a screen picks <strong>the teal</strong> and decides on its own whether it can be read where it sits. This round names colours by <strong>what they do</strong> (act, state a good fact, flag a concern) and <strong>where they sit</strong> (light or night), so the readable choice is the default. It starts from the ruling of 2026-10-03: <strong>indigo is the action colour, teal means a good fact.</strong></p>
     <div class="box" style="margin-top:22px">
+      <b>Ledger · the PM's reaction, 2026-10-23.</b> Every call took the recommendation; the options not taken left the page (they are in commit 7f803f5).
+      <ul>
+        <li><b>R1:</b> the action indigo on light is <code>#3F35A0</code>.</li>
+        <li><b>R2:</b> selected is indigo on the lavender wash.</li>
+        <li><b>R3:</b> the action colour on night is moonlight.</li>
+        <li><b>R4:</b> the §01 wording is approved and written to the principles as v2.1.</li>
+        <li><b>R5:</b> the symptom save moves to solid indigo.</li>
+      </ul>
+    </div>
+    <div class="box" style="margin-top:12px">
       <b>How to read this round.</b>
       <ul>
         <li>Phone frames paint the app's real tokens and ignore this page's theme. Every <span class="ftag now">now</span> frame is main today; every <span class="ftag cur">proposed</span> frame is the same screen after the migration row (CUL-1666's walk), which this round only shows. No app code changes in this row until you react.</li>
-        <li>Three choices are drawn side by side in <a href="#forks">§03</a>. The proposed wording for the design principles is in <a href="#hues">§01</a>; it is written to the repo only once you approve it.</li>
+        <li>The three choices, now ruled, are in <a href="#forks">§03</a>. The proposed wording for the design principles is in <a href="#hues">§01</a>; it is approved and written (v2.1).</li>
         <li>No safety colour gets quieter anywhere on this page. Every rose role keeps its value today (<a href="#safety">§05</a>).</li>
-        <li>Your reactions go in <a href="#react">§06</a>: R1 to R5.</li>
+        <li>The five calls you answered are kept in <a href="#react">§06</a>.</li>
       </ul>
     </div>
   </header>
@@ -171,8 +181,8 @@
   </section>
 
   <section id="forks">
-    <span class="secno">§03 · Three choices</span>
-    <h2>Drawn side by side</h2>
+    <span class="secno">§03 · The three choices</span>
+    <h2>Ruled 2026-10-23</h2>
     <div class="col"><h3>F1 · The action indigo on light grounds</h3><p class="muted">Indigo needs one value a link can wear. The button disc's own indigo reads as black text at link size; the round 2 Home value (2026-10-03) reads as a link. <span class="rec">Recommended: #3F35A0.</span> It is the one new value in the layer.</p></div>
     <div class="row" id="f1"></div>
     <div class="col"><h3>F2 · What colour is "selected"</h3><p class="muted">Today a chosen chip is teal. Under the ruling, choosing is acting, and teal would tell the owner that "Found it" is a good fact. <span class="rec">Recommended: indigo</span>, with a lavender wash that already exists as a token (the night text colour).</p></div>
@@ -183,7 +193,7 @@
 
   <section id="screens">
     <span class="secno">§04 · The repointed screens</span>
-    <h2>Before and after, with the recommended forks</h2>
+    <h2>Before and after, with the ruled choices</h2>
     <p class="col muted">Seven screens from CUL-1666's measured set, one per kind of site. The migration row walks all 51.</p>
     <div class="row" id="screensRow"></div>
   </section>
@@ -350,12 +360,10 @@ function linkCard(c) {
     <div style="display:flex;justify-content:space-between;align-items:center"><span class="t-sec">3 foods</span><span style="font-weight:600;color:${c}">Add a food</span></div>`, '', true);
 }
 document.getElementById('f1').innerHTML =
-  fig('cur', '#3F35A0 · recommended.', linkCard(T.action), 'Reads as a link next to near black body text.', `${fmt(cr(T.action, T.surface))} on white`) +
-  fig('option', '#251F57 · the disc.', linkCard(T.disc), 'At 13pt it is hard to tell from the body text, so a link stops looking tappable.', `${fmt(cr(T.disc, T.surface))} on white`);
+  fig('cur', '#3F35A0 · ruled R1.', linkCard(T.action), 'Reads as a link next to near black body text.', `${fmt(cr(T.action, T.surface))} on white`);
 
 document.getElementById('f2').innerHTML =
-  fig('cur', 'Indigo · recommended.', scopeScreen(NEXT), 'The chosen chip and the chosen row speak the action colour. The lavender wash is the existing night text token.', `ink ${fmt(cr(T.action, T.lavWash))} on the wash`) +
-  fig('option', 'Teal, darkened.', scopeScreen({ ...NEXT, selBorder: T.accentGlyph, selWash: T.washDeep, selInk: T.inkSelected, check: T.accentGlyph }), 'Readable (the CUL-1449 chip tokens), but "Meals" and "Found it" still say good fact.', `ink ${fmt(cr(T.inkSelected, T.washDeep))} on the wash`);
+  fig('cur', 'Indigo · ruled R2.', scopeScreen(NEXT), 'The chosen chip and the chosen row speak the action colour. The lavender wash is the existing night text token.', `ink ${fmt(cr(T.action, T.lavWash))} on the wash`);
 
 function nightCard(c) {
   return phone(`<span class="t-ter" style="color:${T.moonlitTeal}">Evening summary</span>
@@ -364,8 +372,7 @@ function nightCard(c) {
     <span style="font-weight:600;color:${c};display:flex;align-items:center;gap:4px">Open today ${ICON.chev(c, 14)}</span>`, 'night', true);
 }
 document.getElementById('f3').innerHTML =
-  fig('cur', 'Moonlight · recommended.', nightCard(T.moon), 'The tap target is the brightest thing after the headline; the teal eyebrow keeps meaning a good fact.', `${fmt(cr(T.moon, T.night))} on the night`) +
-  fig('option', 'Lavender.', nightCard(T.lav), 'Softer, but the same value as the muted text, so "Open today" reads as a caption.', `${fmt(cr(T.lav, T.night))} on the night`);
+  fig('cur', 'Moonlight · ruled R3.', nightCard(T.moon), 'The tap target is the brightest thing after the headline; the teal eyebrow keeps meaning a good fact.', `${fmt(cr(T.moon, T.night))} on the night`);
 
 // ── §04 screens ────────────────────────────────────────────────
 const SCREENS = [
