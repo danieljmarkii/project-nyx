@@ -52,6 +52,10 @@ account, project or row is reachable from this path.
   chart are the engine's. The script fails when a pet's lead differs from the one
   `scripts/fixture/fixtureStory.ts` declares. `generate-signal` itself is still not
   answered: the seeded rows are fresh at the frozen clock, so nothing asks.
+- **The engine flags.** With `CAPTURE_FLAGS` unset every Engines v3 key is off, for the app
+  and the engine alike. Each pet's lead holds under every key (the fixture's detection
+  test), but a key's decorations (care state, weight lane, context lines) appear only when
+  `CAPTURE_FLAGS` turns it on.
 - **The device chrome.** No notch, status bar or home indicator: safe-area insets are 0.
 - **Text shaping.** Chromium shapes Geist and Newsreader, not CoreText. Same font
   files and the same point sizes, so a wrap can still land a word apart.
