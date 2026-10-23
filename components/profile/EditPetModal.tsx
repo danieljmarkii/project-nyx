@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, KeyboardAvoidingView, Modal, Platform,
+  KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +20,8 @@ import { supabase } from '../../lib/supabase';
 import { kgToLbs, resolveWeightFieldSave } from '../../lib/weightUnits';
 import { dateToYmd, formatBirthdayField, resolveDobPrecisionOnSave, DobPrecision } from '../../lib/age';
 import { usePetStore, Pet } from '../../store/petStore';
+import { useIsOnline } from '../../hooks/useIsOnline';
+import { QuietBand } from '../ui/QuietBand';
 
 type Species = 'dog' | 'cat' | 'other';
 type Sex = 'male' | 'female' | 'unknown';
@@ -51,6 +53,16 @@ function parseDobLocal(dob: string | null): Date | null {
   if (!m) return null;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
+
+/**
+ * Round P8: this form writes straight to the server (no local queue), so offline it can
+ * only fail. Said before the owner types, and Save waits with that reason.
+ */
+export function profileOfflineLine(petName: string): string {
+  return `You’re offline. Changes to ${petName}’s profile can be saved once you’re back.`;
+}
+/** Round P8: a failed save keeps every typed value, and says so in place of an alert. */
+export const SAVE_FAILED_LINE = 'Couldn’t save. Your changes are still here.';
 
 /** Round P9: the profile weight is not a weigh-in. */
 export function profileWeightNote(petName: string): string {
@@ -88,6 +100,8 @@ export function EditPetModal({ visible, onClose }: Props) {
   const [dobPrecision, setDobPrecision] = useState<DobPrecision>('exact');
   const [dobTouched, setDobTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const online = useIsOnline();
   // The pet this form was seeded FOR. Unlike the log paths (which stamp the
   // pet active at write time, spec §6), an edit must land on the pet whose
   // values fill the form — if the active pet flips while the modal is open
@@ -114,6 +128,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       setDobPrecision(activePet.date_of_birth_precision);
       setDobTouched(false);
       setShowDatePicker(false);
+      setSaveFailed(false);
     }
   }, [visible]);
 
@@ -149,6 +164,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       return;
     }
     setSaving(true);
+    setSaveFailed(false);
     try {
       // An untouched weight field omits weight_kg entirely (resolveWeightFieldSave):
       // the stored value stays exact, and the store patch below leaves it alone too.
@@ -180,7 +196,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       onClose();
     } catch (e) {
       console.error('[EditPetModal] save failed:', e);
-      Alert.alert('Could not save', 'Something went wrong. Try again.');
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -208,8 +224,8 @@ export function EditPetModal({ visible, onClose }: Props) {
             <HeaderAction
               label="Save"
               onPress={handleSave}
-              disabled={!canSave}
-              disabledReason="add a name first"
+              disabled={!canSave || !online}
+              disabledReason={!online ? 'you’re offline' : 'add a name first'}
               working={saving}
               testID="edit-pet-save"
             />
@@ -218,6 +234,16 @@ export function EditPetModal({ visible, onClose }: Props) {
 
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+
+            {!online ? (
+              <QuietBand testID="edit-pet-offline">
+                <ThemedText variant="caption" style={styles.bandText}>{profileOfflineLine(seededName)}</ThemedText>
+              </QuietBand>
+            ) : saveFailed ? (
+              <QuietBand testID="edit-pet-save-failed">
+                <ThemedText variant="caption" style={styles.bandText}>{SAVE_FAILED_LINE}</ThemedText>
+              </QuietBand>
+            ) : null}
 
             <TextField
               label="Name"
@@ -361,5 +387,8 @@ const styles = StyleSheet.create({
   note: {
     color: theme.colorTextSecondary,
     marginTop: theme.space1,
+  },
+  bandText: {
+    color: theme.colorTextPrimary,
   },
 });

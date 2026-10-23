@@ -30,6 +30,8 @@ jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+let mockOnline = true;
+jest.mock('../../hooks/useIsOnline', () => ({ useIsOnline: () => mockOnline }));
 
 import React from 'react';
 import { Alert } from 'react-native';
@@ -59,6 +61,7 @@ async function pickAndAdd(picked: Date) {
 }
 
 beforeEach(() => {
+  mockOnline = true;
   mockInsert.mockClear();
   mockUpdate.mockClear();
 });
@@ -143,4 +146,14 @@ describe('the condition form names its pet and carries the resolve', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
     alert.mockRestore();
   });
+});
+
+// CUL-1911 — P8 on the condition form.
+it('offline: the band names the pet, and Add waits with that reason', () => {
+  mockOnline = false;
+  render(<AddConditionModal visible petId="pet-1" petName="Mochi" onClose={jest.fn()} onAdded={jest.fn()} />);
+  expect(screen.getByText('You’re offline. Mochi’s conditions can be saved once you’re back.')).toBeTruthy();
+  fireEvent.changeText(screen.getByPlaceholderText('e.g. Food sensitivity, IBD, atopy'), 'IBD');
+  fireEvent.press(screen.getByLabelText('Add, you’re offline'));
+  expect(mockInsert).not.toHaveBeenCalled();
 });

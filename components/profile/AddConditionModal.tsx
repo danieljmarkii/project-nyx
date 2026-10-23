@@ -17,6 +17,9 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
+import { useIsOnline } from '../../hooks/useIsOnline';
+import { SAVE_FAILED_LINE } from './EditPetModal';
+import { QuietBand } from '../ui/QuietBand';
 
 export interface Condition {
   id: string;
@@ -51,6 +54,11 @@ export function conditionStatusCaption(status: ConditionStatus, petName: string)
   return status === 'active' ? `Currently affecting ${petName}` : 'Being watched, not active right now';
 }
 
+/** Round P8: the form writes straight to the server, so offline is said before typing. */
+export function conditionOfflineLine(petName: string): string {
+  return `You’re offline. ${petName}’s conditions can be saved once you’re back.`;
+}
+
 /** The resolve confirm's lines, word for word from the Pet tab's row (round P3). */
 export const RESOLVE_CONFIRM_TITLE = 'Mark as resolved';
 export const RESOLVE_REPORT_LINE = 'It will still appear in vet reports for the relevant date range.';
@@ -78,6 +86,8 @@ export function AddConditionModal({
   const [diagnosedAt, setDiagnosedAt] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const online = useIsOnline();
 
   useEffect(() => {
     if (visible) {
@@ -99,6 +109,7 @@ export function AddConditionModal({
         setDiagnosedAt(null);
       }
       setShowDatePicker(false);
+      setSaveFailed(false);
     }
   }, [visible, existingCondition]);
 
@@ -110,6 +121,7 @@ export function AddConditionModal({
     const trimmed = conditionName.trim();
     if (!trimmed) return;
     setSaving(true);
+    setSaveFailed(false);
     try {
       const payload = {
         condition_name: trimmed,
@@ -141,7 +153,7 @@ export function AddConditionModal({
       onClose();
     } catch (e) {
       console.error('[AddConditionModal] save failed:', e);
-      Alert.alert('Could not save', 'Something went wrong. Try again.');
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -172,8 +184,8 @@ export function AddConditionModal({
             <HeaderAction
               label={isEditing ? 'Save' : 'Add'}
               onPress={handleSave}
-              disabled={!canSave}
-              disabledReason="name the condition first"
+              disabled={!canSave || !online}
+              disabledReason={!online ? 'you’re offline' : 'name the condition first'}
               working={saving}
               testID="condition-save"
             />
@@ -182,6 +194,16 @@ export function AddConditionModal({
 
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+
+            {!online ? (
+              <QuietBand testID="condition-offline">
+                <ThemedText variant="caption" style={styles.bandText}>{conditionOfflineLine(petName)}</ThemedText>
+              </QuietBand>
+            ) : saveFailed ? (
+              <QuietBand testID="condition-save-failed">
+                <ThemedText variant="caption" style={styles.bandText}>{SAVE_FAILED_LINE}</ThemedText>
+              </QuietBand>
+            ) : null}
 
             <TextField
               label="Condition name"
@@ -268,6 +290,9 @@ const styles = StyleSheet.create({
   caption: {
     color: theme.colorTextSecondary,
     marginTop: theme.space1,
+  },
+  bandText: {
+    color: theme.colorTextPrimary,
   },
   resolve: {
     marginTop: theme.space3,

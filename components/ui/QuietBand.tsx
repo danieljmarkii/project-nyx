@@ -14,13 +14,20 @@ export function QuietBand({
   children,
   style,
   testID,
+  grouped = true,
 }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * One stop for the whole band (the default). False when the band holds a control
+   * (CUL-1911, the failed read's Try again): an accessible View on iOS hides its
+   * children from VoiceOver, so a button inside a grouped band could not be reached.
+   */
+  grouped?: boolean;
 }) {
   return (
-    <View style={[styles.band, style]} testID={testID} accessible>
+    <View style={[styles.band, style]} testID={testID} accessible={grouped}>
       {children}
     </View>
   );
