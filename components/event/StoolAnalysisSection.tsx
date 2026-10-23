@@ -621,8 +621,9 @@ export function StoolAnalysisSection(
       : variant === 'read_this' ? RECORD_NOT_READ_YET_HEADING
       : RECORD_UNREAD_HEADING;
     return (
-      <IncidentReadSection arrival={arrival} announcer={announcer} announcement={heading} pending={false} labelAbove>
-        <ReadSectionInset>
+      <IncidentReadSection arrival={arrival} announcer={announcer} announcement={heading} pending={false}>
+        {/* P3: the unread frames take the dashed edge every state that is not a read takes. */}
+        <IncidentReadFrame surface="dashed" testID="incident-read-consent">
           <RecordUnreadStatus
             kind="stool"
             variant={variant}
@@ -630,8 +631,9 @@ export function StoolAnalysisSection(
             onTurnOn={() => router.push('/settings/ai-reading')}
             onRead={handleRetry}
             reading={retrying}
+            framed
           />
-        </ReadSectionInset>
+        </IncidentReadFrame>
       </IncidentReadSection>
     );
   }
@@ -765,9 +767,10 @@ export function StoolAnalysisSection(
           <ThemedText style={styles.frameHeadline}>{RECORD_UNREAD_HEADING}</ThemedText>
           <ThemedText style={styles.frameText}>{recordUnreadRetryBody(consentPet)}</ThemedText>
           <ThemedText style={styles.frameText}>{recordVetLine('stool', consentPet)}</ThemedText>
+          {/* Never `disabled`: a tap that starts a read routes this section to the pending
+              wait at once, so no frame of this state is ever on screen mid-retry (C-7). */}
           <TouchableOpacity
             onPress={handleRetry}
-            disabled={retrying}
             accessibilityRole="button"
             style={styles.frameLink}
             testID="incident-read-try-again"

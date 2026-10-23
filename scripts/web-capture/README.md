@@ -25,6 +25,13 @@ from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE
 `CAPTURE_DEBUG` (log every request), `CAPTURE_SIGNALS` (signals.deno.ts's output; capture
 refuses one computed at another instant or under other flags).
 
+**The incident screen's read states (CUL-1912).** The fixture writes no read and no photo, so
+`capture.mjs` adds three capture-only vomits 400 days back on Juniper, each with a drawn photo
+and a read: `incident-call-juniper` (a Worth a call), `incident-watch-juniper` (Keep an eye out
+with its findings) and `incident-off-juniper` (a photo not read under a no). The read rows and
+the consent answer are served only to those shots, and the three records sit outside every
+window the other shots read.
+
 ## What it changes, and what it never touches
 
 `metro.config.js` loads `metroWebCapture.js` only when `NYX_WEB_CAPTURE=1`, and every

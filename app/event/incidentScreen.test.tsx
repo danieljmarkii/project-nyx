@@ -234,6 +234,9 @@ describe('the record screen, as the design round ruled (CUL-1912)', () => {
     // The only Edit on a vomit's screen is the header's; the footer's pair is gone.
     expect(view.getAllByText('Edit')).toHaveLength(1);
     expect(view.queryByText('Remove')).toBeNull();
+    // The header Edit's box meets the 44pt floor both ways (C-5); the word alone is ~30pt.
+    const edit = StyleSheet.flatten(view.getByTestId('event-edit').props.style);
+    expect([edit.minHeight, edit.minWidth]).toEqual([44, 44]);
     router.push.mockClear();
     fireEvent.press(view.getByTestId('event-edit'));
     expect(router.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/edit-event' }));

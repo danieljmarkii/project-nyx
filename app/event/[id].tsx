@@ -167,6 +167,9 @@ function ComboLinkRow({
 // and how long a scroll takes to settle before the line is measured again.
 const REVEAL_MARGIN = theme.space2;
 const REVEAL_SETTLE_MS = 400;
+// P1's header Edit grows with Dynamic Type only this far (CUL-1912): the header's side slot is
+// a fixed width, and an uncapped word runs into the title at AX5.
+const HEADER_ACTION_MAX_SCALE = 1.5;
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -911,7 +914,9 @@ export default function EventDetailScreen() {
             style={styles.headerAction}
             testID="event-edit"
           >
-            <ThemedText style={styles.headerActionText}>Edit</ThemedText>
+            {/* Capped like a system bar button: past it, the word outgrows the bar's side and
+                runs into the title at the largest text sizes. */}
+            <ThemedText style={styles.headerActionText} maxFontSizeMultiplier={HEADER_ACTION_MAX_SCALE}>Edit</ThemedText>
           </TouchableOpacity>
         }
       />
@@ -1310,9 +1315,12 @@ const styles = StyleSheet.create({
   scroll: {
     paddingBottom: theme.space5,
   },
+  // The 44pt floor both ways: the word alone is about 30pt wide (C-5). Nothing faces it.
   headerAction: {
     minHeight: theme.hitTarget,
+    minWidth: theme.hitTarget,
     justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   headerActionText: {
     fontSize: theme.textMD,

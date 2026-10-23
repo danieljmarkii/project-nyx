@@ -2492,6 +2492,9 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     const view = render(<VomitAnalysisSection eventId="d823a" petId="pet-1" petName="Rex" hasPhoto />);
     expect(view.getByTestId('record-consent-off')).toBeTruthy();
     expect(view.queryByTestId('incident-read-pending')).toBeNull();
+    // P3: the off frame sits on the dashed edge, its heading inside the frame.
+    expect(StyleSheet.flatten(view.getByTestId('incident-read-consent').props.style).borderStyle).toBe('dashed');
+    expect(view.getAllByText('AI READ')).toHaveLength(1);
   });
 
   it('D-823: a first read asked of the server on a declined account shows the off frame, never the tick', async () => {

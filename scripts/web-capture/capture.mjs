@@ -56,6 +56,81 @@ const accessToken = `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub: use
 const session = { access_token: accessToken, refresh_token: 'fixture-refresh', token_type: 'bearer', expires_in: 365 * 86400, expires_at: exp, user };
 
 const pet = (key) => tables.pets.find((p) => p.name.toLowerCase() === key);
+
+// ── The incident screen's read states (CUL-1912) ─────────────────────────────────────
+// The fixture story writes no read and no photo (fixtureStory.ts, WHAT IT NEVER WRITES), so
+// `incident-juniper` is a photoless vomit with no read, and the states a design pass on that
+// screen must be seen in never reach a capture. Three capture-only vomits carry a photo and a
+// read: a Worth a call, a Keep an eye out with its findings, and a photo the server did not read
+// under a no. They sit 400 days back, outside every window a Home, History or Patterns shot
+// reads, and outside the Signal (signals.deno.ts computes from the fixture alone). The consent
+// answer is served per shot, so every other shot still photographs the fixture's own account.
+const READ_STATE_AT = new Date(NOW - 400 * 86400e3).toISOString();
+const PHOTO_PATH = '/object/sign/fixture-photo.svg?token=fixture';
+const PHOTO_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><defs><radialGradient id="g" cx="50%" cy="55%" r="40%">' +
+  '<stop offset="0" stop-color="#D8B56A"/><stop offset="1" stop-color="#9E8F7E"/></radialGradient></defs>' +
+  '<rect width="800" height="600" fill="url(#g)"/></svg>';
+const READ_STATES = [
+  {
+    eventId: 'c1912000-0000-4000-8000-000000000001',
+    analysis: {
+      status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
+      read_text: 'I can see what looks like fresh red blood in this one.',
+      colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'fresh_red',
+      foreign_material_present: 'no', visual_flags: ['blood'],
+    },
+    consent: true,
+  },
+  {
+    eventId: 'c1912000-0000-4000-8000-000000000002',
+    analysis: {
+      status: 'completed', recommendation: 'monitor', tier: 'logged',
+      read_text: "This one doesn't show anything that stands out on its own.",
+      colour: 'yellow', consistency: 'foamy', contents: ['bile'], blood_present: 'none_visible',
+      foreign_material_present: 'no', visual_flags: [],
+    },
+    consent: true,
+  },
+  {
+    eventId: 'c1912000-0000-4000-8000-000000000003',
+    analysis: { status: 'read_disabled', recommendation: null, tier: null, read_text: null, ai_raw_payload: null },
+    consent: false,
+  },
+];
+for (const [i, r] of READ_STATES.entries()) {
+  const at = new Date(Date.parse(READ_STATE_AT) + i * 3600e3).toISOString();
+  tables.events.push({
+    id: r.eventId, pet_id: pet('juniper').id, event_type: 'vomit', occurred_at: at, severity: null, notes: null,
+    source: 'manual', occurred_at_source: 'manual', occurred_at_confidence: 'witnessed',
+    occurred_at_earliest: null, occurred_at_latest: null, logged_via: 'app', deleted_at: null,
+    // A minute before now, like every fixture row, so the first watermark pull takes it.
+    created_at: at, updated_at: new Date(NOW - 60e3).toISOString(),
+  });
+  (tables.event_attachments ??= []).push({
+    id: r.eventId.replace(/1$|2$|3$/, (d) => `a${d}`), event_id: r.eventId, pet_id: pet('juniper').id,
+    storage_path: `fixture/${r.eventId}.jpg`, mime_type: 'image/jpeg', deleted_at: null, created_at: at,
+    updated_at: new Date(NOW - 60e3).toISOString(),
+  });
+}
+// What a shot overlays on the served tables: the read rows always (they are fetched only by
+// the record that owns them), and the consent answer only for the read-state shots.
+let shotOverlay = {};
+const readStateOverlay = (consent) => ({
+  event_ai_analysis: READ_STATES.map((r) => ({
+    event_id: r.eventId, pet_id: pet('juniper').id, incident_type: 'vomit', description: null, consistency: null,
+    colour: null, contents: null, blood_present: null, bile_present: null, foreign_material_present: null,
+    foreign_material_note: null, edited_at: null, dismissed_at: null, error: null, engine_flags: null,
+    call_said_at: null, may_wait: null, may_wait_decided_at: null, photo_set_key: null,
+    updated_at: READ_STATE_AT, ...r.analysis,
+    // The model's payload is the read's own fields, so nothing reads as an owner edit.
+    ai_raw_payload: r.analysis.status === 'completed' ? { ...r.analysis } : null,
+  })),
+  ai_consent: [{
+    user_id: FIXTURE_USER_ID, scope: 'ai_boundary', granted: consent, copy_version: '2026-10-12',
+    source: 'settings', decided_at: READ_STATE_AT,
+  }],
+});
 const firstVomit = (petId) =>
   tables.events.filter((e) => e.pet_id === petId && e.event_type === 'vomit').sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
 
@@ -78,6 +153,10 @@ const SHOTS = [
   { name: 'history-pepper', pet: 'pepper', go: [tab('History')] },
   { name: 'incident-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page)] },
   { name: 'patterns-juniper', pet: 'juniper', go: [link(/^Patterns/)] },
+  // CUL-1912: the incident screen's read states (see READ_STATES above).
+  { name: 'incident-call-juniper', pet: 'juniper', overlay: readStateOverlay(true), go: [() => {}, push(`/event/${READ_STATES[0].eventId}`)] },
+  { name: 'incident-watch-juniper', pet: 'juniper', overlay: readStateOverlay(true), go: [() => {}, push(`/event/${READ_STATES[1].eventId}`)] },
+  { name: 'incident-off-juniper', pet: 'juniper', overlay: readStateOverlay(false), go: [() => {}, push(`/event/${READ_STATES[2].eventId}`)] },
   // CUL-1282's path: a tap on an earlier day in History's week strip must bring the
   // list to that day (Sunday the 11th, three cards down, past the 21-row long day).
   { name: 'history-strip-tap-pepper', pet: 'pepper', go: [tab('History'), (page) => page.getByText('11', { exact: true }).first().click({ timeout: 8000 })] },
@@ -121,9 +200,17 @@ async function captureSize(browser, size, server, shots) {
     const url = new URL(req.url());
     const cors = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'content-range' };
     if (url.pathname.startsWith('/rest/v1/')) {
-      const a = answerRest(tables, req.method(), url, req.headers()['accept'] ?? '');
+      const a = answerRest({ ...tables, ...shotOverlay }, req.method(), url, req.headers()['accept'] ?? '');
       if (process.env.CAPTURE_DEBUG) log(`${req.method()} ${url.pathname}${url.search.slice(0, 160)} -> ${a.status} ${a.body.length}b`);
       return route.fulfill({ status: a.status, contentType: 'application/json', body: a.body, headers: { ...cors, ...(a.headers ?? {}) } });
+    }
+    // The read-state records' photo: every signing request answers one path, and that path
+    // answers a drawn photo (CUL-1912). Nothing else under /storage is served.
+    if (url.pathname.startsWith('/storage/v1/object/sign/fixture-photo.svg')) {
+      return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: PHOTO_SVG, headers: cors });
+    }
+    if (req.method() === 'POST' && url.pathname.startsWith('/storage/v1/object/sign/')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ signedURL: PHOTO_PATH }), headers: cors });
     }
     if (url.pathname.startsWith('/auth/v1/user')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user), headers: cors });
@@ -151,6 +238,7 @@ async function captureSize(browser, size, server, shots) {
 
   const files = [];
   for (const shot of shots) {
+    shotOverlay = shot.overlay ?? {};
     await page.evaluate((id) => localStorage.setItem('nyx.activePetId', id), pet(shot.pet).id);
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForTimeout(settle);
