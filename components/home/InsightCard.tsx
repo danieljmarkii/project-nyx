@@ -570,7 +570,7 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
 
 /** The safety/insight rail's width — exported so the stand-down line (which has NO rail) can
  *  sit in the same text column as the cards above and below it. */
-export const RAIL_WIDTH = 3;
+export const RAIL_WIDTH = theme.railWidth;
 
 interface Props {
   cached: CachedFinding;

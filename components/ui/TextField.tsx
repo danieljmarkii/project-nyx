@@ -18,7 +18,13 @@ import { ThemedText } from './ThemedText';
 // The reveal toggle's own hit box. A 20pt glyph propped up by hitSlop met 44pt
 // only by spilling over the input, so keep the number here and let the test
 // assert the resolved box rather than trusting the slop arithmetic.
-const REVEAL_TARGET = 44;
+const REVEAL_TARGET = theme.hitTarget;
+
+// Multiline mode (CUL-1900): a notes box opens at about three lines of body type and
+// grows with what is typed until the cap, then scrolls inside itself, so a long note
+// never pushes a sheet's Save off screen.
+const MULTILINE_MIN_HEIGHT = theme.space6 + theme.space4;
+const MULTILINE_MAX_HEIGHT = theme.space6 * 3;
 
 // The pass-through subset of native TextInput props onboarding + auth screens
 // actually reach for (email/password autofill, keyboard type, submit handling).
@@ -40,14 +46,25 @@ type ForwardedInputProps = Pick<
   | 'onFocus'
 >;
 
-interface Props extends ForwardedInputProps {
+// A masked field is one line by nature, so the two modes cannot be combined.
+type ModeProps =
+  | {
+      multiline?: false;
+      // When true, renders the masked-input toggle (show/hide eye). Reveal state is
+      // owned locally so the parent never has to thread it through.
+      secureTextEntry?: boolean;
+    }
+  | {
+      // A notes field: return inserts a newline, so the caller's Save is the commit.
+      multiline: true;
+      secureTextEntry?: never;
+    };
+
+type Props = ForwardedInputProps & ModeProps & {
   value: string;
   onChangeText: (text: string) => void;
   label?: string;
   placeholder?: string;
-  // When true, renders the masked-input toggle (show/hide eye). Reveal state is
-  // owned locally so the parent never has to thread it through.
-  secureTextEntry?: boolean;
   // Presence of an error string puts the field in the error state (destructive
   // border + inline message). Kept as a message, not a boolean, so the copy
   // stays calm and specific (Principle 4 / nyx-voice) — the consumer owns wording.
@@ -58,14 +75,16 @@ interface Props extends ForwardedInputProps {
   // Outer-container style hook (margins / width). The field itself stays
   // spacing-agnostic so forms control the rhythm between fields.
   containerStyle?: StyleProp<ViewStyle>;
-}
+};
 
 /**
- * The shared single-line text input the app lacked — ~6 screens hand-rolled the
- * same bordered-input block (auth, PetForm, the profile modals). One primitive
- * so they stop drifting: a calm label, a focus ring that reuses the single
- * interactive accent, an inline (never red-alarm) error state, a built-in
- * password reveal, and a ≥44pt target with an accessible label/role.
+ * The shared text input: one line by default, or a growing notes box with
+ * `multiline`. Auth, onboarding and the vet visit sheets use it; PetForm, the
+ * profile modals and most notes boxes still roll their own until their screen
+ * pass moves them (CUL-1893). One primitive so they stop drifting: a calm label,
+ * a focus ring that reuses the single interactive accent, an inline (never
+ * red-alarm) error state, a built-in password reveal, and a ≥44pt target with an
+ * accessible label/role.
  */
 export function TextField({
   value,
@@ -73,6 +92,7 @@ export function TextField({
   label,
   placeholder,
   secureTextEntry = false,
+  multiline = false,
   error,
   accessibilityLabel,
   testID,
@@ -119,11 +139,11 @@ export function TextField({
       {label ? <ThemedText style={styles.label}>{label}</ThemedText> : null}
 
       <View
-        style={[styles.field, { borderColor }]}
+        style={[styles.field, multiline && styles.fieldMultiline, { borderColor }]}
         testID={testID ? `${testID}-field` : undefined}
       >
         <TextInput
-          style={styles.input}
+          style={[styles.input, multiline && styles.inputMultiline]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -131,6 +151,7 @@ export function TextField({
           // When `secureTextEntry`, the eye toggle flips the mask; otherwise the
           // input is never secured.
           secureTextEntry={secureTextEntry && !revealed}
+          multiline={multiline}
           accessibilityLabel={accessibilityLabel ?? label}
           accessibilityHint={hasError ? error ?? undefined : undefined}
           testID={testID}
@@ -196,6 +217,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     backgroundColor: theme.colorSurface,
   },
+  fieldMultiline: {
+    alignItems: 'flex-start',
+    minHeight: MULTILINE_MIN_HEIGHT,
+  },
   input: {
     flex: 1,
     // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
@@ -206,6 +231,14 @@ const styles = StyleSheet.create({
     // Vertical padding for comfortable touch on Android; the container's
     // minHeight still enforces the 44pt floor when the text is short.
     paddingVertical: theme.space1,
+  },
+  inputMultiline: {
+    // The cap sits on the input, not the box: an iOS multiline input scrolls only
+    // inside its own maxHeight, and a cap on the parent would clip it instead.
+    // The text starts at the top on both platforms.
+    alignSelf: 'stretch',
+    maxHeight: MULTILINE_MAX_HEIGHT,
+    textAlignVertical: 'top',
   },
   eyeButton: {
     // A real 44pt box instead of a 20pt glyph plus hitSlop. As a flex sibling it

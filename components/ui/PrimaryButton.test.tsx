@@ -82,4 +82,28 @@ describe('PrimaryButton', () => {
     );
     expect(getByTestId('btn-spinner').props.color).toBe(theme.colorNeutralDark);
   });
+
+  // CUL-1900: the filled red commit (DeleteAccountSheet's hand rolled button) is a
+  // variant, apart from the quiet 'destructive' label it must not replace.
+  it('paints destructiveFilled red with a white label and spinner, and leaves destructive quiet', () => {
+    const { getByTestId, getByText, rerender } = render(
+      <PrimaryButton label="Delete account" onPress={() => {}} variant="destructiveFilled" testID="btn" />,
+    );
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe(theme.colorDestructive);
+    expect(StyleSheet.flatten(getByText('Delete account').props.style).color).toBe(theme.colorTextOnDark);
+
+    rerender(<PrimaryButton label="Delete account" onPress={() => {}} variant="destructiveFilled" loading testID="btn" />);
+    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorTextOnDark);
+
+    rerender(<PrimaryButton label="Remove" onPress={() => {}} variant="destructive" testID="btn" />);
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe('transparent');
+    expect(StyleSheet.flatten(getByText('Remove').props.style).color).toBe(theme.colorDestructive);
+  });
+
+  it('greys a disabled destructiveFilled like every other variant', () => {
+    const { getByTestId } = render(
+      <PrimaryButton label="Delete account" onPress={() => {}} variant="destructiveFilled" disabled testID="btn" />,
+    );
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe(theme.colorBorder);
+  });
 });

@@ -18,8 +18,8 @@ import { Block, Line, SilhouetteFrame, Surface } from './Silhouette';
 
 /** `HomeHeader`'s row: a 44pt row inside 6pt of vertical padding (its own constants). */
 const HEADER_ROW_HEIGHT = 44 + 6 * 2;
-/** The Signal card's rail: the rail's width (`RAIL_WIDTH`), a length of the card. */
-const RAIL_WIDTH = 3;
+/** The Signal card's rail: the rail's width (`theme.railWidth`), a length of the card. */
+const RAIL_WIDTH = theme.railWidth;
 /** The look's chips, in the round-4 frame's proportions (the widths carry no meaning). */
 const CHIP_WIDTHS = [44, 84, 56, 92, 66] as const;
 const CHIP_HEIGHT = 30;

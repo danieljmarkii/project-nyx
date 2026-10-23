@@ -15,7 +15,6 @@
 
 import { StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { shadows, theme } from '../../../constants/theme';
-import { RAIL_WIDTH } from '../../home/InsightCard';
 
 /** The card's inset on every side: the one text edge on Home. */
 export const HOME_CARD_INSET = theme.space2;
@@ -23,13 +22,13 @@ export const HOME_CARD_INSET = theme.space2;
 /** How far left of the text edge a rail's left side sits. The rail's right side is a
  *  `space1` clear of the text, and its left side is `HOME_CARD_INSET - RAIL_GUTTER` clear
  *  of the card's edge, so it reads as the row's mark and not as the card's border. */
-export const RAIL_GUTTER = theme.space1 + RAIL_WIDTH;
+export const RAIL_GUTTER = theme.space1 + theme.railWidth;
 
 /** A rail hung in the gutter. The row supplies `top` / `bottom` (and its colour). */
 export const GUTTER_RAIL = {
   position: 'absolute',
   left: -RAIL_GUTTER,
-  width: RAIL_WIDTH,
+  width: theme.railWidth,
   borderRadius: 2,
 } as const satisfies ViewStyle;
 
