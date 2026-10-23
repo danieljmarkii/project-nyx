@@ -1,6 +1,6 @@
 # Mixed meals: the split is a sheet, and Save commits it
 
-**Date:** 2026-10-23 · **Issue:** [CUL-2133](https://linear.app/projectnyx/issue/CUL-2133) · **Branch:** `claude/mix-split-sheet-1023` · shipped via the session's PR
+**Date:** 2026-10-23 · **Issue:** [CUL-2133](https://linear.app/projectnyx/issue/CUL-2133) · **Branch:** `claude/mix-split-sheet-1023` · shipped via #1285
 
 ## What happened
 The PM logged their first mixed meal on device and reported two things. The "About how much of each?" step opened as a full page with most of it empty, where mock M2 drew a compact bottom sheet. And a chip tap saved instantly, so a mistap was recorded before they could change it.
