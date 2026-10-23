@@ -256,6 +256,14 @@
   .tile small { color: var(--dev-text-3); font-size: 11.5px; }
   .tile.locked { border-color: var(--teal); background: var(--dev-teal-wash); }
   .tile.dim { opacity: 0.45; }
+  .tile.ask { border-style: dashed; }
+  .tile.ask small { color: var(--dev-teal-ink); }
+  .tile.new { border-color: var(--teal); }
+  .addrow { display: flex; gap: 10px; align-items: center; background: var(--dev-card); border: 1px solid var(--dev-line); border-radius: 12px; padding: 10px 12px; }
+  .addrow .cam { width: 32px; height: 32px; border-radius: 16px; background: var(--dev-teal-wash); color: var(--dev-teal-ink); display: flex; align-items: center; justify-content: center; font-size: 15px; flex: none; }
+  .addrow b { display: block; font-size: 14px; font-weight: 600; }
+  .addrow span { font-size: 12.5px; color: var(--dev-text-2); }
+  .hintline { font-size: 12.5px; color: var(--dev-text-2); }
 
   /* The split bar: one bowl, full width. */
   .split-names { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; }
@@ -629,6 +637,101 @@
   </div>
 </section>
 
+<!-- ============================================================ §1b -->
+<section>
+  <p class="kicker">§1b · Decision, CUL-2089 · a food that isn't in the picker yet</p>
+  <h2>Day one, and the new food isn't in the app</h2>
+  <p class="lede">On the first day of a switch the new food is often not saved yet, or saved without a type. Today the bowl picker has no way to add it, and a food saved as "Other" simply isn't there. Three ways to answer it; the team recommends <strong>(a)</strong>. Each option is drawn on the same moment: Rabbit Pâté has never been saved, and an old "Other" food and a topper sit in the library.</p>
+
+  <div class="frames">
+    <div class="frame">
+      <div class="option-box">
+        <div class="frame-top"><span class="frame-tag"><b>A1</b> · <span class="tag-opt">option (a), recommended</span> · add it from the picker</span></div>
+        <div class="screen top">
+          <div class="sheet" style="box-shadow:none;border-radius:16px">
+            <div class="sheet-title">Mixed with another food</div>
+            <div class="banner">Mixing with Chicken Pâté in Pixel's bowl. Pick the other food.</div>
+            <div class="search">Search foods</div>
+            <div class="addrow"><span class="cam" aria-hidden="true">◎</span><span><b>Snap a new food</b><span>Or choose from your photos</span></span></div>
+            <div class="tiles">
+              <div class="tile locked"><b>Chicken Pâté</b><small>Wet · in the bowl</small></div>
+              <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
+              <div class="tile ask"><b>Duck Stew</b><small>Not set as a meal · tap to set it</small></div>
+              <div class="tile dim"><b>Bone Broth</b><small>Topper · logged on its own</small></div>
+              <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">The picker's own <strong>"Snap a new food"</strong> row comes back, the same one every other food picker has. Saving there adds the food and <strong>writes no meal</strong>; the bowl is still the only record. An "Other" food shows with a dashed edge and opens its page to set the type; a topper shows dimmed with why, like a treat (this half also finishes CUL-2143).</p>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="option-box">
+        <div class="frame-top"><span class="frame-tag"><b>A2</b> · <span class="tag-opt">option (a), recommended</span> · straight back to the split</span></div>
+        <div class="screen">
+          <div class="ghost"><span class="ghost-title">Mixed with another food</span><div class="ghost-row"></div><div class="ghost-row"></div></div>
+          <div class="sheet">
+            <div class="grabber"></div>
+            <div class="sheet-title">About how much of each?</div>
+            <div class="split-names"><span>Chicken</span><span>Rabbit</span></div>
+            <div class="split" role="img" aria-label="No split picked yet" style="background:transparent;border:1px dashed var(--dev-line)"></div>
+            <div class="ratio-chips" role="group" aria-label="Split">
+              <button class="rchip" type="button" tabindex="-1">¾·¼</button>
+              <button class="rchip" type="button" tabindex="-1">⅔·⅓</button>
+              <button class="rchip" type="button" tabindex="-1">½·½</button>
+              <button class="rchip" type="button" tabindex="-1">⅓·⅔</button>
+              <button class="rchip" type="button" tabindex="-1">¼·¾</button>
+            </div>
+            <div class="btn" style="opacity:0.4">Save</div>
+          </div>
+        </div>
+        <p class="frame-note">After "Save to library" the capture closes and <strong>the split rises with Rabbit already in it</strong>, as if it had been tapped in the picker. If the new food was saved as a treat, topper or "Other", the owner lands back on the picker instead, where its tile says why.</p>
+        <p class="spec">same sheet as M2 · capture's own 900ms saved beat, then the rise · no new motion</p>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="option-box">
+        <div class="frame-top"><span class="frame-tag"><b>B</b> · <span class="tag-opt">option (b)</span> · a hint, no door</span></div>
+        <div class="screen top">
+          <div class="sheet" style="box-shadow:none;border-radius:16px">
+            <div class="sheet-title">Mixed with another food</div>
+            <div class="banner">Mixing with Chicken Pâté in Pixel's bowl. Pick the other food.</div>
+            <div class="search">Search foods</div>
+            <span class="hintline">Not here? Add it in Foods and set it as a meal, then come back to this meal.</span>
+            <div class="tiles">
+              <div class="tile locked"><b>Chicken Pâté</b><small>Wet · in the bowl</small></div>
+              <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
+              <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">Honest about the gap, but the owner still leaves, adds the food, and finds the meal again through History. The first mix stops being a 15 second job on the day it matters most.</p>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="option-box">
+        <div class="frame-top"><span class="frame-tag"><b>C</b> · <span class="tag-opt">option (c)</span> · as shipped today</span></div>
+        <div class="screen top">
+          <div class="sheet" style="box-shadow:none;border-radius:16px">
+            <div class="sheet-title">Mixed with another food</div>
+            <div class="banner">Mixing with Chicken Pâté in Pixel's bowl. Pick the other food.</div>
+            <div class="search">Search foods</div>
+            <div class="tiles">
+              <div class="tile locked"><b>Chicken Pâté</b><small>Wet · in the bowl</small></div>
+              <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
+              <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">No add, no word about the "Other" food or the topper. They are just missing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============================================================ §2 -->
 <section>
   <p class="kicker">§2 · The days after</p>
@@ -919,6 +1022,7 @@
     <li><b>R-2</b>Play M5. Does the MIX pill landing on the card feel like the rest of the app?</li>
     <li><b>R-3</b>Shape 1 (M8b): a split bar on each mixed History row. Worth the extra line?</li>
     <li><b>R-4</b>Foods (F1, F2): is "8 in a mix" on the row enough, and do you want the switch strip on the food's page?</li>
+    <li><b>R-5</b>§1b (CUL-2089): a food not in the picker yet. (a) add it there and go straight to the split, (b) a hint pointing at Foods, or (c) leave it?</li>
   </ul>
 </section>
 
