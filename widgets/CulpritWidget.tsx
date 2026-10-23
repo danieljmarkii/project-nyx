@@ -97,7 +97,7 @@ export function CulpritWidgetLayout(
     textPrimary: '#0A0A0A', // theme.colorTextPrimary
     textSecondary: '#525252', // theme.colorTextSecondary
     textTertiary: '#737373', // theme.colorTextTertiary
-    crescent: '#211E4E', // the CulpritMark disc (brand indigo family)
+    crescent: '#211E4E', // theme.colorCulpritCrescentOnLight — the CulpritMark disc
   };
 
   // Inlined, NOT imported: the layout runs as a bare string with no module graph,
