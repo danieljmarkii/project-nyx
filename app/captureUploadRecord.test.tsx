@@ -33,7 +33,11 @@ const mockUpsert = jest.fn(async () => ({ error: null }));
 const mockRunAsync = jest.fn(async () => ({ changes: 1 }));
 jest.mock('../lib/supabase', () => ({
   supabase: {
-    from: jest.fn(() => ({ insert: jest.fn(async () => ({ error: null })), upsert: mockUpsert })),
+    from: jest.fn(() => ({
+      insert: jest.fn(async () => ({ error: null })),
+      upsert: mockUpsert,
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+    })),
     functions: { invoke: jest.fn() },
   },
 }));
@@ -45,6 +49,8 @@ jest.mock('../lib/storage', () => ({
 }));
 jest.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
+let mockOnline = true;
+jest.mock('../hooks/useIsOnline', () => ({ useIsOnline: () => mockOnline }));
 jest.mock('../store/aiConsentStore', () => ({
   consentDoorState: jest.fn(),
   saveAiConsent: jest.fn(),
@@ -69,6 +75,7 @@ beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
   (consentDoorState as jest.Mock).mockResolvedValue('proceed');
+  mockOnline = true;
   (ImagePicker.launchCameraAsync as jest.Mock)
     .mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///front.jpg', width: 1200, height: 1600 }] })
     .mockResolvedValueOnce({ canceled: false, assets: [{ uri: 'file:///ingredients.jpg', width: 1200, height: 1600 }] });
@@ -99,19 +106,16 @@ function cachedPhotoPath(table: string, index: number): unknown {
 async function saveFood(withIngredients: boolean) {
   const view = render(<FoodCaptureScreen />);
   await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
-  await waitFor(() => expect(view.getByText('Skip')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Read the label')).toBeTruthy());
   if (withIngredients) {
     // A later slot asks camera or library first; take the camera.
     jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
       buttons?.find((b) => b.text === 'Take photo')?.onPress?.();
     });
-    await act(async () => { fireEvent.press(view.getByText('Add ingredients photo')); });
-    await waitFor(() => expect(view.getByText('Add barcode photo')).toBeTruthy());
-  } else {
-    await act(async () => { fireEvent.press(view.getByText('Skip')); });
+    await act(async () => { fireEvent.press(view.getByTestId('capture-slot-ingredients')); });
+    await waitFor(() => expect(view.getByLabelText('Ingredients photo added. Replace it')).toBeTruthy());
   }
-  await act(async () => { fireEvent.press(view.getByText('Skip')); });
-  await act(async () => { fireEvent.press(view.getByText('Continue')); });
+  await act(async () => { fireEvent.press(view.getByText('Read the label')); });
   await waitFor(() => expect(view.getByPlaceholderText('e.g. Royal Canin')).toBeTruthy());
   fireEvent.changeText(view.getByPlaceholderText('e.g. Royal Canin'), 'Weruva');
   fireEvent.changeText(view.getByPlaceholderText('e.g. Gastrointestinal Adult'), 'Duck Stew');
@@ -177,11 +181,10 @@ describe('food capture: a late upload is waited for, not dropped', () => {
     });
     const view = render(<FoodCaptureScreen />);
     await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
-    await waitFor(() => expect(view.getByText('Add ingredients photo')).toBeTruthy());
-    await act(async () => { fireEvent.press(view.getByText('Add ingredients photo')); });
-    await waitFor(() => expect(view.getByText('Add barcode photo')).toBeTruthy());
-    await act(async () => { fireEvent.press(view.getByText('Skip')); });
-    await act(async () => { fireEvent.press(view.getByText('Continue')); });
+    await waitFor(() => expect(view.getByTestId('capture-slot-ingredients')).toBeTruthy());
+    await act(async () => { fireEvent.press(view.getByTestId('capture-slot-ingredients')); });
+    await waitFor(() => expect(view.getByLabelText('Ingredients photo added. Replace it')).toBeTruthy());
+    await act(async () => { fireEvent.press(view.getByText('Read the label')); });
     // The ingredients upload has failed; the front has not settled. No form yet.
     expect(uploadMock).toHaveBeenCalledTimes(2);
     expect(view.queryByPlaceholderText('e.g. Royal Canin')).toBeNull();
@@ -194,6 +197,74 @@ describe('food capture: a late upload is waited for, not dropped', () => {
     const paths = savedRow('food_items').photo_paths as string[];
     expect(paths).toHaveLength(1);
     expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+  });
+});
+
+// CUL-1910: the record says AI read only when a read landed. Before it, a photo alone
+// was enough, so a food typed in before any read ran (P8's offline path, or the camera
+// refused mid-flow) was stored as 'completed' / 'ai_extracted'.
+describe('food capture: what the commit says about the read', () => {
+  it('offline, typed in from the photos step: no read ran, so nothing claims one', async () => {
+    mockOnline = false;
+    const view = render(<FoodCaptureScreen />);
+    await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
+    await waitFor(() => expect(view.getByTestId('capture-offline')).toBeTruthy());
+    // The read cannot start: its button is disabled and says why (C-7).
+    expect(view.getByLabelText('Read the label · needs a connection').props.accessibilityState).toMatchObject({ disabled: true });
+    await act(async () => { fireEvent.press(view.getByText('Type it in now')); });
+    fireEvent.changeText(view.getByPlaceholderText('e.g. Royal Canin'), 'Weruva');
+    fireEvent.changeText(view.getByPlaceholderText('e.g. Gastrointestinal Adult'), 'Duck Stew');
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    await waitFor(() => expect(mockUpsert).toHaveBeenCalled());
+    const row = savedRow('food_items');
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(row.source).toBe('user');
+    expect(row.ai_extraction_status).toBe('manual');
+    expect(row.photo_paths).toEqual([]);
+  });
+
+  it('a read that was asked for and failed is recorded as failed, never as read', async () => {
+    uploadMock.mockResolvedValue(undefined);
+    await saveFood(false);
+    const row = savedRow('food_items');
+    expect(row.source).toBe('user');
+    expect(row.ai_extraction_status).toBe('failed');
+  });
+
+  it('a read missing its brand sends Looks right to the form, never a silent no-op', async () => {
+    uploadMock.mockResolvedValue(undefined);
+    invokeMock.mockResolvedValue({ data: { extraction: { brand: null, product_name: 'Duck Stew', format: 'wet' } }, error: null });
+    const view = render(<FoodCaptureScreen />);
+    await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
+    await act(async () => { fireEvent.press(view.getByText('Read the label')); });
+    await waitFor(() => expect(view.getByText('Looks right')).toBeTruthy());
+    await act(async () => { fireEvent.press(view.getByText('Looks right')); });
+    expect(view.getByPlaceholderText('e.g. Royal Canin')).toBeTruthy();
+    expect(mockUpsert).not.toHaveBeenCalled();
+  });
+
+  it('a read that landed and was confirmed is recorded as the AI read', async () => {
+    uploadMock.mockResolvedValue(undefined);
+    invokeMock.mockResolvedValue({
+      data: { extraction: { brand: 'Weruva', product_name: 'Duck Stew', format: 'wet', primary_protein: 'duck', proteins: ['duck'] } },
+      error: null,
+    });
+    const view = render(<FoodCaptureScreen />);
+    await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
+    await act(async () => { fireEvent.press(view.getByText('Read the label')); });
+    await waitFor(() => expect(view.getByText('Looks right')).toBeTruthy());
+    // P4: every field the read produced is shown, the format included.
+    expect(view.getByLabelText('Brand, Weruva')).toBeTruthy();
+    expect(view.getByLabelText('Product, Duck Stew')).toBeTruthy();
+    expect(view.getByLabelText('Format, Wet / canned')).toBeTruthy();
+    await act(async () => { fireEvent.press(view.getByText('Looks right')); });
+    await waitFor(() => expect(mockUpsert).toHaveBeenCalled());
+    const row = savedRow('food_items');
+    expect(row.source).toBe('ai_extracted');
+    expect(row.ai_extraction_status).toBe('completed');
+    // P10: the library beat names the food it saved.
+    expect(view.getByText('Weruva · Duck Stew')).toBeTruthy();
   });
 });
 

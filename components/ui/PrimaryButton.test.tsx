@@ -106,4 +106,28 @@ describe('PrimaryButton', () => {
     );
     expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe(theme.colorBorder);
   });
+
+  // The icon slot (CUL-1910): the glyph takes the label's colour on every variant, and
+  // the disabled grey with it, so an icon can never sit a different colour from its label.
+  it('tints its icon with the label colour, and greys it with the label when disabled', () => {
+    const seen: (string | undefined)[] = [];
+    const Glyph = ({ color }: { color?: string }) => {
+      seen.push(color);
+      return null;
+    };
+    const { rerender } = render(<PrimaryButton label="Take a photo" onPress={() => {}} icon={Glyph} />);
+    expect(seen.pop()).toBe(theme.colorTextOnDark);
+    rerender(<PrimaryButton label="Take a photo" onPress={() => {}} icon={Glyph} variant="secondary" />);
+    expect(seen.pop()).toBe(theme.colorTextSecondary);
+    rerender(<PrimaryButton label="Take a photo" onPress={() => {}} icon={Glyph} disabled />);
+    expect(seen.pop()).toBe(theme.colorTextTertiary);
+  });
+
+  it('lays the icon and label out in a row only when an icon is passed', () => {
+    const Glyph = () => null;
+    const { getByTestId, rerender } = render(<PrimaryButton label="Go" onPress={() => {}} testID="btn" />);
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).flexDirection).toBeUndefined();
+    rerender(<PrimaryButton label="Go" onPress={() => {}} icon={Glyph} testID="btn" />);
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).flexDirection).toBe('row');
+  });
 });

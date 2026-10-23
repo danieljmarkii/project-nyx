@@ -1,3 +1,4 @@
+import { ComponentType } from 'react';
 import { TouchableOpacity, ViewStyle, StyleSheet, ActivityIndicator } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
@@ -15,6 +16,12 @@ import { ThemedText } from './ThemedText';
 // constants/theme.contrast.test.ts).
 type Variant = 'primary' | 'secondary' | 'destructive' | 'destructiveFilled' | 'accent';
 
+// The icon slot (CUL-1910): a glyph ahead of the label, tinted by the button so it can
+// never drift from the label's colour on any variant or in the disabled state. Takes a
+// lucide component, not an element, for that reason.
+export type ButtonIcon = ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
+export const BUTTON_ICON_SIZE = 20;
+
 interface Props {
   label: string;
   onPress: () => void;
@@ -24,12 +31,22 @@ interface Props {
   // greying out — while `disabled` is the inert/greyed state.
   loading?: boolean;
   variant?: Variant;
+  icon?: ButtonIcon;
   style?: ViewStyle;
   testID?: string;
 }
 
 // Spinner tint tracks the label colour per variant so the working state reads
 // on the same surface the resting label did.
+// The resting label colour per variant; the icon slot reads it too.
+const LABEL_COLOR: Record<Variant, string> = {
+  primary: theme.colorTextOnDark,
+  secondary: theme.colorTextSecondary,
+  destructive: theme.colorDestructive,
+  destructiveFilled: theme.colorTextOnDark,
+  accent: theme.colorNeutralDark,
+};
+
 const SPINNER_COLOR: Record<Variant, string> = {
   primary: theme.colorTextOnDark,
   secondary: theme.colorTextSecondary,
@@ -45,6 +62,7 @@ export function PrimaryButton({
   disabled = false,
   loading = false,
   variant = 'primary',
+  icon: Icon,
   style,
   testID,
 }: Props) {
@@ -56,6 +74,7 @@ export function PrimaryButton({
     <TouchableOpacity
       style={[
         styles.btn,
+        Icon ? styles.btnWithIcon : null,
         variant === 'secondary' && styles.btnSecondary,
         variant === 'destructive' && styles.btnDestructive,
         variant === 'destructiveFilled' && styles.btnDestructiveFilled,
@@ -79,17 +98,26 @@ export function PrimaryButton({
           testID={testID ? `${testID}-spinner` : undefined}
         />
       ) : (
-        <ThemedText
-          style={[
-            styles.label,
-            variant === 'secondary' && styles.labelSecondary,
-            variant === 'destructive' && styles.labelDestructive,
-            variant === 'accent' && styles.labelAccent,
-            disabled && styles.labelDisabled,
-          ]}
-        >
-          {label}
-        </ThemedText>
+        <>
+          {Icon ? (
+            <Icon
+              size={BUTTON_ICON_SIZE}
+              color={disabled ? theme.colorTextTertiary : LABEL_COLOR[variant]}
+              strokeWidth={2}
+            />
+          ) : null}
+          <ThemedText
+            style={[
+              styles.label,
+              variant === 'secondary' && styles.labelSecondary,
+              variant === 'destructive' && styles.labelDestructive,
+              variant === 'accent' && styles.labelAccent,
+              disabled && styles.labelDisabled,
+            ]}
+          >
+            {label}
+          </ThemedText>
+        </>
       )}
     </TouchableOpacity>
   );
@@ -102,6 +130,10 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  btnWithIcon: {
+    flexDirection: 'row',
+    gap: theme.space1,
   },
   btnSecondary: {
     backgroundColor: 'transparent',
