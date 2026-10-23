@@ -17,7 +17,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   writeAnalysisDismissal,
@@ -77,6 +76,8 @@ import {
   BLOOD_OPTIONS,
 } from './vomitFields';
 import { ThemedText } from '../ui/ThemedText';
+import { PrimaryButton } from '../ui/PrimaryButton';
+import { Tick } from '../surfaces/waits/Tick';
 import { intakeCorrectionDisplay, type IntakeCorrectionColumns } from '../../lib/readCorrection';
 import {
   IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
@@ -721,17 +722,7 @@ export function VomitAnalysisSection(
       >
         <View style={styles.failedBox}>
           <ThemedText style={styles.failedText}>{INCIDENT_READ_FAILED_LINE}</ThemedText>
-          <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={handleRetry}
-            disabled={retrying}
-            hitSlop={8}
-            activeOpacity={0.8}
-          >
-            {retrying
-              ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-              : <ThemedText style={styles.retryBtnText}>Try again</ThemedText>}
-          </TouchableOpacity>
+          <PrimaryButton label="Try again" onPress={handleRetry} loading={retrying} />
         </View>
       </IncidentReadSection>
     );
@@ -1072,7 +1063,7 @@ export function VomitAnalysisSection(
         >
           {retrying || reading ? (
             <>
-              <WhorlSpinner size="sm" ground="day" />
+              <Tick working />
               <ThemedText style={styles.rerunReadingText}>
                 {hasPhoto ? INCIDENT_RE_READING_PHOTO_LINE : INCIDENT_RE_READING_LINE}
               </ThemedText>
@@ -1202,7 +1193,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
-    marginTop: 6,
+    marginTop: theme.space0_75,
   },
   rerunRow: {
     paddingVertical: theme.space1,
@@ -1210,7 +1201,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     // Pinned explicitly because the 44pt floor depends on it and the slop that used to
     // reach it is gone (C-5).
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   // The in-place re-read (CUL-827): the spinner and its line side by side, in the row's
   // own box so the 44pt floor above still holds.
@@ -1237,7 +1228,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
     marginTop: theme.space1,
-    lineHeight: 15,
+    lineHeight: theme.lineHeightXS,
   },
   failedBox: {
     backgroundColor: theme.colorSurfaceSubtle,
@@ -1265,19 +1256,5 @@ const styles = StyleSheet.create({
   failedText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-  },
-  retryBtn: {
-    marginTop: 4,
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusSmall,
-    paddingVertical: theme.space1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  retryBtnText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
-    fontWeight: theme.fontWeightMedium,
   },
 });

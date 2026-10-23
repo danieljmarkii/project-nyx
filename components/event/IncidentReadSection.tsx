@@ -24,7 +24,7 @@ import { useLayoutEffect, type ReactNode } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type IncidentArrival, type StageKind } from '../motion/arrivalMotion';
-import { ThemedText } from '../ui/ThemedText';
+import { SectionLabel } from '../ui/SectionLabel';
 import { IncidentReadPending } from './IncidentReadCard';
 import { type ReadLandingAnnouncer } from './useReadLandingAnnouncement';
 
@@ -110,9 +110,7 @@ export function IncidentReadSection({
     <View testID="incident-read-section" style={styles.section}>
       {/* A heading, so VoiceOver's rotor can jump to the read (CUL-1275) — the record
           screen is long, and the read is what an owner comes back to it for. */}
-      <ThemedText style={styles.sectionLabel} accessibilityRole="header">
-        {INCIDENT_READ_SECTION_LABEL}
-      </ThemedText>
+      <SectionLabel label={INCIDENT_READ_SECTION_LABEL} header style={styles.sectionLabel} />
       {inFlight ? (
         <Animated.View
           testID="incident-read-ghost"
@@ -134,10 +132,6 @@ const styles = StyleSheet.create({
     marginTop: theme.space3,
   },
   sectionLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    letterSpacing: theme.trackingWidest,
     marginBottom: theme.space1,
   },
   // `overflow: hidden` holds for the WHOLE flight, not just while a height is held:

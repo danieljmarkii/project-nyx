@@ -45,6 +45,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { observationStripLine } from './observationStrip';
 import { RAIL_WIDTH } from './IncidentReadCard';
+import { TICK_MOTION } from '../surfaces/waits/Tick';
 
 export const OBSERVATIONS_HEADING = "What's visible";
 /** The same control word the Signal fold uses — one vocabulary for one gesture. */
@@ -243,7 +244,7 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 1,
     paddingRight: theme.space2,
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   cellLabel: {
     fontSize: theme.textXS,
@@ -255,7 +256,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: theme.space0_75,
   },
   cellValue: {
     fontSize: theme.textSM,
@@ -276,18 +277,18 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
   },
   descWrap: {
-    marginTop: 6,
+    marginTop: theme.space0_75,
     gap: theme.spaceMicro,
   },
   description: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 19,
+    lineHeight: theme.lineHeightSMLoose,
   },
   editedLine: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    marginTop: 6,
+    marginTop: theme.space0_75,
   },
   foldControlRow: {
     alignSelf: 'flex-start',
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
     marginTop: theme.space1,
     // The tap target, in the box rather than in a slop that would reach into the control
     // below it. Pinned explicitly because the floor depends on it (C-5).
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   foldControl: {
     fontSize: theme.textXS,
@@ -312,14 +313,14 @@ const styles = StyleSheet.create({
     // The floor an adjacent-control geometry depends on is pinned explicitly (C-5); the
     // strip is the only control in its row, so nothing faces it, but the tap target must
     // still clear 44pt for a thumb at 2am.
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   stripRail: {
     width: RAIL_WIDTH,
     alignSelf: 'stretch',
     marginRight: theme.space1,
     marginVertical: theme.space1,
-    borderRadius: 2,
+    borderRadius: TICK_MOTION.radius,
     backgroundColor: theme.colorBorderStrong,
   },
   // Pinned halves: `flexShrink: 0` PLUS `maxWidth: '100%'` — without the max-width a

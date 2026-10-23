@@ -20,7 +20,7 @@
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
-import { Tick } from '../surfaces/waits/Tick';
+import { TICK_MOTION, Tick } from '../surfaces/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
 import { type TierTone } from '../../lib/incidentTierWords';
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     padding: theme.space2,
-    gap: 6,
+    gap: theme.space0_75,
   },
   bodyRailOut: {
     marginLeft: RAIL_WIDTH,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
   },
   patternDoor: {
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
     alignSelf: 'flex-start',
   },
@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   disclaimer: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    lineHeight: 15,
+    lineHeight: theme.lineHeightXS,
   },
   hideRow: {
     alignSelf: 'flex-start',
@@ -456,12 +456,12 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusSmall,
     padding: theme.space2,
-    minHeight: 48,
+    minHeight: theme.space5,
   },
   pendingTick: {
     width: RAIL_WIDTH,
     height: RAIL_TICK_HEIGHT,
-    borderRadius: 2,
+    borderRadius: TICK_MOTION.radius,
     backgroundColor: theme.colorBorderStrong,
   },
   pendingText: {

@@ -7,7 +7,7 @@ import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
-import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
+import { Tick } from '../../components/surfaces/waits/Tick';
 import { EventSilhouette } from '../../components/surfaces/waits/EventSilhouette';
 import * as ImagePicker from 'expo-image-picker';
 import { colorRoles, theme } from '../../constants/theme';
@@ -57,7 +57,7 @@ import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSectio
 import { CallAnswers } from '../../components/event/CallAnswers';
 import { IntakeQuestion } from '../../components/event/IntakeQuestion';
 import { destructiveConfirm } from '../../lib/haptics';
-import { EmptyState, Header, PhotoViewer } from '../../components/ui';
+import { Badge, EmptyState, Header, PhotoViewer, PrimaryButton, SectionLabel } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { isStoolEvent, hasPerIncidentRead } from '../../constants/eventTypes';
 
@@ -146,7 +146,7 @@ function ComboLinkRow({
       <ThemedText style={styles.comboLinkText} numberOfLines={1}>{label}</ThemedText>
       {inDoubt ? (
         <View style={styles.inDoubtTag}>
-          <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
+          <Badge label={DOSE_IN_DOUBT_TAG} variant="symptom" />
         </View>
       ) : null}
       <ChevronRight size={16} color={colorRoles.action.onLight} strokeWidth={2} />
@@ -929,7 +929,7 @@ export default function EventDetailScreen() {
             disabled={uploadingPhoto}
           >
             {uploadingPhoto ? (
-              <WhorlSpinner size="sm" ground="day" />
+              <Tick working />
             ) : (
               <>
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
@@ -1054,7 +1054,7 @@ export default function EventDetailScreen() {
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
             <View style={styles.section}>
-              <ThemedText style={styles.sectionLabel}>FOOD</ThemedText>
+              <SectionLabel label="FOOD" header style={styles.sectionLabel} />
               {foodLabel.product ? <ThemedText style={styles.foodProduct}>{foodLabel.product}</ThemedText> : null}
               {/* B-568 — BRAND · FORMAT, the same meta shape the Foods tab and the
                   picker tile use, so the detail screen names a food the way the library
@@ -1072,7 +1072,7 @@ export default function EventDetailScreen() {
               names them. To change a food or take one out, Edit (spec §7.1). */}
           {bowl ? (
             <View style={styles.section} accessible accessibilityLabel={`Mixed bowl. ${bowlDetailLine(bowl)}`}>
-              <ThemedText style={styles.sectionLabel}>MIXED BOWL</ThemedText>
+              <SectionLabel label="MIXED BOWL" header style={styles.sectionLabel} />
               <ThemedText style={styles.foodProduct}>{bowlDetailLine(bowl)}</ThemedText>
             </View>
           ) : null}
@@ -1096,7 +1096,7 @@ export default function EventDetailScreen() {
 
           {isMeal ? (
             <View style={styles.section}>
-              <ThemedText style={styles.sectionLabel}>INTAKE</ThemedText>
+              <SectionLabel label="INTAKE" header style={styles.sectionLabel} />
               <IntakeChipRow
                 value={intakeRating}
                 onChange={handleIntakeChange}
@@ -1155,7 +1155,7 @@ export default function EventDetailScreen() {
           {isMedication && dose ? (
             <>
               <View style={styles.section}>
-                <ThemedText style={styles.sectionLabel}>MEDICATION</ThemedText>
+                <SectionLabel label="MEDICATION" header style={styles.sectionLabel} />
                 {/* The drug name/strength links to the drug-library screen where a
                     correction (fixing a mis-extracted strength) fixes every dose of
                     that drug at once — the only path to that edit from History. Only
@@ -1190,7 +1190,7 @@ export default function EventDetailScreen() {
                 />
               </View>
               <View style={styles.section}>
-                <ThemedText style={styles.sectionLabel}>ADHERENCE</ThemedText>
+                <SectionLabel label="ADHERENCE" header style={styles.sectionLabel} />
                 <AdherenceChipRow
                   value={adherence}
                   onChange={handleAdherenceChange}
@@ -1221,7 +1221,7 @@ export default function EventDetailScreen() {
                   the chips start empty when nothing was recorded, and the owner can
                   set or clear it any time. Descriptive, never a safety verdict. */}
               <View style={styles.section}>
-                <ThemedText style={styles.sectionLabel}>HOW GIVEN</ThemedText>
+                <SectionLabel label="HOW GIVEN" header style={styles.sectionLabel} />
                 <VehicleChipRow
                   value={howGiven}
                   onChange={handleVehicleChange}
@@ -1243,7 +1243,7 @@ export default function EventDetailScreen() {
 
           {event.notes ? (
             <View style={styles.section}>
-              <ThemedText style={styles.sectionLabel}>NOTES</ThemedText>
+              <SectionLabel label="NOTES" header style={styles.sectionLabel} />
               <ThemedText style={styles.notes}>{event.notes}</ThemedText>
             </View>
           ) : null}
@@ -1256,17 +1256,13 @@ export default function EventDetailScreen() {
           doesn't justify a ⋯ menu). Spacing + text-only treatment keep the
           destructive action from reading as a peer of Edit. */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.editButton} onPress={handleEdit} activeOpacity={0.85}>
-          <ThemedText style={styles.editButtonText}>Edit</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.removeButton}
+        <PrimaryButton label="Edit" onPress={handleEdit} />
+        <PrimaryButton
+          label="Remove"
+          variant="destructive"
           onPress={() => { void handleDelete(); }}
-          activeOpacity={0.7}
-          hitSlop={8}
-        >
-          <ThemedText style={styles.removeButtonText}>Remove</ThemedText>
-        </TouchableOpacity>
+          style={styles.removeButton}
+        />
       </View>
 
       {/* Fullscreen photo viewer */}
@@ -1310,7 +1306,7 @@ const styles = StyleSheet.create({
     gap: theme.space1,
   },
   heroEmptyText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     fontWeight: theme.fontWeightMedium,
   },
@@ -1350,33 +1346,29 @@ const styles = StyleSheet.create({
   timeRow: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    marginTop: 4,
+    marginTop: theme.space0_5,
   },
   exifAttribution: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   // Quiet and under the time — the record's subject, not its headline. The date stays
   // the biggest thing on the block.
   recordOwner: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-    marginTop: 4,
+    marginTop: theme.space0_5,
   },
   confidenceNote: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   section: {
     marginTop: theme.space3,
   },
   sectionLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    letterSpacing: theme.trackingWidest,
     marginBottom: theme.space1,
   },
   foodProduct: {
@@ -1387,7 +1379,7 @@ const styles = StyleSheet.create({
   foodBrand: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   // The drug-name row as a link to the drug-library screen. Row layout so the
   // chevron sits at the trailing edge; minHeight clears the 44pt tap-target floor
@@ -1396,7 +1388,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   // The combo cross-link (B-156 PR B4). Accent text + chevron so it reads as a
   // navigation affordance to the paired event. alignSelf flex-start so the tap target
@@ -1409,7 +1401,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     maxWidth: '100%',
     marginTop: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   comboLinkText: {
     fontSize: theme.textMD,
@@ -1417,22 +1409,11 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
   },
-  // CUL-382 — the History row's in-doubt pill (`EventRow` inDoubtTag), with the rose INK
-  // for its text: the bright rose is a glyph tint, and this is text on the light rose
-  // ground (C-1). It never shrinks; the drug name in the label yields first.
+  // CUL-382 — the in-doubt pill, on the shared Badge's symptom variant since CUL-1912 (it
+  // carries the rose INK on the light rose, C-1). It never shrinks; the drug name in the
+  // label yields first.
   inDoubtTag: {
     flexShrink: 0,
-    paddingHorizontal: theme.space1,
-    paddingVertical: theme.spaceMicro,
-    borderRadius: theme.radiusFull,
-    borderWidth: 1,
-    borderColor: theme.colorEventSymptom,
-    backgroundColor: theme.colorEventSymptomLight,
-  },
-  inDoubtTagText: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorEventSymptomInk,
   },
   // The retroactive combo entry (B-325). Accent text, ≥44pt tap target (the 3am-test
   // floor) via minHeight; a top hairline so it reads as a distinct, optional add-on beneath
@@ -1443,7 +1424,7 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colorBorder,
     marginTop: theme.space2,
     paddingTop: theme.space2,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   addMedText: {
@@ -1492,26 +1473,8 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colorBorder,
     backgroundColor: theme.colorSurface,
   },
-  editButton: {
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusSmall,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  editButtonText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextOnDark,
-  },
   removeButton: {
     marginTop: theme.space1,
-    paddingVertical: theme.space1,
-    alignItems: 'center',
-  },
-  removeButtonText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorDestructive,
   },
   loadingState: {
     flex: 1,

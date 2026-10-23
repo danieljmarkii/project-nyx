@@ -71,14 +71,14 @@ const MOTION_DIR = 'components/motion/';
  */
 const CEILINGS = {
   colour: 8,
-  fontSize: 71,
-  lineHeight: 74,
+  fontSize: 70,
+  lineHeight: 70,
   letterSpacing: 9,
-  spacing: 369,
-  radius: 81,
+  spacing: 352,
+  radius: 79,
   duration: 92,
-  whorlSpinner: 48,
-  hitTarget: 198, // added by CUL-2144 at 199, 2026-10-23; 198 after CUL-658 moved IntakeFirstMealSheet's row
+  whorlSpinner: 43,
+  hitTarget: 184, // added by CUL-2144 at 199, 2026-10-23; 198 after CUL-658 moved IntakeFirstMealSheet's row; 184 after CUL-1912 moved the event detail screen onto theme.hitTarget
 } as const;
 
 type Category = keyof typeof CEILINGS;

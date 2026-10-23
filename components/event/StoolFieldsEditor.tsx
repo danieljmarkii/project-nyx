@@ -5,9 +5,8 @@
 // note. Emits the full draft on Save; the parent decides whether anything
 // actually changed and owns the write + provenance.
 import { useState } from 'react';
-import { View, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { ChipGroup } from '../ui/ChipGroup';
 import { MultiChipGroup } from '../ui/MultiChipGroup';
 import { StoolEditableFields } from '../../lib/analysis';
@@ -22,6 +21,8 @@ import {
   TRISTATE_OPTIONS,
 } from './stoolFields';
 import { ThemedText } from '../ui/ThemedText';
+import { PrimaryButton } from '../ui/PrimaryButton';
+import { TextField } from '../ui/TextField';
 
 interface Props {
   initial: StoolEditableFields;
@@ -117,49 +118,29 @@ export function StoolFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
 
       {/* The note is only meaningful when foreign material is present. */}
       {draft.foreign_material_present === 'yes' ? (
-        <View style={styles.field}>
-          <ThemedText style={styles.fieldLabel}>What was it?</ThemedText>
-          <TextInput
-            style={styles.textInput}
-            placeholder="e.g. a piece of string"
-            placeholderTextColor={theme.colorTextTertiary}
-            value={draft.foreign_material_note ?? ''}
-            onChangeText={(t) => set('foreign_material_note', t)}
-            maxLength={140}
-          />
-        </View>
+        <TextField
+          label="What was it?"
+          placeholder="e.g. a piece of string"
+          value={draft.foreign_material_note ?? ''}
+          onChangeText={(t) => set('foreign_material_note', t)}
+          maxLength={140}
+        />
       ) : null}
 
-      <View style={styles.field}>
-        <ThemedText style={styles.fieldLabel}>Description</ThemedText>
-        <TextInput
-          style={[styles.textInput, styles.textArea]}
-          placeholder="What it looked like (optional)"
-          placeholderTextColor={theme.colorTextTertiary}
-          value={draft.description ?? ''}
-          onChangeText={(t) => set('description', t)}
-          multiline
-          maxLength={300}
-          textAlignVertical="top"
-        />
-      </View>
+      <TextField
+        label="Description"
+        placeholder="What it looked like (optional)"
+        value={draft.description ?? ''}
+        onChangeText={(t) => set('description', t)}
+        multiline
+        maxLength={300}
+      />
 
+      {/* Cancel and Save on the shared button (CUL-1912). Save's wait is the button's own
+          loading state; Cancel is unavailable while it runs, as before. */}
       <View style={styles.actions}>
-        <TouchableOpacity onPress={onCancel} hitSlop={12} disabled={saving} style={styles.cancelBtn}>
-          <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => onSave(draft)}
-          disabled={saving}
-          activeOpacity={0.85}
-          style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-        >
-          {saving ? (
-            <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-          ) : (
-            <ThemedText style={styles.saveText}>Save</ThemedText>
-          )}
-        </TouchableOpacity>
+        <PrimaryButton label="Cancel" variant="secondary" onPress={onCancel} disabled={saving} style={styles.action} />
+        <PrimaryButton label="Save" onPress={() => onSave(draft)} loading={saving} style={styles.action} />
       </View>
     </View>
   );
@@ -198,62 +179,19 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
   },
   field: {
-    gap: 6,
+    gap: theme.space0_75,
   },
   fieldLabel: {
     fontSize: theme.textSM,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextSecondary,
   },
-  textInput: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space1,
-    minHeight: 44,
-  },
-  textArea: {
-    minHeight: 72,
-    maxHeight: 140,
-  },
   actions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: theme.space2,
+    gap: theme.space1_5,
     marginTop: theme.space1,
   },
-  cancelBtn: {
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space1,
-  },
-  cancelText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-    fontWeight: theme.fontWeightMedium,
-  },
-  saveBtn: {
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusSmall,
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space3,
-    minHeight: 44,
-    minWidth: 96,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveBtnDisabled: {
-    opacity: 0.5,
-  },
-  saveText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextOnDark,
+  action: {
+    flex: 1,
   },
 });
