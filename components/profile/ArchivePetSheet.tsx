@@ -77,13 +77,11 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
             loading={archiving}
             style={styles.archiveBtn}
           />
-          <PrimaryButton
-            label="Cancel"
-            variant="plain"
-            onPress={onClose}
-            disabled={archiving}
-            style={styles.cancelBtn}
-          />
+          {/* Withdrawn while the archive is in flight, as the scrim is (C-7: a dimmed
+              Cancel would say it exists and give no reason). */}
+          {!archiving && (
+            <PrimaryButton label="Cancel" variant="plain" onPress={onClose} style={styles.cancelBtn} />
+          )}
         </View>
       </View>
     </Modal>

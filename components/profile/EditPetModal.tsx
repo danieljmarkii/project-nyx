@@ -52,6 +52,11 @@ function parseDobLocal(dob: string | null): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+/** Round P9: the profile weight is not a weigh-in. */
+export function profileWeightNote(petName: string): string {
+  return `This is ${petName}’s profile weight. To track a change over time, log a weigh-in.`;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -61,6 +66,9 @@ export function EditPetModal({ visible, onClose }: Props) {
   const { activePet, updatePet } = usePetStore();
 
   const [name, setName] = useState('');
+  // The name the form was seeded with: the pet the note under the weight names, so a
+  // rename being typed, or a pet flip under the open form, never changes whose it says.
+  const [seededName, setSeededName] = useState('');
   const [species, setSpecies] = useState<Species>('dog');
   const [breed, setBreed] = useState('');
   const [isOtherBreed, setIsOtherBreed] = useState(false);
@@ -91,6 +99,7 @@ export function EditPetModal({ visible, onClose }: Props) {
     if (visible && activePet) {
       setEditingPetId(activePet.id);
       setName(activePet.name);
+      setSeededName(activePet.name);
       setSpecies(activePet.species);
       const { breed: b, isOther } = resolveBreedFieldState(activePet.breed, activePet.species);
       setBreed(b);
@@ -225,6 +234,7 @@ export function EditPetModal({ visible, onClose }: Props) {
                 value={species}
                 onChange={(next) => { if (next) handleSpeciesChange(next as Species); }}
                 allowDeselect={false}
+                variant="default"
                 accessibilityLabel="Species"
               />
             </View>
@@ -277,6 +287,7 @@ export function EditPetModal({ visible, onClose }: Props) {
                 value={sex}
                 onChange={(next) => { if (next) setSex(next as Sex); }}
                 allowDeselect={false}
+                variant="default"
                 accessibilityLabel="Sex"
               />
             </View>
@@ -312,14 +323,20 @@ export function EditPetModal({ visible, onClose }: Props) {
               )}
             </View>
 
-            <TextField
-              label="Weight (lbs)"
-              value={weightStr}
-              onChangeText={setWeightStr}
-              placeholder="e.g. 28"
-              keyboardType="decimal-pad"
-              returnKeyType="done"
-            />
+            <View>
+              <TextField
+                label="Weight (lbs)"
+                value={weightStr}
+                onChangeText={setWeightStr}
+                placeholder="e.g. 28"
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+              />
+              {/* Round P9 — editing this number writes no weigh-in, so the Weight card's
+                  trend never sees it; an owner correcting it here should not believe
+                  they logged one. Named for the pet the form was seeded for. */}
+              <ThemedText variant="caption" style={styles.note}>{profileWeightNote(seededName)}</ThemedText>
+            </View>
 
           </ScrollView>
         </KeyboardAvoidingView>

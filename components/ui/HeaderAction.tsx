@@ -3,6 +3,9 @@ import { colorRoles, theme } from '../../constants/theme';
 import { Tick } from '../surfaces/waits/Tick';
 import { ThemedText } from './ThemedText';
 
+/** The largest text scale a header action follows (the iOS nav bar's own ceiling, roughly). */
+export const HEADER_ACTION_MAX_SCALE = 1.3;
+
 interface Props {
   label: string;
   onPress: () => void;
@@ -46,6 +49,9 @@ export function HeaderAction({
       ) : (
         <ThemedText
           variant={tone === 'commit' ? 'bodyStrong' : 'body'}
+          // Bar chrome holds its size as the system's own bars do: a header side is a
+          // fixed width, and at AX5 an unscaled-cap label collides with the title.
+          maxFontSizeMultiplier={HEADER_ACTION_MAX_SCALE}
           style={disabled ? styles.disabled : tone === 'commit' ? styles.commit : styles.quiet}
         >
           {label}

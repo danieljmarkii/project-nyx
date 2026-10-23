@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
-  Alert, Image, ScrollView, StyleSheet,
+  Alert, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
   type LayoutChangeEvent,
 } from 'react-native';
@@ -15,6 +15,9 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
+import { DoorRow } from '../../components/ui/DoorRow';
+import { IdentityRow } from '../../components/ui/IdentityRow';
+import { PHOTO_SLOT_SIZE, PhotoSlot } from '../../components/ui/PhotoSlot';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { TextLink } from '../../components/ui/TextLink';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -85,7 +88,6 @@ import { ListReadFailed, listReadFailedLine } from '../../components/profile/Lis
 import {
   settlePetRead, updatePetRows, viewForPet, type PetScopedRead,
 } from '../../lib/petScopedRead';
-
 
 interface RegimenDisplay extends Regimen {
   // null = the start date did not parse, so the course's length is unknown (B-441).
@@ -199,14 +201,6 @@ function formatSex(sex: string): string {
   if (sex === 'female') return 'Female';
   return '—';
 }
-
-function formatWeightLbs(kg: number | null): string {
-  if (kg == null) return '—';
-  return `${Math.round(kg * 2.20462 * 10) / 10} lbs`;
-}
-
-// The hero photo: 112pt, no single token (round F5 draws it as a sum).
-const HERO_PHOTO_SIZE = theme.space6 + theme.space5;
 
 function statusLabel(status: string): string {
   return status === 'monitoring' ? 'Monitoring' : 'Active';
@@ -1027,17 +1021,6 @@ export default function ProfileScreen() {
     }
   }
 
-  function confirmResolveCondition(condition: Condition) {
-    Alert.alert(
-      'Mark as resolved',
-      `Mark "${condition.condition_name}" as resolved? It will still appear in vet reports for the relevant date range.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Mark resolved', onPress: () => handleResolveCondition(condition) },
-      ],
-    );
-  }
-
   function openAddMedication() {
     setEditingRegimen(undefined);
     setMedicationModalVisible(true);
@@ -1224,7 +1207,12 @@ export default function ProfileScreen() {
   const initials = activePet.name.slice(0, 2).toUpperCase();
   const speciesLabel =
     activePet.species.charAt(0).toUpperCase() + activePet.species.slice(1);
-  const subtitle = [speciesLabel, activePet.breed].filter(Boolean).join(' · ');
+  // Round P2 — one fact line. An unknown age or sex is left out rather than shown as "—".
+  const age = formatAge(activePet.date_of_birth, activePet.date_of_birth_precision);
+  const sex = formatSex(activePet.sex);
+  const factLine = [speciesLabel, activePet.breed, age === '—' ? null : age, sex === '—' ? null : sex]
+    .filter(Boolean)
+    .join(' · ');
 
   // The card's eleven states resolve in `lib/dietTrialCard` — including B-351
   // slice 4's standing protein note and target line, which are RE-SITED into the
@@ -1248,56 +1236,35 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* ── Pet header ── */}
-        <Card style={styles.headerCard}>
-          <TouchableOpacity
-            onPress={handlePickPhoto}
-            style={styles.photoWrapper}
-            activeOpacity={0.8}
-            disabled={photoUploading}
-          >
-            {photoUri ? (
-              <Image
-                key={heroPhoto.attempt}
-                source={{ uri: photoUri }}
-                style={styles.photo}
-                resizeMode="cover"
-                onError={heroPhoto.onError}
-              />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <ThemedText style={styles.photoInitials}>{initials}</ThemedText>
-              </View>
-            )}
-            {photoUploading && (
-              <View style={styles.photoOverlay}>
-                <Tick working={photoUploading} style={styles.photoTick} testID="photo-saving-tick" />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Off the record, not the link: a pet whose photo failed to load still
-              has one, and "Add photo" would say otherwise. */}
-          <TextLink
-            label={activePet.photo_path ? 'Change photo' : 'Add photo'}
-            variant="caption"
-            onPress={handlePickPhoto}
-            disabled={photoUploading}
-            style={styles.photoLink}
-          />
-
+        {/* ── The pet's identity (round P1, P2) — a row on the page's own ground: the
+            photo, which is itself the button that changes it, then the name and one
+            fact line. Age and sex join that line; weight is said once, with its date,
+            in the Weight card below. ── */}
+        <IdentityRow
+          leadingSize={PHOTO_SLOT_SIZE}
+          gutter={theme.space3}
+          leading={
+            <PhotoSlot
+              petName={activePet.name}
+              initials={initials}
+              photoUri={photoUri}
+              photoAttempt={heroPhoto.attempt}
+              onPhotoError={heroPhoto.onError}
+              hasPhoto={!!activePet.photo_path}
+              saving={photoUploading}
+              onPress={handlePickPhoto}
+            />
+          }
+        >
           {/* CUL-618 (R1 = a, R2 = a2) — the name IS the switcher.
               The tab bar shows this pet's face, and everywhere else in the app that
               face opens the switcher; here it navigated to a screen that had none,
               so on History and Foods the only visible pet control answered the wrong
-              question. The chevron attaches to the name that was ALREADY this page's
-              title rather than adding a header row: a row would put this pet's photo
-              on screen a third time (30pt row + 112pt card + 22pt tab), which is this
-              issue's own complaint one level down.
+              question. The chevron attaches to the name, this page's title, rather
+              than adding a header row.
 
-              Both branches share `nameRow`, so the 44pt floor and the card's rhythm
-              do not depend on how many pets the household has — a one-pet owner and a
-              two-pet owner see the same layout, differing only by the chevron. */}
+              Both branches share `nameRow`, so the 44pt floor does not depend on how
+              many pets the household has. */}
           {multiPet ? (
             <TouchableOpacity
               style={styles.nameRow}
@@ -1313,38 +1280,20 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ) : (
             <View style={styles.nameRow}>
-              <ThemedText style={styles.petName}>{activePet.name}</ThemedText>
+              <ThemedText style={styles.petName} accessibilityRole="header">{activePet.name}</ThemedText>
             </View>
           )}
-          {subtitle ? <ThemedText style={styles.petSubtitle}>{subtitle}</ThemedText> : null}
-
-          <PrimaryButton
+          {factLine ? <ThemedText variant="body" style={styles.factLine}>{factLine}</ThemedText> : null}
+          {/* The tick on the photo, named here (round §16); one loop, so no second tick. */}
+          {photoUploading ? (
+            <ThemedText variant="caption" style={styles.photoSavingText}>Saving the photo…</ThemedText>
+          ) : null}
+          <TextLink
             label="Edit profile"
-            variant="secondary"
+            accessibilityLabel={`Edit ${activePet.name}’s profile`}
             onPress={() => setEditModalVisible(true)}
-            style={styles.editBtn}
           />
-        </Card>
-
-        {/* ── Info chips ── */}
-        <Card noPadding style={styles.infoRow}>
-          <View style={styles.infoChip}>
-            <ThemedText style={styles.infoChipLabel}>Age</ThemedText>
-            <ThemedText style={styles.infoChipValue}>
-              {formatAge(activePet.date_of_birth, activePet.date_of_birth_precision)}
-            </ThemedText>
-          </View>
-          <View style={styles.infoChipDivider} />
-          <View style={styles.infoChip}>
-            <ThemedText style={styles.infoChipLabel}>Sex</ThemedText>
-            <ThemedText style={styles.infoChipValue}>{formatSex(activePet.sex)}</ThemedText>
-          </View>
-          <View style={styles.infoChipDivider} />
-          <View style={styles.infoChip}>
-            <ThemedText style={styles.infoChipLabel}>Weight</ThemedText>
-            <ThemedText style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</ThemedText>
-          </View>
-        </Card>
+        </IdentityRow>
 
         {/* ── Widget slot (B-407) — a quiet lookup line naming the pet's slot in
             the Home Screen "Edit Widget" picker, so a multi-pet household can bind
@@ -1364,6 +1313,22 @@ export default function ProfileScreen() {
             chip above. snapshotKg lets the card show the profile weight before any
             weigh-in is logged, so it never contradicts the Weight chip.
             CUL-753 anchor: the vet-visit rundown's weight tile lands here. ── */}
+        {/* ── A running trial's door (round P4) — under the pet's name, above Weight,
+            while a trial runs or is in its grace: for an owner in one, it is the reason
+            they open this tab. The row is the trial track's, unchanged. The start card
+            (no trial) and the unreadable card keep their place below. ── */}
+        {/* Not gated on `trialLoading`: every focus re-reads the trial, and a door at
+            the top that blinked out on each re-read would shove the whole page. It needs
+            a read answered for THIS pet (`trialDoor` is null otherwise, B-789), so it
+            only ever stands for the pet on screen. */}
+        {trialStatus !== 'unreadable' && trialDoor ? (
+          <TrialDoorRow
+            model={trialDoor}
+            style={styles.sectionGap}
+            onPress={() => router.push(trialScreenHref(activePet.id))}
+          />
+        ) : null}
+
         <WeightTrendCard
           petId={activePet.id}
           petName={activePet.name}
@@ -1375,7 +1340,7 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
-            <TextLink label="+ Add" accessibilityLabel="Add a condition" onPress={openAddCondition} />
+            <TextLink label="Add" accessibilityLabel="Add a condition" onPress={openAddCondition} />
           </View>
 
           {conditionsView.kind === 'loading' ? (
@@ -1392,52 +1357,29 @@ export default function ProfileScreen() {
               diagnosed with, like allergies or a sensitive stomach.
             </ThemedText>
           ) : (
-            conditionsView.rows.map((condition) => (
-              <View key={condition.id} style={styles.conditionRow}>
-                <Divider style={styles.conditionDivider} />
-                <View style={styles.conditionInner}>
-                  <View style={styles.conditionInfo}>
-                    <ThemedText style={styles.conditionName}>{condition.condition_name}</ThemedText>
-                    {diagnosedMonthLabel(condition.diagnosed_at) !== null && (
-                      <ThemedText style={styles.conditionDate}>
-                        Diagnosed {diagnosedMonthLabel(condition.diagnosed_at)}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.conditionRight}>
-                    <Badge
-                      label={statusLabel(condition.status)}
-                      variant={condition.status === 'monitoring' ? 'accent' : 'symptom'}
-                    />
-                    <View style={styles.conditionActions}>
-                      <TouchableOpacity
-                        style={styles.cardActionTouch}
-                        onPress={() => openEditCondition(condition)}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Edit ${condition.condition_name}`}
-                      >
-                        <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
-                      </TouchableOpacity>
-                      {/* geist-ok: typographic separator, not copy and not an icon — a standalone node
-                          whose entire content is a divider. It stays raw so it inherits nothing and
-                          asserts nothing; the B-745 GlyphSvg migration does NOT own it (there is no
-                          vector to replace a middle dot with). CUL-364 §7. */}
-                      <Text style={styles.conditionActionDivider}>·</Text>
-                      <TouchableOpacity
-                        style={styles.cardActionTouch}
-                        onPress={() => confirmResolveCondition(condition)}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Resolve ${condition.condition_name}`}
-                      >
-                        <ThemedText style={styles.conditionActionText}>Resolve</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            ))
+            // Round P3 — each condition is one door into its edit form, where Mark
+            // resolved now lives (one 44pt target per row instead of two small ones).
+            conditionsView.rows.map((condition) => {
+              const diagnosed = diagnosedMonthLabel(condition.diagnosed_at);
+              const status = statusLabel(condition.status);
+              return (
+                <DoorRow
+                  key={condition.id}
+                  testID={`condition-row-${condition.id}`}
+                  title={condition.condition_name}
+                  detail={diagnosed !== null ? `Diagnosed ${diagnosed}` : null}
+                  // P5 — Monitoring takes the muted badge: under the ruled roles teal says
+                  // "good", and being watched is not good news.
+                  trailing={<Badge label={status} variant={condition.status === 'monitoring' ? 'muted' : 'symptom'} />}
+                  accessibilityLabel={[
+                    condition.condition_name,
+                    diagnosed !== null ? `diagnosed ${diagnosed}` : null,
+                    status.toLowerCase(),
+                  ].filter(Boolean).join(', ') + '. Edit'}
+                  onPress={() => openEditCondition(condition)}
+                />
+              );
+            })
           )}
         </Card>
 
@@ -1660,13 +1602,7 @@ export default function ProfileScreen() {
             retrying={trialLoading}
             style={styles.sectionGap}
           />
-        ) : !trialLoading && trialDoor ? (
-          <TrialDoorRow
-            model={trialDoor}
-            style={styles.sectionGap}
-            onPress={() => router.push(trialScreenHref(activePet.id))}
-          />
-        ) : !trialLoading && trialCard && !trialSlotPending && (
+        ) : trialDoor ? null : !trialLoading && trialCard && !trialSlotPending && (
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}
@@ -1751,25 +1687,16 @@ export default function ProfileScreen() {
             which is coherent HERE — you added a pet and you are on the pet's page —
             and is exactly what makes the same rows wrong inside a capture surface
             (CUL-678). */}
-        {!multiPet && (
-          <PrimaryButton
-            label="Add a pet"
-            variant="secondary"
-            onPress={() => router.push('/add-pet')}
-            style={styles.footBtn}
-          />
-        )}
-
-        {/* Quiet archive action (spec §3.5, mock B4) — bottom of the tab,
-            styled to recede: removal is a rare lifecycle moment, not a daily
-            affordance. Tap on the last active pet explains the block instead
-            of hiding (honest over invisible). */}
-        <PrimaryButton
-          label={`Archive ${activePet.name}`}
-          variant="secondary"
-          onPress={handleArchivePress}
-          style={styles.footBtn}
-        />
+        {/* The foot (round P10): two quiet rows under a hairline. */}
+        <View style={styles.foot}>
+          {!multiPet && (
+            <PrimaryButton label="Add a pet" variant="plain" onPress={() => router.push('/add-pet')} />
+          )}
+          {/* Quiet archive action (spec §3.5, mock B4) — a rare lifecycle moment, not a
+              daily affordance. Tap on the last active pet explains the block instead
+              of hiding (honest over invisible). */}
+          <PrimaryButton label={`Archive ${activePet.name}`} variant="plain" onPress={handleArchivePress} />
+        </View>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -1795,7 +1722,9 @@ export default function ProfileScreen() {
       <AddConditionModal
         visible={conditionModalVisible}
         petId={activePet.id}
+        petName={activePet.name}
         existingCondition={editingCondition}
+        onResolve={handleResolveCondition}
         onClose={() => { setConditionModalVisible(false); setEditingCondition(undefined); }}
         onAdded={(c) => setConditionsRead((prev) => updatePetRows(prev, c.pet_id, (rows) => [c, ...rows]))}
         onUpdated={(c) =>
@@ -1864,115 +1793,33 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
 
-  // ── Header card ──
-  headerCard: {
-    alignItems: 'center',
-    gap: theme.space1,
-    paddingVertical: theme.space4,
-  },
-  photoWrapper: {
-    position: 'relative',
-    marginBottom: theme.space0_5,
-  },
-  photo: {
-    width: HERO_PHOTO_SIZE,
-    height: HERO_PHOTO_SIZE,
-    borderRadius: theme.radiusFull,
-  },
-  photoPlaceholder: {
-    width: HERO_PHOTO_SIZE,
-    height: HERO_PHOTO_SIZE,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorNeutralDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoInitials: {
-    fontSize: theme.text2XL,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextOnDark,
-  },
-  photoOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorScrimPhoto,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // The tick on the photo's scrim takes the on-dark ink: the scrim is the ground.
-  photoTick: {
-    backgroundColor: theme.colorTextOnDark,
-  },
-  photoLink: {
-    alignSelf: 'center',
-  },
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so
-  // the card's rhythm does not change with the household's pet count.
+  // the layout does not change with the household's pet count.
   //
-  // The 44pt floor is an explicit minHeight and this row carries NO hitSlop, which
-  // is the CUL-579 call rather than a default. The control directly above is
-  // "Change photo", which already reaches down with hitSlop={8}, and CUL-612's rule
-  // is `gap >= hitSlop.facing(a) + hitSlop.facing(b)`: the two rects must not
-  // overlap, because an overlap resolves by z-order rather than by intent — here on
-  // a neighbour that opens the camera roll. The arithmetic is 8 (headerCard's gap)
-  // + 4 (marginTop below) = 12 >= 8 + 0, so it clears with headroom rather than by
-  // exact equality; the marginTop is the 4pt that used to sit on petName and is kept
-  // for that reason as much as for the rhythm. Growing the box buys the reach that
-  // slop would have, and takes none of the neighbour's.
-  //
-  // Stating the floor as minHeight also makes it ASSERTABLE — a 44pt claim resting
-  // on a rendered font line box is one jest cannot compute, so it is a floor nobody
-  // is holding. profile.test.tsx pins both halves.
+  // The 44pt floor is an explicit minHeight and this row carries NO hitSlop (the
+  // CUL-579 call): its neighbours are the photo, beside or above it (its own 96pt
+  // box), and the Edit profile link below, which holds its floor by its own box too,
+  // so no expanded rect reaches into another (CUL-612). Stating the floor as minHeight
+  // also makes it ASSERTABLE; profile.test.tsx pins both halves.
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: theme.space0_5,
     minHeight: theme.hitTarget,
-    marginTop: theme.space0_5,
   },
   petName: {
     fontSize: theme.text2XL,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+    flexShrink: 1,
   },
-  petSubtitle: {
-    fontSize: theme.textMD,
+  factLine: {
     color: theme.colorTextSecondary,
   },
-  editBtn: {
-    alignSelf: 'stretch',
-    marginTop: theme.space1,
-  },
-
-  // ── Info row ──
-  infoRow: {
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  infoChip: {
-    flex: 1,
-    paddingVertical: theme.space2,
-    alignItems: 'center',
-    gap: theme.spaceMicro,
-  },
-  infoChipDivider: {
-    width: 1,
-    backgroundColor: theme.colorBorder,
-    marginVertical: theme.space1,
-  },
-  infoChipLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
+  photoSavingText: {
     color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: theme.trackingWide,
-  },
-  infoChipValue: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorNeutralDark,
+    marginTop: theme.space0_5,
   },
 
   // B-407 — the widget-slot lookup caption. A quiet tertiary footnote to the info
@@ -2017,33 +1864,8 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
-  conditionRow: {
-    gap: theme.space2,
-  },
   conditionDivider: {
     marginBottom: 0,
-  },
-  conditionInner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: theme.space2,
-  },
-  conditionInfo: {
-    flex: 1,
-    gap: theme.spaceMicro,
-  },
-  conditionName: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  conditionDate: {
-    fontSize: theme.textXS,
-    color: theme.colorTextSecondary,
-  },
-  conditionRight: {
-    alignItems: 'flex-end',
-    gap: theme.space0_75,
   },
   conditionActions: {
     flexDirection: 'row',
@@ -2191,10 +2013,13 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
 
-  // ── The foot ──
-  // CUL-618 — "Add a pet" (one-pet households) and "Archive", a rare lifecycle pair.
-  footBtn: {
-    marginTop: theme.space1,
+  // ── The foot (round P10) ── "Add a pet" (one-pet households) and "Archive", a rare
+  // lifecycle pair, styled to recede.
+  foot: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    paddingTop: theme.space2,
+    paddingBottom: theme.space4,
   },
 
   // ── Empty / bottom ──

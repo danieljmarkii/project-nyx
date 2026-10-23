@@ -30,9 +30,9 @@ jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
-jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { AddConditionModal, diagnosedMonthLabel, type Condition } from './AddConditionModal';
 
@@ -47,7 +47,7 @@ const EXISTING: Condition = {
 };
 
 async function pickAndAdd(picked: Date) {
-  render(<AddConditionModal visible petId="pet-1" onClose={jest.fn()} onAdded={jest.fn()} />);
+  render(<AddConditionModal visible petId="pet-1" petName="Mochi" onClose={jest.fn()} onAdded={jest.fn()} />);
   fireEvent.changeText(screen.getByPlaceholderText('e.g. Food sensitivity, IBD, atopy'), 'IBD');
   fireEvent.press(screen.getByText('Set date'));
   act(() => {
@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 
 it('an edit shows the stored day, not the day before it', () => {
-  render(<AddConditionModal visible petId="pet-1" existingCondition={EXISTING} onClose={jest.fn()} onAdded={jest.fn()} />);
+  render(<AddConditionModal visible petId="pet-1" petName="Mochi" existingCondition={EXISTING} onClose={jest.fn()} onAdded={jest.fn()} />);
   expect(screen.getByText('September 1, 2026')).toBeTruthy();
 });
 
@@ -80,7 +80,7 @@ it('an early-morning pick saves the day picked', async () => {
 
 it('an untouched edit saves the stored day back unchanged', async () => {
   render(
-    <AddConditionModal visible petId="pet-1" existingCondition={EXISTING} onClose={jest.fn()} onAdded={jest.fn()} onUpdated={jest.fn()} />,
+    <AddConditionModal visible petId="pet-1" petName="Mochi" existingCondition={EXISTING} onClose={jest.fn()} onAdded={jest.fn()} onUpdated={jest.fn()} />,
   );
   await act(async () => {
     fireEvent.press(screen.getByText('Save'));
@@ -92,4 +92,55 @@ it("the Pet tab's month label reads the stored day's month, and nothing for no d
   expect(diagnosedMonthLabel('2026-09-01')).toBe('Sep 2026');
   expect(diagnosedMonthLabel(null)).toBeNull();
   expect(diagnosedMonthLabel('not a day')).toBeNull();
+});
+
+// CUL-1911 — the design round's pass (P3, P6) and the kit's disabled Save (C-7).
+describe('the condition form names its pet and carries the resolve', () => {
+  it('names the pet it writes for: the header, and the chosen status\'s caption', () => {
+    render(<AddConditionModal visible petId="pet-1" petName="Mochi" onClose={jest.fn()} onAdded={jest.fn()} />);
+    expect(screen.getByText('Add a condition for Mochi')).toBeTruthy();
+    expect(screen.getByText('Currently affecting Mochi')).toBeTruthy();
+    fireEvent.press(screen.getByText('Monitoring'));
+    expect(screen.getByText('Being watched, not active right now')).toBeTruthy();
+  });
+
+  it('an empty name leaves Add disabled, and its label says why', () => {
+    render(<AddConditionModal visible petId="pet-1" petName="Mochi" onClose={jest.fn()} onAdded={jest.fn()} />);
+    const add = screen.getByLabelText('Add, name the condition first');
+    expect(add.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(add);
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('an add form offers no resolve', () => {
+    render(<AddConditionModal visible petId="pet-1" petName="Mochi" onClose={jest.fn()} onAdded={jest.fn()} onResolve={jest.fn()} />);
+    expect(screen.queryByText('Mark resolved')).toBeNull();
+  });
+
+  it('Mark resolved opens the shipped confirm word for word, and resolves the stored row only on confirm', () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const onResolve = jest.fn();
+    const onClose = jest.fn();
+    render(
+      <AddConditionModal
+        visible petId="pet-1" petName="Mochi" existingCondition={EXISTING}
+        onClose={onClose} onAdded={jest.fn()} onResolve={onResolve}
+      />,
+    );
+    // The report line is said before the confirm, too.
+    expect(screen.getByText('It will still appear in vet reports for the relevant date range.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Mark resolved'));
+    expect(alert.mock.calls[0][0]).toBe('Mark as resolved');
+    expect(alert.mock.calls[0][1]).toBe(
+      'Mark "IBD" as resolved? It will still appear in vet reports for the relevant date range.',
+    );
+    expect(onResolve).not.toHaveBeenCalled();
+    const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => void }[];
+    expect(buttons.map((b) => b.text)).toEqual(['Cancel', 'Mark resolved']);
+    buttons[1].onPress?.();
+    expect(onResolve).toHaveBeenCalledWith(EXISTING);
+    expect(onClose).toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
 });

@@ -214,6 +214,25 @@ describe('a running trial: the door, and no lifecycle on this tab (TS-6, TS-GA)'
     expect(router.push).toHaveBeenCalledWith('/trial/p1');
   });
 
+  // CUL-1911, round P4 — while a trial runs its door sits under the pet's name, above
+  // the record's sections, and appears once (never also in the old slot).
+  it('sits above the record (under the identity), once', async () => {
+    const r = await renderSettled();
+    expect(r.getAllByTestId('trial-door-row')).toHaveLength(1);
+    const tree = JSON.stringify(r.toJSON());
+    expect(tree.indexOf('trial-door-row')).toBeGreaterThan(tree.indexOf('identity-row'));
+    expect(tree.indexOf('trial-door-row')).toBeLessThan(tree.indexOf('"Conditions"'));
+  });
+
+  // Every focus re-reads the trial; at the top of the page a door that blinked out on
+  // each re-read would shove every card below it (code review, CUL-1911).
+  it('stays up through a same-pet re-read, and never doubles as the start card', async () => {
+    Object.assign(mockTrialState, { isLoading: true });
+    const r = await renderSettled();
+    expect(r.getAllByTestId('trial-door-row')).toHaveLength(1);
+    expect(r.queryByText('Start a diet trial')).toBeNull();
+  });
+
   it('mounts no trial sheet: the lifecycle lives on the screen', async () => {
     await renderSettled();
     expect(mockCompletionSheet).not.toHaveBeenCalled();

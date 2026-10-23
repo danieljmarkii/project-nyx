@@ -8,6 +8,7 @@ import { FieldLabel } from '../ui/FieldLabel';
 import { Header } from '../ui/Header';
 import { HeaderAction } from '../ui/HeaderAction';
 import { PickerRow } from '../ui/PickerRow';
+import { PrimaryButton } from '../ui/PrimaryButton';
 import { TextField } from '../ui/TextField';
 import { TextLink } from '../ui/TextLink';
 import { ThemedText } from '../ui/ThemedText';
@@ -36,22 +37,39 @@ export function diagnosedMonthLabel(diagnosedAt: string | null): string | null {
   return day ? day.toLocaleDateString([], { year: 'numeric', month: 'short' }) : null;
 }
 
-const STATUS_OPTIONS: { value: ConditionStatus; label: string; description: string }[] = [
-  { value: 'active', label: 'Active', description: 'Currently affecting the pet' },
-  { value: 'monitoring', label: 'Monitoring', description: 'Under observation' },
+const STATUS_OPTIONS: { value: ConditionStatus; label: string }[] = [
+  { value: 'active', label: 'Active' },
+  { value: 'monitoring', label: 'Monitoring' },
 ];
+
+/**
+ * What the chosen status means, naming the pet (round P6, C-9: a record surface says whose
+ * record it writes to). "Not active right now" rather than the round's "not treated": a
+ * watched condition can still be on a medicine, and the record does not say it is not.
+ */
+export function conditionStatusCaption(status: ConditionStatus, petName: string): string {
+  return status === 'active' ? `Currently affecting ${petName}` : 'Being watched, not active right now';
+}
+
+/** The resolve confirm's lines, word for word from the Pet tab's row (round P3). */
+export const RESOLVE_CONFIRM_TITLE = 'Mark as resolved';
+export const RESOLVE_REPORT_LINE = 'It will still appear in vet reports for the relevant date range.';
 
 interface Props {
   visible: boolean;
   petId: string;
+  /** The pet this form writes for, named in its title and caption (round P6). */
+  petName: string;
   existingCondition?: Condition;
   onClose: () => void;
   onAdded: (condition: Condition) => void;
   onUpdated?: (condition: Condition) => void;
+  /** Resolves the condition being edited, once the owner has confirmed (round P3). */
+  onResolve?: (condition: Condition) => void;
 }
 
 export function AddConditionModal({
-  visible, petId, existingCondition, onClose, onAdded, onUpdated,
+  visible, petId, petName, existingCondition, onClose, onAdded, onUpdated, onResolve,
 }: Props) {
   const isEditing = existingCondition != null;
 
@@ -130,13 +148,25 @@ export function AddConditionModal({
   }
 
   const canSave = conditionName.trim().length > 0;
-  const statusDescription = STATUS_OPTIONS.find((o) => o.value === status)?.description ?? '';
+
+  function confirmResolve() {
+    const condition = existingCondition;
+    if (!condition || !onResolve) return;
+    Alert.alert(
+      RESOLVE_CONFIRM_TITLE,
+      `Mark "${condition.condition_name}" as resolved? ${RESOLVE_REPORT_LINE}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Mark resolved', onPress: () => { onClose(); onResolve(condition); } },
+      ],
+    );
+  }
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.container}>
         <Header
-          title={isEditing ? 'Edit condition' : 'Add condition'}
+          title={isEditing ? 'Edit condition' : `Add a condition for ${petName}`}
           left={<HeaderAction label="Cancel" tone="quiet" onPress={handleClose} />}
           right={
             <HeaderAction
@@ -170,11 +200,12 @@ export function AddConditionModal({
                 value={status}
                 onChange={(next) => { if (next) setStatus(next as ConditionStatus); }}
                 allowDeselect={false}
+                variant="default"
                 accessibilityLabel="Status"
               />
               {/* The kit chip carries one line, so the chosen status's meaning is one
                   caption under the group (round F7). */}
-              <ThemedText variant="caption" style={styles.caption}>{statusDescription}</ThemedText>
+              <ThemedText variant="caption" style={styles.caption}>{conditionStatusCaption(status, petName)}</ThemedText>
             </View>
 
             <View>
@@ -204,6 +235,16 @@ export function AddConditionModal({
               )}
             </View>
 
+            {/* Round P3 — resolving lives here, one step from a stray tap on the tab,
+                and its report line is said before the confirm, not only inside it. */}
+            {/* Withdrawn while a save is in flight rather than dimmed (C-7: no reason to give). */}
+            {isEditing && onResolve && !saving ? (
+              <View style={styles.resolve}>
+                <PrimaryButton label="Mark resolved" variant="secondary" onPress={confirmResolve} />
+                <ThemedText variant="caption" style={styles.caption}>{RESOLVE_REPORT_LINE}</ThemedText>
+              </View>
+            ) : null}
+
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -227,5 +268,11 @@ const styles = StyleSheet.create({
   caption: {
     color: theme.colorTextSecondary,
     marginTop: theme.space1,
+  },
+  resolve: {
+    marginTop: theme.space3,
+    paddingTop: theme.space3,
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
   },
 });

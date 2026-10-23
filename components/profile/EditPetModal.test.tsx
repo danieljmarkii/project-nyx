@@ -118,3 +118,22 @@ describe('EditPetModal weight on save', () => {
     expect(usePetStore.getState().activePet?.weight_kg).toBeNull();
   });
 });
+
+// CUL-1911 — the design round's P9: the field says it is the profile weight, not a weigh-in.
+describe('EditPetModal weight note', () => {
+  it('says the profile weight is not a weigh-in, naming the pet', () => {
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    expect(
+      screen.getByText('This is Nyx’s profile weight. To track a change over time, log a weigh-in.'),
+    ).toBeTruthy();
+  });
+
+  it('an emptied name leaves Save disabled, and its label says why', () => {
+    render(<EditPetModal visible onClose={jest.fn()} />);
+    fireEvent.changeText(screen.getByDisplayValue('Nyx'), '  ');
+    const save = screen.getByLabelText('Save, add a name first');
+    expect(save.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(save);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
