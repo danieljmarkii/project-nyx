@@ -31,7 +31,7 @@ The second half is the **outcome loop**. When the app says "call your vet" and t
 | **"My vet knows" acknowledges, per sign, as a dated fact** | 2026-09-26 PM (plan review) | §3.2 source `my_vet_knows`. |
 | **Never lower a stored escalation automatically** | 2026-09-26 PM | An answer never lowers a tier or removes an ask on an escalation (§6.1). |
 | **PMD-12 → D18** outcome data from any account but the PM's waits for a separate in-app opt in; the policy says so and never unlocks it alone | 2026-09-26 PM (CUL-1313), re-ruled 2026-10-12 (D18 (a), CUL-1825) | §6.6. Supersedes migration 075's header comment ("waits on PMD-12's stated purpose"), which stays as applied. |
-| **Pinned by the plan review** | 2026-09-26 comments on CUL-1139 / CUL-1144 | Draw Jordan's case; a care state never quiets safety lanes (a test pins it); `careState` computed inside PR-11b's pure pipeline; pass lines fixed in advance by PR-16; the call record is its own table; append-only by RLS alone; local-first; `visitReaders` registration in PR-22; PR-35 builds in `components/designV2/` right after PR-23. |
+| **Pinned by the plan review** | 2026-09-26 comments on CUL-1139 / CUL-1144 | Draw Jordan's case; a care state never quiets safety lanes (a test pins it); `careState` computed inside PR-11b's pure pipeline; pass lines fixed in advance by PR-16; the call record is its own table; append-only by RLS alone; local-first; `visitReaders` registration in PR-22; PR-35 builds in `components/surfaces/` right after PR-23. |
 
 ### 0.2 Calls this spec makes (no ruling needed; reverse any by comment)
 
@@ -381,7 +381,7 @@ Additive (`n`); rollback `DROP TABLE vet_call_follow_ups; DROP TABLE vet_calls; 
 ## 9. The flag and the GA seam
 
 - Behind EN-F. **Flag-off, the shell never reads the three tables** and the Signal is byte-identical to today (the R-1 guard over the pure pipeline). Answers written while flag-on stay in their tables and in Vet visits; they take effect again when the flag returns (mock 3f). **A kill switch can make Home louder, never quieter.**
-- Old builds: `careState` is a new optional field on a cached finding; an installed 1.2.0 build ignores it and renders the finding as today (still asking). The client half (PR-35/36) builds in `components/designV2/` and reaches owners at Design v2 GA (CUL-1071).
+- Old builds: `careState` is a new optional field on a cached finding; an installed 1.2.0 build ignores it and renders the finding as today (still asking). The client half (PR-35/36) builds in `components/surfaces/` and reaches owners at Design v2 GA (CUL-1071).
 - **GA day for an existing owner:** every concern starts raised; the one past-visit question appears on the finding screen for the most recent visit on record (at most one a day); nothing is back-filled.
 
 ---
@@ -471,7 +471,7 @@ Verdict on the first draft: **FAIL, eleven counterexamples, all taken into this 
 | 21 | CUL-1139 + CUL-1144 | Migration: the three tables (§8), same-pet triggers, wipe list, export line, note guard | PR-20 approved · CUL-1384 (the shown log's client INSERT policy dropped) · `rls-privacy-reviewer` |
 | 22 | CUL-1140 | EN-10 server lines (§5), the drug-class table stub, Ask's rule 10 in the prompt, `visitReaders` registration of the shell, the AC 10 text (§12) | PR-20 · PR-11b |
 | 23 | CUL-1139 | `careState` in the pipeline (§3.3), the §4.2 test, ranking, Ask handling + fixtures, the report guard | PR-21 · PR-22 · CUL-1311 pt 2 live with its threshold recorded (§4.4) · the tolerance ruled and met on PR-16 · EN-8 live or the weight line (§4.1) |
-| 35 | CUL-1139 | Client: answers on the finding and incident screens, PMD-4's question, tickable rows at the vet, the past-visit question, the rows (in `components/designV2/`) | PR-23 |
+| 35 | CUL-1139 | Client: answers on the finding and incident screens, PMD-4's question, tickable rows at the vet, the past-visit question, the rows (in `components/surfaces/`) | PR-23 |
 | 36 | CUL-1144 | Client: the call record, the follow-up screen and Home line, the `follow_ups` category, TD-5 | PR-35 · the D18 opt in for any account but the PM's |
 
 This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its byte ceiling; the row is paid for by a trim there).
