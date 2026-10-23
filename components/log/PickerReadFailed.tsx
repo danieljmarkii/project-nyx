@@ -3,9 +3,11 @@
 // said "No foods yet" / "No medications yet" to an owner with a full library, and one
 // who believed it could capture the bottle again: a second medication row, whose doses
 // then sit outside the running course. So a failed read says so, and offers the way back.
-// Shared by FoodPicker and MedicationPicker so the two read as one family.
-import { Pressable, StyleSheet, View } from 'react-native';
+// Shared by FoodPicker and MedicationPicker so the two read as one family, on the kit's
+// QuietBand (CUL-2189) like the Pet tab's failed reads.
+import { Pressable, StyleSheet } from 'react-native';
 import { colorRoles, theme } from '../../constants/theme';
+import { QuietBand } from '../ui/QuietBand';
 import { ThemedText } from '../ui/ThemedText';
 
 export const PICKER_READ_FAILED_TEST_ID = 'picker-read-failed';
@@ -13,7 +15,7 @@ export const PICKER_TRY_AGAIN = 'Try again';
 
 export function PickerReadFailed({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <View style={styles.band} testID={PICKER_READ_FAILED_TEST_ID}>
+    <QuietBand style={styles.band} testID={PICKER_READ_FAILED_TEST_ID} grouped={false}>
       <ThemedText style={styles.message}>{message}</ThemedText>
       <Pressable
         onPress={onRetry}
@@ -23,19 +25,14 @@ export function PickerReadFailed({ message, onRetry }: { message: string; onRetr
       >
         <ThemedText style={styles.actionText}>{PICKER_TRY_AGAIN}</ThemedText>
       </Pressable>
-    </View>
+    </QuietBand>
   );
 }
 
 const styles = StyleSheet.create({
+  // The link owns the band's bottom edge (below), so the band drops its bottom padding.
   band: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingTop: theme.space2,
-    gap: theme.space1,
+    paddingBottom: 0,
   },
   message: {
     fontSize: theme.textSM,

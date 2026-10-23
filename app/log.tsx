@@ -20,6 +20,8 @@ import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
+import { SlotRow } from '../components/ui/SlotRow';
+import { QuietBand } from '../components/ui/QuietBand';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { TextField } from '../components/ui/TextField';
 import { NumberField } from '../components/ui/NumberField';
@@ -1126,30 +1128,25 @@ export default function LogModal() {
 
   // ── Shared sub-components ───────────────────────────────────────────────────
 
+  // P10 (CUL-2189): the photo row is the kit's SlotRow, the camera ahead of the label
+  // and the chevron behind it; once a photo is attached, its thumbnail takes the chevron's
+  // place, as food capture's slots do.
   function renderPhotoAttachRow() {
     if (attachmentUri) {
       return (
-        <TouchableOpacity
-          style={styles.photoAttachedRow}
+        <SlotRow
+          title="Photo attached · tap to replace"
           onPress={handlePickPhoto}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-        >
-          <Image source={{ uri: attachmentUri }} style={styles.photoThumb} resizeMode="cover" />
-          <ThemedText style={styles.photoAttachedText}>Photo attached · tap to replace</ThemedText>
-        </TouchableOpacity>
+          trailing={<Image source={{ uri: attachmentUri }} style={styles.photoThumb} resizeMode="cover" />}
+        />
       );
     }
     return (
-      <TouchableOpacity
-        style={styles.photoRow}
+      <SlotRow
+        title="Attach photo"
         onPress={handlePickPhoto}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-      >
-        <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
-        <ThemedText style={styles.photoRowText}>Attach photo</ThemedText>
-      </TouchableOpacity>
+        leading={<Camera size={theme.space2 + theme.space0_5} color={theme.colorTextSecondary} strokeWidth={1.75} />}
+      />
     );
   }
 
@@ -1365,13 +1362,13 @@ export default function LogModal() {
         {isComboMode && (
           // P8 — the band names the meal, its time and its pet before the owner picks: with
           // two pets this step writes to the meal's pet, and the time tells two meals apart.
-          <View style={styles.comboBanner} accessible>
+          <QuietBand style={styles.comboBanner}>
             <SectionLabel label="Given with" />
             <ThemedText style={styles.comboBannerTitle}>
               {comboPetName}'s {comboKind}{comboWhen}
             </ThemedText>
             {comboFoodName ? <ThemedText style={styles.comboBannerText}>{comboFoodName}</ThemedText> : null}
-          </View>
+          </QuietBand>
         )}
         {/* Gate on pickerPetId alone, NOT activePet: in combo mode the picker must
             mount for the MEAL's pet (pairedPetId) even if the active pet is null/mid-
@@ -1586,44 +1583,22 @@ const styles = StyleSheet.create({
   },
 
   // ── Photo attachment ──
-  // Both photo rows hold the 44pt floor (F9; the bare row was about 36pt, C-5).
-  photoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-    minHeight: theme.hitTarget,
-  },
-  photoRowText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-  },
-  photoAttachedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    minHeight: theme.hitTarget,
-  },
+  // The rows themselves are SlotRow, which holds the 44pt floor (F9, C-5); this is the
+  // attached photo's thumbnail in its trailing slot.
   photoThumb: {
     width: PHOTO_THUMB,
     height: PHOTO_THUMB,
     borderRadius: theme.radiusSmall,
   },
-  photoAttachedText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    flex: 1,
-  },
   // ── Combo context banner (B-156 PR B2b) ──
-  // The strip above the medication picker naming the pet + food this dose is being
-  // logged together with. It is context, not a good fact, so it sits on the quiet band
-  // rather than the teal wash (F8).
+  // The band above the medication picker naming the pet + food this dose is being
+  // logged together with. It is context, not a good fact, so it sits on the kit's quiet
+  // band rather than the teal wash (F8; on QuietBand since CUL-2189). The band sits on the picker's own gutter (space2), so the two edges line up; its own
+  // gap is for a sentence and a link, so the label, title and food keep the tighter one.
   comboBanner: {
     gap: theme.space0_5,
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
+    marginHorizontal: theme.space2,
+    marginTop: theme.space2,
   },
   comboBannerTitle: {
     fontSize: theme.textMD,
