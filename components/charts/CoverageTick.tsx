@@ -15,7 +15,7 @@ import { theme } from '../../constants/theme';
 // that sentence, not a second source of it.
 //
 // A DISCLOSED EXCEPTION to the Data Visualization Designer's floor ("no strip under ~20pt
-// per mark on a phone", docs/personas.md § Specialist lenses). Seven ticks under a 26pt
+// per mark on a phone", `docs/nyx-chart-standard.md` §2). Seven ticks under a 26pt
 // bar are ~3pt each and a 55-day strip is ~4pt a day. The floor is written for a mark
 // that CARRIES a fact the reader must pick out (a dot per episode); a coverage tick
 // carries none on its own — the fact is the count in words: "logged 8 of 10 days" beside
