@@ -128,6 +128,27 @@ The quick-win lens read 50 of the 283 eligible issues filed since 09-23, plus th
 
   All four were filed before the sort existed, so no dispatcher has read them.
 
+## 2026-10-23: the PM's rulings, applied
+
+The PM answered all eight calls a week later in this session. The rulings are recorded on CUL-1962, and every write below carries its own signed comment.
+
+| Call | Ruling | What was applied |
+|---|---|---|
+| D1 | Hold: other work is being dispatched | Nothing. CUL-1560 (PR-26) had already gone Done during the week, so its "waiting on your go" is moot |
+| D2 | A separate session | The Sheet B sitting runs as its own cloud session. It claims CUL-1795 and carries CUL-1725's orphaned D6 question, posted on CUL-1795 |
+| D3 | (a) | 36 sheet-row issues gave up `Waiting on PM`, each with a pointer to its Q number. Q12 and Q14's issues had already closed, so a note on CUL-1795 says where their rulings go. Writing the rule into CLAUDE.md and the skill costs bytes against both ratchets, so it is filed separately as CUL-2169 |
+| D4 | (a), via a pasted prompt | The AC-6 scope is posted on CUL-1851, and the PM has the kickoff prompt |
+| D5 | (a) | See below |
+| D6 | (a) | Two projects were created: *Ask v2: answers in the pet's calendar*, whose page is CUL-1802's run order in the /dispatch layout with 10 issues moved in, and *Reintroduction: after the diet trial*, whose rows wait on CUL-1821 and which has 8 issues moved in |
+| D7 | Go | 10 issues seated out of In Progress, 2 labelled. 9 closed on the PM's word, plus 1 duplicate. 13 re-ranks. 3 project moves. 7 relation fixes. 2 parked findings promoted to blocking rows. 9 QUIET-by-text findings given `Live harm`. *Home v1: The Signal fold* closed as Completed |
+| D8 | (a) | `Live harm` on CUL-1354, 1601, 1286 and 1547. `Quick Win` added to 21 issues; CUL-1562 took `Live harm` instead. The label came off CUL-421 and CUL-1449 |
+
+**One D7 item was deliberately not applied:** closing CUL-590. It is Sheet B row Q37. Under D3 a sheet row hands its label to the sheet and stays open until its ruling posts. Closing it first would route the sitting's ruling into a closed issue, which is the leak this pass reported.
+
+**A correction to this pass's own write.** The 72-hour default posted on CUL-1231 on 10-16 was withdrawn, unapplied. CUL-1231 is Sheet B row Q30. The sheet's adversarial pass rates the recommendation **quieter** on the dose row, so it needs the PM's explicit agree under E-6, and a default cannot supply that. The queue lens and this session both missed that it was a sheet row.
+
+**Step 14 ran on schedule.** All 53 dated `Propose close` issues passed every check: the label was still on, no reply had come in seven days, and no exempt label had been added. All 53 were canceled, each with a comment that it can be reopened. By reason: 25 obsolete, 14 stale, 12 won't do, 2 superseded. One is worth the PM's glance: CUL-88 (a detection tie-break label). An older, September comment of its own asked for the PM's nod; its body says no owner-facing output changes.
+
 ## Lessons
 
 - **A sitting that absorbs other issues' checks is a single point of loss.** When it is waived, everything folded into it goes with it. The fold should copy each absorbed check's id into the sitting's script, so a waiver can name what it waives.
