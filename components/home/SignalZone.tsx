@@ -11,10 +11,9 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
-import { Card } from '../ui/Card';
+import { GUTTER_RAIL, HomeCard, RAIL_GUTTER, ZONE_LABEL_SPACING } from '../designV2/home/HomeCard';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
-import { RAIL_WIDTH } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
 import { signalSaysNotEating, visibleFindings } from '../../lib/signalVisible';
 import type { SignalTrialAnchor } from '../../lib/signalTrialAnchor';
@@ -498,7 +497,9 @@ function ArrivalWash({ sweep }: { sweep: Animated.Value }) {
   });
   return (
     <View
-      style={StyleSheet.absoluteFill}
+      // The wash clips itself to the card's corners, so the card never clips: an
+      // `overflow: hidden` on the card would cut off its own shadow for the 1.2s.
+      style={[StyleSheet.absoluteFill, styles.washClip]}
       pointerEvents="none"
       testID="signal-arrival-wash"
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
@@ -552,6 +553,7 @@ function ArrivalStage({
   return (
     <View
       style={active ? styles.arrivalStage : undefined}
+      testID="signal-arrival-stage"
       // The lead sits at opacity 0 for the crossfade's first 400ms, beneath a still-
       // opaque outgoing frame — so without this, a tap on what LOOKS like a ghost
       // watching row lands on the invisible card underneath and opens it. The
@@ -564,8 +566,12 @@ function ArrivalStage({
         <Animated.View
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
+          testID="signal-arrival-outgoing"
           style={[
             StyleSheet.absoluteFill,
+            // The stage's padding does not reach an absolute child: start it on the text
+            // edge, where the live stack starts.
+            styles.outgoingFrame,
             {
               opacity: moment
                 ? moment.crossfade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] })
@@ -846,9 +852,10 @@ export function SignalZone({
   const goneQuietDay = lastLoggedAt ? quietDayLabel(lastLoggedAt, Date.now()) : null;
 
   return (
-    // Signal is the dominant zone — one elevated container. `cardClip` is applied ONLY
-    // while the arrival plays (it clips the travelling wash to the card's corners).
-    <Card elevated style={arriving ? styles.cardClip : undefined}>
+    // Signal leads by position and words, on Home's one card surface (CUL-1525, G1 A): it
+    // no longer floats on its own shadow. The arrival's wash clips itself (`washClip`), so
+    // the card is never clipped and keeps its shadow through the moment.
+    <HomeCard>
       {moment?.sweep ? <ArrivalWash sweep={moment.sweep} /> : null}
       <SectionLabel
         label="Signal"
@@ -878,12 +885,12 @@ export function SignalZone({
           />
           {gapSentence !== null ? (
             <>
-              <Divider style={styles.rowDivider} />
+              <Divider />
               <GapWarning text={gapSentence} enterKey={0} />
             </>
           ) : gapUnread ? (
             <>
-              <Divider style={styles.rowDivider} />
+              <Divider />
               <GapReadFailed petName={petName} onRetry={retryGapRead} />
             </>
           ) : null}
@@ -921,7 +928,7 @@ export function SignalZone({
           onClose={() => setSheetOpen(false)}
         />
       ) : null}
-    </Card>
+    </HomeCard>
   );
 }
 
@@ -1042,7 +1049,7 @@ function LiveStack({
       {ordered.map((f, i) => {
         const row = (
           <>
-            {i > 0 && <Divider style={styles.rowDivider} />}
+            {i > 0 && <Divider />}
             {/* CUL-786: a stood-down marker is one plain line in its former slot — never a
                 card, never the lead canvas: a sentence about absence at the lead's size would
                 be the reassurance the line exists to refuse. The canvas goes to the first
@@ -1132,7 +1139,7 @@ function QuietLineText({
 function QuietLine(props: { petName: string; state: QuietState; day?: string | null; lookSince?: boolean }) {
   return (
     <View style={styles.quietRow}>
-      <View style={[styles.quietRail, styles.quietRailNeutral]} />
+      <View style={[styles.quietRail, styles.quietRailNeutral]} testID="signal-quiet-rail" />
       <QuietLineText {...props} />
     </View>
   );
@@ -1241,9 +1248,7 @@ function SignalLoadingSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  label: {
-    marginBottom: theme.space2,
-  },
+  label: ZONE_LABEL_SPACING,
   // SR-3 receded chrome (§5.2) — the section label drops one tier (secondary → tertiary)
   // in the live register. Tertiary, not disabled: a disabled-tier heading fails AA
   // contrast; tertiary keeps it (≥4.5:1) while still reading as receded.
@@ -1297,14 +1302,10 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
     lineHeight: theme.lineHeightXS,
   },
-  rowDivider: {
-    marginHorizontal: -theme.space1,
-  },
-  // CUL-786 — the stand-down line. The compact-row rhythm, indented past where a rail would
-  // sit so the sentence aligns with the card text above and below it (no rail of its own).
+  // CUL-786 — the stand-down line. The compact-row rhythm, on the card's one text edge like
+  // every row above and below it (no rail of its own; the rails hang in the gutter).
   stoodDownRow: {
     paddingVertical: theme.space1,
-    paddingLeft: RAIL_WIDTH + theme.space2,
   },
   stoodDownText: {
     fontSize: theme.textSM,
@@ -1313,23 +1314,31 @@ const styles = StyleSheet.create({
   },
 
   // ── CUL-601 (§4) — the arrival moment's two structural styles ────────────────
-  // Both are applied only while the 1.2s plays; see the call sites for why.
-  cardClip: {
+  // The stage's is applied only while the 1.2s plays; see the call sites for why.
+  washClip: {
     overflow: 'hidden',
+    borderRadius: theme.radiusMedium,
   },
+  // The clip reaches out into the gutter, so the rails hung there (CUL-1525) are not cut
+  // off for the moment's 1.2s; the padding hands the content its edge back.
   arrivalStage: {
     overflow: 'hidden',
+    marginLeft: -RAIL_GUTTER,
+    paddingLeft: RAIL_GUTTER,
+  },
+  outgoingFrame: {
+    left: RAIL_GUTTER,
   },
 
   // ── The quiet line (CUL-1838) — the lead row's anatomy: rail, display face, sub ──
   quietRow: {
     flexDirection: 'row',
-    gap: theme.space1,
   },
+  // In the gutter, the full height of the line (CUL-1525).
   quietRail: {
-    width: RAIL_WIDTH,
-    alignSelf: 'stretch',
-    borderRadius: 2,
+    ...GUTTER_RAIL,
+    top: 0,
+    bottom: 0,
     overflow: 'hidden',
   },
   // Neutral: nothing to report is not a colour.

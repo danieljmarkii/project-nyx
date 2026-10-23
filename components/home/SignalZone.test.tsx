@@ -1644,7 +1644,9 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     // exactly one child (its ThemedText) and no rail.
     expect(line.children).toHaveLength(1);
     const flat = Array.isArray(line.props.style) ? Object.assign({}, ...line.props.style) : line.props.style;
-    expect(flat.paddingLeft).toBe(3 + theme.space2);
+    // On the card's one text edge (CUL-1525): the rails hang in the gutter, so no row indents
+    // past one.
+    expect(flat.paddingLeft).toBeUndefined();
   });
 
   it('renders alone when the stood-down card was the only finding — the live register, one line', () => {

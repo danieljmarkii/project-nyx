@@ -353,6 +353,41 @@ export function stoolFindings(row: {
   return out;
 }
 
+// ── An owner-set red flag keeps the facts open (CUL-2142) ──────────────────────
+//
+// The observations grid folds only a quiet read, and "quiet" was the stored verdict alone.
+// An owner edit writes the structured fields and leaves the verdict where it was, so a
+// `monitor` / `logged` row could carry fresh blood and still fold it to a count. These ask
+// the fields instead, present-only (`unsure` and `none_visible` are not presence), so the
+// fold refuses whatever the verdict says. Louder only: nothing here touches the verdict.
+
+/** Vomit: the same question and the same columns as analyze-vomit's
+ *  `presentFlagsFromStructured`, mirrored by name (C-34). `vomitFindings` already answers
+ *  it from those columns, so it is the one predicate, not a second. */
+export function vomitRedFlagPresent(row: {
+  blood_present?: string | null;
+  foreign_material_present?: string | null;
+}): boolean {
+  return vomitFindings(row).length > 0;
+}
+
+/** Stool: analyze-stool's `presentFlagsFromStructured` (blood, foreign material) PLUS
+ *  mucus. A different question from the server's: the server asks what escalates, this asks
+ *  what must not fold to a count, and the issue names mucus among the facts an owner turns
+ *  the phone to a vet for. Texture is left out on purpose: a soft stool is the common quiet
+ *  record, and folding it is the point of the fold. */
+export function stoolRedFlagPresent(row: {
+  stool_blood_present?: string | null;
+  stool_mucus_present?: string | null;
+  foreign_material_present?: string | null;
+}): boolean {
+  return (
+    row.stool_blood_present === 'yes' ||
+    row.stool_mucus_present === 'yes' ||
+    row.foreign_material_present === 'yes'
+  );
+}
+
 export interface TellThemInput {
   petName: string | null | undefined;
   kind: 'vomit' | 'stool';

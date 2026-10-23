@@ -597,6 +597,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
               <Pressable
                 onPress={openEmergency}
                 accessibilityRole="button"
+                // door-mark-ok: strips the link's own › from its spoken label.
                 accessibilityLabel={EMERGENCY_DOOR_LABEL.replace(' ›', '')}
                 style={[styles.door, styles.doorAfterChips]}
                 testID="look-header-emergency-door"

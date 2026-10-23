@@ -564,7 +564,8 @@ describe('the route, app/signal/[id]', () => {
 describe('the flight’s landing (D2-6 · CUL-1069)', () => {
   // The test window (jest-expo's 750pt) — the hero's ratio is derived from it, as the screen does.
   const WINDOW = Dimensions.get('window').width;
-  const INNER = WINDOW - 2 * 24 - 2 * 24 - 3 - 16;
+  // The page's 24 and the HomeCard's 16 a side; the rail hangs in the gutter (CUL-1525).
+  const INNER = WINDOW - 2 * 24 - 2 * 16;
   const OUTER = WINDOW - 2 * 16;
   const RATIO = OUTER / INNER;
   const SOURCE = { x: 67, y: 300, width: INNER, height: 130 };

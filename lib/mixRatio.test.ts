@@ -6,6 +6,7 @@ import {
   parseAmount,
   presetComponents,
   stepStop,
+  stepEndLine,
   stopIndexOf,
   stopLabel,
 } from './mixRatio';
@@ -75,5 +76,29 @@ describe('the stepper (R4: either way, one stop, never past the end)', () => {
     expect(stepStop(0.4, 'second')).toBe(3);
     expect(stepStop(0.9, 'first')).toBeNull();
     expect(stepStop(0.9, 'second')).toBe(0);
+  });
+});
+
+// CUL-2134 — the end stop's visible reason names the ¾ ceiling for the food asked for.
+describe('stepEndLine (the end stop says why)', () => {
+  it('names the food at each end, and nothing between', () => {
+    expect(stepEndLine(3 / 4, 'Chicken', 'Rabbit')).toBe('¾ Chicken is as far as the steps go.');
+    expect(stepEndLine(1 / 4, 'Chicken', 'Rabbit')).toBe('¾ Rabbit is as far as the steps go.');
+    for (const s of [2 / 3, 1 / 2, 1 / 3]) expect(stepEndLine(s, 'Chicken', 'Rabbit')).toBeNull();
+  });
+
+  it('a stored ⅓ (0.333) and a measured split past the ends read the same way', () => {
+    expect(stepEndLine(0.75, 'A', 'B')).not.toBeNull();
+    expect(stepEndLine(0.9, 'A', 'B')).toBe('¾ A is as far as the steps go.');
+    expect(stepEndLine(0.1, 'A', 'B')).toBe('¾ B is as far as the steps go.');
+    expect(stepEndLine(0.333, 'A', 'B')).toBeNull();
+  });
+
+  it('is null exactly where the stepper has a stop left on both sides', () => {
+    for (let i = 0; i <= 100; i++) {
+      const share = i / 100;
+      const bothOpen = stepStop(share, 'first') !== null && stepStop(share, 'second') !== null;
+      expect(stepEndLine(share, 'A', 'B') === null).toBe(bothOpen);
+    }
   });
 });

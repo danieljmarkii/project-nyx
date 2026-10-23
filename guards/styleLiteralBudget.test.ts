@@ -26,6 +26,13 @@
 //                  `…_MS` key or const given one in a file that animates (components/
 //                  motion/, or one calling Animated, withTiming and kin, LayoutAnimation).
 //   whorlSpinner   a file that imports or re-exports WhorlSpinner, statically or not.
+//   hitTarget      a height / width / minHeight / minWidth site whose value holds a
+//                  literal 44: the touch floor typed by hand, which theme.hitTarget names
+//                  (CUL-2144, PR-03b; ~180 sites, CUL-658).
+//
+// THE MESSAGE NAMES THE TOKEN (CUL-2144). A red count prints each value its category's
+// scale has a token for (6 → theme.space0_75), read from constants/theme.ts itself, so
+// the list cannot drift from the scale it points at.
 //
 // A RATCHET, both directions, exact (the claudeMdBudget shape, no markers). A count
 // above its ceiling reds: use the token. A count BELOW its ceiling also reds: lower the
@@ -38,8 +45,8 @@
 // counts SITES, so swapping a raw 12 for a raw 13 is invisible; it reads one line of a
 // value, which stops at a newline outside brackets, so a wrapped ternary counts by its first line; it does not read constants/,
 // lib/, hooks/ or widgets/ (the widget's palette has its own parity test,
-// guards/widgetPalette.test.ts); `minHeight: 44` is not counted until the hit target
-// token exists (PR-03b); a named colour ('white'), a hex inside a longer string
+// guards/widgetPalette.test.ts); a 44 that is a hit target under any other key (a
+// `size={44}`, a hitSlop sum) is not a hitTarget site; a named colour ('white'), a hex inside a longer string
 // ('1px #fff') and a hand typed alpha on a token (theme.colorAccent + '33') are not
 // colours here; a barrel alias of WhorlSpinner, and a second use in a file already
 // counted, are invisible; and a `…_MS` timer in a file that does not animate (a
@@ -52,6 +59,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { blankComments } from './blankComments';
+import { theme } from '../constants/theme';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SCANNED_DIRS = ['app', 'components'];
@@ -64,12 +72,13 @@ const MOTION_DIR = 'components/motion/';
 const CEILINGS = {
   colour: 8,
   fontSize: 71,
-  lineHeight: 76,
+  lineHeight: 74,
   letterSpacing: 9,
   spacing: 369,
-  radius: 83,
+  radius: 81,
   duration: 92,
   whorlSpinner: 48,
+  hitTarget: 199, // added by CUL-2144 at its first count, 2026-10-23: a new category, not a raised one
 } as const;
 
 type Category = keyof typeof CEILINGS;
@@ -85,7 +94,29 @@ const REPAIR: Record<Category, string> = {
   duration: 'a duration token (theme.durationFast / Medium / Slow) or an existing *_MOTION constant',
   whorlSpinner:
     'the tick, a skeleton or the screen\'s silhouette (.claude/rules/ui.md § Loading indicators); WhorlSpinner is retiring (CUL-1593)',
+  hitTarget: 'theme.hitTarget (the 44pt touch floor)',
 };
+
+/** The theme keys holding each category's scale, so the message can name a value's token. */
+const SCALE_PREFIX: Partial<Record<Category, RegExp>> = {
+  fontSize: /^text(?!Style)/,
+  lineHeight: /^lineHeight/,
+  letterSpacing: /^tracking/,
+  spacing: /^space/,
+  radius: /^radius/,
+  duration: /^duration/,
+  hitTarget: /^hitTarget$/,
+};
+
+/** `6 → theme.space0_75` for every numeric token in a category's scale, smallest first. */
+function scaleTokens(cat: Category): string[] {
+  const prefix = SCALE_PREFIX[cat];
+  if (!prefix) return [];
+  return (Object.entries(theme) as [string, unknown][])
+    .filter((e): e is [string, number] => prefix.test(e[0]) && typeof e[1] === 'number')
+    .sort((a, b) => a[1] - b[1])
+    .map(([k, v]) => `${v} → theme.${k}`);
+}
 
 // A numeric literal that is not part of an identifier, a member (`theme.space1`), an
 // index (`SIZES[2]`) or a hex.
@@ -93,7 +124,7 @@ const NUMBER = /(?<![\w.$#[])\d*\.?\d+(?![\w.])/g;
 // The key's separator, `key:`, `'key':` or `key={`; the value is read by valueAt().
 const VALUE = String.raw`['"]?\s*(?::|=\{)`;
 
-const KEYED: Record<Exclude<Category, 'colour' | 'whorlSpinner'>, RegExp> = {
+const KEYED: Record<Exclude<Category, 'colour' | 'whorlSpinner' | 'hitTarget'>, RegExp> = {
   fontSize: new RegExp(String.raw`\bfontSize` + VALUE, 'g'),
   lineHeight: new RegExp(String.raw`\blineHeight` + VALUE, 'g'),
   letterSpacing: new RegExp(String.raw`\bletterSpacing` + VALUE, 'g'),
@@ -108,6 +139,8 @@ const KEYED: Record<Exclude<Category, 'colour' | 'whorlSpinner'>, RegExp> = {
   ),
   duration: new RegExp(String.raw`\b(?:duration|delay)` + VALUE + String.raw`|\.(?:duration|delay)\(|\bwithDelay\(`, 'g'),
 };
+const BOX_SIDE = new RegExp(String.raw`\b(?:minHeight|minWidth|height|width)` + VALUE, 'g');
+const FORTY_FOUR = /(?<![\w.$#[])44(?![\w.])/;
 const MOTION_MS = /\b\w+(?:Ms|_MS)\s*[:=]/g;
 const ANIMATES =
   /\bAnimated\.(?:timing|spring|decay|delay|sequence|stagger|parallel)\b|\bwith(?:Timing|Spring|Delay|Sequence|Repeat)\(|\bLayoutAnimation\./;
@@ -146,6 +179,7 @@ function countStyleLiterals(source: string, rel: string): Record<Category, numbe
   if (rel.startsWith(MOTION_DIR) || ANIMATES.test(src)) {
     for (const m of src.matchAll(MOTION_MS)) if (holdsRawNumber(valueAt(src, m.index + m[0].length))) out.duration += 1;
   }
+  for (const m of src.matchAll(BOX_SIDE)) if (FORTY_FOUR.test(valueAt(src, m.index + m[0].length))) out.hitTarget += 1;
   out.colour = (src.match(COLOUR) ?? []).length;
   out.whorlSpinner = WHORL_IMPORT.test(src) ? 1 : 0;
   return out;
@@ -205,6 +239,7 @@ describe('the style literal ratchet (CUL-2138)', () => {
               `${totals[cat] - CEILINGS[cat]} over the ceiling of ${CEILINGS[cat]}.`,
             '',
             `THE REPAIR: use ${REPAIR[cat]} for the value you added.`,
+            ...(scaleTokens(cat).length ? [`Each value's token: ${scaleTokens(cat).join(', ')}.`] : []),
             'If no token fits, that is a design system question for CUL-1897, not a reason',
             'to type the value: raise it there.',
             '',
@@ -243,7 +278,7 @@ describe('the detector', () => {
       'const s = StyleSheet.create({',
       "  a: { color: '#FFFFFF', backgroundColor: 'rgba(0,0,0,0.4)' },",
       '  b: { fontSize: 14, lineHeight: theme.textSM * 1.45, letterSpacing: 0.6 },',
-      '  c: { paddingHorizontal: 12, marginTop: -6, gap: 6, borderTopLeftRadius: 10 },',
+      '  c: { paddingHorizontal: 12, marginTop: -6, gap: 6, borderTopLeftRadius: 10, minHeight: 44, width: 44 },',
       '});',
       'Animated.timing(v, { toValue: 1, duration: 200, useNativeDriver: true });',
       '<SvgText fontSize={10} />;',
@@ -261,6 +296,7 @@ describe('the detector', () => {
       radius: 2,
       duration: 3,
       whorlSpinner: 1,
+      hitTarget: 2,
     });
   });
 
@@ -276,6 +312,7 @@ describe('the detector', () => {
       "const label = 'Dose #12';",
       'const f = { fontSize: SIZES[2], gap: GAPS[1] };',
       'const named = StyleSheet.create({ gap: { flex: 1 } });',
+      'const box = { minHeight: theme.hitTarget, height: 440, maxHeight: 44, borderWidth: 1 };',
     ].join('\n');
     expect(Object.values(count(src)).every((n) => n === 0)).toBe(true);
   });
@@ -286,6 +323,14 @@ describe('the detector', () => {
     expect(count(src, 'components/home/Debounced.tsx').duration).toBe(0);
     const fades = 'const FADE_MS = 150;\nAnimated.timing(v, { toValue: 1, duration: FADE_MS }).start();';
     expect(count(fades, 'components/log/Fab.tsx').duration).toBe(1);
+  });
+
+  it('names the token for each value on the scale, read from the theme', () => {
+    expect(scaleTokens('spacing')).toEqual(expect.arrayContaining(['6 → theme.space0_75', '12 → theme.space1_5']));
+    expect(scaleTokens('lineHeight')).toContain('19 → theme.lineHeightSMLoose');
+    expect(scaleTokens('hitTarget')).toEqual(['44 → theme.hitTarget']);
+    expect(scaleTokens('fontSize')).toContain('13 → theme.textSM');
+    expect(scaleTokens('colour')).toEqual([]);
   });
 
   it('counts a dynamic import of WhorlSpinner', () => {

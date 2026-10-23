@@ -1,5 +1,5 @@
 import { Text, TextStyle, StyleProp, StyleSheet } from 'react-native';
-import { theme } from '../../constants/theme';
+import { theme, textStyles, TextStyleName } from '../../constants/theme';
 
 /**
  * ThemedText — the app's body-text primitive (B-061 / CUL-364, spec §7).
@@ -65,7 +65,14 @@ export function resolveThemedTextStyle(style?: StyleProp<TextStyle>): StyleProp<
 // site that passes one while working perfectly. Verified both halves rather than
 // assumed — a primitive five sweeps build on should not have a docstring its types
 // contradict.
-export type ThemedTextProps = React.ComponentPropsWithRef<typeof Text>;
+export type ThemedTextProps = React.ComponentPropsWithRef<typeof Text> & {
+  /**
+   * A named text style (`constants/theme.ts` textStyles): size, weight and line height
+   * as one decision. Sits under `style`, so a caller's colour, alignment or a deliberate
+   * override still wins.
+   */
+  variant?: TextStyleName;
+};
 
 /**
  * Drop-in replacement for `<Text>`. Every other prop — `numberOfLines`,
@@ -78,6 +85,7 @@ export type ThemedTextProps = React.ComponentPropsWithRef<typeof Text>;
  * both fine: give the nested span the weight it should render, or nest a raw `<Text>`,
  * which inherits the ancestor ThemedText's resolved family through the native cascade.
  */
-export function ThemedText({ style, ...rest }: ThemedTextProps) {
-  return <Text {...rest} style={resolveThemedTextStyle(style)} />;
+export function ThemedText({ style, variant, ...rest }: ThemedTextProps) {
+  const styled = variant ? [textStyles[variant], style] : style;
+  return <Text {...rest} style={resolveThemedTextStyle(styled)} />;
 }

@@ -68,7 +68,7 @@ import { usePhotoReadingOff } from '../../../hooks/usePhotoReadingOff';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
-import { Card } from '../../ui/Card';
+import { HomeCard, ZONE_LABEL_SPACING } from './HomeCard';
 import { SectionLabel } from '../../ui/SectionLabel';
 import { Rows } from '../waits/Silhouette';
 import { ThemedText } from '../../ui/ThemedText';
@@ -327,8 +327,8 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
   });
 
   return (
-    <Card testID="today-card" onLayout={onLayout}>
-      <SectionLabel label="Today" header />
+    <HomeCard testID="today-card" onLayout={onLayout}>
+      <SectionLabel label="Today" header style={ZONE_LABEL_SPACING} />
       <LookHeader trialNotEating={trialNotEating} onLayout={onLookLayout} />
 
       {readState === 'loading' ? (
@@ -365,7 +365,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
           <HomeSpine nodes={model.nodes} onOpen={onOpenEvent} drawToken={ledger.peek(dayKey)} claimDraw={ledger.claim} />
         </>
       )}
-    </Card>
+    </HomeCard>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { measureNodeInWindow } from '../../../lib/measureNode';
@@ -11,9 +11,10 @@ import { hasSignalTitleRule } from '../../../lib/signalTitle';
 import { leadTakesChartCard } from '../../../lib/signalWindows';
 import { weeklyBarsA11yLabel } from '../../../lib/chartCopy';
 import { WeeklyBars } from '../../charts/WeeklyBars';
-import { RAIL_WIDTH } from '../../home/InsightCard';
 import { useColdStartDrawFact } from '../../motion/coldStartDraw';
 import { FLIGHT_ENABLED, FLIGHT_MOTION, flightActiveFor, retargetSource, stageFlight, useFlightState } from '../../motion/flightMotion';
+import { DOOR_WELL_SIZE, DoorMark } from '../home/DoorMark';
+import { GUTTER_RAIL, HOME_CARD_INSET } from '../home/HomeCard';
 import { Block, Line } from '../waits/Silhouette';
 import { ThemedText } from '../../ui/ThemedText';
 import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
@@ -57,20 +58,19 @@ import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 
 /**
  * The chart's width on Home, from the window's: the page's padding (`app/(tabs)/index.tsx`
- * `styles.scroll`), the zone's `Card` padding, the rail and the row's gap. The screen's
- * hero is this layout scaled (one aspect for both charts — the flight's contract), so the
- * formula lives here with the card that owns the layout, and `SignalLeadCard.test.tsx`
- * pins every term against the rendered styles.
+ * `styles.scroll`) and the zone's `HomeCard` inset. The rail hangs in the card's gutter
+ * (CUL-1525, G1 A), so it and the row's gap no longer take width from the chart: the chart
+ * runs the full text column. The screen's hero is this layout scaled (one aspect for both
+ * charts — the flight's contract), so the formula lives here with the card that owns the
+ * layout, and `SignalLeadCard.test.tsx` pins every term against the rendered styles.
  */
 export const LEAD_CHART_INSETS = {
   pagePadding: theme.space3,
-  cardPadding: theme.space3,
-  rail: RAIL_WIDTH,
-  rowGap: theme.space2,
+  cardPadding: HOME_CARD_INSET,
 } as const;
 export function leadChartWidth(windowWidth: number): number {
-  const { pagePadding, cardPadding, rail, rowGap } = LEAD_CHART_INSETS;
-  return windowWidth - 2 * pagePadding - 2 * cardPadding - rail - rowGap;
+  const { pagePadding, cardPadding } = LEAD_CHART_INSETS;
+  return windowWidth - 2 * pagePadding - 2 * cardPadding;
 }
 
 const RAIL_COLOR: Record<PriorityClass, string> = {
@@ -231,10 +231,8 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
           <ThemedText style={styles.title} testID="signal-lead-title">
             {model.title}
           </ThemedText>
-          <View style={styles.chevronBox}>
-            {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
-            <Text style={styles.chevron}>›</Text>
-          </View>
+          {/* The lead's well (G1 A): the one round door mark on Home. */}
+          <DoorMark well style={styles.wellOnTitle} />
         </View>
         {chart ? (
           <View style={styles.chart}>
@@ -261,13 +259,14 @@ const FACE_HITSLOP = { top: 8, left: 8, right: 8, bottom: 0 } as const;
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: theme.space2,
     minHeight: 44,
     paddingVertical: theme.space2,
   },
+  // In the card's gutter (CUL-1525): the chart and the title start at the card's text edge.
   rail: {
-    width: RAIL_WIDTH,
-    borderRadius: 2,
+    ...GUTTER_RAIL,
+    top: theme.space2,
+    bottom: theme.space2,
     opacity: 0.85,
   },
   content: {
@@ -279,19 +278,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: theme.space1,
   },
-  chevronBox: {
-    width: 28,
-    height: 28,
-    marginTop: (theme.lineHeightSignal - 28) / 2,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorSurfaceSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chevron: {
-    fontSize: theme.textLG,
-    lineHeight: theme.textLG + 2,
-    color: theme.colorTextTertiary,
+  // Centred on the title's first line.
+  wellOnTitle: {
+    marginTop: (theme.lineHeightSignal - DOOR_WELL_SIZE) / 2,
   },
   // The shipped lead sentence's face (`InsightCard`'s `sentenceLead`), on the title now.
   title: {
