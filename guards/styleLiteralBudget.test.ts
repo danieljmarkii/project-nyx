@@ -15,13 +15,17 @@
 //   colour         a quoted hex literal ('#fff', "#0A0A0A") or an rgb()/rgba()/hsl() call
 //   fontSize, lineHeight, letterSpacing, spacing (padding*, margin*, gap, rowGap,
 //   columnGap), radius (border*Radius)
-//                  a SITE whose value holds a non-zero numeric literal, as `key: …` or
-//                  the JSX attribute `key={…}`. `theme.textSM * 1.45` counts (it is the
-//                  missing line height scale typed by hand); `theme.space2` and `0` do not.
-//   duration       a `duration:` / `delay:` with a non-zero literal anywhere, plus every
-//                  `…Ms` / `…_MS` key or const given one in components/motion/, where
-//                  the choreography lives and only some modules read theme.duration*.
-//   whorlSpinner   a file that imports WhorlSpinner.
+//                  a SITE whose value holds a non-zero numeric literal, as `key: …`,
+//                  `'key': …` or the JSX attribute `key={…}`. The value runs to the next
+//                  `,` `;` or newline at bracket depth 0, so `Math.max(insets.bottom, 12)`
+//                  and `Platform.select({ ios: 12 })` count. `theme.textSM * 1.45` counts
+//                  (the missing line height scale, typed by hand); `theme.space2`, `0` and
+//                  an index (`SIZES[2]`) do not.
+//   duration       a `duration:` / `delay:`, a `.duration(…)` / `.delay(…)` builder or a
+//                  `withDelay(…)` with a non-zero literal anywhere, plus every `…Ms` /
+//                  `…_MS` key or const given one in a file that animates (components/
+//                  motion/, or one calling Animated, withTiming and kin, LayoutAnimation).
+//   whorlSpinner   a file that imports or re-exports WhorlSpinner, statically or not.
 //
 // A RATCHET, both directions, exact (the claudeMdBudget shape, no markers). A count
 // above its ceiling reds: use the token. A count BELOW its ceiling also reds: lower the
@@ -32,12 +36,15 @@
 //
 // SCOPE BOUNDARY (stated, because an undocumented blind spot reads as coverage): it
 // counts SITES, so swapping a raw 12 for a raw 13 is invisible; it reads one line of a
-// value, so a ternary that wraps counts by its first line; it does not read constants/,
+// value, which stops at a newline outside brackets, so a wrapped ternary counts by its first line; it does not read constants/,
 // lib/, hooks/ or widgets/ (the widget's palette has its own parity test,
 // guards/widgetPalette.test.ts); `minHeight: 44` is not counted until the hit target
-// token exists (PR-03b); a named colour ('white') is not a colour here; and a timer
-// outside components/motion/ (a debounce, a TTL) is not a duration, since no motion
-// token is meant to replace it.
+// token exists (PR-03b); a named colour ('white'), a hex inside a longer string
+// ('1px #fff') and a hand typed alpha on a token (theme.colorAccent + '33') are not
+// colours here; a barrel alias of WhorlSpinner, and a second use in a file already
+// counted, are invisible; and a `…_MS` timer in a file that does not animate (a
+// debounce, a TTL) is not a duration, since no motion token is meant to replace it,
+// while one in a file that does animate is counted, debounce or not.
 //
 // Files are read as bytes, not through a grep: `app/food/[id].tsx` holds NUL bytes, and
 // a tool that sniffs for binaries skips it. The non-vacuity floor pins that it is read.
@@ -61,7 +68,7 @@ const CEILINGS = {
   letterSpacing: 9,
   spacing: 369,
   radius: 83,
-  duration: 62,
+  duration: 92,
   whorlSpinner: 48,
 } as const;
 
@@ -80,10 +87,11 @@ const REPAIR: Record<Category, string> = {
     'the tick, a skeleton or the screen\'s silhouette (.claude/rules/ui.md § Loading indicators); WhorlSpinner is retiring (CUL-1593)',
 };
 
-// A numeric literal that is not part of an identifier, a member (`theme.space1`) or a hex.
-const NUMBER = /(?<![\w.$#])\d*\.?\d+(?![\w.])/g;
-// One line of a value: up to the next `,` `}` `;` or newline.
-const VALUE = String.raw`\s*(?::|=\{)\s*([^,}\n;]*)`;
+// A numeric literal that is not part of an identifier, a member (`theme.space1`), an
+// index (`SIZES[2]`) or a hex.
+const NUMBER = /(?<![\w.$#[])\d*\.?\d+(?![\w.])/g;
+// The key's separator, `key:`, `'key':` or `key={`; the value is read by valueAt().
+const VALUE = String.raw`['"]?\s*(?::|=\{)`;
 
 const KEYED: Record<Exclude<Category, 'colour' | 'whorlSpinner'>, RegExp> = {
   fontSize: new RegExp(String.raw`\bfontSize` + VALUE, 'g'),
@@ -95,16 +103,36 @@ const KEYED: Record<Exclude<Category, 'colour' | 'whorlSpinner'>, RegExp> = {
     'g',
   ),
   radius: new RegExp(
-    String.raw`\bborder(?:TopLeft|TopRight|BottomLeft|BottomRight|TopStart|TopEnd|BottomStart|BottomEnd)?Radius` + VALUE,
+    String.raw`\bborder\w*Radius` + VALUE,
     'g',
   ),
-  duration: new RegExp(String.raw`\b(?:duration|delay)` + VALUE, 'g'),
+  duration: new RegExp(String.raw`\b(?:duration|delay)` + VALUE + String.raw`|\.(?:duration|delay)\(|\bwithDelay\(`, 'g'),
 };
-const MOTION_MS = /\b\w+(?:Ms|_MS)\s*[:=]\s*([^,}\n;]*)/g;
+const MOTION_MS = /\b\w+(?:Ms|_MS)\s*[:=]/g;
+const ANIMATES =
+  /\bAnimated\.(?:timing|spring|decay|delay|sequence|stagger|parallel)\b|\bwith(?:Timing|Spring|Delay|Sequence|Repeat)\(|\bLayoutAnimation\./;
 const COLOUR = /['"`]#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})['"`]|\b(?:rgba?|hsla?)\(/g;
-const WHORL_IMPORT = /\bimport\b[^;]*\bWhorlSpinner\b[^;]*\bfrom\b|\brequire\([^)]*WhorlSpinner/;
+const WHORL_IMPORT =
+  /\b(?:import|export)\b[^;]*\bWhorlSpinner\b[^;]*\bfrom\b|\b(?:require|import)\(\s*['"][^'"]*WhorlSpinner/;
+
+/** The value that starts at `from`: up to the next `,` `;` or newline at depth 0, or its closing bracket. */
+function valueAt(src: string, from: number): string {
+  let depth = 0;
+  let i = from;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === '(' || c === '[' || c === '{') depth += 1;
+    else if (c === ')' || c === ']' || c === '}') {
+      if (depth === 0) break;
+      depth -= 1;
+    } else if (depth === 0 && (c === ',' || c === ';' || c === '\n')) break;
+  }
+  return src.slice(from, i);
+}
 
 function holdsRawNumber(value: string): boolean {
+  // An object is a style NAMED like a key (`gap: { … }` in a StyleSheet), not a value.
+  if (/^\s*\{/.test(value)) return false;
   return (value.match(NUMBER) ?? []).some((n) => Number(n) !== 0);
 }
 
@@ -113,10 +141,10 @@ function countStyleLiterals(source: string, rel: string): Record<Category, numbe
   const src = blankComments(source);
   const out = Object.fromEntries(Object.keys(CEILINGS).map((k) => [k, 0])) as Record<Category, number>;
   for (const [cat, re] of Object.entries(KEYED) as [keyof typeof KEYED, RegExp][]) {
-    for (const m of src.matchAll(re)) if (holdsRawNumber(m[1])) out[cat] += 1;
+    for (const m of src.matchAll(re)) if (holdsRawNumber(valueAt(src, m.index + m[0].length))) out[cat] += 1;
   }
-  if (rel.startsWith(MOTION_DIR)) {
-    for (const m of src.matchAll(MOTION_MS)) if (holdsRawNumber(m[1])) out.duration += 1;
+  if (rel.startsWith(MOTION_DIR) || ANIMATES.test(src)) {
+    for (const m of src.matchAll(MOTION_MS)) if (holdsRawNumber(valueAt(src, m.index + m[0].length))) out.duration += 1;
   }
   out.colour = (src.match(COLOUR) ?? []).length;
   out.whorlSpinner = WHORL_IMPORT.test(src) ? 1 : 0;
@@ -219,15 +247,19 @@ describe('the detector', () => {
       '});',
       'Animated.timing(v, { toValue: 1, duration: 200, useNativeDriver: true });',
       '<SvgText fontSize={10} />;',
+      "const q = { 'paddingTop': 4, borderStartStartRadius: 3 };",
+      'const w = { paddingBottom: Math.max(insets.bottom, 12), gap: Platform.select({ ios: 12, default: 8 }) };',
+      'const e = FadeIn.duration(250).delay(80);',
+      "export { WhorlSpinner } from './WhorlSpinner';",
     ].join('\n');
     expect(count(src)).toEqual({
       colour: 2,
       fontSize: 2,
       lineHeight: 1,
       letterSpacing: 1,
-      spacing: 3,
-      radius: 1,
-      duration: 1,
+      spacing: 6,
+      radius: 2,
+      duration: 3,
       whorlSpinner: 1,
     });
   });
@@ -242,13 +274,21 @@ describe('the detector', () => {
       '});',
       'Animated.timing(v, { duration: theme.durationFast, delay: 0 });',
       "const label = 'Dose #12';",
+      'const f = { fontSize: SIZES[2], gap: GAPS[1] };',
+      'const named = StyleSheet.create({ gap: { flex: 1 } });',
     ].join('\n');
     expect(Object.values(count(src)).every((n) => n === 0)).toBe(true);
   });
 
-  it('counts a motion module\'s *Ms literals, and nobody else\'s timers', () => {
+  it('counts *Ms literals where something animates, and nobody else\'s timers', () => {
     const src = 'export const X_MOTION = { openMs: 370, closeMs: theme.durationMedium };\nconst HOLD_MS = 600;';
     expect(count(src, 'components/motion/xMotion.ts').duration).toBe(2);
     expect(count(src, 'components/home/Debounced.tsx').duration).toBe(0);
+    const fades = 'const FADE_MS = 150;\nAnimated.timing(v, { toValue: 1, duration: FADE_MS }).start();';
+    expect(count(fades, 'components/log/Fab.tsx').duration).toBe(1);
+  });
+
+  it('counts a dynamic import of WhorlSpinner', () => {
+    expect(count("const W = React.lazy(() => import('@/components/brand/WhorlSpinner'));").whorlSpinner).toBe(1);
   });
 });
