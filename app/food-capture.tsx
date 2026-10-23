@@ -1139,8 +1139,11 @@ export default function FoodCaptureScreen() {
               </View>
             ) : extractionFailed ? (
               <View style={styles.failedBanner}>
+                {/* CUL-2164: says only what is true. Nothing retries in the background, and
+                    the food page's retry exists only when the server recorded its own failed
+                    read, never after a transport fault or an offline upload. */}
                 <ThemedText style={styles.failedBannerText}>
-                  Couldn't read the label automatically. You can fill it in below — we'll retry extraction in the background.
+                  Couldn't read the label. Fill in what you know below.
                 </ThemedText>
               </View>
             ) : null}
