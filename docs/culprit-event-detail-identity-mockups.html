@@ -1,0 +1,427 @@
+<title>Whose Record Is This</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&display=swap">
+<style>
+  :root{
+    --ground:#FAFAFA; --card:#FFFFFF; --card-subtle:#F5F5F5;
+    --ink:#0A0A0A; --ink-2:#525252; --ink-3:#737373;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --accent:#00C2A8; --accent-ink:#0B7B6C; --accent-light:#E0FBF7;
+    --rose:#F43F5E; --rose-light:#FFE4E6; --rose-ink:#BE123C;
+    --eyebrow:#0B7B6C;
+    --frame-edge:rgba(10,10,10,.14); --frame-shadow:0 10px 28px rgba(10,10,10,.10);
+    --rec:#0B7B6C; --rec-bg:#E0FBF7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+      --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+      --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+      --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+      --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+      --eyebrow:#4FD8C4;
+      --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+      --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#13112E; --card:#1A1640; --card-subtle:#221C56;
+    --ink:#ECEAF6; --ink-2:#A6A2CE; --ink-3:#706BA6;
+    --border:rgba(196,190,255,.16); --border-strong:rgba(196,190,255,.28);
+    --accent:#00C2A8; --accent-ink:#4FD8C4; --accent-light:rgba(0,194,168,.12);
+    --rose:#FB7185; --rose-light:rgba(251,113,133,.14); --rose-ink:#FB7185;
+    --eyebrow:#4FD8C4;
+    --frame-edge:rgba(196,190,255,.22); --frame-shadow:0 12px 32px rgba(0,0,0,.45);
+    --rec:#4FD8C4; --rec-bg:rgba(0,194,168,.12);
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:'Geist',system-ui,-apple-system,sans-serif;
+       font-size:15px;line-height:1.55;margin:0;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding:40px 20px 80px;}
+  a{color:var(--accent-ink);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+  .mast{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .mast svg{color:#211E4E;}
+  :root[data-theme="dark"] .mast svg{color:#F2EEE4;}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .mast svg{color:#F2EEE4;}}
+  .mast .wordmark{font-family:'Newsreader',Georgia,serif;font-size:17px;color:var(--ink-3);letter-spacing:-.3px;}
+  .roundtag{margin-left:auto;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--eyebrow);
+            border:1px solid var(--border-strong);border-radius:999px;padding:4px 10px;}
+  h1{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:clamp(30px,5vw,42px);line-height:1.12;
+     letter-spacing:-.5px;margin:6px 0 14px;text-wrap:balance;}
+  .lede{color:var(--ink-2);max-width:66ch;margin:0 0 6px;}
+  .lede b{color:var(--ink);font-weight:600;}
+  .meta{font-size:13px;color:var(--ink-3);margin:10px 0 0;}
+  .banner{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;
+          padding:12px 16px;margin:6px 0 18px;font-size:13.5px;color:var(--ink-2);}
+  .banner b{color:var(--ink);}
+
+  .sec{margin-top:60px;}
+  .eyebrow{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--eyebrow);font-weight:600;margin:0 0 6px;}
+  h2{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:27px;letter-spacing:-.3px;margin:0 0 10px;text-wrap:balance;}
+  h3{font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:20px;letter-spacing:-.2px;margin:26px 0 6px;}
+  .sec>p{color:var(--ink-2);max-width:68ch;margin:0 0 8px;}
+  .sec>p b{color:var(--ink);font-weight:600;}
+  .row{display:flex;flex-wrap:wrap;gap:26px;margin-top:22px;align-items:flex-start;}
+
+  .fig{width:322px;max-width:100%;}
+  .fig.wide{width:auto;}
+  .opt{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .opt .k{font-weight:600;font-size:13px;letter-spacing:.4px;}
+  .tag{font-size:10px;letter-spacing:.7px;text-transform:uppercase;border-radius:999px;padding:3px 8px;font-weight:600;}
+  .tag.rec{color:var(--rec);background:var(--rec-bg);}
+  .tag.risk{color:var(--ink-3);border:1px solid var(--border-strong);}
+  .tag.bad{color:var(--rose-ink);background:var(--rose-light);}
+  .ruledbox{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:12px;
+            padding:14px 16px;margin-top:16px;font-size:13.5px;color:var(--ink-2);}
+  .ruledbox b{color:var(--ink);}
+  .ruledbox ul{margin:8px 0 0;padding-left:18px;}
+  .ruledbox li{margin:5px 0;}
+  .cap{font-size:13px;color:var(--ink-2);margin-top:10px;line-height:1.5;}
+  .cap b{color:var(--ink);font-weight:600;}
+  .capnote{font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.5;}
+
+  /* ── phone frame + in-frame primitives (literal day colors — frames depict the app) ── */
+  .frame{background:#FAFAFA;border:1px solid var(--frame-edge);border-radius:22px;box-shadow:var(--frame-shadow);
+         overflow:hidden;font-size:13px;color:#0A0A0A;}
+  .frame *{box-sizing:border-box;}
+  .nav{height:48px;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;
+       background:#FFFFFF;border-bottom:1px solid #EAEAEA;padding:0 12px;}
+  .nav .chev{font-size:24px;line-height:1;color:#0A0A0A;}
+  .nav .title{text-align:center;font-weight:600;font-size:16px;color:#0A0A0A;
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  .nav .title .dim{color:#525252;font-weight:600;}
+  /* two-line variant */
+  .nav.two{height:58px;}
+  .nav.two .stack{text-align:center;min-width:0;line-height:1.15;}
+  .nav.two .stack .t{font-weight:600;font-size:15px;color:#0A0A0A;
+                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .nav.two .stack .s{font-size:12px;color:#525252;
+                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* accessibility-text simulation */
+  .nav.ax .title{font-size:22px;}
+  .nav.ax.two .stack .t{font-size:20px;}
+  .nav.ax.two .stack .s{font-size:16px;}
+  .nav .lead-av{width:26px;height:26px;border-radius:13px;background:#E0FBF7;color:#0B7B6C;font-size:11px;
+                font-weight:600;display:flex;align-items:center;justify-content:center;}
+  .nav .titlerow{display:flex;align-items:center;gap:8px;justify-content:center;min-width:0;}
+
+  .hero{height:104px;background:linear-gradient(135deg,#E7E4DE 0%,#D9D5CD 55%,#CFCAC0 100%);
+        display:flex;align-items:flex-end;justify-content:flex-start;padding:8px 10px;}
+  .hero .stamp{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#5F5A50;
+               background:rgba(255,255,255,.72);border-radius:4px;padding:2px 6px;}
+  .ebody{padding:14px 14px 16px;background:#FAFAFA;}
+  .f-eyebrow{font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:#525252;font-weight:500;}
+  .f-date{font-size:22px;font-weight:600;letter-spacing:-.4px;color:#0A0A0A;margin-top:4px;}
+  .f-time{font-size:13px;color:#0A0A0A;margin-top:2px;}
+  .f-note{font-size:12px;color:#737373;margin-top:2px;}
+  .readcard{margin-top:12px;background:#FFFFFF;border-radius:14px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .readcard .rl{font-size:10px;letter-spacing:.9px;text-transform:uppercase;color:#737373;font-weight:600;}
+  .readcard .rv{font-size:13px;color:#0A0A0A;margin-top:5px;line-height:1.45;}
+  .readcard .rc{font-size:12px;color:#525252;margin-top:7px;line-height:1.45;}
+  .readcard .rc b{color:#0A0A0A;font-weight:600;}
+  .cut{border-top:1px dashed #D4D4D4;margin-top:12px;padding-top:7px;font-size:11px;color:#737373;text-align:center;}
+
+  .xnote{background:#FFE4E6;color:#BE123C;font-size:11.5px;padding:8px 12px;line-height:1.45;}
+  .onote{background:#E0FBF7;color:#0B7B6C;font-size:11.5px;padding:8px 12px;line-height:1.45;}
+
+  table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:14px;}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3);font-weight:600;}
+  td b{color:var(--ink);}
+  td{color:var(--ink-2);}
+  .scroller{overflow-x:auto;}
+</style>
+
+<div class="wrap">
+  <div class="mast">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+    <span class="wordmark">Culprit</span>
+    <span class="roundtag">Round 1 &middot; CUL-660</span>
+  </div>
+
+  <div class="banner">
+    <b>One decision open — R1: where the pet&rsquo;s name goes in the event detail header.</b> The data is already on the screen (<code>eventPetName</code>, resolved from the record&rsquo;s own <code>pet_id</code> by CUL-574); only the shape is unsettled. Three options below, same record in every frame, plus the frames where each one breaks. Build is <b>S</b> once ruled.
+  </div>
+
+  <h1>A health record that never says whose it is</h1>
+  <p class="lede">Open a logged vomit and the bar reads <b>&ldquo;Vomit&rdquo;</b>. The body reads <b>&ldquo;VOMIT&rdquo;</b> again, then the date. In a two-cat household nothing on the screen answers the first question a vet asks — <b>which cat?</b> — on the one surface an owner actually turns around and hands over, because it is where the photo and the AI read live.</p>
+  <p class="lede">CUL-574 fixed the version of this that named the <i>wrong</i> pet. This is the version that names <i>none</i>. B-550 hit the same thing one surface over on <code>vet-document/[id]</code> and put the name in the header, on the reasoning that the bar sits <b>outside the ScrollView</b> — so it is still on screen when the phone is turned around over a scrolled record.</p>
+  <p class="meta">Sam lens + Designer &middot; session 2026-08-30 &middot; related: CUL-574, B-550 (VF-6), CUL-726 (what an ellipsis is allowed to eat), DP-2 &sect;2</p>
+
+  <!-- ══════════════ TODAY ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">Today &middot; shipped behaviour</p>
+    <h2>Two cats, two records, one identical screen</h2>
+    <p>These are the same pixels. Sam has Mochi (8, chronic vomiter, mid diet trial) and Luna (3, fine). The only difference between these two frames is which row she tapped in History — and there is no difference between these two frames.</p>
+    <div class="row">
+
+      <div class="fig">
+        <div class="opt"><span class="k">Mochi&rsquo;s vomit</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Vomit</div><div></div></div>
+          <div class="hero"><span class="stamp">photo</span></div>
+          <div class="ebody">
+            <div class="f-eyebrow">Vomit</div>
+            <div class="f-date">Sat, Aug 30</div>
+            <div class="f-time">5:33 PM &middot; 2 hr ago</div>
+            <div class="readcard">
+              <div class="rl">What we see</div>
+              <div class="rv">Clear to pale foam, no food visible.</div>
+              <div class="rc">Worth a call if it keeps up.</div>
+            </div>
+          </div>
+        </div>
+        <p class="cap"><b>Type stated twice, pet stated zero times.</b> The bar says &ldquo;Vomit&rdquo;; the body says &ldquo;VOMIT&rdquo; nine pixels later.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">Luna&rsquo;s vomit</span><span class="tag bad">Identical</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Vomit</div><div></div></div>
+          <div class="hero"><span class="stamp">photo</span></div>
+          <div class="ebody">
+            <div class="f-eyebrow">Vomit</div>
+            <div class="f-date">Sat, Aug 30</div>
+            <div class="f-time">5:33 PM &middot; 2 hr ago</div>
+            <div class="readcard">
+              <div class="rl">What we see</div>
+              <div class="rv">Clear to pale foam, no food visible.</div>
+              <div class="rc">Worth a call if it keeps up.</div>
+            </div>
+          </div>
+          <div class="xnote">Turned around at the clinic, this screen tells the vet everything except the patient.</div>
+        </div>
+        <p class="cap">The day-summary spine pushes <code>/event/[id]</code> for <b>every</b> pet&rsquo;s rows, and so do notifications and deep links — so &ldquo;whoever is active&rdquo; is not an answer.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">Where the name does appear</span><span class="tag risk">Conditional</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Vomit</div><div></div></div>
+          <div class="ebody" style="padding-top:12px;">
+            <div class="readcard">
+              <div class="rl">What we see</div>
+              <div class="rv">Clear to pale foam, no food visible.</div>
+              <div class="rc">If <b>Mochi</b> keeps vomiting or seems off, don&rsquo;t wait for the read.</div>
+            </div>
+            <div class="cut">&darr; scrolled &mdash; the AI read is below the fold &darr;</div>
+          </div>
+        </div>
+        <p class="cap">The one place the pet is named today is inside the AI read&rsquo;s cap sentence, which renders <b>only on a vomit or stool leaf, only once the read lands</b> — and it scrolls. A weight check, a meal, a cough names nobody at all.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════ OPTIONS ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">R1 &middot; the three options</p>
+    <h2>Same record, three headers</h2>
+    <p>All three put the name in the bar (the B-550 reasoning holds: it survives the scroll). They differ in <b>form</b>, and the differences are only visible in the stress frames further down — so read this row for the everyday case and the next section for what each one costs.</p>
+    <div class="row">
+
+      <div class="fig">
+        <div class="opt"><span class="k">A &middot; Possessive</span><span class="tag risk">B-550&rsquo;s shape</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Mochi&rsquo;s vomit</div><div></div></div>
+          <div class="hero"><span class="stamp">photo</span></div>
+          <div class="ebody">
+            <div class="f-eyebrow">Vomit</div>
+            <div class="f-date">Sat, Aug 30</div>
+            <div class="f-time">5:33 PM &middot; 2 hr ago</div>
+          </div>
+        </div>
+        <p class="cap">Literally what <code>vet-document/[id]</code> ships today (<b>&ldquo;Mochi&rsquo;s Vet Files&rdquo;</b>). Warmest of the three; reads as a sentence, not a label.</p>
+        <p class="capnote">Costs a hand-written possessive noun per event type — see &ldquo;Other&rdquo; below.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">B &middot; Compound, pet first</span><span class="tag rec">Recommended</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Mochi <span class="dim">&middot;</span> Vomit</div><div></div></div>
+          <div class="hero"><span class="stamp">photo</span></div>
+          <div class="ebody">
+            <div class="f-eyebrow">Vomit</div>
+            <div class="f-date">Sat, Aug 30</div>
+            <div class="f-time">5:33 PM &middot; 2 hr ago</div>
+          </div>
+        </div>
+        <p class="cap">Reads as a filing label rather than a sentence, so it takes <b>any</b> leaf label unchanged — including the ones a possessive can&rsquo;t take, and the ones the taxonomy track hasn&rsquo;t written yet.</p>
+        <p class="capnote">Pet leads deliberately: the ellipsis eats the tail, and the tail is the half the body restates.</p>
+      </div>
+
+      <div class="fig">
+        <div class="opt"><span class="k">C &middot; Two-line header</span><span class="tag risk">Shared component</span></div>
+        <div class="frame">
+          <div class="nav two"><div class="chev">&lsaquo;</div><div class="stack"><div class="t">Vomit</div><div class="s">Mochi</div></div><div></div></div>
+          <div class="hero"><span class="stamp">photo</span></div>
+          <div class="ebody">
+            <div class="f-eyebrow">Vomit</div>
+            <div class="f-date">Sat, Aug 30</div>
+            <div class="f-time">5:33 PM &middot; 2 hr ago</div>
+          </div>
+        </div>
+        <p class="cap">The only option where <b>neither half can eat the other</b> — each line truncates on its own. Most legible at accessibility text sizes.</p>
+        <p class="capnote">Needs a new <code>subtitle</code> prop on the shared <code>Header</code> (~20 call sites, additive and defaulted off) and ~10pt more bar on every screen that opts in.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══════════════ STRESS ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">Where each one breaks</p>
+    <h2>The four frames that decide this</h2>
+    <p>The everyday case above is a tie. These are not.</p>
+
+    <h3>1 &middot; The leaf that has no possessive</h3>
+    <p>The event labels are owned by <code>constants/eventTypes.ts</code> — and the <b>Event Taxonomy Expansion</b> track is actively adding to them. Two of today&rsquo;s eleven already refuse a possessive.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">A &middot; &ldquo;Other&rdquo;</span><span class="tag bad">Breaks</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Mochi&rsquo;s other</div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Other</div><div class="f-date">Sat, Aug 30</div><div class="f-time">5:33 PM</div></div>
+          <div class="xnote">&ldquo;Mochi&rsquo;s other&rdquo; is not English. &ldquo;Mochi&rsquo;s itch/scratch&rdquo; is barely better — and every leaf W1&ndash;W4 adds has to be checked by hand.</div>
+        </div>
+        <p class="cap">The fix is a per-leaf possessive noun table, which is a <b>second</b> copy of the label list, owned by this screen and drifting from the one the taxonomy track edits.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">B &middot; &ldquo;Other&rdquo;</span><span class="tag rec">Holds</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Mochi <span class="dim">&middot;</span> Other</div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Other</div><div class="f-date">Sat, Aug 30</div><div class="f-time">5:33 PM</div></div>
+          <div class="onote">A separator makes no grammatical claim, so a new leaf inherits the header the day it is written — nothing to check, nothing to drift.</div>
+        </div>
+        <p class="cap">C holds here too, for the same reason: the two halves never form a phrase.</p>
+      </div>
+    </div>
+
+    <h3>2 &middot; A long name at accessibility text</h3>
+    <p>Nothing outside the tab bar sets <code>allowFontScaling={false}</code>, and the bar&rsquo;s title is one line between two 56pt sides. So the question is not <i>whether</i> it truncates — it is <b>which half survives</b>. CUL-726&rsquo;s rule: count how many times the surface states each half. The type is stated again in the body nine pixels down; the pet is stated nowhere else.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">B &middot; pet first</span><span class="tag rec">Right half survives</span></div>
+        <div class="frame">
+          <div class="nav ax"><div class="chev">&lsaquo;</div><div class="title">Bartholomew &middot; Loose stool</div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Loose stool</div><div class="f-date">Sat, Aug 30</div><div class="f-time">Found by 5:33 PM</div></div>
+        </div>
+        <p class="cap">The ellipsis eats the type — which the body states in full immediately below. Nothing is lost.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">B&prime; &middot; type first</span><span class="tag bad">Wrong half survives</span></div>
+        <div class="frame">
+          <div class="nav ax"><div class="chev">&lsaquo;</div><div class="title">Loose stool &middot; Bartholomew</div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Loose stool</div><div class="f-date">Sat, Aug 30</div><div class="f-time">Found by 5:33 PM</div></div>
+          <div class="xnote">The ellipsis eats the only statement of identity on the screen — the exact defect, restored by word order alone.</div>
+        </div>
+        <p class="cap">Drawn only to be rejected. It matches History&rsquo;s <span style="white-space:nowrap;">&ldquo;Meal &middot; Hydrolyzed chicken&rdquo;</span> idiom, which is why it is the tempting one.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">C &middot; two-line</span><span class="tag rec">Both survive</span></div>
+        <div class="frame">
+          <div class="nav two ax"><div class="chev">&lsaquo;</div><div class="stack"><div class="t">Loose stool</div><div class="s">Bartholomew</div></div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Loose stool</div><div class="f-date">Sat, Aug 30</div><div class="f-time">Found by 5:33 PM</div></div>
+        </div>
+        <p class="cap">C&rsquo;s genuine advantage, and the whole of it: at AX sizes it is the only one that keeps both facts. Note the bar is now ~68pt tall.</p>
+      </div>
+    </div>
+
+    <h3>3 &middot; The pet that cannot be resolved</h3>
+    <p>Archive a pet while its record is on the back stack, or cold-open a deep link, and the lookup misses. <code>resolveRecordPetName</code> refuses to guess (there is no <code>activePet</code> rung, by rule) and returns the anonymous form. B-550 already ruled what a header does with that: <b>fall back to the bare title, never the awkward possessive</b> — an unnamed record is recoverable, a confidently wrong name is not, and &ldquo;your pet&rsquo;s vomit&rdquo; reads as a bug besides.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">Any option &middot; miss</span><span class="tag rec">Same rule as B-550</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Vomit</div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Vomit</div><div class="f-date">Sat, Aug 30</div><div class="f-time">5:33 PM &middot; 2 hr ago</div></div>
+          <div class="onote">Today&rsquo;s header, deliberately — the anonymous state is the <i>floor</i> this change raises, not a state it removes.</div>
+        </div>
+        <p class="cap">Applies identically to A, B and C. Not a decision — recorded so the build cannot re-derive it as &ldquo;your pet &middot; Vomit&rdquo;.</p>
+      </div>
+      <div class="fig">
+        <div class="opt"><span class="k">Single-pet household</span><span class="tag rec">Still named</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="title">Nyx <span class="dim">&middot;</span> Vomit</div><div></div></div>
+          <div class="ebody"><div class="f-eyebrow">Vomit</div><div class="f-date">Sat, Aug 30</div><div class="f-time">5:33 PM &middot; 2 hr ago</div></div>
+        </div>
+        <p class="cap">DP-2&rsquo;s &ldquo;single-pet households keep zero multi-pet chrome&rdquo; governs the <b>switcher chevron</b>, not the name. The clinic hand-over is the same gesture in a one-cat house, and the vet knows the name even less. <b>Unconditional</b>, matching B-550.</p>
+      </div>
+    </div>
+
+    <h3>4 &middot; The leading-avatar reading, and why it is set aside</h3>
+    <p>The issue floats it: <i>&ldquo;a leading avatar, per DP-2&rsquo;s one-row header where the pet&rsquo;s photo leads?&rdquo;</i> Drawn so the rejection is visible rather than asserted.</p>
+    <div class="row">
+      <div class="fig">
+        <div class="opt"><span class="k">D &middot; Avatar leads</span><span class="tag bad">Set aside</span></div>
+        <div class="frame">
+          <div class="nav"><div class="chev">&lsaquo;</div><div class="titlerow"><span class="lead-av">M</span><span class="title" style="text-align:left;">Vomit</span></div><div></div></div>
+          <div class="hero"><span class="stamp">photo</span></div>
+          <div class="ebody"><div class="f-eyebrow">Vomit</div><div class="f-date">Sat, Aug 30</div><div class="f-time">5:33 PM &middot; 2 hr ago</div></div>
+          <div class="xnote">A face here means &ldquo;open the switcher&rdquo; everywhere else in the app (Home header, FAB chip, log sheet) — and 26pt of Mochi sits directly above a photograph of what came out of her.</div>
+        </div>
+        <p class="cap">Three separate objections, any one sufficient: <b>(1)</b> DP-2&rsquo;s photo-leads rule is scoped to the Home identity strip, whose left cluster <i>is</i> the switcher target — this bar&rsquo;s leading slot is Back. <b>(2)</b> It breaks the shared <code>Header</code>&rsquo;s equal-56pt-sides guarantee that the title is truly centred. <b>(3)</b> An avatar is warmth, and it lands two rows above the clinical artifact; CUL-660 is a legibility fix, not a place to spend delight.</p>
+        <p class="capnote">A photo also cannot be read out loud, turned around, or typed into a vet&rsquo;s chart. The name can.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ SCORECARD ══════════════ -->
+  <div class="sec">
+    <p class="eyebrow">Side by side</p>
+    <h2>What each option actually costs</h2>
+    <div class="scroller">
+      <table>
+        <tr>
+          <th>&nbsp;</th>
+          <th>A &middot; Possessive</th>
+          <th>B &middot; Compound, pet first</th>
+          <th>C &middot; Two-line</th>
+        </tr>
+        <tr>
+          <td><b>Survives a scroll</b></td><td>Yes</td><td>Yes</td><td>Yes</td>
+        </tr>
+        <tr>
+          <td><b>Takes any leaf label</b></td>
+          <td>No — needs a per-leaf noun; breaks on <i>Other</i>, strains on <i>Itch/Scratch</i></td>
+          <td>Yes</td><td>Yes</td>
+        </tr>
+        <tr>
+          <td><b>At accessibility text</b></td>
+          <td>Pet survives, type ellipses</td>
+          <td>Pet survives, type ellipses</td>
+          <td><b>Both survive</b></td>
+        </tr>
+        <tr>
+          <td><b>Touches shared code</b></td>
+          <td>No</td><td>No</td>
+          <td>Yes — <code>subtitle</code> prop on <code>Header</code>, ~20 call sites</td>
+        </tr>
+        <tr>
+          <td><b>Matches shipped precedent</b></td>
+          <td><b>Yes</b> — <code>vet-document/[id]</code>, <code>report.tsx</code></td>
+          <td>Partly — <code>rundown.tsx</code> is pet-first</td>
+          <td>No precedent in the app</td>
+        </tr>
+        <tr>
+          <td><b>Reusable for the siblings</b><br><span style="font-size:12px;color:var(--ink-3)">(<code>medication/[id]</code> says &ldquo;Medication&rdquo; and names nobody either)</span></td>
+          <td>Per-screen copy</td>
+          <td>One helper, any record screen</td>
+          <td>One prop, any record screen</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="ruledbox">
+      <b>R1 — Deciding:</b> the form the pet&rsquo;s name takes in the <code>/event/[id]</code> header bar. Everything else about this change is settled.
+      <ul>
+        <li><b>A &middot; &ldquo;Mochi&rsquo;s vomit&rdquo;</b> — warmest, and literally the shipped B-550 shape one surface over. Costs a hand-maintained possessive noun per event leaf, on a label list another track is actively growing.</li>
+        <li><b>B &middot; &ldquo;Mochi &middot; Vomit&rdquo; &mdash; recommended.</b> Label-agnostic, no shared-component change, and pet-first puts the ellipsis on the half the body restates. One helper in <code>lib/logCopy.ts</code> that <code>medication/[id]</code> and the other anonymous record screens can adopt unchanged.</li>
+        <li><b>C &middot; two-line</b> — the most legible at accessibility text and the only one where neither half can eat the other; buys that with a shared <code>Header</code> prop and ~10pt of bar. Worth it <i>if</i> you want this to become the app-wide record-screen header rather than a fix to one screen.</li>
+      </ul>
+      <b>Consequence:</b> B or A is an S-sized single-file change plus a copy unit test, shippable this session. C is the same change plus a shared-component PR and a pass over the other <code>Header</code> call sites — a bigger, more valuable, second-session shape. The fallback rule (miss &rarr; bare event label) and the single-pet rule (name renders unconditionally) are recorded above and are <b>not</b> part of R1.
+    </div>
+  </div>
+</div>
