@@ -158,7 +158,7 @@ Rules with guards where possible: one card surface, and elevation never carries 
 
 **WBC-3 · Three populations share the verb 'logged', and the coverage door never says its window ends yesterday** (medium; lenses: Data Visualization Designer with the Sr. Data Scientist, Pet Owner (Jordan), Sr. Product Designer; in this doc)
 
-- **Where:** components/designV2/home/CoverageDoor.tsx:36; lib/monthCoverage.ts; lib/spineNode.ts:682; lib/dietTrialCard.ts:2801
+- **Where:** components/surfaces/home/CoverageDoor.tsx:36; lib/monthCoverage.ts; lib/spineNode.ts:682; lib/dietTrialCard.ts:2801
 - **Evidence:** '4 logged' counts today's rows. 'October · logged 1 of 1 day' counts finished days through yesterday (the 2026-09-27 ruling). 'Meals logged on 56 of 56 days' counts meal days in the trial's designed window. None of them names its window.
 - **Counterexample:** Oct 2, nothing logged on Oct 1, four rows today: the door reads 'logged 0 of 1 day' directly under '4 logged', and the owner thinks today's logs did not save.
 - **Resolution:** Copy fix: 'October, before today · logged 1 of 1 day'. This names the today-exclusion ruling without re-arguing it. D2-8 carries a short Home vocabulary in which two ratios over different populations never share a phrase.
@@ -191,7 +191,7 @@ Rules with guards where possible: one card surface, and elevation never carries 
 
 **GAP-2 · Text starts at three left edges because the rail sits inside the column** (medium; lenses: Sr. Product Designer, Mobile Information Architect; in this doc)
 
-- **Where:** components/designV2/signal/SignalRow.tsx (gap space2 + RAIL_WIDTH 3); SignalZone.tsx rowDivider; SignalLeadCard.tsx LEAD_CHART_INSETS
+- **Where:** components/surfaces/signal/SignalRow.tsx (gap space2 + RAIL_WIDTH 3); SignalZone.tsx rowDivider; SignalLeadCard.tsx LEAD_CHART_INSETS
 - **Evidence:** Signal headlines start at about x=119 px, while SIGNAL, the trial headline and TODAY start at about 87 px, and the spine leaf starts after its time column. The Signal's hairlines overhang the content by 8pt each side. Nothing on the page establishes 'indented means railed': the trial has no rail by ruling, and the answered look carries one inline.
 - **Resolution:** The mock round puts rails in the card's left gutter so every card's text starts at one edge, and runs hairlines on the text column. Build note: LEAD_CHART_INSETS and the card-to-screen flight width move in the same PR, with the pin test updated.
 - **Verification:** CONFIRMED. The ruled mock also offsets railed text, so only the cross-card mismatch is new.
@@ -205,7 +205,7 @@ Rules with guards where possible: one card surface, and elevation never carries 
 
 **GAP-4 · The intake refusal door is the last control in the compact set, on the fourth visual row and below the first frame** (medium; lenses: Mobile Information Architect; filed CUL-1501)
 
-- **Where:** components/designV2/home/LookHeader.tsx:105, 485-520
+- **Where:** components/surfaces/home/LookHeader.tsx:105, 485-520
 - **Evidence:** REFUSAL_DOORS_ON_FIRST_ROW = true, but at 390pt the set wraps to four rows and 'Left her food ›' lands on the last one, beside 'More…'. GC-6 (a) ruled placement on the compact set, not the order within it.
 - **Counterexample:** Sam's cat has left her bowl. Sam scans the visible rows and finds mood words, positives and 'Nothing unusual', but no intake option. The tap count ties a mood word, but the reading cost and the fold cost do not.
 - **Resolution:** Put the refusal door first in reading order for both species, and rename the constant to what it guarantees. Guard: an index-order test asserting the door precedes every positive word and 'Nothing unusual'.
@@ -222,7 +222,7 @@ Rules with guards where possible: one card surface, and elevation never carries 
 
 **MFU-1 · Header comments claim wirings the code does not keep, and Patterns has two door names** (low; lenses: Sr. Product Designer, Mobile Information Architect; filed CUL-1502)
 
-- **Where:** components/designV2/home/CoverageDoor.tsx:4, 7-9; app/(tabs)/index.tsx:335; SignalZoneFoot.tsx:43
+- **Where:** components/surfaces/home/CoverageDoor.tsx:4, 7-9; app/(tabs)/index.tsx:335; SignalZoneFoot.tsx:43
 - **Evidence:** CoverageDoor and index.tsx both say the coverage door is the only door to Patterns, but SignalZoneFoot also pushes /insights (kept by GC-8 (a)). CoverageDoor says nothing tappable sits at the right edge, but its Pressable fills the card width. The same destination is labelled 'All patterns ›' and 'Patterns ›'.
 - **Resolution:** File a small fix (C-38): correct the three comments and give the destination one label. In the mock round, optionally draw the coverage line as Today's foot beside the separate card; both doors stay per GC-8 (a).
 - **Verification:** CONFIRMED.
@@ -280,7 +280,7 @@ Rules with guards where possible: one card surface, and elevation never carries 
 
 **BKL-1 · A chip that navigates looks like the chips that write** (low; lenses: Pet Owner (Jordan); in this doc)
 
-- **Where:** lib/lookCard.ts:48-62; components/designV2/home/LookHeader.tsx
+- **Where:** lib/lookCard.ts:48-62; components/surfaces/home/LookHeader.tsx
 - **Evidence:** 'Left her food ›' is the same outlined pill as eleven one-tap writes, and only its '›' tells it apart. 'More…' is a text link.
 - **Resolution:** Once PMD-1 settles the door vocabulary, the intake door takes the door's form, and D2-8 says a control that writes and one that navigates never share a form.
 - **Verification:** CONFIRMED; a legibility nicety.

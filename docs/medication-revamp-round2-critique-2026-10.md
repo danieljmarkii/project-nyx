@@ -104,7 +104,7 @@ Every item below survived the verifier. Each keeps the synthesis wording; the le
 
 **BRK-2 · Pixel's Home is measured on the retired trial strip under a placeholder Signal, and the words-only option is only a crop** (high, gates round 3; lenses: Designer / Motion & IA, Sam, Dr. Chen / Data Scientist, Verifier; source ids DES-3, SAM-04, SAM-08, CLN-6, VER-frame2)
 
-- **Where:** Frames 1, 2, 34; components/designV2/home/TrialCard.tsx (CUL-1526); components/home/TrialStrip.tsx; trial screen §5.1
+- **Where:** Frames 1, 2, 34; components/surfaces/home/TrialCard.tsx (CUL-1526); components/home/TrialStrip.tsx; trial screen §5.1
 - **Evidence:** Frame 34 uses round 1's trial strip with a meal lane, though Home's shipped trial card has carried no lane since CUL-1526 (Oct 3) and §5.1 hides the lane under any intake decline; its Signal is a grey placeholder although its caption depends on the Signal's intake card leading. Frame 2, D2's words-only option, is a crop with no Signal, tab bar or FAB, so the two Home versions are never compared at the same 390 × 844 fold.
 - **Counterexample:** On Sep 27, the day Pixel turns down her duck food, frame 34 shows five teal meal marks under a rose methimazole row and pushes 'How does Pixel seem today?' under the tab bar, but the retired strip is taller than the shipped card, so that fold cost is unmeasured.
 - **Resolution:** Redraw every Home frame on the shipped Home (the TrialCard, the Signal drawn, tab bar and FAB) at 390 × 844 and AX1, with both D2 versions at the same fold, then measure where the daily look lands on Pixel's busiest day and add a compaction rule if it leaves the first screen.

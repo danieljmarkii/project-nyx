@@ -313,7 +313,7 @@ Items are numbered as the synthesis numbered them; gaps in a sequence are items 
 
 **Severity:** medium · **Gates the next step:** no · **Shipped defect:** no · **Lenses:** Designer, Sam, Jordan · **Source findings:** DES-04, SAM-01, JOR-12, DESF-A7
 
-- **Where:** The proposed Sep 4 read (html:327); frame 03 (4 of 11 rows); EN-3 copy scope; lib/incidentReadState.ts:41-45; lib/chartCopy.ts:144; lib/monthModel.ts:440; components/designV2/signal/EpisodeGallery.tsx:57-64
+- **Where:** The proposed Sep 4 read (html:327); frame 03 (4 of 11 rows); EN-3 copy scope; lib/incidentReadState.ts:41-45; lib/chartCopy.ts:144; lib/monthModel.ts:440; components/surfaces/signal/EpisodeGallery.tsx:57-64
 - **Evidence:** The shipped label is 'Keep an eye out', the forward-looking form clinical-guardrails Pattern 1 and nyx-voice Pattern 6 require, and C-17 retired a bare 'Logged'; INCIDENT_REC_LABEL carries one string to the gallery tiles and the incident screen, where no watch-for list sits beside it. The same words are spoken inside hard-coded frames ('read as …', 'N read as worth a call', the month legend), where 'read as logged' says nothing because every event is logged.
 - **Counterexample:** At 2am Sam saves a hairball photo, sees the completion beat and then a grey 'Logged' chip: two receipts, and the phone goes down.
 - **Resolution:** EN-3 keeps 'logged' as the stored value with a forward-looking owner label ('Keep an eye out'), styles the tier chip apart from the observation chips, and bars any status word as a tier label. One tier-word map feeds every visible and spoken frame (eyebrow, strip ask within FS-11, announcement, 'read as' predicate, month count), with a guard that fails the build on the literal 'worth a call' outside it.
@@ -515,7 +515,7 @@ Items are numbered as the synthesis numbered them; gaps in a sequence are items 
 
 **Severity:** medium · **Gates the next step:** yes · **Shipped defect:** no · **Lenses:** Dir. Eng / QA, Designer, Verifiers · **Source findings:** ENG-11, DES-13, V+: v2 face is a door
 
-- **Where:** All four frames; the client halves of EN-8, EN-9, EN-10, EN-14; lib/appConfig.ts (design_v2, D2-8); components/designV2/signal/SignalLeadCard.tsx:22-24; components/home/InsightCard.tsx:580-585
+- **Where:** All four frames; the client halves of EN-8, EN-9, EN-10, EN-14; lib/appConfig.ts (design_v2, D2-8); components/surfaces/signal/SignalLeadCard.tsx:22-24; components/home/InsightCard.tsx:580-585
 - **Evidence:** Design v2 (ruled go 2026-09-19) makes the Signal card's face a door with no control row, has its own weight card, and draws none of the shipped decorations; the frames put buttons on the flag-off Home, so every tap count assumes controls Design v2 removes. History v2's readStateOf is already the verdict's only client reader.
 - **Counterexample:** EN-9 ships 'watching' on v1's InsightCard; D2-8 then deletes v1 Home and the state disappears for every owner, undecided.
 - **Resolution:** EN-9's and EN-15's mocks draw Design v2's lead card, Signal screen, spine and Patterns plus the design_v2 by Engines flag matrix, and the run order schedules the client halves of EN-8, EN-9, EN-10 and EN-14 with or after D2-8, each with a per-namespace flag-off guard proven in its own suite (C-41).
@@ -635,7 +635,7 @@ Items are numbered as the synthesis numbered them; gaps in a sequence are items 
 
 **Severity:** high · **Gates the next step:** yes · **Shipped defect:** no · **Lenses:** Designer, Critic · **Source findings:** DESF-T3, DESF-T7, DESF-T9, critic gap 3
 
-- **Where:** EN-F (CUL-1267) GA by 'flipping enabled'; EN-3 (no mock round in the run order); EN-11; D5; components/designV2/patterns/MonthInstrument.tsx:584, 622; components/designV2/signal/EpisodeGallery.tsx:57-64; generate-signal/standDown.ts:1-33
+- **Where:** EN-F (CUL-1267) GA by 'flipping enabled'; EN-3 (no mock round in the run order); EN-11; D5; components/surfaces/patterns/MonthInstrument.tsx:584, 622; components/surfaces/signal/EpisodeGallery.tsx:57-64; generate-signal/standDown.ts:1-33
 - **Evidence:** EN-F's GA flips a flag and deletes the old path, EN-3 moves twelve surfaces with no mock round, and a lower output with no explanation is read as permission to de-escalate (Buoy, 32%). From the GA, the month's 'photo read as worth a call · N days', the gallery and History hold reads made under two rules with nothing to tell them apart, and a card that fails a new rule (EN-11's worsening floor, D5's Early cards) vanishes overnight with no stand-down line.
 - **Counterexample:** A steady cat whose September reads were four 'Worth a call' days shows one or none in November for the same pattern; scrubbing the month, the owner and Dr. Chen see an improvement that is only the rule.
 - **Resolution:** EN-F gains a per-phase GA rule: each phase says whether its output is stored per event or recomputed, what an existing owner sees on the first output made under the new rule, and what an old-rule output shows beside it, with no Home card, push, motion or haptic. EN-3 goes discovery-first with a mock round drawing both sides of the GA and a dated nyx-voice register for the app naming its own rule change; the month never adds two rule populations into one number; each withdrawn card leaves one stand-down-register line minted once at the phase's GA; EN-1 reports the GA-day delta and a seam row.

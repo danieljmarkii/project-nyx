@@ -35,7 +35,7 @@ Every chart Nyx ships, in the app or in the vet report, is evidence a reader can
 
 ## 4. The shipped charts
 
-Checked against `main` at `a5988ca` (2026-10-23). Paths are as of that commit; `components/designV2/` is being renamed by the component front door work (CUL-1896), so find a component by name first.
+Checked against `main` at `a5988ca` (2026-10-23). Paths are as of that commit; `components/surfaces/` is being renamed by the component front door work (CUL-1896), so find a component by name first.
 
 ### 4.1 The app: the chart family (`components/charts/`)
 
