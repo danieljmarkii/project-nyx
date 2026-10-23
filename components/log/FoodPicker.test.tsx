@@ -457,7 +457,7 @@ describe('FoodPicker mixableOnly (row 5)', () => {
     pf('p1', 'Sprinkle', 'meal', 'topper'),
   ];
 
-  it('shows meal foods only, and no add CTA', async () => {
+  it('offers meal foods only, hides toppers, and has no add CTA', async () => {
     ROT.mockResolvedValue(FOODS);
     DB.getLibraryFoods.mockResolvedValue(FOODS as never);
     const { findAllByText, queryByText } = render(
@@ -465,19 +465,44 @@ describe('FoodPicker mixableOnly (row 5)', () => {
         onPickFood={jest.fn()} onAddNew={jest.fn()} />,
     );
     expect((await findAllByText('Rabbit Pâté')).length).toBeGreaterThan(0);
-    expect(queryByText('Jerky')).toBeNull();
     expect(queryByText('Sprinkle')).toBeNull();
     expect(queryByText('Snap a new food')).toBeNull();
+  });
+
+  // CUL-2134 (mock M1b): a treat shows, dimmed, with the reason, and is no control.
+  it('shows a treat dimmed with its reason, and a tap on it picks nothing', async () => {
+    ROT.mockResolvedValue(FOODS);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const onPickFood = jest.fn();
+    const { findByText, getByText, getByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onAddNew={jest.fn()} />,
+    );
+    const name = await findByText('Jerky');
+    getByText('Treat · logged on its own');
+    // Inert by host (C-7): no touchable owns the tile, and it claims no `disabled`.
+    const tile = getByLabelText('B Jerky. Treat · logged on its own');
+    expect(tile.props.accessibilityState).toBeUndefined();
+    expect(tile.props.onPress).toBeUndefined();
+    // C-6: walk UP the host nodes; none between the label and the root is a responder.
+    let node: typeof name | null = name;
+    while (node) {
+      if (typeof node.type === 'string') expect(node.props.onStartShouldSetResponder).toBeUndefined();
+      node = node.parent as typeof name | null;
+    }
+    fireEvent.press(name);
+    expect(onPickFood).not.toHaveBeenCalled();
   });
 
   it('without it, the same foods all show (the control)', async () => {
     ROT.mockResolvedValue([]);
     DB.getLibraryFoods.mockResolvedValue(FOODS as never);
-    const { findByText } = render(
+    const { findByText, queryByText } = render(
       <FoodPicker petId="p1" petName="Nyx" onPickFood={jest.fn()} onAddNew={jest.fn()} />,
     );
     expect(await findByText('Jerky')).toBeTruthy();
     expect(await findByText('Sprinkle')).toBeTruthy();
+    expect(queryByText('Treat · logged on its own')).toBeNull();
   });
 });
 
