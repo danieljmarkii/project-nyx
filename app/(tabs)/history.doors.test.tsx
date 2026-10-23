@@ -93,6 +93,12 @@ const CASES: DoorCase[] = [
     lands: { filter: ALL, window: ALL_TIME, landedDay: DAY },
   },
   {
+    door: 'food-mixed-bowls',
+    name: 'a food\'s mixed-bowls line, on its newest bowl\'s day',
+    params: historyDayHref(DAY, 8).params,
+    lands: { filter: ALL, window: ALL_TIME, landedDay: DAY },
+  },
+  {
     door: 'look-more-today',
     name: 'the look card\'s more today',
     params: paramsOfString(lookMoreTodayHref(7)),

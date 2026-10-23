@@ -35,7 +35,7 @@ import { AiConsentSheet } from '../../components/consent/AiConsentSheet';
 import { useAuthStore } from '../../store/authStore';
 import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
-import { getDb } from '../../lib/db';
+import { getDb, getMixedBowls } from '../../lib/db';
 import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';
 import { foodIntakeKey } from '../../lib/food';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
@@ -57,6 +57,9 @@ import { addToTrialListLabel, trialMembershipLine } from '../../lib/trialLibrary
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel } from '../../lib/dietTrialSetup';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { MixedBowlsSection, type MixedBowlsState } from '../../components/food/MixedBowlsSection';
+import { foodMixLines } from '../../lib/foodMixedBowls';
+import { historyDayHref } from '../../lib/historyDateFilter';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -228,6 +231,26 @@ export default function FoodDetailScreen() {
       .catch(() => { if (!cancelled) setTrialCtx(null); });
     return () => { cancelled = true; };
   }, [activePet?.id]);
+
+  // Spec §7.4: the bowls this food was mixed into, for the ACTIVE pet (bowls belong to a
+  // pet; the library is per-account, the trial note above scopes the same way). Keyed on
+  // the SAVED brand+product, the key the Foods tab's "in a mix" note counts on.
+  const [mixState, setMixState] = useState<MixedBowlsState>({ status: 'loading' });
+  const [mixReadTick, setMixReadTick] = useState(0);
+  const mixFoodKey = row ? foodIntakeKey(row.brand, row.product_name) : null;
+  useEffect(() => {
+    const petId = activePet?.id;
+    if (!petId || mixFoodKey === null) { setMixState({ status: 'loading' }); return; }
+    let cancelled = false;
+    setMixState({ status: 'loading' });
+    getMixedBowls(petId)
+      .then((bowls) => { if (!cancelled) setMixState({ status: 'ready', lines: foodMixLines(mixFoodKey, bowls) }); })
+      .catch((e) => {
+        console.error('[food-detail] mixed bowls read failed:', e);
+        if (!cancelled) setMixState({ status: 'error' });
+      });
+    return () => { cancelled = true; };
+  }, [activePet?.id, mixFoodKey, mixReadTick]);
 
   function applyRow(next: FoodRow) {
     // CUL-651 — where the raw failure string goes now that it is off the screen.
@@ -922,6 +945,14 @@ export default function FoodDetailScreen() {
                 one toggle row per active pet in multi-pet households; the
                 single toggle otherwise. */}
             <AlwaysAvailableCard foodItemId={row.id} />
+
+            {/* Mixed meals §7.4 (CUL-2085): read-only, absent unless the food was mixed;
+                each line lands on its newest bowl's day in History. */}
+            <MixedBowlsSection
+              state={mixState}
+              onOpenDay={(dayKey) => router.push(historyDayHref(dayKey))}
+              onRetry={() => setMixReadTick((t) => t + 1)}
+            />
 
             {/* A "try again" affordance for completed extractions — useful when
                 the AI got it wrong but the user wants to re-run rather than

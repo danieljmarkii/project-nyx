@@ -1014,22 +1014,35 @@ function sqliteLower(s: string): string {
   return s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 }
 
-/** Folds each bowl into the stats of every food it held, once per bowl per food (by the
- *  library's case-folded brand+product). A component with no cached food row has no
- *  library row to annotate. Instants are compared parsed (C-40). EXPORTED for its test. */
+/** The library foods one bowl held, by the library's case-folded brand+product (the key
+ *  `indexIntakeStats` and `foodIntakeKey` meet). A component with no cached food row has
+ *  no library row to annotate. The ONE rule both the Foods tab's "in a mix" count and food
+ *  detail's "In mixed bowls" section read (CUL-2085), so the two always count one set. */
+export function mixedBowlFoodKeys(bowl: Pick<AppBowl, 'components'>): Set<string> {
+  const keys = new Set<string>();
+  for (const c of bowl.components) {
+    const key = componentLibraryKey(c);
+    if (key !== null) keys.add(key);
+  }
+  return keys;
+}
+
+/** One component's library key (see `mixedBowlFoodKeys`), or null with no cached food row. */
+export function componentLibraryKey(c: AppBowl['components'][number]): string | null {
+  if (!c.food || c.food.brand === null || c.food.productName === null) return null;
+  return `${sqliteLower(c.food.brand)}\u001F${sqliteLower(c.food.productName)}`;
+}
+
+/** Folds each bowl into the stats of every food it held, once per bowl per food
+ *  (`mixedBowlFoodKeys`). Instants are compared parsed (C-40). EXPORTED for its test. */
 export function mergeMixedBowlStats(
   plain: readonly Omit<FoodIntakeStat, 'mix_count'>[],
-  bowls: readonly { occurredAt: string; bowl: AppBowl }[],
+  bowls: readonly MixedBowlAt[],
 ): FoodIntakeStat[] {
   const byKey = new Map<string, FoodIntakeStat>();
   for (const s of plain) byKey.set(`${s.brand_key}\u001F${s.product_key}`, { ...s, mix_count: 0 });
   for (const { occurredAt, bowl } of bowls) {
-    const keys = new Set<string>();
-    for (const c of bowl.components) {
-      if (!c.food || c.food.brand === null || c.food.productName === null) continue;
-      keys.add(`${sqliteLower(c.food.brand)}\u001F${sqliteLower(c.food.productName)}`);
-    }
-    for (const key of keys) {
+    for (const key of mixedBowlFoodKeys(bowl)) {
       const [brand_key, product_key] = key.split('\u001F');
       const held = byKey.get(key);
       if (!held) {
@@ -1044,24 +1057,37 @@ export function mergeMixedBowlStats(
   return [...byKey.values()];
 }
 
-export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[]> {
-  const db = getDb();
-  const [plain, candidates] = await Promise.all([
-    db.getAllAsync<Omit<FoodIntakeStat, 'mix_count'>>(PLAIN_INTAKE_STATS_SQL, [petId]).then((r) => r ?? []),
-    db.getAllAsync<{ event_id: string; occurred_at: string }>(MIX_CANDIDATES_SQL, [petId]).then((r) => r ?? []),
-  ]);
-  if (candidates.length === 0) return mergeMixedBowlStats(plain, []);
+/** One mixed (or incomplete) bowl with the instant it was fed. */
+export interface MixedBowlAt {
+  occurredAt: string;
+  bowl: AppBowl;
+}
+
+/** Every mixed bowl one pet was fed (live meals only), through the one composition read.
+ *  Throws on a failed read: an unread bowl is never "no bowls". */
+export async function getMixedBowls(
+  petId: string,
+  db: Pick<ReturnType<typeof getDb>, 'getAllAsync'> = getDb(),
+): Promise<MixedBowlAt[]> {
+  const candidates = (await db.getAllAsync<{ event_id: string; occurred_at: string }>(MIX_CANDIDATES_SQL, [petId])) ?? [];
+  if (candidates.length === 0) return [];
   // Lazy: `lib/mealBowls.ts` imports this module at runtime (this one imports only its type).
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { loadMealBowls } = require('./mealBowls') as typeof import('./mealBowls');
   const bowls = await loadMealBowls(candidates.map((c) => c.event_id), db);
-  return mergeMixedBowlStats(
-    plain,
-    candidates.flatMap((c) => {
-      const bowl = bowls.get(c.event_id);
-      return bowl ? [{ occurredAt: c.occurred_at, bowl }] : [];
-    }),
-  );
+  return candidates.flatMap((c) => {
+    const bowl = bowls.get(c.event_id);
+    return bowl ? [{ occurredAt: c.occurred_at, bowl }] : [];
+  });
+}
+
+export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[]> {
+  const db = getDb();
+  const [plain, bowls] = await Promise.all([
+    db.getAllAsync<Omit<FoodIntakeStat, 'mix_count'>>(PLAIN_INTAKE_STATS_SQL, [petId]).then((r) => r ?? []),
+    getMixedBowls(petId, db),
+  ]);
+  return mergeMixedBowlStats(plain, bowls);
 }
 
 /**
