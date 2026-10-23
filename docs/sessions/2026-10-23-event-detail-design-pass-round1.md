@@ -14,8 +14,10 @@ Dispatched as PR-10 of *Design system · one kit, every screen*. Posted the plan
 - Consent off no longer renders "no read section": since CUL-1835 it is the "AI reading is off" frame, so §4 of the incident spec and CUL-823's premise both trail the code.
 - The completion card's ground is now daylight (`COMPLETION_GROUND = colorSurface`), so CUL-824's "two dark bars" premise has half changed; the overlap with the footer still holds.
 
+- The reviewer's out-of-scope catch, verified and filed as CUL-2141 (Live harm, QUIET): an owner's edit that adds blood or foreign material under a quiet read leaves the card quiet and the facts foldable, because the fold gate reads only the stored verdict.
+
 ## Clinical floor
-Every read string in all three columns is verbatim from the shipped modules; the call tiers keep fill against outline; no haptic is drawn or proposed. P3, P4, P5, P6, D-820 and D-828 change how a read looks and went to `adversarial-reviewer`: ADVERSARIAL.
+Every read string in all three columns is verbatim from the shipped modules; the call tiers keep fill against outline; no haptic is drawn or proposed. P3, P4, P5, P6, D-820 and D-828 change how a read looks and went to `adversarial-reviewer`. Pass 1 returned FAIL: D-820's "no signal" copy named a cause the branch cannot know (an unsynced photo and a timed-out watch land there too) and could delay a retry, so the copy is now cause-neutral; P3's call today outline went to 2pt after the reviewer found it one 1pt stroke from Keep an eye out once both cards were white; P5's Not enough headline moved to secondary grey; P6 keeps "Hide this note"; D-828 keys on the enum. The reviewer also caught five fixture strings that did not match the engine (call now's read text, a two-form "What to tell them", the watch-for deadlines, the dog's missing bloat line, the stool's read text); all corrected. P4 held.
 
 ## Next
 The PM rules the round on CUL-1907; the page merges once ruled. CUL-1912 builds the picks after PR-03b, PR-05 and PR-06.

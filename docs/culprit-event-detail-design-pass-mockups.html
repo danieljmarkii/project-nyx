@@ -123,13 +123,13 @@ section.state { margin-top: 56px; scroll-margin-top: 70px; }
 /* the read card, design pass: Home's one surface, rail in the gutter, text on the record's edge */
 .pc { position: relative; background: #FFFFFF; border-radius: calc(var(--u)*16); box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.045); padding: calc(var(--u)*16); display: flex; flex-direction: column; gap: calc(var(--u)*6); }
 .pc.attn { background: #FFE4E6; box-shadow: none; border: 1px solid #FBCFD6; }
-.pc.outl { box-shadow: none; border: 1px solid #F43F5E; }
+.pc.outl { box-shadow: none; border: calc(var(--u)*2) solid #F43F5E; }
 .pc.muted { box-shadow: none; border: 1px dashed #D4D4D4; }
 .pc .rl { position: absolute; left: calc(var(--u)*6); top: calc(var(--u)*16); bottom: calc(var(--u)*16); width: calc(var(--u)*3); border-radius: 2px; background: #D4D4D4; }
 .pc.attn .rl, .pc.outl .rl { background: #F43F5E; }
 .pc .rl.tk { bottom: auto; height: calc(var(--u)*16); animation: breathe 1.6s ease-in-out infinite; background: #C9C9C9; }
 @media (prefers-reduced-motion: reduce) { .pc .rl.tk { animation: none; } }
-.pfoot { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u)*12); margin-top: calc(var(--u)*4); }
+.pfoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: calc(var(--u)*12); margin-top: calc(var(--u)*4); }
 .pfoot .lk { min-height: calc(var(--u)*44); display: flex; align-items: center; white-space: nowrap; }
 .chips { display: flex; flex-wrap: wrap; gap: calc(var(--u)*8); }
 .chip { border: 1px solid #D4D4D4; border-radius: 999px; padding: calc(var(--u)*10) calc(var(--u)*16); min-height: calc(var(--u)*44); display: inline-flex; align-items: center; font-weight: 500; background: #FFFFFF; }
@@ -286,7 +286,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
     <div class="box"><h3>Dr. Chen (every frame)</h3><p>Read every frame cold. Passes: no column adds, softens or moves a word of the read; the call tiers stay told apart by fill against outline, not colour alone; the vet line rides every state that is not a read, including the new unreached frame. Holds: P9 (the lane) is recommended against, because a lone dot reads as "isolated" and an empty week reads as wellness. P4, P5 and D-828 go to the adversarial pass before build.</p></div>
     <div class="box"><h3>Motion &amp; IA</h3><p>The arrival keeps its constants (§16). Fold economics on a 390 × 844pt phone: today the footer takes about 132pt of every screen; the design pass gives that back to the record, which is what puts the call's action line above the fold.</p></div>
     <div class="box"><h3>QA</h3><p>Fifteen states drawn in all three columns, plus 320pt, largest text, two pets and the VoiceOver order (§15, §17). The unreached and AI-off frames depend on behaviour that needs a device check (D-823's flash); the page says so where it draws it.</p></div>
-    <div class="box"><h3>Adversarial review</h3><p id="adv">Pending: the <code>adversarial-reviewer</code> pass on P4, P5, P6, D-820 and D-828 runs on this page before the round goes to the PM. Its verdict is written here.</p></div>
+    <div class="box"><h3>Adversarial review</h3><p id="adv"><b>Pass 1 of 2: FAIL, fixed on this page.</b> D-820's first copy ("No signal… try again once you have signal") named a cause the branch cannot know and could delay a retry on Wi-Fi (QUIET); it is now cause-neutral. P3: call today and Keep an eye out were one 1pt stroke apart once both were white; call today's outline is now 2pt and the build checks the pair in greyscale. P5: Not enough's headline moved from tertiary to secondary grey for 4.5:1. P6: the control keeps "Hide this note", and its gap to the call answers is a C-5 check. D-828 keys on the field's enum, not the string. Fixture copy corrected: call now's full read text, one form of "What to tell them", the engine's watch-for deadlines, the dog's bloat line, the stool's own read text. P4 held. Held with conditions: P5, P6, D-828. A second pass runs on the build (CUL-1912), not on this page.</p></div>
   </div>
 </section>
 
@@ -307,17 +307,18 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
   var VET_LINE = function (p) { return 'If ' + p + ' keeps vomiting, brings up something unusual, or seems unwell, call your vet.'; };
   var READS = {
     call_now: { tone: 'attn', label: 'Call your vet now', action: "Call your vet now. If they're closed, call an emergency clinic.",
-      tell: 'Biscuit vomited at 7:42 AM; 3 vomits logged from 1:10 AM to 7:42 AM.', text: 'Biscuit has thrown up more than once in a short window.' },
+      tell: '3 vomits logged from 1:10 AM to 7:42 AM.', text: 'Biscuit has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.' },
     call_today: { tone: 'outl', label: 'Call your vet today', action: "Call your vet today. If they're closed, call an emergency clinic.",
       tell: 'Biscuit vomited at 7:42 AM; fresh red blood in the photo.', text: "I can see what looks like blood in this photo. That's worth a call to your vet about Biscuit." },
     worth: { tone: 'attn', label: 'Worth a call', action: null, tell: null, rule: 'Read under the earlier rule, before Oct 9.',
       text: "I can see something that doesn't look like food in this photo. That's worth a call to your vet about Biscuit." },
     logged: { tone: 'neutral', label: 'Keep an eye out', action: null, tell: null,
       text: "A single photo on its own can't tell you how Biscuit is doing. Keep an eye on Biscuit — if it happens again, or Biscuit seems unwell or goes off food, your vet is the best call.",
-      watch: ['Call your vet now if you see Biscuit vomit twice more by 3:40 PM, each more than half an hour after the vomit before it, or Biscuit is low on energy by 7:40 PM.', 'Call your vet today if Biscuit vomits again by 7:40 AM tomorrow.'] },
+      watch: ['Call your vet now if you see Biscuit vomit twice more by 11:42 AM, each more than half an hour after the vomit before it, or Biscuit is low on energy by 7:42 AM tomorrow.', 'Call your vet today if Biscuit vomits again by 7:42 AM tomorrow.'], emergency: 'Go to your vet or an emergency clinic now if Biscuit retches with nothing coming up, or Biscuit\'s belly looks swollen or tight. That can be bloat.' },
     nes: { tone: 'muted', label: 'Not enough to say yet', action: null, tell: null, text: null,
-      watch: ['Call your vet now if you see Biscuit vomit twice more by 3:40 PM, each more than half an hour after the vomit before it, or Biscuit is low on energy by 7:40 PM.', 'Call your vet today if Biscuit vomits again by 7:40 AM tomorrow.'] }
+      watch: ['Call your vet now if you see Biscuit vomit twice more by 11:42 AM, each more than half an hour after the vomit before it, or Biscuit is low on energy by 7:42 AM tomorrow.', 'Call your vet today if Biscuit vomits again by 7:42 AM tomorrow.'], emergency: 'Go to your vet or an emergency clinic now if Biscuit retches with nothing coming up, or Biscuit\'s belly looks swollen or tight. That can be bloat.' }
   };
+  var STOOL_MONITOR = "One stool on its own is just a single snapshot — it can't show how Biscuit's gut is doing over time. That fuller picture comes from logging the next few. If Biscuit keeps having loose stools, seems unwell, or goes off food, your vet is the best call.";
   var OBS = {
     blood: [['Consistency', 'Chunky'], ['Contents', 'Food, bile'], ['Blood', 'Fresh red'], ['Foreign material', 'None visible']],
     repeat: [['Consistency', 'Watery'], ['Contents', 'Bile, foam'], ['Blood', 'None visible']],
@@ -359,7 +360,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
   }
   function readBody(r, col, opts) {
     var lbl = col === 'pass'
-      ? '<div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 ' + (r.tone === 'attn' || r.tone === 'outl' ? 'ci' : r.tone === 'muted' ? 'c3' : 'c2') + '"' + tg('Verdict as headline (P5)', 'textLG · weightSemibold · colorEventSymptomInk on calls') + '>' + r.label + '</div>'
+      ? '<div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 ' + (r.tone === 'attn' || r.tone === 'outl' ? 'ci' : 'c2') + '"' + tg('Verdict as headline (P5)', 'textLG · weightSemibold · colorEventSymptomInk on calls') + '>' + r.label + '</div>'
       : '<div class="t11 m trk ' + (r.tone === 'attn' || r.tone === 'outl' ? 'ci' : r.tone === 'muted' ? 'c3' : 'c2') + '"' + tg('Verdict label', 'textXS · trackingWidest · colorEventSymptomInk') + '>' + r.label + '</div>';
     var h = lbl;
     if (r.action) h += '<div class="t15 m lh22"' + tg('Action line', 'textMD · fontWeightMedium') + '>' + r.action + '</div>';
@@ -367,13 +368,14 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
     if (r.text) h += '<div class="t15 lh22"' + tg('Read text', 'textMD · lineHeightBody') + '>' + r.text + '</div>';
     if (r.watch) {
       h += '<div' + tg('Watch-for list', 'textSM lead · textMD lines') + '><div class="t13 c2 lh22">Watch for these:</div>';
+      if (r.emergency && !(opts && opts.cat)) h += '<div class="t15 lh22">' + r.emergency + '</div>';
       r.watch.forEach(function (w) { h += '<div class="t15 lh22">' + w + '</div>'; });
       h += '</div>';
     }
     if (r.rule) h += '<div class="t13 c2 lh22"' + tg('Rule note', 'textSM · colorTextSecondary') + '>' + r.rule + '</div>';
     if (opts && opts.extra) h += opts.extra;
     if (col === 'pass') {
-      h += '<div class="pfoot"' + tg('Card foot (P6)', 'textXS disclaimer · textSM link · 44pt') + '><span class="t11 c3">' + DISCLAIMER + '</span><span class="lk t13 m c2">Hide</span></div>';
+      h += '<div class="pfoot"' + tg('Card foot (P6)', 'textXS disclaimer · textSM link · 44pt') + '><span class="t11 c3">' + DISCLAIMER + '</span><span class="lk t13 m c2">' + HIDE + '</span></div>';
     } else {
       h += '<div class="t11 c3"' + tg('Disclaimer', 'textXS · lineHeight 15 literal', col === 'today') + '>' + DISCLAIMER + '</div>';
       h += '<div class="t13 m c2"' + tg('Hide control · TouchableOpacity', 'textSM · paddingVertical spaceMicro', col === 'today') + '>' + HIDE + '</div>';
@@ -438,9 +440,10 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
         if (col === 'pass') return '<div class="pc"' + tg('Pending on HomeCard surface', 'Tick 3×16 in gutter · textMD') + '><span class="rl tk" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t15 c2">' + PENDING + '</div></div>';
         return secLabel(col) + '<div class="pend gap8"' + tg('IncidentReadPending', 'Tick · radiusSmall dashed · minHeight 48') + '><span class="tick" aria-hidden="true"></span><span class="t15 c2">' + PENDING + '</span></div>';
       case 'call_now': case 'call_today': case 'worth': case 'logged': case 'nes':
-        return secLabel(col) + card(col, READS[st.read]);
+        var rd = READS[st.read]; if (st.kind === 'stool' && st.read === 'logged') rd = Object.assign({}, rd, { text: STOOL_MONITOR, watch: null, emergency: null });
+        return secLabel(col) + card(col, rd, { cat: st.cat });
       case 'unreached':
-        if (col === 'pass') return '<div class="pc muted"' + tg('Unread frame (D-820, new copy)', 'RecordUnreadStatus family · dashed') + '><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 c2">The photo wasn\'t read</div><div class="t15 lh22">No signal, so this photo couldn\'t be sent for a read yet. It\'s saved. Try again once you have signal.</div><div class="t15 lh22">' + VET_LINE(p) + '</div><div class="pfoot"><span></span><span class="lk t13 m ct">Try again</span></div></div>';
+        if (col === 'pass') return '<div class="pc muted"' + tg('Unread frame (D-820, new copy)', 'RecordUnreadStatus family · dashed') + '><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 c2">The photo wasn\'t read</div><div class="t15 lh22">This photo hasn\'t been read yet. It\'s saved on ' + p + '\'s record, and Try again sends it now.</div><div class="t15 lh22">' + VET_LINE(p) + '</div><div class="pfoot"><span></span><span class="lk t13 m ct">Try again</span></div></div>';
         return secLabel(col) + '<div class="rc gap8"' + tg('Neutral card · hand-built View', 'colorSurfaceSubtle · radiusMedium', col === 'today') + '><div class="bd"><div class="t15 lh22">' + NOT_ENOUGH_LINE + '</div><div class="t13 m ct">Try analysis</div></div></div><div class="t11 c3 gap8">' + DISCLAIMER + '</div>';
       case 'failed':
         var FAILED = "Couldn't finish reading this one.";
@@ -504,7 +507,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
       chen: 'Not-enough is the floor, never reassurance, and it keeps a look of its own in every column.' },
     { id: 's07', n: '07', title: 'The read never reached the server (CUL-820)', why: 'No signal at log time. Today the section falls through to the no-row branch and says "Not enough to say about this one yet", which reads as a verdict on a photo nobody looked at.',
       st: { photo: true, read: 'unreached', obs: null },
-      caps: ['Today: the defect. The words sound like a read.', 'Faithful: drawn as today, because the fix is a ruling (D-820), not a move onto parts.', 'Design pass: the consent frames\' "The photo wasn\'t read" shape, with the vet line every non-read carries and a Try again.'],
+      caps: ['Today: the defect. The words sound like a read.', 'Faithful: drawn as today, because the fix is a ruling (D-820), not a move onto parts.', 'Design pass: the consent frames\' "The photo wasn\'t read" shape. The words name no cause, because this branch also catches an unsynced photo and a watch that gave up; the vet line and Try again ride it.'],
       chen: 'The new frame cannot reassure: it says plainly that no read happened and carries the vet line. Its copy is new, so it goes through <code>nyx-voice</code> and the adversarial pass before build (D-820).' },
     { id: 's07b', n: '07b', title: 'The read failed', why: 'The server was reached and the read did not finish. Shipped copy and a Try again.',
       st: { photo: true, read: 'failed', obs: null },
@@ -526,10 +529,10 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
       st: { photo: true, read: 'pending', obs: null, completion: true },
       caps: ['Today: the card\'s lower half sits over the footer; Remove is hidden behind it and Edit shows through the scrim.', 'Faithful: the same overlap.', 'Design pass: with no footer (P1) the card sits over the scroll and covers nothing you can tap. Undo is the one way back for those 5 seconds.'],
       chen: 'Not clinical. Undo stays the safer sibling of Remove in every column.' },
-    { id: 's12', n: '12', title: 'A stool record', why: 'The stool twin: the same card, the stool fields, the Bristol type beside consistency.',
+    { id: 's12', n: '12', title: 'A stool record', why: 'The stool twin: the same card, the stool read\'s own words, the stool fields, the Bristol type beside consistency.',
       st: { photo: true, kind: 'stool', read: 'logged', obs: 'stool', heroCls: 'stool' },
       caps: ['Today.', 'Faithful: no visible change.', 'Design pass: the Bristol type sits beside the value on its row.'],
-      chen: 'Mucus present stays a plain row; the read above decides the tone, never the row. The stool watch-for words are the vomit list\'s shape here as a fixture; the build reads the stool list.' },
+      chen: 'Mucus present stays a plain row; the read above decides the tone, never the row. The stool read text is the analyze-stool monitor template, verbatim.' },
     { id: 's13', n: '13', title: 'No photo: the empty record', why: 'A photoless vomit takes the completion path, not the route, so the owner reaches this from History. No read section unless a photoless check made a call.',
       st: { photo: false, read: null, obs: null, notes: 'Found on the rug, not sure when.' },
       caps: ['Today: a 320pt grey hero that says Add photo.', 'Faithful: the hand-typed 15 becomes <code>textMD</code>; no visible change.', 'Design pass: a shorter dashed tile (P10) puts the record and the notes above the fold.'],
@@ -565,7 +568,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
     '<div class="slot"><span class="tag faith">Faithful · largest text</span>' + phone('faith', callToday, { big: true }) + '<p class="cap"><b>Faithful, largest text</b>As today.</p></div>' +
     '<div class="slot"><span class="tag pass">Design pass · largest text</span>' + phone('pass', callToday, { big: true }) + '<p class="cap"><b>Design pass, largest text</b>The verdict and the action line are on screen under the hero.</p></div>' +
     '</div>';
-  var mochi = { photo: true, read: 'nes', obs: null, pet: 'Mochi', heroCls: 'dark' };
+  var mochi = { photo: true, read: 'nes', obs: null, pet: 'Mochi', cat: true, heroCls: 'dark' };
   stress += '<h3 style="margin-top:28px">Two pets: Mochi\'s record opened from History while Biscuit is the active pet</h3><div class="frames">' +
     '<div class="slot"><span class="tag today">Today</span>' + phone('today', mochi).replace(/Biscuit/g, 'Mochi') + '<p class="cap"><b>Today</b>"Mochi\'s record" comes from the record\'s pet (<code>resolveRecordPetName</code>), never the active one.</p></div>' +
     '<div class="slot"><span class="tag faith">Faithful</span>' + phone('faith', mochi).replace(/Biscuit/g, 'Mochi') + '<p class="cap"><b>Faithful</b>Unchanged.</p></div>' +
@@ -625,7 +628,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
       'none on CUL-660, whose header form stays open. Frames: every design pass column.'),
     brief('P3', 'PM', 'Quiet reads on Home\'s one card surface', 'the ground and surface the read sits on when it is not a call.',
       ['(A) As shipped: a grey filled box with a hairline on a white screen.', '<strong>(B) The screen below the hero takes Home\'s #FAFAFA ground; Keep an eye out sits on the soft-shadow card (G1 A); Not enough, the unread frames and the cap keep a dashed edge; calls keep their fill and outline exactly.</strong> ' + R + 'the record speaks Home\'s language, and every tier keeps a look of its own that does not rest on colour alone.'],
-      'CUL-1912 imports Home\'s card surface from <code>components/designV2/home/</code> (PR-00). Frames §01, §05, §06, §07 to §10.' + ADV),
+      'CUL-1912 imports Home\'s card surface from <code>components/designV2/home/</code> (PR-00). Round 1\'s review found call today and Keep an eye out separated only by a 1pt stroke once both are white, so call today\'s outline is drawn at 2pt here, and the build checks the pair in greyscale. Frames §01, §05, §06, §07 to §10.' + ADV),
     brief('P4', 'PM', 'The rail in the gutter, text on one edge', 'where the 3pt rail stands.',
       ['(A) As shipped: flush against the card\'s inner left edge, so the card\'s text starts 19pt right of the record\'s.', '<strong>(B) The card runs 8pt from the screen edge, the rail stands in its gutter, and the verdict starts on the record\'s 24pt text edge (Home\'s R-2).</strong> ' + R + 'one left edge for the whole record. The arrival keeps every constant; only the tick\'s position moves with the rail.'],
       'one filmed sitting of the arrival before CUL-1912 merges (§16). Frames: every design pass read.' + ADV),
@@ -633,7 +636,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
       ['(A) As shipped: 11pt, tracked, the same register as a section label.', '<strong>(B) 17pt semibold, every tier the same size, the "AI READ" eyebrow above it inside the card.</strong> ' + R + 'the one sentence the owner must act on becomes the biggest words under the photo. G4 holds: no tier is drawn larger or harder than another. A LOUD change.'],
       'the shipped words are untouched. Frames: every design pass read.' + ADV),
     brief('P6', 'PM', 'The disclaimer and Hide share the card\'s foot', 'whether Hide is a line of its own.',
-      ['(A) As shipped: the disclaimer, then "Hide this note" on its own line.', '<strong>(B) One foot row: the disclaimer on the left, "Hide" on the right at 44pt.</strong> ' + R + 'one line back, and Home\'s Signal already uses this foot. The visible word becomes "Hide" and its accessible name follows it, never a label that differs from the text (C-7).'],
+      ['(A) As shipped: the disclaimer, then "Hide this note" on its own line.', '<strong>(B) One foot row: the disclaimer on the left, "Hide this note" on the right at 44pt, wrapping under the disclaimer at 320pt.</strong> ' + R + 'one line back, and Home\'s Signal already uses this foot. The words keep their object, so VoiceOver still says what is hidden. The row sits 16pt above the call answers on a call; the build checks that gap under C-5, because a mis-tap there would hide a call.'],
       'none. Frames: every design pass read.' + ADV),
     brief('P7', 'PM', 'The observations as hairline rows', 'the two-column grid against label and value rows.',
       ['(A) As shipped: a two-column grid, uppercase 11pt labels over 13pt values.', '<strong>(B) One row per finding, the label left at 13pt and the value right at 15pt, under hairlines; Edit and "Keep it compact" unchanged.</strong> ' + R + 'the values a vet reads become the larger type, and rows survive 320pt and largest text without the grid\'s ragged wrap.'],
@@ -653,7 +656,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
   ].join('');
   document.getElementById('ledger-d').innerHTML = [
     brief('D-820', 'PM · clinical copy', 'The read that never reached the server', 'what the record says when the photo could not be sent for a read, and whether Save still routes there.',
-      ['(A) As shipped: "Not enough to say about this one yet." + Try analysis.', '<strong>(B) The consent family\'s unread frame: "The photo wasn\'t read", "No signal, so this photo couldn\'t be sent for a read yet. It\'s saved. Try again once you have signal.", the vet line, Try again. Save keeps routing to the record.</strong> ' + R + 'it says what happened, it cannot be heard as a verdict, and the record is still the confirmation (D1). Not routing would hide a saved log behind a silent failure.'],
+      ['(A) As shipped: "Not enough to say about this one yet." + Try analysis.', '<strong>(B) The consent family\'s unread frame: "The photo wasn\'t read", "This photo hasn\'t been read yet. It\'s saved on Biscuit\'s record, and Try again sends it now.", the vet line, Try again. Save keeps routing to the record.</strong> ' + R + 'it says no read happened without naming a cause the code cannot know (round 1\'s "no signal" copy failed review: the branch also catches an unsynced photo and a timed-out watch, and telling a Wi-Fi owner to wait for signal delays a retry). It cannot be heard as a verdict, and the record is still the confirmation (D1).', '(C) Split the branch on a known transport failure and say "no connection" only there. Better words, more state; a later fix, not this round.'],
       'adds one frame to <code>docs/nyx-incident-screen-requirements.md</code> §4 (a Tier 2 edit on ruling). Frame §07.' + ADV),
     brief('D-823', 'PM', 'The off frame on the first frame', 'whether the record waits on the row before showing the consent answer.',
       ['<strong>Paint the off frame from the device\'s consent answer on the first frame; never show the pending tick on an account that said no.</strong> ' + R + 'the answer is local, so the flash costs a moment of false work for nothing. Check the cap state the same way.'],
@@ -663,7 +666,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
       'resolved by P1 (B). Frame §11.'),
     brief('D-828', 'PM', 'The folded strip keeps its labels', 'what the one-line strip prints.',
       ['(A) As shipped: values only, so "None visible · 1 finding".', '<strong>(B) An absence value carries its label ("Blood: none visible"), and the count adds "1 edited" when the owner changed a value.</strong> ' + R + 'both residuals close for a few characters; the count stays pinned and the named values still yield first (§5.3a ④).'],
-      'one rule in <code>observationStrip.ts</code>. Frame §10.' + ADV)
+      'one rule in <code>observationStrip.ts</code>, keyed on the field\'s absence enum value, never the display string; §5.3a ③ and ④ stand. Frame §10.' + ADV)
   ].join('');
 
   // controls
