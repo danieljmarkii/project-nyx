@@ -59,8 +59,15 @@ describe('BowlEditor stepper', () => {
     const { getByTestId } = render(<BowlEditor foods={atEnd} onChange={jest.fn()} {...props} />);
     const first = getByTestId('bowl-step-first');
     expect(first.props.accessibilityState).toEqual({ disabled: true });
-    expect(first.props.accessibilityLabel).toBe('More Chicken in this bowl. Already at ¾, the most the steps go.');
+    expect(first.props.accessibilityLabel).toBe('More Chicken in this bowl. ¾ Chicken is as far as the steps go.');
     expect(getByTestId('bowl-step-second').props.accessibilityState).toEqual({ disabled: false });
+    // CUL-2134: the card's own visible line, from the one shared function.
+    expect(getByTestId('bowl-step-why', { includeHiddenElements: true }).props.children).toBe('¾ Chicken is as far as the steps go.');
+  });
+
+  it('between the ends there is no end-stop line', () => {
+    const { queryByTestId } = render(<BowlEditor foods={CHICKEN_THIRD} onChange={jest.fn()} {...props} />);
+    expect(queryByTestId('bowl-step-why', { includeHiddenElements: true })).toBeNull();
   });
 
   it('no stepper on a one-food bowl', () => {

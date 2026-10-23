@@ -121,3 +121,17 @@ export function stepStop(firstShare: number, toward: StepToward): number | null 
   }
   return null;
 }
+
+/**
+ * The line under a stepper whose side has dimmed (spec §7.5, C-7; CUL-2134): the end stop
+ * says why in words a sighted owner reads, not only in the button's label. The steps end
+ * at ¾, so the line names that ceiling for the food asked for, never "all of it": a bowl
+ * that is all one food is a plain meal, which the stepper never writes. Null when neither
+ * side is at an end. One function for both steppers (the card and the edit screen).
+ */
+export function stepEndLine(firstShare: number, firstName: string, secondName: string): string | null {
+  const ceiling = shareGlyph(MIX_STOPS[0]) ?? '¾';
+  if (stepStop(firstShare, 'first') === null) return `${ceiling} ${firstName} is as far as the steps go.`;
+  if (stepStop(firstShare, 'second') === null) return `${ceiling} ${secondName} is as far as the steps go.`;
+  return null;
+}

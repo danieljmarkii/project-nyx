@@ -232,9 +232,31 @@ describe('MealCompletionCard — mixing (row 5)', () => {
     const { getByTestId } = render(<MealCompletionCard />);
     const end = getByTestId('mix-step-second');
     expect(end.props.accessibilityState).toEqual({ disabled: true });
-    expect(end.props.accessibilityLabel).toBe('More Rabbit Pâté in this bowl. Already at ¾, the most the steps go.');
+    expect(end.props.accessibilityLabel).toBe('More Rabbit Pâté in this bowl. ¾ Rabbit Pâté is as far as the steps go.');
+    // CUL-2134: the reason is a line a sighted owner reads, not only the button's label.
+    expect(getByTestId('mix-step-why', { includeHiddenElements: true }).props.children).toBe('¾ Rabbit Pâté is as far as the steps go.');
     await act(async () => { fireEvent.press(end); });
     expect(mockSetMealComponents).not.toHaveBeenCalled();
+  });
+
+  it('between the ends there is no end-stop line', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { queryByTestId } = render(<MealCompletionCard />);
+    expect(queryByTestId('mix-step-why', { includeHiddenElements: true })).toBeNull();
+  });
+
+  // CUL-2134 (mock M3): the subtitle says the two foods are one record; a plain meal's
+  // subtitle stays the time alone.
+  it('a bowl\'s subtitle says "one bowl"', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByText } = render(<MealCompletionCard />);
+    getByText(/ · one bowl$/);
+  });
+
+  it('a plain meal\'s subtitle has no "one bowl"', () => {
+    seedMeal({ foodType: 'meal' });
+    const { queryByText } = render(<MealCompletionCard />);
+    expect(queryByText(/one bowl/)).toBeNull();
   });
 
   it('a failed step goes back and says so', async () => {
