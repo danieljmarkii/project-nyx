@@ -126,6 +126,7 @@ jest.mock('../../lib/incidentPattern', () => ({
 const mockRouterPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (h: string) => mockRouterPush(h) } }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { OBSERVATION_FOLD_STORAGE_KEY } from '../../lib/observationFold';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { AppState } from 'react-native';
 import { Alert, LayoutAnimation } from 'react-native';
@@ -1261,6 +1262,93 @@ describe('StoolAnalysisSection — EN-7 re-check on an owner edit (CUL-1408)', (
   it('an edit that stays formed, or a call that already stands: nothing re-runs', async () => {
     await saveConsistency({ engine_flags: ['engines_v3_en3'], contextual_flags: [] }, 'type_3_cracked');
     expect(triggerStoolAnalysis).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-2142 — an owner-set red flag keeps the facts open, whatever the verdict ──────
+//
+// The vomit suite's twin. An owner edit leaves `recommendation` where it was, so a quiet
+// stool row can carry blood, mucus or foreign material; each is pinned on its own over a
+// stored fold, beside a control that proves the same row without the flag DOES fold.
+describe('StoolAnalysisSection — a red flag under a quiet verdict never folds (CUL-2142)', () => {
+  let storedFold: jest.SpyInstance | null = null;
+  afterEach(async () => {
+    // Restored by hand: a spy over AsyncStorage's own jest.fn survives `restoreAllMocks`
+    // (the C-12 test's note), and a leaked fold would fold the next suite's grids.
+    storedFold?.mockRestore();
+    storedFold = null;
+    mockRow = null;
+    mockEditorProps = null;
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  // The stored fold is served straight from `getItem`. An earlier `restoreAllMocks` in this
+  // file can leave AsyncStorage's jest mock writing nowhere, so a fold seeded through
+  // `setObservationFold` may never be read back, and every red-flag test below would pass
+  // over a grid that was never going to fold. The control test is the proof it does.
+  function seedStoredFold(): jest.SpyInstance {
+    const blob = JSON.stringify({ 'pet-1': { 'rf-1': { state: 'folded', foldedAtIso: '2026-09-05T12:00:00.000Z' } } });
+    storedFold = jest.spyOn(AsyncStorage, 'getItem').mockResolvedValue(blob);
+    return storedFold;
+  }
+
+  const QUIET = {
+    status: 'completed', recommendation: 'monitor', read_text: 'Keep an eye on this one.',
+    stool_consistency: 'type_6_mushy', stool_colour: 'brown',
+    stool_blood_present: 'no', stool_mucus_present: 'no', foreign_material_present: 'no',
+  };
+
+  it('control: the same quiet row with no red flag honours a stored fold', async () => {
+    seedStoredFold();
+    mockRow = row(QUIET);
+    const { findByText, getByText, queryByText } = render(
+      <StoolAnalysisSection eventId="rf-1" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    await waitFor(() => expect(getByText(/findings/)).toBeTruthy());
+    expect(queryByText('Soft and mushy')).toBeNull();
+  });
+
+  it.each([
+    ['stool_blood_present', 'yes', 'Present'],
+    ['stool_mucus_present', 'yes', 'Present'],
+    ['foreign_material_present', 'yes', 'Possible'],
+  ])('%s = %s: a stored fold is overridden and no fold is offered', async (field, value, shown) => {
+    const stored = seedStoredFold();
+    mockRow = row({ ...QUIET, [field]: value });
+    const { findByText, getByText, queryByText } = render(
+      <StoolAnalysisSection eventId="rf-1" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    await findByText(shown);
+    // The verdict is untouched: still the quiet card. Only the fold changed.
+    expect(getByText('Keep an eye out')).toBeTruthy();
+    // Let the stored fold's read answer, then check it was beaten, not raced.
+    await waitFor(() => expect(stored).toHaveBeenCalledWith(OBSERVATION_FOLD_STORAGE_KEY));
+    await act(async () => {});
+    expect(getByText(shown)).toBeTruthy();
+    expect(getByText('Soft and mushy')).toBeTruthy();
+    expect(queryByText(/findings/)).toBeNull();
+    expect(queryByText('Keep it compact')).toBeNull();
+  });
+
+  it('the owner editing in blood takes the fold control away at once', async () => {
+    mockRow = row(QUIET);
+    const { findByText, getByText, queryByText } = render(
+      <StoolAnalysisSection eventId="rf-2" petId="pet-1" petName="Rex" hasPhoto />,
+    );
+    await findByText('Keep an eye out');
+    expect(getByText('Keep it compact')).toBeTruthy();
+    fireEvent.press(getByText('Edit'));
+    await waitFor(() => expect(mockEditorProps).not.toBeNull());
+    (deriveEditedStoolFields as jest.Mock).mockReturnValueOnce(['stool_blood_present']);
+    await act(async () => {
+      await mockEditorProps!.onSave({ ...QUIET, stool_blood_present: 'yes', stool_blood_type: null });
+    });
+    await findByText('Present');
+    // The stored verdict is the owner's to keep (CUL-2141 rules on it); the facts stay open.
+    expect(getByText('Keep an eye out')).toBeTruthy();
+    expect(queryByText('Keep it compact')).toBeNull();
   });
 });
 

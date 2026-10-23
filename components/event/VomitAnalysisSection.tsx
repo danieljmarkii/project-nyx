@@ -59,6 +59,7 @@ import {
   phoneWorkedOutLine,
   tellThem,
   vomitFindings,
+  vomitRedFlagPresent,
   watchForList,
 } from '../../lib/incidentFloorWords';
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
@@ -1042,8 +1043,9 @@ export function VomitAnalysisSection(
             />
           ) : undefined}
           // Any verdict off the quiet list, one this build does not know included: its
-          // facts never fold (CUL-1277).
-          escalating={isCallRow(row)}
+          // facts never fold (CUL-1277). Nor do they under a quiet verdict whose fields
+          // carry a red flag, the owner's own edit included (CUL-2142).
+          escalating={isCallRow(row) || vomitRedFlagPresent(row)}
           heading={heldDisclosure ? EARLIER_READ_LABEL : undefined}
           folded={folded}
           onToggleFold={setFolded}
