@@ -52,6 +52,21 @@ describe('extraction cap copy (§7.3)', () => {
     expect(medicationCapCopy('daily')).toMatch(/label photo is saved/i);
     expect(medicationCapCopy('monthly')).toMatch(/at the start of next month/i);
   });
+  // CUL-2171: each string pinned whole, so the window it names matches its cap.
+  it('pins each window: daily names today, monthly names this month', () => {
+    expect(foodCapCopy('daily')).toBe(
+      "You've hit today's limit for label reading. The photo is saved — fill in what you know below, and reading picks back up tomorrow.",
+    );
+    expect(foodCapCopy('monthly')).toBe(
+      "You've hit this month's limit for label reading. The photo is saved — fill in what you know below, and reading picks back up at the start of next month.",
+    );
+    expect(medicationCapCopy('daily')).toBe(
+      "You've hit today's limit for label reading. The label photo is saved — fill in the details below, and reading picks back up tomorrow.",
+    );
+    expect(medicationCapCopy('monthly')).toBe(
+      "You've hit this month's limit for label reading. The label photo is saved — fill in the details below, and reading picks back up at the start of next month.",
+    );
+  });
 });
 
 describe('vomit cap copy (§7.3) — the sensitive one', () => {
