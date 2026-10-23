@@ -6,6 +6,7 @@ import {
   LIBRARY_FOODS_QUERY,
   ARCHIVED_FOODS_QUERY,
   recentFoodsQuery,
+  rotationFoodsQuery,
   RecentFoodsBounds,
 } from './foodQueries';
 import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY } from './eventAttachmentQueries';
@@ -900,6 +901,15 @@ export async function getRecentFoods(
   // is the FAB's fixed day span (CUL-1647), and every other caller omits it.
   const { sql, params } = recentFoodsQuery(petId, daysBack, limit, bounds);
   return db.getAllAsync<PickerFood>(sql, params);
+}
+
+// The picker's rotation shelf's plain foods, with when each was last fed (CUL-2090; the
+// SQL and its reasons are in ./foodQueries).
+export type RotationFood = PickerFood & { last_fed_jd: number };
+
+export async function getRotationFoods(petId: string, daysBack: number, limit: number): Promise<RotationFood[]> {
+  const { sql, params } = rotationFoodsQuery(petId, daysBack, limit);
+  return getDb().getAllAsync<RotationFood>(sql, params);
 }
 
 // ONE food, in the picker's own shape, by id.

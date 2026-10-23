@@ -8,7 +8,8 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroup } from '../ui/ChipGroup';
-import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
+import { getLibraryFoods, PickerFood } from '../../lib/db';
+import { getPickerRotationItems, type FabMix, type FabRecentItem } from '../../lib/fabRecentItems';
 import {
   groupFoodsByType, toFoodRows, splitBrandGroupsForPicker,
   filterFoodsByScope, FOOD_SCOPE_OPTIONS, FoodScope,
@@ -61,6 +62,11 @@ interface Props {
   // new" steps aside too: its capture flow logs a meal of its own, which is not a food in
   // this bowl. Pair with `selectedFoodIds={[first]}` so the bowl's first food shows locked.
   mixableOnly?: boolean;
+  // CUL-2090 (spec §7.4) — a recent mix on the rotation shelf, tapped: log that bowl again
+  // at its latest split, as the FAB's MIX pill does. Mix tiles show only on the one-tap
+  // log path with this handler: never while building a set or picking a bowl's second
+  // food, where a whole bowl is not an answer.
+  onPickMix?: (mix: FabMix) => void;
 }
 
 /** The R1 rule the writer enforces, as the picker filters by it. */
@@ -79,9 +85,10 @@ const SCREEN_PADDING = theme.space2;
 
 export function FoodPicker({
   petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds, initialScope, mixableOnly = false,
+  onPickMix,
 }: Props) {
   const selecting = selectedFoodIds !== undefined;
-  const [rotation, setRotation] = useState<PickerFood[]>([]);
+  const [rotation, setRotation] = useState<FabRecentItem[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<FoodArrangementGroup[]>([]);
   const [search, setSearch] = useState('');
@@ -146,7 +153,7 @@ export function FoodPicker({
       (async () => {
         try {
           const [r, l, a] = await Promise.all([
-            getRecentFoods(petId, ROTATION_DAYS, ROTATION_LIMIT),
+            getPickerRotationItems(petId, ROTATION_DAYS, ROTATION_LIMIT),
             getLibraryFoods(),
             loadArrangements(),
           ]);
@@ -178,7 +185,7 @@ export function FoodPicker({
     (async () => {
       try {
         const [r, l] = await Promise.all([
-          getRecentFoods(petId, ROTATION_DAYS, ROTATION_LIMIT),
+          getPickerRotationItems(petId, ROTATION_DAYS, ROTATION_LIMIT),
           getLibraryFoods(),
         ]);
         if (!cancelled) { setRotation(r); setLibrary(l); }
@@ -245,9 +252,10 @@ export function FoodPicker({
         f.product_name.toLowerCase().includes(q),
     );
   }, [library, search, scope, mixableOnly]);
+  const mixTiles = !selecting && !mixableOnly && onPickMix !== undefined;
   const rotationShown = useMemo(
-    () => (mixableOnly ? rotation.filter(isMixable) : rotation),
-    [rotation, mixableOnly],
+    () => rotation.filter((f) => (f.mix ? mixTiles : !mixableOnly || isMixable(f))),
+    [rotation, mixableOnly, mixTiles],
   );
 
   // Group the (filtered) library by food_type via the shared helper (lib/food,
@@ -400,12 +408,14 @@ export function FoodPicker({
                 off-screen overflow), which kills the picker's last silent h-scroll
                 (the B-146 direction). Compact tiles keep the ~12-food rotation short
                 so the full library below stays reachable. Recency-ordered (newest
-                first) by getRecentFoods, so the morning food is the first tile at
-                breakfast. Reuses the same TileGrid the library groups use. */}
+                first) by getPickerRotationItems, so the morning food is the first tile
+                at breakfast. Reuses the same TileGrid the library groups use. A recent
+                mix sits among the foods as its own tile (CUL-2090). */}
             <TileGrid
               foods={rotationShown}
               compact
               onPickFood={onPickFood}
+              onPickMix={onPickMix}
               onOpenDetail={onOpenDetail}
               selectedFoodIds={selectedFoodIds}
             />
@@ -664,13 +674,14 @@ function LibraryGroup({
 // foods into 2-col rows (toFoodRows) so tiles in a row share a height; a trailing
 // odd tile gets a spacer to keep the last row left-aligned.
 function TileGrid({
-  foods, hideBrand = false, compact = false, onPickFood, onOpenDetail, selectedFoodIds,
+  foods, hideBrand = false, compact = false, onPickFood, onPickMix, onOpenDetail, selectedFoodIds,
 }: {
-  foods: PickerFood[];
+  foods: FabRecentItem[];
   hideBrand?: boolean;
   // Renders compact tiles — used by the B-346 rotation shelf, not the library.
   compact?: boolean;
   onPickFood: (food: PickerFood) => void;
+  onPickMix?: (mix: FabMix) => void;
   onOpenDetail?: (food: PickerFood) => void;
   selectedFoodIds?: readonly string[];
 }) {
@@ -689,11 +700,17 @@ function TileGrid({
               format={f.format}
               hideBrand={hideBrand}
               compact={compact}
+              mix={!!f.mix}
               // `undefined` outside selection mode keeps the tile a log button;
               // a boolean makes it a checkbox (see FoodTile).
               selected={selectedFoodIds ? selectedFoodIds.includes(f.id) : undefined}
-              onPress={() => onPickFood(f)}
-              onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
+              onPress={() => {
+                const { mix } = f;
+                if (mix) onPickMix?.(mix);
+                else onPickFood(f);
+              }}
+              // A mix is never a library item (§7.4): it has no detail screen to open.
+              onLongPress={onOpenDetail && !f.mix ? () => onOpenDetail(f) : undefined}
             />
           ))}
           {row.length === 1 && <View style={styles.gridSpacer} />}

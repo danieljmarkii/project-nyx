@@ -17,9 +17,9 @@
 // library (not archived, still a meal food) and the bowl complete on this phone. Anything
 // else is left out, which costs one trip through the picker, never a wrong bowl.
 
-import { getDb, getRecentFoods, type PickerFood } from './db';
+import { getDb, getRecentFoods, getRotationFoods, type PickerFood, type RotationFood } from './db';
 import type { RecentFoodsBounds } from './foodQueries';
-import { AMOUNT_UNITS, readMealComposition, type AmountUnit, type MealComponentRow, type ShareSource } from './mealComposition';
+import { AMOUNT_UNITS, readMealComposition, type AmountUnit, type MealComponentRow, type MealComposition, type ShareSource } from './mealComposition';
 import { shareGlyph } from './mealBowlLabel';
 import { mixFoodOf } from './mixCard';
 import type { ComponentInput } from './mealComposition';
@@ -73,11 +73,18 @@ interface MixMealRow {
   component_count: number | null;
 }
 
-/** The recent mixes, newest first, one per set of foods, at most `limit`. */
-export async function getRecentMixes(petId: string, bounds: RecentFoodsBounds, limit: number): Promise<{ mix: FabMix; at: string }[]> {
+/**
+ * Every meal in the span that may be a bowl, newest first, each read through the one bowl
+ * read rule (`readMealComposition`: the newest generation's live rows). Lazy, so a reader
+ * that has what it needs stops reading.
+ */
+async function* recentBowls(
+  petId: string,
+  bounds: RecentFoodsBounds,
+): AsyncGenerator<{ at: string; read: MealComposition }> {
   const db = getDb();
-  // Every meal in the window that may be a mix: a parent naming no food, or carrying a
-  // count. The composition helper decides; this only narrows the read.
+  // A parent naming no food, or carrying a count. The composition helper decides; this
+  // only narrows the read.
   const meals = await db.getAllAsync<MixMealRow>(
     `SELECT m.event_id, e.occurred_at, m.food_item_id, m.component_count
        FROM meals m
@@ -89,46 +96,62 @@ export async function getRecentMixes(petId: string, bounds: RecentFoodsBounds, l
       ORDER BY e.occurred_at DESC`,
     [petId, bounds.after, bounds.before],
   );
-  const out: { mix: FabMix; at: string }[] = [];
-  const seen = new Set<string>();
   for (const meal of meals) {
-    if (out.length >= limit) break;
     const rows = await db.getAllAsync<MealComponentRow>(
       `SELECT id, position, food_item_id, food_label, share, share_source, amount_value, amount_unit,
               updated_at, deleted_at
          FROM meal_components WHERE event_id = ?`,
       [meal.event_id],
     );
-    const read = readMealComposition({ food_item_id: meal.food_item_id, component_count: meal.component_count }, rows);
+    yield { at: meal.occurred_at, read: readMealComposition({ food_item_id: meal.food_item_id, component_count: meal.component_count }, rows) };
+  }
+}
+
+/** A read bowl as a repeatable mix, or null when it cannot be logged again exactly (see
+ *  the header). */
+async function mixOf(read: MealComposition): Promise<FabMix | null> {
+  if (read.status !== 'mix') return null;
+  if (read.components.some((c) => !c.foodItemId || c.normalizedShare === null)) return null;
+  const db = getDb();
+  const ids = read.components.map((c) => c.foodItemId as string);
+  const foods: FabMixFood[] = [];
+  for (const c of read.components) {
+    const food = await db.getFirstAsync<PickerFood & { archived_at: string | null }>(
+      `SELECT id, brand, product_name, format, food_type, photo_path, archived_at
+         FROM food_items_cache WHERE id = ?`,
+      [c.foodItemId],
+    );
+    if (!food || food.archived_at !== null || food.food_type !== 'meal' || food.format === 'topper') return null;
+    const { archived_at: _a, ...picker } = food;
+    foods.push({
+      food: picker,
+      rowName: mixFoodOf(picker).rowName,
+      share: c.normalizedShare as number,
+      written: {
+        share: c.share as number,
+        shareSource: writtenSource(c.shareSource),
+        amountValue: c.amountValue,
+        amountUnit: (AMOUNT_UNITS as readonly string[]).includes(c.amountUnit ?? '') ? (c.amountUnit as AmountUnit) : null,
+      },
+    });
+  }
+  return { key: [...ids].sort().join('|'), foods };
+}
+
+/** The recent mixes, newest first, one per set of foods, at most `limit`. */
+export async function getRecentMixes(petId: string, bounds: RecentFoodsBounds, limit: number): Promise<{ mix: FabMix; at: string }[]> {
+  const out: { mix: FabMix; at: string }[] = [];
+  const seen = new Set<string>();
+  for await (const { at, read } of recentBowls(petId, bounds)) {
+    if (out.length >= limit) break;
     if (read.status !== 'mix') continue;
-    if (read.components.some((c) => !c.foodItemId || c.normalizedShare === null)) continue;
-    const ids = read.components.map((c) => c.foodItemId as string);
-    const key = [...ids].sort().join('|');
+    const key = read.components.map((c) => c.foodItemId ?? '').sort().join('|');
     if (seen.has(key)) continue;
+    // Seen before the lookups: an older bowl of the same foods is never offered in place
+    // of the latest one that cannot be repeated.
     seen.add(key);
-    const foods: FabMixFood[] = [];
-    for (const c of read.components) {
-      const food = await db.getFirstAsync<PickerFood & { archived_at: string | null }>(
-        `SELECT id, brand, product_name, format, food_type, photo_path, archived_at
-           FROM food_items_cache WHERE id = ?`,
-        [c.foodItemId],
-      );
-      if (!food || food.archived_at !== null || food.food_type !== 'meal' || food.format === 'topper') break;
-      const { archived_at: _a, ...picker } = food;
-      foods.push({
-        food: picker,
-        rowName: mixFoodOf(picker).rowName,
-        share: c.normalizedShare as number,
-        written: {
-          share: c.share as number,
-          shareSource: writtenSource(c.shareSource),
-          amountValue: c.amountValue,
-          amountUnit: (AMOUNT_UNITS as readonly string[]).includes(c.amountUnit ?? '') ? (c.amountUnit as AmountUnit) : null,
-        },
-      });
-    }
-    if (foods.length !== read.components.length) continue;
-    out.push({ mix: { key, foods }, at: meal.occurred_at });
+    const mix = await mixOf(read);
+    if (mix) out.push({ mix, at });
   }
   return out;
 }
@@ -161,6 +184,19 @@ export async function withRecentMixes(
   }
 }
 
+/** A mix in the food's own shape, so a fan or a shelf lays it out as a food. */
+function mixItem(mix: FabMix): FabRecentItem {
+  return {
+    id: `${MIX_ITEM_PREFIX}${mix.key}`,
+    brand: '',
+    product_name: fabMixLabel(mix),
+    format: '',
+    food_type: 'meal',
+    photo_path: null,
+    mix,
+  };
+}
+
 async function mergeRecentMixes(
   petId: string,
   foods: PickerFood[],
@@ -183,20 +219,92 @@ async function mergeRecentMixes(
   }
   const items: { item: FabRecentItem; at: number }[] = [
     ...foods.map((f) => ({ item: f as FabRecentItem, at: new Date(lastAt.get(f.id) ?? 0).getTime() || 0 })),
-    ...mixes.map(({ mix, at }) => ({
-      item: {
-        id: `${MIX_ITEM_PREFIX}${mix.key}`,
-        brand: '',
-        product_name: fabMixLabel(mix),
-        format: '',
-        food_type: 'meal',
-        photo_path: null,
-        mix,
-      } as FabRecentItem,
-      at: new Date(at).getTime(),
-    })),
+    ...mixes.map(({ mix, at }) => ({ item: mixItem(mix), at: new Date(at).getTime() })),
   ];
   // Parse both sides (C-40): a hydrated and a local timestamp spell one instant two ways.
   items.sort((a, b) => b.at - a.at);
   return items.slice(0, limit).map((x) => x.item);
+}
+
+/** A Julian day as epoch milliseconds (SQLite's julianday(), the rotation read's clock). */
+function julianToMs(jd: number): number {
+  // Rounded: a Julian day's float carries sub-millisecond noise, and a bowl's foods share
+  // its instant exactly, so they must tie with it.
+  return Math.round((jd - 2440587.5) * 86400000);
+}
+
+/**
+ * The picker's "{Pet}'s rotation" shelf (CUL-2090; spec §7.4): the second place a mix
+ * lives as a thing you can repeat. The foods this pet was fed in the last `daysBack` days,
+ * including the foods inside mixed bowls (T2: a mix names no food on its row, so without
+ * this a food fed only mixed fell off the shelf for the whole of a switch), and the recent
+ * mixes as items of their own, one per set of foods, logging the latest split, by the
+ * FAB's own rules. One recency order, newest first, at most `limit`.
+ *
+ * A bowl's foods are read through the bowl read rule, never off raw component rows: after a
+ * sync an older generation can still be live, and its foods were not in the bowl. A bowl
+ * read that fails leaves the plain foods: a missing tile costs a trip to the library.
+ */
+export async function getPickerRotationItems(
+  petId: string,
+  daysBack: number,
+  limit: number,
+  nowMs: number = Date.now(),
+): Promise<FabRecentItem[]> {
+  const plain = await getRotationFoods(petId, daysBack, limit);
+  const items: { item: FabRecentItem; at: number }[] = [];
+  const shown = new Set<string>();
+  try {
+    const db = getDb();
+    // The shelf is "fed lately", so the span runs to now (a bowl logged this morning
+    // counts), unlike the FAB's fixed day order. The upper bound is a day ahead so a
+    // phone clock a little behind the write never drops it.
+    const bounds = {
+      after: new Date(nowMs - daysBack * 86400000).toISOString(),
+      before: new Date(nowMs + 86400000).toISOString(),
+    };
+    const seenMixes = new Set<string>();
+    for await (const { at, read } of recentBowls(petId, bounds)) {
+      // A plain meal, or a bowl with nothing live (its foods as last recorded, not fed).
+      if (read.status === 'single' || read.lastRecorded) continue;
+      const atMs = new Date(at).getTime();
+      // Mixes come first in `items`, so on a tie (a bowl and the foods in it, fed at one
+      // instant) the stable sort below puts the bowl ahead: it is what was last fed.
+      const key = read.components.map((c) => c.foodItemId ?? '').sort().join('|');
+      if (read.status === 'mix' && !seenMixes.has(key)) {
+        seenMixes.add(key);
+        const mix = await mixOf(read);
+        if (mix) items.push({ item: mixItem(mix), at: atMs });
+      }
+      for (const c of read.components) {
+        // Bowls come newest first, so a food's first sighting is its latest bowl. Its
+        // plain meals are merged in below.
+        if (!c.foodItemId || shown.has(c.foodItemId)) continue;
+        shown.add(c.foodItemId);
+        const food = await db.getFirstAsync<PickerFood>(
+          `SELECT id, brand, product_name, format, food_type, photo_path
+             FROM food_items_cache WHERE id = ? AND archived_at IS NULL`,
+          [c.foodItemId],
+        );
+        if (food) items.push({ item: food, at: atMs });
+      }
+    }
+    // A food both plain-fed and bowl-fed takes its later feeding.
+    for (const f of plain) {
+      const plainAt = julianToMs(f.last_fed_jd);
+      const i = items.findIndex((x) => !x.item.mix && x.item.id === f.id);
+      if (i === -1) items.push({ item: strip(f), at: plainAt });
+      else if (plainAt > items[i].at) items[i] = { item: strip(f), at: plainAt };
+    }
+  } catch (e) {
+    console.warn('[picker] mixed bowls read failed; plain foods only:', e);
+    return plain.map(strip);
+  }
+  items.sort((a, b) => b.at - a.at);
+  return items.slice(0, limit).map((x) => x.item);
+}
+
+function strip(f: RotationFood): PickerFood {
+  const { last_fed_jd: _jd, ...picker } = f;
+  return picker;
 }

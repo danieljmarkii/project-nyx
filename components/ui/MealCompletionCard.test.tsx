@@ -206,6 +206,16 @@ describe('MealCompletionCard — mixing (row 5)', () => {
     expect(queryByText('+ Mixed with another food')).toBeNull();
   });
 
+  // CUL-2090: on a bowl, "Undo" says the whole bowl goes (§7.1), so it can't read as
+  // "undo the mix". A plain meal keeps "Undo" (pinned in the single-food test above).
+  it('a bowl\'s Undo reads "Undo bowl" and says the whole bowl goes', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByText, queryByText, getByLabelText } = render(<MealCompletionCard />);
+    getByText('Undo bowl');
+    expect(queryByText('Undo')).toBeNull();
+    getByLabelText('Undo bowl — remove every food in it');
+  });
+
   it('a step moves one stop toward the named food and writes the bowl', async () => {
     seedMeal({ foodType: 'meal', bowl: BOWL });
     const { getByTestId, getByText } = render(<MealCompletionCard />);

@@ -41,6 +41,9 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 // above), shared with the in-sheet confirm — so log.tsx no longer imports the
 // storage / analysis / signal / sync-event helpers directly for this path.
 import { applyMealTrialFlag } from '../lib/mealTrialFlag';
+import { fabMixComponents, type FabMix } from '../lib/fabRecentItems';
+import { cardBowlFrom } from '../lib/mixCard';
+import type { ComponentInput } from '../lib/mealComposition';
 import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
 import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 
@@ -362,6 +365,63 @@ export default function LogModal() {
     setOccurredAt((prev) => refreshedNowPoint(prev, occurredAtSource, new Date()));
   }
 
+  // Meals are inherently witnessed — you see yourself put the bowl down.
+  // The B-010 found path does not apply (you don't "discover" a meal).
+  function mealTimeFields(): TimeFields {
+    const usingExif = occurredAtSource === 'exif';
+    return {
+      confidence: 'witnessed',
+      occurredAt: usingExif ? occurredAt : new Date(),
+      earliest: null,
+      latest: null,
+      source: usingExif ? 'exif' : 'now',
+    };
+  }
+
+  // CUL-2090 (mixed meals spec §7.4) — a recent mix tapped on the rotation shelf: the
+  // FAB's MIX pill, from the picker. It writes the latest bowl of those foods exactly as it
+  // was entered, in ONE transaction with the event (insertMeal's components), so it can
+  // never land as its first food alone; the card comes back as the mix, stepper and all,
+  // and the trial heads-up evaluates every food in it (§5.2). Guarded like a food tile.
+  async function handlePickMix(mix: FabMix): Promise<boolean> {
+    const bowl = fabMixComponents(mix);
+    const result = await handleConfirm({
+      foodId: bowl[0].foodItemId,
+      foodBrand: '',
+      foodProduct: '',
+      foodType: 'meal',
+      timeFields: mealTimeFields(),
+      components: bowl,
+    });
+    if (!result) return false;
+    try {
+      showMealMoment(
+        {
+          eventId: result.eventId,
+          petId: result.petId,
+          occurredAt: result.occurredAt,
+          foodType: 'meal',
+          foodBrand: null,
+          foodProductName: null,
+          foodFormat: null,
+          intakeRating: null,
+          bowl: cardBowlFrom(bowl, Object.fromEntries(mix.foods.map((f) => [f.food.id, f.rowName]))),
+        },
+        { delayMs: 450 },
+      );
+      void applyMealTrialFlag({
+        eventId: result.eventId,
+        petId: result.petId,
+        foodId: null,
+        occurredAt: result.occurredAt,
+        components: bowl.map((c) => ({ foodId: c.foodItemId, foodLabel: c.foodLabel })),
+      });
+    } catch (e) {
+      console.error('[log] mixed bowl saved, but its completion card failed:', e);
+    }
+    return true;
+  }
+
   // One-tap log path from the new picker — bypasses state so it works
   // even before `selectedFoodId` has propagated through React. Provenance
   // is forced to 'now' (with a fresh new Date()) because the user never
@@ -378,23 +438,13 @@ export default function LogModal() {
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
     setSelectedFoodFormat(food.format);
-    const usingExif = occurredAtSource === 'exif';
-    const effectiveOccurredAt = usingExif ? occurredAt : new Date();
     const result = await handleConfirm({
       foodId: food.id,
       foodBrand: food.brand,
       foodProduct: food.product_name,
       foodFormat: food.format,
       foodType: food.food_type ?? null,
-      // Meals are inherently witnessed — you see yourself put the bowl down.
-      // The B-010 found path does not apply (you don't "discover" a meal).
-      timeFields: {
-        confidence: 'witnessed',
-        occurredAt: effectiveOccurredAt,
-        earliest: null,
-        latest: null,
-        source: usingExif ? 'exif' : 'now',
-      },
+      timeFields: mealTimeFields(),
     });
     // B-336 — settle the double-submit guard's answer HERE, on the write itself,
     // and make sure nothing below can change it. Everything past this point is
@@ -799,6 +849,8 @@ export default function LogModal() {
     foodFormat?: string | null;
     foodType?: string | null;
     timeFields?: TimeFields;
+    /** A mixed bowl (CUL-2090): its foods, written with the event in one transaction. */
+    components?: ComponentInput[];
   }): Promise<{ eventId: string; occurredAt: string; petId: string } | null> {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, never the render-time closure, so an event always lands on the
@@ -835,6 +887,7 @@ export default function LogModal() {
           foodId: foodId!,
           occurredAt: effectiveOccurredAt,
           occurredAtSource: effectiveSource,
+          ...(override?.components ? { components: override.components } : {}),
         });
         eventId = res.eventId;
         now = res.now;
@@ -883,10 +936,11 @@ export default function LogModal() {
       deleted_at: null,
       created_at: now,
       updated_at: now,
-      food_item_id: foodId,
-      food_brand: foodBrand,
-      food_product_name: foodProduct,
-      food_format: foodFormat,
+      // A mix names no food on its row (T2); the bowl is read back from its components.
+      food_item_id: override?.components ? null : foodId,
+      food_brand: override?.components ? null : foodBrand,
+      food_product_name: override?.components ? null : foodProduct,
+      food_format: override?.components ? null : foodFormat,
       food_type: override?.foodType ?? null,
       quantity: foodId ? 'unknown' : null,
     });
@@ -1189,6 +1243,7 @@ export default function LogModal() {
             // Guarded (B-336): the first tap latches, so a rapid double-tap on a
             // tile can't write two meals.
             onPickFood={(food) => { void guardSubmit(() => handlePickFood(food)); }}
+            onPickMix={(mix) => { void guardSubmit(() => handlePickMix(mix)); }}
             // Photo-first food capture (Step 5). On confirm, food-capture
             // logs the meal itself and routes back home — log.tsx is bypassed.
             onAddNew={() => router.push('/food-capture?fromLog=1')}

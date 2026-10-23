@@ -9,6 +9,13 @@
 //
 // "Change" offers meal foods only (R1) that are not already in the bowl: two rows of one
 // food would be one food (the composition key collapses them), not a mix.
+//
+// The split is an edit too (CUL-2090, PM option A): a two-food bowl carries the card's own
+// stepper, "‹ More Chicken · ⅓·⅔ · More Rabbit ›", so a wrong split is fixed without taking
+// a food out and mixing again. One tap is one stop toward the named food, never a
+// direction of the app's own (R4); staged like everything else here. A measured bowl
+// (cans, grams) steps to the nearest stop and becomes the owner's estimate, exactly as the
+// card's stepper writes it (`bowlWithShares`).
 
 import { useRef, useState } from 'react';
 import { Animated, LayoutAnimation, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -17,6 +24,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { shareGlyph } from '../../lib/mealBowlLabel';
+import { MIX_STOPS, stepStop, stopIndexOf, stopLabel, type StepToward } from '../../lib/mixRatio';
 
 export interface StagedBowlFood {
   foodItemId: string;
@@ -42,6 +50,24 @@ interface Props {
   loadChoices: () => Promise<BowlPickerFood[]>;
   /** A picked food in the bowl's shape (its stored label and row name). */
   toStaged: (food: BowlPickerFood, replacing: StagedBowlFood) => StagedBowlFood;
+}
+
+/** The staged bowl one stop toward more of the named food, or null at the end of the scale
+ *  (or for a bowl that is not two foods). The new split is a preset, with no amounts. */
+export function stepStagedBowl(foods: readonly StagedBowlFood[], toward: StepToward): StagedBowlFood[] | null {
+  if (foods.length !== 2) return null;
+  const total = foods[0].share + foods[1].share;
+  if (!(total > 0)) return null;
+  const stop = stepStop(foods[0].share / total, toward);
+  if (stop === null) return null;
+  const first = MIX_STOPS[stop];
+  return foods.map((f, i) => ({
+    ...f,
+    share: i === 0 ? first : 1 - first,
+    shareSource: 'preset' as const,
+    amountValue: null,
+    amountUnit: null,
+  }));
 }
 
 export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
@@ -91,6 +117,57 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
   }
 
   const inBowl = new Set(foods.map((f) => f.foodItemId));
+
+  function step(toward: StepToward) {
+    const next = stepStagedBowl(foods, toward);
+    if (next) onChange(next);
+  }
+
+  // The card's stepper, staged (see the header). Only on a two-food bowl, not while a food
+  // is folding away (the bowl it would step is about to be one food), and not while a
+  // food's Change list is open (one edit at a time).
+  const stepper = (() => {
+    if (foods.length !== 2 || total <= 0 || leaving !== null || changing !== null) return null;
+    const firstShare = foods[0].share / total;
+    const value = stopIndexOf(firstShare) !== null
+      ? stopLabel(firstShare)
+      : `${shareGlyph(firstShare)}·${shareGlyph(1 - firstShare)}`;
+    const side = (f: StagedBowlFood, toward: StepToward) => {
+      const share = toward === 'first' ? firstShare : 1 - firstShare;
+      const atEnd = stepStop(firstShare, toward) === null;
+      return (
+        <TouchableOpacity
+          style={[styles.stepSide, toward === 'second' && styles.stepSideRight, atEnd && styles.stepEnd]}
+          onPress={() => step(toward)}
+          disabled={atEnd}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={atEnd
+            ? `More ${f.rowName} in this bowl. Already at ${shareGlyph(share)}, the most the steps go.`
+            : `More ${f.rowName} in this bowl`}
+          accessibilityState={{ disabled: atEnd }}
+          testID={`bowl-step-${toward}`}
+        >
+          <ThemedText style={styles.stepText} numberOfLines={1}>
+            {toward === 'first' ? `‹ More ${f.rowName}` : `More ${f.rowName} ›`}
+          </ThemedText>
+        </TouchableOpacity>
+      );
+    };
+    return (
+      <View style={styles.stepRow}>
+        {side(foods[0], 'first')}
+        <ThemedText
+          style={styles.stepValue}
+          accessibilityLabel={`${shareGlyph(firstShare)} ${foods[0].rowName}, ${shareGlyph(1 - firstShare)} ${foods[1].rowName}`}
+          testID="bowl-step-value"
+        >
+          {value}
+        </ThemedText>
+        {side(foods[1], 'second')}
+      </View>
+    );
+  })();
 
   return (
     <View style={styles.root}>
@@ -154,6 +231,7 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
           </Animated.View>
         );
       })}
+      {stepper}
     </View>
   );
 }
@@ -216,6 +294,35 @@ const styles = StyleSheet.create({
   choiceBrand: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: theme.space1,
+    paddingHorizontal: theme.space2,
+  },
+  stepSide: {
+    flex: 1,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  stepSideRight: {
+    alignItems: 'flex-end',
+  },
+  // C-7: an end stop dims and its label says why.
+  stepEnd: {
+    opacity: 0.4,
+  },
+  stepText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccentInk,
+    fontWeight: theme.weightMedium,
+  },
+  stepValue: {
+    flexShrink: 0,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
   },
   empty: {
     fontSize: theme.textSM,

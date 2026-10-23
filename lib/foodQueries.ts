@@ -128,3 +128,32 @@ export function recentFoodsQuery(
      LIMIT ?`;
   return { sql, params };
 }
+
+// The picker's rotation shelf (CUL-2090): the plain meals' foods, as `recentFoodsQuery`
+// reads them, each with `last_fed_jd` (a Julian day) so the foods fed inside mixed bowls,
+// and the mixes themselves, can slot in among them by when they were last fed. Those come
+// from `getPickerRotationItems` (lib/fabRecentItems.ts), through the bowl read rule: a raw
+// component row is not a bowl (an older generation can still be live after a sync), so
+// this query never reads `meal_components`. Instants compare through julianday() on both
+// sides (C-40): a hydrated row and a local one spell the same instant two ways.
+export function rotationFoodsQuery(
+  petId: string,
+  daysBack: number,
+  limit: number,
+  nowMs: number = Date.now(),
+): { sql: string; params: (string | number)[] } {
+  const after = new Date(nowMs - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  const sql = `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path,
+            MAX(julianday(e.occurred_at)) AS last_fed_jd
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+       AND f.archived_at IS NULL
+       AND julianday(e.occurred_at) >= julianday(?)
+     GROUP BY f.id
+     ORDER BY last_fed_jd DESC
+     LIMIT ?`;
+  return { sql, params: [petId, after, limit] };
+}
