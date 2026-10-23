@@ -8,11 +8,13 @@ import { ThemedText } from './ThemedText';
  * One optional step as a row (CUL-1910, capture design round P2): a title, an optional
  * line saying why it matters, and a trailing mark — the action chevron while the step is
  * open, or what the caller passes once it is done (a photo thumbnail). The whole row is
- * the button, at least the 44pt floor tall.
+ * the button, at least the 44pt floor tall. An optional leading glyph names the kind of
+ * step (the log form's photo row, CUL-2189: the camera, as the log form round's P10 drew it).
  */
 export function SlotRow({
   title,
   detail,
+  leading,
   trailing,
   onPress,
   divided = false,
@@ -21,6 +23,7 @@ export function SlotRow({
 }: {
   title: string;
   detail?: string | null;
+  leading?: ReactNode;
   trailing?: ReactNode;
   onPress: () => void;
   /** A hairline above, for every row after the first. */
@@ -37,6 +40,7 @@ export function SlotRow({
       accessibilityLabel={accessibilityLabel ?? (detail ? `${title}. ${detail}` : title)}
       testID={testID}
     >
+      {leading}
       <View style={styles.copy}>
         <ThemedText variant="bodyStrong" style={styles.title}>{title}</ThemedText>
         {detail ? <ThemedText variant="caption" style={styles.detail}>{detail}</ThemedText> : null}

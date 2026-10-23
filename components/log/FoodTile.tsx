@@ -1,8 +1,9 @@
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { FORMAT_LABEL } from '../../lib/food';
+import { ONE_COLUMN_FONT_SCALE } from './pickerColumns';
 
 interface Props {
   brand: string;
@@ -49,6 +50,44 @@ interface Props {
   // dimmed, because a tap does something: it opens the food, never picks it. It announces
   // as a button with its own hint even in a selecting picker, since it toggles nothing.
   ask?: { line: string; hint: string };
+  // CUL-1908 P3 — the food's front photo, beside the eyebrow: at 6am the bag is
+  // recognised faster than its name is read (Principle 2). A string draws it; null draws
+  // an even empty slot so the grid stays level; undefined draws no slot at all. The photo
+  // is decoration: the tile's announcement is unchanged.
+  photoUri?: string | null;
+}
+
+// The slot's side: 24pt beside a one-line eyebrow, 32pt once the accessibility text
+// sizes put the tiles in one column (the round's §14), so it keeps pace with the type.
+const PHOTO_SLOT = theme.space3;
+const PHOTO_SLOT_LARGE = theme.space4;
+
+// The eyebrow line, with the photo slot leading it when the caller asked for one.
+function TileTop({ metaLine, photoUri }: { metaLine: string; photoUri?: string | null }) {
+  const large = useWindowDimensions().fontScale >= ONE_COLUMN_FONT_SCALE;
+  const meta = metaLine ? (
+    <ThemedText style={[styles.meta, styles.metaInRow]} numberOfLines={1}>
+      {metaLine}
+    </ThemedText>
+  ) : null;
+  if (photoUri === undefined) return meta;
+  const size = large ? styles.slotLarge : styles.slot;
+  return (
+    <View style={styles.top}>
+      {photoUri ? (
+        <Image
+          source={{ uri: photoUri }}
+          style={[size, styles.slotPhoto]}
+          resizeMode="cover"
+          accessible={false}
+          testID="food-tile-photo"
+        />
+      ) : (
+        <View style={[size, styles.slotEmpty]} testID="food-tile-photo-slot" />
+      )}
+      {meta}
+    </View>
+  );
 }
 
 // Text-only food tile. Product name is the primary line — for a single-brand
@@ -68,7 +107,7 @@ interface Props {
 // FoodRow tap navigates to detail.
 export function FoodTile({
   brand, productName, format, onPress, onLongPress,
-  hideBrand = false, compact = false, selected, mix = false, notHere, ask,
+  hideBrand = false, compact = false, selected, mix = false, notHere, ask, photoUri,
 }: Props) {
   const selecting = selected !== undefined;
   const typeLabel = FORMAT_LABEL[format] ?? '';
@@ -91,11 +130,7 @@ export function FoodTile({
         accessible
         accessibilityLabel={`${brand} ${productName}. ${notHere}`}
       >
-        {metaLine ? (
-          <ThemedText style={styles.meta} numberOfLines={1}>
-            {metaLine}
-          </ThemedText>
-        ) : null}
+        <TileTop metaLine={metaLine} photoUri={photoUri} />
         <ThemedText style={styles.product} numberOfLines={2}>
           {productName}
         </ThemedText>
@@ -118,11 +153,7 @@ export function FoodTile({
         accessibilityLabel={`${brand} ${productName}. ${ask.line}`}
         accessibilityHint={ask.hint}
       >
-        {metaLine ? (
-          <ThemedText style={styles.meta} numberOfLines={1}>
-            {metaLine}
-          </ThemedText>
-        ) : null}
+        <TileTop metaLine={metaLine} photoUri={photoUri} />
         <ThemedText style={styles.product} numberOfLines={2}>
           {productName}
         </ThemedText>
@@ -147,11 +178,7 @@ export function FoodTile({
     >
       {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
           render an empty eyebrow line above the product name. */}
-      {metaLine ? (
-        <ThemedText style={styles.meta} numberOfLines={1}>
-          {metaLine}
-        </ThemedText>
-      ) : null}
+      <TileTop metaLine={metaLine} photoUri={photoUri} />
       {/* Two lines on both variants: the flavor in the product name is what tells a
           same-brand cluster apart, so compact tiles must not clip it (see the prop
           comment). The compactness comes from the shorter min-height + padding, not
@@ -174,7 +201,7 @@ export function FoodTile({
 const styles = StyleSheet.create({
   tile: {
     flex: 1,
-    minHeight: 96,
+    minHeight: theme.space6 + theme.space4,
     borderWidth: 1,
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusMedium,
@@ -197,9 +224,38 @@ const styles = StyleSheet.create({
     right: theme.space1,
   },
   tileCompact: {
-    minHeight: 62,
+    minHeight: theme.space6,
     paddingVertical: theme.space1,
     gap: theme.spaceMicro,
+  },
+  top: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  // In the row the eyebrow yields its width to the slot, never the other way round.
+  metaInRow: {
+    flexShrink: 1,
+  },
+  slot: {
+    width: PHOTO_SLOT,
+    height: PHOTO_SLOT,
+    borderRadius: theme.radiusXS,
+  },
+  slotLarge: {
+    width: PHOTO_SLOT_LARGE,
+    height: PHOTO_SLOT_LARGE,
+    borderRadius: theme.radiusXS,
+  },
+  slotPhoto: {
+    backgroundColor: theme.colorNeutralLight,
+  },
+  // An even empty slot when the food has no photo, so a row of tiles stays level.
+  slotEmpty: {
+    backgroundColor: theme.colorNeutralLight,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colorBorder,
   },
   meta: {
     fontSize: theme.textXS,

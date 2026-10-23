@@ -6,7 +6,7 @@
 //
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
+import { ACTIVE_COURSE_ITEM_IDS_QUERY, ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
 
 interface PickRow {
   id: string;
@@ -144,6 +144,43 @@ describe('ACTIVE_REGIMEN_FOR_DRUG_QUERY (B-153 dose→regimen link)', () => {
     db.close();
     expect(row.id).toBe('new');
     expect(row.dose_amount).toBe('5 mg'); // inherits the current regimen's dose
+  });
+});
+
+describe('ACTIVE_COURSE_ITEM_IDS_QUERY (the log form\'s courses shelf, CUL-1908 P7)', () => {
+  function freshRegDb() {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE medications (
+      id TEXT PRIMARY KEY, pet_id TEXT, medication_item_id TEXT, status TEXT
+    );`);
+    return db;
+  }
+  function ids(rows: [string, string, string | null, string][]): string[] {
+    const db = freshRegDb();
+    const ins = db.prepare(`INSERT INTO medications (id, pet_id, medication_item_id, status) VALUES (?, ?, ?, ?)`);
+    for (const r of rows) ins.run(...r);
+    const out = (db.prepare(ACTIVE_COURSE_ITEM_IDS_QUERY).all('p1') as { medication_item_id: string }[])
+      .map((r) => r.medication_item_id)
+      .sort();
+    db.close();
+    return out;
+  }
+
+  it('returns each drug behind an active course for this pet, once', () => {
+    expect(ids([
+      ['r1', 'p1', 'item-maro', 'active'],
+      ['r2', 'p1', 'item-maro', 'active'],
+      ['r3', 'p1', 'item-pred', 'active'],
+    ])).toEqual(['item-maro', 'item-pred']);
+  });
+
+  it('drops ended courses, other pets and ad-hoc regimens with no library item', () => {
+    expect(ids([
+      ['r1', 'p1', 'item-pred', 'completed'],
+      ['r2', 'p1', 'item-amox', 'stopped'],
+      ['r3', 'p2', 'item-maro', 'active'],
+      ['r4', 'p1', null, 'active'],
+    ])).toEqual([]);
   });
 });
 

@@ -29,6 +29,20 @@ export const LIBRARY_MEDICATIONS_QUERY =
 // medicationQueries.test.ts.
 //
 // Params, in placeholder order: pet_id, medication_item_id.
+// The drugs this pet has a running course of (the log form's "{Pet}'s courses" shelf,
+// CUL-1908 P7): every library item behind an ACTIVE regimen. Ordering only: the shelf
+// lifts these tiles to the top and says nothing else, no count and no "Dose X of Y"
+// (the dose duration spec keeps a course's count on its own card). Same `status =
+// 'active'` predicate as ACTIVE_REGIMEN_FOR_DRUG_QUERY, so a tile is pinned exactly when
+// its one-tap dose would link to a course. An ad-hoc regimen with no library item has
+// no tile to pin and drops out.
+//
+// Params: pet_id.
+export const ACTIVE_COURSE_ITEM_IDS_QUERY =
+  `SELECT DISTINCT medication_item_id
+   FROM medications
+   WHERE pet_id = ? AND status = 'active' AND medication_item_id IS NOT NULL`;
+
 export const ACTIVE_REGIMEN_FOR_DRUG_QUERY =
   `SELECT id, medication_item_id, dose_amount
    FROM medications

@@ -18,7 +18,7 @@ import {
   type DoubleDoseResult,
   type DoseVehicle,
 } from './medications';
-import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
+import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN, ACTIVE_COURSE_ITEM_IDS_QUERY } from './medicationQueries';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { NOTIFICATION_SCHEMA_SQL } from './notificationPreferences';
 import {
@@ -1239,6 +1239,23 @@ export async function getActiveRegimenForDrug(
     [petId, medicationItemId],
   );
   return row ?? null;
+}
+
+// The library items this pet has a running course of (CUL-1908 P7, the dose step's
+// "{Pet}'s courses" shelf). Local, so it works offline like the dose write it orders for.
+export async function getActiveCourseItemIds(petId: string): Promise<string[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{ medication_item_id: string }>(ACTIVE_COURSE_ITEM_IDS_QUERY, [petId]);
+  return rows.map((r) => r.medication_item_id);
+}
+
+// When an event happened, as stored (ISO UTC), or null for an unknown id. The dose step
+// names the meal it rides with by its time (CUL-1908 P8), since two meals of one food on
+// one day differ only there.
+export async function getEventOccurredAt(eventId: string): Promise<string | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ occurred_at: string }>('SELECT occurred_at FROM events WHERE id = ?', [eventId]);
+  return row?.occurred_at ?? null;
 }
 
 // NOTE: the text-first addMedicationItem() helper (B-117 PR 3) was retired in

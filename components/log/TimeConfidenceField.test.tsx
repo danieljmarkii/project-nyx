@@ -123,22 +123,22 @@ describe('TimeConfidenceField', () => {
       }
     });
 
-    // Pins the geometry the rule above rests on. The segments are flush by
-    // design (a shared border, not a gap), which is what makes ANY slop here an
-    // overlap rather than a spend of empty space — the CLAUDE.md CUL-612 test is
-    // `gap >= facing(a) + facing(b)`, and this row's gap is zero. If a later
-    // redesign puts real space between them, that is the moment to re-derive
-    // this rule rather than inherit it.
-    it('the segments are flush — there is no gap for slop to spend', () => {
+    // Pins the geometry the rule above rests on. The segments sit on the kit's
+    // SegmentedControl track (CUL-1908 F4), a hairline apart. With no slop on either
+    // side the facing reach is zero, so the CUL-612 test (`gap >= facing(a) +
+    // facing(b)`) holds at any gap; a slop added to either segment would need the gap
+    // re-derived, which is the moment to revisit this rather than inherit it.
+    it('the gap between the segments covers their (zero) facing reach', () => {
       const { getByText } = setup({ mode: 'saw' });
-      const row = commonAncestor(
-        owningTouchable(getByText('Saw it happen')),
-        owningTouchable(getByText('Found it')),
-      );
+      const saw = owningTouchable(getByText('Saw it happen'));
+      const found = owningTouchable(getByText('Found it'));
+      const row = commonAncestor(saw, found);
       expect(row).not.toBeNull();
 
-      expect(flat(row).gap ?? 0).toBe(0);
-      expect(flat(row).columnGap ?? 0).toBe(0);
+      const gap = Math.max(flat(row).gap ?? 0, flat(row).columnGap ?? 0);
+      type Slop = { left?: number; right?: number } | undefined;
+      const reach = ((saw!.props.hitSlop as Slop)?.right ?? 0) + ((found!.props.hitSlop as Slop)?.left ?? 0);
+      expect(gap).toBeGreaterThanOrEqual(reach);
     });
 
     it('each segment selects its own mode', () => {
@@ -149,6 +149,30 @@ describe('TimeConfidenceField', () => {
       const found = setup({ mode: 'saw' });
       fireEvent.press(found.getByText('Found it'));
       expect(found.props.onModeChange).toHaveBeenCalledWith('found');
+    });
+  });
+
+  // CUL-1908 F3: the witnessed point edits in the kit's one time sheet, which mounts only
+  // while open and hands back the point the owner saved.
+  describe('the witnessed point opens TimeEditSheet', () => {
+    it('Change time opens the sheet, and Save hands the point back', () => {
+      const { getByText, queryByText, props } = setup({ mode: 'saw' });
+      expect(queryByText('When did this happen?')).toBeNull();
+
+      fireEvent.press(getByText('Change time'));
+      expect(getByText('When did this happen?')).toBeTruthy();
+
+      fireEvent.press(getByText('Save'));
+      expect(props.onPointChange).toHaveBeenCalledWith(POINT);
+      expect(queryByText('When did this happen?')).toBeNull();
+    });
+
+    it('Cancel closes it and moves nothing', () => {
+      const { getByText, queryByText, props } = setup({ mode: 'saw' });
+      fireEvent.press(getByText('Change time'));
+      fireEvent.press(getByText('Cancel'));
+      expect(props.onPointChange).not.toHaveBeenCalled();
+      expect(queryByText('When did this happen?')).toBeNull();
     });
   });
 });
