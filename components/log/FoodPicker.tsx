@@ -58,7 +58,9 @@ interface Props {
   initialScope?: FoodScope;
   // Mixed meals row 5 (CUL-2054; spec §7.1, R1) — the picker for a bowl's second food.
   // Only meal foods that are not toppers are offered: treats, human food and toppers stay
-  // their own logs, and the writer would refuse them anyway (`assertMixableFoods`). "+ Add
+  // their own logs, and the writer would refuse them anyway (`assertMixableFoods`). Treats
+  // still show in the library, dimmed and inert with the reason (CUL-2134, mock M1b), so an
+  // owner hunting for the treat they mixed in learns why it can't go in the bowl. "+ Add
   // new" steps aside too: its capture flow logs a meal of its own, which is not a food in
   // this bowl. Pair with `selectedFoodIds={[first]}` so the bowl's first food shows locked.
   mixableOnly?: boolean;
@@ -72,6 +74,12 @@ interface Props {
 /** The R1 rule the writer enforces, as the picker filters by it. */
 function isMixable(f: PickerFood): boolean {
   return f.food_type === 'meal' && f.format !== 'topper';
+}
+
+/** A treat in the bowl picker: shown, never pickable (CUL-2134, mock M1b). */
+const TREAT_NOT_IN_BOWL = 'Treat · logged on its own';
+function shownInMixPicker(f: PickerFood): boolean {
+  return isMixable(f) || f.food_type === 'treat';
 }
 
 // B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
@@ -243,7 +251,7 @@ export function FoodPicker({
   // first, then the free-text search over brand + product. Both are AND-ed, so
   // "Wet" + "tur" narrows to wet turkey foods.
   const filteredLibrary = useMemo(() => {
-    const scoped = filterFoodsByScope(mixableOnly ? library.filter(isMixable) : library, scope);
+    const scoped = filterFoodsByScope(mixableOnly ? library.filter(shownInMixPicker) : library, scope);
     const q = search.trim().toLowerCase();
     if (!q) return scoped;
     return scoped.filter(
@@ -448,13 +456,13 @@ export function FoodPicker({
           ) : (
             <View style={styles.groups}>
               <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
-                onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
                 selectedFoodIds={selectedFoodIds} />
               <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
-                onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
                 selectedFoodIds={selectedFoodIds} />
               <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
-                onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
                 selectedFoodIds={selectedFoodIds}
                 hint={selecting ? undefined : 'Long-press a tile to classify it.'} />
             </View>
@@ -629,10 +637,11 @@ function AddFoodCta({ onPress }: { onPress: () => void }) {
 // 10-second-test regression). The Foods tab headers every brand; the picker does
 // not, by design.
 function LibraryGroup({
-  label, foods, onPickFood, onOpenDetail, hint, selectedFoodIds,
+  label, foods, onPickFood, onOpenDetail, hint, selectedFoodIds, mixableOnly = false,
 }: {
   label: string;
   foods: PickerFood[];
+  mixableOnly?: boolean;
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
   hint?: string;
@@ -657,13 +666,13 @@ function LibraryGroup({
               </ThemedText>
             ) : null}
             <TileGrid foods={bg.foods} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-              selectedFoodIds={selectedFoodIds} />
+              selectedFoodIds={selectedFoodIds} mixableOnly={mixableOnly} />
           </View>
         ))}
         {/* Single-variant brands: one flat grid, brand kept in each tile's eyebrow. */}
         {singles.length > 0 ? (
           <TileGrid foods={singles} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-            selectedFoodIds={selectedFoodIds} />
+            selectedFoodIds={selectedFoodIds} mixableOnly={mixableOnly} />
         ) : null}
       </View>
     </View>
@@ -675,8 +684,11 @@ function LibraryGroup({
 // odd tile gets a spacer to keep the last row left-aligned.
 function TileGrid({
   foods, hideBrand = false, compact = false, onPickFood, onPickMix, onOpenDetail, selectedFoodIds,
+  mixableOnly = false,
 }: {
   foods: FabRecentItem[];
+  // The bowl picker: a food the bowl can't take renders inert with its reason.
+  mixableOnly?: boolean;
   hideBrand?: boolean;
   // Renders compact tiles — used by the B-346 rotation shelf, not the library.
   compact?: boolean;
@@ -692,7 +704,9 @@ function TileGrid({
           row view and miss a re-layout. */}
       {toFoodRows(foods).map((row) => (
         <View key={row[0].id} style={styles.gridRow}>
-          {row.map((f) => (
+          {row.map((f) => {
+            const notHere = mixableOnly && !f.mix && !isMixable(f) ? TREAT_NOT_IN_BOWL : undefined;
+            return (
             <FoodTile
               key={f.id}
               brand={f.brand}
@@ -701,10 +715,14 @@ function TileGrid({
               hideBrand={hideBrand}
               compact={compact}
               mix={!!f.mix}
+              notHere={notHere}
               // `undefined` outside selection mode keeps the tile a log button;
               // a boolean makes it a checkbox (see FoodTile).
               selected={selectedFoodIds ? selectedFoodIds.includes(f.id) : undefined}
               onPress={() => {
+                // An inert tile renders no touchable; this guard is the second wall, so the
+                // writer's refusal is never the only thing keeping a treat out of a bowl.
+                if (notHere) return;
                 const { mix } = f;
                 if (mix) onPickMix?.(mix);
                 else onPickFood(f);
@@ -712,7 +730,8 @@ function TileGrid({
               // A mix is never a library item (§7.4): it has no detail screen to open.
               onLongPress={onOpenDetail && !f.mix ? () => onOpenDetail(f) : undefined}
             />
-          ))}
+            );
+          })}
           {row.length === 1 && <View style={styles.gridSpacer} />}
         </View>
       ))}

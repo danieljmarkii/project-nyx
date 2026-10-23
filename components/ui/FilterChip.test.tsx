@@ -115,3 +115,26 @@ describe('FilterChip — the active label is legible on its own fill (CUL-744)',
     expect(color).toBe(theme.colorTextOnDark);
   });
 });
+
+// CUL-658 — the tap target is computed from the chip's own PINNED box (lib/tapTarget),
+// where it used to be a typed { top: 6, bottom: 6 } over a font's line box. The move is
+// a refactor only if the rendered hit area is the one it replaced.
+describe('FilterChip — the touch target (CUL-658)', () => {
+  function host() {
+    const { toJSON } = render(<FilterChip label="Oral" active={false} onPress={() => {}} />);
+    return toJSON() as unknown as { props: { style?: unknown; hitSlop?: unknown } };
+  }
+
+  it('renders the same vertical-only slop the literal gave, on a pinned 32pt box', () => {
+    const node = host();
+    expect(node.props.hitSlop).toEqual({ top: 6, bottom: 6 });
+    expect((StyleSheet.flatten(node.props.style) as { minHeight?: number }).minHeight).toBe(32);
+  });
+
+  it('the pinned box plus the slop reaches the 44pt floor', () => {
+    const node = host();
+    const { minHeight } = StyleSheet.flatten(node.props.style) as { minHeight: number };
+    const slop = node.props.hitSlop as { top: number; bottom: number };
+    expect(minHeight + slop.top + slop.bottom).toBeGreaterThanOrEqual(theme.hitTarget);
+  });
+});

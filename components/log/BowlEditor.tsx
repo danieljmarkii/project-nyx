@@ -24,7 +24,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { shareGlyph } from '../../lib/mealBowlLabel';
-import { MIX_STOPS, stepStop, stopIndexOf, stopLabel, type StepToward } from '../../lib/mixRatio';
+import { MIX_STOPS, stepEndLine, stepStop, stopIndexOf, stopLabel, type StepToward } from '../../lib/mixRatio';
 
 export interface StagedBowlFood {
   foodItemId: string;
@@ -132,8 +132,9 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
     const value = stopIndexOf(firstShare) !== null
       ? stopLabel(firstShare)
       : `${shareGlyph(firstShare)}·${shareGlyph(1 - firstShare)}`;
+    // The end stop's reason, the card's own line (CUL-2134, `stepEndLine`).
+    const endLine = stepEndLine(firstShare, foods[0].rowName, foods[1].rowName);
     const side = (f: StagedBowlFood, toward: StepToward) => {
-      const share = toward === 'first' ? firstShare : 1 - firstShare;
       const atEnd = stepStop(firstShare, toward) === null;
       return (
         <TouchableOpacity
@@ -142,8 +143,8 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
           disabled={atEnd}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={atEnd
-            ? `More ${f.rowName} in this bowl. Already at ${shareGlyph(share)}, the most the steps go.`
+          accessibilityLabel={atEnd && endLine
+            ? `More ${f.rowName} in this bowl. ${endLine}`
             : `More ${f.rowName} in this bowl`}
           accessibilityState={{ disabled: atEnd }}
           testID={`bowl-step-${toward}`}
@@ -155,16 +156,24 @@ export function BowlEditor({ foods, onChange, loadChoices, toStaged }: Props) {
       );
     };
     return (
-      <View style={styles.stepRow}>
-        {side(foods[0], 'first')}
-        <ThemedText
-          style={styles.stepValue}
-          accessibilityLabel={`${shareGlyph(firstShare)} ${foods[0].rowName}, ${shareGlyph(1 - firstShare)} ${foods[1].rowName}`}
-          testID="bowl-step-value"
-        >
-          {value}
-        </ThemedText>
-        {side(foods[1], 'second')}
+      <View>
+        <View style={styles.stepRow}>
+          {side(foods[0], 'first')}
+          <ThemedText
+            style={styles.stepValue}
+            accessibilityLabel={`${shareGlyph(firstShare)} ${foods[0].rowName}, ${shareGlyph(1 - firstShare)} ${foods[1].rowName}`}
+            testID="bowl-step-value"
+          >
+            {value}
+          </ThemedText>
+          {side(foods[1], 'second')}
+        </View>
+        {/* The dimmed side already speaks it, so assistive tech skips the repeat. */}
+        {endLine ? (
+          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <ThemedText style={styles.stepWhy} testID="bowl-step-why">{endLine}</ThemedText>
+          </View>
+        ) : null}
       </View>
     );
   })();
@@ -323,6 +332,13 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
+  },
+  // The end stop's reason (CUL-2134), the card's line in the card's quiet type.
+  stepWhy: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    fontWeight: theme.weightRegular,
+    paddingHorizontal: theme.space2,
   },
   empty: {
     fontSize: theme.textSM,

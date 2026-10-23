@@ -1,6 +1,7 @@
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { TAP_TARGET_FLOOR, verticalSlopTo } from '../../lib/tapTarget';
 
 // The dose-adherence scale (migration 020 `dose_adherence` enum) — the medication
 // analog of meals.intake_rating (B-014). Deliberately splits pet-driven states
@@ -57,9 +58,11 @@ const CONCERN: ReadonlySet<DoseAdherence> = new Set(['partial', 'missed', 'refus
 // into a 6pt row gap would make the two wrapped LINES share hit area — the same
 // z-order defect, rotated 90°. So the gaps are split: the column gap stays at
 // the design's 6, and the row gap is widened to clear both neighbours' reach.
-// Exported so the arithmetic is asserted rather than eyeballed on a device.
-export const CHIP_HITSLOP = { top: 6, bottom: 6 } as const;
+// Exported so the arithmetic is asserted rather than eyeballed on a device. The
+// slop is computed from this chip's own pinned box (lib/tapTarget, CUL-658), never
+// shared with FilterChip's: equal today because the boxes match, free to diverge.
 export const CHIP_MIN_HEIGHT = 32;
+export const CHIP_HITSLOP = verticalSlopTo(TAP_TARGET_FLOOR, CHIP_MIN_HEIGHT);
 export const CHIP_COLUMN_GAP = 6;
 export const CHIP_ROW_GAP = CHIP_HITSLOP.top + CHIP_HITSLOP.bottom;
 

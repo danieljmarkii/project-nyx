@@ -2,7 +2,7 @@ import { createRef } from 'react';
 import { render } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
 import { ThemedText, resolveThemedTextStyle, fontFamilyForWeight } from './ThemedText';
-import { theme } from '../../constants/theme';
+import { theme, textStyles } from '../../constants/theme';
 
 // The whole point of the primitive is that a style sheet keeps saying
 // `fontWeight: theme.weightMedium` and the matching FAMILY resolves — RN does not
@@ -90,6 +90,27 @@ describe('ThemedText', () => {
     const ref = createRef<Text>();
     render(<ThemedText ref={ref}>Nyx</ThemedText>);
     expect(ref.current).not.toBeNull();
+  });
+
+  // A named style is size, weight and line height as one decision (CUL-1897). The
+  // weight must still reach the family map, or every variant renders the regular face.
+  it('renders a named text style, its weight resolved to the matching face', () => {
+    const style = styleOf(<ThemedText variant="subheading">Nyx</ThemedText>);
+    expect(style.fontSize).toBe(textStyles.subheading.fontSize);
+    expect(style.lineHeight).toBe(textStyles.subheading.lineHeight);
+    expect(style.fontFamily).toBe(theme.fontBodySemibold);
+    expect(style.fontWeight).toBeUndefined();
+  });
+
+  it('lets the caller\'s style win over the named style', () => {
+    const style = styleOf(
+      <ThemedText variant="caption" style={{ lineHeight: theme.lineHeightBody, color: theme.colorTextPrimary }}>
+        Nyx
+      </ThemedText>
+    );
+    expect(style.fontSize).toBe(textStyles.caption.fontSize);
+    expect(style.lineHeight).toBe(theme.lineHeightBody);
+    expect(style.color).toBe(theme.colorTextPrimary);
   });
 
   it('passes every other prop through — it is a drop-in for <Text>', () => {

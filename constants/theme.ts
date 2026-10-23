@@ -32,6 +32,14 @@ export const theme = {
   lineHeightBody: 22, // body/paragraph leading — app-wide default for multi-line copy
   lineHeightSM: 18, // caption/compact-row leading (textSM × ~1.35) — e.g. the cross-pet banner
   lineHeightXS: 16, // XS-note leading (textXS × ~1.45) — the metric-card note lines (B-193)
+  // The rest of the line height scale (CUL-1897 D3, ruled (a) 2026-10-23). One rung per
+  // type size that had none, each the value call sites were already computing by hand
+  // (the audit, CUL-1893, found ~40 `theme.textSM * 1.45`-style sites), so a screen pass
+  // moves a site onto its rung without moving a pixel more than a rounding.
+  lineHeightMicro: 12, // textMicro badge text (9 × ~1.33)
+  lineHeightSMLoose: 19, // a multi-line caption paragraph (textSM × 1.45 = 18.85, typed 18 times)
+  lineHeightLG: 24, // textLG subheadings (17 × ~1.4; `lineHeightBody + 2` by hand)
+  lineHeightXL: 28, // textXL page headings (22 × ~1.3)
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,
@@ -49,7 +57,10 @@ export const theme = {
   trackingWidest: 0.8,   // zone labels, section labels
 
   // ── Colors (Design System v1.2 "Linear Clean") ────────────────────────────
-  // One accent — interactive elements + primary trend line only. Never decorative.
+  // One ACTION colour, indigo, and one meaning per hue: the hue table in the design
+  // principles' Color section (v2.1, CUL-2145). A screen picks a colour by its job and
+  // its ground through `colorRoles` below, never by hue. The raw hues stay exported
+  // until CUL-1666's walk moves every call site onto a role.
   colorAccent: '#00C2A8',
   colorAccentSoft: '#86D9CC',     // mid teal — a calm, on-brand fill that is NOT a verdict
                                   // (e.g. the treats segment of the Meals & treats card)
@@ -86,6 +97,12 @@ export const theme = {
   // never a text colour (text on white takes colorAccentInk). Both halves are pinned in
   // theme.contrast.test.ts.
   colorAccentGlyph: '#0FA08B',
+  // The ACTION colour on light grounds (CUL-2145 R1, PM 2026-10-23; G4 (C) of CUL-1279,
+  // 2026-10-03: indigo is the action, teal a good fact). One step lighter than the FAB
+  // disc (colorBrandNightElevated), which at link size reads as black body text: 9.42:1
+  // on white, so it clears text AA with room. Reached through `colorRoles.action` and
+  // `colorRoles.selected`, never by name, so the migration can find every site.
+  colorAction: '#3F35A0',
 
   // Neutrals
   colorNeutralDark: '#0A0A0A',
@@ -250,10 +267,10 @@ export const theme = {
   // (DayEventsSheet), where a med row previously fell back to the neutral fg-2.
   // A muted slate-blue: its own hue family, so a med row reads distinctly from a
   // symptom (rose) or a meal (teal) at a glance. Deliberately NOT indigo/violet —
-  // §1.3 reserves the brand indigo (#13112E family) for world/ground use only, so a
-  // med tint in that family would read as breaking the accent rule (this is why the
-  // N5b mock's #EEF0FF/#5B63C4 indigo chip was rejected). NOT teal — teal is the
-  // sole interactive accent; NOT rose — rose is the safety/symptom colour. This is a
+  // indigo is the action colour (principles v2.1 hue table, CUL-2145), so a med tint
+  // in that family would read as tappable (this is why the N5b mock's #EEF0FF/#5B63C4
+  // indigo chip was rejected). NOT teal — teal is a good fact; NOT rose — rose is the
+  // safety/symptom colour. This is a
   // category identity tint, never a verdict (medication is not a "warning" — no
   // amber/red). Contrast on this glyph (WCAG graphical target 3:1): 4.45:1 on
   // #FFFFFF, 4.08:1 on colorSurfaceSubtle #F5F5F5, 4.23:1 on colorNeutralLight
@@ -333,12 +350,23 @@ export const theme = {
   // between the 2pt type sub-grid (spaceMicro) and the 8pt layout grid, which
   // had nothing at 4 (B-193). Half of space1.
   space0_5: 4,
+  // 6 and 12 (CUL-1897 D3, ruled (a) 2026-10-23): the two values the code reached for
+  // most off the 8pt grid (12 ×53, 6 ×45 in the audit, CUL-1893). A grid nobody follows
+  // protects nothing, so the half steps join it rather than ~100 sites being bent to
+  // 4/8/16. Not a licence for 10 or 14: those still move to a rung.
+  space0_75: 6,
   space1: 8,
+  space1_5: 12,
   space2: 16,
   space3: 24,
   space4: 32,
   space5: 48,
   space6: 64,
+
+  // ── Hit target ────────────────────────────────────────────────────────────
+  // The 44pt minimum touch target (Apple HIG; CUL-658, CUL-1897 D3). `minHeight: 44`
+  // was hand typed ~180 times. A box's floor, not a spacing step: never add it to a gap.
+  hitTarget: 44,
 
   // ── Border radius ─────────────────────────────────────────────────────────
   radiusXS: 4,
@@ -360,6 +388,92 @@ export const theme = {
   durationSlow: 400,
   easingDefault: 'ease-out',
 } as const;
+
+// Colour ROLES (CUL-2145, row 1 of CUL-1898's D4, ruled (a) 2026-10-23). Each role names
+// a JOB and the GROUND it sits on, and resolves to a theme token above: the only new
+// value is colorAction. A call site asks for `colorRoles.positive.glyphOnLight`, not for
+// the teal, so whether a mark is readable where it sits is decided once, here, and
+// pinned in theme.contrast.test.ts, which fails on any role without a pin. Nothing reads
+// these yet: CUL-1666's walk is the migration, and a guard follows it.
+//
+// The hue table these encode is the principles' Color section (v2.1). Concern (the rose)
+// is the safety register: a concern role may keep or raise its contrast, never lower it,
+// and the test pins today's ratio as its floor.
+export const colorRoles = {
+  // What the owner can tap or change: a link, a chevron, a switch, a save.
+  action: {
+    onLight: theme.colorAction,
+    onNight: theme.colorMoonlight,        // R3: indigo cannot show on the indigo night
+    labelOnFill: theme.colorTextOnDark,   // the label on a solid action fill
+  },
+  // A good fact: a meal eaten, a dose given, a clean day.
+  positive: {
+    glyphOnLight: theme.colorAccentGlyph,
+    textOnLight: theme.colorAccentInk,
+    wash: theme.colorAccentLight,
+    onNight: theme.colorMoonlitTeal,
+  },
+  // A chosen chip, row or option (R2: choosing is acting, so indigo). The wash is the
+  // night text token reused as a light ground; it barely lifts off white (1.19:1), so
+  // the edge carries the state and the label states it in words.
+  selected: {
+    ground: theme.colorTextOnNight,
+    ink: theme.colorAction,
+    edge: theme.colorAction,
+  },
+  // A symptom or a concern, and every safety surface.
+  concern: {
+    glyphOnLight: theme.colorEventSymptom,
+    textOnLight: theme.colorEventSymptomInk,
+    wash: theme.colorEventSymptomLight,
+    onNight: theme.colorEventSymptomOnNight,
+  },
+  // A heads up, as strong as the record knows. Not danger.
+  attention: {
+    text: theme.colorAttentionInk,
+    wash: theme.colorAttentionLight,
+    rail: theme.colorAttentionRail,
+  },
+  medication: {
+    glyphOnLight: theme.colorEventMedication,
+    textOnLight: theme.colorEventMedicationInk,
+    wash: theme.colorEventMedicationLight,
+    onNight: theme.colorEventMedicationOnNight,
+  },
+  // White grounds only: on its own banner wash (colorDestructiveLight) the red is
+  // 3.95:1, under text AA, so a destructive label there needs an ink this layer does
+  // not have yet.
+  destructive: {
+    onLight: theme.colorDestructive,
+    onDark: theme.colorDestructiveOnDark,
+  },
+  text: {
+    primaryOnLight: theme.colorTextPrimary,
+    secondaryOnLight: theme.colorTextSecondary,
+    primaryOnNight: theme.colorTextOnNight,
+    mutedOnNight: theme.colorTextOnNightMuted,
+  },
+} as const;
+
+// Named text styles (CUL-1897 scope 3): size, weight and line height decided once, as
+// a set. Before these nothing paired them, so every style sheet re-chose a leading for
+// its size (and 40 sites computed one). Body face only: ThemedText derives the Geist
+// family from `fontWeight`, so `<ThemedText variant="caption">` renders the right face.
+// The display face (Newsreader headlines) keeps its own styles. Colour is never part of
+// a named style: the ground decides it (.claude/rules/ui.md, C-1).
+export const textStyles = {
+  micro: { fontSize: theme.textMicro, fontWeight: theme.weightSemibold, lineHeight: theme.lineHeightMicro },
+  label: { fontSize: theme.textXS, fontWeight: theme.weightMedium, lineHeight: theme.lineHeightXS },
+  note: { fontSize: theme.textXS, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightXS },
+  caption: { fontSize: theme.textSM, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightSM },
+  captionParagraph: { fontSize: theme.textSM, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightSMLoose },
+  body: { fontSize: theme.textMD, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightBody },
+  bodyStrong: { fontSize: theme.textMD, fontWeight: theme.weightMedium, lineHeight: theme.lineHeightBody },
+  subheading: { fontSize: theme.textLG, fontWeight: theme.weightSemibold, lineHeight: theme.lineHeightLG },
+  heading: { fontSize: theme.textXL, fontWeight: theme.weightSemibold, lineHeight: theme.lineHeightXL },
+} as const;
+
+export type TextStyleName = keyof typeof textStyles;
 
 // Shadow tokens — defined outside `as const` so shadowOffset stays mutable,
 // which is required by React Native's ViewStyle type.

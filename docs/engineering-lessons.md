@@ -708,3 +708,18 @@ The rule is now **the row must have moved**: the edge compares `updated_at` (tri
 
 **The rule's shape.** Two passes, then ship the version whose residuals err loud and file the rest. The carve-out is what keeps it from being a weakening: a residual that can drop, soften or delay a warning is not "loud", so it still blocks, as the never-lower rule and E-6 already require. The cap limits how long a PR keeps looking for edges. It never decides which edges are acceptable.
 
+
+
+### P-17 · Correcting a frozen brief: what the corrections showed (2026-08-30, CUL-671)
+
+**Why both halves of the correction shape.** The `§V` addendum alone is unread by anyone who scrolls to the claim rather than the bottom, and an in-place rewrite destroys the record the freeze exists to keep. A filename version (`*-v1_0`) never gets bumped, which is why those docs froze; the version lives in the header.
+
+**What a correction beside the original buys.** It shows what kind of mistake the pack makes: CUL-671's seven corrections were six attributions stated one notch stronger than their source plus one dead link, a pattern a reader can carry to the claims nobody has checked yet. And a competitor sweep decays fast: three of six products had moved within six days of that sweep being committed, and one "nobody does this" claim was already false on the day it shipped. Hence re-verify at use, not at citation.
+
+### P-18 · The mock round contract: why a build ready round names its parts and draws its states (2026-10-23, CUL-1894)
+
+**The evidence.** The design system usage audit (CUL-1893) traced five tracks and about 94 design defects found after a mock was ruled. About a third were states no frame drew: offline and consent off on the incident screen (CUL-820, CUL-823), 320pt and the largest text in the polish track (CUL-628, CUL-630), the filtered week strip in History (CUL-1227), the look vocabulary in Noticed. Separately, the Design v2 v4 mock drew a card as raw CSS (`.acard`) and never named a `Card` variant, so each lane chose its own and Home shipped two surfaces no mock drew (CUL-1525); the FAB teal was a hex typed into a mock that failed 3:1 (CUL-1063).
+
+**The shape.** D1 (a), ruled 2026-10-23: the contract binds only the build ready round, the one a spec or build is cut from, so an exploratory round can still propose parts the kit lacks; it marks them `new:` and the build treats each as a gate. Colours come from a generated `docs/mockups/theme.css` rather than a hand copy, because a hand copy is the same drift one file over; `guards/mockupThemeCss.test.ts` reds on any divergence and its message names the regenerate command. The cost, stated at ruling: a round takes about a third longer to review, and specs stop needing state errata after the build.
+
+**Its blind spot.** Nothing machine-checks a page's tags or its state set yet: the `contract` lens in `/design-critique` reads them. Existing pages were left untagged on purpose; the contract starts with the next build ready round.

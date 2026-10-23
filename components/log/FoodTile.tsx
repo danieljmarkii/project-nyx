@@ -39,6 +39,11 @@ interface Props {
   // brand or format of its own, so the eyebrow reads "MIX" (the FAB pill's tag) and the
   // label says what a tap writes: the whole bowl, at its latest split.
   mix?: boolean;
+  // CUL-2134 (mock M1b) — why this food cannot be picked HERE ("Treat · logged on its
+  // own" in a bowl's second-food picker). The tile then shows dimmed with the reason under
+  // its name, and is no control at all: a plain View read as one sentence, never a
+  // `disabled` button (C-7), because nothing on this surface can make it pickable.
+  notHere?: string;
 }
 
 // Text-only food tile. Product name is the primary line — for a single-brand
@@ -58,7 +63,7 @@ interface Props {
 // FoodRow tap navigates to detail.
 export function FoodTile({
   brand, productName, format, onPress, onLongPress,
-  hideBrand = false, compact = false, selected, mix = false,
+  hideBrand = false, compact = false, selected, mix = false, notHere,
 }: Props) {
   const selecting = selected !== undefined;
   const typeLabel = FORMAT_LABEL[format] ?? '';
@@ -73,6 +78,28 @@ export function FoodTile({
     : typeLabel
       ? `${brand.toUpperCase()} · ${formatMeta}`
       : brand.toUpperCase();
+
+  if (notHere) {
+    return (
+      <View
+        style={[styles.tile, compact && styles.tileCompact, styles.tileNotHere]}
+        accessible
+        accessibilityLabel={`${brand} ${productName}. ${notHere}`}
+      >
+        {metaLine ? (
+          <ThemedText style={styles.meta} numberOfLines={1}>
+            {metaLine}
+          </ThemedText>
+        ) : null}
+        <ThemedText style={styles.product} numberOfLines={2}>
+          {productName}
+        </ThemedText>
+        <ThemedText style={styles.notHere} numberOfLines={1}>
+          {notHere}
+        </ThemedText>
+      </View>
+    );
+  }
 
   return (
     <TouchableOpacity
@@ -147,6 +174,14 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
     letterSpacing: theme.trackingWidest,
+  },
+  // The stepper's end-stop dim (0.4), so "can't go here" reads one way across the mix flow.
+  tileNotHere: {
+    opacity: 0.4,
+  },
+  notHere: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
   },
   product: {
     fontSize: theme.textMD,
