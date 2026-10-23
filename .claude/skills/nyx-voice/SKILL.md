@@ -7,19 +7,19 @@ description: Use this skill when writing or reviewing any owner-facing copy in N
 
 ## Origin and Scope
 
-The canonical rules live in two places: the Sr. Product Designer's **Copy standards** in CLAUDE.md, and the **Copy Principles** + **Voice and Tone** sections of `docs/nyx-design-principles-v1_0.md` (lines 143, 167–179, and Principle 4 at 86–96). This skill is the code-grounded version: every rule below points at a string already shipped in the app so the next contributor can copy the register by example, not re-derive it from adjectives.
+The canonical rules live in two places: the Sr. Product Designer's **Copy standards** in CLAUDE.md, and **Copy Principles**, **Visual Language › Tone** and Principle 4 in `docs/nyx-design-principles-v1_0.md`; cites below name its sections, never lines. This skill is the code-grounded version: every rule below points at a string already shipped in the app so the next contributor can copy the register by example, not re-derive it from adjectives.
 
-The voice, in one line from the design doc (`:175`): *"the register of a smart, caring friend who happens to know about veterinary medicine."* Not a pet brand ("fur babies"), not a medical record tool ("emesis"). Calm, considered, quietly confident (`:143`).
+The voice, in one line from the design doc (`§ Warm Without Being Cute`): *"the register of a smart, caring friend who happens to know about veterinary medicine."* Not a pet brand ("fur babies"), not a medical record tool ("emesis"). Calm, considered, quietly confident (`§ Tone`).
 
 **Out of scope:**
 - The **clinical no-reassure asymmetry** behind AI read text and recommendation enums — that's the `clinical-guardrails` skill. This skill covers how those strings *sound*; that one covers what they're *forbidden to assert*. Pattern 6 below is the seam.
-- The **vet report** register (SOAP-note, clinical-grade, Dr. Chen's lens). The vet report is deliberately *not* in the owner voice — it's a separate audience. If/when a `vet-report-clinical` skill exists, it owns that.
+- The **vet report** register (SOAP-note, clinical-grade, Dr. Chen's lens). The vet report is deliberately *not* in the owner voice — a separate audience, read cold by the `vet-report-cold-read` agent.
 
 ---
 
 ## PATTERN 1: First Person for the Pet, Second Person for the Owner
 
-**RULE:** The pet is the subject, by name. Address the owner as "you." Never "your pet" when a name exists, never "the pet," never third-person about the owner. When the name is genuinely unavailable, the fallback is `'your pet'` (second person) — not `'the pet'` or `'this pet'`. Using the pet's name is what creates the emotional stakes that make a nudge land (`design-principles:179`).
+**RULE:** The pet is the subject, by name. Address the owner as "you." Never "your pet" when a name exists, never "the pet," never third-person about the owner. When the name is genuinely unavailable, the fallback is `'your pet'` (second person) — not `'the pet'` or `'this pet'`. Using the pet's name is what creates the emotional stakes that make a nudge land (`§ First Person for the Pet`).
 
 **CANONICAL EXAMPLE** (`components/home/SignalZone.tsx:14`, the fallback; `:21` the in-copy use):
 
@@ -43,7 +43,7 @@ Nothing logged yet — how's {petName} doing?
 
 ## PATTERN 2: Specific Over Generic — Numbers, Dates, Foods
 
-**RULE:** Owner-facing insight copy names the thing: the percentage, the day, the food, the window. Specificity is what makes Jordan trust the app; generic copy reads as filler (`design-principles:171`). "Vomiting is down 60% since Tuesday," never "things are improving."
+**RULE:** Owner-facing insight copy names the thing: the percentage, the day, the food, the window. Specificity is what makes Jordan trust the app; generic copy reads as filler (`§ Specific Over Generic`). "Vomiting is down 60% since Tuesday," never "things are improving."
 
 **CANONICAL EXAMPLE** (`components/home/SignalZone.tsx:8–9`, the shipped preview insights that set the bar for the real Step 10 Signal):
 
@@ -62,7 +62,7 @@ Each names a magnitude (60%, 3–6 hours), an anchor (switching proteins, chicke
 
 ## PATTERN 3: Empty States Are Designed, Forward-Looking Copy — Never Blank, Never a Placeholder
 
-**RULE:** Every empty state — first open, nothing logged today, not enough data for a chart — is a trust-building moment, because that's when the owner is most uncertain about the product (`design-principles:102`). It must be warm, honest, and forward-looking: name what's coming and what to do to get there. Never a blank space, never "No data," never a broken chart, never "Coming soon."
+**RULE:** Every empty state — first open, nothing logged today, not enough data for a chart — is a trust-building moment, because that's when the owner is most uncertain about the product (Principle 5). It must be warm, honest, and forward-looking: name what's coming and what to do to get there. Never a blank space, never "No data," never a broken chart, never "Coming soon."
 
 **CANONICAL EXAMPLE** (`components/home/TrendZone.tsx:42–46`):
 
@@ -90,7 +90,7 @@ Keep logging and {petName}'s first pattern will surface in about a week.
 
 ## PATTERN 4: No Exclamation Marks, No Manufactured Enthusiasm
 
-**RULE:** Nyx does not shout and does not celebrate aggressively (`design-principles:143`). No exclamation marks to manufacture enthusiasm — this is a CLAUDE.md copy standard, not a stylistic preference. The register is calm and quietly confident throughout, including success and completion states.
+**RULE:** Nyx does not shout and does not celebrate aggressively (`§ Tone`). No exclamation marks to manufacture enthusiasm — this is a CLAUDE.md copy standard, not a stylistic preference. The register is calm and quietly confident throughout, including success and completion states.
 
 **CANONICAL EXAMPLE:** the rule is enforced as a *test assertion* in the AI read path (`supabase/functions/analyze-vomit/index.test.ts:255`):
 
@@ -100,7 +100,7 @@ assertEquals(t.includes('!'), false);
 
 Every shipped owner-facing string in `components/home/` and `components/event/VomitAnalysisSection.tsx` holds to this — none ends in `!`. Match that.
 
-**ANTI-PATTERN:** `"Logged! 🎉"`, `"Great job!"`, `"Mochi's all caught up!"`. Enthusiasm-by-punctuation is the pet-brand voice the product explicitly rejects. A completion state can be satisfying without shouting — see the brief, quiet confirmation the quick-log uses (`design-principles:195`).
+**ANTI-PATTERN:** `"Logged! 🎉"`, `"Great job!"`, `"Mochi's all caught up!"`. Enthusiasm-by-punctuation is the pet-brand voice the product explicitly rejects. A completion state can be satisfying without shouting — see the brief, quiet confirmation the quick-log uses (`§ The Quick-Log Screen`).
 
 ---
 
@@ -152,21 +152,21 @@ const REC_LABEL: Record<Recommendation, string> = {
 
 ## PATTERN 7: The Nudge Is Warm, Not Nagging — Specific, One a Day
 
-**RULE:** A nudge sounds like a thoughtful friend, never a DAU metric (`design-principles:96`). It is specific to what happened, not a generic reminder, and there is at most one a day (Principle 4). The test (`design-principles:96`): read it aloud — does it sound like a caring friend or a PM chasing engagement? If the latter, rewrite.
+**RULE:** A nudge sounds like a thoughtful friend, never a DAU metric (Principle 4). It is specific to what happened, not a generic reminder, and there is at most one a day (Principle 4). Its test: read it aloud — does it sound like a caring friend or a PM chasing engagement? If the latter, rewrite.
 
-**CANONICAL EXAMPLE** — the in-app nudge (`components/home/TodayZone.tsx:54`) is specific and warm, and it *vanishes the moment anything is logged* (`design-principles:77`):
+**CANONICAL EXAMPLE** — the in-app nudge (`components/home/TodayZone.tsx:54`) is specific and warm, and it *vanishes the moment anything is logged*:
 
 ```tsx
 Nothing logged yet — how's {petName} doing?
 ```
 
-The aspirational push-notification bar (`design-principles:93`) ties the nudge to the actual event:
+The aspirational push-notification bar (Principle 4) ties the nudge to the actual event:
 
 ```
 "Luna vomited at 2am — she had a snack 20 minutes earlier. Want to note what it was?"
 ```
 
-**ANTI-PATTERN:** `"Don't forget to log today!"` (`design-principles:93` names this exact line as the thing not to do — generic, nagging, exclamation-marked, all three failures at once). Also anti-pattern: more than one nudge a day, a red badge/dot instead of a sentence (`design-principles:77`), or a streak-pressure framing ("Don't break your 6-day streak").
+**ANTI-PATTERN:** `"Don't forget to log today!"` (Principle 4 names this exact line as the thing not to do — generic, nagging, exclamation-marked, all three failures at once). Also anti-pattern: more than one nudge a day, a red badge/dot instead of a sentence, or a streak-pressure framing ("Don't break your 6-day streak").
 
 ---
 
@@ -192,7 +192,7 @@ Plain cause, a concrete recovery (replace the photo), and the honest health back
 
 Gaps between what this skill asserts and what the code currently enforces. Left open for PM decision rather than silently "fixed."
 
-1. **The voice rules are tested only on the AI read path.** Pattern 4's no-`!` assertion and Pattern 6's no-reassure regex live in `analyze-vomit/index.test.ts`. No equivalent guard exists for the home-zone strings, empty states, or alerts — they hold to voice by authorship, not by test. A lightweight option: a copy lint/test that scans rendered string literals in `components/` for `!` and the reassurance vocabulary. Worth a Linear issue (team Culprit) if copy drift becomes real; not obviously worth the maintenance now.
+1. **Resolved (CUL-445):** `guards/ownerFacingCopy.test.ts` now reds a `!` in rendered owner copy, untranslated clinical terms in error copy and raw error strings (`.claude/rules/copy.md`, C-25).
 
 2. **Model-emitted `read_text` is unguarded for voice, not just for reassurance.** `clinical-guardrails` Ambiguity #1 already flags that the model's own `read_text` isn't regex-checked for reassurance. The same gap applies to *voice*: the model could emit an exclamation mark or a jargon term ("emesis") in the clean-photo path, and nothing catches it before display. If a post-call check is added for reassurance, fold the `!` and jargon checks into the same pass.
 

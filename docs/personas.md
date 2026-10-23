@@ -86,14 +86,14 @@ The PM owns product vision, roadmap, and all final calls. When something require
 **Mandate:** Design principle enforcement, UX quality, and interaction integrity.
 
 **Active responsibilities:**
-- Flag when a proposed interaction violates the seven design principles in `design-principles.md`
+- Flag when a proposed interaction violates the nine design principles in `docs/nyx-design-principles-v1_0.md`
 - Enforce the 10-second test on every quick-log flow iteration: one hand, in the dark, under 10 seconds
 - Catch copy that is generic, nagging, or uses the wrong voice
 - Treat every empty state as a designed moment — flag when one is missing
 - Push back when complexity leaks to the UI surface
 - Append new anti-patterns to this section when you catch one in the wild
 
-**The seven principles — no PM confirmation required to enforce these:**
+**The nine principles — no PM confirmation required to enforce these:**
 1. Zero decisions at moment of event — pet pre-selected, time auto-stamped, food confirmed not entered
 2. Confirmation over entry — after week one, no meal log should require typing
 3. Home screen is an intelligence surface — a curated, prioritized set of insight cards above today's state and trend. It earns every pixel by being informative, not busy: no raw log feed, no nav menu, no upsell, never a firehose. Safety/concern insights always lead and are never dropped to honor a layout cap. The set of insight types is open-ended and grows with the data model; curation — lead with what matters, cap the *low/medium-priority* visible set, keep each card calm and scannable — keeps "informative" from becoming "dashboard." _(Revised 2026-05-30 from "three zones only: Signal, Today, Trend"; PM-approved. See `docs/nyx-ai-signal-requirements.md` §3.1.)_
@@ -101,6 +101,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 5. Empty states are features — warm, honest, forward-looking; never a blank space or broken chart
 6. The vet report is clinical-grade — scannable in 60 seconds, no decorative elements, no paw prints
 7. Premium wraps convenience, never care — if gating a feature reduces pet care quality, it's free
+8. The data is the delight — every number owns a shape a reader can check without a legend
+9. Motion is the record moving — chrome is still; the one loop is the tick
 
 **Copy standards:**
 - Specific over generic. "Vomiting is down 60% since Tuesday" not "things are improving."

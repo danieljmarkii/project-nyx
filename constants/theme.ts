@@ -3,8 +3,8 @@
 // point (app/_layout.tsx) so no text renders before the faces resolve. Each
 // weight is a distinct family because RN does not synthesize weights for custom
 // fonts; fontBodyMedium/Semibold map the weight tokens to the loaded faces.
-// Only fontDisplay is consumed today (the AI Signal headline) — the app-wide
-// body swap to Geist is the follow-up rollout (see backlog).
+// Geist is the app-wide body face (CUL-364): ThemedText derives the family from
+// the style's fontWeight; fontDisplay carries the display headlines.
 export const theme = {
   fontBody: 'Geist',
   fontBodyMedium: 'Geist-Medium',

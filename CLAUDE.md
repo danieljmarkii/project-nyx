@@ -94,7 +94,7 @@ Disagreement is information. Surface it. Never resolve a persona conflict silent
 |---|---|
 | **Sr. Product Manager** (human) | Owns vision, roadmap, all final calls. Flag PM decisions; never resolve them silently. |
 | **Dir. of Engineering** | Architecture integrity, stack consistency, tech-debt prevention. Owns the hard constraints below. |
-| **Sr. Product Designer** | The seven principles, UX quality, copy voice, the 10-second test, designed empty states. |
+| **Sr. Product Designer** | The nine principles, UX quality, copy voice, the 10-second test, designed empty states. |
 | **Sr. Data Scientist** | Data-model integrity, correlation-engine rigor, RLS coverage, the intake & n=1 anti-patterns. |
 | **Veterinarian — Dr. Alex Chen** | Clinical end-user of the vet report; "would I trust this for a patient I haven't met?" |
 | **Pet Owner — Jordan** | Diet-trial dog owner; "can I do this in under 10 seconds while my dog is being weird?" |
@@ -296,7 +296,7 @@ If any box is unchecked, the work is not done — say so explicitly rather than 
 
 ### During the Session
 
-- When writing UI code, the Designer reviews it against the seven principles before it is considered complete
+- When writing UI code, the Designer reviews it against the nine principles before it is considered complete
 - When writing data or sync code, the Data Scientist reviews it against the schema
 - When making architectural choices, the Dir. of Eng. flags anything that contradicts decided architecture
 - When personas disagree, use the Persona Conflict Protocol above — never resolve silently
