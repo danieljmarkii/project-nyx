@@ -12,4 +12,6 @@ Dispatched DISCOVERY row for CUL-1990, shipped via #1318. Page: https://claude.a
 
 **Residual.** The PM's real payload is not drawn (a production read waits on the PM's word). The build is CUL-1909.
 
+**Ruled in session (PM, 2026-10-23): "Take all the recommendations."** S1 (B); F1 to F9 (F6 falls away with P3); P1 to P9 as recommended; D-1 (A) in its own fix row (CUL-2176); D-2 resolved by P4. The page is marked ruled and republished to the same URL; the picks are written on CUL-1909.
+
 **One thing:** none — dispatched session, not this round's teach row
