@@ -984,6 +984,8 @@ export function FoldedStrip({
       {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
           (the B-745 GlyphSvg migration owns them), so they keep the system face rather
           than taking the body family a sweep would give them. CUL-364 §7. */}
+      {/* door-mark-ok: InsightCard is not mounted on Home since CUL-1270 (the zone draws
+          SignalRow); its folded strip retires with it rather than taking the shared mark. */}
       <Text style={styles.stripChevron}>›</Text>
     </Pressable>
   );

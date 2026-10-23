@@ -64,10 +64,10 @@ const MOTION_DIR = 'components/motion/';
 const CEILINGS = {
   colour: 8,
   fontSize: 71,
-  lineHeight: 76,
+  lineHeight: 74,
   letterSpacing: 9,
   spacing: 369,
-  radius: 83,
+  radius: 81,
   duration: 92,
   whorlSpinner: 48,
 } as const;

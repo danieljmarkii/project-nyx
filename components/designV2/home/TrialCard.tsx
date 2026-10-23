@@ -18,12 +18,13 @@
 // Every string is the resolver's (`resolveTrialStrip`'s `header` and `cardLine`); this file
 // adds layout and one door. The host (`components/home/TrialStrip`) holds both gates.
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import type { TrialStripModel } from '../../../lib/dietTrialCard';
 import { trialScreenHref } from '../../../lib/trialRoute';
-import { Card } from '../../ui/Card';
+import { DoorMark } from './DoorMark';
+import { HomeCard } from './HomeCard';
 import { ThemedText } from '../../ui/ThemedText';
 
 /** The action, spoken after the visible text (the label is the visible text, C-8). */
@@ -55,11 +56,10 @@ export function TrialCard({ model, petId, onPress }: TrialCardProps) {
       style={styles.target}
       testID="trial-card-v2"
     >
-      <Card>
+      <HomeCard>
         <View style={styles.headRow}>
           <ThemedText style={styles.title}>{model.header}</ThemedText>
-          {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
-          <Text style={styles.chevron}>›</Text>
+          <DoorMark />
         </View>
         <View style={styles.track} testID="trial-card-v2-track">
           <View
@@ -69,7 +69,7 @@ export function TrialCard({ model, petId, onPress }: TrialCardProps) {
           />
         </View>
         {model.cardLine !== null && <ThemedText style={styles.line}>{model.cardLine}</ThemedText>}
-      </Card>
+      </HomeCard>
     </Pressable>
   );
 }
@@ -91,11 +91,6 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
-  },
-  chevron: {
-    fontSize: theme.textLG,
-    lineHeight: theme.textLG + 2,
-    color: theme.colorTextTertiary,
   },
   track: {
     height: 4,

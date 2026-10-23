@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
-import { Card } from '../ui/Card';
+import { HomeCard } from '../designV2/home/HomeCard';
 import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -216,7 +216,7 @@ export function AppointmentStrip() {
   };
 
   return (
-    <Card>
+    <HomeCard>
       <AppointmentBlock
         // The DAY half, never the full `when`: built from the joined string the ask came
         // out as "Did Tuesday · 3:00 pm’s visit happen?".
@@ -267,7 +267,7 @@ export function AppointmentStrip() {
           </>
         )}
       </View>
-    </Card>
+    </HomeCard>
   );
 }
 

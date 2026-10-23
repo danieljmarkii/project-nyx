@@ -65,6 +65,7 @@ export function SignalZoneFoot(
             hitSlop={FOOT_LINK_HITSLOP}
             accessibilityRole="button"
             // The visible words without the chevron glyph, which a screen reader would spell.
+            // door-mark-ok: strips the link's own › from its spoken label.
             accessibilityLabel={vetDoor.label.replace(/\s*›$/, '')}
             style={styles.link}
             testID="signal-zone-vet-door"
@@ -81,6 +82,7 @@ export function SignalZoneFoot(
             style={[styles.link, styles.reportLink]}
             testID="signal-zone-report"
           >
+            {/* door-mark-ok: a text link's words; the › is the link's copy. */}
             <ThemedText style={styles.linkText}>Vet report ›</ThemedText>
           </Pressable>
         ) : null}
@@ -101,6 +103,7 @@ export function SignalZoneFoot(
         style={styles.link}
         testID="signal-zone-patterns"
       >
+        {/* door-mark-ok: a text link's words; the › is the link's copy. */}
         <ThemedText style={styles.linkText}>{`${PATTERNS_DOOR_LABEL} ›`}</ThemedText>
       </Pressable>
     </View>
