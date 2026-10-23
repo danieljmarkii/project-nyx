@@ -377,6 +377,13 @@ describe('CUL-1659 — every month drill-in row glyph clears 3:1 on its chip', (
   });
 });
 
+describe('the filled destructive button (CUL-1900)', () => {
+  it('its white label clears AA on the destructive red', () => {
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorDestructive)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorDestructive)).toBeCloseTo(4.83, 1);
+  });
+});
+
 describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
   // The role layer exists so a screen asks for a JOB on a GROUND and gets a colour that
   // reads there. That promise is only as good as this table: each row is a role on the
@@ -506,12 +513,5 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
   it('the brand teal fails as a glyph on white, and the action indigo fails on the night', () => {
     expect(contrastRatio(theme.colorAccent, theme.colorSurface)).toBeLessThan(NON_TEXT);
     expect(contrastRatio(theme.colorAction, theme.colorBrandNight)).toBeLessThan(NON_TEXT);
-  });
-});
-
-describe('the filled destructive button (CUL-1900)', () => {
-  it('its white label clears AA on the destructive red', () => {
-    expect(contrastRatio(theme.colorTextOnDark, theme.colorDestructive)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
-    expect(contrastRatio(theme.colorTextOnDark, theme.colorDestructive)).toBeCloseTo(4.83, 1);
   });
 });
