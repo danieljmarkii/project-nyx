@@ -8,6 +8,8 @@ const STUBS = path.join(__dirname, 'stubs');
 // Module name → the web stub that stands in for it. Each stub says why in its header.
 const WEB_STUBS = {
   'expo-secure-store': 'secureStore.ts',
+  'expo-sqlite': 'sqlite.ts',
+  'expo-router/entry': 'entry.ts',
   '@expo/ui/swift-ui': 'nativeViewsInert.ts',
   '@expo/ui/swift-ui/modifiers': 'nativeViewsInert.ts',
 };
