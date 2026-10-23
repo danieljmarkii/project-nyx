@@ -168,6 +168,14 @@ describe('CUL-2154: a trial past the cap, as drawn and as spoken', () => {
     expect(label).not.toMatch(/In the trial:/);
   });
 
+  it('past the cap with nothing earlier: no zero line, drawn or spoken, and the lane still names the cap', () => {
+    const m = signalLanes({ finding, today, trial, episodes: episodes.slice(9) });
+    const { queryByTestId, getByText, getByTestId } = render(<TimingLanes lanes={m.lanes} axis={m.axis} />);
+    expect(getByText(`The trial's last ${MAX_COMPARE_DAYS} days`)).toBeTruthy();
+    expect(queryByTestId('timing-earlier-line')).toBeNull();
+    expect(getByTestId('timing-lanes').props.accessibilityLabel as string).not.toMatch(/earlier in the trial/);
+  });
+
   it('at the cap, no earlier line is drawn', () => {
     const atCap = { ...trial, startDay: day(-(MAX_COMPARE_DAYS - 1)), dayCounter: MAX_COMPARE_DAYS };
     const m = signalLanes({ finding, today, trial: atCap, episodes });

@@ -580,10 +580,11 @@ describe('CUL-2154: past the cap, the lanes name it and count what they leave ou
     expect(lanesEarlierLine(m.lanes)).toBe('1 episode earlier in the trial is not on these lanes.');
   });
 
-  it('at zero, a capped trial still says so', () => {
+  it('at zero, the line is silent: no zero over days nothing draws (a masking course can sit there unshown)', () => {
     const m = signalLanes({ finding: chronicity(), today: THURSDAY, trial, episodes: late });
     expect(m.lanes[1].earlierCount).toBe(0);
-    expect(lanesEarlierLine(m.lanes)).toBe('No episodes were logged earlier in the trial.');
+    expect(m.lanes[1].label).toBe(`The trial's last ${MAX_COMPARE_DAYS} days`);
+    expect(lanesEarlierLine(m.lanes)).toBeNull();
   });
 
   it('a split trial lane names the cap too, and the count rides its first in-trial lane', () => {

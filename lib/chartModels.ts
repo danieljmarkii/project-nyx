@@ -566,13 +566,17 @@ export function lanesUntimedLine(lanes: readonly LaneModel[]): string {
 /**
  * The line for a trial longer than the lanes draw (CUL-2154): the episodes earlier in the
  * trial, on no lane, counted in words. Null when no lane carries the count (the lanes hold the
- * whole trial, or there is none). At zero it still speaks, like the untimed line.
+ * whole trial, or there is none) AND at zero: unlike the untimed line, a zero here is a claim
+ * about days no chart on the screen draws, where a masking course (CUL-1440 D2) or a logging
+ * gap can sit unshown, so it reads as "the trial worked" with nothing to check it against
+ * (adversarial pass on CUL-2154). The lane's label already names the cap, so silence claims
+ * nothing; a count above zero errs toward a look and always speaks.
  */
 export function lanesEarlierLine(lanes: readonly LaneModel[]): string | null {
   const lane = lanes.find((l) => l.earlierCount !== undefined);
   if (lane?.earlierCount === undefined) return null;
   const n = lane.earlierCount;
-  if (n === 0) return 'No episodes were logged earlier in the trial.';
+  if (n === 0) return null;
   return n === 1
     ? '1 episode earlier in the trial is not on these lanes.'
     : `${n} episodes earlier in the trial are not on these lanes.`;
