@@ -18,7 +18,9 @@
 //      design ruling, not an exemption.
 //   2. a raw › anywhere in the code of Home's `components/` and `app/` files, outside
 //      `DoorMark`. A text link whose words end in › ("Patterns ›") is copy, not the mark,
-//      and says so per SITE with `// door-mark-ok: <reason>` within ten lines above. In
+//      and says so per SITE with `// door-mark-ok: <reason>` at most two lines above (two,
+//      not the ten other guards allow: Home's foot holds three links in thirty lines, and a
+//      ten-line window let one marker excuse its neighbour's glyph). In
 //      `lib/`, `constants/`, `hooks/` and `store/`, where the labels' copy lives, only a
 //      string that IS the glyph alone reds: a lone '›' exported for a card to render is the
 //      door mark drawn somewhere else.
@@ -48,10 +50,14 @@ const RENDER_DIRS = ['components/', 'app/'];
 const COPY_DIRS = ['lib/', 'constants/', 'hooks/', 'store/'];
 
 const EXEMPTION = /door-mark-ok:\s*\S/;
-const EXEMPTION_WINDOW = 10;
+const EXEMPTION_WINDOW = 2;
 
-const GLYPH = /›|\\u203[aA]/;
-const LONE_GLYPH = /(['"`])\s*(?:›|\\u203[aA])\s*\1/;
+// The glyph in every spelling the source can hold: the character, its JS escapes, and the
+// HTML entities a web view would take. (Imports are relative only: the repo configures no
+// path alias, so an absolute `components/ui/Card` specifier would not compile.)
+const GLYPH_ALT = '›|\\\\u203[aA]|\\\\u\\{203[aA]\\}|&rsaquo;|&#8250;|&#x203[aA];';
+const GLYPH = new RegExp(GLYPH_ALT);
+const LONE_GLYPH = new RegExp(`(['"\`])\\s*(?:${GLYPH_ALT})\\s*\\1`);
 
 export interface SurfaceFinding {
   file: string;
@@ -250,13 +256,23 @@ describe('the detector itself', () => {
     ]);
   });
 
-  it('takes a per-site marker within ten lines, and only for its site', () => {
+  it('takes a per-site marker at most two lines above, and only for its site', () => {
     const src =
       '// door-mark-ok: a text link\n' +
+      'export const pad0 = 1;\n' +
       "export const A = 'Patterns ›';\n" +
-      Array.from({ length: 10 }, () => 'export const pad = 1;\n').join('') +
+      'export const pad1 = 1;\n' +
       "export const B = 'Vet report ›';\n";
     expect(home(src)).toEqual(['components/home/X.tsx — raw › outside DoorMark']);
+  });
+
+  it('FLAGS the glyph in its other spellings', () => {
+    const src =
+      "export const A = '\\u{203A}';\n" +
+      "export const B = 'Open &rsaquo;';\n" +
+      "export const C = 'Open &#8250;';\n" +
+      "export const D = 'Open &#x203a;';\n";
+    expect(home(src)).toHaveLength(4);
   });
 
   it('ignores a › in a comment', () => {

@@ -497,7 +497,9 @@ function ArrivalWash({ sweep }: { sweep: Animated.Value }) {
   });
   return (
     <View
-      style={StyleSheet.absoluteFill}
+      // The wash clips itself to the card's corners, so the card never clips: an
+      // `overflow: hidden` on the card would cut off its own shadow for the 1.2s.
+      style={[StyleSheet.absoluteFill, styles.washClip]}
       pointerEvents="none"
       testID="signal-arrival-wash"
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
@@ -551,6 +553,7 @@ function ArrivalStage({
   return (
     <View
       style={active ? styles.arrivalStage : undefined}
+      testID="signal-arrival-stage"
       // The lead sits at opacity 0 for the crossfade's first 400ms, beneath a still-
       // opaque outgoing frame — so without this, a tap on what LOOKS like a ghost
       // watching row lands on the invisible card underneath and opens it. The
@@ -563,6 +566,7 @@ function ArrivalStage({
         <Animated.View
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
+          testID="signal-arrival-outgoing"
           style={[
             StyleSheet.absoluteFill,
             // The stage's padding does not reach an absolute child: start it on the text
@@ -849,9 +853,9 @@ export function SignalZone({
 
   return (
     // Signal leads by position and words, on Home's one card surface (CUL-1525, G1 A): it
-    // no longer floats on its own shadow. `cardClip` is applied ONLY while the arrival
-    // plays (it clips the travelling wash to the card's corners).
-    <HomeCard style={arriving ? styles.cardClip : undefined}>
+    // no longer floats on its own shadow. The arrival's wash clips itself (`washClip`), so
+    // the card is never clipped and keeps its shadow through the moment.
+    <HomeCard>
       {moment?.sweep ? <ArrivalWash sweep={moment.sweep} /> : null}
       <SectionLabel
         label="Signal"
@@ -881,12 +885,12 @@ export function SignalZone({
           />
           {gapSentence !== null ? (
             <>
-              <Divider style={styles.rowDivider} />
+              <Divider />
               <GapWarning text={gapSentence} enterKey={0} />
             </>
           ) : gapUnread ? (
             <>
-              <Divider style={styles.rowDivider} />
+              <Divider />
               <GapReadFailed petName={petName} onRetry={retryGapRead} />
             </>
           ) : null}
@@ -1045,7 +1049,7 @@ function LiveStack({
       {ordered.map((f, i) => {
         const row = (
           <>
-            {i > 0 && <Divider style={styles.rowDivider} />}
+            {i > 0 && <Divider />}
             {/* CUL-786: a stood-down marker is one plain line in its former slot — never a
                 card, never the lead canvas: a sentence about absence at the lead's size would
                 be the reassurance the line exists to refuse. The canvas goes to the first
@@ -1135,7 +1139,7 @@ function QuietLineText({
 function QuietLine(props: { petName: string; state: QuietState; day?: string | null; lookSince?: boolean }) {
   return (
     <View style={styles.quietRow}>
-      <View style={[styles.quietRail, styles.quietRailNeutral]} />
+      <View style={[styles.quietRail, styles.quietRailNeutral]} testID="signal-quiet-rail" />
       <QuietLineText {...props} />
     </View>
   );
@@ -1298,11 +1302,6 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
     lineHeight: theme.lineHeightXS,
   },
-  // Hairlines run on the text column (CUL-1525): from the text edge, never out into the
-  // gutter the rails hang in.
-  rowDivider: {
-    marginHorizontal: 0,
-  },
   // CUL-786 — the stand-down line. The compact-row rhythm, on the card's one text edge like
   // every row above and below it (no rail of its own; the rails hang in the gutter).
   stoodDownRow: {
@@ -1315,9 +1314,10 @@ const styles = StyleSheet.create({
   },
 
   // ── CUL-601 (§4) — the arrival moment's two structural styles ────────────────
-  // Both are applied only while the 1.2s plays; see the call sites for why.
-  cardClip: {
+  // The stage's is applied only while the 1.2s plays; see the call sites for why.
+  washClip: {
     overflow: 'hidden',
+    borderRadius: theme.radiusMedium,
   },
   // The clip reaches out into the gutter, so the rails hung there (CUL-1525) are not cut
   // off for the moment's 1.2s; the padding hands the content its edge back.

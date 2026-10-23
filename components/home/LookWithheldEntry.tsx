@@ -74,9 +74,9 @@ export const LOOK_WITHHELD_ACT = 'Saved';
  */
 export function lookWithheldReason(petName: string, sex: 'male' | 'female' | 'unknown'): string {
   const p = petPronouns(sex);
-  // door-mark-ok: the sentence's own closing words point at the record; copy, not the mark.
   return (
     `While ${petName}’s eating needs attention, Home keeps quiet days off the card — ` +
+    // door-mark-ok: the sentence's own closing words point at the record; copy, not the mark.
     `an ordinary day isn’t a sign ${p.subject} is well. Your answer is in ${p.possessive} record ›`
   );
 }
