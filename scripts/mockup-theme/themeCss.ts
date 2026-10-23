@@ -10,6 +10,7 @@
 // guards/mockupThemeCss.test.ts fails when the committed file and theme.ts diverge.
 
 type Token = string | number;
+type TextStyle = { fontSize: number; fontWeight: string; lineHeight: number };
 type Shadow = {
   shadowColor: string;
   shadowOffset: { width: number; height: number };
@@ -23,7 +24,7 @@ const FAMILIES: { prefix: RegExp; unit: (v: Token) => string }[] = [
   { prefix: /^color/, unit: (v) => String(v) },
   { prefix: /^font(Body|Display)/, unit: (v) => `'${v}'` },
   { prefix: /^(fontWeight|weight)/, unit: (v) => String(v) },
-  { prefix: /^(text|lineHeight|space|radius|tracking)/, unit: (v) => `${v}px` },
+  { prefix: /^(text|lineHeight|space|radius|tracking|hitTarget)/, unit: (v) => `${v}px` },
   { prefix: /^duration/, unit: (v) => `${v}ms` },
   { prefix: /^(opacity|easing)/, unit: (v) => String(v) },
 ];
@@ -47,7 +48,13 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export function themeCss(theme: Record<string, Token>, shadows: Record<string, Shadow>): string {
+// A named text style (constants/theme.ts `textStyles`) is a class, not a property, so a
+// frame tags `class="textStyle-body"` with the same name the build passes as ThemedText's `variant`.
+export function themeCss(
+  theme: Record<string, Token>,
+  shadows: Record<string, Shadow>,
+  textStyles: Record<string, TextStyle> = {},
+): string {
   const lines = [
     '/* GENERATED from constants/theme.ts by scripts/mockup-theme/emit.ts. Do not edit.',
     ' * Regenerate: node --no-warnings scripts/mockup-theme/emit.ts',
@@ -59,6 +66,10 @@ export function themeCss(theme: Record<string, Token>, shadows: Record<string, S
       return `  --shadow-${key}: ${width}px ${height}px ${s.shadowRadius}px ${rgba(s.shadowColor, s.shadowOpacity)};`;
     }),
     '}',
+    ...Object.entries(textStyles).map(
+      ([name, t]) =>
+        `.textStyle-${name} { font-size: ${t.fontSize}px; font-weight: ${t.fontWeight}; line-height: ${t.lineHeight}px; }`,
+    ),
     '',
   ];
   return lines.join('\n');

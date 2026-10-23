@@ -8,7 +8,7 @@
 // css), and its message names the one command that repairs it.
 import * as fs from 'fs';
 import * as path from 'path';
-import { theme, shadows } from '../constants/theme';
+import { theme, shadows, textStyles } from '../constants/theme';
 import { themeCss } from '../scripts/mockup-theme/themeCss';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -16,7 +16,7 @@ const CSS_PATH = path.join(REPO_ROOT, 'docs', 'mockups', 'theme.css');
 const REGENERATE = 'node --no-warnings scripts/mockup-theme/emit.ts';
 
 const committed = fs.readFileSync(CSS_PATH, 'utf8');
-const expected = themeCss(theme, shadows);
+const expected = themeCss(theme, shadows, textStyles);
 
 describe('docs/mockups/theme.css matches constants/theme.ts (CUL-1894)', () => {
   // Non-vacuity: an empty generator and an empty file would agree.
@@ -25,6 +25,8 @@ describe('docs/mockups/theme.css matches constants/theme.ts (CUL-1894)', () => {
     expect(props.length).toBe(Object.keys(theme).length + Object.keys(shadows).length);
     expect(committed).toContain(`  --colorAccent: ${theme.colorAccent};`);
     expect(committed).toContain(`  --space2: ${theme.space2}px;`);
+    const classes = committed.match(/^\.textStyle-\w+ \{/gm) ?? [];
+    expect(classes.length).toBe(Object.keys(textStyles).length);
   });
 
   it('is byte-identical to what the generator emits from theme.ts today', () => {

@@ -7,11 +7,11 @@
 // path alias either, which is why theme.ts is reached by a two-level relative path.
 import * as fs from 'fs';
 import * as path from 'path';
-import { theme, shadows } from '../../constants/theme.ts';
+import { theme, shadows, textStyles } from '../../constants/theme.ts';
 import { themeCss } from './themeCss.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(process.argv[1]), '..', '..');
 const OUT = path.join(REPO_ROOT, 'docs', 'mockups', 'theme.css');
 
-fs.writeFileSync(OUT, themeCss(theme, shadows));
+fs.writeFileSync(OUT, themeCss(theme, shadows, textStyles));
 process.stdout.write(`wrote ${path.relative(REPO_ROOT, OUT)}\n`);

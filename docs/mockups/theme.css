@@ -21,6 +21,10 @@
   --lineHeightBody: 22px;
   --lineHeightSM: 18px;
   --lineHeightXS: 16px;
+  --lineHeightMicro: 12px;
+  --lineHeightSMLoose: 19px;
+  --lineHeightLG: 24px;
+  --lineHeightXL: 28px;
   --weightRegular: 400;
   --weightMedium: 500;
   --weightSemibold: 600;
@@ -103,12 +107,15 @@
   --colorMomentGlowLight: #FDF6E3;
   --spaceMicro: 2px;
   --space0_5: 4px;
+  --space0_75: 6px;
   --space1: 8px;
+  --space1_5: 12px;
   --space2: 16px;
   --space3: 24px;
   --space4: 32px;
   --space5: 48px;
   --space6: 64px;
+  --hitTarget: 44px;
   --radiusXS: 4px;
   --radiusSmall: 8px;
   --radiusMedium: 16px;
@@ -125,3 +132,12 @@
   --shadow-card: 0px 2px 10px rgba(0, 0, 0, 0.06);
   --shadow-fab: 0px 2px 4px rgba(0, 0, 0, 0.2);
 }
+.textStyle-micro { font-size: 9px; font-weight: 600; line-height: 12px; }
+.textStyle-label { font-size: 11px; font-weight: 500; line-height: 16px; }
+.textStyle-note { font-size: 11px; font-weight: 400; line-height: 16px; }
+.textStyle-caption { font-size: 13px; font-weight: 400; line-height: 18px; }
+.textStyle-captionParagraph { font-size: 13px; font-weight: 400; line-height: 19px; }
+.textStyle-body { font-size: 15px; font-weight: 400; line-height: 22px; }
+.textStyle-bodyStrong { font-size: 15px; font-weight: 500; line-height: 22px; }
+.textStyle-subheading { font-size: 17px; font-weight: 600; line-height: 24px; }
+.textStyle-heading { font-size: 22px; font-weight: 600; line-height: 28px; }
