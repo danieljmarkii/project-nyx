@@ -5,7 +5,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 let mockDb: { exec(sql: string): void; prepare(sql: string): { run(...p: unknown[]): unknown; all(...p: unknown[]): unknown[]; get(...p: unknown[]): unknown }; close(): void };
 jest.mock('./db', () => {
-  const { recentFoodsQuery } = jest.requireActual('./foodQueries');
+  const { recentFoodsQuery, rotationFoodsQuery } = jest.requireActual('./foodQueries');
   const api = {
     getAllAsync: async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).all(...params),
     getFirstAsync: async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).get(...params) ?? null,
@@ -16,13 +16,19 @@ jest.mock('./db', () => {
       const { sql, params } = recentFoodsQuery(petId, daysBack, limit, bounds);
       return mockDb.prepare(sql).all(...params);
     },
+    getRotationFoods: async (petId: string, daysBack: number, limit: number) => {
+      const { sql, params } = rotationFoodsQuery(petId, daysBack, limit, mockNow);
+      return mockDb.prepare(sql).all(...params);
+    },
   };
 });
+// The picker's rotation read is relative to now; the suite pins "now" to its own window.
+const mockNow = Date.parse('2026-10-21T12:00:00.000Z');
 
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
-import { fabMixComponents, fabMixLabel, getFabRecentItems } from './fabRecentItems';
+import { fabMixComponents, fabMixLabel, getFabRecentItems, getPickerRotationItems } from './fabRecentItems';
 import { mintGenerationId } from './mealComposition';
 
 const PET = 'pet-a';
@@ -118,4 +124,40 @@ it('caps the fan at the limit across foods and mixes together', async () => {
   mix('2026-10-18T08:00:00.000Z', [['chicken', 0.5], ['rabbit', 0.5]]);
   const items = await getFabRecentItems(PET, BOUNDS, 3);
   expect(items.map((i) => i.id)).toEqual(['mix:chicken|rabbit', 'duck', 'rabbit']);
+});
+
+// CUL-2090 (spec §7.4) — the picker's rotation shelf: the second place a mix lives as a
+// thing you can repeat, and a food fed only inside mixes no longer falls off it.
+describe('getPickerRotationItems', () => {
+  it('a mix and its foods are on the shelf, in one recency order', async () => {
+    meal('2026-10-15T08:00:00.000Z', 'duck');
+    mix('2026-10-21T08:00:00.000Z', [['chicken', 0.333], ['rabbit', 0.667]]);
+    const items = await getPickerRotationItems(PET, 30, 12, mockNow);
+    expect(items[0].id).toBe('mix:chicken|rabbit');
+    expect(fabMixLabel(items[0].mix!)).toBe('⅓ Chicken Pâté + ⅔ Rabbit Pâté');
+    expect(items.slice(1, 3).map((i) => i.id).sort()).toEqual(['chicken', 'rabbit']);
+    expect(items[items.length - 1].id).toBe('duck');
+    expect(items.slice(1).every((i) => i.mix === undefined && !('last_fed_jd' in i))).toBe(true);
+  });
+
+  it('logged this morning counts (the shelf runs to now, unlike the FAB)', async () => {
+    mix('2026-10-21T07:00:00.000Z', [['chicken', 0.5], ['rabbit', 0.5]]);
+    const items = await getPickerRotationItems(PET, 30, 12, mockNow);
+    expect(items.map((i) => i.id)).toContain('mix:chicken|rabbit');
+  });
+
+  it('a plain-food history reads as before: no mix item', async () => {
+    meal('2026-10-19T08:00:00.000Z', 'chicken');
+    meal('2026-10-20T08:00:00.000Z', 'rabbit');
+    const items = await getPickerRotationItems(PET, 30, 12, mockNow);
+    expect(items.map((i) => i.id)).toEqual(['rabbit', 'chicken']);
+  });
+
+  it('caps foods and mixes together at the limit', async () => {
+    meal('2026-10-15T08:00:00.000Z', 'duck');
+    mix('2026-10-18T08:00:00.000Z', [['chicken', 0.5], ['rabbit', 0.5]]);
+    const items = await getPickerRotationItems(PET, 30, 2, mockNow);
+    expect(items).toHaveLength(2);
+    expect(items[0].id).toBe('mix:chicken|rabbit');
+  });
 });

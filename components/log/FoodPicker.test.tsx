@@ -5,8 +5,12 @@
 // rendering above the filtered results, so on smaller phones typing a search
 // visibly changed nothing — the matches were correct but off-screen.
 jest.mock('../../lib/db', () => ({
-  getRecentFoods: jest.fn(),
   getLibraryFoods: jest.fn(),
+}));
+// The rotation shelf's read (foods fed lately, mixes among them; CUL-2090), pinned against
+// a real engine in lib/foodQueries.test.ts.
+jest.mock('../../lib/fabRecentItems', () => ({
+  getPickerRotationItems: jest.fn(),
 }));
 // Mock the arrangements module whole (its module graph reaches expo-sqlite /
 // supabase, which can't import under jest) — this test seeds zero arrangements
@@ -45,8 +49,11 @@ import { buildTrialContext, type AllowedFood } from '../../lib/dietTrial';
 import type { TrialAllowedSet } from '../../lib/trialAllowedSet';
 import * as db from '../../lib/db';
 import type { PickerFood, LibraryFood } from '../../lib/db';
+import * as recent from '../../lib/fabRecentItems';
+import type { FabMix, FabRecentItem } from '../../lib/fabRecentItems';
 
 const DB = db as jest.Mocked<typeof db>;
+const ROT = recent.getPickerRotationItems as jest.MockedFunction<typeof recent.getPickerRotationItems>;
 const TRIAL_SET = useTrialAllowedSet as jest.MockedFunction<typeof useTrialAllowedSet>;
 
 const food = (id: string, brand: string, product: string): PickerFood => ({
@@ -83,7 +90,7 @@ beforeEach(() => {
       date_of_birth_precision: 'exact', sex: 'unknown', weight_kg: null, photo_path: null,
     }],
   });
-  DB.getRecentFoods.mockResolvedValue(ROTATION);
+  ROT.mockResolvedValue(ROTATION);
   DB.getLibraryFoods.mockResolvedValue(LIBRARY);
 });
 
@@ -110,7 +117,7 @@ describe('FoodPicker search-results mode', () => {
   // elimination diet feeds exactly one, so the shelf label degrades to the
   // neutral, still recency-factual "Recently fed".
   it('labels a single-food shelf "Recently fed", never "{pet}\'s rotation" (B-356)', async () => {
-    DB.getRecentFoods.mockResolvedValue([ROTATION[0]]);
+    ROT.mockResolvedValue([ROTATION[0]]);
     const { findByText, queryByText } = renderPicker();
     expect(await findByText('Recently fed')).toBeTruthy();
     expect(queryByText("Nyx's rotation")).toBeNull();
@@ -184,7 +191,7 @@ describe('FoodPicker initialScope (B-406)', () => {
   beforeEach(() => {
     // Empty the rotation so only the (scope-filtered) library renders — the
     // rotation shelf shows recency regardless of scope, by B-347 design.
-    DB.getRecentFoods.mockResolvedValue([]);
+    ROT.mockResolvedValue([]);
     DB.getLibraryFoods.mockResolvedValue(LIB as never);
   });
 
@@ -451,7 +458,7 @@ describe('FoodPicker mixableOnly (row 5)', () => {
   ];
 
   it('shows meal foods only, and no add CTA', async () => {
-    DB.getRecentFoods.mockResolvedValue(FOODS);
+    ROT.mockResolvedValue(FOODS);
     DB.getLibraryFoods.mockResolvedValue(FOODS as never);
     const { findAllByText, queryByText } = render(
       <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
@@ -464,12 +471,70 @@ describe('FoodPicker mixableOnly (row 5)', () => {
   });
 
   it('without it, the same foods all show (the control)', async () => {
-    DB.getRecentFoods.mockResolvedValue([]);
+    ROT.mockResolvedValue([]);
     DB.getLibraryFoods.mockResolvedValue(FOODS as never);
     const { findByText } = render(
       <FoodPicker petId="p1" petName="Nyx" onPickFood={jest.fn()} onAddNew={jest.fn()} />,
     );
     expect(await findByText('Jerky')).toBeTruthy();
     expect(await findByText('Sprinkle')).toBeTruthy();
+  });
+});
+
+// CUL-2090 (mixed meals spec §7.4) — a recent mix lives on the rotation shelf as its own
+// tile, beside the FAB pill. A tap logs the bowl again; it never shows where a whole bowl
+// is not an answer (building a set, picking a bowl's second food).
+describe('FoodPicker rotation shelf: recent mixes (CUL-2090)', () => {
+  const chicken = food('c1', 'Acme', 'Chicken Pâté');
+  const rabbit = food('b1', 'Acme', 'Rabbit Pâté');
+  const MIX: FabMix = {
+    key: 'b1|c1',
+    foods: [
+      { food: chicken, rowName: 'Chicken Pâté', share: 1 / 3, written: { share: 1 / 3, shareSource: 'preset' } },
+      { food: rabbit, rowName: 'Rabbit Pâté', share: 2 / 3, written: { share: 2 / 3, shareSource: 'preset' } },
+    ],
+  };
+  const MIX_ITEM: FabRecentItem = {
+    id: 'mix:b1|c1', brand: '', product_name: '⅓ Chicken Pâté + ⅔ Rabbit Pâté', format: '',
+    food_type: 'meal', photo_path: null, mix: MIX,
+  };
+
+  it('shows the mix as a tile, and a tap hands the bowl to onPickMix, not onPickFood', async () => {
+    ROT.mockResolvedValue([MIX_ITEM, rabbit, chicken]);
+    const onPickFood = jest.fn();
+    const onPickMix = jest.fn();
+    const { findByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={onPickFood} onPickMix={onPickMix} onAddNew={jest.fn()} />,
+    );
+    fireEvent.press(await findByLabelText('Mixed bowl, ⅓ Chicken Pâté + ⅔ Rabbit Pâté'));
+    expect(onPickMix).toHaveBeenCalledWith(MIX);
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  it('a food fed only in the mix keeps its own plain tile', async () => {
+    ROT.mockResolvedValue([MIX_ITEM, rabbit]);
+    const onPickFood = jest.fn();
+    const { findByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={onPickFood} onPickMix={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    fireEvent.press(await findByLabelText('Acme Rabbit Pâté'));
+    expect(onPickFood).toHaveBeenCalledWith(rabbit);
+  });
+
+  it('no mix tile without onPickMix, or while picking a bowl’s second food', async () => {
+    ROT.mockResolvedValue([MIX_ITEM, rabbit]);
+    const plain = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await plain.findByLabelText('Acme Rabbit Pâté')).toBeTruthy();
+    expect(plain.queryByLabelText(/Mixed bowl/)).toBeNull();
+    plain.unmount();
+
+    const second = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={['c1']}
+        onPickFood={jest.fn()} onPickMix={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect((await second.findAllByText('Rabbit Pâté')).length).toBeGreaterThan(0);
+    expect(second.queryByLabelText(/Mixed bowl/)).toBeNull();
   });
 });

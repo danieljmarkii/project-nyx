@@ -205,7 +205,9 @@ async function mergeRecentMixes(
 
 /** A Julian day as epoch milliseconds (SQLite's julianday(), the rotation read's clock). */
 function julianToMs(jd: number): number {
-  return (jd - 2440587.5) * 86400000;
+  // Rounded: a Julian day's float carries sub-millisecond noise, and a bowl's foods share
+  // its instant exactly, so they must tie with it.
+  return Math.round((jd - 2440587.5) * 86400000);
 }
 
 /**
@@ -240,9 +242,11 @@ export async function getPickerRotationItems(
     console.warn('[picker] recent mixes read failed; foods only:', e);
   }
   if (mixes.length === 0) return foods.map(strip);
+  // Mixes first, so on a tie (a bowl and the foods in it, fed at one instant) the stable
+  // sort puts the bowl ahead: it is what was last fed, and it repeats in one tap.
   const items: { item: FabRecentItem; at: number }[] = [
-    ...foods.map((f) => ({ item: strip(f) as FabRecentItem, at: julianToMs(f.last_fed_jd) })),
     ...mixes.map(({ mix, at }) => ({ item: mixItem(mix), at: new Date(at).getTime() })),
+    ...foods.map((f) => ({ item: strip(f) as FabRecentItem, at: julianToMs(f.last_fed_jd) })),
   ];
   items.sort((a, b) => b.at - a.at);
   return items.slice(0, limit).map((x) => x.item);
