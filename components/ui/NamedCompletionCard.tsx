@@ -17,7 +17,7 @@ import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
   timeEditPrompt, removedNoticeCopy, undoGateCopy,
-  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+  HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, ACTION_PAIR_GAP,
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.space1,
+    gap: ACTION_PAIR_GAP, // the hitSlop pair's facing edges derive from it
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,

@@ -193,6 +193,22 @@ describe('picking a food', () => {
     expect((await findByTestId('intake-sheet-food')).props.children).toBe('Hill’s z/d');
   });
 
+  // CUL-658 — the chip's slop is computed from its own pinned box (lib/tapTarget) where
+  // it used to be a typed { top: 6, bottom: 6 }. Same hit area after the move, and the
+  // pill's reach lands exactly on the row's 44pt floor.
+  it('*Change food ›* keeps its hit area: a pinned 32pt pill, 6pt slop, a 44pt row', async () => {
+    const { findByTestId } = setup();
+    const chip = await findByTestId('intake-sheet-change-food');
+    // The row is the chip's nearest HOST ancestor (the touchable's own host is the chip).
+    let row = chip.parent;
+    while (row && typeof row.type !== 'string') row = row.parent;
+    const slop = chip.props.hitSlop as { top: number; bottom: number };
+    expect(slop).toEqual({ top: 6, bottom: 6 });
+    expect(flat(chip).minHeight).toBe(32);
+    expect((flat(chip).minHeight ?? 0) + slop.top + slop.bottom).toBe(theme.hitTarget);
+    expect(flat(row).minHeight).toBe(theme.hitTarget);
+  });
+
   it('*Change food ›* returns to the picker without writing', async () => {
     const { findByTestId } = setup();
     fireEvent.press(await findByTestId('intake-sheet-change-food'));

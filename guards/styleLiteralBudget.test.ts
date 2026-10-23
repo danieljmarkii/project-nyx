@@ -78,7 +78,7 @@ const CEILINGS = {
   radius: 81,
   duration: 92,
   whorlSpinner: 48,
-  hitTarget: 199, // added by CUL-2144 at its first count, 2026-10-23: a new category, not a raised one
+  hitTarget: 198, // added by CUL-2144 at 199, 2026-10-23; 198 after CUL-658 moved IntakeFirstMealSheet's row
 } as const;
 
 type Category = keyof typeof CEILINGS;
