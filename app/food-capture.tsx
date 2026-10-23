@@ -15,8 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { Camera, Images, Plus } from 'lucide-react-native';
+import { Camera } from 'lucide-react-native';
 import { colorRoles, theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
@@ -27,11 +26,19 @@ import { TextField } from '../components/ui/TextField';
 import { QuietBand } from '../components/ui/QuietBand';
 import { CompletionMark } from '../components/ui/CompletionMark';
 import { CaptureSilhouette } from '../components/surfaces/waits/CaptureSilhouette';
+import { HomeCard } from '../components/surfaces/home/HomeCard';
+import { SlotRow } from '../components/ui/SlotRow';
+import { PhotoThumb } from '../components/ui/PhotoThumb';
+import { PhotoViewer } from '../components/ui/PhotoViewer';
+import { TimeEditSheet } from '../components/ui/TimeEditSheet';
+import { PhotoSlots } from '../components/food/PhotoSlots';
+import { CaptureReadCard } from '../components/food/CaptureReadCard';
+import { useIsOnline } from '../hooks/useIsOnline';
 import {
   ProteinSetPicker,
   type ProteinSetPickerHandle,
 } from '../components/food/ProteinSetPicker';
-import { usePetStore } from '../store/petStore';
+import { usePetStore, resolveRecordPetName } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useMomentStore, whenMealCardVisible } from '../store/momentStore';
@@ -124,7 +131,7 @@ function mapAiFormat(ai: string | null | undefined): string {
 }
 
 export default function FoodCaptureScreen() {
-  const { activePet } = usePetStore();
+  const { activePet, pets } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   // The meal completion card (CUL-613). Selected, not destructured off getState(),
@@ -185,17 +192,25 @@ export default function FoodCaptureScreen() {
   // photo Storage does not hold. A ref, not state: the commit reads it after
   // the awaited uploads, never through a render.
   const uploadedUris = useRef<Set<string>>(new Set());
-  // Tracks slots the user has explicitly skipped on the review screen so we
-  // don't re-encourage them after a Skip tap. Filling a slot via the tile
-  // (out of order) doesn't need to live here — `*Photo` state is the truth.
-  const [skippedSlots, setSkippedSlots] = useState<Set<OptionalSlot>>(() => new Set());
-
-  // Next slot the review screen should encourage, or null if the user has
-  // either captured or skipped both optional shots.
-  const nextEncouragedSlot: OptionalSlot | null =
-    !ingredientsPhoto && !skippedSlots.has('ingredients') ? 'ingredients'
-    : !barcodePhoto    && !skippedSlots.has('barcode')    ? 'barcode'
-    : null;
+  // P8 (CUL-1910): an offline owner is told before the wait, not after it, since the
+  // read can only fail without a connection. Render only: the upload path below still
+  // routes any failure to the typed form.
+  const online = useIsOnline();
+  // Whether the read was asked for (the upload-and-read ran), and whether it answered
+  // with a read. The commit records the food as AI read only on the second, so a food
+  // typed in before any read ran (offline, or the camera refused mid-flow) is never
+  // stored as 'completed' / 'ai_extracted' just because a photo was taken.
+  const [readStarted, setReadStarted] = useState(false);
+  const [readLanded, setReadLanded] = useState(false);
+  // D-1 (A): the failed band may point at the food page's retry only when that retry
+  // exists, which is when the server recorded its own failed read (ai_extraction_error;
+  // app/food/[id].tsx gates the button on it). Never after a transport fault, an upload
+  // that failed or an offline phone: then the photos are not there to read again.
+  const [retryOnFoodPage, setRetryOnFoodPage] = useState(false);
+  // The front photo open full screen (P4 on confirm, P7 on the typed form).
+  const [viewingPhoto, setViewingPhoto] = useState(false);
+  // The library beat names the food it saved (P10, C-17).
+  const [savedName, setSavedName] = useState<string | null>(null);
 
   // Extraction state — populated after Edge Function returns.
   const [extracting, setExtracting] = useState(false);
@@ -356,39 +371,13 @@ export default function FoodCaptureScreen() {
     setStep('review');
   }
 
-  // Primary CTA on the review screen — captures the next encouraged slot.
-  // Doesn't auto-advance; the review screen will re-render with the next
-  // encouragement (or the Continue CTA) once state updates.
-  async function handleSnapNext() {
-    if (!nextEncouragedSlot) return;
-    const photo = await pickPhoto(nextEncouragedSlot);
-    if (!photo) return;
-    if (nextEncouragedSlot === 'ingredients') setIngredientsPhoto(photo);
-    else                                       setBarcodePhoto(photo);
-  }
-
-  function handleSkipNext() {
-    if (!nextEncouragedSlot) return;
-    setSkippedSlots((prev) => new Set(prev).add(nextEncouragedSlot));
-  }
-
-  // Tile-tap from the PhotoChecklist — sets the chosen slot's photo without
-  // changing step. Filling a slot also clears its skipped flag so the review
-  // CTA reflects reality.
-  async function handleSlotTap(slot: 'front' | 'ingredients' | 'barcode') {
+  // An optional slot's row on the photos step (P2): adds that photo, or replaces it once
+  // taken. Never changes step, so "Read the label" stays the one way on.
+  async function handleSlotTap(slot: OptionalSlot) {
     const photo = await pickPhoto(slot);
     if (!photo) return;
-    if (slot === 'front')            setFrontPhoto(photo);
-    else if (slot === 'ingredients') setIngredientsPhoto(photo);
-    else                             setBarcodePhoto(photo);
-    if (slot !== 'front') {
-      setSkippedSlots((prev) => {
-        if (!prev.has(slot)) return prev;
-        const next = new Set(prev);
-        next.delete(slot);
-        return next;
-      });
-    }
+    if (slot === 'ingredients') setIngredientsPhoto(photo);
+    else                        setBarcodePhoto(photo);
   }
 
   // Insert the pending food_items row, upload its photos, then kick off async
@@ -405,6 +394,9 @@ export default function FoodCaptureScreen() {
     setExtracting(true);
     setExtractionFailed(false);
     setCapReached(null);
+    setReadStarted(true);
+    setReadLanded(false);
+    setRetryOnFoodPage(false);
 
     // Seed the meal time up-front from the front photo's EXIF (if any) so the
     // manual-edit fallback path inherits the right provenance even when AI
@@ -477,6 +469,7 @@ export default function FoodCaptureScreen() {
       // Genuine transport/function fault → the retryable failure banner (unchanged).
       if (error) {
         console.warn('[food-capture] extraction failed:', error.message);
+        setRetryOnFoodPage(await serverRecordedFailedRead(foodId));
         setExtractionFailed(true);
         setStep('edit');
         return;
@@ -500,6 +493,7 @@ export default function FoodCaptureScreen() {
 
       if (!data?.extraction) {
         console.warn('[food-capture] extraction returned no data');
+        setRetryOnFoodPage(await serverRecordedFailedRead(foodId));
         setExtractionFailed(true);
         setStep('edit');
         return;
@@ -530,6 +524,7 @@ export default function FoodCaptureScreen() {
         setMealOccurredAt(new Date());
         setMealOccurredAtSource('now');
       }
+      setReadLanded(true);
       setStep('confirm');
     } catch (err) {
       console.error('[food-capture] upload/extract error:', err);
@@ -653,7 +648,7 @@ export default function FoodCaptureScreen() {
     // AI actually produced data only when the extraction ran and returned. A capped
     // (or flag-off) commit routes exactly as the failure path (§6.1) — the photo is
     // saved but extraction didn't run, so it must NOT be recorded as 'completed'.
-    const aiRead = !!frontPhoto && !extractionFailed && !capReached;
+    const aiRead = readLanded && !extractionFailed && !capReached;
     const foodUpsert: Record<string, unknown> = {
       id: foodId,
       brand: brand.trim(),
@@ -816,6 +811,7 @@ export default function FoodCaptureScreen() {
         photo_path: frontStoragePath,
       });
     }
+    setSavedName(`${brand.trim()} · ${product.trim()}`);
     setStep('complete');
   }
 
@@ -870,7 +866,8 @@ export default function FoodCaptureScreen() {
   // The meal-log path does not reach here: it hands off to the real meal completion
   // card (CUL-613), which carries the intake row + "Change time" this beat never
   // could. What is left is the library save, which writes no event — so there is no
-  // record to speak, no occurred_at to change, and nothing to undo.
+  // record to speak, no occurred_at to change, and nothing to undo. It names the food it
+  // saved (P10), so the beat speaks the record it wrote (C-17).
   if (step === 'complete') {
     return (
       <View style={styles.completeContainer}>
@@ -882,36 +879,35 @@ export default function FoodCaptureScreen() {
         <ThemedText variant="heading" style={styles.savedHeading} accessibilityRole="header">
           Saved to your foods
         </ThemedText>
+        {savedName ? <ThemedText variant="body" style={styles.savedName}>{savedName}</ThemedText> : null}
       </View>
     );
   }
 
-  // ── Intro ──
+  // ── Intro ── P1: the whole job before the camera opens.
   if (step === 'intro') {
     return (
       <SafeAreaView style={styles.container}>
         <Header title="Add a food" leading="close" onLeadingPress={() => router.back()} />
-        <ScrollView contentContainerStyle={styles.introScroll}>
+        <ScrollView contentContainerStyle={styles.scroll}>
           <ThemedText style={styles.introHeading}>Add the front of the package</ThemedText>
-          <ThemedText style={styles.introBody}>
-            A clear shot of the front lets us read the label. The ingredients
-            and barcode are optional but make the entry more useful later.
+          <ThemedText variant="body" style={styles.introBody}>
+            Only the front is needed. We read the rest from it.
           </ThemedText>
+          <PhotoSlots
+            slots={[
+              { label: 'Front · needed', uri: null },
+              { label: 'Ingredients · optional', uri: null },
+              { label: 'Barcode · optional', uri: null },
+            ]}
+          />
           {/* D-M6 early-access label (§7.2) — quiet, small, no badge. Dual-signals
               free-now and may-be-paid-later. Retired in T3-E when the gate flips. */}
-          <ThemedText style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</ThemedText>
-          {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji). Both glyphs on the
-              screen convert together so the two buttons don't end up one vector +
-              one emoji. */}
+          <ThemedText variant="caption" style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</ThemedText>
           <PrimaryButton label="Take a photo" icon={Camera} onPress={() => handleSnapFront('camera')} />
-          <PrimaryButton
-            label="Choose from library"
-            icon={Images}
-            variant="secondary"
-            onPress={() => handleSnapFront('library')}
-          />
+          <PrimaryButton label="Choose from library" variant="secondary" onPress={() => handleSnapFront('library')} />
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} accessibilityRole="button">
-            <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
+            <ThemedText style={styles.linkBtnText}>Type it in instead</ThemedText>
           </TouchableOpacity>
         </ScrollView>
         <AiConsentSheet {...consentDoor.sheetProps} />
@@ -919,152 +915,169 @@ export default function FoodCaptureScreen() {
     );
   }
 
-  // ── Review: tile checklist + next-encouraged-slot CTA ──
-  // One screen for both ingredients and barcode encouragement. The CTA and
-  // copy are computed from `nextEncouragedSlot` so tile-taps that fill a
-  // slot out of order never leave the CTA pointing at a slot that's already
-  // captured.
+  // ── The photos step ── P2: "Read the label" is the way on from the first photo; the two
+  // optional shots are quiet rows, and the ingredients row says why it matters. P8: an
+  // offline phone is told here, before any wait, with the typed form one tap away.
   if (step === 'review') {
-    const heading = nextEncouragedSlot === 'ingredients' ? 'Add the ingredients label'
-                  : nextEncouragedSlot === 'barcode'     ? 'Add the barcode'
-                  : 'Ready to read the label';
-    const body = nextEncouragedSlot === 'ingredients'
-      ? 'Optional, but lets us extract the full ingredients list. You can skip and add it later.'
-      : nextEncouragedSlot === 'barcode'
-      ? 'A clear shot of the barcode helps the AI confirm the exact product. Optional.'
-      : 'We\'ll read the front of the package and confirm with you.';
-    const ctaLabel = nextEncouragedSlot === 'ingredients' ? 'Add ingredients photo'
-                   : nextEncouragedSlot === 'barcode'     ? 'Add barcode photo'
-                   : 'Continue';
-    const ctaAction = nextEncouragedSlot
-      ? handleSnapNext
-      : () => runUploadAndExtract(frontPhoto!, ingredientsPhoto, barcodePhoto);
+    const offline = !online;
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, styles.ground]}>
         <Header title="Add a food" leading="back" onLeadingPress={() => setStep('intro')} />
-        <ScrollView contentContainerStyle={styles.introScroll}>
-          <PhotoChecklist
-            front={frontPhoto}
-            ingredients={ingredientsPhoto}
-            barcode={barcodePhoto}
-            onSlotTap={handleSlotTap}
-          />
-          <ThemedText style={styles.introHeading}>{heading}</ThemedText>
-          <ThemedText style={styles.introBody}>{body}</ThemedText>
-          <PrimaryButton label={ctaLabel} icon={nextEncouragedSlot ? Camera : undefined} onPress={ctaAction} />
-          {nextEncouragedSlot && (
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={handleSkipNext}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-            >
-              <ThemedText style={styles.secondaryBtnText}>Skip</ThemedText>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Uploading + extracting ──
-  if (step === 'uploading') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Header title="Confirm" />
-        {/* CUL-1910 F4: the confirm screen's silhouette and the tick, one wait for the
-            upload and the read (the owner made one request). The tick breathes on
-            `extracting`, the request's own flag, never a flag invented for the loader. */}
-        <ScrollView contentContainerStyle={styles.confirmScroll} scrollEnabled={false}>
-          <CaptureSilhouette working={extracting} />
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // ── Confirm extracted brand + product ──
-  if (step === 'confirm') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Header title="Confirm" />
-        <ScrollView contentContainerStyle={styles.confirmScroll}>
+        <ScrollView contentContainerStyle={styles.scroll}>
           {frontPhoto && (
-            <View style={styles.confirmHero}>
-              <Image source={{ uri: frontPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
-              <View style={styles.confirmOverlay}>
-                <ThemedText style={styles.confirmBrand} numberOfLines={1}>{extractedBrand}</ThemedText>
-                <ThemedText style={styles.confirmProduct} numberOfLines={2}>{extractedProduct}</ThemedText>
-              </View>
-            </View>
+            <HomeCard noPadding style={styles.heroCard}>
+              <Image
+                source={{ uri: frontPhoto.localUri }}
+                style={styles.reviewPhoto}
+                resizeMode="cover"
+                accessibilityLabel="Your photo of the front of the package"
+              />
+            </HomeCard>
           )}
-          <ThemedText style={styles.confirmCaption}>Is this right?</ThemedText>
-          {/* Tier-1 (D7/§8.5) — the confirm step shows no protein picker, so this
-              compact line is the whole disclosure here: primary first, secondaries
-              after, and "ingredient list not read" instead of an implied-complete
-              set when the D10 gate fails. Silent when there is nothing honest to
-              say (proteinSummaryLine returns null). */}
-          {summaryLine ? <ThemedText style={styles.proteinSummary}>{summaryLine}</ThemedText> : null}
-          <SectionLabel label="Type" />
-          <TypeChips value={foodType} onChange={setFoodType} />
-          {/* Meal time is meaningful only when this capture also logs a meal.
-              In B-110 add-only mode (no `fromLog`) no meal is written, so the
-              time picker would set a value nothing consumes — hide it. */}
-          {cameFromMealLog && (
-            <>
+          <ThemedText style={styles.introHeading} accessibilityRole="header">Ready to read the label</ThemedText>
+          {offline ? (
+            <QuietBand testID="capture-offline">
+              <ThemedText variant="caption" style={styles.bandText}>
+                You're offline. Reading the label needs a connection: type it in now, or tap Read the label once you're back.
+              </ThemedText>
+            </QuietBand>
+          ) : null}
+          <PrimaryButton
+            label={offline ? 'Read the label · needs a connection' : 'Read the label'}
+            disabled={offline}
+            onPress={() => { if (frontPhoto) void runUploadAndExtract(frontPhoto, ingredientsPhoto, barcodePhoto); }}
+          />
+          {offline ? <PrimaryButton label="Type it in now" variant="secondary" onPress={() => setStep('edit')} /> : null}
+          <HomeCard>
+            <SlotRow
+              title="Add the ingredients"
+              detail="Lets us read every protein, not just the main one."
+              onPress={() => handleSlotTap('ingredients')}
+              trailing={ingredientsPhoto ? <AddedThumb uri={ingredientsPhoto.localUri} /> : undefined}
+              accessibilityLabel={ingredientsPhoto ? 'Ingredients photo added. Replace it' : undefined}
+              testID="capture-slot-ingredients"
+            />
+            <SlotRow
+              title="Add the barcode"
+              onPress={() => handleSlotTap('barcode')}
+              trailing={barcodePhoto ? <AddedThumb uri={barcodePhoto.localUri} /> : undefined}
+              accessibilityLabel={barcodePhoto ? 'Barcode photo added. Replace it' : undefined}
+              divided
+              testID="capture-slot-barcode"
+            />
+          </HomeCard>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── The wait and the confirm: one tree ── P3 + P4. The wait is the confirm screen
+  // itself: the owner's photo stands from the first frame, the read card holds the tick
+  // at its rail, and when the read answers the tick grows into the rail and the facts
+  // fill in place (CaptureReadCard). The same element across both steps, so nothing has
+  // to fly.
+  if (step === 'uploading' || step === 'confirm') {
+    const reading = step === 'uploading';
+    const formatLabel = FOOD_FORMATS.find((f) => f.value === extractedFormat)?.label ?? extractedFormat;
+    const facts = [
+      { label: 'Brand', value: extractedBrand.trim() },
+      { label: 'Product', value: extractedProduct.trim() },
+      { label: 'Format', value: formatLabel },
+      { label: 'Protein', value: summaryLine ?? '' },
+    ].filter((f) => f.value.length > 0);
+    // P6: whose meal this is. The record is written for the active pet at commit, so
+    // that pet is the record's pet here (C-9); a blank name reads anonymous, never wrong.
+    const mealPetName = resolveRecordPetName(pets, activePet?.id);
+    const mealTime = mealOccurredAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return (
+      <SafeAreaView style={[styles.container, styles.ground]}>
+        <Header title="Confirm" />
+        <ScrollView contentContainerStyle={styles.confirmScroll} scrollEnabled={!reading}>
+          {frontPhoto && (
+            <HomeCard noPadding style={styles.heroCard}>
               <TouchableOpacity
-                style={styles.mealTimeRow}
-                onPress={() => setShowMealTimePicker((v) => !v)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
+                onPress={() => setViewingPhoto(true)}
+                disabled={reading}
+                activeOpacity={0.85}
+                accessibilityRole="imagebutton"
+                accessibilityLabel="Your photo of the front of the package"
+                accessibilityHint="Opens the photo full screen"
               >
-                <ThemedText style={styles.mealTimeText}>
-                  {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
-                      nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
-                      native text-style cascade; this EXIF span differs from its parent only in size and
-                      colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
-                  {mealOccurredAtSource === 'exif' ? (
-                    <Text style={styles.mealTimeAttribution}>
-                      {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
-                    </Text>
-                  ) : null}
-                </ThemedText>
-                <ThemedText style={styles.mealTimeChange}>Change</ThemedText>
+                <Image source={{ uri: frontPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
               </TouchableOpacity>
-              {showMealTimePicker && (
-                <DateTimePicker
-                  value={mealOccurredAt}
-                  mode="datetime"
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                  maximumDate={new Date()}
-                  onChange={(_e, date) => {
-                    if (Platform.OS === 'android') setShowMealTimePicker(false);
-                    if (!date) return;
-                    // Provenance flips to 'manual' on an actual value change from any
-                    // non-manual source ('exif' or 'now'); a peek-tap that changes
-                    // nothing preserves it, so an EXIF attribution is never silently
-                    // dropped. Shares the one rule with app/log.tsx and app/edit-event.tsx
-                    // via sourceAfterPointEdit — before B-525 this screen only handled
-                    // 'exif', so a 'now'-seeded meal the owner re-timed was stored as
-                    // witnessed-live provenance ('now') rather than the manual edit it
-                    // was — the case occurred_at_source exists to distinguish. (The column
-                    // is written + synced but not yet read by the report/engine, so this
-                    // is a stored-correctness + forward-safety fix, not a live one.)
-                    setMealOccurredAtSource(
-                      sourceAfterPointEdit(mealOccurredAtSource, date.getTime() !== mealOccurredAt.getTime()),
-                    );
-                    setMealOccurredAt(date);
-                  }}
-                />
+            </HomeCard>
+          )}
+          <CaptureReadCard
+            reading={reading}
+            facts={facts}
+            identity={foodId}
+            // Tier-1 (D7/§8.5): the provenance line says whether the protein set is the
+            // WHOLE set, and "ingredient list not read" when the D10 gate fails.
+            provenance={<ProteinDisclosure input={disclosureInput} />}
+          />
+          {reading ? (
+            <CaptureSilhouette working={extracting} withHead={false} />
+          ) : (
+            <>
+              <SectionLabel label="Type" />
+              <TypeChips value={foodType} onChange={setFoodType} />
+              {/* Meal time is meaningful only when this capture also logs a meal.
+                  In B-110 add-only mode (no `fromLog`) no meal is written, so the
+                  time editor would set a value nothing consumes — hide it. */}
+              {cameFromMealLog && (
+                <View style={styles.mealTimeRow}>
+                  <ThemedText variant="body" style={styles.mealTimeText}>
+                    {`${mealPetName}'s meal · ${mealTime}`}
+                    {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+                        nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
+                        native text-style cascade; this EXIF span differs from its parent only in size and
+                        colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
+                    {mealOccurredAtSource === 'exif' ? (
+                      <Text style={styles.mealTimeAttribution}>
+                        {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
+                      </Text>
+                    ) : null}
+                  </ThemedText>
+                  <TouchableOpacity
+                    style={styles.changeTime}
+                    onPress={() => setShowMealTimePicker(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Change time"
+                  >
+                    <ThemedText variant="caption" style={styles.changeTimeText}>Change time</ThemedText>
+                  </TouchableOpacity>
+                </View>
               )}
+              <PrimaryButton
+                label="Looks right"
+                onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
+              />
+              <PrimaryButton label="Edit" variant="secondary" onPress={() => setStep('edit')} />
             </>
           )}
-          <PrimaryButton
-            label="Looks right"
-            onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
-          />
-          <PrimaryButton label="Edit" variant="secondary" onPress={() => setStep('edit')} />
         </ScrollView>
+        {showMealTimePicker && (
+          <TimeEditSheet
+            value={mealOccurredAt}
+            title="When did this happen?"
+            onCancel={() => setShowMealTimePicker(false)}
+            onSave={(date) => {
+              // Provenance flips to 'manual' on an actual value change from any
+              // non-manual source ('exif' or 'now'); a peek-and-save that changes
+              // nothing preserves it, so an EXIF attribution is never silently
+              // dropped. Shares the one rule with app/log.tsx and app/edit-event.tsx
+              // via sourceAfterPointEdit (B-525).
+              setMealOccurredAtSource(
+                sourceAfterPointEdit(mealOccurredAtSource, date.getTime() !== mealOccurredAt.getTime()),
+              );
+              setMealOccurredAt(date);
+              setShowMealTimePicker(false);
+            }}
+          />
+        )}
+        {frontPhoto && (
+          <PhotoViewer visible={viewingPhoto} uris={[frontPhoto.localUri]} onClose={() => setViewingPhoto(false)} />
+        )}
       {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
           and edit steps from one place, so the two Save paths cannot diverge.
           Backdrop / Android-back both resolve to "Not now": a dismissed sheet is
@@ -1090,36 +1103,49 @@ export default function FoodCaptureScreen() {
   if (step === 'edit') {
     const canSave = extractedBrand.trim().length > 0 && extractedProduct.trim().length > 0;
     const saveLabel = cameFromMealLog ? 'Save and log food' : 'Save';
+    // Back goes where the owner came from: the read (when one landed), the photos step
+    // (typed in before any read ran), or out.
+    const goBack = readLanded
+      ? () => setStep('confirm')
+      : frontPhoto && !readStarted
+        ? () => setStep('review')
+        : () => router.back();
+    // P7: after a read was asked for, the photo stays in view while the owner types.
+    const showThumb = !!frontPhoto && readStarted;
     return (
-      <SafeAreaView style={styles.container}>
-        <Header
-          title="Edit food"
-          // Only return to Confirm if there's valid AI-extracted data to show
-          // — when extraction failed, that screen would be empty.
-          leading="back"
-          onLeadingPress={frontPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
-        />
+      <SafeAreaView style={[styles.container, styles.ground]}>
+        <Header title="Edit food" leading="back" onLeadingPress={goBack} />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
             {/* §6.1 cap-reached: a calm informational band (never error styling), with
-                the first B-333 care-first surface (§16). Distinct from the retryable
-                failure banner below, which is a genuine fault. */}
+                the first B-333 care-first surface (§16). Distinct from the failure band
+                below, which is a genuine fault. */}
             {capReached ? (
               <QuietBand>
                 <ThemedText variant="caption" style={styles.bandText}>{foodCapCopy(capReached.cap)}</ThemedText>
                 <ThemedText variant="note" style={styles.careLine}>{careFirstLine(activePet?.name)}</ThemedText>
               </QuietBand>
             ) : extractionFailed ? (
-              // F6: a failed read is not a symptom, so it leaves the concern wash for the
-              // quiet band the cap already used.
+              // F6: a failed read is not a symptom, so it sits on the quiet band.
               <QuietBand testID="capture-read-failed">
-                {/* CUL-2164: says only what is true. Nothing retries in the background, and
-                    the food page's retry exists only when the server recorded its own failed
-                    read, never after a transport fault or an offline upload. */}
+                {/* CUL-2164 / D-1 (A): says only what is true. Nothing retries in the
+                    background, and the food page's retry is named only when it exists:
+                    the server recorded its own failed read (retryOnFoodPage). */}
                 <ThemedText variant="caption" style={styles.bandText}>
-                  Couldn't read the label. Fill in what you know below.
+                  {retryOnFoodPage
+                    ? "Couldn't read the label. Fill in what you know below; you can try reading it again from the food's page."
+                    : "Couldn't read the label. Fill in what you know below."}
                 </ThemedText>
               </QuietBand>
+            ) : null}
+            {showThumb && frontPhoto ? (
+              <PhotoThumb
+                uri={frontPhoto.localUri}
+                caption="Your photo. Tap to see it full size."
+                accessibilityLabel="Your photo of the front of the package"
+                onPress={() => setViewingPhoto(true)}
+                testID="capture-photo-thumb"
+              />
             ) : null}
             <TextField
               label="Brand"
@@ -1170,6 +1196,9 @@ export default function FoodCaptureScreen() {
             />
           </ScrollView>
         </KeyboardAvoidingView>
+        {frontPhoto && (
+          <PhotoViewer visible={viewingPhoto} uris={[frontPhoto.localUri]} onClose={() => setViewingPhoto(false)} />
+        )}
       {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
           and edit steps from one place, so the two Save paths cannot diverge.
           Backdrop / Android-back both resolve to "Not now": a dismissed sheet is
@@ -1216,50 +1245,32 @@ function TypeChips({ value, onChange }: { value: FoodType; onChange: (next: Food
   );
 }
 
-// Visual progress through the three encouraged shots. Each tile is itself
-// tappable — empty slots open the photo source picker, filled slots offer
-// to replace. Lets the user fill out of order.
-function PhotoChecklist({
-  front, ingredients, barcode, onSlotTap,
-}: {
-  front: CapturedPhoto | null;
-  ingredients: CapturedPhoto | null;
-  barcode: CapturedPhoto | null;
-  onSlotTap: (slot: 'front' | 'ingredients' | 'barcode') => void;
-}) {
-  return (
-    <View style={styles.checklistRow}>
-      <ChecklistTile photo={front}        label="Front"   onPress={() => onSlotTap('front')} />
-      <ChecklistTile photo={ingredients}  label="Label"   onPress={() => onSlotTap('ingredients')} />
-      <ChecklistTile photo={barcode}      label="Barcode" onPress={() => onSlotTap('barcode')} />
-    </View>
-  );
+// An optional photo once taken: the slot row's trailing mark. Not a button of its own:
+// the whole row is the button (it replaces the photo), so a nested target would split
+// one control in two.
+function AddedThumb({ uri }: { uri: string }) {
+  return <Image source={{ uri }} style={styles.addedThumb} resizeMode="cover" />;
 }
 
-function ChecklistTile({
-  photo, label, onPress,
-}: {
-  photo: CapturedPhoto | null;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.checklistTile}
-      onPress={onPress}
-      activeOpacity={0.7}
-      hitSlop={8}
-    >
-      {photo ? (
-        <Image source={{ uri: photo.localUri }} style={styles.checklistThumb} resizeMode="cover" />
-      ) : (
-        <View style={[styles.checklistThumb, styles.checklistThumbEmpty]}>
-          <Plus size={theme.space3} color={theme.colorTextTertiary} strokeWidth={2} />
-        </View>
-      )}
-      <ThemedText style={styles.checklistLabel}>{label}</ThemedText>
-    </TouchableOpacity>
-  );
+// D-1 (A): whether the food page will offer "try reading it again" for this food. That
+// page shows its retry only on a 'failed' row whose ai_extraction_error the Edge
+// Function wrote (its catch is the only writer), so ask the server the same question
+// rather than guess from the transport error. Any doubt (offline, a failed read of the
+// row) answers false: the band then promises nothing, which is never untrue.
+async function serverRecordedFailedRead(foodId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('food_items')
+      .select('ai_extraction_error')
+      .eq('id', foodId)
+      .maybeSingle();
+    if (error || !data) return false;
+    const recorded = (data as { ai_extraction_error: string | null }).ai_extraction_error;
+    return typeof recorded === 'string' && recorded.length > 0;
+  } catch (err) {
+    console.warn('[food-capture] could not read the failed read back:', err);
+    return false;
+  }
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
@@ -1269,35 +1280,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
+  // Home's ground under the photos, the read and the form, so the cards sit on it the
+  // way Home's do (P4).
+  ground: {
+    backgroundColor: theme.colorNeutralLight,
+  },
 
-  introScroll: {
+  scroll: {
     padding: theme.space3,
     gap: theme.space2,
   },
   introHeading: {
     fontSize: theme.textXL,
     fontWeight: theme.weightMedium,
+    lineHeight: theme.lineHeightXL,
     color: theme.colorTextPrimary,
-    marginTop: theme.space2,
   },
   introBody: {
-    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightBody,
-    marginBottom: theme.space2,
+  },
+  // D-M6 early-access label — quiet tertiary line, no badge/pill styling (§7.2).
+  earlyAccessLabel: {
+    color: theme.colorTextTertiary,
   },
 
-  // The one hand-built control left: Skip, a quiet text action under the review step's
-  // button, until the design pass retires the step's per-slot buttons.
-  secondaryBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: theme.hitTarget,
-  },
-  secondaryBtnText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-  },
   linkBtn: {
     alignItems: 'center',
     minHeight: theme.hitTarget,
@@ -1309,107 +1315,57 @@ const styles = StyleSheet.create({
     color: colorRoles.action.onLight,
   },
 
-  checklistRow: {
-    flexDirection: 'row',
-    gap: theme.space2,
-    marginBottom: theme.space2,
+  heroCard: {
+    overflow: 'hidden',
   },
-  checklistTile: {
-    flex: 1,
-    alignItems: 'center',
-    gap: theme.space0_75,
-  },
-  checklistThumb: {
+  reviewPhoto: {
     width: '100%',
-    aspectRatio: 1,
-    borderRadius: theme.radiusSmall,
+    aspectRatio: 4 / 3,
     backgroundColor: theme.colorNeutralLight,
   },
-  checklistThumbEmpty: {
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: theme.colorBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // P4: 16:9, so the commit stays reachable at 390pt with the read card under it.
+  confirmPhoto: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: theme.colorNeutralLight,
   },
-  checklistLabel: {
-    fontSize: theme.textXS,
-    color: theme.colorTextSecondary,
-    letterSpacing: theme.trackingWide,
+  addedThumb: {
+    width: theme.space4,
+    height: theme.space4,
+    borderRadius: theme.radiusXS,
+    backgroundColor: theme.colorNeutralLight,
   },
 
   confirmScroll: {
-    padding: theme.space3,
-    gap: theme.space2,
-  },
-  confirmHero: {
-    borderRadius: theme.radiusMedium,
-    overflow: 'hidden',
-    backgroundColor: theme.colorNeutralLight,
-    aspectRatio: 4 / 3,
-    position: 'relative',
-  },
-  confirmPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  confirmOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     padding: theme.space2,
-    backgroundColor: theme.colorScrimDark,
-    gap: theme.spaceMicro,
-  },
-  confirmBrand: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorTextOnDark,
-  },
-  confirmProduct: {
-    fontSize: theme.textMD,
-    color: theme.colorTextOnDarkMuted,
-    lineHeight: theme.lineHeightBody,
-  },
-  // Tier-1 protein disclosure on the confirm step — quiet, under the "Is this
-  // right?" caption, where it reads as part of what the owner is confirming.
-  proteinSummary: {
-    fontSize: theme.textSM,
-    lineHeight: theme.lineHeightSM,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-    marginTop: -theme.space1,
-  },
-  confirmCaption: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-    paddingVertical: theme.space1,
+    gap: theme.space2,
   },
   mealTimeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: theme.space2,
+    columnGap: theme.space2,
     paddingHorizontal: theme.space2,
     borderWidth: 1,
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
+    backgroundColor: theme.colorSurface,
     minHeight: theme.hitTarget,
   },
   mealTimeText: {
-    fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-    flex: 1,
+    flexShrink: 1,
   },
   mealTimeAttribution: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
   },
-  mealTimeChange: {
-    fontSize: theme.textSM,
+  changeTime: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+  },
+  changeTimeText: {
     color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
@@ -1427,13 +1383,6 @@ const styles = StyleSheet.create({
   bandText: {
     color: theme.colorTextPrimary,
   },
-  // D-M6 early-access label — quiet tertiary line, no badge/pill styling (§7.2).
-  earlyAccessLabel: {
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
-    lineHeight: theme.lineHeightSM,
-    marginBottom: theme.space2,
-  },
   // The first B-333 care-first surface — quieter than the cap copy above it.
   careLine: {
     color: theme.colorTextSecondary,
@@ -1445,8 +1394,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: theme.space2,
+    padding: theme.space3,
   },
   savedHeading: {
     color: theme.colorTextPrimary,
+    textAlign: 'center',
+  },
+  savedName: {
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
   },
 });
