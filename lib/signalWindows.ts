@@ -381,6 +381,17 @@ export function signalCompare(input: SignalCompareInput): CompareWindowsModel | 
   return compareWindows({ ...before, ...shared }, { ...during, ...shared });
 }
 
+/** Whether the trial outruns the compare's cap, so its windows hold only its last
+ *  `MAX_COMPARE_DAYS` (the same test `signalCompareSpec` applies). */
+function signalTrialCapped(trial: SignalTrialWindow): boolean {
+  return !trialTooYoungToCompare(trial) && Math.max(1, Math.floor(trial.dayCounter)) > MAX_COMPARE_DAYS;
+}
+
+/** The trial's own first day, anchored on today and the day counter like the compare. */
+function trialFirstDayIndex(today: string, trial: SignalTrialWindow): number {
+  return indexOf(today, 'today') - Math.max(1, Math.floor(trial.dayCounter)) + 1;
+}
+
 /** One lane's window, before its episodes are laid. */
 export interface SignalLaneSpec {
   label: string;
@@ -412,14 +423,18 @@ export function signalLaneSpec(
     const from = indexOf(during.startDay, 'startDay');
     const to = indexOf(endOf(during), 'endDay');
     const at = split ? indexOf(split.day, 'split.day') : null;
+    // Past MAX_COMPARE_DAYS the lane draws only the trial's last days (CUL-2154): it says so in
+    // the compare's own words, never "In the trial", which would claim the whole run.
+    const capped = signalTrialCapped(trial);
     if (split && at !== null && at > from && at <= to) {
       const word = (k: string) => formatCalendarDate(k) ?? k;
+      const head = capped ? `In ${lowerFirst(during.label)}` : 'In the trial';
       lanes.push(
-        { label: `In the trial, ${word(during.startDay)} to ${word(dayKeyFromIndex(at - 1))}`, startDay: during.startDay, endDay: dayKeyFromIndex(at - 1) },
+        { label: `${head}, ${word(during.startDay)} to ${word(dayKeyFromIndex(at - 1))}`, startDay: during.startDay, endDay: dayKeyFromIndex(at - 1) },
         { label: `In the trial, on ${split.drug} from ${word(split.day)}`, startDay: split.day, endDay: endOf(during) },
       );
     } else {
-      lanes.push({ label: 'In the trial', startDay: during.startDay, endDay: endOf(during) });
+      lanes.push({ label: capped ? during.label : 'In the trial', startDay: during.startDay, endDay: endOf(during) });
     }
     return lanes;
   }
@@ -449,8 +464,24 @@ export interface SignalLanesModel {
 
 /** The timing lanes, laid with the shipped panel's own geometry (`laneDots`). */
 export function signalLanes(input: SignalLanesInput): SignalLanesModel {
-  const specs = signalLaneSpec(input.finding, input.today, input.trial, input.undivided ?? false, input.split ?? null);
-  const lanes = specs.map((spec) => {
+  const undivided = input.undivided ?? false;
+  const specs = signalLaneSpec(input.finding, input.today, input.trial, undivided, input.split ?? null);
+  // A capped trial's lanes start inside it (CUL-2154): the episodes from its first day up to
+  // the lanes' window are on no lane, so the first in-trial lane carries their count and the
+  // chart says it. Every episode, timed or not, as the lanes' own totals count.
+  const trial = input.trial;
+  const earlier =
+    trial && !undivided && signalTrialCapped(trial) && specs.length >= 2
+      ? (() => {
+          const from = trialFirstDayIndex(input.today, trial);
+          const to = indexOf(specs[1].startDay, 'lane.startDay');
+          return input.episodes.filter((e) => {
+            const idx = indexOf(e.dayKey, 'episodes[].dayKey');
+            return idx >= from && idx < to;
+          }).length;
+        })()
+      : null;
+  const lanes = specs.map((spec, i) => {
     const start = indexOf(spec.startDay, 'lane.startDay');
     const end = indexOf(spec.endDay, 'lane.endDay');
     const laneInput: LaneInput = {
@@ -462,7 +493,8 @@ export function signalLanes(input: SignalLanesInput): SignalLanesModel {
         })
         .map((e) => e.minutesSinceMeal),
     };
-    const lane = laneDots(laneInput);
+    const laid = laneDots(laneInput);
+    const lane = i === 1 && earlier !== null ? { ...laid, earlierCount: earlier } : laid;
     return input.laneMasked?.(spec.startDay, spec.endDay)
       ? { ...lane, masked: true, window: { startDay: spec.startDay, endDay: spec.endDay } }
       : lane;
