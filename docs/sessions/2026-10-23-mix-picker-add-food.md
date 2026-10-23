@@ -1,7 +1,7 @@
 # Mixed meals: a new or unclassified food can join the bowl from the mix picker (CUL-2089)
 
 **Date:** 2026-10-23
-**One thing:** D4 L1 — A test is proven by breaking the code on purpose: if it stays green, it was not checking that code · check: pending
+**One thing:** D4 L1 — A test is proven by breaking the code on purpose: if it stays green, it was not checking that code · check: correct
 
 Dispatched BUILD row, plan gated; the PM ruled option (a) in session. Shipped via #1295. The PR body is the record of the change. This file exists because the row carried `Teach: yes`.
 
