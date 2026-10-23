@@ -32,6 +32,7 @@ import { uploadPhoto, compressForUpload, persistCapture, getSignedUrl } from '..
 import { localFileExists } from '../lib/localFile';
 import {
   resolveEditorPhoto, needsSignedUrl, priorsToDetach, photoPickerCopy, EDITOR_PHOTO_OFFLINE_LABEL,
+  EDITOR_PHOTO_UNKNOWN_LABEL,
   type EditorAttachmentRow,
 } from '../lib/editEventPhoto';
 import { supabase } from '../lib/supabase';
@@ -179,11 +180,12 @@ export default function EditEventModal() {
   // Photo attachment
   // CUL-2176: the row the editor shows, whatever its local_uri. `attachmentsLoaded` gates
   // the photo row until the read answers; `shownAttachmentIdsRef` is every row present at
-  // load, the only rows Save may remove.
+  // load, the only rows Save may remove, and the count the Replace sheet names.
   const [existingAttachment, setExistingAttachment] = useState<EditorAttachmentRow | null>(null);
   const [existingLocalUsable, setExistingLocalUsable] = useState(false);
   const [existingRemoteUrl, setExistingRemoteUrl] = useState<string | null>(null);
   const [attachmentsLoaded, setAttachmentsLoaded] = useState(false);
+  const [attachmentsFailed, setAttachmentsFailed] = useState(false);
   const shownAttachmentIdsRef = useRef<ReadonlySet<string>>(new Set());
   const [newAttachmentUri, setNewAttachmentUri] = useState<string | null>(null);
   // Source pixel dimensions from the picker asset, kept only so the pre-upload
@@ -369,7 +371,11 @@ export default function EditEventModal() {
           .then(setExistingRemoteUrl)
           .catch((e) => console.warn('[edit-event] could not sign the attached photo', e));
       }
-    }).catch(console.error);
+    }).catch((e) => {
+      // Say so rather than hide the row: the editor cannot tell attached from absent.
+      console.error(e);
+      setAttachmentsFailed(true);
+    });
 
     getEventSource(id).then(setOccurredAtSource).catch(console.error);
 
@@ -424,7 +430,7 @@ export default function EditEventModal() {
   }
 
   async function handlePickPhoto() {
-    const copy = photoPickerCopy(photoState.kind === 'attached');
+    const copy = photoPickerCopy(shownAttachmentIdsRef.current.size);
     Alert.alert(copy.title, copy.message, [
       {
         text: 'Take photo',
@@ -744,8 +750,8 @@ export default function EditEventModal() {
           // B-105 — capture the rows this photo supersedes before inserting it.
           // "Add" here is really a replace: the event carries one photo, and the
           // old row/file/Storage object used to be left behind entirely.
-          // CUL-2176: only the rows the editor showed at load. A row that arrived after
-          // the editor opened stays; the owner never saw it, so Save cannot remove it.
+          // CUL-2176: only the rows present at load, the count the Replace sheet named. A
+          // row that arrived after the editor opened stays; Save cannot remove it unseen.
           const priors = priorsToDetach(await getEventAttachments(id), shownAttachmentIdsRef.current, attId);
           await db.runAsync(
             `INSERT OR REPLACE INTO event_attachments
@@ -896,6 +902,7 @@ export default function EditEventModal() {
 
   const photoState = resolveEditorPhoto({
     loaded: attachmentsLoaded,
+    failed: attachmentsFailed,
     existing: existingAttachment,
     localFileUsable: existingLocalUsable,
     remoteUrl: existingRemoteUrl,
@@ -1038,7 +1045,11 @@ export default function EditEventModal() {
           {isLook ? null : (
             <>
           <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-          {photoState.kind === 'loading' ? null : photoState.kind === 'attached' ? (
+          {photoState.kind === 'loading' ? null : photoState.kind === 'unknown' ? (
+            <View style={styles.photoRow}>
+              <ThemedText style={styles.photoRowText}>{EDITOR_PHOTO_UNKNOWN_LABEL}</ThemedText>
+            </View>
+          ) : photoState.kind === 'attached' ? (
             <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
               {displayAttachmentUri ? (
                 <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />

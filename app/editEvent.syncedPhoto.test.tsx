@@ -192,6 +192,32 @@ describe('a photo that arrived by sync (CUL-2176)', () => {
     expect(removed).toEqual(['att-old']);
     expect(removed).not.toContain('att-late');
   });
+
+  it('an older duplicate present at load is named in the sheet before Save sweeps it', async () => {
+    const DUP = { ...LATE, id: 'att-dup' };
+    mockGetEventAttachments.mockResolvedValue([HYDRATED, DUP]);
+    const messages: string[] = [];
+    alertSpy.mockImplementation((_t, msg, buttons) => {
+      messages.push(String(msg));
+      buttons?.find((b: { text?: string }) => b.text === 'Choose from library')?.onPress?.();
+    });
+    const utils = await open();
+    await replaceAndSave(utils);
+    expect(messages).toEqual(['This replaces the 2 photos on this record.']);
+    expect(mockDetach.mock.calls[0][0].map((r: { id: string }) => r.id)).toEqual(['att-old', 'att-dup']);
+  });
+});
+
+describe('the attachment read fails (CUL-2176)', () => {
+  it('says so, and offers neither Attach nor Replace', async () => {
+    mockGetEventAttachments.mockRejectedValue(new Error('db closed'));
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const utils = await open();
+    await waitFor(() => expect(utils.getByText("Couldn't check for a photo. Close and reopen to try again.")).toBeTruthy());
+    expect(utils.queryByText('Attach a photo')).toBeNull();
+    expect(utils.queryByText('Photo attached')).toBeNull();
+    err.mockRestore();
+  });
 });
 
 describe('a photo taken on this phone (CUL-2176)', () => {

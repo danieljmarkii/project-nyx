@@ -37,6 +37,11 @@ describe('resolveEditorPhoto (CUL-2176)', () => {
     expect(resolveEditorPhoto({ ...base, existing: null })).toEqual({ kind: 'none' });
   });
 
+  it('a failed read offers no control, even with a picked photo', () => {
+    expect(resolveEditorPhoto({ ...base, loaded: false, failed: true, existing: null })).toEqual({ kind: 'unknown' });
+    expect(resolveEditorPhoto({ ...base, failed: true, existing: null, newUri: 'file:///x.jpg' })).toEqual({ kind: 'unknown' });
+  });
+
   it('nothing is offered until the read answers', () => {
     expect(resolveEditorPhoto({ ...base, loaded: false, existing: null })).toEqual({ kind: 'loading' });
   });
@@ -70,9 +75,10 @@ describe('priorsToDetach (CUL-2176)', () => {
 });
 
 describe('photoPickerCopy', () => {
-  it('names what goes when a photo is attached', () => {
-    expect(photoPickerCopy(true).title).toBe('Replace photo');
-    expect(photoPickerCopy(true).message).toMatch(/replaces the photo on this record/);
-    expect(photoPickerCopy(false).title).toBe('Attach photo');
+  it('names what goes, and how many, when a photo is attached', () => {
+    expect(photoPickerCopy(1)).toEqual({ title: 'Replace photo', message: 'This replaces the photo on this record.' });
+    // An older duplicate is swept too (B-105), so the sheet counts it rather than hide it.
+    expect(photoPickerCopy(2).message).toBe('This replaces the 2 photos on this record.');
+    expect(photoPickerCopy(0).title).toBe('Attach photo');
   });
 });
