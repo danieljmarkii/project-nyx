@@ -50,6 +50,7 @@ import {
 import {
   uploadPhoto, compressForUpload, buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET,
 } from '../lib/storage';
+import { uploadedPhotoPath } from '../lib/captureUploads';
 import { uuid } from '../lib/utils';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
@@ -122,6 +123,11 @@ export default function MedicationCaptureScreen() {
   // catalog column default). The owner toggles it on the PR 6 detail screen.
   const [isPrescription, setIsPrescription] = useState<boolean | null>(null);
   const [extractionFailed, setExtractionFailed] = useState(false);
+  const [labelUploaded, setLabelUploaded] = useState(false);
+  // Local URIs of the label photos whose upload resolved (CUL-2170). The commit
+  // reads this rather than `labelUploaded`, which drives the band's sentence, so
+  // the record and the band each answer their own question from one write.
+  const uploadedUris = useRef<Set<string>>(new Set());
 
   // §6.5 dose-confirm gate. True = the owner has DELIBERATELY confirmed the
   // strength by ticking "matches the label". Seeded CLOSED (false): a present
@@ -249,11 +255,14 @@ export default function MedicationCaptureScreen() {
     setStep('uploading');
     setExtracting(true);
     setExtractionFailed(false);
+    setLabelUploaded(false);
     setCapReached(null);
 
     try {
       const compressedUri = await compressForUpload(photo.localUri, photo.width, photo.height);
       await uploadPhoto(MEDICATION_PHOTOS_BUCKET, photo.storagePath, compressedUri);
+      uploadedUris.current.add(photo.localUri);
+      setLabelUploaded(true);
 
       // Body carries ONLY the item id — the function builds the label path from
       // the authed uid server-side (never a body path, B-123).
@@ -330,7 +339,9 @@ export default function MedicationCaptureScreen() {
   async function commitInner() {
     const db = getDb();
     const now = new Date().toISOString();
-    const labelPath = labelPhoto?.storagePath ?? null;
+    // Only a label whose upload finished is recorded (CUL-2170), in the local
+    // cache and the remote row alike.
+    const labelPath = uploadedPhotoPath(labelPhoto, uploadedUris.current);
     const trimmedGeneric = genericName.trim();
     const trimmedBrand = brandName.trim() || null;
     const trimmedStrength = strength.trim() || null;
@@ -661,9 +672,12 @@ export default function MedicationCaptureScreen() {
               </View>
             ) : extractionFailed ? (
               <View style={styles.failedBanner}>
+                {/* CUL-2164: the photo is claimed only once its upload finished; an offline
+                    capture fails before any photo reaches storage. */}
                 <ThemedText style={styles.failedBannerText}>
-                  Couldn't read the label automatically. You can fill it in below —
-                  the label photo is saved either way.
+                  {labelUploaded
+                    ? "Couldn't read the label. Fill in what you know below; the label photo is saved."
+                    : "Couldn't read the label. Fill in what you know below."}
                 </ThemedText>
               </View>
             ) : null}

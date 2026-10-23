@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
-  Alert, Image, ScrollView, StyleSheet,
+  Alert, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
   type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { ChevronDown } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
+import { colorRoles, theme } from '../../constants/theme';
+import { Tick } from '../../components/surfaces/waits/Tick';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
+import { DoorRow } from '../../components/ui/DoorRow';
+import { IdentityRow } from '../../components/ui/IdentityRow';
+import { PHOTO_SLOT_SIZE, PhotoSlot } from '../../components/ui/PhotoSlot';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { TextLink } from '../../components/ui/TextLink';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
 import {
@@ -79,7 +84,10 @@ import {
   buildPastCourseRows, type PastCourseRow, type MedicationItemName,
 } from '../../lib/pastMedications';
 import { PastMedicationsSection } from '../../components/profile/PastMedicationsSection';
-
+import { ListReadFailed, listReadFailedLine } from '../../components/profile/ListReadFailed';
+import {
+  settlePetRead, updatePetRows, viewForPet, type PetScopedRead,
+} from '../../lib/petScopedRead';
 
 interface RegimenDisplay extends Regimen {
   // null = the start date did not parse, so the course's length is unknown (B-441).
@@ -194,13 +202,25 @@ function formatSex(sex: string): string {
   return '—';
 }
 
-function formatWeightLbs(kg: number | null): string {
-  if (kg == null) return '—';
-  return `${Math.round(kg * 2.20462 * 10) / 10} lbs`;
-}
-
 function statusLabel(status: string): string {
   return status === 'monitoring' ? 'Monitoring' : 'Active';
+}
+
+// A section's wait (round F4): lines in the card's own shape, hidden from assistive
+// tech, in place of the retiring WhorlSpinner (CUL-1593). Under a second, content shaped.
+function SectionSkeleton({ lines, testID }: { lines: number; testID?: string }) {
+  return (
+    <View
+      style={styles.skeleton}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID={testID}
+    >
+      {Array.from({ length: lines }, (_, i) => (
+        <Skeleton key={i} width={i % 2 ? '46%' : '78%'} />
+      ))}
+    </View>
+  );
 }
 
 export default function ProfileScreen() {
@@ -232,13 +252,18 @@ export default function ProfileScreen() {
   // ArchivePetSheet). Doubles as the sheet's visibility flag.
   const [archivingPet, setArchivingPet] = useState<Pet | null>(null);
 
-  const [conditions, setConditions] = useState<Condition[]>([]);
+  // CUL-2174 — each list is held WITH the pet it was read for (`lib/petScopedRead`).
+  // The tab switches pets in place, so bare rows outlived their pet: a failed read for
+  // the new pet left the previous pet's conditions and medicines on screen, under the
+  // new name, with row actions that wrote against them. Rows are only ever drawn, and
+  // only ever acted on, through `viewForPet` for the pet on screen.
+  const [conditionsRead, setConditionsRead] = useState<PetScopedRead<Condition> | null>(null);
   const [conditionsLoading, setConditionsLoading] = useState(true);
 
-  const [medications, setMedications] = useState<RegimenDisplay[]>([]);
+  const [medicationsRead, setMedicationsRead] = useState<PetScopedRead<RegimenDisplay> | null>(null);
   // Which dose the optimistic tally below is currently counting, so Undo can take
   // it back off. Null once reconciled (by the rollback or by a focus refetch).
-  const countedDose = useRef<{ eventId: string; regimenId: string } | null>(null);
+  const countedDose = useRef<{ eventId: string; regimenId: string; petId: string } | null>(null);
 
   const [medicationsLoading, setMedicationsLoading] = useState(true);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
@@ -246,8 +271,18 @@ export default function ProfileScreen() {
 
   // B-140 (extended) PR 2 — the "Past medications" section's rows. No loading state:
   // it is collapsed-by-default reference material, so it simply appears once derived
-  // rather than flashing a spinner (and renders nothing until then / when empty).
-  const [pastRows, setPastRows] = useState<PastCourseRow[]>([]);
+  // rather than flashing a spinner (and renders nothing until then / when empty). A
+  // failed read is the exception, and says so (CUL-2174).
+  const [pastRead, setPastRead] = useState<PetScopedRead<PastCourseRow> | null>(null);
+
+  // What each list may draw for the pet on screen. Rows read for another pet never
+  // come back out of these, so neither the cards nor their row actions can reach them.
+  const screenPetId = activePet?.id ?? null;
+  const conditionsView = viewForPet(conditionsRead, screenPetId, conditionsLoading);
+  const medicationsView = viewForPet(medicationsRead, screenPetId, medicationsLoading);
+  const pastView = viewForPet(pastRead, screenPetId, false);
+  const medications = medicationsView.kind === 'loaded' ? medicationsView.rows : [];
+  const pastRows = pastView.kind === 'loaded' ? pastView.rows : [];
 
   // B-417 PR 4 — the trial card reads through one shared loader with the Home
   // strip, so the two surfaces cannot disagree about the same trial. It reads the
@@ -363,7 +398,8 @@ export default function ProfileScreen() {
   // Every section above an anchor loads asynchronously, so a y measured mid-load is
   // one this screen is about to invalidate. Gating on all three is what makes the
   // arrival land on the card rather than near where the card used to be.
-  const focusContentSettled = !conditionsLoading && !medicationsLoading && !trialLoading;
+  const focusContentSettled =
+    conditionsView.kind !== 'loading' && medicationsView.kind !== 'loading' && !trialLoading;
   // CUL-1292 — the same, read FOR one pet. A widget door switches pets in the flush it
   // arrives in, and every loader flips its flag in its own effect, so the gate above is
   // true for a render over the PREVIOUS pet's content. So this names the pet the rendered
@@ -373,9 +409,10 @@ export default function ProfileScreen() {
   //     the previous pet's "loaded" — and the trial's `inputIsForPet` is false there
   //     (B-789: it holds until the new pet's read answers). By the time it answers, the
   //     conditions and medications loaders have flipped their flags to loading in the
-  //     switch's own commit, so the trial's marker alone closes the window. (Per-pet
-  //     markers for those two were tried and removed: no mutation could red them.)
-  const activePetId = activePet?.id ?? null;
+  //     switch's own commit, so the trial's marker alone closes the window. Since
+  //     CUL-2174 those two lists are keyed by pet as well (`viewForPet`), which reads
+  //     another pet's rows as still loading.
+  const activePetId = screenPetId;
   const focusContentSettledFor =
     focusContentSettled && activePetId !== null && trialInputIsForActivePet ? activePetId : null;
 
@@ -596,28 +633,36 @@ export default function ProfileScreen() {
 
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
+    const petId = activePet.id;
     setConditionsLoading(true);
+    let outcome: { ok: true; rows: Condition[] } | { ok: false };
     try {
       const { data, error } = await supabase
         .from('conditions')
         .select('id, pet_id, condition_name, diagnosed_at, status, notes, created_at')
-        .eq('pet_id', activePet.id)
+        .eq('pet_id', petId)
         .neq('status', 'resolved')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setConditions((data as Condition[]) ?? []);
+      outcome = { ok: true, rows: (data as Condition[]) ?? [] };
     } catch (e) {
       console.error('[Profile] load conditions failed:', e);
-    } finally {
-      setConditionsLoading(false);
+      outcome = { ok: false };
     }
+    // A read that answers after the owner has switched away is dropped, read live
+    // from the store: landing it would replace the new pet's read with the old pet's.
+    if (usePetStore.getState().activePet?.id !== petId) return;
+    setConditionsRead((prev) => settlePetRead(prev, petId, outcome));
+    setConditionsLoading(false);
   }, [activePet?.id]);
 
   const loadMedications = useCallback(async () => {
     if (!activePet) return;
+    const petId = activePet.id;
     setMedicationsLoading(true);
-    try {
+    let outcome: { ok: true; rows: RegimenDisplay[] } | { ok: false };
+    const read = async (): Promise<RegimenDisplay[]> => {
       // Active regimens for THIS pet only (RLS double-scopes; the .eq is the
       // intent). The card is a per-pet surface, so multi-pet households never see
       // another pet's medications here.
@@ -628,7 +673,7 @@ export default function ProfileScreen() {
           'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
           'target_duration_doses, status, ended_at',
         )
-        .eq('pet_id', activePet.id)
+        .eq('pet_id', petId)
         .eq('status', 'active')
         .order('started_at', { ascending: false });
 
@@ -640,7 +685,7 @@ export default function ProfileScreen() {
         ...r,
         doses_per_day: r.doses_per_day == null ? null : Number(r.doses_per_day),
       }));
-      if (regimens.length === 0) { setMedications([]); return; }
+      if (regimens.length === 0) return [];
 
       // Dose children, attributed to regimens by attributeDosesToRegimens: an
       // EXPLICIT regimen link (medication_id, set by B-153/B-154) wins, else an
@@ -678,7 +723,7 @@ export default function ProfileScreen() {
           // which threw the whole load and blanked the Current-medications card.
           // We always want the dose's OWN parent event here, never the paired meal.
           .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
-          .eq('pet_id', activePet.id)
+          .eq('pet_id', petId)
           .or(orParts.join(','));
         if (doseError) throw doseError;
         // Shared embed-shape mapper (lib/medications) — the B-196 handling lives in one
@@ -687,12 +732,18 @@ export default function ProfileScreen() {
       }
 
       const tallies = attributeDosesToRegimens(regimens, doses);
-      setMedications(regimens.map((reg) => buildRegimenDisplay(reg, tallies.get(reg.id) ?? EMPTY_TALLY())));
+      return regimens.map((reg) => buildRegimenDisplay(reg, tallies.get(reg.id) ?? EMPTY_TALLY()));
+    };
+    try {
+      outcome = { ok: true, rows: await read() };
     } catch (e) {
       console.error('[Profile] load medications failed:', e);
-    } finally {
-      setMedicationsLoading(false);
+      outcome = { ok: false };
     }
+    // Dropped when the owner has switched away meanwhile (see loadConditions).
+    if (usePetStore.getState().activePet?.id !== petId) return;
+    setMedicationsRead((prev) => settlePetRead(prev, petId, outcome));
+    setMedicationsLoading(false);
   }, [activePet?.id]);
 
   // B-140 (extended) PR 2 — the "Past medications" section. Derives PAST courses from
@@ -709,6 +760,8 @@ export default function ProfileScreen() {
   // focus (acceptable); consolidating both surfaces onto one derivation is a later call.
   const loadPastMedications = useCallback(async () => {
     if (!activePet) return;
+    const petId = activePet.id;
+    let outcome: { ok: true; rows: PastCourseRow[] } | { ok: false };
     try {
       // Every regimen for the pet — ALL statuses. The `status = 'active'` filter is
       // exactly the bug this feature undoes, so it is deliberately absent here.
@@ -718,7 +771,7 @@ export default function ProfileScreen() {
           'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
           'schedule_notes, started_at, target_duration_days, target_duration_doses, status, ended_at',
         )
-        .eq('pet_id', activePet.id);
+        .eq('pet_id', petId);
       if (regimenError) throw regimenError;
 
       // Coerce doses_per_day (PostgREST serialises NUMERIC as a string) once at the
@@ -743,7 +796,7 @@ export default function ProfileScreen() {
       const { data: doseRows, error: doseError } = await supabase
         .from('medication_administrations')
         .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
-        .eq('pet_id', activePet.id);
+        .eq('pet_id', petId);
       if (doseError) throw doseError;
       const doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
 
@@ -774,16 +827,19 @@ export default function ProfileScreen() {
         );
       }
 
-      setPastRows(buildPastCourseRows(courses, itemNames));
+      outcome = { ok: true, rows: buildPastCourseRows(courses, itemNames) };
     } catch (e) {
-      // Leave the PRIOR successful result standing (matching the sibling loadMedications,
-      // never loadVetFiles' clear-on-error): a transient failure on a re-focus/after-End
-      // refetch must NOT blank an already-rendered history — with the section hidden at
-      // rows.length === 0, clearing here would make real history read as "never had any",
-      // the exact amnesia this feature exists to cure. Before the first success pastRows
-      // is already [], so a first-load failure still shows no section.
+      // A failure on a SAME-pet refetch (a re-focus, after End) leaves the prior result
+      // standing (`settlePetRead`): blanking an already-rendered history would make real
+      // history read as "never had any", the amnesia this feature exists to cure. Any
+      // other failure, a first load or a pet switch (CUL-2174), is the failed state with
+      // a retry, never the previous pet's courses and never a quiet "no history".
       console.error('[Profile] load past medications failed:', e);
+      outcome = { ok: false };
     }
+    // Dropped when the owner has switched away meanwhile (see loadConditions).
+    if (usePetStore.getState().activePet?.id !== petId) return;
+    setPastRead((prev) => settlePetRead(prev, petId, outcome));
   }, [activePet?.id]);
 
   useEffect(() => {
@@ -829,14 +885,16 @@ export default function ProfileScreen() {
     const counted = countedDose.current;
     if (!momentRemoved || !counted || momentEventId !== counted.eventId) return;
     countedDose.current = null;
-    setMedications((prev) =>
-      prev.map((m) =>
-        m.id === counted.regimenId
-          // Clamped at zero: a focus refetch may already have landed the true tally
-          // between the log and the Undo, and a compliance count must never render
-          // negative even for the frame before the next reconcile.
-          ? buildRegimenDisplay(m, { ...m.tally, given: Math.max(0, m.tally.given - 1) })
-          : m,
+    setMedicationsRead((prev) =>
+      updatePetRows(prev, counted.petId, (rows) =>
+        rows.map((m) =>
+          m.id === counted.regimenId
+            // Clamped at zero: a focus refetch may already have landed the true tally
+            // between the log and the Undo, and a compliance count must never render
+            // negative even for the frame before the next reconcile.
+            ? buildRegimenDisplay(m, { ...m.tally, given: Math.max(0, m.tally.given - 1) })
+            : m,
+        ),
       ),
     );
   }, [momentRemoved, momentEventId]);
@@ -925,17 +983,30 @@ export default function ProfileScreen() {
     }
   }
 
+  // CUL-2174 — the backstop under the keyed lists. The cards only draw the pet on
+  // screen's rows, so this should never refuse; it is here so that a row reaching an
+  // action by any other route still cannot write to another pet's record. Read live
+  // from the store, never from this render's closure (C-12).
+  function rowIsOnScreenPet(rowPetId: string): boolean {
+    if (usePetStore.getState().activePet?.id === rowPetId) return true;
+    console.warn('[Profile] refused a row action on another pet\'s row');
+    return false;
+  }
+
   function openAddCondition() {
     setEditingCondition(undefined);
     setConditionModalVisible(true);
   }
 
   function openEditCondition(condition: Condition) {
+    if (!rowIsOnScreenPet(condition.pet_id)) return;
     setEditingCondition(condition);
     setConditionModalVisible(true);
   }
 
-  async function handleResolveCondition(id: string) {
+  async function handleResolveCondition(condition: Condition) {
+    if (!rowIsOnScreenPet(condition.pet_id)) return;
+    const { id, pet_id: petId } = condition;
     try {
       const { error } = await supabase
         .from('conditions')
@@ -943,22 +1014,11 @@ export default function ProfileScreen() {
         .eq('id', id);
 
       if (error) throw error;
-      setConditions((prev) => prev.filter((c) => c.id !== id));
+      setConditionsRead((prev) => updatePetRows(prev, petId, (rows) => rows.filter((c) => c.id !== id)));
     } catch (e) {
       console.error('[Profile] resolve condition failed:', e);
       Alert.alert('Could not resolve', 'Something went wrong. Try again.');
     }
-  }
-
-  function confirmResolveCondition(condition: Condition) {
-    Alert.alert(
-      'Mark as resolved',
-      `Mark "${condition.condition_name}" as resolved? It will still appear in vet reports for the relevant date range.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Mark resolved', onPress: () => handleResolveCondition(condition.id) },
-      ],
-    );
   }
 
   function openAddMedication() {
@@ -967,6 +1027,7 @@ export default function ProfileScreen() {
   }
 
   function openEditRegimen(reg: RegimenDisplay) {
+    if (!rowIsOnScreenPet(reg.pet_id)) return;
     // Pass just the Regimen fields the modal seeds from (drop the derived display).
     setEditingRegimen({
       id: reg.id, pet_id: reg.pet_id, medication_item_id: reg.medication_item_id,
@@ -980,7 +1041,9 @@ export default function ProfileScreen() {
     setMedicationModalVisible(true);
   }
 
-  async function handleEndRegimen(id: string) {
+  async function handleEndRegimen(reg: RegimenDisplay) {
+    if (!rowIsOnScreenPet(reg.pet_id)) return;
+    const { id, pet_id: petId } = reg;
     try {
       // Local-first since CUL-901 (VV-3), and not only for symmetry: a course created
       // offline has no server row to `.eq('id', …)` yet, so the old remote UPDATE
@@ -994,7 +1057,7 @@ export default function ProfileScreen() {
       // the vet report's regimen span. The day key is keyed HERE, from local
       // components, because this screen is what knows the end means "today".
       await endRegimen(id, toLocalDayKey(new Date()));
-      setMedications((prev) => prev.filter((m) => m.id !== id));
+      setMedicationsRead((prev) => updatePetRows(prev, petId, (rows) => rows.filter((m) => m.id !== id)));
       // The just-ended course now belongs in the Past medications section — refresh it
       // so the row moves down immediately, without waiting for the next tab focus.
       loadPastMedications();
@@ -1011,7 +1074,9 @@ export default function ProfileScreen() {
   // FREE-TEXT regimen (no library item — the only loggable path for one). The same
   // shared insertMedicationDose path as the picker, so the write is built once.
   async function handleLogDose(reg: RegimenDisplay) {
-    if (!activePet) return;
+    // The dose is written for `activePet` against `reg`'s course, so the two must be
+    // the same pet (CUL-2174: no server guard ties a dose's course to its pet).
+    if (!activePet || reg.pet_id !== activePet.id || !rowIsOnScreenPet(reg.pet_id)) return;
     let result: Awaited<ReturnType<typeof insertMedicationDose>>;
     try {
       result = await insertMedicationDose({
@@ -1043,12 +1108,14 @@ export default function ProfileScreen() {
     // the record no longer holds, indefinitely while offline. That direction is
     // reassuring, which is the one direction this app may not drift in. The effect
     // above takes it back; this records which dose to take back.
-    countedDose.current = { eventId: result.eventId, regimenId: reg.id };
-    setMedications((prev) =>
-      prev.map((m) =>
-        m.id === reg.id
-          ? buildRegimenDisplay(m, { ...m.tally, given: m.tally.given + 1 })
-          : m,
+    countedDose.current = { eventId: result.eventId, regimenId: reg.id, petId: reg.pet_id };
+    setMedicationsRead((prev) =>
+      updatePetRows(prev, reg.pet_id, (rows) =>
+        rows.map((m) =>
+          m.id === reg.id
+            ? buildRegimenDisplay(m, { ...m.tally, given: m.tally.given + 1 })
+            : m,
+        ),
       ),
     );
     // The confirm-over-entry adherence follow-up (§5.1) — the same warmed card the
@@ -1098,7 +1165,7 @@ export default function ProfileScreen() {
       `Mark ${reg.drug_name} as finished? Its logged doses stay on the timeline and in vet reports.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'End medication', onPress: () => handleEndRegimen(reg.id) },
+        { text: 'End medication', onPress: () => handleEndRegimen(reg) },
       ],
     );
   }
@@ -1140,7 +1207,12 @@ export default function ProfileScreen() {
   const initials = activePet.name.slice(0, 2).toUpperCase();
   const speciesLabel =
     activePet.species.charAt(0).toUpperCase() + activePet.species.slice(1);
-  const subtitle = [speciesLabel, activePet.breed].filter(Boolean).join(' · ');
+  // Round P2 — one fact line. An unknown age or sex is left out rather than shown as "—".
+  const age = formatAge(activePet.date_of_birth, activePet.date_of_birth_precision);
+  const sex = formatSex(activePet.sex);
+  const factLine = [speciesLabel, activePet.breed, age === '—' ? null : age, sex === '—' ? null : sex]
+    .filter(Boolean)
+    .join(' · ');
 
   // The card's eleven states resolve in `lib/dietTrialCard` — including B-351
   // slice 4's standing protein note and target line, which are RE-SITED into the
@@ -1164,54 +1236,35 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* ── Pet header ── */}
-        <Card style={styles.headerCard}>
-          <TouchableOpacity
-            onPress={handlePickPhoto}
-            style={styles.photoWrapper}
-            activeOpacity={0.8}
-            disabled={photoUploading}
-          >
-            {photoUri ? (
-              <Image
-                key={heroPhoto.attempt}
-                source={{ uri: photoUri }}
-                style={styles.photo}
-                resizeMode="cover"
-                onError={heroPhoto.onError}
-              />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <ThemedText style={styles.photoInitials}>{initials}</ThemedText>
-              </View>
-            )}
-            {photoUploading && (
-              <View style={styles.photoOverlay}>
-                <WhorlSpinner size="md" tint={theme.colorTextOnDark} />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handlePickPhoto} disabled={photoUploading} hitSlop={8}>
-            <ThemedText style={styles.photoLabel}>
-              {/* Off the record, not the link: a pet whose photo failed to
-                  load still has one, and "Add photo" would say otherwise. */}
-              {activePet.photo_path ? 'Change photo' : 'Add photo'}
-            </ThemedText>
-          </TouchableOpacity>
-
+        {/* ── The pet's identity (round P1, P2) — a row on the page's own ground: the
+            photo, which is itself the button that changes it, then the name and one
+            fact line. Age and sex join that line; weight is said once, with its date,
+            in the Weight card below. ── */}
+        <IdentityRow
+          leadingSize={PHOTO_SLOT_SIZE}
+          gutter={theme.space3}
+          leading={
+            <PhotoSlot
+              petName={activePet.name}
+              initials={initials}
+              photoUri={photoUri}
+              photoAttempt={heroPhoto.attempt}
+              onPhotoError={heroPhoto.onError}
+              hasPhoto={!!activePet.photo_path}
+              saving={photoUploading}
+              onPress={handlePickPhoto}
+            />
+          }
+        >
           {/* CUL-618 (R1 = a, R2 = a2) — the name IS the switcher.
               The tab bar shows this pet's face, and everywhere else in the app that
               face opens the switcher; here it navigated to a screen that had none,
               so on History and Foods the only visible pet control answered the wrong
-              question. The chevron attaches to the name that was ALREADY this page's
-              title rather than adding a header row: a row would put this pet's photo
-              on screen a third time (30pt row + 112pt card + 22pt tab), which is this
-              issue's own complaint one level down.
+              question. The chevron attaches to the name, this page's title, rather
+              than adding a header row.
 
-              Both branches share `nameRow`, so the 44pt floor and the card's rhythm
-              do not depend on how many pets the household has — a one-pet owner and a
-              two-pet owner see the same layout, differing only by the chevron. */}
+              Both branches share `nameRow`, so the 44pt floor does not depend on how
+              many pets the household has. */}
           {multiPet ? (
             <TouchableOpacity
               style={styles.nameRow}
@@ -1227,39 +1280,20 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           ) : (
             <View style={styles.nameRow}>
-              <ThemedText style={styles.petName}>{activePet.name}</ThemedText>
+              <ThemedText style={styles.petName} accessibilityRole="header">{activePet.name}</ThemedText>
             </View>
           )}
-          {subtitle ? <ThemedText style={styles.petSubtitle}>{subtitle}</ThemedText> : null}
-
-          <TouchableOpacity
-            style={styles.editBtn}
+          {factLine ? <ThemedText variant="body" style={styles.factLine}>{factLine}</ThemedText> : null}
+          {/* The tick on the photo, named here (round §16); one loop, so no second tick. */}
+          {photoUploading ? (
+            <ThemedText variant="caption" style={styles.photoSavingText}>Saving the photo…</ThemedText>
+          ) : null}
+          <TextLink
+            label="Edit profile"
+            accessibilityLabel={`Edit ${activePet.name}’s profile`}
             onPress={() => setEditModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <ThemedText style={styles.editBtnText}>Edit profile</ThemedText>
-          </TouchableOpacity>
-        </Card>
-
-        {/* ── Info chips ── */}
-        <Card noPadding style={styles.infoRow}>
-          <View style={styles.infoChip}>
-            <ThemedText style={styles.infoChipLabel}>Age</ThemedText>
-            <ThemedText style={styles.infoChipValue}>
-              {formatAge(activePet.date_of_birth, activePet.date_of_birth_precision)}
-            </ThemedText>
-          </View>
-          <View style={styles.infoChipDivider} />
-          <View style={styles.infoChip}>
-            <ThemedText style={styles.infoChipLabel}>Sex</ThemedText>
-            <ThemedText style={styles.infoChipValue}>{formatSex(activePet.sex)}</ThemedText>
-          </View>
-          <View style={styles.infoChipDivider} />
-          <View style={styles.infoChip}>
-            <ThemedText style={styles.infoChipLabel}>Weight</ThemedText>
-            <ThemedText style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</ThemedText>
-          </View>
-        </Card>
+          />
+        </IdentityRow>
 
         {/* ── Widget slot (B-407) — a quiet lookup line naming the pet's slot in
             the Home Screen "Edit Widget" picker, so a multi-pet household can bind
@@ -1279,6 +1313,22 @@ export default function ProfileScreen() {
             chip above. snapshotKg lets the card show the profile weight before any
             weigh-in is logged, so it never contradicts the Weight chip.
             CUL-753 anchor: the vet-visit rundown's weight tile lands here. ── */}
+        {/* ── A running trial's door (round P4) — under the pet's name, above Weight,
+            while a trial runs or is in its grace: for an owner in one, it is the reason
+            they open this tab. The row is the trial track's, unchanged. The start card
+            (no trial) and the unreadable card keep their place below. ── */}
+        {/* Not gated on `trialLoading`: every focus re-reads the trial, and a door at
+            the top that blinked out on each re-read would shove the whole page. It needs
+            a read answered for THIS pet (`trialDoor` is null otherwise, B-789), so it
+            only ever stands for the pet on screen. */}
+        {trialStatus !== 'unreadable' && trialDoor ? (
+          <TrialDoorRow
+            model={trialDoor}
+            style={styles.sectionGap}
+            onPress={() => router.push(trialScreenHref(activePet.id))}
+          />
+        ) : null}
+
         <WeightTrendCard
           petId={activePet.id}
           petName={activePet.name}
@@ -1290,53 +1340,46 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
-            <TouchableOpacity style={styles.cardActionTouch} onPress={openAddCondition} hitSlop={8}>
-              <ThemedText style={styles.sectionAction}>+ Add</ThemedText>
-            </TouchableOpacity>
+            <TextLink label="Add" accessibilityLabel="Add a condition" onPress={openAddCondition} />
           </View>
 
-          {conditionsLoading ? (
-            <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
-          ) : conditions.length === 0 ? (
+          {conditionsView.kind === 'loading' ? (
+            <SectionSkeleton lines={3} testID="conditions-loading" />
+          ) : conditionsView.kind === 'failed' ? (
+            <ListReadFailed
+              testID="conditions-read-failed"
+              line={listReadFailedLine(activePet.name, 'conditions')}
+              onRetry={loadConditions}
+            />
+          ) : conditionsView.rows.length === 0 ? (
             <ThemedText style={styles.emptyConditionsText}>
               No conditions on file yet. Add anything {activePet.name} has been
               diagnosed with, like allergies or a sensitive stomach.
             </ThemedText>
           ) : (
-            conditions.map((condition) => (
-              <View key={condition.id} style={styles.conditionRow}>
-                <Divider style={styles.conditionDivider} />
-                <View style={styles.conditionInner}>
-                  <View style={styles.conditionInfo}>
-                    <ThemedText style={styles.conditionName}>{condition.condition_name}</ThemedText>
-                    {diagnosedMonthLabel(condition.diagnosed_at) !== null && (
-                      <ThemedText style={styles.conditionDate}>
-                        Diagnosed {diagnosedMonthLabel(condition.diagnosed_at)}
-                      </ThemedText>
-                    )}
-                  </View>
-                  <View style={styles.conditionRight}>
-                    <Badge
-                      label={statusLabel(condition.status)}
-                      variant={condition.status === 'monitoring' ? 'accent' : 'symptom'}
-                    />
-                    <View style={styles.conditionActions}>
-                      <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditCondition(condition)} hitSlop={8}>
-                        <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
-                      </TouchableOpacity>
-                      {/* geist-ok: typographic separator, not copy and not an icon — a standalone node
-                          whose entire content is a divider. It stays raw so it inherits nothing and
-                          asserts nothing; the B-745 GlyphSvg migration does NOT own it (there is no
-                          vector to replace a middle dot with). CUL-364 §7. */}
-                      <Text style={styles.conditionActionDivider}>·</Text>
-                      <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
-                        <ThemedText style={styles.conditionActionText}>Resolve</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            ))
+            // Round P3 — each condition is one door into its edit form, where Mark
+            // resolved now lives (one 44pt target per row instead of two small ones).
+            conditionsView.rows.map((condition) => {
+              const diagnosed = diagnosedMonthLabel(condition.diagnosed_at);
+              const status = statusLabel(condition.status);
+              return (
+                <DoorRow
+                  key={condition.id}
+                  testID={`condition-row-${condition.id}`}
+                  title={condition.condition_name}
+                  detail={diagnosed !== null ? `Diagnosed ${diagnosed}` : null}
+                  // P5 — Monitoring takes the muted badge: under the ruled roles teal says
+                  // "good", and being watched is not good news.
+                  trailing={<Badge label={status} variant={condition.status === 'monitoring' ? 'muted' : 'symptom'} />}
+                  accessibilityLabel={[
+                    condition.condition_name,
+                    diagnosed !== null ? `diagnosed ${diagnosed}` : null,
+                    status.toLowerCase(),
+                  ].filter(Boolean).join(', ') + '. Edit'}
+                  onPress={() => openEditCondition(condition)}
+                />
+              );
+            })
           )}
         </Card>
 
@@ -1347,25 +1390,32 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap} testID="med-section" onLayout={handleMedSectionLayout}>
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
-            <TouchableOpacity style={styles.cardActionTouch} onPress={openAddMedication} hitSlop={8}>
-              <ThemedText style={styles.sectionAction}>+ Add</ThemedText>
-            </TouchableOpacity>
+            <TextLink label="+ Add" accessibilityLabel="Add a medication" onPress={openAddMedication} />
           </View>
 
-          {medicationsLoading ? (
-            <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
-          ) : medications.length === 0 ? (
+          {medicationsView.kind === 'loading' ? (
+            <SectionSkeleton lines={3} testID="medications-loading" />
+          ) : medicationsView.kind === 'failed' ? (
+            <ListReadFailed
+              testID="medications-read-failed"
+              line={listReadFailedLine(activePet.name, 'medications')}
+              onRetry={loadMedications}
+            />
+          ) : medicationsView.rows.length === 0 ? (
             // With past history below, "No medications yet" would read as "never had
             // any" directly over a populated Past list (the between-courses state — a
             // pet just off its antibiotics). Say "right now" and point down; keep the
-            // forward-looking first-run copy only when there is genuinely no history.
+            // forward-looking first-run copy only when the past read ANSWERED with no
+            // history. Unanswered or failed, it claims neither (CUL-2174, C-12).
             <ThemedText style={styles.emptyConditionsText}>
-              {pastRows.length > 0
+              {pastView.kind === 'loaded' && pastView.rows.length > 0
                 ? `No medications right now — ${activePet.name}'s past courses are just below.`
-                : 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'}
+                : pastView.kind === 'loaded'
+                  ? 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'
+                  : 'No medications right now.'}
             </ThemedText>
           ) : (
-            medications.map((reg) => {
+            medicationsView.rows.map((reg) => {
               const meta = [reg.dose_amount, routeLabel(reg.route), frequencyLabel(reg.doses_per_day)]
                 .filter(Boolean)
                 .join(' · ');
@@ -1522,7 +1572,18 @@ export default function ProfileScreen() {
             (spec §1). Renders nothing until derived / when there is no past history.
             A row with a catalog item taps through to app/medication/[id], which PR 3
             gave the past-course facts (CUL-318); an unspecified orphan stays inert. */}
-        <PastMedicationsSection rows={pastRows} />
+        {pastView.kind === 'failed' ? (
+          <Card style={styles.sectionGap}>
+            <ThemedText style={styles.sectionTitle}>Past medications</ThemedText>
+            <ListReadFailed
+              testID="past-medications-read-failed"
+              line={listReadFailedLine(activePet.name, 'past medications')}
+              onRetry={loadPastMedications}
+            />
+          </Card>
+        ) : (
+          <PastMedicationsSection rows={pastRows} />
+        )}
 
         {/* ── The diet trial's slot (B-417 §4.2; TS-6, every account since TS-GA) ──
             While a trial runs or is in its 30-day grace the slot is `TrialDoorRow`, one row
@@ -1541,13 +1602,7 @@ export default function ProfileScreen() {
             retrying={trialLoading}
             style={styles.sectionGap}
           />
-        ) : !trialLoading && trialDoor ? (
-          <TrialDoorRow
-            model={trialDoor}
-            style={styles.sectionGap}
-            onPress={() => router.push(trialScreenHref(activePet.id))}
-          />
-        ) : !trialLoading && trialCard && !trialSlotPending && (
+        ) : trialDoor ? null : !trialLoading && trialCard && !trialSlotPending && (
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}
@@ -1632,29 +1687,16 @@ export default function ProfileScreen() {
             which is coherent HERE — you added a pet and you are on the pet's page —
             and is exactly what makes the same rows wrong inside a capture surface
             (CUL-678). */}
-        {!multiPet && (
-          <TouchableOpacity
-            style={styles.addPetBtn}
-            onPress={() => router.push('/add-pet')}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-          >
-            <ThemedText style={styles.addPetBtnText}>Add a pet</ThemedText>
-          </TouchableOpacity>
-        )}
-
-        {/* Quiet archive action (spec §3.5, mock B4) — bottom of the tab,
-            styled to recede: removal is a rare lifecycle moment, not a daily
-            affordance. Tap on the last active pet explains the block instead
-            of hiding (honest over invisible). */}
-        <TouchableOpacity
-          style={styles.archiveBtn}
-          onPress={handleArchivePress}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-        >
-          <ThemedText style={styles.archiveBtnText}>Archive {activePet.name}</ThemedText>
-        </TouchableOpacity>
+        {/* The foot (round P10): two quiet rows under a hairline. */}
+        <View style={styles.foot}>
+          {!multiPet && (
+            <PrimaryButton label="Add a pet" variant="plain" onPress={() => router.push('/add-pet')} />
+          )}
+          {/* Quiet archive action (spec §3.5, mock B4) — a rare lifecycle moment, not a
+              daily affordance. Tap on the last active pet explains the block instead
+              of hiding (honest over invisible). */}
+          <PrimaryButton label={`Archive ${activePet.name}`} variant="plain" onPress={handleArchivePress} />
+        </View>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -1680,11 +1722,15 @@ export default function ProfileScreen() {
       <AddConditionModal
         visible={conditionModalVisible}
         petId={activePet.id}
+        petName={activePet.name}
         existingCondition={editingCondition}
+        onResolve={handleResolveCondition}
         onClose={() => { setConditionModalVisible(false); setEditingCondition(undefined); }}
-        onAdded={(c) => setConditions((prev) => [c, ...prev])}
+        onAdded={(c) => setConditionsRead((prev) => updatePetRows(prev, c.pet_id, (rows) => [c, ...rows]))}
         onUpdated={(c) =>
-          setConditions((prev) => prev.map((x) => (x.id === c.id ? c : x)))
+          setConditionsRead((prev) =>
+            updatePetRows(prev, c.pet_id, (rows) => rows.map((x) => (x.id === c.id ? c : x))),
+          )
         }
       />
 
@@ -1695,13 +1741,17 @@ export default function ProfileScreen() {
         onClose={() => { setMedicationModalVisible(false); setEditingRegimen(undefined); }}
         // A new regimen has no doses yet (empty tally → "No doses logged yet").
         onAdded={(reg) =>
-          setMedications((prev) => [buildRegimenDisplay(reg, EMPTY_TALLY()), ...prev])
+          setMedicationsRead((prev) =>
+            updatePetRows(prev, reg.pet_id, (rows) => [buildRegimenDisplay(reg, EMPTY_TALLY()), ...rows]),
+          )
         }
         // An edit can change doses_per_day (the expected denominator), so recompute
         // with the regimen's EXISTING tally rather than discarding its logged doses.
         onUpdated={(reg) =>
-          setMedications((prev) =>
-            prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
+          setMedicationsRead((prev) =>
+            updatePetRows(prev, reg.pet_id, (rows) =>
+              rows.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
+            ),
           )
         }
       />
@@ -1743,122 +1793,33 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
 
-  // ── Header card ──
-  headerCard: {
-    alignItems: 'center',
-    gap: theme.space1,
-    paddingVertical: theme.space4,
-  },
-  photoWrapper: {
-    position: 'relative',
-    marginBottom: 4,
-  },
-  photo: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-  },
-  photoPlaceholder: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-    backgroundColor: theme.colorNeutralDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoInitials: {
-    fontSize: 38,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextOnDark,
-  },
-  photoOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: 56,
-    backgroundColor: theme.colorScrimPhoto,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoLabel: {
-    fontSize: theme.textSM,
-    color: theme.colorAccentInk,
-    fontWeight: theme.weightMedium,
-  },
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so
-  // the card's rhythm does not change with the household's pet count.
+  // the layout does not change with the household's pet count.
   //
-  // The 44pt floor is an explicit minHeight and this row carries NO hitSlop, which
-  // is the CUL-579 call rather than a default. The control directly above is
-  // "Change photo", which already reaches down with hitSlop={8}, and CUL-612's rule
-  // is `gap >= hitSlop.facing(a) + hitSlop.facing(b)`: the two rects must not
-  // overlap, because an overlap resolves by z-order rather than by intent — here on
-  // a neighbour that opens the camera roll. The arithmetic is 8 (headerCard's gap)
-  // + 4 (marginTop below) = 12 >= 8 + 0, so it clears with headroom rather than by
-  // exact equality; the marginTop is the 4pt that used to sit on petName and is kept
-  // for that reason as much as for the rhythm. Growing the box buys the reach that
-  // slop would have, and takes none of the neighbour's.
-  //
-  // Stating the floor as minHeight also makes it ASSERTABLE — a 44pt claim resting
-  // on a rendered font line box is one jest cannot compute, so it is a floor nobody
-  // is holding. profile.test.tsx pins both halves.
+  // The 44pt floor is an explicit minHeight and this row carries NO hitSlop (the
+  // CUL-579 call): its neighbours are the photo, beside or above it (its own 96pt
+  // box), and the Edit profile link below, which holds its floor by its own box too,
+  // so no expanded rect reaches into another (CUL-612). Stating the floor as minHeight
+  // also makes it ASSERTABLE; profile.test.tsx pins both halves.
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: theme.space0_5,
-    minHeight: 44,
-    marginTop: theme.space0_5,
+    minHeight: theme.hitTarget,
   },
   petName: {
     fontSize: theme.text2XL,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+    flexShrink: 1,
   },
-  petSubtitle: {
-    fontSize: theme.textMD,
+  factLine: {
     color: theme.colorTextSecondary,
   },
-  editBtn: {
-    marginTop: theme.space1,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 8,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-  },
-  editBtnText: {
-    fontSize: theme.textSM,
+  photoSavingText: {
     color: theme.colorTextSecondary,
-    fontWeight: theme.weightMedium,
-  },
-
-  // ── Info row ──
-  infoRow: {
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  infoChip: {
-    flex: 1,
-    paddingVertical: theme.space2,
-    alignItems: 'center',
-    gap: 3,
-  },
-  infoChipDivider: {
-    width: 1,
-    backgroundColor: theme.colorBorder,
-    marginVertical: theme.space1,
-  },
-  infoChipLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: theme.trackingWide,
-  },
-  infoChipValue: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorNeutralDark,
+    marginTop: theme.space0_5,
   },
 
   // B-407 — the widget-slot lookup caption. A quiet tertiary footnote to the info
@@ -1892,14 +1853,9 @@ const styles = StyleSheet.create({
   reportButton: {
     marginTop: theme.space1,
   },
-  sectionAction: {
-    fontSize: theme.textMD,
-    color: theme.colorAccentInk,
-    fontWeight: theme.weightMedium,
-  },
-  sectionLoader: {
-    alignSelf: 'center',
-    paddingVertical: theme.space2,
+  skeleton: {
+    gap: theme.space1_5,
+    paddingVertical: theme.space1,
   },
 
   // ── Conditions ──
@@ -1908,38 +1864,13 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
-  conditionRow: {
-    gap: theme.space2,
-  },
   conditionDivider: {
     marginBottom: 0,
-  },
-  conditionInner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: theme.space2,
-  },
-  conditionInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  conditionName: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  conditionDate: {
-    fontSize: theme.textXS,
-    color: theme.colorTextSecondary,
-  },
-  conditionRight: {
-    alignItems: 'flex-end',
-    gap: 6,
   },
   conditionActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: theme.space0_75,
   },
   // B-136 — the inline card actions (Edit/Resolve/End/Log a dose/+Add on the
   // Conditions and Current medications cards) render small (textXS/textMD) text, so
@@ -1947,7 +1878,7 @@ const styles = StyleSheet.create({
   // + centered lifts each to the floor without touching the text style; the existing
   // hitSlop stays as extra slack. Shared so every card action clears the bar identically.
   cardActionTouch: {
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   conditionActionText: {
@@ -1967,7 +1898,7 @@ const styles = StyleSheet.create({
   // "Log a dose" is the card's primary action (the wedge path), so it leads in the
   // accent colour while Edit/End stay quiet secondary text.
   logDoseActionText: {
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
 
@@ -1978,20 +1909,20 @@ const styles = StyleSheet.create({
   // line below (pm-feature-review B-618 — bar semantics; final spacing is a device-pass
   // tuning, the binding is the point).
   doseCourseGroup: {
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   // The MEDICATION regimen bar. Its width is bound to dose adherence, which is a
   // real ratio of discrete events; the diet-trial card's bar is bound to
   // `getDietTrialProgress().fraction` and lives in components/profile/DietTrialCard.
   progressTrack: {
-    height: 5,
-    borderRadius: 3,
+    height: theme.space0_75,
+    borderRadius: theme.radiusXS,
     backgroundColor: theme.colorChartEmpty,
     overflow: 'hidden',
   },
   progressBar: {
-    height: 5,
-    borderRadius: 3,
+    height: theme.space0_75,
+    borderRadius: theme.radiusXS,
     backgroundColor: theme.colorAccent,
   },
   // Medication ADHERENCE line. Distinct from the diet trial in every way that
@@ -2034,7 +1965,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     // 44pt tap-target floor — the same one cardActionTouch documents on this screen,
     // reached here by height (this is a filled button) rather than by hitSlop.
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   coursePromptButtonText: {
@@ -2045,7 +1976,7 @@ const styles = StyleSheet.create({
 
   // ── Current medications (rows mirror the conditions list + the diet-trial bar) ──
   medRow: {
-    gap: 4,
+    gap: theme.space0_5,
   },
   medName: {
     fontSize: theme.textLG,
@@ -2059,7 +1990,7 @@ const styles = StyleSheet.create({
   medDays: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   // Calm-but-clear attention treatment for a missed/refused dose — a soft rose
   // tint (the app's symptom family), never a solid-red alarm. clinical-guardrails:
@@ -2070,53 +2001,25 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   medFlagText: {
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
-    lineHeight: 19,
+    lineHeight: theme.lineHeightSMLoose,
   },
   medContext: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
 
-  // ── Archive ──
-  // CUL-618 — the one-pet "Add a pet" door. Deliberately the archive button's box
-  // (same rare-lifecycle register, same 44pt floor); secondary rather than tertiary
-  // ink because this one is a way forward, not a way out.
-  addPetBtn: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: 13,
-    paddingHorizontal: theme.space2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-    marginTop: theme.space1,
-  },
-  addPetBtnText: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-  },
-  archiveBtn: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: 13,
-    paddingHorizontal: theme.space2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-    marginTop: theme.space1,
-  },
-  archiveBtnText: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextTertiary,
+  // ── The foot (round P10) ── "Add a pet" (one-pet households) and "Archive", a rare
+  // lifecycle pair, styled to recede.
+  foot: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    paddingTop: theme.space2,
+    paddingBottom: theme.space4,
   },
 
   // ── Empty / bottom ──

@@ -1,7 +1,7 @@
 import { useId, useMemo } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import {
   COMPLETION_MOTION, checkRevealFor, type CheckReveal, type CompletionMarkMotion,
 } from '../motion/completionMotion';
@@ -112,7 +112,7 @@ export function CompletionMark({ halo, motion, reveal = checkRevealFor() }: Comp
         style={[styles.disc, motion ? { opacity: motion.layers, transform: [{ scale: motion.disc }] } : null]}
       >
         <Svg testID="completion-mark-disc" width={MARK_SIZE} height={MARK_SIZE} viewBox="0 0 32 32">
-          <Circle cx={16} cy={16} r={16} fill={theme.colorAccentGlyph} />
+          <Circle cx={16} cy={16} r={16} fill={colorRoles.positive.glyphOnLight} />
         </Svg>
         {reveal === 'window' ? (
           // The window: the outer View clips at the check's box and slides −w → 0; the
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     top: BOX.y,
     width: BOX.w,
     height: BOX.h,
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
     transformOrigin: 'right',
   },
 });

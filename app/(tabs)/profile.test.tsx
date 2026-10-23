@@ -102,8 +102,11 @@ jest.mock('../../store/authStore', () => {
 
 // ONE stable state object, mutated between renders rather than replaced — a fresh
 // literal per render re-fires this screen's useCallback-gated effects forever.
-const MOCHI = { id: 'p1', name: 'Mochi', species: 'cat', photo_path: 'a.jpg', weight_kg: 4.1 };
-const LUNA = { id: 'p2', name: 'Luna', species: 'cat', photo_path: 'b.jpg', weight_kg: 3.4 };
+const MOCHI = {
+  id: 'p1', name: 'Mochi', species: 'cat', breed: 'Domestic Shorthair', sex: 'female',
+  date_of_birth: null as string | null, date_of_birth_precision: 'exact', photo_path: 'a.jpg', weight_kg: 4.1,
+};
+const LUNA = { ...MOCHI, id: 'p2', name: 'Luna', breed: 'Siamese', photo_path: 'b.jpg', weight_kg: 3.4 };
 const mockPetState: { activePet: typeof MOCHI; pets: (typeof MOCHI)[]; updatePet: jest.Mock } = {
   activePet: MOCHI,
   pets: [MOCHI],
@@ -226,5 +229,43 @@ describe('the identity block is derived, never mirrored', () => {
 
     expect(getByText('Luna')).toBeTruthy();
     expect(queryByText('Mochi')).toBeNull();
+  });
+});
+
+// CUL-1911 — the profile round's design pass (P1, P2, P10), as ruled 2026-10-23.
+describe('the identity row and the foot (round P1, P2, P10)', () => {
+  it('one fact line: species, breed, and sex; an unknown age is left out, never "—"', () => {
+    const { getByText, queryByText } = render(<ProfileScreen />);
+    expect(getByText('Cat · Domestic Shorthair · Female')).toBeTruthy();
+    // The three cell facts row is gone, and with it the dateless second weight.
+    expect(queryByText('Age')).toBeNull();
+    expect(queryByText('Weight')).toBeNull();
+    expect(queryByText(/lbs/)).toBeNull();
+  });
+
+  it('an unknown sex is left out too', () => {
+    setHousehold([{ ...MOCHI, sex: 'unknown' }]);
+    const { getByText } = render(<ProfileScreen />);
+    expect(getByText('Cat · Domestic Shorthair')).toBeTruthy();
+  });
+
+  it('the photo is the button that changes it, and no separate Change photo control remains', () => {
+    const { getByLabelText, queryByText } = render(<ProfileScreen />);
+    expect(getByLabelText('Mochi’s photo').props.accessibilityRole).toBe('button');
+    expect(queryByText('Change photo')).toBeNull();
+  });
+
+  it('Edit profile is a link that names the pet', () => {
+    const { getByLabelText } = render(<ProfileScreen />);
+    expect(getByLabelText('Edit Mochi’s profile').props.accessibilityRole).toBe('button');
+  });
+
+  it('the foot is two quiet rows: no fill and no edge', () => {
+    const { getByText } = render(<ProfileScreen />);
+    for (const label of ['Add a pet', 'Archive Mochi']) {
+      const style = StyleSheet.flatten(owningTouchable(getByText(label)).props.style);
+      expect(style.backgroundColor).toBe('transparent');
+      expect(style.borderWidth).toBeUndefined();
+    }
   });
 });

@@ -63,7 +63,7 @@ import { Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 're
 import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SPINE_THREAD, SpineRowFrame, type SpineBead } from '../recap/DaySpine';
 import { NODE_DOT_SIZE } from '../recap/nodeTints';
 import { ThemedText } from '../ui/ThemedText';
@@ -1054,7 +1054,7 @@ const styles = StyleSheet.create({
     left: THREAD_X - RUN_RAIL_W / 2,
     top: RUN_LEAD_TOP,
     width: RUN_RAIL_W,
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
     transformOrigin: 'top',
   },
   // The box's line: plain, no transform, the box's keyframe carries it. Square at its top,
@@ -1067,6 +1067,6 @@ const styles = StyleSheet.create({
     width: RUN_RAIL_W,
     borderBottomLeftRadius: RUN_RAIL_W / 2,
     borderBottomRightRadius: RUN_RAIL_W / 2,
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
   },
 });

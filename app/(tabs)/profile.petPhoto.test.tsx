@@ -3,7 +3,7 @@
 // The hero is the second of the two renderers of a pet photo (the avatar disc is
 // the first, components/pet/PetAvatar.test.tsx). These tests pin what an owner
 // sees for each answer the signing gives: the signed photo, the initials when the
-// link fails, and a label that still reads "Change photo" for a pet that has one.
+// link fails, and a photo button that still names the pet's photo for a pet that has one.
 // A guard (guards/petPhotoSignedOnly.test.ts) keeps public URLs out entirely.
 
 jest.mock('react-native-safe-area-context', () => {
@@ -155,8 +155,10 @@ describe('the Pet profile hero reads a signed link', () => {
     await act(async () => {});
     expect(heroImages()).toHaveLength(0);
     expect(screen.getByText('MO')).toBeTruthy();
-    // The pet still has a photo on record, so the action still says so.
-    expect(screen.getByText('Change photo')).toBeTruthy();
+    // The pet still has a photo on record, so the photo's button still says it is
+    // the pet's photo, never "Add a photo" (round P1: the photo is the button).
+    expect(screen.getByLabelText('Mochi’s photo')).toBeTruthy();
+    expect(screen.queryByText('Add photo')).toBeNull();
   });
 
   it('re-signs once when the link fails to load, then falls back to the initials', async () => {
@@ -181,6 +183,7 @@ describe('the Pet profile hero reads a signed link', () => {
     render(<ProfileScreen />);
     await act(async () => {});
     expect(screen.getByText('Add photo')).toBeTruthy();
+    expect(screen.getByLabelText('Add a photo of Mochi')).toBeTruthy();
     expect(mockGetPetPhotoUrl).not.toHaveBeenCalled();
   });
 
@@ -190,7 +193,7 @@ describe('the Pet profile hero reads a signed link', () => {
     await waitFor(() => expect(heroImages()).toHaveLength(1));
     // The source choice is a system alert; take its library button.
     const alert = jest.spyOn(Alert, 'alert');
-    fireEvent.press(screen.getByText('Change photo'));
+    fireEvent.press(screen.getByLabelText('Mochi’s photo'));
     const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => unknown }[];
     await act(async () => { await buttons.find((b) => b.text === 'Choose from library')?.onPress?.(); });
     await waitFor(() => expect(mockMarkPetPhotoChanged).toHaveBeenCalledWith('p1/profile.jpg'));
@@ -204,7 +207,7 @@ describe('the Pet profile hero reads a signed link', () => {
     await waitFor(() => expect(heroImages()).toHaveLength(1));
     const alert = jest.spyOn(Alert, 'alert');
     mockPhotoUpdateFails = true;
-    fireEvent.press(screen.getByText('Change photo'));
+    fireEvent.press(screen.getByLabelText('Mochi’s photo'));
     const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => unknown }[];
     await act(async () => { await buttons.find((b) => b.text === 'Choose from library')?.onPress?.(); });
     await waitFor(() => expect(mockMarkPetPhotoChanged).toHaveBeenCalledWith('p1/profile.jpg'));

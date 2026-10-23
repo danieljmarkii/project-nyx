@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
+  KeyboardAvoidingView, Modal, Platform,
+  ScrollView, StyleSheet, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
-import { SectionLabel } from '../ui/SectionLabel';
-import { FilterChip } from '../ui/FilterChip';
+import { ChipGroup } from '../ui/ChipGroup';
+import { FieldLabel } from '../ui/FieldLabel';
+import { Header } from '../ui/Header';
+import { HeaderAction } from '../ui/HeaderAction';
+import { PickerRow } from '../ui/PickerRow';
+import { TextField } from '../ui/TextField';
+import { TextLink } from '../ui/TextLink';
 import { ThemedText } from '../ui/ThemedText';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
 import { kgToLbs, resolveWeightFieldSave } from '../../lib/weightUnits';
 import { dateToYmd, formatBirthdayField, resolveDobPrecisionOnSave, DobPrecision } from '../../lib/age';
 import { usePetStore, Pet } from '../../store/petStore';
+import { useIsOnline } from '../../hooks/useIsOnline';
+import { QuietBand } from '../ui/QuietBand';
 
 type Species = 'dog' | 'cat' | 'other';
 type Sex = 'male' | 'female' | 'unknown';
@@ -48,6 +54,21 @@ function parseDobLocal(dob: string | null): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+/**
+ * Round P8: this form writes straight to the server (no local queue), so offline it can
+ * only fail. Said before the owner types, and Save waits with that reason.
+ */
+export function profileOfflineLine(petName: string): string {
+  return `You’re offline. Changes to ${petName}’s profile can be saved once you’re back.`;
+}
+/** Round P8: a failed save keeps every typed value, and says so in place of an alert. */
+export const SAVE_FAILED_LINE = 'Couldn’t save. Your changes are still here.';
+
+/** Round P9: the profile weight is not a weigh-in. */
+export function profileWeightNote(petName: string): string {
+  return `This is ${petName}’s profile weight. To track a change over time, log a weigh-in.`;
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -57,6 +78,9 @@ export function EditPetModal({ visible, onClose }: Props) {
   const { activePet, updatePet } = usePetStore();
 
   const [name, setName] = useState('');
+  // The name the form was seeded with: the pet the note under the weight names, so a
+  // rename being typed, or a pet flip under the open form, never changes whose it says.
+  const [seededName, setSeededName] = useState('');
   const [species, setSpecies] = useState<Species>('dog');
   const [breed, setBreed] = useState('');
   const [isOtherBreed, setIsOtherBreed] = useState(false);
@@ -76,6 +100,8 @@ export function EditPetModal({ visible, onClose }: Props) {
   const [dobPrecision, setDobPrecision] = useState<DobPrecision>('exact');
   const [dobTouched, setDobTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const online = useIsOnline();
   // The pet this form was seeded FOR. Unlike the log paths (which stamp the
   // pet active at write time, spec §6), an edit must land on the pet whose
   // values fill the form — if the active pet flips while the modal is open
@@ -87,6 +113,7 @@ export function EditPetModal({ visible, onClose }: Props) {
     if (visible && activePet) {
       setEditingPetId(activePet.id);
       setName(activePet.name);
+      setSeededName(activePet.name);
       setSpecies(activePet.species);
       const { breed: b, isOther } = resolveBreedFieldState(activePet.breed, activePet.species);
       setBreed(b);
@@ -101,6 +128,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       setDobPrecision(activePet.date_of_birth_precision);
       setDobTouched(false);
       setShowDatePicker(false);
+      setSaveFailed(false);
     }
   }, [visible]);
 
@@ -136,6 +164,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       return;
     }
     setSaving(true);
+    setSaveFailed(false);
     try {
       // An untouched weight field omits weight_kg entirely (resolveWeightFieldSave):
       // the stored value stays exact, and the store patch below leaves it alone too.
@@ -167,7 +196,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       onClose();
     } catch (e) {
       console.error('[EditPetModal] save failed:', e);
-      Alert.alert('Could not save', 'Something went wrong. Try again.');
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -188,62 +217,63 @@ export function EditPetModal({ visible, onClose }: Props) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-          </TouchableOpacity>
-          <ThemedText style={styles.headerTitle}>Edit profile</ThemedText>
-          <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
-            {saving
-              ? <WhorlSpinner size="sm" ground="day" />
-              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</ThemedText>
-            }
-          </TouchableOpacity>
-        </View>
+        <Header
+          title="Edit profile"
+          left={<HeaderAction label="Cancel" tone="quiet" onPress={onClose} />}
+          right={
+            <HeaderAction
+              label="Save"
+              onPress={handleSave}
+              disabled={!canSave || !online}
+              disabledReason={!online ? 'you’re offline' : 'add a name first'}
+              working={saving}
+              testID="edit-pet-save"
+            />
+          }
+        />
 
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
-            {/* Name */}
-            <SectionLabel label="Name" style={styles.fieldLabel} />
-            <TextInput
-              style={styles.input}
+            {!online ? (
+              <QuietBand testID="edit-pet-offline">
+                <ThemedText variant="caption" style={styles.bandText}>{profileOfflineLine(seededName)}</ThemedText>
+              </QuietBand>
+            ) : saveFailed ? (
+              <QuietBand testID="edit-pet-save-failed">
+                <ThemedText variant="caption" style={styles.bandText}>{SAVE_FAILED_LINE}</ThemedText>
+              </QuietBand>
+            ) : null}
+
+            <TextField
+              label="Name"
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
               returnKeyType="done"
-              placeholderTextColor={theme.colorTextSecondary}
             />
 
-            {/* Species */}
-            <SectionLabel label="Species" style={styles.fieldLabel} />
-            <View style={styles.chipRow}>
-              {SPECIES_OPTIONS.map((opt) => (
-                <View key={opt.value} style={styles.chipWrap}>
-                  <FilterChip
-                    label={opt.label}
-                    active={species === opt.value}
-                    onPress={() => handleSpeciesChange(opt.value)}
-                    variant="filled"
-                  />
-                </View>
-              ))}
+            <View>
+              <FieldLabel label="Species" />
+              <ChipGroup
+                options={SPECIES_OPTIONS}
+                value={species}
+                onChange={(next) => { if (next) handleSpeciesChange(next as Species); }}
+                allowDeselect={false}
+                variant="default"
+                accessibilityLabel="Species"
+              />
             </View>
 
-            {/* Breed */}
-            <SectionLabel label="Breed" style={styles.fieldLabel} />
             {hasBreedList && !isOtherBreed ? (
-              <>
-                <TouchableOpacity
-                  style={styles.fieldBtn}
+              <View>
+                <PickerRow
+                  label="Breed"
+                  value={breedDisplayValue}
+                  placeholder="Select breed"
+                  actionLabel={showBreedPicker ? 'Done' : 'Change'}
                   onPress={() => setShowBreedPicker(!showBreedPicker)}
-                  activeOpacity={0.7}
-                >
-                  <ThemedText style={breedDisplayValue ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                    {breedDisplayValue ?? 'Select breed'}
-                  </ThemedText>
-                  <ThemedText style={styles.changeLabel}>{showBreedPicker ? 'Done' : 'Change'}</ThemedText>
-                </TouchableOpacity>
+                />
                 {showBreedPicker && (
                   <BreedPicker
                     breeds={breeds}
@@ -252,94 +282,87 @@ export function EditPetModal({ visible, onClose }: Props) {
                     onSelectOther={handleBreedOther}
                   />
                 )}
-              </>
+              </View>
             ) : (
               /* other species or "Other" selected from list — text input */
-              <>
-                <TextInput
-                  style={styles.input}
+              <View>
+                <TextField
+                  label="Breed"
                   value={breed}
                   onChangeText={setBreed}
                   placeholder={hasBreedList ? 'Type breed name' : 'e.g. Rabbit, Guinea pig'}
-                  placeholderTextColor={theme.colorTextSecondary}
                   autoCapitalize="words"
                   returnKeyType="done"
                   autoFocus={isOtherBreed}
                 />
                 {hasBreedList && (
-                  <TouchableOpacity
+                  <TextLink
+                    label="Back to breed list"
+                    tone="quiet"
+                    variant="caption"
                     onPress={() => { setIsOtherBreed(false); setBreed(''); }}
-                    style={styles.clearBtn}
-                    hitSlop={8}
-                  >
-                    <ThemedText style={styles.clearBtnText}>Back to breed list</ThemedText>
-                  </TouchableOpacity>
+                  />
                 )}
-              </>
+              </View>
             )}
 
-            {/* Sex */}
-            <SectionLabel label="Sex" style={styles.fieldLabel} />
-            <View style={styles.chipRow}>
-              {SEX_OPTIONS.map((opt) => (
-                <View key={opt.value} style={styles.chipWrap}>
-                  <FilterChip
-                    label={opt.label}
-                    active={sex === opt.value}
-                    onPress={() => setSex(opt.value)}
-                    variant="filled"
-                  />
-                </View>
-              ))}
+            <View>
+              <FieldLabel label="Sex" />
+              <ChipGroup
+                options={SEX_OPTIONS}
+                value={sex}
+                onChange={(next) => { if (next) setSex(next as Sex); }}
+                allowDeselect={false}
+                variant="default"
+                accessibilityLabel="Sex"
+              />
             </View>
 
-            {/* Date of birth */}
-            <SectionLabel label="Date of birth" style={styles.fieldLabel} />
-            <TouchableOpacity
-              style={styles.fieldBtn}
-              onPress={() => setShowDatePicker(!showDatePicker)}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={dobLabel ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                {dobLabel ?? 'Not set'}
-              </ThemedText>
-              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</ThemedText>
-            </TouchableOpacity>
-            {dobIsEstimated && !showDatePicker && (
-              // Explain why an approximate DOB shows as a month/year, not a day —
-              // and that picking a date makes it a real birthday (honesty, PR 9).
-              <ThemedText style={styles.dobEstimateNote}>Estimated from age — pick a date to set an exact birthday.</ThemedText>
-            )}
-            {dob && !showDatePicker && (
-              <TouchableOpacity onPress={() => setDob(null)} style={styles.clearBtn} hitSlop={8}>
-                <ThemedText style={styles.clearBtnText}>Clear date</ThemedText>
-              </TouchableOpacity>
-            )}
-            {showDatePicker && (
-              <DateTimePicker
-                value={dob ?? new Date(2020, 0, 1)}
-                mode="date"
-                display="spinner"
-                maximumDate={new Date()}
-                onChange={(_e: unknown, date?: Date) => {
-                  if (Platform.OS === 'android') setShowDatePicker(false);
-                  // A concrete calendar pick is a witnessed birthday → 'exact'.
-                  if (date) { setDob(date); setDobTouched(true); }
-                }}
+            <View>
+              <PickerRow
+                label="Date of birth"
+                value={dobLabel}
+                placeholder="Not set"
+                actionLabel={showDatePicker ? 'Done' : 'Change'}
+                onPress={() => setShowDatePicker(!showDatePicker)}
               />
-            )}
+              {dobIsEstimated && !showDatePicker && (
+                // Explain why an approximate DOB shows as a month/year, not a day —
+                // and that picking a date makes it a real birthday (honesty, PR 9).
+                <ThemedText variant="caption" style={styles.note}>Estimated from age — pick a date to set an exact birthday.</ThemedText>
+              )}
+              {dob && !showDatePicker && (
+                <TextLink label="Clear date" tone="quiet" variant="caption" onPress={() => setDob(null)} />
+              )}
+              {showDatePicker && (
+                <DateTimePicker
+                  value={dob ?? new Date(2020, 0, 1)}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_e: unknown, date?: Date) => {
+                    if (Platform.OS === 'android') setShowDatePicker(false);
+                    // A concrete calendar pick is a witnessed birthday → 'exact'.
+                    if (date) { setDob(date); setDobTouched(true); }
+                  }}
+                />
+              )}
+            </View>
 
-            {/* Weight */}
-            <SectionLabel label="Weight (lbs)" style={styles.fieldLabel} />
-            <TextInput
-              style={styles.input}
-              value={weightStr}
-              onChangeText={setWeightStr}
-              placeholder="e.g. 28"
-              placeholderTextColor={theme.colorTextSecondary}
-              keyboardType="decimal-pad"
-              returnKeyType="done"
-            />
+            <View>
+              <TextField
+                label="Weight (lbs)"
+                value={weightStr}
+                onChangeText={setWeightStr}
+                placeholder="e.g. 28"
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+              />
+              {/* Round P9 — editing this number writes no weigh-in, so the Weight card's
+                  trend never sees it; an owner correcting it here should not believe
+                  they logged one. Named for the pet the form was seeded for. */}
+              <ThemedText variant="caption" style={styles.note}>{profileWeightNote(seededName)}</ThemedText>
+            </View>
 
           </ScrollView>
         </KeyboardAvoidingView>
@@ -353,96 +376,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  saveText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
-  },
-  saveTextDisabled: {
-    opacity: theme.opacityDisabled,
+  flex: {
+    flex: 1,
   },
   form: {
     padding: theme.space3,
     paddingBottom: theme.space6,
-    gap: theme.space1,
+    gap: theme.space2,
   },
-  fieldLabel: {
-    marginTop: theme.space2,
-    marginBottom: 4,
+  note: {
+    color: theme.colorTextSecondary,
+    marginTop: theme.space1,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    fontFamily: theme.fontBody,
-    fontSize: 16,
+  bandText: {
     color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: theme.space1,
-  },
-  chipWrap: {
-    flex: 1,
-  },
-  fieldBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  fieldBtnText: {
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-  },
-  fieldBtnPlaceholder: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  changeLabel: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
-    fontWeight: theme.fontWeightMedium,
-  },
-  dobEstimateNote: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
-    marginTop: 6, // matches the sibling clearBtn/changeLabel spacing in this file
-  },
-  clearBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  clearBtnText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    textDecorationLine: 'underline',
   },
 });

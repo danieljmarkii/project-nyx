@@ -24,6 +24,8 @@ import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { trialListMembership } from '../../lib/trialAllowedSet';
 import { FoodTile } from './FoodTile';
+import { PickerReadFailed } from './PickerReadFailed';
+import { PickerSilhouette } from '../surfaces/waits/PickerSilhouette';
 
 interface Props {
   petId: string;
@@ -99,6 +101,12 @@ const ROTATION_DAYS = 30;
 const ROTATION_LIMIT = 12;
 const SCREEN_PADDING = theme.space2;
 
+// CUL-2168 (C-12): rotation, library and arrangements start as [], so an empty array
+// alone cannot tell "no foods" from "not read yet" or "the read threw". Only 'answered'
+// may render a shelf, the library's empty copy or "Nothing always-out yet".
+export const FOOD_READ_FAILED = "Couldn't load your foods.";
+type LibraryRead = 'reading' | 'answered' | 'failed';
+
 export function FoodPicker({
   petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds, initialScope, mixableOnly = false,
   onPickMix,
@@ -108,6 +116,9 @@ export function FoodPicker({
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<FoodArrangementGroup[]>([]);
   const [search, setSearch] = useState('');
+  const [read, setRead] = useState<LibraryRead>('reading');
+  // Bumped by Try again: a new callback identity re-runs the focus load in place.
+  const [retryTick, setRetryTick] = useState(0);
   // B-347 — the pinned scope chip. A closed single-select set (All/Meals/Treats/
   // Wet/Dry); 'all' is the default no-op. Filters the library by a FACT (food_type
   // / format), never a preference read. B-406 — seeded from `initialScope` so a
@@ -177,16 +188,22 @@ export function FoodPicker({
             setRotation(r);
             setLibrary(l);
             setArrangements(a);
+            setRead('answered');
           }
         } catch (err) {
-          // No silent failures in the data path (house rule). Leave the prior
-          // state intact — navigating away and back re-runs this load.
+          // No silent failures in the data path (house rule): the band says so.
           console.warn('[FoodPicker] load failed:', err);
+          if (!cancelled) setRead('failed');
         }
       })();
       return () => { cancelled = true; };
-    }, [petId, loadArrangements]),
+    }, [petId, loadArrangements, retryTick]),
   );
+
+  const retry = useCallback(() => {
+    setRead('reading');
+    setRetryTick((t) => t + 1);
+  }, []);
 
   // B-005: also reload when the library changes while the picker is already
   // focused. Archiving happens on the food detail screen (opened via onOpenDetail
@@ -194,7 +211,8 @@ export function FoodPicker({
   // without a re-focus event, so useFocusEffect alone wouldn't bring the tile back.
   // Only the two archive-affected reads (recents + library) — arrangements are
   // unaffected by archive. Idempotent, so a redundant fire alongside a focus reload
-  // is harmless.
+  // is harmless. It never marks the read answered (arrangements are not in it), but a
+  // throw here is said like the focus load's (CUL-2168).
   const libraryVersion = useFoodLibraryStore((s) => s.version);
   useEffect(() => {
     let cancelled = false;
@@ -207,6 +225,7 @@ export function FoodPicker({
         if (!cancelled) { setRotation(r); setLibrary(l); }
       } catch (err) {
         console.warn('[FoodPicker] library-version reload failed:', err);
+        if (!cancelled) setRead('failed');
       }
     })();
     return () => { cancelled = true; };
@@ -393,17 +412,21 @@ export function FoodPicker({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {read === 'failed' && <PickerReadFailed message={FOOD_READ_FAILED} onRetry={retry} />}
+
         {!searching && (
           <View style={styles.zone}>
             <AddFoodCta onPress={onAddNew} />
           </View>
         )}
 
+        {read === 'reading' && <PickerSilhouette />}
+
         {/* FR-16 — above the rotation shelf, below the pinned search bar. Hidden
             in search-results mode for the same reason the rotation shelf is: an
             unfiltered shelf sitting above filtered results reads as phantom
             matches, and search is the lane for "I know what I'm looking for". */}
-        {!searching && trialFoods.length > 0 && (
+        {read === 'answered' && !searching && trialFoods.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label="On the trial list" header />
             <TileGrid
@@ -417,7 +440,7 @@ export function FoodPicker({
           </View>
         )}
 
-        {!searching && rotationShown.length > 0 && (
+        {read === 'answered' && !searching && rotationShown.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label={rotationLabel} header />
             {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
@@ -445,38 +468,40 @@ export function FoodPicker({
             eyebrow above a prominent "Meals" title would re-create the inverted
             hierarchy the Foods tab just fixed. Search + scope now live in the pinned
             bar above, so this zone opens straight on the results. */}
-        <View style={styles.zone}>
-          {filteredLibrary.length === 0 ? (
-            searching ? (
-              // The search dead-end carries its own forward path (P5 — empty
-              // states are features): the top CTA is hidden in results mode, and
-              // the food the owner just failed to find is exactly the one to snap.
-              <>
-                <ThemedText style={styles.empty}>No matches.</ThemedText>
-                <AddFoodCta onPress={onAddNew} />
-              </>
+        {read === 'answered' && (
+          <View style={styles.zone}>
+            {filteredLibrary.length === 0 ? (
+              searching ? (
+                // The search dead-end carries its own forward path (P5 — empty
+                // states are features): the top CTA is hidden in results mode, and
+                // the food the owner just failed to find is exactly the one to snap.
+                <>
+                  <ThemedText style={styles.empty}>No matches.</ThemedText>
+                  <AddFoodCta onPress={onAddNew} />
+                </>
+              ) : (
+                <ThemedText style={styles.empty}>
+                  {library.length === 0
+                    ? 'No foods yet. Snap one above.'
+                    : 'No matches.'}
+                </ThemedText>
+              )
             ) : (
-              <ThemedText style={styles.empty}>
-                {library.length === 0
-                  ? 'No foods yet. Snap one above.'
-                  : 'No matches.'}
-              </ThemedText>
-            )
-          ) : (
-            <View style={styles.groups}>
-              <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
-                mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-                selectedFoodIds={selectedFoodIds} />
-              <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
-                mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-                selectedFoodIds={selectedFoodIds} />
-              <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
-                mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-                selectedFoodIds={selectedFoodIds}
-                hint={selecting ? undefined : 'Long-press a tile to classify it.'} />
-            </View>
-          )}
-        </View>
+              <View style={styles.groups}>
+                <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
+                  mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                  selectedFoodIds={selectedFoodIds} />
+                <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
+                  mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                  selectedFoodIds={selectedFoodIds} />
+                <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
+                  mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                  selectedFoodIds={selectedFoodIds}
+                  hint={selecting ? undefined : 'Long-press a tile to classify it.'} />
+              </View>
+            )}
+          </View>
+        )}
 
         {/* B-040 R1 — "Always available" (free-choice) standing facts. B-347 moves
             it BELOW the library: these are standing facts, not a hot log path, so
@@ -492,7 +517,7 @@ export function FoodPicker({
             from inside a modal would strand the set the owner was building. These
             are standing facts about feeding, not candidates for a trial's allowed
             set. */}
-        {!searching && !selecting && (
+        {read === 'answered' && !searching && !selecting && (
           <View style={styles.zone}>
             <SectionLabel label="Always available" header />
             {arrangements.length === 0 ? (
