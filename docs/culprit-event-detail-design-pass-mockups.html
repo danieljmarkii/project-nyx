@@ -208,6 +208,8 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
   <div class="eyebrow">Culprit · Design system · Milestone 2 · Pass 1 · Round 1 · 2026-10-23</div>
   <h1>The event detail screen, three ways</h1>
   <p class="lede">The screen an owner lands on after logging a photographed vomit or stool: the photo, the AI read, what the photo showed. Every state below is drawn as it ships today, as a faithful move onto the shared parts, and as a design pass under Principles 1 to 9 with Home's card language. You rule per screen or per element in the ledger at the foot. Issue: <a href="https://linear.app/projectnyx/issue/CUL-1907">CUL-1907</a>; the build that follows your picks is <a href="https://linear.app/projectnyx/issue/CUL-1912">CUL-1912</a>.</p>
+  <div class="box ask" style="margin-top:16px;border-left-color:var(--teal-ink)"><h3>Ruled 2026-10-23: every recommendation taken</h3>
+    <p>The PM, in session: "Take all the recommendations." F1 to F3 stand; P1 to P8 and P10 to P12 are taken as recommended; P9 is ruled no lane; D-820 (B), D-823, D-824 (b, through P1) and D-828 (B) are taken. The build is CUL-1912, after PR-03b, PR-05 and PR-06; P3 to P6, D-820 and D-828 take a second adversarial pass on the built screen. Not settled by this ruling: CUL-2141's clinical question (whether an owner's added red flag re-runs the floor), which carried no recommendation.</p></div>
   <div class="boxes">
     <div class="box floor"><h3>The clinical floor holds in every column</h3>
       <p>The Worth a call path, the read's order (verdict, action, what to tell them, the read, the disclaimer) and every read string are verbatim from the shipped code in all three columns. No haptic anywhere on this screen. A design pass frame that would change how a read is presented says so and names its brief; those briefs go to <code>adversarial-reviewer</code> and Dr. Chen before any build.</p></div>
@@ -269,7 +271,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
 
 <section class="state" id="ledger">
   <div class="sec-head"><span class="sec-id">§19</span><h2>The ledger: every visible change</h2></div>
-  <p class="why">Faithful changes F1 to F3 are team calls under rules already in force; you can veto. Design pass changes P1 to P12 and the four defects are yours. Each brief names the frames it draws in.</p>
+  <p class="why">Faithful changes F1 to F3 are team calls under rules already in force; you can veto. Design pass changes P1 to P12 and the four defects are yours. Each brief names the frames it draws in. <b>Ruled 2026-10-23: the recommended option of every brief.</b></p>
   <h3 style="margin-top:18px">Faithful: the same screen on the shared parts</h3>
   <div class="ledger" id="ledger-f"></div>
   <h3 style="margin-top:22px">Design pass</h3>
@@ -607,7 +609,7 @@ footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 1
   // §19 ledger
   function brief(id, kind, title, deciding, options, consequence, extra) {
     return '<div class="brief"><div class="bid">' + id + '<small>' + kind + '</small></div><div><p><strong>' + title + '</strong></p><p><strong>Deciding:</strong> ' + deciding + '</p>' +
-      options.map(function (o) { return '<p>' + o + '</p>'; }).join('') + '<p><strong>Consequence:</strong> ' + consequence + '</p>' + (extra ? '<p>' + extra + '</p>' : '') + '</div></div>';
+      options.map(function (o) { return '<p>' + o + '</p>'; }).join('') + '<p><strong>Consequence:</strong> ' + consequence + '</p>' + (extra ? '<p>' + extra + '</p>' : '') + '<p class="rec">Ruled 2026-10-23: the recommended option.</p></div></div>';
   }
   var R = '<span class="rec">Recommended:</span> ';
   var ADV = ' <span class="gate">Needs adversarial review before build.</span>';

@@ -19,5 +19,10 @@ Dispatched as PR-10 of *Design system · one kit, every screen*. Posted the plan
 ## Clinical floor
 Every read string in all three columns is verbatim from the shipped modules; the call tiers keep fill against outline; no haptic is drawn or proposed. P3, P4, P5, P6, D-820 and D-828 change how a read looks and went to `adversarial-reviewer`. Pass 1 returned FAIL: D-820's "no signal" copy named a cause the branch cannot know (an unsynced photo and a timed-out watch land there too) and could delay a retry, so the copy is now cause-neutral; P3's call today outline went to 2pt after the reviewer found it one 1pt stroke from Keep an eye out once both cards were white; P5's Not enough headline moved to secondary grey; P6 keeps "Hide this note"; D-828 keys on the enum. The reviewer also caught five fixture strings that did not match the engine (call now's read text, a two-form "What to tell them", the watch-for deadlines, the dog's missing bloat line, the stool's read text); all corrected. P4 held.
 
+## Ruling
+PM, in session: "Take all the recommendations." Every brief's recommended option is taken (F1 to F3, P1 to P12 with P9 ruled no lane, D-820 B, D-823, D-824 b through P1, D-828 B). CUL-2141's clinical question carried no recommendation, so it stays with the PM.
+
 ## Next
-The PM rules the round on CUL-1907; the page merges once ruled. CUL-1912 builds the picks after PR-03b, PR-05 and PR-06.
+CUL-1912 builds the picks after PR-03b, PR-05 and PR-06, carries the D-820 row into the incident spec's §4 (a Tier 2 edit this ruling approves), and runs the second adversarial pass on P3 to P6, D-820 and D-828 on the built screen.
+
+**One thing learned:** a mock's sample copy is a claim about the engine. Five strings composed by hand drifted from what the app would print, one of them toward a later deadline; drawing every fixture through the shipped copy functions, not from memory of them, is the cheap guard.
