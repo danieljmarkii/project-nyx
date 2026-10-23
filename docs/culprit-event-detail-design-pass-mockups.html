@@ -1,0 +1,678 @@
+<title>Event Detail Design Pass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a long review page. Each state is one row of three phones (today · faithful · design pass),
+   then the ledger of briefs. The page chrome is themed; the phones are pictures of the app and keep
+   the app's own light tokens, because the record stays in daylight (incident spec G6). */
+:root {
+  --bg: #F6F5FA; --paper: #FFFFFF; --ink: #16142B; --ink-2: #4A4762; --ink-3: #6E6A88;
+  --rule: #E2E0EC; --indigo: #3F35A0; --indigo-wash: #ECEAFB; --rose-ink: #9F1239; --rose-wash: #FFE4E6;
+  --gold-ink: #6B4A0E; --gold-wash: #FDF3DC; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+  --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #100F1E; --paper: #19172C; --ink: #ECEAF6; --ink-2: #B9B5D6; --ink-3: #8E89B3;
+  --rule: #2C2947; --indigo: #A9A2F2; --indigo-wash: #251F57; --rose-ink: #FDA4B4; --rose-wash: #3A1220;
+  --gold-ink: #F2D592; --gold-wash: #33270F; --teal-ink: #6FE0CF; --teal-wash: #0E2E2A; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #100F1E; --paper: #19172C; --ink: #ECEAF6; --ink-2: #B9B5D6; --ink-3: #8E89B3;
+  --rule: #2C2947; --indigo: #A9A2F2; --indigo-wash: #251F57; --rose-ink: #FDA4B4; --rose-wash: #3A1220;
+  --gold-ink: #F2D592; --gold-wash: #33270F; --teal-ink: #6FE0CF; --teal-wash: #0E2E2A; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { text-wrap: balance; }
+h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(30px, 5vw, 44px); line-height: 1.1; margin: 6px 0 12px; letter-spacing: -0.01em; }
+h2 { font-family: var(--serif); font-weight: 400; font-size: 26px; line-height: 1.2; margin: 0; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+p { margin: 0 0 10px; max-width: 72ch; }
+a { color: var(--indigo); }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--indigo-wash); padding: 1px 5px; border-radius: 4px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.lede { font-size: 17px; color: var(--ink-2); max-width: 70ch; }
+.boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 20px 0; }
+.box { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.box p { font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
+.box.floor { border-left: 3px solid var(--rose-ink); }
+.box.pend { border-left: 3px solid var(--gold-ink); }
+.box.ask { border-left: 3px solid var(--indigo); }
+.controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--paper); }
+.seg button { font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--indigo-wash); color: var(--indigo); font-weight: 600; }
+.seg button:focus-visible, .toc a:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin: 8px 0 0; }
+.toc a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+
+section.state { margin-top: 56px; scroll-margin-top: 70px; }
+.sec-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; border-top: 1px solid var(--rule); padding-top: 18px; margin-bottom: 8px; }
+.sec-id { font-family: var(--mono); font-size: 13px; color: var(--ink-3); }
+.why { color: var(--ink-2); font-size: 14.5px; }
+.frames { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 14px; align-items: start; }
+@media (max-width: 1040px) { .frames { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .frames { grid-template-columns: minmax(0, 1fr); } }
+.slot { min-width: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.slot .tag { align-self: flex-start; }
+.tag { display: inline-block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.tag.today { background: var(--rule); color: var(--ink-2); }
+.tag.faith { background: var(--teal-wash); color: var(--teal-ink); }
+.tag.pass { background: var(--indigo-wash); color: var(--indigo); }
+.tag.opt { background: var(--gold-wash); color: var(--gold-ink); }
+.cap { font-size: 13px; color: var(--ink-2); align-self: stretch; margin: 0; max-width: none; }
+.cap b { color: var(--ink); display: block; font-weight: 600; }
+.cap .bref { font-family: var(--mono); font-size: 12px; color: var(--indigo); }
+.chen { margin-top: 14px; font-size: 14px; color: var(--ink-2); border-left: 3px solid var(--rose-ink); padding: 4px 0 4px 12px; max-width: 90ch; }
+.chen b { color: var(--ink); }
+.optbox { border: 1.5px dashed var(--gold-ink); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+
+/* ── The phone: the app's light tokens, literal (this is a picture of the app). 1pt = var(--u). ── */
+.ph { --u: 0.8px; --t: 1; width: calc(var(--u) * 390); max-width: 100%; background: #FFFFFF; color: #0A0A0A; border-radius: calc(var(--u) * 44); border: 1px solid rgba(22,20,43,0.18); box-shadow: 0 18px 44px rgba(19,17,46,0.14); overflow: hidden; position: relative; display: flex; flex-direction: column; font-family: var(--sans); line-height: 1.35; font-variant-numeric: tabular-nums; }
+.ph.w320 { width: calc(var(--u) * 320); }
+.ph.big { --t: 1.45; }
+.ph.vp { height: calc(var(--u) * 844); }
+.ph .sb { height: calc(var(--u) * 47); flex-shrink: 0; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 calc(var(--u)*28) calc(var(--u)*6); font-size: calc(var(--u)*13); font-weight: 600; color: #0A0A0A; background: #FFFFFF; }
+.ph .scr { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; position: relative; }
+.ph .scr::-webkit-scrollbar { display: none; }
+.ph:not(.vp) .scr { overflow: visible; }
+.ph.pass-ground .scr { background: #FAFAFA; }
+.t11 { font-size: calc(var(--u) * var(--t) * 11); } .t13 { font-size: calc(var(--u) * var(--t) * 13); }
+.t15 { font-size: calc(var(--u) * var(--t) * 15); } .t17 { font-size: calc(var(--u) * var(--t) * 17); }
+.t22 { font-size: calc(var(--u) * var(--t) * 22); } .t28 { font-size: calc(var(--u) * var(--t) * 28); }
+.m { font-weight: 500; } .sb6 { font-weight: 600; }
+.c2 { color: #525252; } .c3 { color: #737373; } .ci { color: #9F1239; } .ct { color: #0B7B6C; } .cd { color: #DC2626; }
+.trk { letter-spacing: 0.12em; } .up { text-transform: uppercase; }
+.hd { height: calc(var(--u)*44); flex-shrink: 0; display: grid; grid-template-columns: calc(var(--u)*64) 1fr calc(var(--u)*64); align-items: center; border-bottom: 1px solid #EAEAEA; background: #FFFFFF; }
+.hd .bk { padding-left: calc(var(--u)*12); font-size: calc(var(--u)*26); line-height: 1; color: #0A0A0A; }
+.hd .ti { text-align: center; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hd .tr { text-align: right; padding-right: calc(var(--u)*16); }
+.hero { height: calc(var(--u)*320); background: radial-gradient(ellipse 38% 30% at 46% 54%, #D8B56A 0%, #C9A04F 45%, rgba(201,160,79,0) 70%), radial-gradient(ellipse 22% 16% at 60% 44%, #EBD49A 0%, rgba(235,212,154,0) 70%), linear-gradient(160deg, #B7A99A, #8E8273); position: relative; flex-shrink: 0; }
+.hero.blood { background: radial-gradient(ellipse 10% 7% at 52% 50%, #9B1C2C 0%, rgba(155,28,44,0) 80%), radial-gradient(ellipse 38% 30% at 46% 54%, #D8B56A 0%, #C9A04F 45%, rgba(201,160,79,0) 70%), linear-gradient(160deg, #B7A99A, #8E8273); }
+.hero.stool { background: radial-gradient(ellipse 34% 22% at 50% 55%, #7A5530 0%, #6A4626 50%, rgba(106,70,38,0) 75%), linear-gradient(160deg, #9AA38F, #6F7864); }
+.hero.dark { background: radial-gradient(ellipse 40% 30% at 50% 55%, #3A3530 0%, rgba(58,53,48,0) 75%), linear-gradient(160deg, #2B2926, #1A1917); }
+.hero .ph-note { position: absolute; left: calc(var(--u)*10); bottom: calc(var(--u)*8); font-size: calc(var(--u)*10); color: rgba(255,255,255,0.8); letter-spacing: 0.06em; text-transform: uppercase; }
+.hero-empty { height: calc(var(--u)*320); background: #FAFAFA; border-top: 1px solid #EAEAEA; border-bottom: 1px solid #EAEAEA; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--u)*8); text-align: center; padding: 0 calc(var(--u)*32); }
+.hero-empty.tile { height: auto; margin: calc(var(--u)*16) calc(var(--u)*8) 0; background: #FFFFFF; border: 1.5px dashed #D4D4D4; border-radius: calc(var(--u)*16); padding: calc(var(--u)*20) calc(var(--u)*16); }
+.cam { width: calc(var(--u)*32); height: calc(var(--u)*26); border: calc(var(--u)*1.5) solid #737373; border-radius: calc(var(--u)*6); position: relative; }
+.cam::after { content: ""; position: absolute; left: 50%; top: 50%; width: calc(var(--u)*10); height: calc(var(--u)*10); margin: calc(var(--u)*-5) 0 0 calc(var(--u)*-5); border: calc(var(--u)*1.5) solid #737373; border-radius: 50%; }
+.body { padding: calc(var(--u)*24) calc(var(--u)*24) calc(var(--u)*48); display: flex; flex-direction: column; }
+.body.pass { padding: calc(var(--u)*20) calc(var(--u)*8) calc(var(--u)*24); }
+.body.pass > .flat { padding: 0 calc(var(--u)*16); }
+.gap4 { margin-top: calc(var(--u)*4); } .gap2 { margin-top: calc(var(--u)*2); } .gap8 { margin-top: calc(var(--u)*8); }
+.gap16 { margin-top: calc(var(--u)*16); } .gap24 { margin-top: calc(var(--u)*24); }
+.date { font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; }
+/* the read card, today */
+.rc { display: flex; border-radius: calc(var(--u)*16); border: 1px solid #EAEAEA; overflow: hidden; background: #F5F5F5; }
+.rc.attn { background: #FFE4E6; border-color: #FBCFD6; }
+.rc.outl { background: #FFFFFF; border-color: #F43F5E; }
+.rc.muted { border-style: dashed; }
+.rc .rl { width: calc(var(--u)*3); flex-shrink: 0; background: #D4D4D4; }
+.rc.attn .rl, .rc.outl .rl { background: #F43F5E; }
+.rc .bd { flex: 1; min-width: 0; padding: calc(var(--u)*16); display: flex; flex-direction: column; gap: calc(var(--u)*6); }
+.lh22 { line-height: calc(var(--u) * var(--t) * 22); }
+.pend { display: flex; align-items: center; gap: calc(var(--u)*8); border: 1px dashed #EAEAEA; border-radius: calc(var(--u)*8); padding: calc(var(--u)*16); min-height: calc(var(--u)*48); }
+.tick { width: calc(var(--u)*3); height: calc(var(--u)*16); background: #C9C9C9; border-radius: 1px; flex-shrink: 0; animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tick { animation: none; } }
+.whorl { width: calc(var(--u)*16); height: calc(var(--u)*16); border-radius: 50%; border: calc(var(--u)*2) solid #A6A2CE; border-right-color: transparent; flex-shrink: 0; }
+/* the read card, design pass: Home's one surface, rail in the gutter, text on the record's edge */
+.pc { position: relative; background: #FFFFFF; border-radius: calc(var(--u)*16); box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.045); padding: calc(var(--u)*16); display: flex; flex-direction: column; gap: calc(var(--u)*6); }
+.pc.attn { background: #FFE4E6; box-shadow: none; border: 1px solid #FBCFD6; }
+.pc.outl { box-shadow: none; border: 1px solid #F43F5E; }
+.pc.muted { box-shadow: none; border: 1px dashed #D4D4D4; }
+.pc .rl { position: absolute; left: calc(var(--u)*6); top: calc(var(--u)*16); bottom: calc(var(--u)*16); width: calc(var(--u)*3); border-radius: 2px; background: #D4D4D4; }
+.pc.attn .rl, .pc.outl .rl { background: #F43F5E; }
+.pc .rl.tk { bottom: auto; height: calc(var(--u)*16); animation: breathe 1.6s ease-in-out infinite; background: #C9C9C9; }
+@media (prefers-reduced-motion: reduce) { .pc .rl.tk { animation: none; } }
+.pfoot { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--u)*12); margin-top: calc(var(--u)*4); }
+.pfoot .lk { min-height: calc(var(--u)*44); display: flex; align-items: center; white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: calc(var(--u)*8); }
+.chip { border: 1px solid #D4D4D4; border-radius: 999px; padding: calc(var(--u)*10) calc(var(--u)*16); min-height: calc(var(--u)*44); display: inline-flex; align-items: center; font-weight: 500; background: #FFFFFF; }
+.og { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--u)*12) calc(var(--u)*16); }
+.og .cl { display: flex; flex-direction: column; gap: calc(var(--u)*2); min-width: 0; }
+.ed { display: inline-block; margin-left: calc(var(--u)*6); font-size: calc(var(--u)*var(--t)*11); color: #525252; border: 1px solid #D4D4D4; border-radius: 999px; padding: 0 calc(var(--u)*6); vertical-align: middle; }
+.rows { display: flex; flex-direction: column; }
+.rows .r { display: flex; justify-content: space-between; gap: calc(var(--u)*12); padding: calc(var(--u)*10) 0; align-items: baseline; }
+.rows .r + .r { border-top: 1px solid #EAEAEA; }
+.rows .r > span:last-child { text-align: right; }
+.strip { display: flex; align-items: center; gap: calc(var(--u)*4); min-height: calc(var(--u)*44); white-space: nowrap; overflow: hidden; }
+.strip .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.foot { flex-shrink: 0; border-top: 1px solid #EAEAEA; background: #FFFFFF; padding: calc(var(--u)*16) calc(var(--u)*24) calc(var(--u)*24); display: flex; flex-direction: column; align-items: stretch; }
+.btn { background: #0A0A0A; color: #FFFFFF; text-align: center; font-weight: 500; border-radius: calc(var(--u)*8); padding: calc(var(--u)*14) 0; }
+.btn.pb { border-radius: calc(var(--u)*16); padding: calc(var(--u)*16) 0; }
+.btn.sm { padding: calc(var(--u)*8) 0; margin-top: calc(var(--u)*4); }
+.rm { text-align: center; color: #DC2626; font-weight: 500; padding: calc(var(--u)*8) 0; margin-top: calc(var(--u)*8); }
+.rm.pb { min-height: calc(var(--u)*44); display: flex; align-items: center; justify-content: center; margin-top: calc(var(--u)*4); }
+.rmrow { margin-top: calc(var(--u)*32); padding: 0 calc(var(--u)*16); min-height: calc(var(--u)*44); display: flex; align-items: center; color: #DC2626; font-weight: 500; border-top: 1px solid #EAEAEA; }
+.homeind { height: calc(var(--u)*34); flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: #FFFFFF; }
+.homeind i { width: calc(var(--u)*134); height: calc(var(--u)*5); border-radius: 3px; background: #0A0A0A; display: block; }
+.scrim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); z-index: 3; }
+.ncard { position: absolute; left: calc(var(--u)*16); right: calc(var(--u)*16); z-index: 4; background: #FFFFFF; border-radius: calc(var(--u)*16); box-shadow: 0 4px 18px rgba(0,0,0,0.14); padding: calc(var(--u)*16); display: flex; flex-direction: column; gap: calc(var(--u)*4); }
+.ncard .acts { display: flex; gap: calc(var(--u)*16); margin-top: calc(var(--u)*8); }
+.ncard .acts span { min-height: calc(var(--u)*44); display: flex; align-items: center; font-weight: 500; }
+.sil { background: #F0F0F0; border-radius: calc(var(--u)*6); }
+.flash { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-3); align-self: stretch; }
+.flash i { font-style: normal; font-family: var(--mono); }
+
+/* part and token tags (D1 is not ruled: the tags are drawn, the contract is pending) */
+body.parts [data-part] { outline: 1px dashed rgba(63,53,160,0.55); outline-offset: -1px; position: relative; }
+body.parts [data-part]::before { content: attr(data-part) " · " attr(data-token); position: absolute; top: 0; left: 0; z-index: 6; font: 500 9px/1.25 var(--mono); color: #FFFFFF; background: rgba(63,53,160,0.9); padding: 1px 4px; border-radius: 0 0 4px 0; max-width: 100%; white-space: normal; letter-spacing: 0; text-transform: none; pointer-events: none; }
+body.parts [data-part].drift { outline-color: rgba(220,38,38,0.7); }
+body.parts [data-part].drift::before { background: rgba(159,18,57,0.92); }
+
+/* motion storyboard */
+.beats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+@media (max-width: 760px) { .beats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.beat { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 12px; min-width: 0; }
+.beat .mini { height: 120px; background: #FAFAFA; border-radius: 10px; position: relative; overflow: hidden; margin-bottom: 8px; }
+.beat .mini .bx { position: absolute; left: 10px; right: 10px; top: 14px; background: #FFFFFF; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.045); }
+.beat .mini .rr { position: absolute; left: 14px; top: 26px; width: 3px; border-radius: 2px; background: #F43F5E; }
+.beat .mini .ln { position: absolute; left: 26px; height: 6px; border-radius: 3px; background: #E4E4E4; }
+.beat .mini .ln.v { background: #9F1239; opacity: 0.85; }
+.beat p { font-size: 13px; color: var(--ink-2); margin: 0; }
+.beat b { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+/* tables, lists, ledger */
+.tscroll { overflow-x: auto; margin-top: 12px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 720px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; color: var(--ink); background: var(--bg); position: sticky; top: 0; }
+td { color: var(--ink-2); }
+.ok { color: var(--teal-ink); font-weight: 600; } .no { color: var(--rose-ink); font-weight: 600; } .na { color: var(--ink-3); }
+.vo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+@media (max-width: 700px) { .vo { grid-template-columns: minmax(0, 1fr); } }
+.vo ol { margin: 6px 0 0; padding-left: 22px; font-size: 13.5px; color: var(--ink-2); }
+.vo li { margin-bottom: 2px; }
+.vo li.read { color: var(--rose-ink); font-weight: 600; }
+.ledger { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.brief { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 4px 16px; }
+@media (max-width: 640px) { .brief { grid-template-columns: minmax(0, 1fr); } }
+.brief .bid { font-family: var(--mono); font-size: 13px; color: var(--indigo); font-weight: 500; }
+.brief .bid small { display: block; font-family: var(--sans); color: var(--ink-3); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
+.brief p { font-size: 14px; margin: 0 0 5px; color: var(--ink-2); max-width: 86ch; }
+.brief p strong { color: var(--ink); }
+.rec { color: var(--teal-ink); font-weight: 600; }
+.gate { color: var(--rose-ink); font-weight: 600; }
+.lens { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.lens .box h3 { font-size: 14px; }
+footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 16px; font-size: 13px; color: var(--ink-3); }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Culprit · Design system · Milestone 2 · Pass 1 · Round 1 · 2026-10-23</div>
+  <h1>The event detail screen, three ways</h1>
+  <p class="lede">The screen an owner lands on after logging a photographed vomit or stool: the photo, the AI read, what the photo showed. Every state below is drawn as it ships today, as a faithful move onto the shared parts, and as a design pass under Principles 1 to 9 with Home's card language. You rule per screen or per element in the ledger at the foot. Issue: <a href="https://linear.app/projectnyx/issue/CUL-1907">CUL-1907</a>; the build that follows your picks is <a href="https://linear.app/projectnyx/issue/CUL-1912">CUL-1912</a>.</p>
+  <div class="boxes">
+    <div class="box floor"><h3>The clinical floor holds in every column</h3>
+      <p>The Worth a call path, the read's order (verdict, action, what to tell them, the read, the disclaimer) and every read string are verbatim from the shipped code in all three columns. No haptic anywhere on this screen. A design pass frame that would change how a read is presented says so and names its brief; those briefs go to <code>adversarial-reviewer</code> and Dr. Chen before any build.</p></div>
+    <div class="box pend"><h3>The mock contract is pending</h3>
+      <p>D1 (<a href="https://linear.app/projectnyx/issue/CUL-1894">CUL-1894</a>) is not ruled. This round tags every drawn element with its shared part and token anyway: switch on <b>Show parts</b>. A red tag is a hand-built part the faithful column replaces.</p></div>
+    <div class="box ask"><h3>What you rule</h3>
+      <p>Column per screen, or element by element through briefs P1 to P12 and the four defects (D-820, D-823, D-824, D-828). Recommendations are marked. Briefs marked <span class="gate">needs adversarial review</span> change how a read looks; your ruling sends them to review, it does not send them to build.</p></div>
+  </div>
+  <p class="why">The record in every frame is a fixture: Biscuit, a dog, vomited at 7:42 AM on Thursday, Oct 23, witnessed; Mochi, a cat, is the second pet. Field values come from the <code>event_ai_analysis</code> enums and every string from the shipped copy functions (<code>lib/incidentTierWords.ts</code>, <code>lib/incidentFloorWords.ts</code>, <code>constants/aiConsentCopy.ts</code>, <code>constants/monetizationCopy.ts</code>, the analyze-vomit templates). No real owner's record is on this page.</p>
+</header>
+
+<nav class="controls" aria-label="Page controls">
+  <span class="seg" role="group" aria-label="Part tags"><button type="button" id="b-parts-off" aria-pressed="true">Pictures</button><button type="button" id="b-parts-on" aria-pressed="false">Show parts</button></span>
+  <span class="seg" role="group" aria-label="Phone height"><button type="button" id="b-vp" aria-pressed="true">Phone height</button><button type="button" id="b-full" aria-pressed="false">Full length</button></span>
+  <span>Phone height is the first screenful on a 390 × 844pt phone; scroll inside it, or switch to the whole record.</span>
+  <div class="toc">
+    <a href="#s01">01 Arrival</a><a href="#s02">02 Call now</a><a href="#s03">03 Call today</a><a href="#s04">04 Worth a call</a><a href="#s05">05 Keep an eye out</a><a href="#s06">06 Not enough</a><a href="#s07">07 Unreached</a><a href="#s07b">07b Failed</a><a href="#s08">08 AI off</a><a href="#s09">09 Cap</a><a href="#s10">10 Fold</a><a href="#s11">11 Completion card</a><a href="#s12">12 Stool</a><a href="#s13">13 No photo</a><a href="#s14">14 Loading</a><a href="#s15">15 Stress</a><a href="#motion">Motion</a><a href="#vo">VoiceOver</a><a href="#qa">State set</a><a href="#ledger">Ledger</a><a href="#lenses">Lenses</a>
+  </div>
+</nav>
+
+<main id="states"></main>
+
+<section class="state" id="motion">
+  <div class="sec-head"><span class="sec-id">§16</span><h2>The arrival, in the design pass</h2></div>
+  <p class="why">Ruled D4 (2026-09-05): the rail-led arrival, the Signal fold's physics, no haptic on any verdict. The design pass keeps every constant from <code>components/motion/arrivalMotion.ts</code>. What moves is only where the rail stands: in the card's left gutter, so the tick it grows from stands on the same spot. Same choreography on every verdict (G4).</p>
+  <div class="beats">
+    <div class="beat"><div class="mini"><div class="rr" style="height:14px;background:#C9C9C9"></div><div class="ln" style="top:30px;width:46%"></div></div><p><b>0 · pending</b><br>The 3 × 16pt tick breathes beside "Reading the photo…". Only while the server is asked (<code>working</code>).</p></div>
+    <div class="beat"><div class="mini"><div class="rr" style="height:72px"></div></div><p><b>1 · railLeadMs 160</b><br>The tick grows to the card's height ahead of the box; the line fades in the same beat.</p></div>
+    <div class="beat"><div class="mini"><div class="bx" style="height:92px"></div><div class="rr" style="height:72px"></div></div><p><b>2 · openMs 370</b><br>The box opens: spring on iOS (damping 0.7), ease on Android, never a bounce on close.</p></div>
+    <div class="beat"><div class="mini"><div class="bx" style="height:92px"></div><div class="rr" style="height:72px"></div><div class="ln v" style="top:30px;width:52%"></div><div class="ln" style="top:46px;width:66%"></div><div class="ln" style="top:60px;width:58%"></div></div><p><b>3 · landDelayMs 40 · landMs 300</b><br>Verdict and read land as one block, −8pt to 0. Reduced motion: a <code>durationFast</code> crossfade, nothing else.</p></div>
+  </div>
+  <p class="why" style="margin-top:12px"><b>Motion &amp; IA:</b> nothing new moves. The Principle 9 check: chrome is still (header, footer, observations never animate), the one loop is the tick, and a read already stored paints on the first frame. Moving the rail into the gutter (P4) needs one filmed sitting on a phone before CUL-1912 merges, because the rail leaves the row's flow during the commit.</p>
+</section>
+
+<section class="state" id="vo">
+  <div class="sec-head"><span class="sec-id">§17</span><h2>VoiceOver order on the Call your vet today record</h2></div>
+  <p class="why">Read in swipe order. The read (rose) must come before anything that changes the record.</p>
+  <div class="vo">
+    <div class="box"><h3>Today and faithful</h3><ol>
+      <li>Back, button</li><li>Vomit, heading</li><li>Vomit photo, image button. Opens the photo full screen</li><li>VOMIT</li><li>Thursday, October 23</li><li>7:42 AM · 12 min ago</li><li>Biscuit's record</li><li>AI READ, heading</li>
+      <li class="read">Call your vet today</li><li class="read">Call your vet today. If they're closed, call an emergency clinic.</li><li class="read">What to tell them: Biscuit vomited at 7:42 AM; fresh red blood in the photo.</li><li class="read">I can see what looks like blood in this photo…</li>
+      <li>This is a quick read of a single moment, not a diagnosis.</li><li>Hide this note, button</li><li>I've called, button</li><li>Not yet, button</li><li>What's visible · Edit, button · four findings</li><li>Re-run analysis, button</li><li>Edit, button</li><li>Remove, button</li></ol></div>
+    <div class="box"><h3>Design pass (P1 moves Edit to the header)</h3><ol>
+      <li>Back, button</li><li>Vomit, heading</li><li>Edit, button</li><li>Vomit photo, image button. Opens the photo full screen</li><li>Thursday, Oct 23 · 7:42 AM</li><li>Vomit · witnessed · 12 min ago · Biscuit's record</li><li>AI READ</li>
+      <li class="read">Call your vet today</li><li class="read">Call your vet today. If they're closed, call an emergency clinic.</li><li class="read">What to tell them: Biscuit vomited at 7:42 AM; fresh red blood in the photo.</li><li class="read">I can see what looks like blood in this photo…</li>
+      <li>This is a quick read of a single moment, not a diagnosis.</li><li>Hide this note, button</li><li>I've called, button</li><li>Not yet, button</li><li>What's visible · Edit, button · four findings</li><li>Re-run analysis, button</li><li>Remove this vomit, button</li></ol>
+      <p style="margin-top:8px">One control (Edit) now comes before the read: the cost of P1, named in its brief. Edit opens a form and changes nothing by itself.</p></div>
+  </div>
+</section>
+
+<section class="state" id="qa">
+  <div class="sec-head"><span class="sec-id">§18</span><h2>The state set, checked</h2></div>
+  <p class="why">QA's matrix: every state the issue names, where it is drawn, and whether each column draws it.</p>
+  <div class="tscroll"><table>
+    <thead><tr><th>State</th><th>Frame</th><th>Today</th><th>Faithful</th><th>Design pass</th><th>Note</th></tr></thead>
+    <tbody id="qa-body"></tbody>
+  </table></div>
+</section>
+
+<section class="state" id="ledger">
+  <div class="sec-head"><span class="sec-id">§19</span><h2>The ledger: every visible change</h2></div>
+  <p class="why">Faithful changes F1 to F3 are team calls under rules already in force; you can veto. Design pass changes P1 to P12 and the four defects are yours. Each brief names the frames it draws in.</p>
+  <h3 style="margin-top:18px">Faithful: the same screen on the shared parts</h3>
+  <div class="ledger" id="ledger-f"></div>
+  <h3 style="margin-top:22px">Design pass</h3>
+  <div class="ledger" id="ledger-p"></div>
+  <h3 style="margin-top:22px">The four open defects, ruled here</h3>
+  <div class="ledger" id="ledger-d"></div>
+</section>
+
+<section class="state" id="lenses">
+  <div class="sec-head"><span class="sec-id">§20</span><h2>The lenses</h2></div>
+  <div class="lens">
+    <div class="box"><h3>Jordan (dog, diet trial)</h3><p>At 7:45 AM with Biscuit still retching: the call now card is the first thing under the photo in every column. In the design pass the verdict is readable at arm's length (P5) and the whole ask, action and what to tell the vet sit above the fold on a 390pt phone. The footer going (P1) is what makes that fit.</p></div>
+    <div class="box"><h3>Sam (cat, picky eater)</h3><p>Mochi's record says "Mochi's record" while Biscuit is the active pet (§15). On "Not enough to say yet" Sam reads the dashed card as "this wasn't settled", not "fine". The unreached frame (D-820) is the one Sam would have misread today: "Not enough to say about this one yet" sounded like a verdict on a photo nobody read.</p></div>
+    <div class="box"><h3>Dr. Chen (every frame)</h3><p>Read every frame cold. Passes: no column adds, softens or moves a word of the read; the call tiers stay told apart by fill against outline, not colour alone; the vet line rides every state that is not a read, including the new unreached frame. Holds: P9 (the lane) is recommended against, because a lone dot reads as "isolated" and an empty week reads as wellness. P4, P5 and D-828 go to the adversarial pass before build.</p></div>
+    <div class="box"><h3>Motion &amp; IA</h3><p>The arrival keeps its constants (§16). Fold economics on a 390 × 844pt phone: today the footer takes about 132pt of every screen; the design pass gives that back to the record, which is what puts the call's action line above the fold.</p></div>
+    <div class="box"><h3>QA</h3><p>Fifteen states drawn in all three columns, plus 320pt, largest text, two pets and the VoiceOver order (§15, §17). The unreached and AI-off frames depend on behaviour that needs a device check (D-823's flash); the page says so where it draws it.</p></div>
+    <div class="box"><h3>Adversarial review</h3><p id="adv">Pending: the <code>adversarial-reviewer</code> pass on P4, P5, P6, D-820 and D-828 runs on this page before the round goes to the PM. Its verdict is written here.</p></div>
+  </div>
+</section>
+
+<footer class="end">Design authority this round builds on: <code>docs/culprit-incident-screen-mockups.html</code> round 2 (S-A, S-A2, V1), <code>docs/culprit-incident-tiers-mockups.html</code>, <code>docs/culprit-ai-consent-mockups.html</code>, and Home's §01 target frame in <code>docs/culprit-home-one-language-mockups.html</code> (G1 A, ruled 2026-10-03). Spec: <code>docs/nyx-incident-screen-requirements.md</code> v1.2. Round 1 of this page; later rounds republish to the same address.</footer>
+</div>
+
+<script>
+(function () {
+  var PET = 'Biscuit';
+  function tg(part, token, drift) { return ' data-part="' + part + '" data-token="' + token + '"' + (drift ? ' class="drift"' : ''); }
+  function tgc(cls, part, token, drift) { return ' class="' + cls + (drift ? ' drift' : '') + '" data-part="' + part + '" data-token="' + token + '"'; }
+
+  // ── shared copy (verbatim from the shipped modules) ──
+  var DISCLAIMER = 'This is a quick read of a single moment, not a diagnosis.';
+  var HIDE = 'Hide this note';
+  var PENDING = 'Reading the photo…';
+  var NOT_ENOUGH_LINE = 'Not enough to say about this one yet.';
+  var VET_LINE = function (p) { return 'If ' + p + ' keeps vomiting, brings up something unusual, or seems unwell, call your vet.'; };
+  var READS = {
+    call_now: { tone: 'attn', label: 'Call your vet now', action: "Call your vet now. If they're closed, call an emergency clinic.",
+      tell: 'Biscuit vomited at 7:42 AM; 3 vomits logged from 1:10 AM to 7:42 AM.', text: 'Biscuit has thrown up more than once in a short window.' },
+    call_today: { tone: 'outl', label: 'Call your vet today', action: "Call your vet today. If they're closed, call an emergency clinic.",
+      tell: 'Biscuit vomited at 7:42 AM; fresh red blood in the photo.', text: "I can see what looks like blood in this photo. That's worth a call to your vet about Biscuit." },
+    worth: { tone: 'attn', label: 'Worth a call', action: null, tell: null, rule: 'Read under the earlier rule, before Oct 9.',
+      text: "I can see something that doesn't look like food in this photo. That's worth a call to your vet about Biscuit." },
+    logged: { tone: 'neutral', label: 'Keep an eye out', action: null, tell: null,
+      text: "A single photo on its own can't tell you how Biscuit is doing. Keep an eye on Biscuit — if it happens again, or Biscuit seems unwell or goes off food, your vet is the best call.",
+      watch: ['Call your vet now if you see Biscuit vomit twice more by 3:40 PM, each more than half an hour after the vomit before it, or Biscuit is low on energy by 7:40 PM.', 'Call your vet today if Biscuit vomits again by 7:40 AM tomorrow.'] },
+    nes: { tone: 'muted', label: 'Not enough to say yet', action: null, tell: null, text: null,
+      watch: ['Call your vet now if you see Biscuit vomit twice more by 3:40 PM, each more than half an hour after the vomit before it, or Biscuit is low on energy by 7:40 PM.', 'Call your vet today if Biscuit vomits again by 7:40 AM tomorrow.'] }
+  };
+  var OBS = {
+    blood: [['Consistency', 'Chunky'], ['Contents', 'Food, bile'], ['Blood', 'Fresh red'], ['Foreign material', 'None visible']],
+    repeat: [['Consistency', 'Watery'], ['Contents', 'Bile, foam'], ['Blood', 'None visible']],
+    foreign: [['Consistency', 'Chunky'], ['Contents', 'Food'], ['Foreign material', 'Possible — not identified']],
+    plain: [['Consistency', 'Chunky'], ['Contents', 'Food, foam'], ['Colour', 'Yellow'], ['Blood', 'None visible']],
+    absence: [['Blood', 'None visible', true]],
+    stool: [['Consistency', 'Soft and mushy', false, 'Type 6'], ['Colour', 'Brown'], ['Blood', 'None visible'], ['Mucus', 'Present']]
+  };
+
+  // ── phone pieces ──
+  function statusBar() { return '<div class="sb"><span>7:54</span><span>●●● ▮</span></div>'; }
+  function header(col, title, opts) {
+    var tr = col === 'pass' && !(opts && opts.noEdit) ? '<span class="tr t15 m"' + tg('Header trailing action (new)', 'textMD · colorTextPrimary') + '>Edit</span>' : '<span></span>';
+    return '<div class="hd"' + tg('Header', 'colorSurface · colorBorder') + '><span class="bk" aria-hidden="true">‹</span><span class="ti t17"' + tg('Header title', 'textLG · weightSemibold') + '>' + title + '</span>' + tr + '</div>';
+  }
+  function hero(col, st) {
+    if (st.photo === false) {
+      if (col === 'pass') return '<div class="hero-empty tile"' + tg('Add-photo tile (P10)', 'radiusMedium · colorBorderStrong dashed') + '><span class="cam" aria-hidden="true"></span><span class="t15 m c2">Add photo</span><span class="t13 c3 lh22">With a photo, I can read the colour, consistency, and whether there\'s blood.</span></div>';
+      return '<div' + tgc('hero-empty', 'Empty hero · TouchableOpacity', 'EVENT_HERO_HEIGHT 320 · fontSize 15 literal', col === 'today') + '><span class="cam" aria-hidden="true"></span><span class="t15 m c2">Add photo</span><span class="t13 c3 lh22">With a photo, I can read the colour, consistency, and whether there\'s blood.</span></div>';
+    }
+    return '<div class="hero ' + (st.heroCls || '') + '"' + tg('Hero image · TouchableOpacity', 'EVENT_HERO_HEIGHT 320') + '><span class="ph-note">' + (st.kind === 'stool' ? 'stool photo' : 'vomit photo') + '</span></div>';
+  }
+  function record(col, st) {
+    var pet = st.pet || PET, type = st.kind === 'stool' ? 'Stool' : 'Vomit';
+    if (col === 'pass') {
+      return '<div class="flat"' + tg('Record block (P2)', 'textXL · textSM · colorTextSecondary') + '>' +
+        '<div class="date t22">Thursday, Oct 23 · 7:42 AM</div>' +
+        '<div class="t13 c2 gap4">' + type + ' · witnessed · 12 min ago · ' + pet + '\'s record</div></div>';
+    }
+    var d = col === 'today';
+    return '<div class="t11 m c2 trk"' + tg('Type label · ThemedText', 'textXS · trackingWidest') + '>' + type.toUpperCase() + '</div>' +
+      '<div class="date t28 gap8"' + tg('Date · ThemedText', 'text2XL · weightSemibold') + '>Thursday, October 23</div>' +
+      '<div class="t15 c2 gap4"' + tg('Time row', d ? 'textMD · marginTop 4 literal' : 'textMD · spaceMicro×2', d) + '>7:42 AM · 12 min ago</div>' +
+      '<div class="t13 c3 gap4"' + tg('Record owner line', d ? 'textSM · marginTop 4 literal' : 'textSM · spaceMicro×2', d) + '>' + pet + '\'s record</div>';
+  }
+  function secLabel(col) {
+    if (col === 'pass') return '';
+    return '<div class="t11 m c2 trk gap24"' + tg(col === 'today' ? 'Section label · ThemedText' : 'SectionLabel', 'textXS · trackingWidest', col === 'today') + '>AI READ</div>';
+  }
+  function readBody(r, col, opts) {
+    var lbl = col === 'pass'
+      ? '<div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 ' + (r.tone === 'attn' || r.tone === 'outl' ? 'ci' : r.tone === 'muted' ? 'c3' : 'c2') + '"' + tg('Verdict as headline (P5)', 'textLG · weightSemibold · colorEventSymptomInk on calls') + '>' + r.label + '</div>'
+      : '<div class="t11 m trk ' + (r.tone === 'attn' || r.tone === 'outl' ? 'ci' : r.tone === 'muted' ? 'c3' : 'c2') + '"' + tg('Verdict label', 'textXS · trackingWidest · colorEventSymptomInk') + '>' + r.label + '</div>';
+    var h = lbl;
+    if (r.action) h += '<div class="t15 m lh22"' + tg('Action line', 'textMD · fontWeightMedium') + '>' + r.action + '</div>';
+    if (r.tell) h += '<div' + tg('Tell them', 'textSM · colorTextPrimary') + '><div class="t13 m">What to tell them:</div><div class="t13 lh22">' + r.tell + '</div></div>';
+    if (r.text) h += '<div class="t15 lh22"' + tg('Read text', 'textMD · lineHeightBody') + '>' + r.text + '</div>';
+    if (r.watch) {
+      h += '<div' + tg('Watch-for list', 'textSM lead · textMD lines') + '><div class="t13 c2 lh22">Watch for these:</div>';
+      r.watch.forEach(function (w) { h += '<div class="t15 lh22">' + w + '</div>'; });
+      h += '</div>';
+    }
+    if (r.rule) h += '<div class="t13 c2 lh22"' + tg('Rule note', 'textSM · colorTextSecondary') + '>' + r.rule + '</div>';
+    if (opts && opts.extra) h += opts.extra;
+    if (col === 'pass') {
+      h += '<div class="pfoot"' + tg('Card foot (P6)', 'textXS disclaimer · textSM link · 44pt') + '><span class="t11 c3">' + DISCLAIMER + '</span><span class="lk t13 m c2">Hide</span></div>';
+    } else {
+      h += '<div class="t11 c3"' + tg('Disclaimer', 'textXS · lineHeight 15 literal', col === 'today') + '>' + DISCLAIMER + '</div>';
+      h += '<div class="t13 m c2"' + tg('Hide control · TouchableOpacity', 'textSM · paddingVertical spaceMicro', col === 'today') + '>' + HIDE + '</div>';
+    }
+    return h;
+  }
+  function card(col, r, opts) {
+    if (col === 'pass') return '<div class="pc ' + r.tone + '"' + tg('IncidentReadCard on HomeCard surface (P3, P4)', r.tone === 'attn' ? 'colorEventSymptomLight fill · rail in gutter' : r.tone === 'outl' ? 'colorEventSymptom outline · rail in gutter' : 'soft shadow · rail colorBorderStrong in gutter') + '><span class="rl" aria-hidden="true"></span>' + readBody(r, col, opts) + '</div>';
+    return '<div class="rc ' + r.tone + ' gap8"' + tg('IncidentReadCard', 'radiusMedium · RAIL_WIDTH 3 · gap 6 literal', col === 'today') + '><span class="rl" aria-hidden="true"></span><div class="bd">' + readBody(r, col, opts) + '</div></div>';
+  }
+  function callAnswers(col) {
+    return '<div class="chips gap16' + (col === 'pass' ? ' flat' : '') + '"' + tg('CallAnswers', 'chip · 44pt · unchanged by rule') + '><span class="chip t15">I\'ve called</span><span class="chip t15">Not yet</span></div>';
+  }
+  function obs(col, st) {
+    var rows = OBS[st.obs]; if (!rows) return '';
+    var wrap = col === 'pass' ? ' flat' : '';
+    var heading = st.kind === 'stool' ? "What's visible" : "What's visible";
+    if (st.folded) {
+      var named, count = rows.length === 1 ? '1 finding' : rows.length + ' findings';
+      if (col === 'pass') {
+        named = rows.map(function (r) { return /none visible/i.test(r[1]) ? r[0] + ': ' + r[1].toLowerCase() : r[1]; }).join(', ');
+        if (st.edited) count += ' · 1 edited';
+        return '<div class="strip gap16' + wrap + '"' + tg('Fold strip (D-828)', 'textSM · label kept on an absence') + '><span class="t13 m c2">' + heading + '</span><span class="t13 c3 nm"> · ' + named + '</span><span class="t13 c3"> · ' + count + '</span><span class="t15 c3">›</span></div>';
+      }
+      named = rows.map(function (r) { return r[1]; }).join(', ');
+      return '<div class="strip gap16"' + tg('Fold strip', 'textSM · colorTextTertiary') + '><span class="t13 m c2">' + heading + '</span><span class="t13 c3 nm"> · ' + named + '</span><span class="t13 c3"> · ' + count + '</span><span class="t15 c3">›</span></div>';
+    }
+    if (col === 'pass') {
+      var h = '<div class="gap24' + wrap + '"' + tg('Observations as hairline rows (P7)', 'textSM label · textMD value · colorBorder hairline') + '><div style="display:flex;justify-content:space-between;align-items:center"><span class="t13 m c2">' + heading + '</span><span class="t13 m ct">Edit</span></div><div class="rows gap4">';
+      rows.forEach(function (r) { h += '<div class="r"><span class="t13 c2">' + r[0] + '</span><span class="t15">' + r[1] + (r[3] ? ' <span class="t13 c3">' + r[3] + '</span>' : '') + (r[2] && st.edited ? '<span class="ed">Edited</span>' : '') + '</span></div>'; });
+      h += '</div>' + (st.escalating ? '' : '<div class="t11 m c2" style="min-height:calc(var(--u)*44);display:flex;align-items:center">Keep it compact</div>') + '</div>';
+      return h;
+    }
+    var g = '<div class="gap24"' + tg('ObservationGrid', 'textSM heading · textXS label · textSM value') + '><div style="display:flex;justify-content:space-between"><span class="t13 m c2">' + heading + '</span><span class="t13 m ct">Edit</span></div><div class="og gap8">';
+    rows.forEach(function (r) { g += '<div class="cl"><span class="t11 c3 trk up">' + r[0] + '</span><span class="t13 m">' + r[1] + (r[3] ? ' · ' + r[3] : '') + (r[2] && st.edited ? '<span class="ed">Edited</span>' : '') + '</span></div>'; });
+    g += '</div>' + (st.escalating ? '' : '<div class="t11 m c2 gap8">Keep it compact</div>') + '</div>';
+    return g;
+  }
+  function rerun(col) {
+    return '<div class="t13 m ct' + (col === 'pass' ? ' flat' : '') + '" style="min-height:calc(var(--u)*44);display:flex;align-items:center"' + tg('Re-run analysis · TouchableOpacity', 'textSM · colorAccentInk · minHeight 44') + '>Re-run analysis</div>';
+  }
+  function footer(col) {
+    if (col === 'pass') return '';
+    var d = col === 'today';
+    return '<div class="foot"' + tg('Footer', 'space2 · space3 · colorBorder') + '><div class="btn t15' + (d ? '' : ' pb') + '"' + tg(d ? 'Edit · hand-built TouchableOpacity' : 'PrimaryButton', d ? 'radiusSmall · paddingVertical 14 literal' : 'radiusMedium · space2', d) + '>Edit</div><div class="rm t15' + (d ? '' : ' pb') + '"' + tg(d ? 'Remove · hand-built TouchableOpacity' : 'PrimaryButton destructive', d ? 'colorDestructive · hitSlop 8' : 'colorDestructive · 44pt', d) + '>Remove</div></div>';
+  }
+  function removeRow(col, st) {
+    if (col !== 'pass') return '';
+    return '<div class="rmrow t15"' + tg('Remove row (P1)', 'colorDestructive · 44pt · hairline') + '>Remove this ' + (st.kind === 'stool' ? 'stool' : 'vomit') + '</div>';
+  }
+  function notes(col, st) {
+    if (!st.notes) return '';
+    var wrap = col === 'pass' ? ' flat' : '';
+    return '<div class="gap24' + wrap + '"' + tg('Notes section', 'textXS label · textMD body') + '><div class="t11 m c2 trk">NOTES</div><div class="t15 lh22 gap8">' + st.notes + '</div></div>';
+  }
+
+  // the read area, per state
+  function readArea(col, st) {
+    var p = st.pet || PET;
+    switch (st.read) {
+      case 'pending':
+        if (col === 'pass') return '<div class="pc"' + tg('Pending on HomeCard surface', 'Tick 3×16 in gutter · textMD') + '><span class="rl tk" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t15 c2">' + PENDING + '</div></div>';
+        return secLabel(col) + '<div class="pend gap8"' + tg('IncidentReadPending', 'Tick · radiusSmall dashed · minHeight 48') + '><span class="tick" aria-hidden="true"></span><span class="t15 c2">' + PENDING + '</span></div>';
+      case 'call_now': case 'call_today': case 'worth': case 'logged': case 'nes':
+        return secLabel(col) + card(col, READS[st.read]);
+      case 'unreached':
+        if (col === 'pass') return '<div class="pc muted"' + tg('Unread frame (D-820, new copy)', 'RecordUnreadStatus family · dashed') + '><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 c2">The photo wasn\'t read</div><div class="t15 lh22">No signal, so this photo couldn\'t be sent for a read yet. It\'s saved. Try again once you have signal.</div><div class="t15 lh22">' + VET_LINE(p) + '</div><div class="pfoot"><span></span><span class="lk t13 m ct">Try again</span></div></div>';
+        return secLabel(col) + '<div class="rc gap8"' + tg('Neutral card · hand-built View', 'colorSurfaceSubtle · radiusMedium', col === 'today') + '><div class="bd"><div class="t15 lh22">' + NOT_ENOUGH_LINE + '</div><div class="t13 m ct">Try analysis</div></div></div><div class="t11 c3 gap8">' + DISCLAIMER + '</div>';
+      case 'failed':
+        var FAILED = "Couldn't finish reading this one.";
+        if (col === 'pass') return '<div class="pc muted"' + tg('Failed frame on HomeCard surface', 'dashed · PrimaryButton secondary') + '><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t15 lh22">' + FAILED + '</div><div class="t15 lh22">' + VET_LINE(p) + '</div><div class="btn pb t15" style="background:#FFFFFF;color:#0A0A0A;border:1px solid #EAEAEA">Try again</div></div>';
+        return secLabel(col) + '<div class="rc gap8"' + tg('Failed box · hand-built View', 'colorSurfaceSubtle · radiusMedium', col === 'today') + '><div class="bd"><div class="t15 lh22">' + FAILED + '</div><div class="btn sm t13' + (col === 'today' ? '' : ' pb') + '"' + tg(col === 'today' ? 'Try again · hand-built TouchableOpacity' : 'PrimaryButton', col === 'today' ? 'radiusSmall · marginTop 4 literal' : 'radiusMedium · space2', col === 'today') + '>Try again</div></div></div>';
+      case 'off':
+        var offBody = p + '\'s photo is saved but wasn\'t read. If you turn AI reading on, you can send this photo to Claude, an AI, for a read.';
+        if (col === 'pass') return '<div class="pc muted"' + tg('RecordUnreadStatus on HomeCard surface', 'dashed · painted on the first frame (D-823)') + '><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t17 sb6 c2">AI reading is off</div><div class="t15 lh22">' + offBody + '</div><div class="t15 lh22">' + VET_LINE(p) + '</div><div class="pfoot"><span></span><span class="lk t13 m ct">Turn on AI reading</span></div></div>';
+        return secLabel(col) + '<div class="rc gap8"' + tg('RecordUnreadStatus', 'colorSurfaceSubtle · radiusMedium') + '><div class="bd"><div class="t15 m">AI reading is off</div><div class="t15 lh22">' + offBody + '</div><div class="t15 lh22">' + VET_LINE(p) + '</div><div class="t13 m ct">Turn on AI reading</div></div></div>';
+      case 'cap':
+        var cap = "Today's photo reads are used up, so this read will run tomorrow. Everything you logged is saved. If " + p + " keeps vomiting or seems off, don't wait for the read — check in with your vet.";
+        if (col === 'pass') return '<div class="pc muted"' + tg('Cap frame on HomeCard surface', 'dashed · copy verbatim') + '><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">AI READ</div><div class="t15 lh22">' + cap + '</div></div>';
+        return secLabel(col) + '<div class="rc gap8"' + tg('Cap box · hand-built View', 'colorSurfaceSubtle · radiusMedium', col === 'today') + '><div class="bd"><div class="t15 lh22">' + cap + '</div></div></div>';
+      default: return '';
+    }
+  }
+
+  function phone(col, st, opts) {
+    opts = opts || {};
+    var cls = 'ph vp' + (col === 'pass' ? ' pass-ground' : '') + (opts.w320 ? ' w320' : '') + (opts.big ? ' big' : '');
+    var title = st.kind === 'stool' ? 'Stool' : 'Vomit';
+    if (st.loading) {
+      return '<div class="' + cls + '">' + statusBar() + '<div class="scr"' + tg('EventSilhouette', 'colorChartEmpty · still under Reduce Motion') + '><div class="sil" style="height:calc(var(--u)*320);border-radius:0"></div><div style="padding:calc(var(--u)*24);display:flex;flex-direction:column;gap:calc(var(--u)*10)"><div class="sil" style="width:22%;height:calc(var(--u)*10)"></div><div class="sil" style="width:70%;height:calc(var(--u)*26)"></div><div class="sil" style="width:40%;height:calc(var(--u)*12)"></div><div class="sil" style="height:calc(var(--u)*120);margin-top:calc(var(--u)*16);border-radius:calc(var(--u)*16)"></div></div></div><div class="homeind"><i></i></div></div>';
+    }
+    var body = '<div class="body' + (col === 'pass' ? ' pass' : '') + '">' + record(col, st) +
+      (col === 'pass' && st.read ? '<div class="gap24"></div>' : '') + readArea(col, st) +
+      (st.calls ? callAnswers(col) : '') + obs(col, st) + (st.obs && !st.folded ? rerun(col) : '') + notes(col, st) + removeRow(col, st) + '</div>';
+    var overlay = '';
+    if (st.completion) {
+      var bottom = col === 'pass' ? 'calc(var(--u)*50)' : 'calc(var(--u)*50)';
+      overlay = '<div class="scrim"></div><div class="ncard" style="bottom:' + bottom + '"' + tg('NamedCompletionCard', 'COMPLETION_GROUND colorSurface · insets.bottom + space2') + '><span class="t15 m">Vomit · 7:42 AM</span><span class="t13 c2">Saved to Biscuit\'s record</span><div class="acts"><span class="t15 ct">Change time</span><span class="t15 ct">Undo</span></div></div>';
+    }
+    return '<div class="' + cls + '">' + statusBar() + header(col, title) + '<div class="scr">' + hero(col, st) + body + '</div>' + footer(col) + '<div class="homeind"><i></i></div>' + overlay + '</div>';
+  }
+
+  // ── the states ──
+  var STATES = [
+    { id: 's01', n: '01', title: 'The arrival: the read is on its way', why: 'Save routes a photographed vomit to its record (D1). The tick breathes while the server reads. §16 draws the arrival beat by beat.',
+      st: { photo: true, read: 'pending', obs: null },
+      caps: ['Pending box: a dashed outline with the tick. "AI READ" heading above it.', 'The same, with the section label on <code>SectionLabel</code>. No visible change.', 'The tick stands in the card\'s gutter, where the rail will grow (P3, P4). The ground is Home\'s #FAFAFA.'],
+      chen: 'Nothing is claimed while pending in any column. "Reading the photo…" names real work, never a result.' },
+    { id: 's02', n: '02', title: 'Call your vet now: three vomits since 1 AM', why: 'A new-rule call now (EN-4\'s count, Engines v3). The filled rose card, the action, what to tell the vet, then the read. The facts never fold under a call (§5.3a).',
+      st: { photo: true, read: 'call_now', obs: 'repeat', escalating: true, calls: true },
+      caps: ['Today. The action line sits at the fold; the footer takes the bottom of the screen.', 'Faithful: Edit and Remove on <code>PrimaryButton</code>. The only visible change is the Edit button\'s corner (F1).', 'Design pass: the verdict is the card\'s headline (P5), the footer is gone (P1), so the whole ask clears the fold. Fill unchanged.'],
+      chen: 'Read order and words identical across all three. Call now keeps its fill, so it is never mistaken for call today\'s outline. The headline makes the ask bigger, never smaller: a LOUD change, still routed through review (P5).' },
+    { id: 's03', n: '03', title: 'Call your vet today: blood in the photo', why: 'A visual flag (blood) maps worth_a_call to call today. Rose outline on the plain surface.',
+      st: { photo: true, read: 'call_today', obs: 'blood', escalating: true, calls: true, heroCls: 'blood' },
+      caps: ['Today. "What to tell them" names the blood; the four facts sit open below.', 'Faithful: no change to the card.', 'Design pass: the outline stays the tier\'s mark; the rail moves into the gutter so the verdict starts on the record\'s text edge (P4).'],
+      chen: 'Outline against fill still tells the two calls apart without colour alone (GAP-32). The blood row is never folded (§5.3a) and is the third fact in every column.' },
+    { id: 's04', n: '04', title: 'Worth a call: a read under the earlier rule', why: 'An older record keeps the shipped words and the filled card; the rule note says which rule read it.',
+      st: { photo: true, read: 'worth', obs: 'foreign', escalating: true, calls: true },
+      caps: ['Today. No action line: an earlier-rule read keeps today\'s card.', 'Faithful: no change.', 'Design pass: same words, same fill, the rule note stays inside the card.'],
+      chen: 'The Worth a call path is unchanged: the same verdict, no new action line invented for an old read, the call answers below it.' },
+    { id: 's05', n: '05', title: 'Keep an eye out: an unremarkable vomit', why: 'A finished read with no flag. The watch-for list says what would turn this into a call.',
+      st: { photo: true, read: 'logged', obs: 'plain', notes: 'After breakfast, ate fast.' },
+      caps: ['Today. Grey card, solid hairline.', 'Faithful: no change to the card.', 'Design pass: the calm read moves onto Home\'s soft-shadow surface (P3); the observations become hairline rows (P7).'],
+      chen: 'No reassurance added or implied. "Keep an eye out" stays a forward instruction with its watch-for list; the soft card is the same surface Home uses for a building finding, never a green or a check.' },
+    { id: 's06', n: '06', title: 'Not enough to say yet: the photo was unclear', why: 'The read finished and could not see enough. Muted tone, dashed edge.',
+      st: { photo: true, read: 'nes', obs: null, heroCls: 'dark' },
+      caps: ['Today. Dashed grey card.', 'Faithful: no change.', 'Design pass: the dashed edge stays, because it is what tells "not settled" from a finished calm read without relying on the words alone (P3).'],
+      chen: 'Not-enough is the floor, never reassurance, and it keeps a look of its own in every column.' },
+    { id: 's07', n: '07', title: 'The read never reached the server (CUL-820)', why: 'No signal at log time. Today the section falls through to the no-row branch and says "Not enough to say about this one yet", which reads as a verdict on a photo nobody looked at.',
+      st: { photo: true, read: 'unreached', obs: null },
+      caps: ['Today: the defect. The words sound like a read.', 'Faithful: drawn as today, because the fix is a ruling (D-820), not a move onto parts.', 'Design pass: the consent frames\' "The photo wasn\'t read" shape, with the vet line every non-read carries and a Try again.'],
+      chen: 'The new frame cannot reassure: it says plainly that no read happened and carries the vet line. Its copy is new, so it goes through <code>nyx-voice</code> and the adversarial pass before build (D-820).' },
+    { id: 's07b', n: '07b', title: 'The read failed', why: 'The server was reached and the read did not finish. Shipped copy and a Try again.',
+      st: { photo: true, read: 'failed', obs: null },
+      caps: ['Today: a dark Try again button built by hand at 8pt corners.', 'Faithful: Try again on <code>PrimaryButton</code>.', 'Design pass: the dashed card every non-read shares, the shipped line, the vet line (D-820 extends to this frame), Try again as the secondary button.'],
+      chen: 'A failed read never stands beside a calm verdict (a stored call survives a failure and is drawn instead, <code>escalationSurvivesFailure</code>). The vet line is the LOUD addition here.' },
+    { id: 's08', n: '08', title: 'AI reading is off (CUL-823)', why: 'The account said no to AI reads. Since CUL-1835 the record shows the off frame; CUL-823 says a pending tick flashes before it on a routed arrival.',
+      st: { photo: true, read: 'off', obs: null }, flash: true,
+      caps: ['Today: the off frame, preceded by the tick for a moment (filed 2026-09-05; needs a device check on the current code).', 'Faithful: the same, on <code>SectionLabel</code>.', 'Design pass: the consent answer is known on the device, so the off frame paints on the first frame (D-823).'],
+      chen: 'The vet line rides the off frame in every column. A photo that was not read never looks like one that was checked.' },
+    { id: 's09', n: '09', title: 'Today\'s photo reads are used up', why: 'The daily cap. Calm copy, no retry, no Premium mention (Pets > $, monetization §7.3).',
+      st: { photo: true, read: 'cap', obs: null },
+      caps: ['Today. A grey box built by hand.', 'Faithful: on the shared card; no visible change.', 'Design pass: the copy verbatim on the dashed card, like every other non-read.'],
+      chen: 'The cap copy keeps its "don\'t wait for the read" line in every column.' },
+    { id: 's10', n: '10', title: 'The observations folded (CUL-828)', why: 'The owner kept it compact. When the only finding is an absence, today\'s strip prints a value with nothing saying what it is about, and an owner\'s edit loses its marker.',
+      st: { photo: true, read: 'nes', obs: 'absence', folded: true, edited: true },
+      caps: ['Today: "None visible · 1 finding". None visible what?', 'Faithful: drawn as today (the fix is D-828).', 'Design pass: "Blood: none visible · 1 finding · 1 edited". The label rides an absence; the count names the edit.'],
+      chen: 'An absence keeps its referent and stays a fact about this frame, never a wellness claim. A call never folds, so this strip only ever sits under a quiet or not-enough read.' },
+    { id: 's11', n: '11', title: 'The completion card over the record (CUL-824)', why: 'For 5 seconds after Save the named card sits at the safe-area inset over the record. Today it covers most of the Edit / Remove footer.',
+      st: { photo: true, read: 'pending', obs: null, completion: true },
+      caps: ['Today: the card\'s lower half sits over the footer; Remove is hidden behind it and Edit shows through the scrim.', 'Faithful: the same overlap.', 'Design pass: with no footer (P1) the card sits over the scroll and covers nothing you can tap. Undo is the one way back for those 5 seconds.'],
+      chen: 'Not clinical. Undo stays the safer sibling of Remove in every column.' },
+    { id: 's12', n: '12', title: 'A stool record', why: 'The stool twin: the same card, the stool fields, the Bristol type beside consistency.',
+      st: { photo: true, kind: 'stool', read: 'logged', obs: 'stool', heroCls: 'stool' },
+      caps: ['Today.', 'Faithful: no visible change.', 'Design pass: the Bristol type sits beside the value on its row.'],
+      chen: 'Mucus present stays a plain row; the read above decides the tone, never the row. The stool watch-for words are the vomit list\'s shape here as a fixture; the build reads the stool list.' },
+    { id: 's13', n: '13', title: 'No photo: the empty record', why: 'A photoless vomit takes the completion path, not the route, so the owner reaches this from History. No read section unless a photoless check made a call.',
+      st: { photo: false, read: null, obs: null, notes: 'Found on the rug, not sure when.' },
+      caps: ['Today: a 320pt grey hero that says Add photo.', 'Faithful: the hand-typed 15 becomes <code>textMD</code>; no visible change.', 'Design pass: a shorter dashed tile (P10) puts the record and the notes above the fold.'],
+      chen: 'The hint still says what a photo is for. A photoless call, when the check makes one, leads above the tile in every column.' },
+    { id: 's14', n: '14', title: 'Loading the record', why: 'The screen\'s silhouette while the event row is read from the device.',
+      st: { loading: true },
+      caps: ['Today: <code>EventSilhouette</code>.', 'Faithful: unchanged.', 'Design pass: unchanged. The silhouette already follows the loader rule.'],
+      chen: 'Nothing to read yet, nothing claimed.' }
+  ];
+
+  var main = document.getElementById('states');
+  var COLS = [['today', 'Today'], ['faith', 'Faithful'], ['pass', 'Design pass']];
+  STATES.forEach(function (S) {
+    var h = '<section class="state" id="' + S.id + '"><div class="sec-head"><span class="sec-id">§' + S.n + '</span><h2>' + S.title + '</h2></div><p class="why">' + S.why + '</p><div class="frames">';
+    COLS.forEach(function (c, i) {
+      var cls = S.st.kind === 'stool' ? 'stool' : '';
+      h += '<div class="slot"><span class="tag ' + c[0] + '">' + c[1] + '</span>' + phone(c[0], S.st) +
+        (S.flash && i < 2 ? '<div class="flash"><i>0 ms</i> tick breathing → <i>~300 ms</i> off frame (per CUL-823)</div>' : '') +
+        '<p class="cap"><b>' + c[1] + '</b>' + S.caps[i] + '</p></div>';
+    });
+    h += '</div><p class="chen"><b>Dr. Chen:</b> ' + S.chen + '</p></section>';
+    main.insertAdjacentHTML('beforeend', h);
+  });
+
+  // §15: stress frames
+  var callToday = { photo: true, read: 'call_today', obs: 'blood', escalating: true, calls: true, heroCls: 'blood' };
+  var stress = '<section class="state" id="s15"><div class="sec-head"><span class="sec-id">§15</span><h2>Stress: 320pt, largest text, two pets</h2></div><p class="why">The call today record from §03 at its worst. 320pt is an iPhone SE width; largest text is 1.45× (the house setting for "largest" since the Home round).</p>';
+  stress += '<div class="frames">' +
+    '<div class="slot"><span class="tag today">Today · 320pt</span>' + phone('today', callToday, { w320: true }) + '<p class="cap"><b>Today at 320pt</b>The footer is the same height on a shorter screen; the action line drops below the fold.</p></div>' +
+    '<div class="slot"><span class="tag faith">Faithful · 320pt</span>' + phone('faith', callToday, { w320: true }) + '<p class="cap"><b>Faithful at 320pt</b>As today.</p></div>' +
+    '<div class="slot"><span class="tag pass">Design pass · 320pt</span>' + phone('pass', callToday, { w320: true }) + '<p class="cap"><b>Design pass at 320pt</b>The call answers wrap to two rows without sharing a hit area (C-5: 8pt gap, no slop).</p></div>' +
+    '<div class="slot"><span class="tag today">Today · largest text</span>' + phone('today', callToday, { big: true }) + '<p class="cap"><b>Today, largest text</b>The footer grows with the type to about 180pt; under the hero the verdict is the only line of the card on screen.</p></div>' +
+    '<div class="slot"><span class="tag faith">Faithful · largest text</span>' + phone('faith', callToday, { big: true }) + '<p class="cap"><b>Faithful, largest text</b>As today.</p></div>' +
+    '<div class="slot"><span class="tag pass">Design pass · largest text</span>' + phone('pass', callToday, { big: true }) + '<p class="cap"><b>Design pass, largest text</b>The verdict and the action line are on screen under the hero.</p></div>' +
+    '</div>';
+  var mochi = { photo: true, read: 'nes', obs: null, pet: 'Mochi', heroCls: 'dark' };
+  stress += '<h3 style="margin-top:28px">Two pets: Mochi\'s record opened from History while Biscuit is the active pet</h3><div class="frames">' +
+    '<div class="slot"><span class="tag today">Today</span>' + phone('today', mochi).replace(/Biscuit/g, 'Mochi') + '<p class="cap"><b>Today</b>"Mochi\'s record" comes from the record\'s pet (<code>resolveRecordPetName</code>), never the active one.</p></div>' +
+    '<div class="slot"><span class="tag faith">Faithful</span>' + phone('faith', mochi).replace(/Biscuit/g, 'Mochi') + '<p class="cap"><b>Faithful</b>Unchanged.</p></div>' +
+    '<div class="slot"><span class="tag pass">Design pass</span>' + phone('pass', mochi).replace(/Biscuit/g, 'Mochi') + '<p class="cap"><b>Design pass</b>The pet stays in the record line. The header form (<em>Mochi\'s vomit</em>) is CUL-660\'s open brief, not this round\'s.</p></div>' +
+    '</div><p class="chen"><b>Dr. Chen:</b> every name on the record, the watch-for list included, is the record\'s pet. A confidently wrong name on a vomit\'s read is the expensive direction; no column introduces one.</p></section>';
+  main.insertAdjacentHTML('beforeend', stress);
+
+  // option box: the week lane (P9), drawn and recommended against
+  var lane = '<section class="state" id="s15b"><div class="sec-head"><span class="sec-id">§15b · P9</span><h2>Option: this week\'s vomits on the record</h2></div><p class="why">Principle 8 asks every number to own a shape. The obvious shape here is a seven-day lane with one dot per logged vomit. Drawn so you can rule it; recommended against.</p><div class="frames"><div class="optbox"><span class="tag opt">Option, drawn for the decision, not the current proposal</span>' +
+    '<div class="ph" style="height:auto"><div style="padding:calc(var(--u)*16);background:#FAFAFA"><div class="pc"><span class="rl" aria-hidden="true"></span><div class="t11 m c3 trk">THIS WEEK</div><div style="position:relative;height:calc(var(--u)*18);background:#FAFAFA;border:1px solid #EAEAEA;border-radius:3px;margin-top:calc(var(--u)*6)"><span style="position:absolute;left:92%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#F43F5E"></span></div><div class="t11 c3" style="display:flex;justify-content:space-between"><span>Fri</span><span>Thu</span></div><div class="t13 c2">1 vomit logged in 7 days</div></div></div></div>' +
+    '<p class="cap"><b>Why not</b>A lone dot on an empty week reads as "an isolated incident", which is a reassurance by absence the record cannot back: the owner may not have logged the others. Dr. Chen rejects it; the counts the floor needs are already in "What to tell them" on a call.</p></div></div></section>';
+  main.insertAdjacentHTML('beforeend', lane);
+
+  // §18 QA matrix
+  var QA = [
+    ['Empty (no photo, no read)', '§13', 'Draws the 320pt empty hero'],
+    ['Loading', '§14', 'Silhouette; no read claimed'],
+    ['Pending, then lands', '§01, §16', 'Arrival constants verbatim'],
+    ['Failed or offline', '§07, §07b', 'Offline is the CUL-820 defect; failed keeps its shipped line'],
+    ['Consent off', '§08', 'Flash per CUL-823 needs a device check'],
+    ['Daily cap', '§09', 'Copy verbatim'],
+    ['320pt', '§15', ''],
+    ['Largest text', '§15', '1.45×'],
+    ['Two pets', '§15', 'Record\'s pet, never active'],
+    ['VoiceOver order', '§17', 'P1 puts Edit before the read'],
+    ['A call record (now, today, earlier rule)', '§02, §03, §04', 'Facts never fold'],
+    ['An unremarkable record', '§05, §12', 'Keep an eye out with its watch-for list'],
+    ['Not enough to say', '§06', 'Dashed edge kept'],
+    ['Folded observations', '§10', 'CUL-828'],
+    ['Completion card over the record', '§11', 'CUL-824']
+  ];
+  document.getElementById('qa-body').innerHTML = QA.map(function (r) {
+    return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td><td>' + r[2] + '</td></tr>';
+  }).join('');
+
+  // §19 ledger
+  function brief(id, kind, title, deciding, options, consequence, extra) {
+    return '<div class="brief"><div class="bid">' + id + '<small>' + kind + '</small></div><div><p><strong>' + title + '</strong></p><p><strong>Deciding:</strong> ' + deciding + '</p>' +
+      options.map(function (o) { return '<p>' + o + '</p>'; }).join('') + '<p><strong>Consequence:</strong> ' + consequence + '</p>' + (extra ? '<p>' + extra + '</p>' : '') + '</div></div>';
+  }
+  var R = '<span class="rec">Recommended:</span> ';
+  var ADV = ' <span class="gate">Needs adversarial review before build.</span>';
+  document.getElementById('ledger-f').innerHTML = [
+    brief('F1', 'Team call', 'Edit and Remove move onto PrimaryButton', 'the footer\'s two hand-built buttons become <code>PrimaryButton</code> and its destructive variant. Edit\'s corner goes from 8 to 16pt and its padding from 14 to 16pt; Remove gains a real 44pt box instead of an 8pt slop.',
+      [R + 'yes. It is the shared part\'s look and the audit\'s first finding on this screen. Frames: every Today against Faithful pair.'], 'applies whether or not you take P1. If you take P1, Edit becomes a header action and only Remove uses the destructive variant.'),
+    brief('F2', 'Team call', 'Section labels on SectionLabel, spinners on Tick', 'the "AI READ", "NOTES" and observation headings render through <code>SectionLabel</code>; the two <code>WhorlSpinner</code>s left on this screen (Re-run in progress, Try again in progress) become the <code>Tick</code> and <code>PrimaryButton</code>\'s loading state, per the loader rule (WhorlSpinner is retiring, CUL-1593).',
+      [R + 'yes. No visible change except the re-run wait, which now breathes like the pending tick.'], 'none beyond CUL-1912\'s first commit.'),
+    brief('F3', 'Team call', 'Hand-typed values onto the scale', 'the literal 15, the marginTops of 4 and 2, the gap of 6 and the disclaimer\'s line height of 15 move onto tokens once CUL-1897 (D3) adds 6 and 12 to the scale.',
+      [R + 'yes, on whatever D3 rules. No visible change.'], 'CUL-1912 waits on PR-03b anyway; nothing new.')
+  ].join('');
+  document.getElementById('ledger-p').innerHTML = [
+    brief('P1', 'PM', 'The footer goes: Edit to the header, Remove to the foot of the record', 'whether the screen keeps a pinned footer.',
+      ['(A) Keep the footer, on F1\'s parts.', '<strong>(B) Edit becomes the header\'s trailing action; Remove becomes the last row of the scroll, "Remove this vomit".</strong> ' + R + 'it gives back about 132pt of every screen (about 180pt at largest text), which puts a call\'s action line above the fold on a 390pt phone, and it removes the overlap in CUL-824. Remove stays one confirm away and further from the thumb, which suits a destructive action.'],
+      'unblocks D-824 (b). Cost: VoiceOver reaches Edit before the read (§17). Frames §02, §03, §11, §15.'),
+    brief('P2', 'PM', 'A tighter record block', 'how the date, time and owner line are set.',
+      ['(A) As shipped: type eyebrow, a 28pt weekday date, time, then the owner line.', '<strong>(B) One 22pt line, "Thursday, Oct 23 · 7:42 AM", then "Vomit · witnessed · 12 min ago · Biscuit\'s record".</strong> ' + R + 'about 40pt back, and the time sits in the headline a vet asks for first. A found time still prints its window through <code>describeOccurredAt</code>.'],
+      'none on CUL-660, whose header form stays open. Frames: every design pass column.'),
+    brief('P3', 'PM', 'Quiet reads on Home\'s one card surface', 'the ground and surface the read sits on when it is not a call.',
+      ['(A) As shipped: a grey filled box with a hairline on a white screen.', '<strong>(B) The screen below the hero takes Home\'s #FAFAFA ground; Keep an eye out sits on the soft-shadow card (G1 A); Not enough, the unread frames and the cap keep a dashed edge; calls keep their fill and outline exactly.</strong> ' + R + 'the record speaks Home\'s language, and every tier keeps a look of its own that does not rest on colour alone.'],
+      'CUL-1912 imports Home\'s card surface from <code>components/designV2/home/</code> (PR-00). Frames §01, §05, §06, §07 to §10.' + ADV),
+    brief('P4', 'PM', 'The rail in the gutter, text on one edge', 'where the 3pt rail stands.',
+      ['(A) As shipped: flush against the card\'s inner left edge, so the card\'s text starts 19pt right of the record\'s.', '<strong>(B) The card runs 8pt from the screen edge, the rail stands in its gutter, and the verdict starts on the record\'s 24pt text edge (Home\'s R-2).</strong> ' + R + 'one left edge for the whole record. The arrival keeps every constant; only the tick\'s position moves with the rail.'],
+      'one filmed sitting of the arrival before CUL-1912 merges (§16). Frames: every design pass read.' + ADV),
+    brief('P5', 'PM', 'The verdict as the card\'s headline', 'the verdict label\'s size.',
+      ['(A) As shipped: 11pt, tracked, the same register as a section label.', '<strong>(B) 17pt semibold, every tier the same size, the "AI READ" eyebrow above it inside the card.</strong> ' + R + 'the one sentence the owner must act on becomes the biggest words under the photo. G4 holds: no tier is drawn larger or harder than another. A LOUD change.'],
+      'the shipped words are untouched. Frames: every design pass read.' + ADV),
+    brief('P6', 'PM', 'The disclaimer and Hide share the card\'s foot', 'whether Hide is a line of its own.',
+      ['(A) As shipped: the disclaimer, then "Hide this note" on its own line.', '<strong>(B) One foot row: the disclaimer on the left, "Hide" on the right at 44pt.</strong> ' + R + 'one line back, and Home\'s Signal already uses this foot. The visible word becomes "Hide" and its accessible name follows it, never a label that differs from the text (C-7).'],
+      'none. Frames: every design pass read.' + ADV),
+    brief('P7', 'PM', 'The observations as hairline rows', 'the two-column grid against label and value rows.',
+      ['(A) As shipped: a two-column grid, uppercase 11pt labels over 13pt values.', '<strong>(B) One row per finding, the label left at 13pt and the value right at 15pt, under hairlines; Edit and "Keep it compact" unchanged.</strong> ' + R + 'the values a vet reads become the larger type, and rows survive 320pt and largest text without the grid\'s ragged wrap.'],
+      'the row order stays the builders\' order; escalation facts still never fold. Frames §02, §03, §05, §12.'),
+    brief('P8', 'PM', 'The call answers stay where they are', 'nothing; recorded so silence is not read as a change.',
+      ['"I\'ve called · Not yet" stays below the read and never inside it (CUL-1419). The design pass only aligns it to the record\'s edge.'], 'none.'),
+    brief('P9', 'PM', 'No week lane on the record', 'whether the record draws this week\'s vomits as a lane (§15b).',
+      ['(A) Draw the lane.', '<strong>(B) No lane.</strong> ' + R + 'a lone dot reads as "isolated", a reassurance by absence the record cannot back. The counts that matter already ride "What to tell them" on a call.'],
+      'forecloses a Principle 8 shape on this screen; the Trends surface keeps that job.'),
+    brief('P10', 'PM', 'A shorter add-photo tile', 'the empty hero on a record with no photo.',
+      ['(A) As shipped: a 320pt grey hero.', '<strong>(B) A dashed tile of about 120pt inside the gutter, same words.</strong> ' + R + 'D3 kept the hero for a photo an owner shows a vet; an empty one has nothing to show, and the record and notes come above the fold.'],
+      'none. Frame §13.'),
+    brief('P11', 'PM', 'Home\'s ground under the record', 'folded into P3; listed so you can rule it apart.',
+      ['<strong>The #FAFAFA ground below the hero.</strong> ' + R + 'it is what lets a soft-shadow card read at all. G6 holds: the record stays in daylight; the only dark ground is still the photo viewer.'], 'rides with P3.'),
+    brief('P12', 'PM', 'Links stay teal until the colour roles land', 'the colour of Edit, Re-run analysis, Try again and Turn on AI reading.',
+      ['<strong>Shipped teal ink in every column.</strong> ' + R + 'G4 (C) makes indigo the action colour, but CUL-1279 and CUL-1898 (D4) set the token; repainting one screen first is the inconsistency this milestone exists to remove.'], 'CUL-1912 takes the action token when PR-06 lands.')
+  ].join('');
+  document.getElementById('ledger-d').innerHTML = [
+    brief('D-820', 'PM · clinical copy', 'The read that never reached the server', 'what the record says when the photo could not be sent for a read, and whether Save still routes there.',
+      ['(A) As shipped: "Not enough to say about this one yet." + Try analysis.', '<strong>(B) The consent family\'s unread frame: "The photo wasn\'t read", "No signal, so this photo couldn\'t be sent for a read yet. It\'s saved. Try again once you have signal.", the vet line, Try again. Save keeps routing to the record.</strong> ' + R + 'it says what happened, it cannot be heard as a verdict, and the record is still the confirmation (D1). Not routing would hide a saved log behind a silent failure.'],
+      'adds one frame to <code>docs/nyx-incident-screen-requirements.md</code> §4 (a Tier 2 edit on ruling). Frame §07.' + ADV),
+    brief('D-823', 'PM', 'The off frame on the first frame', 'whether the record waits on the row before showing the consent answer.',
+      ['<strong>Paint the off frame from the device\'s consent answer on the first frame; never show the pending tick on an account that said no.</strong> ' + R + 'the answer is local, so the flash costs a moment of false work for nothing. Check the cap state the same way.'],
+      'needs a device check first: the flash was filed before CUL-1835 moved this state onto the consent frames. Frame §08.'),
+    brief('D-824', 'PM', 'The completion card over the footer', 'what the card covers for its 5 seconds.',
+      ['(a) It reads fine: close with the frame added.', '<strong>(b) With P1 there is no footer to cover.</strong> ' + R + 'it fixes the geometry rather than judging it. If you decline P1, the card lifts to clear the footer instead.'],
+      'resolved by P1 (B). Frame §11.'),
+    brief('D-828', 'PM', 'The folded strip keeps its labels', 'what the one-line strip prints.',
+      ['(A) As shipped: values only, so "None visible · 1 finding".', '<strong>(B) An absence value carries its label ("Blood: none visible"), and the count adds "1 edited" when the owner changed a value.</strong> ' + R + 'both residuals close for a few characters; the count stays pinned and the named values still yield first (§5.3a ④).'],
+      'one rule in <code>observationStrip.ts</code>. Frame §10.' + ADV)
+  ].join('');
+
+  // controls
+  function pair(onId, offId, fn) {
+    var on = document.getElementById(onId), off = document.getElementById(offId);
+    on.addEventListener('click', function () { on.setAttribute('aria-pressed', 'true'); off.setAttribute('aria-pressed', 'false'); fn(true); });
+    off.addEventListener('click', function () { off.setAttribute('aria-pressed', 'true'); on.setAttribute('aria-pressed', 'false'); fn(false); });
+  }
+  pair('b-parts-on', 'b-parts-off', function (v) { document.body.classList.toggle('parts', v); });
+  pair('b-full', 'b-vp', function (v) { document.querySelectorAll('.ph').forEach(function (p) { if (p.closest('#s15b')) return; p.classList.toggle('vp', !v); }); });
+})();
+</script>
