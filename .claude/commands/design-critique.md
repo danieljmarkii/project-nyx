@@ -4,7 +4,7 @@ description: Run the house design critique on one surface (a mock round, a spec,
 
 # /design-critique: the house critique, on any surface
 
-The method behind CUL-1060, CUL-1076 and CUL-1108, packaged (CUL-1176). CUL-1108 ran it at full depth on the History v2 round-3 mock: nine isolated lenses, a verifier each, a synthesis, a completeness critic, six follow-ups, a final synthesis (27 agents). 118 findings confirmed, 12 plausible, 13 mock artifacts, 2 refuted; eleven decision briefs for the PM and eleven defects filed against shipped code, all before a line of the feature was built.
+The method behind CUL-1060, CUL-1076 and CUL-1108, packaged (CUL-1176). CUL-1108's full run (27 agents, 118 confirmed findings, eleven briefs, all before the build) is `docs/history-v2-round3-critique-2026-09.md`.
 
 What makes it work, and what this command locks in:
 
@@ -34,7 +34,7 @@ Not for a code diff (`/code-review`, `code-reviewer`), a statistics check (`adve
 | Agents | lenses + 2 (six for four lenses) | 2 × lenses + 3 to 9 (CUL-1108: 27) |
 | Use for | a small surface, a second opinion, a finish pass | a mock round before requirements, anything the PM will rule on |
 
-Default to full for a mock round or a spec headed to build, light otherwise. Name the depth and why in the claim comment: a full run is a deliberate spend. A workflow runs at most CPUs − 2 agents at once (two on a 4-core cloud container), so the lenses read in waves; plan for the wall clock as well as the tokens (CUL-1176's light dry run, four lenses, took about 85 minutes).
+Default to full for a mock round or a spec headed to build, light otherwise. Name the depth and why in the claim comment: a full run is a deliberate spend. A workflow runs at most CPUs − 2 agents at once (two on a 4-core cloud container), so the lenses read in waves; plan for the wall clock as well as the tokens (a light run of four lenses: about 85 minutes).
 
 ## Steps
 
@@ -56,6 +56,8 @@ Default to full for a mock round or a spec headed to build, light otherwise. Nam
    - `drchen` with `agentType: 'vet-report-cold-read'` on a rendered vet report (hand it renders only; its value is not knowing the code);
    - `jordan` or `sam` with `agentType: 'pm-feature-review'` on a shipped feature's flows;
    - `data` with `agentType: 'adversarial-reviewer'` where the surface states a clinical or statistical claim.
+
+   On a build ready round (`.claude/rules/docs.md`, CUL-1894) also seat `contract`: it checks every frame's `data-kit` tags, that no colour is typed, and the state set.
 
 4. **Run the workflow.** It is the orchestration; this file is the method.
 
