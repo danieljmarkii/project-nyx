@@ -1593,8 +1593,9 @@ const styles = StyleSheet.create({
   // ── Combo context banner (B-156 PR B2b) ──
   // The band above the medication picker naming the pet + food this dose is being
   // logged together with. It is context, not a good fact, so it sits on the kit's quiet
-  // band rather than the teal wash (F8; on QuietBand since CUL-2189). The band sits on the picker's own gutter (space2), so the two edges line up; its own
-  // gap is for a sentence and a link, so the label, title and food keep the tighter one.
+  // band rather than the teal wash (F8; on QuietBand since CUL-2189). It sits on the
+  // picker's own gutter (space2), so the two edges line up. QuietBand's gap is for a
+  // sentence and a link, so the label, title and food keep the tighter one.
   comboBanner: {
     gap: theme.space0_5,
     marginHorizontal: theme.space2,
