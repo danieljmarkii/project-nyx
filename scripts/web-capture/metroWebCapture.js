@@ -10,6 +10,8 @@ const WEB_STUBS = {
   'expo-secure-store': 'secureStore.ts',
   'expo-sqlite': 'sqlite.ts',
   'expo-router/entry': 'entry.ts',
+  // babel-preset-expo rewrites app imports from react-native to these per-export paths.
+  'react-native-web/dist/exports/findNodeHandle': 'findNodeHandle.ts',
   '@expo/ui/swift-ui': 'nativeViewsInert.ts',
   '@expo/ui/swift-ui/modifiers': 'nativeViewsInert.ts',
 };
@@ -23,6 +25,15 @@ module.exports = function applyWebCapture(config) {
   config.resolver.resolveRequest = (context, moduleName, platform) => {
     if (platform === 'web' && WEB_STUBS[moduleName]) {
       return { type: 'sourceFile', filePath: path.join(STUBS, WEB_STUBS[moduleName]) };
+    }
+    // react-native-web re-exports findNodeHandle from inside its own entry, so the swap
+    // keys on that relative import from that one file.
+    if (
+      platform === 'web' &&
+      moduleName === './exports/findNodeHandle' &&
+      /react-native-web[\\/]dist[\\/]index\.js$/.test(context.originModulePath)
+    ) {
+      return { type: 'sourceFile', filePath: path.join(STUBS, 'findNodeHandle.ts') };
     }
     return upstream
       ? upstream(context, moduleName, platform)

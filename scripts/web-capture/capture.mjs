@@ -23,6 +23,9 @@ if (!dist || !outDir) throw new Error('usage: capture.mjs <dist> <out-dir>');
 const NOW = Date.parse(process.env.CAPTURE_NOW ?? '2026-10-14T16:00:00Z');
 const HOST = 'https://fixture.nyx-capture.invalid';
 const tables = buildFixtureTables(NOW);
+// app_config flags, for capturing a build from before a rollout went GA
+// (e.g. CAPTURE_FLAGS='{"history_v2":true}'). Unset, the app reads its own defaults.
+tables.app_config = Object.entries(JSON.parse(process.env.CAPTURE_FLAGS ?? '{}')).map(([key, value]) => ({ key, value }));
 
 const ONLY = process.env.CAPTURE_ONLY?.split(',');
 
@@ -59,6 +62,9 @@ const SHOTS = [
   { name: 'history-pepper', pet: 'pepper', go: [tab('History')] },
   { name: 'incident-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page)] },
   { name: 'patterns-juniper', pet: 'juniper', go: [link(/^Patterns/)] },
+  // CUL-1282's path: a tap on an earlier day in History's week strip must bring the
+  // list to that day (Sunday the 11th, three cards down, past the 21-row long day).
+  { name: 'history-strip-tap-pepper', pet: 'pepper', go: [tab('History'), (page) => page.getByText('11', { exact: true }).first().click({ timeout: 8000 })] },
 ];
 
 // Each size the spike photographs. Text multipliers are RN's own iOS table
@@ -83,11 +89,14 @@ async function captureSize(browser, size, server, shots) {
   });
   await context.clock.setFixedTime(NOW);
   await context.addInitScript(
-    ({ key, session, scale }) => {
+    ({ key, session, scale, storage }) => {
       localStorage.setItem('securestore:' + key, JSON.stringify(session));
+      for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
       globalThis.__NYX_FONT_SCALE = scale;
     },
-    { key: 'sb-fixture-auth-token', session, scale: size.scale },
+    // CAPTURE_STORAGE seeds device-local state (AsyncStorage is localStorage on web), e.g.
+    // an older build's beta opt-ins: '{"culprit.betaOptIns.v1":"{\\"history_v2\\":true}"}'.
+    { key: 'sb-fixture-auth-token', session, scale: size.scale, storage: JSON.parse(process.env.CAPTURE_STORAGE ?? '{}') },
   );
   // Realtime would open a socket to the fixture host; there is nothing to say on it.
   await context.routeWebSocket(/fixture\.nyx-capture\.invalid/, (ws) => ws.close());
