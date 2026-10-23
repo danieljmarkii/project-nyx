@@ -1,0 +1,253 @@
+<title>Colour Walk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="build-ready">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* ============================================================
+     Colour Walk, ROUND 1 (CUL-1666, row 2 of CUL-1898's D4). The sites the colour
+     roles round (docs/culprit-colour-roles-mockups.html) did not draw.
+     Layout: the house mock page (paper, serif heads, phone frames in wrapping
+     before/after pairs). Page chrome follows the viewer's theme; the PHONE FRAMES
+     never do: every colour, size and radius inside a frame is a var(--token) from
+     mockups/theme.css, generated from constants/theme.ts, and each element names
+     its kit part and token in data-kit.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1; --tag: #3F35A0; --tag-wash: #ECEAF6;
+    --serif: "Newsreader", ui-serif, Charter, Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .roundtag { font-weight: 600; color: var(--tag); background: var(--tag-wash); border-radius: 999px; padding: 4px 11px; letter-spacing: 0.1em; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.1; margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(23px, 3vw, 29px); line-height: 1.15; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  p { margin: 0; }
+  .standfirst { font-size: 17px; color: var(--ink-2); max-width: 66ch; }
+  section { padding-top: 48px; display: flex; flex-direction: column; gap: 18px; }
+  .secno { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--ink-3); text-transform: uppercase; }
+  .box { border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 16px 20px; font-size: 14.5px; color: var(--ink-2); max-width: 84ch; }
+  .box b { color: var(--ink); }
+  .box ul, .box ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 5px; }
+  code { font-family: var(--mono); font-size: 12.5px; }
+  .site { display: flex; flex-direction: column; gap: 10px; }
+  .site > p { color: var(--ink-2); font-size: 14.5px; max-width: 76ch; }
+  .pair { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 8px; width: 262px; max-width: 100%; }
+  figcaption { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+  figcaption b { color: var(--ink); }
+  .ftag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; align-self: flex-start; color: var(--ink-2); background: var(--rule-soft); }
+  .ftag.cur { color: var(--tag); background: var(--tag-wash); }
+  .ftag.opt { background: transparent; border: 1px dashed var(--ink-3); }
+  .ratio { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .optbox { border: 1px dashed var(--ink-3); border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .optbox .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .react { display: grid; gap: 10px; max-width: 84ch; margin: 0; padding-left: 22px; }
+  .react b { color: var(--ink); }
+  .react li { color: var(--ink-2); font-size: 15px; }
+  .rec { color: var(--tag); font-weight: 600; }
+
+  /* Phone frames: tokens only. */
+  .phone { width: 262px; max-width: 100%; border-radius: 30px; border: 1px solid var(--colorBorderStrong); overflow: hidden; background: var(--colorNeutralLight); color: var(--colorTextPrimary); font-family: var(--sans); font-size: var(--textSM); line-height: 1.4; }
+  .status { height: 30px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-size: var(--textXS); font-weight: 600; }
+  .scr { padding: 6px var(--space2) 22px; display: flex; flex-direction: column; gap: 12px; min-height: 330px; }
+  .t-title { font-size: var(--textXL); font-weight: 600; }
+  .t-sec { color: var(--colorTextSecondary); font-size: var(--textSM); }
+  .t-ter { color: var(--colorTextTertiary); font-size: var(--textXS); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+  .card { background: var(--colorSurface); border-radius: var(--radiusLarge); border: 1px solid var(--colorBorder); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .grow { flex: 1; min-width: 0; }
+  .tile { border-radius: var(--radiusLarge); border: 1px solid var(--colorBorder); background: var(--colorSurface); padding: var(--space2); display: flex; align-items: center; gap: var(--space2); }
+  .avatar { width: 46px; height: 46px; border-radius: var(--radiusFull); display: flex; align-items: center; justify-content: center; flex: none; }
+  .dot { width: 11px; height: 11px; border-radius: var(--radiusFull); border: 2px solid var(--colorSurface); flex: none; }
+  .thread { width: 2px; align-self: stretch; background: var(--colorBorder); margin-left: 4px; }
+  .bar { display: flex; height: 12px; border-radius: var(--radiusFull); overflow: hidden; background: var(--colorChartEmpty); }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; vertical-align: -1px; margin-right: 5px; }
+  .ring { width: 72px; height: 72px; border-radius: var(--radiusFull); background: var(--colorSurface); display: flex; align-items: center; justify-content: center; align-self: center; margin-top: 30px; }
+  svg { display: block; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow"><span class="roundtag">Round 1 · build ready</span><span>CUL-1666 · D4 row 2 of 3</span><span>Design system</span></div>
+    <h1>The teal walk: the sites the roles round did not draw</h1>
+    <p class="standfirst">The colour roles round ruled what each colour does: indigo acts, teal states a good fact, rose flags a concern. The walk has already moved every site that round drew. These six it did not draw, so each is shown before and after, and one is a real choice.</p>
+  </header>
+
+  <section>
+    <div class="secno">§00 · Where this sits</div>
+    <div class="box">
+      <b>Already moved in this PR, as the roles round drew them</b> (no reaction needed):
+      <ul>
+        <li>The sign in, sign up and reset hero glyphs, and the onboarding "all set" check: the darker teal on their wash circle (3.01:1, was 2.08:1).</li>
+        <li>The chevrons on event detail, the editor and the Patterns drill-in, and every Switch track (ten): indigo (9.42:1, was 2.26:1).</li>
+        <li>The filter menu's chosen row and pill, the lone filter chip, the pet switcher's chosen row: the selected role, indigo on the lavender wash.</li>
+        <li>The Signal insight rail and the gap warning's rail: the darker teal at full strength (3.27:1, was 2.04:1). The safety rail keeps its rose exactly.</li>
+        <li>On dark grounds, unchanged and now pinned: the paywall checks (8.26:1), the recap trial strip (6.57:1), the night recap dots (8.09:1).</li>
+      </ul>
+    </div>
+    <div class="box">
+      <b>State set.</b> Every change on this page is a colour on a mark that already exists. None moves a box, so each frame is the same at 320pt and at the largest text size, with two pets, and in VoiceOver order; empty, loading and offline states draw none of these marks except where a frame says so. The payload is the PM's dog, Nyx.
+    </div>
+  </section>
+
+  <section>
+    <div class="secno">§01 · Six sites</div>
+    <h2>Before and after</h2>
+    <div id="sites" style="display:flex;flex-direction:column;gap:36px"></div>
+  </section>
+
+  <section>
+    <div class="secno">§02 · Not in this round</div>
+    <div class="box">
+      <ul>
+        <li><b>The trial ledger's "meals logged" cell</b> (a fill at 2.26:1): it waits on gate 11 of the medication round (CUL-1902), which rules contrast floors and shape marks for those cells.</li>
+        <li><b>The Ask answer's sparkline and the onboarding preview chart</b>: a trend line. The hue table left the trend line's colour to the chart standard, so it is filed there.</li>
+        <li><b>The Home insight card's rail</b>: its file belongs to another row in flight (PR-05); it moves to the same rail as the Signal once that row lands.</li>
+        <li><b>The rest of the action and selected class</b> (text links, choice chips in the log sheet, form fields): text sites, not glyphs, filed as their own walk.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="secno">§03 · Your reaction</div>
+    <h2>Six calls</h2>
+    <ol class="react">
+      <li><b>W1 · Add a food, Snap a new food, Add a medication:</b> the plus and camera glyphs (and the Foods label) move to indigo. <span class="rec">Recommended:</span> they are actions.</li>
+      <li><b>W2 · Choosing a pet type:</b> the chosen tile takes the selected role; the species glyph is indigo when chosen and grey when not, on a neutral circle. <span class="rec">Recommended:</span> it matches every other choice in the app.</li>
+      <li><b>W3 · The meal dot on Home's day spine:</b> the darker teal, as the Patterns drill-in already draws it. <span class="rec">Recommended.</span></li>
+      <li><b>W4 · A metric that rose for the good:</b> its arrow, figure and line take the teal ink. <span class="rec">Recommended:</span> the figure is text, and the bright teal was 2.26:1.</li>
+      <li><b>W5 · The meals share bar on Insights:</b> the meal segment takes the darker teal. <span class="rec">Recommended.</span></li>
+      <li><b>W6 · The check after any log:</b> the darker teal (A) or neutral ink (B). <span class="rec">Recommended: A</span>, because the check says the entry is written, a fact about the record, and it stays the colour owners already know. B is the choice if a teal check after a vomit log reads as "good".</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+// Each frame is built from one set of parts, so a before and its after differ only in the
+// token that paints each mark. Values are var(--token) names from mockups/theme.css.
+const v = (t) => `var(--${t})`;
+const ICON = {
+  plus: (c) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
+  camera: (c) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg>`,
+  dog: (c) => `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.2C10 3.9 8.9 2.9 7.5 3 4.7 3.3 3 8 4 10.5c.3.8 1.4 1.4 2.5 1"/><path d="M14 5.2c0-1.3 1.1-2.3 2.5-2.2 2.8.3 4.5 5 3.5 7.5-.3.8-1.4 1.4-2.5 1"/><path d="M8 14v.5M16 14v.5M11.3 17.5h1.4"/><path d="M4.4 11.5C4.2 12.9 4 14.4 4 16c0 3 3.6 5 8 5s8-2 8-5c0-1.6-.2-3.1-.4-4.5"/></svg>`,
+  cat: (c) => `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c.7 0 1.3.1 2 .2C15.6 3.6 18 2.9 19 3c.6 2.1 0 4.3-.6 5.3.4.8.6 1.8.6 2.7 0 4.4-3.1 8-7 8s-7-3.6-7-8c0-.9.2-1.9.6-2.7C5 7.3 4.4 5.1 5 3c1-.1 3.4.6 5 2.2.7-.1 1.3-.2 2-.2z"/><path d="M8 14v.5M16 14v.5M11.3 16.5h1.4"/></svg>`,
+  up: (c) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>`,
+  check: (c, s = 38, w = 3) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`,
+};
+const phone = (inner) => `<div class="phone" data-kit="device · colorNeutralLight"><div class="status"><span>9:41</span><span>●●●</span></div><div class="scr">${inner}</div></div>`;
+const fig = (tag, title, body, caption, ratio) => {
+  const cls = tag === 'now' ? '' : tag === 'option' ? 'opt' : 'cur';
+  const label = tag === 'now' ? 'now' : tag === 'option' ? 'option' : 'proposed';
+  return `<figure><span class="ftag ${cls}">${label}</span>${body}<figcaption><b>${title}</b> ${caption}${ratio ? `<br><span class="ratio">${ratio}</span>` : ''}</figcaption></figure>`;
+};
+
+function addScreens(p) {
+  return phone(`
+    <div class="row"><span class="t-title grow">Foods</span>
+      <span class="row" style="gap:var(--space1)" data-kit="TouchableOpacity · Plus ${p.addTok}; ThemedText ${p.labelTok}">${ICON.plus(v(p.add))}<span style="font-size:var(--textMD);font-weight:500;color:${v(p.label)}">Add food</span></span></div>
+    <div class="card" data-kit="Card · colorSurface"><span>Hydrolyzed salmon kibble</span><span class="t-sec">On the trial</span></div>
+    <div class="t-ter" style="margin-top:6px">In the log sheet</div>
+    <div class="card" data-kit="FoodPicker add CTA · colorSurface"><div class="row" data-kit="Camera · ${p.addTok}">${ICON.camera(v(p.add))}<div class="grow"><div style="font-weight:500">Snap a new food</div><div class="t-sec">Photo the label</div></div></div></div>
+    <div class="card" data-kit="MedicationPicker add CTA · colorSurface"><div class="row" data-kit="Camera · ${p.addTok}">${ICON.camera(v(p.add))}<div class="grow"><div style="font-weight:500">Add a medication</div><div class="t-sec">Photo the box</div></div></div></div>`);
+}
+
+function petTypeScreen(p) {
+  const tile = (label, sub, icon, on) => `
+    <div class="tile" style="${on ? `border-color:${v(p.selEdge)};background:${v(p.selGround)}` : ''}" data-kit="pet-type tile · ${on ? p.selTok : 'colorSurface, colorBorder'}">
+      <span class="avatar" style="background:${v(on ? 'colorSurface' : p.avatar)}" data-kit="avatar · ${on ? 'colorSurface' : p.avatar}">${icon(v(on ? p.glyphOn : p.glyphOff))}</span>
+      <div class="grow"><div style="font-weight:600;font-size:var(--textMD)">${label}</div><div class="t-sec">${sub}</div></div></div>`;
+  return phone(`
+    <div class="t-title">Who are we tracking?</div>
+    <div class="t-sec">You can add more pets later.</div>
+    ${tile('A dog', 'Meals, walks and the rest', ICON.dog, true)}
+    ${tile('A cat', 'Grazing, picky days and all', ICON.cat, false)}`);
+}
+
+function spineScreen(meal) {
+  const node = (time, title, c, tok) => `<div class="row" style="gap:12px" data-kit="SpineNodeRow · dot ${tok}"><span class="t-sec" style="width:52px;font-size:var(--textXS)">${time}</span><span class="dot" style="background:${v(c)}"></span><span class="grow">${title}</span></div>`;
+  return phone(`
+    <div class="t-title">Nyx</div>
+    <div class="card" data-kit="HomeCard · colorSurface">
+      <div class="t-ter">Today</div>
+      ${node('7:40 am', 'Breakfast · Hydrolyzed salmon', meal, meal)}
+      ${node('9:05 am', 'Apoquel · given', 'colorEventMedication', 'colorEventMedication')}
+      ${node('1:10 pm', 'Loose stool', 'colorEventSymptom', 'colorEventSymptom')}
+      ${node('6:30 pm', 'Dinner · Hydrolyzed salmon', meal, meal)}
+    </div>`);
+}
+
+function metricScreen(c) {
+  const line = `<svg width="200" height="64" viewBox="0 0 200 64"><polyline fill="none" stroke="${v(c)}" stroke-width="2" stroke-linejoin="round" points="4,52 36,48 68,44 100,40 132,30 164,26 196,16"/><circle cx="196" cy="16" r="3.2" fill="${v(c)}"/></svg>`;
+  return phone(`
+    <div class="t-title">Meals finished</div>
+    <div class="card" data-kit="MetricDetailScreen · colorSurface">
+      <div class="t-ter">Last 14 days</div>
+      <div style="font-size:var(--text2XL);font-weight:600">86%</div>
+      <div class="row" style="gap:4px" data-kit="ArrowUp + deltaText · ${c}">${ICON.up(v(c))}<span style="color:${v(c)};font-weight:500">Up 12 points on the 14 days before</span></div>
+      <div data-kit="Sparkline · ${c}">${line}</div>
+    </div>`);
+}
+
+function shareScreen(c) {
+  return phone(`
+    <div class="t-title">Insights</div>
+    <div class="card" data-kit="CompositionCard · colorSurface">
+      <div class="t-ter">What Nyx ate · 30 days</div>
+      <div class="bar"><span style="flex:41;background:${v(c)}" data-kit="segment meal · ${c}"></span><span style="flex:9;background:${v('colorAccentSoft')}" data-kit="segment treat · colorAccentSoft"></span><span style="flex:3;background:${v('colorTextDisabled')}" data-kit="segment other · colorTextDisabled"></span></div>
+      <div class="t-sec"><span class="swatch" style="background:${v(c)}"></span>Meals 41 · <span class="swatch" style="background:${v('colorAccentSoft')}"></span>Treats 9 · <span class="swatch" style="background:${v('colorTextDisabled')}"></span>Other 3</div>
+    </div>`);
+}
+
+function beatScreen(c) {
+  return phone(`
+    <div class="ring" style="border:2px solid ${v(c)}" data-kit="SheetLogBeat ring · colorSurface, edge ${c}">${ICON.check(v(c))}</div>
+    <div style="text-align:center;font-size:var(--textLG);font-weight:600">Vomit at 7:40 pm, for Nyx</div>
+    <div class="t-sec" style="text-align:center">Change time · Undo</div>`);
+}
+
+const NOW_ADD = { add: 'colorAccent', addTok: 'colorAccent', label: 'colorAccentInk', labelTok: 'colorAccentInk' };
+const NEXT_ADD = { add: 'colorAction', addTok: 'colorAction (action.onLight)', label: 'colorAction', labelTok: 'colorAction (action.onLight)' };
+const NOW_PET = { selEdge: 'colorAccent', selGround: 'colorAccentLight', selTok: 'colorAccent, colorAccentLight', avatar: 'colorAccentLight', glyphOn: 'colorAccent', glyphOff: 'colorAccent' };
+const NEXT_PET = { selEdge: 'colorAction', selGround: 'colorTextOnNight', selTok: 'selected.edge, selected.ground', avatar: 'colorSurfaceSubtle', glyphOn: 'colorAction', glyphOff: 'colorTextSecondary' };
+
+const SITES = [
+  ['W1 · The add actions', 'app/(tabs)/foods.tsx, FoodPicker, MedicationPicker',
+    addScreens(NOW_ADD), addScreens(NEXT_ADD), 'Adding is an action: the glyph and the Foods label take the action indigo.', 'glyph 2.26:1 → 9.42:1 on white'],
+  ['W2 · Choosing a pet type', 'app/onboarding/pet-type.tsx',
+    petTypeScreen(NOW_PET), petTypeScreen(NEXT_PET), 'The chosen tile speaks the selected role, as every other choice does; the species glyph follows the tile, on a neutral circle.', 'chosen glyph 2.26:1 → 9.42:1 · resting glyph 2.08:1 → 7.17:1'],
+  ['W3 · The meal dot on Home', 'components/recap/nodeTints.ts, NODE_TINT_DAY',
+    spineScreen('colorEventMeal'), spineScreen('colorAccentGlyph'), 'The darker teal, the value the Patterns drill-in and the log sheet tiles already use. The rose and slate dots do not change.', 'meal dot 2.26:1 → 3.27:1 on white'],
+  ['W4 · A metric that rose for the good', 'components/dashboard/cardTokens.ts, positive',
+    metricScreen('colorAccent'), metricScreen('colorAccentInk'), 'The figure beside the arrow is text, so the whole tone takes the teal ink (positive.textOnLight). Concern stays rose.', 'text 2.26:1 → 5.17:1 on white'],
+  ['W5 · The meals share bar', 'components/dashboard/CompositionCard.tsx',
+    shareScreen('colorEventMeal'), shareScreen('colorAccentGlyph'), 'The meal segment takes the darker teal, which also parts it further from the treats segment beside it.', 'segment 2.26:1 → 3.27:1 on white'],
+];
+
+document.getElementById('sites').innerHTML = SITES.map(([t, file, a, b, cap, ratio]) => `
+  <div class="site"><h3>${t}</h3><p><code>${file}</code></p>
+  <div class="pair">${fig('now', 'Main today.', a, '', null)}${fig('cur', 'After the walk.', b, cap, ratio)}</div></div>`).join('') + `
+  <div class="site"><h3>W6 · The check after any log</h3><p><code>components/log/SheetLogBeat.tsx</code>, colorMomentConfirm. Drawn after a vomit log, the case where the colour matters most.</p>
+  <div class="pair">${fig('now', 'Main today.', beatScreen('colorMomentConfirm'), '', null)}
+    ${fig('cur', 'A · the darker teal (recommended).', beatScreen('colorAccentGlyph'), 'The check states the entry is written. Same hue owners know, now readable.', 'check 2.26:1 → 3.27:1 on white')}
+    <div class="optbox"><span class="lbl">Option, drawn for the decision, not the current proposal</span>${fig('option', 'B · neutral ink.', beatScreen('colorTextPrimary'), 'No hue at all, so no reading of "good" after a symptom.', 'check 19.8:1 on white')}</div></div></div>`;
+</script>
