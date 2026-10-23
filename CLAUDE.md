@@ -40,6 +40,7 @@ Read the rows that match your surface before writing code. If a referenced doc d
 | `docs/nyx-per-account-food-library-requirements.md` | `food_items` / `medication_items` RLS, the food cache, dedup, catalog legal language |
 | `docs/monetization-and-throttling-requirements.md` | Any gate, cap, entitlement, `app_config` flag, `ai_usage` throttle or paywall (the *why* is `docs/monetization-and-ai-gating-strategy.md`) |
 | `docs/nyx-filter-ux-requirements.md` | Any filter, scope, lens or range control |
+| `docs/nyx-chart-standard.md` 🌱 | Any chart, app or vet report: its row lands before it ships |
 | `docs/nyx-widget-requirements.md` 🌱 v2.0 | The widget, the App Group snapshot, `widgets/`, any App Intent; informational only, never writes (§R-1) |
 | `docs/nyx-beta-features-requirements.md` 🌱 | A per-account feature toggle, the widget publish gate, the beta opt-in (§R-2) |
 | `docs/nyx-ask-requirements.md` | Ask, its caps, the allowlist flag convention, any LLM-boundary question (mock `docs/ask-mockups.html`) |
@@ -74,7 +75,7 @@ You operate as a collaborative product team. Every member has a distinct lens an
 
 ### Persona vs. subagent vs. skill
 - **Persona** — an in-context lens for live judgment calls (this section + `docs/personas.md`).
-- **Subagent** (`.claude/agents/`) — a bounded, isolated-context review that returns a verdict: `adversarial-reviewer` (falsification pass on clinical/statistical logic), `code-reviewer` (diff review), `rls-privacy-reviewer` (access-control red-team: share tokens, service-role queries, RLS, Storage, deletion/export), `vet-report-cold-read` (Dr. Chen reading the *rendered* report cold), and `pm-feature-review` (a fresh walk of a built feature's flows as the target owner, in the QA-note taxonomy; a *static* read that pairs with the on-device pass, never replaces it). Isolation is a *feature* for adversarial review — the reviewer is not anchored by the build conversation's optimism (and for the cold read, it mirrors how the artifact is actually consumed: by a vet with zero build context).
+- **Subagent** (`.claude/agents/`) — a bounded, isolated-context review that returns a verdict: `adversarial-reviewer` (falsification pass on clinical/statistical logic), `code-reviewer` (diff review), `rls-privacy-reviewer` (access-control red-team: share tokens, service-role queries, RLS, Storage, deletion/export), `vet-report-cold-read` (Dr. Chen reading the *rendered* report cold), and `pm-feature-review` (a fresh walk of a built feature's flows as the target owner, in the QA-note taxonomy; a *static* read that pairs with the on-device pass, never replaces it). Isolation is a *feature* for adversarial review — the reviewer is not anchored by the build conversation's optimism.
 - **Skill** (`.claude/skills/`) — an auto-loaded invariant that must fire reliably, not when remembered: `clinical-guardrails`, `nyx-voice`, `supabase-sync`, `backlog-groomer`.
 - **Command** (`.claude/commands/`): a ritual run on demand. `/design-critique` runs the CUL-1108 method on a mock, spec or shipped screen: isolated lenses, one set of renders, every finding verified.
 

@@ -3,8 +3,8 @@
 // Design authority: `docs/culprit-design-v4-mockups.html` §04 — the month page the PM
 // ruled ("LOVE the weekly bars + calendar"), with the data read's three corrections:
 // the bars start on the same weekday the rows do, a vomit day keeps its date with the
-// count in its corner, and the weight's range is fixed. §05 is the standard every chart
-// on the page answers — a mark per fact · a count on every mark · the denominator in
+// count in its corner, and the weight's range is fixed. §05 was the standard every chart
+// on the page answers (now `docs/nyx-chart-standard.md`, CUL-1899) — a mark per fact · a count on every mark · the denominator in
 // view · the uncounted disclosed · the window named.
 //
 // ── ONE MODEL, TWO DRAWINGS ─────────────────────────────────────────────────────
