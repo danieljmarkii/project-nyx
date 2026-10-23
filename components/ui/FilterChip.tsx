@@ -1,6 +1,7 @@
 import { TouchableOpacity, StyleSheet, AccessibilityRole } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { TAP_TARGET_FLOOR, verticalSlopTo } from '../../lib/tapTarget';
 
 type Variant =
   | 'default'   // active: teal outline + tinted background (date presets)
@@ -45,21 +46,35 @@ export function FilterChip({
           ? { checked: active, disabled }
           : { selected: active, disabled }
       }
-      // Chips are ~32pt tall; expand the tap zone vertically to the 44pt floor
-      // (Designer anti-pattern: sub-44pt targets need hitSlop). Vertical-only so
-      // adjacent chips in a horizontal row never share a tap zone.
-      hitSlop={{ top: 6, bottom: 6 }}
+      // See FILTER_CHIP_HITSLOP: the pinned box plus vertical-only slop reaches the
+      // 44pt floor, and adjacent chips in a row never share a tap zone.
+      hitSlop={FILTER_CHIP_HITSLOP}
     >
       <ThemedText style={[set.label, active && set.activeLabel]}>{label}</ThemedText>
     </TouchableOpacity>
   );
 }
 
+// ── THE CHIP'S TOUCH TARGET (CUL-658) ───────────────────────────────────────
+// A chip is ~32pt tall (a 13pt medium label, 6pt padding either side, a 1pt
+// border). The 32 is PINNED as a minHeight rather than left to the font's line
+// box, so the reach is computed from a box the code holds (lib/tapTarget): a floor
+// resting on a metric no test can compute is a floor nobody is holding (CUL-579).
+// A floor, so larger type still grows the pill past it.
+//
+// Computed here from THIS chip's box, never shared with AdherenceChipRow's: the
+// two agree today only because their geometry matches. Restyle one and the two
+// should diverge; a shared constant would keep them equal, and one of them wrong.
+export const FILTER_CHIP_MIN_HEIGHT = 32;
+export const FILTER_CHIP_HITSLOP = verticalSlopTo(TAP_TARGET_FLOOR, FILTER_CHIP_MIN_HEIGHT);
+
 const baseChip = {
   paddingHorizontal: 12,
   paddingVertical: 6,
   borderRadius: theme.radiusFull,
   borderWidth: 1,
+  minHeight: FILTER_CHIP_MIN_HEIGHT,
+  justifyContent: 'center',
 } as const;
 
 const baseLabel = {

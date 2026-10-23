@@ -394,6 +394,14 @@ describe('HITSLOP_ACTION_LEFT / _RIGHT', () => {
     expect(HITSLOP_ACTION_RIGHT.left).toBeLessThan(HITSLOP_ACTION_RIGHT.right);
     expect(HITSLOP_ACTION_LEFT.right + HITSLOP_ACTION_RIGHT.left).toBeLessThanOrEqual(8);
   });
+
+  // CUL-658 moved the yielded edge from a typed 4 onto facingReach(gap). The hit
+  // areas the cards measured before the move must be exactly what they get after.
+  it('the computed geometry equals the literals it replaced (no change to the hit areas)', () => {
+    expect(HITSLOP_ACTION_LEFT).toEqual({ top: 12, bottom: 12, left: 12, right: 4 });
+    expect(HITSLOP_ACTION_RIGHT).toEqual({ top: 12, bottom: 12, left: 4, right: 12 });
+    expect(HITSLOP_ACTION_SOLO).toEqual({ top: 12, bottom: 12, left: 12, right: 12 });
+  });
 });
 
 

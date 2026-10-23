@@ -79,6 +79,7 @@ import { useSubmitGuard } from '../../hooks/useSubmitGuard';
 import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import type { PickerFood } from '../../lib/db';
+import { TAP_TARGET_FLOOR, verticalSlopTo } from '../../lib/tapTarget';
 
 /** Brand + product, the app's one spelling of a food's name (`foodLabel` in
  *  `lib/dietTrialSetup.ts` and `lib/feedingArrangements.ts` are the same two words);
@@ -98,6 +99,16 @@ export type IntakeSheetOutcome = 'saved' | 'dismissed';
  *  rather than behind a still-presented Modal on iOS — the same 450 ms `app/log.tsx`
  *  spends for the same reason. */
 const CARD_DELAY_MS = 450;
+
+/** The "Change food" chip's touch target (CUL-658). The pill keeps chip proportions
+ *  (12/6 padding, a 1pt border, a 13pt medium label), PINNED at 32 so its reach is
+ *  computed from a box the code holds rather than a font's line box; the row around
+ *  it carries the 44pt floor as its own `minHeight`, and the vertical-only slop takes
+ *  the pill's hit area to that same height. Computed from this pill's own box, never
+ *  borrowed from FilterChip's, which matches it today only by coincidence. Exported so
+ *  the arithmetic is asserted rather than eyeballed. */
+export const CHANGE_FOOD_MIN_HEIGHT = 32;
+export const CHANGE_FOOD_HITSLOP = verticalSlopTo(TAP_TARGET_FLOOR, CHANGE_FOOD_MIN_HEIGHT);
 
 interface PanelProps {
   petId: string;
@@ -374,7 +385,7 @@ export function IntakeFirstMealPanel({
               <TouchableOpacity
                 style={styles.changeFood}
                 onPress={() => setStep({ kind: 'food' })}
-                hitSlop={{ top: 6, bottom: 6 }}
+                hitSlop={CHANGE_FOOD_HITSLOP}
                 accessibilityRole="button"
                 accessibilityLabel={INTAKE_SHEET_CHANGE_FOOD}
                 testID="intake-sheet-change-food"
@@ -503,13 +514,16 @@ const styles = StyleSheet.create({
   // neighbour would be a whole sentence. The ROW owns the 44pt floor so the chip keeps
   // chip proportions inside it.
   changeFoodRow: {
-    minHeight: 44,
+    minHeight: TAP_TARGET_FLOOR,
     justifyContent: 'center',
     alignItems: 'flex-start',
   },
   changeFood: {
     paddingHorizontal: 12,
     paddingVertical: 6,
+    // See CHANGE_FOOD_HITSLOP — pinned so the reach is computed from a held box.
+    minHeight: CHANGE_FOOD_MIN_HEIGHT,
+    justifyContent: 'center',
     borderRadius: theme.radiusFull,
     borderWidth: 1,
     borderColor: theme.colorBorder,
