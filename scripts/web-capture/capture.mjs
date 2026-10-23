@@ -96,6 +96,12 @@ const READ_STATES = [
     eventId: 'c1912000-0000-4000-8000-000000000003',
     analysis: { status: 'read_disabled', recommendation: null, tier: null, read_text: null, ai_raw_payload: null },
     consent: false,
+  },  {
+    // A row with no verdict on it: the branch an unsynced photo or a watch that gave up
+    // reaches (CUL-820's frame).
+    eventId: 'c1912000-0000-4000-8000-000000000004',
+    analysis: { status: 'completed', recommendation: null, tier: null, read_text: null, ai_raw_payload: null },
+    consent: true,
   },
 ];
 for (const [i, r] of READ_STATES.entries()) {
@@ -108,7 +114,7 @@ for (const [i, r] of READ_STATES.entries()) {
     created_at: at, updated_at: new Date(NOW - 60e3).toISOString(),
   });
   (tables.event_attachments ??= []).push({
-    id: r.eventId.replace(/1$|2$|3$/, (d) => `a${d}`), event_id: r.eventId, pet_id: pet('juniper').id,
+    id: r.eventId.replace(/\d$/, (d) => `a${d}`), event_id: r.eventId, pet_id: pet('juniper').id,
     storage_path: `fixture/${r.eventId}.jpg`, mime_type: 'image/jpeg', deleted_at: null, created_at: at,
     updated_at: new Date(NOW - 60e3).toISOString(),
   });
@@ -157,6 +163,7 @@ const SHOTS = [
   { name: 'incident-call-juniper', pet: 'juniper', overlay: readStateOverlay(true), go: [() => {}, push(`/event/${READ_STATES[0].eventId}`)] },
   { name: 'incident-watch-juniper', pet: 'juniper', overlay: readStateOverlay(true), go: [() => {}, push(`/event/${READ_STATES[1].eventId}`)] },
   { name: 'incident-off-juniper', pet: 'juniper', overlay: readStateOverlay(false), go: [() => {}, push(`/event/${READ_STATES[2].eventId}`)] },
+  { name: 'incident-unread-juniper', pet: 'juniper', overlay: readStateOverlay(true), go: [() => {}, push(`/event/${READ_STATES[3].eventId}`)] },
   // CUL-1282's path: a tap on an earlier day in History's week strip must bring the
   // list to that day (Sunday the 11th, three cards down, past the 21-row long day).
   { name: 'history-strip-tap-pepper', pet: 'pepper', go: [tab('History'), (page) => page.getByText('11', { exact: true }).first().click({ timeout: 8000 })] },
