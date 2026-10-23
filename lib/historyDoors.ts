@@ -56,7 +56,8 @@ export type HistoryDoorId =
   | 'ask-provenance'
   | 'ask-chip'
   | 'medication-course'
-  | 'rundown';
+  | 'rundown'
+  | 'food-mixed-bowls';
 
 export const HISTORY_DOORS: readonly HistoryDoor[] = [
   {
@@ -127,6 +128,17 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
       'since the last visit → Since the last vet visit; *None logged in 30 days* → All symptoms, Last 30 days; a past course ' +
       'with no regimen → that course, All time. Only when the rundown is about the pet on screen; for another pet\'s ' +
       'appointment, the bare route (CUL-1252)',
+    frozen: false,
+  },
+  {
+    id: 'food-mixed-bowls',
+    // Food detail's "In mixed bowls" lines (Mixed meals §7.4, CUL-2085).
+    senders: ['app/food/[id].tsx'],
+    builder: { file: 'lib/historyDateFilter.ts', fn: 'historyDayHref' },
+    sends: '`day` (the LOCAL day of the line\'s newest bowl), `ts`',
+    lands:
+      'lands on that day under All types and All time, on the active pet (the pet whose bowls the section read); ' +
+      'the line\'s earlier bowls are on earlier days of the same list',
     frozen: false,
   },
 ];

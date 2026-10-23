@@ -67,7 +67,7 @@ jest.mock('../../lib/supabase', () => ({
     functions: { invoke: jest.fn(async () => ({ error: null })) },
   },
 }));
-jest.mock('../../lib/db', () => ({ getDb: () => ({ runAsync: jest.fn(), getAllAsync: jest.fn(async () => []) }) }));
+jest.mock('../../lib/db', () => ({ getDb: () => ({ runAsync: jest.fn(), getAllAsync: jest.fn(async () => []) }), getMixedBowls: jest.fn(async () => []) }));
 jest.mock('../../lib/storage', () => ({ uploadPhoto: jest.fn(), compressForUpload: jest.fn() }));
 jest.mock('../../lib/foodArchive', () => ({ archiveFood: jest.fn(), restoreFood: jest.fn() }));
 jest.mock('../../lib/trialContaminant', () => ({
