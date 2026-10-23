@@ -935,4 +935,84 @@ sign's chronic course is not disclosed (Q21). The last two are filed as CUL-1791
 
 ## 7. Rulings received
 
-_To be filled when you rule._
+**Sitting:** 2026-10-23, attended, in the session CUL-1962 (D2) named for it. **The PM's words:** "I'll defer to
+your recommendations on all as long as the team agrees", then four picked answers: "Yes, all seven" to the
+rows E-6 needs named (Q7, Q9, Q13.5, Q16.2, Q24, Q26, Q30); Q18 B; Q19 A; Q22 a and Q38 A.
+
+**Re-verified before relaying (2026-10-23, `main` at b51f5cc).** 127 commits had landed since `5fb9cd3a`, and the
+check re-read every row. 31 held, many only with line drift. Seven had moved, and each was relayed to the PM before
+the ruling:
+* Q14 was built as A (#1242), then widened by the PM's CUL-2037 ruling of 2026-10-19 (#1265: a refused row also
+  makes the read incomplete).
+* Q12 was built (#1230), with its Signal sibling CUL-1791.
+* Q4's W3 now contradicts what ships: #1258 (CUL-2026, CUL-2027) put a weight-loss flag on the report's safety band
+  behind en8.
+* Q2's en9, Q3's en8 and Q9's en3 are seeded for the PM's account (migrations 101 and 102); every other account is
+  still dark.
+* Q9: the PM may already run a 1.2.0 build that is newer than #952.
+* Q6 now has 22 queues, and a refused row already reaches the Signal and Ask.
+
+### 7.1 The rulings
+
+| # | Ruling | Kind |
+|---|---|---|
+| Q1 | **A**: the ratchet, *x* = PR-31's go-live-size worst case, rounded up to 5 points, may only fall; PR-31 reports x = 10% and 20% and the per-trial number | Agree |
+| Q2 | **(a) A**: one shared "ask from the concern itself" predicate across both scoring sites, all six EN-9 lines move together; this agree is the sign-off that re-pins the frozen line list's digest. **(b) A**: withhold the zero when no symptom is logged since the answer | Agree · adopted provisionally |
+| Q3 | **3.1 A** drop `EXACT_COPY_NEVER_PAIRS` · **3.2 A** keep the built anchor · **3.3 A** a stand-down never moves a running plan's start · **3.4 A** one-day lookback, inclusive of the start instant, plan start dated from the visit | Adopt · agree · adopt · agree |
+| Q4 | **W3 held, not ruled**: it is re-briefed against the report's shipped `weight_loss` row (#1258) before PR-37. **W4 A** keep "(N%)" · **W5 A** the plain Home row · **W6 A** vet plan only · **W7 A** on its condition (no vet-scale reading lowers a raised row; no home reading softens a vet-to-vet loss), four fixtures owed by PR-37 | Agree · adopted provisionally |
+| Q5 | **A**: rule 1 wins, the marker never gates the card | Adopted provisionally |
+| Q6 | **A**: a tappable banner over all 22 queues naming the vet report and the Signal | Adopted provisionally |
+| Q7 | **A**: "N refused or picked at · N left some" on the All-types header and the Meal row; amends HV-9 call 3a | **Explicit agree** |
+| Q8 | **A**: Home rides CUL-1263; the Daily Recap counts treats as treats | Adopted provisionally |
+| Q9 | **A**: closed by the next TestFlight cut; until then one read-only count of hidden escalation rows. Confirm in EAS whether the installed 1.2.0 build already carries #952 | **Signed off** |
+| Q10 | **A**: Ask keeps a call tier's own words through a hide | Adopted provisionally |
+| Q11 | **A**: withhold the arrival under a cross-pet banner and spend the marker; also stop it if a banner appears mid-play | Agree |
+| Q12 | **Ratified as shipped** (#1230, "A bout that began earlier continues into…") | Agree |
+| Q13 | **Rows 1 to 6 A**; row 5 extends ruling (a) | Adopted provisionally; row 5 **explicit agree** |
+| Q14 | **Ratified as shipped**: #1242 plus the CUL-2037 ruling (#1265), which supersedes A's refused-row exception | Agree |
+| Q15 | **A**: the bowl line rides the milestone | Adopted provisionally |
+| Q16 | **Rows 1 to 3 A**; row 2 amends the 2026-09-27 trial-screen ruling | Adopted provisionally; row 2 **explicit agree** |
+| Q17 | **A**: the window sheet does not restate the refusal | Agree |
+| Q18 | **B (Jordan)**: as built, no timed prompt | **PM's letter** |
+| Q19 | **A (the team)**: the eight-week question stays off | **PM's letter** |
+| Q20 | **A**: the density arm, with its stand-down and null-price build conditions | Adopted provisionally |
+| Q21 | **A**: "…and another recurring sign" | Adopted provisionally |
+| Q22 | **Mark A** (most recent course; a tie keeps the leader) · **ordering a** (span first, documented) | Agree · **PM's letter** |
+| Q23 | **A**: its own constant at 0.7 plus the trailing-dark disclosure; the 7 days **No source** | Adopted provisionally |
+| Q24 | **A**: accepted, cost stated as never; named in CUL-1486's GA-day marker | **Explicit agree** |
+| Q25 | **A**: date each end that differs from the row's day, year when it differs | Agree |
+| Q26 | **A**: `Set it up` only on an exact every-protein match to a recorded target; re-opens §5.5 D-A | **Explicit agree** |
+| Q27 | **A**: keep the dose-span sentence | Agree |
+| Q28 | **A**: keep "N changes" | Agree |
+| Q29 | **A**: mark a removal off the start and recorded end | Adopted provisionally |
+| Q30 | **A**: "Prednisone · directly", pairing and *Unconfirmed* kept | **Explicit agree** |
+| Q31 | **A**: 3 into T-20, naming `NOTICED_REFUSAL_RECENCY_DAYS` | Agree |
+| Q32 | **A**: print answering's placement, mock frame first | Adopted provisionally |
+| Q33 | **A**: grey | Agree |
+| Q34 | **A**: the team drafts the critical-drug list; it comes back for an agree | Adopted provisionally |
+| Q35 | **A**: keep the §15 sheet as an errand for the PM's own vet; merge #765 | Agree |
+| Q36 | **A**: Ask relays the overrun words, never "complete" | Adopted provisionally |
+| Q37 | **A**: keep "Your vet has the final say." | Agree |
+| Q38 | **A (Engineer, Designer)**: keep 2.5 | **PM's letter** |
+
+### 7.2 Rode the sitting: CUL-1725's D6
+
+**Question:** should an eaten bowl inside the 30-minute band before a refusal exclude the I5 episode?
+**Ruling: A**, keep counting, and pin the case with a test. Neutral; it ratifies what is built.
+
+Its recommendation came from the Dr. Chen and Data Scientist lenses, and one isolated `adversarial-reviewer` pass
+held it. The pass tried five cases:
+* eat 18:00, refuse 18:05, vomit 18:15: counts, and the copy stays true;
+* B's 29/31-minute cliff;
+* a picked bowl silenced under B;
+* same-instant bowls, a free-fed bowl and a dog;
+* whether counting hides or softens any other card.
+
+It filed two findings, CUL-2165 (I5's rank) and CUL-2166 (a picked second bowl never counts).
+
+### 7.3 What stays open
+
+* **Q4 W3** waits on a re-brief against #1258, carried on CUL-1390. It gates PR-37's report half only.
+* **Q34's drafted list** comes back as its own row.
+* **Q9's EAS check** is the PM's.
+* Every "adopted provisionally" row stays live under E-6 until a measured row says otherwise.
