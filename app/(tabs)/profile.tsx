@@ -79,6 +79,10 @@ import {
   buildPastCourseRows, type PastCourseRow, type MedicationItemName,
 } from '../../lib/pastMedications';
 import { PastMedicationsSection } from '../../components/profile/PastMedicationsSection';
+import { ListReadFailed, listReadFailedLine } from '../../components/profile/ListReadFailed';
+import {
+  rowsForPet, settlePetRead, updatePetRows, viewForPet, type PetScopedRead,
+} from '../../lib/petScopedRead';
 
 
 interface RegimenDisplay extends Regimen {
@@ -232,13 +236,18 @@ export default function ProfileScreen() {
   // ArchivePetSheet). Doubles as the sheet's visibility flag.
   const [archivingPet, setArchivingPet] = useState<Pet | null>(null);
 
-  const [conditions, setConditions] = useState<Condition[]>([]);
+  // CUL-2174 — each list is held WITH the pet it was read for (`lib/petScopedRead`).
+  // The tab switches pets in place, so bare rows outlived their pet: a failed read for
+  // the new pet left the previous pet's conditions and medicines on screen, under the
+  // new name, with row actions that wrote against them. Rows are only ever drawn, and
+  // only ever acted on, through `viewForPet` / `rowsForPet` for the pet on screen.
+  const [conditionsRead, setConditionsRead] = useState<PetScopedRead<Condition> | null>(null);
   const [conditionsLoading, setConditionsLoading] = useState(true);
 
-  const [medications, setMedications] = useState<RegimenDisplay[]>([]);
+  const [medicationsRead, setMedicationsRead] = useState<PetScopedRead<RegimenDisplay> | null>(null);
   // Which dose the optimistic tally below is currently counting, so Undo can take
   // it back off. Null once reconciled (by the rollback or by a focus refetch).
-  const countedDose = useRef<{ eventId: string; regimenId: string } | null>(null);
+  const countedDose = useRef<{ eventId: string; regimenId: string; petId: string } | null>(null);
 
   const [medicationsLoading, setMedicationsLoading] = useState(true);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
@@ -246,8 +255,18 @@ export default function ProfileScreen() {
 
   // B-140 (extended) PR 2 — the "Past medications" section's rows. No loading state:
   // it is collapsed-by-default reference material, so it simply appears once derived
-  // rather than flashing a spinner (and renders nothing until then / when empty).
-  const [pastRows, setPastRows] = useState<PastCourseRow[]>([]);
+  // rather than flashing a spinner (and renders nothing until then / when empty). A
+  // failed read is the exception, and says so (CUL-2174).
+  const [pastRead, setPastRead] = useState<PetScopedRead<PastCourseRow> | null>(null);
+
+  // What each list may draw for the pet on screen. Rows read for another pet never
+  // come back out of these, so neither the cards nor their row actions can reach them.
+  const screenPetId = activePet?.id ?? null;
+  const conditionsView = viewForPet(conditionsRead, screenPetId, conditionsLoading);
+  const medicationsView = viewForPet(medicationsRead, screenPetId, medicationsLoading);
+  const pastView = viewForPet(pastRead, screenPetId, false);
+  const medications = medicationsView.kind === 'loaded' ? medicationsView.rows : [];
+  const pastRows = pastView.kind === 'loaded' ? pastView.rows : [];
 
   // B-417 PR 4 — the trial card reads through one shared loader with the Home
   // strip, so the two surfaces cannot disagree about the same trial. It reads the
@@ -363,7 +382,8 @@ export default function ProfileScreen() {
   // Every section above an anchor loads asynchronously, so a y measured mid-load is
   // one this screen is about to invalidate. Gating on all three is what makes the
   // arrival land on the card rather than near where the card used to be.
-  const focusContentSettled = !conditionsLoading && !medicationsLoading && !trialLoading;
+  const focusContentSettled =
+    conditionsView.kind !== 'loading' && medicationsView.kind !== 'loading' && !trialLoading;
   // CUL-1292 — the same, read FOR one pet. A widget door switches pets in the flush it
   // arrives in, and every loader flips its flag in its own effect, so the gate above is
   // true for a render over the PREVIOUS pet's content. So this names the pet the rendered
@@ -373,9 +393,10 @@ export default function ProfileScreen() {
   //     the previous pet's "loaded" — and the trial's `inputIsForPet` is false there
   //     (B-789: it holds until the new pet's read answers). By the time it answers, the
   //     conditions and medications loaders have flipped their flags to loading in the
-  //     switch's own commit, so the trial's marker alone closes the window. (Per-pet
-  //     markers for those two were tried and removed: no mutation could red them.)
-  const activePetId = activePet?.id ?? null;
+  //     switch's own commit, so the trial's marker alone closes the window. Since
+  //     CUL-2174 those two lists are keyed by pet as well (`viewForPet`), which reads
+  //     another pet's rows as still loading.
+  const activePetId = screenPetId;
   const focusContentSettledFor =
     focusContentSettled && activePetId !== null && trialInputIsForActivePet ? activePetId : null;
 
@@ -596,28 +617,36 @@ export default function ProfileScreen() {
 
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
+    const petId = activePet.id;
     setConditionsLoading(true);
+    let outcome: { ok: true; rows: Condition[] } | { ok: false };
     try {
       const { data, error } = await supabase
         .from('conditions')
         .select('id, pet_id, condition_name, diagnosed_at, status, notes, created_at')
-        .eq('pet_id', activePet.id)
+        .eq('pet_id', petId)
         .neq('status', 'resolved')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setConditions((data as Condition[]) ?? []);
+      outcome = { ok: true, rows: (data as Condition[]) ?? [] };
     } catch (e) {
       console.error('[Profile] load conditions failed:', e);
-    } finally {
-      setConditionsLoading(false);
+      outcome = { ok: false };
     }
+    // A read that answers after the owner has switched away is dropped, read live
+    // from the store: landing it would replace the new pet's read with the old pet's.
+    if (usePetStore.getState().activePet?.id !== petId) return;
+    setConditionsRead((prev) => settlePetRead(prev, petId, outcome));
+    setConditionsLoading(false);
   }, [activePet?.id]);
 
   const loadMedications = useCallback(async () => {
     if (!activePet) return;
+    const petId = activePet.id;
     setMedicationsLoading(true);
-    try {
+    let outcome: { ok: true; rows: RegimenDisplay[] } | { ok: false };
+    const read = async (): Promise<RegimenDisplay[]> => {
       // Active regimens for THIS pet only (RLS double-scopes; the .eq is the
       // intent). The card is a per-pet surface, so multi-pet households never see
       // another pet's medications here.
@@ -628,7 +657,7 @@ export default function ProfileScreen() {
           'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
           'target_duration_doses, status, ended_at',
         )
-        .eq('pet_id', activePet.id)
+        .eq('pet_id', petId)
         .eq('status', 'active')
         .order('started_at', { ascending: false });
 
@@ -640,7 +669,7 @@ export default function ProfileScreen() {
         ...r,
         doses_per_day: r.doses_per_day == null ? null : Number(r.doses_per_day),
       }));
-      if (regimens.length === 0) { setMedications([]); return; }
+      if (regimens.length === 0) return [];
 
       // Dose children, attributed to regimens by attributeDosesToRegimens: an
       // EXPLICIT regimen link (medication_id, set by B-153/B-154) wins, else an
@@ -678,7 +707,7 @@ export default function ProfileScreen() {
           // which threw the whole load and blanked the Current-medications card.
           // We always want the dose's OWN parent event here, never the paired meal.
           .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
-          .eq('pet_id', activePet.id)
+          .eq('pet_id', petId)
           .or(orParts.join(','));
         if (doseError) throw doseError;
         // Shared embed-shape mapper (lib/medications) — the B-196 handling lives in one
@@ -687,12 +716,18 @@ export default function ProfileScreen() {
       }
 
       const tallies = attributeDosesToRegimens(regimens, doses);
-      setMedications(regimens.map((reg) => buildRegimenDisplay(reg, tallies.get(reg.id) ?? EMPTY_TALLY())));
+      return regimens.map((reg) => buildRegimenDisplay(reg, tallies.get(reg.id) ?? EMPTY_TALLY()));
+    };
+    try {
+      outcome = { ok: true, rows: await read() };
     } catch (e) {
       console.error('[Profile] load medications failed:', e);
-    } finally {
-      setMedicationsLoading(false);
+      outcome = { ok: false };
     }
+    // Dropped when the owner has switched away meanwhile (see loadConditions).
+    if (usePetStore.getState().activePet?.id !== petId) return;
+    setMedicationsRead((prev) => settlePetRead(prev, petId, outcome));
+    setMedicationsLoading(false);
   }, [activePet?.id]);
 
   // B-140 (extended) PR 2 — the "Past medications" section. Derives PAST courses from
@@ -709,6 +744,8 @@ export default function ProfileScreen() {
   // focus (acceptable); consolidating both surfaces onto one derivation is a later call.
   const loadPastMedications = useCallback(async () => {
     if (!activePet) return;
+    const petId = activePet.id;
+    let outcome: { ok: true; rows: PastCourseRow[] } | { ok: false };
     try {
       // Every regimen for the pet — ALL statuses. The `status = 'active'` filter is
       // exactly the bug this feature undoes, so it is deliberately absent here.
@@ -718,7 +755,7 @@ export default function ProfileScreen() {
           'id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
           'schedule_notes, started_at, target_duration_days, target_duration_doses, status, ended_at',
         )
-        .eq('pet_id', activePet.id);
+        .eq('pet_id', petId);
       if (regimenError) throw regimenError;
 
       // Coerce doses_per_day (PostgREST serialises NUMERIC as a string) once at the
@@ -743,7 +780,7 @@ export default function ProfileScreen() {
       const { data: doseRows, error: doseError } = await supabase
         .from('medication_administrations')
         .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
-        .eq('pet_id', activePet.id);
+        .eq('pet_id', petId);
       if (doseError) throw doseError;
       const doses = mapDoseRowsToAttributable(doseRows as unknown as DoseEmbedRow[]);
 
@@ -774,16 +811,19 @@ export default function ProfileScreen() {
         );
       }
 
-      setPastRows(buildPastCourseRows(courses, itemNames));
+      outcome = { ok: true, rows: buildPastCourseRows(courses, itemNames) };
     } catch (e) {
-      // Leave the PRIOR successful result standing (matching the sibling loadMedications,
-      // never loadVetFiles' clear-on-error): a transient failure on a re-focus/after-End
-      // refetch must NOT blank an already-rendered history — with the section hidden at
-      // rows.length === 0, clearing here would make real history read as "never had any",
-      // the exact amnesia this feature exists to cure. Before the first success pastRows
-      // is already [], so a first-load failure still shows no section.
+      // A failure on a SAME-pet refetch (a re-focus, after End) leaves the prior result
+      // standing (`settlePetRead`): blanking an already-rendered history would make real
+      // history read as "never had any", the amnesia this feature exists to cure. Any
+      // other failure, a first load or a pet switch (CUL-2174), is the failed state with
+      // a retry, never the previous pet's courses and never a quiet "no history".
       console.error('[Profile] load past medications failed:', e);
+      outcome = { ok: false };
     }
+    // Dropped when the owner has switched away meanwhile (see loadConditions).
+    if (usePetStore.getState().activePet?.id !== petId) return;
+    setPastRead((prev) => settlePetRead(prev, petId, outcome));
   }, [activePet?.id]);
 
   useEffect(() => {
@@ -829,14 +869,16 @@ export default function ProfileScreen() {
     const counted = countedDose.current;
     if (!momentRemoved || !counted || momentEventId !== counted.eventId) return;
     countedDose.current = null;
-    setMedications((prev) =>
-      prev.map((m) =>
-        m.id === counted.regimenId
-          // Clamped at zero: a focus refetch may already have landed the true tally
-          // between the log and the Undo, and a compliance count must never render
-          // negative even for the frame before the next reconcile.
-          ? buildRegimenDisplay(m, { ...m.tally, given: Math.max(0, m.tally.given - 1) })
-          : m,
+    setMedicationsRead((prev) =>
+      updatePetRows(prev, counted.petId, (rows) =>
+        rows.map((m) =>
+          m.id === counted.regimenId
+            // Clamped at zero: a focus refetch may already have landed the true tally
+            // between the log and the Undo, and a compliance count must never render
+            // negative even for the frame before the next reconcile.
+            ? buildRegimenDisplay(m, { ...m.tally, given: Math.max(0, m.tally.given - 1) })
+            : m,
+        ),
       ),
     );
   }, [momentRemoved, momentEventId]);
@@ -925,17 +967,30 @@ export default function ProfileScreen() {
     }
   }
 
+  // CUL-2174 — the backstop under the keyed lists. The cards only draw the pet on
+  // screen's rows, so this should never refuse; it is here so that a row reaching an
+  // action by any other route still cannot write to another pet's record. Read live
+  // from the store, never from this render's closure (C-12).
+  function rowIsOnScreenPet(rowPetId: string): boolean {
+    if (usePetStore.getState().activePet?.id === rowPetId) return true;
+    console.warn('[Profile] refused a row action on another pet\'s row');
+    return false;
+  }
+
   function openAddCondition() {
     setEditingCondition(undefined);
     setConditionModalVisible(true);
   }
 
   function openEditCondition(condition: Condition) {
+    if (!rowIsOnScreenPet(condition.pet_id)) return;
     setEditingCondition(condition);
     setConditionModalVisible(true);
   }
 
-  async function handleResolveCondition(id: string) {
+  async function handleResolveCondition(condition: Condition) {
+    if (!rowIsOnScreenPet(condition.pet_id)) return;
+    const { id, pet_id: petId } = condition;
     try {
       const { error } = await supabase
         .from('conditions')
@@ -943,7 +998,7 @@ export default function ProfileScreen() {
         .eq('id', id);
 
       if (error) throw error;
-      setConditions((prev) => prev.filter((c) => c.id !== id));
+      setConditionsRead((prev) => updatePetRows(prev, petId, (rows) => rows.filter((c) => c.id !== id)));
     } catch (e) {
       console.error('[Profile] resolve condition failed:', e);
       Alert.alert('Could not resolve', 'Something went wrong. Try again.');
@@ -956,7 +1011,7 @@ export default function ProfileScreen() {
       `Mark "${condition.condition_name}" as resolved? It will still appear in vet reports for the relevant date range.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Mark resolved', onPress: () => handleResolveCondition(condition.id) },
+        { text: 'Mark resolved', onPress: () => handleResolveCondition(condition) },
       ],
     );
   }
@@ -967,6 +1022,7 @@ export default function ProfileScreen() {
   }
 
   function openEditRegimen(reg: RegimenDisplay) {
+    if (!rowIsOnScreenPet(reg.pet_id)) return;
     // Pass just the Regimen fields the modal seeds from (drop the derived display).
     setEditingRegimen({
       id: reg.id, pet_id: reg.pet_id, medication_item_id: reg.medication_item_id,
@@ -980,7 +1036,9 @@ export default function ProfileScreen() {
     setMedicationModalVisible(true);
   }
 
-  async function handleEndRegimen(id: string) {
+  async function handleEndRegimen(reg: RegimenDisplay) {
+    if (!rowIsOnScreenPet(reg.pet_id)) return;
+    const { id, pet_id: petId } = reg;
     try {
       // Local-first since CUL-901 (VV-3), and not only for symmetry: a course created
       // offline has no server row to `.eq('id', …)` yet, so the old remote UPDATE
@@ -994,7 +1052,7 @@ export default function ProfileScreen() {
       // the vet report's regimen span. The day key is keyed HERE, from local
       // components, because this screen is what knows the end means "today".
       await endRegimen(id, toLocalDayKey(new Date()));
-      setMedications((prev) => prev.filter((m) => m.id !== id));
+      setMedicationsRead((prev) => updatePetRows(prev, petId, (rows) => rows.filter((m) => m.id !== id)));
       // The just-ended course now belongs in the Past medications section — refresh it
       // so the row moves down immediately, without waiting for the next tab focus.
       loadPastMedications();
@@ -1011,7 +1069,9 @@ export default function ProfileScreen() {
   // FREE-TEXT regimen (no library item — the only loggable path for one). The same
   // shared insertMedicationDose path as the picker, so the write is built once.
   async function handleLogDose(reg: RegimenDisplay) {
-    if (!activePet) return;
+    // The dose is written for `activePet` against `reg`'s course, so the two must be
+    // the same pet (CUL-2174: no server guard ties a dose's course to its pet).
+    if (!activePet || reg.pet_id !== activePet.id || !rowIsOnScreenPet(reg.pet_id)) return;
     let result: Awaited<ReturnType<typeof insertMedicationDose>>;
     try {
       result = await insertMedicationDose({
@@ -1043,12 +1103,14 @@ export default function ProfileScreen() {
     // the record no longer holds, indefinitely while offline. That direction is
     // reassuring, which is the one direction this app may not drift in. The effect
     // above takes it back; this records which dose to take back.
-    countedDose.current = { eventId: result.eventId, regimenId: reg.id };
-    setMedications((prev) =>
-      prev.map((m) =>
-        m.id === reg.id
-          ? buildRegimenDisplay(m, { ...m.tally, given: m.tally.given + 1 })
-          : m,
+    countedDose.current = { eventId: result.eventId, regimenId: reg.id, petId: reg.pet_id };
+    setMedicationsRead((prev) =>
+      updatePetRows(prev, reg.pet_id, (rows) =>
+        rows.map((m) =>
+          m.id === reg.id
+            ? buildRegimenDisplay(m, { ...m.tally, given: m.tally.given + 1 })
+            : m,
+        ),
       ),
     );
     // The confirm-over-entry adherence follow-up (§5.1) — the same warmed card the
@@ -1098,7 +1160,7 @@ export default function ProfileScreen() {
       `Mark ${reg.drug_name} as finished? Its logged doses stay on the timeline and in vet reports.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'End medication', onPress: () => handleEndRegimen(reg.id) },
+        { text: 'End medication', onPress: () => handleEndRegimen(reg) },
       ],
     );
   }
@@ -1295,15 +1357,21 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {conditionsLoading ? (
+          {conditionsView.kind === 'loading' ? (
             <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
-          ) : conditions.length === 0 ? (
+          ) : conditionsView.kind === 'failed' ? (
+            <ListReadFailed
+              testID="conditions-read-failed"
+              line={listReadFailedLine(activePet.name, 'conditions')}
+              onRetry={loadConditions}
+            />
+          ) : conditionsView.rows.length === 0 ? (
             <ThemedText style={styles.emptyConditionsText}>
               No conditions on file yet. Add anything {activePet.name} has been
               diagnosed with, like allergies or a sensitive stomach.
             </ThemedText>
           ) : (
-            conditions.map((condition) => (
+            conditionsView.rows.map((condition) => (
               <View key={condition.id} style={styles.conditionRow}>
                 <Divider style={styles.conditionDivider} />
                 <View style={styles.conditionInner}>
@@ -1352,20 +1420,29 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {medicationsLoading ? (
+          {medicationsView.kind === 'loading' ? (
             <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
-          ) : medications.length === 0 ? (
+          ) : medicationsView.kind === 'failed' ? (
+            <ListReadFailed
+              testID="medications-read-failed"
+              line={listReadFailedLine(activePet.name, 'medications')}
+              onRetry={loadMedications}
+            />
+          ) : medicationsView.rows.length === 0 ? (
             // With past history below, "No medications yet" would read as "never had
             // any" directly over a populated Past list (the between-courses state — a
             // pet just off its antibiotics). Say "right now" and point down; keep the
-            // forward-looking first-run copy only when there is genuinely no history.
+            // forward-looking first-run copy only when the past read ANSWERED with no
+            // history. Unanswered or failed, it claims neither (CUL-2174, C-12).
             <ThemedText style={styles.emptyConditionsText}>
-              {pastRows.length > 0
+              {pastView.kind === 'loaded' && pastView.rows.length > 0
                 ? `No medications right now — ${activePet.name}'s past courses are just below.`
-                : 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'}
+                : pastView.kind === 'loaded'
+                  ? 'No medications yet. Add a regimen once and logging each dose becomes a single tap.'
+                  : 'No medications right now.'}
             </ThemedText>
           ) : (
-            medications.map((reg) => {
+            medicationsView.rows.map((reg) => {
               const meta = [reg.dose_amount, routeLabel(reg.route), frequencyLabel(reg.doses_per_day)]
                 .filter(Boolean)
                 .join(' · ');
@@ -1522,7 +1599,18 @@ export default function ProfileScreen() {
             (spec §1). Renders nothing until derived / when there is no past history.
             A row with a catalog item taps through to app/medication/[id], which PR 3
             gave the past-course facts (CUL-318); an unspecified orphan stays inert. */}
-        <PastMedicationsSection rows={pastRows} />
+        {pastView.kind === 'failed' ? (
+          <Card style={styles.sectionGap}>
+            <ThemedText style={styles.sectionTitle}>Past medications</ThemedText>
+            <ListReadFailed
+              testID="past-medications-read-failed"
+              line={listReadFailedLine(activePet.name, 'past medications')}
+              onRetry={loadPastMedications}
+            />
+          </Card>
+        ) : (
+          <PastMedicationsSection rows={pastRows} />
+        )}
 
         {/* ── The diet trial's slot (B-417 §4.2; TS-6, every account since TS-GA) ──
             While a trial runs or is in its 30-day grace the slot is `TrialDoorRow`, one row
@@ -1682,9 +1770,11 @@ export default function ProfileScreen() {
         petId={activePet.id}
         existingCondition={editingCondition}
         onClose={() => { setConditionModalVisible(false); setEditingCondition(undefined); }}
-        onAdded={(c) => setConditions((prev) => [c, ...prev])}
+        onAdded={(c) => setConditionsRead((prev) => updatePetRows(prev, c.pet_id, (rows) => [c, ...rows]))}
         onUpdated={(c) =>
-          setConditions((prev) => prev.map((x) => (x.id === c.id ? c : x)))
+          setConditionsRead((prev) =>
+            updatePetRows(prev, c.pet_id, (rows) => rows.map((x) => (x.id === c.id ? c : x))),
+          )
         }
       />
 
@@ -1695,13 +1785,17 @@ export default function ProfileScreen() {
         onClose={() => { setMedicationModalVisible(false); setEditingRegimen(undefined); }}
         // A new regimen has no doses yet (empty tally → "No doses logged yet").
         onAdded={(reg) =>
-          setMedications((prev) => [buildRegimenDisplay(reg, EMPTY_TALLY()), ...prev])
+          setMedicationsRead((prev) =>
+            updatePetRows(prev, reg.pet_id, (rows) => [buildRegimenDisplay(reg, EMPTY_TALLY()), ...rows]),
+          )
         }
         // An edit can change doses_per_day (the expected denominator), so recompute
         // with the regimen's EXISTING tally rather than discarding its logged doses.
         onUpdated={(reg) =>
-          setMedications((prev) =>
-            prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
+          setMedicationsRead((prev) =>
+            updatePetRows(prev, reg.pet_id, (rows) =>
+              rows.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
+            ),
           )
         }
       />
