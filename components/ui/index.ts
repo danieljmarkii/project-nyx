@@ -25,3 +25,7 @@ export { TimeEditSheet } from './TimeEditSheet';
 export { CompletionMark, CheckGlyph } from './CompletionMark';
 export { FloorRaiseLine } from './FloorRaiseLine';
 export { ReadOfferLine } from './ReadOfferLine';
+export { QuietBand } from './QuietBand';
+export { FactRows } from './FactRows';
+export { SlotRow } from './SlotRow';
+export { PhotoThumb } from './PhotoThumb';

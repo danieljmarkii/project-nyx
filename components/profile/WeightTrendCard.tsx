@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { ArrowDown, ArrowUp, ChevronRight, Minus } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -330,9 +330,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
+  // The action colour (CUL-1911, the profile round's F1): teal is a good fact, never a control.
   actionText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

@@ -82,9 +82,15 @@ jest.mock('../../components/vetfiles/VetFilesCard', () => ({ VetFilesCard: () =>
 jest.mock('../../components/vetvisits/VetVisitsCard', () => ({ VetVisitsCard: () => null }));
 jest.mock('../../components/profile/WeightTrendCard', () => ({ WeightTrendCard: () => null }));
 jest.mock('../../components/profile/EditPetModal', () => ({ EditPetModal: () => null }));
+// The form is a stub that keeps its props: since CUL-1911 (round P3) Resolve lives in
+// the condition form, so the test drives the form's onResolve the way its confirm does.
+let mockConditionForm: { existingCondition?: { id: string; pet_id: string; condition_name: string }; onResolve?: (c: unknown) => void } = {};
 jest.mock('../../components/profile/AddConditionModal', () => ({
   ...jest.requireActual('../../components/profile/AddConditionModal'),
-  AddConditionModal: () => null,
+  AddConditionModal: (props: typeof mockConditionForm) => {
+    mockConditionForm = props;
+    return null;
+  },
 }));
 jest.mock('../../components/profile/AddMedicationModal', () => ({ AddMedicationModal: () => null }));
 jest.mock('../../components/profile/StartTrialModal', () => ({ StartTrialModal: () => null }));
@@ -233,6 +239,8 @@ function biscuitRows(view: RenderAPI) {
     view.queryByText('Prednisolone'),
     view.queryByLabelText('Log a dose of Prednisolone'),
     view.queryByText(/Amoxicillin/),
+    // The condition's door (CUL-1911, round P3), the one way into its edit and resolve.
+    view.queryByLabelText(/^Food sensitivity.*Edit$/),
   ].filter((n) => n !== null);
 }
 
@@ -242,6 +250,7 @@ describe('the Pet tab never shows another pet\'s records (CUL-2174)', () => {
     await act(async () => {});
     // Biscuit's page, read for Biscuit: all three lists are there.
     expect(view.getByText('Food sensitivity')).toBeTruthy();
+    expect(view.getByLabelText('Food sensitivity, active. Edit')).toBeTruthy();
     expect(view.getByText('Prednisolone')).toBeTruthy();
     expect(view.getByTestId('past-section').props.children).toBe('Amoxicillin');
 
@@ -334,12 +343,15 @@ describe('the Pet tab never shows another pet\'s records (CUL-2174)', () => {
     await act(async () => {});
     await switchTo(view, MOCHI);
 
-    fireEvent.press(view.getByText('Resolve'));
-    const buttons = alertSpy.mock.calls[0][2] as { text: string; onPress?: () => void }[];
-    expect(alertSpy.mock.calls[0][1]).toContain('Hairballs');
-    await act(async () => { buttons.find((b) => b.text === 'Mark resolved')?.onPress?.(); });
+    // The row is one door into the edit form (round P3), seeded with the on-screen
+    // pet's condition, and the form's resolve resolves exactly that row.
+    fireEvent.press(view.getByText('Hairballs'));
+    expect(mockConditionForm.existingCondition?.condition_name).toBe('Hairballs');
+    expect(mockConditionForm.existingCondition?.pet_id).toBe('p2');
+    await act(async () => { mockConditionForm.onResolve?.(mockConditionForm.existingCondition); });
 
     expect(view.queryByText('Hairballs')).toBeNull();
+    expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
 });

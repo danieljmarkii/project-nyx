@@ -35,7 +35,7 @@ jest.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: jest.fn(() => 
 jest.mock('../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
 
 async function saveByHand(view: ReturnType<typeof render>) {
-  await act(async () => { fireEvent.press(view.getByText('Enter manually')); });
+  await act(async () => { fireEvent.press(view.getByText('Type it in instead')); });
   fireEvent.changeText(view.getByPlaceholderText('e.g. Royal Canin'), 'Weruva');
   fireEvent.changeText(view.getByPlaceholderText('e.g. Gastrointestinal Adult'), 'Duck Stew');
   await act(async () => { fireEvent.press(view.getByText('Save')); });
@@ -66,7 +66,7 @@ it('a key beside fromLog offers nothing: that path writes a meal of its own', as
   // the one place the hand back sits. Only the gate on `fromLog` keeps it from offering.
   mockParams = { fromLog: '1', handBack: 'e1' };
   const view = render(<FoodCaptureScreen />);
-  await act(async () => { fireEvent.press(view.getByText('Enter manually')); });
+  await act(async () => { fireEvent.press(view.getByText('Type it in instead')); });
   fireEvent.changeText(view.getByPlaceholderText('e.g. Royal Canin'), 'Weruva');
   fireEvent.changeText(view.getByPlaceholderText('e.g. Gastrointestinal Adult'), 'Duck Stew');
   await act(async () => { fireEvent.press(view.getByText('Save and log food')); });

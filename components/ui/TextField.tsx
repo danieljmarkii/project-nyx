@@ -14,6 +14,7 @@ import { Eye, EyeOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { ThemedText } from './ThemedText';
+import { FieldLabel } from './FieldLabel';
 
 // The reveal toggle's own hit box. A 20pt glyph propped up by hitSlop met 44pt
 // only by spilling over the input, so keep the number here and let the test
@@ -79,9 +80,9 @@ type Props = ForwardedInputProps & ModeProps & {
 
 /**
  * The shared text input: one line by default, or a growing notes box with
- * `multiline`. Auth, onboarding and the vet visit sheets use it; PetForm, the
- * profile modals and most notes boxes still roll their own until their screen
- * pass moves them (CUL-1893). One primitive so they stop drifting: a calm label,
+ * `multiline`. Auth, onboarding, the vet visit sheets and the profile forms use
+ * it; PetForm and most notes boxes still roll their own until their screen pass
+ * moves them (CUL-1893). One primitive so they stop drifting: a calm label,
  * a focus ring that reuses the single interactive accent, an inline (never
  * red-alarm) error state, a built-in password reveal, and a ≥44pt target with an
  * accessible label/role.
@@ -136,7 +137,7 @@ export function TextField({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label ? <ThemedText style={styles.label}>{label}</ThemedText> : null}
+      {label ? <FieldLabel label={label} /> : null}
 
       <View
         style={[styles.field, multiline && styles.fieldMultiline, { borderColor }]}
@@ -200,12 +201,6 @@ const styles = StyleSheet.create({
   container: {
     // Spacing-agnostic by design — the parent form owns vertical rhythm.
     width: '100%',
-  },
-  label: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-    marginBottom: theme.space1,
   },
   field: {
     flexDirection: 'row',

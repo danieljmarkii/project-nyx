@@ -71,14 +71,14 @@ const MOTION_DIR = 'components/motion/';
  */
 const CEILINGS = {
   colour: 8,
-  fontSize: 64,
-  lineHeight: 72,
-  letterSpacing: 9,
-  spacing: 366,
-  radius: 81,
-  duration: 92,
-  whorlSpinner: 48,
-  hitTarget: 186, // added by CUL-2144 at 199, 2026-10-23; 198 after CUL-658 moved IntakeFirstMealSheet's row; 186 after CUL-1908
+  fontSize: 41, // 71 until CUL-1910 moved food capture onto the kit; 48 after CUL-1911 (the pet profile); 41 after CUL-1908
+  lineHeight: 67,
+  letterSpacing: 8,
+  spacing: 336,
+  radius: 75,
+  duration: 90,
+  whorlSpinner: 43,
+  hitTarget: 176, // added by CUL-2144 at 199, 2026-10-23; 198 after CUL-658 moved IntakeFirstMealSheet's row; 195 after CUL-1910; 188 after CUL-1911; 176 after CUL-1908
 } as const;
 
 type Category = keyof typeof CEILINGS;
