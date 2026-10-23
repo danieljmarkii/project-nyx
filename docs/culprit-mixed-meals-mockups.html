@@ -462,6 +462,7 @@
     <div class="led"><span class="led-q">"4a… log this as a known known and not tackle it here."</span><span class="led-a">P-4 ruled (a). The weaning case is CUL-2040. 4b left the page.</span><span class="state ruled">Ruled</span></div>
     <div class="led"><span class="led-q">"Let's consider how to introduce design delight and motion."</span><span class="led-a">Every frame below plays. Two new shapes for the record are drawn as options (§2, §4).</span><span class="state open">New, react R-1 to R-3</span></div>
     <div class="led"><span class="led-q">Device, first mix (2026-10-22): "a big ass sheet with a lot of just empty space" · "give me a second"</span><span class="led-a">The split was built as a full page; it is now the compact sheet M2 always drew. A tap picks, Save writes (CUL-2133, option 1 of 3; a timed auto save was rejected). M2 and M2b redrawn in §1.</span><span class="state ruled">Ruled</span></div>
+    <div class="led"><span class="led-q">Audit, mock against the build (2026-10-23)</span><span class="led-a">Three details the build skipped now ship: the stepper's end stop says why (M4, new words, since the steps end at ¾), a treat shows dimmed in the picker (M1b), and the card says "one bowl" (M3). CUL-2134.</span><span class="state ruled">Built</span></div>
     <div class="led"><span class="led-q">Team correction</span><span class="led-a">Round 1's History ran one row across three days. Shipped runs never cross a day, so History is redrawn per day (§2).</span><span class="state ruled">Fixed</span></div>
   </div>
 </header>
@@ -522,7 +523,7 @@
           </div>
         </div>
       </div>
-      <p class="frame-note">The card slips away (180ms, 8pt drift) and the picker rises on <strong>the platform's own sheet</strong>, exactly as "+ Add a med" does today. One motion engine per gesture.</p>
+      <p class="frame-note">The card slips away (180ms, 8pt drift) and the picker rises on <strong>the platform's own sheet</strong>, exactly as "+ Add a med" does today. One motion engine per gesture. A treat <strong>stays in view, dimmed, with why</strong> it can't go in, so an owner hunting for it isn't left wondering (CUL-2134). It is not a button. "+ Add a food" is CUL-2089.</p>
     </div>
 
     <div class="frame" id="f-m2">
@@ -585,8 +586,8 @@
         <div class="card">
           <div class="card-head">
             <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <div class="card-titles t"><div class="card-title">Logged · <span class="ratio">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">7:40 am · Pixel · one bowl</div></div>
-            <div class="card-actions t"><span class="card-action">Undo</span></div>
+            <div class="card-titles t"><div class="card-title">Logged · <span class="ratio">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">7:40 am · one bowl</div></div>
+            <div class="card-actions t"><span class="card-action">Undo bowl</span><span class="card-action">Change time</span></div>
           </div>
           <div class="card-sect t">
             <span class="intake-label">How much did Pixel eat?</span>
@@ -597,7 +598,7 @@
           </div>
         </div>
       </div>
-      <p class="frame-note">A full arrival and one more buzz, because the mix is a real write (D-M1, team pick). The new title lands whole. <strong>No number roll</strong>: a roll would pass through splits you never entered.</p>
+      <p class="frame-note">A full arrival and one more buzz, because the mix is a real write (D-M1, team pick). The new title lands whole. <strong>No number roll</strong>: a roll would pass through splits you never entered. "One bowl" under the time says the two foods are one record, not two meals (CUL-2134).</p>
       <p class="spec">same arrival as M1 · VoiceOver: "Logged, one third chicken plus two thirds rabbit"</p>
     </div>
 
@@ -609,8 +610,8 @@
         <div class="card">
           <div class="card-head">
             <div class="mark"><div class="halo"></div><div class="disc"></div><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.5l4 4 8-9" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <div class="card-titles"><div class="card-title" aria-live="polite">Logged · <span class="ratio" id="m4-title">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">Day 5 · 7:35 am · Pixel · one bowl</div></div>
-            <div class="card-actions"><span class="card-action">Undo</span></div>
+            <div class="card-titles"><div class="card-title" aria-live="polite">Logged · <span class="ratio" id="m4-title">⅓ Chicken + ⅔ Rabbit</span></div><div class="card-sub">7:35 am · one bowl</div></div>
+            <div class="card-actions"><span class="card-action">Undo bowl</span><span class="card-action">Change time</span></div>
           </div>
           <div class="card-sect">
             <div class="stepper">
@@ -622,8 +623,8 @@
           </div>
         </div>
       </div>
-      <p class="frame-note">Tap either side. The split and the title <strong>crossfade in place</strong>, one light tick in the hand, and the card stays up a beat longer. Both sides feel the same, so the app never hints which way to go.</p>
-      <p class="spec">180ms ease-out crossfade · selectChip on save · end stop dims to 0.4 and says why</p>
+      <p class="frame-note">Tap either side. The split and the title <strong>crossfade in place</strong>, one light tick in the hand, and the card stays up a beat longer. Both sides feel the same, so the app never hints which way to go. At an end the side dims and <strong>a line under it says why</strong>: the steps stop at ¾ (CUL-2134). The edit screen's stepper shows the same line.</p>
+      <p class="spec">180ms ease-out crossfade · selectChip on save · end stop dims to 0.4 · line: "¾ {food} is as far as the steps go."</p>
     </div>
   </div>
 </section>
@@ -966,8 +967,8 @@
     now.textContent = stops[idx][0] + ' · ' + stops[idx][1];
     btnA.setAttribute('aria-disabled', String(idx === 0));
     btnB.setAttribute('aria-disabled', String(idx === stops.length - 1));
-    why.textContent = idx === stops.length - 1 ? 'Last stop. All rabbit is a plain Rabbit Pâté meal.'
-                    : idx === 0 ? 'Last stop. All chicken is a plain Chicken Pâté meal.' : '';
+    why.textContent = idx === stops.length - 1 ? '¾ Rabbit is as far as the steps go.'
+                    : idx === 0 ? '¾ Chicken is as far as the steps go.' : '';
     if (animate) {
       [title, now].forEach(function (n) { n.classList.remove('xfade'); void n.offsetWidth; n.classList.add('xfade'); });
       buzz.classList.remove('buzz'); void buzz.offsetWidth; buzz.classList.add('buzz');
