@@ -52,13 +52,17 @@ export function NumberField({
 }
 
 const styles = StyleSheet.create({
+  // Stretched, never centred as a column: the row then takes the container's width and
+  // centres its value inside it, where a centred column sized the row to the input's own
+  // intrinsic width, which can be wider than the screen and pushed the unit off it.
   block: {
-    alignItems: 'center',
     gap: theme.space1,
     paddingVertical: theme.space3,
   },
   row: {
     flexDirection: 'row',
+    // The value may shrink to fit beside its unit, never push the unit off the row.
+    maxWidth: '100%',
     alignItems: 'baseline',
     justifyContent: 'center',
     gap: theme.space1,
@@ -69,6 +73,7 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBodyMedium,
     color: theme.colorNeutralDark,
     minWidth: VALUE_MIN_WIDTH,
+    flexShrink: 1,
     textAlign: 'right',
     padding: 0,
   },
