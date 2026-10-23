@@ -235,6 +235,14 @@ export interface RecordAskCopy {
   vetLine: string;
 }
 
+/** The record's unread frame when the photo never reached a read (CUL-820, ruled B on the
+ *  event detail round, CUL-1907). It names no cause: the same branch catches an unsynced
+ *  photo, a watch that gave up and a read that was never asked for, and telling an owner on
+ *  Wi-Fi to wait for signal would delay the retry that fixes it. */
+export function recordUnreadRetryBody(pet: string | null): string {
+  return `This photo hasn't been read yet. It's saved on ${petOf(pet)} record, and Try again sends it now.`;
+}
+
 /** The "when to call" line, on its own (frames F and H). */
 export function recordVetLine(kind: RecordKind, pet: string | null): string {
   return kind === 'vomit'

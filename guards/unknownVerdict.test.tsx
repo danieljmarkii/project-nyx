@@ -72,6 +72,7 @@ jest.mock('../components/event/VomitFieldsEditor', () => ({ VomitFieldsEditor: (
 jest.mock('../components/event/StoolFieldsEditor', () => ({ StoolFieldsEditor: () => null }));
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
+import { RECORD_TRY_AGAIN, RECORD_UNREAD_HEADING } from '../constants/aiConsentCopy';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ComponentType } from 'react';
@@ -240,8 +241,9 @@ describe.each(SECTIONS)('$file — a status this build does not know', (section)
       mockRow = rowFor(section, { status, recommendation: verdict, read_text: 'The read the server wrote.', ...section.facts });
       const { findByText, queryByText, queryByTestId } = render(<Section eventId="e1" petId="pet-1" petName="Rex" hasPhoto />);
 
-      expect(await findByText('Not enough to say about this one yet.')).toBeTruthy();
-      expect(queryByText('Try analysis')).toBeTruthy();
+      // The record's unread frame since CUL-820: it says no read happened, never a verdict.
+      expect(await findByText(RECORD_UNREAD_HEADING)).toBeTruthy();
+      expect(queryByText(RECORD_TRY_AGAIN)).toBeTruthy();
       expect(queryByText(words)).toBeNull();
       expect(queryByText('The read the server wrote.')).toBeNull();
       expect(queryByTestId('incident-read-card')).toBeNull();

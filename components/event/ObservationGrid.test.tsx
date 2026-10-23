@@ -22,15 +22,26 @@ function grid(props: Partial<React.ComponentProps<typeof ObservationGrid>> = {})
 }
 
 describe('ObservationGrid — expanded (§5.3)', () => {
-  it('renders every finding as a label/value pair, label uppercased by STYLE not by string', () => {
+  it('renders every finding as a label/value row, the value the larger type (CUL-1912, P7)', () => {
     const { getByText } = grid();
     for (const r of ROWS) {
-      // The clinical vocabulary is what a test queries; the casing is presentation.
       expect(getByText(r.label)).toBeTruthy();
       expect(getByText(r.value)).toBeTruthy();
     }
     const { StyleSheet } = require('react-native');
-    expect(StyleSheet.flatten(getByText('Colour').props.style).textTransform).toBe('uppercase');
+    const label = StyleSheet.flatten(getByText('Colour').props.style);
+    const value = StyleSheet.flatten(getByText(ROWS[0].value).props.style);
+    // The values a vet reads are the larger type, and the label is sentence case now.
+    expect(value.fontSize).toBeGreaterThan(label.fontSize);
+    expect(label.textTransform).toBeUndefined();
+  });
+
+  it('draws a hairline between rows, never above the first (P7)', () => {
+    const { getByTestId } = grid();
+    const { StyleSheet } = require('react-native');
+    const rowOf = (key: string) => StyleSheet.flatten(getByTestId(`observation-row-${key}`).props.style);
+    expect(rowOf(ROWS[0].key).borderTopWidth).toBeUndefined();
+    expect(rowOf(ROWS[1].key).borderTopWidth).toBeGreaterThan(0);
   });
 
   it('marks an owner-edited row and carries the one calm provenance line', () => {

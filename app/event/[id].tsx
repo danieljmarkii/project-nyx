@@ -10,7 +10,7 @@ import { ChevronRight, Camera } from 'lucide-react-native';
 import { Tick } from '../../components/surfaces/waits/Tick';
 import { EventSilhouette } from '../../components/surfaces/waits/EventSilhouette';
 import * as ImagePicker from 'expo-image-picker';
-import { colorRoles, theme } from '../../constants/theme';
+import { colorRoles, textStyles, theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
   getDb,
@@ -57,7 +57,7 @@ import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSectio
 import { CallAnswers } from '../../components/event/CallAnswers';
 import { IntakeQuestion } from '../../components/event/IntakeQuestion';
 import { destructiveConfirm } from '../../lib/haptics';
-import { Badge, EmptyState, Header, PhotoViewer, PrimaryButton, SectionLabel } from '../../components/ui';
+import { Badge, EmptyState, Header, PhotoViewer, SectionLabel } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { isStoolEvent, hasPerIncidentRead } from '../../constants/eventTypes';
 
@@ -89,15 +89,9 @@ function formatRelative(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], {
-    weekday: 'long', month: 'long', day: 'numeric',
-  });
-}
-
-// The lightbox caption's date (§5.4). Shorter than the record block's — the caption is
-// one line under a photo on a black ground, and the weekday is what a vet actually asks
-// for ("when was this?"), so the month abbreviates rather than the weekday.
+// The record block's date and the lightbox caption's (§5.4, and P2 of the event detail
+// round, CUL-1912): the weekday is what a vet asks for first ("when was this?"), so the
+// month abbreviates rather than the weekday, and the date shares one line with the time.
 function formatCaptionDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], {
     weekday: 'long', month: 'short', day: 'numeric',
@@ -111,6 +105,21 @@ function confidenceWord(confidence: string | null | undefined): string | null {
   if (confidence === 'witnessed') return 'witnessed';
   if (confidence === 'estimated') return 'estimated';
   return null;
+}
+
+// P2's second line names how the time was known. A found or estimated time says it was not
+// witnessed, plainly (B-010: the report never presents a found time as an exact one); the
+// window itself prints on the line above through `describeOccurredAt`. A legacy row with
+// no confidence says nothing rather than claim "witnessed" (C-10).
+function timeHowKnown(tag: string | null, confidence: string | null | undefined): string | null {
+  if (tag === 'estimated') return 'estimated, not witnessed';
+  if (tag === 'approximate') return 'found, not witnessed';
+  return confidenceWord(confidence);
+}
+
+// P1's Remove row names what it removes, in the confirm's own noun.
+function removeRowLabel(record: TimelineRow, typeLabel: string): string {
+  return isLookRow(record) ? 'Remove what you noticed' : `Remove this ${typeLabel.toLowerCase()}`;
 }
 
 // B-156 PR B4 — the combo cross-link on the detail screen, the larger sibling of
@@ -886,14 +895,29 @@ export default function EventDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* P1 (CUL-1912): Edit is the header's trailing action, and the pinned footer is gone,
+          which gives the read back the screen's bottom (a call's action line clears the fold
+          on a 390pt phone) and leaves the completion card nothing to cover (CUL-824). Edit
+          opens a form and changes nothing by itself, so it may come before the read. */}
       <Header
         leading="back"
         title={label}
         onLeadingPress={() => router.back()}
+        right={
+          <TouchableOpacity
+            onPress={handleEdit}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            style={styles.headerAction}
+            testID="event-edit"
+          >
+            <ThemedText style={styles.headerActionText}>Edit</ThemedText>
+          </TouchableOpacity>
+        }
       />
 
       <View ref={scrollFrameRef} collapsable={false} style={styles.scrollFrame}>
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} onScroll={onScroll} scrollEventThrottle={16}>
+      <ScrollView ref={scrollRef} style={styles.ground} contentContainerStyle={styles.scroll} onScroll={onScroll} scrollEventThrottle={16}>
         {/* Hero photo — present when a photo exists; on symptom events without
             a photo, an empty-state tap-to-add hero. Meals skip the empty hero. */}
         {photoUri ? (
@@ -925,8 +949,10 @@ export default function EventDetailScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={handleAddPhoto}
-            style={styles.heroEmpty}
+            style={styles.photoTile}
             disabled={uploadingPhoto}
+            accessibilityRole="button"
+            testID="event-add-photo"
           >
             {uploadingPhoto ? (
               <Tick working />
@@ -948,22 +974,25 @@ export default function EventDetailScreen() {
 
         {/* Body */}
         <View style={styles.body}>
-          <ThemedText style={styles.typeLabel}>{label.toUpperCase()}</ThemedText>
-          <ThemedText style={styles.dateBig}>{formatDate(event.occurred_at)}</ThemedText>
-          <ThemedText style={styles.timeRow}>
-            {timeDisplay.primary}
-            {timeDisplay.isExact ? ` · ${formatRelative(event.occurred_at)}` : ''}
+          {/* P2 (CUL-1912): one date-and-time line, then what it was, how the time was
+              known, how long ago and whose record it is. A found time prints its window
+              here, through `describeOccurredAt`, never a point. */}
+          <ThemedText style={styles.when}>
+            {`${formatCaptionDate(event.occurred_at)} · ${timeDisplay.primary}`}
           </ThemedText>
-          {/* B-010 — when the time wasn't witnessed, say so plainly. Honest, not
-              alarming (Designer / Dr. Chen): the report must never present a
-              found time as a clinically-exact one. */}
-          {timeDisplay.tag ? (
-            <ThemedText style={styles.confidenceNote}>
-              {timeDisplay.tag === 'estimated'
-                ? 'Estimated — not witnessed'
-                : 'Found, not witnessed'}
-            </ThemedText>
-          ) : null}
+          {/* CUL-660 — a record screen SAYS whose record it is, from the RECORD's pet id,
+              never the active one (C-9); a blank resolves to nothing and the clause drops:
+              correct-but-anonymous beats confidently wrong. */}
+          <ThemedText style={styles.recordLine} testID="event-record-line">
+            {[
+              label,
+              timeHowKnown(timeDisplay.tag, event.occurred_at_confidence),
+              timeDisplay.isExact ? formatRelative(event.occurred_at) : null,
+              eventPetName ? `${eventPetName}'s record` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </ThemedText>
           {/* EXIF attribution only when the time is exact: a found event's photo
               is stamped at discovery, not occurrence, so the window/estimate
               already carries the meaning here. */}
@@ -972,19 +1001,8 @@ export default function EventDetailScreen() {
               {formatExifAttribution(event.occurred_at)}
             </ThemedText>
           ) : null}
-          {/* CUL-660 (the B-550 class, one surface over) — a record screen should SAY
-              whose record it is. The name comes from the RECORD's pet id, never the
-              active one: on a multi-pet account the tap-through from a cross-pet surface
-              lands here on a pet who is not the active one, and a confidently wrong name
-              on a vomit's read is the expensive direction. `resolveRecordPetName` has no
-              active-pet rung by design (C-9); a blank resolves to nothing and this line
-              simply does not render — correct-but-anonymous beats confidently wrong. */}
-          {eventPetName ? (
-            <ThemedText style={styles.recordOwner}>{`${eventPetName}'s record`}</ThemedText>
-          ) : null}
-
-          {/* The measured weight. NO section label: the type heading above already
-              reads "WEIGHT", and the value IS the event — there is no badge to pair it
+          {/* The measured weight. NO section label: the record line above already
+              names it a weight, and the value IS the event — there is no badge to pair it
               with, so it states itself the way the date does rather than sitting under
               a second copy of its own name.
 
@@ -998,8 +1016,8 @@ export default function EventDetailScreen() {
           ) : null}
 
           {/* CUL-869 — the look's words and its note. No section label above the
-              words for the same reason the weight has none: the type heading already
-              reads "NOTICED", and the words ARE the record. */}
+              words for the same reason the weight has none: the record line already
+              names it, and the words ARE the record. */}
           {look ? (
             <LookRecordSection
               eventId={event.id}
@@ -1247,22 +1265,20 @@ export default function EventDetailScreen() {
               <ThemedText style={styles.notes}>{event.notes}</ThemedText>
             </View>
           ) : null}
+
+          {/* P1: Remove is the record's last row, one confirm away and furthest from the
+              thumb, which suits a destructive action. The box carries the 44pt floor. */}
+          <TouchableOpacity
+            onPress={() => { void handleDelete(); }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            style={styles.removeRow}
+            testID="event-remove"
+          >
+            <ThemedText style={styles.removeRowText}>{removeRowLabel(event, label)}</ThemedText>
+          </TouchableOpacity>
         </View>
       </ScrollView>
-      </View>
-
-      {/* Bottom actions — Edit is the filled primary; Remove is a subordinate,
-          destructive text action below it (PM call: a single secondary action
-          doesn't justify a ⋯ menu). Spacing + text-only treatment keep the
-          destructive action from reading as a peer of Edit. */}
-      <View style={styles.footer}>
-        <PrimaryButton label="Edit" onPress={handleEdit} />
-        <PrimaryButton
-          label="Remove"
-          variant="destructive"
-          onPress={() => { void handleDelete(); }}
-          style={styles.removeButton}
-        />
       </View>
 
       {/* Fullscreen photo viewer */}
@@ -1286,22 +1302,40 @@ const styles = StyleSheet.create({
   scrollFrame: {
     flex: 1,
   },
+  // P11: Home's ground below the hero, so the read's soft-shadow card reads at all. The
+  // record stays in daylight; the only dark ground is still the photo viewer.
+  ground: {
+    backgroundColor: theme.colorNeutralLight,
+  },
   scroll: {
     paddingBottom: theme.space5,
+  },
+  headerAction: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+  },
+  headerActionText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   hero: {
     width: '100%',
     height: HERO_HEIGHT,
     backgroundColor: theme.colorNeutralLight,
   },
-  heroEmpty: {
-    width: '100%',
-    height: HERO_HEIGHT,
-    backgroundColor: theme.colorNeutralLight,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: theme.colorBorder,
-    justifyContent: 'center',
+  // P10: a record with no photo has nothing to show a vet, so the offer is a dashed tile in
+  // the gutter rather than a 320pt hero, and the record and notes come above the fold.
+  photoTile: {
+    marginHorizontal: theme.space1,
+    marginTop: theme.space2,
+    paddingVertical: theme.space3,
+    paddingHorizontal: theme.space2,
+    backgroundColor: theme.colorSurface,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colorBorderStrong,
+    borderRadius: theme.radiusMedium,
     alignItems: 'center',
     gap: theme.space1,
   },
@@ -1321,18 +1355,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space3,
     paddingTop: theme.space3,
   },
-  typeLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    letterSpacing: theme.trackingWidest,
-    marginBottom: theme.space1,
-  },
-  dateBig: {
-    fontSize: theme.text2XL,
-    fontWeight: theme.weightSemibold,
+  when: {
+    ...textStyles.heading,
     color: theme.colorTextPrimary,
     letterSpacing: theme.trackingTight,
+  },
+  recordLine: {
+    ...textStyles.caption,
+    color: theme.colorTextSecondary,
+    marginTop: theme.space0_5,
   },
   // The measured value, sized as the event's own fact — under the date, above
   // everything derived. Primary ink, no tint: a weight reading carries no verdict, so
@@ -1343,24 +1374,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     marginTop: theme.space2,
   },
-  timeRow: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-    marginTop: theme.space0_5,
-  },
   exifAttribution: {
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
-    marginTop: theme.spaceMicro,
-  },
-  // Quiet and under the time — the record's subject, not its headline. The date stays
-  // the biggest thing on the block.
-  recordOwner: {
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
-    marginTop: theme.space0_5,
-  },
-  confidenceNote: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: theme.spaceMicro,
@@ -1442,7 +1456,8 @@ const styles = StyleSheet.create({
   // NOT the rose symptom tint: a gentle heads-up, never an alarm (Principle 4).
   doubleDoseNote: {
     marginTop: theme.space3,
-    backgroundColor: theme.colorNeutralLight,
+    // White on Home's ground (P11): the shipped neutral fill IS the ground now.
+    backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusSmall,
     padding: theme.space2,
   },
@@ -1465,16 +1480,17 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightBody,
   },
-  footer: {
-    paddingHorizontal: theme.space3,
-    paddingTop: theme.space2,
-    paddingBottom: theme.space3,
-    borderTopWidth: 1,
+  removeRow: {
+    marginTop: theme.space4,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colorBorder,
-    backgroundColor: theme.colorSurface,
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
   },
-  removeButton: {
-    marginTop: theme.space1,
+  removeRowText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.destructive.onLight,
   },
   loadingState: {
     flex: 1,

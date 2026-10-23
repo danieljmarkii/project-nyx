@@ -114,7 +114,7 @@ describe('the load wait (D2-7 / CUL-1068)', () => {
     const { getByTestId, queryByTestId, getByText } = render(<EventDetailScreen />);
     expect(getByTestId('event-silhouette')).toBeTruthy();
     expect(queryByTestId('whorl')).toBeNull();
-    await waitFor(() => expect(getByText("Biscuit's record")).toBeTruthy());
+    await waitFor(() => expect(getByText(/· Biscuit's record$/)).toBeTruthy());
     expect(queryByTestId('event-silhouette')).toBeNull();
   });
 });
@@ -123,7 +123,7 @@ describe('the record block says whose record it is (CUL-660, §5.1)', () => {
   it("names the RECORD's pet, resolved from the row's own pet_id", async () => {
     mockGetEventById.mockResolvedValue(baseRow);
     const { getByText } = render(<EventDetailScreen />);
-    await waitFor(() => expect(getByText("Biscuit's record")).toBeTruthy());
+    await waitFor(() => expect(getByText(/· Biscuit's record$/)).toBeTruthy());
     // Not the active pet, and not by luck: the resolver was asked for pet-A.
     expect(mockResolveRecordPetName).toHaveBeenCalledWith(expect.anything(), 'pet-A');
   });
@@ -177,26 +177,29 @@ describe('the lightbox caption (§5.4, mock V1)', () => {
     // The whole reason the caption goes through `describeOccurredAt` rather than a
     // display string: this is the frame a vet is shown, and a discovery time printed as
     // an occurrence time is a clinical claim the record does not hold.
-    const { getByText, queryByText } = await openViewer({
+    const { getByText, getAllByText, queryByText } = await openViewer({
       ...baseRow,
       occurred_at_confidence: 'window',
       occurred_at_earliest: new Date(2026, 8, 5, 16, 0).toISOString(),
       occurred_at_latest: new Date(2026, 8, 5, 17, 33).toISOString(),
     });
-    await waitFor(() => expect(getByText(/^Saturday, Sep 5 · between 0?4:00 PM and 0?5:33 PM$/)).toBeTruthy());
+    // Twice, by design: the record's own date-and-time line (CUL-1912, P2) and the caption
+    // print the same window through the same `describeOccurredAt`.
+    await waitFor(() => expect(getAllByText(/^Saturday, Sep 5 · between 0?4:00 PM and 0?5:33 PM$/)).toHaveLength(2));
     // No third token — the anchored match above is what proves it, and this pins the
     // token FORM (`· witnessed`) so a future append is caught even if the anchor moves.
-    // The record block's own "Found, not witnessed" line is a sentence, not this token,
-    // and is expected to be on the screen.
+    // The record line's own "found, not witnessed" clause is not this token, and is
+    // expected to be on the screen.
     expect(queryByText(/· witnessed/)).toBeNull();
-    expect(getByText('Found, not witnessed')).toBeTruthy();
+    expect(getByText(/^Vomit · found, not witnessed · /)).toBeTruthy();
   });
 
   it('an unclassified legacy row claims NOTHING about how the time was known (C-10)', async () => {
     // A null confidence reports the same "exact" shape as a witnessed one. Labelling it
     // "witnessed" would put a claim on the photo that nobody ever made.
-    const { getByText, queryByText } = await openViewer({ ...baseRow, occurred_at_confidence: null });
-    await waitFor(() => expect(getByText(/^Saturday, Sep 5 · 0?2:14 AM$/)).toBeTruthy());
+    const { getAllByText, queryByText } = await openViewer({ ...baseRow, occurred_at_confidence: null });
+    // The record line and the caption, both with no third token.
+    await waitFor(() => expect(getAllByText(/^Saturday, Sep 5 · 0?2:14 AM$/)).toHaveLength(2));
     expect(queryByText(/· witnessed/)).toBeNull();
     expect(queryByText(/· estimated/)).toBeNull();
   });
@@ -213,5 +216,60 @@ describe('the hero photo speaks to VoiceOver (CUL-1275)', () => {
     expect(hero.props.accessibilityRole).toBe('imagebutton');
     expect(hero.props.accessibilityLabel).toBe('Vomit photo');
     expect(hero.props.accessibilityHint).toBe('Opens the photo full screen');
+  });
+});
+
+// ── CUL-1912: the event detail round's P1, P2, P10 and P11 ───────────────────────────
+describe('the record screen, as the design round ruled (CUL-1912)', () => {
+  const { router } = jest.requireMock('expo-router') as { router: { push: jest.Mock } };
+  const { StyleSheet } = jest.requireActual<typeof import('react-native')>('react-native');
+
+  it('P1: Edit is the header\'s trailing action, Remove the record\'s last row, and no footer', async () => {
+    mockGetEventById.mockResolvedValue(baseRow);
+    const view = render(<EventDetailScreen />);
+    const remove = await view.findByTestId('event-remove');
+    expect(view.getByText('Remove this vomit')).toBeTruthy();
+    // Its 44pt is its box.
+    expect(StyleSheet.flatten(remove.props.style).minHeight).toBe(44);
+    // The only Edit on a vomit's screen is the header's; the footer's pair is gone.
+    expect(view.getAllByText('Edit')).toHaveLength(1);
+    expect(view.queryByText('Remove')).toBeNull();
+    router.push.mockClear();
+    fireEvent.press(view.getByTestId('event-edit'));
+    expect(router.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/edit-event' }));
+  });
+
+  it('P2: one date-and-time line, then type · how it was known · how long ago · whose record', async () => {
+    mockGetEventById.mockResolvedValue(baseRow);
+    const view = render(<EventDetailScreen />);
+    const line = await view.findByTestId('event-record-line');
+    expect(line.props.children).toMatch(/^Vomit · witnessed · .+ · Biscuit's record$/);
+    expect(view.getAllByText(/^Saturday, Sep 5 · 0?2:14 AM$/).length).toBeGreaterThan(0);
+  });
+
+  it('P2: an estimated time says it was not witnessed, and never says how long ago as if exact', async () => {
+    mockGetEventById.mockResolvedValue({ ...baseRow, occurred_at_confidence: 'estimated' });
+    const view = render(<EventDetailScreen />);
+    const line = await view.findByTestId('event-record-line');
+    expect(line.props.children).toBe("Vomit · estimated, not witnessed · Biscuit's record");
+    expect(view.getByText(/^Saturday, Sep 5 · ~0?2:14 AM$/)).toBeTruthy();
+  });
+
+  it('P2: an unnamed pet drops the clause rather than naming the wrong one (C-9)', async () => {
+    mockResolveRecordPetName.mockReturnValue(null);
+    mockGetEventById.mockResolvedValue(baseRow);
+    const view = render(<EventDetailScreen />);
+    const line = await view.findByTestId('event-record-line');
+    expect(line.props.children).not.toMatch(/record/);
+  });
+
+  it('P10 and P11: a photoless record offers a dashed tile on Home\'s ground', async () => {
+    mockGetEventById.mockResolvedValue(baseRow);
+    const view = render(<EventDetailScreen />);
+    const tile = StyleSheet.flatten((await view.findByTestId('event-add-photo')).props.style);
+    expect(tile.borderStyle).toBe('dashed');
+    expect(tile.height).toBeUndefined();
+    const scroll = view.UNSAFE_root.findAll((n: { props: Record<string, unknown> }) => n.props.contentContainerStyle !== undefined && n.props.onScroll !== undefined)[0];
+    expect(StyleSheet.flatten(scroll.props.style).backgroundColor).toBe('#FAFAFA');
   });
 });

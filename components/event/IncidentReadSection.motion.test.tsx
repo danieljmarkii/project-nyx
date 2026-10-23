@@ -143,11 +143,11 @@ const layout = (node: Instance, height: number, y = 0) =>
 function arrive(opts: { verdict?: IncidentVerdict; measurePending?: boolean; measureCard?: boolean } = {}) {
   const { verdict = 'monitor', measurePending = true, measureCard = true } = opts;
   const view = render(<Host pending verdict={verdict} />);
-  if (measurePending) layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+  if (measurePending) layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
   act(() => {
     view.rerender(<Host pending={false} verdict={verdict} />);
   });
-  if (measureCard) act(() => layout(view.getByTestId('incident-read-card'), CARD_H));
+  if (measureCard) act(() => layout(view.getByTestId('incident-read-body'), CARD_H));
   return view;
 }
 
@@ -158,9 +158,9 @@ describe('the idle tree — §7: the arrival adds no node when nothing is in fli
     expect(queryByTestId('incident-read-ghost')).toBeNull();
     expect(queryByTestId('incident-read-clip')).toBeNull();
     expect(queryByTestId('incident-read-land')).toBeNull();
-    // The label, then the pending box. No wrapper between them.
-    expect(section.children).toHaveLength(2);
-    expect((section.children[1] as Instance).props.onLayout).toBeDefined();
+    // The pending frame alone: it carries the heading inside it (CUL-1912, P5). No wrapper.
+    expect(section.children).toHaveLength(1);
+    expect((section.children[0] as Instance).props.onLayout).toBeDefined();
   });
 
   it('a read already on screen: no wrappers, a plain rail, and not one `configureNext`', () => {
@@ -170,10 +170,13 @@ describe('the idle tree — §7: the arrival adds no node when nothing is in fli
     expect(queryByTestId('incident-read-clip')).toBeNull();
     expect(queryByTestId('incident-read-land')).toBeNull();
     expect(configureNext).not.toHaveBeenCalled();
-    // The rail is back in the card's flow: no explicit height, no absolute position.
+    // The rail hangs in the gutter and spans its track: no explicit height, no transform
+    // (CUL-1912, P4).
     const rail = flat(getByTestId('incident-read-rail'));
     expect(rail.height).toBeUndefined();
-    expect(rail.position).toBeUndefined();
+    expect(rail.transform).toBeUndefined();
+    expect(rail.position).toBe('absolute');
+    expect([rail.top, rail.bottom]).toEqual([0, 0]);
     expect(rail.width).toBe(3);
   });
 
@@ -192,12 +195,13 @@ describe('the idle tree — §7: the arrival adds no node when nothing is in fli
     expect(view.queryByTestId('incident-read-land')).toBeNull();
     const rail = flat(view.getByTestId('incident-read-rail'));
     expect(rail.height).toBeUndefined();
-    expect(rail.position).toBeUndefined();
+    expect(rail.transform).toBeUndefined();
+    expect([rail.top, rail.bottom]).toEqual([0, 0]);
   });
 });
 
 describe('the beats — §7, on the fold\'s constants', () => {
-  it('beat 1: the rail leaves the flow, seeds at the tick, and grows over railLeadMs — before the box moves', () => {
+  it('beat 1: the rail takes an explicit height, seeds at the tick, and grows over railLeadMs — before the box moves', () => {
     const view = arrive();
 
     // The box has NOT been told to open yet: beat 2 is 80ms out.
@@ -209,12 +213,14 @@ describe('the beats — §7, on the fold\'s constants', () => {
 
     const rail = view.getByTestId('incident-read-rail');
     expect(flat(rail).position).toBe('absolute');
+    expect(flat(rail).top).toBe(0);
     expect(flat(rail).height).toBe(CARD_H);
     const { scale, shift } = transformValues(rail);
-    // A `tick`-tall segment, centred where the pending tick was: the rail scales about its
-    // own centre (CARD_H/2), the tick sat at the pending box's centre (PENDING_H/2).
+    // A `tick`-tall segment, centred where the pending tick stood: the rail scales about its
+    // own centre (CARD_H/2), and the tick stands at the top of the same track in the
+    // pending frame (TICK/2), both in the gutter (CUL-1912, P4).
     expect(valueOf(scale!)).toBeCloseTo(TICK / CARD_H, 5);
-    expect(valueOf(shift!)).toBeCloseTo(PENDING_H / 2 - CARD_H / 2, 5);
+    expect(valueOf(shift!)).toBeCloseTo(TICK / 2 - CARD_H / 2, 5);
 
     const railRuns = timing.mock.calls.filter(
       ([v]) => v === scale || v === shift,
@@ -315,7 +321,7 @@ describe('G4 — same physics on every verdict', () => {
 describe('what never arrives (§7)', () => {
   it('a re-analysis over an owner\'s edit swaps un-animated', () => {
     const view = render(<Host pending suppressed />);
-    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
     act(() => {
       view.rerender(<Host pending={false} suppressed />);
     });
@@ -324,7 +330,7 @@ describe('what never arrives (§7)', () => {
     expect(configureNext).not.toHaveBeenCalled();
     expect(view.queryByTestId('incident-read-ghost')).toBeNull();
     expect(view.queryByTestId('incident-read-clip')).toBeNull();
-    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+    expect(flat(view.getByTestId('incident-read-rail')).height).toBeUndefined();
   });
 
   it('reduced motion is a crossfade: no configureNext, no translate, no ghost', () => {
@@ -344,7 +350,7 @@ describe('what never arrives (§7)', () => {
     expect(fade![1].toValue).toBe(1);
     expect(fade![1].duration).toBe(theme.durationFast);
     // The rail never leaves the card's flow under reduced motion.
-    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+    expect(flat(view.getByTestId('incident-read-rail')).height).toBeUndefined();
   });
 });
 
@@ -353,7 +359,7 @@ describe('the degrades', () => {
     const view = arrive({ measurePending: false });
 
     // No seed to grow from, so the rail stays in the card's flow (§12.3's degrade).
-    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+    expect(flat(view.getByTestId('incident-read-rail')).height).toBeUndefined();
     // …and no height is held, so the box has nothing to open from.
     expect(flat(view.getByTestId('incident-read-clip')).height).toBeUndefined();
 
@@ -365,7 +371,7 @@ describe('the degrades', () => {
 
   it('a content height that never reports: the arrival still ends, at its end state', () => {
     const view = arrive({ measureCard: false });
-    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+    expect(flat(view.getByTestId('incident-read-rail')).height).toBeUndefined();
 
     act(() => jest.advanceTimersByTime(FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.settleSlackMs * 2 + FRAME_MS));
     expect(view.queryByTestId('incident-read-clip')).toBeNull();
@@ -390,7 +396,7 @@ describe('app blur finishes the arrival, never pauses it', () => {
     expect(view.queryByTestId('incident-read-clip')).toBeNull();
     expect(valueOf(opacity!)).toBe(1);
     expect(valueOf(shift!)).toBe(0);
-    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+    expect(flat(view.getByTestId('incident-read-rail')).height).toBeUndefined();
 
     // And the beat it never reached does not fire late.
     const before = configureNext.mock.calls.length;
@@ -406,7 +412,7 @@ describe('the two conditions — the adversarial pass (§7, both halves of the e
     // an unrendered section lands its 370ms spring on whatever else lays out in that
     // commit — which is why "it settles with no visual effect" was the wrong answer.
     const view = render(<Host pending />);
-    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
     act(() => {
       view.rerender(<Host pending={false} hasContent={false} />);
     });
@@ -444,7 +450,7 @@ describe('G4 — the rail measures the CARD, never the section block', () => {
       </View>
     );
     const view = render(<Host pending tail={tail} />);
-    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
     act(() => {
       view.rerender(<Host pending={false} tail={tail} />);
     });
@@ -452,7 +458,7 @@ describe('G4 — the rail measures the CARD, never the section block', () => {
     // measurement, it wins the arming race and the rail takes the wrong height — so this
     // ordering is what makes the assertion below mean something.
     act(() => layout(view.getByTestId('incident-read-land'), CARD_H + 210));
-    act(() => layout(view.getByTestId('incident-read-card'), CARD_H));
+    act(() => layout(view.getByTestId('incident-read-body'), CARD_H));
 
     const rail = view.getByTestId('incident-read-rail');
     expect(flat(rail).height).toBe(CARD_H);
@@ -465,7 +471,7 @@ describe('the reduced-motion crossfade ends on its own', () => {
   it('has the safety valve the animated path has — an invisible read is worst here', () => {
     mockUseReducedMotion.mockReturnValue(true);
     const view = render(<Host pending />);
-    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
     act(() => {
       view.rerender(<Host pending={false} />);
     });
@@ -489,12 +495,12 @@ describe('the safety valves — what happens when a beat never calls back', () =
 
   it('the arrival recovers, visible and unwrapped, and stops what it started', () => {
     const view = render(<Host pending />);
-    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
     stall();
     act(() => {
       view.rerender(<Host pending={false} />);
     });
-    act(() => layout(view.getByTestId('incident-read-card'), CARD_H));
+    act(() => layout(view.getByTestId('incident-read-body'), CARD_H));
     act(() => jest.advanceTimersByTime(FOLD_MOTION.railLagMs));
     // Wrapped, clipped, invisible — and nothing running will ever end it.
     expect(view.getByTestId('incident-read-land')).toBeTruthy();
@@ -509,13 +515,13 @@ describe('the safety valves — what happens when a beat never calls back', () =
     expect(view.queryByTestId('incident-read-ghost', { includeHiddenElements: true })).toBeNull();
     // The values are at rest, not left wherever a stalled beat abandoned them.
     expect(valueOf(opacity!)).toBe(1);
-    expect(flat(view.getByTestId('incident-read-rail')).position).toBeUndefined();
+    expect(flat(view.getByTestId('incident-read-rail')).height).toBeUndefined();
   });
 
   it('the reduced-motion crossfade recovers too — an invisible read is worst on this path', () => {
     mockUseReducedMotion.mockReturnValue(true);
     const view = render(<Host pending />);
-    layout(view.getByTestId('incident-read-section').children[1] as Instance, PENDING_H, SLOT_Y);
+    layout(view.getByTestId('incident-read-pending'), PENDING_H, SLOT_Y);
     stall();
     act(() => {
       view.rerender(<Host pending={false} />);

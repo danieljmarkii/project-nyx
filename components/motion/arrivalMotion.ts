@@ -266,13 +266,15 @@ export function useIncidentArrival({
       // No pending measurement, or a degenerate height: the rail rides the box, in flow,
       // and the other two beats still run (§12.3's degrade, never a snap).
       if (from == null || !(height > 0)) return;
-      // The rail is full-bleed (top 0) and scales about its own centre, so a scale of
-      // tick/height leaves a `tick`-tall segment centred at height/2. The pending tick sat
-      // at the pending box's centre, and the box and the card share a top edge — so the
-      // seed shift is the difference between those two centres, and the end state (scale 1,
-      // shift 0) is the rail filling the card.
+      // The rail spans its track (the card's body, top 0) and scales about its own centre,
+      // so a scale of tick/height leaves a `tick`-tall segment centred at height/2. The
+      // pending tick stands at the top of the same track in the pending frame (CUL-1912, P4:
+      // both hang in the gutter, one inset below a shared top edge), centred at tick/2, so
+      // the seed shift is the difference between those two centres, and the end state
+      // (scale 1, shift 0) is the rail filling the track. `from` still gates the beat: no
+      // pending measurement, no rail beat.
       values.railScale.setValue(tick / height);
-      values.railShift.setValue(from / 2 - height / 2);
+      values.railShift.setValue(tick / 2 - height / 2);
       setRailHeight(height);
       run(
         Animated.parallel([

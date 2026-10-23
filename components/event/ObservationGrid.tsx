@@ -4,10 +4,10 @@
 // Shared by the vomit and stool sections for the same reason as `IncidentReadCard`: they
 // rendered the same block twice and drifted apart on every touch.
 //
-// TWO COLUMNS, LABEL OVER VALUE. The shipped label-left/value-right row wasted the middle
-// of the screen and pushed a four-finding read past the fold on a small phone. Cells stack
-// their label above their value so a long value ("Possible — not identified") wraps inside
-// its own column instead of squeezing the label.
+// ONE ROW PER FINDING, UNDER HAIRLINES (CUL-1912, the event detail round's P7). The label
+// sits left at caption size and the value right at body size, so the values a vet reads are
+// the larger type; a long value wraps inside its own half rather than the two-column grid's
+// ragged wrap at 320pt and the largest text. The row order stays the builders' order.
 //
 // THE FOLD IS SEEN, NEVER RESOLVED (the Signal fold's rule, inherited). Folding hides
 // FACTS the owner has already read; it never hides the READ — `IncidentReadCard` sits
@@ -41,7 +41,7 @@
 //     never.
 import { ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { theme } from '../../constants/theme';
+import { textStyles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { observationStripLine } from './observationStrip';
 import { RAIL_WIDTH } from './IncidentReadCard';
@@ -66,6 +66,9 @@ export interface ObservationRow {
    *  part of the folded strip's named values: the strip names what the row IS. */
   secondary?: string | null;
   edited: boolean;
+  /** The row's stored value is its field's absence enum, decided by the caller from the
+   *  enum (CUL-828): the folded strip keeps the label beside it. */
+  absence?: boolean;
 }
 
 export function ObservationGrid({
@@ -100,7 +103,7 @@ export function ObservationGrid({
    *  screen replaced (CUL-819 (a): "From the earlier read" under a held call). */
   heading?: string;
 }) {
-  const stripLine = observationStripLine(rows.map((r) => r.value));
+  const stripLine = observationStripLine(rows);
 
   // The fold is offered only when there is a grid to fold AND a line to fold it to. An
   // editor open, a block carrying only a description, or an ESCALATING read (header rule
@@ -156,18 +159,14 @@ export function ObservationGrid({
       {editor ?? (
         <>
           {rows.length > 0 ? (
-            <View style={styles.grid}>
-              {rows.map((r) => (
-                <View key={r.key} style={styles.cell}>
-                  {/* Uppercased by STYLE, not by `.toUpperCase()`: the label's own string
-                      is what a test queries and what the clinical vocabulary is written in,
-                      and mangling it in JS for a visual effect turns every assertion
-                      about a finding’s name into an assertion about its casing. */}
-                  <ThemedText style={styles.cellLabel}>{r.label}</ThemedText>
-                  <View style={styles.cellValueRow}>
-                    <ThemedText style={styles.cellValue}>{r.value}</ThemedText>
+            <View style={styles.rows}>
+              {rows.map((r, i) => (
+                <View key={r.key} testID={`observation-row-${r.key}`} style={[styles.row, i > 0 ? styles.rowRule : null]}>
+                  <ThemedText style={styles.rowLabel}>{r.label}</ThemedText>
+                  <View style={styles.rowValue}>
+                    <ThemedText style={styles.value}>{r.value}</ThemedText>
                     {r.secondary ? (
-                      <ThemedText style={styles.cellSecondary}>{r.secondary}</ThemedText>
+                      <ThemedText style={styles.valueSecondary}>{r.secondary}</ThemedText>
                     ) : null}
                     {r.edited ? <ThemedText style={styles.editedTag}>Edited</ThemedText> : null}
                   </View>
@@ -228,46 +227,45 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
   },
-  grid: {
+  rows: {
+    marginTop: theme.space0_5,
+  },
+  // Label and value share the row's baseline; each takes the room it needs and wraps in
+  // its own half, so neither squeezes the other off the line.
+  row: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    columnGap: theme.space1_5,
+    paddingVertical: theme.space1,
+  },
+  rowRule: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+  },
+  rowLabel: {
+    ...textStyles.caption,
+    color: theme.colorTextSecondary,
+    flexShrink: 0,
+    maxWidth: '45%',
+  },
+  rowValue: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    // Only `rowGap`. A `columnGap` here would push two 50% cells past 100% and wrap the
-    // grid into a single column — the gutter is the cell's own `paddingRight` instead, so
-    // the two-column arithmetic cannot be broken by a spacing token change (C-5's
-    // re-derive-after-wrapping rule, applied before it can bite). These cells are inert
-    // text, not controls, so no hit area depends on the separation.
-    rowGap: theme.space1,
+    justifyContent: 'flex-end',
+    alignItems: 'baseline',
+    columnGap: theme.space0_75,
   },
-  cell: {
-    flexBasis: '50%',
-    maxWidth: '50%',
-    flexGrow: 0,
-    flexShrink: 1,
-    paddingRight: theme.space2,
-    gap: theme.spaceMicro,
-  },
-  cellLabel: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    letterSpacing: theme.trackingWidest,
-    textTransform: 'uppercase',
-  },
-  cellValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: theme.space0_75,
-  },
-  cellValue: {
-    fontSize: theme.textSM,
+  value: {
+    ...textStyles.body,
     color: theme.colorTextPrimary,
-    fontWeight: theme.fontWeightMedium,
+    textAlign: 'right',
     flexShrink: 1,
   },
-  cellSecondary: {
-    fontSize: theme.textXS,
+  valueSecondary: {
+    ...textStyles.caption,
     color: theme.colorTextTertiary,
-    flexShrink: 1,
   },
   // Per-field provenance marker — deliberately tertiary + small so it reads as a quiet
   // annotation, never an alarm (Designer / nyx-voice).

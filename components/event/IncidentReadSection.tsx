@@ -4,7 +4,8 @@
 // the one place both render.
 //
 // IDLE IS THE SHIPPED TREE, TO THE BYTE. Waiting or settled, this renders exactly what the
-// two sections rendered before PR 3 — a `View` holding the label and one child — and the
+// two sections rendered before PR 3 — a `View` holding one child (and, since CUL-1912, the
+// heading over a child that paints no frame of its own) — and the
 // `onLayout` the pending box carries adds no node. Every wrapper below mounts only while a
 // beat is in flight, which is what the §7 snapshot proves: the arrival adds nothing to the
 // tree an owner is actually looking at.
@@ -20,15 +21,27 @@
 //   · the GHOST — the pending box, out of the flow at the slot's own offset, fading over
 //     the card that replaced it. It is hidden from assistive tech: a screen reader must
 //     hear the read that landed, never the spinner copy that is on its way out.
+//
+// THE CARD BLEEDS, THE REST DOES NOT (CUL-1912, P4). The section runs 8pt from the screen's
+// edge so a card's inset lands its text on the record's 24pt edge; everything else the
+// sections put here (the observations, Re-run, a hidden note's line, the consent frames)
+// sits in `ReadSectionInset`, back on the record's edge. The heading lives inside each
+// frame the read paints (P5); a child that paints no frame passes `labelAbove`, and the
+// section draws the heading over it, so no state of the read loses it.
 import { useLayoutEffect, type ReactNode } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type IncidentArrival, type StageKind } from '../motion/arrivalMotion';
-import { SectionLabel } from '../ui/SectionLabel';
-import { IncidentReadPending } from './IncidentReadCard';
+import { HOME_CARD_INSET } from '../surfaces/home/HomeCard';
+import { IncidentReadEyebrow, IncidentReadPending, INCIDENT_READ_LABEL } from './IncidentReadCard';
 import { type ReadLandingAnnouncer } from './useReadLandingAnnouncement';
 
-export const INCIDENT_READ_SECTION_LABEL = 'AI READ';
+export const INCIDENT_READ_SECTION_LABEL = INCIDENT_READ_LABEL;
+
+/** Puts non-card content back on the record's text edge inside the bled section. */
+export function ReadSectionInset({ children }: { children?: ReactNode }) {
+  return <View style={styles.inset}>{children}</View>;
+}
 
 export function IncidentReadSection({
   arrival,
@@ -36,6 +49,7 @@ export function IncidentReadSection({
   working = false,
   announcer,
   announcement = null,
+  labelAbove = false,
   children,
 }: {
   arrival: IncidentArrival;
@@ -53,6 +67,9 @@ export function IncidentReadSection({
   announcement?: string | null;
   /** The landed content: the read card, or the failed / capped / not-enough card. */
   children?: ReactNode;
+  /** The content paints no frame of its own (a hidden note's line, a consent frame), so
+   *  the section draws the heading over it. Never while pending: the wait has its frame. */
+  labelAbove?: boolean;
 }) {
   const { phase, inFlight, heldHeight, slotTop, values } = arrival;
 
@@ -108,9 +125,11 @@ export function IncidentReadSection({
 
   return (
     <View testID="incident-read-section" style={styles.section}>
-      {/* A heading, so VoiceOver's rotor can jump to the read (CUL-1275) — the record
-          screen is long, and the read is what an owner comes back to it for. */}
-      <SectionLabel label={INCIDENT_READ_SECTION_LABEL} header style={styles.sectionLabel} />
+      {labelAbove && !pending ? (
+        <View style={[styles.inset, styles.labelAbove]}>
+          <IncidentReadEyebrow />
+        </View>
+      ) : null}
       {inFlight ? (
         <Animated.View
           testID="incident-read-ghost"
@@ -130,8 +149,12 @@ export function IncidentReadSection({
 const styles = StyleSheet.create({
   section: {
     marginTop: theme.space3,
+    marginHorizontal: -HOME_CARD_INSET,
   },
-  sectionLabel: {
+  inset: {
+    paddingHorizontal: HOME_CARD_INSET,
+  },
+  labelAbove: {
     marginBottom: theme.space1,
   },
   // `overflow: hidden` holds for the WHOLE flight, not just while a height is held:

@@ -234,3 +234,124 @@ describe('IncidentReadCard: "Part of a pattern" (K2)', () => {
     expect(railStyle(view.getByTestId).backgroundColor).toBe(theme.colorBorderStrong);
   });
 });
+
+// ── CUL-1912: the event detail round's P3 to P6 ────────────────────────────────────
+describe('IncidentReadCard on Home\'s surface (CUL-1912, P3 to P6)', () => {
+  const { StyleSheet } = require('react-native');
+  const cardStyle = (tone: Parameters<typeof IncidentReadCard>[0]['tone'], verdict = 'monitor') => {
+    const { getByTestId } = render(
+      <IncidentReadCard verdict={verdict} label="L" tone={tone} readText="x" onHide={() => {}} />,
+    );
+    return StyleSheet.flatten(getByTestId('incident-read-card').props.style);
+  };
+
+  it('P3: every tier keeps a look that is not colour alone', () => {
+    const filled = cardStyle('call_filled', 'worth_a_call');
+    const outline = cardStyle('call_outline', 'worth_a_call');
+    const calm = cardStyle('neutral');
+    const muted = cardStyle('muted', 'not_enough_to_say');
+    // Call now keeps its fill.
+    expect(filled.backgroundColor).toBe(theme.colorEventSymptomLight);
+    // Call today: a 2pt outline on white, so in greyscale it is not one hairline from the
+    // calm card (the round's first adversarial pass).
+    expect(outline.backgroundColor).toBe(theme.colorSurface);
+    expect(outline.borderWidth).toBe(2);
+    expect(outline.borderColor).toBe(theme.colorEventSymptom);
+    // Keep an eye out: Home's soft shadow, no edge.
+    expect(calm.shadowOpacity).toBeGreaterThan(0);
+    expect(calm.borderWidth).toBeUndefined();
+    // Not enough: the dashed edge, no shadow.
+    expect(muted.borderStyle).toBe('dashed');
+    expect(muted.shadowOpacity).toBeUndefined();
+  });
+
+  it('P4: the rail hangs in the gutter, left of the text edge, spanning its track', () => {
+    const { getByTestId } = render(<IncidentReadCard verdict="monitor" label="L" readText="x" />);
+    const rail = StyleSheet.flatten(getByTestId('incident-read-rail').props.style);
+    expect(rail.position).toBe('absolute');
+    expect(rail.left).toBeLessThan(0);
+    expect([rail.top, rail.bottom]).toEqual([0, 0]);
+    // The card's inset is Home's, so the text lands on the record's edge.
+    expect(StyleSheet.flatten(getByTestId('incident-read-card').props.style).padding).toBe(theme.space2);
+  });
+
+  it('P5: the verdict is one size and weight at every tier, and the heading is inside the card', () => {
+    const sizes = (['call_filled', 'call_outline', 'neutral', 'muted'] as const).map((tone) => {
+      const verdict = tone.startsWith('call') ? 'worth_a_call' : 'monitor';
+      const { getByText } = render(<IncidentReadCard verdict={verdict} label={`V-${tone}`} tone={tone} readText="x" />);
+      const s = StyleSheet.flatten(getByText(`V-${tone}`).props.style);
+      // ThemedText resolves the weight into the face, so the face is what is compared.
+      return `${s.fontSize}/${s.fontFamily}`;
+    });
+    // G4: no tier arrives larger or harder than another.
+    expect(new Set(sizes).size).toBe(1);
+    expect(sizes[0].startsWith(`${theme.textLG}/`)).toBe(true);
+    expect(sizes[0]).toMatch(/SemiBold|Semibold|600/);
+    const { getByText } = render(<IncidentReadCard verdict="monitor" label="L" readText="x" />);
+    expect(getByText('AI READ').props.accessibilityRole).toBe('header');
+  });
+
+  it('P5: a quiet verdict is the secondary grey, Not enough included; a call keeps the ink', () => {
+    const quiet = render(<IncidentReadCard verdict="not_enough_to_say" label="Q" tone="muted" readText="x" />);
+    expect(StyleSheet.flatten(quiet.getByText('Q').props.style).color).toBe(theme.colorTextSecondary);
+    const call = render(<IncidentReadCard verdict="worth_a_call" label="C" tone="call_outline" readText="x" />);
+    expect(StyleSheet.flatten(call.getByText('C').props.style).color).toBe(theme.colorEventSymptomInk);
+  });
+
+  it('P6: one foot row; Hide carries its 44pt in the box, never a slop (C-5)', () => {
+    const onHide = jest.fn();
+    const { getByTestId, getByText } = render(
+      <IncidentReadCard verdict="worth_a_call" label="C" readText="x" onHide={onHide} />,
+    );
+    const foot = getByTestId('incident-read-foot');
+    expect(StyleSheet.flatten(foot.props.style).flexWrap).toBe('wrap');
+    expect(getByText(INCIDENT_READ_DISCLAIMER)).toBeTruthy();
+    const hide = getByTestId('incident-read-hide');
+    // A slop would reach toward "I've called · Not yet" under a call; a mis-tap there hides one.
+    expect(hide.props.hitSlop).toBeUndefined();
+    expect(StyleSheet.flatten(hide.props.style).minHeight).toBe(theme.hitTarget);
+    fireEvent.press(getByText(INCIDENT_READ_HIDE_LABEL));
+    expect(onHide).toHaveBeenCalledTimes(1);
+  });
+
+  it('the body reports the rail\'s track height, not the card\'s', () => {
+    const onMeasure = jest.fn();
+    const { getByTestId } = render(<IncidentReadCard verdict="monitor" label="L" readText="x" onMeasure={onMeasure} />);
+    expect(getByTestId('incident-read-card').props.onLayout).toBeUndefined();
+    fireEvent(getByTestId('incident-read-body'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 300, height: 120 } } });
+    expect(onMeasure).toHaveBeenCalledWith(120);
+  });
+});
+
+describe('IncidentReadFrame and the pending wait (CUL-1912)', () => {
+  const { StyleSheet } = require('react-native');
+  const { IncidentReadFrame } = require('./IncidentReadCard');
+
+  it('a dashed frame leads with the heading and rails grey at full height', () => {
+    const { getByText, getByTestId, UNSAFE_root } = render(
+      <IncidentReadFrame surface="dashed" testID="f"><></></IncidentReadFrame>,
+    );
+    expect(getByText('AI READ').props.accessibilityRole).toBe('header');
+    expect(StyleSheet.flatten(getByTestId('f').props.style).borderStyle).toBe('dashed');
+    const { View } = require('react-native');
+    const rail = UNSAFE_root.findAllByType(View)
+      .map((n: { props: { style?: unknown } }) => StyleSheet.flatten(n.props.style) ?? {})
+      .find((s: { position?: string; bottom?: number }) => s.position === 'absolute' && s.bottom === 0);
+    expect(rail.backgroundColor).toBe(theme.colorBorderStrong);
+  });
+
+  it('the pending wait sits on the raised surface with its tick at the TOP of the gutter (P4)', () => {
+    const { getByTestId, getByText } = render(<IncidentReadPending />);
+    expect(getByText('AI READ')).toBeTruthy();
+    const frame = StyleSheet.flatten(getByTestId('incident-read-pending').props.style);
+    expect(frame.shadowOpacity).toBeGreaterThan(0);
+    const { View } = require('react-native');
+    const tick = getByTestId('incident-read-pending')
+      .findAllByType(View)
+      .map((n: { props: { style?: unknown } }) => StyleSheet.flatten(n.props.style) ?? {})
+      .find((s: { height?: number }) => s.height === RAIL_TICK_HEIGHT);
+    // The arrival seeds the rail from this spot: top of the track, in the gutter.
+    expect(tick.top).toBe(0);
+    expect(tick.position).toBe('absolute');
+  });
+});

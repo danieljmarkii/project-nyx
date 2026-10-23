@@ -1,6 +1,6 @@
 # Culprit — The Incident Screen: post-log routing + the AI read's arrival
 
-**Version:** 1.2 (**BUILD-READY** — D1–D4 PM-ruled 2026-09-05; D2 and G3 amended 2026-09-28, Engines v3 K1) · **Date:** 2026-09-28 · **Owner:** Sr. Product Designer (design authority), Dr. Alex Chen (clinical conditions), Dir. of Engineering (the route + the motion contract) · **Track:** CUL-800 (parent; absorbs CUL-158 / B-029) → CUL-802 (PR 1, the route), CUL-803 (PR 2, the screen), CUL-804 (PR 3, the arrival); CUL-801 (the trigger race) blocks PR 1 · **Design authority:** `docs/culprit-incident-screen-mockups.html` round 2 (the artifact re-publishes to the same URL)
+**Version:** 1.3 (**BUILD-READY** — D1–D4 PM-ruled 2026-09-05; D2 and G3 amended 2026-09-28, Engines v3 K1) · **Date:** 2026-10-23 · **Owner:** Sr. Product Designer (design authority), Dr. Alex Chen (clinical conditions), Dir. of Engineering (the route + the motion contract) · **Track:** CUL-800 (parent; absorbs CUL-158 / B-029) → CUL-802 (PR 1, the route), CUL-803 (PR 2, the screen), CUL-804 (PR 3, the arrival); CUL-801 (the trigger race) blocks PR 1 · **Design authority:** `docs/culprit-incident-screen-mockups.html` round 2 (the artifact re-publishes to the same URL)
 
 **Read this when:** touching what happens after a vomit or stool is logged, `app/event/[id].tsx`, `VomitAnalysisSection` / `StoolAnalysisSection`, the named completion card's placement, or any surface where a per-incident AI read appears.
 
@@ -45,10 +45,10 @@ All are existing states of the analysis sections; the route makes them visible o
 |---|---|---|
 | Pending, then lands | The tick and whorl, then the arrival (§7). | — |
 | Slow (upload on a bad signal) | Pending stays; the card dismisses at 5s as today; the screen does not. Back is always available; the read lands in the row for next time. | Real work on the pet's behalf earns a wait; a spinner never blocks Back. |
-| Failed | "Couldn't finish reading this one." + Try again, as shipped. | Error copy names the repair. |
+| Failed | "Couldn't finish reading this one." + the vet line + Try again, on the dashed frame (CUL-1912). | Error copy names the repair; the vet line rides every state that is not a read. |
 | Daily cap reached | The calm cap copy, no retry, no Premium mention. | Pets > $; monetization §7.3. |
-| Consent off (CUL-552) | No read section at all; the screen is the record. | Never a spinner that cannot end. |
-| Photo unclear | "Not enough to say about this one yet." + Try analysis. | Not-enough is the floor, never reassurance. |
+| Consent off (CUL-552, CUL-1835) | The off frame, painted from the phone's answer on the first frame, never after a tick (CUL-823). | Never a spinner that cannot end, and never a promised read the server will not run. |
+| No read reached (an unsynced photo, a watch that gave up, a read never asked) | "The photo wasn't read" / "This photo hasn't been read yet. It's saved on {pet}'s record, and Try again sends it now." + the vet line + Try again (CUL-820, ruled B on CUL-1907). | Names no cause the branch cannot know, so it is never heard as a verdict on a photo nobody read. A photo the model could not read is the read's own Not enough to say, a verdict. |
 | Undo from the card | Screen dismisses, Removed line lands on Home. | G5. |
 
 ## §5 The screen (PR 2)
@@ -101,3 +101,4 @@ The design principles allow one considered animation: *the transition to a real 
 |---|---|---|
 | 1.0 | 2026-09-05 | Build-ready. Distilled from mock round 2 after the PM ruled D1–D4 the same day. |
 | 1.1 | 2026-09-05 | §5.3a added and §6 corrected during PR 2's build (CUL-803, #806) — the fold's two missing rules (an escalation's facts do not fold; the record re-opens a fold), the strip's two honesty rules, and the §6 pointer at a `hydration.test.ts` scan that structurally could not cover an AsyncStorage key. All four came from the `adversarial-reviewer` pass, which returned FAIL on the first cut. |
+| 1.3 | 2026-10-23 | §4 rows for the event detail round's build (CUL-1912; ruled on CUL-1907): the no-read frame (CUL-820), the vet line on the failed frame, and the off frame on the first frame (CUL-823). |

@@ -17,10 +17,20 @@
 // never maps a recommendation to words, so neither section's clinical copy can be edited
 // from here (clinical-guardrails Pattern 1: the enum has no reassuring value, and there is
 // no path through this file that adds one).
+//
+// HOME'S SURFACE, THE RAIL IN THE GUTTER (CUL-1912, the event detail round's P3 to P6). The
+// card takes Home's one surface and Home's gutter: it runs 8pt from the screen's edge (the
+// section bleeds), its inset puts the text on the record's 24pt edge, and the rail hangs in
+// the inset rather than standing as a column of the row. Every tier keeps a look that does
+// not rest on colour alone: call now the rose fill, call today a 2pt rose outline, Keep an
+// eye out the soft shadow, and every state that is not a settled read a dashed edge.
+import { type ReactNode } from 'react';
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
-import { theme } from '../../constants/theme';
+import { shadows, textStyles, theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
-import { TICK_MOTION, Tick } from '../surfaces/waits/Tick';
+import { GUTTER_RAIL, HOME_CARD_INSET } from '../surfaces/home/HomeCard';
+import { Tick } from '../surfaces/waits/Tick';
+import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
 import { type TierTone } from '../../lib/incidentTierWords';
@@ -30,6 +40,11 @@ import { TELL_THEM_HEADING, WATCH_FOR_LEAD, type WatchForList } from '../../lib/
  *  three-value union: a server may hold a verdict this build has never seen (CUL-1277),
  *  and the tone below is decided by the quiet list, never by the literal. */
 export type IncidentVerdict = string;
+
+/** The read's heading, inside every frame the read section paints (P5). A heading for
+ *  VoiceOver's rotor (CUL-1275): the record is long, and the read is what an owner comes
+ *  back to it for. */
+export const INCIDENT_READ_LABEL = 'AI READ';
 
 export const INCIDENT_READ_DISCLAIMER =
   'This is a quick read of a single moment, not a diagnosis.';
@@ -42,12 +57,12 @@ export const INCIDENT_READ_PENDING_LABEL = 'Reading the photo…';
  *  contextual escalation (repeated vomiting, a concurrent symptom) that has no photo to read. */
 export const INCIDENT_RE_READING_PHOTO_LINE = 'Reading the photo again…';
 export const INCIDENT_RE_READING_LINE = 'Reading this one again…';
-/** The failed read's line, and the no-recommendation read's. Named here (CUL-1275) because
- *  each is now said twice — on screen, and to a screen reader when it lands — and both
- *  sections say them, so one string per line keeps the two channels and the two surfaces
- *  from drifting apart. */
+/** The failed read's line. Named here (CUL-1275) because it is said twice — on screen, and
+ *  to a screen reader when it lands — and both sections say it, so one string keeps the two
+ *  channels and the two surfaces from drifting apart. The no-recommendation read's line
+ *  ("Not enough to say about this one yet.") retired with CUL-820: it sounded like a verdict
+ *  on a photo nobody read, and that frame now says it was not read. */
 export const INCIDENT_READ_FAILED_LINE = "Couldn't finish reading this one.";
-export const INCIDENT_READ_NOT_ENOUGH_LINE = 'Not enough to say about this one yet.';
 
 /** The rail's width, and the height of its pending TICK (§5.2). Exported because PR 3's
  *  arrival animates the tick to the card's height and needs the same two numbers. */
@@ -76,9 +91,56 @@ export function IncidentReadPending({
   working?: boolean;
 }) {
   return (
-    <View style={styles.pendingBox} onLayout={onLayout}>
-      {working ? <Tick working={working} /> : <View style={styles.pendingTick} />}
+    <IncidentReadFrame surface="raised" tick={working ? 'working' : 'still'} onLayout={onLayout} testID="incident-read-pending">
       <ThemedText style={styles.pendingText}>{INCIDENT_READ_PENDING_LABEL}</ThemedText>
+    </IncidentReadFrame>
+  );
+}
+
+/** The heading every frame opens with. */
+export function IncidentReadEyebrow() {
+  return <SectionLabel label={INCIDENT_READ_LABEL} header />;
+}
+
+/**
+ * The frame every state that is not a read sits in: the pending wait on Home's raised
+ * surface, and the failed, capped and unread states on a dashed edge, which is what tells
+ * "not settled" from a finished calm read without the words alone (P3). The heading leads;
+ * the rail hangs in the gutter at full height, or, while waiting, the 16pt tick stands at
+ * the top of where the rail will grow (P4), which is the point the arrival grows it from.
+ */
+export function IncidentReadFrame({
+  surface,
+  tick,
+  onLayout,
+  testID,
+  children,
+}: {
+  surface: 'raised' | 'dashed';
+  /** The pending frame only: the tick in the rail's place, breathing while a request is
+   *  out ('working') and still while a stored row is being read off the device. */
+  tick?: 'working' | 'still';
+  onLayout?: (e: LayoutChangeEvent) => void;
+  testID?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <View
+      testID={testID}
+      onLayout={onLayout}
+      style={[styles.card, surface === 'raised' ? styles.cardNeutral : styles.cardMuted]}
+    >
+      <View style={styles.body}>
+        {tick === 'working' ? (
+          <Tick working style={[styles.rail, styles.railTop]} />
+        ) : tick === 'still' ? (
+          <View style={[styles.rail, styles.railTop, styles.stillTick]} />
+        ) : (
+          <View style={[styles.rail, styles.railSpan, styles.railQuiet]} />
+        )}
+        <IncidentReadEyebrow />
+        {children}
+      </View>
     </View>
   );
 }
@@ -157,10 +219,10 @@ export function IncidentReadCard({
   const outline = attn && tone === 'call_outline';
   const quietTone = tone === 'neutral' || tone === 'muted' ? tone : verdict === 'monitor' ? 'neutral' : 'muted';
   const inPattern = !attn && pattern != null;
+  const railColour = attn ? styles.railAttn : inPattern ? styles.railPattern : styles.railQuiet;
   return (
     <View
       testID="incident-read-card"
-      onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}
       style={[
         styles.card,
         attn ? (outline ? styles.cardAttnOutline : styles.cardAttn)
@@ -168,40 +230,37 @@ export function IncidentReadCard({
         : quietTone === 'neutral' ? styles.cardNeutral : styles.cardMuted,
       ]}
     >
-      {/* The rail LEAVES the row's flow for the commit that animates layout, and takes an
-          explicit height: a layout keyframe re-applies a view's committed props when it
-          ends, so a view that is both layout-animated and carrying an in-flight
-          native-driver transform snaps back on Fabric (foldMotion's header, verbatim).
-          The card already clips, so a rail taller than the opening box is hidden by it
-          until the box catches up. */}
-      {arrival ? (
-        <Animated.View
-          testID="incident-read-rail"
-          style={[
-            styles.rail,
-            attn ? styles.railAttn : inPattern ? styles.railPattern : styles.railQuiet,
-            styles.railOut,
-            {
-              height: arrival.height,
-              transform: [{ translateY: arrival.shift }, { scaleY: arrival.scale }],
-            },
-          ]}
-        />
-      ) : (
-        <View
-          testID="incident-read-rail"
-          style={[styles.rail, attn ? styles.railAttn : inPattern ? styles.railPattern : styles.railQuiet]}
-        />
-      )}
-      <View style={arrival ? [styles.body, styles.bodyRailOut] : styles.body}>
-        <ThemedText
-          style={[
-            styles.verdict,
-            attn ? styles.verdictAttn
-            : quietTone === 'neutral' ? styles.verdictNeutral
-            : styles.verdictMuted,
-          ]}
-        >
+      {/* The body is the rail's track: the rail spans it, so its height is what the arrival
+          grows the rail to, and the card reports that height rather than its own (the card
+          adds its inset above and below, which the rail never reaches). */}
+      <View
+        testID="incident-read-body"
+        style={styles.body}
+        onLayout={onMeasure ? (e) => onMeasure(e.nativeEvent.layout.height) : undefined}
+      >
+        {/* The rail stands out of the flow in the gutter at every moment, so the arrival
+            changes only its height and transform: an explicit height while it grows, never a
+            move between the flow and an overlay (foldMotion's Fabric snap, verbatim). */}
+        {arrival ? (
+          <Animated.View
+            testID="incident-read-rail"
+            style={[
+              styles.rail,
+              styles.railTop,
+              railColour,
+              {
+                height: arrival.height,
+                transform: [{ translateY: arrival.shift }, { scaleY: arrival.scale }],
+              },
+            ]}
+          />
+        ) : (
+          <View testID="incident-read-rail" style={[styles.rail, styles.railSpan, railColour]} />
+        )}
+        <IncidentReadEyebrow />
+        {/* The verdict is the card's headline (P5): one size and weight for every tier, so no
+            tier arrives larger or harder than another (G4); the ink and the ground differ. */}
+        <ThemedText style={[styles.verdict, attn ? styles.verdictAttn : styles.verdictQuiet]}>
           {label}
         </ThemedText>
         {attn && action ? <ThemedText style={styles.action}>{action}</ThemedText> : null}
@@ -255,93 +314,96 @@ export function IncidentReadCard({
         {ruleNote ? (
           <ThemedText testID="incident-read-rule-note" style={styles.ruleNote}>{ruleNote}</ThemedText>
         ) : null}
-        <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>
-        {/* The visible text IS the accessible name — never a label that differs from it
-            (C-7). This replaces the shipped `✕`, which announced nothing at all. */}
-        {onHide ? (
-          <TouchableOpacity
-            onPress={onHide}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={styles.hideRow}
-            accessibilityRole="button"
-          >
-            <ThemedText style={styles.hideText}>{INCIDENT_READ_HIDE_LABEL}</ThemedText>
-          </TouchableOpacity>
-        ) : null}
+        {/* One foot row (P6): the disclaimer, and Hide beside it, wrapping under it when the
+            two do not fit. Hide's 44pt is its BOX, never a slop: on a call the card's inset
+            and the section's margin separate it from "I've called · Not yet" below, and a
+            mis-tap there would hide a call (C-5). The visible text IS the accessible name
+            (C-7); it replaced a bare `✕` that announced nothing. */}
+        <View testID="incident-read-foot" style={styles.foot}>
+          <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>
+          {onHide ? (
+            <TouchableOpacity
+              onPress={onHide}
+              style={styles.hideControl}
+              accessibilityRole="button"
+              testID="incident-read-hide"
+            >
+              <ThemedText style={styles.hideText}>{INCIDENT_READ_HIDE_LABEL}</ThemedText>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // `overflow: hidden` is what lets a full-bleed rail sit inside a rounded, bordered box
-  // without squaring its corners — the rail is a child, not a borderLeft, because PR 3
-  // has to animate its height independently of the card's.
+  // The inset is Home's (`HOME_CARD_INSET`), so the text starts on the record's edge once
+  // the section has bled the card out to 8pt from the screen's (P4).
   card: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
     borderRadius: theme.radiusMedium,
-    borderWidth: 1,
-    overflow: 'hidden',
+    padding: HOME_CARD_INSET,
   },
   cardAttn: {
     backgroundColor: theme.colorEventSymptomLight,
+    borderWidth: 1,
     borderColor: theme.colorEventSymptomBorder,
   },
-  // Call today: the rose outline on the plain surface. The rail and the words carry the
-  // rose too, so the tier never rests on the border's hue alone.
+  // Call today: the rose outline on the plain surface, at 2pt. At 1pt it sat one stroke
+  // from Keep an eye out once both were white (the round's first adversarial pass); the
+  // rail and the words carry the rose too, so the tier never rests on the border's hue.
   cardAttnOutline: {
     backgroundColor: theme.colorSurface,
+    borderWidth: 2,
     borderColor: theme.colorEventSymptom,
   },
+  // Keep an eye out, and the pending wait: Home's one card surface (G1 A).
   cardNeutral: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderColor: theme.colorBorder,
+    backgroundColor: theme.colorSurface,
+    ...shadows.card,
   },
   // "Part of a pattern" (K2): the dashed pale rose on the plain surface, no fill. Louder
   // than grey and never a call: the fill and the full rose stay the calls' alone (GAP-32).
   cardPattern: {
     backgroundColor: theme.colorSurface,
+    borderWidth: 1,
     borderColor: theme.colorEventSymptomBorder,
     borderStyle: 'dashed',
   },
+  // Not enough to say, and every frame that is not a read: the dashed edge (P3).
   cardMuted: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderColor: theme.colorBorder,
+    backgroundColor: theme.colorSurface,
+    borderWidth: 1,
+    borderColor: theme.colorBorderStrong,
     borderStyle: 'dashed',
   },
-  rail: {
-    width: RAIL_WIDTH,
+  body: {
+    gap: theme.space0_75,
   },
-  // Out of the flow for the arrival only. The body takes the width back as a margin so
-  // nothing moves sideways on the frame the rail leaves or rejoins the row.
-  railOut: {
-    position: 'absolute',
+  rail: GUTTER_RAIL,
+  railSpan: {
     top: 0,
-    left: 0,
+    bottom: 0,
+  },
+  railTop: {
+    top: 0,
   },
   railAttn: { backgroundColor: theme.colorEventSymptom },
   railQuiet: { backgroundColor: theme.colorBorderStrong },
   railPattern: { backgroundColor: theme.colorEventSymptomBorder },
-  body: {
-    flex: 1,
-    padding: theme.space2,
-    gap: theme.space0_75,
-  },
-  bodyRailOut: {
-    marginLeft: RAIL_WIDTH,
+  stillTick: {
+    height: RAIL_TICK_HEIGHT,
+    backgroundColor: theme.colorBorderStrong,
   },
   verdict: {
-    fontSize: theme.textXS,
-    fontWeight: theme.fontWeightMedium,
-    letterSpacing: theme.trackingWidest,
+    ...textStyles.subheading,
   },
   // C-1 / CUL-744: a category colour is a GLYPH tint (the rail); TEXT on the tinted ground
   // takes the ink. The rose is 2.5:1 on its own light fill — the ink is 6.68:1, pinned in
   // `constants/theme.contrast.test.ts`. This is the label that asks an owner to phone a vet.
   verdictAttn: { color: theme.colorEventSymptomInk },
-  verdictNeutral: { color: theme.colorTextSecondary },
-  verdictMuted: { color: theme.colorTextTertiary },
+  // Every quiet verdict in secondary grey, Not enough included (4.5:1, the round's pass).
+  verdictQuiet: { color: theme.colorTextSecondary },
   pattern: {
     gap: theme.space0_5,
   },
@@ -433,39 +495,35 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
-  disclaimer: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    lineHeight: theme.lineHeightXS,
+  foot: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: theme.space1_5,
+    marginTop: theme.space0_5,
   },
-  hideRow: {
-    alignSelf: 'flex-start',
-    paddingVertical: theme.spaceMicro,
+  // A basis under the row's width, so on a phone the disclaimer wraps beside Hide; when
+  // Hide cannot fit beside even that (320pt at the largest text), it drops under.
+  disclaimer: {
+    ...textStyles.note,
+    color: theme.colorTextTertiary,
+    flexBasis: '60%',
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+  hideControl: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
   },
   hideText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     fontWeight: theme.fontWeightMedium,
   },
-  pendingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-    minHeight: theme.space5,
-  },
-  pendingTick: {
-    width: RAIL_WIDTH,
-    height: RAIL_TICK_HEIGHT,
-    borderRadius: TICK_MOTION.radius,
-    backgroundColor: theme.colorBorderStrong,
-  },
   pendingText: {
-    fontSize: theme.textSM,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
   },
 });

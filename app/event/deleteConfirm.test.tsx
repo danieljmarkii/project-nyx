@@ -105,8 +105,8 @@ function alertBody(): string {
 
 async function pressRemove() {
   const view = render(<EventDetailScreen />);
-  await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
-  fireEvent.press(view.getByText('Remove'));
+  await waitFor(() => expect(view.getByTestId('event-remove')).toBeTruthy());
+  fireEvent.press(view.getByTestId('event-remove'));
   return view;
 }
 
@@ -164,12 +164,12 @@ describe('the confirm survives the attachment-read window (C-12)', () => {
     const view = render(<EventDetailScreen />);
     // The footer is reachable while the attachment read is still in flight — that
     // it renders at all here IS the window under test.
-    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('event-remove')).toBeTruthy());
 
     // The record does have a photo; the screen just has not been told yet. The
     // re-check inside handleDelete is what has to find it.
     mockGetEventAttachment.mockResolvedValue(withPhoto);
-    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByTestId('event-remove'));
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
     expect(alertBody()).toContain('The photo you attached will be removed with it.');
@@ -182,10 +182,10 @@ describe('the confirm survives the attachment-read window (C-12)', () => {
   it('makes no photo claim when the re-check fails', async () => {
     mockGetEventAttachment.mockResolvedValueOnce(null);
     const view = render(<EventDetailScreen />);
-    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('event-remove')).toBeTruthy());
 
     mockGetEventAttachment.mockRejectedValue(new Error('database is locked'));
-    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByTestId('event-remove'));
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
     expect(alertBody()).toBe('This will remove the Vomit from history.');
@@ -234,12 +234,12 @@ describe('one Remove, one confirm', () => {
   it('a second tap while the photo re-check is out raises one confirm, not two', async () => {
     mockGetEventAttachment.mockResolvedValueOnce(null); // the screen's own load: no photo yet
     const view = render(<EventDetailScreen />);
-    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('event-remove')).toBeTruthy());
 
     let release!: (v: unknown) => void;
     mockGetEventAttachment.mockReturnValue(new Promise((r) => { release = r; }));
-    fireEvent.press(view.getByText('Remove'));
-    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByTestId('event-remove'));
+    fireEvent.press(view.getByTestId('event-remove'));
     await act(async () => { release(null); });
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
@@ -250,13 +250,13 @@ describe('one Remove, one confirm', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGetEventAttachment.mockResolvedValueOnce(null);
     const view = render(<EventDetailScreen />);
-    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('event-remove')).toBeTruthy());
 
     mockGetEventAttachment.mockRejectedValueOnce(new Error('database is locked'));
-    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByTestId('event-remove'));
     await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
     mockGetEventAttachment.mockResolvedValue(null);
-    fireEvent.press(view.getByText('Remove'));
+    fireEvent.press(view.getByTestId('event-remove'));
     await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(2));
     warn.mockRestore();
   });
@@ -282,7 +282,7 @@ describe('the record opens with VoiceOver on Back (HV-10)', () => {
 
   it('the first thing a screen reader reaches on the record is the Back button', async () => {
     const view = render(<EventDetailScreen />);
-    await waitFor(() => expect(view.getByText('Remove')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId('event-remove')).toBeTruthy());
     const first = firstStop(view.toJSON() as unknown as Node);
     expect(first?.props.accessibilityLabel).toBe('Back');
     expect(first?.props.accessibilityRole).toBe('button');
