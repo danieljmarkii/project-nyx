@@ -22,13 +22,19 @@ import { forgetFlagsSpentByEvent } from '../lib/trialContaminant';
 import { AMOUNT_UNITS, type AmountUnit } from '../lib/mealComposition';
 import { mixFoodOf } from '../lib/mixCard';
 import { bowlDetailLine } from '../lib/mixDetail';
-import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { writeOwingFloorCheck } from '../lib/incidentFloorQueue';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../lib/analysis';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
-import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
+import { uploadPhoto, compressForUpload, persistCapture, getSignedUrl } from '../lib/storage';
+import { localFileExists } from '../lib/localFile';
+import {
+  resolveEditorPhoto, needsSignedUrl, priorsToDetach, photoPickerCopy, EDITOR_PHOTO_OFFLINE_LABEL,
+  EDITOR_PHOTO_UNKNOWN_LABEL,
+  type EditorAttachmentRow,
+} from '../lib/editEventPhoto';
 import { supabase } from '../lib/supabase';
 import { foodFormatTag } from '../lib/food';
 import { useEventStore } from '../store/eventStore';
@@ -172,7 +178,15 @@ export default function EditEventModal() {
   const confidenceTouched = useRef(false);
 
   // Photo attachment
-  const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
+  // CUL-2176: the row the editor shows, whatever its local_uri. `attachmentsLoaded` gates
+  // the photo row until the read answers; `shownAttachmentIdsRef` is every row present at
+  // load, the only rows Save may remove, and the count the Replace sheet names.
+  const [existingAttachment, setExistingAttachment] = useState<EditorAttachmentRow | null>(null);
+  const [existingLocalUsable, setExistingLocalUsable] = useState(false);
+  const [existingRemoteUrl, setExistingRemoteUrl] = useState<string | null>(null);
+  const [attachmentsLoaded, setAttachmentsLoaded] = useState(false);
+  const [attachmentsFailed, setAttachmentsFailed] = useState(false);
+  const shownAttachmentIdsRef = useRef<ReadonlySet<string>>(new Set());
   const [newAttachmentUri, setNewAttachmentUri] = useState<string | null>(null);
   // Source pixel dimensions from the picker asset, kept only so the pre-upload
   // resize can cap the photo's true longest edge (B-352).
@@ -340,14 +354,28 @@ export default function EditEventModal() {
       }).catch(console.error);
     }
 
-    getEventAttachment(id).then((att) => {
+    getEventAttachments(id).then((rows) => {
       // FR-10 (B-054): a hydrated attachment row carries an empty local_uri (no
-      // on-device file). Don't hand '' to <Image> — treat it as absent so the
-      // edit screen shows no broken thumbnail. (The detail screen resolves the
-      // Storage signed URL; editing the photo on a download-only device is out
-      // of Phase 1 scope.)
-      if (att && att.local_uri.length > 0) setExistingAttachmentUri(att.local_uri);
-    }).catch(console.error);
+      // on-device file). It is still the record's photo (CUL-2176): treating it as
+      // absent drew "Attach a photo" over it, and Save then deleted it unseen. A
+      // missing on-device file resolves the Storage signed URL, as the record
+      // screen does; the row reads as attached while that resolves or fails.
+      shownAttachmentIdsRef.current = new Set(rows.map((r) => r.id));
+      const att = rows[0] ?? null;
+      setExistingAttachment(att);
+      const usable = att != null && att.local_uri.length > 0 && localFileExists(att.local_uri);
+      setExistingLocalUsable(usable);
+      setAttachmentsLoaded(true);
+      if (att && needsSignedUrl(att, usable)) {
+        getSignedUrl('nyx-event-attachments', att.storage_path, 60 * 60)
+          .then(setExistingRemoteUrl)
+          .catch((e) => console.warn('[edit-event] could not sign the attached photo', e));
+      }
+    }).catch((e) => {
+      // Say so rather than hide the row: the editor cannot tell attached from absent.
+      console.error(e);
+      setAttachmentsFailed(true);
+    });
 
     getEventSource(id).then(setOccurredAtSource).catch(console.error);
 
@@ -402,7 +430,8 @@ export default function EditEventModal() {
   }
 
   async function handlePickPhoto() {
-    Alert.alert('Attach photo', 'Choose a source', [
+    const copy = photoPickerCopy(shownAttachmentIdsRef.current.size);
+    Alert.alert(copy.title, copy.message, [
       {
         text: 'Take photo',
         onPress: async () => {
@@ -721,7 +750,9 @@ export default function EditEventModal() {
           // B-105 — capture the rows this photo supersedes before inserting it.
           // "Add" here is really a replace: the event carries one photo, and the
           // old row/file/Storage object used to be left behind entirely.
-          const priors = await getEventAttachments(id);
+          // CUL-2176: only the rows present at load, the count the Replace sheet named. A
+          // row that arrived after the editor opened stays; Save cannot remove it unseen.
+          const priors = priorsToDetach(await getEventAttachments(id), shownAttachmentIdsRef.current, attId);
           await db.runAsync(
             `INSERT OR REPLACE INTO event_attachments
                (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
@@ -869,7 +900,15 @@ export default function EditEventModal() {
     }
   }
 
-  const displayAttachmentUri = newAttachmentUri ?? existingAttachmentUri;
+  const photoState = resolveEditorPhoto({
+    loaded: attachmentsLoaded,
+    failed: attachmentsFailed,
+    existing: existingAttachment,
+    localFileUsable: existingLocalUsable,
+    remoteUrl: existingRemoteUrl,
+    newUri: newAttachmentUri,
+  });
+  const displayAttachmentUri = photoState.kind === 'attached' ? photoState.thumbUri : null;
 
   // CUL-869 — the look's chip options, or null when there are none to draw: an
   // absence row (no words by definition), a child that has not loaded, or a pet with
@@ -1006,9 +1045,19 @@ export default function EditEventModal() {
           {isLook ? null : (
             <>
           <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-          {displayAttachmentUri ? (
+          {photoState.kind === 'loading' ? null : photoState.kind === 'unknown' ? (
+            <View style={styles.photoRow}>
+              <ThemedText style={styles.photoRowText}>{EDITOR_PHOTO_UNKNOWN_LABEL}</ThemedText>
+            </View>
+          ) : photoState.kind === 'attached' ? (
             <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
-              <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+              {displayAttachmentUri ? (
+                <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+              ) : (
+                <View style={[styles.photoThumb, styles.photoThumbPending]}>
+                  <Camera size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                </View>
+              )}
               <View style={styles.photoAttachedMeta}>
                 <ThemedText style={styles.photoAttachedText}>Photo attached</ThemedText>
                 <ThemedText style={styles.photoChangeText}>Tap to view</ThemedText>
@@ -1297,6 +1346,7 @@ export default function EditEventModal() {
       <PhotoViewer
         visible={photoViewerVisible}
         uris={[displayAttachmentUri ?? null]}
+        unavailableLabel={EDITOR_PHOTO_OFFLINE_LABEL}
         onClose={() => setPhotoViewerVisible(false)}
         onReplace={() => { setPhotoViewerVisible(false); handlePickPhoto(); }}
       />
@@ -1380,6 +1430,12 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: theme.radiusSmall,
+  },
+  photoThumbPending: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
   },
   photoAttachedMeta: {
     flex: 1,
