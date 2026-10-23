@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { AlertTriangle } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
 import { FollowUpNotificationRow } from '../../components/settings/FollowUpNotificationRow';
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
   deniedActionText: {
     fontFamily: theme.fontBodyMedium,
     fontSize: theme.textSM,
-    color: theme.colorDestructive,
+    color: colorRoles.destructive.textOnWash,
   },
 
   // ── Intro framing (states a/b) + the relocated lock-screen privacy note (DR-4),

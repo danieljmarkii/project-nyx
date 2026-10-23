@@ -441,6 +441,7 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     ['medication.onNight', 'colorBrandNightElevated', TEXT],
     ['destructive.onLight', 'colorSurface', TEXT],
     ['destructive.onDark', 'colorSurfaceDark', TEXT],
+    ['destructive.textOnWash', 'colorDestructiveLight', TEXT],
     ['text.primaryOnLight', 'colorSurface', TEXT],
     ['text.secondaryOnLight', 'colorSurface', TEXT],
     ['text.primaryOnNight', 'colorBrandNight', TEXT],
@@ -492,6 +493,13 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
       theme.colorAccentGlyph,
       theme.colorAccentInk,
     ]);
+  });
+
+  // The banner label's ink (CUL-2151): the red it replaced fails as text on its own
+  // wash, so pointing textOnWash back at colorDestructive reds here as well as above.
+  it('the destructive ink clears AA on the danger wash, and the destructive red does not', () => {
+    expect(contrastRatio(colorRoles.destructive.textOnWash, theme.colorDestructiveLight)).toBeCloseTo(5.30, 1);
+    expect(contrastRatio(theme.colorDestructive, theme.colorDestructiveLight)).toBeLessThan(AA_NORMAL_TEXT);
   });
 
   // A ratio floor alone lets a concern role stop being rose: the destructive red clears
