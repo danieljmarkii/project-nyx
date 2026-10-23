@@ -1,0 +1,547 @@
+<title>Culprit — Patterns redesign</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     Patterns redesign — mock ROUND 3: THE DETAIL SCREEN ONLY.
+     PM re-scoped after round 2: converge on the metric detail
+     screen first (round-1 frame D1 approved as the base), then a
+     PR-by-PR build plan. The dashboard is PARKED: V1 "liked but
+     really busy" is the recorded starting point for its own
+     future round; heat cells are RETIRED from the vocabulary
+     (illegible intensity ramp → discrete count pips).
+
+     Document chrome mirrors the med-strip mock family. Device
+     frames stay light in both themes. Frame values are real
+     tokens from constants/theme.ts.
+     ============================================================ */
+
+  :root {
+    --paper:      #F5F4F9;
+    --paper-2:    #FFFFFF;
+    --ink:        #1B1A2E;
+    --ink-2:      #5F5C7A;
+    --ink-3:      #8B87A8;
+    --rule:       #DEDCE9;
+    --rule-soft:  #E9E7F1;
+    --teal:       #00C2A8;
+    --teal-ink:   #0B7B6C;
+    --teal-wash:  #E0FBF7;
+    --rose:       #F43F5E;
+    --rose-ink:   #B4123B;
+    --rose-wash:  #FFE4E6;
+    --med:        #5B7A9E;
+    --med-wash:   #EAF0F7;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #13112E;
+      --paper-2:   #1D1A42;
+      --ink:       #ECEAF6;
+      --ink-2:     #A6A2CE;
+      --ink-3:     #706BA6;
+      --rule:      rgba(196,190,255,0.20);
+      --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink:  #4FD8C4;
+      --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink:  #FB7185;
+      --rose-wash: rgba(251,113,133,0.14);
+      --med:       #93B0CE;
+      --med-wash:  rgba(91,122,158,0.18);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A;
+    --ink-3: #8B87A8; --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --med: #5B7A9E; --med-wash: #EAF0F7;
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE;
+    --ink-3: #706BA6; --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --med: #93B0CE; --med-wash: rgba(91,122,158,0.18);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  .col  { max-width: 68ch; }
+
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px;
+    display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+  }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  .roundtag {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 600;
+    color: var(--med); background: var(--med-wash);
+    border-radius: 999px; padding: 4px 11px;
+  }
+  .roundtag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  em { font-style: italic; color: var(--ink-2); }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.85em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); }
+  td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  .tablewrap { overflow-x: auto; }
+
+  .yes { color: var(--teal-ink); font-weight: 600; }
+  .no  { color: var(--rose-ink); font-weight: 600; }
+  .part { color: var(--med); font-weight: 600; }
+
+  .callout {
+    border: 1px solid var(--rule); border-left: 3px solid var(--teal);
+    background: var(--paper-2); border-radius: 8px; padding: 16px 18px; margin: 20px 0;
+    font-size: 15px;
+  }
+  .callout.warn { border-left-color: var(--rose); }
+  .callout .cl-tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 6px; }
+
+  /* ── Device frames ────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 26px; margin: 26px 0 8px; align-items: flex-start; }
+  .framewrap { width: 320px; flex-shrink: 0; }
+  .framecap { font-size: 13px; color: var(--ink-2); margin-top: 10px; line-height: 1.5; }
+  .framecap b { color: var(--ink); }
+  .frame {
+    width: 320px; background: #FAFAFA; color: #0A0A0A;
+    border: 1px solid #D4D4D4; border-radius: 22px; padding: 14px 12px 18px;
+    font-family: var(--sans); font-size: 12.5px; line-height: 1.45;
+    box-shadow: 0 1px 3px rgba(27,26,46,0.10);
+  }
+  .frame * { box-sizing: border-box; }
+  .f-nav { font-size: 12px; color: #525252; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .f-title { font-size: 17px; font-weight: 700; color: #0A0A0A; margin: 2px 0 10px; }
+  .f-card { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 12px; padding: 11px 12px; margin-bottom: 9px; }
+  .f-card.tight { padding: 9px 10px; }
+  .f-card.flat { background: transparent; border-style: dashed; }
+  .f-kicker { font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: #8A8A8A; font-weight: 600; margin-bottom: 5px; }
+  .f-lead { font-size: 13.5px; color: #0A0A0A; line-height: 1.4; }
+  .f-sub { font-size: 11.5px; color: #525252; margin-top: 4px; }
+  .f-faint { font-size: 11px; color: #8A8A8A; margin-top: 4px; }
+  .f-num { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .f-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .f-chevron { color: #B0B0B0; font-size: 14px; flex-shrink: 0; }
+  .f-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .f-chip {
+    font-size: 11px; color: #0B7B6C; background: #E0FBF7; border: 1px solid #B5EDE3;
+    border-radius: 999px; padding: 3px 9px; font-weight: 500;
+  }
+  .f-chip.ghost { color: #525252; background: #F5F5F5; border-color: #E3E3E3; }
+  .f-chip.on { color: #0A0A0A; background: #FFFFFF; border-color: #B0B0B0; font-weight: 600; }
+  .f-seg { display: flex; background: #F0F0F0; border-radius: 8px; padding: 3px; gap: 3px; margin-bottom: 10px; }
+  .f-seg span { flex: 1; text-align: center; padding: 5px 0; border-radius: 6px; font-size: 11.5px; color: #525252; }
+  .f-seg .on { background: #FFFFFF; color: #0A0A0A; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+  .f-listrow { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #F0F0F0; font-size: 11.5px; color: #333; align-items: baseline; }
+  .f-listrow:last-child { border-bottom: 0; }
+  .f-listrow .d { color: #8A8A8A; font-variant-numeric: tabular-nums; flex-shrink: 0; width: 44px; }
+  .f-key { display: flex; flex-wrap: wrap; gap: 10px 12px; font-size: 10px; color: #8A8A8A; margin-top: 6px; }
+  .f-key span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
+  .f-key .k-sym::before { background: #F43F5E; }
+  .f-key .k-meal::before { background: #00C2A8; }
+  .f-key .k-food::before { background: #5B7A9E; border-radius: 2px; }
+  .f-key .k-none::before { background: transparent; border: 1px solid #C9C9C9; }
+
+  .f-collapse { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; background: #FFFFFF; border: 1px dashed #E3E3E3; border-radius: 10px; margin-bottom: 9px; font-size: 11.5px; color: #8A8A8A; }
+
+  .opt-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+  .opt-pill { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; border: 1px solid var(--rule); color: var(--ink-2); background: var(--paper-2); }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">
+      <span>Culprit · Patterns — metric detail screen</span>
+      <span>Mock round 3 · 2026-08-01</span>
+      <span class="roundtag">Detail-screen variants — direction call, then build plan</span>
+    </p>
+    <h1>Round 3 — the detail screen, three ways</h1>
+    <p class="standfirst">
+      PM re-scope: converge on <strong>the detail screen</strong> first. The approved round-1 frame
+      (annotated chart + the days behind the number) is the shared base; the three variants below
+      differ in <strong>how much they show and how you reach it</strong>. Also here: the answer to
+      "what else should we report?" (§02) — mostly <strong>new dimensions of existing events</strong>,
+      not new numbers. Dashboard parked: V1 recorded as <em>liked-but-busy</em> for its own future
+      round; <strong>heat cells retired</strong> (illegible ramp → discrete count pips, the calendar's
+      existing pattern).
+    </p>
+  </header>
+
+  <!-- ══════════════════ 01 · Reactions applied ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Round-2 reactions, applied</h2></div>
+    <div class="col">
+      <p>
+        <strong>Heat cells → count pips.</strong> Judging light-rose vs mid-rose is guesswork; counting
+        1–2–3 dots is not. Anywhere round 2 shaded a cell, round 3 draws discrete pips — the
+        encoding the shipped calendar already uses. Intensity ramps are retired app-wide.
+      </p>
+      <p>
+        <strong>"Busy" is a real budget.</strong> V1's hero tried to show five things at once. The detail
+        screen gets a hard rule instead: <em>one chart in view at a time; every additional analysis
+        is a module you scroll to or summon.</em> The three variants are three different spends of
+        that budget.
+      </p>
+      <p>
+        <strong>Time-of-day is generalized.</strong> Not a symptom-specific trick — a standard module for
+        any event type (itch, vomit, stool, meals, doses), §02 row 3.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 02 · The metric shelf ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>What else can we honestly report? The metric shelf</h2></div>
+    <div class="col">
+      <p>
+        Audited against data that already exists on-device. The sharpest finding: the best new
+        metrics aren't new counts — they're <strong>new dimensions of the events we already have</strong>.
+        Four families: <em>rhythm</em> (when), <em>spacing</em> (how often, how clustered),
+        <em>character</em> (what kind), <em>context</em> (what else was true).
+      </p>
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Metric</th><th>Family</th><th>Data source</th><th>Honesty rule</th><th>Verdict</th></tr>
+      <tr><td><strong>Recency + longest quiet stretch</strong> — "10 days since the last one; longest gap this window: 21 days"</td><td>Spacing</td><td>event timestamps (have)</td><td>Fact-framed, never celebratory; always beside the coverage line — a quiet stretch in a logging gap is a hole, not a win</td><td class="yes">v1 module</td></tr>
+      <tr><td><strong>Episode spacing</strong> — are gaps widening or bunching? ("3d, 1d … then 10 and counting")</td><td>Spacing</td><td>event timestamps (have)</td><td>Floor ≥4 events; "spreading out" phrasing only via reflection detector ③'s floors</td><td class="yes">v1 module</td></tr>
+      <tr><td><strong>Time of day</strong> — any event type</td><td>Rhythm</td><td><code>occurred_at</code> (have); needs a small client aggregate</td><td>Dots always; the sentence only when detector ⑥'s floor clears</td><td class="yes">v1 module</td></tr>
+      <tr><td><strong>Post-meal timing</strong> — "2 of 3 vomits within 30 min of eating"</td><td>Rhythm</td><td>events + detector ⑤'s window logic (server has; client mirror needed)</td><td>Same floor as ⑤; vomit/stool details only</td><td class="part">v1.5</td></tr>
+      <tr><td><strong>Character mix</strong> — stool consistency split ("3 of 5 loose"); vomit characteristics (bile/foam/food)</td><td>Character</td><td>structured event fields + AI reads (have — report renders these server-side today)</td><td>Owner-classified fields lead; AI reads labeled as reads; never a diagnosis</td><td class="yes">v1 module (vomit/stool)</td></tr>
+      <tr><td><strong>Same-day company</strong> — "2 of 3 itch days also had loose stool"</td><td>Context</td><td>event co-occurrence (have)</td><td>Descriptive count only; never "linked", never causal; floor ≥3 co-days</td><td class="part">v1.5</td></tr>
+      <tr><td><strong>Before/since trial start</strong> — event counts split at the trial boundary</td><td>Context</td><td><code>diet_trials</code> (have)</td><td>Record framing (G2 two-sided); comparable-window rule; never a verdict on the trial</td><td class="part">v1.5 — needs its own clinical pass</td></tr>
+      <tr><td><strong>Unfinished-meal runs</strong> — longest consecutive run, skipped-meal days</td><td>Spacing</td><td>meal events (have)</td><td>Detector ② owns escalation; the module only describes; feline single-day rule untouched</td><td class="yes">v1 (Meals detail)</td></tr>
+      <tr><td><strong>Weight rate</strong> — change per month, % from first reading</td><td>Character</td><td><code>weight_readings</code> (have)</td><td>Anchored to explicit dates; sparse-data honest</td><td class="yes">v1 (Weight detail, B-189)</td></tr>
+      <tr><td>Day-of-week pattern</td><td>Rhythm</td><td>timestamps (have)</td><td>—</td><td class="no">Skip — n too small to clear any floor for months; weekend "patterns" would be noise theater</td></tr>
+      <tr><td>Severity scores</td><td>Character</td><td>—</td><td>—</td><td class="no">Never — no severity columns by design (C5 ruling); character mix + density carry it</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <span class="cl-tag">Why this answers "beyond meals finished"</span>
+      "Meals finished" is a good metric because it has a denominator. Every shelf row above keeps
+      that property — each is a count over a visible base, computed from events we already store.
+      Nothing here needs new logging behavior from the owner.
+    </div>
+  </section>
+
+  <!-- ══════════════════ 03 · Shared anatomy ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Shared anatomy — what every variant agrees on</h2></div>
+    <div class="col">
+      <p>
+        All three variants are the same six parts in the same order; they differ only in how many
+        modules are open at once. <strong>1 · Headline read</strong> (the approved baseline sentence).
+        <strong>2 · The annotated trend</strong> (approved D1 chart: stems, meal ticks, change markers).
+        <strong>3 · Analysis modules</strong> from the §02 shelf (recency/spacing · time-of-day · character mix).
+        <strong>4 · The days behind the number</strong> (tappable → event detail).
+        <strong>5 · Exits</strong> (report link; Ask chip, flag-gated). <strong>6 · Coverage line</strong>
+        (days-logged denominator, always visible).
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 04 · DA ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>DA — The dossier (one scroll, everything open)</h2></div>
+    <div class="opt-meta">
+      <span class="opt-pill">All modules expanded</span>
+      <span class="opt-pill">Zero taps to see everything</span>
+      <span class="opt-pill">Longest screen</span>
+    </div>
+    <div class="frames">
+      <div class="framewrap">
+        <div class="frame">
+          <div class="f-nav"><span>‹ Patterns</span><span></span></div>
+          <div class="f-title">Itch/Scratch</div>
+          <div class="f-seg"><span>Week</span><span class="on">Month</span><span>3 Months</span></div>
+          <div class="f-lead" style="margin-bottom:8px;">3 events this month, all within Jul 18–21 — up from none the previous 30 days.</div>
+          <div class="f-card" style="padding:10px 8px 8px;">
+            <svg viewBox="0 0 280 84" width="100%" height="84" role="img" aria-label="Itch events with meals and food change annotated">
+              <line x1="8" y1="58" x2="272" y2="58" stroke="#EAEAEA" stroke-width="1"/>
+              <g stroke="#F43F5E" stroke-width="2">
+                <line x1="150" y1="58" x2="150" y2="20"/><line x1="160" y1="58" x2="160" y2="34"/><line x1="178" y1="58" x2="178" y2="34"/>
+              </g>
+              <g fill="#F43F5E"><circle cx="150" cy="20" r="3.4"/><circle cx="160" cy="34" r="3.4"/><circle cx="178" cy="34" r="3.4"/></g>
+              <g fill="#00C2A8">
+                <rect x="12" y="66" width="3" height="6" rx="1"/><rect x="28" y="66" width="3" height="6" rx="1"/><rect x="44" y="66" width="3" height="6" rx="1"/><rect x="76" y="66" width="3" height="6" rx="1"/><rect x="92" y="66" width="3" height="6" rx="1"/><rect x="108" y="66" width="3" height="6" rx="1"/><rect x="124" y="66" width="3" height="6" rx="1"/><rect x="140" y="66" width="3" height="6" rx="1"/><rect x="156" y="66" width="3" height="6" rx="1"/><rect x="172" y="66" width="3" height="6" rx="1"/><rect x="188" y="66" width="3" height="6" rx="1"/><rect x="204" y="66" width="3" height="6" rx="1"/><rect x="220" y="66" width="3" height="6" rx="1"/><rect x="252" y="66" width="3" height="6" rx="1"/><rect x="268" y="66" width="3" height="6" rx="1"/>
+              </g>
+              <g fill="none" stroke="#C9C9C9" stroke-width="1"><rect x="60" y="66" width="3" height="6" rx="1"/><rect x="236" y="66" width="3" height="6" rx="1"/></g>
+              <line x1="132" y1="8" x2="132" y2="58" stroke="#5B7A9E" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <rect x="104" y="2" width="58" height="13" rx="6.5" fill="#EAF0F7"/>
+              <text x="133" y="11.5" font-size="8" fill="#5B7A9E" text-anchor="middle" font-family="sans-serif">Jul 16 · new food</text>
+            </svg>
+            <div class="f-key"><span class="k-sym">Itch</span><span class="k-meal">Meals</span><span class="k-food">Change</span><span class="k-none">No log</span></div>
+          </div>
+          <div class="f-card tight">
+            <div class="f-row">
+              <div><div class="f-kicker">Since the last one</div><div class="f-num">10 <small style="font-size:10px; color:#8A8A8A; font-weight:500;">days</small></div></div>
+              <div style="text-align:right;"><div class="f-kicker">Longest quiet stretch</div><div class="f-num" style="color:#525252;">21 <small style="font-size:10px; color:#8A8A8A; font-weight:500;">days · May</small></div></div>
+            </div>
+            <div class="f-faint">28 of 30 days logged — the quiet reads against a mostly-complete record</div>
+          </div>
+          <div class="f-card tight">
+            <div class="f-kicker">Gaps between events · 3 months</div>
+            <svg viewBox="0 0 280 34" width="100%" height="34" aria-label="Intervals between itch events">
+              <g fill="#F43F5E"><rect x="8" y="18" width="22" height="7" rx="3.5" opacity="0.5"/><rect x="36" y="18" width="10" height="7" rx="3.5" opacity="0.5"/><rect x="52" y="18" width="34" height="7" rx="3.5" opacity="0.5"/><rect x="92" y="18" width="8" height="7" rx="3.5"/><rect x="106" y="18" width="8" height="7" rx="3.5"/><rect x="120" y="18" width="64" height="7" rx="3.5" fill="#EAEAEA"/></g>
+              <text x="8" y="12" font-size="8.5" fill="#8A8A8A" font-family="sans-serif">7d · 3d · 11d · 2d · 2d · 10d and counting</text>
+            </svg>
+          </div>
+          <div class="f-card tight">
+            <div class="f-kicker">Time of day</div>
+            <svg viewBox="0 0 280 40" width="100%" height="40" aria-label="Itch events by hour">
+              <line x1="8" y1="26" x2="272" y2="26" stroke="#EAEAEA"/>
+              <g font-size="8" fill="#8A8A8A" font-family="sans-serif"><text x="8" y="38">12a</text><text x="72" y="38">6a</text><text x="134" y="38">noon</text><text x="200" y="38">6p</text><text x="258" y="38">12a</text></g>
+              <g fill="#F43F5E"><circle cx="212" cy="18" r="4"/><circle cx="224" cy="18" r="4"/><circle cx="231" cy="10" r="4"/><circle cx="240" cy="18" r="4"/><circle cx="118" cy="18" r="4" opacity="0.55"/></g>
+            </svg>
+            <div class="f-faint">4 of 5 events after 6pm</div>
+          </div>
+          <div class="f-card">
+            <div class="f-kicker">The days behind the number</div>
+            <div class="f-listrow"><span class="d">Jul 21</span><span>Itching after dinner · salmon treat that afternoon</span><span class="f-chevron">›</span></div>
+            <div class="f-listrow"><span class="d">Jul 19</span><span>Itching, evening · 2 meals finished</span><span class="f-chevron">›</span></div>
+            <div class="f-listrow"><span class="d">Jul 18</span><span>Itching · first noted, photo attached</span><span class="f-chevron">›</span></div>
+          </div>
+          <div class="f-chips" style="margin-top:2px;">
+            <span class="f-chip ghost">This is in the vet report ›</span>
+            <span class="f-chip">Ask about this</span>
+          </div>
+        </div>
+        <p class="framecap"><b>DA · Everything open.</b> Chart → recency/coverage → spacing → time-of-day → days → exits, one scroll. Nothing hidden, nothing to learn — the cost is length (~2 screenfuls for an active symptom).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 05 · DB ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>DB — Pinned chart, summoned analysis</h2></div>
+    <div class="opt-meta">
+      <span class="opt-pill">Chart + days always visible</span>
+      <span class="opt-pill">Modules behind lens chips</span>
+      <span class="opt-pill">Shortest screen</span>
+    </div>
+    <div class="frames">
+      <div class="framewrap">
+        <div class="frame">
+          <div class="f-nav"><span>‹ Patterns</span><span></span></div>
+          <div class="f-title">Itch/Scratch</div>
+          <div class="f-seg"><span>Week</span><span class="on">Month</span><span>3 Months</span></div>
+          <div class="f-lead" style="margin-bottom:8px;">3 events this month, all within Jul 18–21 — up from none the previous 30 days.</div>
+          <div class="f-card" style="padding:10px 8px 8px;">
+            <svg viewBox="0 0 280 84" width="100%" height="84" role="img" aria-label="Itch events with meals and food change annotated">
+              <line x1="8" y1="58" x2="272" y2="58" stroke="#EAEAEA" stroke-width="1"/>
+              <g stroke="#F43F5E" stroke-width="2">
+                <line x1="150" y1="58" x2="150" y2="20"/><line x1="160" y1="58" x2="160" y2="34"/><line x1="178" y1="58" x2="178" y2="34"/>
+              </g>
+              <g fill="#F43F5E"><circle cx="150" cy="20" r="3.4"/><circle cx="160" cy="34" r="3.4"/><circle cx="178" cy="34" r="3.4"/></g>
+              <g fill="#00C2A8">
+                <rect x="12" y="66" width="3" height="6" rx="1"/><rect x="28" y="66" width="3" height="6" rx="1"/><rect x="44" y="66" width="3" height="6" rx="1"/><rect x="76" y="66" width="3" height="6" rx="1"/><rect x="92" y="66" width="3" height="6" rx="1"/><rect x="108" y="66" width="3" height="6" rx="1"/><rect x="124" y="66" width="3" height="6" rx="1"/><rect x="140" y="66" width="3" height="6" rx="1"/><rect x="156" y="66" width="3" height="6" rx="1"/><rect x="172" y="66" width="3" height="6" rx="1"/><rect x="188" y="66" width="3" height="6" rx="1"/><rect x="204" y="66" width="3" height="6" rx="1"/><rect x="220" y="66" width="3" height="6" rx="1"/><rect x="252" y="66" width="3" height="6" rx="1"/><rect x="268" y="66" width="3" height="6" rx="1"/>
+              </g>
+              <g fill="none" stroke="#C9C9C9" stroke-width="1"><rect x="60" y="66" width="3" height="6" rx="1"/><rect x="236" y="66" width="3" height="6" rx="1"/></g>
+              <line x1="132" y1="8" x2="132" y2="58" stroke="#5B7A9E" stroke-width="1.5" stroke-dasharray="3 3"/>
+              <rect x="104" y="2" width="58" height="13" rx="6.5" fill="#EAF0F7"/>
+              <text x="133" y="11.5" font-size="8" fill="#5B7A9E" text-anchor="middle" font-family="sans-serif">Jul 16 · new food</text>
+            </svg>
+            <div class="f-key"><span class="k-sym">Itch</span><span class="k-meal">Meals</span><span class="k-food">Change</span></div>
+          </div>
+          <div class="f-chips" style="margin: 0 0 9px;">
+            <span class="f-chip on">Timing</span>
+            <span class="f-chip ghost">Spacing</span>
+            <span class="f-chip ghost">Company</span>
+          </div>
+          <div class="f-card tight">
+            <div class="f-kicker">Time of day</div>
+            <svg viewBox="0 0 280 40" width="100%" height="40" aria-label="Itch events by hour">
+              <line x1="8" y1="26" x2="272" y2="26" stroke="#EAEAEA"/>
+              <g font-size="8" fill="#8A8A8A" font-family="sans-serif"><text x="8" y="38">12a</text><text x="72" y="38">6a</text><text x="134" y="38">noon</text><text x="200" y="38">6p</text><text x="258" y="38">12a</text></g>
+              <g fill="#F43F5E"><circle cx="212" cy="18" r="4"/><circle cx="224" cy="18" r="4"/><circle cx="231" cy="10" r="4"/><circle cx="240" cy="18" r="4"/><circle cx="118" cy="18" r="4" opacity="0.55"/></g>
+            </svg>
+            <div class="f-faint">4 of 5 events after 6pm</div>
+          </div>
+          <div class="f-card">
+            <div class="f-kicker">The days behind the number</div>
+            <div class="f-listrow"><span class="d">Jul 21</span><span>Itching after dinner · salmon treat that afternoon</span><span class="f-chevron">›</span></div>
+            <div class="f-listrow"><span class="d">Jul 19</span><span>Itching, evening · 2 meals finished</span><span class="f-chevron">›</span></div>
+            <div class="f-listrow"><span class="d">Jul 18</span><span>Itching · first noted, photo attached</span><span class="f-chevron">›</span></div>
+          </div>
+          <div class="f-chips" style="margin-top:2px;">
+            <span class="f-chip ghost">This is in the vet report ›</span>
+            <span class="f-chip">Ask about this</span>
+          </div>
+        </div>
+        <p class="framecap"><b>DB · One module at a time.</b> Chart, headline, and the days list are permanent; Timing/Spacing/Company swap in the single analysis slot. Compact and calm — the cost is that a module you never tap is a module you never see.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 06 · DC ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>DC — Earned modules (the screen sizes itself to the record)</h2></div>
+    <div class="opt-meta">
+      <span class="opt-pill">Modules render only past their floors</span>
+      <span class="opt-pill">Quiet modules collapse to one honest line</span>
+      <span class="opt-pill">Adaptive length</span>
+    </div>
+    <div class="col">
+      <p>
+        DA's stack, but each module <em>earns</em> its expansion: below its floor it collapses to a
+        one-line explanation of what it's waiting for. A dense record reads like DA; a thin one
+        stays short and honest instead of padding itself with empty charts. Shown here on a
+        <strong>low-data case</strong> (first vomit in six weeks) — the case that punishes DA with
+        empty modules and punishes DB with dead tabs.
+      </p>
+    </div>
+    <div class="frames">
+      <div class="framewrap">
+        <div class="frame">
+          <div class="f-nav"><span>‹ Patterns</span><span></span></div>
+          <div class="f-title">Vomiting</div>
+          <div class="f-seg"><span>Week</span><span class="on">Month</span><span>3 Months</span></div>
+          <div class="f-lead" style="margin-bottom:8px;">1 event this month — Jul 8, the first in six weeks.</div>
+          <div class="f-card" style="padding:10px 8px 8px;">
+            <svg viewBox="0 0 280 74" width="100%" height="74" role="img" aria-label="Single vomit event with meals annotated">
+              <line x1="8" y1="48" x2="272" y2="48" stroke="#EAEAEA" stroke-width="1"/>
+              <g stroke="#F43F5E" stroke-width="2"><line x1="70" y1="48" x2="70" y2="18"/></g>
+              <g fill="#F43F5E"><circle cx="70" cy="18" r="3.4"/></g>
+              <g fill="#00C2A8">
+                <rect x="12" y="56" width="3" height="6" rx="1"/><rect x="28" y="56" width="3" height="6" rx="1"/><rect x="44" y="56" width="3" height="6" rx="1"/><rect x="60" y="56" width="3" height="6" rx="1"/><rect x="76" y="56" width="3" height="6" rx="1"/><rect x="92" y="56" width="3" height="6" rx="1"/><rect x="108" y="56" width="3" height="6" rx="1"/><rect x="124" y="56" width="3" height="6" rx="1"/><rect x="140" y="56" width="3" height="6" rx="1"/><rect x="156" y="56" width="3" height="6" rx="1"/><rect x="172" y="56" width="3" height="6" rx="1"/><rect x="188" y="56" width="3" height="6" rx="1"/><rect x="204" y="56" width="3" height="6" rx="1"/><rect x="220" y="56" width="3" height="6" rx="1"/><rect x="236" y="56" width="3" height="6" rx="1"/><rect x="252" y="56" width="3" height="6" rx="1"/><rect x="268" y="56" width="3" height="6" rx="1"/>
+              </g>
+            </svg>
+            <div class="f-key"><span class="k-sym">Vomit</span><span class="k-meal">Meals</span></div>
+          </div>
+          <div class="f-card tight">
+            <div class="f-kicker">What it looked like</div>
+            <div class="f-lead" style="font-size:12.5px;">Yellow bile, no food · photo attached · AI read: no red-flag findings <span style="color:#8A8A8A;">(a single read never rules things out)</span></div>
+          </div>
+          <div class="f-collapse"><span>Time of day — charts at 3+ events; 1 so far</span></div>
+          <div class="f-collapse"><span>Gaps between events — needs 4+ events to mean anything</span></div>
+          <div class="f-card">
+            <div class="f-kicker">The day behind the number</div>
+            <div class="f-listrow"><span class="d">Jul 8</span><span>Vomit, 6:10am · breakfast finished after · photo</span><span class="f-chevron">›</span></div>
+          </div>
+          <div class="f-chips" style="margin-top:2px;">
+            <span class="f-chip ghost">This is in the vet report ›</span>
+            <span class="f-chip">Ask about this</span>
+          </div>
+        </div>
+        <p class="framecap"><b>DC · Low-data case.</b> The character module (owner fields + labeled AI read) earns its place with one event; timing and spacing collapse to what-they're-waiting-for lines. No empty charts, no dead tabs, no fake depth.</p>
+      </div>
+
+      <div class="framewrap">
+        <div class="frame">
+          <div class="f-nav"><span>‹ Patterns</span><span></span></div>
+          <div class="f-title">Meals finished</div>
+          <div class="f-seg"><span>Week</span><span class="on">Month</span><span>3 Months</span></div>
+          <div class="f-lead" style="margin-bottom:8px;">86% of 51 rated meals finished — inside Mochi's usual range.</div>
+          <div class="f-card" style="padding:10px 8px 8px;">
+            <svg viewBox="0 0 280 70" width="100%" height="70" role="img" aria-label="Daily finish rate against usual band">
+              <rect x="8" y="18" width="264" height="20" rx="4" fill="#EAEAEA" opacity="0.6"/>
+              <polyline points="8,30 46,26 84,32 122,24 160,30 198,22 236,28 272,26" fill="none" stroke="#00C2A8" stroke-width="2"/>
+              <circle cx="272" cy="26" r="3" fill="#00C2A8"/>
+              <text x="10" y="14" font-size="8.5" fill="#8A8A8A" font-family="sans-serif">usual range · last 6 months</text>
+            </svg>
+          </div>
+          <div class="f-card tight">
+            <div class="f-row">
+              <div><div class="f-kicker">Longest unfinished run</div><div class="f-num">2 <small style="font-size:10px; color:#8A8A8A; font-weight:500;">meals · Jul 19–20</small></div></div>
+              <div style="text-align:right;"><div class="f-kicker">Days fully skipped</div><div class="f-num" style="color:#525252;">0</div></div>
+            </div>
+          </div>
+          <div class="f-card tight">
+            <div class="f-kicker">By food · finished / offered</div>
+            <div class="f-listrow"><span style="flex:1;">Hydrolyzed kibble</span><span class="d" style="width:auto;">34 of 36</span></div>
+            <div class="f-listrow"><span style="flex:1;">Hydrolyzed wet</span><span class="d" style="width:auto;">9 of 12</span></div>
+            <div class="f-listrow"><span style="flex:1;">Salmon treats <span style="color:#8A8A8A;">· treat</span></span><span class="d" style="width:auto;">not rated</span></div>
+          </div>
+          <div class="f-chips" style="margin-top:2px;">
+            <span class="f-chip ghost">This is in the vet report ›</span>
+            <span class="f-chip">Ask about this</span>
+          </div>
+        </div>
+        <p class="framecap"><b>The template generalizes (any variant).</b> "Meals finished" detail — the B-093 doorway that's a dead end today: band chart ("his usual", not a species norm), runs, per-food denominators. Weight (B-189) follows the same anatomy.</p>
+      </div>
+    </div>
+    <div class="callout warn">
+      <span class="cl-tag">Dr. Chen + Data Scientist — the rules the modules inherit</span>
+      Recency is a fact, never a win ("10 days since" sits beside the coverage line, and no quiet
+      stretch ever renders as celebration). Spacing language above the floor routes through
+      reflection detector ③; below it, the chart shows and the copy stays mute. The single-event
+      character module may state findings and escalate on presence, never reassure on absence —
+      the "a single read never rules things out" qualifier is load-bearing, not boilerplate.
+    </div>
+  </section>
+
+  <!-- ══════════════════ 07 · Build plan preview ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Build-plan preview — mostly variant-independent</h2></div>
+    <div class="col">
+      <p>
+        The PR spine below holds for any of DA/DB/DC — the variants differ only in PR 4's screen
+        assembly. Final PR-by-PR plan (with per-PR acceptance criteria and kickoff prompts) comes
+        after the direction call.
+      </p>
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>PR</th><th>Scope</th><th>Notes</th></tr>
+      <tr><td>1</td><td><strong>Aggregates</strong> — <code>lib/analytics.ts</code>: hour-of-day, inter-event intervals, recency/longest-gap, unfinished runs</td><td>Pure + tested, timezone-honest fixtures (B-514 rules); no UI</td></tr>
+      <tr><td>2</td><td><strong>Module assemblers</strong> — <code>lib/metricDetail.ts</code>: module data contracts, floors, collapse states, copy</td><td>The n=1 / never-reassure decision tree lives here; <code>adversarial-reviewer</code> pass required (floors are clinically load-bearing)</td></tr>
+      <tr><td>3</td><td><strong>Chart components</strong> — annotated trend (stems + ticks + change markers), time-of-day strip, interval strip, band chart</td><td>Component tests; reduced-motion N/A (static SVG); shared with future dashboard round</td></tr>
+      <tr><td>4</td><td><strong>Symptom detail assembly</strong> — the chosen variant's screen; day-list drill-in to event detail</td><td>Reuses the calendar's day-sheet pattern (B-315 adjacency); <code>pm-feature-review</code> before device QA</td></tr>
+      <tr><td>5</td><td><strong>Intake detail + doorway</strong> — "Meals finished" screen (band, runs, per-food); dashboard card gains its chevron</td><td>First non-symptom B-093 slice; intake anti-pattern review (Sam)</td></tr>
+      <tr><td>6</td><td><strong>Weight + remaining doorways, exits, voice pass</strong> — B-189 weight detail; report/Ask exit chips (flag-gated); <code>nyx-voice</code> sweep</td><td>Closes B-093; report link is the cheap half of the B-023 PR-5 bridge</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════ 08 · Decisions ══════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-num">08</span><h2>The direction call</h2></div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Decision</th><th>Options</th><th>Team lean</th></tr>
+      <tr><td>R3-1</td><td>Detail-screen variant</td><td>DA dossier · DB pinned+summoned · DC earned modules</td><td><strong>DC</strong> — it *is* DA when the record is rich and stays honest when it's thin; DB's hidden-module cost fights "the chart should speak"</td></tr>
+      <tr><td>R3-2</td><td>v1 module set</td><td>§02 shelf verdicts: recency+coverage · spacing · time-of-day · character mix (vomit/stool) · runs/per-food (intake)</td><td>Ship the five "v1" rows; hold v1.5 (post-meal, company, trial-split) for their own clinical pass</td></tr>
+      <tr><td>R3-3</td><td>Pips-not-heat ratification</td><td>Confirm the vocabulary amendment app-wide</td><td>Yes — retire intensity ramps everywhere, incl. the existing calendar's future rounds</td></tr>
+      <tr><td>R3-4</td><td>Dashboard parking record</td><td>Park V1-liked-but-busy as the recorded starting point for a later dashboard round</td><td>Yes — revisit only after the detail track ships (the dashboard's job gets easier once every card has a real destination)</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <span class="cl-tag">Standing constraints (unchanged)</span>
+      n=1 never colours · intake is not preference · never reassure on absence · every count carries
+      its denominator · quiet states designed, never blank · the chart may show, only the engine may say ·
+      no severity scores (C5) · G2 two-sided on anything trial-adjacent.
+    </div>
+  </section>
+
+</div>
