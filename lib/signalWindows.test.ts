@@ -43,6 +43,7 @@ import type {
   SymptomWorseningFinding,
   TrialResponseFinding,
 } from './signal';
+import { lanesEarlierLine } from './chartModels';
 import { MIN_INTERPRETABLE_DAYS } from './dietTrial';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 
@@ -331,7 +332,8 @@ describe('the compare — two equal windows, adjacent, never overlapping', () =>
     // the last twelve months' (C-19).
     expect(2 * MAX_COMPARE_DAYS + 1).toBeLessThan(365);
     const lanes = signalLaneSpec(chronicity(), THURSDAY, trial);
-    expect(lanes[1]).toEqual({ label: 'In the trial', startDay: shift(THURSDAY, -83), endDay: THURSDAY });
+    // The lane names the cap in the compare's own words (CUL-2154), never "In the trial".
+    expect(lanes[1]).toEqual({ label: during.label, startDay: shift(THURSDAY, -83), endDay: THURSDAY });
   });
 
   it('an odd lookback splits by the floor: 15 days is two windows of 7, ending today', () => {
@@ -536,5 +538,75 @@ describe('Q12 (CUL-1791): a bout that began before the last 7 days is named on t
 
   it('a span runs from the onset day to the last row\'s day', () => {
     expect(boutSpansOfEpisodes([{ dayKey: THURSDAY, endDayKey: shift(THURSDAY, 1) }])).toEqual([{ startDay: THURSDAY, endDay: shift(THURSDAY, 1) }]);
+  });
+});
+
+describe('CUL-2154: past the cap, the lanes name it and count what they leave out', () => {
+  // A trial 16 days past the cap, derived from the constant (never a literal 84): the lanes
+  // draw its last MAX_COMPARE_DAYS, so its first 16 days are on no lane.
+  const OVER = 16;
+  const RUN = MAX_COMPARE_DAYS + OVER;
+  const trial = trialFor(THURSDAY, RUN);
+  const trialDay = (n: number) => shift(THURSDAY, -(RUN - n)); // day 1 is the trial's start
+  // The issue's counterexample: 9 episodes in the trial's first 16 days, 2 after.
+  const early = Array.from({ length: 9 }, (_, i) => ({ dayKey: trialDay(1 + i), minutesSinceMeal: i % 2 === 0 ? 10 : null }));
+  const late = [
+    { dayKey: trialDay(OVER + 1), minutesSinceMeal: 20 },
+    { dayKey: THURSDAY, minutesSinceMeal: 300 },
+  ];
+  const beforeTrial = [{ dayKey: shift(trial.startDay, -1), minutesSinceMeal: 5 }];
+
+  it('the lane carries the compare’s capped label, and the first in-trial lane counts the earlier episodes', () => {
+    const [, during] = signalCompareSpec(chronicity(), THURSDAY, trial);
+    expect(during.label).toBe(`The trial's last ${MAX_COMPARE_DAYS} days`);
+    const m = signalLanes({ finding: chronicity(), today: THURSDAY, trial, episodes: [...beforeTrial, ...early, ...late] });
+    expect(m.lanes.map((l) => l.label)).toEqual(['Before the trial', during.label]);
+    expect(m.lanes[1].total).toBe(2);
+    // The day before the trial is not "earlier in the trial"; the first day of the lane is not either.
+    expect(m.lanes[1].earlierCount).toBe(9);
+    expect(m.lanes[0].earlierCount).toBeUndefined();
+    expect(lanesEarlierLine(m.lanes)).toBe('9 episodes earlier in the trial are not on these lanes.');
+  });
+
+  it('the boundaries: the trial’s first day counts, the lane’s first day does not', () => {
+    const m = signalLanes({
+      finding: chronicity(),
+      today: THURSDAY,
+      trial,
+      episodes: [{ dayKey: trialDay(1), minutesSinceMeal: 1 }, { dayKey: trialDay(OVER + 1), minutesSinceMeal: 1 }],
+    });
+    expect(m.lanes[1].earlierCount).toBe(1);
+    expect(m.lanes[1].total).toBe(1);
+    expect(lanesEarlierLine(m.lanes)).toBe('1 episode earlier in the trial is not on these lanes.');
+  });
+
+  it('at zero, a capped trial still says so', () => {
+    const m = signalLanes({ finding: chronicity(), today: THURSDAY, trial, episodes: late });
+    expect(m.lanes[1].earlierCount).toBe(0);
+    expect(lanesEarlierLine(m.lanes)).toBe('No episodes were logged earlier in the trial.');
+  });
+
+  it('a split trial lane names the cap too, and the count rides its first in-trial lane', () => {
+    const split = { day: shift(THURSDAY, -10), drug: 'Prednisone' };
+    const specs = signalLaneSpec(chronicity(), THURSDAY, trial, false, split);
+    expect(specs[1].label).toMatch(new RegExp(`^In the trial's last ${MAX_COMPARE_DAYS} days, `));
+    expect(specs[2].label).toMatch(/^In the trial, on Prednisone from /);
+    const m = signalLanes({ finding: chronicity(), today: THURSDAY, trial, episodes: [...early, ...late], split });
+    expect(m.lanes[1].earlierCount).toBe(9);
+    expect(m.lanes[2].earlierCount).toBeUndefined();
+  });
+
+  it('at exactly the cap, nothing changes: "In the trial", no count, no line', () => {
+    const atCap = trialFor(THURSDAY, MAX_COMPARE_DAYS);
+    const m = signalLanes({ finding: chronicity(), today: THURSDAY, trial: atCap, episodes: late });
+    expect(m.lanes.map((l) => l.label)).toEqual(['Before the trial', 'In the trial']);
+    expect(m.lanes.every((l) => l.earlierCount === undefined)).toBe(true);
+    expect(lanesEarlierLine(m.lanes)).toBeNull();
+  });
+
+  it('undivided, the one lane over the lookback carries no trial count', () => {
+    const m = signalLanes({ finding: chronicity(), today: THURSDAY, trial, episodes: [...early, ...late], undivided: true });
+    expect(m.lanes).toHaveLength(1);
+    expect(lanesEarlierLine(m.lanes)).toBeNull();
   });
 });

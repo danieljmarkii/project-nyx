@@ -13,6 +13,7 @@ import { isCallDisplay, TIER_WORDS, type CallDisplay } from './incidentTierWords
 import { formatCalendarDate } from './utils';
 import {
   daysSoFarLabel,
+  lanesEarlierLine,
   lanesUntimedLine,
   type CompareWindowsModel,
   type LaneModel,
@@ -170,7 +171,8 @@ export function timingLanesA11yLabel(
     return `${l.label}${shaded}: ${l.timedLine}.${said.length > 0 ? ` ${said.join(', ')}.` : ''}`;
   });
   const masked = lanes.some((l) => l.masked === true) && maskCaption ? ` Shaded: ${maskCaption}` : '';
-  return `Timed from meals. ${per.join(' ')} ${lanesUntimedLine(lanes)}${masked}`;
+  const earlier = lanesEarlierLine(lanes);
+  return `Timed from meals. ${per.join(' ')} ${lanesUntimedLine(lanes)}${earlier ? ` ${earlier}` : ''}${masked}`;
 }
 
 export type DayMarkCoverage = 'logged' | 'left_some' | 'unlogged' | 'ahead';

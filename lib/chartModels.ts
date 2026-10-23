@@ -491,6 +491,9 @@ export interface LaneModel {
   /** The lane's dates (inclusive day keys), set alongside `masked` so a caption can name only the
    *  spans that touch a hatched lane. */
   window?: { startDay: string; endDay: string };
+  /** On the first in-trial lane of a trial longer than the lanes draw (CUL-2154): the episodes
+   *  earlier in the trial, on no lane. Set by the caller, which knows dates; absent otherwise. */
+  earlierCount?: number;
 }
 
 export interface LaneAxis {
@@ -558,6 +561,21 @@ export function lanesUntimedLine(lanes: readonly LaneModel[]): string {
   const laneWord = lanes.length > 1 ? 'the lanes' : 'the lane';
   const verb = sum === 1 ? `it isn't on ${laneWord}` : `they aren't on ${laneWord}`;
   return `${joined} ${noun} couldn't be timed against a meal — ${verb}.`;
+}
+
+/**
+ * The line for a trial longer than the lanes draw (CUL-2154): the episodes earlier in the
+ * trial, on no lane, counted in words. Null when no lane carries the count (the lanes hold the
+ * whole trial, or there is none). At zero it still speaks, like the untimed line.
+ */
+export function lanesEarlierLine(lanes: readonly LaneModel[]): string | null {
+  const lane = lanes.find((l) => l.earlierCount !== undefined);
+  if (lane?.earlierCount === undefined) return null;
+  const n = lane.earlierCount;
+  if (n === 0) return 'No episodes were logged earlier in the trial.';
+  return n === 1
+    ? '1 episode earlier in the trial is not on these lanes.'
+    : `${n} episodes earlier in the trial are not on these lanes.`;
 }
 
 // ── Weight, dots by date ──────────────────────────────────────────────────────

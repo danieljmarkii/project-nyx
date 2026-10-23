@@ -7,6 +7,9 @@ import { Animated, StyleSheet } from 'react-native';
 import { TimingLanes } from './TimingLanes';
 import { laneDots, timingLanesAxis } from '../../lib/chartModels';
 import { patternsTimingPos } from '../../lib/patternsTiming';
+import { MAX_COMPARE_DAYS, signalLanes } from '../../lib/signalWindows';
+import { dayKeyFromIndex, localDayIndexOf } from '../../lib/utils';
+import type { SignalFinding } from '../../lib/signal';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 
 const laneOf = (label: string, timed: number[], total: number) => ({ label, episodeMinutes: [...timed, ...Array<null>(Math.max(0, total - timed.length)).fill(null)] });
@@ -136,5 +139,40 @@ describe('TimingLanes — a masked lane (CUL-1440)', () => {
   it('three lanes: the untimed line never says "both lanes"', () => {
     const { getByTestId } = render(<TimingLanes lanes={[before, during, onDrug]} axis={axis} />);
     expect(getByTestId('timing-untimed-line').props.children).not.toContain('both lanes');
+  });
+});
+
+describe('CUL-2154: a trial past the cap, as drawn and as spoken', () => {
+  // Built through the real lane model off MAX_COMPARE_DAYS, so the chart is handed what the
+  // Signal screen hands it.
+  const today = '2026-09-17';
+  const run = MAX_COMPARE_DAYS + 16;
+  const day = (offset: number) => dayKeyFromIndex((localDayIndexOf(today) as number) + offset);
+  const trial = { startDay: day(-(run - 1)), identity: 'Rabbit trial', dayCounter: run, targetDays: 56, foodLabel: 'Rabbit' };
+  const finding = { type: 'symptom_chronicity', symptom: 'vomit', windowDays: 56 } as unknown as SignalFinding;
+  const episodes = [
+    ...Array.from({ length: 9 }, (_, i) => ({ dayKey: day(-(run - 1) + i), minutesSinceMeal: 10 })),
+    { dayKey: day(-3), minutesSinceMeal: 20 },
+    { dayKey: today, minutesSinceMeal: 300 },
+  ];
+
+  it('the lane names the cap and the line counts the nine earlier episodes, on screen and aloud', () => {
+    const m = signalLanes({ finding, today, trial, episodes });
+    const { getByTestId, getByText } = render(<TimingLanes lanes={m.lanes} axis={m.axis} />);
+    const capped = `The trial's last ${MAX_COMPARE_DAYS} days`;
+    expect(getByText(capped)).toBeTruthy();
+    expect(getByTestId('timing-earlier-line').props.children).toBe('9 episodes earlier in the trial are not on these lanes.');
+    const label = getByTestId('timing-lanes').props.accessibilityLabel as string;
+    expect(label).toContain(`${capped}: 2 timed of 2.`);
+    expect(label).toContain('9 episodes earlier in the trial are not on these lanes.');
+    expect(label).not.toMatch(/In the trial:/);
+  });
+
+  it('at the cap, no earlier line is drawn', () => {
+    const atCap = { ...trial, startDay: day(-(MAX_COMPARE_DAYS - 1)), dayCounter: MAX_COMPARE_DAYS };
+    const m = signalLanes({ finding, today, trial: atCap, episodes });
+    const { queryByTestId, getByText } = render(<TimingLanes lanes={m.lanes} axis={m.axis} />);
+    expect(getByText('In the trial')).toBeTruthy();
+    expect(queryByTestId('timing-earlier-line')).toBeNull();
   });
 });
