@@ -457,16 +457,33 @@ describe('FoodPicker mixableOnly (row 5)', () => {
     pf('p1', 'Sprinkle', 'meal', 'topper'),
   ];
 
-  it('offers meal foods only, hides toppers, and has no add CTA', async () => {
+  // CUL-2089 (mock A1): the add row stays, so a food not saved yet can join the bowl. The
+  // caller opens capture add only; the picker just hands the tap over.
+  it('keeps the add row, and hands its tap to the caller', async () => {
     ROT.mockResolvedValue(FOODS);
     DB.getLibraryFoods.mockResolvedValue(FOODS as never);
-    const { findAllByText, queryByText } = render(
+    const onAddNew = jest.fn();
+    const { findByText } = render(
       <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
-        onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+        onPickFood={jest.fn()} onAddNew={onAddNew} />,
     );
-    expect((await findAllByText('Rabbit Pâté')).length).toBeGreaterThan(0);
-    expect(queryByText('Sprinkle')).toBeNull();
-    expect(queryByText('Snap a new food')).toBeNull();
+    fireEvent.press(await findByText('Snap a new food'));
+    expect(onAddNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a meal food as a pick, and keeps a topper off the rotation shelf', async () => {
+    ROT.mockResolvedValue(FOODS);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const onPickFood = jest.fn();
+    const { findAllByText, getAllByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onAddNew={jest.fn()} />,
+    );
+    const rabbit = await findAllByText('Rabbit Pâté');
+    fireEvent.press(rabbit[0]);
+    expect(onPickFood).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
+    // Once, in the library with its reason; never as a pickable shelf tile.
+    expect(getAllByText('Sprinkle')).toHaveLength(1);
   });
 
   // CUL-2134 (mock M1b): a treat shows, dimmed, with the reason, and is no control.
@@ -491,6 +508,65 @@ describe('FoodPicker mixableOnly (row 5)', () => {
       node = node.parent as typeof name | null;
     }
     fireEvent.press(name);
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  // CUL-2143: a topper shows the same way, with its own reason, whatever its type says.
+  it('shows a topper dimmed with its reason, inert', async () => {
+    const otherTopper = pf('p2', 'Broth', 'other', 'topper');
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([...FOODS, otherTopper] as never);
+    const onPickFood = jest.fn();
+    const onOpenDetail = jest.fn();
+    const { findByLabelText, getByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onOpenDetail={onOpenDetail} onAddNew={jest.fn()} />,
+    );
+    for (const label of ['B Sprinkle. Topper · logged on its own', 'B Broth. Topper · logged on its own']) {
+      const tile = await findByLabelText(label);
+      expect(tile.props.onPress).toBeUndefined();
+      expect(tile.props.accessibilityState).toBeUndefined();
+    }
+    fireEvent.press(getByText('Sprinkle'));
+    fireEvent.press(getByText('Broth'));
+    expect(onPickFood).not.toHaveBeenCalled();
+    expect(onOpenDetail).not.toHaveBeenCalled();
+  });
+
+  // CUL-2089 (mock A1): a food not set as a meal is a button that opens its page, where the
+  // type is set; it is never handed to the bowl, whose writer would refuse it.
+  it('a food not set as a meal opens its page, and is never picked', async () => {
+    const unset = [pf('o1', 'Duck Stew', 'other', 'wet'), { ...pf('n1', 'Old Bag', 'meal', 'dry'), food_type: null }];
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue(unset as never);
+    const onPickFood = jest.fn();
+    const onOpenDetail = jest.fn();
+    const { findByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onOpenDetail={onOpenDetail} onAddNew={jest.fn()} />,
+    );
+    for (const [label, id] of [['B Duck Stew. Not set as a meal · tap to set it', 'o1'], ['B Old Bag. Not set as a meal · tap to set it', 'n1']]) {
+      const tile = await findByLabelText(label);
+      // A button with its own hint, never a checkbox: a tap toggles nothing here.
+      expect(tile.props.accessibilityRole).toBe('button');
+      expect(tile.props.accessibilityHint).toBe('Opens the food to set its type');
+      fireEvent.press(tile);
+      expect(onOpenDetail).toHaveBeenLastCalledWith(expect.objectContaining({ id }));
+    }
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  it('with no way to open a food, one not set as a meal is inert and says so', async () => {
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([pf('o1', 'Duck Stew', 'other', 'wet')] as never);
+    const onPickFood = jest.fn();
+    const { findByLabelText, getByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onAddNew={jest.fn()} />,
+    );
+    const tile = await findByLabelText('B Duck Stew. Not set as a meal');
+    expect(tile.props.onPress).toBeUndefined();
+    fireEvent.press(getByText('Duck Stew'));
     expect(onPickFood).not.toHaveBeenCalled();
   });
 

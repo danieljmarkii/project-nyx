@@ -165,6 +165,7 @@
     font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash);
     border: 0; border-radius: 999px; padding: 5px 12px; cursor: pointer;
   }
+  .cur-box { display: flex; flex-direction: column; gap: 10px; }
   .option-box { border: 1.5px dashed var(--opt-rule); background: var(--opt-wash); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 
   /* ── Device ───────────────────────────────────────────────── */
@@ -471,6 +472,7 @@
     <div class="led"><span class="led-q">"Let's consider how to introduce design delight and motion."</span><span class="led-a">Every frame below plays. Two new shapes for the record are drawn as options (§2, §4).</span><span class="state open">New, react R-1 to R-3</span></div>
     <div class="led"><span class="led-q">Device, first mix (2026-10-22): "a big ass sheet with a lot of just empty space" · "give me a second"</span><span class="led-a">The split was built as a full page; it is now the compact sheet M2 always drew. A tap picks, Save writes (CUL-2133, option 1 of 3; a timed auto save was rejected). M2 and M2b redrawn in §1.</span><span class="state ruled">Ruled</span></div>
     <div class="led"><span class="led-q">Audit, mock against the build (2026-10-23)</span><span class="led-a">Three details the build skipped now ship: the stepper's end stop says why (M4, new words, since the steps end at ¾), a treat shows dimmed in the picker (M1b), and the card says "one bowl" (M3). CUL-2134.</span><span class="state ruled">Built</span></div>
+    <div class="led"><span class="led-q">"go a" (2026-10-23, CUL-2089)</span><span class="led-a">A food not in the picker yet is added from it, and the split rises with it (§1b). A topper and a food not set as a meal now say why too (CUL-2143). Options (b) and (c) left the page (git: 78a2238).</span><span class="state ruled">Ruled, built</span></div>
     <div class="led"><span class="led-q">Team correction</span><span class="led-a">Round 1's History ran one row across three days. Shipped runs never cross a day, so History is redrawn per day (§2).</span><span class="state ruled">Fixed</span></div>
   </div>
 </header>
@@ -527,11 +529,10 @@
             <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
             <div class="tile"><b>Indoor Dry</b><small>Dry</small></div>
             <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
-            <div class="tile"><b>+ Add a food</b><small>Scan or type</small></div>
           </div>
         </div>
       </div>
-      <p class="frame-note">The card slips away (180ms, 8pt drift) and the picker rises on <strong>the platform's own sheet</strong>, exactly as "+ Add a med" does today. One motion engine per gesture. A treat <strong>stays in view, dimmed, with why</strong> it can't go in, so an owner hunting for it isn't left wondering (CUL-2134). It is not a button. "+ Add a food" is CUL-2089.</p>
+      <p class="frame-note">The card slips away (180ms, 8pt drift) and the picker rises on <strong>the platform's own sheet</strong>, exactly as "+ Add a med" does today. One motion engine per gesture. A treat <strong>stays in view, dimmed, with why</strong> it can't go in, so an owner hunting for it isn't left wondering (CUL-2134). It is not a button. A food that isn't here yet is §1b.</p>
     </div>
 
     <div class="frame" id="f-m2">
@@ -639,14 +640,14 @@
 
 <!-- ============================================================ §1b -->
 <section>
-  <p class="kicker">§1b · Decision, CUL-2089 · a food that isn't in the picker yet</p>
+  <p class="kicker">§1b · Ruled (a), 2026-10-23 · CUL-2089, CUL-2143</p>
   <h2>Day one, and the new food isn't in the app</h2>
-  <p class="lede">On the first day of a switch the new food is often not saved yet, or saved without a type. Today the bowl picker has no way to add it, and a food saved as "Other" simply isn't there. Three ways to answer it; the team recommends <strong>(a)</strong>. Each option is drawn on the same moment: Rabbit Pâté has never been saved, and an old "Other" food and a topper sit in the library.</p>
+  <p class="lede">On the first day of a switch the new food is often not saved yet, or saved without a type. Today the bowl picker has no way to add it, and a food saved as "Other" simply isn't there. Ruled (a): it is added from the picker and comes straight back to the split. Drawn on one moment: Rabbit Pâté has never been saved, and an old "Other" food and a topper sit in the library.</p>
 
   <div class="frames">
     <div class="frame">
-      <div class="option-box">
-        <div class="frame-top"><span class="frame-tag"><b>A1</b> · <span class="tag-opt">option (a), recommended</span> · add it from the picker</span></div>
+      <div class="cur-box">
+        <div class="frame-top"><span class="frame-tag"><b>A1</b> · <span class="tag-cur">current</span> · add it from the picker</span></div>
         <div class="screen top">
           <div class="sheet" style="box-shadow:none;border-radius:16px">
             <div class="sheet-title">Mixed with another food</div>
@@ -667,8 +668,8 @@
     </div>
 
     <div class="frame">
-      <div class="option-box">
-        <div class="frame-top"><span class="frame-tag"><b>A2</b> · <span class="tag-opt">option (a), recommended</span> · straight back to the split</span></div>
+      <div class="cur-box">
+        <div class="frame-top"><span class="frame-tag"><b>A2</b> · <span class="tag-cur">current</span> · straight back to the split</span></div>
         <div class="screen">
           <div class="ghost"><span class="ghost-title">Mixed with another food</span><div class="ghost-row"></div><div class="ghost-row"></div></div>
           <div class="sheet">
@@ -686,49 +687,11 @@
             <div class="btn" style="opacity:0.4">Save</div>
           </div>
         </div>
-        <p class="frame-note">After "Save to library" the capture closes and <strong>the split rises with Rabbit already in it</strong>, as if it had been tapped in the picker. If the new food was saved as a treat, topper or "Other", the owner lands back on the picker instead, where its tile says why.</p>
+        <p class="frame-note">After Save and capture's own "Saved to your foods" beat, it closes and <strong>the split rises with Rabbit already in it</strong>, as if it had been tapped in the picker. If the new food was saved as a treat, topper or "Other", the owner lands back on the picker instead, where its tile says why.</p>
         <p class="spec">same sheet as M2 · capture's own 900ms saved beat, then the rise · no new motion</p>
       </div>
     </div>
 
-    <div class="frame">
-      <div class="option-box">
-        <div class="frame-top"><span class="frame-tag"><b>B</b> · <span class="tag-opt">option (b)</span> · a hint, no door</span></div>
-        <div class="screen top">
-          <div class="sheet" style="box-shadow:none;border-radius:16px">
-            <div class="sheet-title">Mixed with another food</div>
-            <div class="banner">Mixing with Chicken Pâté in Pixel's bowl. Pick the other food.</div>
-            <div class="search">Search foods</div>
-            <span class="hintline">Not here? Add it in Foods and set it as a meal, then come back to this meal.</span>
-            <div class="tiles">
-              <div class="tile locked"><b>Chicken Pâté</b><small>Wet · in the bowl</small></div>
-              <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
-              <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
-            </div>
-          </div>
-        </div>
-        <p class="frame-note">Honest about the gap, but the owner still leaves, adds the food, and finds the meal again through History. The first mix stops being a 15 second job on the day it matters most.</p>
-      </div>
-    </div>
-
-    <div class="frame">
-      <div class="option-box">
-        <div class="frame-top"><span class="frame-tag"><b>C</b> · <span class="tag-opt">option (c)</span> · as shipped today</span></div>
-        <div class="screen top">
-          <div class="sheet" style="box-shadow:none;border-radius:16px">
-            <div class="sheet-title">Mixed with another food</div>
-            <div class="banner">Mixing with Chicken Pâté in Pixel's bowl. Pick the other food.</div>
-            <div class="search">Search foods</div>
-            <div class="tiles">
-              <div class="tile locked"><b>Chicken Pâté</b><small>Wet · in the bowl</small></div>
-              <div class="tile"><b>Salmon Dinner</b><small>Wet</small></div>
-              <div class="tile dim"><b>Freeze-dried Bites</b><small>Treat · logged on its own</small></div>
-            </div>
-          </div>
-        </div>
-        <p class="frame-note">No add, no word about the "Other" food or the topper. They are just missing.</p>
-      </div>
-    </div>
   </div>
 </section>
 
@@ -1022,7 +985,6 @@
     <li><b>R-2</b>Play M5. Does the MIX pill landing on the card feel like the rest of the app?</li>
     <li><b>R-3</b>Shape 1 (M8b): a split bar on each mixed History row. Worth the extra line?</li>
     <li><b>R-4</b>Foods (F1, F2): is "8 in a mix" on the row enough, and do you want the switch strip on the food's page?</li>
-    <li><b>R-5</b>§1b (CUL-2089): a food not in the picker yet. (a) add it there and go straight to the split, (b) a hint pointing at Foods, or (c) leave it?</li>
   </ul>
 </section>
 

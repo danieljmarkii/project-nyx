@@ -44,6 +44,11 @@ interface Props {
   // its name, and is no control at all: a plain View read as one sentence, never a
   // `disabled` button (C-7), because nothing on this surface can make it pickable.
   notHere?: string;
+  // CUL-2089 (mock A1) — a food the bowl can take once the owner acts on it ("Not set as a
+  // meal · tap to set it"). Unlike `notHere` it stays a real button, dashed rather than
+  // dimmed, because a tap does something: it opens the food, never picks it. It announces
+  // as a button with its own hint even in a selecting picker, since it toggles nothing.
+  ask?: { line: string; hint: string };
 }
 
 // Text-only food tile. Product name is the primary line — for a single-brand
@@ -63,7 +68,7 @@ interface Props {
 // FoodRow tap navigates to detail.
 export function FoodTile({
   brand, productName, format, onPress, onLongPress,
-  hideBrand = false, compact = false, selected, mix = false, notHere,
+  hideBrand = false, compact = false, selected, mix = false, notHere, ask,
 }: Props) {
   const selecting = selected !== undefined;
   const typeLabel = FORMAT_LABEL[format] ?? '';
@@ -98,6 +103,33 @@ export function FoodTile({
           {notHere}
         </ThemedText>
       </View>
+    );
+  }
+
+  if (ask) {
+    return (
+      <TouchableOpacity
+        style={[styles.tile, compact && styles.tileCompact, styles.tileAsk]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`${brand} ${productName}. ${ask.line}`}
+        accessibilityHint={ask.hint}
+      >
+        {metaLine ? (
+          <ThemedText style={styles.meta} numberOfLines={1}>
+            {metaLine}
+          </ThemedText>
+        ) : null}
+        <ThemedText style={styles.product} numberOfLines={2}>
+          {productName}
+        </ThemedText>
+        <ThemedText style={styles.askLine} numberOfLines={2}>
+          {ask.line}
+        </ThemedText>
+      </TouchableOpacity>
     );
   }
 
@@ -178,6 +210,15 @@ const styles = StyleSheet.create({
   // The stepper's end-stop dim (0.4), so "can't go here" reads one way across the mix flow.
   tileNotHere: {
     opacity: 0.4,
+  },
+  // Dashed, not dimmed: this tile still does something (CUL-2089).
+  tileAsk: {
+    borderStyle: 'dashed',
+    borderColor: theme.colorBorderStrong,
+  },
+  askLine: {
+    fontSize: theme.textXS,
+    color: theme.colorAccentInk,
   },
   notHere: {
     fontSize: theme.textXS,

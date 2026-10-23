@@ -12,7 +12,7 @@ import { getLibraryFoods, PickerFood } from '../../lib/db';
 import { getPickerRotationItems, type FabMix, type FabRecentItem } from '../../lib/fabRecentItems';
 import {
   groupFoodsByType, toFoodRows, splitBrandGroupsForPicker,
-  filterFoodsByScope, FOOD_SCOPE_OPTIONS, FoodScope,
+  filterFoodsByScope, FOOD_SCOPE_OPTIONS, FoodScope, isMixableFood,
 } from '../../lib/food';
 import {
   getActiveArrangementsForPets, confirmArrangementFresh, endFreeChoice,
@@ -57,12 +57,13 @@ interface Props {
   // owner can still switch scope from the pinned row, exactly as after a manual tap.
   initialScope?: FoodScope;
   // Mixed meals row 5 (CUL-2054; spec §7.1, R1) — the picker for a bowl's second food.
-  // Only meal foods that are not toppers are offered: treats, human food and toppers stay
-  // their own logs, and the writer would refuse them anyway (`assertMixableFoods`). Treats
-  // still show in the library, dimmed and inert with the reason (CUL-2134, mock M1b), so an
-  // owner hunting for the treat they mixed in learns why it can't go in the bowl. "+ Add
-  // new" steps aside too: its capture flow logs a meal of its own, which is not a food in
-  // this bowl. Pair with `selectedFoodIds={[first]}` so the bowl's first food shows locked.
+  // Only meal foods that are not toppers can be picked (`isMixableFood`, the rule the writer
+  // refuses by). Every other food still shows, so an owner hunting for it learns why it
+  // isn't pickable: a treat or a topper dimmed and inert with its reason (CUL-2134, CUL-2143,
+  // mock M1b), a food not set as a meal as a tile that opens it to set the type (CUL-2089,
+  // mock A1; needs `onOpenDetail`, else it is inert too). "+ Add new" stays: the caller
+  // opens capture in its add only mode, which writes no meal (CUL-2089). Pair with
+  // `selectedFoodIds={[first]}` so the bowl's first food shows locked.
   mixableOnly?: boolean;
   // CUL-2090 (spec §7.4) — a recent mix on the rotation shelf, tapped: log that bowl again
   // at its latest split, as the FAB's MIX pill does. Mix tiles show only on the one-tap
@@ -71,15 +72,22 @@ interface Props {
   onPickMix?: (mix: FabMix) => void;
 }
 
-/** The R1 rule the writer enforces, as the picker filters by it. */
-function isMixable(f: PickerFood): boolean {
-  return f.food_type === 'meal' && f.format !== 'topper';
-}
-
-/** A treat in the bowl picker: shown, never pickable (CUL-2134, mock M1b). */
+/** What a food's tile is in the bowl picker. Treat before topper before type, so each
+ *  food gets the reason that is still true once the owner acts on it: setting a topper's
+ *  type to meal would not let it in, so it never asks to be set. */
+type BowlTile =
+  | { kind: 'pick' }
+  | { kind: 'notHere'; reason: string }
+  | { kind: 'setType' };
 const TREAT_NOT_IN_BOWL = 'Treat · logged on its own';
-function shownInMixPicker(f: PickerFood): boolean {
-  return isMixable(f) || f.food_type === 'treat';
+const TOPPER_NOT_IN_BOWL = 'Topper · logged on its own';
+const NOT_SET_AS_MEAL = 'Not set as a meal';
+const SET_IT_AS_MEAL = 'Not set as a meal · tap to set it';
+function bowlTile(f: PickerFood, canOpen: boolean): BowlTile {
+  if (isMixableFood(f)) return { kind: 'pick' };
+  if (f.food_type === 'treat') return { kind: 'notHere', reason: TREAT_NOT_IN_BOWL };
+  if (f.format === 'topper') return { kind: 'notHere', reason: TOPPER_NOT_IN_BOWL };
+  return canOpen ? { kind: 'setType' } : { kind: 'notHere', reason: NOT_SET_AS_MEAL };
 }
 
 // B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
@@ -251,7 +259,7 @@ export function FoodPicker({
   // first, then the free-text search over brand + product. Both are AND-ed, so
   // "Wet" + "tur" narrows to wet turkey foods.
   const filteredLibrary = useMemo(() => {
-    const scoped = filterFoodsByScope(mixableOnly ? library.filter(shownInMixPicker) : library, scope);
+    const scoped = filterFoodsByScope(library, scope);
     const q = search.trim().toLowerCase();
     if (!q) return scoped;
     return scoped.filter(
@@ -259,10 +267,10 @@ export function FoodPicker({
         f.brand.toLowerCase().includes(q) ||
         f.product_name.toLowerCase().includes(q),
     );
-  }, [library, search, scope, mixableOnly]);
+  }, [library, search, scope]);
   const mixTiles = !selecting && !mixableOnly && onPickMix !== undefined;
   const rotationShown = useMemo(
-    () => rotation.filter((f) => (f.mix ? mixTiles : !mixableOnly || isMixable(f))),
+    () => rotation.filter((f) => (f.mix ? mixTiles : !mixableOnly || isMixableFood(f))),
     [rotation, mixableOnly, mixTiles],
   );
 
@@ -385,7 +393,7 @@ export function FoodPicker({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {!searching && !mixableOnly && (
+        {!searching && (
           <View style={styles.zone}>
             <AddFoodCta onPress={onAddNew} />
           </View>
@@ -404,6 +412,7 @@ export function FoodPicker({
               onPickFood={onPickFood}
               onOpenDetail={onOpenDetail}
               selectedFoodIds={selectedFoodIds}
+              mixableOnly={mixableOnly}
             />
           </View>
         )}
@@ -444,7 +453,7 @@ export function FoodPicker({
               // the food the owner just failed to find is exactly the one to snap.
               <>
                 <ThemedText style={styles.empty}>No matches.</ThemedText>
-                {!mixableOnly && <AddFoodCta onPress={onAddNew} />}
+                <AddFoodCta onPress={onAddNew} />
               </>
             ) : (
               <ThemedText style={styles.empty}>
@@ -705,7 +714,9 @@ function TileGrid({
       {toFoodRows(foods).map((row) => (
         <View key={row[0].id} style={styles.gridRow}>
           {row.map((f) => {
-            const notHere = mixableOnly && !f.mix && !isMixable(f) ? TREAT_NOT_IN_BOWL : undefined;
+            const tile: BowlTile = mixableOnly && !f.mix ? bowlTile(f, !!onOpenDetail) : { kind: 'pick' };
+            const notHere = tile.kind === 'notHere' ? tile.reason : undefined;
+            const setType = tile.kind === 'setType';
             return (
             <FoodTile
               key={f.id}
@@ -716,6 +727,7 @@ function TileGrid({
               compact={compact}
               mix={!!f.mix}
               notHere={notHere}
+              ask={setType ? { line: SET_IT_AS_MEAL, hint: 'Opens the food to set its type' } : undefined}
               // `undefined` outside selection mode keeps the tile a log button;
               // a boolean makes it a checkbox (see FoodTile).
               selected={selectedFoodIds ? selectedFoodIds.includes(f.id) : undefined}
@@ -723,6 +735,12 @@ function TileGrid({
                 // An inert tile renders no touchable; this guard is the second wall, so the
                 // writer's refusal is never the only thing keeping a treat out of a bowl.
                 if (notHere) return;
+                // Never handed to the bowl: the writer would refuse it. Its own page sets the
+                // type, and the picker re-reads on focus, so it comes back pickable.
+                if (setType) {
+                  onOpenDetail?.(f);
+                  return;
+                }
                 const { mix } = f;
                 if (mix) onPickMix?.(mix);
                 else onPickFood(f);

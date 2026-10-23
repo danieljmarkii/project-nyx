@@ -13,6 +13,7 @@
 
 import { getDb } from './db';
 import type { HeadsUpSurface } from './mealTrialFlag';
+import { isMixableFood } from './food';
 import {
   planComponentWrite,
   MealComponentInputError,
@@ -66,7 +67,7 @@ export async function assertMixableFoods(db: Db, components: readonly ComponentI
       'SELECT food_type, format FROM food_items_cache WHERE id = ?',
       [id],
     );
-    if (!food || food.food_type !== 'meal' || food.format === 'topper') {
+    if (!food || !isMixableFood(food)) {
       throw new MealComponentInputError('Only a meal food can be mixed into a bowl');
     }
   }
