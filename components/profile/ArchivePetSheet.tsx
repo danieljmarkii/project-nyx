@@ -1,12 +1,9 @@
 import { useState } from 'react';
-import {
-  Alert, Modal, Pressable, StyleSheet,
-  TouchableOpacity, View,
-} from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { usePetStore, Pet } from '../../store/petStore';
 import { archiveBlockedCopy, archiveConfirmBody } from '../../lib/utils';
@@ -69,29 +66,24 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <Pressable style={styles.scrim} onPress={archiving ? undefined : onClose} />
-        <View style={[styles.card, { marginBottom: insets.bottom + 18 }]}>
+        <View style={[styles.card, { marginBottom: insets.bottom + theme.space2 }]}>
           <ThemedText style={styles.title}>Archive {pet.name}?</ThemedText>
           <ThemedText style={styles.body}>{archiveConfirmBody(pet)}</ThemedText>
-          <TouchableOpacity
-            style={styles.archiveBtn}
+          {/* `primary`, not `destructiveFilled` (round P7): archiving is reversible and
+              the line above says so, and red is for the irreversible commit. */}
+          <PrimaryButton
+            label="Archive"
             onPress={handleArchive}
-            disabled={archiving}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-          >
-            {archiving
-              ? <WhorlSpinner size="sm" tint={theme.colorSurface} />
-              : <ThemedText style={styles.archiveBtnText}>Archive</ThemedText>}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.cancelBtn}
+            loading={archiving}
+            style={styles.archiveBtn}
+          />
+          <PrimaryButton
+            label="Cancel"
+            variant="plain"
             onPress={onClose}
             disabled={archiving}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-          >
-            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-          </TouchableOpacity>
+            style={styles.cancelBtn}
+          />
         </View>
       </View>
     </Modal>
@@ -108,7 +100,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorScrim,
   },
   card: {
-    marginHorizontal: 14,
+    marginHorizontal: theme.space2,
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusLarge,
     paddingTop: theme.space3,
@@ -131,28 +123,10 @@ const styles = StyleSheet.create({
   },
   archiveBtn: {
     alignSelf: 'stretch',
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-    marginTop: 14,
-  },
-  archiveBtnText: {
-    color: theme.colorSurface,
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
+    marginTop: theme.space2,
   },
   cancelBtn: {
     alignSelf: 'stretch',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-    marginTop: 4,
-  },
-  cancelText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
+    marginTop: theme.space0_5,
   },
 });

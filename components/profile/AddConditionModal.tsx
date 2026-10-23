@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
+  ScrollView, StyleSheet, View,
 } from 'react-native';
+import { ChipGroup } from '../ui/ChipGroup';
+import { FieldLabel } from '../ui/FieldLabel';
+import { Header } from '../ui/Header';
+import { HeaderAction } from '../ui/HeaderAction';
+import { PickerRow } from '../ui/PickerRow';
+import { TextField } from '../ui/TextField';
+import { TextLink } from '../ui/TextLink';
 import { ThemedText } from '../ui/ThemedText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 
@@ -124,88 +130,79 @@ export function AddConditionModal({
   }
 
   const canSave = conditionName.trim().length > 0;
+  const statusDescription = STATUS_OPTIONS.find((o) => o.value === status)?.description ?? '';
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleClose} hitSlop={8}>
-            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-          </TouchableOpacity>
-          <ThemedText style={styles.headerTitle}>{isEditing ? 'Edit condition' : 'Add condition'}</ThemedText>
-          <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
-            {saving
-              ? <WhorlSpinner size="sm" ground="day" />
-              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
-                  {isEditing ? 'Save' : 'Add'}
-                </ThemedText>
-            }
-          </TouchableOpacity>
-        </View>
+        <Header
+          title={isEditing ? 'Edit condition' : 'Add condition'}
+          left={<HeaderAction label="Cancel" tone="quiet" onPress={handleClose} />}
+          right={
+            <HeaderAction
+              label={isEditing ? 'Save' : 'Add'}
+              onPress={handleSave}
+              disabled={!canSave}
+              disabledReason="name the condition first"
+              working={saving}
+              testID="condition-save"
+            />
+          }
+        />
 
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
-            <ThemedText style={styles.label}>Condition name</ThemedText>
-            <TextInput
-              style={styles.input}
+            <TextField
+              label="Condition name"
               value={conditionName}
               onChangeText={setConditionName}
               placeholder="e.g. Food sensitivity, IBD, atopy"
-              placeholderTextColor={theme.colorTextSecondary}
               autoCapitalize="sentences"
               returnKeyType="done"
               autoFocus={!isEditing}
             />
 
-            <ThemedText style={styles.label}>Status</ThemedText>
-            <View style={styles.chipRow}>
-              {STATUS_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, status === opt.value && styles.chipActive]}
-                  onPress={() => setStatus(opt.value)}
-                >
-                  <ThemedText style={[styles.chipText, status === opt.value && styles.chipTextActive]}>
-                    {opt.label}
-                  </ThemedText>
-                  <ThemedText style={[styles.chipDesc, status === opt.value && styles.chipDescActive]}>
-                    {opt.description}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+            <View>
+              <FieldLabel label="Status" />
+              <ChipGroup
+                options={STATUS_OPTIONS}
+                value={status}
+                onChange={(next) => { if (next) setStatus(next as ConditionStatus); }}
+                allowDeselect={false}
+                accessibilityLabel="Status"
+              />
+              {/* The kit chip carries one line, so the chosen status's meaning is one
+                  caption under the group (round F7). */}
+              <ThemedText variant="caption" style={styles.caption}>{statusDescription}</ThemedText>
             </View>
 
-            <ThemedText style={styles.label}>Diagnosed (optional)</ThemedText>
-            <TouchableOpacity
-              style={styles.fieldBtn}
-              onPress={() => setShowDatePicker(!showDatePicker)}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={diagnosedAt ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                {diagnosedAt
+            <View>
+              <PickerRow
+                label="Diagnosed (optional)"
+                value={diagnosedAt
                   ? diagnosedAt.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })
-                  : 'Not known'}
-              </ThemedText>
-              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Set date'}</ThemedText>
-            </TouchableOpacity>
-            {diagnosedAt && !showDatePicker && (
-              <TouchableOpacity onPress={() => setDiagnosedAt(null)} style={styles.clearBtn} hitSlop={8}>
-                <ThemedText style={styles.clearBtnText}>Clear date</ThemedText>
-              </TouchableOpacity>
-            )}
-            {showDatePicker && (
-              <DateTimePicker
-                value={diagnosedAt ?? new Date()}
-                mode="date"
-                display="spinner"
-                maximumDate={new Date()}
-                onChange={(_e: unknown, date?: Date) => {
-                  if (Platform.OS === 'android') setShowDatePicker(false);
-                  if (date) setDiagnosedAt(date);
-                }}
+                  : null}
+                placeholder="Not known"
+                actionLabel={showDatePicker ? 'Done' : 'Set date'}
+                onPress={() => setShowDatePicker(!showDatePicker)}
               />
-            )}
+              {diagnosedAt && !showDatePicker && (
+                <TextLink label="Clear date" tone="quiet" variant="caption" onPress={() => setDiagnosedAt(null)} />
+              )}
+              {showDatePicker && (
+                <DateTimePicker
+                  value={diagnosedAt ?? new Date()}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_e: unknown, date?: Date) => {
+                    if (Platform.OS === 'android') setShowDatePicker(false);
+                    if (date) setDiagnosedAt(date);
+                  }}
+                />
+              )}
+            </View>
 
           </ScrollView>
         </KeyboardAvoidingView>
@@ -219,123 +216,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  saveText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
-  },
-  saveTextDisabled: {
-    opacity: theme.opacityDisabled,
+  flex: {
+    flex: 1,
   },
   form: {
     padding: theme.space3,
     paddingBottom: theme.space6,
-    gap: theme.space1,
+    gap: theme.space2,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: theme.fontWeightMedium,
+  caption: {
     color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 4,
-    marginTop: theme.space2,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    fontFamily: theme.fontBody,
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: theme.space1,
-  },
-  chip: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: theme.space1,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    backgroundColor: theme.colorNeutralLight,
-    alignItems: 'center',
-    gap: 2,
-  },
-  chipActive: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  chipText: {
-    fontSize: 14,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-  },
-  chipTextActive: {
-    color: theme.colorTextOnDark,
-  },
-  chipDesc: {
-    fontSize: 11,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-  },
-  chipDescActive: {
-    color: theme.colorTextOnDarkSubtle,
-  },
-  fieldBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  fieldBtnText: {
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-  },
-  fieldBtnPlaceholder: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  changeLabel: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
-    fontWeight: theme.fontWeightMedium,
-  },
-  clearBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  clearBtnText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    textDecorationLine: 'underline',
+    marginTop: theme.space1,
   },
 });

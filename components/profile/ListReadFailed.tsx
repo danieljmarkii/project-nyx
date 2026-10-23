@@ -3,7 +3,7 @@
 // of its designed empty state. The line is the shipped vet visits register
 // ("Mochi's visits could not be read just now.").
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
@@ -52,6 +52,6 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

@@ -106,4 +106,24 @@ describe('PrimaryButton', () => {
     );
     expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe(theme.colorBorder);
   });
+  // CUL-1911 — the plain variant is a quiet row: no fill, no edge, and the 44pt floor by
+  // its own box, since it drops the padding the filled variants reach the floor with.
+  it('plain: no fill or edge, secondary ink, and the 44pt floor by construction', () => {
+    const { getByTestId, getByText } = render(
+      <PrimaryButton label="Archive Mochi" variant="plain" onPress={jest.fn()} testID="btn" />,
+    );
+    const box = StyleSheet.flatten(getByTestId('btn').props.style);
+    expect(box.backgroundColor).toBe('transparent');
+    expect(box.borderWidth).toBeUndefined();
+    expect(box.minHeight).toBe(theme.hitTarget);
+    expect(StyleSheet.flatten(getByText('Archive Mochi').props.style).color).toBe(theme.colorTextSecondary);
+  });
+
+  it('plain, disabled: the label greys and no grey fill appears', () => {
+    const { getByTestId, getByText } = render(
+      <PrimaryButton label="Archive Mochi" variant="plain" disabled onPress={jest.fn()} testID="btn" />,
+    );
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe('transparent');
+    expect(StyleSheet.flatten(getByText('Archive Mochi').props.style).color).toBe(theme.colorTextTertiary);
+  });
 });

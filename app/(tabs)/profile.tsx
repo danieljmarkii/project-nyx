@@ -8,13 +8,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { ChevronDown } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
+import { colorRoles, theme } from '../../constants/theme';
+import { Tick } from '../../components/surfaces/waits/Tick';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { TextLink } from '../../components/ui/TextLink';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
 import {
@@ -203,8 +205,28 @@ function formatWeightLbs(kg: number | null): string {
   return `${Math.round(kg * 2.20462 * 10) / 10} lbs`;
 }
 
+// The hero photo: 112pt, no single token (round F5 draws it as a sum).
+const HERO_PHOTO_SIZE = theme.space6 + theme.space5;
+
 function statusLabel(status: string): string {
   return status === 'monitoring' ? 'Monitoring' : 'Active';
+}
+
+// A section's wait (round F4): lines in the card's own shape, hidden from assistive
+// tech, in place of the retiring WhorlSpinner (CUL-1593). Under a second, content shaped.
+function SectionSkeleton({ lines, testID }: { lines: number; testID?: string }) {
+  return (
+    <View
+      style={styles.skeleton}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID={testID}
+    >
+      {Array.from({ length: lines }, (_, i) => (
+        <Skeleton key={i} width={i % 2 ? '46%' : '78%'} />
+      ))}
+    </View>
+  );
 }
 
 export default function ProfileScreen() {
@@ -1249,18 +1271,20 @@ export default function ProfileScreen() {
             )}
             {photoUploading && (
               <View style={styles.photoOverlay}>
-                <WhorlSpinner size="md" tint={theme.colorTextOnDark} />
+                <Tick working={photoUploading} style={styles.photoTick} testID="photo-saving-tick" />
               </View>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handlePickPhoto} disabled={photoUploading} hitSlop={8}>
-            <ThemedText style={styles.photoLabel}>
-              {/* Off the record, not the link: a pet whose photo failed to
-                  load still has one, and "Add photo" would say otherwise. */}
-              {activePet.photo_path ? 'Change photo' : 'Add photo'}
-            </ThemedText>
-          </TouchableOpacity>
+          {/* Off the record, not the link: a pet whose photo failed to load still
+              has one, and "Add photo" would say otherwise. */}
+          <TextLink
+            label={activePet.photo_path ? 'Change photo' : 'Add photo'}
+            variant="caption"
+            onPress={handlePickPhoto}
+            disabled={photoUploading}
+            style={styles.photoLink}
+          />
 
           {/* CUL-618 (R1 = a, R2 = a2) — the name IS the switcher.
               The tab bar shows this pet's face, and everywhere else in the app that
@@ -1294,13 +1318,12 @@ export default function ProfileScreen() {
           )}
           {subtitle ? <ThemedText style={styles.petSubtitle}>{subtitle}</ThemedText> : null}
 
-          <TouchableOpacity
-            style={styles.editBtn}
+          <PrimaryButton
+            label="Edit profile"
+            variant="secondary"
             onPress={() => setEditModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <ThemedText style={styles.editBtnText}>Edit profile</ThemedText>
-          </TouchableOpacity>
+            style={styles.editBtn}
+          />
         </Card>
 
         {/* ── Info chips ── */}
@@ -1352,13 +1375,11 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
-            <TouchableOpacity style={styles.cardActionTouch} onPress={openAddCondition} hitSlop={8}>
-              <ThemedText style={styles.sectionAction}>+ Add</ThemedText>
-            </TouchableOpacity>
+            <TextLink label="+ Add" accessibilityLabel="Add a condition" onPress={openAddCondition} />
           </View>
 
           {conditionsView.kind === 'loading' ? (
-            <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
+            <SectionSkeleton lines={3} testID="conditions-loading" />
           ) : conditionsView.kind === 'failed' ? (
             <ListReadFailed
               testID="conditions-read-failed"
@@ -1389,7 +1410,13 @@ export default function ProfileScreen() {
                       variant={condition.status === 'monitoring' ? 'accent' : 'symptom'}
                     />
                     <View style={styles.conditionActions}>
-                      <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditCondition(condition)} hitSlop={8}>
+                      <TouchableOpacity
+                        style={styles.cardActionTouch}
+                        onPress={() => openEditCondition(condition)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${condition.condition_name}`}
+                      >
                         <ThemedText style={styles.conditionActionText}>Edit</ThemedText>
                       </TouchableOpacity>
                       {/* geist-ok: typographic separator, not copy and not an icon — a standalone node
@@ -1397,7 +1424,13 @@ export default function ProfileScreen() {
                           asserts nothing; the B-745 GlyphSvg migration does NOT own it (there is no
                           vector to replace a middle dot with). CUL-364 §7. */}
                       <Text style={styles.conditionActionDivider}>·</Text>
-                      <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
+                      <TouchableOpacity
+                        style={styles.cardActionTouch}
+                        onPress={() => confirmResolveCondition(condition)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Resolve ${condition.condition_name}`}
+                      >
                         <ThemedText style={styles.conditionActionText}>Resolve</ThemedText>
                       </TouchableOpacity>
                     </View>
@@ -1415,13 +1448,11 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap} testID="med-section" onLayout={handleMedSectionLayout}>
           <View style={styles.sectionHeader}>
             <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
-            <TouchableOpacity style={styles.cardActionTouch} onPress={openAddMedication} hitSlop={8}>
-              <ThemedText style={styles.sectionAction}>+ Add</ThemedText>
-            </TouchableOpacity>
+            <TextLink label="+ Add" accessibilityLabel="Add a medication" onPress={openAddMedication} />
           </View>
 
           {medicationsView.kind === 'loading' ? (
-            <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
+            <SectionSkeleton lines={3} testID="medications-loading" />
           ) : medicationsView.kind === 'failed' ? (
             <ListReadFailed
               testID="medications-read-failed"
@@ -1721,28 +1752,24 @@ export default function ProfileScreen() {
             and is exactly what makes the same rows wrong inside a capture surface
             (CUL-678). */}
         {!multiPet && (
-          <TouchableOpacity
-            style={styles.addPetBtn}
+          <PrimaryButton
+            label="Add a pet"
+            variant="secondary"
             onPress={() => router.push('/add-pet')}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-          >
-            <ThemedText style={styles.addPetBtnText}>Add a pet</ThemedText>
-          </TouchableOpacity>
+            style={styles.footBtn}
+          />
         )}
 
         {/* Quiet archive action (spec §3.5, mock B4) — bottom of the tab,
             styled to recede: removal is a rare lifecycle moment, not a daily
             affordance. Tap on the last active pet explains the block instead
             of hiding (honest over invisible). */}
-        <TouchableOpacity
-          style={styles.archiveBtn}
+        <PrimaryButton
+          label={`Archive ${activePet.name}`}
+          variant="secondary"
           onPress={handleArchivePress}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-        >
-          <ThemedText style={styles.archiveBtnText}>Archive {activePet.name}</ThemedText>
-        </TouchableOpacity>
+          style={styles.footBtn}
+        />
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -1845,38 +1872,40 @@ const styles = StyleSheet.create({
   },
   photoWrapper: {
     position: 'relative',
-    marginBottom: 4,
+    marginBottom: theme.space0_5,
   },
   photo: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
+    width: HERO_PHOTO_SIZE,
+    height: HERO_PHOTO_SIZE,
+    borderRadius: theme.radiusFull,
   },
   photoPlaceholder: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
+    width: HERO_PHOTO_SIZE,
+    height: HERO_PHOTO_SIZE,
+    borderRadius: theme.radiusFull,
     backgroundColor: theme.colorNeutralDark,
     alignItems: 'center',
     justifyContent: 'center',
   },
   photoInitials: {
-    fontSize: 38,
+    fontSize: theme.text2XL,
     fontWeight: theme.weightMedium,
     color: theme.colorTextOnDark,
   },
   photoOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: 56,
+    borderRadius: theme.radiusFull,
     backgroundColor: theme.colorScrimPhoto,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoLabel: {
-    fontSize: theme.textSM,
-    color: theme.colorAccentInk,
-    fontWeight: theme.weightMedium,
+  // The tick on the photo's scrim takes the on-dark ink: the scrim is the ground.
+  photoTick: {
+    backgroundColor: theme.colorTextOnDark,
+  },
+  photoLink: {
+    alignSelf: 'center',
   },
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so
   // the card's rhythm does not change with the household's pet count.
@@ -1900,7 +1929,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.space0_5,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     marginTop: theme.space0_5,
   },
   petName: {
@@ -1913,17 +1942,8 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   editBtn: {
+    alignSelf: 'stretch',
     marginTop: theme.space1,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 8,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-  },
-  editBtnText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    fontWeight: theme.weightMedium,
   },
 
   // ── Info row ──
@@ -1935,7 +1955,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: theme.space2,
     alignItems: 'center',
-    gap: 3,
+    gap: theme.spaceMicro,
   },
   infoChipDivider: {
     width: 1,
@@ -1986,14 +2006,9 @@ const styles = StyleSheet.create({
   reportButton: {
     marginTop: theme.space1,
   },
-  sectionAction: {
-    fontSize: theme.textMD,
-    color: theme.colorAccentInk,
-    fontWeight: theme.weightMedium,
-  },
-  sectionLoader: {
-    alignSelf: 'center',
-    paddingVertical: theme.space2,
+  skeleton: {
+    gap: theme.space1_5,
+    paddingVertical: theme.space1,
   },
 
   // ── Conditions ──
@@ -2015,7 +2030,7 @@ const styles = StyleSheet.create({
   },
   conditionInfo: {
     flex: 1,
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   conditionName: {
     fontSize: theme.textMD,
@@ -2028,12 +2043,12 @@ const styles = StyleSheet.create({
   },
   conditionRight: {
     alignItems: 'flex-end',
-    gap: 6,
+    gap: theme.space0_75,
   },
   conditionActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: theme.space0_75,
   },
   // B-136 — the inline card actions (Edit/Resolve/End/Log a dose/+Add on the
   // Conditions and Current medications cards) render small (textXS/textMD) text, so
@@ -2041,7 +2056,7 @@ const styles = StyleSheet.create({
   // + centered lifts each to the floor without touching the text style; the existing
   // hitSlop stays as extra slack. Shared so every card action clears the bar identically.
   cardActionTouch: {
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   conditionActionText: {
@@ -2061,7 +2076,7 @@ const styles = StyleSheet.create({
   // "Log a dose" is the card's primary action (the wedge path), so it leads in the
   // accent colour while Edit/End stay quiet secondary text.
   logDoseActionText: {
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
 
@@ -2072,20 +2087,20 @@ const styles = StyleSheet.create({
   // line below (pm-feature-review B-618 — bar semantics; final spacing is a device-pass
   // tuning, the binding is the point).
   doseCourseGroup: {
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   // The MEDICATION regimen bar. Its width is bound to dose adherence, which is a
   // real ratio of discrete events; the diet-trial card's bar is bound to
   // `getDietTrialProgress().fraction` and lives in components/profile/DietTrialCard.
   progressTrack: {
-    height: 5,
-    borderRadius: 3,
+    height: theme.space0_75,
+    borderRadius: theme.radiusXS,
     backgroundColor: theme.colorChartEmpty,
     overflow: 'hidden',
   },
   progressBar: {
-    height: 5,
-    borderRadius: 3,
+    height: theme.space0_75,
+    borderRadius: theme.radiusXS,
     backgroundColor: theme.colorAccent,
   },
   // Medication ADHERENCE line. Distinct from the diet trial in every way that
@@ -2128,7 +2143,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     // 44pt tap-target floor — the same one cardActionTouch documents on this screen,
     // reached here by height (this is a filled button) rather than by hitSlop.
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   coursePromptButtonText: {
@@ -2139,7 +2154,7 @@ const styles = StyleSheet.create({
 
   // ── Current medications (rows mirror the conditions list + the diet-trial bar) ──
   medRow: {
-    gap: 4,
+    gap: theme.space0_5,
   },
   medName: {
     fontSize: theme.textLG,
@@ -2153,7 +2168,7 @@ const styles = StyleSheet.create({
   medDays: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   // Calm-but-clear attention treatment for a missed/refused dose — a soft rose
   // tint (the app's symptom family), never a solid-red alarm. clinical-guardrails:
@@ -2164,53 +2179,22 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   medFlagText: {
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
-    lineHeight: 19,
+    lineHeight: theme.lineHeightSMLoose,
   },
   medContext: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
 
-  // ── Archive ──
-  // CUL-618 — the one-pet "Add a pet" door. Deliberately the archive button's box
-  // (same rare-lifecycle register, same 44pt floor); secondary rather than tertiary
-  // ink because this one is a way forward, not a way out.
-  addPetBtn: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: 13,
-    paddingHorizontal: theme.space2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
+  // ── The foot ──
+  // CUL-618 — "Add a pet" (one-pet households) and "Archive", a rare lifecycle pair.
+  footBtn: {
     marginTop: theme.space1,
-  },
-  addPetBtnText: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-  },
-  archiveBtn: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: 13,
-    paddingHorizontal: theme.space2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-    marginTop: theme.space1,
-  },
-  archiveBtnText: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextTertiary,
   },
 
   // ── Empty / bottom ──

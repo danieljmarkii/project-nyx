@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import {
   Alert, KeyboardAvoidingView, Modal, Platform,
-  ScrollView, StyleSheet, TextInput, TouchableOpacity, View,
+  ScrollView, StyleSheet, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
-import { SectionLabel } from '../ui/SectionLabel';
-import { FilterChip } from '../ui/FilterChip';
+import { ChipGroup } from '../ui/ChipGroup';
+import { FieldLabel } from '../ui/FieldLabel';
+import { Header } from '../ui/Header';
+import { HeaderAction } from '../ui/HeaderAction';
+import { PickerRow } from '../ui/PickerRow';
+import { TextField } from '../ui/TextField';
+import { TextLink } from '../ui/TextLink';
 import { ThemedText } from '../ui/ThemedText';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
@@ -188,62 +192,52 @@ export function EditPetModal({ visible, onClose }: Props) {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={8}>
-            <ThemedText style={styles.cancelText}>Cancel</ThemedText>
-          </TouchableOpacity>
-          <ThemedText style={styles.headerTitle}>Edit profile</ThemedText>
-          <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
-            {saving
-              ? <WhorlSpinner size="sm" ground="day" />
-              : <ThemedText style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</ThemedText>
-            }
-          </TouchableOpacity>
-        </View>
+        <Header
+          title="Edit profile"
+          left={<HeaderAction label="Cancel" tone="quiet" onPress={onClose} />}
+          right={
+            <HeaderAction
+              label="Save"
+              onPress={handleSave}
+              disabled={!canSave}
+              disabledReason="add a name first"
+              working={saving}
+              testID="edit-pet-save"
+            />
+          }
+        />
 
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
-            {/* Name */}
-            <SectionLabel label="Name" style={styles.fieldLabel} />
-            <TextInput
-              style={styles.input}
+            <TextField
+              label="Name"
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
               returnKeyType="done"
-              placeholderTextColor={theme.colorTextSecondary}
             />
 
-            {/* Species */}
-            <SectionLabel label="Species" style={styles.fieldLabel} />
-            <View style={styles.chipRow}>
-              {SPECIES_OPTIONS.map((opt) => (
-                <View key={opt.value} style={styles.chipWrap}>
-                  <FilterChip
-                    label={opt.label}
-                    active={species === opt.value}
-                    onPress={() => handleSpeciesChange(opt.value)}
-                    variant="filled"
-                  />
-                </View>
-              ))}
+            <View>
+              <FieldLabel label="Species" />
+              <ChipGroup
+                options={SPECIES_OPTIONS}
+                value={species}
+                onChange={(next) => { if (next) handleSpeciesChange(next as Species); }}
+                allowDeselect={false}
+                accessibilityLabel="Species"
+              />
             </View>
 
-            {/* Breed */}
-            <SectionLabel label="Breed" style={styles.fieldLabel} />
             {hasBreedList && !isOtherBreed ? (
-              <>
-                <TouchableOpacity
-                  style={styles.fieldBtn}
+              <View>
+                <PickerRow
+                  label="Breed"
+                  value={breedDisplayValue}
+                  placeholder="Select breed"
+                  actionLabel={showBreedPicker ? 'Done' : 'Change'}
                   onPress={() => setShowBreedPicker(!showBreedPicker)}
-                  activeOpacity={0.7}
-                >
-                  <ThemedText style={breedDisplayValue ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                    {breedDisplayValue ?? 'Select breed'}
-                  </ThemedText>
-                  <ThemedText style={styles.changeLabel}>{showBreedPicker ? 'Done' : 'Change'}</ThemedText>
-                </TouchableOpacity>
+                />
                 {showBreedPicker && (
                   <BreedPicker
                     breeds={breeds}
@@ -252,91 +246,77 @@ export function EditPetModal({ visible, onClose }: Props) {
                     onSelectOther={handleBreedOther}
                   />
                 )}
-              </>
+              </View>
             ) : (
               /* other species or "Other" selected from list — text input */
-              <>
-                <TextInput
-                  style={styles.input}
+              <View>
+                <TextField
+                  label="Breed"
                   value={breed}
                   onChangeText={setBreed}
                   placeholder={hasBreedList ? 'Type breed name' : 'e.g. Rabbit, Guinea pig'}
-                  placeholderTextColor={theme.colorTextSecondary}
                   autoCapitalize="words"
                   returnKeyType="done"
                   autoFocus={isOtherBreed}
                 />
                 {hasBreedList && (
-                  <TouchableOpacity
+                  <TextLink
+                    label="Back to breed list"
+                    tone="quiet"
+                    variant="caption"
                     onPress={() => { setIsOtherBreed(false); setBreed(''); }}
-                    style={styles.clearBtn}
-                    hitSlop={8}
-                  >
-                    <ThemedText style={styles.clearBtnText}>Back to breed list</ThemedText>
-                  </TouchableOpacity>
+                  />
                 )}
-              </>
+              </View>
             )}
 
-            {/* Sex */}
-            <SectionLabel label="Sex" style={styles.fieldLabel} />
-            <View style={styles.chipRow}>
-              {SEX_OPTIONS.map((opt) => (
-                <View key={opt.value} style={styles.chipWrap}>
-                  <FilterChip
-                    label={opt.label}
-                    active={sex === opt.value}
-                    onPress={() => setSex(opt.value)}
-                    variant="filled"
-                  />
-                </View>
-              ))}
+            <View>
+              <FieldLabel label="Sex" />
+              <ChipGroup
+                options={SEX_OPTIONS}
+                value={sex}
+                onChange={(next) => { if (next) setSex(next as Sex); }}
+                allowDeselect={false}
+                accessibilityLabel="Sex"
+              />
             </View>
 
-            {/* Date of birth */}
-            <SectionLabel label="Date of birth" style={styles.fieldLabel} />
-            <TouchableOpacity
-              style={styles.fieldBtn}
-              onPress={() => setShowDatePicker(!showDatePicker)}
-              activeOpacity={0.7}
-            >
-              <ThemedText style={dobLabel ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                {dobLabel ?? 'Not set'}
-              </ThemedText>
-              <ThemedText style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</ThemedText>
-            </TouchableOpacity>
-            {dobIsEstimated && !showDatePicker && (
-              // Explain why an approximate DOB shows as a month/year, not a day —
-              // and that picking a date makes it a real birthday (honesty, PR 9).
-              <ThemedText style={styles.dobEstimateNote}>Estimated from age — pick a date to set an exact birthday.</ThemedText>
-            )}
-            {dob && !showDatePicker && (
-              <TouchableOpacity onPress={() => setDob(null)} style={styles.clearBtn} hitSlop={8}>
-                <ThemedText style={styles.clearBtnText}>Clear date</ThemedText>
-              </TouchableOpacity>
-            )}
-            {showDatePicker && (
-              <DateTimePicker
-                value={dob ?? new Date(2020, 0, 1)}
-                mode="date"
-                display="spinner"
-                maximumDate={new Date()}
-                onChange={(_e: unknown, date?: Date) => {
-                  if (Platform.OS === 'android') setShowDatePicker(false);
-                  // A concrete calendar pick is a witnessed birthday → 'exact'.
-                  if (date) { setDob(date); setDobTouched(true); }
-                }}
+            <View>
+              <PickerRow
+                label="Date of birth"
+                value={dobLabel}
+                placeholder="Not set"
+                actionLabel={showDatePicker ? 'Done' : 'Change'}
+                onPress={() => setShowDatePicker(!showDatePicker)}
               />
-            )}
+              {dobIsEstimated && !showDatePicker && (
+                // Explain why an approximate DOB shows as a month/year, not a day —
+                // and that picking a date makes it a real birthday (honesty, PR 9).
+                <ThemedText variant="caption" style={styles.note}>Estimated from age — pick a date to set an exact birthday.</ThemedText>
+              )}
+              {dob && !showDatePicker && (
+                <TextLink label="Clear date" tone="quiet" variant="caption" onPress={() => setDob(null)} />
+              )}
+              {showDatePicker && (
+                <DateTimePicker
+                  value={dob ?? new Date(2020, 0, 1)}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_e: unknown, date?: Date) => {
+                    if (Platform.OS === 'android') setShowDatePicker(false);
+                    // A concrete calendar pick is a witnessed birthday → 'exact'.
+                    if (date) { setDob(date); setDobTouched(true); }
+                  }}
+                />
+              )}
+            </View>
 
-            {/* Weight */}
-            <SectionLabel label="Weight (lbs)" style={styles.fieldLabel} />
-            <TextInput
-              style={styles.input}
+            <TextField
+              label="Weight (lbs)"
               value={weightStr}
               onChangeText={setWeightStr}
               placeholder="e.g. 28"
-              placeholderTextColor={theme.colorTextSecondary}
               keyboardType="decimal-pad"
               returnKeyType="done"
             />
@@ -353,96 +333,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  saveText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
-  },
-  saveTextDisabled: {
-    opacity: theme.opacityDisabled,
+  flex: {
+    flex: 1,
   },
   form: {
     padding: theme.space3,
     paddingBottom: theme.space6,
-    gap: theme.space1,
+    gap: theme.space2,
   },
-  fieldLabel: {
-    marginTop: theme.space2,
-    marginBottom: 4,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    fontFamily: theme.fontBody,
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: theme.space1,
-  },
-  chipWrap: {
-    flex: 1,
-  },
-  fieldBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  fieldBtnText: {
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-  },
-  fieldBtnPlaceholder: {
-    fontSize: 16,
+  note: {
     color: theme.colorTextSecondary,
-  },
-  changeLabel: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
-    fontWeight: theme.fontWeightMedium,
-  },
-  dobEstimateNote: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
-    marginTop: 6, // matches the sibling clearBtn/changeLabel spacing in this file
-  },
-  clearBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  clearBtnText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    textDecorationLine: 'underline',
+    marginTop: theme.space1,
   },
 });

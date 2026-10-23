@@ -13,7 +13,11 @@ import { ThemedText } from './ThemedText';
 // button for the one irreversible commit a sheet exists to make (delete account), so
 // the screen stops hand rolling it. White on colorDestructive clears AA (pinned in
 // constants/theme.contrast.test.ts).
-type Variant = 'primary' | 'secondary' | 'destructive' | 'destructiveFilled' | 'accent';
+//
+// 'plain' (CUL-1911, the profile round's P10; the capture round drew it too) is a quiet
+// text row on the 44pt floor, no fill and no edge: a rare lifecycle action that should
+// recede (Add a pet, Archive at the foot of the Pet tab) or a sheet's way out.
+type Variant = 'primary' | 'secondary' | 'destructive' | 'destructiveFilled' | 'accent' | 'plain';
 
 interface Props {
   label: string;
@@ -37,6 +41,7 @@ const SPINNER_COLOR: Record<Variant, string> = {
   destructiveFilled: theme.colorTextOnDark,
   // Matches the accent variant's near-black label on the teal fill.
   accent: theme.colorNeutralDark,
+  plain: theme.colorTextSecondary,
 };
 
 export function PrimaryButton({
@@ -60,7 +65,8 @@ export function PrimaryButton({
         variant === 'destructive' && styles.btnDestructive,
         variant === 'destructiveFilled' && styles.btnDestructiveFilled,
         variant === 'accent' && styles.btnAccent,
-        disabled && styles.btnDisabled,
+        variant === 'plain' && styles.btnPlain,
+        disabled && (variant === 'plain' ? styles.btnPlainDisabled : styles.btnDisabled),
         style,
       ]}
       onPress={onPress}
@@ -85,6 +91,7 @@ export function PrimaryButton({
             variant === 'secondary' && styles.labelSecondary,
             variant === 'destructive' && styles.labelDestructive,
             variant === 'accent' && styles.labelAccent,
+            variant === 'plain' && styles.labelPlain,
             disabled && styles.labelDisabled,
           ]}
         >
@@ -120,6 +127,15 @@ const styles = StyleSheet.create({
   btnDisabled: {
     backgroundColor: theme.colorBorder,
   },
+  btnPlain: {
+    backgroundColor: 'transparent',
+    paddingVertical: 0,
+    minHeight: theme.hitTarget,
+  },
+  // A plain row has no fill to grey out; the label alone says it is unavailable.
+  btnPlainDisabled: {
+    backgroundColor: 'transparent',
+  },
   label: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
@@ -137,6 +153,9 @@ const styles = StyleSheet.create({
   },
   labelAccent: {
     color: theme.colorNeutralDark,
+  },
+  labelPlain: {
+    color: theme.colorTextSecondary,
   },
   labelDisabled: {
     color: theme.colorTextTertiary,
