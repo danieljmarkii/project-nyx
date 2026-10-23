@@ -14,7 +14,7 @@
 //   • THE ONE LOOP: the breath is implemented once, `useTickBreath` in
 //     `components/motion/arrivalMotion.ts`, which D2-4's node also calls on the value
 //     that grows into its rail (CUL-1075 unified the two spellings). This file binds it;
-//     `guards/designV2OneLoop.test.ts` finds the loop there and nowhere else flag-on.
+//     `guards/surfacesOneLoop.test.ts` finds the loop there and nowhere else flag-on.
 //   • ITS SHAPE: 3pt wide, 16pt tall — the rail's own tick (`RAIL_WIDTH` /
 //     `RAIL_TICK_HEIGHT` in `components/event/IncidentReadCard.tsx`), because the tick is
 //     the mark an arrival grows into: where a read lands, this becomes the rail of the

@@ -16,7 +16,7 @@ jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 // app/insights/designV2.test.tsx — so here it is a placeholder, and its reads (which
 // reach lib/supabase at import time) are stubbed for the import edge only.
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
-jest.mock('../../components/designV2/patterns/MonthInstrument', () => {
+jest.mock('../../components/surfaces/patterns/MonthInstrument', () => {
   const { View } = require('react-native');
   return { MonthInstrument: () => <View testID="month-instrument" /> };
 });

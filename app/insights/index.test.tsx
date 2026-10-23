@@ -22,7 +22,7 @@ jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 // The month draws and reads on its own (app/insights/designV2.test.tsx and its own
 // suite); here it is a placeholder so this suite stays on the dashboard read.
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
-jest.mock('../../components/designV2/patterns/MonthInstrument', () => {
+jest.mock('../../components/surfaces/patterns/MonthInstrument', () => {
   const { View } = require('react-native');
   return { MonthInstrument: () => <View testID="month-instrument" /> };
 });

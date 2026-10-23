@@ -28,8 +28,8 @@ jest.mock('@react-native-community/datetimepicker', () => {
       onPress: () => props.onChange({}, mockPickedDate),
     });
 });
-jest.mock('../components/designV2/waits/ReportSilhouette', () => ({ ReportSilhouette: () => null }));
-jest.mock('../components/designV2/waits/Tick', () => ({ Tick: () => null }));
+jest.mock('../components/surfaces/waits/ReportSilhouette', () => ({ ReportSilhouette: () => null }));
+jest.mock('../components/surfaces/waits/Tick', () => ({ Tick: () => null }));
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi' };
   const state = { activePet: pet, pets: [pet] };

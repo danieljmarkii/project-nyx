@@ -32,8 +32,8 @@ jest.mock('../../components/home/CrossPetSafetyBanner', () => ({ CrossPetSafetyB
 jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
 jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
-jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
-jest.mock('../../components/designV2/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
+jest.mock('../../components/surfaces/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
+jest.mock('../../components/surfaces/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }),
 }));

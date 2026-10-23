@@ -70,7 +70,7 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
   },
   {
     id: 'month-day',
-    senders: ['components/designV2/patterns/MonthInstrument.tsx'],
+    senders: ['components/surfaces/patterns/MonthInstrument.tsx'],
     builder: { file: 'lib/historyDateFilter.ts', fn: 'historyDayHref' },
     sends: '`day` (a LOCAL day, the month\'s own), `ts`',
     lands: 'lands on that day under All types and All time',
@@ -79,7 +79,7 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
   {
     id: 'look-more-today',
     // The look header folds the day's quiet looks behind this door (CUL-1220).
-    senders: ['components/designV2/home/LookHeader.tsx'],
+    senders: ['components/surfaces/home/LookHeader.tsx'],
     builder: { file: 'lib/lookCard.ts', fn: 'lookMoreTodayHref' },
     sends: '`type=check_in`, `window=today`, `ts`',
     lands: 'Noticed, Today',

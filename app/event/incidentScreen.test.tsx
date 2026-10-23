@@ -30,7 +30,7 @@ jest.mock('../../components/brand/WhorlSpinner', () => {
   const React = require('react');
   return { WhorlSpinner: () => React.createElement(Text, { testID: 'whorl' }, 'whorl') };
 });
-jest.mock('../../components/designV2/waits/EventSilhouette', () => {
+jest.mock('../../components/surfaces/waits/EventSilhouette', () => {
   const { Text } = require('react-native');
   const React = require('react');
   return { EventSilhouette: () => React.createElement(Text, { testID: 'event-silhouette' }, 'silhouette') };

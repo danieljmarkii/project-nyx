@@ -218,7 +218,7 @@ const ALLOW: Record<string, readonly string[]> = {
   // allow-set would be pre-authorising (C-32). The med strip's one-tap confirm retired
   // with its file, so Home carries two write classes: this look and the appointment
   // strip's resolution.
-  'components/designV2/home/LookHeader.tsx': ['insertLook'],
+  'components/surfaces/home/LookHeader.tsx': ['insertLook'],
 };
 
 /**
@@ -789,7 +789,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // the same floor `haptics.test.ts` and `completionCard.test.ts` pin.
     const files = scannedFiles(ROOT);
     expect(files).toContain(ENTRY_FILE);
-    expect(files).toContain('components/designV2/home/LookHeader.tsx');
+    expect(files).toContain('components/surfaces/home/LookHeader.tsx');
     expect(files).toContain('components/vetvisits/AppointmentStrip.tsx');
     expect(files.length).toBeGreaterThan(20);
   });
@@ -841,7 +841,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // is on the ALLOW entry above.
     //
     // It fired a THIRD time on CUL-1066 (D2-4), and that one is NOT a new class: the
-    // look, drawn by a second file (`components/designV2/home/LookHeader.tsx`) behind
+    // look, drawn by a second file (`components/surfaces/home/LookHeader.tsx`) behind
     // the Design v2 flag, reaching ONE of the look's two helpers. It passes the three tests
     // above in the same words the note did — the look's own row, no new record, ruled
     // (the round-4 page §01). What the flag changes is which classes are MOUNTED: flag-on
@@ -854,7 +854,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // a file that no longer exists is an exemption for nothing, C-32). Two classes remain.
     expect(ALLOW).toEqual({
       'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
-      'components/designV2/home/LookHeader.tsx': ['insertLook'],
+      'components/surfaces/home/LookHeader.tsx': ['insertLook'],
     });
   });
 
@@ -1046,7 +1046,7 @@ describe('the detector itself', () => {
 
   it('lets an allowed file make ONLY its own write', () => {
     const src = 'await insertLook({ petId });\nawait insertSimpleEvent({ type: "itch" });\n';
-    const findings = findWrites('components/designV2/home/LookHeader.tsx', src);
+    const findings = findWrites('components/surfaces/home/LookHeader.tsx', src);
     // The third adversarial pass's mutant: the look's own write passes, the prompted
     // symptom row does not.
     expect(findings.map((f) => f.what)).toEqual(['insertSimpleEvent(']);

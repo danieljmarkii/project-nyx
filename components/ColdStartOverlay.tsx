@@ -1,6 +1,6 @@
 import { useSyncStore } from '../store/syncStore';
 import { usePetStore } from '../store/petStore';
-import { ColdStartSilhouette } from './designV2/waits/ColdStartSilhouette';
+import { ColdStartSilhouette } from './surfaces/waits/ColdStartSilhouette';
 import { TAB_HEIGHT } from './nav/NyxTabBar';
 
 // B-054 §6 — the block-only-when-empty cold-start state.

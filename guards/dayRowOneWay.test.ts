@@ -44,7 +44,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 /** The two surfaces, as the directories their drawing lives in. */
 const SURFACE_DIRS = {
-  home: 'components/designV2/home',
+  home: 'components/surfaces/home',
   history: 'components/historyV2',
 } as const;
 
@@ -221,7 +221,7 @@ describe('one row, one way: Home and History draw a day only through the pipelin
   it('Home draws its day through DayNodeRow over the pipeline (a real call site on each side)', () => {
     const home = callersIn(ROOT, homeFiles);
     expect(home.draws).toEqual(['components/historyV2/HomeSpine.tsx']);
-    expect(home.builds).toEqual(['components/designV2/home/TodayCard.tsx']);
+    expect(home.builds).toEqual(['components/surfaces/home/TodayCard.tsx']);
   });
 
   it('History draws its day through DayNodeRow over the pipeline (a real call site on each side)', () => {

@@ -16,7 +16,7 @@
 # CUL-831's fix was proved with) and 400 (past a full year, so every New Year's rollover
 # is seen well ahead). All three were green on 2026-09-24 once CUL-832 defused the two
 # it found: lib/signalScreen.test.ts (would have gone off 2026-11-14) and
-# components/designV2/patterns/WeightCard.test.tsx (2027-01-01).
+# components/surfaces/patterns/WeightCard.test.tsx (2027-01-01).
 #
 # Deliberately NOT a pull-request check. A skewed red is a warning about a coming date,
 # not a fault in the change under review, and a required check that reds on the calendar

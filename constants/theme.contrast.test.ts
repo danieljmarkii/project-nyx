@@ -24,7 +24,7 @@
 
 import { colorRoles, theme } from './theme';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
-import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from '../components/designV2/patterns/dayRowTint';
+import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from '../components/surfaces/patterns/dayRowTint';
 
 /** WCAG 2.1 relative luminance of an #rrggbb colour (sRGB, linearized). */
 function relativeLuminance(hex: string): number {

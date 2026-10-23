@@ -2,8 +2,8 @@
 // `docs/culprit-home-one-language-mockups.html` §01 is the target frame).
 //
 // WHAT THE RULE IS. Every card on Home sits on ONE surface, `HomeCard`
-// (`components/designV2/home/HomeCard.tsx`): one soft shadow, no border, one inset. And
-// every door on Home draws ONE mark, `DoorMark` (`components/designV2/home/DoorMark.tsx`):
+// (`components/surfaces/home/HomeCard.tsx`): one soft shadow, no border, one inset. And
+// every door on Home draws ONE mark, `DoorMark` (`components/surfaces/home/DoorMark.tsx`):
 // a plain ›, with the round well on the Signal zone's lead row only.
 //
 // WHY A GUARD AND NOT A SENTENCE. Home spoke three languages because each card was built
@@ -39,7 +39,7 @@ import { homeClosure } from './homeClosure';
 const ROOT = path.resolve(__dirname, '..');
 
 /** The one component allowed to draw the glyph. */
-const DOOR_MARK_FILE = 'components/designV2/home/DoorMark.tsx';
+const DOOR_MARK_FILE = 'components/surfaces/home/DoorMark.tsx';
 /** The primitive Home no longer imports. */
 const UI_CARD = 'components/ui/Card';
 const UI_BARREL = 'components/ui';
@@ -177,11 +177,11 @@ describe('Home speaks one card language (CUL-1525, G1 A)', () => {
     const files = scannedFiles(ROOT);
     for (const card of [
       'components/home/SignalZone.tsx',
-      'components/designV2/home/TrialCard.tsx',
-      'components/designV2/home/TodayCard.tsx',
-      'components/designV2/home/CoverageDoor.tsx',
+      'components/surfaces/home/TrialCard.tsx',
+      'components/surfaces/home/TodayCard.tsx',
+      'components/surfaces/home/CoverageDoor.tsx',
       'components/vetvisits/AppointmentStrip.tsx',
-      'components/designV2/home/HomeCard.tsx',
+      'components/surfaces/home/HomeCard.tsx',
       DOOR_MARK_FILE,
     ]) {
       expect(files).toContain(card);
@@ -289,7 +289,7 @@ describe('the detector itself', () => {
 
   it('lets DoorMark draw the glyph', () => {
     expect(
-      home("import { DoorMark } from '../designV2/home/DoorMark';\nexport const X = DoorMark;\n", {
+      home("import { DoorMark } from '../surfaces/home/DoorMark';\nexport const X = DoorMark;\n", {
         [DOOR_MARK_FILE]: 'export const DoorMark = () => <Text>›</Text>;\n',
       }),
     ).toEqual([]);

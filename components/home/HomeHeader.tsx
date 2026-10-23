@@ -12,7 +12,7 @@ import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useTodayKey } from '../../hooks/useTodayKey';
-import { HeaderDate } from '../designV2/home/HeaderDate';
+import { HeaderDate } from '../surfaces/home/HeaderDate';
 import {
   ASK_BORDER,
   ASK_DOT_GAP,
@@ -65,7 +65,7 @@ import {
 // v2's Home is a day (the spine, "Today", the coverage door), and §05 names that window
 // as "today, dated in the header". Still one row: the date is small, muted, never a
 // control, and its width comes out of the name's budget like everything else here. It
-// is drawn in `components/designV2/home/HeaderDate`.
+// is drawn in `components/surfaces/home/HeaderDate`.
 
 /** Vertical padding, per side. The row is deliberately tight — it is chrome. */
 const HEADER_PADDING_Y = 6;

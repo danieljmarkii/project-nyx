@@ -41,7 +41,7 @@ import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 // here is the class colour as on every Signal row; this component never paints a verdict
 // word. The zone routes a safety lead to the row directly; this branch is the backstop.
 //
-// THE READ IS THIS COMPONENT'S. It lives inside `components/designV2/`, so with the flag
+// THE READ IS THIS COMPONENT'S. It lives inside `components/surfaces/`, so with the flag
 // off it is never mounted and the record is never read for it — the async half of the
 // flag-off guard, proven in `SignalLeadCard.test.tsx` by the zone's own suite. While the
 // read is in flight the card is a content-shaped skeleton (C-12: a read that has not
