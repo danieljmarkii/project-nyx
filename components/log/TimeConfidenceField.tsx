@@ -258,11 +258,14 @@ const styles = StyleSheet.create({
     gap: theme.space1,
   },
   // Segmented control
+  // Wraps at the largest text sizes, so "Change time" drops under the date rather than
+  // running off the screen (the AX5 capture); the row gap is the link's own 44pt box.
   timeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: theme.space2,
+    columnGap: theme.space2,
     minHeight: theme.hitTarget,
   },
   // The link owns the row's full height, so it needs no slop to reach the floor.

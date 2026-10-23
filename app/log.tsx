@@ -1541,11 +1541,14 @@ const styles = StyleSheet.create({
   // so those styles retired with B-745 PR 1.
 
   // ── Time row ──
+  // Wraps at the largest text sizes, so "Change time" drops under the date rather than
+  // running off the screen (the AX5 capture); the row gap is the link's own 44pt box.
   timeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: theme.space2,
+    columnGap: theme.space2,
     minHeight: theme.hitTarget,
   },
   timeLabel: {
