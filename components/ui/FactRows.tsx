@@ -51,9 +51,11 @@ const styles = StyleSheet.create({
   label: {
     color: theme.colorTextSecondary,
   },
+  // Pushed to the right edge while it fits beside its label; once it wraps under the
+  // label it takes the line's full width and reads from the left (label over value).
   value: {
     color: theme.colorTextPrimary,
     flexShrink: 1,
-    textAlign: 'right',
+    marginLeft: 'auto',
   },
 });
