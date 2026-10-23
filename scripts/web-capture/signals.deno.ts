@@ -15,6 +15,9 @@
 // The care record and the care-context facts are empty, as on a fresh fixture account (the
 // fixture's detection test makes the same call: EN-10's lines decorate a finding and never
 // move one). Weights are fed through the production mapper while engines_v3_en8 is on.
+// With CAPTURE_FLAGS unset every Engines v3 key is off (the app is served no app_config
+// either, so both sides agree); the fixture's detection test holds each pet's lead under
+// every key, so the lead is the same, but a key's decorations are absent unless set.
 import { mapWeightCheckRows, runSignalPipeline, assembleSignal, templateTexts, templateSummary, type MealEventRow, type SignalRows, type SymptomRow, type WeightCheckRow } from '../../supabase/functions/generate-signal/pipeline.ts'
 import { CORRELATION_SYMPTOM_TYPES } from '../../supabase/functions/generate-signal/detection.ts'
 import { EMPTY_CARE_RECORD } from '../../supabase/functions/generate-signal/careState.ts'
@@ -37,13 +40,18 @@ const flagRows = captureFlagRows(Deno.env.get('CAPTURE_FLAGS'))
 const engineFlags: EngineFlags = resolveEngineFlags({ data: flagRows, error: null }, FIXTURE_USER_ID)
 
 const SYMPTOMS: ReadonlySet<string> = new Set(CORRELATION_SYMPTOM_TYPES)
+// generate-signal/index.ts's LOOKBACK_DAYS (not exported: index.ts is the shell and serves on
+// import). Same question, the window every event pull reads, so the same value.
+const LOOKBACK_DAYS = 180
+const lookbackMs = nowMs - LOOKBACK_DAYS * 86_400_000
+const inWindow = (e: Row) => Date.parse(e.occurred_at as string) >= lookbackMs
 const live = (r: Row) => r.deleted_at == null
 const foods = new Map(tables.food_items.map((f) => [f.id as string, f]))
 const eventsById = new Map(tables.events.map((e) => [e.id as string, e]))
 const timezone = (tables.user_profiles[0]?.timezone as string | undefined) ?? null
 
 function rowsFor(pet: Row): SignalRows {
-  const events = tables.events.filter((e) => e.pet_id === pet.id && live(e))
+  const events = tables.events.filter((e) => e.pet_id === pet.id && live(e) && inWindow(e))
   const symptoms: SymptomRow[] = events
     .filter((e) => SYMPTOMS.has(e.event_type as string))
     .map((e) => ({
@@ -56,7 +64,7 @@ function rowsFor(pet: Row): SignalRows {
   const meals: MealEventRow[] = []
   for (const m of tables.meals.filter((m) => m.pet_id === pet.id)) {
     const e = eventsById.get(m.event_id as string)
-    if (!e || !live(e) || e.event_type !== 'meal') continue
+    if (!e || !live(e) || !inWindow(e) || e.event_type !== 'meal') continue
     const f = foods.get(m.food_item_id as string)
     meals.push({
       id: e.id as string,

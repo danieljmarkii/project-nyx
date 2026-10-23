@@ -25,9 +25,12 @@ on:
     paths:
       - 'app/**'
       - 'components/**'
+      # The theme tokens: the design system moves most of its pixels here.
+      - 'constants/**'
       # The capture path itself, so a change to the harness proves itself on its own run.
       - 'scripts/web-capture/**'
       - 'scripts/fixture/fixtureStory.ts'
+      - 'scripts/demo/**'
       - 'metro.config.js'
       - '.github/workflows/layout-captures.yml'
 
@@ -43,11 +46,19 @@ jobs:
     name: Layout captures (reported, not gating)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      DENO_DIR: ${{ github.workspace }}/.deno-cache
-      SHOTS: ${{ github.workspace }}/.captures/shots
-      PLAYWRIGHT_REQUIRE_FROM: ${{ github.workspace }}/.captures/pw/node_modules/
     steps:
+      # Everything this job writes lives outside the checkout: Metro crawls the project root,
+      # and a Deno cache or a second node_modules under it would be walked by the build.
+      # Set here because job-level `env` cannot read the runner context.
+      - name: Work directories
+        run: |
+          {
+            echo "DENO_DIR=$RUNNER_TEMP/deno-cache"
+            echo "WORK=$RUNNER_TEMP/captures"
+            echo "SHOTS=$RUNNER_TEMP/captures/shots"
+            echo "PLAYWRIGHT_REQUIRE_FROM=$RUNNER_TEMP/captures/pw/node_modules/"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -71,36 +82,36 @@ jobs:
       # so a capture here and one from a session photograph the same engine.
       - name: Install Playwright and Chromium
         run: |
-          mkdir -p .captures/pw
-          npm install --prefix .captures/pw --no-save --no-package-lock playwright@1.63.0
-          .captures/pw/node_modules/.bin/playwright install --with-deps chromium
+          mkdir -p "$WORK/pw"
+          npm install --prefix "$WORK/pw" --no-save --no-package-lock playwright@1.63.0
+          "$WORK/pw/node_modules/.bin/playwright" install --with-deps chromium
 
       # Home's Signal lead: the shipped pipeline over the fixture's rows at the frozen instant.
       # Fails when a pet's lead differs from the one the fixture declares. `--check` because
       # ci.yml's `Deno check (scripts)` globs one level of scripts/ and does not reach here.
       - name: Compute the fixture's Signal
         run: |
-          deno run --check --lock=deno.lock --allow-read --allow-env --allow-write=.captures \
-            scripts/web-capture/signals.deno.ts .captures/signals.json
+          deno run --check --lock=deno.lock --allow-read --allow-env --allow-write="$WORK" \
+            scripts/web-capture/signals.deno.ts "$WORK/signals.json"
 
       - name: Build the web bundle
         run: scripts/web-capture/build.sh "${{ runner.temp }}/nyx-web"
 
       - name: Capture
         env:
-          CAPTURE_SIGNALS: .captures/signals.json
+          CAPTURE_SIGNALS: ${{ runner.temp }}/captures/signals.json
         run: node --experimental-strip-types scripts/web-capture/capture.mjs "${{ runner.temp }}/nyx-web" "$SHOTS"
 
       - name: Contact sheet
         if: ${{ !cancelled() }}
-        run: node scripts/web-capture/sheet.mjs "$SHOTS" .captures/layout-captures.png .captures/grid.md
+        run: node scripts/web-capture/sheet.mjs "$SHOTS" "$WORK/layout-captures.png" "$WORK/grid.md"
 
       - name: Upload the contact sheet
         id: sheet
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: .captures/layout-captures.png
+          path: ${{ runner.temp }}/captures/layout-captures.png
           archive: false
           if-no-files-found: ignore
           retention-days: 30
@@ -111,7 +122,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layout-captures-${{ github.event.pull_request.number }}
-          path: ${{ env.SHOTS }}
+          path: ${{ runner.temp }}/captures/shots
           if-no-files-found: ignore
           retention-days: 30
 
@@ -131,7 +142,7 @@ jobs:
             if [ -n "$SHEET_URL" ]; then echo "- [Contact sheet]($SHEET_URL) (one PNG, every shot at every size)"; fi
             if [ -n "$SHOTS_URL" ]; then echo "- [Full-resolution captures]($SHOTS_URL) (zip)"; fi
             echo
-            if [ -f .captures/grid.md ]; then cat .captures/grid.md; else echo "No captures were taken: see the failing step."; fi
+            if [ -f "$WORK/grid.md" ]; then cat "$WORK/grid.md"; else echo "No captures were taken: see the failing step."; fi
           } >> "$GITHUB_STEP_SUMMARY"
           if ls "$SHOTS"/*-UNREACHED.png >/dev/null 2>&1; then
             echo "::error::a shot could not reach its screen: $(cd "$SHOTS" && ls *-UNREACHED.png | tr '\n' ' ')"
