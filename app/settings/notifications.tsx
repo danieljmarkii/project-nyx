@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
   deniedActionText: {
     fontFamily: theme.fontBodyMedium,
     fontSize: theme.textSM,
-    color: theme.colorDestructive,
+    color: colorRoles.destructive.textOnWash,
   },
 
   // ── Intro framing (states a/b) + the relocated lock-screen privacy note (DR-4),

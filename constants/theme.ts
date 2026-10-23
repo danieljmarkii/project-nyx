@@ -305,6 +305,10 @@ export const theme = {
   // system-state warning reads as prominent without a solid-red alarm (B-661 PR 3).
   colorDestructiveLight: '#FEE2E2',   // red-100 tint — danger-banner fill
   colorDestructiveBorder: '#FCA5A5',  // red-300 — danger-banner hairline
+  // Text ink on that fill (CUL-2151, the CUL-578 ink pattern): colorDestructive is
+  // 3.95:1 on colorDestructiveLight, under text AA; red-700 is 5.30:1 there and stays
+  // in the same red, so the banner's label reads without changing what it says.
+  colorDestructiveInk: '#B91C1C',
 
   // ── Attention (amber) — light-surface "heads-up", NOT a danger state ─────────
   // The Tier-2 register (multi-protein D7): a factual heads-up whose claim-strength
@@ -446,12 +450,12 @@ export const colorRoles = {
     wash: theme.colorEventMedicationLight,
     onNight: theme.colorEventMedicationOnNight,
   },
-  // White grounds only: on its own banner wash (colorDestructiveLight) the red is
-  // 3.95:1, under text AA, so a destructive label there needs an ink this layer does
-  // not have yet.
+  // onLight is for white grounds only: on its own banner wash (colorDestructiveLight)
+  // the red is 3.95:1, under text AA, so a label on the wash takes textOnWash.
   destructive: {
     onLight: theme.colorDestructive,
     onDark: theme.colorDestructiveOnDark,
+    textOnWash: theme.colorDestructiveInk,
   },
   text: {
     primaryOnLight: theme.colorTextPrimary,
