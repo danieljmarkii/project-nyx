@@ -57,7 +57,10 @@ export const theme = {
   trackingWidest: 0.8,   // zone labels, section labels
 
   // ── Colors (Design System v1.2 "Linear Clean") ────────────────────────────
-  // One accent — interactive elements + primary trend line only. Never decorative.
+  // One ACTION colour, indigo, and one meaning per hue: the hue table in the design
+  // principles' Color section (v2.1, CUL-2145). A screen picks a colour by its job and
+  // its ground through `colorRoles` below, never by hue. The raw hues stay exported
+  // until CUL-1666's walk moves every call site onto a role.
   colorAccent: '#00C2A8',
   colorAccentSoft: '#86D9CC',     // mid teal — a calm, on-brand fill that is NOT a verdict
                                   // (e.g. the treats segment of the Meals & treats card)
@@ -94,6 +97,12 @@ export const theme = {
   // never a text colour (text on white takes colorAccentInk). Both halves are pinned in
   // theme.contrast.test.ts.
   colorAccentGlyph: '#0FA08B',
+  // The ACTION colour on light grounds (CUL-2145 R1, PM 2026-10-23; G4 (C) of CUL-1279,
+  // 2026-10-03: indigo is the action, teal a good fact). One step lighter than the FAB
+  // disc (colorBrandNightElevated), which at link size reads as black body text: 9.42:1
+  // on white, so it clears text AA with room. Reached through `colorRoles.action` and
+  // `colorRoles.selected`, never by name, so the migration can find every site.
+  colorAction: '#3F35A0',
 
   // Neutrals
   colorNeutralDark: '#0A0A0A',
@@ -378,6 +387,69 @@ export const theme = {
   durationMedium: 250,
   durationSlow: 400,
   easingDefault: 'ease-out',
+} as const;
+
+// Colour ROLES (CUL-2145, row 1 of CUL-1898's D4, ruled (a) 2026-10-23). Each role names
+// a JOB and the GROUND it sits on, and resolves to a theme token above: the only new
+// value is colorAction. A call site asks for `colorRoles.positive.glyphOnLight`, not for
+// the teal, so whether a mark is readable where it sits is decided once, here, and
+// pinned in theme.contrast.test.ts, which fails on any role without a pin. Nothing reads
+// these yet: CUL-1666's walk is the migration, and a guard follows it.
+//
+// The hue table these encode is the principles' Color section (v2.1). Concern (the rose)
+// is the safety register: a concern role may keep or raise its contrast, never lower it,
+// and the test pins today's ratio as its floor.
+export const colorRoles = {
+  // What the owner can tap or change: a link, a chevron, a switch, a save.
+  action: {
+    onLight: theme.colorAction,
+    onNight: theme.colorMoonlight,        // R3: indigo cannot show on the indigo night
+    labelOnFill: theme.colorTextOnDark,   // the label on a solid action fill
+  },
+  // A good fact: a meal eaten, a dose given, a clean day.
+  positive: {
+    glyphOnLight: theme.colorAccentGlyph,
+    textOnLight: theme.colorAccentInk,
+    wash: theme.colorAccentLight,
+    onNight: theme.colorMoonlitTeal,
+  },
+  // A chosen chip, row or option (R2: choosing is acting, so indigo). The wash is the
+  // night text token reused as a light ground; it barely lifts off white (1.19:1), so
+  // the edge carries the state and the label states it in words.
+  selected: {
+    ground: theme.colorTextOnNight,
+    ink: theme.colorAction,
+    edge: theme.colorAction,
+  },
+  // A symptom or a concern, and every safety surface.
+  concern: {
+    glyphOnLight: theme.colorEventSymptom,
+    textOnLight: theme.colorEventSymptomInk,
+    wash: theme.colorEventSymptomLight,
+    onNight: theme.colorEventSymptomOnNight,
+  },
+  // A heads up, as strong as the record knows. Not danger.
+  attention: {
+    text: theme.colorAttentionInk,
+    wash: theme.colorAttentionLight,
+    rail: theme.colorAttentionRail,
+  },
+  medication: {
+    glyphOnLight: theme.colorEventMedication,
+    textOnLight: theme.colorEventMedicationInk,
+    wash: theme.colorEventMedicationLight,
+    onNight: theme.colorEventMedicationOnNight,
+  },
+  destructive: {
+    onLight: theme.colorDestructive,
+    onDark: theme.colorDestructiveOnDark,
+  },
+  text: {
+    primaryOnLight: theme.colorTextPrimary,
+    secondaryOnLight: theme.colorTextSecondary,
+    primaryOnNight: theme.colorTextOnNight,
+    mutedOnNight: theme.colorTextOnNightMuted,
+  },
 } as const;
 
 // Named text styles (CUL-1897 scope 3): size, weight and line height decided once, as

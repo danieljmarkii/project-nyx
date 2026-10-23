@@ -22,7 +22,7 @@
 // is deliberately only about the tokens — it is one end of that chain, not a
 // restatement of the others.
 
-import { theme } from './theme';
+import { colorRoles, theme } from './theme';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
 import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from '../components/designV2/patterns/dayRowTint';
 
@@ -374,5 +374,117 @@ describe('CUL-1659 — every month drill-in row glyph clears 3:1 on its chip', (
     expect(DAY_ROW_TINT.meal).toBe(theme.colorAccentGlyph);
     expect(contrastRatio(theme.colorEventMeal, DAY_ROW_ICON_GROUND)).toBeCloseTo(2.26, 2);
     expect(contrastRatio(theme.colorAccentGlyph, DAY_ROW_ICON_GROUND)).toBeCloseTo(3.27, 2);
+  });
+});
+
+describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
+  // The role layer exists so a screen asks for a JOB on a GROUND and gets a colour that
+  // reads there. That promise is only as good as this table: each row is a role on the
+  // ground it is named for, at the WCAG floor its use needs (4.5:1 text, 3:1 a glyph or
+  // a control's edge). The coverage test below reds on a role with no row, so a new
+  // role cannot ship unpinned, and the resolution test reds on a role that types a hex
+  // instead of naming a theme token (the layer adds no hues; colorAction is a token).
+  const TEXT = AA_NORMAL_TEXT;
+  const NON_TEXT = 3;
+
+  // Concern is the safety register: a concern role may keep or raise its contrast,
+  // never lower it (the principles' hue table, v2.1). So its floor is today's measured
+  // ratio, truncated to two places, not the WCAG minimum: a lighter rose that still
+  // cleared 3:1 is a quieter warning, and that is the edit these rows exist to stop.
+  const CONCERN_FLOOR = {
+    glyphOnLight: 3.67,
+    textOnLight: 8.01,
+    textOnWash: 6.67,
+    onNight: 6.80,
+  } as const;
+
+  type Leaf = string;
+  type Row = readonly [role: Leaf, ground: Leaf, floor: number];
+  // A ground is a role path or a theme token name.
+  const PINS: ReadonlyArray<Row> = [
+    ['action.onLight', 'colorSurface', TEXT],
+    ['action.onLight', 'colorNeutralLight', TEXT],
+    ['action.onLight', 'colorSurfaceSubtle', TEXT],
+    ['action.onNight', 'colorBrandNight', TEXT],
+    ['action.onNight', 'colorBrandNightElevated', TEXT],
+    ['action.labelOnFill', 'action.onLight', TEXT],
+    ['positive.glyphOnLight', 'colorSurface', NON_TEXT],
+    ['positive.textOnLight', 'colorSurface', TEXT],
+    ['positive.textOnLight', 'positive.wash', TEXT],
+    ['positive.onNight', 'colorBrandNight', TEXT],
+    ['positive.onNight', 'colorBrandNightElevated', TEXT],
+    ['selected.ink', 'selected.ground', TEXT],
+    ['selected.edge', 'colorSurface', NON_TEXT],
+    ['concern.glyphOnLight', 'colorSurface', CONCERN_FLOOR.glyphOnLight],
+    ['concern.textOnLight', 'colorSurface', CONCERN_FLOOR.textOnLight],
+    ['concern.textOnLight', 'concern.wash', CONCERN_FLOOR.textOnWash],
+    ['concern.onNight', 'colorBrandNight', CONCERN_FLOOR.onNight],
+    ['attention.text', 'attention.wash', TEXT],
+    ['attention.rail', 'attention.wash', NON_TEXT],
+    ['medication.glyphOnLight', 'colorSurface', NON_TEXT],
+    ['medication.textOnLight', 'colorSurface', TEXT],
+    ['medication.textOnLight', 'medication.wash', TEXT],
+    ['medication.onNight', 'colorBrandNight', TEXT],
+    ['destructive.onLight', 'colorSurface', TEXT],
+    ['destructive.onDark', 'colorSurfaceDark', TEXT],
+    ['text.primaryOnLight', 'colorSurface', TEXT],
+    ['text.secondaryOnLight', 'colorSurface', TEXT],
+    ['text.primaryOnNight', 'colorBrandNight', TEXT],
+    ['text.mutedOnNight', 'colorBrandNight', TEXT],
+  ];
+
+  function roleLeaves(node: object, prefix = ''): Array<[path: string, value: string]> {
+    return Object.entries(node).flatMap(([k, v]): Array<[string, string]> =>
+      typeof v === 'string' ? [[`${prefix}${k}`, v]] : roleLeaves(v as object, `${prefix}${k}.`),
+    );
+  }
+  const LEAVES = new Map(roleLeaves(colorRoles));
+
+  function resolve(name: Leaf): string {
+    const fromRole = LEAVES.get(name);
+    if (fromRole !== undefined) return fromRole;
+    const fromTheme = (theme as Record<string, unknown>)[name];
+    if (typeof fromTheme !== 'string') throw new Error(`no role or theme colour named ${name}`);
+    return fromTheme;
+  }
+
+  it('walks a non-empty layer', () => {
+    // Non-vacuity: an empty colorRoles would pass every test below.
+    expect(LEAVES.size).toBeGreaterThanOrEqual(25);
+  });
+
+  it.each(PINS)('%s on %s clears %p:1', (role, ground, floor) => {
+    expect(LEAVES.has(role)).toBe(true);
+    expect(contrastRatio(resolve(role), resolve(ground))).toBeGreaterThanOrEqual(floor);
+  });
+
+  it('pins every role, as a mark or as the ground a mark is pinned on', () => {
+    const pinned = new Set(PINS.flatMap(([role, ground]) => [role, ground]));
+    const unpinned = [...LEAVES.keys()].filter((path) => !pinned.has(path));
+    expect(unpinned).toEqual([]);
+  });
+
+  it('resolves every role to a theme token, never a typed hex', () => {
+    const themeColours = new Set<unknown>(Object.values(theme));
+    const strays = [...LEAVES].filter(([, value]) => !themeColours.has(value)).map(([path]) => path);
+    expect(strays).toEqual([]);
+  });
+
+  it('encodes the rulings: indigo acts, teal states a good fact (G4 C; R1 to R3)', () => {
+    expect(colorRoles.action.onLight).toBe(theme.colorAction);
+    expect(colorRoles.selected.ink).toBe(theme.colorAction);
+    expect(colorRoles.action.onNight).toBe(theme.colorMoonlight);
+    expect([colorRoles.positive.glyphOnLight, colorRoles.positive.textOnLight]).toEqual([
+      theme.colorAccentGlyph,
+      theme.colorAccentInk,
+    ]);
+  });
+
+  // The failing halves, each the shortcut a later edit would reach for. Without these
+  // rows "point positive.glyphOnLight back at the brand teal" or "let action.onNight be
+  // the indigo too" reads as a tidy one-token diff.
+  it('the brand teal fails as a glyph on white, and the action indigo fails on the night', () => {
+    expect(contrastRatio(theme.colorAccent, theme.colorSurface)).toBeLessThan(NON_TEXT);
+    expect(contrastRatio(theme.colorAction, theme.colorBrandNight)).toBeLessThan(NON_TEXT);
   });
 });
