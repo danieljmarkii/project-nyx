@@ -19,7 +19,7 @@
 // touched at all, which is how row 5 keeps "a single-food meal logs exactly as before"
 // true by construction rather than by a flag.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -31,7 +31,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme, shadows } from '../constants/theme';
 import { Header } from '../components/ui/Header';
 import { ThemedText } from '../components/ui/ThemedText';
@@ -44,6 +44,8 @@ import { setMealComponents } from '../lib/mealComponents';
 import { MealComponentInputError, type ComponentInput } from '../lib/mealComposition';
 import { cardBowlFrom, mixFoodOf } from '../lib/mixCard';
 import { takeMixReturn } from '../lib/mixReturn';
+import { takeCapturedFood } from '../lib/captureHandBack';
+import { isMixableFood } from '../lib/food';
 import { useSheetMotion } from '../components/motion/sheetMotion';
 import { useAppActive } from '../hooks/useAppActive';
 
@@ -128,6 +130,28 @@ export default function MixRoute() {
     setSplitUp(true);
   }
 
+  // CUL-2089 (mock A1/A2): a food that isn't in the picker yet is added from it. Capture
+  // runs add only (no meal of its own; the bowl stays the one record) and hands the new food
+  // back under this meal's id, so the split rises with it as if it had been tapped. One
+  // saved as a treat, topper or "Other" is not handed to the bowl: the owner lands on the
+  // picker, where its tile says why.
+  function addNew() {
+    if (!eventId) return;
+    router.push(`/food-capture?returnTo=back&handBack=${encodeURIComponent(eventId)}`);
+  }
+  // Every focus takes the offer, so it is spent once. The first focus is this route opening,
+  // before the meal is read: `pickSecond` refuses without a first food, so an offer left by
+  // a capture that never made it back here (its exit fell to dismissAll) is dropped there.
+  const pickSecondRef = useRef(pickSecond);
+  pickSecondRef.current = pickSecond;
+  useFocusEffect(
+    useCallback(() => {
+      if (!eventId) return;
+      const food = takeCapturedFood(eventId);
+      if (food && isMixableFood(food)) pickSecondRef.current(food);
+    }, [eventId]),
+  );
+
   // Back to the picker: nothing was written. Not while a write is in flight, which would
   // otherwise land after the owner had seemingly backed out of it.
   function backToPicker() {
@@ -210,7 +234,8 @@ export default function MixRoute() {
               selectedFoodIds={[first.foodItemId]}
               mixableOnly
               onPickFood={pickSecond}
-              onAddNew={() => undefined}
+              onAddNew={addNew}
+              onOpenDetail={(food) => router.push(`/food/${food.id}`)}
             />
           </>
         )}

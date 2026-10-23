@@ -36,6 +36,7 @@ import { useMomentStore, whenMealCardVisible } from '../store/momentStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
+import { offerCapturedFood } from '../lib/captureHandBack';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
@@ -126,7 +127,8 @@ export default function FoodCaptureScreen() {
   // The meal completion card (CUL-613). Selected, not destructured off getState(),
   // so this screen uses the same store handle every other meal-entry path does.
   const showMealMoment = useMomentStore((st) => st.showMeal);
-  const { fromLog, returnTo } = useLocalSearchParams<{ fromLog?: string; returnTo?: string }>();
+  const { fromLog, returnTo, handBack } =
+    useLocalSearchParams<{ fromLog?: string; returnTo?: string; handBack?: string }>();
   const cameFromMealLog = fromLog === '1';
   // B-625 — a return-aware exit. The default exit unwinds the whole stack to Home
   // (`dismissAll`), which is right for the two callers that PRESENT capture over a tab (the
@@ -135,6 +137,10 @@ export default function FoodCaptureScreen() {
   // passes `returnTo=back` so we pop back to IT instead of dismissing it along with the
   // capture — the captured food is then one tap away on the screen that asked for it.
   const returnToPusher = returnTo === 'back';
+  // CUL-2089 — the bowl picker's add: the saved food is handed back to the meal named here
+  // (lib/captureHandBack.ts), so the split rises with it. Add only: never with `fromLog`,
+  // whose commit writes a meal of its own.
+  const handBackKey = !cameFromMealLog && typeof handBack === 'string' && handBack ? handBack : null;
 
   // B-329 flag-aware state. Render-only: the Edge Function re-checks the flag + cap
   // server-side (B-252), so this only shapes what's shown, never what's allowed.
@@ -790,6 +796,16 @@ export default function FoodCaptureScreen() {
     // speak — no occurred_at to change, no intake to ask about, nothing to undo. The
     // library-save beat below stays (CUL-613 Option A, PM-ruled); its copy is in
     // CUL-614's pass.
+    if (handBackKey) {
+      offerCapturedFood(handBackKey, {
+        id: foodId,
+        brand: brand.trim(),
+        product_name: product.trim(),
+        format,
+        food_type: type,
+        photo_path: frontStoragePath,
+      });
+    }
     setStep('complete');
   }
 

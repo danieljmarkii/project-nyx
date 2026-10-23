@@ -53,6 +53,15 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
 // this and never restate it. `EVENT_TYPES.meal.label` (constants/eventTypes.ts)
 // spells the same word for the type grid from its own literal; a taxonomy rename
 // of that label must visit this helper too, or the grid and the rows diverge.
+/**
+ * Mixed meals R1: the one rule for a food that can go in a bowl with another. Treats, toppers
+ * and anything not set as a meal stay their own logs. The bowl's writer (`assertMixableFoods`)
+ * refuses by it and the bowl picker offers by it, so the two cannot disagree.
+ */
+export function isMixableFood(f: { food_type: string | null; format: string | null }): boolean {
+  return f.food_type === 'meal' && f.format !== 'topper';
+}
+
 export function mealRowLabel(foodType: string | null | undefined): 'Meal' | 'Treat' {
   return foodType === 'treat' ? 'Treat' : 'Meal';
 }

@@ -9,9 +9,17 @@
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
 const mockBack = jest.fn();
 let mockParams: Record<string, string> = {};
+const mockPush = jest.fn();
+// The focus callback runs once on mount, as the route opening; `refocus()` re-runs the
+// latest one, as the route coming back into view (from capture, or a food's page).
+let mockFocusCb: (() => void) | null = null;
 jest.mock('expo-router', () => ({
-  router: { back: (...a: unknown[]) => mockBack(...a), push: jest.fn() },
+  router: { back: (...a: unknown[]) => mockBack(...a), push: (...a: unknown[]) => mockPush(...a) },
   useLocalSearchParams: () => mockParams,
+  useFocusEffect: (cb: () => void) => {
+    mockFocusCb = cb;
+    jest.requireActual('react').useEffect(() => { cb(); }, []);
+  },
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = jest.requireActual('react-native');
@@ -35,6 +43,7 @@ import MixRoute, { CARD_RETURN_DELAY_MS } from './mix';
 import { useMomentStore } from '../store/momentStore';
 import { usePetStore } from '../store/petStore';
 import { holdMixReturn } from '../lib/mixReturn';
+import { offerCapturedFood, takeCapturedFood } from '../lib/captureHandBack';
 import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 
 const RABBIT = { food_item_id: 'rabbit', food_brand: 'Weruva', food_product_name: 'Rabbit Pâté', food_type: 'meal', food_format: 'wet', intake_rating: null };
@@ -59,6 +68,9 @@ async function pickAndSave(view: ReturnType<typeof render>, chip: string) {
 beforeEach(() => {
   jest.useFakeTimers();
   mockBack.mockReset();
+  mockPush.mockReset();
+  mockFocusCb = null;
+  takeCapturedFood('e1');
   mockSet.mockReset().mockResolvedValue({ food_item_id: null, component_count: 2 });
   mockGetMeal.mockReset().mockResolvedValue(RABBIT);
   lastPickerProps = null;
@@ -189,4 +201,62 @@ it('Other amounts: one unit for both, and no save until both are above zero', as
     expect.objectContaining({ shareSource: 'amounts', amountValue: 0.25, amountUnit: 'can' }),
     expect.objectContaining({ shareSource: 'amounts', amountValue: 0.5, amountUnit: 'can' }),
   ], expect.any(Date), { headsUp: 'card' });
+});
+
+// CUL-2089 (mock A1/A2): a food that isn't in the picker yet is added from it, and comes back
+// to the bowl that asked.
+describe('a food added from the bowl picker', () => {
+  const DUCK = { id: 'new1', brand: 'Weruva', product_name: 'Duck Stew', format: 'wet', food_type: 'meal', photo_path: null };
+  const refocus = () => act(() => { mockFocusCb!(); });
+
+  it('opens capture in its add only mode, keyed to this meal', async () => {
+    await openAndPick();
+    act(() => (lastPickerProps!.onAddNew as () => void)());
+    expect(mockPush).toHaveBeenCalledWith('/food-capture?returnTo=back&handBack=e1');
+    // Never the meal log path, which would write a meal of its own.
+    expect(mockPush.mock.calls[0][0]).not.toContain('fromLog');
+  });
+
+  it('the saved food comes back and the split rises with it', async () => {
+    const view = await openAndPick();
+    offerCapturedFood('e1', DUCK);
+    refocus();
+    view.getByText('About how much of each?');
+    view.getByText('Duck Stew');
+    expect(mockSet).not.toHaveBeenCalled();
+  });
+
+  it('a food saved as a treat, topper or "Other" lands on the picker, not in the bowl', async () => {
+    const view = await openAndPick();
+    for (const f of [
+      { ...DUCK, food_type: 'treat' },
+      { ...DUCK, format: 'topper' },
+      { ...DUCK, food_type: 'other' },
+    ]) {
+      offerCapturedFood('e1', f);
+      refocus();
+      expect(view.queryByText('About how much of each?')).toBeNull();
+    }
+  });
+
+  it('a food offered for another meal is never taken by this one', async () => {
+    const view = await openAndPick();
+    offerCapturedFood('e2', DUCK);
+    refocus();
+    expect(view.queryByText('About how much of each?')).toBeNull();
+    expect(takeCapturedFood('e2')).toEqual(DUCK);
+  });
+
+  it('an offer left from a capture that never came back is dropped when the route opens', async () => {
+    offerCapturedFood('e1', DUCK);
+    const view = await openAndPick();
+    refocus();
+    expect(view.queryByText('About how much of each?')).toBeNull();
+  });
+
+  it('a food not set as a meal opens its own page to set the type', async () => {
+    await openAndPick();
+    act(() => (lastPickerProps!.onOpenDetail as (f: unknown) => void)(DUCK));
+    expect(mockPush).toHaveBeenCalledWith('/food/new1');
+  });
 });
