@@ -220,8 +220,28 @@ describe('food capture: what the commit says about the read', () => {
     expect(uploadMock).not.toHaveBeenCalled();
     expect(invokeMock).not.toHaveBeenCalled();
     expect(row.source).toBe('user');
-    expect(row.ai_extraction_status).toBe('failed');
+    expect(row.ai_extraction_status).toBe('manual');
     expect(row.photo_paths).toEqual([]);
+  });
+
+  it('a read that was asked for and failed is recorded as failed, never as read', async () => {
+    uploadMock.mockResolvedValue(undefined);
+    await saveFood(false);
+    const row = savedRow('food_items');
+    expect(row.source).toBe('user');
+    expect(row.ai_extraction_status).toBe('failed');
+  });
+
+  it('a read missing its brand sends Looks right to the form, never a silent no-op', async () => {
+    uploadMock.mockResolvedValue(undefined);
+    invokeMock.mockResolvedValue({ data: { extraction: { brand: null, product_name: 'Duck Stew', format: 'wet' } }, error: null });
+    const view = render(<FoodCaptureScreen />);
+    await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
+    await act(async () => { fireEvent.press(view.getByText('Read the label')); });
+    await waitFor(() => expect(view.getByText('Looks right')).toBeTruthy());
+    await act(async () => { fireEvent.press(view.getByText('Looks right')); });
+    expect(view.getByPlaceholderText('e.g. Royal Canin')).toBeTruthy();
+    expect(mockUpsert).not.toHaveBeenCalled();
   });
 
   it('a read that landed and was confirmed is recorded as the AI read', async () => {

@@ -657,7 +657,9 @@ export default function FoodCaptureScreen() {
       food_type: type,
       created_by_user_id: user?.id ?? null,
       photo_paths: uploadedPhotoPaths([frontPhoto, ingredientsPhoto, barcodePhoto], uploadedUris.current),
-      ai_extraction_status: frontPhoto ? (aiRead ? 'completed' : 'failed') : 'manual',
+      // 'failed' only when a read was asked for and did not land; a food typed in before
+      // any read ran (offline, or the camera refused mid-flow) is 'manual', photo or not.
+      ai_extraction_status: frontPhoto && readStarted ? (aiRead ? 'completed' : 'failed') : 'manual',
       source: aiRead ? 'ai_extracted' : 'user',
     };
     // Only include the protein columns when the owner actually touched the
@@ -890,7 +892,7 @@ export default function FoodCaptureScreen() {
       <SafeAreaView style={styles.container}>
         <Header title="Add a food" leading="close" onLeadingPress={() => router.back()} />
         <ScrollView contentContainerStyle={styles.scroll}>
-          <ThemedText style={styles.introHeading}>Add the front of the package</ThemedText>
+          <ThemedText style={styles.introHeading} accessibilityRole="header">Add the front of the package</ThemedText>
           <ThemedText variant="body" style={styles.introBody}>
             Only the front is needed. We read the rest from it.
           </ThemedText>
@@ -995,16 +997,26 @@ export default function FoodCaptureScreen() {
         <ScrollView contentContainerStyle={styles.confirmScroll} scrollEnabled={!reading}>
           {frontPhoto && (
             <HomeCard noPadding style={styles.heroCard}>
-              <TouchableOpacity
-                onPress={() => setViewingPhoto(true)}
-                disabled={reading}
-                activeOpacity={0.85}
-                accessibilityRole="imagebutton"
-                accessibilityLabel="Your photo of the front of the package"
-                accessibilityHint="Opens the photo full screen"
-              >
-                <Image source={{ uri: frontPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
-              </TouchableOpacity>
+              {reading ? (
+                // During the wait the photo is only a picture: no control, rather than a
+                // control announced as dimmed (C-7).
+                <Image
+                  source={{ uri: frontPhoto.localUri }}
+                  style={styles.confirmPhoto}
+                  resizeMode="cover"
+                  accessibilityLabel="Your photo of the front of the package"
+                />
+              ) : (
+                <TouchableOpacity
+                  onPress={() => setViewingPhoto(true)}
+                  activeOpacity={0.85}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel="Your photo of the front of the package"
+                  accessibilityHint="Opens the photo full screen"
+                >
+                  <Image source={{ uri: frontPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
+                </TouchableOpacity>
+              )}
             </HomeCard>
           )}
           <CaptureReadCard
@@ -1050,7 +1062,12 @@ export default function FoodCaptureScreen() {
               )}
               <PrimaryButton
                 label="Looks right"
-                onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
+                // A read missing its brand or product cannot be saved as it stands, and
+                // a commit that silently does nothing is worse than the form that says
+                // what is missing.
+                onPress={() => (extractedBrand.trim() && extractedProduct.trim()
+                  ? attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)
+                  : setStep('edit'))}
               />
               <PrimaryButton label="Edit" variant="secondary" onPress={() => setStep('edit')} />
             </>
@@ -1257,19 +1274,27 @@ function AddedThumb({ uri }: { uri: string }) {
 // Function wrote (its catch is the only writer), so ask the server the same question
 // rather than guess from the transport error. Any doubt (offline, a failed read of the
 // row) answers false: the band then promises nothing, which is never untrue.
+const READ_BACK_TIMEOUT_MS = 3000;
 async function serverRecordedFailedRead(foodId: string): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const { data, error } = await supabase
-      .from('food_items')
-      .select('ai_extraction_error')
-      .eq('id', foodId)
-      .maybeSingle();
+    // Bounded: the owner is on the wait while this runs, and an answer that never comes
+    // is the same as no answer.
+    const timedOut = new Promise<{ data: null; error: { message: string } }>((resolve) => {
+      timer = setTimeout(() => resolve({ data: null, error: { message: 'read-back timed out' } }), READ_BACK_TIMEOUT_MS);
+    });
+    const { data, error } = await Promise.race([
+      supabase.from('food_items').select('ai_extraction_error').eq('id', foodId).maybeSingle(),
+      timedOut,
+    ]);
     if (error || !data) return false;
     const recorded = (data as { ai_extraction_error: string | null }).ai_extraction_error;
     return typeof recorded === 'string' && recorded.length > 0;
   } catch (err) {
     console.warn('[food-capture] could not read the failed read back:', err);
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
