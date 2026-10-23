@@ -32,6 +32,14 @@ export const theme = {
   lineHeightBody: 22, // body/paragraph leading — app-wide default for multi-line copy
   lineHeightSM: 18, // caption/compact-row leading (textSM × ~1.35) — e.g. the cross-pet banner
   lineHeightXS: 16, // XS-note leading (textXS × ~1.45) — the metric-card note lines (B-193)
+  // The rest of the line height scale (CUL-1897 D3, ruled (a) 2026-10-23). One rung per
+  // type size that had none, each the value call sites were already computing by hand
+  // (the audit, CUL-1893, found ~40 `theme.textSM * 1.45`-style sites), so a screen pass
+  // moves a site onto its rung without moving a pixel more than a rounding.
+  lineHeightMicro: 12, // textMicro badge text (9 × ~1.33)
+  lineHeightSMLoose: 19, // a multi-line caption paragraph (textSM × 1.45 = 18.85, typed 18 times)
+  lineHeightLG: 24, // textLG subheadings (17 × ~1.4; `lineHeightBody + 2` by hand)
+  lineHeightXL: 28, // textXL page headings (22 × ~1.3)
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,
@@ -333,12 +341,23 @@ export const theme = {
   // between the 2pt type sub-grid (spaceMicro) and the 8pt layout grid, which
   // had nothing at 4 (B-193). Half of space1.
   space0_5: 4,
+  // 6 and 12 (CUL-1897 D3, ruled (a) 2026-10-23): the two values the code reached for
+  // most off the 8pt grid (12 ×53, 6 ×45 in the audit, CUL-1893). A grid nobody follows
+  // protects nothing, so the half steps join it rather than ~100 sites being bent to
+  // 4/8/16. Not a licence for 10 or 14: those still move to a rung.
+  space0_75: 6,
   space1: 8,
+  space1_5: 12,
   space2: 16,
   space3: 24,
   space4: 32,
   space5: 48,
   space6: 64,
+
+  // ── Hit target ────────────────────────────────────────────────────────────
+  // The 44pt minimum touch target (Apple HIG; CUL-658, CUL-1897 D3). `minHeight: 44`
+  // was hand typed ~180 times. A box's floor, not a spacing step: never add it to a gap.
+  hitTarget: 44,
 
   // ── Border radius ─────────────────────────────────────────────────────────
   radiusXS: 4,
@@ -360,6 +379,26 @@ export const theme = {
   durationSlow: 400,
   easingDefault: 'ease-out',
 } as const;
+
+// Named text styles (CUL-1897 scope 3): size, weight and line height decided once, as
+// a set. Before these nothing paired them, so every style sheet re-chose a leading for
+// its size (and 40 sites computed one). Body face only: ThemedText derives the Geist
+// family from `fontWeight`, so `<ThemedText variant="caption">` renders the right face.
+// The display face (Newsreader headlines) keeps its own styles. Colour is never part of
+// a named style: the ground decides it (.claude/rules/ui.md, C-1).
+export const textStyles = {
+  micro: { fontSize: theme.textMicro, fontWeight: theme.weightSemibold, lineHeight: theme.lineHeightMicro },
+  label: { fontSize: theme.textXS, fontWeight: theme.weightMedium, lineHeight: theme.lineHeightXS },
+  note: { fontSize: theme.textXS, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightXS },
+  caption: { fontSize: theme.textSM, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightSM },
+  captionParagraph: { fontSize: theme.textSM, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightSMLoose },
+  body: { fontSize: theme.textMD, fontWeight: theme.weightRegular, lineHeight: theme.lineHeightBody },
+  bodyStrong: { fontSize: theme.textMD, fontWeight: theme.weightMedium, lineHeight: theme.lineHeightBody },
+  subheading: { fontSize: theme.textLG, fontWeight: theme.weightSemibold, lineHeight: theme.lineHeightLG },
+  heading: { fontSize: theme.textXL, fontWeight: theme.weightSemibold, lineHeight: theme.lineHeightXL },
+} as const;
+
+export type TextStyleName = keyof typeof textStyles;
 
 // Shadow tokens — defined outside `as const` so shadowOffset stays mutable,
 // which is required by React Native's ViewStyle type.
