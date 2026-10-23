@@ -8,10 +8,10 @@
 // clock at NOW so every row and every "today" is the same on every run, and photographs
 // each screen at each width. Playwright comes from the container's global install.
 import { createRequire } from 'node:module';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve } from './serve.mjs';
-import { buildFixtureTables, answerRest, FIXTURE_USER_ID, FIXTURE_EMAIL } from './fixtureRest.ts';
+import { buildFixtureTables, answerRest, captureFlagRows, CAPTURE_DEFAULT_NOW, FIXTURE_USER_ID, FIXTURE_EMAIL } from './fixtureRest.ts';
 
 const require = createRequire(process.env.PLAYWRIGHT_REQUIRE_FROM ?? '/opt/node22/lib/node_modules/');
 const { chromium } = require('playwright');
@@ -19,13 +19,28 @@ const { chromium } = require('playwright');
 const [dist, outDir] = process.argv.slice(2).map((p) => resolve(p));
 if (!dist || !outDir) throw new Error('usage: capture.mjs <dist> <out-dir>');
 
-// A Wednesday afternoon, UTC: every fixture row is materialised against this instant.
-const NOW = Date.parse(process.env.CAPTURE_NOW ?? '2026-10-14T16:00:00Z');
+const NOW = Date.parse(process.env.CAPTURE_NOW ?? CAPTURE_DEFAULT_NOW);
 const HOST = 'https://fixture.nyx-capture.invalid';
 const tables = buildFixtureTables(NOW);
 // app_config flags, for capturing a build from before a rollout went GA
 // (e.g. CAPTURE_FLAGS='{"history_v2":true}'). Unset, the app reads its own defaults.
-tables.app_config = Object.entries(JSON.parse(process.env.CAPTURE_FLAGS ?? '{}')).map(([key, value]) => ({ key, value }));
+tables.app_config = captureFlagRows(process.env.CAPTURE_FLAGS);
+// Home's Signal (CUL-2150): the ai_signals rows signals.deno.ts computed with the shipped
+// engine over these same rows. Without them Home photographs the Signal's building state.
+// A file computed at another instant or under other flags describes a different record, so
+// it is refused rather than served.
+if (process.env.CAPTURE_SIGNALS) {
+  const seeded = JSON.parse(await readFile(process.env.CAPTURE_SIGNALS, 'utf8'));
+  if (Date.parse(seeded.nowIso) !== NOW) {
+    throw new Error(`CAPTURE_SIGNALS was computed at ${seeded.nowIso}, not at this run's ${new Date(NOW).toISOString()}`);
+  }
+  if (JSON.stringify(seeded.flagRows ?? []) !== JSON.stringify(tables.app_config)) {
+    throw new Error('CAPTURE_SIGNALS was computed under different CAPTURE_FLAGS');
+  }
+  tables.ai_signals = seeded.ai_signals;
+} else {
+  console.log('CAPTURE_SIGNALS unset: Home shows the Signal building state, not its lead');
+}
 
 const ONLY = process.env.CAPTURE_ONLY?.split(',');
 
@@ -58,6 +73,7 @@ const push = (path) => (page) =>
 
 const SHOTS = [
   { name: 'home-juniper', pet: 'juniper', go: [] },
+  { name: 'home-miso', pet: 'miso', go: [] },
   { name: 'home-pepper', pet: 'pepper', go: [] },
   { name: 'history-pepper', pet: 'pepper', go: [tab('History')] },
   { name: 'incident-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page)] },
