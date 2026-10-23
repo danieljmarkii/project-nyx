@@ -81,7 +81,7 @@ import {
 import { PastMedicationsSection } from '../../components/profile/PastMedicationsSection';
 import { ListReadFailed, listReadFailedLine } from '../../components/profile/ListReadFailed';
 import {
-  rowsForPet, settlePetRead, updatePetRows, viewForPet, type PetScopedRead,
+  settlePetRead, updatePetRows, viewForPet, type PetScopedRead,
 } from '../../lib/petScopedRead';
 
 
@@ -240,7 +240,7 @@ export default function ProfileScreen() {
   // The tab switches pets in place, so bare rows outlived their pet: a failed read for
   // the new pet left the previous pet's conditions and medicines on screen, under the
   // new name, with row actions that wrote against them. Rows are only ever drawn, and
-  // only ever acted on, through `viewForPet` / `rowsForPet` for the pet on screen.
+  // only ever acted on, through `viewForPet` for the pet on screen.
   const [conditionsRead, setConditionsRead] = useState<PetScopedRead<Condition> | null>(null);
   const [conditionsLoading, setConditionsLoading] = useState(true);
 

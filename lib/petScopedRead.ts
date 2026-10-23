@@ -33,13 +33,6 @@ export function viewForPet<T>(
   return { kind: 'loaded', rows: read.rows };
 }
 
-/** The rows held for `petId`, or null when none are (a wait, a failure, another
- *  pet's). Row actions and the focus scroll read through this, never the raw read. */
-export function rowsForPet<T>(read: PetScopedRead<T> | null, petId: string | null): T[] | null {
-  if (read === null || petId === null || read.petId !== petId || read.status !== 'loaded') return null;
-  return read.rows;
-}
-
 /** The read after a load for `petId` settled. A failure keeps the last good rows only
  *  when they are THIS pet's (a same-pet refetch must not blank a history it already
  *  showed; the trial loader's stance); any other failure is the failed state. */
