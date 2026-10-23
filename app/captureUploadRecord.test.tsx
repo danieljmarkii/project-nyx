@@ -165,6 +165,38 @@ describe('food capture: the commit records only photos that uploaded', () => {
   });
 });
 
+describe('food capture: a late upload is waited for, not dropped', () => {
+  it('a failure does not reach the form while a sibling upload is still in flight', async () => {
+    let finishFront: () => void = () => {};
+    uploadMock.mockImplementation((_bucket: string, path: string) => {
+      if (path.includes('ingredients')) return Promise.reject(new Error('Network request failed'));
+      return new Promise<void>((resolve) => { finishFront = resolve; });
+    });
+    jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+      buttons?.find((b) => b.text === 'Take photo')?.onPress?.();
+    });
+    const view = render(<FoodCaptureScreen />);
+    await act(async () => { fireEvent.press(view.getByText('Take a photo')); });
+    await waitFor(() => expect(view.getByText('Add ingredients photo')).toBeTruthy());
+    await act(async () => { fireEvent.press(view.getByText('Add ingredients photo')); });
+    await waitFor(() => expect(view.getByText('Add barcode photo')).toBeTruthy());
+    await act(async () => { fireEvent.press(view.getByText('Skip')); });
+    await act(async () => { fireEvent.press(view.getByText('Continue')); });
+    // The ingredients upload has failed; the front has not settled. No form yet.
+    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(view.queryByPlaceholderText('e.g. Royal Canin')).toBeNull();
+    await act(async () => { finishFront(); });
+    await waitFor(() => expect(view.getByPlaceholderText('e.g. Royal Canin')).toBeTruthy());
+    fireEvent.changeText(view.getByPlaceholderText('e.g. Royal Canin'), 'Weruva');
+    fireEvent.changeText(view.getByPlaceholderText('e.g. Gastrointestinal Adult'), 'Duck Stew');
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    await waitFor(() => expect(mockUpsert).toHaveBeenCalled());
+    const paths = savedRow('food_items').photo_paths as string[];
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toMatch(/\/0-front\.jpg$/);
+  });
+});
+
 describe('medication capture: the commit records only a label that uploaded', () => {
   it('offline: no photo path on the row or in the cache', async () => {
     uploadMock.mockRejectedValue(new Error('Network request failed'));

@@ -461,11 +461,16 @@ export default function FoodCaptureScreen() {
 
       // Compress + upload all photos in parallel. Runs AFTER the insert so the
       // owner-scoped Storage INSERT policy can authorize each {foodId}/… path.
-      await Promise.all(photos.map(async (p) => {
+      // allSettled, not all: a fast failure must not route to the form while a
+      // sibling upload is still in flight, or a save there would leave out a photo
+      // that lands a moment later (CUL-2170). Every upload settles first.
+      const settled = await Promise.allSettled(photos.map(async (p) => {
         const compressedUri = await compressForUpload(p.localUri, p.width, p.height);
         await uploadPhoto('nyx-food-photos', p.storagePath, compressedUri);
         uploadedUris.current.add(p.localUri);
       }));
+      const failedUpload = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failedUpload) throw failedUpload.reason;
 
       // Invoke extraction. We await it for the confirm screen, but don't block
       // the meal log on it — if it errors, we fall through to manual edit.

@@ -125,8 +125,8 @@ export default function MedicationCaptureScreen() {
   const [extractionFailed, setExtractionFailed] = useState(false);
   const [labelUploaded, setLabelUploaded] = useState(false);
   // Local URIs of the label photos whose upload resolved (CUL-2170). The commit
-  // reads this, not `labelUploaded`: that flag is per attempt and drives the band,
-  // while a retry that fails after an earlier success still leaves the object.
+  // reads this rather than `labelUploaded`, which drives the band's sentence, so
+  // the record and the band each answer their own question from one write.
   const uploadedUris = useRef<Set<string>>(new Set());
 
   // §6.5 dose-confirm gate. True = the owner has DELIBERATELY confirmed the
