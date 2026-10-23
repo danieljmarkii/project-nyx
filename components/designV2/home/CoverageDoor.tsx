@@ -23,9 +23,10 @@ import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
 import { useTodayKey } from '../../../hooks/useTodayKey';
-import { Card } from '../../ui/Card';
+import { HOME_CARD_INSET, HomeCard } from './HomeCard';
 import { ThemedText } from '../../ui/ThemedText';
 
+// door-mark-ok: a text link's words; the › is part of the link's copy, not the door mark.
 export const COVERAGE_DOOR_LABEL = 'Patterns ›';
 
 export function CoverageDoor({ onPress }: { onPress?: () => void }) {
@@ -74,7 +75,7 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
     else router.push('/insights');
   };
   return (
-    <Card noPadding>
+    <HomeCard noPadding>
       <Pressable
         onPress={open}
         accessibilityRole="button"
@@ -87,13 +88,13 @@ export function CoverageDoor({ onPress }: { onPress?: () => void }) {
           <ThemedText style={styles.link}>{COVERAGE_DOOR_LABEL}</ThemedText>
         </View>
       </Pressable>
-    </Card>
+    </HomeCard>
   );
 }
 
 const styles = StyleSheet.create({
   door: {
-    paddingHorizontal: theme.space3,
+    paddingHorizontal: HOME_CARD_INSET,
     paddingVertical: theme.space2,
     minHeight: 44,
     justifyContent: 'center',

@@ -58,6 +58,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Pressable, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { DoorMark } from '../designV2/home/DoorMark';
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 import { petPronouns } from '../../lib/utils';
@@ -73,6 +74,7 @@ export const LOOK_WITHHELD_ACT = 'Saved';
  */
 export function lookWithheldReason(petName: string, sex: 'male' | 'female' | 'unknown'): string {
   const p = petPronouns(sex);
+  // door-mark-ok: the sentence's own closing words point at the record; copy, not the mark.
   return (
     `While ${petName}’s eating needs attention, Home keeps quiet days off the card — ` +
     `an ordinary day isn’t a sign ${p.subject} is well. Your answer is in ${p.possessive} record ›`
@@ -178,7 +180,7 @@ export function LookWithheldEntry({
     >
       <View style={styles.row}>
         <View style={styles.headWrap}>{head}</View>
-        <ThemedText style={styles.chevron}>›</ThemedText>
+        <DoorMark />
       </View>
     </Pressable>
   );
@@ -246,10 +248,6 @@ const styles = StyleSheet.create({
   },
   time: {
     fontSize: theme.textXS,
-    color: theme.colorTextSecondary,
-  },
-  chevron: {
-    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
   },
   reasonRow: {

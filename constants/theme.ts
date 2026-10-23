@@ -385,6 +385,17 @@ export const shadows = {
     shadowRadius: 18,
     elevation: 8,
   },
+  // Home's one card surface (CUL-1525, G1 A; `docs/culprit-home-one-language-mockups.html`
+  // §01's `.c.one`): softer and wider than `md`, so five cards on one screen read as one
+  // ground rather than five lifted objects. The mock draws it as two layers; React Native
+  // takes one, so this is their blend.
+  card: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
+  },
   fab: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

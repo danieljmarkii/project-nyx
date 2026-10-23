@@ -22,9 +22,8 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { LEAD_CHART_INSETS, SignalLeadCard, leadChartWidth } from './SignalLeadCard';
-import { RAIL_WIDTH } from '../../home/InsightCard';
 import { DOOR_A11Y_HINT } from './SignalRow';
-import { Card } from '../../ui/Card';
+import { HOME_CARD_INSET, HomeCard, RAIL_GUTTER } from '../home/HomeCard';
 import { abortFlight, getFlightState, landFlight, reverseFlight, setHeroReady, settleOutbound } from '../../motion/flightMotion';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -325,20 +324,24 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
     expect(getFlightState().phase).toBe('idle');
   });
 
-  it('`leadChartWidth` is pinned term by term against the rendered styles — the page, the Card, the rail, the row’s gap', async () => {
+  it('`leadChartWidth` is pinned term by term against the rendered styles — the page and the HomeCard; the rail takes no width', async () => {
     // The page's padding: Home's scroll container (`app/(tabs)/index.tsx`), read at source.
     const home = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
     expect(home).toMatch(/scroll:\s*\{\s*padding:\s*theme\.space3\b/);
     expect(LEAD_CHART_INSETS.pagePadding).toBe(theme.space3);
-    // The zone's Card: its rendered padding.
-    const card = render(<Card testID="c">{null}</Card>);
+    // The zone's HomeCard: its rendered padding.
+    const card = render(<HomeCard testID="c">{null}</HomeCard>);
     expect(StyleSheet.flatten(card.getByTestId('c').props.style).padding).toBe(LEAD_CHART_INSETS.cardPadding);
-    // The rail and the row's gap, off the card's own rendered row.
+    // The rail hangs in the gutter (CUL-1525): out of the row's flow, so it and a row gap
+    // take nothing from the chart. Read off the card's own rendered row.
     const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={jest.fn()} withholdFallingVomit={false} generatedAt={null} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
-    const row = StyleSheet.flatten(view.getByTestId('signal-lead-card').props.style);
-    expect(row.gap).toBe(LEAD_CHART_INSETS.rowGap);
-    expect(LEAD_CHART_INSETS.rail).toBe(RAIL_WIDTH);
-    expect(leadChartWidth(393)).toBe(393 - 2 * theme.space3 - 2 * theme.space3 - RAIL_WIDTH - theme.space2);
+    const rowNode = view.getByTestId('signal-lead-card');
+    expect(StyleSheet.flatten(rowNode.props.style).gap).toBeUndefined();
+    const railNode = rowNode.children[0] as unknown as { props: { style: unknown } };
+    const rail = StyleSheet.flatten(railNode.props.style as never) as { position?: string; left?: number };
+    expect(rail.position).toBe('absolute');
+    expect(rail.left).toBe(-RAIL_GUTTER);
+    expect(leadChartWidth(393)).toBe(393 - 2 * theme.space3 - 2 * HOME_CARD_INSET);
   });
 });

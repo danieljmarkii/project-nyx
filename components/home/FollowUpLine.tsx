@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { DoorMark } from '../designV2/home/DoorMark';
+import { HOME_CARD_INSET } from '../designV2/home/HomeCard';
 import { useEn14 } from '../../hooks/useEn14';
 import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
@@ -66,17 +68,17 @@ export function FollowUpLine() {
         testID="home-follow-up-line"
       >
         <ThemedText style={styles.text}>{line}</ThemedText>
-        <ThemedText style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
-          ›
-        </ThemedText>
+        <DoorMark />
       </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  // On the cards' one text edge (CUL-1525): the line sits between cards, not in one, so it
+  // takes their inset to start where their words do.
   wrap: {
-    paddingHorizontal: theme.space3,
+    paddingHorizontal: HOME_CARD_INSET,
   },
   line: {
     minHeight: 44,
@@ -94,9 +96,5 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
-  },
-  chevron: {
-    fontSize: theme.textMD,
-    color: theme.colorTextTertiary,
   },
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
 import { type CompareRow, dotLaneModel, isTimingFinding, symptomWord, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
@@ -13,7 +13,8 @@ import { useMinuteNow } from '../../../hooks/useIncidentFloorFacts';
 import { signalTrialWindowFor } from '../../../lib/signalTrialAnchor';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
 import { DotLane, StackedCompare } from '../../home/SignalReceipts';
-import { RAIL_WIDTH } from '../../home/InsightCard';
+import { DoorMark } from '../home/DoorMark';
+import { GUTTER_RAIL } from '../home/HomeCard';
 import { ThemedText } from '../../ui/ThemedText';
 
 // SignalRow — one Signal finding on Home under Design v2 (CUL-1270 · D1 = B; design
@@ -202,10 +203,8 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
         {thumbnail}
         <SubLine count={subCount} ask={line.ask} />
       </View>
-      <View style={isLead ? styles.chevronLead : styles.chevronBox}>
-        {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
-        <Text style={styles.chevron}>›</Text>
-      </View>
+      {/* G1 A (CUL-1525): the well on the zone's lead row only, a plain › on every other. */}
+      <DoorMark well={isLead} />
     </Pressable>
   );
 }
@@ -253,10 +252,8 @@ function WatchedRow({ care, onOpen, isLead }: { care: CareStateView; onOpen: () 
           </ThemedText>
         ) : null}
       </View>
-      <View style={isLead ? styles.chevronLead : styles.chevronBox}>
-        {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
-        <Text style={styles.chevron}>›</Text>
-      </View>
+      {/* G1 A (CUL-1525): the well on the zone's lead row only, a plain › on every other. */}
+      <DoorMark well={isLead} />
     </Pressable>
   );
 }
@@ -363,10 +360,12 @@ const styles = StyleSheet.create({
     minHeight: ROW_MIN_HEIGHT,
     paddingVertical: theme.space1,
   },
+  // In the card's gutter (CUL-1525, G1 A), spanning the row's text: every card's words
+  // start at one edge, rail or no rail.
   rail: {
-    width: RAIL_WIDTH,
-    alignSelf: 'stretch',
-    borderRadius: 2,
+    ...GUTTER_RAIL,
+    top: theme.space1,
+    bottom: theme.space1,
     opacity: 0.85,
   },
   // "Your vet knows": the same rose, lighter. The tag carries the state in words.
@@ -443,22 +442,5 @@ const styles = StyleSheet.create({
   thumb: {
     marginTop: theme.space0_5,
     marginBottom: 2,
-  },
-  chevronBox: {
-    width: 22,
-    alignItems: 'center',
-  },
-  chevronLead: {
-    width: 28,
-    height: 28,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorSurfaceSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chevron: {
-    fontSize: theme.textLG,
-    lineHeight: theme.textLG + 2,
-    color: theme.colorTextTertiary,
   },
 });
