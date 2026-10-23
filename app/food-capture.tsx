@@ -9,26 +9,28 @@
 // - Bucket is private; reads via getSignedUrl.
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Animated, Image, Alert, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  Image, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Camera, Images } from 'lucide-react-native';
-import { theme } from '../constants/theme';
-import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
+import { Camera, Images, Plus } from 'lucide-react-native';
+import { colorRoles, theme } from '../constants/theme';
+import { ThemedText } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
-import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { Header } from '../components/ui/Header';
+import { PrimaryButton } from '../components/ui/PrimaryButton';
+import { TextField } from '../components/ui/TextField';
+import { QuietBand } from '../components/ui/QuietBand';
+import { CompletionMark } from '../components/ui/CompletionMark';
+import { CaptureSilhouette } from '../components/surfaces/waits/CaptureSilhouette';
 import {
   ProteinSetPicker,
   type ProteinSetPickerHandle,
 } from '../components/food/ProteinSetPicker';
-import { NightMoment } from '../components/brand/NightMoment';
-import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
@@ -223,9 +225,6 @@ export default function FoodCaptureScreen() {
   const [mealOccurredAtSource, setMealOccurredAtSource] = useState<'exif' | 'now' | 'manual'>('now');
   const [showMealTimePicker, setShowMealTimePicker] = useState(false);
 
-  const checkScale = useRef(new Animated.Value(0.5)).current;
-  const checkOpacity = useRef(new Animated.Value(0)).current;
-
   // Submission guard — prevents double-tap on "Looks right" / "Save" from
   // writing two events for the same meal.
   const submitting = useRef(false);
@@ -245,13 +244,10 @@ export default function FoodCaptureScreen() {
   // The add-only library-save beat. The MEAL path no longer reaches this — it hands
   // off to the real completion card at commit (CUL-613) — so there is no trial
   // heads-up to hold the beat open for any more, and the dwell is back to the plain
-  // 900ms confirmation it was sized for.
+  // 900ms confirmation it was sized for. The mark is the kit's CompletionMark at rest
+  // (CUL-1910 F7): nothing on this beat moves.
   useEffect(() => {
     if (step !== 'complete') return;
-    Animated.parallel([
-      Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
-      Animated.timing(checkOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
-    ]).start();
     const t = setTimeout(exitCapture, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -878,20 +874,14 @@ export default function FoodCaptureScreen() {
   if (step === 'complete') {
     return (
       <View style={styles.completeContainer}>
-        <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          {/* geist-ok: Icon glyph, not copy — stays a raw <Text> so it keeps the system face.
-              These stand in for vector glyphs (the B-745 GlyphSvg migration owns them),
-              and Geist's cmap carries no ✓ / ✕ / ＋ at all, so forcing the body family
-              here buys nothing and hands the render to OS fallback. CUL-364 §7 sweep. */}
-          <Text style={styles.checkMark}>✓</Text>
-        </Animated.View>
-        <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
-          {/* This saves to the food LIBRARY — it does not log a meal, and (on the
-              /trial-foods path) it does not put the food on the trial's allowed set.
-              Name the real destination so "Added" can't read as "added to the list"
-              (B-625, pm-review). */}
+        <CompletionMark halo={false} />
+        {/* This saves to the food LIBRARY — it does not log a meal, and (on the
+            /trial-foods path) it does not put the food on the trial's allowed set.
+            Name the real destination so "Added" can't read as "added to the list"
+            (B-625, pm-review). */}
+        <ThemedText variant="heading" style={styles.savedHeading} accessibilityRole="header">
           Saved to your foods
-        </Animated.Text>
+        </ThemedText>
       </View>
     );
   }
@@ -913,15 +903,14 @@ export default function FoodCaptureScreen() {
           {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji). Both glyphs on the
               screen convert together so the two buttons don't end up one vector +
               one emoji. */}
-          <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnapFront('camera')} activeOpacity={0.85}>
-            <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />
-            <ThemedText style={styles.primaryBtnText}>Take a photo</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.outlineBtn} onPress={() => handleSnapFront('library')} activeOpacity={0.85}>
-            <Images size={20} color={theme.colorTextPrimary} strokeWidth={2} />
-            <ThemedText style={styles.outlineBtnText}>Choose from library</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
+          <PrimaryButton label="Take a photo" icon={Camera} onPress={() => handleSnapFront('camera')} />
+          <PrimaryButton
+            label="Choose from library"
+            icon={Images}
+            variant="secondary"
+            onPress={() => handleSnapFront('library')}
+          />
+          <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} accessibilityRole="button">
             <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
           </TouchableOpacity>
         </ScrollView>
@@ -962,16 +951,13 @@ export default function FoodCaptureScreen() {
           />
           <ThemedText style={styles.introHeading}>{heading}</ThemedText>
           <ThemedText style={styles.introBody}>{body}</ThemedText>
-          <TouchableOpacity style={styles.primaryBtn} onPress={ctaAction} activeOpacity={0.85}>
-            {nextEncouragedSlot && <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />}
-            <ThemedText style={styles.primaryBtnText}>{ctaLabel}</ThemedText>
-          </TouchableOpacity>
+          <PrimaryButton label={ctaLabel} icon={nextEncouragedSlot ? Camera : undefined} onPress={ctaAction} />
           {nextEncouragedSlot && (
             <TouchableOpacity
               style={styles.secondaryBtn}
               onPress={handleSkipNext}
-              hitSlop={8}
               activeOpacity={0.7}
+              accessibilityRole="button"
             >
               <ThemedText style={styles.secondaryBtnText}>Skip</ThemedText>
             </TouchableOpacity>
@@ -985,22 +971,13 @@ export default function FoodCaptureScreen() {
   if (step === 'uploading') {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Add a food" />
-        <View style={styles.momentBody}>
-          {/* The brief upload precursor is a light in-place Tier-2 spinner (<2s → not the
-              night moment). */}
-          {!extracting && (
-            <View style={styles.loadingContainer}>
-              <WhorlSpinner size="md" ground="day" />
-              <ThemedText style={styles.loadingText}>Uploading…</ThemedText>
-              <ThemedText style={styles.loadingHint}>This usually takes a few seconds.</ThemedText>
-            </View>
-          )}
-          {/* The AI read is the qualifying photo-extraction wait (§6). KEPT MOUNTED and
-              toggled by `visible` so its min-hold runs and it crossfades in from the upload
-              spinner rather than hard-cutting; the flex body keeps the Header/back. */}
-          <NightMoment visible={extracting} title="Reading the label…" subtitle="A few seconds." />
-        </View>
+        <Header title="Confirm" />
+        {/* CUL-1910 F4: the confirm screen's silhouette and the tick, one wait for the
+            upload and the read (the owner made one request). The tick breathes on
+            `extracting`, the request's own flag, never a flag invented for the loader. */}
+        <ScrollView contentContainerStyle={styles.confirmScroll} scrollEnabled={false}>
+          <CaptureSilhouette working={extracting} />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -1028,17 +1005,7 @@ export default function FoodCaptureScreen() {
               say (proteinSummaryLine returns null). */}
           {summaryLine ? <ThemedText style={styles.proteinSummary}>{summaryLine}</ThemedText> : null}
           <SectionLabel label="Type" />
-          <View style={styles.foodTypeRow}>
-            {FOOD_TYPES.map((t) => (
-              <FilterChip
-                key={t.value}
-                label={t.label}
-                active={foodType === t.value}
-                onPress={() => setFoodType(t.value)}
-                variant="filled"
-              />
-            ))}
-          </View>
+          <TypeChips value={foodType} onChange={setFoodType} />
           {/* Meal time is meaningful only when this capture also logs a meal.
               In B-110 add-only mode (no `fromLog`) no meal is written, so the
               time picker would set a value nothing consumes — hide it. */}
@@ -1048,7 +1015,7 @@ export default function FoodCaptureScreen() {
                 style={styles.mealTimeRow}
                 onPress={() => setShowMealTimePicker((v) => !v)}
                 activeOpacity={0.7}
-                hitSlop={12}
+                accessibilityRole="button"
               >
                 <ThemedText style={styles.mealTimeText}>
                   {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1092,21 +1059,11 @@ export default function FoodCaptureScreen() {
               )}
             </>
           )}
-          <TouchableOpacity
-            style={styles.primaryBtn}
+          <PrimaryButton
+            label="Looks right"
             onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
-            activeOpacity={0.85}
-          >
-            <ThemedText style={styles.primaryBtnText}>Looks right</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => setStep('edit')}
-            hitSlop={8}
-            activeOpacity={0.7}
-          >
-            <ThemedText style={styles.secondaryBtnText}>Edit</ThemedText>
-          </TouchableOpacity>
+          />
+          <PrimaryButton label="Edit" variant="secondary" onPress={() => setStep('edit')} />
         </ScrollView>
       {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
           and edit steps from one place, so the two Save paths cannot diverge.
@@ -1132,6 +1089,7 @@ export default function FoodCaptureScreen() {
   // ── Edit / manual entry ──
   if (step === 'edit') {
     const canSave = extractedBrand.trim().length > 0 && extractedProduct.trim().length > 0;
+    const saveLabel = cameFromMealLog ? 'Save and log food' : 'Save';
     return (
       <SafeAreaView style={styles.container}>
         <Header
@@ -1147,34 +1105,32 @@ export default function FoodCaptureScreen() {
                 the first B-333 care-first surface (§16). Distinct from the retryable
                 failure banner below, which is a genuine fault. */}
             {capReached ? (
-              <View style={styles.capBand}>
-                <ThemedText style={styles.capBandText}>{foodCapCopy(capReached.cap)}</ThemedText>
-                <ThemedText style={styles.careLine}>{careFirstLine(activePet?.name)}</ThemedText>
-              </View>
+              <QuietBand>
+                <ThemedText variant="caption" style={styles.bandText}>{foodCapCopy(capReached.cap)}</ThemedText>
+                <ThemedText variant="note" style={styles.careLine}>{careFirstLine(activePet?.name)}</ThemedText>
+              </QuietBand>
             ) : extractionFailed ? (
-              <View style={styles.failedBanner}>
+              // F6: a failed read is not a symptom, so it leaves the concern wash for the
+              // quiet band the cap already used.
+              <QuietBand testID="capture-read-failed">
                 {/* CUL-2164: says only what is true. Nothing retries in the background, and
                     the food page's retry exists only when the server recorded its own failed
                     read, never after a transport fault or an offline upload. */}
-                <ThemedText style={styles.failedBannerText}>
+                <ThemedText variant="caption" style={styles.bandText}>
                   Couldn't read the label. Fill in what you know below.
                 </ThemedText>
-              </View>
+              </QuietBand>
             ) : null}
-            <SectionLabel label="Brand" />
-            <TextInput
-              style={styles.textInput}
+            <TextField
+              label="Brand"
               placeholder="e.g. Royal Canin"
-              placeholderTextColor={theme.colorTextSecondary}
               value={extractedBrand}
               onChangeText={setExtractedBrand}
               autoCapitalize="words"
             />
-            <SectionLabel label="Product name" />
-            <TextInput
-              style={styles.textInput}
+            <TextField
+              label="Product name"
               placeholder="e.g. Gastrointestinal Adult"
-              placeholderTextColor={theme.colorTextSecondary}
               value={extractedProduct}
               onChangeText={setExtractedProduct}
               autoCapitalize="words"
@@ -1187,6 +1143,7 @@ export default function FoodCaptureScreen() {
               // also narrows ChipGroup's (string | null) onChange to the string this setter wants.
               onChange={(v) => { if (v !== null) setExtractedFormat(v); }}
               allowDeselect={false}
+              variant="default"
               accessibilityLabel="Format"
               style={styles.formatRow}
             />
@@ -1204,27 +1161,13 @@ export default function FoodCaptureScreen() {
                 the WHOLE set, which is the one thing D10 forbids leaving implied. */}
             <ProteinDisclosure input={disclosureInput} />
             <SectionLabel label="Type" />
-            <View style={styles.foodTypeRow}>
-              {FOOD_TYPES.map((t) => (
-                <FilterChip
-                  key={t.value}
-                  label={t.label}
-                  active={foodType === t.value}
-                  onPress={() => setFoodType(t.value)}
-                  variant="filled"
-                />
-              ))}
-            </View>
-            <TouchableOpacity
-              style={[styles.primaryBtn, !canSave && styles.primaryBtnDisabled]}
+            <TypeChips value={foodType} onChange={setFoodType} />
+            {/* C-7: a disabled Save says why it is waiting, in the words it shows. */}
+            <PrimaryButton
+              label={canSave ? saveLabel : `${saveLabel} · add a brand and product`}
               onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
               disabled={!canSave}
-              activeOpacity={0.85}
-            >
-              <ThemedText style={styles.primaryBtnText}>
-                {cameFromMealLog ? 'Save and log food' : 'Save'}
-              </ThemedText>
-            </TouchableOpacity>
+            />
           </ScrollView>
         </KeyboardAvoidingView>
       {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
@@ -1252,6 +1195,26 @@ export default function FoodCaptureScreen() {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
+
+// Type (Meal, Treat, Other) as the radio group it is (CUL-1910 F3): three bare chips
+// announced three buttons and no choice. One required answer, so no deselect; the
+// chosen chip takes the selected role, the same as Format beside it.
+function TypeChips({ value, onChange }: { value: FoodType; onChange: (next: FoodType) => void }) {
+  return (
+    <ChipGroup
+      options={FOOD_TYPES}
+      value={value}
+      onChange={(v) => {
+        const next = FOOD_TYPES.find((t) => t.value === v);
+        if (next) onChange(next.value);
+      }}
+      allowDeselect={false}
+      variant="default"
+      accessibilityLabel="Type"
+      style={styles.typeRow}
+    />
+  );
+}
 
 // Visual progress through the three encouraged shots. Each tile is itself
 // tappable — empty slots open the photo source picker, filled slots offer
@@ -1291,8 +1254,7 @@ function ChecklistTile({
         <Image source={{ uri: photo.localUri }} style={styles.checklistThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.checklistThumb, styles.checklistThumbEmpty]}>
-          {/* geist-ok: Icon glyph, not copy — stays raw so it keeps the system face (CUL-364 §7). */}
-          <Text style={styles.checklistEmptyIcon}>+</Text>
+          <Plus size={theme.space3} color={theme.colorTextTertiary} strokeWidth={2} />
         </View>
       )}
       <ThemedText style={styles.checklistLabel}>{label}</ThemedText>
@@ -1325,50 +1287,12 @@ const styles = StyleSheet.create({
     marginBottom: theme.space2,
   },
 
-  primaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.space1,
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: theme.space2,
-    minHeight: 52,
-  },
-  primaryBtnDisabled: {
-    backgroundColor: theme.colorBorder,
-  },
-  primaryBtnText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextOnDark,
-  },
-  // Outline button — the on-screen "Choose from library" affordance. Reads as
-  // a real button (visible border) so the library path isn't hidden, while
-  // sitting clearly below the dark "Take a photo" primary. Distinct from the
-  // plain-text `secondaryBtn` used for Skip / Edit elsewhere on this screen.
-  outlineBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.space1,
-    backgroundColor: theme.colorSurface,
-    borderWidth: 1,
-    borderColor: theme.colorBorderStrong,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: theme.space2,
-    minHeight: 52,
-  },
-  outlineBtnText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
+  // The one hand-built control left: Skip, a quiet text action under the review step's
+  // button, until the design pass retires the step's per-slot buttons.
   secondaryBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: theme.space2,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   secondaryBtnText: {
     fontSize: theme.textMD,
@@ -1376,13 +1300,13 @@ const styles = StyleSheet.create({
   },
   linkBtn: {
     alignItems: 'center',
-    paddingVertical: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
+  // F5: a link is a control, so it speaks the action role, never the teal of a good fact.
   linkBtnText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 
   checklistRow: {
@@ -1393,7 +1317,7 @@ const styles = StyleSheet.create({
   checklistTile: {
     flex: 1,
     alignItems: 'center',
-    gap: 6,
+    gap: theme.space0_75,
   },
   checklistThumb: {
     width: '100%',
@@ -1408,36 +1332,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checklistEmptyIcon: {
-    fontSize: 24,
-    color: theme.colorTextTertiary,
-  },
   checklistLabel: {
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     letterSpacing: theme.trackingWide,
-  },
-
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.space2,
-    padding: theme.space3,
-  },
-  // Fills the body below the Header for the extraction night moment (it measures this
-  // box and paints its own night ground into it).
-  momentBody: {
-    flex: 1,
-  },
-  loadingText: {
-    fontSize: theme.textLG,
-    color: theme.colorTextPrimary,
-    fontWeight: theme.weightMedium,
-  },
-  loadingHint: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
   },
 
   confirmScroll: {
@@ -1462,7 +1360,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     padding: theme.space2,
     backgroundColor: theme.colorScrimDark,
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   confirmBrand: {
     fontSize: theme.textLG,
@@ -1478,7 +1376,7 @@ const styles = StyleSheet.create({
   // right?" caption, where it reads as part of what the owner is confirming.
   proteinSummary: {
     fontSize: theme.textSM,
-    lineHeight: theme.textSM * 1.4,
+    lineHeight: theme.lineHeightSM,
     color: theme.colorTextSecondary,
     textAlign: 'center',
     marginTop: -theme.space1,
@@ -1499,7 +1397,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusSmall,
     backgroundColor: theme.colorNeutralLight,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   mealTimeText: {
     fontSize: theme.textMD,
@@ -1512,7 +1410,7 @@ const styles = StyleSheet.create({
   },
   mealTimeChange: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
 
@@ -1520,35 +1418,14 @@ const styles = StyleSheet.create({
     padding: theme.space3,
     gap: theme.space2,
   },
-  textInput: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    height: 48,
-  },
   formatRow: {
     marginBottom: theme.space2,
   },
-  foodTypeRow: {
-    flexDirection: 'row',
-    gap: theme.space1,
+  typeRow: {
     marginBottom: theme.space2,
   },
-  failedBanner: {
-    backgroundColor: theme.colorEventSymptomLight,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-  },
-  failedBannerText: {
-    fontSize: theme.textSM,
+  bandText: {
     color: theme.colorTextPrimary,
-    lineHeight: 18,
   },
   // D-M6 early-access label — quiet tertiary line, no badge/pill styling (§7.2).
   earlyAccessLabel: {
@@ -1557,26 +1434,9 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     marginBottom: theme.space2,
   },
-  // §6.1 cap band — a calm neutral surface, NEVER error red. Reads as an
-  // informational note; the record is already saved.
-  capBand: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-    gap: theme.space1,
-  },
-  capBandText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextPrimary,
-    lineHeight: 18,
-  },
   // The first B-333 care-first surface — quieter than the cap copy above it.
   careLine: {
-    fontSize: theme.textXS,
     color: theme.colorTextSecondary,
-    lineHeight: 16,
   },
 
   completeContainer: {
@@ -1586,28 +1446,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
   },
-  checkCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: theme.colorNeutralDark,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkMark: {
-    fontSize: 36,
-    color: theme.colorTextOnDark,
-  },
-  // `Animated.Text` can't be a ThemedText (no Animated variant — §7), so this one
-  // resolves its face through the primitive's mapper instead of the wrapper. Same one
-  // fact, same path; see components/log/SheetLogBeat.tsx for the full note.
-  loggedText: {
-    fontSize: 20,
-    // Named here rather than via ThemedText: this line renders through
-    // `Animated.Text`, which the wrapper cannot be. An explicit family is the
-    // primitive's own passthrough, and deriving it from the weight token keeps
-    // this from drifting out of step with the mapping.
-    fontFamily: fontFamilyForWeight(theme.weightMedium),
-    color: theme.colorNeutralDark,
+  savedHeading: {
+    color: theme.colorTextPrimary,
   },
 });
