@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Camera } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
@@ -100,7 +100,7 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
             accessibilityLabel="Add a medication"
           >
             <View style={styles.addCtaIcon}>
-              <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
+              <Camera size={20} color={colorRoles.action.onLight} strokeWidth={2} />
             </View>
             <View style={styles.addCtaText}>
               <ThemedText style={styles.addCtaTitle}>Add a medication</ThemedText>

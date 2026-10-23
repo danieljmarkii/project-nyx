@@ -19,7 +19,7 @@
 //     the minted `colorEventMedicationOnNight`); teal (meal) and the muted
 //     neutral (other) already read on the night ground, matching the mock's
 //     spine dots (`.spine-dot.m` keeps #00C2A8 on night).
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { EventTintCategory } from '../../lib/dayEvents';
 
 /** Light-ground node tint — DR-2's Home lane. Mirrors the calendar day drill-in
@@ -27,7 +27,9 @@ import type { EventTintCategory } from '../../lib/dayEvents';
  *  symptom rose, meal teal, medication slate, everything else neutral. */
 export const NODE_TINT_DAY: Record<EventTintCategory, string> = {
   symptom: theme.colorEventSymptom,
-  meal: theme.colorEventMeal,
+  // The glyph teal (3.27:1 on the day ground), as the Patterns drill-in draws it; the
+  // bright meal teal was 2.26:1 there (CUL-1666, W3).
+  meal: colorRoles.positive.glyphOnLight,
   medication: theme.colorEventMedication,
   other: theme.colorTextSecondary,
   // A look is the muted neutral, and it is drawn HOLLOW (see `nodeDotColors`) —
@@ -36,6 +38,14 @@ export const NODE_TINT_DAY: Record<EventTintCategory, string> = {
   // owner answered the question, and the mark on the lane records the ACT.
   look: theme.colorTextSecondary,
 };
+
+/** The ground the day tints above are drawn on: Home's card and History (`DaySpine`'s
+ *  `GROUND.day`). Exported so the contrast test measures each tint on it (CUL-1666). */
+export const NODE_TINT_DAY_GROUND = theme.colorSurface;
+
+/** The ground the night tints below are drawn on: the recap's brand night (`DaySpine`'s
+ *  `GROUND.night`). Exported so the contrast test measures each tint on it (CUL-1666). */
+export const NODE_TINT_NIGHT_GROUND = theme.colorBrandNight;
 
 /** Night-ground node tint — DR-1's day spine. The two category hues that would
  *  read muddy on #13112E swap to their night siblings; teal and the muted neutral

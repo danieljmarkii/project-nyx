@@ -1,7 +1,7 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { FilterChip } from './FilterChip';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 type Node = { type: unknown; props: Record<string, any>; parent: Node | null };
 type A11yState = { selected?: boolean; checked?: boolean } | undefined;
@@ -101,10 +101,11 @@ describe('FilterChip — the active label is legible on its own fill (CUL-744)',
     };
   }
 
-  it('renders the default variant in accent INK on the accent tint', () => {
+  it('renders the default variant in the selected ink on the selected ground', () => {
+    // Choosing is acting, so the state is indigo (CUL-2145 R2; CUL-1666's walk).
     const { color, backgroundColor } = activePair('default');
-    expect(backgroundColor).toBe(theme.colorAccentLight);
-    expect(color).toBe(theme.colorAccentInk);
+    expect(backgroundColor).toBe(colorRoles.selected.ground);
+    expect(color).toBe(colorRoles.selected.ink);
     // Named, so the bright teal here reads as the defect rather than a near-miss.
     expect(color).not.toBe(theme.colorAccent);
   });

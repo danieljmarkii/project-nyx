@@ -1,5 +1,5 @@
 import { TouchableOpacity, StyleSheet, AccessibilityRole } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 import { TAP_TARGET_FLOOR, verticalSlopTo } from '../../lib/tapTarget';
 
@@ -91,15 +91,15 @@ const defaultVariant = StyleSheet.create({
     backgroundColor: theme.colorSurface,
   },
   activeContainer: {
-    borderColor: theme.colorAccent,
-    backgroundColor: theme.colorAccentLight,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ground,
   },
   label: {
     ...baseLabel,
     color: theme.colorTextSecondary,
   },
   activeLabel: {
-    color: theme.colorAccentInk,
+    color: colorRoles.selected.ink,
   },
 });
 

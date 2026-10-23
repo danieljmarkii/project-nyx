@@ -7,7 +7,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Check, Plus } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { supabase } from '../../lib/supabase';
 import { usePetStore } from '../../store/petStore';
@@ -248,7 +248,7 @@ export function PetSwitcherPanel({
                   ) : null}
                 </View>
                 {selected && (
-                  <Check size={18} color={theme.colorAccent} strokeWidth={2.5} />
+                  <Check size={18} color={colorRoles.selected.ink} strokeWidth={2.5} />
                 )}
               </TouchableOpacity>
             );
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   petRowSelected: {
-    backgroundColor: theme.colorAccentLight,
+    backgroundColor: colorRoles.selected.ground,
   },
   petText: {
     flex: 1,

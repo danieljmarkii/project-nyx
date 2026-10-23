@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { StyleSheet, Animated, Easing, View, TouchableOpacity, Alert } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../ui/ThemedText';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
@@ -306,7 +306,7 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
           would be two contradictory signals, and the quiet is the point. */}
       {!removed && (
         <Animated.View style={[styles.ring, celebrate && styles.ringCelebrate, { transform: [{ scale: checkScale }] }]}>
-          <Check size={38} color={theme.colorMomentConfirm} strokeWidth={3} />
+          <Check size={38} color={colorRoles.positive.glyphOnLight} strokeWidth={3} />
         </Animated.View>
       )}
       {/* A sentence, not a word: it wraps to two lines and centres, rather than
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     borderRadius: CHECK_RING_SIZE / 2,
     backgroundColor: theme.colorSurface,
     borderWidth: 2,
-    borderColor: theme.colorMomentConfirm,
+    borderColor: colorRoles.positive.glyphOnLight,
     alignItems: 'center',
     justifyContent: 'center',
   },

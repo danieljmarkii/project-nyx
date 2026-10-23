@@ -10,7 +10,7 @@ import { ChevronRight, Camera } from 'lucide-react-native';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { EventSilhouette } from '../../components/surfaces/waits/EventSilhouette';
 import * as ImagePicker from 'expo-image-picker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
   getDb,
@@ -149,7 +149,7 @@ function ComboLinkRow({
           <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
         </View>
       ) : null}
-      <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
+      <ChevronRight size={16} color={colorRoles.action.onLight} strokeWidth={2} />
     </TouchableOpacity>
   );
 }
@@ -1173,7 +1173,7 @@ export default function EventDetailScreen() {
                       <ThemedText style={styles.foodProduct}>{drugPrimary}</ThemedText>
                       {drugSecondary ? <ThemedText style={styles.foodBrand}>{drugSecondary}</ThemedText> : null}
                     </View>
-                    <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                    <ChevronRight size={18} color={colorRoles.action.onLight} strokeWidth={2} />
                   </TouchableOpacity>
                 ) : (
                   <>

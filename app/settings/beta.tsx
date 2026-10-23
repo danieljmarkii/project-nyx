@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { FlaskConical, Info } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaShelf } from '../../hooks/useBetaShelf';
@@ -82,7 +82,7 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
         <Switch
           value={optedIn}
           onValueChange={(next) => setOptIn(feature.key, next)}
-          trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+          trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
           ios_backgroundColor={theme.colorBorderStrong}
           // The switch names the feature it gates: RN's Switch takes no label from
           // the Text beside it. The label once added ", beta" to stand in for the

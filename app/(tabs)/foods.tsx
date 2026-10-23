@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SkeletonRows } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui';
 import { FoodRow } from '../../components/foods/FoodRow';
@@ -387,7 +387,7 @@ export default function FoodsScreen() {
           accessibilityLabel="Add food"
           hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
         >
-          <Plus size={18} color={theme.colorAccent} strokeWidth={2} />
+          <Plus size={18} color={colorRoles.action.onLight} strokeWidth={2} />
           <ThemedText style={styles.addBtnText}>Add food</ThemedText>
         </TouchableOpacity>
       </View>
@@ -720,7 +720,7 @@ const styles = StyleSheet.create({
   addBtnText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // The strip's own inset in the two non-scrolling branches, matching the padding
   // `scrollContent` gives it in the normal one so it sits in the same column.

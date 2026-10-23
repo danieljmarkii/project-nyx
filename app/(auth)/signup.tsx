@@ -16,7 +16,7 @@ import { ChevronLeft, Mail } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { updateOwnerName } from '../../lib/profile';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SOCIAL_AUTH_ENABLED } from '../../constants/flags';
 import { PRIVACY_POLICY_URL, TERMS_URL } from '../../constants/links';
 import { TextField } from '../../components/ui/TextField';
@@ -218,7 +218,7 @@ export default function SignupScreen() {
           </View>
           <View style={styles.grow} />
           <View style={styles.verifyIcon}>
-            <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
+            <Mail size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />
           </View>
           <ThemedText style={styles.title}>Check your inbox</ThemedText>
           {/* B-401 wrote this line to promise only the manual return trip the app

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { theme, shadows } from '../../../constants/theme';
+import { colorRoles, theme, shadows } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { dayMarkDateWord } from '../../../lib/chartCopy';
@@ -702,7 +702,7 @@ function DaySlot({
                   <ThemedText style={styles.historyLinkText}>
                     Open in History · {historyDayLabel(aboutKey)}
                   </ThemedText>
-                  <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
+                  <ChevronRight size={16} color={colorRoles.action.onLight} strokeWidth={2} />
                 </Pressable>
               )}
             </>

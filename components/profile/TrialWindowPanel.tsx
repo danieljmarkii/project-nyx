@@ -61,7 +61,7 @@
 // door is opened by the owner, and the sheet records what their vet decided.
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -334,7 +334,7 @@ export function TrialWindowPanel({
             // the toggle from the queryable tree, so the row's own behaviour would
             // become unassertable (C-39's shape: a harness narrower than the API
             // hides what it cannot reach).
-            trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+            trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
             ios_backgroundColor={theme.colorBorderStrong}
           />
         </Pressable>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, theme, shadows } from '../../constants/theme';
 import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { pluralize } from '../../lib/dashboardCards';
 import type { MealTreatComposition } from '../../lib/analytics';
@@ -20,8 +20,13 @@ import { ThemedText } from '../ui/ThemedText';
 // one hue carries NO verdict (meals are not "the healthy colour"; treats are not a
 // warning); it simply mirrors that meals are the dietary staple and treats supplement it.
 // "Other" stays a quiet neutral — it is a literal catch-all, not a judgment.
-const SEGMENT_COLOR = {
-  meal: theme.colorEventMeal,
+/** The card the bar sits on, exported so the contrast test measures the meal segment on it. */
+export const SEGMENT_GROUND = theme.colorSurface;
+// The meal segment is the glyph teal (3.27:1 on the card; the bright meal teal was 2.26:1,
+// CUL-1666). The treat and other segments are told apart by the legend's words, never by
+// colour alone (the principles' Color section).
+export const SEGMENT_COLOR = {
+  meal: colorRoles.positive.glyphOnLight,
   treat: theme.colorAccentSoft,
   other: theme.colorBorderStrong,
 } as const;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
-import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
+import { signalRailStyle } from './railTint';
+import type { CachedFinding, ReflectionFinding, SignalFinding } from '../../../lib/signal';
 import { type CompareRow, dotLaneModel, isTimingFinding, symptomWord, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
 import { askStandalone, rowReadsScreen, signalHomeLabel, trialSoFarClause, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
 import { countedHomePair } from '../../../lib/signalCounts';
@@ -55,10 +56,6 @@ import { ThemedText } from '../../ui/ThemedText';
 // padding included — is the whole target and carries NO slop: two adjacent doors abut and
 // never overlap, and the 44pt floor is the row's `minHeight`.
 
-const RAIL_COLOR: Record<PriorityClass, string> = {
-  safety: theme.colorEventSymptom,
-  insight: theme.colorAccent,
-};
 
 /** A Signal door's hint (the rows and the lead card), told apart from the shipped card's
  *  "Shows the evidence…". */
@@ -185,7 +182,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
       style={styles.row}
       testID="signal-row"
     >
-      <View style={[styles.rail, { backgroundColor: RAIL_COLOR[finding.priorityClass] }]} />
+      <View style={[styles.rail, signalRailStyle(finding.priorityClass)]} />
       <View style={styles.body}>
         {backLine ? (
           <ThemedText style={styles.backLine} testID="signal-row-back">
@@ -366,7 +363,7 @@ const styles = StyleSheet.create({
     ...GUTTER_RAIL,
     top: theme.space1,
     bottom: theme.space1,
-    opacity: 0.85,
+    // Colour and opacity are the class's: `signalRailStyle` (railTint.ts).
   },
   // "Your vet knows": the same rose, lighter. The tag carries the state in words.
   railWatched: {

@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Camera } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroup } from '../ui/ChipGroup';
@@ -614,7 +614,7 @@ function AddFoodCta({ onPress }: { onPress: () => void }) {
           identical "Add" CTA so the two pickers read as one family of vector
           glyphs rather than mixed emoji/icon. */}
       <View style={styles.addCtaIcon}>
-        <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
+        <Camera size={20} color={colorRoles.action.onLight} strokeWidth={2} />
       </View>
       <View style={styles.addCtaText}>
         <ThemedText style={styles.addCtaTitle}>Snap a new food</ThemedText>
