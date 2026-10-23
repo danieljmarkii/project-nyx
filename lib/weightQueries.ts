@@ -15,3 +15,14 @@ export const LATEST_WEIGHT_KG_QUERY =
     WHERE wc.pet_id = ? AND e.deleted_at IS NULL
     ORDER BY e.occurred_at DESC
     LIMIT 1`;
+
+// The latest reading WITH its date, for the log form's "Last weighed {date}: {n} lbs"
+// (CUL-1908 P9): the prefilled value says where it came from, so a number nobody re-took
+// never reads as today's weighing. Same population and order as LATEST_WEIGHT_KG_QUERY.
+export const LATEST_WEIGHING_QUERY =
+  `SELECT wc.weight_kg AS weight_kg, e.occurred_at AS occurred_at
+     FROM weight_checks wc
+     JOIN events e ON e.id = wc.event_id
+    WHERE wc.pet_id = ? AND e.deleted_at IS NULL
+    ORDER BY e.occurred_at DESC
+    LIMIT 1`;

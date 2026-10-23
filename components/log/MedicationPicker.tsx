@@ -7,7 +7,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { SearchField } from '../ui/SearchField';
-import { getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
+import { getActiveCourseItemIds, getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
 import { PickerSilhouette } from '../surfaces/waits/PickerSilhouette';
 import { PickerReadFailed } from './PickerReadFailed';
 import { PickerAddDoor } from './PickerAddDoor';
@@ -19,7 +19,8 @@ import { usePickerColumns } from './pickerColumns';
 // a medication" CTA (B-117 PR 5 — the CTA opens app/medication-capture, which
 // snaps the label and falls back to manual entry, exactly like FoodPicker's
 // onAddNew → food-capture). Tap a tile → onPickMedication logs a dose in one tap.
-// The two pickers share their structure (Add CTA on top → Recent grid → Library)
+// The two pickers share their structure (shelves → the Add door → Library; the door
+// moved under the shelves in CUL-1908's design pass)
 // so they read as one family.
 
 // B-355 — Recent is a WRAPPED compact 2-up grid, not a hidden horizontal scroll.
@@ -44,6 +45,9 @@ type LibraryRead = 'reading' | 'answered' | 'failed';
 
 interface Props {
   petId: string;
+  // The pet the dose is written to, for the "{Pet}'s courses" shelf (P7). The caller
+  // resolves it from the record's pet (the meal's, on a combo), never the active one.
+  petName?: string;
   // Fires when the user taps a Recent or Library tile — one-tap dose log.
   onPickMedication: (med: PickerMedication) => void;
   // Fires when the user taps "Add a medication" — opens the photo-capture flow
@@ -55,9 +59,12 @@ interface Props {
   onOpenDetail?: (med: PickerMedication) => void;
 }
 
-export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDetail }: Props) {
+export function MedicationPicker({ petId, petName, onPickMedication, onAddNew, onOpenDetail }: Props) {
   const [recent, setRecent] = useState<PickerMedication[]>([]);
   const [library, setLibrary] = useState<PickerMedication[]>([]);
+  // CUL-1908 P7 — the drugs this pet has a running course of. Read with the shelves, so a
+  // throw is the same failed read the band says (C-12).
+  const [courseIds, setCourseIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [read, setRead] = useState<LibraryRead>('reading');
   // Bumped by Try again: a new callback identity re-runs the focus load in place.
@@ -70,13 +77,15 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
       let cancelled = false;
       (async () => {
         try {
-          const [r, l] = await Promise.all([
+          const [r, l, c] = await Promise.all([
             getRecentMedications(petId, RECENT_DAYS, RECENT_LIMIT),
             getLibraryMedications(),
+            getActiveCourseItemIds(petId),
           ]);
           if (!cancelled) {
             setRecent(r);
             setLibrary(l);
+            setCourseIds(c);
             setRead('answered');
           }
         } catch (err) {
@@ -93,6 +102,20 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
     setRead('reading');
     setRetryTick((t) => t + 1);
   }, []);
+
+  // P7 — "{Pet}'s courses" pinned first: the trial list's rule applied to medicine.
+  // ORDERING ONLY: the tiles are the same tiles, the label is the only signal, and
+  // nothing here counts doses or says a course is done (a course's "Dose X of Y" lives
+  // on its own card, dose duration spec D7). A course drug leaves Recent so it is not
+  // pinned twice above the fold; the library below still holds every drug.
+  const courses = useMemo(
+    () => library.filter((m) => courseIds.includes(m.id)),
+    [library, courseIds],
+  );
+  const recentShown = useMemo(
+    () => recent.filter((m) => !courseIds.includes(m.id)),
+    [recent, courseIds],
+  );
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -113,13 +136,21 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
     >
         {read === 'failed' && <PickerReadFailed message={MED_READ_FAILED} onRetry={retry} />}
 
-        <View style={styles.zone}>
-          <PickerAddDoor title="Add a medication" hint="Snap the label, or enter it by hand" onPress={onAddNew} />
-        </View>
-
         {read === 'reading' && <PickerSilhouette />}
 
-        {read === 'answered' && recent.length > 0 && (
+        {read === 'answered' && courses.length > 0 && (
+          <View style={styles.zone}>
+            <SectionLabel label={petName ? `${petName}'s courses` : 'Courses'} header />
+            <MedGrid
+              meds={courses}
+              compact
+              onPickMedication={onPickMedication}
+              onOpenDetail={onOpenDetail}
+            />
+          </View>
+        )}
+
+        {read === 'answered' && recentShown.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label="Recent" header />
             {/* B-355 — a wrapped compact 2-up grid (not a horizontal scroll): every
@@ -128,13 +159,20 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
                 tiles keep the small recent set short so the full library below stays
                 reachable. Recency-ordered (newest first) by getRecentMedications. */}
             <MedGrid
-              meds={recent}
+              meds={recentShown}
               compact
               onPickMedication={onPickMedication}
               onOpenDetail={onOpenDetail}
             />
           </View>
         )}
+
+        {/* The door follows the shelves (the round's §07): after week one a shelf answers
+            most visits, so it takes the top of the fold. Before the read answers, and
+            when it fails, it sits under the silhouette or the band. */}
+        <View style={styles.zone}>
+          <PickerAddDoor title="Add a medication" hint="Snap the label, or enter it by hand" onPress={onAddNew} />
+        </View>
 
         {read === 'answered' && (
           <View style={styles.zone}>

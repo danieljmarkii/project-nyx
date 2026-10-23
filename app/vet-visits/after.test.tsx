@@ -53,6 +53,9 @@ jest.mock('../../lib/sync', () => ({
   syncPendingVetVisits: jest.fn(async () => undefined),
   syncPendingVetDocuments: jest.fn(async () => undefined),
 }));
+// StartTrialModal hosts FoodPicker, whose tiles sign their food photos (CUL-1908 P3)
+// through lib/storage, which loads the Supabase client; nothing here signs anything.
+jest.mock('../../lib/storage', () => ({ getSignedUrls: jest.fn(async () => new Map()) }));
 jest.mock('../../lib/haptics', () => ({ commitVisit: jest.fn(), destructiveConfirm: jest.fn() }));
 jest.mock('../../lib/visitPaperwork', () => ({
   captureVisitPaperwork: jest.fn(async () => ({ groupId: null, skipped: null })),

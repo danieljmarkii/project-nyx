@@ -59,6 +59,7 @@ jest.mock('../lib/simpleEvent', () => ({
 // parse/format helpers stay live, because `canConfirmWeight` gates the button on
 // parseWeightLbsToKg and a stubbed parse would test a button that is never
 // actually reachable the way an owner reaches it.
+const mockGetLatestWeighing = jest.fn().mockResolvedValue(null);
 const mockInsertWeightCheck = jest.fn().mockResolvedValue({
   eventId: 'wt-1', occurredAtIso: '2026-09-05T17:33:00.000Z', now: '2026-09-05T17:33:00.000Z',
 });
@@ -66,6 +67,7 @@ jest.mock('../lib/weight', () => ({
   ...jest.requireActual('../lib/weight'),
   insertWeightCheck: (...a: unknown[]) => mockInsertWeightCheck(...a),
   getLatestWeightKg: jest.fn().mockResolvedValue(null),
+  getLatestWeighing: (...a: unknown[]) => mockGetLatestWeighing(...a),
 }));
 
 // The meal step's writes (CUL-2090): the meal writer, the trial heads-up and the rotation
@@ -317,7 +319,7 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
     mockTypeParam = 'weight_check';
     const { getByText, getByPlaceholderText } = render(<LogScreen />);
     fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '12.4');
-    const confirm = getByText('Log weight');
+    const confirm = getByText('Log 12.4 lbs');
     fireEvent.press(confirm);
     fireEvent.press(confirm);
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
@@ -329,7 +331,7 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
     mockInsertWeightCheck.mockRejectedValueOnce(new Error('disk full'));
     const { getByText, getByPlaceholderText } = render(<LogScreen />);
     fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '12.4');
-    const confirm = getByText('Log weight');
+    const confirm = getByText('Log 12.4 lbs');
     fireEvent.press(confirm);
     await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Couldn't save that", expect.any(String)));
     fireEvent.press(confirm);
@@ -443,5 +445,95 @@ describe('/log — a MIX tile on the rotation shelf (CUL-2090)', () => {
     expect(card.kind).toBe('meal');
     expect(card.foodProductName).toBeNull();
     expect(card.bowl?.foods.map((f) => f.rowName)).toEqual(['Chicken Pâté', 'Rabbit Pâté']);
+  });
+});
+
+// CUL-1908 — the log form round's design pass, as the PM ruled it (2026-10-23).
+describe('/log — the design pass (CUL-1908)', () => {
+  it('P1: a step a door opened leads with a close, and it leaves the form', () => {
+    mockTypeParam = 'weight_check';
+    const { getByLabelText, queryByText } = render(<LogScreen />);
+    fireEvent.press(getByLabelText('Close'));
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    // Never the type grid the owner never saw.
+    expect(queryByText('Log for Biscuit')).toBeNull();
+  });
+
+  it('P1: a step reached FROM the grid still steps back to it', () => {
+    mockTypeParam = undefined;
+    const { getByText, getByLabelText } = render(<LogScreen />);
+    fireEvent.press(getByText('Other'));
+    fireEvent.press(getByLabelText('Back'));
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(getByText('Log for Biscuit')).toBeTruthy();
+  });
+
+  it('P2: the food step says once that a tap logs', () => {
+    mockTypeParam = 'meal';
+    jest.spyOn(require('../lib/db'), 'getLibraryFoods').mockResolvedValue([]);
+    const { getByText } = render(<LogScreen />);
+    expect(getByText('Tap a food to log it now.')).toBeTruthy();
+  });
+
+  it('P9: the prefill says where it came from, and the button says the number it writes', async () => {
+    mockTypeParam = 'weight_check';
+    usePetStore.setState({ activePet: { id: 'p1', name: 'Biscuit', weight_kg: 19.3 } as never });
+    // Built from local components (C-29): the caption is a local date.
+    const taken = new Date(new Date().getFullYear(), 0, 2, 9, 0);
+    mockGetLatestWeighing.mockResolvedValueOnce({ weightKg: 19.3, occurredAt: taken.toISOString() });
+    const { findByText, getByPlaceholderText, getByText } = render(<LogScreen />);
+    const prefill = (getByPlaceholderText('e.g. 12.5').props.value as string);
+    expect(await findByText(new RegExp(`^Last weighed .+: ${prefill} lbs$`))).toBeTruthy();
+    expect(getByText(`Log ${prefill} lbs`)).toBeTruthy();
+    fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '43.1');
+    expect(getByText('Log 43.1 lbs')).toBeTruthy();
+  });
+
+  it('P9: a pet never weighed gets no caption, as before', async () => {
+    mockTypeParam = 'weight_check';
+    const { queryByText } = render(<LogScreen />);
+    await act(async () => {});
+    expect(queryByText(/Last weighed/)).toBeNull();
+  });
+
+  it('P10: Other leads with the note, names the pet on its commit, and never blocks an empty note', async () => {
+    mockTypeParam = 'other';
+    const tree = render(<LogScreen />);
+    expect(tree.getByText('What did you notice?')).toBeTruthy();
+    const text = JSON.stringify(tree.toJSON());
+    expect(text.indexOf('What did you notice?')).toBeLessThan(text.indexOf('Attach photo'));
+    const commit = tree.getByRole('button', { name: 'Log for Biscuit' });
+    expect(commit.props.accessibilityState?.disabled).toBeFalsy();
+    await act(async () => { fireEvent.press(commit); });
+    expect(mockInsertSimpleEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('P10: a symptom step keeps its order and its commit', () => {
+    mockTypeParam = 'vomit';
+    const tree = render(<LogScreen />);
+    expect(tree.queryByText('What did you notice?')).toBeNull();
+    expect(tree.getByText('Log vomit')).toBeTruthy();
+  });
+});
+
+// CUL-1908 P8 — from the meal card, the band names the meal, its time and its pet.
+describe('/log — the dose step from the meal card (CUL-1908 P8)', () => {
+  it('names the MEAL\'s pet, the meal\'s time and the food before the owner picks', async () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Biscuit' }, { id: 'p2', name: 'Mochi' }] as never,
+      activePet: { id: 'p1', name: 'Biscuit' } as never,
+    });
+    mockTypeParam = 'medication';
+    mockWidgetParams = { pairedEventId: 'meal-9', pairedPetId: 'p2', pairedFoodType: 'meal', pairedFoodName: 'Indoor Cat Dry' };
+    const at = new Date(2026, 9, 23, 7, 42);
+    jest.spyOn(require('../lib/db'), 'getEventOccurredAt').mockResolvedValue(at.toISOString());
+    jest.spyOn(require('../lib/db'), 'getLibraryMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getRecentMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getActiveCourseItemIds').mockResolvedValue([]);
+    const { findByText, getByText } = render(<LogScreen />);
+    expect(getByText('Given with')).toBeTruthy();
+    expect(await findByText(/^Mochi's meal · /)).toBeTruthy();
+    expect(getByText('Indoor Cat Dry')).toBeTruthy();
+    expect(getByText('What did Mochi take?')).toBeTruthy();
   });
 });

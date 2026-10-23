@@ -19,6 +19,7 @@ import { insertSimpleEvent } from '../lib/simpleEvent';
 import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
+import { SectionLabel } from '../components/ui/SectionLabel';
 import { PrimaryButton } from '../components/ui/PrimaryButton';
 import { TextField } from '../components/ui/TextField';
 import { NumberField } from '../components/ui/NumberField';
@@ -33,11 +34,11 @@ import { useAuthStore } from '../store/authStore';
 import { cachedAiConsent, loadAiConsent } from '../store/aiConsentStore';
 import { useEventStore } from '../store/eventStore';
 import { useMomentStore } from '../store/momentStore';
-import { getActiveRegimenForDrug, getMealForEvent, PickerFood, PickerMedication } from '../lib/db';
+import { getActiveRegimenForDrug, getEventOccurredAt, getMealForEvent, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose, applyLogTimeDoubleDoseCheck, optimisticDoseRow, rateDoseAdherence } from '../lib/medicationDose';
-import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
+import { insertWeightCheck, getLatestWeightKg, getLatestWeighing, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
 import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, drugDisplayName, type DoseAdherence } from '../lib/medications';
 // The simple-event write side-effects (event row + photo + its AI read + sync +
 // regen) now live in lib/simpleEvent (imported near the eventTimeEdit import
@@ -55,6 +56,16 @@ type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
 // The attached photo's thumbnail: a 40pt square inside the 44pt row (F7, off the scale's
 // own steps rather than typed).
 const PHOTO_THUMB = theme.space4 + theme.space1;
+
+// "Oct 2", or "Oct 2, 2025" outside this year: a date stamps its year when it is not
+// the current one, since a weighing can be months old (P9's caption).
+function shortDate(d: Date, now: Date = new Date()): string {
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
 
 // The `?type=` param is untrusted (a deep link, the widget's door), so it opens a step
 // only for a type this screen can log. Own keys only, never `in`: an inherited key
@@ -123,6 +134,15 @@ export default function LogModal() {
   // when the vehicle wasn't finished, first shows the deliberate confirm sheet in place of
   // the card's sharpened prompt. Everything up to and including the dose write is shared.
   const isRetroactiveCombo = isComboMode && comboSource === 'detail';
+  // CUL-1908 P1 — a step a door opened (the + button, the sheet, the widget, a deep link,
+  // the meal card) leads with a close that leaves the form, because every in-app door
+  // opens a step directly and Back used to land on a type grid the owner never saw. The
+  // grid stays only as the fallback for a link that names no type, and a step reached
+  // FROM that grid still steps back to it.
+  const openedByDoor =
+    typeParam === 'meal' || typeParam === 'medication' || typeParam === 'weight_check' ||
+    (!!typeParam && isLoggableTypeParam(typeParam));
+  const stepLeading = openedByDoor ? 'close' : 'back';
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<EventTypeKey | null>(null);
@@ -148,6 +168,18 @@ export default function LogModal() {
   // id + the food/pet it rode in) when a retroactive combo dose lands UNCONFIRMED because
   // its vehicle wasn't finished; the sheet lets the owner resolve it before returning to
   // the treat. Null the rest of the time (finished/standalone paths never show it).
+  // CUL-1908 P8 — when the meal this dose rides with happened, so the band can name it:
+  // two meals of one food on one day differ only by their time. Null until read.
+  const [pairedMealAt, setPairedMealAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pairedEventId) return;
+    let cancelled = false;
+    getEventOccurredAt(pairedEventId)
+      .then((at) => { if (!cancelled) setPairedMealAt(at); })
+      .catch((e) => console.warn('[log] paired meal time read failed:', e));
+    return () => { cancelled = true; };
+  }, [pairedEventId]);
+
   const [comboConfirm, setComboConfirm] = useState<{
     doseEventId: string;
     petName: string;
@@ -173,6 +205,10 @@ export default function LogModal() {
   // event where the value IS the entry (Principle 1's confirm-don't-enter can't
   // apply), so this field is the screen.
   const [weightLbsStr, setWeightLbsStr] = useState('');
+  // CUL-1908 P9 — where the prefill came from: the last reading and the day it was taken,
+  // said under the value so a number nobody re-took never reads as today's weighing.
+  // Null until read, and when the pet was never weighed (then nothing is said, as before).
+  const [lastWeighing, setLastWeighing] = useState<{ weightKg: number; occurredAt: string } | null>(null);
 
   // Shared
   const [notes, setNotes] = useState('');
@@ -301,8 +337,17 @@ export default function LogModal() {
   // converted to lbs — so a re-weigh is an adjustment, not a fresh entry. Blank
   // when no weight is on file yet (first-ever check).
   function seedWeightPrefill() {
-    const lastKg = usePetStore.getState().activePet?.weight_kg ?? null;
+    const pet = usePetStore.getState().activePet;
+    const lastKg = pet?.weight_kg ?? null;
     setWeightLbsStr(lastKg != null ? kgToLbs(lastKg) : '');
+    setLastWeighing(null);
+    if (!pet) return;
+    // A local read; a failure only costs the caption, never the log.
+    getLatestWeighing(pet.id)
+      .then((w) => {
+        if (usePetStore.getState().activePet?.id === pet.id) setLastWeighing(w);
+      })
+      .catch((e) => console.warn('[log] last weighing read failed:', e));
   }
 
   // Chooser first, then only the chosen source's permission (CUL-577, lib/photoSource).
@@ -1044,6 +1089,8 @@ export default function LogModal() {
 
   function handleBack() {
     if (step === 'type') { router.back(); return; }
+    // P1: a step a door opened has no grid behind it to return to; it leaves the form.
+    if (openedByDoor) { router.back(); return; }
     // Combo mode (B-156 PR B2b) opened straight into the medication picker from the
     // meal card, so there's no type-grid to step back to — back closes the modal.
     if (isComboMode && step === 'medication') { router.back(); return; }
@@ -1214,12 +1261,14 @@ export default function LogModal() {
     );
   }
 
-  function renderNotesInput() {
+  // `label` set: the note leads the step and asks its question (P10, Other only).
+  function renderNotesInput(label?: string) {
     return (
       <TextField
         multiline
-        placeholder="Add a note (optional)"
-        accessibilityLabel="Note"
+        label={label}
+        placeholder={label ? 'A sentence is plenty' : 'Add a note (optional)'}
+        accessibilityLabel={label ?? 'Note'}
         value={notes}
         onChangeText={setNotes}
         maxLength={300}
@@ -1250,7 +1299,10 @@ export default function LogModal() {
   if (step === 'food') {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title={`What did ${petName} eat?`} leading="back" onLeadingPress={handleBack} />
+        <Header title={`What did ${petName} eat?`} leading={stepLeading} onLeadingPress={handleBack} />
+        {/* P2 — a tile is the write (Principle 1), so the screen says so once, before
+            the first tap, rather than leaving it to a hint VoiceOver may not read. */}
+        <ThemedText style={styles.stepHint}>Tap a food to log it now.</ThemedText>
         {activePet && (
           <FoodPicker
             petId={activePet.id}
@@ -1283,20 +1335,28 @@ export default function LogModal() {
     // visible. Fall back to a neutral 'your pet' (NOT the active pet's name — which may
     // be a different pet than the meal's, the whole reason we key off pairedPetId) on
     // the unreachable-in-practice case where pets haven't hydrated.
-    const comboPetName = (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null) ?? 'your pet';
-    const comboFoodLabel = pairedFoodName?.trim() || (pairedFoodType === 'treat' ? 'treat' : 'meal');
+    // The MEAL's pet, through the one shared lookup (C-9): an unmatched id reads as
+    // "your pet", never as the active pet, which may be a different one.
+    const comboPetName = resolveRecordPetName(pets, pairedPetId);
+    const comboKind = pairedFoodType === 'treat' ? 'treat' : 'meal';
+    const comboFoodName = pairedFoodName?.trim() || null;
+    const comboWhen = pairedMealAt ? ` · ${formatTime(new Date(pairedMealAt))}` : '';
     const headerPetName = isComboMode ? comboPetName : petName;
     // The Recent shelf is pet-scoped, so it should show the MEAL's pet's drugs in
     // combo mode; the Library is global so it's identical either way.
     const pickerPetId = isComboMode && pairedPetId ? pairedPetId : activePet?.id;
     return (
       <SafeAreaView style={styles.container}>
-        <Header title={`What did ${headerPetName} take?`} leading="back" onLeadingPress={handleBack} />
+        <Header title={`What did ${headerPetName} take?`} leading={stepLeading} onLeadingPress={handleBack} />
         {isComboMode && (
-          <View style={styles.comboBanner}>
-            <ThemedText style={styles.comboBannerText}>
-              Adding to {comboPetName}'s {comboFoodLabel} — pick the medication you gave with it
+          // P8 — the band names the meal, its time and its pet before the owner picks: with
+          // two pets this step writes to the meal's pet, and the time tells two meals apart.
+          <View style={styles.comboBanner} accessible>
+            <SectionLabel label="Given with" />
+            <ThemedText style={styles.comboBannerTitle}>
+              {comboPetName}'s {comboKind}{comboWhen}
             </ThemedText>
+            {comboFoodName ? <ThemedText style={styles.comboBannerText}>{comboFoodName}</ThemedText> : null}
           </View>
         )}
         {/* Gate on pickerPetId alone, NOT activePet: in combo mode the picker must
@@ -1307,6 +1367,7 @@ export default function LogModal() {
         {pickerPetId && (
           <MedicationPicker
             petId={pickerPetId}
+            petName={headerPetName}
             // Guarded (B-336): the first tap latches, so a rapid double-tap on a
             // tile can't write two doses — and on the retroactive combo path can't
             // overwrite the first dose's pending confirm sheet.
@@ -1340,9 +1401,12 @@ export default function LogModal() {
     // real positive number (parseWeightLbsToKg), never a 0/NaN that would corrupt a
     // trend line.
     const canConfirmWeight = parseWeightLbsToKg(weightLbsStr) != null;
+    const lastWeighedCaption = lastWeighing
+      ? `Last weighed ${shortDate(new Date(lastWeighing.occurredAt))}: ${kgToLbs(lastWeighing.weightKg)} lbs`
+      : null;
     return (
       <SafeAreaView style={styles.container}>
-        <Header title={`What does ${petName} weigh?`} leading="back" onLeadingPress={handleBack} />
+        <Header title={`What does ${petName} weigh?`} leading={stepLeading} onLeadingPress={handleBack} />
         <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
             <NumberField
@@ -1352,6 +1416,7 @@ export default function LogModal() {
               accessibilityLabel="Weight in pounds"
               placeholder="e.g. 12.5"
               autoFocus
+              caption={lastWeighedCaption}
             />
             {renderNotesInput()}
             {renderTimeRowWithPicker('When was this weight taken?')}
@@ -1360,7 +1425,8 @@ export default function LogModal() {
             {/* Disabled says why in its own words (C-7): VoiceOver reads "dimmed" over
                 the label, so the label is the reason. */}
             <PrimaryButton
-              label={canConfirmWeight ? 'Log weight' : 'Enter a weight to log'}
+              // P9 — the button says the number it writes (Principle 8).
+              label={canConfirmWeight ? `Log ${weightLbsStr.trim()} lbs` : 'Enter a weight to log'}
               onPress={() => { void guardSubmit(handleConfirmWeight); }}
               disabled={!canConfirmWeight}
             />
@@ -1383,13 +1449,27 @@ export default function LogModal() {
     const simpleConfig = selectedType ? EVENT_TYPES[selectedType] : null;
     const witnessedOnly = simpleConfig?.confidenceModel === 'witnessed';
     const offersPhoto = simpleConfig ? simpleConfig.hasPhoto : true;
+    // P10 — for Other the note IS the record (an Other with nothing in it says nothing to
+    // a vet), so it leads, labelled, and the commit names the pet it writes to. Never
+    // disabled for an empty note: a log is never blocked. The symptom steps keep their
+    // order (the round redrew only Other).
+    const isOther = selectedType === 'other';
     return (
       <SafeAreaView style={styles.container}>
-        <Header title={eventLabel} leading="back" onLeadingPress={handleBack} />
+        <Header title={eventLabel} leading={stepLeading} onLeadingPress={handleBack} />
         <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
-            {offersPhoto && renderPhotoAttachRow()}
-            {renderNotesInput()}
+            {isOther ? (
+              <>
+                {renderNotesInput('What did you notice?')}
+                {offersPhoto && renderPhotoAttachRow()}
+              </>
+            ) : (
+              <>
+                {offersPhoto && renderPhotoAttachRow()}
+                {renderNotesInput()}
+              </>
+            )}
             {witnessedOnly ? (
               renderTimeRowWithPicker('When did this happen?')
             ) : (
@@ -1412,7 +1492,7 @@ export default function LogModal() {
           </ScrollView>
           <View style={styles.bottomAction}>
             <PrimaryButton
-              label={eventLabel === 'Other' ? 'Log event' : `Log ${eventLabel.toLowerCase()}`}
+              label={isOther ? `Log for ${petName}` : `Log ${eventLabel.toLowerCase()}`}
               onPress={() => { void guardSubmit(async () => (await handleConfirm()) !== null); }}
             />
           </View>
@@ -1431,6 +1511,13 @@ const styles = StyleSheet.create({
   },
   fill: {
     flex: 1,
+  },
+  stepHint: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
+    paddingHorizontal: theme.space2,
+    paddingTop: theme.space1,
   },
 
   // The log's five step headers now use the shared Header (B-075); their
@@ -1512,13 +1599,17 @@ const styles = StyleSheet.create({
   // logged together with. It is context, not a good fact, so it sits on the quiet band
   // rather than the teal wash (F8).
   comboBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    gap: theme.space0_5,
     paddingHorizontal: theme.space3,
     paddingVertical: theme.space2,
     backgroundColor: theme.colorSurfaceSubtle,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
+  },
+  comboBannerTitle: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   comboBannerText: {
     // On the type scale (textSM + its leading token) rather than the raw 14/20 the
@@ -1527,7 +1618,6 @@ const styles = StyleSheet.create({
     // exactly this secondary-banner body.
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    flex: 1,
     lineHeight: theme.lineHeightSM,
   },
 });
