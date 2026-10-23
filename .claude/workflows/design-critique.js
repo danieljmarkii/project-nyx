@@ -37,7 +37,7 @@ const list = (xs) => (xs && xs.length ? xs.map((x) => `- ${x}`).join('\n') : '- 
 // to try to break on THIS surface. A caller may override name, code or mandate per lens.
 const LIBRARY = {
   designer: { code: 'DES', name: 'Sr. Product Designer',
-    mandate: `You own the seven principles, UX quality, copy voice (.claude/skills/nyx-voice/SKILL.md), the 10-second test and designed empty states, and you hold the Design v2 language (the spine, Principle 8, Principle 9). Benchmark: Calm, Linear, Oura. Would a designer at Calm be proud of this screen?` },
+    mandate: `You own the nine principles, UX quality, copy voice (.claude/skills/nyx-voice/SKILL.md), the 10-second test and designed empty states, and you hold the Design v2 language (the spine, Principle 8, Principle 9). Benchmark: Calm, Linear, Oura. Would a designer at Calm be proud of this screen?` },
   motion: { code: 'MOT', name: 'Motion Designer',
     mandate: `One physics for the whole app, every motion verified on a phone, six gestures and no more: draw in, open in place, arrive, fold, the wait as the shape of what is coming, the card-to-screen flight. Reviews for: a motion that is not one of the six; chrome that moves on its own; a loop that is not real work; a symptom celebrated; a safety card arriving differently from a benign one; a reset that transitions instead of snapping. Anti-patterns: motion added because a thing looked bare; two engines for one gesture (CLAUDE.md C-30); a duration under 150ms or over 500ms without a reason written down; a gesture with no Reduce Motion frame or no VoiceOver focus rule.` },
   mobile_ia: { code: 'MIA', name: 'Mobile Information Architect',
@@ -96,9 +96,9 @@ ISOLATION
 Form your read from the artifact, the renders, the standards and the shipped code. ${A.exclude && A.exclude.length ? `Do NOT read these until your findings are written: ${A.exclude.join('; ')}.` : 'Do NOT read earlier deliberation about this surface (its Linear comments, its session records in docs/sessions/) until your findings are written.'} Afterwards you may consult it ONLY to mark a finding as carried (already recorded) rather than new.
 
 THE STANDARDS YOU CRITIQUE AGAINST
-- The seven design principles: ${REPO}/docs/nyx-design-principles-v1_0.md (summarised in CLAUDE.md), and the two safety invariants: intake is not preference; n=1 never reassures.
+- The nine design principles: ${REPO}/docs/nyx-design-principles-v1_0.md (summarised in CLAUDE.md), and the two safety invariants: intake is not preference; n=1 never reassures.
 - The Design v2 language: the spine (Home's node rows); the six gestures (docs/personas.md § Motion Designer); Principle 8 "the data is the delight" and its five-column check (a mark per fact · a count on every mark · the denominator in view · the uncounted disclosed · the window named; docs/culprit-design-v4-mockups.html §05 and §07); Principle 9 "motion is the record moving".
-- The house rules in CLAUDE.md (conventions C-1 onward): cite them by number where one applies.
+- The house rules: CLAUDE.md § Code Conventions and the path-scoped files under ${REPO}/.claude/rules/ (conventions C-1 onward, read the ones for this surface): cite them by number where one applies.
 - Your own lens's entry in ${REPO}/docs/personas.md, read in full.
 ${A.standards && A.standards.length ? A.standards.map((s) => `- Also: ${s}`).join('\n') : ''}
 
@@ -342,7 +342,7 @@ const CRITIC_SCHEMA = {
 }
 const critic = await agent(`You are the COMPLETENESS CRITIC for an isolated design critique (${A.issue}, ${A.title}, Culprit/Nyx). Do not edit any repo file; never post anywhere; scratch only under ${SP}/critic/.
 
-Ask: what did this critique MISS? Check the synthesis against (a) every section and rule of the artifact (${(art.sources || []).join(', ')}${art.text ? `; extracted text at ${art.text}` : ''}); (b) every render${art.renders ? ` in ${art.renders} (read MANIFEST.md; list in uncited_renders every render no finding cites, and look at those)` : ''}; (c) each of the seven principles, the two safety invariants, and the Design v2 language (the spine, the six gestures, Principle 8's five columns); (d) the open items; (e) accessibility (VoiceOver, Dynamic Type, Reduce Motion, colour carrying meaning alone), multi-pet, a brand-new account with nothing logged, a very long record, offline, and the shipped pieces of this surface the artifact does not mention${art.code && art.code.length ? ` (${art.code.join(', ')})` : ''}. Also check the synthesis did not wrongly drop a finding (compare against the raw lens outputs below), did not miscategorise, and that the gating list is neither padded nor missing something ${NEXT} genuinely cannot be done without.
+Ask: what did this critique MISS? Check the synthesis against (a) every section and rule of the artifact (${(art.sources || []).join(', ')}${art.text ? `; extracted text at ${art.text}` : ''}); (b) every render${art.renders ? ` in ${art.renders} (read MANIFEST.md; list in uncited_renders every render no finding cites, and look at those)` : ''}; (c) each of the nine principles, the two safety invariants, and the Design v2 language (the spine, the six gestures, Principle 8's five columns); (d) the open items; (e) accessibility (VoiceOver, Dynamic Type, Reduce Motion, colour carrying meaning alone), multi-pet, a brand-new account with nothing logged, a very long record, offline, and the shipped pieces of this surface the artifact does not mention${art.code && art.code.length ? ` (${art.code.join(', ')})` : ''}. Also check the synthesis did not wrongly drop a finding (compare against the raw lens outputs below), did not miscategorise, and that the gating list is neither padded nor missing something ${NEXT} genuinely cannot be done without.
 
 Return up to 6 gaps, each assigned to the lens best placed to answer it (lens keys: ${LENSES.map((L) => L.key).join(', ')}) with one precise question.
 
