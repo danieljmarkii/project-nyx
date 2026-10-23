@@ -1,4 +1,4 @@
-import { theme } from '../../../constants/theme';
+import { colorRoles, theme } from '../../../constants/theme';
 import type { EventTintCategory } from '../../../lib/dayEvents';
 
 /** The white chip each drill-in row's glyph sits on (`styles.rowIcon`). A pure module, so
@@ -12,7 +12,7 @@ export const DAY_ROW_ICON_GROUND = theme.colorSurface;
 // white (CUL-1659, the CUL-1637 fix on the log sheet's tiles).
 export const DAY_ROW_TINT: Record<EventTintCategory, string> = {
   symptom: theme.colorEventSymptom,
-  meal: theme.colorAccentGlyph,
+  meal: colorRoles.positive.glyphOnLight,
   medication: theme.colorEventMedication,
   other: theme.colorTextSecondary,
   look: theme.colorTextSecondary,

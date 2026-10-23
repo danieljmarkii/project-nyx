@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 // CoverageTick — one day's coverage under a bar (CUL-1064, §05 "the denominator in
 // view"). Filled = logged, hollow = unlogged, ahead = the slot is held but nothing is
@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
   // The soft teal it replaced and the idle grey's outline were 1.01:1 apart, ΔE2000 3.9
   // under deuteranopia; the glyph teal is 1.97:1 from the grey and 3.27:1 on white.
   logged: {
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
   },
   unlogged: {
     borderWidth: StyleSheet.hairlineWidth * 2,

@@ -4,7 +4,7 @@ import {
   EVENT_TYPES, EventTypeKey, expandedPickerGroups, type PickerGroup,
 } from '../../constants/eventTypes';
 import { SectionLabel } from '../ui/SectionLabel';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 // The log's event-type picker (B-745), extracted out of app/log.tsx so both hosts
@@ -57,7 +57,7 @@ export const CATEGORY_TINT: Record<EventTypeKey, { bg: string; fg: string }> = {
   sneeze: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   lethargy: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   itch: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
-  meal: { bg: theme.colorEventMealLight, fg: theme.colorAccentGlyph },
+  meal: { bg: theme.colorEventMealLight, fg: colorRoles.positive.glyphOnLight },
   medication: { bg: theme.colorEventMedicationLight, fg: theme.colorEventMedication },
   weight_check: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },
   other: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },
