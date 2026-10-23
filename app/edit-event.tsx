@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, ChevronRight } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
@@ -1157,7 +1157,7 @@ export default function EditEventModal() {
                       </ThemedText>
                     ) : null}
                   </View>
-                  <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                  <ChevronRight size={18} color={colorRoles.action.onLight} strokeWidth={2} />
                 </TouchableOpacity>
               ) : (
                 <View style={styles.foodRow}>

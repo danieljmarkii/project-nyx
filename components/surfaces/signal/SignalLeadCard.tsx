@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
+import { signalRailStyle } from './railTint';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { measureNodeInWindow } from '../../../lib/measureNode';
 import { useSyncStore } from '../../../store/syncStore';
-import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/signal';
+import type { CachedFinding, SignalFinding } from '../../../lib/signal';
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { hasSignalTitleRule } from '../../../lib/signalTitle';
@@ -73,10 +74,6 @@ export function leadChartWidth(windowWidth: number): number {
   return windowWidth - 2 * pagePadding - 2 * cardPadding;
 }
 
-const RAIL_COLOR: Record<PriorityClass, string> = {
-  safety: theme.colorEventSymptom,
-  insight: theme.colorAccent,
-};
 
 interface Props {
   cached: CachedFinding;
@@ -167,12 +164,12 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
     return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead generatedAt={generatedAt} />;
   }
 
-  const rail = RAIL_COLOR[cached.finding.priorityClass];
+  const rail = signalRailStyle(cached.finding.priorityClass);
 
   if (load.status === 'loading') {
     return (
       <View style={styles.row} testID="signal-lead-skeleton">
-        <View style={[styles.rail, { backgroundColor: rail }]} />
+        <View style={[styles.rail, rail]} />
         <View style={styles.content} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <Block width="80%" height={theme.lineHeightSignal - 8} />
           <Block height={72} style={styles.skeletonChart} />
@@ -213,7 +210,7 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   };
   return (
     <View style={styles.row} testID="signal-lead-card">
-      <View style={[styles.rail, { backgroundColor: rail }]} />
+      <View style={[styles.rail, rail]} />
       <Pressable
         onPress={press}
         hitSlop={FACE_HITSLOP}
@@ -267,7 +264,7 @@ const styles = StyleSheet.create({
     ...GUTTER_RAIL,
     top: theme.space2,
     bottom: theme.space2,
-    opacity: 0.85,
+    // Colour and opacity are the class's: `signalRailStyle` (railTint.ts).
   },
   content: {
     flex: 1,

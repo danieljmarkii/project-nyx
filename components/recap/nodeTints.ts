@@ -37,6 +37,10 @@ export const NODE_TINT_DAY: Record<EventTintCategory, string> = {
   look: theme.colorTextSecondary,
 };
 
+/** The ground the night tints below are drawn on: the recap's brand night (`DaySpine`'s
+ *  `GROUND.night`). Exported so the contrast test measures each tint on it (CUL-1666). */
+export const NODE_TINT_NIGHT_GROUND = theme.colorBrandNight;
+
 /** Night-ground node tint — DR-1's day spine. The two category hues that would
  *  read muddy on #13112E swap to their night siblings; teal and the muted neutral
  *  carry over unchanged (they clear the 3:1 graphical-glyph target on night). */

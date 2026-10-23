@@ -25,6 +25,8 @@
 import { colorRoles, theme } from './theme';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
 import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from '../components/surfaces/patterns/dayRowTint';
+import { NODE_TINT_NIGHT, NODE_TINT_NIGHT_GROUND } from '../components/recap/nodeTints';
+import { SIGNAL_RAIL, SIGNAL_RAIL_GROUND } from '../components/surfaces/signal/railTint';
 
 /** WCAG 2.1 relative luminance of an #rrggbb colour (sRGB, linearized). */
 function relativeLuminance(hex: string): number {
@@ -506,5 +508,83 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
   it('the brand teal fails as a glyph on white, and the action indigo fails on the night', () => {
     expect(contrastRatio(theme.colorAccent, theme.colorSurface)).toBeLessThan(NON_TEXT);
     expect(contrastRatio(theme.colorAction, theme.colorBrandNight)).toBeLessThan(NON_TEXT);
+  });
+});
+
+// ── CUL-1666 — the teal walk: each site that keeps a tint map, on its ground ──────────
+// The walk moved every light-ground glyph onto a role (pinned above). What survives as a
+// map, or keeps the bright teal because its ground is dark, is measured here against the
+// ground it is exported with, so a revert or a new entry is a red build. Ratios recorded
+// to two places so a token nudge is a visible diff.
+describe('CUL-1666 — the walked sites that keep a map or a dark ground', () => {
+  const NON_TEXT = 3;
+
+  /** An #rrggbb mark drawn at `opacity` over an opaque ground, as the screen composites it. */
+  function drawnOver(fg: string, ground: string, opacity: number): string {
+    const ch = (h: string, i: number) => parseInt(h.replace('#', '').slice(i, i + 2), 16);
+    return (
+      '#' +
+      [0, 2, 4]
+        .map((i) => Math.round(ch(fg, i) * opacity + ch(ground, i) * (1 - opacity)).toString(16).padStart(2, '0'))
+        .join('')
+    );
+  }
+
+  describe('the Signal door rails, as drawn on the card', () => {
+    it('the rail hangs on the white card', () => {
+      expect(SIGNAL_RAIL_GROUND).toBe(theme.colorSurface);
+    });
+
+    it.each(Object.entries(SIGNAL_RAIL))('%s clears 3:1', (_cls, { color, opacity }) => {
+      expect(contrastRatio(drawnOver(color, SIGNAL_RAIL_GROUND, opacity), SIGNAL_RAIL_GROUND)).toBeGreaterThanOrEqual(NON_TEXT);
+    });
+
+    // Safety keeps exactly what it had: the walk may raise a concern mark, never lower it.
+    it('keeps the safety rail the rose at 0.85, and the insight rail the positive glyph at full strength', () => {
+      expect(SIGNAL_RAIL.safety).toEqual({ color: theme.colorEventSymptom, opacity: 0.85 });
+      expect(SIGNAL_RAIL.insight).toEqual({ color: colorRoles.positive.glyphOnLight, opacity: 1 });
+    });
+
+    it('records the ratios, and the two shortcuts that fail', () => {
+      const drawn = (fg: string, o: number) => contrastRatio(drawnOver(fg, SIGNAL_RAIL_GROUND, o), SIGNAL_RAIL_GROUND);
+      expect(drawn(theme.colorEventSymptom, 0.85)).toBeCloseTo(3.13, 2);
+      expect(drawn(colorRoles.positive.glyphOnLight, 1)).toBeCloseTo(3.27, 2);
+      // The rail it replaced, and the glyph teal kept at the old opacity.
+      expect(drawn(theme.colorAccent, 0.85)).toBeLessThan(NON_TEXT);
+      expect(drawn(colorRoles.positive.glyphOnLight, 0.85)).toBeLessThan(NON_TEXT);
+    });
+  });
+
+  describe('the recap night tints (the day spine, and the primer that previews it)', () => {
+    it('are drawn on the brand night', () => {
+      expect(NODE_TINT_NIGHT_GROUND).toBe(theme.colorBrandNight);
+    });
+
+    it.each(Object.entries(NODE_TINT_NIGHT))('%s clears 3:1', (_category, fg) => {
+      expect(contrastRatio(fg, NODE_TINT_NIGHT_GROUND)).toBeGreaterThanOrEqual(NON_TEXT);
+    });
+
+    it('records the meal teal on the night', () => {
+      expect(NODE_TINT_NIGHT.meal).toBe(theme.colorEventMeal);
+      expect(contrastRatio(NODE_TINT_NIGHT.meal, NODE_TINT_NIGHT_GROUND)).toBeCloseTo(8.09, 2);
+    });
+  });
+
+  // Two sites keep the bright teal because their ground is dark; each names it in a comment.
+  it('the paywall checks on colorSurfaceDark, and the recap trial strip on colorBrandNightElevated', () => {
+    expect(contrastRatio(theme.colorAccent, theme.colorSurfaceDark)).toBeCloseTo(8.26, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorBrandNightElevated)).toBeCloseTo(6.57, 2);
+  });
+
+  // The light-ground moves, recorded: each now reads through a role pinned above.
+  it('records the light-ground repoints', () => {
+    // Auth heroes and the onboarding done orb: the glyph on its wash circle.
+    expect(contrastRatio(colorRoles.positive.glyphOnLight, colorRoles.positive.wash)).toBeCloseTo(3.01, 2);
+    // Chevrons and switch tracks on white; the selected ink on its wash.
+    expect(contrastRatio(colorRoles.action.onLight, theme.colorSurface)).toBeCloseTo(9.42, 2);
+    expect(contrastRatio(colorRoles.selected.ink, colorRoles.selected.ground)).toBeCloseTo(7.93, 2);
+    // What each replaced.
+    expect(contrastRatio(theme.colorAccent, colorRoles.positive.wash)).toBeCloseTo(2.08, 2);
+    expect(contrastRatio(theme.colorAccent, theme.colorSurface)).toBeCloseTo(2.26, 2);
   });
 });

@@ -11,7 +11,7 @@
 // touches pet B's arrangement (spec §7.7).
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import {
   startFreeChoice, endFreeChoice, getArrangementMetasForFood, confirmArrangementFresh,
   confirmedLabel, formatCalendarDate, isArrangementStale, sharedBowlHint,
@@ -157,7 +157,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
             value={freeChoice}
             onValueChange={(next) => handleToggle(pet, next)}
             disabled={savingPetId === pet.id}
-            trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+            trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
             ios_backgroundColor={theme.colorBorderStrong}
           />
         </View>
@@ -234,7 +234,7 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
                 value={on}
                 onValueChange={(next) => handleToggle(pet, next)}
                 disabled={savingPetId === pet.id}
-                trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
                 ios_backgroundColor={theme.colorBorderStrong}
                 accessibilityLabel={`Always available for ${pet.name}`}
               />

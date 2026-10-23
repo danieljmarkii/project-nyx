@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { Header, PrimaryButton, SectionLabel, ThemedText } from '../components/ui';
 import { ReportSilhouette } from '../components/surfaces/waits/ReportSilhouette';
 import { Tick } from '../components/surfaces/waits/Tick';
@@ -421,7 +421,7 @@ export default function ReportScreen() {
             <Switch
               value={includeNotes}
               onValueChange={setIncludeNotes}
-              trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+              trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
               ios_backgroundColor={theme.colorBorderStrong}
               accessibilityLabel="Include your Noticed notes in the report"
             />

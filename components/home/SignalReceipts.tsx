@@ -16,7 +16,7 @@
 import { type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { CompareRow, DotLaneModel, PhoneScriptFact } from '../../lib/signalCopy';
 
 // Half a dot's width/height — used to centre a dot on its (left, 50%) anchor without
@@ -27,7 +27,7 @@ const DOT_HALF = DOT_SIZE / 2;
 const TONE_FILL: Record<CompareRow['tone'], string> = {
   concern: theme.colorEventSymptom, // rose — the pattern side (the symptom hue, used descriptively)
   muted: theme.colorTextDisabled, // neutral grey — the control side
-  calm: theme.colorAccent, // teal — a genuine improvement side (reserved; unused in SR-1)
+  calm: colorRoles.positive.glyphOnLight, // teal — a genuine improvement side (reserved; unused in SR-1)
 };
 
 // ── Shape A — the dot lane ────────────────────────────────────────────────────

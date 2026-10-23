@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { GUTTER_RAIL, HomeCard, RAIL_GUTTER, ZONE_LABEL_SPACING } from '../surfaces/home/HomeCard';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -48,6 +48,7 @@ import { insightArrival } from '../../lib/haptics';
 // D2-3 (CUL-1065, Design v2; GA by CUL-1071): the namespace the drawing lives in.
 import { SignalLeadCard } from '../../components/surfaces/signal/SignalLeadCard';
 import { SignalRow } from '../../components/surfaces/signal/SignalRow';
+import { SIGNAL_RAIL } from '../../components/surfaces/signal/railTint';
 import { leadTakesChartCard } from '../../lib/signalWindows';
 import { SignalZoneFoot, type SignalVetDoor } from '../../components/surfaces/signal/SignalZoneFoot';
 import { signalScreenHref } from '../../lib/signalRoute';
@@ -1295,7 +1296,7 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.glyphOnLight,
   },
   ackText: {
     fontSize: theme.textXS,
@@ -1345,11 +1346,12 @@ const styles = StyleSheet.create({
   quietRailNeutral: {
     backgroundColor: theme.colorBorder,
   },
-  // The insight rail's ink (`SignalRow`'s RAIL_COLOR.insight, at its 0.85): the warning is a
-  // finding on the record, not a safety finding — plainness carries its weight (S1).
+  // The insight rail's ink (`SIGNAL_RAIL.insight`, railTint.ts): the warning is a finding on
+  // the record, not a safety finding — plainness carries its weight (S1). Full strength, as
+  // that rail is: the bright teal at 0.85 drew 2.04:1 on the card (CUL-1666).
   gapRail: {
-    backgroundColor: theme.colorAccent,
-    opacity: 0.85,
+    backgroundColor: SIGNAL_RAIL.insight.color,
+    opacity: SIGNAL_RAIL.insight.opacity,
   },
   quietBody: {
     flex: 1,

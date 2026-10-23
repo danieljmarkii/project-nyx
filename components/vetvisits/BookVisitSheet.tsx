@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { TextField } from '../ui/TextField';
@@ -372,7 +372,7 @@ export function BookVisitSheet({
                           return out;
                         })
                       }
-                      trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                      trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
                       ios_backgroundColor={theme.colorBorderStrong}
                       accessibilityLabel={`Also book this appointment for ${pet.name}`}
                     />

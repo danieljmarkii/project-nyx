@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import { MailOpen, Smartphone, RefreshCw } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { abandonRecovery } from '../../lib/recoveryDeepLink';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -182,7 +182,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'wrong_device') {
     return (
       <StateScreen
-        icon={<Smartphone size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<Smartphone size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="Open this link on the phone you asked from"
         body="For your security, a reset link only works on the device that asked for it. You can send a fresh one from this device instead."
         primaryLabel="Send a link from this device"
@@ -197,7 +197,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'link_unusable') {
     return (
       <StateScreen
-        icon={<MailOpen size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<MailOpen size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="That link no longer works"
         body="Reset links only work once, and they don't last long. Send yourself a fresh one."
         primaryLabel="Send a new link"
@@ -217,7 +217,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'failed') {
     return (
       <StateScreen
-        icon={<RefreshCw size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<RefreshCw size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="Couldn't finish that"
         body="Something interrupted the connection, and a reset link can't be tried twice. Send yourself a fresh one."
         primaryLabel="Send a new link"
