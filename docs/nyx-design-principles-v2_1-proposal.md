@@ -77,9 +77,9 @@ Each edit below is one Tier-2 change in the shape CLAUDE.md § Documentation Upd
 **Where:** Principle 3, after E5.
 
 **Add:**
-> While a safety card is live, no other card on the screen prints a line whose direction reassures: no falling comparison, no coverage ratio, no "all within". Facts without a direction (an end date) and accusing facts (an off-diet count) stay.
+> While a safety card is live, no other card on the screen prints or draws anything whose direction reassures: no falling comparison, no coverage ratio, no "all within", no falling chart. The reassuring line yields; the safety card never does, and nothing here is met by removing or delaying it. Facts without a direction (an end date) and accusing facts (an off-diet count) stay. A line whose direction is unclear is withheld if it could read as reassurance, and an accusing fact is never withheld as unclear.
 
-**Source:** ruled G3 (B), with Dr. Chen's concurrence; it extends the PM's 2026-09-27 lane ruling (CUL-1301) from the chart to the words. This is the n=1 and intake safety invariants applied to layout, so it is the one edit here on the clinical never-list.
+**Source:** ruled G3 (B), with Dr. Chen's concurrence; it extends the PM's 2026-09-27 lane ruling (CUL-1301) from the chart to the words. This is the n=1 and intake safety invariants applied to layout, so it is the one edit here on the clinical never-list. The last two sentences of the text, and "or draws", were added after the adversarial pass of 2026-10-23 found the first wording could be met by dropping the safety card, or by a falling chart instead of a line.
 
 ## E7 · Every count states its number, unit and window
 
@@ -105,9 +105,9 @@ Each edit below is one Tier-2 change in the shape CLAUDE.md § Documentation Upd
 **Where:** Principle 3, after E6.
 
 **Add:**
-> **Only safety may push the day below the first screen.** At the largest supported text size, the daily look starts within the first screen unless a safety card stands above it. Every benign section declares a compact form it takes when space runs out: pattern rows after the lead fold into a counted door ("1 more pattern · All patterns ›") while a safety card leads. Safety rows never fold.
+> **Only safety may push the day below the first screen.** A safety card starts within the first screen at every text size, and nothing is placed above it to make room. At the largest supported text size, the daily look starts within the first screen unless a safety card stands above it. Every benign section declares a compact form it takes when space runs out: pattern rows after the lead fold into a counted door ("1 more pattern · All patterns ›") while a safety card leads. Safety rows never fold. A compact form keeps its accusing fact (E5's accusing-first line), and a row carrying one (a refusal, a rising count) folds last, never into a bare count.
 
-**Source:** ruled G6 (B) as a better-than-the-rule brief over CUL-1285 that keeps all of its protections (no stored state, no control, safety never collapses). Not built yet: CUL-1527 (Todo). Ratifying E9 before it lands writes the rule ahead of the code, which is the order the principles are meant to run in. The largest-text measurement is the device pass's (CUL-1070).
+**Source:** ruled G6 (B) as a better-than-the-rule brief over CUL-1285 that keeps all of its protections (no stored state, no control, safety never collapses). Not built yet: CUL-1527 (Todo). Ratifying E9 before it lands writes the rule ahead of the code, which is the order the principles are meant to run in. The largest-text measurement is the device pass's (CUL-1070). The first and last sentences of the text were added after the adversarial pass of 2026-10-23: the first wording kept the look on screen but not the safety card, and a benign fold could hide an accusing fact behind "1 more pattern". E9 touches safety placement, so it joins E6 on the clinical never-list.
 
 ## E10 · Zones are labelled, doors are not
 
