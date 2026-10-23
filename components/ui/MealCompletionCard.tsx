@@ -13,7 +13,7 @@ import { FloorRaiseLine } from './FloorRaiseLine';
 import { openRaisedRead } from './openRaisedRead';
 import { useMomentStore, isIntakeDecline, completionTone } from '../../store/momentStore';
 import {
-  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, ACTION_PAIR_GAP,
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
@@ -1250,7 +1250,7 @@ const styles = StyleSheet.create({
   actionPair: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.space1,
+    gap: ACTION_PAIR_GAP, // the hitSlop pair's facing edges derive from it
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
   // 15pt; hitSlop helps but the container guarantees the floor.

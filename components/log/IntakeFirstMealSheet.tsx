@@ -101,8 +101,10 @@ export type IntakeSheetOutcome = 'saved' | 'dismissed';
 const CARD_DELAY_MS = 450;
 
 /** The "Change food" chip's touch target (CUL-658). The pill keeps chip proportions
- *  (12/6 padding, a 1pt border, a 13pt medium label), PINNED at 32 so its reach is
- *  computed from a box the code holds rather than a font's line box; the row around
+ *  (12/6 padding, a 1pt border, a 13pt medium label: ~31pt left to Geist's line box),
+ *  PINNED at 32 so its reach is computed from a box the code holds rather than a
+ *  font's line box (the pill grows by about a point; the row's height does not move);
+ *  the row around
  *  it carries the 44pt floor as its own `minHeight`, and the vertical-only slop takes
  *  the pill's hit area to that same height. Computed from this pill's own box, never
  *  borrowed from FilterChip's, which matches it today only by coincidence. Exported so

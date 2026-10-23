@@ -270,13 +270,14 @@ export function removedNoticeCopy(petName: string): RemovedNotice {
 // dose, where Change time is withheld): a control whose hit area changes shape
 // depending on its sibling is a harder thing to keep right than one that does not.
 //
-// The facing edge is computed from the pair's gap (lib/tapTarget, CUL-658): all
-// three cards' `actionPair` rows use `gap: theme.space1`, so retuning that gap
-// moves the yielded edge with it rather than leaving a stale half behind. REACH is
-// comfort, not the floor: each box is pinned at the floor by `minHeight`, so the
-// floor's own reach (verticalReachTo) is zero here and this is everything above it.
-const PAIR_GAP = theme.space1;
-const PAIR_GAP_HALF = facingReach(PAIR_GAP);
+// The facing edge is computed from the pair's gap (lib/tapTarget, CUL-658), and the
+// three R1 cards lay their Undo | Change time row out with ACTION_PAIR_GAP itself, so
+// retuning the gap moves the yielded edge with it rather than leaving a stale half
+// behind. REACH is comfort, not the floor: each box is pinned at the floor by
+// `minHeight`, so the floor's own reach (verticalReachTo) is zero here and this is
+// everything above it.
+export const ACTION_PAIR_GAP = theme.space1;
+const PAIR_GAP_HALF = facingReach(ACTION_PAIR_GAP);
 const REACH = 12;
 
 /** The LEFT member of the action pair — Undo. Yields its right edge. */

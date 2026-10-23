@@ -56,11 +56,13 @@ export function FilterChip({
 }
 
 // ── THE CHIP'S TOUCH TARGET (CUL-658) ───────────────────────────────────────
-// A chip is ~32pt tall (a 13pt medium label, 6pt padding either side, a 1pt
-// border). The 32 is PINNED as a minHeight rather than left to the font's line
-// box, so the reach is computed from a box the code holds (lib/tapTarget): a floor
-// resting on a metric no test can compute is a floor nobody is holding (CUL-579).
-// A floor, so larger type still grows the pill past it.
+// Left to the font, a chip is ~31pt tall: Geist Medium's line box at 13pt is 16.9pt
+// (hhea 1005 / -295 per 1000), plus 6pt padding either side and a 1pt border. With
+// the old 6 + 6 slop that was a 43pt target, a point under the floor, resting on a
+// metric no test can compute (CUL-579). The box is now PINNED at 32, so the reach is
+// computed from a box the code holds (lib/tapTarget) and 32 + 6 + 6 = 44 is true by
+// construction. That grows the pill by about a point. A floor, so larger type still
+// grows it past 32.
 //
 // Computed here from THIS chip's box, never shared with AdherenceChipRow's: the
 // two agree today only because their geometry matches. Restyle one and the two

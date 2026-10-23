@@ -7,7 +7,7 @@ import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import {
-  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, ACTION_PAIR_GAP,
 } from '../../lib/completionCard';
 import { useMomentStore, completionTone } from '../../store/momentStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -708,7 +708,7 @@ const styles = StyleSheet.create({
   actionPair: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.space1,
+    gap: ACTION_PAIR_GAP, // the hitSlop pair's facing edges derive from it
   },
   actionBtn: {
     minHeight: 44,
