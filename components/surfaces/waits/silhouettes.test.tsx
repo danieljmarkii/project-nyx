@@ -6,6 +6,7 @@ import { render } from '@testing-library/react-native';
 import { Animated } from 'react-native';
 import { EVENT_SILHOUETTE_TEST_ID, EventSilhouette } from './EventSilhouette';
 import { HOME_SILHOUETTE_TEST_ID, HomeSilhouette } from './HomeSilhouette';
+import { PICKER_SILHOUETTE_TEST_ID, PickerSilhouette } from './PickerSilhouette';
 import { Rows } from './Silhouette';
 import { SIGNAL_SILHOUETTE_TEST_ID, SignalSilhouette } from './SignalSilhouette';
 import { REPORT_SILHOUETTE_TEST_ID, REPORT_WAIT_SUBTITLE, ReportSilhouette, reportWaitTitle } from './ReportSilhouette';
@@ -22,6 +23,8 @@ describe('the silhouettes', () => {
     // CUL-1075: the Signal screen's own shape, whole and its lower half, and the list rows.
     ['Signal', SIGNAL_SILHOUETTE_TEST_ID, () => <SignalSilhouette />],
     ['Signal (below the flight)', SIGNAL_SILHOUETTE_TEST_ID, () => <SignalSilhouette withHead={false} />],
+    // CUL-2168: the food and medication pickers' tile shape.
+    ['Picker', PICKER_SILHOUETTE_TEST_ID, () => <PickerSilhouette />],
     ['Rows', 'rows-silhouette', () => <Rows count={3} testID="rows-silhouette" />],
   ])('%s: hidden from assistive tech as one unit, and starts no animation', (_n, id, make) => {
     const loop = jest.spyOn(Animated, 'loop');

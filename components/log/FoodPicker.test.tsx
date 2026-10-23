@@ -34,15 +34,17 @@ jest.mock('../../hooks/useTrialAllowedSet', () => ({
 jest.mock('expo-router', () => {
   const React = jest.requireActual('react');
   return {
-    // Fire the focus callback once on mount — the picker's data load.
+    // Fire the focus callback on mount — the picker's data load — and again whenever
+    // its identity changes, as the real hook does while focused (Try again, CUL-2168).
     useFocusEffect: (cb: () => void | (() => void)) => {
-      React.useEffect(() => cb(), []);
+      React.useEffect(() => cb(), [cb]);
     },
   };
 });
 
 import { render, fireEvent } from '@testing-library/react-native';
-import { FoodPicker } from './FoodPicker';
+import { FoodPicker, FOOD_READ_FAILED } from './FoodPicker';
+import { PICKER_SILHOUETTE_TEST_ID } from '../surfaces/waits/PickerSilhouette';
 import { usePetStore } from '../../store/petStore';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { buildTrialContext, type AllowedFood } from '../../lib/dietTrial';
@@ -104,6 +106,52 @@ function renderPicker() {
     />,
   );
 }
+
+// CUL-2168 (C-12) — a read that hasn't answered is never an empty record. The picker's
+// arrays start as [], so before this the first frame and every failed read said
+// "No foods yet" to an owner with a full library.
+describe('FoodPicker — the read’s three states below "has rows" (CUL-2168)', () => {
+  const EMPTY = 'No foods yet. Snap one above.';
+  const hidden = { includeHiddenElements: true };
+
+  it('while the read is unanswered: the silhouette, never the empty copy', () => {
+    DB.getLibraryFoods.mockReturnValue(new Promise(() => {}));
+    const { getByTestId, queryByText } = renderPicker();
+    expect(getByTestId(PICKER_SILHOUETTE_TEST_ID, hidden)).toBeTruthy();
+    expect(queryByText(EMPTY)).toBeNull();
+    expect(queryByText(/Nothing always-out yet/)).toBeNull();
+    expect(queryByText(FOOD_READ_FAILED)).toBeNull();
+    // The way to add a food stays open while the library reads.
+    expect(queryByText('Snap a new food')).toBeTruthy();
+  });
+
+  it('once a read answers with nothing: the empty copy, and no silhouette', async () => {
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([]);
+    const { findByText, queryByTestId, queryByText } = renderPicker();
+    expect(await findByText(EMPTY)).toBeTruthy();
+    expect(queryByTestId(PICKER_SILHOUETTE_TEST_ID, hidden)).toBeNull();
+    expect(queryByText(FOOD_READ_FAILED)).toBeNull();
+  });
+
+  it('when the read throws: the quiet band, never the empty copy, and Try again reads again', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    DB.getLibraryFoods.mockRejectedValue(new Error('SQLITE_BUSY'));
+    const { findByText, getByText, queryByText, queryByTestId } = renderPicker();
+    expect(await findByText(FOOD_READ_FAILED)).toBeTruthy();
+    expect(queryByText(EMPTY)).toBeNull();
+    expect(queryByText(/Nothing always-out yet/)).toBeNull();
+    expect(queryByTestId(PICKER_SILHOUETTE_TEST_ID, hidden)).toBeNull();
+    expect(getByText('Snap a new food')).toBeTruthy();
+
+    DB.getLibraryFoods.mockResolvedValue(LIBRARY);
+    fireEvent.press(getByText('Try again'));
+    expect(await findByText("Nyx's rotation")).toBeTruthy();
+    expect(getByText('Chicken')).toBeTruthy();
+    expect(queryByText(FOOD_READ_FAILED)).toBeNull();
+    warn.mockRestore();
+  });
+});
 
 describe('FoodPicker search-results mode', () => {
   it('browse mode shows the add CTA, rotation shelf, and Always available', async () => {
