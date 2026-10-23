@@ -107,6 +107,13 @@ function confidenceWord(confidence: string | null | undefined): string | null {
   return null;
 }
 
+// P2's "how long ago". Past a week `formatRelative` falls back to a date, which the line
+// above already prints, so the clause drops rather than say the date twice.
+function relativeAgo(iso: string): string | null {
+  const rel = formatRelative(iso);
+  return /ago$|^just now$/.test(rel) ? rel : null;
+}
+
 // P2's second line names how the time was known. A found or estimated time says it was not
 // witnessed, plainly (B-010: the report never presents a found time as an exact one); the
 // window itself prints on the line above through `describeOccurredAt`. A legacy row with
@@ -992,7 +999,7 @@ export default function EventDetailScreen() {
             {[
               label,
               timeHowKnown(timeDisplay.tag, event.occurred_at_confidence),
-              timeDisplay.isExact ? formatRelative(event.occurred_at) : null,
+              timeDisplay.isExact ? relativeAgo(event.occurred_at) : null,
               eventPetName ? `${eventPetName}'s record` : null,
             ]
               .filter(Boolean)

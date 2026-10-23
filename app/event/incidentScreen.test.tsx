@@ -246,8 +246,17 @@ describe('the record screen, as the design round ruled (CUL-1912)', () => {
     mockGetEventById.mockResolvedValue(baseRow);
     const view = render(<EventDetailScreen />);
     const line = await view.findByTestId('event-record-line');
-    expect(line.props.children).toMatch(/^Vomit · witnessed · .+ · Biscuit's record$/);
+    // The fixture is weeks old: "how long ago" would fall back to the date the line above
+    // prints, so it drops (no date twice).
+    expect(line.props.children).toBe("Vomit · witnessed · Biscuit's record");
     expect(view.getAllByText(/^Saturday, Sep 5 · 0?2:14 AM$/).length).toBeGreaterThan(0);
+  });
+
+  it('P2: a recent record says how long ago', async () => {
+    mockGetEventById.mockResolvedValue({ ...baseRow, occurred_at: new Date(Date.now() - 12 * 60e3).toISOString() });
+    const view = render(<EventDetailScreen />);
+    const line = await view.findByTestId('event-record-line');
+    expect(line.props.children).toBe("Vomit · witnessed · 12 min ago · Biscuit's record");
   });
 
   it('P2: an estimated time says it was not witnessed, and never says how long ago as if exact', async () => {
