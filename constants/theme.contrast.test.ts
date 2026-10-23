@@ -25,7 +25,9 @@
 import { colorRoles, theme } from './theme';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
 import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from '../components/surfaces/patterns/dayRowTint';
-import { NODE_TINT_NIGHT, NODE_TINT_NIGHT_GROUND } from '../components/recap/nodeTints';
+import { NODE_TINT_DAY, NODE_TINT_DAY_GROUND, NODE_TINT_NIGHT, NODE_TINT_NIGHT_GROUND } from '../components/recap/nodeTints';
+import { DELTA_TONE_COLOR } from '../components/dashboard/cardTokens';
+import { SEGMENT_COLOR, SEGMENT_GROUND } from '../components/dashboard/CompositionCard';
 import { SIGNAL_RAIL, SIGNAL_RAIL_GROUND } from '../components/surfaces/signal/railTint';
 
 /** WCAG 2.1 relative luminance of an #rrggbb colour (sRGB, linearized). */
@@ -568,6 +570,38 @@ describe('CUL-1666 — the walked sites that keep a map or a dark ground', () =>
       expect(NODE_TINT_NIGHT.meal).toBe(theme.colorEventMeal);
       expect(contrastRatio(NODE_TINT_NIGHT.meal, NODE_TINT_NIGHT_GROUND)).toBeCloseTo(8.09, 2);
     });
+  });
+
+  // The mock round's sites (W1 to W6, PM 2026-10-23): the maps that survive, on their grounds.
+  describe('the day spine tints (Home and History)', () => {
+    it('are drawn on white', () => {
+      expect(NODE_TINT_DAY_GROUND).toBe(theme.colorSurface);
+    });
+
+    it.each(Object.entries(NODE_TINT_DAY))('%s clears 3:1', (_category, fg) => {
+      expect(contrastRatio(fg, NODE_TINT_DAY_GROUND)).toBeGreaterThanOrEqual(NON_TEXT);
+    });
+
+    it('the meal dot is the positive glyph, and the bright meal teal it replaced fails on white', () => {
+      expect(NODE_TINT_DAY.meal).toBe(colorRoles.positive.glyphOnLight);
+      expect(contrastRatio(theme.colorEventMeal, NODE_TINT_DAY_GROUND)).toBeLessThan(NON_TEXT);
+      expect(NODE_TINT_DAY.symptom).toBe(theme.colorEventSymptom);
+    });
+  });
+
+  describe("the metric delta's tone (an arrow and the delta's TEXT, on the white card)", () => {
+    it('positive is the teal ink and clears text AA; concern keeps the rose', () => {
+      expect(DELTA_TONE_COLOR.positive).toBe(colorRoles.positive.textOnLight);
+      expect(contrastRatio(DELTA_TONE_COLOR.positive, theme.colorSurface)).toBeCloseTo(5.17, 2);
+      expect(contrastRatio(theme.colorAccent, theme.colorSurface)).toBeLessThan(AA_NORMAL_TEXT);
+      expect(DELTA_TONE_COLOR.concern).toBe(theme.colorEventSymptom);
+    });
+  });
+
+  it("the meals share bar's meal segment clears 3:1 on its card", () => {
+    expect(SEGMENT_GROUND).toBe(theme.colorSurface);
+    expect(SEGMENT_COLOR.meal).toBe(colorRoles.positive.glyphOnLight);
+    expect(contrastRatio(SEGMENT_COLOR.meal, SEGMENT_GROUND)).toBeCloseTo(3.27, 2);
   });
 
   // Two sites keep the bright teal because their ground is dark; each names it in a comment.

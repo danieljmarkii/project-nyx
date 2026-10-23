@@ -2,7 +2,7 @@ import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Cat, Dog, Check, type LucideIcon } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
 import { useOnboardingDraftStore, type OnboardingSpecies } from '../../store/onboardingDraftStore';
@@ -58,7 +58,7 @@ export default function PetTypeScreen() {
                 testID={`pet-type-${value}`}
               >
                 <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
-                  <Icon size={30} color={theme.colorAccent} strokeWidth={1.75} />
+                  <Icon size={30} color={isSelected ? colorRoles.selected.ink : theme.colorTextSecondary} strokeWidth={1.75} />
                 </View>
                 <View style={styles.tileText}>
                   <ThemedText style={styles.tileTitle}>{label}</ThemedText>
@@ -127,14 +127,14 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
   },
   tileSelected: {
-    borderColor: theme.colorAccent,
-    backgroundColor: theme.colorAccentLight,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ground,
   },
   avatar: {
     width: theme.space6, // 64
     height: theme.space6,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccentLight,
+    backgroundColor: theme.colorSurfaceSubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
