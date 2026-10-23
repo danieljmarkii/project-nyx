@@ -38,6 +38,7 @@ import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { offerCapturedFood } from '../lib/captureHandBack';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
+import { uploadedPhotoPath, uploadedPhotoPaths } from '../lib/captureUploads';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerProteinWrite, proteinsToCacheText } from '../lib/protein';
 import { PENDING_CAPTURE_LABEL, foodIntakeKey } from '../lib/food';
@@ -177,6 +178,11 @@ export default function FoodCaptureScreen() {
   const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
   const [ingredientsPhoto, setIngredientsPhoto] = useState<CapturedPhoto | null>(null);
   const [barcodePhoto, setBarcodePhoto] = useState<CapturedPhoto | null>(null);
+  // Local URIs of the photos whose own upload resolved (CUL-2170). The commit
+  // records a photo path only for these, so an offline capture never lists a
+  // photo Storage does not hold. A ref, not state: the commit reads it after
+  // the awaited uploads, never through a render.
+  const uploadedUris = useRef<Set<string>>(new Set());
   // Tracks slots the user has explicitly skipped on the review screen so we
   // don't re-encourage them after a Skip tap. Filling a slot via the tile
   // (out of order) doesn't need to live here — `*Photo` state is the truth.
@@ -455,10 +461,16 @@ export default function FoodCaptureScreen() {
 
       // Compress + upload all photos in parallel. Runs AFTER the insert so the
       // owner-scoped Storage INSERT policy can authorize each {foodId}/… path.
-      await Promise.all(photos.map(async (p) => {
+      // allSettled, not all: a fast failure must not route to the form while a
+      // sibling upload is still in flight, or a save there would leave out a photo
+      // that lands a moment later (CUL-2170). Every upload settles first.
+      const settled = await Promise.allSettled(photos.map(async (p) => {
         const compressedUri = await compressForUpload(p.localUri, p.width, p.height);
         await uploadPhoto('nyx-food-photos', p.storagePath, compressedUri);
+        uploadedUris.current.add(p.localUri);
       }));
+      const failedUpload = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failedUpload) throw failedUpload.reason;
 
       // Invoke extraction. We await it for the confirm screen, but don't block
       // the meal log on it — if it errors, we fall through to manual edit.
@@ -587,7 +599,9 @@ export default function FoodCaptureScreen() {
     // their own `now` from insertMeal (returned as mealNow) — a sub-millisecond
     // split with no LWW impact, kept separate so the helper owns its timestamps.
     const now = new Date().toISOString();
-    const frontStoragePath = frontPhoto?.storagePath ?? null;
+    // Only a photo whose upload finished is recorded (CUL-2170): offline, the
+    // front never reached Storage and the row must not claim it.
+    const frontStoragePath = uploadedPhotoPath(frontPhoto, uploadedUris.current);
     // ON CONFLICT DO UPDATE, not INSERT OR REPLACE: on an edit of an existing
     // food, REPLACE would null the columns not listed here — last_used_at
     // (local-only recency, unrecoverable once lost) and the AI-extracted
@@ -651,7 +665,7 @@ export default function FoodCaptureScreen() {
       format,
       food_type: type,
       created_by_user_id: user?.id ?? null,
-      photo_paths: frontPhoto ? [frontPhoto.storagePath, ingredientsPhoto?.storagePath, barcodePhoto?.storagePath].filter(Boolean) : [],
+      photo_paths: uploadedPhotoPaths([frontPhoto, ingredientsPhoto, barcodePhoto], uploadedUris.current),
       ai_extraction_status: frontPhoto ? (aiRead ? 'completed' : 'failed') : 'manual',
       source: aiRead ? 'ai_extracted' : 'user',
     };
