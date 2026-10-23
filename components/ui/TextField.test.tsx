@@ -73,6 +73,42 @@ describe('TextField', () => {
     expect(minHeight).toBeGreaterThanOrEqual(44);
   });
 
+  // CUL-1900: the notes box. A newline-taking input, top-aligned, opening taller than
+  // one line and capped so a long note scrolls inside rather than growing the sheet.
+  describe('multiline', () => {
+    it('renders a multiline input inside a taller, capped, top-aligned box', () => {
+      const { getByTestId } = render(
+        <TextField label="Note" value="" onChangeText={() => {}} multiline testID="note" />,
+      );
+      expect(getByTestId('note').props.multiline).toBe(true);
+      const field = flatStyle(getByTestId('note-field'));
+      expect(field.minHeight as number).toBeGreaterThan(theme.space5);
+      expect(field.maxHeight as number).toBeGreaterThan(field.minHeight as number);
+      expect(field.alignItems).toBe('flex-start');
+      expect(flatStyle(getByTestId('note')).textAlignVertical).toBe('top');
+    });
+
+    it('stays one line by default', () => {
+      const { getByTestId } = render(
+        <TextField label="Email" value="" onChangeText={() => {}} testID="email" />,
+      );
+      expect(getByTestId('email').props.multiline).toBe(false);
+      const field = flatStyle(getByTestId('email-field'));
+      expect(field.maxHeight).toBeUndefined();
+      expect(field.alignItems).toBe('center');
+    });
+
+    it('reports edits and draws no reveal toggle', () => {
+      const onChangeText = jest.fn();
+      const { getByTestId, queryByTestId } = render(
+        <TextField label="Note" value="" onChangeText={onChangeText} multiline testID="note" />,
+      );
+      fireEvent.changeText(getByTestId('note'), 'Ate half,\nthen slept');
+      expect(onChangeText).toHaveBeenCalledWith('Ate half,\nthen slept');
+      expect(queryByTestId('note-reveal')).toBeNull();
+    });
+  });
+
   describe('error state', () => {
     it('shows the message and turns the border destructive when an error is present', () => {
       const { getByText, getByTestId } = render(

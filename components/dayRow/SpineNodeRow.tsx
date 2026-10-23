@@ -83,7 +83,7 @@ import { DOSE_IN_DOUBT_TAG } from '../../lib/medications';
 import type { NodeRead, SpineCompactNode, SpineEventNode } from '../../lib/spineNode';
 
 /** The waiting tick — the fold's own resting rail, 3pt × 16pt. */
-export const SPINE_RAIL_WIDTH = 3;
+export const SPINE_RAIL_WIDTH = theme.railWidth;
 export const SPINE_TICK_HEIGHT = 16;
 /** The read slot's copy while the server works — the incident card's own line. */
 export const SPINE_READ_PENDING_LABEL = 'Reading the photo…';

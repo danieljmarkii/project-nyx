@@ -7,7 +7,13 @@ import { ThemedText } from './ThemedText';
 // submit) so the hero action on an acquisition surface can carry the interactive
 // accent the rest of that screen speaks. Label rides near-black for contrast on
 // the bright teal (white would fail on #00C2A8).
-type Variant = 'primary' | 'secondary' | 'destructive' | 'accent';
+//
+// Two destructive weights (CUL-1900): 'destructive' is the quiet red label for a
+// secondary "remove" beside a primary action; 'destructiveFilled' is the filled red
+// button for the one irreversible commit a sheet exists to make (delete account), so
+// the screen stops hand rolling it. White on colorDestructive clears AA (pinned in
+// constants/theme.contrast.test.ts).
+type Variant = 'primary' | 'secondary' | 'destructive' | 'destructiveFilled' | 'accent';
 
 interface Props {
   label: string;
@@ -28,6 +34,7 @@ const SPINNER_COLOR: Record<Variant, string> = {
   primary: theme.colorTextOnDark,
   secondary: theme.colorTextSecondary,
   destructive: theme.colorDestructive,
+  destructiveFilled: theme.colorTextOnDark,
   // Matches the accent variant's near-black label on the teal fill.
   accent: theme.colorNeutralDark,
 };
@@ -51,6 +58,7 @@ export function PrimaryButton({
         styles.btn,
         variant === 'secondary' && styles.btnSecondary,
         variant === 'destructive' && styles.btnDestructive,
+        variant === 'destructiveFilled' && styles.btnDestructiveFilled,
         variant === 'accent' && styles.btnAccent,
         disabled && styles.btnDisabled,
         style,
@@ -102,6 +110,9 @@ const styles = StyleSheet.create({
   },
   btnDestructive: {
     backgroundColor: 'transparent',
+  },
+  btnDestructiveFilled: {
+    backgroundColor: theme.colorDestructive,
   },
   btnAccent: {
     backgroundColor: theme.colorAccent,

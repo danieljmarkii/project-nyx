@@ -368,6 +368,12 @@ export const theme = {
   // was hand typed ~180 times. A box's floor, not a spacing step: never add it to a gap.
   hitTarget: 44,
 
+  // ── Rail ──────────────────────────────────────────────────────────────────
+  // The coloured rule down a card's left edge (the Signal, the per-incident read, the
+  // day spine) and the wait silhouette standing in for it. One width, so a skeleton
+  // never draws a rail the card it stands for does not (CUL-1900).
+  railWidth: 3,
+
   // ── Border radius ─────────────────────────────────────────────────────────
   radiusXS: 4,
   radiusSmall: 8,

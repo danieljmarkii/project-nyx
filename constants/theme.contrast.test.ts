@@ -508,3 +508,10 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     expect(contrastRatio(theme.colorAction, theme.colorBrandNight)).toBeLessThan(NON_TEXT);
   });
 });
+
+describe('the filled destructive button (CUL-1900)', () => {
+  it('its white label clears AA on the destructive red', () => {
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorDestructive)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorDestructive)).toBeCloseTo(4.83, 1);
+  });
+});

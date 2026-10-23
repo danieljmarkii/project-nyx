@@ -9,6 +9,7 @@ export { SectionLabel } from './SectionLabel';
 export { ThemedText } from './ThemedText';
 export { PrimaryButton } from './PrimaryButton';
 export { TextField } from './TextField';
+export { SegmentedControl } from './SegmentedControl';
 export { FilterChip } from './FilterChip';
 export { ScopeMenu } from './ScopeMenu';
 export { Badge } from './Badge';
