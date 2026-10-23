@@ -32,7 +32,7 @@ jest.mock('../../components/home/SignalZone', () => ({ SignalZone: marker('signa
 jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
 jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
-jest.mock('../../components/designV2/home/LookHeader', () => ({ LookHeader: marker('look-header') }));
+jest.mock('../../components/surfaces/home/LookHeader', () => ({ LookHeader: marker('look-header') }));
 // CUL-1975: Home's own eating check, answered "no decline" so this suite keeps its subject
 // and never touches SQLite. `index.intakeDecline.test.tsx` owns what the read does.
 jest.mock('../../lib/dietTrialFacts', () => ({

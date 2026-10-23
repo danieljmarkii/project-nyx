@@ -103,7 +103,7 @@ Anything short of that: do not merge, and say which condition failed as the firs
 
 When a project's run order splits work into PRs that run as parallel sessions, **the files more than one PR touches decide what can run side by side.** Every merge between 2026-09-12 and 09-25 that conflicted in real code hit at least one of these shapes:
 
-- an index file that re-exports a namespace (`components/designV2/index.ts`)
+- an index file that re-exports a namespace (`components/ui/index.ts`)
 - the beta shelf, `app/settings/beta.tsx`
 - a guard's registry (`guards/designV2FlagOff.test.tsx`, `guards/haptics.test.ts`)
 - one big render file and its tests (`supabase/functions/generate-report/render.ts`)

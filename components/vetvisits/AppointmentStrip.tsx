@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
-import { HomeCard } from '../designV2/home/HomeCard';
+import { HomeCard } from '../surfaces/home/HomeCard';
 import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
 import { useAppActive } from '../../hooks/useAppActive';

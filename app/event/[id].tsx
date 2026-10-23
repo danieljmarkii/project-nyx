@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
-import { EventSilhouette } from '../../components/designV2/waits/EventSilhouette';
+import { EventSilhouette } from '../../components/surfaces/waits/EventSilhouette';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';

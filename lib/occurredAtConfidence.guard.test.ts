@@ -111,7 +111,7 @@ const ALLOWED: Record<string, string> = {
     're-assertion moves no number anywhere. What this path must never become is an ' +
     'INFERRED confidence: nothing here reads a clock the owner did not see, and no ' +
     'metadata is consulted.',
-  'components/designV2/home/LookHeader.tsx':
+  'components/surfaces/home/LookHeader.tsx':
     'The look as Today\u2019s header (D2-4 / CUL-1066). The mirror the retired LookCard ' +
     'made, for the same reason: prependEvent restates the row insertLook just ' +
     'wrote, at the clock instant of the tap, so the answered row draws from the in-memory ' +

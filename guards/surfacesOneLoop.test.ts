@@ -5,7 +5,7 @@
 //
 // Two walks, because a loop can reach the flag-on tree two ways:
 //
-//   1. WRITTEN in the namespace. Every source under `components/designV2/` is read
+//   1. WRITTEN in the namespace. Every source under `components/surfaces/` is read
 //      (comments blanked, the C-18 single-pass walker) for `Animated.loop(` and for an
 //      `iterations: -1` (the other spelling of "forever", on `Animated.timing`'s config
 //      or a Reanimated `withRepeat`). No file may match: the tick (`waits/Tick.tsx`)
@@ -43,9 +43,9 @@ import { blankComments } from './blankComments';
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const NAMESPACE_REL = 'components/designV2';
+const NAMESPACE_REL = 'components/surfaces';
 /** The tick: in the namespace, binds the breath, spells no loop. */
-const THE_TICK = 'components/designV2/waits/Tick.tsx';
+const THE_TICK = 'components/surfaces/waits/Tick.tsx';
 /** The breath's one implementation, and the one loop the namespace may reach. */
 const THE_BREATH = 'components/motion/arrivalMotion.ts';
 
@@ -175,10 +175,10 @@ describe('the walk bites (proven by mutation, not by reading)', () => {
     // silhouette that loops in place (the first walk's mutation), and a silhouette
     // importing a looping helper from outside the namespace (the second walk's mutation)
     // — plus a comment that spells the loop, which must NOT count.
-    writeFixture(root, 'components/designV2/waits/Tick.tsx', `import { useTickBreath } from '../../motion/arrivalMotion';\nexport const t = useTickBreath;\n`);
+    writeFixture(root, 'components/surfaces/waits/Tick.tsx', `import { useTickBreath } from '../../motion/arrivalMotion';\nexport const t = useTickBreath;\n`);
     writeFixture(root, 'components/motion/arrivalMotion.ts', `import { Animated } from 'react-native';\nexport const useTickBreath = () => Animated.loop(null as never);\n`);
-    writeFixture(root, 'components/designV2/waits/Shimmer.tsx', `import { Animated } from 'react-native';\n// Animated.loop( in a comment is not a loop\nexport const l = Animated.loop(null as never);\n`);
-    writeFixture(root, 'components/designV2/waits/Reuser.tsx', `import { Skeleton } from '../../ui/Skeleton';\nexport const s = Skeleton;\n`);
+    writeFixture(root, 'components/surfaces/waits/Shimmer.tsx', `import { Animated } from 'react-native';\n// Animated.loop( in a comment is not a loop\nexport const l = Animated.loop(null as never);\n`);
+    writeFixture(root, 'components/surfaces/waits/Reuser.tsx', `import { Skeleton } from '../../ui/Skeleton';\nexport const s = Skeleton;\n`);
     writeFixture(root, 'components/ui/Skeleton.tsx', `import { Animated } from 'react-native';\nexport const Skeleton = Animated.timing(null as never, { iterations: -1 } as never);\n`);
     writeFixture(root, 'components/ui/Quiet.tsx', `export const q = 1;\n`);
   });
@@ -187,13 +187,13 @@ describe('the walk bites (proven by mutation, not by reading)', () => {
 
   it('a planted loop in a second namespace file, and a looping import, are both found', () => {
     const { written, imported } = walk(root, NAMESPACE_REL);
-    expect(written).toEqual(['components/designV2/waits/Shimmer.tsx']);
+    expect(written).toEqual(['components/surfaces/waits/Shimmer.tsx']);
     expect(imported).toEqual(['components/motion/arrivalMotion.ts', 'components/ui/Skeleton.tsx']);
   });
 
   it('a comment spelling the loop does not count, and a quiet import does not either', () => {
-    writeFixture(root, 'components/designV2/waits/Shimmer.tsx', `import { Animated } from 'react-native';\n// Animated.loop( in a comment is not a loop\nexport const l = 1;\n`);
-    writeFixture(root, 'components/designV2/waits/Reuser.tsx', `import { q } from '../../ui/Quiet';\nexport const s = q;\n`);
+    writeFixture(root, 'components/surfaces/waits/Shimmer.tsx', `import { Animated } from 'react-native';\n// Animated.loop( in a comment is not a loop\nexport const l = 1;\n`);
+    writeFixture(root, 'components/surfaces/waits/Reuser.tsx', `import { q } from '../../ui/Quiet';\nexport const s = q;\n`);
     const { written, imported } = walk(root, NAMESPACE_REL);
     expect(written).toEqual([]);
     expect(imported).toEqual(['components/motion/arrivalMotion.ts']);

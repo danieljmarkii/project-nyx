@@ -11,7 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
-import { GUTTER_RAIL, HomeCard, RAIL_GUTTER, ZONE_LABEL_SPACING } from '../designV2/home/HomeCard';
+import { GUTTER_RAIL, HomeCard, RAIL_GUTTER, ZONE_LABEL_SPACING } from '../surfaces/home/HomeCard';
 import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { useSignal } from '../../hooks/useSignal';
@@ -46,10 +46,10 @@ import { announceQueued, useRowSpeech } from '../dayRow/rowSpeech';
 // haptics-guard-ok: arrival tap, gated off whenever any finding is safety-class
 import { insightArrival } from '../../lib/haptics';
 // D2-3 (CUL-1065, Design v2; GA by CUL-1071): the namespace the drawing lives in.
-import { SignalLeadCard } from '../../components/designV2/signal/SignalLeadCard';
-import { SignalRow } from '../../components/designV2/signal/SignalRow';
+import { SignalLeadCard } from '../../components/surfaces/signal/SignalLeadCard';
+import { SignalRow } from '../../components/surfaces/signal/SignalRow';
 import { leadTakesChartCard } from '../../lib/signalWindows';
-import { SignalZoneFoot, type SignalVetDoor } from '../../components/designV2/signal/SignalZoneFoot';
+import { SignalZoneFoot, type SignalVetDoor } from '../../components/surfaces/signal/SignalZoneFoot';
 import { signalScreenHref } from '../../lib/signalRoute';
 import { foldIdentity, sharedFoldIdentities } from '../../lib/signalFold';
 import { Skeleton } from '../ui/Skeleton';

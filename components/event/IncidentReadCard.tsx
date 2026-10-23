@@ -20,7 +20,7 @@
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
-import { Tick } from '../designV2/waits/Tick';
+import { Tick } from '../surfaces/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
 import { type TierTone } from '../../lib/incidentTierWords';

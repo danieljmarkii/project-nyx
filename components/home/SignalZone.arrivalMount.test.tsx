@@ -34,7 +34,7 @@ jest.mock('../../lib/measureNode', () => ({ measureNodeInWindow: (_n: unknown, c
 
 import { act, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
-import { RAIL_GUTTER } from '../designV2/home/HomeCard';
+import { RAIL_GUTTER } from '../surfaces/home/HomeCard';
 import { SignalZone } from './SignalZone';
 import type { SignalState } from '../../hooks/useSignal';
 import type { CachedFinding } from '../../lib/signal';

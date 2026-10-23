@@ -15,10 +15,10 @@
 // thing they live with for eight weeks. That gap is the whole reason this exists.
 //
 // ── THE DRAWING ──────────────────────────────────────────────────────────────────
-// `components/designV2/home/TrialCard` (CUL-1526: title, a neutral bar, the one end-date
+// `components/surfaces/home/TrialCard` (CUL-1526: title, a neutral bar, the one end-date
 // line), for every account since Design v2's GA (CUL-1071). The pre-redesign drawing
 // (`TrialStripDoor`, the Signal row's grammar with this week's lane) retired with it.
-import { TrialCard } from '../designV2/home/TrialCard';
+import { TrialCard } from '../surfaces/home/TrialCard';
 import type { TrialStripModel } from '../../lib/dietTrialCard';
 
 interface Props {

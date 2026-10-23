@@ -58,7 +58,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Pressable, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
-import { DoorMark } from '../designV2/home/DoorMark';
+import { DoorMark } from '../surfaces/home/DoorMark';
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
 import { formatTime } from '../../lib/utils';
 import { petPronouns } from '../../lib/utils';
