@@ -1,7 +1,7 @@
 # Design System v1.2 ("Linear Clean") — Migration Plan
 
 **Status:** Executed. All four PRs shipped — palette (#99), fonts Geist+Newsreader (#100), event icons Lucide (#101), completion "moment" (#103, + folded meal card #105). Retained as the historical rationale for the token-value decisions (§3.1's value map, the destructive-on-dark call, the declined nested-`theme.ts` API). Open follow-ups tracked in STATUS.md: B-061 (app-wide Geist body rollout) and B-063 (tone-aware-moment design-principles line, pending PM sign-off).
-**Source bundle:** `docs/design-system/` (merged via PR #95 — reference material only).
+**Source bundle:** `docs/design-system/` (merged via PR #95 — reference material only). **Deleted 2026-10-23 (CUL-1899):** its tokens and principles copy had drifted from the shipped app; the last commit that holds it is `a5988ca` (`git show a5988ca:docs/design-system/README.md`). The live sources are `constants/theme.ts` and `docs/nyx-design-principles-v1_0.md`.
 **Owning tracks:** four scoped PRs (see Sequencing). Schema changes: none anywhere.
 
 ---
@@ -138,7 +138,7 @@ alphas** on the photo viewer and FAB, not palette colors. Leave them.
 
 - `tsc --noEmit` + `npm test` (flat→flat swap; types can't drift).
 - **On-device pass is mandatory** (hue ≠ contrast). Walk every screen against
-  `docs/design-system/_system/ui_kits/mobile_app/index.html`: Home/Signal, the
+  `docs/design-system/_system/ui_kits/mobile_app/index.html` (deleted 2026-10-23; at `a5988ca`): Home/Signal, the
   Trend chart (mint dots, rose bars — must stay *calm*, not alarm, per Dr. Chen),
   symptom surfaces, the dark photo viewer (the destructive-on-dark check), and
   the 3am tap-target test (unchanged — no layout edits).
