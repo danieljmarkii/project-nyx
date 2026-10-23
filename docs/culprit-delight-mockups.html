@@ -1,0 +1,2464 @@
+<title>Culprit · Delight from the Record</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     DELIGHT FROM THE RECORD · round 1 (the brainstorm, 2026-10-08).
+     One proposal page: later rounds replace frames in place, git is
+     the archive. Same document system and real theme tokens as the
+     rest of the Culprit mocks (constants/theme.ts).
+     Layout: a long editorial record, section by section; device
+     frames and drawings sit beside their notes.
+     ============================================================ */
+  :root {
+    --paper:     #F5F4F9;
+    --paper-2:   #FFFFFF;
+    --ink:       #1B1A2E;
+    --ink-2:     #5F5C7A;
+    --ink-3:     #8B87A8;
+    --rule:      #DEDCE9;
+    --rule-soft: #E9E7F1;
+    --teal-ink:  #0B7B6C;   /* theme.colorAccentInk */
+    --teal-wash: #E0FBF7;   /* theme.colorAccentLight */
+    --amber-ink: #9A6A00;
+    --rose-ink:  #9F1239;   /* theme.colorEventSymptomInk */
+    --rose-wash: #FFE4E6;   /* theme.colorEventSymptomLight */
+
+    /* chart marks: house event tints, theme.ts */
+    --c-meal:    #00C2A8;   /* colorEventMeal */
+    --c-symptom: #F43F5E;   /* colorEventSymptom */
+    --c-dose:    #5B7A9E;   /* colorEventMedication */
+    --c-day:     #F0F0F0;   /* colorChartEmpty */
+    --c-grid:    #E2E0EC;
+    --c-trial:   #1B1A2E;
+
+    --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+    --sans:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* device-frame palette: fixed app tokens, identical in both document themes */
+    --f-neutral: #FAFAFA; --f-surface: #FFFFFF; --f-text: #0A0A0A; --f-text-2: #525252;
+    --f-text-3: #737373; --f-border: #EAEAEA; --f-accent: #00C2A8; --f-accent-ink: #0B7B6C;
+    --n-ground: #13112E; --n-card: #251F57; --n-text: #ECEAF6; --n-muted: #A6A2CE;
+    --n-faint: #706BA6; --n-rose: #FB7185; --n-med: #93ADCB; --n-moon: #F2EEE4;
+    --n-rule: rgba(196,190,255,0.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BE;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14); --amber-ink: #E4B25C;
+      --rose-ink: #FDA4AF; --rose-wash: rgba(251,113,133,0.14);
+      --c-symptom: #FB7185; --c-dose: #93ADCB; --c-day: rgba(196,190,255,0.07);
+      --c-grid: rgba(196,190,255,0.14); --c-trial: #ECEAF6;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BE;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14); --amber-ink: #E4B25C;
+    --rose-ink: #FDA4AF; --rose-wash: rgba(251,113,133,0.14);
+    --c-symptom: #FB7185; --c-dose: #93ADCB; --c-day: rgba(196,190,255,0.07);
+    --c-grid: rgba(196,190,255,0.14); --c-trial: #ECEAF6;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 22px; padding-block: 48px 110px; }
+  a { color: var(--teal-ink); }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--rule-soft); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+
+  /* masthead */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 26px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 14px; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 5vw, 46px); line-height: 1.08; letter-spacing: -0.015em; text-wrap: balance; margin: 0 0 16px; }
+  .lede { max-width: 66ch; color: var(--ink-2); font-size: 17px; margin: 0 0 12px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 20px; font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* sections */
+  .section { margin-top: 64px; }
+  .section > h2 { font-family: var(--serif); font-weight: 600; font-size: 27px; letter-spacing: -0.01em; margin: 0 0 6px; text-wrap: balance; }
+  .section > .sub { color: var(--ink-2); max-width: 70ch; margin: 0 0 26px; }
+  h3 { font-size: 16.5px; margin: 0 0 8px; letter-spacing: -0.005em; }
+  p { margin: 0 0 10px; }
+  .note-col p, .note-col li { color: var(--ink-2); font-size: 15px; }
+  .note-col b, .note-col strong { color: var(--ink); }
+  ul.tight { margin: 6px 0 10px; padding-left: 18px; }
+  ul.tight li { margin: 3px 0; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); white-space: nowrap; }
+  .chip.teal { color: var(--teal-ink); border-color: var(--teal-ink); }
+  .chip.rose { color: var(--rose-ink); border-color: var(--rose-ink); }
+  .chip.amber { color: var(--amber-ink); border-color: var(--amber-ink); }
+
+  /* two-column thesis */
+  .thesis { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 760px) { .thesis { grid-template-columns: 1fr; } }
+  .thesis > div { background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 16px; padding: 18px 20px; min-width: 0; }
+  .thesis h3 { font-family: var(--serif); font-size: 19px; }
+  .thesis .verdict-line { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+  .thesis .no .verdict-line { color: var(--rose-ink); }
+  .thesis .yes .verdict-line { color: var(--teal-ink); }
+  .thesis ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 15px; }
+
+  /* plate: frame + notes */
+  .plate { display: grid; grid-template-columns: 330px 1fr; gap: 36px; align-items: start; padding: 26px 0; border-top: 1px solid var(--rule-soft); }
+  .plate.two { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 820px) { .plate, .plate.two { grid-template-columns: 1fr; gap: 22px; } }
+  .plate > * { min-width: 0; }
+  .frame-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 10px; }
+  .frame-label b { color: var(--teal-ink); font-weight: 600; }
+  .frame-label .no { color: var(--rose-ink); font-weight: 700; }
+
+  /* lock screen mini */
+  .mini-lock { background: linear-gradient(168deg, #2a2550 0%, #16132f 70%); border-radius: 18px; padding: 16px 12px 14px; color: #fff; max-width: 330px; }
+  .mini-lock .clock { text-align: center; font-size: 40px; font-weight: 300; line-height: 1; letter-spacing: -0.02em; }
+  .mini-lock .date { text-align: center; font-size: 12px; color: rgba(255,255,255,0.8); margin: 4px 0 14px; }
+  .notif { background: rgba(245,244,250,0.92); border-radius: 15px; padding: 10px 12px; text-align: left; box-shadow: 0 8px 22px -12px rgba(0,0,0,0.5); position: relative; }
+  .notif .nh { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+  .notif .nicon { width: 18px; height: 18px; border-radius: 5px; background: var(--f-accent); flex: 0 0 auto; }
+  .notif .napp { font-size: 10.5px; letter-spacing: 0.04em; color: #3a3a3a; text-transform: uppercase; font-weight: 700; flex: 1 1 auto; }
+  .notif .nwhen { font-size: 10.5px; color: #6a6a6a; }
+  .notif .ntitle { font-size: 13.5px; font-weight: 600; color: #000; }
+  .notif .nbody { font-size: 13px; color: #1f1f1f; line-height: 1.35; }
+  .struck .notif { opacity: 0.88; }
+  .struck .notif::after { content: ""; position: absolute; left: 10px; right: 10px; top: 50%; border-top: 2px solid #E11D48; transform: rotate(-4deg); }
+  .stamp { display: inline-block; margin-top: 10px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #FECDD3; border: 1px solid rgba(254,205,211,0.6); border-radius: 6px; padding: 2px 7px; }
+
+  /* night (recap) card */
+  .night { background: var(--n-ground); color: var(--n-text); border-radius: 22px; padding: 18px 16px 16px; max-width: 330px; font-size: 14px; }
+  .night .n-eb { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--n-muted); }
+  .night .n-date { font-family: var(--serif); color: var(--n-moon); font-size: 21px; margin: 2px 0 12px; }
+  .night .n-card { background: var(--n-card); border-radius: 14px; padding: 6px 12px; }
+  .spine-row { display: grid; grid-template-columns: 58px 12px 1fr; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--n-rule); font-size: 13.5px; }
+  .spine-row:last-child { border-bottom: 0; }
+  .spine-row .t { color: var(--n-muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .spine-row .dot { width: 9px; height: 9px; border-radius: 99px; background: var(--f-accent); }
+  .spine-row .dot.rose { background: var(--n-rose); }
+  .spine-row .dot.look { background: transparent; border: 1.5px solid var(--n-muted); }
+  .spine-row .dot.med { background: var(--n-med); }
+  .spine-row .sub { color: var(--n-muted); font-size: 12px; }
+  .night .fwd { margin-top: 12px; color: var(--n-moon); font-family: var(--serif); font-size: 16px; }
+  .night .fwd small { display: block; font-family: var(--sans); color: var(--n-faint); font-size: 11px; margin-top: 2px; }
+
+  /* day (app) card */
+  .dayframe { background: var(--f-neutral); color: var(--f-text); border-radius: 22px; padding: 16px; max-width: 330px; font-size: 14px; border: 1px solid var(--rule-soft); }
+  .dayframe .hd { font-size: 12px; color: var(--f-text-3); font-weight: 500; }
+  .dayframe .hd-big { font-family: var(--serif); font-size: 22px; color: var(--f-text); margin: 2px 0 12px; }
+  .dayframe .card { background: var(--f-surface); border-radius: 14px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(20,16,46,0.06); margin-top: 10px; }
+  .dayframe .row-title { font-weight: 600; font-size: 14px; }
+  .dayframe .row-sub { color: var(--f-text-2); font-size: 13px; margin-top: 3px; line-height: 1.4; }
+  .dayframe .row-sub.flag { color: #9F1239; }
+  .dayframe .door { color: var(--f-accent-ink); font-size: 13.5px; font-weight: 500; margin-top: 8px; }
+  .dayframe .muted { color: var(--f-text-3); font-size: 12px; }
+  .share { background: var(--f-surface); border-radius: 14px; padding: 13px; font-size: 13.5px; line-height: 1.5; color: var(--f-text); border: 1px solid var(--f-border); }
+  .share .from { font-size: 11px; color: var(--f-text-3); margin-top: 8px; }
+
+  /* option boxes */
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 640px) { .options { grid-template-columns: 1fr; } }
+  .opt { border: 1.5px dashed var(--rule); border-radius: 16px; padding: 12px; min-width: 0; }
+  .opt .opt-l { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .opt.lean { border-color: var(--teal-ink); border-style: solid; }
+  .opt.lean .opt-l { color: var(--teal-ink); }
+
+  /* tables */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--rule-soft); border-radius: 14px; background: var(--paper-2); }
+  table.t { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+  table.t th, table.t td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); }
+  table.t tr:last-child td { border-bottom: 0; }
+  table.t th { color: var(--ink-3); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
+  table.t td { color: var(--ink-2); }
+  table.t td b { color: var(--ink); }
+  .st { font-family: var(--mono); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .st.say { color: var(--teal-ink); }
+  .st.care { color: var(--amber-ink); }
+  .st.never { color: var(--rose-ink); }
+
+  /* shortlist cards */
+  .sl { display: grid; gap: 16px; }
+  .sl-card { background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 18px; padding: 20px 22px; display: grid; grid-template-columns: 54px 1fr; gap: 6px 16px; }
+  .sl-card .rank { font-family: var(--serif); font-size: 34px; line-height: 1; color: var(--teal-ink); }
+  .sl-card h3 { font-family: var(--serif); font-size: 21px; margin-bottom: 4px; }
+  .sl-card .one { color: var(--ink-2); margin-bottom: 10px; }
+  .sl-card .copy { border-left: 2px solid var(--teal-ink); padding: 2px 0 2px 12px; margin: 8px 0 12px; font-size: 15px; }
+  .sl-card dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+  .sl-card dt { font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); padding-top: 2px; }
+  .sl-card dd { margin: 0; color: var(--ink-2); min-width: 0; }
+  @media (max-width: 640px) { .sl-card { grid-template-columns: 1fr; } .sl-card dl { grid-template-columns: 1fr; } }
+  .sl-body { min-width: 0; }
+
+  /* anti wall */
+  .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
+  .wall .item { min-width: 0; }
+  .wall .why { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; }
+  .wall .why b { color: var(--ink); }
+  .wall .instead { font-size: 13.5px; color: var(--teal-ink); margin-top: 6px; }
+
+  /* briefs */
+  .briefs { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 16px; padding: 16px 18px; min-width: 0; }
+  .brief .id { font-family: var(--mono); font-size: 11px; color: var(--teal-ink); letter-spacing: 0.06em; }
+  .brief h3 { font-size: 15.5px; margin: 4px 0 8px; }
+  .brief ol { margin: 0 0 8px; padding-left: 20px; font-size: 14px; color: var(--ink-2); }
+  .brief li { margin: 3px 0; }
+  .brief li.rec { color: var(--ink); }
+  .brief li.rec::marker { color: var(--teal-ink); font-weight: 700; }
+  .brief .cons { font-size: 13.5px; color: var(--ink-3); }
+  .brief.first { border-color: var(--teal-ink); }
+
+  /* conflict */
+  .conf { border-top: 1px solid var(--rule-soft); padding: 14px 0; display: grid; grid-template-columns: 220px 1fr 1fr; gap: 16px; font-size: 14px; }
+  .conf > * { min-width: 0; }
+  .conf .topic { font-weight: 600; }
+  .conf .side { color: var(--ink-2); }
+  .conf .side b { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 3px; }
+  .conf .q { grid-column: 2 / 4; color: var(--amber-ink); font-size: 13.5px; }
+  @media (max-width: 760px) { .conf { grid-template-columns: 1fr; } .conf .q { grid-column: auto; } }
+
+  /* rules list */
+  .rules { columns: 2 360px; column-gap: 28px; font-size: 14px; color: var(--ink-2); }
+  .rules p { break-inside: avoid; margin-bottom: 12px; }
+  .rules b { color: var(--ink); font-family: var(--mono); font-size: 12px; }
+
+  /* charts */
+  .chart-card { background: var(--paper-2); border: 1px solid var(--rule-soft); border-radius: 18px; padding: 18px 18px 14px; margin-top: 14px; }
+  .chart-card h3 { font-family: var(--serif); font-size: 19px; }
+  .chart-card .cap { color: var(--ink-2); font-size: 14px; max-width: 76ch; }
+  .chart-scroll { overflow-x: auto; margin: 10px -4px 6px; padding: 0 4px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin: 6px 0 4px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend svg { width: 14px; height: 14px; overflow: visible; }
+  svg.rec, svg.clk { display: block; }
+  svg .grid { stroke: var(--c-grid); stroke-width: 1; }
+  svg .base { stroke: var(--ink-3); stroke-width: 1; }
+  svg .tick { stroke: var(--ink-3); stroke-width: 1; }
+  svg .ax { fill: var(--ink-3); font: 10.5px var(--sans); }
+  svg .ax.strong { fill: var(--ink); font-weight: 600; }
+  svg .val { fill: var(--ink); font: 600 11px var(--sans); }
+  svg .day { fill: var(--c-day); }
+  svg .emptyday { fill: none; stroke: var(--ink-3); stroke-width: 1; }
+  svg .hit { fill: transparent; }
+  svg .hit:hover { fill: rgba(0,194,168,0.10); }
+  svg .mk-m { fill: var(--c-meal); }
+  svg .mk-t { fill: none; stroke: var(--c-meal); stroke-width: 1.1; }
+  svg .mk-v { fill: var(--c-symptom); }
+  svg .mk-s { fill: none; stroke: var(--c-symptom); stroke-width: 1.2; }
+  svg .mk-d { stroke: var(--c-dose); stroke-width: 1.8; stroke-linecap: round; }
+  svg .trial { stroke: var(--c-trial); stroke-width: 1.2; }
+  svg .bar-m { fill: var(--c-meal); }
+  svg .bar-t { fill: var(--c-meal); fill-opacity: 0.35; }
+  .data-note { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 6px; }
+
+  .callout { background: var(--paper-2); border: 1px solid var(--rule-soft); border-left: 3px solid var(--amber-ink); border-radius: 12px; padding: 14px 16px; color: var(--ink-2); font-size: 15px; max-width: 80ch; }
+  .callout b { color: var(--ink); }
+  .found { display: grid; gap: 10px; }
+  .found .f { display: grid; grid-template-columns: 96px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--rule-soft); font-size: 14.5px; color: var(--ink-2); }
+  .found .f .id { font-family: var(--mono); font-size: 12px; color: var(--teal-ink); padding-top: 2px; }
+  .found .f b { color: var(--ink); }
+  @media (max-width: 560px) { .found .f { grid-template-columns: 1fr; gap: 4px; } }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">Brainstorm · round 1 · October 8, 2026 · CUL-1683</p>
+  <h1>Delight from the record</h1>
+  <p class="lede">You asked whether Culprit could hand owners something lighter: <strong>“your pet is really playful this week”</strong>, <strong>“your pet really likes this food”</strong>, nuggets they would never notice looking at a week at a time. The product team took it to Nyx’s own record.</p>
+  <p class="lede"><strong>The answer:</strong> delight that depends on how the pet is doing either lies or goes quiet for exactly the owners who need warmth. Delight the calendar or the record’s size schedules is true however she is doing. Build that kind first, in the app, and put a “has died” state underneath it before any of it ships.</p>
+  <div class="meta">
+    <span><b>8</b> lenses</span><span><b>80</b> raw ideas</span><span><b>9</b> on the shortlist</span>
+    <span><b>14</b> never</span><span><b>11</b> decisions for you</span><span><b>7</b> issues filed</span>
+    <span>record: <b>Nyx</b>, May 14 to Oct 7, read-only</span>
+  </div>
+</header>
+
+<!-- ============================================================ 1 -->
+<section class="section">
+  <h2>Two kinds of delight, and only one is honest for a sick pet</h2>
+  <p class="sub">Nyx is on day 75 of 84 of a rabbit elimination trial with ten vomits in September. Anything gated on her being well would almost never reach her owner. Anything the calendar schedules reaches every owner, and says nothing about her health.</p>
+  <div class="thesis">
+    <div class="no">
+      <div class="verdict-line">Depends on how she is doing</div>
+      <h3>Playful · likes · a quiet week</h3>
+      <ul>
+        <li>Ungated, it asserts wellness the record cannot see.</li>
+        <li>Gated correctly, it is silent for the wedge owner, so its arrival starts to mean “she’s fine”.</li>
+        <li>Lives in the app at most, as the owner’s own dated words, beside the concern words.</li>
+      </ul>
+    </div>
+    <div class="yes">
+      <div class="verdict-line">Scheduled by the calendar or the record’s size</div>
+      <h3>Her birthday · the record’s age · day 84 · a finish rate with its denominator · the household’s rhythm, drawn</h3>
+      <ul>
+        <li>True however she is doing, so it can be light without being a verdict.</li>
+        <li>Renders the same on a bad day as a good one, below any safety card.</li>
+        <li>Spoken in the owner’s own nouns, not a cuter voice.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 2 -->
+<section class="section">
+  <h2>Your two examples, tested on Nyx’s record</h2>
+  <p class="sub">Both fail as written. Their honest versions are better, and one of them already ships.</p>
+
+  <div class="plate">
+    <div>
+      <p class="frame-label"><span class="no">Never</span> · the push as written</p>
+      <div class="mini-lock struck">
+        <div class="clock">9:00</div>
+        <div class="date">Sunday, September 27</div>
+        <div class="notif">
+          <div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div>
+          <div class="ntitle">Nyx this week</div>
+          <div class="nbody">Nyx has been really playful this week.</div>
+        </div>
+        <span class="stamp">would have fired over this</span>
+      </div>
+      <p class="frame-label" style="margin-top:18px"><b>Honest</b> · the recap spine for Sep 25, evening rows</p>
+      <div class="night">
+        <div class="n-eb">Today</div>
+        <div class="n-date">Friday, September 25</div>
+        <div class="n-card">
+          <div class="spine-row"><span class="t">7:06 pm</span><span class="dot rose"></span><span>Vomit</span></div>
+          <div class="spine-row"><span class="t">8:00 pm</span><span class="dot look"></span><span>Noticed <span class="sub">· Played</span></span></div>
+          <div class="spine-row"><span class="t">8:12 pm</span><span class="dot rose"></span><span>Vomit</span></div>
+          <div class="spine-row"><span class="t">8:18 pm</span><span class="dot look"></span><span>Noticed <span class="sub">· Hunched or tucked up</span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note-col">
+      <h3>“Your pet is really playful this week”</h3>
+      <p><b>The app receives no behavioural cues.</b> All it has is what you tap in Noticed: 8 looks since Sep 22. Five say nothing unusual. <i>Played</i> appears on Sep 25 and Sep 26.</p>
+      <p><b>The week that push would have celebrated holds this evening:</b> a vomit at 7:06, <i>Played</i> at 8:00, a second vomit at 8:12, <i>Hunched or tucked up</i> at 8:18. A pain posture between two vomits, in a cat on a GI trial.</p>
+      <ul class="tight">
+        <li><b>“Really”</b> claims an intensity against a baseline the app never computes.</li>
+        <li><b>“Playful”</b> slides from an activity into a mood; <code>lively</code>’s never-say column forbids exactly that (“happy, a good day, better, herself again”).</li>
+        <li><b>On a lock screen</b> it asserts record contents (G1) and a state (NV-G8 rung 4).</li>
+        <li><b>Sent only to healthy pets</b>, it becomes delight that switches on with health, so its arrival teaches “she’s fine”. CUL-914 measured lines of this kind printing on 22 to 77% of pure-noise records.</li>
+      </ul>
+      <p><b>Honest version:</b> your own words at their hour, concern first, in the app (the recap spine above, which needs CUL-883 to name look words). Patterns already counts them once there are 14 answered days. If you want more play in the record, the lever is the opt-in evening look (CUL-842), not a summary of it.</p>
+      <div class="chips"><span class="chip rose">push: never</span><span class="chip teal">in the app: her words, symptom first</span><span class="chip">S</span></div>
+    </div>
+  </div>
+
+  <div class="plate">
+    <div>
+      <p class="frame-label"><span class="no">Shipped today</span> · the Foods shelf</p>
+      <div class="dayframe">
+        <div class="hd">Foods</div>
+        <div class="card">
+          <div class="row-title">Royal Canin Selected Protein PR, Dry</div>
+          <div class="row-sub flag">Finished 29 of 29 meals</div>
+        </div>
+        <p class="muted" style="margin:8px 2px 0">Logged 264 times since Jul 26. The 29 are only the rated ones. The newest rating is from Aug 12.</p>
+      </div>
+      <p class="frame-label" style="margin-top:18px"><b>Honest</b> · shelf + food detail</p>
+      <div class="dayframe">
+        <div class="card">
+          <div class="row-title">Royal Canin Selected Protein PR, Dry</div>
+          <div class="row-sub">Finished 29 of 29 rated meals</div>
+        </div>
+        <div class="card">
+          <div class="row-sub">You rated 29 of the 264 Royal Canin Selected Protein PR Dry meals logged since Jul 26. All 29 were Most or All (28 All, 1 Most). Newest rating Aug 12.</div>
+        </div>
+      </div>
+    </div>
+    <div class="note-col">
+      <h3>“Your pet really likes this food”</h3>
+      <p><b>Never “likes”.</b> Preference is a rate over many meals, and “likes” is a state of mind the record cannot see. Intake decline is often a disease signal, so the house rule is that only the positive, multi-sample signal may be said at all.</p>
+      <ul class="tight">
+        <li><b>The perfect finish records are the chicken treats the trial removed:</b> Greenies 70 of 70, rotisserie chicken 11 of 11. Treats sit at a ceiling the code already refuses to call loved.</li>
+        <li><b>The shelf already overclaims.</b> “Finished 29 of 29 meals” sits on a food logged 264 times, from ratings that stopped Aug 12. Filed as CUL-1685.</li>
+        <li><b>“Finished” counts Most</b>, so “finished all 29” would be false in your own words (28 All, 1 Most).</li>
+        <li><b>The wet trial food</b> (13 rated, none All) invites “not a fan”. It gets no taste line, anywhere.</li>
+      </ul>
+      <p><b>Honest version:</b> “finished, out of the meals you rated”, with the unrated count and the newest rating date, on meal foods only, in the app.</p>
+      <div class="chips"><span class="chip rose">“likes”: never</span><span class="chip teal">finish line with denominator</span><span class="chip">S</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 3 -->
+<section class="section">
+  <h2>What Nyx’s record holds that a week at a time hides</h2>
+  <p class="sub">Mined read-only from your account, then verified against the database by a second pass. Three corrections from that pass are marked.</p>
+  <div class="tbl-wrap">
+    <table class="t">
+      <thead><tr><th>Status</th><th>The nugget</th><th>How it may be said</th></tr></thead>
+      <tbody>
+        <tr><td class="st say">Say it</td><td>Nyx turned 3 on Sep 1. Her birth date is stored at exact precision. It was trial day 38 and nothing marked it.</td><td>“Nyx is 3 today.” Next year, “Nyx turns 4 today.” Only once a “has died” state exists (CUL-1684).</td></tr>
+        <tr><td class="st say">Say it</td><td>The record turns 150 days old on Sat Oct 10 and six months old on Nov 14.</td><td>“Nyx’s record is 150 days old today. It starts on May 14.” Dates and totals, never a ratio of logged days.</td></tr>
+        <tr><td class="st care">Carefully</td><td>Royal Canin SP PR Dry: 264 logs, 29 rated, 28 All and 1 Most. Newest rating Aug 12.</td><td>“You rated 29 of the 264 … All 29 were Most or All. Newest rating Aug 12.”</td></tr>
+        <tr><td class="st care">Carefully</td><td><b>Corrected.</b> Rabbit enters her record on May 23 (Rayne rabbit treats), two months before her rabbit trial: 12 entries across five rabbit foods before Jul 26.</td><td>For her vet, on the report’s trial block, signed by Dr. Chen. Never on a light surface, never “the trial is ruined”.</td></tr>
+        <tr><td class="st care">Carefully</td><td><b>Corrected.</b> 527 treat entries before the trial, nearly all chicken. Greenies Smartbites alone: 110.</td><td>Only as previous diet history behind Get ready, near the end of the trial. Never as trivia while elimination runs.</td></tr>
+        <tr><td class="st care">Carefully</td><td>Day 84 is Sat Oct 17. The vet moved the target from 56 to 84 days on Sep 18, which was trial day 55.</td><td>“Today is day 84 of 84, the length your vet set on September 18. Keep Nyx on her trial food until you’ve talked with your vet.”</td></tr>
+        <tr><td class="st care">Carefully</td><td>One weight in five months: 3.73 kg on Sep 16. June’s 4.4 kg was overwritten and is in no table.</td><td>“A weigh in before Saturday gives her vet a second point.” Never “she lost about 15%”.</td></tr>
+        <tr><td class="st care">Carefully</td><td>The 1,000th meal or treat entry landed on Oct 3 (verified).</td><td>“Nyx’s record now holds 1,000 meal and treat entries. The first is from May 14.” Once, no badge. The red teams split on this.</td></tr>
+        <tr><td class="st care">Carefully</td><td><b>Corrected.</b> Meal and treat entries peak at 6 am, 5 pm and 9 pm, Central time (the team had assumed Eastern).</td><td>“Most of Nyx’s meal entries are logged around 6 in the morning and between 5 and 10 at night.” Always “logged”, never “eats”.</td></tr>
+        <tr><td class="st care">Carefully</td><td>Every one of the 49 photos in her record is on a vomit. No picture of her being herself exists.</td><td>Beside a portrait door, once a private photo class exists (DB-9).</td></tr>
+        <tr><td class="st care">Carefully</td><td>Sep 25 holds Played and Hunched or tucked up, between two vomits.</td><td>Her words at their hour, symptom first, in the app.</td></tr>
+        <tr><td class="st never">Never</td><td>October has no vomit in its first 7 days.</td><td>At September’s rate a vomit-free week turns up by chance about one week in ten. Nine days before day 84 it reads as “the diet worked”.</td></tr>
+        <tr><td class="st never">Never</td><td>The last chicken treat entry is dated Jul 24.</td><td>Its interest is what it implies did not happen. An absence claim in a date’s clothing.</td></tr>
+        <tr><td class="st never">Never</td><td>Meal entries fell from 301 in July to 142 in September.</td><td>The treats left with the trial. This is logging, not appetite.</td></tr>
+        <tr><td class="st never">Never</td><td>The wet trial food: 13 rated, none All.</td><td>No taste line. If anything: “Five rated wet meals would let her vet see how much of the wet Nyx eats.”</td></tr>
+        <tr><td class="st never">Team only</td><td>313 of 355 trial meals are unrated, and one rated Most or All quiets the vomit read’s feline intake arm.</td><td>Nothing to the owner. Investigate whether her reads escalate on rating gaps (CUL-1690).</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 4 -->
+<section class="section">
+  <h2>Two drawings at real density</h2>
+  <p class="sub">Principle 8 says the data is the delight. These are the two shapes no week-to-week view can show, drawn from Nyx’s actual entries. Hover any column or bar for its counts.</p>
+
+  <div class="chart-card">
+    <h3>Nyx’s record, drawn</h3>
+    <p class="cap">Every day since May 14, each entry at the hour it was logged. The chicken-treat era, the switch to rabbit on Jul 26, and the household’s morning and evening stripes, in one picture.</p>
+    <div class="legend" aria-hidden="true">
+      <span><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="3.2" fill="var(--c-meal)"/></svg>Meal</span>
+      <span><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="3" fill="none" stroke="var(--c-meal)" stroke-width="1.4"/></svg>Treat</span>
+      <span><svg viewBox="0 0 14 14"><path d="M7 2L11 7L7 12L3 7Z" fill="var(--c-symptom)"/></svg>Vomit</span>
+      <span><svg viewBox="0 0 14 14"><path d="M7 3L10.5 7L7 11L3.5 7Z" fill="none" stroke="var(--c-symptom)" stroke-width="1.4"/></svg>Cough, sneeze, itch, lethargy</span>
+      <span><svg viewBox="0 0 14 14"><line x1="3" x2="11" y1="7" y2="7" stroke="var(--c-dose)" stroke-width="2.2" stroke-linecap="round"/></svg>Dose</span>
+      <span><svg viewBox="0 0 14 14"><rect x="3" y="1" width="8" height="12" fill="none" stroke="var(--ink-3)"/></svg>No entry</span>
+    </div>
+    <div class="chart-scroll"><svg class="rec" viewBox="0 0 809 292" width="809" height="292" role="img" aria-labelledby="rec-t rec-d">
+<title id="rec-t">Nyx’s record, May 14 to October 7, every entry at its logged hour</title>
+<desc id="rec-d">Each column is one day; each mark sits at the local hour it was logged (America/Chicago). Filled dots are meals, open rings are treats, filled rose diamonds are vomits, open rose diamonds are cough, sneeze, itch and lethargy entries, slate ticks are doses. The trial diet began July 26. September 20 has no entry.</desc>
+<line class="grid" x1="62" x2="797" y1="30.0" y2="30.0"/>
+<text class="ax" x="56" y="33.5" text-anchor="end">midnight</text>
+<line class="grid" x1="62" x2="797" y1="87.0" y2="87.0"/>
+<text class="ax" x="56" y="90.5" text-anchor="end">6 am</text>
+<line class="grid" x1="62" x2="797" y1="144.0" y2="144.0"/>
+<text class="ax" x="56" y="147.5" text-anchor="end">noon</text>
+<line class="grid" x1="62" x2="797" y1="201.0" y2="201.0"/>
+<text class="ax" x="56" y="204.5" text-anchor="end">6 pm</text>
+<line class="grid" x1="62" x2="797" y1="258.0" y2="258.0"/>
+<text class="ax" x="56" y="261.5" text-anchor="end">midnight</text>
+<rect class="day" x="62.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M64.5 88.8L67.1 91.8L64.5 94.8L61.9 91.8Z"/>
+<rect class="hit" x="62" y="30" width="5" height="228.0"><title>May 14 · 1 vomit</title></rect>
+<rect class="day" x="67.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M69.5 95.4L72.1 98.4L69.5 101.4L66.9 98.4Z"/>
+<path class="mk-v" d="M69.5 95.4L72.1 98.4L69.5 101.4L66.9 98.4Z"/>
+<rect class="hit" x="67" y="30" width="5" height="228.0"><title>May 15 · 2 vomits</title></rect>
+<rect class="day" x="72.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="74.5" cy="213.3" r="1.5"/>
+<rect class="hit" x="72" y="30" width="5" height="228.0"><title>May 16 · 1 treat</title></rect>
+<rect class="day" x="77.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="79.5" cy="76.6" r="1.5"/>
+<circle class="mk-m" cx="79.5" cy="81.3" r="1.7"/>
+<circle class="mk-t" cx="79.5" cy="122.1" r="1.5"/>
+<circle class="mk-t" cx="79.5" cy="130.7" r="1.5"/>
+<circle class="mk-t" cx="79.5" cy="162.1" r="1.5"/>
+<circle class="mk-t" cx="79.5" cy="183.0" r="1.5"/>
+<circle class="mk-t" cx="79.5" cy="196.2" r="1.5"/>
+<circle class="mk-t" cx="79.5" cy="216.2" r="1.5"/>
+<circle class="mk-t" cx="79.5" cy="220.0" r="1.5"/>
+<rect class="hit" x="77" y="30" width="5" height="228.0"><title>May 17 · 1 meal, 8 treats</title></rect>
+<rect class="day" x="82.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M84.5 57.4L87.1 60.4L84.5 63.4L81.9 60.4Z"/>
+<circle class="mk-m" cx="84.5" cy="65.2" r="1.7"/>
+<circle class="mk-t" cx="84.5" cy="89.8" r="1.5"/>
+<circle class="mk-m" cx="84.5" cy="91.8" r="1.7"/>
+<circle class="mk-t" cx="84.5" cy="135.4" r="1.5"/>
+<circle class="mk-t" cx="84.5" cy="163.0" r="1.5"/>
+<path class="mk-v" d="M84.5 179.0L87.1 182.0L84.5 185.0L81.9 182.0Z"/>
+<circle class="mk-m" cx="84.5" cy="183.0" r="1.7"/>
+<circle class="mk-t" cx="84.5" cy="208.6" r="1.5"/>
+<circle class="mk-t" cx="84.5" cy="214.3" r="1.5"/>
+<circle class="mk-t" cx="84.5" cy="229.5" r="1.5"/>
+<circle class="mk-t" cx="84.5" cy="234.2" r="1.5"/>
+<rect class="hit" x="82" y="30" width="5" height="228.0"><title>May 18 · 3 meals, 7 treats, 2 vomits</title></rect>
+<rect class="day" x="87.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="89.5" cy="33.8" r="1.5"/>
+<circle class="mk-t" cx="89.5" cy="70.8" r="1.5"/>
+<path class="mk-v" d="M89.5 67.8L92.1 70.8L89.5 73.8L86.9 70.8Z"/>
+<circle class="mk-m" cx="89.5" cy="89.8" r="1.7"/>
+<circle class="mk-t" cx="89.5" cy="89.8" r="1.5"/>
+<circle class="mk-t" cx="89.5" cy="172.5" r="1.5"/>
+<circle class="mk-t" cx="89.5" cy="189.6" r="1.5"/>
+<circle class="mk-t" cx="89.5" cy="194.3" r="1.5"/>
+<circle class="mk-m" cx="89.5" cy="198.2" r="1.7"/>
+<rect class="hit" x="87" y="30" width="5" height="228.0"><title>May 19 · 2 meals, 6 treats, 1 vomit</title></rect>
+<rect class="day" x="92.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="94.5" cy="30.9" r="1.5"/>
+<circle class="mk-t" cx="94.5" cy="35.7" r="1.5"/>
+<circle class="mk-t" cx="94.5" cy="38.5" r="1.5"/>
+<circle class="mk-t" cx="94.5" cy="42.4" r="1.5"/>
+<circle class="mk-t" cx="94.5" cy="99.3" r="1.5"/>
+<circle class="mk-m" cx="94.5" cy="130.7" r="1.7"/>
+<circle class="mk-t" cx="94.5" cy="183.0" r="1.5"/>
+<circle class="mk-t" cx="94.5" cy="195.3" r="1.5"/>
+<circle class="mk-t" cx="94.5" cy="200.0" r="1.5"/>
+<path class="mk-v" d="M94.5 207.5L97.1 210.5L94.5 213.5L91.9 210.5Z"/>
+<circle class="mk-t" cx="94.5" cy="236.2" r="1.5"/>
+<rect class="hit" x="92" y="30" width="5" height="228.0"><title>May 20 · 1 meal, 9 treats, 1 vomit</title></rect>
+<rect class="day" x="97.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="99.5" cy="35.7" r="1.5"/>
+<circle class="mk-t" cx="99.5" cy="80.3" r="1.5"/>
+<circle class="mk-m" cx="99.5" cy="96.5" r="1.7"/>
+<circle class="mk-t" cx="99.5" cy="138.3" r="1.5"/>
+<circle class="mk-t" cx="99.5" cy="182.0" r="1.5"/>
+<circle class="mk-t" cx="99.5" cy="196.2" r="1.5"/>
+<circle class="mk-t" cx="99.5" cy="208.6" r="1.5"/>
+<circle class="mk-t" cx="99.5" cy="218.1" r="1.5"/>
+<rect class="hit" x="97" y="30" width="5" height="228.0"><title>May 21 · 1 meal, 7 treats</title></rect>
+<rect class="day" x="102.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="104.5" cy="57.5" r="1.5"/>
+<circle class="mk-m" cx="104.5" cy="91.8" r="1.7"/>
+<circle class="mk-m" cx="104.5" cy="93.7" r="1.7"/>
+<circle class="mk-m" cx="104.5" cy="133.6" r="1.7"/>
+<circle class="mk-t" cx="104.5" cy="148.8" r="1.5"/>
+<circle class="mk-t" cx="104.5" cy="181.1" r="1.5"/>
+<circle class="mk-t" cx="104.5" cy="189.6" r="1.5"/>
+<circle class="mk-t" cx="104.5" cy="217.2" r="1.5"/>
+<circle class="mk-t" cx="104.5" cy="223.8" r="1.5"/>
+<circle class="mk-t" cx="104.5" cy="248.5" r="1.5"/>
+<circle class="mk-t" cx="104.5" cy="254.2" r="1.5"/>
+<rect class="hit" x="102" y="30" width="5" height="228.0"><title>May 22 · 3 meals, 8 treats</title></rect>
+<rect class="day" x="107.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="109.5" cy="91.8" r="1.7"/>
+<circle class="mk-m" cx="109.5" cy="91.8" r="1.7"/>
+<circle class="mk-t" cx="109.5" cy="111.7" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="138.3" r="1.5"/>
+<circle class="mk-m" cx="109.5" cy="146.9" r="1.7"/>
+<circle class="mk-t" cx="109.5" cy="147.8" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="156.4" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="181.1" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="198.2" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="203.8" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="237.1" r="1.5"/>
+<circle class="mk-t" cx="109.5" cy="240.9" r="1.5"/>
+<rect class="hit" x="107" y="30" width="5" height="228.0"><title>May 23 · 3 meals, 9 treats</title></rect>
+<rect class="day" x="112.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="114.5" cy="38.5" r="1.5"/>
+<circle class="mk-t" cx="114.5" cy="75.6" r="1.5"/>
+<circle class="mk-m" cx="114.5" cy="82.2" r="1.7"/>
+<circle class="mk-t" cx="114.5" cy="109.8" r="1.5"/>
+<circle class="mk-t" cx="114.5" cy="130.7" r="1.5"/>
+<circle class="mk-t" cx="114.5" cy="137.4" r="1.5"/>
+<circle class="mk-t" cx="114.5" cy="191.5" r="1.5"/>
+<circle class="mk-t" cx="114.5" cy="197.2" r="1.5"/>
+<rect class="hit" x="112" y="30" width="5" height="228.0"><title>May 24 · 1 meal, 7 treats</title></rect>
+<rect class="day" x="117.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M119.5 29.9L122.1 32.9L119.5 35.9L116.9 32.9Z"/>
+<circle class="mk-t" cx="119.5" cy="35.7" r="1.5"/>
+<circle class="mk-t" cx="119.5" cy="52.8" r="1.5"/>
+<circle class="mk-t" cx="119.5" cy="82.2" r="1.5"/>
+<path class="mk-v" d="M119.5 79.2L122.1 82.2L119.5 85.2L116.9 82.2Z"/>
+<circle class="mk-m" cx="119.5" cy="136.4" r="1.7"/>
+<circle class="mk-t" cx="119.5" cy="178.2" r="1.5"/>
+<circle class="mk-t" cx="119.5" cy="224.8" r="1.5"/>
+<circle class="mk-t" cx="119.5" cy="236.2" r="1.5"/>
+<rect class="hit" x="117" y="30" width="5" height="228.0"><title>May 25 · 1 meal, 6 treats, 2 vomits</title></rect>
+<rect class="day" x="122.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="124.5" cy="30.9" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="69.9" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="83.2" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="87.0" r="1.5"/>
+<circle class="mk-m" cx="124.5" cy="87.9" r="1.7"/>
+<circle class="mk-t" cx="124.5" cy="163.0" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="197.2" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="199.1" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="202.9" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="212.4" r="1.5"/>
+<circle class="mk-t" cx="124.5" cy="232.3" r="1.5"/>
+<rect class="hit" x="122" y="30" width="5" height="228.0"><title>May 26 · 1 meal, 10 treats</title></rect>
+<rect class="day" x="127.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="129.5" cy="51.8" r="1.5"/>
+<circle class="mk-m" cx="129.5" cy="88.9" r="1.7"/>
+<circle class="mk-t" cx="129.5" cy="89.8" r="1.5"/>
+<circle class="mk-t" cx="129.5" cy="202.0" r="1.5"/>
+<circle class="mk-m" cx="129.5" cy="202.9" r="1.7"/>
+<circle class="mk-t" cx="129.5" cy="224.8" r="1.5"/>
+<circle class="mk-t" cx="129.5" cy="225.7" r="1.5"/>
+<rect class="hit" x="127" y="30" width="5" height="228.0"><title>May 27 · 2 meals, 5 treats</title></rect>
+<rect class="day" x="132.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="134.5" cy="50.0" r="1.5"/>
+<circle class="mk-t" cx="134.5" cy="91.8" r="1.5"/>
+<circle class="mk-m" cx="134.5" cy="97.5" r="1.7"/>
+<circle class="mk-t" cx="134.5" cy="138.3" r="1.5"/>
+<circle class="mk-t" cx="134.5" cy="185.8" r="1.5"/>
+<circle class="mk-t" cx="134.5" cy="186.8" r="1.5"/>
+<circle class="mk-t" cx="134.5" cy="216.2" r="1.5"/>
+<circle class="mk-m" cx="134.5" cy="226.7" r="1.7"/>
+<circle class="mk-t" cx="134.5" cy="247.5" r="1.5"/>
+<rect class="hit" x="132" y="30" width="5" height="228.0"><title>May 28 · 2 meals, 7 treats</title></rect>
+<rect class="day" x="137.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="139.5" cy="87.0" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="99.3" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="104.1" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="184.8" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="191.5" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="195.3" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="210.5" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="223.8" r="1.5"/>
+<circle class="mk-t" cx="139.5" cy="225.7" r="1.5"/>
+<rect class="hit" x="137" y="30" width="5" height="228.0"><title>May 29 · 9 treats</title></rect>
+<rect class="day" x="142.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M144.5 65.0L147.1 68.0L144.5 71.0L141.9 68.0Z"/>
+<circle class="mk-t" cx="144.5" cy="74.7" r="1.5"/>
+<path class="mk-v" d="M144.5 97.3L147.1 100.3L144.5 103.3L141.9 100.3Z"/>
+<circle class="mk-m" cx="144.5" cy="122.1" r="1.7"/>
+<circle class="mk-t" cx="144.5" cy="148.8" r="1.5"/>
+<circle class="mk-t" cx="144.5" cy="155.4" r="1.5"/>
+<circle class="mk-t" cx="144.5" cy="162.1" r="1.5"/>
+<circle class="mk-t" cx="144.5" cy="193.4" r="1.5"/>
+<circle class="mk-t" cx="144.5" cy="202.0" r="1.5"/>
+<circle class="mk-t" cx="144.5" cy="213.3" r="1.5"/>
+<circle class="mk-m" cx="144.5" cy="219.0" r="1.7"/>
+<rect class="hit" x="142" y="30" width="5" height="228.0"><title>May 30 · 2 meals, 7 treats, 2 vomits</title></rect>
+<rect class="day" x="147.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="149.5" cy="50.9" r="1.5"/>
+<circle class="mk-t" cx="149.5" cy="68.0" r="1.5"/>
+<circle class="mk-t" cx="149.5" cy="108.9" r="1.5"/>
+<rect class="hit" x="147" y="30" width="5" height="228.0"><title>May 31 · 3 treats</title></rect>
+<rect class="day" x="152.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="154.5" cy="54.7" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="90.8" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="154.4" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="195.3" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="199.1" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="214.3" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="227.6" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="234.2" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="237.1" r="1.5"/>
+<circle class="mk-t" cx="154.5" cy="255.2" r="1.5"/>
+<rect class="hit" x="152" y="30" width="5" height="228.0"><title>Jun 1 · 10 treats</title></rect>
+<rect class="day" x="157.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="159.5" cy="93.7" r="1.5"/>
+<circle class="mk-t" cx="159.5" cy="93.7" r="1.5"/>
+<circle class="mk-t" cx="159.5" cy="202.0" r="1.5"/>
+<circle class="mk-t" cx="159.5" cy="202.9" r="1.5"/>
+<circle class="mk-t" cx="159.5" cy="217.2" r="1.5"/>
+<circle class="mk-t" cx="159.5" cy="238.0" r="1.5"/>
+<circle class="mk-t" cx="159.5" cy="248.5" r="1.5"/>
+<rect class="hit" x="157" y="30" width="5" height="228.0"><title>Jun 2 · 7 treats</title></rect>
+<rect class="day" x="162.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="164.5" cy="42.4" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="54.7" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="93.7" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="95.5" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="158.2" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="193.4" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="202.9" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="231.4" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="240.9" r="1.5"/>
+<circle class="mk-t" cx="164.5" cy="246.6" r="1.5"/>
+<rect class="hit" x="162" y="30" width="5" height="228.0"><title>Jun 3 · 10 treats</title></rect>
+<rect class="day" x="167.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="169.5" cy="59.5" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="95.5" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="97.5" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="130.7" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="133.6" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="186.8" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="189.6" r="1.5"/>
+<circle class="mk-t" cx="169.5" cy="225.7" r="1.5"/>
+<circle class="mk-m" cx="169.5" cy="237.1" r="1.7"/>
+<rect class="hit" x="167" y="30" width="5" height="228.0"><title>Jun 4 · 1 meal, 8 treats</title></rect>
+<rect class="day" x="172.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="174.5" cy="41.4" r="1.5"/>
+<circle class="mk-t" cx="174.5" cy="90.8" r="1.5"/>
+<circle class="mk-t" cx="174.5" cy="100.3" r="1.5"/>
+<path class="mk-v" d="M174.5 128.6L177.1 131.6L174.5 134.6L171.9 131.6Z"/>
+<circle class="mk-t" cx="174.5" cy="138.3" r="1.5"/>
+<circle class="mk-t" cx="174.5" cy="166.8" r="1.5"/>
+<circle class="mk-t" cx="174.5" cy="183.0" r="1.5"/>
+<circle class="mk-t" cx="174.5" cy="254.2" r="1.5"/>
+<rect class="hit" x="172" y="30" width="5" height="228.0"><title>Jun 5 · 7 treats, 1 vomit</title></rect>
+<rect class="day" x="177.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="179.5" cy="38.5" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="113.6" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="122.1" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="138.3" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="148.8" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="187.7" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="204.8" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="227.6" r="1.5"/>
+<circle class="mk-t" cx="179.5" cy="252.3" r="1.5"/>
+<rect class="hit" x="177" y="30" width="5" height="228.0"><title>Jun 6 · 9 treats</title></rect>
+<rect class="day" x="182.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="184.5" cy="73.7" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="113.6" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="125.0" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="134.5" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="144.9" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="170.6" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="188.7" r="1.5"/>
+<circle class="mk-m" cx="184.5" cy="194.3" r="1.7"/>
+<circle class="mk-t" cx="184.5" cy="221.0" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="233.3" r="1.5"/>
+<circle class="mk-t" cx="184.5" cy="247.5" r="1.5"/>
+<rect class="hit" x="182" y="30" width="5" height="228.0"><title>Jun 7 · 1 meal, 10 treats</title></rect>
+<rect class="day" x="187.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M189.5 58.3L192.1 61.3L189.5 64.3L186.9 61.3Z"/>
+<circle class="mk-t" cx="189.5" cy="68.0" r="1.5"/>
+<circle class="mk-t" cx="189.5" cy="93.7" r="1.5"/>
+<circle class="mk-t" cx="189.5" cy="94.6" r="1.5"/>
+<circle class="mk-t" cx="189.5" cy="202.9" r="1.5"/>
+<circle class="mk-t" cx="189.5" cy="215.2" r="1.5"/>
+<circle class="mk-t" cx="189.5" cy="220.0" r="1.5"/>
+<circle class="mk-t" cx="189.5" cy="246.6" r="1.5"/>
+<rect class="hit" x="187" y="30" width="5" height="228.0"><title>Jun 8 · 7 treats, 1 vomit</title></rect>
+<rect class="day" x="192.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="194.5" cy="42.4" r="1.5"/>
+<circle class="mk-t" cx="194.5" cy="91.8" r="1.5"/>
+<circle class="mk-t" cx="194.5" cy="132.6" r="1.5"/>
+<path class="mk-v" d="M194.5 131.5L197.1 134.5L194.5 137.5L191.9 134.5Z"/>
+<circle class="mk-t" cx="194.5" cy="192.5" r="1.5"/>
+<circle class="mk-t" cx="194.5" cy="196.2" r="1.5"/>
+<circle class="mk-t" cx="194.5" cy="205.8" r="1.5"/>
+<circle class="mk-m" cx="194.5" cy="220.0" r="1.7"/>
+<circle class="mk-t" cx="194.5" cy="233.3" r="1.5"/>
+<circle class="mk-t" cx="194.5" cy="251.3" r="1.5"/>
+<rect class="hit" x="192" y="30" width="5" height="228.0"><title>Jun 9 · 1 meal, 8 treats, 1 vomit</title></rect>
+<rect class="day" x="197.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="199.5" cy="58.5" r="1.5"/>
+<circle class="mk-t" cx="199.5" cy="91.8" r="1.5"/>
+<circle class="mk-t" cx="199.5" cy="92.7" r="1.5"/>
+<path class="mk-v" d="M199.5 90.7L202.1 93.7L199.5 96.7L196.9 93.7Z"/>
+<circle class="mk-t" cx="199.5" cy="169.7" r="1.5"/>
+<circle class="mk-t" cx="199.5" cy="190.5" r="1.5"/>
+<circle class="mk-m" cx="199.5" cy="195.3" r="1.7"/>
+<circle class="mk-t" cx="199.5" cy="201.0" r="1.5"/>
+<circle class="mk-t" cx="199.5" cy="238.0" r="1.5"/>
+<rect class="hit" x="197" y="30" width="5" height="228.0"><title>Jun 10 · 1 meal, 7 treats, 1 vomit</title></rect>
+<rect class="day" x="202.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="204.5" cy="45.2" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="77.5" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="96.5" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="115.5" r="1.5"/>
+<path class="mk-v" d="M204.5 150.5L207.1 153.5L204.5 156.5L201.9 153.5Z"/>
+<circle class="mk-t" cx="204.5" cy="153.5" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="185.8" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="194.3" r="1.5"/>
+<circle class="mk-m" cx="204.5" cy="217.2" r="1.7"/>
+<circle class="mk-t" cx="204.5" cy="219.0" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="233.3" r="1.5"/>
+<circle class="mk-t" cx="204.5" cy="252.3" r="1.5"/>
+<rect class="hit" x="202" y="30" width="5" height="228.0"><title>Jun 11 · 1 meal, 10 treats, 1 vomit</title></rect>
+<rect class="day" x="207.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="209.5" cy="78.4" r="1.5"/>
+<circle class="mk-t" cx="209.5" cy="97.5" r="1.5"/>
+<circle class="mk-t" cx="209.5" cy="130.7" r="1.5"/>
+<circle class="mk-t" cx="209.5" cy="180.1" r="1.5"/>
+<circle class="mk-m" cx="209.5" cy="196.2" r="1.7"/>
+<circle class="mk-t" cx="209.5" cy="237.1" r="1.5"/>
+<circle class="mk-t" cx="209.5" cy="241.8" r="1.5"/>
+<rect class="hit" x="207" y="30" width="5" height="228.0"><title>Jun 12 · 1 meal, 6 treats</title></rect>
+<rect class="day" x="212.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="214.5" cy="36.6" r="1.5"/>
+<circle class="mk-t" cx="214.5" cy="88.9" r="1.5"/>
+<circle class="mk-m" cx="214.5" cy="134.5" r="1.7"/>
+<circle class="mk-t" cx="214.5" cy="143.1" r="1.5"/>
+<circle class="mk-t" cx="214.5" cy="153.5" r="1.5"/>
+<circle class="mk-t" cx="214.5" cy="169.7" r="1.5"/>
+<circle class="mk-t" cx="214.5" cy="212.4" r="1.5"/>
+<circle class="mk-t" cx="214.5" cy="221.9" r="1.5"/>
+<circle class="mk-t" cx="214.5" cy="235.2" r="1.5"/>
+<rect class="hit" x="212" y="30" width="5" height="228.0"><title>Jun 13 · 1 meal, 8 treats</title></rect>
+<rect class="day" x="217.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="219.5" cy="42.4" r="1.5"/>
+<circle class="mk-t" cx="219.5" cy="87.9" r="1.5"/>
+<circle class="mk-m" cx="219.5" cy="128.8" r="1.7"/>
+<circle class="mk-t" cx="219.5" cy="166.8" r="1.5"/>
+<circle class="mk-t" cx="219.5" cy="176.3" r="1.5"/>
+<circle class="mk-t" cx="219.5" cy="195.3" r="1.5"/>
+<circle class="mk-m" cx="219.5" cy="224.8" r="1.7"/>
+<circle class="mk-t" cx="219.5" cy="240.0" r="1.5"/>
+<rect class="hit" x="217" y="30" width="5" height="228.0"><title>Jun 14 · 2 meals, 6 treats</title></rect>
+<rect class="day" x="222.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M224.5 74.5L227.1 77.5L224.5 80.5L221.9 77.5Z"/>
+<circle class="mk-t" cx="224.5" cy="89.8" r="1.5"/>
+<circle class="mk-t" cx="224.5" cy="139.2" r="1.5"/>
+<circle class="mk-t" cx="224.5" cy="190.5" r="1.5"/>
+<circle class="mk-t" cx="224.5" cy="199.1" r="1.5"/>
+<circle class="mk-m" cx="224.5" cy="208.6" r="1.7"/>
+<circle class="mk-t" cx="224.5" cy="226.7" r="1.5"/>
+<circle class="mk-t" cx="224.5" cy="232.3" r="1.5"/>
+<circle class="mk-t" cx="224.5" cy="241.8" r="1.5"/>
+<rect class="hit" x="222" y="30" width="5" height="228.0"><title>Jun 15 · 1 meal, 7 treats, 1 vomit</title></rect>
+<rect class="day" x="227.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="229.5" cy="55.7" r="1.5"/>
+<circle class="mk-m" cx="229.5" cy="89.8" r="1.7"/>
+<circle class="mk-t" cx="229.5" cy="93.7" r="1.5"/>
+<circle class="mk-t" cx="229.5" cy="94.6" r="1.5"/>
+<circle class="mk-t" cx="229.5" cy="132.6" r="1.5"/>
+<circle class="mk-t" cx="229.5" cy="147.8" r="1.5"/>
+<circle class="mk-t" cx="229.5" cy="173.4" r="1.5"/>
+<circle class="mk-t" cx="229.5" cy="183.9" r="1.5"/>
+<circle class="mk-t" cx="229.5" cy="197.2" r="1.5"/>
+<circle class="mk-m" cx="229.5" cy="206.7" r="1.7"/>
+<circle class="mk-t" cx="229.5" cy="231.4" r="1.5"/>
+<rect class="hit" x="227" y="30" width="5" height="228.0"><title>Jun 16 · 2 meals, 9 treats</title></rect>
+<rect class="day" x="232.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="234.5" cy="50.9" r="1.5"/>
+<circle class="mk-t" cx="234.5" cy="76.6" r="1.5"/>
+<circle class="mk-m" cx="234.5" cy="89.8" r="1.7"/>
+<circle class="mk-t" cx="234.5" cy="90.8" r="1.5"/>
+<circle class="mk-t" cx="234.5" cy="195.3" r="1.5"/>
+<circle class="mk-t" cx="234.5" cy="208.6" r="1.5"/>
+<circle class="mk-m" cx="234.5" cy="214.3" r="1.7"/>
+<circle class="mk-t" cx="234.5" cy="230.5" r="1.5"/>
+<rect class="hit" x="232" y="30" width="5" height="228.0"><title>Jun 17 · 2 meals, 6 treats</title></rect>
+<rect class="day" x="237.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="239.5" cy="57.5" r="1.5"/>
+<circle class="mk-t" cx="239.5" cy="88.9" r="1.5"/>
+<circle class="mk-t" cx="239.5" cy="91.8" r="1.5"/>
+<circle class="mk-m" cx="239.5" cy="96.5" r="1.7"/>
+<circle class="mk-t" cx="239.5" cy="147.8" r="1.5"/>
+<circle class="mk-t" cx="239.5" cy="182.0" r="1.5"/>
+<circle class="mk-m" cx="239.5" cy="215.2" r="1.7"/>
+<circle class="mk-t" cx="239.5" cy="236.2" r="1.5"/>
+<circle class="mk-t" cx="239.5" cy="243.8" r="1.5"/>
+<circle class="mk-t" cx="239.5" cy="252.3" r="1.5"/>
+<rect class="hit" x="237" y="30" width="5" height="228.0"><title>Jun 18 · 2 meals, 8 treats</title></rect>
+<rect class="day" x="242.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="244.5" cy="49.0" r="1.5"/>
+<circle class="mk-t" cx="244.5" cy="91.8" r="1.5"/>
+<circle class="mk-t" cx="244.5" cy="136.4" r="1.5"/>
+<circle class="mk-m" cx="244.5" cy="209.5" r="1.7"/>
+<rect class="hit" x="242" y="30" width="5" height="228.0"><title>Jun 19 · 1 meal, 3 treats</title></rect>
+<rect class="day" x="247.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="249.5" cy="95.5" r="1.5"/>
+<circle class="mk-t" cx="249.5" cy="106.0" r="1.5"/>
+<circle class="mk-t" cx="249.5" cy="108.9" r="1.5"/>
+<circle class="mk-t" cx="249.5" cy="163.0" r="1.5"/>
+<circle class="mk-t" cx="249.5" cy="206.7" r="1.5"/>
+<path class="mk-v" d="M249.5 222.7L252.1 225.7L249.5 228.7L246.9 225.7Z"/>
+<circle class="mk-t" cx="249.5" cy="248.5" r="1.5"/>
+<rect class="hit" x="247" y="30" width="5" height="228.0"><title>Jun 20 · 6 treats, 1 vomit</title></rect>
+<rect class="day" x="252.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="254.5" cy="51.8" r="1.5"/>
+<circle class="mk-m" cx="254.5" cy="91.8" r="1.7"/>
+<circle class="mk-t" cx="254.5" cy="122.1" r="1.5"/>
+<path class="mk-v" d="M254.5 189.5L257.1 192.5L254.5 195.5L251.9 192.5Z"/>
+<circle class="mk-t" cx="254.5" cy="197.2" r="1.5"/>
+<circle class="mk-t" cx="254.5" cy="229.5" r="1.5"/>
+<circle class="mk-t" cx="254.5" cy="240.0" r="1.5"/>
+<circle class="mk-t" cx="254.5" cy="251.3" r="1.5"/>
+<rect class="hit" x="252" y="30" width="5" height="228.0"><title>Jun 21 · 1 meal, 6 treats, 1 vomit</title></rect>
+<rect class="day" x="257.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="259.5" cy="50.0" r="1.5"/>
+<circle class="mk-t" cx="259.5" cy="88.9" r="1.5"/>
+<circle class="mk-m" cx="259.5" cy="91.8" r="1.7"/>
+<circle class="mk-t" cx="259.5" cy="144.0" r="1.5"/>
+<circle class="mk-t" cx="259.5" cy="190.5" r="1.5"/>
+<circle class="mk-m" cx="259.5" cy="205.8" r="1.7"/>
+<circle class="mk-t" cx="259.5" cy="208.6" r="1.5"/>
+<circle class="mk-t" cx="259.5" cy="223.8" r="1.5"/>
+<circle class="mk-t" cx="259.5" cy="240.0" r="1.5"/>
+<rect class="hit" x="257" y="30" width="5" height="228.0"><title>Jun 22 · 2 meals, 7 treats</title></rect>
+<rect class="day" x="262.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="264.5" cy="55.7" r="1.5"/>
+<circle class="mk-t" cx="264.5" cy="87.9" r="1.5"/>
+<circle class="mk-m" cx="264.5" cy="89.8" r="1.7"/>
+<circle class="mk-t" cx="264.5" cy="150.6" r="1.5"/>
+<circle class="mk-t" cx="264.5" cy="151.6" r="1.5"/>
+<circle class="mk-t" cx="264.5" cy="199.1" r="1.5"/>
+<circle class="mk-t" cx="264.5" cy="212.4" r="1.5"/>
+<circle class="mk-m" cx="264.5" cy="223.8" r="1.7"/>
+<circle class="mk-t" cx="264.5" cy="237.1" r="1.5"/>
+<circle class="mk-t" cx="264.5" cy="251.3" r="1.5"/>
+<circle class="mk-t" cx="264.5" cy="254.2" r="1.5"/>
+<rect class="hit" x="262" y="30" width="5" height="228.0"><title>Jun 23 · 2 meals, 9 treats</title></rect>
+<rect class="day" x="267.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M269.5 62.2L272.1 65.2L269.5 68.2L266.9 65.2Z"/>
+<circle class="mk-t" cx="269.5" cy="70.8" r="1.5"/>
+<circle class="mk-t" cx="269.5" cy="183.9" r="1.5"/>
+<circle class="mk-m" cx="269.5" cy="221.9" r="1.7"/>
+<circle class="mk-t" cx="269.5" cy="239.0" r="1.5"/>
+<rect class="hit" x="267" y="30" width="5" height="228.0"><title>Jun 24 · 1 meal, 3 treats, 1 vomit</title></rect>
+<rect class="day" x="272.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="274.5" cy="96.5" r="1.7"/>
+<circle class="mk-t" cx="274.5" cy="96.5" r="1.5"/>
+<path class="mk-v" d="M274.5 103.0L277.1 106.0L274.5 109.0L271.9 106.0Z"/>
+<circle class="mk-t" cx="274.5" cy="111.7" r="1.5"/>
+<circle class="mk-t" cx="274.5" cy="135.4" r="1.5"/>
+<circle class="mk-t" cx="274.5" cy="149.7" r="1.5"/>
+<circle class="mk-t" cx="274.5" cy="193.4" r="1.5"/>
+<circle class="mk-m" cx="274.5" cy="193.4" r="1.7"/>
+<circle class="mk-t" cx="274.5" cy="249.5" r="1.5"/>
+<rect class="hit" x="272" y="30" width="5" height="228.0"><title>Jun 25 · 2 meals, 6 treats, 1 vomit</title></rect>
+<rect class="day" x="277.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="279.5" cy="101.2" r="1.5"/>
+<circle class="mk-t" cx="279.5" cy="119.3" r="1.5"/>
+<circle class="mk-t" cx="279.5" cy="126.0" r="1.5"/>
+<circle class="mk-m" cx="279.5" cy="149.7" r="1.7"/>
+<circle class="mk-t" cx="279.5" cy="183.9" r="1.5"/>
+<circle class="mk-t" cx="279.5" cy="204.8" r="1.5"/>
+<circle class="mk-t" cx="279.5" cy="234.2" r="1.5"/>
+<circle class="mk-t" cx="279.5" cy="240.9" r="1.5"/>
+<circle class="mk-t" cx="279.5" cy="255.2" r="1.5"/>
+<rect class="hit" x="277" y="30" width="5" height="228.0"><title>Jun 26 · 1 meal, 8 treats</title></rect>
+<rect class="day" x="282.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="284.5" cy="96.5" r="1.5"/>
+<circle class="mk-m" cx="284.5" cy="97.5" r="1.7"/>
+<circle class="mk-t" cx="284.5" cy="145.9" r="1.5"/>
+<path class="mk-v" d="M284.5 152.4L287.1 155.4L284.5 158.4L281.9 155.4Z"/>
+<circle class="mk-t" cx="284.5" cy="195.3" r="1.5"/>
+<circle class="mk-t" cx="284.5" cy="209.5" r="1.5"/>
+<circle class="mk-t" cx="284.5" cy="236.2" r="1.5"/>
+<circle class="mk-m" cx="284.5" cy="244.7" r="1.7"/>
+<rect class="hit" x="282" y="30" width="5" height="228.0"><title>Jun 27 · 2 meals, 5 treats, 1 vomit</title></rect>
+<rect class="day" x="287.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="289.5" cy="106.0" r="1.5"/>
+<circle class="mk-t" cx="289.5" cy="128.8" r="1.5"/>
+<circle class="mk-t" cx="289.5" cy="129.8" r="1.5"/>
+<circle class="mk-t" cx="289.5" cy="219.0" r="1.5"/>
+<circle class="mk-m" cx="289.5" cy="220.0" r="1.7"/>
+<circle class="mk-t" cx="289.5" cy="222.8" r="1.5"/>
+<circle class="mk-t" cx="289.5" cy="235.2" r="1.5"/>
+<circle class="mk-t" cx="289.5" cy="245.7" r="1.5"/>
+<circle class="mk-t" cx="289.5" cy="257.9" r="1.5"/>
+<rect class="hit" x="287" y="30" width="5" height="228.0"><title>Jun 28 · 1 meal, 8 treats</title></rect>
+<rect class="day" x="292.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="294.5" cy="105.0" r="1.5"/>
+<path class="mk-v" d="M294.5 117.2L297.1 120.2L294.5 123.2L291.9 120.2Z"/>
+<circle class="mk-m" cx="294.5" cy="229.5" r="1.7"/>
+<circle class="mk-t" cx="294.5" cy="233.3" r="1.5"/>
+<circle class="mk-t" cx="294.5" cy="246.6" r="1.5"/>
+<circle class="mk-t" cx="294.5" cy="256.1" r="1.5"/>
+<rect class="hit" x="292" y="30" width="5" height="228.0"><title>Jun 29 · 1 meal, 4 treats, 1 vomit</title></rect>
+<rect class="day" x="297.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="299.5" cy="67.0" r="1.5"/>
+<circle class="mk-t" cx="299.5" cy="111.7" r="1.5"/>
+<circle class="mk-t" cx="299.5" cy="237.1" r="1.5"/>
+<circle class="mk-m" cx="299.5" cy="237.1" r="1.7"/>
+<circle class="mk-t" cx="299.5" cy="250.4" r="1.5"/>
+<rect class="hit" x="297" y="30" width="5" height="228.0"><title>Jun 30 · 1 meal, 4 treats</title></rect>
+<rect class="day" x="302.5" y="30" width="4" height="228.0"/>
+<path class="mk-s" d="M304.5 84.6L306.6 87.0L304.5 89.4L302.4 87.0Z"/>
+<circle class="mk-t" cx="304.5" cy="90.8" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="100.3" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="105.0" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="123.1" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="144.9" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="153.5" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="176.3" r="1.5"/>
+<path class="mk-s" d="M304.5 208.1L306.6 210.5L304.5 212.9L302.4 210.5Z"/>
+<circle class="mk-t" cx="304.5" cy="212.4" r="1.5"/>
+<line class="mk-d" x1="302.5" x2="306.5" y1="212.4" y2="212.4"/>
+<circle class="mk-t" cx="304.5" cy="233.3" r="1.5"/>
+<circle class="mk-t" cx="304.5" cy="248.5" r="1.5"/>
+<circle class="mk-m" cx="304.5" cy="248.5" r="1.7"/>
+<rect class="hit" x="302" y="30" width="5" height="228.0"><title>Jul 1 · 1 meal, 10 treats, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="307.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="309.5" cy="30.9" r="1.5"/>
+<circle class="mk-t" cx="309.5" cy="68.0" r="1.5"/>
+<circle class="mk-m" cx="309.5" cy="106.0" r="1.7"/>
+<circle class="mk-t" cx="309.5" cy="147.8" r="1.5"/>
+<circle class="mk-t" cx="309.5" cy="163.0" r="1.5"/>
+<circle class="mk-t" cx="309.5" cy="186.8" r="1.5"/>
+<circle class="mk-t" cx="309.5" cy="195.3" r="1.5"/>
+<circle class="mk-m" cx="309.5" cy="220.0" r="1.7"/>
+<circle class="mk-t" cx="309.5" cy="244.7" r="1.5"/>
+<circle class="mk-t" cx="309.5" cy="251.3" r="1.5"/>
+<circle class="mk-t" cx="309.5" cy="255.2" r="1.5"/>
+<rect class="hit" x="307" y="30" width="5" height="228.0"><title>Jul 2 · 2 meals, 9 treats</title></rect>
+<rect class="day" x="312.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="314.5" cy="55.7" r="1.5"/>
+<circle class="mk-m" cx="314.5" cy="68.0" r="1.7"/>
+<circle class="mk-t" cx="314.5" cy="78.4" r="1.5"/>
+<circle class="mk-t" cx="314.5" cy="126.9" r="1.5"/>
+<circle class="mk-t" cx="314.5" cy="181.1" r="1.5"/>
+<path class="mk-s" d="M314.5 213.8L316.6 216.2L314.5 218.6L312.4 216.2Z"/>
+<circle class="mk-t" cx="314.5" cy="229.5" r="1.5"/>
+<circle class="mk-m" cx="314.5" cy="231.4" r="1.7"/>
+<circle class="mk-t" cx="314.5" cy="231.4" r="1.5"/>
+<circle class="mk-t" cx="314.5" cy="248.5" r="1.5"/>
+<rect class="hit" x="312" y="30" width="5" height="228.0"><title>Jul 3 · 2 meals, 7 treats, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="317.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="319.5" cy="35.7" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="61.3" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="64.2" r="1.5"/>
+<circle class="mk-m" cx="319.5" cy="110.8" r="1.7"/>
+<circle class="mk-t" cx="319.5" cy="127.9" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="144.9" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="161.1" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="172.5" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="184.8" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="190.5" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="207.7" r="1.5"/>
+<circle class="mk-t" cx="319.5" cy="232.3" r="1.5"/>
+<path class="mk-v" d="M319.5 242.7L322.1 245.7L319.5 248.7L316.9 245.7Z"/>
+<circle class="mk-t" cx="319.5" cy="245.7" r="1.5"/>
+<path class="mk-v" d="M319.5 243.6L322.1 246.6L319.5 249.6L316.9 246.6Z"/>
+<rect class="hit" x="317" y="30" width="5" height="228.0"><title>Jul 4 · 1 meal, 12 treats, 2 vomits</title></rect>
+<rect class="day" x="322.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="324.5" cy="44.2" r="1.5"/>
+<circle class="mk-t" cx="324.5" cy="47.1" r="1.5"/>
+<path class="mk-v" d="M324.5 95.4L327.1 98.4L324.5 101.4L321.9 98.4Z"/>
+<circle class="mk-m" cx="324.5" cy="134.5" r="1.7"/>
+<circle class="mk-t" cx="324.5" cy="163.9" r="1.5"/>
+<circle class="mk-t" cx="324.5" cy="173.4" r="1.5"/>
+<circle class="mk-t" cx="324.5" cy="177.2" r="1.5"/>
+<circle class="mk-t" cx="324.5" cy="233.3" r="1.5"/>
+<circle class="mk-m" cx="324.5" cy="233.3" r="1.7"/>
+<circle class="mk-t" cx="324.5" cy="247.5" r="1.5"/>
+<rect class="hit" x="322" y="30" width="5" height="228.0"><title>Jul 5 · 2 meals, 7 treats, 1 vomit</title></rect>
+<rect class="day" x="327.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="329.5" cy="40.5" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="71.8" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="91.8" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="125.0" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="156.4" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="186.8" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="193.4" r="1.5"/>
+<path class="mk-s" d="M329.5 198.6L331.6 201.0L329.5 203.4L327.4 201.0Z"/>
+<circle class="mk-t" cx="329.5" cy="202.0" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="207.7" r="1.5"/>
+<circle class="mk-m" cx="329.5" cy="211.5" r="1.7"/>
+<circle class="mk-t" cx="329.5" cy="231.4" r="1.5"/>
+<circle class="mk-t" cx="329.5" cy="238.0" r="1.5"/>
+<rect class="hit" x="327" y="30" width="5" height="228.0"><title>Jul 6 · 1 meal, 11 treats, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="332.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="334.5" cy="35.7" r="1.5"/>
+<circle class="mk-t" cx="334.5" cy="73.7" r="1.5"/>
+<circle class="mk-t" cx="334.5" cy="90.8" r="1.5"/>
+<circle class="mk-m" cx="334.5" cy="90.8" r="1.7"/>
+<circle class="mk-t" cx="334.5" cy="198.2" r="1.5"/>
+<path class="mk-s" d="M334.5 195.8L336.6 198.2L334.5 200.6L332.4 198.2Z"/>
+<circle class="mk-t" cx="334.5" cy="198.2" r="1.5"/>
+<line class="mk-d" x1="332.5" x2="336.5" y1="198.2" y2="198.2"/>
+<circle class="mk-t" cx="334.5" cy="215.2" r="1.5"/>
+<circle class="mk-t" cx="334.5" cy="218.1" r="1.5"/>
+<circle class="mk-m" cx="334.5" cy="224.8" r="1.7"/>
+<circle class="mk-t" cx="334.5" cy="255.2" r="1.5"/>
+<rect class="hit" x="332" y="30" width="5" height="228.0"><title>Jul 7 · 2 meals, 8 treats, 1 cough, sneeze, itch or lethargy entry, 1 dose</title></rect>
+<rect class="day" x="337.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="339.5" cy="52.8" r="1.5"/>
+<circle class="mk-m" cx="339.5" cy="77.5" r="1.7"/>
+<circle class="mk-t" cx="339.5" cy="90.8" r="1.5"/>
+<circle class="mk-t" cx="339.5" cy="195.3" r="1.5"/>
+<circle class="mk-m" cx="339.5" cy="196.2" r="1.7"/>
+<circle class="mk-t" cx="339.5" cy="200.0" r="1.5"/>
+<circle class="mk-t" cx="339.5" cy="207.7" r="1.5"/>
+<circle class="mk-m" cx="339.5" cy="232.3" r="1.7"/>
+<circle class="mk-t" cx="339.5" cy="237.1" r="1.5"/>
+<rect class="hit" x="337" y="30" width="5" height="228.0"><title>Jul 8 · 3 meals, 6 treats</title></rect>
+<rect class="day" x="342.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="344.5" cy="34.8" r="1.5"/>
+<circle class="mk-t" cx="344.5" cy="82.2" r="1.5"/>
+<circle class="mk-t" cx="344.5" cy="92.7" r="1.5"/>
+<circle class="mk-t" cx="344.5" cy="105.0" r="1.5"/>
+<circle class="mk-t" cx="344.5" cy="117.4" r="1.5"/>
+<circle class="mk-t" cx="344.5" cy="144.9" r="1.5"/>
+<circle class="mk-t" cx="344.5" cy="146.9" r="1.5"/>
+<path class="mk-v" d="M344.5 144.8L347.1 147.8L344.5 150.8L341.9 147.8Z"/>
+<circle class="mk-m" cx="344.5" cy="200.0" r="1.7"/>
+<circle class="mk-t" cx="344.5" cy="219.0" r="1.5"/>
+<circle class="mk-m" cx="344.5" cy="219.0" r="1.7"/>
+<circle class="mk-t" cx="344.5" cy="239.0" r="1.5"/>
+<rect class="hit" x="342" y="30" width="5" height="228.0"><title>Jul 9 · 2 meals, 9 treats, 1 vomit</title></rect>
+<rect class="day" x="347.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="349.5" cy="32.9" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="61.3" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="94.6" r="1.5"/>
+<circle class="mk-m" cx="349.5" cy="99.3" r="1.7"/>
+<circle class="mk-t" cx="349.5" cy="105.0" r="1.5"/>
+<path class="mk-s" d="M349.5 106.5L351.6 108.9L349.5 111.3L347.4 108.9Z"/>
+<circle class="mk-t" cx="349.5" cy="111.7" r="1.5"/>
+<line class="mk-d" x1="347.5" x2="351.5" y1="111.7" y2="111.7"/>
+<circle class="mk-t" cx="349.5" cy="126.9" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="128.8" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="163.0" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="190.5" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="197.2" r="1.5"/>
+<path class="mk-v" d="M349.5 196.1L352.1 199.1L349.5 202.1L346.9 199.1Z"/>
+<circle class="mk-t" cx="349.5" cy="244.7" r="1.5"/>
+<circle class="mk-t" cx="349.5" cy="246.6" r="1.5"/>
+<circle class="mk-m" cx="349.5" cy="248.5" r="1.7"/>
+<rect class="hit" x="347" y="30" width="5" height="228.0"><title>Jul 10 · 2 meals, 12 treats, 1 vomit, 1 cough, sneeze, itch or lethargy entry, 1 dose</title></rect>
+<rect class="day" x="352.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="354.5" cy="35.7" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="87.9" r="1.5"/>
+<line class="mk-d" x1="352.5" x2="356.5" y1="91.8" y2="91.8"/>
+<circle class="mk-t" cx="354.5" cy="91.8" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="142.1" r="1.5"/>
+<circle class="mk-m" cx="354.5" cy="147.8" r="1.7"/>
+<circle class="mk-t" cx="354.5" cy="167.8" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="173.4" r="1.5"/>
+<circle class="mk-m" cx="354.5" cy="174.4" r="1.7"/>
+<circle class="mk-t" cx="354.5" cy="212.4" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="220.0" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="228.5" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="237.1" r="1.5"/>
+<circle class="mk-t" cx="354.5" cy="248.5" r="1.5"/>
+<rect class="hit" x="352" y="30" width="5" height="228.0"><title>Jul 11 · 2 meals, 11 treats, 1 dose</title></rect>
+<rect class="day" x="357.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="359.5" cy="71.8" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="77.5" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="87.0" r="1.5"/>
+<line class="mk-d" x1="357.5" x2="361.5" y1="112.6" y2="112.6"/>
+<circle class="mk-m" cx="359.5" cy="112.6" r="1.7"/>
+<circle class="mk-t" cx="359.5" cy="151.6" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="165.8" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="192.5" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="194.3" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="219.0" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="223.8" r="1.5"/>
+<circle class="mk-t" cx="359.5" cy="246.6" r="1.5"/>
+<rect class="hit" x="357" y="30" width="5" height="228.0"><title>Jul 12 · 1 meal, 10 treats, 1 dose</title></rect>
+<rect class="day" x="362.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="364.5" cy="70.8" r="1.5"/>
+<circle class="mk-t" cx="364.5" cy="85.1" r="1.5"/>
+<circle class="mk-t" cx="364.5" cy="87.9" r="1.5"/>
+<circle class="mk-m" cx="364.5" cy="89.8" r="1.7"/>
+<circle class="mk-t" cx="364.5" cy="140.2" r="1.5"/>
+<circle class="mk-t" cx="364.5" cy="180.1" r="1.5"/>
+<circle class="mk-m" cx="364.5" cy="180.1" r="1.7"/>
+<circle class="mk-t" cx="364.5" cy="193.4" r="1.5"/>
+<circle class="mk-t" cx="364.5" cy="222.8" r="1.5"/>
+<circle class="mk-t" cx="364.5" cy="238.0" r="1.5"/>
+<rect class="hit" x="362" y="30" width="5" height="228.0"><title>Jul 13 · 2 meals, 8 treats</title></rect>
+<rect class="day" x="367.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="369.5" cy="82.2" r="1.5"/>
+<circle class="mk-t" cx="369.5" cy="89.8" r="1.5"/>
+<circle class="mk-t" cx="369.5" cy="92.7" r="1.5"/>
+<circle class="mk-t" cx="369.5" cy="146.9" r="1.5"/>
+<circle class="mk-t" cx="369.5" cy="185.8" r="1.5"/>
+<circle class="mk-t" cx="369.5" cy="200.0" r="1.5"/>
+<circle class="mk-m" cx="369.5" cy="208.6" r="1.7"/>
+<circle class="mk-t" cx="369.5" cy="219.0" r="1.5"/>
+<path class="mk-v" d="M369.5 217.0L372.1 220.0L369.5 223.0L366.9 220.0Z"/>
+<circle class="mk-t" cx="369.5" cy="233.3" r="1.5"/>
+<rect class="hit" x="367" y="30" width="5" height="228.0"><title>Jul 14 · 1 meal, 8 treats, 1 vomit</title></rect>
+<rect class="day" x="372.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="374.5" cy="40.5" r="1.5"/>
+<circle class="mk-t" cx="374.5" cy="80.3" r="1.5"/>
+<circle class="mk-t" cx="374.5" cy="87.9" r="1.5"/>
+<circle class="mk-t" cx="374.5" cy="146.9" r="1.5"/>
+<circle class="mk-t" cx="374.5" cy="180.1" r="1.5"/>
+<circle class="mk-t" cx="374.5" cy="194.3" r="1.5"/>
+<circle class="mk-m" cx="374.5" cy="221.0" r="1.7"/>
+<circle class="mk-t" cx="374.5" cy="230.5" r="1.5"/>
+<circle class="mk-t" cx="374.5" cy="235.2" r="1.5"/>
+<rect class="hit" x="372" y="30" width="5" height="228.0"><title>Jul 15 · 1 meal, 8 treats</title></rect>
+<rect class="day" x="377.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="379.5" cy="38.5" r="1.5"/>
+<circle class="mk-t" cx="379.5" cy="70.8" r="1.5"/>
+<path class="mk-s" d="M379.5 89.3L381.6 91.8L379.5 94.2L377.4 91.8Z"/>
+<circle class="mk-t" cx="379.5" cy="96.5" r="1.5"/>
+<circle class="mk-t" cx="379.5" cy="102.2" r="1.5"/>
+<circle class="mk-t" cx="379.5" cy="134.5" r="1.5"/>
+<circle class="mk-t" cx="379.5" cy="164.9" r="1.5"/>
+<path class="mk-s" d="M379.5 169.2L381.6 171.6L379.5 174.0L377.4 171.6Z"/>
+<circle class="mk-t" cx="379.5" cy="196.2" r="1.5"/>
+<circle class="mk-t" cx="379.5" cy="209.5" r="1.5"/>
+<path class="mk-s" d="M379.5 216.6L381.6 219.0L379.5 221.4L377.4 219.0Z"/>
+<line class="mk-d" x1="377.5" x2="381.5" y1="221.9" y2="221.9"/>
+<circle class="mk-t" cx="379.5" cy="235.2" r="1.5"/>
+<circle class="mk-t" cx="379.5" cy="243.8" r="1.5"/>
+<rect class="hit" x="377" y="30" width="5" height="228.0"><title>Jul 16 · 10 treats, 3 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="382.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="384.5" cy="43.3" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="75.6" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="91.8" r="1.5"/>
+<circle class="mk-m" cx="384.5" cy="95.5" r="1.7"/>
+<line class="mk-d" x1="382.5" x2="386.5" y1="104.1" y2="104.1"/>
+<circle class="mk-t" cx="384.5" cy="104.1" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="115.5" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="127.9" r="1.5"/>
+<path class="mk-s" d="M384.5 128.3L386.6 130.7L384.5 133.1L382.4 130.7Z"/>
+<circle class="mk-t" cx="384.5" cy="133.6" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="150.6" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="160.2" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="191.5" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="204.8" r="1.5"/>
+<circle class="mk-m" cx="384.5" cy="213.3" r="1.7"/>
+<line class="mk-d" x1="382.5" x2="386.5" y1="220.0" y2="220.0"/>
+<circle class="mk-t" cx="384.5" cy="244.7" r="1.5"/>
+<circle class="mk-t" cx="384.5" cy="256.1" r="1.5"/>
+<rect class="hit" x="382" y="30" width="5" height="228.0"><title>Jul 17 · 2 meals, 13 treats, 1 cough, sneeze, itch or lethargy entry, 2 doses</title></rect>
+<rect class="day" x="387.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="389.5" cy="82.2" r="1.5"/>
+<circle class="mk-t" cx="389.5" cy="86.1" r="1.5"/>
+<path class="mk-v" d="M389.5 83.1L392.1 86.1L389.5 89.1L386.9 86.1Z"/>
+<circle class="mk-t" cx="389.5" cy="106.0" r="1.5"/>
+<line class="mk-d" x1="387.5" x2="391.5" y1="109.8" y2="109.8"/>
+<circle class="mk-m" cx="389.5" cy="113.6" r="1.7"/>
+<circle class="mk-t" cx="389.5" cy="130.7" r="1.5"/>
+<circle class="mk-t" cx="389.5" cy="140.2" r="1.5"/>
+<circle class="mk-t" cx="389.5" cy="147.8" r="1.5"/>
+<path class="mk-s" d="M389.5 145.4L391.6 147.8L389.5 150.2L387.4 147.8Z"/>
+<circle class="mk-t" cx="389.5" cy="171.6" r="1.5"/>
+<circle class="mk-t" cx="389.5" cy="177.2" r="1.5"/>
+<circle class="mk-m" cx="389.5" cy="210.5" r="1.7"/>
+<line class="mk-d" x1="387.5" x2="391.5" y1="223.8" y2="223.8"/>
+<circle class="mk-m" cx="389.5" cy="223.8" r="1.7"/>
+<rect class="hit" x="387" y="30" width="5" height="228.0"><title>Jul 18 · 3 meals, 8 treats, 1 vomit, 1 cough, sneeze, itch or lethargy entry, 2 doses</title></rect>
+<rect class="day" x="392.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="394.5" cy="48.0" r="1.5"/>
+<path class="mk-s" d="M394.5 49.4L396.6 51.8L394.5 54.2L392.4 51.8Z"/>
+<circle class="mk-t" cx="394.5" cy="55.7" r="1.5"/>
+<circle class="mk-t" cx="394.5" cy="101.2" r="1.5"/>
+<circle class="mk-t" cx="394.5" cy="122.1" r="1.5"/>
+<circle class="mk-m" cx="394.5" cy="122.1" r="1.7"/>
+<line class="mk-d" x1="392.5" x2="396.5" y1="122.1" y2="122.1"/>
+<circle class="mk-t" cx="394.5" cy="138.3" r="1.5"/>
+<circle class="mk-t" cx="394.5" cy="161.1" r="1.5"/>
+<path class="mk-s" d="M394.5 179.6L396.6 182.0L394.5 184.4L392.4 182.0Z"/>
+<circle class="mk-t" cx="394.5" cy="185.8" r="1.5"/>
+<line class="mk-d" x1="392.5" x2="396.5" y1="221.9" y2="221.9"/>
+<circle class="mk-t" cx="394.5" cy="230.5" r="1.5"/>
+<circle class="mk-t" cx="394.5" cy="235.2" r="1.5"/>
+<rect class="hit" x="392" y="30" width="5" height="228.0"><title>Jul 19 · 1 meal, 9 treats, 2 cough, sneeze, itch or lethargy entries, 2 doses</title></rect>
+<rect class="day" x="397.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="399.5" cy="52.8" r="1.5"/>
+<circle class="mk-t" cx="399.5" cy="76.6" r="1.5"/>
+<line class="mk-d" x1="397.5" x2="401.5" y1="89.8" y2="89.8"/>
+<circle class="mk-t" cx="399.5" cy="89.8" r="1.5"/>
+<circle class="mk-m" cx="399.5" cy="94.6" r="1.7"/>
+<circle class="mk-t" cx="399.5" cy="189.6" r="1.5"/>
+<circle class="mk-t" cx="399.5" cy="192.5" r="1.5"/>
+<circle class="mk-m" cx="399.5" cy="201.0" r="1.7"/>
+<circle class="mk-t" cx="399.5" cy="211.5" r="1.5"/>
+<circle class="mk-t" cx="399.5" cy="230.5" r="1.5"/>
+<line class="mk-d" x1="397.5" x2="401.5" y1="230.5" y2="230.5"/>
+<circle class="mk-t" cx="399.5" cy="240.9" r="1.5"/>
+<rect class="hit" x="397" y="30" width="5" height="228.0"><title>Jul 20 · 2 meals, 8 treats, 2 doses</title></rect>
+<rect class="day" x="402.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="404.5" cy="38.5" r="1.5"/>
+<circle class="mk-t" cx="404.5" cy="47.1" r="1.5"/>
+<line class="mk-d" x1="402.5" x2="406.5" y1="88.9" y2="88.9"/>
+<circle class="mk-t" cx="404.5" cy="88.9" r="1.5"/>
+<circle class="mk-t" cx="404.5" cy="208.6" r="1.5"/>
+<circle class="mk-m" cx="404.5" cy="210.5" r="1.7"/>
+<circle class="mk-t" cx="404.5" cy="218.1" r="1.5"/>
+<path class="mk-s" d="M404.5 222.3L406.6 224.8L404.5 227.2L402.4 224.8Z"/>
+<circle class="mk-t" cx="404.5" cy="224.8" r="1.5"/>
+<line class="mk-d" x1="402.5" x2="406.5" y1="224.8" y2="224.8"/>
+<path class="mk-s" d="M404.5 229.9L406.6 232.3L404.5 234.8L402.4 232.3Z"/>
+<circle class="mk-t" cx="404.5" cy="234.2" r="1.5"/>
+<circle class="mk-t" cx="404.5" cy="251.3" r="1.5"/>
+<line class="mk-d" x1="402.5" x2="406.5" y1="257.9" y2="257.9"/>
+<rect class="hit" x="402" y="30" width="5" height="228.0"><title>Jul 21 · 1 meal, 8 treats, 2 cough, sneeze, itch or lethargy entries, 3 doses, 1 other entry</title></rect>
+<rect class="day" x="407.5" y="30" width="4" height="228.0"/>
+<circle class="mk-t" cx="409.5" cy="48.0" r="1.5"/>
+<circle class="mk-t" cx="409.5" cy="76.6" r="1.5"/>
+<circle class="mk-t" cx="409.5" cy="89.8" r="1.5"/>
+<circle class="mk-m" cx="409.5" cy="91.8" r="1.7"/>
+<line class="mk-d" x1="407.5" x2="411.5" y1="94.6" y2="94.6"/>
+<circle class="mk-t" cx="409.5" cy="96.5" r="1.5"/>
+<circle class="mk-t" cx="409.5" cy="175.3" r="1.5"/>
+<circle class="mk-t" cx="409.5" cy="180.1" r="1.5"/>
+<circle class="mk-m" cx="409.5" cy="193.4" r="1.7"/>
+<circle class="mk-m" cx="409.5" cy="207.7" r="1.7"/>
+<circle class="mk-t" cx="409.5" cy="217.2" r="1.5"/>
+<circle class="mk-t" cx="409.5" cy="235.2" r="1.5"/>
+<circle class="mk-m" cx="409.5" cy="257.0" r="1.7"/>
+<line class="mk-d" x1="407.5" x2="411.5" y1="257.0" y2="257.0"/>
+<rect class="hit" x="407" y="30" width="5" height="228.0"><title>Jul 22 · 4 meals, 8 treats, 2 doses</title></rect>
+<rect class="day" x="412.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="414.5" cy="93.7" r="1.7"/>
+<circle class="mk-t" cx="414.5" cy="103.2" r="1.5"/>
+<circle class="mk-m" cx="414.5" cy="103.2" r="1.7"/>
+<line class="mk-d" x1="412.5" x2="416.5" y1="134.5" y2="134.5"/>
+<path class="mk-v" d="M414.5 141.0L417.1 144.0L414.5 147.0L411.9 144.0Z"/>
+<circle class="mk-m" cx="414.5" cy="144.0" r="1.7"/>
+<circle class="mk-m" cx="414.5" cy="165.8" r="1.7"/>
+<circle class="mk-m" cx="414.5" cy="184.8" r="1.7"/>
+<circle class="mk-m" cx="414.5" cy="199.1" r="1.7"/>
+<circle class="mk-m" cx="414.5" cy="218.1" r="1.7"/>
+<circle class="mk-m" cx="414.5" cy="224.8" r="1.7"/>
+<line class="mk-d" x1="412.5" x2="416.5" y1="235.2" y2="235.2"/>
+<circle class="mk-m" cx="414.5" cy="240.9" r="1.7"/>
+<rect class="hit" x="412" y="30" width="5" height="228.0"><title>Jul 23 · 9 meals, 1 treat, 1 vomit, 2 doses</title></rect>
+<rect class="day" x="417.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="419.5" cy="34.8" r="1.7"/>
+<circle class="mk-m" cx="419.5" cy="65.2" r="1.7"/>
+<circle class="mk-t" cx="419.5" cy="102.2" r="1.5"/>
+<line class="mk-d" x1="417.5" x2="421.5" y1="119.3" y2="119.3"/>
+<circle class="mk-m" cx="419.5" cy="119.3" r="1.7"/>
+<circle class="mk-t" cx="419.5" cy="161.1" r="1.5"/>
+<circle class="mk-m" cx="419.5" cy="173.4" r="1.7"/>
+<circle class="mk-m" cx="419.5" cy="177.2" r="1.7"/>
+<circle class="mk-t" cx="419.5" cy="190.5" r="1.5"/>
+<circle class="mk-m" cx="419.5" cy="204.8" r="1.7"/>
+<line class="mk-d" x1="417.5" x2="421.5" y1="226.7" y2="226.7"/>
+<circle class="mk-m" cx="419.5" cy="226.7" r="1.7"/>
+<circle class="mk-m" cx="419.5" cy="226.7" r="1.7"/>
+<circle class="mk-m" cx="419.5" cy="256.1" r="1.7"/>
+<rect class="hit" x="417" y="30" width="5" height="228.0"><title>Jul 24 · 9 meals, 3 treats, 2 doses</title></rect>
+<rect class="day" x="422.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="424.5" cy="61.3" r="1.7"/>
+<circle class="mk-m" cx="424.5" cy="84.2" r="1.7"/>
+<circle class="mk-t" cx="424.5" cy="125.0" r="1.5"/>
+<line class="mk-d" x1="422.5" x2="426.5" y1="127.9" y2="127.9"/>
+<circle class="mk-m" cx="424.5" cy="133.6" r="1.7"/>
+<circle class="mk-m" cx="424.5" cy="133.6" r="1.7"/>
+<circle class="mk-m" cx="424.5" cy="158.2" r="1.7"/>
+<path class="mk-v" d="M424.5 156.2L427.1 159.2L424.5 162.2L421.9 159.2Z"/>
+<circle class="mk-t" cx="424.5" cy="186.8" r="1.5"/>
+<circle class="mk-m" cx="424.5" cy="218.1" r="1.7"/>
+<line class="mk-d" x1="422.5" x2="426.5" y1="234.2" y2="234.2"/>
+<rect class="hit" x="422" y="30" width="5" height="228.0"><title>Jul 25 · 6 meals, 2 treats, 1 vomit, 2 doses</title></rect>
+<rect class="day" x="427.5" y="30" width="4" height="228.0"/>
+<line class="mk-d" x1="427.5" x2="431.5" y1="129.8" y2="129.8"/>
+<circle class="mk-m" cx="429.5" cy="144.0" r="1.7"/>
+<circle class="mk-t" cx="429.5" cy="163.9" r="1.5"/>
+<circle class="mk-t" cx="429.5" cy="197.2" r="1.5"/>
+<line class="mk-d" x1="427.5" x2="431.5" y1="226.7" y2="226.7"/>
+<circle class="mk-t" cx="429.5" cy="237.1" r="1.5"/>
+<circle class="mk-m" cx="429.5" cy="238.0" r="1.7"/>
+<rect class="hit" x="427" y="30" width="5" height="228.0"><title>Jul 26 · 2 meals, 3 treats, 2 doses</title></rect>
+<rect class="day" x="432.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="434.5" cy="38.5" r="1.7"/>
+<line class="mk-d" x1="432.5" x2="436.5" y1="94.6" y2="94.6"/>
+<circle class="mk-t" cx="434.5" cy="133.6" r="1.5"/>
+<path class="mk-v" d="M434.5 130.6L437.1 133.6L434.5 136.6L431.9 133.6Z"/>
+<circle class="mk-m" cx="434.5" cy="149.7" r="1.7"/>
+<circle class="mk-m" cx="434.5" cy="204.8" r="1.7"/>
+<circle class="mk-m" cx="434.5" cy="221.0" r="1.7"/>
+<line class="mk-d" x1="432.5" x2="436.5" y1="221.9" y2="221.9"/>
+<circle class="mk-m" cx="434.5" cy="224.8" r="1.7"/>
+<rect class="hit" x="432" y="30" width="5" height="228.0"><title>Jul 27 · 5 meals, 1 treat, 1 vomit, 2 doses</title></rect>
+<rect class="day" x="437.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="439.5" cy="74.7" r="1.7"/>
+<line class="mk-d" x1="437.5" x2="441.5" y1="94.6" y2="94.6"/>
+<circle class="mk-m" cx="439.5" cy="94.6" r="1.7"/>
+<circle class="mk-m" cx="439.5" cy="195.3" r="1.7"/>
+<circle class="mk-m" cx="439.5" cy="205.8" r="1.7"/>
+<line class="mk-d" x1="437.5" x2="441.5" y1="208.6" y2="208.6"/>
+<circle class="mk-m" cx="439.5" cy="226.7" r="1.7"/>
+<circle class="mk-m" cx="439.5" cy="227.6" r="1.7"/>
+<circle class="mk-m" cx="439.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="437" y="30" width="5" height="228.0"><title>Jul 28 · 7 meals, 2 doses</title></rect>
+<rect class="day" x="442.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="444.5" cy="84.2" r="1.7"/>
+<circle class="mk-m" cx="444.5" cy="84.2" r="1.7"/>
+<line class="mk-d" x1="442.5" x2="446.5" y1="91.8" y2="91.8"/>
+<circle class="mk-m" cx="444.5" cy="94.6" r="1.7"/>
+<line class="mk-d" x1="442.5" x2="446.5" y1="211.5" y2="211.5"/>
+<circle class="mk-m" cx="444.5" cy="221.0" r="1.7"/>
+<circle class="mk-m" cx="444.5" cy="237.1" r="1.7"/>
+<rect class="hit" x="442" y="30" width="5" height="228.0"><title>Jul 29 · 5 meals, 2 doses</title></rect>
+<rect class="day" x="447.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="449.5" cy="30.0" r="1.7"/>
+<circle class="mk-m" cx="449.5" cy="92.7" r="1.7"/>
+<line class="mk-d" x1="447.5" x2="451.5" y1="99.3" y2="99.3"/>
+<circle class="mk-m" cx="449.5" cy="165.8" r="1.7"/>
+<circle class="mk-m" cx="449.5" cy="202.0" r="1.7"/>
+<circle class="mk-m" cx="449.5" cy="224.8" r="1.7"/>
+<rect class="hit" x="447" y="30" width="5" height="228.0"><title>Jul 30 · 5 meals, 1 dose</title></rect>
+<rect class="day" x="452.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="454.5" cy="49.0" r="1.7"/>
+<circle class="mk-m" cx="454.5" cy="104.1" r="1.7"/>
+<rect class="hit" x="452" y="30" width="5" height="228.0"><title>Jul 31 · 2 meals</title></rect>
+<rect class="day" x="457.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="459.5" cy="52.8" r="1.7"/>
+<circle class="mk-m" cx="459.5" cy="96.5" r="1.7"/>
+<circle class="mk-m" cx="459.5" cy="140.2" r="1.7"/>
+<circle class="mk-m" cx="459.5" cy="140.2" r="1.7"/>
+<path class="mk-s" d="M459.5 148.2L461.6 150.6L459.5 153.0L457.4 150.6Z"/>
+<path class="mk-s" d="M459.5 165.3L461.6 167.8L459.5 170.2L457.4 167.8Z"/>
+<circle class="mk-m" cx="459.5" cy="168.7" r="1.7"/>
+<line class="mk-d" x1="457.5" x2="461.5" y1="168.7" y2="168.7"/>
+<circle class="mk-m" cx="459.5" cy="199.1" r="1.7"/>
+<circle class="mk-m" cx="459.5" cy="220.0" r="1.7"/>
+<rect class="hit" x="457" y="30" width="5" height="228.0"><title>Aug 1 · 7 meals, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="462.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="464.5" cy="49.0" r="1.7"/>
+<path class="mk-v" d="M464.5 47.0L467.1 50.0L464.5 53.0L461.9 50.0Z"/>
+<circle class="mk-m" cx="464.5" cy="104.1" r="1.7"/>
+<path class="mk-s" d="M464.5 106.5L466.6 108.9L464.5 111.3L462.4 108.9Z"/>
+<circle class="mk-m" cx="464.5" cy="156.4" r="1.7"/>
+<circle class="mk-m" cx="464.5" cy="183.9" r="1.7"/>
+<line class="mk-d" x1="462.5" x2="466.5" y1="183.9" y2="183.9"/>
+<circle class="mk-m" cx="464.5" cy="186.8" r="1.7"/>
+<circle class="mk-m" cx="464.5" cy="206.7" r="1.7"/>
+<path class="mk-s" d="M464.5 218.6L466.6 221.0L464.5 223.4L462.4 221.0Z"/>
+<rect class="hit" x="462" y="30" width="5" height="228.0"><title>Aug 2 · 6 meals, 1 vomit, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="467.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="469.5" cy="82.2" r="1.7"/>
+<circle class="mk-m" cx="469.5" cy="89.8" r="1.7"/>
+<circle class="mk-m" cx="469.5" cy="147.8" r="1.7"/>
+<circle class="mk-m" cx="469.5" cy="202.0" r="1.7"/>
+<path class="mk-s" d="M469.5 222.3L471.6 224.8L469.5 227.2L467.4 224.8Z"/>
+<rect class="hit" x="467" y="30" width="5" height="228.0"><title>Aug 3 · 4 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="472.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="474.5" cy="39.5" r="1.7"/>
+<circle class="mk-m" cx="474.5" cy="50.0" r="1.7"/>
+<path class="mk-s" d="M474.5 208.1L476.6 210.5L474.5 212.9L472.4 210.5Z"/>
+<path class="mk-s" d="M474.5 208.1L476.6 210.5L474.5 212.9L472.4 210.5Z"/>
+<circle class="mk-m" cx="474.5" cy="212.4" r="1.7"/>
+<line class="mk-d" x1="472.5" x2="476.5" y1="212.4" y2="212.4"/>
+<circle class="mk-m" cx="474.5" cy="231.4" r="1.7"/>
+<circle class="mk-m" cx="474.5" cy="253.2" r="1.7"/>
+<rect class="hit" x="472" y="30" width="5" height="228.0"><title>Aug 4 · 5 meals, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="477.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="479.5" cy="52.8" r="1.7"/>
+<circle class="mk-m" cx="479.5" cy="80.3" r="1.7"/>
+<path class="mk-v" d="M479.5 77.3L482.1 80.3L479.5 83.3L476.9 80.3Z"/>
+<circle class="mk-m" cx="479.5" cy="204.8" r="1.7"/>
+<circle class="mk-m" cx="479.5" cy="221.0" r="1.7"/>
+<rect class="hit" x="477" y="30" width="5" height="228.0"><title>Aug 5 · 4 meals, 1 vomit</title></rect>
+<rect class="day" x="482.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="484.5" cy="57.5" r="1.7"/>
+<circle class="mk-m" cx="484.5" cy="97.5" r="1.7"/>
+<circle class="mk-m" cx="484.5" cy="173.4" r="1.7"/>
+<circle class="mk-m" cx="484.5" cy="192.5" r="1.7"/>
+<circle class="mk-m" cx="484.5" cy="220.0" r="1.7"/>
+<path class="mk-s" d="M484.5 229.0L486.6 231.4L484.5 233.8L482.4 231.4Z"/>
+<circle class="mk-m" cx="484.5" cy="240.9" r="1.7"/>
+<rect class="hit" x="482" y="30" width="5" height="228.0"><title>Aug 6 · 6 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="487.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="489.5" cy="37.6" r="1.7"/>
+<circle class="mk-m" cx="489.5" cy="147.8" r="1.7"/>
+<path class="mk-s" d="M489.5 163.4L491.6 165.8L489.5 168.2L487.4 165.8Z"/>
+<circle class="mk-m" cx="489.5" cy="173.4" r="1.7"/>
+<circle class="mk-m" cx="489.5" cy="192.5" r="1.7"/>
+<rect class="hit" x="487" y="30" width="5" height="228.0"><title>Aug 7 · 4 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="492.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="494.5" cy="71.8" r="1.7"/>
+<circle class="mk-m" cx="494.5" cy="189.6" r="1.7"/>
+<circle class="mk-m" cx="494.5" cy="214.3" r="1.7"/>
+<circle class="mk-m" cx="494.5" cy="218.1" r="1.7"/>
+<path class="mk-v" d="M494.5 216.0L497.1 219.0L494.5 222.0L491.9 219.0Z"/>
+<rect class="hit" x="492" y="30" width="5" height="228.0"><title>Aug 8 · 4 meals, 1 vomit</title></rect>
+<rect class="day" x="497.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="499.5" cy="159.2" r="1.7"/>
+<path class="mk-s" d="M499.5 157.8L501.6 160.2L499.5 162.6L497.4 160.2Z"/>
+<circle class="mk-m" cx="499.5" cy="181.1" r="1.7"/>
+<circle class="mk-m" cx="499.5" cy="210.5" r="1.7"/>
+<rect class="hit" x="497" y="30" width="5" height="228.0"><title>Aug 9 · 3 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="502.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="504.5" cy="89.8" r="1.7"/>
+<circle class="mk-m" cx="504.5" cy="217.2" r="1.7"/>
+<circle class="mk-m" cx="504.5" cy="235.2" r="1.7"/>
+<rect class="hit" x="502" y="30" width="5" height="228.0"><title>Aug 10 · 3 meals</title></rect>
+<rect class="day" x="507.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="509.5" cy="83.2" r="1.7"/>
+<circle class="mk-m" cx="509.5" cy="164.9" r="1.7"/>
+<circle class="mk-m" cx="509.5" cy="233.3" r="1.7"/>
+<rect class="hit" x="507" y="30" width="5" height="228.0"><title>Aug 11 · 3 meals</title></rect>
+<rect class="day" x="512.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="514.5" cy="70.8" r="1.7"/>
+<circle class="mk-m" cx="514.5" cy="101.2" r="1.7"/>
+<circle class="mk-m" cx="514.5" cy="101.2" r="1.7"/>
+<circle class="mk-m" cx="514.5" cy="199.1" r="1.7"/>
+<circle class="mk-m" cx="514.5" cy="208.6" r="1.7"/>
+<circle class="mk-m" cx="514.5" cy="228.5" r="1.7"/>
+<rect class="hit" x="512" y="30" width="5" height="228.0"><title>Aug 12 · 6 meals</title></rect>
+<rect class="day" x="517.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="519.5" cy="89.8" r="1.7"/>
+<circle class="mk-m" cx="519.5" cy="151.6" r="1.7"/>
+<path class="mk-s" d="M519.5 152.0L521.6 154.4L519.5 156.8L517.4 154.4Z"/>
+<circle class="mk-m" cx="519.5" cy="173.4" r="1.7"/>
+<circle class="mk-m" cx="519.5" cy="203.8" r="1.7"/>
+<path class="mk-s" d="M519.5 207.1L521.6 209.5L519.5 211.9L517.4 209.5Z"/>
+<circle class="mk-m" cx="519.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="517" y="30" width="5" height="228.0"><title>Aug 13 · 5 meals, 2 cough, sneeze, itch or lethargy entries</title></rect>
+<rect class="day" x="522.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="524.5" cy="77.5" r="1.7"/>
+<circle class="mk-m" cx="524.5" cy="93.7" r="1.7"/>
+<path class="mk-s" d="M524.5 131.2L526.6 133.6L524.5 136.0L522.4 133.6Z"/>
+<circle class="mk-m" cx="524.5" cy="144.9" r="1.7"/>
+<line class="mk-d" x1="522.5" x2="526.5" y1="144.9" y2="144.9"/>
+<circle class="mk-m" cx="524.5" cy="162.1" r="1.7"/>
+<circle class="mk-m" cx="524.5" cy="176.3" r="1.7"/>
+<path class="mk-s" d="M524.5 176.8L526.6 179.2L524.5 181.6L522.4 179.2Z"/>
+<circle class="mk-m" cx="524.5" cy="222.8" r="1.7"/>
+<circle class="mk-m" cx="524.5" cy="243.8" r="1.7"/>
+<rect class="hit" x="522" y="30" width="5" height="228.0"><title>Aug 14 · 7 meals, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="527.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="529.5" cy="39.5" r="1.7"/>
+<circle class="mk-m" cx="529.5" cy="126.9" r="1.7"/>
+<circle class="mk-m" cx="529.5" cy="159.2" r="1.7"/>
+<circle class="mk-m" cx="529.5" cy="211.5" r="1.7"/>
+<rect class="hit" x="527" y="30" width="5" height="228.0"><title>Aug 15 · 4 meals</title></rect>
+<rect class="day" x="532.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="534.5" cy="34.8" r="1.7"/>
+<circle class="mk-m" cx="534.5" cy="67.0" r="1.7"/>
+<circle class="mk-m" cx="534.5" cy="96.5" r="1.7"/>
+<path class="mk-s" d="M534.5 109.3L536.6 111.7L534.5 114.1L532.4 111.7Z"/>
+<circle class="mk-m" cx="534.5" cy="178.2" r="1.7"/>
+<circle class="mk-m" cx="534.5" cy="198.2" r="1.7"/>
+<circle class="mk-m" cx="534.5" cy="212.4" r="1.7"/>
+<circle class="mk-m" cx="534.5" cy="228.5" r="1.7"/>
+<path class="mk-s" d="M534.5 234.7L536.6 237.1L534.5 239.5L532.4 237.1Z"/>
+<rect class="hit" x="532" y="30" width="5" height="228.0"><title>Aug 16 · 7 meals, 2 cough, sneeze, itch or lethargy entries</title></rect>
+<rect class="day" x="537.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="539.5" cy="95.5" r="1.7"/>
+<circle class="mk-m" cx="539.5" cy="96.5" r="1.7"/>
+<line class="mk-d" x1="537.5" x2="541.5" y1="96.5" y2="96.5"/>
+<circle class="mk-m" cx="539.5" cy="207.7" r="1.7"/>
+<circle class="mk-m" cx="539.5" cy="220.0" r="1.7"/>
+<circle class="mk-m" cx="539.5" cy="224.8" r="1.7"/>
+<circle class="mk-m" cx="539.5" cy="249.5" r="1.7"/>
+<rect class="hit" x="537" y="30" width="5" height="228.0"><title>Aug 17 · 6 meals, 1 dose</title></rect>
+<rect class="day" x="542.5" y="30" width="4" height="228.0"/>
+<path class="mk-s" d="M544.5 44.7L546.6 47.1L544.5 49.5L542.4 47.1Z"/>
+<circle class="mk-m" cx="544.5" cy="73.7" r="1.7"/>
+<circle class="mk-m" cx="544.5" cy="148.8" r="1.7"/>
+<line class="mk-d" x1="542.5" x2="546.5" y1="148.8" y2="148.8"/>
+<circle class="mk-m" cx="544.5" cy="164.9" r="1.7"/>
+<circle class="mk-m" cx="544.5" cy="215.2" r="1.7"/>
+<circle class="mk-m" cx="544.5" cy="239.0" r="1.7"/>
+<rect class="hit" x="542" y="30" width="5" height="228.0"><title>Aug 18 · 5 meals, 1 cough, sneeze, itch or lethargy entry, 1 dose</title></rect>
+<rect class="day" x="547.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="549.5" cy="57.5" r="1.7"/>
+<circle class="mk-m" cx="549.5" cy="93.7" r="1.7"/>
+<path class="mk-v" d="M549.5 195.2L552.1 198.2L549.5 201.2L546.9 198.2Z"/>
+<circle class="mk-m" cx="549.5" cy="201.0" r="1.7"/>
+<circle class="mk-m" cx="549.5" cy="210.5" r="1.7"/>
+<circle class="mk-m" cx="549.5" cy="230.5" r="1.7"/>
+<circle class="mk-m" cx="549.5" cy="254.2" r="1.7"/>
+<rect class="hit" x="547" y="30" width="5" height="228.0"><title>Aug 19 · 6 meals, 1 vomit</title></rect>
+<rect class="day" x="552.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="554.5" cy="81.3" r="1.7"/>
+<circle class="mk-m" cx="554.5" cy="88.9" r="1.7"/>
+<circle class="mk-m" cx="554.5" cy="101.2" r="1.7"/>
+<circle class="mk-m" cx="554.5" cy="135.4" r="1.7"/>
+<circle class="mk-m" cx="554.5" cy="176.3" r="1.7"/>
+<circle class="mk-m" cx="554.5" cy="209.5" r="1.7"/>
+<circle class="mk-m" cx="554.5" cy="231.4" r="1.7"/>
+<rect class="hit" x="552" y="30" width="5" height="228.0"><title>Aug 20 · 7 meals</title></rect>
+<rect class="day" x="557.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="559.5" cy="48.0" r="1.7"/>
+<circle class="mk-m" cx="559.5" cy="81.3" r="1.7"/>
+<path class="mk-s" d="M559.5 111.2L561.6 113.6L559.5 116.0L557.4 113.6Z"/>
+<circle class="mk-m" cx="559.5" cy="115.5" r="1.7"/>
+<circle class="mk-m" cx="559.5" cy="163.9" r="1.7"/>
+<path class="mk-s" d="M559.5 182.4L561.6 184.8L559.5 187.2L557.4 184.8Z"/>
+<circle class="mk-m" cx="559.5" cy="192.5" r="1.7"/>
+<line class="mk-d" x1="557.5" x2="561.5" y1="192.5" y2="192.5"/>
+<circle class="mk-m" cx="559.5" cy="213.3" r="1.7"/>
+<rect class="hit" x="557" y="30" width="5" height="228.0"><title>Aug 21 · 6 meals, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="562.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="564.5" cy="39.5" r="1.7"/>
+<circle class="mk-m" cx="564.5" cy="148.8" r="1.7"/>
+<circle class="mk-m" cx="564.5" cy="159.2" r="1.7"/>
+<circle class="mk-m" cx="564.5" cy="186.8" r="1.7"/>
+<circle class="mk-m" cx="564.5" cy="248.5" r="1.7"/>
+<rect class="hit" x="562" y="30" width="5" height="228.0"><title>Aug 22 · 5 meals</title></rect>
+<rect class="day" x="567.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="569.5" cy="54.7" r="1.7"/>
+<circle class="mk-m" cx="569.5" cy="80.3" r="1.7"/>
+<circle class="mk-m" cx="569.5" cy="90.8" r="1.7"/>
+<path class="mk-s" d="M569.5 109.3L571.6 111.7L569.5 114.1L567.4 111.7Z"/>
+<path class="mk-s" d="M569.5 122.6L571.6 125.0L569.5 127.4L567.4 125.0Z"/>
+<circle class="mk-m" cx="569.5" cy="125.0" r="1.7"/>
+<circle class="mk-m" cx="569.5" cy="199.1" r="1.7"/>
+<line class="mk-d" x1="567.5" x2="571.5" y1="199.1" y2="199.1"/>
+<circle class="mk-m" cx="569.5" cy="211.5" r="1.7"/>
+<circle class="mk-m" cx="569.5" cy="223.8" r="1.7"/>
+<rect class="hit" x="567" y="30" width="5" height="228.0"><title>Aug 23 · 7 meals, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="572.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="574.5" cy="49.0" r="1.7"/>
+<path class="mk-v" d="M574.5 46.0L577.1 49.0L574.5 52.0L571.9 49.0Z"/>
+<circle class="mk-m" cx="574.5" cy="89.8" r="1.7"/>
+<circle class="mk-m" cx="574.5" cy="187.7" r="1.7"/>
+<circle class="mk-m" cx="574.5" cy="202.9" r="1.7"/>
+<circle class="mk-m" cx="574.5" cy="206.7" r="1.7"/>
+<circle class="mk-m" cx="574.5" cy="217.2" r="1.7"/>
+<circle class="mk-m" cx="574.5" cy="243.8" r="1.7"/>
+<rect class="hit" x="572" y="30" width="5" height="228.0"><title>Aug 24 · 7 meals, 1 vomit</title></rect>
+<rect class="day" x="577.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="579.5" cy="51.8" r="1.7"/>
+<circle class="mk-m" cx="579.5" cy="91.8" r="1.7"/>
+<circle class="mk-m" cx="579.5" cy="123.1" r="1.7"/>
+<circle class="mk-m" cx="579.5" cy="169.7" r="1.7"/>
+<circle class="mk-m" cx="579.5" cy="218.1" r="1.7"/>
+<circle class="mk-m" cx="579.5" cy="241.8" r="1.7"/>
+<rect class="hit" x="577" y="30" width="5" height="228.0"><title>Aug 25 · 6 meals</title></rect>
+<rect class="day" x="582.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="584.5" cy="72.8" r="1.7"/>
+<path class="mk-s" d="M584.5 158.7L586.6 161.1L584.5 163.5L582.4 161.1Z"/>
+<circle class="mk-m" cx="584.5" cy="169.7" r="1.7"/>
+<circle class="mk-m" cx="584.5" cy="196.2" r="1.7"/>
+<circle class="mk-m" cx="584.5" cy="203.8" r="1.7"/>
+<circle class="mk-m" cx="584.5" cy="218.1" r="1.7"/>
+<circle class="mk-m" cx="584.5" cy="236.2" r="1.7"/>
+<circle class="mk-m" cx="584.5" cy="242.8" r="1.7"/>
+<rect class="hit" x="582" y="30" width="5" height="228.0"><title>Aug 26 · 7 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="587.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="589.5" cy="68.0" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="90.8" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="90.8" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="113.6" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="115.5" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="157.3" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="186.8" r="1.7"/>
+<circle class="mk-m" cx="589.5" cy="240.9" r="1.7"/>
+<rect class="hit" x="587" y="30" width="5" height="228.0"><title>Aug 27 · 8 meals</title></rect>
+<rect class="day" x="592.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="594.5" cy="41.4" r="1.7"/>
+<circle class="mk-m" cx="594.5" cy="75.6" r="1.7"/>
+<circle class="mk-m" cx="594.5" cy="99.3" r="1.7"/>
+<circle class="mk-m" cx="594.5" cy="138.3" r="1.7"/>
+<circle class="mk-m" cx="594.5" cy="138.3" r="1.7"/>
+<line class="mk-d" x1="592.5" x2="596.5" y1="138.3" y2="138.3"/>
+<circle class="mk-m" cx="594.5" cy="238.0" r="1.7"/>
+<rect class="hit" x="592" y="30" width="5" height="228.0"><title>Aug 28 · 6 meals, 1 dose</title></rect>
+<rect class="day" x="597.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="599.5" cy="73.7" r="1.7"/>
+<circle class="mk-m" cx="599.5" cy="105.0" r="1.7"/>
+<circle class="mk-m" cx="599.5" cy="127.9" r="1.7"/>
+<path class="mk-s" d="M599.5 135.9L601.6 138.3L599.5 140.7L597.4 138.3Z"/>
+<circle class="mk-m" cx="599.5" cy="172.5" r="1.7"/>
+<circle class="mk-m" cx="599.5" cy="179.2" r="1.7"/>
+<circle class="mk-m" cx="599.5" cy="200.0" r="1.7"/>
+<path class="mk-s" d="M599.5 197.6L601.6 200.0L599.5 202.4L597.4 200.0Z"/>
+<circle class="mk-m" cx="599.5" cy="235.2" r="1.7"/>
+<circle class="mk-m" cx="599.5" cy="241.8" r="1.7"/>
+<circle class="mk-m" cx="599.5" cy="248.5" r="1.7"/>
+<rect class="hit" x="597" y="30" width="5" height="228.0"><title>Aug 29 · 9 meals, 2 cough, sneeze, itch or lethargy entries</title></rect>
+<rect class="day" x="602.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="604.5" cy="79.4" r="1.7"/>
+<circle class="mk-m" cx="604.5" cy="123.1" r="1.7"/>
+<circle class="mk-m" cx="604.5" cy="160.2" r="1.7"/>
+<circle class="mk-m" cx="604.5" cy="172.5" r="1.7"/>
+<circle class="mk-m" cx="604.5" cy="199.1" r="1.7"/>
+<circle class="mk-m" cx="604.5" cy="221.9" r="1.7"/>
+<circle class="mk-m" cx="604.5" cy="241.8" r="1.7"/>
+<rect class="hit" x="602" y="30" width="5" height="228.0"><title>Aug 30 · 7 meals</title></rect>
+<rect class="day" x="607.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="609.5" cy="121.2" r="1.7"/>
+<circle class="mk-m" cx="609.5" cy="188.7" r="1.7"/>
+<circle class="mk-m" cx="609.5" cy="213.3" r="1.7"/>
+<circle class="mk-m" cx="609.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="607" y="30" width="5" height="228.0"><title>Aug 31 · 4 meals</title></rect>
+<rect class="day" x="612.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="614.5" cy="44.2" r="1.7"/>
+<circle class="mk-m" cx="614.5" cy="96.5" r="1.7"/>
+<circle class="mk-m" cx="614.5" cy="141.1" r="1.7"/>
+<circle class="mk-m" cx="614.5" cy="168.7" r="1.7"/>
+<circle class="mk-m" cx="614.5" cy="190.5" r="1.7"/>
+<rect class="hit" x="612" y="30" width="5" height="228.0"><title>Sep 1 · 5 meals</title></rect>
+<rect class="day" x="617.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="619.5" cy="154.4" r="1.7"/>
+<circle class="mk-m" cx="619.5" cy="183.9" r="1.7"/>
+<circle class="mk-m" cx="619.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="617" y="30" width="5" height="228.0"><title>Sep 2 · 3 meals</title></rect>
+<rect class="day" x="622.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="624.5" cy="79.4" r="1.7"/>
+<circle class="mk-m" cx="624.5" cy="104.1" r="1.7"/>
+<circle class="mk-m" cx="624.5" cy="186.8" r="1.7"/>
+<circle class="mk-m" cx="624.5" cy="201.0" r="1.7"/>
+<rect class="hit" x="622" y="30" width="5" height="228.0"><title>Sep 3 · 4 meals</title></rect>
+<rect class="day" x="627.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="629.5" cy="60.4" r="1.7"/>
+<path class="mk-s" d="M629.5 88.4L631.6 90.8L629.5 93.2L627.4 90.8Z"/>
+<path class="mk-v" d="M629.5 93.5L632.1 96.5L629.5 99.5L626.9 96.5Z"/>
+<circle class="mk-m" cx="629.5" cy="147.8" r="1.7"/>
+<rect class="hit" x="627" y="30" width="5" height="228.0"><title>Sep 4 · 2 meals, 1 vomit, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="632.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="634.5" cy="102.2" r="1.7"/>
+<path class="mk-s" d="M634.5 126.4L636.6 128.8L634.5 131.2L632.4 128.8Z"/>
+<circle class="mk-m" cx="634.5" cy="163.9" r="1.7"/>
+<circle class="mk-m" cx="634.5" cy="176.3" r="1.7"/>
+<line class="mk-d" x1="632.5" x2="636.5" y1="176.3" y2="176.3"/>
+<circle class="mk-m" cx="634.5" cy="200.0" r="1.7"/>
+<path class="mk-s" d="M634.5 199.6L636.6 202.0L634.5 204.4L632.4 202.0Z"/>
+<circle class="mk-m" cx="634.5" cy="203.8" r="1.7"/>
+<rect class="hit" x="632" y="30" width="5" height="228.0"><title>Sep 5 · 5 meals, 2 cough, sneeze, itch or lethargy entries, 1 dose</title></rect>
+<rect class="day" x="637.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="639.5" cy="109.8" r="1.7"/>
+<circle class="mk-m" cx="639.5" cy="110.8" r="1.7"/>
+<rect class="hit" x="637" y="30" width="5" height="228.0"><title>Sep 6 · 2 meals</title></rect>
+<rect class="day" x="642.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="644.5" cy="42.4" r="1.7"/>
+<path class="mk-v" d="M644.5 84.0L647.1 87.0L644.5 90.0L641.9 87.0Z"/>
+<circle class="mk-m" cx="644.5" cy="101.2" r="1.7"/>
+<circle class="mk-m" cx="644.5" cy="180.1" r="1.7"/>
+<path class="mk-v" d="M644.5 179.0L647.1 182.0L644.5 185.0L641.9 182.0Z"/>
+<circle class="mk-m" cx="644.5" cy="197.2" r="1.7"/>
+<circle class="mk-m" cx="644.5" cy="216.2" r="1.7"/>
+<circle class="mk-m" cx="644.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="642" y="30" width="5" height="228.0"><title>Sep 7 · 6 meals, 2 vomits</title></rect>
+<rect class="day" x="647.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="649.5" cy="43.3" r="1.7"/>
+<circle class="mk-m" cx="649.5" cy="82.2" r="1.7"/>
+<circle class="mk-m" cx="649.5" cy="89.8" r="1.7"/>
+<circle class="mk-m" cx="649.5" cy="148.8" r="1.7"/>
+<circle class="mk-m" cx="649.5" cy="194.3" r="1.7"/>
+<path class="mk-s" d="M649.5 200.5L651.6 202.9L649.5 205.3L647.4 202.9Z"/>
+<circle class="mk-m" cx="649.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="647" y="30" width="5" height="228.0"><title>Sep 8 · 6 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="652.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="654.5" cy="54.7" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="81.3" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="95.5" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="198.2" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="201.0" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="204.8" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="225.7" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="225.7" r="1.7"/>
+<circle class="mk-m" cx="654.5" cy="231.4" r="1.7"/>
+<rect class="hit" x="652" y="30" width="5" height="228.0"><title>Sep 9 · 9 meals</title></rect>
+<rect class="day" x="657.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="659.5" cy="58.5" r="1.7"/>
+<circle class="mk-m" cx="659.5" cy="94.6" r="1.7"/>
+<circle class="mk-m" cx="659.5" cy="194.3" r="1.7"/>
+<circle class="mk-m" cx="659.5" cy="205.8" r="1.7"/>
+<circle class="mk-m" cx="659.5" cy="223.8" r="1.7"/>
+<circle class="mk-m" cx="659.5" cy="227.6" r="1.7"/>
+<rect class="hit" x="657" y="30" width="5" height="228.0"><title>Sep 10 · 6 meals</title></rect>
+<rect class="day" x="662.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="664.5" cy="48.0" r="1.7"/>
+<circle class="mk-m" cx="664.5" cy="77.5" r="1.7"/>
+<circle class="mk-m" cx="664.5" cy="77.5" r="1.7"/>
+<circle class="mk-m" cx="664.5" cy="135.4" r="1.7"/>
+<path class="mk-s" d="M664.5 139.7L666.6 142.1L664.5 144.5L662.4 142.1Z"/>
+<circle class="mk-m" cx="664.5" cy="163.9" r="1.7"/>
+<path class="mk-s" d="M664.5 202.4L666.6 204.8L664.5 207.2L662.4 204.8Z"/>
+<circle class="mk-m" cx="664.5" cy="228.5" r="1.7"/>
+<circle class="mk-m" cx="664.5" cy="231.4" r="1.7"/>
+<rect class="hit" x="662" y="30" width="5" height="228.0"><title>Sep 11 · 7 meals, 2 cough, sneeze, itch or lethargy entries</title></rect>
+<rect class="day" x="667.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="669.5" cy="96.5" r="1.7"/>
+<circle class="mk-m" cx="669.5" cy="96.5" r="1.7"/>
+<circle class="mk-m" cx="669.5" cy="110.8" r="1.7"/>
+<circle class="mk-m" cx="669.5" cy="145.9" r="1.7"/>
+<path class="mk-v" d="M669.5 143.9L672.1 146.9L669.5 149.9L666.9 146.9Z"/>
+<circle class="mk-m" cx="669.5" cy="213.3" r="1.7"/>
+<circle class="mk-m" cx="669.5" cy="218.1" r="1.7"/>
+<circle class="mk-m" cx="669.5" cy="232.3" r="1.7"/>
+<rect class="hit" x="667" y="30" width="5" height="228.0"><title>Sep 12 · 7 meals, 1 vomit</title></rect>
+<rect class="day" x="672.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="674.5" cy="110.8" r="1.7"/>
+<circle class="mk-m" cx="674.5" cy="141.1" r="1.7"/>
+<path class="mk-s" d="M674.5 140.7L676.6 143.1L674.5 145.5L672.4 143.1Z"/>
+<circle class="mk-m" cx="674.5" cy="167.8" r="1.7"/>
+<circle class="mk-m" cx="674.5" cy="183.0" r="1.7"/>
+<circle class="mk-m" cx="674.5" cy="193.4" r="1.7"/>
+<circle class="mk-m" cx="674.5" cy="228.5" r="1.7"/>
+<rect class="hit" x="672" y="30" width="5" height="228.0"><title>Sep 13 · 6 meals, 1 cough, sneeze, itch or lethargy entry, 2 other entries</title></rect>
+<rect class="day" x="677.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="679.5" cy="106.0" r="1.7"/>
+<path class="mk-s" d="M679.5 105.5L681.6 107.9L679.5 110.3L677.4 107.9Z"/>
+<circle class="mk-m" cx="679.5" cy="220.0" r="1.7"/>
+<circle class="mk-m" cx="679.5" cy="220.0" r="1.7"/>
+<rect class="hit" x="677" y="30" width="5" height="228.0"><title>Sep 14 · 3 meals, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="682.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="684.5" cy="42.4" r="1.7"/>
+<circle class="mk-m" cx="684.5" cy="78.4" r="1.7"/>
+<circle class="mk-m" cx="684.5" cy="144.9" r="1.7"/>
+<circle class="mk-m" cx="684.5" cy="166.8" r="1.7"/>
+<circle class="mk-m" cx="684.5" cy="203.8" r="1.7"/>
+<circle class="mk-m" cx="684.5" cy="222.8" r="1.7"/>
+<circle class="mk-m" cx="684.5" cy="248.5" r="1.7"/>
+<rect class="hit" x="682" y="30" width="5" height="228.0"><title>Sep 15 · 7 meals</title></rect>
+<rect class="day" x="687.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="689.5" cy="74.7" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="91.8" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="152.6" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="180.1" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="204.8" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="224.8" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="236.2" r="1.7"/>
+<circle class="mk-m" cx="689.5" cy="246.6" r="1.7"/>
+<rect class="hit" x="687" y="30" width="5" height="228.0"><title>Sep 16 · 8 meals, 1 other entry</title></rect>
+<rect class="day" x="692.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="694.5" cy="85.1" r="1.7"/>
+<circle class="mk-m" cx="694.5" cy="133.6" r="1.7"/>
+<path class="mk-v" d="M694.5 131.5L697.1 134.5L694.5 137.5L691.9 134.5Z"/>
+<circle class="mk-m" cx="694.5" cy="150.6" r="1.7"/>
+<circle class="mk-m" cx="694.5" cy="172.5" r="1.7"/>
+<circle class="mk-m" cx="694.5" cy="192.5" r="1.7"/>
+<path class="mk-s" d="M694.5 191.0L696.6 193.4L694.5 195.8L692.4 193.4Z"/>
+<path class="mk-v" d="M694.5 190.4L697.1 193.4L694.5 196.4L691.9 193.4Z"/>
+<circle class="mk-m" cx="694.5" cy="198.2" r="1.7"/>
+<circle class="mk-m" cx="694.5" cy="245.7" r="1.7"/>
+<rect class="hit" x="692" y="30" width="5" height="228.0"><title>Sep 17 · 7 meals, 2 vomits, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="697.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="699.5" cy="51.8" r="1.7"/>
+<circle class="mk-m" cx="699.5" cy="98.4" r="1.7"/>
+<circle class="mk-m" cx="699.5" cy="115.5" r="1.7"/>
+<circle class="mk-m" cx="699.5" cy="217.2" r="1.7"/>
+<circle class="mk-m" cx="699.5" cy="242.8" r="1.7"/>
+<rect class="hit" x="697" y="30" width="5" height="228.0"><title>Sep 18 · 5 meals</title></rect>
+<rect class="day" x="702.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="704.5" cy="109.8" r="1.7"/>
+<rect class="hit" x="702" y="30" width="5" height="228.0"><title>Sep 19 · 1 meal</title></rect>
+<rect class="emptyday" x="707.5" y="30" width="4" height="228.0"/>
+<rect class="hit" x="707" y="30" width="5" height="228.0"><title>Sep 20 · no entry</title></rect>
+<rect class="day" x="712.5" y="30" width="4" height="228.0"/>
+<line class="mk-d" x1="712.5" x2="716.5" y1="144.9" y2="144.9"/>
+<line class="mk-d" x1="712.5" x2="716.5" y1="153.5" y2="153.5"/>
+<circle class="mk-m" cx="714.5" cy="153.5" r="1.7"/>
+<circle class="mk-m" cx="714.5" cy="187.7" r="1.7"/>
+<path class="mk-v" d="M714.5 185.7L717.1 188.7L714.5 191.7L711.9 188.7Z"/>
+<circle class="mk-m" cx="714.5" cy="205.8" r="1.7"/>
+<circle class="mk-m" cx="714.5" cy="222.8" r="1.7"/>
+<circle class="mk-m" cx="714.5" cy="239.0" r="1.7"/>
+<rect class="hit" x="712" y="30" width="5" height="228.0"><title>Sep 21 · 5 meals, 1 vomit, 2 doses</title></rect>
+<rect class="day" x="717.5" y="30" width="4" height="228.0"/>
+<path class="mk-v" d="M719.5 41.2L722.1 44.2L719.5 47.2L716.9 44.2Z"/>
+<circle class="mk-m" cx="719.5" cy="91.8" r="1.7"/>
+<line class="mk-d" x1="717.5" x2="721.5" y1="91.8" y2="91.8"/>
+<line class="mk-d" x1="717.5" x2="721.5" y1="97.5" y2="97.5"/>
+<circle class="mk-m" cx="719.5" cy="147.8" r="1.7"/>
+<circle class="mk-m" cx="719.5" cy="185.8" r="1.7"/>
+<circle class="mk-m" cx="719.5" cy="185.8" r="1.7"/>
+<circle class="mk-m" cx="719.5" cy="220.0" r="1.7"/>
+<circle class="mk-m" cx="719.5" cy="243.8" r="1.7"/>
+<rect class="hit" x="717" y="30" width="5" height="228.0"><title>Sep 22 · 6 meals, 1 vomit, 2 doses, 1 look</title></rect>
+<rect class="day" x="722.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="724.5" cy="88.9" r="1.7"/>
+<line class="mk-d" x1="722.5" x2="726.5" y1="88.9" y2="88.9"/>
+<line class="mk-d" x1="722.5" x2="726.5" y1="96.5" y2="96.5"/>
+<path class="mk-s" d="M724.5 193.8L726.6 196.2L724.5 198.7L722.4 196.2Z"/>
+<circle class="mk-m" cx="724.5" cy="202.9" r="1.7"/>
+<circle class="mk-m" cx="724.5" cy="216.2" r="1.7"/>
+<rect class="hit" x="722" y="30" width="5" height="228.0"><title>Sep 23 · 3 meals, 1 cough, sneeze, itch or lethargy entry, 2 doses, 1 look</title></rect>
+<rect class="day" x="727.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="729.5" cy="62.3" r="1.7"/>
+<line class="mk-d" x1="727.5" x2="731.5" y1="63.2" y2="63.2"/>
+<circle class="mk-m" cx="729.5" cy="63.2" r="1.7"/>
+<circle class="mk-m" cx="729.5" cy="90.8" r="1.7"/>
+<line class="mk-d" x1="727.5" x2="731.5" y1="94.6" y2="94.6"/>
+<circle class="mk-m" cx="729.5" cy="208.6" r="1.7"/>
+<circle class="mk-m" cx="729.5" cy="215.2" r="1.7"/>
+<rect class="hit" x="727" y="30" width="5" height="228.0"><title>Sep 24 · 5 meals, 2 doses, 1 look</title></rect>
+<rect class="day" x="732.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="734.5" cy="63.2" r="1.7"/>
+<line class="mk-d" x1="732.5" x2="736.5" y1="63.2" y2="63.2"/>
+<line class="mk-d" x1="732.5" x2="736.5" y1="94.6" y2="94.6"/>
+<circle class="mk-m" cx="734.5" cy="106.0" r="1.7"/>
+<circle class="mk-m" cx="734.5" cy="208.6" r="1.7"/>
+<path class="mk-v" d="M734.5 208.5L737.1 211.5L734.5 214.5L731.9 211.5Z"/>
+<path class="mk-v" d="M734.5 218.9L737.1 221.9L734.5 224.9L731.9 221.9Z"/>
+<rect class="hit" x="732" y="30" width="5" height="228.0"><title>Sep 25 · 3 meals, 2 vomits, 2 doses, 2 looks</title></rect>
+<rect class="day" x="737.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="739.5" cy="63.2" r="1.7"/>
+<circle class="mk-m" cx="739.5" cy="92.7" r="1.7"/>
+<line class="mk-d" x1="737.5" x2="741.5" y1="92.7" y2="92.7"/>
+<line class="mk-d" x1="737.5" x2="741.5" y1="122.1" y2="122.1"/>
+<circle class="mk-m" cx="739.5" cy="202.9" r="1.7"/>
+<circle class="mk-m" cx="739.5" cy="239.0" r="1.7"/>
+<rect class="hit" x="737" y="30" width="5" height="228.0"><title>Sep 26 · 4 meals, 2 doses, 1 look</title></rect>
+<rect class="day" x="742.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="744.5" cy="93.7" r="1.7"/>
+<line class="mk-d" x1="742.5" x2="746.5" y1="93.7" y2="93.7"/>
+<line class="mk-d" x1="742.5" x2="746.5" y1="124.0" y2="124.0"/>
+<circle class="mk-m" cx="744.5" cy="133.6" r="1.7"/>
+<circle class="mk-m" cx="744.5" cy="177.2" r="1.7"/>
+<rect class="hit" x="742" y="30" width="5" height="228.0"><title>Sep 27 · 3 meals, 2 doses</title></rect>
+<rect class="day" x="747.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="749.5" cy="47.1" r="1.7"/>
+<circle class="mk-m" cx="749.5" cy="98.4" r="1.7"/>
+<line class="mk-d" x1="747.5" x2="751.5" y1="98.4" y2="98.4"/>
+<circle class="mk-m" cx="749.5" cy="145.9" r="1.7"/>
+<circle class="mk-m" cx="749.5" cy="175.3" r="1.7"/>
+<circle class="mk-t" cx="749.5" cy="196.2" r="1.5"/>
+<circle class="mk-m" cx="749.5" cy="204.8" r="1.7"/>
+<circle class="mk-t" cx="749.5" cy="249.5" r="1.5"/>
+<rect class="hit" x="747" y="30" width="5" height="228.0"><title>Sep 28 · 5 meals, 2 treats, 1 dose</title></rect>
+<rect class="day" x="752.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="754.5" cy="30.9" r="1.7"/>
+<circle class="mk-m" cx="754.5" cy="89.8" r="1.7"/>
+<line class="mk-d" x1="752.5" x2="756.5" y1="89.8" y2="89.8"/>
+<rect class="hit" x="752" y="30" width="5" height="228.0"><title>Sep 29 · 2 meals, 1 dose</title></rect>
+<rect class="day" x="757.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="759.5" cy="87.0" r="1.7"/>
+<line class="mk-d" x1="757.5" x2="761.5" y1="201.0" y2="201.0"/>
+<circle class="mk-m" cx="759.5" cy="204.8" r="1.7"/>
+<circle class="mk-m" cx="759.5" cy="204.8" r="1.7"/>
+<circle class="mk-m" cx="759.5" cy="242.8" r="1.7"/>
+<rect class="hit" x="757" y="30" width="5" height="228.0"><title>Sep 30 · 4 meals, 1 dose</title></rect>
+<rect class="day" x="762.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="764.5" cy="88.9" r="1.7"/>
+<circle class="mk-t" cx="764.5" cy="163.0" r="1.5"/>
+<circle class="mk-m" cx="764.5" cy="166.8" r="1.7"/>
+<path class="mk-s" d="M764.5 192.9L766.6 195.3L764.5 197.7L762.4 195.3Z"/>
+<circle class="mk-t" cx="764.5" cy="238.0" r="1.5"/>
+<circle class="mk-m" cx="764.5" cy="252.3" r="1.7"/>
+<rect class="hit" x="762" y="30" width="5" height="228.0"><title>Oct 1 · 3 meals, 2 treats, 1 cough, sneeze, itch or lethargy entry</title></rect>
+<rect class="day" x="767.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="769.5" cy="50.9" r="1.7"/>
+<line class="mk-d" x1="767.5" x2="771.5" y1="99.3" y2="99.3"/>
+<circle class="mk-m" cx="769.5" cy="99.3" r="1.7"/>
+<path class="mk-s" d="M769.5 133.0L771.6 135.4L769.5 137.8L767.4 135.4Z"/>
+<rect class="hit" x="767" y="30" width="5" height="228.0"><title>Oct 2 · 2 meals, 1 cough, sneeze, itch or lethargy entry, 1 dose</title></rect>
+<rect class="day" x="772.5" y="30" width="4" height="228.0"/>
+<line class="mk-d" x1="772.5" x2="776.5" y1="82.2" y2="82.2"/>
+<circle class="mk-m" cx="774.5" cy="82.2" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="118.4" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="161.1" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="188.7" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="191.5" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="226.7" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="227.6" r="1.7"/>
+<circle class="mk-m" cx="774.5" cy="237.1" r="1.7"/>
+<rect class="hit" x="772" y="30" width="5" height="228.0"><title>Oct 3 · 8 meals, 1 dose, 1 look</title></rect>
+<rect class="day" x="777.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="779.5" cy="45.2" r="1.7"/>
+<circle class="mk-m" cx="779.5" cy="105.0" r="1.7"/>
+<circle class="mk-m" cx="779.5" cy="105.0" r="1.7"/>
+<line class="mk-d" x1="777.5" x2="781.5" y1="105.0" y2="105.0"/>
+<circle class="mk-m" cx="779.5" cy="126.0" r="1.7"/>
+<path class="mk-s" d="M779.5 136.8L781.6 139.2L779.5 141.7L777.4 139.2Z"/>
+<circle class="mk-m" cx="779.5" cy="144.9" r="1.7"/>
+<circle class="mk-m" cx="779.5" cy="146.9" r="1.7"/>
+<circle class="mk-m" cx="779.5" cy="179.2" r="1.7"/>
+<circle class="mk-m" cx="779.5" cy="181.1" r="1.7"/>
+<circle class="mk-m" cx="779.5" cy="199.1" r="1.7"/>
+<rect class="hit" x="777" y="30" width="5" height="228.0"><title>Oct 4 · 9 meals, 1 cough, sneeze, itch or lethargy entry, 1 dose</title></rect>
+<rect class="day" x="782.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="784.5" cy="96.5" r="1.7"/>
+<circle class="mk-t" cx="784.5" cy="141.1" r="1.5"/>
+<circle class="mk-m" cx="784.5" cy="172.5" r="1.7"/>
+<circle class="mk-m" cx="784.5" cy="194.3" r="1.7"/>
+<circle class="mk-m" cx="784.5" cy="194.3" r="1.7"/>
+<rect class="hit" x="782" y="30" width="5" height="228.0"><title>Oct 5 · 4 meals, 1 treat</title></rect>
+<rect class="day" x="787.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="789.5" cy="68.9" r="1.7"/>
+<circle class="mk-m" cx="789.5" cy="97.5" r="1.7"/>
+<line class="mk-d" x1="787.5" x2="791.5" y1="97.5" y2="97.5"/>
+<circle class="mk-m" cx="789.5" cy="205.8" r="1.7"/>
+<circle class="mk-m" cx="789.5" cy="231.4" r="1.7"/>
+<rect class="hit" x="787" y="30" width="5" height="228.0"><title>Oct 6 · 4 meals, 1 dose, 1 look</title></rect>
+<rect class="day" x="792.5" y="30" width="4" height="228.0"/>
+<circle class="mk-m" cx="794.5" cy="103.2" r="1.7"/>
+<circle class="mk-m" cx="794.5" cy="202.9" r="1.7"/>
+<circle class="mk-m" cx="794.5" cy="209.5" r="1.7"/>
+<circle class="mk-m" cx="794.5" cy="223.8" r="1.7"/>
+<rect class="hit" x="792" y="30" width="5" height="228.0"><title>Oct 7 · 4 meals</title></rect>
+<line class="tick" x1="62" x2="62" y1="258.0" y2="263.0"/>
+<text class="ax" x="62" y="275.0">May 14</text>
+<line class="tick" x1="152" x2="152" y1="258.0" y2="263.0"/>
+<text class="ax" x="152" y="275.0">Jun 1</text>
+<line class="tick" x1="302" x2="302" y1="258.0" y2="263.0"/>
+<text class="ax" x="302" y="275.0">Jul 1</text>
+<line class="tick" x1="457" x2="457" y1="258.0" y2="263.0"/>
+<text class="ax" x="457" y="275.0">Aug 1</text>
+<line class="tick" x1="612" x2="612" y1="258.0" y2="263.0"/>
+<text class="ax" x="612" y="275.0">Sep 1</text>
+<line class="tick" x1="762" x2="762" y1="258.0" y2="263.0"/>
+<text class="ax" x="762" y="275.0">Oct 1</text>
+<line class="trial" x1="427" x2="427" y1="18" y2="258.0"/>
+<text class="ax strong" x="431" y="15">Trial diet from Jul 26</text>
+<text class="ax" x="709.5" y="27" text-anchor="middle">Sep 20</text>
+</svg></div>
+    <p class="data-note">147 days · 489 meals · 536 treats · 48 vomits · 52 cough, sneeze, itch and lethargy entries · 65 doses · not drawn: 8 looks, 4 other entries · America/Chicago · the marks show logging, not eating</p>
+    <p class="cap"><b>Rules it keeps:</b> meals and treats have different marks, or the drop in density after Jul 26 reads as “she eats less”. No caption compares the eras. Every day is drawn, so coverage is the ground, never a “146 of 147” ratio. A shared version that hides the rose marks must say so.</p>
+  </div>
+
+  <div class="chart-card">
+    <h3>When Nyx’s meals and treats are logged</h3>
+    <p class="cap">1,025 entries, May 14 to Oct 7, by local hour. Most land around 6 in the morning and between 5 and 10 at night.</p>
+    <div class="legend" aria-hidden="true">
+      <span><svg viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" fill="var(--c-meal)"/></svg>Meals</span>
+      <span><svg viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="10" rx="2" fill="var(--c-meal)" fill-opacity="0.35"/></svg>Treats</span>
+    </div>
+    <div class="chart-scroll"><svg class="clk" viewBox="0 0 722 218" width="722" height="218" role="img" aria-labelledby="clk-t clk-d">
+<title id="clk-t">When Nyx’s meals and treats are logged, by local hour</title>
+<desc id="clk-d">489 meal entries and 536 treat entries, May 14 to October 7, grouped by the hour they were logged in America/Chicago.</desc>
+<line class="grid" x1="40" x2="712" y1="188.0" y2="188.0"/>
+<text class="ax" x="34" y="191.5" text-anchor="end">0</text>
+<line class="grid" x1="40" x2="712" y1="96.6" y2="96.6"/>
+<text class="ax" x="34" y="100.1" text-anchor="end">50</text>
+<rect class="bar-m" x="43.0" y="177.0" width="22" height="11.0"/>
+<path class="bar-t" d="M43.0 175.0V146.1Q43.0 142.1 47.0 142.1H61.0Q65.0 142.1 65.0 146.1V175.0Z"/>
+<rect class="hit" x="40.0" y="18" width="28" height="170"><title>12 am: 6 meals, 18 treats logged</title></rect>
+<text class="ax" x="54.0" y="204.0" text-anchor="middle">12 am</text>
+<rect class="bar-m" x="71.0" y="166.1" width="22" height="21.9"/>
+<path class="bar-t" d="M71.0 164.1V142.5Q71.0 138.5 75.0 138.5H89.0Q93.0 138.5 93.0 142.5V164.1Z"/>
+<rect class="hit" x="68.0" y="18" width="28" height="170"><title>1 am: 12 meals, 14 treats logged</title></rect>
+<rect class="bar-m" x="99.0" y="164.2" width="22" height="23.8"/>
+<path class="bar-t" d="M99.0 162.2V133.3Q99.0 129.3 103.0 129.3H117.0Q121.0 129.3 121.0 133.3V162.2Z"/>
+<rect class="hit" x="96.0" y="18" width="28" height="170"><title>2 am: 13 meals, 18 treats logged</title></rect>
+<rect class="bar-m" x="127.0" y="169.7" width="22" height="18.3"/>
+<path class="bar-t" d="M127.0 167.7V160.8Q127.0 156.8 131.0 156.8H145.0Q149.0 156.8 149.0 160.8V167.7Z"/>
+<rect class="hit" x="124.0" y="18" width="28" height="170"><title>3 am: 10 meals, 6 treats logged</title></rect>
+<text class="ax" x="138.0" y="204.0" text-anchor="middle">3 am</text>
+<rect class="bar-m" x="155.0" y="167.9" width="22" height="20.1"/>
+<path class="bar-t" d="M155.0 165.9V135.2Q155.0 131.2 159.0 131.2H173.0Q177.0 131.2 177.0 135.2V165.9Z"/>
+<rect class="hit" x="152.0" y="18" width="28" height="170"><title>4 am: 11 meals, 19 treats logged</title></rect>
+<rect class="bar-m" x="183.0" y="147.8" width="22" height="40.2"/>
+<path class="bar-t" d="M183.0 145.8V126.0Q183.0 122.0 187.0 122.0H201.0Q205.0 122.0 205.0 126.0V145.8Z"/>
+<rect class="hit" x="180.0" y="18" width="28" height="170"><title>5 am: 22 meals, 13 treats logged</title></rect>
+<rect class="bar-m" x="211.0" y="103.9" width="22" height="84.1"/>
+<path class="bar-t" d="M211.0 101.9V20.0Q211.0 16.0 215.0 16.0H229.0Q233.0 16.0 233.0 20.0V101.9Z"/>
+<rect class="hit" x="208.0" y="18" width="28" height="170"><title>6 am: 46 meals, 47 treats logged</title></rect>
+<text class="ax" x="222.0" y="204.0" text-anchor="middle">6 am</text>
+<text class="val" x="222.0" y="11.0" text-anchor="middle">93</text>
+<rect class="bar-m" x="239.0" y="129.5" width="22" height="58.5"/>
+<path class="bar-t" d="M239.0 127.5V91.3Q239.0 87.3 243.0 87.3H257.0Q261.0 87.3 261.0 91.3V127.5Z"/>
+<rect class="hit" x="236.0" y="18" width="28" height="170"><title>7 am: 32 meals, 22 treats logged</title></rect>
+<rect class="bar-m" x="267.0" y="166.1" width="22" height="21.9"/>
+<path class="bar-t" d="M267.0 164.1V146.1Q267.0 142.1 271.0 142.1H285.0Q289.0 142.1 289.0 146.1V164.1Z"/>
+<rect class="hit" x="264.0" y="18" width="28" height="170"><title>8 am: 12 meals, 12 treats logged</title></rect>
+<rect class="bar-m" x="295.0" y="169.7" width="22" height="18.3"/>
+<path class="bar-t" d="M295.0 167.7V155.3Q295.0 151.3 299.0 151.3H313.0Q317.0 151.3 317.0 155.3V167.7Z"/>
+<rect class="hit" x="292.0" y="18" width="28" height="170"><title>9 am: 10 meals, 9 treats logged</title></rect>
+<text class="ax" x="306.0" y="204.0" text-anchor="middle">9 am</text>
+<rect class="bar-m" x="323.0" y="167.9" width="22" height="20.1"/>
+<path class="bar-t" d="M323.0 165.9V131.5Q323.0 127.5 327.0 127.5H341.0Q345.0 127.5 345.0 131.5V165.9Z"/>
+<rect class="hit" x="320.0" y="18" width="28" height="170"><title>10 am: 11 meals, 21 treats logged</title></rect>
+<rect class="bar-m" x="351.0" y="167.9" width="22" height="20.1"/>
+<path class="bar-t" d="M351.0 165.9V137.0Q351.0 133.0 355.0 133.0H369.0Q373.0 133.0 373.0 137.0V165.9Z"/>
+<rect class="hit" x="348.0" y="18" width="28" height="170"><title>11 am: 11 meals, 18 treats logged</title></rect>
+<rect class="bar-m" x="379.0" y="147.8" width="22" height="40.2"/>
+<path class="bar-t" d="M379.0 145.8V109.6Q379.0 105.6 383.0 105.6H397.0Q401.0 105.6 401.0 109.6V145.8Z"/>
+<rect class="hit" x="376.0" y="18" width="28" height="170"><title>12 pm: 22 meals, 22 treats logged</title></rect>
+<text class="ax" x="390.0" y="204.0" text-anchor="middle">12 pm</text>
+<rect class="bar-m" x="407.0" y="167.9" width="22" height="20.1"/>
+<path class="bar-t" d="M407.0 165.9V144.3Q407.0 140.3 411.0 140.3H425.0Q429.0 140.3 429.0 144.3V165.9Z"/>
+<rect class="hit" x="404.0" y="18" width="28" height="170"><title>1 pm: 11 meals, 14 treats logged</title></rect>
+<rect class="bar-m" x="435.0" y="162.4" width="22" height="25.6"/>
+<path class="bar-t" d="M435.0 160.4V133.3Q435.0 129.3 439.0 129.3H453.0Q457.0 129.3 457.0 133.3V160.4Z"/>
+<rect class="hit" x="432.0" y="18" width="28" height="170"><title>2 pm: 14 meals, 17 treats logged</title></rect>
+<rect class="bar-m" x="463.0" y="146.0" width="22" height="42.0"/>
+<path class="bar-t" d="M463.0 144.0V115.1Q463.0 111.1 467.0 111.1H481.0Q485.0 111.1 485.0 115.1V144.0Z"/>
+<rect class="hit" x="460.0" y="18" width="28" height="170"><title>3 pm: 23 meals, 18 treats logged</title></rect>
+<text class="ax" x="474.0" y="204.0" text-anchor="middle">3 pm</text>
+<rect class="bar-m" x="491.0" y="156.9" width="22" height="31.1"/>
+<path class="bar-t" d="M491.0 154.9V102.3Q491.0 98.3 495.0 98.3H509.0Q513.0 98.3 513.0 102.3V154.9Z"/>
+<rect class="hit" x="488.0" y="18" width="28" height="170"><title>4 pm: 17 meals, 31 treats logged</title></rect>
+<rect class="bar-m" x="519.0" y="129.5" width="22" height="58.5"/>
+<path class="bar-t" d="M519.0 127.5V51.1Q519.0 47.1 523.0 47.1H537.0Q541.0 47.1 541.0 51.1V127.5Z"/>
+<rect class="hit" x="516.0" y="18" width="28" height="170"><title>5 pm: 32 meals, 44 treats logged</title></rect>
+<text class="val" x="530.0" y="42.1" text-anchor="middle">76</text>
+<rect class="bar-m" x="547.0" y="113.1" width="22" height="74.9"/>
+<path class="bar-t" d="M547.0 111.1V69.4Q547.0 65.4 551.0 65.4H565.0Q569.0 65.4 569.0 69.4V111.1Z"/>
+<rect class="hit" x="544.0" y="18" width="28" height="170"><title>6 pm: 41 meals, 25 treats logged</title></rect>
+<text class="ax" x="558.0" y="204.0" text-anchor="middle">6 pm</text>
+<rect class="bar-m" x="575.0" y="129.5" width="22" height="58.5"/>
+<path class="bar-t" d="M575.0 127.5V84.0Q575.0 80.0 579.0 80.0H593.0Q597.0 80.0 597.0 84.0V127.5Z"/>
+<rect class="hit" x="572.0" y="18" width="28" height="170"><title>7 pm: 32 meals, 26 treats logged</title></rect>
+<rect class="bar-m" x="603.0" y="107.6" width="22" height="80.4"/>
+<path class="bar-t" d="M603.0 105.6V71.2Q603.0 67.2 607.0 67.2H621.0Q625.0 67.2 625.0 71.2V105.6Z"/>
+<rect class="hit" x="600.0" y="18" width="28" height="170"><title>8 pm: 44 meals, 21 treats logged</title></rect>
+<rect class="bar-m" x="631.0" y="147.8" width="22" height="40.2"/>
+<path class="bar-t" d="M631.0 145.8V62.0Q631.0 58.0 635.0 58.0H649.0Q653.0 58.0 653.0 62.0V145.8Z"/>
+<rect class="hit" x="628.0" y="18" width="28" height="170"><title>9 pm: 22 meals, 48 treats logged</title></rect>
+<text class="ax" x="642.0" y="204.0" text-anchor="middle">9 pm</text>
+<text class="val" x="642.0" y="53.0" text-anchor="middle">70</text>
+<rect class="bar-m" x="659.0" y="144.1" width="22" height="43.9"/>
+<path class="bar-t" d="M659.0 142.1V98.6Q659.0 94.6 663.0 94.6H677.0Q681.0 94.6 681.0 98.6V142.1Z"/>
+<rect class="hit" x="656.0" y="18" width="28" height="170"><title>10 pm: 24 meals, 26 treats logged</title></rect>
+<rect class="bar-m" x="687.0" y="167.9" width="22" height="20.1"/>
+<path class="bar-t" d="M687.0 165.9V120.5Q687.0 116.5 691.0 116.5H705.0Q709.0 116.5 709.0 120.5V165.9Z"/>
+<rect class="hit" x="684.0" y="18" width="28" height="170"><title>11 pm: 11 meals, 27 treats logged</title></rect>
+<line class="base" x1="40" x2="712" y1="188" y2="188"/>
+</svg></div>
+    <p class="data-note">counts are entries in each hour · peaks labelled · America/Chicago (the account’s zone; the app would read the device zone)</p>
+    <p class="cap"><b>Rules it keeps:</b> “logged” every time, never “eats” or “breakfast lands”. Never “missed” or “late” (NV-G9). A clock on a lock screen or a public share tells a stranger when the house is empty, so it stays in the app, or shares without the hour axis.</p>
+  </div>
+</section>
+
+<!-- ============================================================ 5 -->
+<section class="section">
+  <h2>The shortlist</h2>
+  <p class="sub">Ranked by delight times honesty times buildability. Nothing on it is a new notification in v1. Every one cleared both red teams, some only with the transform shown.</p>
+
+  <div class="sl">
+
+    <div class="sl-card">
+      <div class="rank">1</div>
+      <div class="sl-body">
+        <h3>Calendar occasions, said in the app</h3>
+        <p class="one">Her exact birthday, the record’s age, the next appointment and the trial day, on Home’s header date and in the 9pm recap’s forward line. Worded the same whatever her health.</p>
+        <div class="plate two" style="border:0;padding:6px 0 10px">
+          <div>
+            <p class="frame-label"><b>Home</b> · header date · Sat Oct 10</p>
+            <div class="dayframe">
+              <div class="hd">Saturday, October 10</div>
+              <div class="hd-big">Nyx’s record is 150 days old today.</div>
+              <div class="muted">It starts on May 14.</div>
+            </div>
+          </div>
+          <div>
+            <p class="frame-label"><b>Recap</b> · forward line · Fri Oct 16</p>
+            <div class="night">
+              <div class="n-eb">Today</div>
+              <div class="n-date">Friday, October 16</div>
+              <div class="fwd">Tomorrow is day 84 of the trial.<small>One forward line a night, in this order: appointment · birthday · trial day · the record’s age</small></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-label">DB-4 · the birthday line, drawn for the decision</p>
+        <div class="options">
+          <div class="opt"><div class="opt-l">Option · one deadpan register (Data Scientist, Dr. Chen)</div>
+            <div class="dayframe"><div class="hd">Tuesday, September 1</div><div class="hd-big">Nyx is 3 today.</div></div></div>
+          <div class="opt lean"><div class="opt-l">Lean · one allowlisted literal, identical every year</div>
+            <div class="dayframe"><div class="hd">Tuesday, September 1</div><div class="hd-big">Happy birthday, Nyx.</div><div class="muted">She is 3 today.</div></div></div>
+        </div>
+        <dl style="margin-top:14px">
+          <dt>Lock screen</dt><dd>Not in v1. Later, only if DB-3 (b) passes: “Nyx turns 4 today.” Opt in per pet, off by default, never a trial day, count or food.</dd>
+          <dt>Data</dt><dd>Ready. <code>pets.date_of_birth</code> (exact precision only), earliest live entry, <code>vet_appointments</code>, <code>diet_trials</code>. <code>buildForwardLine</code> knows only the trial day today.</dd>
+          <dt>Waits on</dt><dd>CUL-1684, a “has died” state a sole pet can reach. Your recap also needs the test pet archived: with two active pets the forward line never renders (<code>lib/daySummary.ts</code>, single-pet only).</dd>
+          <dt>Cost</dt><dd>S (the death state is its own M)</dd>
+          <dt>For / against</dt><dd>Every lens put it first. Against: no death state exists, so the worst message this app could send is a birthday a week after a death.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">2</div>
+      <div class="sl-body">
+        <h3>Finished, never liked</h3>
+        <p class="one">Which meal foods Nyx finishes, out of the meals you rated, with the unrated count and the newest rating date beside it. Drawn above in “your two examples”.</p>
+        <dl>
+          <dt>Where</dt><dd>The Foods shelf (fix now, CUL-1685), food detail (B-181), one recap line when a meal food first qualifies, echoed on Patterns’ Top Foods.</dd>
+          <dt>Never</dt><dd>A push, a rate for a treat, an off-diet food during a trial, a line about the food she finishes less.</dd>
+          <dt>Waits on</dt><dd>The “armed twin” rule before anything beyond the shelf: a positive intake line shows only while the decline read for that pet can see.</dd>
+          <dt>Cost</dt><dd>S, the predicate already exists (<code>selectReliableFavorites</code>)</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">3</div>
+      <div class="sl-body">
+        <h3>The household trial card</h3>
+        <p class="one">A plain text card the owner sends to a partner or the dog walker, saying what Nyx eats on her trial. Built only from her trial list, with an “as of” date and no end date.</p>
+        <div class="plate two" style="border:0;padding:6px 0 10px">
+          <div>
+            <p class="frame-label"><b>Share sheet preview</b> · exactly what leaves</p>
+            <div class="share">Nyx is on a diet trial her vet set. She eats only these: Royal Canin Selected Protein PR (dry and wet), Instinct Limited Ingredient Rabbit in gravy, Rayne rabbit treats, Vital Essentials freeze-dried rabbit bites, and plain cooked rabbit. Anything else, even a bite of chicken, makes it harder for her vet to learn what’s going on. If something slips, tell me so it goes in her record, and the trial keeps going. Her vet decides when it ends.<div class="from">As of October 8 · from Nyx’s record in Culprit</div></div>
+          </div>
+          <div class="note-col">
+            <p><b>Corrected:</b> the team’s draft named three foods. Nyx’s list holds six. A card that leaves one out becomes a false ban, so it reads the list and nothing else.</p>
+            <p><b>No end date:</b> in the counterexample a screenshot said “until September 20”, the vet extended on Sep 18, and the walker restarted treats.</p>
+            <p><b>No indication, vet or clinic:</b> a trial is a de facto diagnosis.</p>
+          </div>
+        </div>
+        <dl>
+          <dt>Why it ranks</dt><dd>Undisclosed feeding by others is the top trial contaminant, and the record shows 527 treat entries before Jul 26. Useful more than light, but it is the card Jordan would actually send.</dd>
+          <dt>Cost</dt><dd>S, text through the share sheet</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">4</div>
+      <div class="sl-body">
+        <h3>The household’s clock</h3>
+        <p class="one">A 24-hour lane on Patterns with every meal and treat entry at its local hour, captioned “logged”. Drawn above at real density.</p>
+        <dl>
+          <dt>Where</dt><dd>A Patterns card with a doorway, reusing the timing lane’s Shape A.</dd>
+          <dt>Never</dt><dd>A comparison between eras (“about 9 a day before, about 5 since”), which is the eating-less anti-candidate.</dd>
+          <dt>Cost</dt><dd>M</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">5</div>
+      <div class="sl-body">
+        <h3>Day 84: the weigh in before it, the record of it after</h3>
+        <p class="one">Nyx reaches day 84 of 84 on Sat Oct 17, and the trial card’s milestone state already ships. Add one weigh-in ask this week, and, only after you record the vet’s call, a plain record of the 84 days.</p>
+        <div class="plate two" style="border:0;padding:6px 0 10px">
+          <div>
+            <p class="frame-label"><b>Trial card</b> · this week</p>
+            <div class="dayframe">
+              <div class="card">
+                <div class="row-title">Day 75 of Nyx’s trial</div>
+                <div class="row-sub">Nyx’s one weight in the record is 3.73 kg, on September 16. A weigh in before Saturday gives her vet a second point.</div>
+                <div class="door">Log a weight ›</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="frame-label"><b>After the vet’s call</b> · same whatever the outcome</p>
+            <div class="dayframe">
+              <div class="card">
+                <div class="row-sub">84 days of Nyx’s trial, Jul 26 to Oct 17. Her vet extended it from 56 to 84 days on Sep 18. What the trial showed is her vet’s call; the full record is in her report.</div>
+                <div class="door">Send the vet report ›</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <dl>
+          <dt>Never</dt><dd>“Last”, “complete” or “done”. A count of your logging (“{n} of the 84 days”). Vomit bars by month. Anything before you record the outcome.</dd>
+          <dt>Cost</dt><dd>M. Dr. Chen signs every string.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">6</div>
+      <div class="sl-body">
+        <h3>Nyx’s record, drawn</h3>
+        <p class="one">The first drawing above, as a real surface: offered from Patterns’ month, and at the record’s six-month and yearly marks.</p>
+        <dl><dt>Cost</dt><dd>M. An image share would make it L (a native build).</dd>
+        <dt>Against</dt><dd>A public share puts dated vomit marks off the device. A curated version lies by omission.</dd></dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">7</div>
+      <div class="sl-body">
+        <h3>The protein she has met before</h3>
+        <p class="one">Rabbit is in Nyx’s record before her rabbit trial. Tell her vet once, where the vet reads.</p>
+        <p class="copy">“Rabbit also appears in Nyx’s record before her trial: 12 entries across five rabbit foods, the first Rayne rabbit treats on May 23. It’s in her vet report with her previous diet. Keep going with the trial as your vet set it.”</p>
+        <dl>
+          <dt>Where</dt><dd>The vet report’s trial block, Get ready, and the trial screen’s never-blocking heads-up. Never a light surface.</dd>
+          <dt>Corrected</dt><dd>The team’s draft said Instinct rabbit 17 times before the trial. It was 2; the other 15 are during the trial, where it is on her list.</dd>
+          <dt>Cost</dt><dd>S. Dr. Chen signs.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">8</div>
+      <div class="sl-body">
+        <h3>Nyx’s month, and the Sunday week</h3>
+        <p class="one">Named look-back objects in the app. Symptoms first, every month whatever it holds, never compared with an earlier period.</p>
+        <p class="copy">“September in Nyx’s record: 10 vomits · 7 coughs · 3 itch entries · 142 meals and treats logged · day 67 of her trial on Sep 30.”<br>“Oct 1 to 7 in Nyx’s record: 2 coughs · 1 sneeze · 38 meals and treats.”</p>
+        <dl><dt>Cost</dt><dd>M, on <code>lib/monthModel.ts</code> and the recap. This gives the parked weekly digest (portfolio #7) the home it lacked.</dd>
+        <dt>Against</dt><dd>A recap that omits the vomits lies, and one that includes them is not a party. That caps how light it can feel.</dd></dl>
+      </div>
+    </div>
+
+    <div class="sl-card">
+      <div class="rank">9</div>
+      <div class="sl-body">
+        <h3>Her words at their hour, symptom first</h3>
+        <p class="one">The honest form of “playful”: the recap spine names your look words at the hour you marked them (drawn in “your two examples”). Patterns’ <i>What you noticed</i> card already does the count once there are 14 answered days.</p>
+        <dl><dt>Cost</dt><dd>S, rides CUL-883</dd></dl>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section class="section">
+  <h2>Never, and why</h2>
+  <p class="sub">The tempting versions, each rejected by at least one red team with a concrete counterexample. Recorded so they are decided, not forgotten.</p>
+  <div class="wall">
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">8:00 am</div></div><div class="nbody">Nyx hasn’t vomited in 7 days.</div></div></div>
+      <p class="why"><b>An absence claim.</b> At September’s rate a vomit-free week happens by chance about one week in ten. Nine days before day 84 it reads as “the diet worked”.</p>
+      <p class="instead">Instead: History already shows the date of the last vomit, with no count of days.</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">Vomiting is down since Nyx switched to rabbit.</div></div></div>
+      <p class="why"><b>A causal verdict and regression to the mean.</b> August’s 5 was followed by September’s 10. The house still teaches this sentence in three places (CUL-1686).</p>
+      <p class="instead">Instead: nothing for the owner. The trial screen’s ruled lines and the vet carry it.</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">Nyx finished 70 of 70 Greenies.</div></div></div>
+      <p class="why"><b>Treat nostalgia mid-elimination.</b> It celebrates the trial’s likeliest confounder, at the finishing ceiling treats always sit at.</p>
+      <p class="instead">Instead: the list returns only as the vet’s rechallenge menu (DB-10).</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">Nyx ate 43% less in August than in July.</div></div></div>
+      <p class="why"><b>Entries measure logging.</b> 527 treat entries left with the trial. Read one way it is a false alarm, the other a false “she’s settled”.</p>
+      <p class="instead">Instead: the decline detector, which compares rated meals with both denominators.</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">Nyx played more than 80% of cats her age this month.</div></div></div>
+      <p class="why"><b>There is no population.</b> Production holds 4 pets and 9 accounts, row-level security is per account, and words chosen by owners describe the owners.</p>
+      <p class="instead">Instead: nothing.</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">A moment from Nyx’s record, a year ago.</div></div></div>
+      <p class="why"><b>Built today it opens a vomit photo</b>, since all 49 of her photos are on vomits. No filter catches an unrecorded death of a sole pet.</p>
+      <p class="instead">Instead: in the app only, from portraits, after a private photo class and a death state exist.</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">Nyx’s record type: The Evening Regular.</div></div></div>
+      <p class="why"><b>It turns the household’s logging habit into a trait of the cat</b>, in the vet’s vocabulary; grazing versus meal feeding is a clinical distinction.</p>
+      <p class="instead">Instead: the household’s clock.</p>
+    </div>
+    <div class="item">
+      <div class="mini-lock struck"><div class="notif"><div class="nh"><div class="nicon"></div><div class="napp">Culprit</div><div class="nwhen">now</div></div><div class="nbody">110 Greenies Smartbites in the record. Nyx noticed.</div></div></div>
+      <p class="why"><b>The joke’s subject is the confounder</b>, and “Nyx noticed” credits the cat with enjoyment when the owner is the informant.</p>
+      <p class="instead">Instead: previous diet history behind Get ready.</p>
+    </div>
+  </div>
+  <p class="cap" style="margin-top:16px;color:var(--ink-3);font-size:13.5px">Also never: “the most logged food changes hands”, “a month ago you wrote…” on Home, “has Nyx jumped up anywhere high this week?”, meal 1,000 stamped at the bowl, a day titled from its own facts in a comic cadence.</p>
+</section>
+
+<!-- ============================================================ 7 -->
+<section class="section">
+  <h2>Found on the way, and filed</h2>
+  <p class="sub">Each was claimed by a lens and then verified against the code or the database before filing. Several are worth doing whatever you decide about delight.</p>
+  <div class="callout"><b>Do this first, no build needed:</b> archive the test pet, Schrodingers Cat. Your account has two active pets, and the recap’s lead line, count chips, trial strip and forward line render only for a single-pet account (<code>lib/daySummary.ts</code>, <code>single = input.pets.length === 1</code>). You have likely never seen the rich recap you shipped.</div>
+  <div class="found" style="margin-top:14px">
+    <div class="f"><span class="id">CUL-1684</span><span><b>No “has died” state, and a sole pet cannot be archived.</b> The app tells a grieving owner “Adding another pet first makes this possible”, and the 9pm notification keeps arriving. High. Gates every occasion idea.</span></div>
+    <div class="f"><span class="id">CUL-1685</span><span><b>The Foods shelf says “Finished 29 of 29 meals”</b> on a food logged 264 times, from ratings that stopped Aug 12, and a favourite never ages out.</span></div>
+    <div class="f"><span class="id">CUL-1686</span><span><b>Three teaching examples still teach “Vomiting is down 60%”</b>: the design principles, the nyx-voice skill, and the Landing preview every new owner sees.</span></div>
+    <div class="f"><span class="id">CUL-1687</span><span><b>Follow-up notifications name any pet</b> under the names opt-in, while the recap keeps R-8’s single-pet rule. One naming rule for every category.</span></div>
+    <div class="f"><span class="id">CUL-1688</span><span><b>Nothing counts unsolicited sends per day.</b> The budget sums category weights. Any second unsolicited type needs one per-day arbiter first.</span></div>
+    <div class="f"><span class="id">CUL-1689</span><span><b>Ask’s answer check blocks “picky” but lets “loves”, “likes” and “favourite” through</b>, while the Signal’s check catches them.</span></div>
+    <div class="f"><span class="id">CUL-1690</span><span><b>Investigate whether Nyx’s vomit reads escalate on rating gaps</b> (313 of 355 trial meals unrated).</span></div>
+  </div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section class="section">
+  <h2>Decisions for you</h2>
+  <p class="sub">Eleven briefs. DB-1 and DB-2 come first: every occasion idea waits on them, and they decide whether Nyx sees any of this. The recommended option is marked.</p>
+  <div class="briefs">
+    <div class="brief first"><div class="id">DB-1 · FIRST</div><h3>Does a “has died” state ship before any occasion, and where?</h3>
+      <ol type="a"><li class="rec">A profile row reachable for a sole pet that stops every notification and look-back for her, the recap included. The only shape the most common account can reach.</li><li>A reason inside the archive flow (a sole pet can’t reach it).</li><li>An activity proxy only (fires through the first two weeks of grief).</li></ol>
+      <p class="cons">Unblocks every occasion idea. Own schema PR and a T&amp;S read (CUL-1684).</p></div>
+    <div class="brief first"><div class="id">DB-2 · FIRST</div><h3>Does delight go quiet when she is unwell?</h3>
+      <ol type="a"><li>Structural silence under shared quiet gates.</li><li class="rec">Calendar facts render the same whatever her health, below any safety card; record-derived facts are gated. A calendar line that hides in a crisis teaches that its presence means she is fine.</li><li>Everything below safety, with a disclosure when something is withheld.</li></ol>
+      <p class="cons">Record-derived nuggets will rarely fire for Nyx, which is correct. Dir. of Engineering’s dissent stands for record-derived delight.</p></div>
+    <div class="brief"><div class="id">DB-3</div><h3>Which channel does delight use in v1?</h3>
+      <ol type="a"><li class="rec">The 9pm recap and in-app surfaces only. Spends no unsolicited budget.</li><li>Plus an opt-in birthday and record-age push.</li><li>A full opt-in “Nyx’s days” category.</li><li>Spend the push on the dinner rating question (Dr. Chen).</li></ol>
+      <p class="cons">(b) to (d) need the per-day arbiter (CUL-1688), the Principle 4 D1 wording, and a CHECK migration.</p></div>
+    <div class="brief"><div class="id">DB-4</div><h3>Does delight get a second voice?</h3>
+      <ol type="a"><li>One deadpan register; lightness comes from the subject.</li><li>A keepsake register for calendar moments.</li><li>A lighter voice everywhere.</li><li class="rec">Lean: (a) plus one allowlisted literal, “Happy birthday, Nyx.”, identical every year.</li></ol>
+      <p class="cons">Dissent: Owners and Market want (b); Data Scientist and Dr. Chen hold (a) without the literal. Drawn side by side in shortlist #1.</p></div>
+    <div class="brief"><div class="id">DB-5</div><h3>What does Nyx’s day 84 (Sat Oct 17) get?</h3>
+      <ol type="a"><li>Clinical prep only: the weigh-in line and the report door.</li><li>A shareable keepsake at the target tap.</li><li class="rec">(a) now, plus a plain record of the 84 days after you record the vet’s call. A keepsake before the vet rules reads as “it worked”.</li></ol>
+      <p class="cons">The weigh-in line is buildable in nine days; an image keepsake needs a native build.</p></div>
+    <div class="brief"><div class="id">DB-6</div><h3>Reopen B-763 for the target day on the lock screen?</h3>
+      <ol type="a"><li class="rec">Keep it parked. The recap already says “Tomorrow is day 84 of the trial.” on Oct 16; a body cannot carry the keep-going sentence.</li><li>The envelope “A note about Nyx’s trial.”</li><li>“Day 84 of Nyx’s trial. Worth reviewing with your vet where it goes from here.”</li></ol>
+      <p class="cons">Dissent: Owners and Market want (c).</p></div>
+    <div class="brief"><div class="id">DB-7</div><h3>Trade a small ask for an honest finish rate?</h3>
+      <ol type="a"><li>No ask; the food line lives with sparse ratings and says so.</li><li class="rec">At most weekly, a recap door to the least-rated food of the day, nothing preselected, stands down after three ignored weeks.</li><li>An app-sampled meal a day (the better statistical instrument, later).</li><li>A dinner push at a declared window.</li></ol>
+      <p class="cons">Any prompted rating carries safety weight: one Most or All quiets the vomit read’s intake arm.</p></div>
+    <div class="brief"><div class="id">DB-8</div><h3>What format do shared cards take in v1?</h3>
+      <ol type="a"><li class="rec">Text or PDF through the share sheet, with a preview of exactly what leaves and an “as of” date. A share is an export.</li><li>Image story cards (native build).</li><li>No shares in v1.</li></ol>
+      <p class="cons">Unblocks the household trial card. Whether symptoms print on a shared look-back stays a conflict below.</p></div>
+    <div class="brief"><div class="id">DB-9</div><h3>Does the record get a non-clinical photo class?</h3>
+      <ol type="a"><li class="rec">Not yet. Resolve the public pet-photo bucket first (CUL-594); a portrait stored there is readable by anyone with the link.</li><li>Owner-initiated, private.</li><li>A photo door after any look.</li><li>A monthly side portrait (Dr. Chen).</li></ol>
+      <p class="cons">Gates every photo memory. Until then the record has no face.</p></div>
+    <div class="brief"><div class="id">DB-10</div><h3>When is the rechallenge list released?</h3>
+      <ol type="a"><li class="rec">Behind Get ready, when an appointment falls in the last 14 days of the target, grouped by protein.</li><li>After elimination ends (v1 never writes that phase).</li></ol>
+      <p class="cons">Either way it never appears on Home or in a notification.</p></div>
+    <div class="brief"><div class="id">DB-11</div><h3>May any part of a look-back be Premium?</h3>
+      <ol type="a"><li class="rec">All free. A look-back that carries health counts is trend visibility (Principle 7), and Strava’s 2025 paywall on Year in Sport drew backlash.</li><li>Customising a shared card’s look may be Premium.</li></ol>
+      <p class="cons">Under (a), the Premium feature list does not grow from this portfolio.</p></div>
+  </div>
+</section>
+
+<!-- ============================================================ 9 -->
+<section class="section">
+  <h2>Persona conflicts, unresolved</h2>
+  <p class="sub">Disagreement is information. These stay open until you rule; the ones tied to a brief name it.</p>
+  <div>
+    <div class="conf"><div class="topic">What “lighthearted” means</div><div class="side"><b>Owners · Market</b>A keepsake register for owner-only calendar moments. “Not playful” was written before any real record existed.</div><div class="side"><b>Designer · Data · Dr. Chen</b>One deadpan voice. The same channel says “worth a call to your vet” tomorrow.</div><div class="q">DB-4: a second register, and is “Happy birthday, Nyx.” over your line?</div></div>
+    <div class="conf"><div class="topic">Delight when she is unwell</div><div class="side"><b>Dir. of Engineering</b>Shared quiet gates that fail toward silence.</div><div class="side"><b>Designer · Owners</b>Calendar delight never switches with her health, or its presence teaches “she’s fine”.</div><div class="q">DB-2</div></div>
+    <div class="conf"><div class="topic">Which delight earns a notification</div><div class="side"><b>Data · Engineering</b>None; ride the recap. Only calendar facts ever, after a G1 ruling.</div><div class="side"><b>Designer · Market · Owners · Dr. Chen</b>A birthday push; a monthly doorbell; a “Nyx’s days” category; or the dinner question.</div><div class="q">DB-3</div></div>
+    <div class="conf"><div class="topic">A trial day count on the lock screen</div><div class="side"><b>Owners · Market</b>Day 84 is the moment the owner worked twelve weeks toward.</div><div class="side"><b>Data · Engineering · Dr. Chen · T&amp;S</b>A trial day on a public surface reveals a GI condition.</div><div class="q">DB-6</div></div>
+    <div class="conf"><div class="topic">Day 84: keepsake or clinical moment</div><div class="side"><b>Designer · Owners · Market</b>Build the keepsake; the owner did 84 days of work.</div><div class="side"><b>Dr. Chen · Data</b>Anything said that day reads as a verdict or as permission to stop.</div><div class="q">DB-5</div></div>
+    <div class="conf"><div class="topic">Counting your logging back to you</div><div class="side"><b>Designer · Data · Engineering</b>The record’s growth is the most remarkable fact on the account.</div><div class="side"><b>Dr. Chen · both red teams</b>§6.9 bans scoring the owner; the broken streak and the clinical slip land on the same day.</div><div class="q">Better-than-the-rule brief 4: may owner surfaces carry counts of your logging, or only the record’s age and dated totals?</div></div>
+    <div class="conf"><div class="topic">Getting ratings back</div><div class="side"><b>Data · Engineering</b>An app-sampled meal, so the owner no longer picks which meals get rated.</div><div class="side"><b>Market · Dr. Chen · Designer · Owners</b>A weekly recap door; a dinner push; or no ask at all.</div><div class="q">DB-7</div></div>
+    <div class="conf"><div class="topic">Symptoms on a shared look-back</div><div class="side"><b>Market · Owners</b>Always printed; a postcard that hides ten vomits misleads the exam room.</div><div class="side"><b>Designer · Data · T&amp;S</b>Point to them; or the owner chooses with a disclosure; a vomit mark posted publicly is health data.</div><div class="q">Printed, pointed to, or left to the owner?</div></div>
+    <div class="conf"><div class="topic">A portrait class, and who starts it</div><div class="side"><b>Designer</b>Owner-initiated only, after the save.</div><div class="side"><b>Dr. Chen · Market · Owners · Engineering</b>A monthly side portrait, or a photo offer after a look (any outcome).</div><div class="q">DB-9</div></div>
+    <div class="conf"><div class="topic">The chicken treats, after the trial</div><div class="side"><b>Market · Owners</b>Once elimination ends the counts are funny and good to share.</div><div class="side"><b>Data · Designer · Dr. Chen</b>Never name the displaced food; it returns only as the rechallenge menu.</div><div class="q">May pre-trial counts ever appear outside clinical diet history?</div></div>
+    <div class="conf"><div class="topic">The rechallenge list’s timing</div><div class="side"><b>Dr. Chen</b>Final week, behind Get ready.</div><div class="side"><b>Engineering · Market</b>After elimination ends; during it, it is a menu of temptations.</div><div class="q">DB-10</div></div>
+    <div class="conf"><div class="topic">Premium on delight</div><div class="side"><b>Designer</b>Customising a shared card may be Premium.</div><div class="side"><b>Market</b>Always free; a recap with health counts is care.</div><div class="q">DB-11</div></div>
+    <div class="conf"><div class="topic">The 1,000th entry</div><div class="side"><b>Clinical red team</b>One recap line, said once, no bars.</div><div class="side"><b>T&amp;S red team</b>A crossing moment is a badge in all but name; keep only the shape.</div><div class="q">Does the record’s size ever get a moment?</div></div>
+    <div class="conf"><div class="topic">“On this day” memories</div><div class="side"><b>Clinical red team</b>An opt-in yearly push survives behind exclusions, once a death state exists.</div><div class="side"><b>T&amp;S red team</b>Never a push; no filter catches an unrecorded death.</div><div class="q">May a memory ever arrive unasked?</div></div>
+  </div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section class="section">
+  <h2>Better than the rule</h2>
+  <p class="sub">Four places where a better idea runs into a dated rule. Each says what the rule protected and whether that protection still holds.</p>
+  <div class="tbl-wrap">
+    <table class="t">
+      <thead><tr><th>Rule · date</th><th>It protected</th><th>The better thing</th><th>Still holds?</th><th>Recommendation</th></tr></thead>
+      <tbody>
+        <tr><td><b>G1</b> · the lock-screen body never asserts record contents · 2026-08-02</td><td>Stale content at fire time, health data on a public surface, reassurance from a wrong record.</td><td>A lock-screen class for two calendar facts only: “Nyx turns 4 today.” and “Six months of Nyx’s record today.”</td><td>Yes for these two (no health data, cannot reassure). No for a trial day or any count.</td><td>Approve for those two only: opt in per pet, off by default, passive, after the death state and the per-day arbiter.</td></tr>
+        <tr><td><b>R-8</b> · pet names on the lock screen only for single-pet accounts · 2026-08-15</td><td>An account-wide body cannot honestly name one pet.</td><td>A per-pet occasion names its own pet under the names opt-in, on any account.</td><td>Yes; a birthday belongs to one pet. Follow-ups already do this.</td><td>One naming resolver for every category (CUL-1687).</td></tr>
+        <tr><td><b>“Warm without being cute… not playful”</b> · design principles v1.0, May 2026</td><td>Clinical trust and any claim about the pet’s state.</td><td>“Happy birthday, Nyx.” as a greeting about a date.</td><td>Yes, if the literal is identical every year and allowlisted alone; “happy” stays banned elsewhere.</td><td>Allow the one literal, in the app, below any safety card (DB-4).</td></tr>
+        <tr><td><b>Diet trial §6.9</b> · never score the owner · 2026-07-25</td><td>Self-focused feedback lowers performance; the broken streak and the slip land together.</td><td>Counts that only grow: 1,000 entries, 150 days logged.</td><td>Yes. The same delight survives with no act counted: the record’s age as a calendar span.</td><td>Keep the rule and extend it outside trials (DELIGHT-4).</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 11 -->
+<section class="section">
+  <h2>Proposed standing rules</h2>
+  <p class="sub">What a delight portfolio would need written down before its first PR. Proposals only; none is adopted until you rule the briefs.</p>
+  <div class="rules">
+    <p><b>DELIGHT-1 · the inference test.</b> A nugget whose interest depends on what it implies did not happen is an absence claim, whatever its grammar (“the last chicken treat was Jul 24”).</p>
+    <p><b>DELIGHT-2 · health invariance.</b> A calendar fact renders the same whatever the record holds, below safety, never hidden. A record-derived fact is withheld while any intake arm, live safety finding or symptom logged today holds.</p>
+    <p><b>DELIGHT-3 · the armed twin.</b> A positive intake or behaviour claim is promoted beyond its own screen only while the matching negative read can see, and prints its newest sample’s date.</p>
+    <p><b>DELIGHT-4 · the subject rule.</b> A delight line’s subject is the pet’s record or a date, never the owner’s act: no “you logged”, no ratio of logged days, nothing consecutive, no badge.</p>
+    <p><b>DELIGHT-5 · bereavement before occasions.</b> No birthday, anniversary, memory or year recap ships until a “has died” state the last pet can reach exists and silences the recap too.</p>
+    <p><b>DELIGHT-6 · instrument honesty.</b> No count crosses a change of instrument (the trial boundary, one-tap logging, a new event type). Entry counts always say “logged”.</p>
+    <p><b>DELIGHT-7 · symmetric capture.</b> The app never prompts for a photo, rating or word only after a positive.</p>
+    <p><b>DELIGHT-8 · a share is an export.</b> Show exactly what leaves; an “as of” date; no date that can move; never a vet, clinic or indication.</p>
+    <p><b>DELIGHT-9 · prompted ratings carry safety weight.</b> No default, no lock-screen action, Skip at equal weight, asked only after the meal could have been eaten.</p>
+    <p><b>DELIGHT-10 · fixed templates.</b> Every template declares the words it may never sit beside and the facts it must sit beside. No model writes, selects or rephrases a nugget.</p>
+    <p><b>DL-1 · the lock screen.</b> A delight body may name a calendar fact or nothing.</p>
+    <p><b>DL-3 / DL-4 · one arbiter.</b> One per-account, per-day gate for unsolicited sends; safety outranks delight; delight never wakes the phone.</p>
+    <p><b>DL-8 · photos.</b> No delight surface reads a photo from a symptom event; any non-clinical photo class is private, not in the public pet-photo bucket.</p>
+    <p><b>DL-9 · no offer in delight.</b> No Premium mention or upsell in a delight body, and no look-back carrying health counts behind a paywall.</p>
+    <p><b>DL-10 · phase-aware naming.</b> While an elimination trial runs, no delight surface names a food the trial removed.</p>
+    <p><b>DL-12 · judge on the real shape.</b> Recap-borne delight is judged on a single-pet account; archive the test pet first.</p>
+  </div>
+</section>
+
+<!-- ============================================================ 12 -->
+<section class="section">
+  <h2>Wild cards, kept alive</h2>
+  <p class="sub">Off the shortlist, not dead. Each waits on something named.</p>
+  <div class="tbl-wrap">
+    <table class="t">
+      <thead><tr><th>Idea</th><th>Waits on</th></tr></thead>
+      <tbody>
+        <tr><td><b>Nyx’s year, two-sided and free.</b> Once a year in the app, symptoms printed (“Also in the record: 48 vomits, 32 coughs…”). No major pet app was found running one.</td><td>The death state; fixed templates</td></tr>
+        <tr><td><b>Her year, on her birthday</b> (Sep 1, 2027): span, entry total, number of foods.</td><td>The death state</td></tr>
+        <tr><td><b>On this day</b>, in the app only, from portraits and positive looks, with “hide this date” on every memory.</td><td>A private photo class; the death state</td></tr>
+        <tr><td><b>The cough clip:</b> “A short video of Nyx’s next cough helps her vet tell a cough from a hairball retch.”</td><td>Video storage, export, a T&amp;S review</td></tr>
+        <tr><td><b>Light questions in Ask:</b> “What’s logged most for Nyx?”, “How long is Nyx’s record?”</td><td>CUL-1689, Ask’s preference screen</td></tr>
+        <tr><td><b>What Nyx’s record learned to show:</b> one recap line when an insight card first has enough data, never for a safety lane.</td><td>The registry</td></tr>
+        <tr><td><b>The breakfast window, learned:</b> “A meal is usually logged for Nyx around 6 in the morning. Want a check in then?”</td><td>B-288</td></tr>
+        <tr><td><b>Today, for the household:</b> an owner-initiated text share of the day, symptoms first.</td><td>DB-8</td></tr>
+        <tr><td><b>The nugget registry</b> (<code>lib/nuggets/</code>): fixed templates over pure predicates, one a night in the recap, a noise test over 500 synthetic records.</td><td>Three or more templates existing</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================ 13 -->
+<section class="section">
+  <h2>The first slice</h2>
+  <p class="sub">The smallest build that proves the claim: delight that is true however she is doing, on surfaces you already open, with no new notification, no new capture and no model.</p>
+  <div class="tbl-wrap">
+    <table class="t">
+      <thead><tr><th>When</th><th>What</th><th>Needs</th></tr></thead>
+      <tbody>
+        <tr><td><b>Today</b></td><td>Archive Schrodingers Cat so your recap renders its rich form.</td><td>You, on the phone</td></tr>
+        <tr><td><b>This week</b></td><td>The shelf string (“rated meals”) and the food-detail finish line with its denominator and newest rating date. The day-84 weigh-in line on Nyx’s trial card.</td><td>CUL-1685 part 1; Dr. Chen for the weigh-in string</td></tr>
+        <tr><td><b>Next</b></td><td>The “has died” profile row, its own schema PR.</td><td>DB-1, CUL-1684, a T&amp;S read</td></tr>
+        <tr><td><b>Then</b></td><td>The recap’s forward line learns a fixed order of real facts; the birthday and the record’s age reach Home’s header date.</td><td>DB-2, DB-4</td></tr>
+        <tr><td><b>In parallel</b></td><td>The household trial card (S); the household’s clock on Patterns (M); the protein she has met before on the report (S, Dr. Chen signs).</td><td>DB-8</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap" style="margin-top:14px;color:var(--ink-2)">You would see the record’s age on Nyx’s own account at six months, on Nov 14.</p>
+</section>
+
+<!-- ============================================================ 14 -->
+<section class="section">
+  <h2>How this was made</h2>
+  <p class="sub">So you know what to trust.</p>
+  <div class="note-col" style="max-width:78ch">
+    <ul class="tight">
+      <li><b>Six lenses brainstormed independently</b> against the same brief and the same data profile: Designer with Motion &amp; IA, Data Scientist, the owners (Jordan, Sam, and a healthy-pet owner), Dr. Chen with the clinical guardrails, market research with live web search, and the Director of Engineering. 80 raw ideas.</li>
+      <li><b>A facilitator clustered them</b>, keeping wild cards and every dissent.</li>
+      <li><b>Two red teams tried to break every idea:</b> a clinical adversarial reviewer (biostatistics and Dr. Chen) and a trust, safety and voice reviewer. Each named the concrete counterexample it tried.</li>
+      <li><b>A synthesis lead</b> ranked the survivors and wrote the briefs.</li>
+      <li><b>A verification pass</b> then checked every load-bearing claim against the code and the database. It confirmed the shelf string, the sole-pet archive block, the single-pet recap gate, the follow-up naming, the budget, Ask’s screen and the teaching examples, and corrected four facts: 527 treat entries before the trial (not about 420), Central time (not Eastern), six foods on the trial list (not three), and rabbit before the trial (2 Instinct entries, not 17; first rabbit May 23).</li>
+      <li><b>The data</b> is your own account only, read-only, aggregates and timestamps, no notes or photos read. It moves as you log; counts are as of the evening of Oct 7.</li>
+    </ul>
+  </div>
+</section>
+
+</div>
