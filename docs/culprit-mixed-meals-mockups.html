@@ -461,6 +461,7 @@
     <div class="led"><span class="led-q">"3a. Looks good!" · "5a. Great!"</span><span class="led-a">P-5 ruled (a). Both shown unchanged in §5.</span><span class="state ruled">Ruled</span></div>
     <div class="led"><span class="led-q">"4a… log this as a known known and not tackle it here."</span><span class="led-a">P-4 ruled (a). The weaning case is CUL-2040. 4b left the page.</span><span class="state ruled">Ruled</span></div>
     <div class="led"><span class="led-q">"Let's consider how to introduce design delight and motion."</span><span class="led-a">Every frame below plays. Two new shapes for the record are drawn as options (§2, §4).</span><span class="state open">New, react R-1 to R-3</span></div>
+    <div class="led"><span class="led-q">Device, first mix (2026-10-22): "a big ass sheet with a lot of just empty space" · "give me a second"</span><span class="led-a">The split was built as a full page; it is now the compact sheet M2 always drew. A tap picks, Save writes (CUL-2133, option 1 of 3; a timed auto save was rejected). M2 and M2b redrawn in §1.</span><span class="state ruled">Ruled</span></div>
     <div class="led"><span class="led-q">Team correction</span><span class="led-a">Round 1's History ran one row across three days. Shipped runs never cross a day, so History is redrawn per day (§2).</span><span class="state ruled">Fixed</span></div>
   </div>
 </header>
@@ -476,7 +477,7 @@
 <section>
   <p class="kicker">§1 · Day one · ruled P-1 (a)</p>
   <h2>The first mixed bowl</h2>
-  <p class="lede">Four beats. The card arrives the way every meal card does. The picker opens on the platform's own sheet. Tapping a split <strong>draws the bowl's first shape</strong> and holds long enough for you to see it. The card returns as the mix, with the stepper ready for the next morning's nudge.</p>
+  <p class="lede">Four beats. The card arrives the way every meal card does. The picker opens on the platform's own sheet. The split rises over it as its own small sheet; tapping a split <strong>draws the bowl's first shape</strong>, and Save writes it (PM, 2026-10-23, CUL-2133: the chip tap is no longer the save). The card returns as the mix, with the stepper ready for the next morning's nudge.</p>
 
   <div class="frames">
     <div class="frame" id="f-m1">
@@ -525,9 +526,33 @@
     </div>
 
     <div class="frame" id="f-m2">
-      <div class="frame-top"><span class="frame-tag"><b>M2</b> · <span class="tag-cur">current</span> · tap a split</span><button class="play-btn" type="button" data-play="f-m2" data-kind="splitstep">Play</button></div>
+      <div class="frame-top"><span class="frame-tag"><b>M2</b> · <span class="tag-cur">current</span> · the split rises (CUL-2133)</span></div>
       <div class="screen">
-        <div class="ghost"><div class="ghost-row"></div></div>
+        <div class="ghost"><span class="ghost-title">Pick the other food</span><div class="ghost-row"></div><div class="ghost-row"></div></div>
+        <div class="sheet">
+          <div class="grabber"></div>
+          <div class="sheet-title">About how much of each?</div>
+          <div class="split-names"><span>Chicken</span><span>Rabbit</span></div>
+          <div class="split" role="img" aria-label="No split picked yet" style="background:transparent;border:1px dashed var(--dev-line)"></div>
+          <div class="ratio-chips" role="group" aria-label="Split">
+            <button class="rchip" type="button" aria-label="Three quarters chicken, one quarter rabbit">¾·¼</button>
+            <button class="rchip" type="button" aria-label="Two thirds chicken, one third rabbit">⅔·⅓</button>
+            <button class="rchip" type="button" aria-label="Half and half">½·½</button>
+            <button class="rchip" type="button" aria-label="One third chicken, two thirds rabbit">⅓·⅔</button>
+            <button class="rchip" type="button" aria-label="One quarter chicken, three quarters rabbit">¼·¾</button>
+          </div>
+          <div class="btn" style="opacity:0.4">Save</div>
+          <span class="link-line">Other amounts…</span>
+        </div>
+      </div>
+      <p class="frame-note">The split is a <strong>compact sheet over the picker</strong>, rising on the shipped sheet spring; tapping the veil goes back to the picker. Before a pick the bar is an outline, not a grey fill, so it never reads as loading. Save stays off until a split is picked.</p>
+      <p class="spec">rise SHEET_SPRING · veil fades with it · Reduce Motion: crossfade · nothing preselected</p>
+    </div>
+
+    <div class="frame" id="f-m2b">
+      <div class="frame-top"><span class="frame-tag"><b>M2b</b> · <span class="tag-cur">current</span> · a pick, not yet a save</span><button class="play-btn" type="button" data-play="f-m2b" data-kind="splitstep">Play</button></div>
+      <div class="screen">
+        <div class="ghost"><span class="ghost-title">Pick the other food</span><div class="ghost-row"></div><div class="ghost-row"></div></div>
         <div class="sheet">
           <div class="grabber"></div>
           <div class="sheet-title">About how much of each?</div>
@@ -543,13 +568,13 @@
             <button class="rchip on" type="button" aria-label="One third chicken, two thirds rabbit">⅓·⅔</button>
             <button class="rchip" type="button" aria-label="One quarter chicken, three quarters rabbit">¼·¾</button>
           </div>
-          <span class="sheet-cap">Tapping a split saves the bowl.</span>
+          <div class="btn">Save</div>
           <span class="link-line">Other amounts…</span>
         </div>
-        <span class="closing">The card returns as the mix (M3)</span>
+        <span class="closing">Save: the card returns as the mix (M3)</span>
       </div>
-      <p class="frame-note">Before a tap the bar is an empty track. Then it <strong>draws the bowl</strong>: chicken first, rabbit 120ms behind, fractions last. The sheet holds about half a second so the bar visibly answers the tap (D-M2, team pick).</p>
-      <p class="spec">draw 420ms MARK_EASE, second segment +120 · labels at 400 · hold, then close · no haptic at the chip</p>
+      <p class="frame-note">A tap <strong>picks and draws</strong> the bowl; another tap redraws it. Nothing is written until Save, so a mistap costs nothing. Save closes at once: the bar already answered the pick, so the 540ms hold is gone.</p>
+      <p class="spec">draw 420ms MARK_EASE, second segment +120 · fractions inside the segments · no haptic at the chip · commitRoutine on the card's return</p>
     </div>
 
     <div class="frame" id="f-m3">
@@ -889,7 +914,7 @@
   <p class="kicker">Your reactions</p>
   <h2>What to react to</h2>
   <ul class="prompts">
-    <li><b>R-1</b>Play M1 to M4. Does the first mix feel quick and satisfying? Is the half-second hold on the split bar (M2) right, or should the sheet close at once?</li>
+    <li><b>R-1</b>Play M1 to M4. Does the first mix feel quick and satisfying? <em>Answered on device (CUL-2133): the hold is gone, Save commits.</em></li>
     <li><b>R-2</b>Play M5. Does the MIX pill landing on the card feel like the rest of the app?</li>
     <li><b>R-3</b>Shape 1 (M8b): a split bar on each mixed History row. Worth the extra line?</li>
     <li><b>R-4</b>Foods (F1, F2): is "8 in a mix" on the row enough, and do you want the switch strip on the food's page?</li>

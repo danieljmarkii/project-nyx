@@ -1,6 +1,6 @@
 # Mixed Meals and Food Transitions — Requirements
 
-**Version:** 0.4 | **Last Updated:** 2026-10-20 (row 5 ships unflagged, PM)
+**Version:** 0.5 | **Last Updated:** 2026-10-23 (the split is a sheet and Save commits it, PM, CUL-2133)
 **Status:** All six P-decisions ruled (§0.2). Mock round 1 (`docs/culprit-mixed-meals-mockups.html`, https://claude.ai/artifact/JsaLnSwdqeuyQZAXqgEWFY) is ruled; round 2 (same link) adds motion and the Foods tab. Round 2 reactions R-1 and R-2 move to device QA at build row 5; R-3 and R-4 moved to CUL-2049 (PM, 2026-10-20). Nothing in the spec waits on the PM.
 **Reads first:** `docs/sessions/2026-10-19-mixed-meals-requirements.md` (the convening record), `docs/nyx-diet-trial-requirements.md` §4.1 and §5, `docs/research/2026-07-diet-trial-competitive-landscape.md`.
 **Issue:** [CUL-2039](https://linear.app/projectnyx/issue/CUL-2039). **Readable copy:** https://claude.ai/artifact/1NPLtiUGvc9gy6HDEx5ivR (this file wins on divergence). **Related:** [CUL-1997](https://linear.app/projectnyx/issue/CUL-1997) (its transition finding is addressed by §6; the build closes it), [CUL-229](https://linear.app/projectnyx/issue/CUL-229) (NOT closed by this; see §5.3).
@@ -209,7 +209,7 @@ Not a declared rechallenge (out, D8). The report derives a **New foods introduce
 
 ### §7.1 Owner logging (R6 B)
 - **First mix:** "+ Mixed with another food" on the meal card (P-1), for `food_type = 'meal'`. The card hides and the picker opens bound to this event, the `pairedEventId` pattern (`app/log.tsx:76-115`), reusing `FoodPicker`'s SELECTION mode (`components/log/FoodPicker.tsx:39-50`) with the first food locked and a cap of 2. Banner: "Mixing with {food} in {Pet}'s bowl. Pick the other food."
-- **Ratio step:** "About how much of each?" A split bar, the five chips (P-2), first food on the left, nothing preselected; the chip tap is the save (the `IntakeFirstMealSheet` pattern). "Other amounts…" opens one unit picker shared by both foods (cans, cups, grams, %) and one field per food. There is no "Not sure" (P-3).
+- **Ratio step:** "About how much of each?" A compact sheet rising over the picker (mock M2), with a split bar, the five chips (P-2), first food on the left, nothing preselected. A chip tap picks and draws the bar; **Save** writes the bowl (PM, 2026-10-23, [CUL-2133](https://linear.app/projectnyx/issue/CUL-2133): this replaces "the chip tap is the save", because on device a mistap was recorded before the owner could change it; a timed auto save was rejected). Tapping the veil returns to the picker with nothing written. "Other amounts…" opens one unit picker shared by both foods (cans, cups, grams, %) and one field per food. There is no "Not sure" (P-3).
 - **One unit per bowl** means a share always exists and the app never converts wet to dry. A bowl measured in two different units is out of v1; the owner enters a % instead.
 - **After the fact:** the same line on the event detail screen, twin of the retroactive med entry (`app/event/[id].tsx:1022-1036`).
 - **Repeat (the transition days):** a mix enters FAB recency as one item keyed by its **set of foods**, not its ratio (`lib/fabRecentFoods.ts`). The pill reads "⅓ Chicken + ⅔ Rabbit" and logs the latest ratio in one press.
@@ -240,7 +240,8 @@ Every motion reuses a shipped constant (C-30); the feature adds **no new spring*
 |---|---|---|---|
 | Card gains "+ Mixed with another food" | Arrives with the card's words (`SHEET_SPRING` rise, words 120→300 ms, `completionMotion.ts:43-69`). No pulse: a door stays still. | none of its own | 150 ms crossfade |
 | Card → picker → card | The med-combo path unchanged: card exits 180 ms with 8 pt drift; picker on the platform modal; card returns 450 ms after `router.back()` (`app/log.tsx:432`). | — | crossfade |
-| Tap a split | The bar draws in on the shipped "compare" kind: 420 ms `MARK_EASE`, second segment +120 ms (`drawInMotion.ts:59-61`). The sheet **holds** about 540 ms so the bar answers the tap (D-M2). | none at the chip | bar appears at its split |
+| The split sheet rises | The shared sheet motion (`sheetMotion.ts`, `SHEET_SPRING`), its own veil fading with it; the picker stays put beneath. | none | crossfade |
+| Tap a split | The bar draws in on the shipped "compare" kind: 420 ms `MARK_EASE`, second segment +120 ms (`drawInMotion.ts:59-61`), each segment carrying its fraction. A pick, not a save: Save closes at once, so D-M2's 540 ms hold is retired (CUL-2133). | none at the chip | bar appears at its split |
 | Card returns as the mix | Full arrival and `commitRoutine` (D-M1: a real write reaches the hand). Title lands whole; **no number roll**. | `commitRoutine` | crossfade |
 | Stepper tap | Value and title crossfade 180 ms in place; `rescheduleHide(1500)`; end stop dims to 0.4 and says why (C-7). | `selectChip` on save, same both directions | instant |
 | MIX pill on the FAB | Ordinary recent-food pill: `FAN_SPRING`, 38 ms stagger, the disc's flight to the check on `FLIGHT_SPRING`. **No gold outline.** | `commitRoutine` at reveal | no flight, 150 ms crossfade |

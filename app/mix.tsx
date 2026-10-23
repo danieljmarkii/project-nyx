@@ -6,7 +6,9 @@
 //
 //   1. pick the other food — the food picker with the bowl's first food shown locked and
 //      only meal foods offered (R1), under the banner that names what is being mixed;
-//   2. the split — `MixSplitPanel`, whose chip tap is the save.
+//   2. the split — `MixSplitPanel`, rising as a compact sheet OVER the picker (mock M2;
+//      CUL-2133: it was built as a second full page, most of it empty). A chip tap picks,
+//      Save writes. Tapping the veil goes back to the picker.
 //
 // The write is `setMealComponents`, the bowl's one writer. From the card, the card comes
 // back AS the mix with a full arrival (D-M1), 450 ms after the route closes (the med-combo
@@ -18,10 +20,19 @@
 // true by construction rather than by a flag.
 
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Alert,
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { theme } from '../constants/theme';
+import { theme, shadows } from '../constants/theme';
 import { Header } from '../components/ui/Header';
 import { ThemedText } from '../components/ui/ThemedText';
 import { FoodPicker } from '../components/log/FoodPicker';
@@ -33,6 +44,8 @@ import { setMealComponents } from '../lib/mealComponents';
 import { MealComponentInputError, type ComponentInput } from '../lib/mealComposition';
 import { cardBowlFrom, mixFoodOf } from '../lib/mixCard';
 import { takeMixReturn } from '../lib/mixReturn';
+import { useSheetMotion } from '../components/motion/sheetMotion';
+import { useAppActive } from '../hooks/useAppActive';
 
 /** The card returns this long after the route closes: the med-combo path's beat
  *  (`app/log.tsx`'s `delayMs: 450`), so the platform modal is gone before it rises. */
@@ -51,6 +64,28 @@ export default function MixRoute() {
   const [first, setFirst] = useState<Food | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [second, setSecond] = useState<Food | null>(null);
+  // The FACT the sheet moves on (C-30): asked up. `second` outlives it by the exit, so
+  // the panel still has its foods while it sinks, and clears on `onExited`.
+  const [splitUp, setSplitUp] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const appActive = useAppActive();
+
+  // The shared sheet motion (CUL-1642), lifted rather than restated. It was written for a
+  // Modal's `onShow`; this layer has no Modal of its own (C-14), so the rise starts at the
+  // first commit of the asked-up state, the moment the layer is on screen.
+  const sheet = useSheetMotion({
+    visible: splitUp,
+    veil: 'own',
+    travelPt: windowHeight,
+    appActive,
+    onExited: () => setSecond(null),
+  });
+  const { phase: sheetPhase, onShow: sheetShown } = sheet;
+  useEffect(() => {
+    if (sheetPhase === 'presenting') sheetShown();
+  }, [sheetPhase, sheetShown]);
 
   // The bowl's first food is the meal's own food, read from the record (never a param a
   // stale link could carry). A meal that is already a mix has no single food here, and
@@ -88,12 +123,21 @@ export default function MixRoute() {
   }
 
   function pickSecond(food: PickerFood) {
-    if (!first || food.id === first.foodItemId) return;
+    if (!first || food.id === first.foodItemId || splitUp) return;
     setSecond(mixFoodOf(food));
+    setSplitUp(true);
+  }
+
+  // Back to the picker: nothing was written. Not while a write is in flight, which would
+  // otherwise land after the owner had seemingly backed out of it.
+  function backToPicker() {
+    if (saving) return;
+    setSplitUp(false);
   }
 
   async function save(components: ComponentInput[]): Promise<boolean> {
     if (!eventId) return false;
+    setSaving(true);
     try {
       // From the detail screen no card is up, so the heads-up waits for that screen (CUL-2088).
       await setMealComponents(eventId, components, new Date(), { headsUp: fromCard ? 'card' : 'meal_screen' });
@@ -107,6 +151,7 @@ export default function MixRoute() {
           ? 'Only meal foods can go in a bowl together.'
           : 'Something went wrong. Please try again.',
       );
+      setSaving(false);
       return false;
     }
   }
@@ -142,9 +187,15 @@ export default function MixRoute() {
     );
   }
 
-  if (!second) {
-    return (
-      <SafeAreaView style={styles.container}>
+  const layerOpen = sheet.modalVisible && !!first && !!second;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View
+        style={styles.container}
+        importantForAccessibility={layerOpen ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={layerOpen}
+      >
         <Header title="Mixed with another food" leading="back" onLeadingPress={close} />
         {first && (
           <>
@@ -163,14 +214,32 @@ export default function MixRoute() {
             />
           </>
         )}
-      </SafeAreaView>
-    );
-  }
+      </View>
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <Header title="Mixed with another food" leading="back" onLeadingPress={() => setSecond(null)} />
-      {first && <MixSplitPanel first={first} second={second} onSave={save} onDone={done} />}
+      {layerOpen && first && second && (
+        <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, sheet.scrimStyle]}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={backToPicker}
+              accessibilityRole="button"
+              accessibilityLabel="Back to the foods"
+            />
+          </Animated.View>
+          <KeyboardAvoidingView
+            style={styles.sheetWrap}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            pointerEvents="box-none"
+          >
+            <Animated.View
+              style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheet.sheetStyle]}
+            >
+              <View style={styles.grabber} />
+              <MixSplitPanel first={first} second={second} onSave={save} onDone={done} />
+            </Animated.View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -198,5 +267,26 @@ const styles = StyleSheet.create({
   bannerText: {
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
+  },
+  scrim: {
+    backgroundColor: theme.colorScrim,
+  },
+  sheetWrap: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: theme.colorSurface,
+    borderTopLeftRadius: theme.radiusMedium,
+    borderTopRightRadius: theme.radiusMedium,
+    paddingTop: theme.space1,
+    ...shadows.lg,
+  },
+  grabber: {
+    alignSelf: 'center',
+    width: 34,
+    height: 4,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorBorderStrong,
   },
 });
