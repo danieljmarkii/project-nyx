@@ -12,6 +12,16 @@ import { materializeInstantIso, materializeDate } from '../demo/demoStory.ts';
 
 export const FIXTURE_USER_ID = '00000000-0000-4000-8000-00000000c1a5';
 export const FIXTURE_EMAIL = 'capture+nyx-fixture@example.invalid';
+// A Wednesday afternoon, UTC: every fixture row is materialised against this instant, and
+// signals.deno.ts computes the Signal at it, so both read the one default.
+export const CAPTURE_DEFAULT_NOW = '2026-10-14T16:00:00Z';
+
+/** `CAPTURE_FLAGS` (a JSON object of app_config keys) as the app_config rows both the app
+ *  and the engine read, e.g. '{"history_v2":true}' to capture a build from before a rollout
+ *  went GA. Unset, there are none and each reads its own defaults. */
+export function captureFlagRows(raw: string | undefined): Row[] {
+  return Object.entries(JSON.parse(raw ?? '{}') as Record<string, unknown>).map(([key, value]) => ({ key, value }));
+}
 
 type Row = Record<string, unknown>;
 
