@@ -703,12 +703,15 @@ export function VomitAnalysisSection(
   // CUL-823 (D-823): on an account that said no, the answer is on this phone, so the off
   // frame paints on the first frame instead of a tick that promises a read the server will
   // not run. Two waits qualify: the stored row still loading, and a first read the server
-  // was just asked for (it can still return a check that needs no photo, which then lands
-  // over this frame as a call, spoken by the announcer as any landing is). A re-run the
-  // owner started keeps its tick: that is their own request.
+  // was just asked for with NO row behind it (it can still return a check that needs no
+  // photo, which then lands over this frame as a call, spoken by the announcer as any
+  // landing is). Never over a row already here: the server never writes `pending`, so a
+  // pending row is this phone's own Re-run, and over a stored call that must stay on screen
+  // through the re-read (CUL-827). `retrying` falls before the watch starts, so it cannot
+  // be what guards that (adversarial pass 1 on CUL-1912).
   const offBeforeRow =
     hasPhoto && consent === 'declined' && !retrying &&
-    (row === undefined || (working && (row === null || row.status === 'pending')));
+    (row === undefined || (working && row === null));
   if (offBeforeRow) return unreadSlot('off');
 
   // First load, nothing known yet. Only shown WITH a photo — a photoless event

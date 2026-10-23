@@ -315,9 +315,9 @@ export function IncidentReadCard({
           <ThemedText testID="incident-read-rule-note" style={styles.ruleNote}>{ruleNote}</ThemedText>
         ) : null}
         {/* One foot row (P6): the disclaimer, and Hide beside it, wrapping under it when the
-            two do not fit. Hide's 44pt is its BOX, never a slop: on a call the card's inset
-            and the section's margin separate it from "I've called · Not yet" below, and a
-            mis-tap there would hide a call (C-5). The visible text IS the accessible name
+            two do not fit. Hide's 44pt is its BOX, never a slop: the card's inset and the
+            next block's margin separate it from the control below it (the findings' Edit,
+            the ask card), and a mis-tap there would hide a call (C-5). The visible text IS the accessible name
             (C-7); it replaced a bare `✕` that announced nothing. */}
         <View testID="incident-read-foot" style={styles.foot}>
           <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>

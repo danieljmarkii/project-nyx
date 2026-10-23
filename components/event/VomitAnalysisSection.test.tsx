@@ -2511,6 +2511,20 @@ describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
     expect(await view.findByText('Worth a call')).toBeTruthy();
   });
 
+  it('D-823: a Re-run under a stored call on a declined account keeps the call on screen (CUL-827)', async () => {
+    // Adversarial pass 1: `retrying` falls before the watch starts, and the local copy is
+    // marked pending, so a rule keyed on either painted the off frame over the call.
+    mockConsent = 'declined';
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Repeated.', ai_raw_payload: { x: 1 } });
+    (watchAnalysisRow as jest.Mock).mockClear();
+    const view = render(<VomitAnalysisSection eventId="d823r" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalled());
+    expect(view.getByText('Worth a call')).toBeTruthy();
+    expect(view.queryByTestId('record-consent-off')).toBeNull();
+  });
+
   it('D-823: the same waits on an account that said yes keep the tick (the non-vacuity half)', async () => {
     mockConsent = 'granted';
     mockReadQueue = [];
