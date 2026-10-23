@@ -1,0 +1,21 @@
+# Design pass 1, round 1: the event detail screen, three ways
+
+**Date:** 2026-10-23 · **Issue:** [CUL-1907](https://linear.app/projectnyx/issue/CUL-1907) · **Branch:** `claude/design-system-pr10-10231306` · **Mode:** DISCOVERY · shipped via #PR
+
+## What happened
+Dispatched as PR-10 of *Design system · one kit, every screen*. Posted the plan on the issue, got the PM's go in session, then drew `docs/culprit-event-detail-design-pass-mockups.html` from the shipped code: fifteen states (pending, call now, call today, an earlier-rule Worth a call, Keep an eye out, Not enough, unreached, failed, AI off, cap, folded, completion card, stool, no photo, loading) plus 320pt, largest text and two pets, each in three columns: today, faithful, design pass. Every element carries its part and token (D1 is unruled, so the page says the contract is pending). Published at https://claude.ai/artifact/Af8aerwLnD4k3cFgApWfXr.
+
+## What the round proposes
+- **Faithful (team calls F1 to F3):** Edit and Remove on `PrimaryButton`, labels on `SectionLabel`, the last two `WhorlSpinner`s on `Tick`, hand-typed values on the scale once D3 lands.
+- **Design pass (P1 to P12, the PM's):** the footer leaves (Edit to the header, Remove to the foot of the record), a tighter record block, quiet reads on Home's one card surface with the rail in the gutter, the verdict as a 17pt headline at every tier, links kept teal until the colour roles land, and no week lane (recommended against: a lone dot reads as "isolated").
+- **The four defects, ruled on the page:** D-820 (an unreached read gets the consent family's "The photo wasn't read" frame with the vet line), D-823 (paint the AI-off frame on the first frame; needs a device check, since CUL-1835 moved that state), D-824 (no footer, nothing to cover), D-828 (an absence keeps its label in the strip; the count names an edit).
+
+## Found along the way
+- Consent off no longer renders "no read section": since CUL-1835 it is the "AI reading is off" frame, so §4 of the incident spec and CUL-823's premise both trail the code.
+- The completion card's ground is now daylight (`COMPLETION_GROUND = colorSurface`), so CUL-824's "two dark bars" premise has half changed; the overlap with the footer still holds.
+
+## Clinical floor
+Every read string in all three columns is verbatim from the shipped modules; the call tiers keep fill against outline; no haptic is drawn or proposed. P3, P4, P5, P6, D-820 and D-828 change how a read looks and went to `adversarial-reviewer`: ADVERSARIAL.
+
+## Next
+The PM rules the round on CUL-1907; the page merges once ruled. CUL-1912 builds the picks after PR-03b, PR-05 and PR-06.
