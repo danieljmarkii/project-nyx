@@ -16,6 +16,7 @@ jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { FoldedStrip, InsightCard } from './InsightCard';
+import { SIGNAL_RAIL } from '../surfaces/signal/railTint';
 import { commonAncestor, facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
 import * as signalCopy from '../../lib/signalCopy';
 import { FOLD_CAPTION, FOLD_CONTROL_LABEL } from '../../lib/signalCopy';
@@ -351,8 +352,10 @@ describe('FoldedStrip (§3.1 / §7)', () => {
     const row = getByTestId('insight-row');
     const rail = row.children[0] as { props: { style: unknown } };
     const railStyle = flat(rail as never);
-    // The shipped rail opacity and width — unchanged, never dimmed, never narrowed.
-    expect(railStyle.opacity).toBe(0.85);
+    // The insight rail's ink and opacity (`SIGNAL_RAIL.insight`, CUL-2163) and its width:
+    // the face's own, never dimmed, never narrowed on the fold.
+    expect(railStyle.backgroundColor).toBe(SIGNAL_RAIL.insight.color);
+    expect(railStyle.opacity).toBe(SIGNAL_RAIL.insight.opacity);
     expect(railStyle.width).toBe(3);
     // At rest on a strip the rail is the mock's 16pt tick, centred (§12: "the strip's 16pt").
     expect(railStyle.height).toBe(16);
