@@ -21,7 +21,7 @@ import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { deriveWindowChange } from './trial.ts'
 import { expectedFailure } from './expectedFailure.testutil.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
-import { REPORT_SYMPTOM_TYPES } from './report.ts'
+import { REPORT_SYMPTOM_TYPES, UNLOGGED_TAIL_MIN_DAYS } from './report.ts'
 import type {
   ReportSnapshot,
   SafetyFlag,
@@ -242,7 +242,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       daysSinceLastEpisode: null,
       loggedDaysSinceLastEpisode: null,
       firstHalfLoggedDays: 0,
-      secondHalfLoggedDays: 0,
+      secondHalfLoggedDays: 0, unloggedTailDays: 0, lastLoggedDate: null,
     },
     symptoms: [],
     vomitPhenotype: null,
@@ -1018,7 +1018,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0, lastLoggedDate: null },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -2104,7 +2104,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       daysSinceLastEpisode: 9,
       loggedDaysSinceLastEpisode: 2,
       firstHalfLoggedDays: 3,
-      secondHalfLoggedDays: 37,
+      secondHalfLoggedDays: 37, unloggedTailDays: 0, lastLoggedDate: null,
     },
     diet: {
       trialTargetProtein: null,
@@ -2149,6 +2149,60 @@ Deno.test('R2-2 ADVERSARIAL — the days-since-last-episode tile never reads as 
   // A LONG, fully-logged gap gets the MOST emphatic caveat, never the thinnest (adversarial residual).
   const longGap = renderReport(monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, daysSinceLastEpisode: 40, loggedDaysSinceLastEpisode: 40 } }))
   assert.ok(/a gap is not evidence the signs resolved/.test(longGap), 'a long well-logged gap gets the strongest non-recovery caveat')
+})
+
+Deno.test('CUL-2101 — the since-onset count names an unlogged tail from the floor, and only from it', () => {
+  const at = (unloggedTailDays: number) =>
+    renderReport(monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, unloggedTailDays } }))
+  const none = at(0)
+  // Below the floor the tile is the feature's absence, byte for byte.
+  assert.equal(at(UNLOGGED_TAIL_MIN_DAYS - 1), none, 'a tail under the floor renders nothing')
+  const named = renderReport(
+    monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, unloggedTailDays: 7, lastLoggedDate: '2026-06-25' } }),
+  )
+  assert.ok(
+    named.includes('on <span class="num">18</span> of <span class="num">46</span> days<br/>no event of any kind logged after Jun 25'),
+    'the tail is named, by date, on the count it spans',
+  )
+  assert.ok(!none.includes('no event of any kind logged'), 'no tail, no clause')
+})
+
+Deno.test('CUL-2101 — "none logged" on a no-symptom monitoring report names a tail nobody logged anything in', () => {
+  const quiet = (unloggedTailDays: number) =>
+    renderReport(
+      monitoringSnap({
+        symptoms: [],
+        atAGlance: { ...monitoringSnap().atAGlance, primarySymptom: null, totalSymptomIncidents: 0, sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, unloggedTailDays, lastLoggedDate: '2026-06-11' },
+      }),
+    )
+  assert.ok(quiet(21).includes('none logged in this window<br/>no event of any kind logged after Jun 11'), 'the tail rides the empty count')
+  assert.equal(quiet(UNLOGGED_TAIL_MIN_DAYS - 1), quiet(0), 'under the floor: the absence')
+})
+
+Deno.test('CUL-2101 adv 2 — the trend tile and a below-floor rise name a tail their last week spans', () => {
+  const tailed = { ...monitoringSnap().atAGlance, unloggedTailDays: 3, lastLoggedDate: '2026-06-29' }
+  const belowFloor = {
+    kind: 'worsening' as const,
+    symptomType: 'diarrhea' as const,
+    windowDays: 7,
+    state: 'below_card_floor' as const,
+    minEpisodes: 3,
+    currentLoggingDays: 4,
+    priorLoggingDays: 7,
+    minLoggingDays: 3,
+  }
+  const at = (atAGlance: typeof tailed) => renderReport(monitoringSnap({ atAGlance, safetyChecks: [belowFloor] }))
+  const html = at(tailed)
+  assert.ok(
+    /Entries, first &rarr; last half<br\/>[^<]*(<span[^>]*>[^<]*<\/span>[^<]*)*<br\/>no event of any kind logged after Jun 29 \(the last <span class="num">3<\/span> days\)/.test(html),
+    'the trend tile names the tail its last half spans',
+  )
+  assert.ok(
+    html.includes('below the <span class="num">3</span> the flag needs; no event of any kind logged after Jun 29 (the last <span class="num">3</span> days).'),
+    'a below-floor rise names the tail the missing episode could sit in',
+  )
+  const none = at({ ...tailed, unloggedTailDays: 0 })
+  assert.ok(!none.includes('no event of any kind logged'), 'no tail, no clause')
 })
 
 Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
@@ -5734,7 +5788,7 @@ Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about di
         daysSinceLastEpisode: 1,
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 18,
-        secondHalfLoggedDays: 18,
+        secondHalfLoggedDays: 18, unloggedTailDays: 0, lastLoggedDate: null,
       },
     }),
   )
@@ -5774,7 +5828,7 @@ Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it
         daysSinceLastEpisode: 1,
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 6,
-        secondHalfLoggedDays: 3,
+        secondHalfLoggedDays: 3, unloggedTailDays: 0, lastLoggedDate: null,
       },
     }),
   )

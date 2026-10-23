@@ -935,18 +935,28 @@ function endedEarlyCase(): ReportInput {
   }
 }
 
-const outDir = Deno.args[0] ?? '.'
-for (const [name, input] of [
-  ['trial-report-clean.html', cleanCase()],
-  ['trial-report-refused.html', refusedCase()],
-  ['trial-report-completed.html', completedCase()],
-  ['trial-report-truncated.html', truncatedCase()],
-  ['trial-report-past-window.html', pastWindowCase()],
-  ['trial-report-extended.html', extendedCase()],
-  ['trial-report-extended-late.html', extendedLateCase()],
-  ['trial-report-ended-early.html', endedEarlyCase()],
-] as const) {
-  const html = renderReport(assembleReport(input))
-  await Deno.writeTextFile(`${outDir}/${name}`, html)
-  console.log(`${name}: ${html.length} bytes`)
+/**
+ * Every sample, by artifact name. Exported so `supabase/functions/generate-report/unloggedTail.test.ts`
+ * renders the same artifacts the cold read reads (CUL-2101); each call builds a fresh input.
+ */
+export function sampleCases(): ReadonlyArray<readonly [string, ReportInput]> {
+  return [
+    ['trial-report-clean.html', cleanCase()],
+    ['trial-report-refused.html', refusedCase()],
+    ['trial-report-completed.html', completedCase()],
+    ['trial-report-truncated.html', truncatedCase()],
+    ['trial-report-past-window.html', pastWindowCase()],
+    ['trial-report-extended.html', extendedCase()],
+    ['trial-report-extended-late.html', extendedLateCase()],
+    ['trial-report-ended-early.html', endedEarlyCase()],
+  ] as const
+}
+
+if (import.meta.main) {
+  const outDir = Deno.args[0] ?? '.'
+  for (const [name, input] of sampleCases()) {
+    const html = renderReport(assembleReport(input))
+    await Deno.writeTextFile(`${outDir}/${name}`, html)
+    console.log(`${name}: ${html.length} bytes`)
+  }
 }

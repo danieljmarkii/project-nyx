@@ -88,7 +88,7 @@ import { summariseIntake } from './report.ts'
 import { drawsStopMark, isWindowChange } from './report.ts'
 // The symptom chart's week floor and the late-log line's threshold (CUL-1995, CUL-2001): value
 // imports, so the chart, the half trend and the copy read the number the snapshot was built on.
-import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, type SafetyCheck, type ThinWeek } from './report.ts'
+import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, UNLOGGED_TAIL_MIN_DAYS, type SafetyCheck, type ThinWeek } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -2069,6 +2069,11 @@ function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: st
   const weeks = (d: number): string => (d % 7 === 0 ? `${num(d / 7)} weeks` : `${num(d)} days`)
   const notTriggered: string[] = []
   const rest: string[] = []
+  // CUL-2101, same class: the ongoing check's count and its "latest within N days" floor both run
+  // to the window end, so "0 episodes in the last 8 weeks" over eight weeks nobody logged read as a
+  // quiet course. The tail is named inside the count it qualifies.
+  const tail = unloggedTailOf(snap.atAGlance)
+  const seenTail = tail === null ? '' : `; ${nothingLoggedFor(tail)}`
   for (const c of checks) {
     if (c.kind === 'ongoing') {
       const floors = `it triggers at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
@@ -2077,10 +2082,20 @@ function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: st
       // The OBSERVED count beside the floor, over the span the engine actually saw: its lookback,
       // or this report's window when that is shorter (it is handed only the window's entries).
       // A near miss in an undercounted record is the thing a vet most needs to see (cold read 4).
+      // When the tail covers the whole span the check saw, its count was taken over no logged day
+      // at all: "0 episodes in the last 8 weeks" is not a measurement and is not printed as one
+      // (cold read 2 on CUL-2101).
+      const seenSpan = Math.min(c.windowDays, c.lookbackDays)
       const seen =
-        c.windowDays < c.lookbackDays
-          ? `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in this ${num(c.windowDays)}-day report, all the check could see`
-          : `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in the last ${weeks(c.lookbackDays)}`
+        // Only when the check saw nothing: its lookback is 24-hour steps, so a tail landing on the
+        // lookback's first day can still hold an episode it counted (adversarial pass 2).
+        tail !== null && tail.days >= seenSpan && c.episodes === 0
+          ? `none of ${
+              c.windowDays < c.lookbackDays ? `this ${num(c.windowDays)}-day report` : `the last ${weeks(c.lookbackDays)}`
+            } was logged: ${nothingLoggedFor(tail)}`
+          : (c.windowDays < c.lookbackDays
+              ? `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in this ${num(c.windowDays)}-day report, all the check could see`
+              : `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in the last ${weeks(c.lookbackDays)}`) + seenTail
       if (c.state === 'not_triggered') notTriggered.push(`ongoing ${lower(c.symptomType)} (${seen}; ${floors})`)
       else if (c.state === 'window_short')
         rest.push(
@@ -2096,13 +2111,13 @@ function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: st
       notTriggered.push(
         `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in the last ${num(
           c.windowDays,
-        )} days, and more, or on more days, than the ${num(c.windowDays)} before)`,
+        )} days, and more, or on more days, than the ${num(c.windowDays)} before${seenTail})`,
       )
     } else if (c.state === 'below_card_floor') {
       rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over the last ${num(
           c.windowDays,
-        )} days below the ${num(c.minEpisodes)} the flag needs.`,
+        )} days below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
       )
     } else if (c.state === 'too_few_days') {
       rest.push(
@@ -2319,6 +2334,12 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // logs begin Jun 15, where the band read "Trial window: Jun 15 – Jul 2" in the same
       // paragraph as "day 93 of 120".
       bits.push(`Dates covered: ${h(fmtRange(f.evidenceStartDate, f.evidenceEndDate))}.`)
+      // CUL-2101 (cold read 2): a refusal flag whose dates stop where the owner stopped logging read
+      // as a refusal that ended with the diet. The silence after it is named, and what it means.
+      const intakeTail = unloggedTailOf(snap.atAGlance)
+      if (intakeTail !== null && intakeTail.after !== null) {
+        bits.push(`N${nothingLoggedFor(intakeTail).slice(1)}, so current intake is not on this record.`)
+      }
       if (wide) {
         // THE ATTRIBUTION GAP IS DISCLOSED, NOT PAPERED OVER (B-530). Under this population the
         // app could not resolve which logged food was the prescribed diet, so naming the diet
@@ -2607,6 +2628,15 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const adjacencyBit = f.coughVomitAdjacent
         ? ` Cough and vomiting are both flagged chronic for this patient. Post-tussive vomiting, and cough mistaken for hairball retching, are common in both directions, so <b>either count may be understated as readily as overstated</b> &mdash; both are owner-classified, reported separately and un-reclassified.`
         : ''
+      // The recency clause carries the unlogged tail (CUL-2101, PM ruling (a)): "most recent 10 days
+      // ago" over seven days with no log of any kind reads the silence as quiet days on the lead line
+      // of the safety band. The day count rides only where it fits inside the recency: on the
+      // engine's UTC fallback it can exceed it by a day, and the date alone is then the honest half.
+      const tail = unloggedTailOf(snap.atAGlance)
+      const recencyTail =
+        tail === null
+          ? ''
+          : `; ${nothingLoggedAfter(tail)}${tail.days <= f.daysSinceLastEpisode ? ` (the last ${num(tail.days)} days)` : ''}`
       return flagRow(
         'Chronicity',
         // "SPANS", not "has been ongoing" (CUL-687, adversarial pass 2026-08-28). This is the
@@ -2627,7 +2657,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
+        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago${recencyTail}. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
     case 'symptom_burden': {
@@ -5365,6 +5395,28 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
       </div>`
 }
 
+/**
+ * The unlogged tail a claim spans, or null when there is none worth naming (CUL-2101). Every caller
+ * renders nothing on null, which is what keeps a report without a tail byte-identical.
+ */
+function unloggedTailOf(ag: AtAGlance): { days: number; after: string | null } | null {
+  return ag.unloggedTailDays >= UNLOGGED_TAIL_MIN_DAYS ? { days: ag.unloggedTailDays, after: ag.lastLoggedDate } : null
+}
+
+/**
+ * The tail, said as the RECORD's silence and by date (cold read on CUL-2101): "the last 7 days
+ * unlogged" glued to an itching sentence read as seven itch-free days, so it names "of any kind",
+ * and a date cannot overstate any window or lookback it sits beside.
+ */
+function nothingLoggedAfter(t: { after: string | null }): string {
+  return t.after === null ? 'no event of any kind logged in this window' : `no event of any kind logged after ${fmtDay(t.after)}`
+}
+
+/** The same, with its length: a date alone left the reader to turn it into days (cold read 2). */
+function nothingLoggedFor(t: { days: number; after: string | null }): string {
+  return t.after === null ? nothingLoggedAfter(t) : `${nothingLoggedAfter(t)} (the last ${num(t.days)} days)`
+}
+
 /** The diet-trial At-a-glance tiles (the pre-round-2 set — appropriate only when a trial is active). */
 function trialTiles(snap: ReportSnapshot): string[] {
   const ag = snap.atAGlance
@@ -5374,11 +5426,21 @@ function trialTiles(snap: ReportSnapshot): string[] {
   const breakdown = snap.symptoms
     .map((s) => `${num(s.count)} ${h(symptomLabel(s.type).toLowerCase())}`)
     .join(', ')
+  // The count names its logged days WHERE IT IS PRINTED when logging stopped before the window end
+  // (CUL-2101): "5 / 88 d" read as five over 88 observed days when all five fell in the 23 anyone
+  // logged, and the caveat that said so sat a page further down.
+  const tail = unloggedTailOf(ag)
+  const tailLine =
+    tail === null
+      ? ''
+      : tail.after === null
+        ? '<br/>nothing logged in this window'
+        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; no event logged after ${fmtDay(tail.after)}`
   tiles.push(
     tile(
       `${ag.totalSymptomIncidents}`,
       `<small>&nbsp;/&nbsp;${ag.windowDays}&nbsp;d</small>`,
-      `Symptom events${breakdown ? `<br/>${breakdown}` : ''}`,
+      `Symptom events${breakdown ? `<br/>${breakdown}` : ''}${tailLine}`,
     ),
   )
 
@@ -5547,11 +5609,16 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
   // Tile 1 — episodes since onset. An onset-scoped denominator, not the window: for a mid-window
   // onset (Nyx: ~46 of 91 days) the window denominator dilutes the rate a vet actually reads.
   if (ps && ag.sinceOnsetDays !== null) {
+    // Same class as the trial tile's count (CUL-2101): the since-onset days run to the window end,
+    // so a tail nobody logged is named here. Tile 3 beside it carries the logged-day coverage.
+    const tail = unloggedTailOf(ag)
     tiles.push(
       tile(
         `${ps.count}`,
         `<small>&nbsp;/&nbsp;${ag.sinceOnsetDays}&nbsp;d</small>`,
-        `${h(symptomLabel(ps.type))} since onset<br/>on ${num(ps.symptomDays)} of ${num(ag.sinceOnsetDays)} days`,
+        `${h(symptomLabel(ps.type))} since onset<br/>on ${num(ps.symptomDays)} of ${num(ag.sinceOnsetDays)} days${
+          tail === null ? '' : `<br/>${nothingLoggedFor(tail)}`
+        }`,
       ),
     )
   } else {
@@ -5559,7 +5626,11 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
       tile(
         `${ag.totalSymptomIncidents}`,
         `<small>&nbsp;/&nbsp;${ag.windowDays}&nbsp;d</small>`,
-        `Symptom events<br/>none logged in this window`,
+        `Symptom events<br/>none logged in this window${(() => {
+          // CUL-2101: "none logged" over a stretch nobody logged anything is the same quiet read.
+          const tail = unloggedTailOf(ag)
+          return tail === null || tail.after === null ? '' : `<br/>${nothingLoggedFor(tail)}`
+        })()}`,
       ),
     )
   }
@@ -5604,7 +5675,15 @@ function monitoringTiles(snap: ReportSnapshot): string[] {
             `<span class="arw">not compared</span>`,
             `Entries, first vs last half<br/>${thinWeekList(thin.weeks)}`,
           )
-        : tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Entries, first &rarr; last half<br/>${sub}${thinSub}`),
+        : tileHtml(
+            `${firstCount} <span class="arw">&rarr;</span> ${lastCount}`,
+            // The last half runs to the window end, so a fall across a tail nobody logged is named
+            // on the tile that prints it (CUL-2101, adversarial pass 2).
+            `Entries, first &rarr; last half<br/>${sub}${thinSub}${(() => {
+              const tail = unloggedTailOf(ag)
+              return tail === null ? '' : `<br/>${nothingLoggedFor(tail)}`
+            })()}`,
+          ),
     )
   } else {
     tiles.push(weightTile(snap))
