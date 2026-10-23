@@ -30,6 +30,12 @@ import { triggerSignalRegenDebounced } from './signal';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from './analysis';
 import { uploadPhoto, compressForUpload, persistCapture } from './storage';
 import { uuid, OccurredConfidence } from './utils';
+import {
+  attachmentStillWanted,
+  markAttachmentSyncedIfLive,
+  purgeRemovedAttachment,
+  withUploadInFlight,
+} from './attachments';
 import { isStoolEvent } from '../constants/eventTypes';
 import { floorOnNow, insertFloorMarker, kickFloorChecks, owesFloorCheck, runOwingCheck } from './incidentFloorQueue';
 import { previewFloorAfterWrite, type FloorAnnouncement } from './incidentFloorPreview';
@@ -214,11 +220,18 @@ async function attachPhotoBestEffort(
     // Async so it doesn't delay the caller's completion beat. Self-contained: a
     // failure here is logged and dropped (the local row stays synced=0 and the
     // queue retries; the lazy detail-open trigger analyzes once the row is up).
-    void (async () => {
+    void withUploadInFlight(attId, async () => {
       let invoked = false;
+      // CUL-639 — the owner can remove this log (Undo, History, the event screen)
+      // at any point in this chain, and a removed log's photo must not reach the
+      // server or be read. So the chain asks again at each step that would put it
+      // there, and if the log is gone it finishes the removal itself.
+      const abandon = () => purgeRemovedAttachment({ id: attId, storage_path: storagePath });
       try {
         const uploadUri = await compressForUpload(attachment.uri, attachment.width, attachment.height);
+        if (!(await attachmentStillWanted(attId))) { await abandon(); return; }
         await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
+        if (!(await attachmentStillWanted(attId))) { await abandon(); return; }
         const { error: attErr } = await supabase.from('event_attachments').upsert(
           {
             id: attId, event_id: eventId, pet_id: petId,
@@ -228,14 +241,29 @@ async function attachPhotoBestEffort(
         );
         // Only mark synced + analyze if the row actually landed (supabase-js
         // returns errors rather than throwing) — the trap B-027 documented.
-        if (attErr) { console.warn('[insertSimpleEvent] event_attachment upsert failed:', attErr.message); return; }
-        await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+        if (attErr) {
+          console.warn('[insertSimpleEvent] event_attachment upsert failed:', attErr.message);
+          // The object is up even though the row is not. A live log leaves it for
+          // the queue's retry; a removed one takes it back down now.
+          if (!(await attachmentStillWanted(attId))) await abandon();
+          return;
+        }
+        // The last check, and the one that closes the window: marking synced only
+        // while the event is live is a single statement, so a removal cannot land
+        // between the check and the mark. Not marked means the log was removed
+        // while the row went up, so take the object and the row back down. A
+        // removal AFTER this point finds the photo synced; Undo re-queues it and
+        // the queue's purge deletes it (lib/attachments.ts).
+        if (!(await markAttachmentSyncedIfLive(db, attId))) { await abandon(); return; }
         // AWAITED, where this was fire-and-forget: the claim has to settle on the
         // invoke's real outcome, because that is what releases a waiting incident
         // screen — at the right moment, and with a truthful flag. The trigger
         // itself never throws (it returns { error }), and nothing downstream of
         // here waits on this IIFE, so the await costs the owner nothing.
-        if (isVomit || isStool) {
+        // No read for a log removed by now: it would spend the owner's per-incident
+        // cap on an incident they took back. Undo has already re-queued the photo
+        // for the purge, so nothing else is owed here.
+        if ((isVomit || isStool) && (await attachmentStillWanted(attId))) {
           const { error: readErr } = isVomit
             ? await triggerVomitAnalysis(eventId)
             : await triggerStoolAnalysis(eventId);
@@ -251,7 +279,7 @@ async function attachPhotoBestEffort(
         // going to write.
         readClaim?.settle(invoked);
       }
-    })();
+    });
   } catch (e) {
     // The attachment ROW insert failed — the event is already committed, so keep
     // the log and drop the photo rather than surface a false "log failed".

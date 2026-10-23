@@ -21,7 +21,7 @@ _Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read
 
 **TestFlight (real iOS builds) is the primary on-device target** since 2026-06-07. Runtime B (Metro + tunnel in the **custom dev client** — Expo Go retired at W2/SDK 57) remains the per-push daily driver.
 
-**Installed TestFlight build: 1.1.0 (35), 2026-07-25.** The first binary since SDK 57, the first carrying the widget + App Group, the first iPhone-only, min iOS 16.4. Previous: 1.0.0 (34), 2026-07-18.
+**Installed TestFlight build: the 1.2.0 cut of 2026-08-29 (#730, `76d27a1`); build number not recorded, so record it at the next cut (CUL-559).** Before it: 1.1.0 (35), 2026-07-25, first since SDK 57.
 
 **OTA to the installed build:** `eas update --branch production` — the build's channel is `production`, **not** `preview`.
 
@@ -163,6 +163,52 @@ _Break glass (Actions or the MCP unavailable): see the runbook._
 ## Manual QA Script (required, every push)
 
 After the command sequence, emit a numbered on-device QA script the PM can run in under 3 minutes. The script must:
+
+- Start from a known state (e.g. "open Expo Go, reload with `r`")
+- List the specific taps and inputs to exercise the change (golden path first, then 1–2 edge cases)
+- Tell the PM **what to expect** at each step, so they can spot regressions without reading code
+- Tie back to the issue's acceptance criteria — call out which criterion each check verifies
+- Flag any check the PM cannot perform on-device (e.g. "verify in Supabase dashboard that `events.synced=1`")
+
+Format:
+
+```
+### Manual QA — <feature>
+1. <action> → <expected> (AC: <criterion ref>)
+2. <action> → <expected>
+3. Edge case: <action> → <expected>
+```
+
+If the change is backend-only (Edge Function, migration, schema), the QA script is the curl/SQL/dashboard steps to verify it instead — same numbered format.
+
+---
+
+## The handoff rules (moved from `CLAUDE.md` § Dev Handoff, 2026-10-12, CUL-1874)
+
+After every `git push`, output the exact terminal commands the PM needs to get the latest code onto their phone, each a code block plus one plain-English sentence on why. Skip none; assume the PM remembers nothing. A `/dispatch` child puts its QA script in the PR body instead.
+
+There are **two runtimes** the PM uses, and the handoff differs for each. Pick the one that matches what the PM is doing this session, and emit only that sequence — do not dump both unless the change requires both.
+
+The full, copy-pasteable command scripts for both runtimes — the one-time EAS/ngrok setup and the complete git "divergent branches" explanation — live in **`docs/dev-handoff-runbook.md`**. Read that file when emitting a handoff and paste the matching runtime's block. Quick reference:
+
+- **Runtime B** (the per-push default — Metro + tunnel, for one-off PR testing): `git fetch` → `git checkout <branch>` → `git pull --ff-only` → (once per Codespace) `ngrok authtoken <token>` → `npx expo start --tunnel`, scan the QR, press `r` to reload.
+- **Runtime A** (TestFlight — a deliberate, separate "cut a new build" session, NOT per-push): `git fetch` → `git checkout <branch>` → `git pull --ff-only`, then **A-OTA** (`eas update --branch production`, JS-only) or **A-Native** (`eas build --platform ios --profile production --auto-submit`). **The channel is `production`, never `preview`**, and since the SDK-57 fence the next TestFlight cut must be A-Native. Traps + the installed-build state: `docs/dev-handoff-runbook.md` § Current build state.
+
+**Default to Runtime B in the handoff** — it's the per-push, test-one-PR path. Only emit a Runtime A block when the session's explicit goal is cutting a new TestFlight build.
+
+**The one non-negotiable git rule:** always `git checkout <the handoff branch>` *before* pulling. A bare `git pull` from a different branch triggers `fatal: Need to specify how to reconcile divergent branches`; the fix is never "merge vs rebase," it's switching to the right branch. The one-time `git config --global pull.ff only` kills that prompt for good.
+
+**When git misbehaves** (divergent-branches prompt, "local changes would be overwritten," `--ff-only` failing after a squash-merge, detached HEAD, accidental commit on `main`): see **`docs/git-first-aid.md`** — a symptom→exact-command guide keyed by the literal error message. Point the PM there rather than improvising recovery commands.
+
+**Before pushing**, if the diff touches a store, Edge Function, or shared utility, run:
+```bash
+npm test
+```
+Confirms automated tests pass locally. Do not push a chunk-completing PR with failing or skipped tests — fix or mark `tests: N/A` in the DoD with the Engineer's exemption rationale.
+
+### Manual QA Script (required, every push)
+
+After the command sequence above, emit a numbered on-device QA script the PM can run in under 3 minutes. The script must:
 
 - Start from a known state (e.g. "open Expo Go, reload with `r`")
 - List the specific taps and inputs to exercise the change (golden path first, then 1–2 edge cases)

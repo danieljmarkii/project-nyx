@@ -47,6 +47,14 @@ interface SyncState {
   signalTick: number;
   bumpSignalTick: () => void;
 
+  // CUL-1947 — the record moved on THIS device. Bumped the moment a local write that can
+  // move a pet's vomit gaps has landed (a log, a time edit, a removal), never on the
+  // server's answer: the gap warning is read from local rows, so it must re-read even when
+  // the regen behind `signalTick` fails, hangs or never runs (offline is exactly when the
+  // phone's own read is the only one that can speak). A monotonic counter, as above.
+  recordTick: number;
+  bumpRecordTick: () => void;
+
   // B-721 SR-3 (§5.3) — the post-log acknowledgment flag, per pet. Raised the moment a
   // fresh log schedules a debounced Signal regen (triggerSignalRegenDebounced) and
   // cleared when THAT regen settles (success OR failure — fail-quiet). The Home Signal
@@ -77,6 +85,9 @@ export const useSyncStore = create<SyncState>((set) => ({
 
   signalTick: 0,
   bumpSignalTick: () => set((s) => ({ signalTick: s.signalTick + 1 })),
+
+  recordTick: 0,
+  bumpRecordTick: () => set((s) => ({ recordTick: s.recordTick + 1 })),
 
   signalAcknowledging: {},
   setSignalAcknowledging: (petId, value) =>

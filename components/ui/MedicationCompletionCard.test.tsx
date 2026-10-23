@@ -26,6 +26,13 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+// The Signal's refresh edge (CUL-1948), stubbed so a time edit's regen is assertable and
+// arms no real timer. The rest of the module stays real.
+const mockRegen = jest.fn();
+jest.mock('../../lib/signal', () => ({
+  ...jest.requireActual('../../lib/signal'),
+  triggerSignalRegenDebounced: (...a: unknown[]) => mockRegen(...a),
+}));
 
 const mockUpdateDoseAdherence = jest.fn().mockResolvedValue(undefined);
 const mockGetDoubleDoseFlag = jest.fn();
@@ -217,7 +224,7 @@ describe('MedicationCompletionCard — Undo', () => {
     seedDose();
     const view = render(<MedicationCompletionCard />);
     await pressUndo(view);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('m1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('m1', { purgePhotos: true });
     view.getByText('Removed');
     view.getByText('Taken out of Mochi’s record');
   });
@@ -381,6 +388,100 @@ describe('MedicationCompletionCard — Change time', () => {
     expect(fields.occurred_at_source).toBe('now');
     // The save still HAPPENED — this is a provenance rule, not a refusal to write.
     expect(fields.occurred_at).toBe('2026-06-07T14:00:00.000Z');
+  });
+
+  // CUL-1947 — a moved time moves a cut on the gap warning's logged clock, and this
+  // card schedules no regen, so Home's gap read re-runs on the local record tick alone,
+  // after the write. A peek-and-save moved nothing and owes no re-read.
+  it('a moved time bumps the record tick, after the write; a peek-and-save does not', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    seedDose();
+    const peek = render(<MedicationCompletionCard />);
+    openPicker(peek);
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(useSyncStore.getState().recordTick).toBe(0);
+    peek.unmount();
+
+    let tickAtWrite = -1;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => {
+      tickAtWrite = useSyncStore.getState().recordTick;
+    });
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(tickAtWrite).toBe(0);
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
+  // CUL-1948 — the server half of a moved time. The edit screen rebuilds the Signal when the
+  // instant moved (app/edit-event.tsx, `engineInputMoved`); this card did not, so every
+  // server-built finding kept counting the record at its old time. The regen is for the
+  // RECORD's pet (the active pet here is another one), only after the write has landed,
+  // and never for a peek-and-save, which would spend a daily cap unit on nothing (CUL-1087).
+  it('a moved time schedules the Signal regen for the record\'s pet after the write lands; a peek-and-save schedules none', async () => {
+    seedDose({}, 'p2');
+    const peek = render(<MedicationCompletionCard />);
+    openPicker(peek);
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(mockRegen).not.toHaveBeenCalled();
+    peek.unmount();
+
+    let writeLanded = false;
+    let landedAtRegen: boolean | null = null;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => { writeLanded = true; });
+    (mockRegen as jest.Mock).mockImplementationOnce(() => { landedAtRegen = writeLanded; });
+    seedDose({}, 'p2');
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('p1');
+    expect(landedAtRegen).toBe(true);
+  });
+
+  // A write that lands and then throws (anything after it in the try) has still moved the
+  // record, so the regen still goes; a write that never landed asks for nothing.
+  it('a moved time whose save lands then throws still schedules the regen; one that never lands does not', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { syncPendingEvents } = require('../../lib/sync');
+    (syncPendingEvents as jest.Mock).mockImplementationOnce(() => { throw new Error('push refused'); });
+    seedDose({}, 'p1');
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('p1');
+    view.unmount();
+
+    (updateEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    seedDose({}, 'p1');
+    const failed = render(<MedicationCompletionCard />);
+    openPicker(failed);
+    await act(async () => {
+      fireEvent(failed.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 45));
+    });
+    await act(async () => { fireEvent.press(failed.getByText('Save')); });
+    expect(alert).toHaveBeenCalledTimes(2);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+    alert.mockRestore();
   });
 
   it('Cancel writes nothing and leaves the card standing', async () => {

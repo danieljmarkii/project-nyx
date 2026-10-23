@@ -270,6 +270,21 @@ describe('momentStore', () => {
     expect(p.trialFlag.proteins).toEqual(['chicken']);
   });
 
+  it('patchTrialFlag never replaces a heads-up the card already shows (CUL-2053)', () => {
+    // A bowl edited on a showing card re-runs the heads-up; replacing the first flag would
+    // leave its food spent with nothing for Undo to forget.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-two' }));
+    expect(useMomentStore.getState().patchTrialFlag('e-two', {
+      kind: 'off_diet_protein', proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'a',
+    })).toBe(true);
+    expect(useMomentStore.getState().patchTrialFlag('e-two', {
+      kind: 'off_diet_protein', proteins: ['beef'], trialProteins: ['duck'], trialId: 't1', foodId: 'b',
+    })).toBe(false);
+    const p = useMomentStore.getState().payload;
+    if (p?.kind !== 'meal') throw new Error('expected meal payload');
+    expect(p.trialFlag?.foodId).toBe('a');
+  });
+
   it('patchTrialFlag lands a MEMBERSHIP flag (B-693) with its trial day-math intact', () => {
     // The rung-3 flag rides the same store path as the contents one; it carries the
     // trial's start/target so the card can build the shipped add sheet. The store
@@ -870,7 +885,7 @@ describe('the in-sheet beat dwell (CUL-964)', () => {
     useMomentStore.getState().showSheetBeat(sheetBeatPayload({ eventId: 'sb-1' }));
     const result = await useMomentStore.getState().undo('sb-1');
     expect(result).toBe('removed');
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('sb-1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('sb-1', { purgePhotos: true });
     expect(useMomentStore.getState().removed).toBe(true);
   });
 });
@@ -934,7 +949,7 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'ev-9' }));
     const result = await useMomentStore.getState().undo('ev-9');
     expect(result).toBe('removed');
-    expect(reverse).toHaveBeenCalledWith('ev-9', undefined);
+    expect(reverse).toHaveBeenCalledWith('ev-9', { purgePhotos: true });
     const s = useMomentStore.getState();
     expect(s.removed).toBe(true);
     // Still on screen — the removal line is the point, not an instant dismiss.
@@ -956,7 +971,7 @@ describe('momentStore — undo', () => {
       previousSnapshotKg: 4.2,
     }));
     await useMomentStore.getState().undo('w-1');
-    expect(reverse).toHaveBeenCalledWith('w-1', { restoreWeightSnapshotToKg: 4.2 });
+    expect(reverse).toHaveBeenCalledWith('w-1', { purgePhotos: true, restoreWeightSnapshotToKg: 4.2 });
   });
 
   it('passes a displaced NULL through rather than treating it as "nothing to restore"', async () => {
@@ -970,7 +985,7 @@ describe('momentStore — undo', () => {
       previousSnapshotKg: null,
     }));
     await useMomentStore.getState().undo('w-2');
-    expect(reverse).toHaveBeenCalledWith('w-2', { restoreWeightSnapshotToKg: null });
+    expect(reverse).toHaveBeenCalledWith('w-2', { purgePhotos: true, restoreWeightSnapshotToKg: null });
   });
 
   it('sends no restore value for a card that never carried one', async () => {
@@ -978,13 +993,13 @@ describe('momentStore — undo', () => {
     // the reconcile to leave an owner's profile weight alone.
     useMomentStore.getState().showNamed(namedPayload({ eventId: 'sym-1' }));
     await useMomentStore.getState().undo('sym-1');
-    expect(reverse).toHaveBeenCalledWith('sym-1', undefined);
+    expect(reverse).toHaveBeenCalledWith('sym-1', { purgePhotos: true });
   });
 
   it('works on a meal and on a dose — one reversal for all three registers', async () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'meal-1' }));
     await useMomentStore.getState().undo('meal-1');
-    expect(reverse).toHaveBeenLastCalledWith('meal-1', undefined);
+    expect(reverse).toHaveBeenLastCalledWith('meal-1', { purgePhotos: true });
     expect(useMomentStore.getState().removed).toBe(true);
 
     useMomentStore.getState().showMedication(medicationPayload({ eventId: 'dose-1' }));
@@ -992,7 +1007,7 @@ describe('momentStore — undo', () => {
     // would render its confirmation under the word "Removed".
     expect(useMomentStore.getState().removed).toBe(false);
     await useMomentStore.getState().undo('dose-1');
-    expect(reverse).toHaveBeenLastCalledWith('dose-1', undefined);
+    expect(reverse).toHaveBeenLastCalledWith('dose-1', { purgePhotos: true });
   });
 
   it('plays the rigid destructive haptic on the tap — the tap IS the confirm here', async () => {
@@ -1069,7 +1084,7 @@ describe('momentStore — undo', () => {
     // alert's "try again" would be silently swallowed forever.
     reverse.mockImplementation(async () => {});
     expect(await useMomentStore.getState().undo('ev-2')).toBe('removed');
-    expect(reverse).toHaveBeenLastCalledWith('ev-2', undefined);
+    expect(reverse).toHaveBeenLastCalledWith('ev-2', { purgePhotos: true });
   });
 
   it('does NOT stamp the removal line on a card that superseded it mid-write', async () => {
@@ -1083,7 +1098,7 @@ describe('momentStore — undo', () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'new' }));
     release();
     expect(await pending).toBe('removed');
-    expect(reverse).toHaveBeenCalledWith('old', undefined);
+    expect(reverse).toHaveBeenCalledWith('old', { purgePhotos: true });
     const s = useMomentStore.getState();
     expect(s.removed).toBe(false);
     expect(s.payload?.eventId).toBe('new');

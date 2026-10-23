@@ -36,14 +36,15 @@ jest.mock('expo-router', () => ({
 
 // Per-pet local rows so the B-734 localCtx-reset test can give pet A a mature record
 // and pet B a fresh one. Defaults to the empty record every pre-existing test assumed.
-let mockLocalRowsByPet: Record<string, { total: number; recent: number; earliest: string | null }> = {};
+type LocalRow = { total: number; earliest: string | null; latest: string | null; latestLook: string | null };
+let mockLocalRowsByPet: Record<string, LocalRow> = {};
 jest.mock('../lib/db', () => ({
   getDb: () => ({
     // Keyed on whichever parameter names a seeded pet, so the read's parameter order is
-    // free to change (the look type is bound twice, around the cutoff).
+    // free to change (the look type is bound four times).
     getAllSync: (_sql: string, params: unknown[]) => [
       mockLocalRowsByPet[params.map(String).find((p) => p in mockLocalRowsByPet) ?? ''] ??
-        { total: 0, recent: 0, earliest: null },
+        { total: 0, earliest: null, latest: null, latestLook: null },
     ],
   }),
 }));
@@ -96,7 +97,7 @@ describe('useSignal — pet-switch multi-pet safety', () => {
 
     const { result } = renderHook(() => useSignal());
     await waitFor(() => expect(result.current.findings).toEqual([finding]));
-    expect(result.current.displayState).toBe('live');
+    expect(result.current.findings).toHaveLength(1);
 
     act(() => {
       usePetStore.setState({ activePet: PET_B });
@@ -105,22 +106,22 @@ describe('useSignal — pet-switch multi-pet safety', () => {
     // Synchronous, in the same act() — no `await` — pet A's findings must
     // already be gone, not lingering alongside pet B's new id.
     expect(result.current.findings).toEqual([]);
-    expect(result.current.displayState).not.toBe('live');
 
     // Let pet B's in-flight (resolves-to-null) fetch settle before the test ends.
     await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 
   it("a pet switch never commits a frame pairing the new pet's name with the previous pet's counts (B-734)", async () => {
-    // CUL-72's second seam: the reset cleared findings but not localCtx, so the E1
-    // headline could briefly read "We're getting to know Mochi. Day 34 — 212 events so
-    // far." with pet A's numbers. localCtx now resets in the same render-body block.
+    // CUL-72's second seam: the reset cleared findings but not localCtx, so the quiet line
+    // could briefly read pet A's record ("Nothing logged since Tue") under pet B's name.
+    // localCtx now resets in the same render-body block.
     mockLocalRowsByPet[PET_A.id] = {
       total: 212,
-      recent: 1,
       earliest: new Date(Date.now() - 33 * 86400000).toISOString(),
+      latest: new Date(Date.now() - 3_600_000).toISOString(),
+      latestLook: null,
     };
-    mockLocalRowsByPet[PET_B.id] = { total: 0, recent: 0, earliest: null };
+    mockLocalRowsByPet[PET_B.id] = { total: 0, earliest: null, latest: null, latestLook: null };
     mockedReadCache.mockResolvedValue(null);
 
     // Record every COMMITTED frame (an effect with no deps runs once per commit, with
@@ -145,7 +146,7 @@ describe('useSignal — pet-switch multi-pet safety', () => {
     expect(frames.some((f) => f.petName === PET_B.name && f.eventCount === 212)).toBe(false);
     // And pet B settles on its own (fresh) local context.
     expect(result.current.eventCount).toBe(0);
-    expect(result.current.dayNumber).toBe(1);
+    expect(result.current.lastLoggedAt).toBeNull();
   });
 });
 

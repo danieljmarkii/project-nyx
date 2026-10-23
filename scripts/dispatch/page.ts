@@ -73,6 +73,10 @@ export type Page = {
   boardRaw?: { from: string; to: string }; // anchors of `## Board` .. next `## `
   hasBoard: boolean;
   alias?: string;
+  // The `Done means (rows):` line (§ The sort rule 6): the rows on the path, by PR number.
+  // Absent means the page has no path, so every row is off it (Unblock kind g).
+  doneMeans?: RowId[];
+  plain: string; // the page minus its Board, tags stripped: what "covered" reads
 };
 
 const TAG = /<(issue|pull-request)\b[^>]*>([\s\S]*?)<\/\1>/g;
@@ -336,7 +340,23 @@ export function parsePage(raw: string): Page {
     boardRaw,
     hasBoard: !!boardStart,
     alias: /^Alias:\s*(.+)$/m.exec(plain)?.[1]?.trim(),
+    doneMeans: parseDoneMeans(plain),
+    plain,
   };
+}
+
+// `Done means (rows): 11b, 09, 13a, 41` (bold or not). Each token is a PR number; a
+// `PR-` prefix and a combined `03 + 04` are read as the page writes them elsewhere.
+export function parseDoneMeans(plain: string): RowId[] | undefined {
+  const m = /^\**Done means \(rows\):\**\s*(.*)$/m.exec(plain.split('\n').map((l) => l.trim()).join('\n'));
+  if (!m) return undefined;
+  return m[1]
+    .replace(/\*\*/g, '')
+    .split(/[,;·]|\s+and\s+/)
+    .flatMap((t) => t.split(' + '))
+    .map((t) => /(?:PR-)?(\d{2}[a-z]?)\b/.exec(t.trim())?.[1])
+    .filter((x): x is string => !!x)
+    .map(normRow);
 }
 
 function withoutBoard(lines: string[]): string[] {

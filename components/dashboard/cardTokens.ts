@@ -10,13 +10,15 @@
 // accent. There is exactly one "bad" colour (concern) and one quiet "good" colour
 // (positive) — everything else stays calm.
 
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { DeltaTone } from '../../lib/dashboardCards';
 
 export const DELTA_TONE_COLOR: Record<DeltaTone, string> = {
   concern: theme.colorEventSymptom, // adverse rising — the one concern colour
   calm: theme.colorTextSecondary, // adverse falling — muted, NOT green (§11 #3)
-  positive: theme.colorAccent, // positive rising — the one quiet "win" colour
+  // positive rising — the one quiet "win" colour. The INK, not the glyph teal: this map also
+  // colours the delta's text on the white card (5.17:1; the bright teal was 2.26:1, CUL-1666).
+  positive: colorRoles.positive.textOnLight,
   neutral: theme.colorTextTertiary, // no verdict
 };
 

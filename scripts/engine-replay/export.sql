@@ -13,7 +13,7 @@
 --
 -- WHOSE PET (CUL-1314, PMD-12). `execute_sql` is the service role and skips RLS, and a
 -- correct id and owner pair proves only that the two agree, not that a session may read
--- them. Until the privacy policy names an evaluation purpose, only the PM's own pets and
+-- them. Until a separate in-app opt in exists (D18, CUL-1825), only the PM's own pets and
 -- synthetic records are evaluation subjects. Each CTE matches only the pets listed in
 -- evaluationSubjects.ts, so run as written, any other pair comes back as `subjects: 0`
 -- and none of its rows leave the database; the loader refuses any other pet id as well.

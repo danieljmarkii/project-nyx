@@ -22,6 +22,8 @@ import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
 import { floorOnNow, insertFloorMarker, kickFloorChecks, writeOwingFloorCheck } from './incidentFloorQueue';
 import { useSyncStore } from '../store/syncStore';
+import { assertMixableFoods, writeMealComponentsTx } from './mealComponents';
+import type { ComponentInput } from './mealComposition';
 
 export interface InsertMealParams {
   petId: string;
@@ -52,6 +54,11 @@ export interface InsertMealParams {
   // would drag React Native into every consumer of this module (C-26 — a shared
   // module's boundary is what imports it).
   intakeRating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;
+  /** A MIXED BOWL in one write (Mixed meals row 5, the FAB's mix pill): two or more foods,
+   *  position 0 first. `foodId` must be position 0's. The event, the meal and its
+   *  components land in ONE transaction, so the bowl can never be saved as its first food
+   *  alone. Absent for a plain meal, which writes exactly as before. */
+  components?: readonly ComponentInput[];
 }
 
 export interface InsertMealResult {
@@ -70,8 +77,13 @@ export interface InsertMealResult {
 // sync push + regen are fire-and-forget and never block or throw into the
 // caller.
 export async function insertMeal(params: InsertMealParams): Promise<InsertMealResult> {
-  const { petId, foodId, occurredAt, occurredAtSource, intakeRating = null } = params;
+  const { petId, foodId, occurredAt, occurredAtSource, intakeRating = null, components } = params;
   const db = getDb();
+  const mix = components && components.length > 1 ? components : null;
+  if (mix) {
+    if (mix[0].foodItemId !== foodId) throw new Error('insertMeal: foodId must be the bowl’s first food');
+    await assertMixableFoods(db, mix);
+  }
   const now = new Date().toISOString();
   const occurredAtIso = occurredAt.toISOString();
   const eventId = uuid();
@@ -110,6 +122,7 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
     );
     // Engines v3 PR-28b (CUL-1436, §8.4): a meal re-checks the vomits around it (a refusal
     // can raise one through the intake flag), so it owes a marker, in this transaction.
+    if (mix) await writeMealComponentsTx(db, eventId, mix, new Date(now));
     if (owesCheck) await insertFloorMarker(db, eventId, petId);
   });
   if (owesCheck) kickFloorChecks();
@@ -129,10 +142,12 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
   // failed log the owner would reasonably re-enter. Log and carry on: the
   // ordering self-heals on the next log of that food.
   try {
-    await db.runAsync(
-      `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
-      [now, foodId],
-    );
+    for (const id of mix ? new Set(mix.map((c) => c.foodItemId)) : [foodId]) {
+      await db.runAsync(
+        `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
+        [now, id],
+      );
+    }
   } catch (e) {
     console.warn('[insertMeal] last_used_at touch failed (ordering only):', e);
   }

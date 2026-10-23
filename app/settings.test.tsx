@@ -6,10 +6,13 @@ import {
   APP_CONFIG_DEFAULTS,
   type AllowlistFlagValues,
 } from '../lib/appConfig';
-import { useBetaOptInStore } from '../lib/betaFeatures';
+import { BETA_REGISTRY, useBetaOptInStore, type BetaFeature } from '../lib/betaFeatures';
 import { JS_UPDATE_ID, JS_CHANNEL, JS_IS_EMBEDDED } from '../lib/appInfo';
 import { formatAppVersion, formatJsBundle } from '../lib/support';
 import { APP_VERSION, APP_BUILD } from '../lib/appInfo';
+import { router } from 'expo-router';
+import { fireEvent } from '@testing-library/react-native';
+import { useAiConsentStore, loadAiConsent } from '../store/aiConsentStore';
 
 // Pins the B-747 fix at its fix SITE — the "You" screen's Beta-features row:
 //   • the row's visibility is an OR over the WHOLE registry (the shipped bug
@@ -31,6 +34,16 @@ jest.mock('expo-router', () => ({
     canGoBack: jest.fn(() => true),
     push: jest.fn(),
   },
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    useEffect(() => cb(), [cb]);
+  },
+}));
+// CUL-1834: the AI reading row reads the consent cache; the read is stubbed so the
+// row's three values can be set directly.
+jest.mock('../store/aiConsentStore', () => ({
+  ...jest.requireActual('../store/aiConsentStore'),
+  loadAiConsent: jest.fn(async () => ({ status: 'error' })),
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -64,6 +77,27 @@ jest.mock('../store/authStore', () => ({
 
 const gatedToPm = { enabled: false, allowlist: ['pm-uid'] };
 
+// The shipped shelf is empty at 1.2.0: the widget, its last beta, graduated
+// (CUL-1842). The shelf's machinery stays for the next beta, so its gates are pinned
+// over a fixture beta seeded into the real registry for the cases that need one.
+const FIXTURE_BETA: BetaFeature = {
+  key: 'ask_enabled',
+  title: 'Fixture feature',
+  blurb: 'A fixture feature for the shelf tests.',
+  owner: 'Test',
+  addedDate: '2026-10-01',
+  reviewBy: '2027-01-01',
+  serverCost: false,
+};
+function seedFixtureBeta(): void {
+  beforeEach(() => {
+    BETA_REGISTRY.push(FIXTURE_BETA);
+  });
+  afterEach(() => {
+    BETA_REGISTRY.splice(BETA_REGISTRY.indexOf(FIXTURE_BETA), 1);
+  });
+}
+
 function setAllowlist(over: Partial<AllowlistFlagValues>): void {
   __resetAppConfigForTest({
     values: APP_CONFIG_DEFAULTS,
@@ -73,6 +107,7 @@ function setAllowlist(over: Partial<AllowlistFlagValues>): void {
 
 beforeEach(() => {
   useBetaOptInStore.getState().reset();
+  useAiConsentStore.getState().reset();
   setAllowlist({});
 });
 
@@ -81,11 +116,12 @@ afterEach(() => {
 });
 
 describe('Settings — the Early-access row gate (B-747)', () => {
+  seedFixtureBeta();
+
   it('shows the row for an account eligible for a beta', () => {
-    // The B-747 regression was a non-widget beta allowlisted with the widget dark; with
-    // the widget the one beta left on the shelf (Design v2 graduated, CUL-1071) the row
-    // is shown by the same OR over the registry (`lib/betaFeatures.test.ts`).
-    setAllowlist({ widget_enabled: gatedToPm });
+    // The B-747 regression was a beta allowlisted with another dark; the row is shown
+    // by the same OR over the registry (`lib/betaFeatures.test.ts`).
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText } = render(<SettingsScreen />);
     expect(getByText('Early access')).toBeTruthy();
   });
@@ -96,12 +132,12 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   });
 
   it('counts every eligible+opted-in beta in the "N on" note', () => {
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, rerender, queryByText } = render(<SettingsScreen />);
     expect(queryByText('1 on')).toBeNull();
 
     // A store write after mount re-renders the subscribed screen — wrap it.
-    act(() => useBetaOptInStore.getState().setOptIn('widget_enabled', true));
+    act(() => useBetaOptInStore.getState().setOptIn('ask_enabled', true));
     rerender(<SettingsScreen />);
     expect(getByText('1 on')).toBeTruthy();
   });
@@ -109,8 +145,8 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   it('says early access, never beta, in what it shows and speaks (CUL-70)', () => {
     // "Beta" reads as Guideline 2.2 ("demos, betas, and trial versions") in App
     // Review's skim, and a screen-reader user hears the label and hint, not the text.
-    setAllowlist({ widget_enabled: gatedToPm });
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    setAllowlist({ ask_enabled: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
     const { getByText, getByLabelText, getByHintText, queryByText } = render(<SettingsScreen />);
 
     expect(getByText('Early access')).toBeTruthy();
@@ -121,10 +157,25 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   });
 
   it('hides the count at 0 on — an eligible owner sees a clean doorway', () => {
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, queryByText } = render(<SettingsScreen />);
     expect(getByText('Early access')).toBeTruthy();
     expect(queryByText(/\d+ on/)).toBeNull();
+  });
+});
+
+describe('Settings — the widget graduated, so no account sees the opt in (CUL-1842)', () => {
+  it('shows no Early access row with the shipped registry, whatever the allowlists say', () => {
+    // Every allowlist key opened to everyone: the row would have every chance to
+    // render if any shipped beta were left on the shelf.
+    const open = { enabled: true, allowlist: [] };
+    setAllowlist(
+      Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>,
+    );
+    const { queryByText } = render(<SettingsScreen />);
+    expect(BETA_REGISTRY).toHaveLength(0);
+    expect(queryByText('Early access')).toBeNull();
+    expect(queryByText('Home screen widget')).toBeNull();
   });
 });
 
@@ -142,5 +193,51 @@ describe('Settings — the version foot names the JS bundle (CUL-690)', () => {
     const { getByText } = render(<SettingsScreen />);
     getByText(`Culprit v${formatAppVersion(APP_VERSION, APP_BUILD)}`);
     getByText(formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL, { abbreviate: true }));
+  });
+});
+
+// CUL-1834 (frame I): the AI reading row is always present (the App Review notes name
+// this path), and its value says On, Off or Not set only once a read has answered for
+// THIS account.
+describe('Settings — the AI reading row (CUL-1834)', () => {
+  const row = { copyVersion: '2026-10-12', source: 'settings', decidedAt: '2026-10-14T09:00:00+00:00' };
+
+  it('is always present, reads on focus, and opens the AI reading screen', () => {
+    const { getByText } = render(<SettingsScreen />);
+    expect(getByText('AI reading')).toBeTruthy();
+    expect(getByText('Photos, labels and patterns')).toBeTruthy();
+    expect(loadAiConsent).toHaveBeenCalledWith('pm-uid');
+    fireEvent.press(getByText('AI reading'));
+    expect(router.push).toHaveBeenCalledWith('/settings/ai-reading');
+  });
+
+  it('shows no value before a read answers: Not set is a claim, never a loading state', () => {
+    const { queryByText } = render(<SettingsScreen />);
+    expect(queryByText('Not set')).toBeNull();
+    expect(queryByText('On')).toBeNull();
+    expect(queryByText('Off')).toBeNull();
+  });
+
+  it('says Not set, On or Off from the cached answer', () => {
+    useAiConsentStore.getState().setRow('pm-uid', null);
+    const first = render(<SettingsScreen />);
+    expect(first.getByText('Not set')).toBeTruthy();
+    first.unmount();
+
+    useAiConsentStore.getState().setRow('pm-uid', { ...row, granted: true });
+    const second = render(<SettingsScreen />);
+    expect(second.getByText('On')).toBeTruthy();
+    expect(second.getByLabelText('AI reading, On')).toBeTruthy();
+    second.unmount();
+
+    useAiConsentStore.getState().setRow('pm-uid', { ...row, granted: false });
+    const third = render(<SettingsScreen />);
+    expect(third.getByText('Off')).toBeTruthy();
+  });
+
+  it("never shows another account's cached answer", () => {
+    useAiConsentStore.getState().setRow('someone-else', { ...row, granted: true });
+    const { queryByText } = render(<SettingsScreen />);
+    expect(queryByText('On')).toBeNull();
   });
 });

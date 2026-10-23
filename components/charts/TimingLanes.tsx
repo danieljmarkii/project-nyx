@@ -3,7 +3,7 @@ import { Animated, StyleSheet, View, type LayoutChangeEvent } from 'react-native
 import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { lanesUntimedLine, type LaneAxis, type LaneModel } from '../../lib/chartModels';
+import { lanesEarlierLine, lanesUntimedLine, type LaneAxis, type LaneModel } from '../../lib/chartModels';
 import { LANE_GEOMETRY, LANE_HEIGHT_PT } from '../../lib/patternsTiming';
 import { lanesBucketCaption, timingLanesA11yLabel } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
@@ -77,6 +77,9 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes', m
   const centerY = LANE_HEIGHT / 2;
   const { rapidWindowMinutes, longGapHours } = axis.config;
   const untimed = lanesUntimedLine(lanes);
+  // Past the trial's cap, the episodes before the lanes' window, counted (CUL-2154). Derived
+  // from the lanes like the untimed line, so no caller can leave it off.
+  const earlier = lanesEarlierLine(lanes);
 
   let dotIndex = 0;
   return (
@@ -164,6 +167,11 @@ export function TimingLanes({ lanes, axis, drawIn = false, identity = 'lanes', m
           <ThemedText style={styles.untimed} testID="timing-untimed-line">
             {untimed}
           </ThemedText>
+          {earlier != null && (
+            <ThemedText style={styles.untimed} testID="timing-earlier-line">
+              {earlier}
+            </ThemedText>
+          )}
         </Animated.View>
       </View>
     </View>

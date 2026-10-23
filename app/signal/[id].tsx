@@ -5,7 +5,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { parseSignalRouteParams } from '../../lib/signalRoute';
-import { SignalScreen } from '../../components/designV2/signal/SignalScreen';
+import { SignalScreen } from '../../components/surfaces/signal/SignalScreen';
 import { useAuthStore } from '../../store/authStore';
 import { FLIGHT_MOTION, peekFlight } from '../../components/motion/flightMotion';
 import { SIGNAL_OPEN_MOTION } from '../../components/motion/signalOpenMotion';

@@ -452,3 +452,31 @@ describe('the reason sheet’s title', () => {
     expect(EXPOSURE_REASON_TITLE).toBe('Why Culprit recorded this');
   });
 });
+
+// ── Mixed meals (CUL-2053, spec §5.2 and §7.3): a bowl names its offending food ────
+
+describe('a mixed bowl names the food that put it outside the trial diet', () => {
+  // A duck-dominant bowl with salmon in it: the dominant food is the trial diet, and a
+  // row that named it would list the prescribed diet as the exposure.
+  const BOWL = feeding({
+    eventId: 'bowl',
+    occurredAt: at('2026-07-22', 8),
+    label: 'Royal Canin Duck Dry + Purina Pro Plan Salmon, mixed',
+    components: [
+      { foodItemId: 'dry-duck', foodKey: 'royal caninduck dry', label: 'Royal Canin Duck Dry', foodType: 'meal', proteins: ['duck'], share: 0.75 },
+      { foodItemId: 'pro-plan', foodKey: 'purinapro plan salmon', label: 'Purina Pro Plan Salmon', foodType: 'meal', proteins: ['salmon'], share: 0.25 },
+    ],
+  });
+
+  it('the row names the offending component and says it was in a mixed bowl', () => {
+    const rows = build({ feedings: [ON_DIET, BOWL] }).groups.flatMap((g) => g.rows);
+    expect(rows.map((r) => r.label)).toEqual(['Purina Pro Plan Salmon, in a mixed bowl']);
+    expect(rows[0].label).not.toContain('Duck');
+  });
+
+  it('the reason explains the offending component, under its own name', () => {
+    const row = build({ feedings: [ON_DIET, BOWL] }).groups[0].rows[0];
+    const alone = classifyFeeding(buildTrialContext(TRIAL, [DRY_DUCK]), { ...SALMON, occurredAt: BOWL.occurredAt });
+    expect(row.reason).toEqual(explainVerdict(alone, 'Purina Pro Plan Salmon'));
+  });
+});

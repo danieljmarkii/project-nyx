@@ -27,7 +27,7 @@ function episode(dayKey: string, hour: number, minutesSinceMeal: number | null =
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
   if (!m) throw new Error(dayKey);
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), hour, 11);
-  return { eventId: `ev-${dayKey}-${hour}`, occurredAt: d.toISOString(), dayKey, minutesSinceMeal, photo: null };
+  return { eventId: `ev-${dayKey}-${hour}`, occurredAt: d.toISOString(), dayKey, endDayKey: dayKey, minutesSinceMeal, photo: null };
 }
 
 const course = (drugLabel: string, startedOn: string, endedOn: string | null = null): MaskCourse => ({

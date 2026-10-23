@@ -44,6 +44,7 @@ import {
   proteinList,
   mealFlagCopy,
   membershipFlagCopy,
+  pastTargetEyebrow,
   addFlagCopy,
   standingFlagCopy,
   localMidnightMs,
@@ -83,6 +84,7 @@ function ctx(
     spec: { id: 't1', startedAt: '2020-01-01', targetDurationDays: 84 },
     allowedFoods: [{ ...TRIAL_FOOD, ...trialFood }],
     trialFoodLabel: 'Zignature Duck',
+    trialProtein: 'duck',
     primaryCount: 1,
     primaryResolved: 1,
     hasUnreadableRole: false,
@@ -340,6 +342,25 @@ describe('foodMembershipFlag — shape ③ (a food that is not on the allowed li
       .toBe('off_trial_list');
     // Contrast: the SAME re-photo with a matching key is correctly silent (rung 1).
     expect(foodMembershipFlag(ctx(), 'trial-food-rephoto', ['duck'], TRIAL_FOOD.foodKey)).toBeNull();
+  });
+});
+
+describe('past-target bowl copy (CUL-2084)', () => {
+  const bowl = { foodLabel: 'Chicken Pâté', pastTarget: true, trialLabel: 'Rabbit trial', targetDays: 42 };
+  it('frames the heads-up with the trial and its length, and hides the add hatch', () => {
+    const copy = membershipFlagCopy('Pixel', bowl);
+    expect(copy.eyebrow).toBe('Rabbit trial · past its 42 days');
+    expect(copy.addLine).toBeNull();
+    expect(copy.detail).toContain('If Pixel’s trial is over, ending it here keeps the record straight.');
+  });
+  it('names no number the record does not hold, and falls back to "Diet trial"', () => {
+    expect(pastTargetEyebrow({ foodLabel: 'X', pastTarget: true })).toBe('Diet trial · past its planned end');
+    expect(pastTargetEyebrow({ ...bowl, targetDays: 0 })).toBe('Rabbit trial · past its planned end');
+  });
+  it('inside the trial the bowl keeps its add hatch and its plain eyebrow', () => {
+    const copy = membershipFlagCopy('Pixel', { ...bowl, pastTarget: false });
+    expect(copy.eyebrow).toBe('Off the trial list');
+    expect(copy.addLine).toBe('Add to the trial list');
   });
 });
 

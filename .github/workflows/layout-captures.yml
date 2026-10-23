@@ -1,0 +1,150 @@
+# Layout captures (CUL-2150): every PR that changes a screen gets photographs of Home (with
+# its Signal lead), History, the incident screen and Patterns at 320pt, 390pt and the largest
+# text size (AX5), taken through Expo web by scripts/web-capture (the CUL-1895 spike).
+#
+# REPORTS, NEVER BLOCKS, on the engine scorecard's terms: its own workflow so it can never join
+# the `main` ruleset's required checks by accident (those are named in ci.yml), and its path
+# filter scopes it to the PRs that can move a pixel. It is not `continue-on-error`: a build
+# that fails, a shot that cannot reach its screen, or a Signal that no longer matches a
+# fixture pet's declared lead shows red, because a green over a broken harness would read as
+# "nothing moved". Red here holds no merge.
+#
+# The captures ride on this run as two artifacts, linked from the job summary on the PR's
+# check: one contact sheet (every shot down the side, every size across, opens in the
+# browser) and the full-resolution PNGs. Read-only token: nothing here comments, pushes or
+# writes outside the run.
+#
+# Fixture only, never a real account: the build points Supabase at a host that cannot resolve
+# (scripts/web-capture/build.sh) and capture.mjs answers every request from the device-pass
+# fixture (CUL-1222). Home's Signal comes from the shipped engine run over those same rows
+# (scripts/web-capture/signals.deno.ts), never from production.
+name: Layout captures
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'components/**'
+      # The theme tokens: the design system moves most of its pixels here.
+      - 'constants/**'
+      # The capture path itself, so a change to the harness proves itself on its own run.
+      - 'scripts/web-capture/**'
+      - 'scripts/fixture/fixtureStory.ts'
+      - 'scripts/demo/**'
+      - 'metro.config.js'
+      - '.github/workflows/layout-captures.yml'
+
+concurrency:
+  group: layout-captures-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: Layout captures (reported, not gating)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Everything this job writes lives outside the checkout: Metro crawls the project root,
+      # and a Deno cache or a second node_modules under it would be walked by the build.
+      # Set here because job-level `env` cannot read the runner context.
+      - name: Work directories
+        run: |
+          {
+            echo "DENO_DIR=$RUNNER_TEMP/deno-cache"
+            echo "WORK=$RUNNER_TEMP/captures"
+            echo "SHOTS=$RUNNER_TEMP/captures/shots"
+            echo "PLAYWRIGHT_REQUIRE_FROM=$RUNNER_TEMP/captures/pw/node_modules/"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same pin as ci.yml's Deno job: the Signal is computed by the engine that job tests.
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.4
+
+      # Playwright stays out of package.json: the app never needs it, and the browser is only
+      # this job's. Installed beside the checkout at the version the cloud container carries,
+      # so a capture here and one from a session photograph the same engine.
+      - name: Install Playwright and Chromium
+        run: |
+          mkdir -p "$WORK/pw"
+          npm install --prefix "$WORK/pw" --no-save --no-package-lock playwright@1.63.0
+          "$WORK/pw/node_modules/.bin/playwright" install --with-deps chromium
+
+      # Home's Signal lead: the shipped pipeline over the fixture's rows at the frozen instant.
+      # Fails when a pet's lead differs from the one the fixture declares. `--check` because
+      # ci.yml's `Deno check (scripts)` globs one level of scripts/ and does not reach here.
+      - name: Compute the fixture's Signal
+        run: |
+          deno run --check --lock=deno.lock --allow-read --allow-env --allow-write="$WORK" \
+            scripts/web-capture/signals.deno.ts "$WORK/signals.json"
+
+      - name: Build the web bundle
+        run: scripts/web-capture/build.sh "${{ runner.temp }}/nyx-web"
+
+      - name: Capture
+        env:
+          CAPTURE_SIGNALS: ${{ runner.temp }}/captures/signals.json
+        run: node --experimental-strip-types scripts/web-capture/capture.mjs "${{ runner.temp }}/nyx-web" "$SHOTS"
+
+      - name: Contact sheet
+        if: ${{ !cancelled() }}
+        run: node scripts/web-capture/sheet.mjs "$SHOTS" "$WORK/layout-captures.png" "$WORK/grid.md"
+
+      - name: Upload the contact sheet
+        id: sheet
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/captures/layout-captures.png
+          archive: false
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload the captures
+        id: shots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-captures-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/captures/shots
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # The link on the PR: the check's summary page. A shot that could not reach its screen
+      # is listed and turns the job red; the captures are uploaded either way.
+      - name: Summary
+        if: ${{ !cancelled() }}
+        env:
+          SHEET_URL: ${{ steps.sheet.outputs.artifact-url }}
+          SHOTS_URL: ${{ steps.shots.outputs.artifact-url }}
+        run: |
+          {
+            echo "## Layout captures"
+            echo
+            echo "Fixture account (CUL-1222), clock frozen, Home's Signal from the shipped engine. Layout only: motion stays with the filmed sitting."
+            echo
+            if [ -n "$SHEET_URL" ]; then echo "- [Contact sheet]($SHEET_URL) (one PNG, every shot at every size)"; fi
+            if [ -n "$SHOTS_URL" ]; then echo "- [Full-resolution captures]($SHOTS_URL) (zip)"; fi
+            echo
+            if [ -f "$WORK/grid.md" ]; then cat "$WORK/grid.md"; else echo "No captures were taken: see the failing step."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if ls "$SHOTS"/*-UNREACHED.png >/dev/null 2>&1; then
+            echo "::error::a shot could not reach its screen: $(cd "$SHOTS" && ls *-UNREACHED.png | tr '\n' ' ')"
+            exit 1
+          fi

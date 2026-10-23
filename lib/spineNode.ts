@@ -75,6 +75,7 @@ import { FORMAT_LABEL, foodFormatTag, mealRowLabel } from './food';
 import { type IncidentRecommendation } from './incidentReadState';
 import { NO_READ_WORDS, TIER_WORDS } from './incidentTierWords';
 import { isComboDoseInDoubt, vehicleLabel } from './medications';
+import { bowlRowLabel, type BowlRowLabel } from './mealBowlLabel';
 import { readVerdictOf, type ReadCopyRow } from './readState';
 import { intakeChipTone, type RowChipTone } from './rowChips';
 import {
@@ -110,6 +111,7 @@ export type SpineEventInput = Pick<TimelineRow, 'id' | 'pet_id' | 'event_type' |
       | 'notes'
       | 'food_brand'
       | 'food_product_name'
+      | 'meal_bowl'
       | 'food_type'
       | 'food_format'
       | 'intake_rating'
@@ -143,6 +145,10 @@ export interface SpineInput {
   /** Event ids whose read is being PRODUCED right now (`analysisChainOutstanding`), the
    *  C-30 fact, handed in rather than read here so the model stays pure. */
   working: ReadonlySet<string>;
+  /** The owner turned photo reading off (a recorded no, CUL-1174): an unread photo's row
+   *  then carries no grey mark, and the state is said once on History's type sheet and on
+   *  the record (H-4b). Never stands down the rose. Absent ⇒ on. */
+  readingOff?: boolean;
   /** The feedings the lane would time against: the pet's meals inside the lookback,
    *  yesterday's included (a 6 AM vomit is timed against last night's bowl). */
   feedings: readonly FeedingInput[];
@@ -223,8 +229,12 @@ export interface SpineEventNode {
    *  A vomit's timing is `timing`, not here, so the renderer can place the photo glyph
    *  between them. */
   detail: string | null;
-  /** The meal's food label alone (brand · product), null off a meal or when unnamed. */
+  /** The meal's food label alone (brand · product), null off a meal or when unnamed. A
+   *  mixed bowl's is its whole label ("⅓ Chicken Pâté + ⅔ Rabbit Pâté"). */
   food: string | null;
+  /** A MIXED BOWL's label in segments (Mixed meals, CUL-2053; spec §7.2), so the row can
+   *  keep every share whole while a long name truncates (C-8); null off a mix. */
+  mix?: BowlRowLabel | null;
   formatTag: string | null;
   /** A meal's recorded intake rating, as the record holds it (the chip); null when
    *  unrated and off a meal. */
@@ -288,14 +298,14 @@ export function nodeReadOf(
   row: SpineAnalysisRow | undefined,
   working: boolean,
   expect?: NodeReadExpectation,
+  readingOff: boolean = false,
 ): NodeRead {
   const { state, verdict, display } = readVerdictOf({
     eventType: expect?.eventType ?? null,
     hasPhoto: expect?.hasPhoto ?? false,
     copy: row,
     inFlight: working,
-    // The owner's photo-reading choice arrives with CUL-552 (HV-18).
-    readingOff: false,
+    readingOff,
   });
   switch (state) {
     case 'worth_a_call': {
@@ -546,7 +556,18 @@ function eventNode(row: SpineEventInput, input: SpineInput, ctx: DayContext): Sp
   let intake: string | null = null;
   let dose: SpineDose | null = null;
   let carries: string | null = null;
-  if (category === 'meal') {
+  let mix: BowlRowLabel | null = null;
+  if (category === 'meal' && row.meal_bowl) {
+    // A MIXED BOWL (spec §7.2): one row, both foods and their shares, never its dominant
+    // food alone and never `food_item_id` (NULL for a mix, T2). No format tag: the two
+    // foods can differ in form, and the shares are what tell two bowls apart.
+    title = mealRowLabel(row.food_type);
+    mix = bowlRowLabel(row.meal_bowl);
+    food = mix.text;
+    detail = food;
+    intake = row.intake_rating ?? null;
+    carries = carriesLine(row, ctx);
+  } else if (category === 'meal') {
     // The TYPE leads and the food follows ("Meal · Royal Canin · Selected Protein PR"), so
     // an opened run's members and a lone meal read the same way.
     title = mealRowLabel(row.food_type);
@@ -565,7 +586,7 @@ function eventNode(row: SpineEventInput, input: SpineInput, ctx: DayContext): Sp
   // The read attaches to any row whose record can hold one (`mayCarryRead`, CUL-1197); a
   // meal or a dose never carries a read, whatever the map holds.
   const read: NodeRead = mayCarryRead(row.event_type)
-    ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id), { eventType: row.event_type, hasPhoto: photo })
+    ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id), { eventType: row.event_type, hasPhoto: photo }, input.readingOff ?? false)
     : { state: 'none' };
   return {
     kind: 'event',
@@ -575,6 +596,7 @@ function eventNode(row: SpineEventInput, input: SpineInput, ctx: DayContext): Sp
     title,
     detail,
     food,
+    mix,
     formatTag,
     intake,
     dose,
@@ -611,6 +633,19 @@ export function vomitSpanOf(row: SpineEventInput): VomitSpan | null {
   return { fromMs: Math.min(ms, bound(row.occurred_at_earliest)), toMs: Math.max(ms, bound(row.occurred_at_latest)) };
 }
 
+/**
+ * The product a run keys on (rule B). A plain meal's is its product. A MIXED BOWL's is its
+ * composition PLUS its ratio (spec §7.2): identical mixes compact, a ratio step breaks the
+ * run so the step is visible in the record, and a mix never joins a plain meal of one of
+ * its foods. An incomplete bowl is null, so it never joins a run: a run names what every
+ * member was, and its contents are not all known.
+ */
+function runProductKey(row: SpineEventInput, node: SpineEventNode): string | null {
+  const bowl = row.meal_bowl;
+  if (bowl) return bowl.status === 'mix' ? `mix␟${bowl.compositionKeyWithRatio}` : null;
+  return productKeyOf({ brand: row.food_brand, product: row.food_product_name, format: row.food_format, rowLabel: node.title });
+}
+
 /** The facts rule B reads, derived from the node and its row (`lib/spineCompaction.ts`). */
 function runFactsOf(
   node: SpineEventNode,
@@ -627,9 +662,7 @@ function runFactsOf(
     day: localDayIndex(node.timeMs),
     hasPhoto: node.photo,
     mealKind: isMeal ? (node.title === 'Treat' ? 'Treat' : 'Meal') : null,
-    product: isMeal
-      ? productKeyOf({ brand: row.food_brand, product: row.food_product_name, format: row.food_format, rowLabel: node.title })
-      : null,
+    product: isMeal ? runProductKey(row, node) : null,
     intake: node.intake,
     noted: !!row.notes?.trim(),
     vehicle: ctx.dosesIn.has(node.id) || (row.paired_dose_count ?? 0) > 0,

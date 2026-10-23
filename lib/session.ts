@@ -1,6 +1,7 @@
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
+import { fenceWidgetPublish } from './widgetSnapshot';
 import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
@@ -12,6 +13,8 @@ import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
 import { useSyncStore } from '../store/syncStore';
+import { useAiConsentStore } from '../store/aiConsentStore';
+import { useMealScreenFlagStore } from '../store/mealScreenFlagStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -29,9 +32,37 @@ import { clearSpentTaps } from './spentTaps';
 import { clearRemovalNotices } from './removalNotice';
 import { cancelAllAnalysisWatches } from './analysis';
 import { abortFlight } from '../components/motion/flightMotion';
-import { supabase } from './supabase';
+import { AUTH_STORAGE_KEY, supabase } from './supabase';
+import { ChunkedSecureStoreAdapter, hasItem } from './secureStore';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 import { fenceFollowUpNotifications, setFollowUpNotificationsOn } from './followUpNotifications';
+
+/**
+ * Remove the persisted auth session from the keychain by hand, the storage half of
+ * auth-js's own `_removeSession`, for the paths where a local `signOut` failed and
+ * nothing else will (CUL-1974: the recovery reconcile and the account-deletion
+ * teardown both used to inline it). Resolves `true` only when a read-back that can
+ * see a failing keychain finds the session gone.
+ *
+ * Why the read-back: `removeItem` swallows its own keychain errors, so a failed
+ * delete only shows as the key still being there, and `getItem` swallows read errors
+ * too (reads null), so a keychain failing on BOTH reads and deletes would pass a
+ * `getItem` check (CUL-1976). `hasItem` throws instead; a throw counts as not purged.
+ * One retry, then the caller decides what a surviving credential means for it.
+ */
+export async function purgeStoredAuthSession(): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
+    await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
+    try {
+      if (!(await hasItem(AUTH_STORAGE_KEY))) return true;
+    } catch (e) {
+      console.warn('[session] keychain read-back failed:', e instanceof Error ? e.message : e);
+    }
+  }
+  console.warn('[session] stored session may survive the purge');
+  return false;
+}
 
 /**
  * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then
@@ -136,6 +167,12 @@ export async function wipeLocalSession(): Promise<void> {
   // Same FR-9 parity rule as the App Group / moment-store / trial-cache clears below:
   // wipe every place account state rests, not just SQLite.
   cancelPendingSignalRegens();
+  // CUL-1952 (rls-privacy-reviewer): a widget publish already reading SQLite would
+  // otherwise land AFTER clearWidgetData / clearWidgetTimeline below and put this
+  // owner's pet back on a signed-out Home Screen, where no later publish heals it.
+  // Fenced here, before the first await, so every write it would make after this
+  // line is dropped and every write it made before is erased by the clears below.
+  fenceWidgetPublish();
   // HV-10 (CUL-1167): the removal notices are the previous owner's event ids resting in
   // memory for a few seconds (`lib/removalNotice.ts`). An id matches no other account's
   // row, and it goes anyway: every place account state rests, not just SQLite.
@@ -255,6 +292,12 @@ export async function wipeLocalSession(): Promise<void> {
     // banner said its entries were waiting until its own first cycle finished. The
     // wipe above emptied the queue, so zero is the truth.
     ['sync counts', () => useSyncStore.getState().setPendingStatus(0, null, 0)],
+    // CUL-1834: the cached AI consent answer. Keyed by user id already, so a stale
+    // entry could not answer for the next account, but it is that account's answer to
+    // a privacy question and it does not stay on a shared phone (FR-9 parity).
+    ['ai consent', () => useAiConsentStore.getState().reset()],
+    // CUL-2088: a trial heads-up waiting for a meal's screen names a food and a trial.
+    ['meal screen heads-up', () => useMealScreenFlagStore.getState().reset()],
   ];
   for (const [what, clear] of inMemory) {
     try {
@@ -304,11 +347,9 @@ export async function wipeLocalSession(): Promise<void> {
     console.warn('[session] trial heads-up ledger clear failed:', e));
   // B-712 — the Beta-features opt-ins (Gate 2), an AsyncStorage-resident per-device
   // preference. Not health data, but it is account-adjacent device state: the prior
-  // owner's beta choices must not carry to the next person on a shared device, and a
-  // widget left "on" for a signed-out account must fall back to the neutral empty
-  // door (the eligibility gate re-fails closed anyway, but the opt-in should not
-  // linger). Same FR-9 parity rule as the active-pet selection and the app_config
-  // cache. Wipes both the in-memory store and the key; internally best-effort.
+  // owner's beta choices must not carry to the next person on a shared device. Same
+  // FR-9 parity rule as the active-pet selection and the app_config cache. Wipes both
+  // the in-memory store and the key; internally best-effort.
   await clearBetaOptIns();
   // B-402 — the app_config last-known-good cache, also AsyncStorage-resident. The
   // flags are global product config rather than this account's data, which is why

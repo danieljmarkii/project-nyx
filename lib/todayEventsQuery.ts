@@ -3,6 +3,7 @@
 // (the `lib/monthReads.dayRows.test.ts` harness) rather than trusting a mocked row's shape.
 
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { bowlFoodType, loadMealBowls, type AppBowl } from './mealBowls';
 
 // ── WHY IT JOINS WHAT IT JOINS ────────────────────────────────────────────────
 // Every row Home draws goes through the shared day row's rules (History v2 HV-6 /
@@ -67,12 +68,31 @@ export const TODAY_EVENTS_SQL = `SELECT e.*, m.food_item_id, m.quantity, m.intak
 const BOUND_SLACK_MS = 24 * 3_600_000;
 
 /** Today's rows for a pet, from `dayStart` (its local midnight) on, newest first. */
-export async function readTodayEvents<T extends { occurred_at: string }>(
-  db: Pick<SQLiteDatabase, 'getAllAsync'>,
-  petId: string,
-  dayStart: Date,
-): Promise<T[]> {
+export async function readTodayEvents<
+  T extends { id: string; event_type: string; occurred_at: string; food_type?: string | null; meal_bowl?: AppBowl | null },
+>(db: Pick<SQLiteDatabase, 'getAllAsync'>, petId: string, dayStart: Date): Promise<T[]> {
   const startMs = dayStart.getTime();
   const rows = await db.getAllAsync<T>(TODAY_EVENTS_SQL, [petId, new Date(startMs - BOUND_SLACK_MS).toISOString()]);
-  return rows.filter((r) => Date.parse(r.occurred_at) >= startMs);
+  const today = rows.filter((r) => Date.parse(r.occurred_at) >= startMs);
+  return withMealBowls(db, today);
+}
+
+/**
+ * Each MIXED BOWL among `rows` carries its bowl (Mixed meals, CUL-2053), and its food type
+ * is the bowl's (a treat only when every food is one): a mix names no food (T2), so the
+ * row's own food join is empty. Shared by Home's today read and History's page read so
+ * the two draw one bowl one way.
+ */
+export async function withMealBowls<
+  T extends { id: string; event_type: string; food_type?: string | null; meal_bowl?: AppBowl | null },
+>(db: Pick<SQLiteDatabase, 'getAllAsync'>, rows: T[]): Promise<T[]> {
+  const meals = rows.filter((r) => r.event_type === 'meal').map((r) => r.id);
+  if (meals.length === 0) return rows;
+  const bowls = await loadMealBowls(meals, db);
+  if (bowls.size === 0) return rows;
+  return rows.map((r) => {
+    const bowl = bowls.get(r.id);
+    if (!bowl) return r;
+    return { ...r, meal_bowl: bowl, food_type: bowlFoodType(bowl.components.map((c) => c.food?.foodType ?? null)) };
+  });
 }

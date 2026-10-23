@@ -39,6 +39,7 @@ import { readEngineFlags } from '../_shared/engineFlagsRead.ts'
 // CUL-975's paged reader, lifted to _shared/ by Engines v3 PR-09 (CUL-989) so generate-signal
 // and ask read their records the same way. Re-exported for index.test.ts, which drives it.
 import { fetchAll, rowsOrThrow } from '../_shared/pull.ts'
+import { bowlFoodType, bowlOf, MEAL_BOWL_SELECT, type MealComponentJoin } from '../_shared/mealBowl.ts'
 export { fetchAll, PULL_MAX_PAGES, PULL_PAGE } from '../_shared/pull.ts'
 import {
   assembleReport,
@@ -48,6 +49,7 @@ import {
   type ReportPetInput,
   type ReportEventInput,
   type ReportMealDetail,
+  type ReportMealComponent,
   type ReportAiAnalysisInput,
   type ReportWeightCheckInput,
   type ReportDoseInput,
@@ -75,6 +77,7 @@ import { selectReportTrial, trialAllowedListMissing } from './trial.ts'
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
+import { TRANSITION_LOOKBACK_DAYS } from '../../../lib/dietTrial.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -197,6 +200,8 @@ type MealJoin = {
   food_item_id: string | null
   intake_rating: string | null
   quantity: string | null
+  /** Mixed meals (migration 105): NULL for a single food; the components decide (§3). */
+  component_count?: number | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
 }
 interface EventRow {
@@ -210,6 +215,8 @@ interface EventRow {
   notes: string | null
   created_at: string
   meals: MealJoin | MealJoin[] | null
+  /** Every component row of a mixed bowl, tombstones included (the read rule needs them). */
+  meal_components?: MealComponentJoin<FoodItemJoin>[] | null
 }
 
 interface AiAnalysisRow {
@@ -256,6 +263,10 @@ export interface LookRow {
 interface WeightRow {
   event_id: string
   weight_kg: number | string
+  // CUL-2026 — read for the engine's weight lane, which counts by source. Optional so a row
+  // without them (an older fixture) still maps for the weight block.
+  source?: string | null
+  source_basis?: string | null
   events: ParentEventJoin | ParentEventJoin[] | null
 }
 
@@ -526,7 +537,55 @@ function mapFoodProteins(fi: FoodProteinCols | null | undefined): {
   }
 }
 
-function mapMealDetail(meal: MealJoin): ReportMealDetail {
+/**
+ * A meal's detail. A MIXED BOWL (CUL-2052) is read through `bowlOf`, the server's one
+ * door to the generations rule, and never from `meals.food_item_id`, which is NULL for a
+ * mix (T2). Its bowl-level fields name no single food: no id, no brand, no primary, no
+ * format, and the food type is the bowl's (a treat only when every component is one).
+ * Every reader that needs a food reads `bowl.components`.
+ */
+function mapMealDetail(meal: MealJoin, componentRows: MealComponentJoin<FoodItemJoin>[] | null | undefined): ReportMealDetail {
+  const bowl = bowlOf(meal, componentRows)
+  if (bowl) {
+    const components: ReportMealComponent[] = bowl.components.map((c) => ({
+      foodItemId: c.foodItemId,
+      snapshotLabel: c.foodLabel,
+      foodKey: c.foodKey,
+      foodType: (c.food?.food_type ?? null) as ReportMealComponent['foodType'],
+      format: (c.food?.format ?? null) as ReportMealComponent['format'],
+      primaryProtein: c.food?.primary_protein ?? null,
+      ...mapFoodProteins(c.food),
+      brand: c.food?.brand ?? null,
+      productName: c.food?.product_name ?? null,
+      share: c.share,
+      normalizedShare: c.normalizedShare,
+      shareSource: c.shareSource,
+      amountValue: c.amountValue,
+      amountUnit: c.amountUnit,
+    }))
+    const foodType = bowlFoodType(components.map((c) => c.foodType)) as ReportMealDetail['foodType']
+    return {
+      foodItemId: null,
+      intakeRating: (meal.intake_rating ?? null) as ReportMealDetail['intakeRating'],
+      quantity: meal.quantity ?? null,
+      foodType,
+      format: null,
+      primaryProtein: null,
+      proteins: null,
+      ingredientsNotes: null,
+      extractionConfidence: null,
+      brand: null,
+      productName: null,
+      bowl: {
+        status: bowl.status,
+        components,
+        compositionKey: bowl.compositionKey,
+        compositionKeyWithRatio: bowl.compositionKeyWithRatio,
+        writtenAtMs: bowl.writtenAtMs,
+        lastRecorded: bowl.lastRecorded,
+      },
+    }
+  }
   const fi = first(meal.food_items)
   return {
     foodItemId: meal.food_item_id ?? null,
@@ -554,7 +613,7 @@ export function mapEventRows(rows: EventRow[]): ReportEventInput[] {
       severity: r.severity ?? null,
       notes: r.notes ?? null,
       loggedAt: r.created_at,
-      meal: r.event_type === 'meal' && meal ? mapMealDetail(meal) : null,
+      meal: r.event_type === 'meal' && meal ? mapMealDetail(meal, r.meal_components) : null,
     }
   })
 }
@@ -591,6 +650,9 @@ function withinLookback(occurredAt: string, lookbackMs: number | undefined): boo
   return Number.isNaN(ms) ? true : ms >= lookbackMs
 }
 
+/** weight_checks.source_basis values the weight lane reads (lib/weightStory.ts `WeightSourceBasis`). */
+const WEIGHT_SOURCE_BASES: ReadonlySet<string> = new Set(['entry', 'owner', 'legacy'])
+
 /** Weigh-ins carry their timing on the PARENT event; soft-delete is on the parent
  * too (1:1 child), so a weigh-in whose event was soft-deleted is dropped here. */
 export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWeightCheckInput[] {
@@ -601,7 +663,17 @@ export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWei
     if (!withinLookback(ev.occurred_at, lookbackMs)) continue
     const kg = num(r.weight_kg)
     if (kg === null) continue
-    out.push({ eventId: r.event_id, weightKg: kg, occurredAt: ev.occurred_at })
+    out.push({
+      eventId: r.event_id,
+      weightKg: kg,
+      occurredAt: ev.occurred_at,
+      // Only the values the lane knows; anything else leaves the reading out of the lane (the
+      // shared mapper's rule, generate-signal/pipeline.ts `mapWeightCheckRows`).
+      ...(r.source === 'clinic' || r.source === 'home_scale' || r.source === 'estimate' ? { source: r.source } : {}),
+      ...(typeof r.source_basis === 'string' && WEIGHT_SOURCE_BASES.has(r.source_basis)
+        ? { sourceBasis: r.source_basis as NonNullable<ReportWeightCheckInput['sourceBasis']> }
+        : {}),
+    })
   }
   return out
 }
@@ -991,7 +1063,11 @@ export function computeLookbackIso(
   // The trial term never RAISES the floor — `Math.min` over all three — so a trial that
   // starts inside the window (the first report of any trial) leaves the pull exactly as
   // it was, and this can only ever widen.
-  const trialMs = trialStartIso === null ? NaN : Date.parse(trialStartIso)
+  // Mixed meals (CUL-2052, spec §6.1): the switch ONTO the trial diet happens before Day 1,
+  // so the pull reaches `TRANSITION_LOOKBACK_DAYS` behind the trial's start. Floored at Day 1
+  // it made "first fed" come back empty for every trial older than the window, and the
+  // disclosure silently vanished (pass 1, break 6b, one layer down).
+  const trialMs = trialStartIso === null ? NaN : Date.parse(trialStartIso) - TRANSITION_LOOKBACK_DAYS * MS_PER_DAY
   const trialFloor = Number.isNaN(trialMs)
     ? Infinity
     : Math.max(
@@ -1219,7 +1295,8 @@ export async function generateReportForPet(
       .select(
         'id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
           'severity, notes, created_at, ' +
-          `meals(food_item_id, intake_rating, quantity, food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name))`,
+          `meals(food_item_id, intake_rating, quantity, component_count, food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name)), ` +
+          MEAL_BOWL_SELECT(`food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name`),
         { count: 'exact' },
       )
       .eq('pet_id', petId)
@@ -1254,7 +1331,7 @@ export async function generateReportForPet(
     fetchAll<WeightRow>('weight_checks', (r) => r.event_id, (from, to) =>
       supabase
       .from('weight_checks')
-      .select('event_id, weight_kg, events(occurred_at, deleted_at)', { count: 'exact' })
+      .select('event_id, weight_kg, source, source_basis, events(occurred_at, deleted_at)', { count: 'exact' })
       .eq('pet_id', petId)
       // `created_at`, not the weigh-in's instant — that is on the embedded parent and
       // PostgREST cannot ORDER a page by an embedded column reliably. `event_id` is UNIQUE.
@@ -1544,6 +1621,11 @@ export async function generateReportForPet(
     events: mapEventRows(eventsPull.rows),
     aiAnalyses: mapAiAnalysisRows(aiPull.rows),
     weightChecks: mapWeightRows(weightPull.rows, lookbackMs),
+    // CUL-2026 — the weight lane's whole history (its window is a year). Passed on an incomplete
+    // pull too, unlike Home (which carries its earlier card instead, and the report has none to
+    // carry): a loss between two real readings is still one, and the incomplete-read note already
+    // names weigh-ins (adversarial pass: silence here hid a card Home was carrying).
+    weightHistory: mapWeightRows(weightPull.rows),
     doses,
     lifetimeDoses,
     medications: mapMedicationRows(medsPull.rows),

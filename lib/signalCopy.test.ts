@@ -1,22 +1,14 @@
 import {
   deriveDisplayState,
-  buildingDayNumber,
-  buildingHeadline,
-  buildingHeadlineLead,
-  buildingDayCount,
-  BUILDING_SUB,
-  BUILDING_SUB_SPARSE,
-  buildingSub,
-  BUILDING_WATCHING_FOR,
-  BUILDING_FLOOR,
-  WATCHING_SUB,
-  watchingTimingRow,
-  watchingChangeRow,
   watchingGapRow,
   formatWatchingGapSequence,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
-  staleIntro,
+  QUIET_TOO_EARLY_HEADER,
+  QUIET_GONE_QUIET_SUB,
+  quietTooEarlySub,
+  quietGoneQuietHeader,
+  quietDayLabel,
   ackUpdatingCopy,
   arrivalAnnouncementCopy,
   isNewWorsening,
@@ -287,160 +279,83 @@ const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i;
 // Correlation copy is associational only — no causal verbs.
 const CAUSAL_RE = /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i;
 
+// CUL-1838 — the quiet line's routing. The zone hands over the count of findings it can
+// DRAW (CUL-1941), the non-look event count, recency and the B-051 floor.
 describe('deriveDisplayState', () => {
-  it('is live when any finding is present', () => {
-    expect(deriveDisplayState([cached(correlation())], false, false)).toBe('live');
+  it('is live when any drawable finding is present', () => {
+    expect(deriveDisplayState(1, 0, false, false)).toBe('live');
   });
-  it('is building with no findings, recent activity, but little history', () => {
-    expect(deriveDisplayState([], true, false)).toBe('building');
+  it('zero events is never stale: a record that never started reads too early (CUL-1838)', () => {
+    expect(deriveDisplayState(0, 0, false, false)).toBe('building');
+    expect(deriveDisplayState(0, 0, false, true)).toBe('building');
   });
-  it('is no_pattern with no findings, recent activity, and substantial history (B-051)', () => {
-    expect(deriveDisplayState([], true, true)).toBe('no_pattern');
+  it('is building with recent activity but little history', () => {
+    expect(deriveDisplayState(0, 3, true, false)).toBe('building');
   });
-  it('is stale with no findings and no recent activity (regardless of history)', () => {
-    expect(deriveDisplayState([], false, false)).toBe('stale');
-    expect(deriveDisplayState([], false, true)).toBe('stale');
+  it('is no_pattern with recent activity and substantial history (B-051)', () => {
+    expect(deriveDisplayState(0, 40, true, true)).toBe('no_pattern');
   });
-});
-
-describe('empty-state intros', () => {
-  // Only `stale` keeps a pre-uplift intro (CUL-547 deleted buildingIntro/noPatternIntro
-  // with the pre-uplift render path); the E1/E2 restyle copy is voice-tested below.
-  it('the stale intro threads the pet name and never reassures or shouts', () => {
-    const s = staleIntro('Pixel');
-    expect(s).toContain('Pixel');
-    expect(s.includes('!')).toBe(false);
-    expect(REASSURANCE_RE.test(s)).toBe(false);
+  it('is stale once logged and quiet, whatever the history', () => {
+    expect(deriveDisplayState(0, 3, false, false)).toBe('stale');
+    expect(deriveDisplayState(0, 40, false, true)).toBe('stale');
   });
 });
 
-// ── SR-2 empty states (B-721 §6 / §9) ─────────────────────────────────────────
-describe('buildingDayNumber (B-721 §6 — B-421 day math)', () => {
-  // B-514: both instants are built from LOCAL components at the same time of day, so
-  // the local-day difference is invariant under the CI runner's zone.
-  it('is Day 1 the day the first event is logged (day-1-inclusive floor)', () => {
-    const now = new Date(2026, 6, 10, 12, 0);
-    const first = new Date(2026, 6, 10, 9, 0);
-    expect(buildingDayNumber(first.toISOString(), now.getTime())).toBe(1);
+// ── The quiet line (B-721 §9 as amended by CUL-1838; round 7 of the Signal mock) ──────
+describe('the quiet line (§9 verbatim; absence ≠ wellness)', () => {
+  it('too early: the header and the subtitle round 7 applied', () => {
+    expect(QUIET_TOO_EARLY_HEADER).toBe('Too early to tell');
+    expect(quietTooEarlySub('Pixel')).toBe("Every log goes into Pixel's vet report. Patterns, if any, take weeks.");
   });
-  it('counts inclusive local days from the first event', () => {
-    const now = new Date(2026, 6, 10, 12, 0);
-    const first = new Date(2026, 6, 8, 12, 0); // 8, 9, 10 → Day 3
-    expect(buildingDayNumber(first.toISOString(), now.getTime())).toBe(3);
+  it('gone quiet: dated, and it names meals and symptoms when a look was logged since', () => {
+    expect(quietGoneQuietHeader('Tue', false)).toBe('Nothing logged since Tue');
+    expect(quietGoneQuietHeader('Tue', true)).toBe('No meals or symptoms since Tue');
+    expect(QUIET_GONE_QUIET_SUB).toBe("Signal can only read what's logged.");
   });
-  it('never returns 0 or negative even if the first event reads later than now', () => {
-    const now = new Date(2026, 6, 8, 12, 0);
-    const first = new Date(2026, 6, 10, 12, 0);
-    expect(buildingDayNumber(first.toISOString(), now.getTime())).toBe(1);
+  it('nothing found: "right now", and the sub says it is not an all-clear', () => {
+    expect(NO_PATTERN_HEADLINE).toBe('No pattern right now');
+    expect(NO_PATTERN_SUB).toBe("That isn't an all-clear.");
   });
-  it('falls back to Day 1 on a missing / malformed first-event stamp (never a guessed day)', () => {
-    const now = new Date(2026, 6, 10, 12, 0).getTime();
-    expect(buildingDayNumber(null, now)).toBe(1);
-    expect(buildingDayNumber('not-a-date', now)).toBe(1);
-  });
-});
-
-describe('E1 headline (§9 verbatim, pluralised)', () => {
-  it('composes the verbatim §9 sentence from its two visual parts', () => {
-    expect(buildingHeadlineLead('Nyx')).toBe("We're getting to know Nyx.");
-    expect(buildingDayCount(3, 11)).toBe('Day 3 — 11 events so far.');
-    expect(buildingHeadline('Nyx', 3, 11)).toBe(
-      "We're getting to know Nyx. Day 3 — 11 events so far.",
-    );
-  });
-  it('pluralises the event count (1 event, not 1 events)', () => {
-    expect(buildingDayCount(1, 1)).toBe('Day 1 — 1 event so far.');
-    expect(buildingDayCount(2, 0)).toBe('Day 2 — 0 events so far.');
-  });
-  it('threads the pet name, never shouts or reassures', () => {
-    const s = buildingHeadline('Pixel', 4, 9);
-    expect(s).toContain('Pixel');
-    expect(s.includes('!')).toBe(false);
-    expect(REASSURANCE_RE.test(s)).toBe(false);
-  });
-});
-
-describe('E1/E2 empty-state copy (§9 verbatim; absence ≠ wellness)', () => {
-  it('E1 sub, watching-for rows and floor are the verbatim §9 strings', () => {
-    expect(BUILDING_SUB).toBe(
-      "Patterns usually start appearing within the first week. Here's what we're watching for:",
-    );
-    expect([...BUILDING_WATCHING_FOR]).toEqual([
-      'Timing — do symptoms follow meals, and how closely',
-      'Food connections — what tends to come before a reaction',
-      'Change — this week against last, counted from your logs',
-    ]);
-    expect(BUILDING_FLOOR).toBe("If something needs attention sooner, it won't wait for the week.");
-  });
-  it('the E1 floor is the safety-honesty line — points at attention, never reassures/shouts', () => {
-    expect(BUILDING_FLOOR.toLowerCase()).toContain('attention');
-    expect(BUILDING_FLOOR.includes('!')).toBe(false);
-    expect(REASSURANCE_RE.test(BUILDING_FLOOR)).toBe(false);
-  });
-  it('every E1 string is guardrail-clean (no exclamation, no reassurance vocabulary)', () => {
-    for (const s of [BUILDING_SUB, BUILDING_SUB_SPARSE, ...BUILDING_WATCHING_FOR, BUILDING_FLOOR]) {
-      expect(s.includes('!')).toBe(false);
-      expect(REASSURANCE_RE.test(s)).toBe(false);
-    }
-  });
-  // B-735 (PM-ruled D5a, GA Phase 0): once the day count outruns the sub's own first-week
-  // promise, the sub swaps to the events-not-days framing — "Day 24" must never sit above
-  // "within the first week" (the sparse-logger dissonance, Sam's grazing cat).
-  it('buildingSub keeps the first-week promise through day 7, then swaps to the sparse framing', () => {
-    for (const day of [1, 4, 7]) expect(buildingSub(day)).toBe(BUILDING_SUB);
-    for (const day of [8, 24, 90]) expect(buildingSub(day)).toBe(BUILDING_SUB_SPARSE);
-  });
-  it('the sparse sub drops the time promise and never nags', () => {
-    expect(BUILDING_SUB_SPARSE).toBe(
-      "Patterns build from logged events more than from time passing. Here's what we're watching for:",
-    );
-    expect(BUILDING_SUB_SPARSE).not.toMatch(/week|day/i); // no time promise the count can outrun
-    expect(BUILDING_SUB_SPARSE).not.toMatch(/\b(log more|please log|keep logging|you should)\b/i);
-  });
-  it('E2 is the verbatim shipped B-284 §9 "Signal — empty" copy', () => {
-    expect(NO_PATTERN_HEADLINE).toBe(
-      'No established patterns yet. Nothing in the last month of logs has cleared our evidence bar.',
-    );
-    expect(NO_PATTERN_SUB).toBe(
-      "That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.",
-    );
-  });
-  it('E2 says absence is not wellness — the "isn\'t an all-clear" clause is present, no exclamation', () => {
-    expect(NO_PATTERN_SUB.toLowerCase()).toContain("isn't an all-clear");
-    expect(NO_PATTERN_HEADLINE.includes('!')).toBe(false);
-    expect(NO_PATTERN_SUB.includes('!')).toBe(false);
-  });
-});
-
-// CUL-14 — the watching-system copy (§4.4 / G8). The verbatim mock §05 strings live here
-// with the rest of the empty-state copy; the full G8 register sweep + the gate logic are
-// in signalWatching.test.ts (co-located with buildWatchingRows).
-describe('watching-system copy (§4.4 / G8 verbatim; transparency, never solicitation)', () => {
-  it('the sub + the three per-lane rows are the ratified strings (GA Phase 0: B-768 D2a reword + B-769 D4 cue)', () => {
-    expect(WATCHING_SUB).toBe("Here's what we're watching, and what each pattern still needs:");
-    expect(watchingTimingRow(4, 6)).toBe(
-      "Timing — 4 of the 6 episodes a pattern needs, timed against meals you've logged.",
-    );
-    expect(watchingChangeRow(2, 2)).toBe(
-      'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
-    );
-    expect(watchingGapRow('vomiting', '6 days, then 3, then 2')).toBe(
-      'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
-    );
-  });
-  it('every watching string is guardrail-clean (no exclamation, no reassurance vocabulary)', () => {
-    for (const s of [
-      WATCHING_SUB,
-      watchingTimingRow(1, 6),
-      watchingChangeRow(1, 2),
-      watchingGapRow('vomiting', formatWatchingGapSequence([6 * 24, 3 * 24, 2 * 24])),
+  it('every quiet string is guardrail-clean: no exclamation, no reassurance, no promise, no nag', () => {
+    for (const str of [
+      QUIET_TOO_EARLY_HEADER,
+      quietTooEarlySub('Pixel'),
+      quietGoneQuietHeader('Tue', false),
+      quietGoneQuietHeader('Sep 22', true),
+      QUIET_GONE_QUIET_SUB,
+      NO_PATTERN_HEADLINE,
+      NO_PATTERN_SUB,
     ]) {
-      expect(s.includes('!')).toBe(false);
-      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(str.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(str)).toBe(false);
+      // Round 7 · 02: never a promise a Signal is coming, never the Signal as the reason to log.
+      expect(str).not.toMatch(/\b(keep logging|log more|will surface|coming soon|first week|week 1)\b/i);
     }
   });
-  it('the gap sequence formatter matches the mock ("6 days, then 3, then 2")', () => {
-    expect(formatWatchingGapSequence([6 * 24, 3 * 24, 2 * 24])).toBe('6 days, then 3, then 2');
+});
+
+describe('quietDayLabel — the gone-quiet header\'s {day}', () => {
+  // B-514: instants built from LOCAL components, so the local-day difference holds in every zone.
+  it('names the weekday inside the last six local days', () => {
+    const now = new Date(2026, 9, 15, 12, 0).getTime(); // Thu 15 Oct 2026
+    expect(quietDayLabel(new Date(2026, 9, 13, 9, 0).toISOString(), now)).toBe('Tue');
+    expect(quietDayLabel(new Date(2026, 9, 9, 9, 0).toISOString(), now)).toBe('Fri');
+  });
+  it('names the date from a week back, so a weekday never means last week', () => {
+    const now = new Date(2026, 9, 15, 12, 0).getTime();
+    expect(quietDayLabel(new Date(2026, 9, 8, 9, 0).toISOString(), now)).toBe('Oct 8');
+  });
+  it('a malformed stamp is null, never a guessed day', () => {
+    expect(quietDayLabel('not-a-date', Date.now())).toBeNull();
+  });
+});
+
+describe('the gap warning\'s copy', () => {
+  it('is the ratified gap row (B-769 D4 cue) and guardrail-clean', () => {
+    const s = watchingGapRow('vomiting', formatWatchingGapSequence([6 * 24, 3 * 24, 2 * 24]));
+    expect(s).toBe('Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.');
+    expect(s.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
   });
 });
 

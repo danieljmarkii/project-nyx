@@ -25,6 +25,8 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // step UPDATEs its breed, or leaves it null on Skip. Breed carries breed-specific
 // disease risk (constants/breeds.ts), so an accurate value has clinical value on
 // the vet report — but it's optional, backfillable in-app, and never a wall.
+// The subtitle says only what breed does today: it prints on the vet report. No
+// detector reads it, so "helps tailor what we watch for" overpromised (CUL-1840).
 
 export default function PetBreedScreen() {
   const { activePet, updatePet } = usePetStore();
@@ -111,7 +113,7 @@ export default function PetBreedScreen() {
       >
         <View style={styles.body}>
           <ThemedText style={styles.title}>{`What's ${activePet.name}'s breed?`}</ThemedText>
-          <ThemedText style={styles.subtitle}>Optional — it helps tailor what we watch for.</ThemedText>
+          <ThemedText style={styles.subtitle}>{`Optional. It goes on ${activePet.name}'s vet report.`}</ThemedText>
 
           {isOther ? (
             <View style={styles.flex}>

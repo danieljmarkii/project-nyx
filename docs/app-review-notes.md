@@ -1,11 +1,13 @@
 # Culprit — App Review Notes (for App Store Connect)
 
-**Status:** Build-ready · **Date:** 2026-08-11 · **Backlog:** B-271 (PR 2) · **Spec:** [`nyx-demo-account-requirements.md`](./nyx-demo-account-requirements.md) §7
-**Gates passed:** `nyx-voice` · `clinical-guardrails` (no reassuring phrasing) · no "clinical-grade" in reviewer-facing text · under the ASC Notes 4,000-character limit · golden path matches the seeded reality (Cooper, "Day 19 of 42", card order ② then ①).
+**Status:** Build-ready for 1.2.0 · **Date:** 2026-10-15 · **Issue:** CUL-1848 (feeds CUL-188) · **Spec:** [`nyx-demo-account-requirements.md`](./nyx-demo-account-requirements.md) §7 and §15 · **Research:** [`research/2026-10-app-store-requirements.md`](./research/2026-10-app-store-requirements.md) rows C9, 1, 4, 5, 7, 9, 10
+**Rulings applied:** D7 (a) — the demo account sees what every account sees, and the notes name each feature that is present and off · D13 (a) — no AI consent on the demo account, so the reviewer meets the consent ask live and the notes say how to see a read.
+**Replaces:** the 2026-08-11 notes (B-271 PR 2), written before the redesign, vet visits and AI consent.
 
 > **How to use this doc (PM).**
 > 1. Put the demo credentials (§1) in ASC → App Review Information → the **Sign-In Required** username/password fields — **not** in the Notes text.
 > 2. Copy the fenced block in §2 into ASC → App Review Information → **Notes**.
+> 3. Before you paste: replace the one bracketed line (**Tested on**) with the devices and iOS versions from the device pass, and attach the consent screen recording from a throwaway account (D13 (a)).
 > Nothing below the fenced block is pasted; §1 and §3 are for you.
 
 ---
@@ -22,64 +24,72 @@ Placeholder only. Do not paste a real password into this file.
 ## 2. Reviewer notes — paste this block into ASC → App Review Information → Notes
 
 ```
-Culprit — notes for App Review
+Culprit: notes for App Review
 
 What Culprit is
-Culprit is an informational pet-health tracking app: owners log meals, symptoms, weight and photos, and Culprit turns that record into trends, pattern findings, and a summary report they bring to their veterinarian. It is informational only — it does not diagnose, treat, or replace veterinary care.
+An informational health record for pet cats and dogs. Owners log meals, symptoms, weight and photos, and Culprit turns that record into patterns and a report they bring to their veterinarian. It does not diagnose or treat, provides no veterinary service or telehealth, and collects no human health data. Offered in the United States only.
 
 The demo account
-This account is pre-confirmed, so you can sign in right away — no email access is needed. (A self-created account clicks a one-time confirmation link before first use; the pre-set account exists so you can skip that step.) All data in it is fictional.
+Pre-confirmed, so no email access is needed. All data is fictional: Cooper, a dog 19 days into a 42-day venison diet trial. The account has never answered the AI question, so you will meet that ask live.
 
-A 2-minute path through the app
-1. Sign in — you arrive on Home. The Signal cards summarize what the record shows, safety first. The top card is a safety read — Cooper is eating less than usual, a small drop over the last two days. Below it, a pattern card notes that beef may be linked to Cooper's vomiting, drawn from four logged feedings. Each card shows the counts behind it and is something to watch or raise with a vet, not a diagnosis.
-2. Open the diet-trial card — Cooper is on a venison elimination trial, "Day 19 of 42." It lists the trial food and flags a beef treat that was fed off-plan.
-3. Still on Home, the Trend zone charts symptoms over time; tap "All patterns" for the Patterns view.
-4. History tab — open the vomit entry that has a photo to see the per-incident read. It only ever suggests keeping an eye out or a call to your vet; by design it never says a pet is fine from one photo.
-5. Pet tab — generate the vet report, then use the share sheet. It is a PDF a vet can scan in about a minute; no app or account is needed to open it.
-6. Optional — log your own meal or symptom and attach a photo to see the camera step. Anything you add is treated as real data; findings recompute on a daily cadence.
+A short path
+1. Home. The Signal leads with safety: Cooper is eating less than usual. Below it, beef may be linked to his vomiting, from four logged feedings. Each card shows its counts and is something to watch or raise with a vet, not a diagnosis.
+2. Under it: a vet recheck in three days (Get ready lists what to bring) and the diet trial, Day 19 of 42.
+3. Today asks how Cooper seems (Noticed). One tap records it.
+4. History holds the record, including the vet visit that started the trial.
+5. Pet tab: Vet visits, then Vet report > Open vet report > Send to vet. A PDF opens in the share sheet; no app or account is needed to read it.
 
-How the automated reads behave
-Every automated read is one-directional: it may suggest keeping an eye on something or calling a vet, and it never diagnoses, never recommends treatment, and never tells an owner their pet is healthy or fine. A short disclaimer to this effect is shown and accepted during onboarding. The reads run only on the data and photos an owner chooses to log.
+AI and consent
+To see an AI read: tap +, Vomit, Saw it, Add a photo, Log it. Before anything is sent, the record names Claude, an AI made by Anthropic, says what is sent, and offers Allow, Don't allow and Not now. Allow runs the read. The same ask comes before a food label photo (Foods > Add food). Change it any time: Home > your avatar (top right) > AI reading. Without a yes nothing is sent, and the app still works.
+A read describes one photo. It can point to signs worth a call to the vet; it never says a pet is fine, never diagnoses and never recommends treatment. No regulatory clearance applies because no diagnostic claim is made. A disclaimer is accepted during onboarding.
 
-What the app does not include
-No in-app purchases, subscriptions, or paywall — everything shown is free. No ads. No third-party analytics. No external hardware or accessories. No live animal is needed to evaluate anything. All demo data is fictional.
+Account
+Sign-up asks for a first and last name because the owner's name is printed on the vet report. Home > your avatar opens Settings. Delete account permanently removes the account, its records and photos; it asks you to type DELETE and enter the password. Deleting this account removes the demo data, so please avoid it unless you are testing deletion.
 
-Permissions you may see
-A camera and photos prompt appears only if you attach a photo to a log entry. Notifications are off by default; a prompt appears only if you turn them on in Settings. Culprit does not send unsolicited reminders.
+Present but off for every account in this version
+- Ask (questions about the pet's record): no entry point. The consent sheet's list of what is sent names it "where it's turned on".
+- Updated pattern rules and follow-up prompts: off, nothing visible.
+- Paid features: no in-app purchase, subscription or paywall. The label photo screen says label reading may become part of Premium later; nothing is for sale in this version.
+- Home Screen widget: shows "No pet in this slot yet".
+None will be turned on without a version that describes it.
 
-Account deletion
-Settings includes a working, permanent Delete Account option. Deleting this demo account removes its seeded history, so please avoid deleting it unless you are specifically testing that flow.
+Permissions
+Camera and photos only when you add a photo. Notifications only if you turn on the evening summary in Settings; it is a local notification, with no push. No location, health, contacts, microphone or tracking.
 
-Early access
-Settings contains an optional early-access section for pre-release features; all listed features are functional.
+External services
+Supabase (account, data, server functions); Anthropic Claude (photo and label reads, pattern wording, only after Allow; Anthropic does not train on this data); Resend (account emails); Expo (app updates). No ads, no analytics, no third-party tracking.
 
-Intentionally empty surfaces (a designed empty state, not a bug)
-- The optional Home Screen widget shows "No pet in this slot yet" on this account.
-- The notifications screen (Settings) shows its off state until you turn notifications on.
+Tested on
+[PM: devices and iOS versions from the device pass]
 
 Contact
-support@getculprit.app — we respond the same day.
+support@getculprit.app. We usually reply within a day.
 ```
 
-*(Character count of the block above is reported in §3. Regenerate the count if you edit it.)*
+*(The block's size is checked in §3. Re-check it if you edit it.)*
 
 ---
 
 ## 3. Gates & checks (QA)
 
-- **`nyx-voice`** — no exclamation marks; pet named ("Cooper"); specific over generic (counts, "Day 19 of 42", "the last two days", "four logged meals"); plain language ("vomiting", not "emesis"). ✓
-- **`clinical-guardrails`** — no owner-facing string reassures. The AI is described as escalate-only ("never tells an owner their pet is healthy or fine"; "by design it never says a pet is fine from one photo"). The word "fine" appears only inside the guardrail's own negation. ✓
-- **No "clinical-grade"** — the phrase does not appear; the report is described as "a PDF a vet can scan in about a minute" (§7's "vet-ready" register). ✓
-- **ASC field limit** — the fenced block is under the 4,000-character Notes limit. ✓
-- **Golden path matches the seed** — Cooper on a venison elimination trial, "Day 19 of 42"; four off-diet beef exposures; **card order ② then ① (the intake-dip safety card leads, the beef-correlation pattern card follows** — Principle 3, safety insights lead). ✓
-- **No real credentials** — the password is a placeholder (§1); the username is the public support address. ✓
-- **Never "beta"** — the early-access line in the block is the PM-ruled wording, verbatim (CUL-70, D8, 2026-08-20), and in the app the shelf reads "Early access" wherever it is shown or spoken, because "beta" reads as Guideline 2.2 ("demos, betas, and trial versions") in a skim. The section renders only for an account on an early-access allowlist, so the demo account shows it only if it is on one. ✓
+- **Every build-note item (CUL-1848)** — Home as it is (path 1–3) ✓ · the consent screen, where it appears and the Settings path ("AI and consent") ✓ · how to see a read: log a vomit with a photo and allow it ✓ · deletion with its password ("Account") ✓ · Settings through the Home avatar ✓ · Noticed (path 3) and vet visits (paths 2, 4, 5) ✓ · every present and off feature, D7 (a) ✓ · the external services: Supabase, Anthropic Claude, Resend, Expo ✓ · US only ✓ · AI reads describe one photo and never reassure ✓ · the individual account line, 5.1.1(ix) ("provides no veterinary service or telehealth, and collects no human health data", the research's row 9 wording) ✓.
+- **Matches the 1.2.0 build** (an isolated walk of the code, 2026-10-15): the owner avatar opens the "You" screen, whose "AI reading" row reads Not set / On / Off; the record ask card's buttons are "Don't allow" / "Allow" / "Not now"; the food label sheet ("Snap the label, skip the typing") opens before the camera; deletion asks for "DELETE" and the password; the Early access row does not render for an account on no allowlist, so the August "Early access" line is gone; the Trend zone and the in-History seeded photo read are gone from the path; the vet report button is "Send to vet" and makes a PDF, with no share link. Flags read live on 2026-10-15: `ask_enabled`, `ask_general_enabled`, `widget_enabled` and every `engines_v3_*` key but `en0` are off for everyone; `paywall_enabled` is false; the demo UUID is on no allowlist.
+- **Matches the seed** — Cooper, "Day 19 of 42"; four off-diet beef feedings; the recheck three days out, inside Home's five-day window; the visit at D-26 in History; no photo and no AI read on the account (D13 (a)). **Card order:** the intake-dip safety card leads, the beef pattern card follows (Principle 3). The beef card shows because `engines_v3_en11`, which would withhold it, is off until after review.
+- **`nyx-voice`** — no exclamation marks; the pet named; counts over adjectives; plain words ("vomiting", "eating less").
+- **`clinical-guardrails`** — the AI is described one way only: it may point to a call, it never says a pet is fine. "Fine" appears only inside that negation.
+- **No "clinical-grade", "diagnose" as a claim, "accurate", "AI vet" or "symptom checker"** in the block (research row 5). "Diagnose" appears only as a negation.
+- **Never "beta"** — the block says "Present but off", never beta (research row 10).
+- **ASC field limit** — under 4,000 bytes; 3,457 bytes by `wc -c` on the fenced block, 2026-10-15.
+- **No real credentials** — the password is a placeholder (§1); the username is the public support address.
 
-### Delta from spec §7 (flag for PM)
-§7 item 8 lists four reachable-but-empty surfaces (widget, medication, vet-document, notifications). Per this PR's brief, the block above names **widget + notifications only** — the two an unguided reviewer actually reaches (the widget from the Home Screen, notifications from Settings). The shipped bottom nav is Home / History / Foods / Pet, so medication and vet-files are secondary surfaces inside the Pet profile whose designed empty states are self-explanatory; naming every empty surface invites the reviewer curiosity R-12d exists to avoid (the same reason Ask is dropped). If you'd rather name all four, add two lines to the "Intentionally empty surfaces" section.
+### Left for the PM (not in this doc's power)
+- **Tested on:** fill the bracketed line from the device pass before pasting.
+- **The screen recording** of the consent ask comes from a throwaway account (D13 (a)); attach it in ASC.
+- **The demo account is never answered:** do not tap Allow or Don't allow on `support@getculprit.app`, on any device. A consent row cannot be deleted by any role (migration 100), so one tap ends D13 (a) for good.
+- **Before the reviewer signs in:** open Home once on the demo account after the latest re-seed, so the Signal is fresh (§12.3 step 4).
 
 ---
 
 ## Persona sign-off
 
-Designer ✓ (`nyx-voice`: no exclamation, specific-over-generic, pet-named, plain language) — Trust & Safety ✓ (no real password in the repo, D4; deletion heads-up present; all data stated fictional) — Dr. Chen / `clinical-guardrails` ✓ (informational posture stated affirmatively; AI framed escalate-only, never reassures; no "clinical-grade") — QA ✓ (under the ASC Notes limit; golden path matches the seed, card order ② then ①). PM decision optional: the §7 reachable-surfaces delta above.
+Designer ✓ (`nyx-voice`: no exclamation, specific over generic, pet named, plain language) — Trust & Safety ✓ (no real password, D4; the consent path, the Settings switch and the deletion heads-up present; Anthropic named; data fictional) — Dr. Chen / `clinical-guardrails` ✓ (informational posture stated; reads one-directional, never reassure; no "clinical-grade") — App Store consultant ✓ (C9's list: concept, external services incl. AI, region, devices line; 2.3.1(a) every off feature named; 5.1.1(ix) and 5.1.1(x) answered) — QA ✓ (every build-note item checked off above; under the ASC limit).

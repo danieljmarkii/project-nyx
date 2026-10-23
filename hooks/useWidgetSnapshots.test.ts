@@ -1,16 +1,13 @@
-// The B-712 eligibility gate on the widget publisher (Beta features PR 2). CI does
-// NOT exercise a flag's on-state unless a test sets it (spec §7), so both branches
-// are pinned here:
-//   • eligible → publish the real per-pet snapshot;
-//   • not eligible → clear the snapshot files + publish a NEUTRAL signed-in-EMPTY
-//     payload (`signedIn: true`, `pets: {}`) — the honest "No pet in this slot yet"
-//     door, NEVER the `signedIn:false` "Sign in" door (a lie for a signed-in owner,
-//     §4.1).
-//
-// Part A tests the extracted seam `buildWidgetPublishProps` directly with injected
-// deps (deterministic, no device). Part B renders the hook to prove the resolved
-// `widget_enabled` flag flows into that seam AND that flipping it re-publishes (it
-// is in the effect deps) — the two wiring bugs the seam test can't see.
+// The widget graduated at 1.2.0 (CUL-1842, D8): every signed-in account publishes
+// its real per-pet data. Before, the publish was gated on the `widget_enabled`
+// allowlist AND a local beta opt-in, and every other account's widget showed "No pet
+// in this slot yet / Touch and hold the widget to pick a pet", a door picking a pet
+// could not open. Pinned here:
+//   • Part A — the seam `buildWidgetPublishProps` publishes the real snapshot and
+//     never the neutral empty payload or the "Sign in" door;
+//   • Part B — the hook, rendered for an account on NO allowlist with NO opt in
+//     (the real opt-in store, default off), publishes real data from the first tick,
+//     and stays real when the config read lands or a stale opt-in reads off.
 
 // lib/supabase's env fail-fast trips on import of the real appConfig chain (Part B
 // uses the real useAppConfig singleton), so stub the client like useAppConfig.test.
@@ -21,6 +18,7 @@ jest.mock('../lib/supabase', () => ({ supabase: {} }));
 // buildWidgetProps (widgetProps is deliberately NOT mocked).
 jest.mock('../lib/widgetSnapshot', () => ({
   publishWidgetSnapshots: jest.fn(async () => ({ snapshots: [], index: null })),
+  widgetPublishEpoch: jest.fn(() => 0),
 }));
 jest.mock('../lib/appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('../lib/widgetBridge', () => ({ publishWidgetPass: jest.fn() }));
@@ -53,17 +51,13 @@ jest.mock('../store/authStore', () => ({
   },
 }));
 
-// Gate 2 (PR 3): the local widget opt-in. Mocked as a controllable module-level
-// value so the eligible×opted-in matrix runs without the real Zustand/AsyncStorage
-// store. Default TRUE so the eligible tests below reach the real-data path (the gate
-// is `eligible && optedIn`); the opted-OUT branch flips it.
-let mockWidgetOptedIn = true;
-jest.mock('../lib/betaFeatures', () => ({
-  useBetaOptIn: () => mockWidgetOptedIn,
-}));
-
 import { act, renderHook } from '@testing-library/react-native';
-import { buildWidgetPublishProps, useWidgetSnapshots, type WidgetPublishDeps } from './useWidgetSnapshots';
+import {
+  buildWidgetPublishProps,
+  useWidgetSnapshots,
+  WidgetPublishFenced,
+  type WidgetPublishDeps,
+} from './useWidgetSnapshots';
 import { WIDGET_PROPS_SCHEMA_VERSION, type CulpritWidgetProps } from '../lib/widgetProps';
 import type { WidgetSnapshot } from '../lib/widgetSnapshot';
 import type { PetSlotIndex } from '../lib/widgetResolution';
@@ -71,16 +65,17 @@ import { publishWidgetSnapshots } from '../lib/widgetSnapshot';
 import { clearWidgetData } from '../lib/appGroup';
 import { publishWidgetPass } from '../lib/widgetBridge';
 import { __resetAppConfigForTest } from './useAppConfig';
-import { APP_CONFIG_DEFAULTS, ALLOWLIST_FLAGS_UNSET, type AllowlistFlagValues } from '../lib/appConfig';
+import { APP_CONFIG_DEFAULTS, ALLOWLIST_FLAGS_UNSET } from '../lib/appConfig';
+import { useBetaOptInStore } from '../lib/betaFeatures';
 
 const PET = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '2eeeaef5-753a-467c-8c17-2b9fed40ee34';
 
-// ── Part A: the eligibility seam ──────────────────────────────────────────────
+// ── Part A: the publish seam ──────────────────────────────────────────────
 
 // A minimal, real WidgetSnapshot — the v2 blocks are optional and left absent, so
 // buildPetPanel maps it to an active (empty) panel. Enough to prove the eligible
-// path threads real data through to a bound slot.
+// publish threads real data through to a bound slot.
 function snapshot(): WidgetSnapshot {
   return {
     schemaVersion: 1,
@@ -112,64 +107,64 @@ function fakeDeps(over: Partial<WidgetPublishDeps> = {}) {
       calls.push('publishSnapshots');
       return { snapshots: [snapshot()], index: index() };
     }) as WidgetPublishDeps['publishSnapshots'],
-    clearData: () => {
-      calls.push('clearData');
-    },
     getPets: () => {
       calls.push('getPets');
       return [{ id: PET, name: 'Biscuit', species: 'dog' }];
     },
+    currentEpoch: () => 0,
     ...over,
   };
   return { deps, calls };
 }
 
-describe('buildWidgetPublishProps — the B-712 widget gate (live = eligible && opted in, spec §2 / §4.1)', () => {
-  it('live → publishes the real per-pet snapshot, never clears', async () => {
+describe('buildWidgetPublishProps — every account gets the widget (CUL-1842)', () => {
+  it('publishes the real per-pet snapshot, signed in, at the current schema', async () => {
     const { deps, calls } = fakeDeps();
-    const props = await buildWidgetPublishProps(true, deps);
+    const props = await buildWidgetPublishProps(deps);
 
-    expect(calls).toContain('publishSnapshots');
-    expect(calls).not.toContain('clearData');
+    expect(calls).toEqual(['getPets', 'publishSnapshots']);
+    // Never the "Sign in" door for a signed-in owner (§4.1), never the mismatch door.
     expect(props.signedIn).toBe(true);
-    // The real snapshot flowed through buildWidgetProps to a bound slot — this is
-    // NOT the empty payload the not-eligible branch returns.
+    expect(props.schemaVersion).toBe(WIDGET_PROPS_SCHEMA_VERSION);
+    // The real snapshot flowed through buildWidgetProps to a bound slot: not the
+    // neutral empty payload ("No pet in this slot yet") the retired gate returned.
     expect(Object.keys(props.pets)).toContain('slot1');
     expect(props.pets.slot1.petName).toBe('Biscuit');
     expect(props.pets.slot1.active).toBe(true);
   });
 
-  it('not live → clears the snapshot files and publishes signed-in-EMPTY', async () => {
-    const { deps, calls } = fakeDeps();
-    const props = await buildWidgetPublishProps(false, deps);
-
-    expect(calls).toContain('clearData');
-    // The real-data path is never taken — no DB read, no snapshot files written.
-    expect(calls).not.toContain('publishSnapshots');
-    expect(calls).not.toContain('getPets');
-    // The load-bearing §4.1 assertion: a signed-in owner is NEVER shown the
-    // "Sign in" door. signedIn stays true; pets is empty → "No pet in this slot yet".
-    expect(props.signedIn).toBe(true);
-    expect(props.pets).toEqual({});
+  // CUL-1952: the timeline push follows `buildProps` on the same tick, so a pass whose
+  // epoch moved (sign-out's wipe) must refuse to resolve here, or the previous owner's
+  // signed-in props land over the "Sign in" timeline. The full chain, through the real
+  // `publishWidgetPass` and the real fence, is useWidgetSnapshots.signOut.test.ts.
+  it('refuses to hand props on when sign-out moved the epoch mid-publish', async () => {
+    let epoch = 7;
+    const passed: number[] = [];
+    const { deps } = fakeDeps({
+      currentEpoch: () => epoch,
+      publishSnapshots: (async (_pets: unknown, e?: number) => {
+        passed.push(e ?? -1);
+        epoch += 1; // the wipe lands while the snapshot read is pending
+        return { snapshots: [snapshot()], index: index() };
+      }) as WidgetPublishDeps['publishSnapshots'],
+    });
+    await expect(buildWidgetPublishProps(deps, 7)).rejects.toBeInstanceOf(WidgetPublishFenced);
+    // The epoch the pass STARTED under reaches the file writer, which fences its own writes.
+    expect(passed).toEqual([7]);
   });
 
-  it('the not-eligible payload carries the CURRENT schema version (the neutral door, not the mismatch door)', async () => {
-    // A wrong schemaVersion would render "Open Culprit to catch up" (§3) instead of
-    // the intended neutral empty door — pin it so the two never drift.
-    const { deps } = fakeDeps();
-    const props = await buildWidgetPublishProps(false, deps);
-    expect(props.schemaVersion).toBe(WIDGET_PROPS_SCHEMA_VERSION);
+  it('a pass whose epoch held hands its props on', async () => {
+    const { deps } = fakeDeps({ currentEpoch: () => 7 });
+    await expect(buildWidgetPublishProps(deps, 7)).resolves.toMatchObject({ signedIn: true });
   });
 
-  it('defaults are wired to the real publisher collaborators (no accidental self-reference)', async () => {
-    // Called with no deps → uses defaultPublishDeps. On the not-eligible branch that
-    // means the module-level clearWidgetData mock; assert it was invoked so a future
-    // refactor can't silently drop the file-wipe.
+  it('defaults are wired to the real publisher, and never wipe the snapshot files', async () => {
     (clearWidgetData as jest.Mock).mockClear();
-    const props = await buildWidgetPublishProps(false);
-    expect(clearWidgetData).toHaveBeenCalledTimes(1);
+    (publishWidgetSnapshots as jest.Mock).mockClear();
+    const props = await buildWidgetPublishProps();
+    expect(publishWidgetSnapshots).toHaveBeenCalledTimes(1);
+    expect(clearWidgetData).not.toHaveBeenCalled();
     expect(props.signedIn).toBe(true);
-    expect(props.pets).toEqual({});
   });
 });
 
@@ -182,21 +177,14 @@ const mockedClearData = clearWidgetData as jest.Mock;
 // The last props the hook pushed to the timeline (captured off publishWidgetPass).
 let captured: CulpritWidgetProps | null = null;
 
-function allowlist(uids: string[]): AllowlistFlagValues {
-  return { ...ALLOWLIST_FLAGS_UNSET, widget_enabled: { enabled: false, allowlist: uids } };
-}
-
-function setEligibility(uids: string[]): void {
-  __resetAppConfigForTest({ values: APP_CONFIG_DEFAULTS, allowlist: allowlist(uids) });
-}
-
-describe('useWidgetSnapshots — the flag flows through and re-publishes on a flip', () => {
+describe('useWidgetSnapshots — every account gets the widget without the opt in (CUL-1842)', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     captured = null;
     mockSession = { user: { id: USER_ID } }; // truthy → the effect runs
     mockUserId = USER_ID;
-    mockWidgetOptedIn = true; // default opted-in; the opted-out test flips it
+    // The real opt-in store at its default: nothing opted in.
+    useBetaOptInStore.getState().reset();
     mockedPublishSnapshots.mockClear();
     mockedClearData.mockClear();
     mockedPublishPass.mockReset().mockImplementation(
@@ -225,54 +213,49 @@ describe('useWidgetSnapshots — the flag flows through and re-publishes on a fl
     });
   }
 
-  it('eligible account publishes real data; flipping to not-eligible clears + neutralizes (never signedIn:false)', async () => {
-    // Eligible: the account is in the allowlist.
-    setEligibility([USER_ID]);
+  function expectRealPublish() {
+    expect(mockedPublishSnapshots).toHaveBeenCalled();
+    expect(mockedClearData).not.toHaveBeenCalled();
+    expect(captured?.signedIn).toBe(true);
+  }
+
+  it('an account on no allowlist, never opted in, publishes real data from the first tick', async () => {
+    // The config read has not answered (unset baseline) and the opt-in store is at
+    // its default — the two inputs the retired gate failed closed on.
+    expect(useBetaOptInStore.getState().optIns).toEqual({});
     renderHook(() => useWidgetSnapshots());
     await flushPublish();
 
-    expect(mockedPublishSnapshots).toHaveBeenCalledTimes(1); // real-data path
-    expect(mockedClearData).not.toHaveBeenCalled();
-    expect(captured?.signedIn).toBe(true);
+    expect(mockedPublishPass).toHaveBeenCalledTimes(1);
+    expectRealPublish();
+  });
 
-    // Flip: remove the account from the allowlist. widgetEligible is in the effect
-    // deps, so the hook re-publishes — this is the assertion the seam test can't make.
+  it('a config read landing with a dark widget_enabled row changes nothing', async () => {
+    // The production row stays until the PM retires it; a build reading it would have
+    // withheld the widget. This client ignores it (and never re-publishes on it).
+    renderHook(() => useWidgetSnapshots());
+    await flushPublish();
     mockedPublishSnapshots.mockClear();
-    mockedClearData.mockClear();
+    mockedPublishPass.mockClear();
+
     await act(async () => {
-      setEligibility([]); // notifies the app-config store → re-render → effect re-runs
+      __resetAppConfigForTest({
+        values: APP_CONFIG_DEFAULTS,
+        allowlist: { ...ALLOWLIST_FLAGS_UNSET, widget_enabled: { enabled: false, allowlist: [] } } as typeof ALLOWLIST_FLAGS_UNSET,
+      });
     });
     await flushPublish();
 
-    expect(mockedClearData).toHaveBeenCalled(); // dropped the snapshot files
-    expect(mockedPublishSnapshots).not.toHaveBeenCalled(); // real data withheld
-    expect(captured?.signedIn).toBe(true); // NEVER the "Sign in" door
-    expect(captured?.pets).toEqual({}); // the neutral "No pet in this slot yet" door
+    expect(mockedPublishPass).not.toHaveBeenCalled();
+    expect(mockedClearData).not.toHaveBeenCalled();
   });
 
-  it('a not-eligible account (empty allowlist) publishes the neutral empty state from the first tick', async () => {
-    setEligibility([]);
+  it('a signed-out caller publishes nothing (sign-out’s wipe owns that door)', async () => {
+    mockSession = null;
+    mockUserId = null;
     renderHook(() => useWidgetSnapshots());
     await flushPublish();
 
-    expect(mockedClearData).toHaveBeenCalled();
-    expect(mockedPublishSnapshots).not.toHaveBeenCalled();
-    expect(captured?.signedIn).toBe(true);
-    expect(captured?.pets).toEqual({});
-  });
-
-  it('ELIGIBLE but NOT opted in → neutral empty (the Phase-2 transition: opt-in defaults off)', async () => {
-    // The account IS in the allowlist, but Gate 2 is off — the exact state a cohort
-    // owner lands in when Phase 2 ships (their Phase-1 widget goes neutral until they
-    // re-enable it once on the beta page). Real data must be withheld.
-    mockWidgetOptedIn = false;
-    setEligibility([USER_ID]);
-    renderHook(() => useWidgetSnapshots());
-    await flushPublish();
-
-    expect(mockedPublishSnapshots).not.toHaveBeenCalled(); // real data withheld
-    expect(mockedClearData).toHaveBeenCalled(); // snapshot files dropped
-    expect(captured?.signedIn).toBe(true); // never the "Sign in" door
-    expect(captured?.pets).toEqual({}); // the neutral "No pet in this slot yet" door
+    expect(mockedPublishPass).not.toHaveBeenCalled();
   });
 });

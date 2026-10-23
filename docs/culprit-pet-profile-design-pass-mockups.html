@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mock-round" content="build-ready">
+<title>Pet Profile Design Pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+/* A build ready round (.claude/rules/docs.md, the mock round contract). Every colour on this
+   page, chrome included, is a var(--token) from mockups/theme.css, which is generated from
+   constants/theme.ts. The page chrome maps its roles onto those tokens: daylight tokens in
+   light mode, the night tokens in dark mode. The phones are pictures of the app and keep the
+   app's daylight tokens in both modes. Inside a phone every size is a token times --k (the
+   drawing scale); the exceptions are named: the device frame (390 × 844pt, 320pt), and the
+   1px hairline the app itself writes as borderWidth: 1. */
+:root {
+  --bg: var(--colorNeutralLight); --paper: var(--colorSurface); --ink: var(--colorTextPrimary);
+  --ink-2: var(--colorTextSecondary); --ink-3: var(--colorTextTertiary); --rule: var(--colorBorder);
+  --act: var(--colorAction); --act-wash: var(--colorTextOnNight);
+  --pos: var(--colorAccentInk); --pos-wash: var(--colorAccentLight);
+  --con: var(--colorEventSymptomInk); --con-wash: var(--colorEventSymptomLight);
+  --att: var(--colorAttentionInk); --att-wash: var(--colorAttentionLight);
+  --tagbg: var(--colorBrandNightElevated); --tagfg: var(--colorTextOnNight);
+  --page-shadow: var(--shadow-card);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: var(--colorBrandNight); --paper: var(--colorBrandNightElevated); --ink: var(--colorTextOnNight);
+  --ink-2: var(--colorTextOnNightMuted); --ink-3: var(--colorTextOnNightMuted); --rule: var(--colorBorderOnNight);
+  --act: var(--colorMoonlight); --act-wash: var(--colorAuroraViolet);
+  --pos: var(--colorMoonlitTeal); --pos-wash: var(--colorAuroraIndigo);
+  --con: var(--colorEventSymptomOnNight); --con-wash: var(--colorAuroraIndigo);
+  --att: var(--colorMomentGlow); --att-wash: var(--colorAuroraIndigo);
+  --tagbg: var(--colorMoonlight); --tagfg: var(--colorBrandNight);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: var(--colorBrandNight); --paper: var(--colorBrandNightElevated); --ink: var(--colorTextOnNight);
+  --ink-2: var(--colorTextOnNightMuted); --ink-3: var(--colorTextOnNightMuted); --rule: var(--colorBorderOnNight);
+  --act: var(--colorMoonlight); --act-wash: var(--colorAuroraViolet);
+  --pos: var(--colorMoonlitTeal); --pos-wash: var(--colorAuroraIndigo);
+  --con: var(--colorEventSymptomOnNight); --con-wash: var(--colorAuroraIndigo);
+  --att: var(--colorMomentGlow); --att-wash: var(--colorAuroraIndigo);
+  --tagbg: var(--colorMoonlight); --tagfg: var(--colorBrandNight);
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif; font-size: 15px; line-height: 1.5; overflow-x: hidden; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { text-wrap: balance; }
+h1 { font-family: "Newsreader", Georgia, serif; font-weight: 400; font-size: clamp(30px, 5vw, 44px); line-height: 1.1; margin: 6px 0 12px; }
+h2 { font-family: "Newsreader", Georgia, serif; font-weight: 400; font-size: 26px; line-height: 1.2; margin: 0; }
+h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+p { margin: 0 0 10px; max-width: 72ch; }
+a { color: var(--act); }
+code { font-family: "Geist Mono", ui-monospace, Menlo, monospace; font-size: 0.86em; background: var(--act-wash); color: var(--ink); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+.lede { font-size: 17px; color: var(--ink-2); max-width: 70ch; }
+.boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 20px 0; }
+.box { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.box p { font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
+.box.floor { border-left: 3px solid var(--con); }
+.box.pend { border-left: 3px solid var(--att); }
+.box.ask { border-left: 3px solid var(--act); }
+.controls { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 10px 0; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--paper); }
+.seg button { font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--ink-2); padding: 6px 12px; cursor: pointer; min-height: 32px; }
+.seg button[aria-pressed="true"] { background: var(--act-wash); color: var(--act); font-weight: 600; }
+.seg button:focus-visible, .toc a:focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin: 4px 0 0; width: 100%; }
+.toc a { color: var(--ink-2); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+
+section.state { margin-top: 56px; scroll-margin-top: 110px; }
+.sec-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; border-top: 1px solid var(--rule); padding-top: 18px; margin-bottom: 8px; }
+.sec-id { font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; color: var(--ink-3); }
+.why { color: var(--ink-2); font-size: 14.5px; }
+.frames { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 14px; align-items: start; }
+@media (max-width: 1040px) { .frames { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .frames { grid-template-columns: minmax(0, 1fr); } }
+.slot { min-width: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.slot .tag { align-self: flex-start; }
+.tag { display: inline-block; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.tag.today { background: var(--rule); color: var(--ink-2); }
+.tag.faith { background: var(--pos-wash); color: var(--pos); }
+.tag.pass { background: var(--act-wash); color: var(--act); }
+.cap { font-size: 13px; color: var(--ink-2); align-self: stretch; margin: 0; max-width: none; }
+.cap b { color: var(--ink); display: block; font-weight: 600; }
+.cap .bref { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; color: var(--act); }
+.note { margin-top: 14px; font-size: 14px; color: var(--ink-2); border-left: 3px solid var(--con); padding: 4px 0 4px 12px; max-width: 90ch; }
+.note b { color: var(--ink); }
+
+/* ── The phone: a picture of the app in its daylight tokens. 1pt = var(--k) px. ── */
+.ph { --k: 0.8; --t: 1; width: calc(390px * var(--k)); max-width: 100%; background: var(--colorSurface); color: var(--colorTextPrimary);
+  border-radius: calc((var(--space5) - var(--space0_5)) * var(--k)); border: 1px solid var(--colorBorderStrong); box-shadow: var(--shadow-lg);
+  overflow: hidden; position: relative; display: flex; flex-direction: column; font-family: var(--fontBody), "Geist", system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.ph.w320 { width: calc(320px * var(--k)); }
+.ph.ax5 { --t: 3.1; }
+.ph.vp { height: calc(844px * var(--k)); }
+.ph .sb { height: calc((var(--space5) - var(--spaceMicro)) * var(--k)); flex-shrink: 0; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 calc((var(--space3) + var(--space0_5)) * var(--k)) calc(var(--space0_75) * var(--k)); font-size: calc(var(--textSM) * var(--k)); font-weight: var(--weightSemibold); }
+.ph .scr { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; position: relative; }
+.ph .scr::-webkit-scrollbar { display: none; }
+.ph:not(.vp) .scr { overflow: visible; }
+.ph .ground { background: var(--colorNeutralLight); }
+.ph .homeind { height: calc((var(--space4) + var(--spaceMicro)) * var(--k)); flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.ph .homeind i { width: calc((var(--space6) * 2 + var(--space0_75)) * var(--k)); height: calc(var(--space0_5) * var(--k)); border-radius: var(--radiusFull); background: var(--colorNeutralDark); display: block; }
+
+.tXS { font-size: calc(var(--textXS) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXS) * var(--k) * var(--t)); }
+.tSM { font-size: calc(var(--textSM) * var(--k) * var(--t)); line-height: calc(var(--lineHeightSM) * var(--k) * var(--t)); }
+.tMD { font-size: calc(var(--textMD) * var(--k) * var(--t)); line-height: calc(var(--lineHeightBody) * var(--k) * var(--t)); }
+.tLG { font-size: calc(var(--textLG) * var(--k) * var(--t)); line-height: calc(var(--lineHeightLG) * var(--k) * var(--t)); }
+.tXL { font-size: calc(var(--textXL) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXL) * var(--k) * var(--t)); }
+.wM { font-weight: var(--weightMedium); } .wS { font-weight: var(--weightSemibold); }
+.cP { color: var(--colorTextPrimary); } .c2 { color: var(--colorTextSecondary); } .c3 { color: var(--colorTextTertiary); }
+.cAct { color: var(--colorAction); } .cPos { color: var(--colorAccentInk); } .cOD { color: var(--colorTextOnDark); } .cODm { color: var(--colorTextOnDarkMuted); }
+.trk { letter-spacing: var(--trackingWidest); text-transform: uppercase; }
+.ctr { text-align: center; }
+
+.hd { min-height: calc(var(--hitTarget) * var(--k)); flex-shrink: 0; display: grid; grid-template-columns: calc(var(--space6) * var(--k)) 1fr calc(var(--space6) * var(--k)); align-items: center; border-bottom: 1px solid var(--colorBorder); background: var(--colorSurface); }
+.hd .lead { padding-left: calc(var(--space1_5) * var(--k)); font-size: calc(var(--textXL) * var(--k)); line-height: 1; }
+.hd .ti { text-align: center; font-weight: var(--weightSemibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pad { padding: calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space2) * var(--k)); }
+.pad.tight { padding: calc(var(--space2) * var(--k)) calc(var(--space2) * var(--k)) calc(var(--space3) * var(--k)); }
+
+.btn { background: var(--colorNeutralDark); color: var(--colorTextOnDark); border-radius: calc(var(--radiusMedium) * var(--k)); padding: calc(var(--space2) * var(--k)); display: flex; align-items: center; justify-content: center; gap: calc(var(--space1) * var(--k)); font-weight: var(--weightMedium); text-align: center; }
+.btn.outl { background: var(--colorSurface); border: 1px solid var(--colorBorderStrong); color: var(--colorTextPrimary); }
+.btn.sec { background: transparent; border: 1px solid var(--colorBorder); color: var(--colorTextSecondary); }
+.btn.dis { background: var(--colorBorder); color: var(--colorTextTertiary); }
+.btn.plain { background: transparent; color: var(--colorTextSecondary); min-height: calc(var(--hitTarget) * var(--k)); padding: 0; }
+.lnk { min-height: calc(var(--hitTarget) * var(--k)); display: flex; align-items: center; justify-content: center; font-weight: var(--weightMedium); }
+.cam { width: calc((var(--space2) + var(--space0_5)) * var(--k)); height: calc(var(--space2) * var(--k)); border: calc(var(--spaceMicro) * var(--k)) solid currentColor; border-radius: calc(var(--radiusXS) * var(--k)); position: relative; flex-shrink: 0; }
+.cam::after { content: ""; position: absolute; left: 50%; top: 50%; width: calc(var(--space0_75) * var(--k)); height: calc(var(--space0_75) * var(--k)); transform: translate(-50%, -50%); border: calc(var(--spaceMicro) * var(--k)) solid currentColor; border-radius: var(--radiusFull); }
+
+.chips { display: flex; flex-wrap: wrap; column-gap: calc(var(--space1) * var(--k)); row-gap: calc(var(--space2) * var(--k)); }
+.chip { border: 1px solid var(--colorBorder); background: var(--colorSurface); color: var(--colorTextSecondary); border-radius: var(--radiusFull); padding: 0 calc(var(--space2) * var(--k)); min-height: calc(var(--hitTarget) * var(--k)); display: inline-flex; align-items: center; font-weight: var(--weightMedium); }
+.chip.on-filled { background: var(--colorNeutralDark); border-color: var(--colorNeutralDark); color: var(--colorTextOnDark); }
+.chip.on-accent { background: var(--colorAccentLight); border-color: var(--colorAccent); color: var(--colorAccentInk); }
+.chip.on-sel { background: var(--colorTextOnNight); border-color: var(--colorAction); color: var(--colorAction); }
+.chip .tickmark { margin-right: calc(var(--space0_5) * var(--k)); }
+
+.label { font-size: calc(var(--textXS) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXS) * var(--k) * var(--t)); font-weight: var(--weightMedium); color: var(--colorTextSecondary); letter-spacing: var(--trackingWidest); text-transform: uppercase; }
+.field { border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusSmall) * var(--k)); min-height: calc(var(--space5) * var(--k)); padding: 0 calc(var(--space2) * var(--k)); display: flex; align-items: center; background: var(--colorSurface); }
+.fieldlab { font-size: calc(var(--textSM) * var(--k) * var(--t)); line-height: calc(var(--lineHeightSM) * var(--k) * var(--t)); font-weight: var(--weightMedium); color: var(--colorTextSecondary); margin-bottom: calc(var(--space1) * var(--k)); }
+
+/* the label photo: a stand-in drawn from tokens (no real package on this page) */
+.photo { position: relative; overflow: hidden; background: linear-gradient(160deg, var(--colorBrandNightElevated), var(--colorBrandNight)); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--space1) * var(--k)); }
+.photo .pband { width: 62%; padding: calc(var(--space1) * var(--k)) 0; background: var(--colorMoonlight); color: var(--colorBrandNight); text-align: center; font-weight: var(--weightSemibold); letter-spacing: var(--trackingWide); font-size: calc(var(--textXS) * var(--k)); border-radius: calc(var(--radiusXS) * var(--k)); }
+.photo .fish { width: 34%; height: calc(var(--space4) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAttentionRail); opacity: 0.85; }
+.photo.ingr { background: var(--colorMoonlight); }
+.photo.ingr .ln { width: 70%; height: calc(var(--space0_5) * var(--k)); background: var(--colorTextTertiary); border-radius: var(--radiusFull); }
+.photo .ph-note { position: absolute; left: calc(var(--space1) * var(--k)); bottom: calc(var(--space0_75) * var(--k)); font-size: calc(var(--textMicro) * var(--k)); color: var(--colorTextOnDarkSubtle); letter-spacing: var(--trackingWide); text-transform: uppercase; }
+.hero43 { aspect-ratio: 4 / 3; border-radius: calc(var(--radiusMedium) * var(--k)); }
+.heroFull { aspect-ratio: 4 / 3; }
+.heroWide { aspect-ratio: 16 / 9; }
+.scrimBar { position: absolute; left: 0; right: 0; bottom: 0; padding: calc(var(--space2) * var(--k)); background: var(--colorScrimDark); display: flex; flex-direction: column; gap: calc(var(--spaceMicro) * var(--k)); }
+
+.tiles { display: flex; gap: calc(var(--space2) * var(--k)); }
+.tile { flex: 1; display: flex; flex-direction: column; align-items: center; gap: calc(var(--space0_75) * var(--k)); min-width: 0; }
+.thumb { width: 100%; aspect-ratio: 1; border-radius: calc(var(--radiusSmall) * var(--k)); background: var(--colorNeutralLight); }
+.thumb.empty { border: 1px dashed var(--colorBorder); display: flex; align-items: center; justify-content: center; color: var(--colorTextTertiary); font-size: calc(var(--textXL) * var(--k)); }
+.thumb.photo { padding: 0; }
+
+/* the design pass: Home's card language (HomeCard: colorSurface, radiusMedium, shadow-card, rail in the gutter) */
+.hc { position: relative; background: var(--colorSurface); border-radius: calc(var(--radiusMedium) * var(--k)); box-shadow: var(--shadow-card); padding: calc(var(--space2) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1) * var(--k)); }
+.hc .rail { position: absolute; left: calc(var(--space0_75) * var(--k)); top: calc(var(--space2) * var(--k)); bottom: calc(var(--space2) * var(--k)); width: calc(var(--railWidth) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAccentGlyph); }
+.hc .rail.tk { bottom: auto; height: calc(var(--space2) * var(--k)); background: var(--colorBorderStrong); animation: breath 1.4s ease-in-out infinite; }
+.hc.flush { padding: 0; overflow: hidden; }
+.rows { display: flex; flex-direction: column; }
+.rows .r { display: flex; justify-content: space-between; align-items: baseline; gap: calc(var(--space1_5) * var(--k)); padding: calc(var(--space1) * var(--k)) 0; min-width: 0; }
+.rows .r + .r { border-top: 1px solid var(--colorBorder); }
+.rows .r > span:last-child { text-align: right; min-width: 0; overflow-wrap: break-word; }
+.ph.ax5 .rows .r { flex-direction: column; align-items: flex-start; gap: 0; }
+.ph.ax5 .rows .r > span:last-child { text-align: left; }
+.band { border-radius: calc(var(--radiusSmall) * var(--k)); padding: calc(var(--space2) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1) * var(--k)); }
+.band.rose { background: var(--colorEventSymptomLight); }
+.band.quiet { background: var(--colorSurfaceSubtle); border: 1px solid var(--colorBorder); }
+.timerow { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space1) * var(--k)); padding: calc(var(--space2) * var(--k)); border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusSmall) * var(--k)); background: var(--colorNeutralLight); min-height: calc(var(--hitTarget) * var(--k)); }
+.timerow.pass { background: transparent; border: 0; padding: 0; flex-wrap: wrap; }
+.sil { background: var(--colorChartEmpty); border-radius: calc(var(--radiusSmall) * var(--k)); }
+.sil.line { border-radius: calc(var(--space0_75) * var(--k)); height: calc((var(--space1) + var(--spaceMicro)) * var(--k)); }
+.tick { width: calc(var(--railWidth) * var(--k)); height: calc(var(--space2) * var(--k)); background: var(--colorBorderStrong); border-radius: var(--radiusFull); flex-shrink: 0; animation: breath 1.4s ease-in-out infinite; }
+@keyframes breath { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .tick, .hc .rail.tk { animation: none; } }
+.night { background: var(--colorBrandNight); color: var(--colorTextOnNight); flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--space1) * var(--k)); min-height: calc(var(--space6) * 6 * var(--k)); position: relative; }
+.night .moon { width: calc(var(--space5) * var(--k)); height: calc(var(--space5) * var(--k)); border-radius: var(--radiusFull); box-shadow: inset calc(var(--space1_5) * var(--k)) calc(var(--space0_5) * -1 * var(--k)) 0 0 var(--colorMoonlight); }
+.night .star { position: absolute; width: calc(var(--spaceMicro) * var(--k)); height: calc(var(--spaceMicro) * var(--k)); border-radius: var(--radiusFull); background: var(--colorStar); }
+.whorl { width: calc(var(--space3) * var(--k)); height: calc(var(--space3) * var(--k)); border-radius: var(--radiusFull); border: calc(var(--spaceMicro) * var(--k)) solid var(--colorWhorlRidgeDay); border-right-color: transparent; }
+.check80 { width: calc((var(--space6) + var(--space2)) * var(--k)); height: calc((var(--space6) + var(--space2)) * var(--k)); border-radius: var(--radiusFull); background: var(--colorNeutralDark); color: var(--colorTextOnDark); display: flex; align-items: center; justify-content: center; font-size: calc((var(--space4) + var(--space0_5)) * var(--k)); }
+.mark32 { width: calc(var(--space4) * var(--k)); height: calc(var(--space4) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAccentGlyph); color: var(--colorSurface); display: flex; align-items: center; justify-content: center; font-size: calc(var(--textMD) * var(--k)); font-weight: var(--weightSemibold); flex-shrink: 0; }
+.center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--space2) * var(--k)); padding: calc(var(--space3) * var(--k)); min-height: calc(var(--space6) * 6 * var(--k)); }
+
+/* sheets */
+.scrim { position: absolute; inset: 0; background: var(--colorScrim); z-index: 3; }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; background: var(--colorSurface); border-radius: calc(var(--radiusLarge) * var(--k)) calc(var(--radiusLarge) * var(--k)) 0 0; box-shadow: var(--shadow-lg); padding: calc(var(--space1) * var(--k)) calc(var(--space3) * var(--k)) calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1_5) * var(--k)); }
+.ph:not(.vp) .sheet { position: relative; }
+.ph:not(.vp) .scrim { display: none; }
+.grab { align-self: center; width: calc(var(--space5) * 0.75 * var(--k)); height: calc(var(--space0_5) * var(--k)); border-radius: var(--radiusFull); background: var(--colorBorderStrong); }
+.ben { display: flex; gap: calc(var(--space1_5) * var(--k)); align-items: flex-start; }
+.ben i { width: calc(var(--space4) * var(--k)); height: calc(var(--space4) * var(--k)); border-radius: var(--radiusFull); background: var(--colorAccentLight); flex-shrink: 0; }
+.pair { display: flex; gap: calc(var(--space1_5) * var(--k)); }
+.pair > * { flex: 1; }
+
+/* part tags */
+body.parts .ph [data-kit] { outline: 1px dashed var(--colorAction); outline-offset: -1px; position: relative; }
+body.parts .ph [data-kit]::before { content: attr(data-kit); position: absolute; top: 0; left: 0; z-index: 6; font: 500 9px/1.25 "Geist Mono", ui-monospace, monospace; color: var(--colorTextOnNight); background: var(--colorBrandNightElevated); padding: 1px 4px; border-radius: 0 0 4px 0; max-width: 100%; white-space: normal; letter-spacing: 0; text-transform: none; pointer-events: none; }
+body.parts .ph [data-kit^="drift"] { outline-color: var(--colorDestructive); }
+body.parts .ph [data-kit^="drift"]::before { background: var(--colorEventSymptomInk); color: var(--colorTextOnDark); }
+body.parts .ph [data-kit^="new"] { outline-color: var(--colorAttentionRail); }
+body.parts .ph [data-kit^="new"]::before { background: var(--colorAttentionInk); color: var(--colorTextOnDark); }
+
+/* tables, VoiceOver, ledger */
+.tscroll { overflow-x: auto; margin-top: 12px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 720px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; color: var(--ink); background: var(--bg); }
+td { color: var(--ink-2); }
+.ok { color: var(--pos); font-weight: 600; } .no { color: var(--con); font-weight: 600; }
+.vo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 12px; }
+@media (max-width: 700px) { .vo { grid-template-columns: minmax(0, 1fr); } }
+.vo ol { margin: 6px 0 0; padding-left: 22px; font-size: 13.5px; color: var(--ink-2); }
+.vo li { margin-bottom: 2px; }
+.vo li.key { color: var(--act); font-weight: 600; }
+.ledger { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.brief { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 4px 16px; }
+@media (max-width: 640px) { .brief { grid-template-columns: minmax(0, 1fr); } }
+.brief .bid { font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; color: var(--act); font-weight: 500; }
+.brief .bid small { display: block; font-family: "Geist", sans-serif; color: var(--ink-3); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px; }
+.brief p { font-size: 14px; margin: 0 0 5px; color: var(--ink-2); max-width: 86ch; }
+.brief p strong { color: var(--ink); }
+.rec { color: var(--pos); font-weight: 600; }
+.gate { color: var(--con); font-weight: 600; }
+.lens { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+footer.end { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 16px; font-size: 13px; color: var(--ink-3); }
+
+/* ── this page's parts (the pet profile). Same rules: tokens times --k, nothing typed. ── */
+.card { background: var(--colorSurface); border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusMedium) * var(--k)); padding: calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space2) * var(--k)); min-width: 0; }
+.card.np { padding: 0; overflow: hidden; }
+.card.c2 { padding: calc(var(--space2) * var(--k)); gap: calc(var(--space1) * var(--k)); }
+.stack { padding: calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space2) * var(--k)); }
+.idcard { align-items: center; gap: calc(var(--space1) * var(--k)); padding-block: calc(var(--space4) * var(--k)); }
+.av { width: calc((var(--space6) + var(--space5)) * var(--k)); height: calc((var(--space6) + var(--space5)) * var(--k)); border-radius: var(--radiusFull); flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+.av.s96 { width: calc((var(--space6) + var(--space4)) * var(--k)); height: calc((var(--space6) + var(--space4)) * var(--k)); }
+.av.ini { background: var(--colorNeutralDark); color: var(--colorTextOnDark); font-size: calc((var(--space4) + var(--space0_75)) * var(--k) * var(--t)); font-weight: var(--weightMedium); }
+.av.pic { background: radial-gradient(circle at 50% 38%, var(--colorEventMealLight) 0 22%, var(--colorAttentionRail) 23% 46%, var(--colorEventMeal) 47%); }
+.av.pic::after { content: "pet photo"; position: absolute; bottom: calc(var(--space1) * var(--k)); font-size: calc(var(--textMicro) * var(--k)); letter-spacing: var(--trackingWide); text-transform: uppercase; color: var(--colorTextOnDarkSubtle); }
+.av.add { background: var(--colorSurfaceSubtle); border: 1px dashed var(--colorBorderStrong); color: var(--colorAction); flex-direction: column; gap: calc(var(--space0_5) * var(--k)); }
+.av .ovl { position: absolute; inset: 0; background: var(--colorScrimPhoto); display: flex; align-items: center; justify-content: center; }
+.av .ovl .tick { background: var(--colorTextOnDark); }
+.chev { display: inline-block; width: calc(var(--space1) * var(--k)); height: calc(var(--space1) * var(--k)); border-right: calc(var(--spaceMicro) * var(--k)) solid var(--colorTextSecondary); border-bottom: calc(var(--spaceMicro) * var(--k)) solid var(--colorTextSecondary); transform: rotate(45deg) translateY(calc(var(--spaceMicro) * -1 * var(--k))); margin-left: calc(var(--space0_75) * var(--k)); flex-shrink: 0; }
+.namerow { display: flex; align-items: center; justify-content: center; min-height: calc(var(--hitTarget) * var(--k)); gap: calc(var(--space0_5) * var(--k)); min-width: 0; }
+.namerow.left { justify-content: flex-start; }
+.t2XL { font-size: calc(var(--text2XL) * var(--k) * var(--t)); line-height: calc((var(--lineHeightXL) + var(--space0_5)) * var(--k) * var(--t)); }
+.cDark { color: var(--colorNeutralDark); }
+.cDes { color: var(--colorDestructive); }
+.ul { text-decoration: underline; }
+.irow { display: flex; }
+.icell { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: calc(var(--spaceMicro) * var(--k)); padding: calc(var(--space2) * var(--k)) calc(var(--space0_5) * var(--k)); text-align: center; }
+.idiv { width: 1px; background: var(--colorBorder); margin: calc(var(--space1) * var(--k)) 0; flex-shrink: 0; }
+.ph.ax5 .irow { flex-direction: column; }
+.ph.ax5 .idiv { width: auto; height: 1px; margin: 0 calc(var(--space2) * var(--k)); }
+.sechd { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space1) * var(--k)); min-height: calc(var(--hitTarget) * var(--k)); }
+.hl { border-top: 1px solid var(--colorBorder); }
+.crow { display: flex; align-items: flex-start; gap: calc(var(--space2) * var(--k)); padding-top: calc(var(--space2) * var(--k)); border-top: 1px solid var(--colorBorder); }
+.crow .ci { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--spaceMicro) * var(--k)); }
+.crow .cr { display: flex; flex-direction: column; align-items: flex-end; gap: calc(var(--space0_75) * var(--k)); flex-shrink: 0; }
+.acts { display: flex; align-items: center; gap: calc(var(--space0_75) * var(--k)); }
+.acts > span { min-height: calc(var(--hitTarget) * var(--k)); display: inline-flex; align-items: center; }
+.drow { display: flex; align-items: center; gap: calc(var(--space1_5) * var(--k)); min-height: calc(var(--hitTarget) * var(--k)); padding: calc(var(--space1_5) * var(--k)) 0; border-top: 1px solid var(--colorBorder); }
+.drow .ci { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(var(--spaceMicro) * var(--k)); }
+.door { color: var(--colorTextTertiary); font-size: calc(var(--textLG) * var(--k) * var(--t)); flex-shrink: 0; }
+.ph.ax5 .crow, .ph.ax5 .drow { flex-wrap: wrap; }
+.badge { display: inline-flex; align-items: center; border-radius: calc((var(--radiusXS) + var(--spaceMicro)) * var(--k)); padding: calc(var(--spaceMicro) * var(--k)) calc(var(--space1) * var(--k)); font-size: calc(var(--textXS) * var(--k) * var(--t)); line-height: calc(var(--lineHeightXS) * var(--k) * var(--t)); font-weight: var(--weightMedium); white-space: nowrap; }
+.badge.sym { background: var(--colorEventSymptomLight); color: var(--colorEventSymptomInk); }
+.badge.acc { background: var(--colorAccentLight); color: var(--colorAccentInk); }
+.badge.mut { background: var(--colorNeutralLight); color: var(--colorTextSecondary); }
+.prog { height: calc(var(--space0_75) * var(--k)); border-radius: var(--radiusFull); background: var(--colorChartEmpty); overflow: hidden; }
+.prog i { display: block; height: 100%; background: var(--colorAccent); border-radius: var(--radiusFull); }
+.medrow { display: flex; flex-direction: column; gap: calc(var(--space0_5) * var(--k)); padding-top: calc(var(--space2) * var(--k)); border-top: 1px solid var(--colorBorder); }
+.wrow { display: flex; align-items: flex-end; justify-content: space-between; gap: calc(var(--space2) * var(--k)); }
+.wval { font-size: calc(var(--text2XL) * var(--k) * var(--t)); line-height: calc((var(--lineHeightXL) + var(--space0_5)) * var(--k) * var(--t)); font-weight: var(--weightSemibold); }
+.spark { width: 42%; height: calc(var(--space5) * var(--k)); flex-shrink: 0; }
+.spark polyline { fill: none; stroke: var(--colorTextTertiary); stroke-width: var(--spaceMicro); vector-effect: non-scaling-stroke; }
+.blk { display: flex; flex-direction: column; gap: calc(var(--space0_5) * var(--k)); min-width: 0; }
+.idrow { display: flex; gap: calc(var(--space2) * var(--k)); align-items: center; padding: calc(var(--space1) * var(--k)) 0; }
+.ph.w320 .idrow, .ph.ax5 .idrow { flex-direction: column; align-items: flex-start; }
+.mhd { min-height: calc((var(--hitTarget) + var(--space1_5)) * var(--k)); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space1) * var(--k)); padding: 0 calc(var(--space3) * var(--k)); border-bottom: 1px solid var(--colorBorder); background: var(--colorSurface); }
+.mhd > span { min-height: calc(var(--hitTarget) * var(--k)); display: inline-flex; align-items: center; }
+.mhd .ti { font-weight: var(--weightMedium); text-align: center; flex: 1; justify-content: center; min-width: 0; }
+.fbtn { border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusSmall) * var(--k)); background: var(--colorNeutralLight); padding: calc(var(--space1_5) * var(--k)) calc(var(--space2) * var(--k)); display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space1) * var(--k)); min-width: 0; }
+.fbtn.tok { background: var(--colorSurface); min-height: calc(var(--space5) * var(--k)); padding-block: 0; }
+.inp { border: 1px solid var(--colorBorder); border-radius: calc(var(--radiusSmall) * var(--k)); background: var(--colorNeutralLight); padding: calc(var(--space1_5) * var(--k)) calc(var(--space2) * var(--k)); min-width: 0; }
+.inp.focus, .field.focus { border-color: var(--colorAction); }
+.chiprow { display: flex; gap: calc(var(--space1) * var(--k)); }
+.chiprow > * { flex: 1; justify-content: center; }
+.schip { flex: 1; min-width: 0; border: 1px solid var(--colorBorder); background: var(--colorNeutralLight); border-radius: calc(var(--radiusSmall) * var(--k)); padding: calc(var(--space1) * var(--k)); display: flex; flex-direction: column; align-items: center; gap: calc(var(--spaceMicro) * var(--k)); text-align: center; }
+.schip.on { background: var(--colorNeutralDark); border-color: var(--colorNeutralDark); }
+.flab { margin-top: calc(var(--space2) * var(--k)); }
+.form { padding: calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1) * var(--k)); }
+.form.kit { gap: calc(var(--space2) * var(--k)); }
+.fgrp { display: flex; flex-direction: column; gap: calc(var(--space1) * var(--k)); }
+.foot { display: flex; flex-direction: column; align-items: center; padding: calc(var(--space2) * var(--k)) 0 calc(var(--space4) * var(--k)); }
+.foot .lnk { width: 100%; }
+.archcard { margin: calc(var(--space2) * var(--k)); background: var(--colorSurface); border-radius: calc(var(--radiusLarge) * var(--k)); box-shadow: var(--shadow-lg); padding: calc(var(--space3) * var(--k)); display: flex; flex-direction: column; gap: calc(var(--space1_5) * var(--k)); position: relative; z-index: 4; }
+.ph.vp .archcard { position: absolute; left: 0; right: 0; bottom: calc(var(--space2) * var(--k)); }
+.ph:not(.vp) .archwrap .scrim { display: none; }
+.prow { display: flex; align-items: center; gap: calc(var(--space1_5) * var(--k)); padding: calc(var(--space1_5) * var(--k)) 0; border-top: 1px solid var(--colorBorder); }
+.prow .av { width: calc((var(--space4) + var(--space0_75)) * var(--k)); height: calc((var(--space4) + var(--space0_75)) * var(--k)); font-size: calc(var(--textMD) * var(--k) * var(--t)); }
+.prow .av.pic::after { content: none; }
+.pill { border: 1px solid var(--colorBorder); border-radius: var(--radiusFull); padding: 0 calc(var(--space2) * var(--k)); min-height: calc(var(--hitTarget) * var(--k)); display: inline-flex; align-items: center; flex-shrink: 0; }
+.vo-ttl { margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Culprit · Design system · Milestone 2 · Pass 4 · Round 1 · 2026-10-23 · build ready</div>
+  <h1>The pet's page and its forms, three ways</h1>
+  <p class="lede">The Pet tab is where a pet's identity lives: the photo, the name, the facts, what they have been diagnosed with and what they take, and the doors to the vet. Two forms open from it, Edit profile and Add condition. Every state is drawn as it ships today, as a faithful move onto the shared parts, and as a design pass under Principles 3, 5, 8 and 9. You rule per screen or per element in the ledger at the foot. Issue: <a href="https://linear.app/projectnyx/issue/CUL-1989">CUL-1989</a>; the build that follows your picks is <a href="https://linear.app/projectnyx/issue/CUL-1911">CUL-1911</a>.</p>
+  <div class="box ask" id="rulingbox" style="margin-top:16px;border-left-color:var(--pos)"><h3>Ruled 2026-10-23: every recommendation taken</h3>
+    <p>The PM, in session: "take all the recommendations". S1 is (A): <code>AddMedicationModal</code> and the medicines card's design stay with the medication revamp. F1 to F8 stand. P1 to P4 and P6 to P10 are taken as (B), and P5 is (B), the muted badge. D-1 is (A), filed as <a href="https://linear.app/projectnyx/issue/CUL-2174">CUL-2174</a> for its own fix row. The build is <a href="https://linear.app/projectnyx/issue/CUL-1911">CUL-1911</a>. Carried into it: the <code>new:</code> parts (<code>PickerRow</code>, IdentityRow, DoorRow, the add photo slot, and the plain button variant shared with CUL-1910) are built as kit parts; the copy for P6, P8 and P9 and the failed read lines get a nyx-voice read; the fold rise in P1 and P2 is measured on PR-09b's capture. Not settled by this ruling: the PM's real payload frame stays undrawn.</p></div>
+  <div class="boxes">
+    <div class="box ask"><h3>Medicines are the revamp's</h3>
+      <p>The medication revamp (<a href="https://linear.app/projectnyx/issue/CUL-1903">CUL-1903</a>, <a href="https://linear.app/projectnyx/issue/CUL-1902">CUL-1902</a>) ruled that medicine lives with the pet and that setup is redrawn from the label (GC-5 A), which replaces <code>AddMedicationModal</code> in all three of its hosts (this tab, a vet call, after a vet visit). So, as the issue asked, this round does not draw that modal, and the <b>Current medications</b> card is drawn as it ships plus its faithful token moves only; its design pass column says "the revamp's". Brief S1.</p></div>
+    <div class="box floor"><h3>One defect found, filed live</h3>
+      <p>Switching pets on this tab while a read fails leaves the previous pet's conditions and medicines on screen, and "Log a dose" then writes against the other pet's course (§05, D-1). Filed as one class, Live harm: <a href="https://linear.app/projectnyx/issue/CUL-2174">CUL-2174</a>. Every design pass frame draws the fix.</p></div>
+    <div class="box pend"><h3>The mock round contract</h3>
+      <p>Build ready (#1297). Every element names its part and token in <code>data-kit</code>: switch on <b>Show parts</b>. Red tags are drift (a hand built part or a typed value the faithful column replaces); amber tags are <code>new:</code> parts the kit lacks, each a gate for the build. Every colour on this page is a token from <code>mockups/theme.css</code>.</p></div>
+  </div>
+  <p class="why">The record in every frame is a fixture. Biscuit, a dog, is the active pet; Mochi, a cat, is the second. Conditions, the course, the weights and the trial are invented, and the pet photo is a stand in drawn from tokens, so no real pet or owner is on this page. Every shipped string is verbatim from <code>app/(tabs)/profile.tsx</code>, <code>components/profile/</code>, <code>components/vetvisits/VetVisitsCard.tsx</code>, <code>lib/dietTrialCard.ts</code>, <code>lib/medications.ts</code> and <code>lib/utils.ts</code>. Design pass copy that differs is marked and briefed (nyx-voice read at build). <b>Not drawn:</b> the PM's real payload (Nyx's page). Drawing it means reading your pet's record from production, a privacy read this session did not take without your word; say so and the next round draws it. <b>Run beside:</b> the log form round (<a href="https://linear.app/projectnyx/issue/CUL-1988">CUL-1988</a>) is unruled; nothing here depends on its picks.</p>
+</header>
+
+<nav class="controls" aria-label="Page controls">
+  <span class="seg" role="group" aria-label="Part tags"><button type="button" id="b-parts-off" aria-pressed="true">Pictures</button><button type="button" id="b-parts-on" aria-pressed="false">Show parts</button></span>
+  <span class="seg" role="group" aria-label="Phone height"><button type="button" id="b-vp" aria-pressed="false">Phone height</button><button type="button" id="b-full" aria-pressed="true">Full length</button></span>
+  <div class="toc">
+    <a href="#s01">01 The tab</a><a href="#s02">02 New pet</a><a href="#s03">03 The photo</a><a href="#s04">04 Loading</a><a href="#s05">05 Failed read</a><a href="#s06">06 Two pets</a><a href="#s07">07 Archive</a><a href="#s08">08 Archived pets</a><a href="#s09">09 Edit profile</a><a href="#s10">10 Save failed</a><a href="#s11">11 Add condition</a><a href="#s12">12 Edit condition</a><a href="#s13">13 320pt</a><a href="#s14">14 Largest text</a><a href="#vo">VoiceOver</a><a href="#motion">Motion</a><a href="#qa">State set</a><a href="#ledger">Ledger</a><a href="#lenses">Lenses</a>
+  </div>
+</nav>
+
+<main id="states"></main>
+
+<section class="state" id="vo">
+  <div class="sec-head"><span class="sec-id">§15</span><h2>VoiceOver order: the top of the tab and a condition</h2></div>
+  <p class="why">Read in swipe order, two pets, Biscuit active. The pet's identity (indigo) must be heard before anything that acts on the record.</p>
+  <div class="vo">
+    <div class="box"><h3 class="vo-ttl">Today and faithful</h3><ol>
+      <li>Image button <i>(the photo: no label, no hint that it changes the photo)</i></li><li>Change photo</li><li class="key">Biscuit, switch pet, button</li><li class="key">Dog · Labrador Retriever</li><li>Edit profile <i>(today: no button role; faithful: button)</i></li><li>Age</li><li>4yr 2mo</li><li>Sex</li><li>Male</li><li>Weight</li><li>62.4 lbs</li><li>…Weight card…</li><li>Conditions</li><li>+ Add <i>(no role; announced "plus Add")</i></li><li>Food sensitivity</li><li>Diagnosed Mar 2026</li><li>Active</li><li>Edit</li><li>·</li><li>Resolve</li></ol>
+      <p style="margin-top:8px">Each fact is two stops (label, then value). The raw "·" separators are their own stops. Edit and Resolve never say which condition they act on.</p></div>
+    <div class="box"><h3 class="vo-ttl">Design pass</h3><ol>
+      <li class="key">Biscuit's photo, button. Opens the photo options</li><li class="key">Biscuit, switch pet, button</li><li class="key">Dog · Labrador Retriever · 4yr 2mo · Male</li><li>Edit Biscuit's profile, button</li><li>…Weight card…</li><li>Conditions, heading</li><li>Add a condition, button</li><li>Food sensitivity, diagnosed Mar 2026, active. Edit, button</li><li>Atopic dermatitis, monitoring. Edit, button</li></ol>
+      <p style="margin-top:8px">One stop per fact line and per condition (C-8: one string, no rejoining label). Resolve moves into the edit form, so no row carries two unnamed actions (P3).</p></div>
+  </div>
+</section>
+
+<section class="state" id="motion">
+  <div class="sec-head"><span class="sec-id">§16</span><h2>Motion</h2></div>
+  <p class="why"><b>Today:</b> a <code>WhorlSpinner</code> per section while conditions and medicines load, a second one over the photo while it uploads, and a third in each form's Save slot. All three are on the retiring list (CUL-1593). Both forms slide up as page sheets.</p>
+  <p class="why"><b>Faithful and design pass:</b> nothing new moves. Section waits are <code>Skeleton</code> rows in the card's own shape (under a second, content shaped); the photo upload is the <code>Tick</code> on the photo, named "Saving the photo…"; a form's Save becomes the tick in place of its label while the write is in flight. Reduce Motion: the tick is still at full opacity. The page sheets stay the platform's. The pet switch (§06) changes the page in place with no transition, as today, and the design pass clears every list on the switch before the new read answers (the CUL-2174 fix), so no frame ever shows two pets at once.</p>
+  <p class="why"><b>Motion &amp; IA:</b> the fold. Today at 390pt the identity card and the facts row fill the first screen; the first record fact (a condition) starts near 620pt of 763pt of tab content. The design pass identity row is about 150pt shorter, so Conditions starts on the first screen (P1, P2). Measure at build on PR-09b's capture.</p>
+</section>
+
+<section class="state" id="qa">
+  <div class="sec-head"><span class="sec-id">§17</span><h2>The state set, against the contract</h2></div>
+  <div class="tscroll"><table>
+    <thead><tr><th>State</th><th>Where</th><th>Today</th><th>Faithful</th><th>Design pass</th></tr></thead>
+    <tbody>
+      <tr><td>A lived in record (photo, conditions, a course, weights, a trial, visits)</td><td>§01</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Empty: a new pet with nothing logged</td><td>§02</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>No photo · uploading · photo saved</td><td>§03</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Loading</td><td>§04</td><td class="no">three spinners</td><td class="ok">skeleton rows</td><td class="ok">skeleton rows</td></tr>
+      <tr><td>Failed read or offline (the tab)</td><td>§05</td><td class="no">drawn: the wrong pet's rows (D-1)</td><td class="ok">error + retry</td><td class="ok">error + retry</td></tr>
+      <tr><td>Failed save or offline (the forms)</td><td>§10</td><td class="ok">drawn: an alert</td><td class="ok">drawn</td><td class="ok">inline, said before</td></tr>
+      <tr><td>Two pets</td><td>§06</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>An archived pet (the confirm, and the list it waits in)</td><td>§07 · §08</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>320pt</td><td>§13</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>Largest text (fontScale 3.1, AX5; the app sets no cap)</td><td>§14</td><td class="ok">drawn</td><td class="ok">drawn</td><td class="ok">drawn</td></tr>
+      <tr><td>VoiceOver order</td><td>§15</td><td class="ok">listed</td><td class="ok">listed</td><td class="ok">listed</td></tr>
+      <tr><td>The PM's real payload</td><td>header</td><td class="no" colspan="3">not drawn: needs a production read of your pet's record, which waits on your word</td></tr>
+      <tr><td><code>AddMedicationModal</code>, its three hosts</td><td>—</td><td colspan="3">not drawn: the medication revamp's setup replaces it (S1)</td></tr>
+      <tr><td>The diet trial slot, Vet Files, Past medications</td><td>§01</td><td colspan="3">drawn unchanged in every column: the trial track's and the vet files track's parts. The design pass only moves where the trial door sits (P4)</td></tr>
+    </tbody></table></div>
+</section>
+
+<section class="state" id="ledger">
+  <div class="sec-head"><span class="sec-id">§18</span><h2>The ledger: every visible change, as a brief</h2></div>
+  <p class="why">Faithful briefs (F) are team calls under the kit and the ruled colour roles; veto any you disagree with. Design pass briefs (P) and scope calls (S) are yours. D-1 is a defect in shipped code. <b>Forecast:</b> 1 row (this page); the build is CUL-1911.</p>
+  <div class="ledger">
+    <div class="brief"><div class="bid">S1<small>scope</small></div><div>
+      <p><strong>Deciding:</strong> whether this round draws <code>AddMedicationModal</code>. <strong>(A) Leave it, and the Current medications card's design, to the medication revamp;</strong> this round gives the card its faithful token moves only (F6). <strong>(B)</strong> Draw the modal faithful and pass here anyway. <span class="rec">Recommended (A):</span> the revamp ruled setup from the label (GC-5 A) and "medicine lives with the pet"; a pass drawn here would be redrawn there, and two rounds would compete for the same card.</p>
+      <p><strong>Consequence:</strong> CUL-1911 builds the tab, Edit profile and the condition form; the medicines card waits for the revamp's rows.</p></div></div>
+    <div class="brief"><div class="bid">F1<small>faithful</small></div><div>
+      <p><strong>Links speak the action colour.</strong> Change photo, + Add, Log a weigh-in, Log a dose, Change, Set date and both forms' Save move from the teal ink to <code>action.onLight</code> (indigo), per the ruled roles (#1294): teal is a good fact, never a control. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F2<small>faithful</small></div><div>
+      <p><strong>Every hand built button onto <code>PrimaryButton</code>.</strong> Edit profile, Add a pet and Archive become <code>secondary</code> with a button role (Edit profile has none today); the archive sheet's black Archive becomes <code>destructiveFilled</code> (an irreversible looking commit; it is reversible, so see P7). Typed 8, 13 and 52pt paddings leave. <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F3<small>faithful</small></div><div>
+      <p><strong>Both forms onto the kit:</strong> <code>Header</code> with Cancel leading and Save trailing (today two hand rolled bars with typed 16 and 17pt type); every raw <code>TextInput</code> onto <code>TextField</code> with its own label; Species and Sex onto <code>ChipGroup</code> (a radio group; today three <code>FilterChip</code>s with no radio role); Breed and Date of birth onto one picker row part. Save waits disabled with its reason (C-7). <span class="rec">Recommended.</span></p>
+      <p><strong>Gate:</strong> the picker row (a value, a placeholder, a trailing Change) is drawn twice per form and has no kit part: <code>new: PickerRow</code>. <span class="rec">Recommended:</span> add it (four uses).</p></div></div>
+    <div class="brief"><div class="bid">F4<small>faithful</small></div><div>
+      <p><strong>Waits onto the house rule:</strong> the section spinners become <code>Skeleton</code> rows; the photo upload and the forms' Save become the <code>Tick</code>; <code>WhorlSpinner</code> leaves this tab (retiring, CUL-1593). <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F5<small>faithful</small></div><div>
+      <p><strong>Typed values leave for the scale.</strong> The 112pt photo, 38pt initials, the 3pt fact gap, the 6pt condition gaps, the 5pt progress bar, 19pt line height and 12pt status labels, 29 type sizes across the two forms (the audit, CUL-1893). <span class="rec">Recommended.</span> Where a size has no token (112, 38) it is drawn as a sum of tokens and named in its tag.</p></div></div>
+    <div class="brief"><div class="bid">F6<small>faithful</small></div><div>
+      <p><strong>The Current medications card, tokens only:</strong> its links take the action colour (F1), "End" keeps <code>colorDestructive</code>, the progress bar takes <code>space0_75</code>, the refusal flag keeps the concern wash (a refusal can be a disease signal; it stays as loud). Nothing else moves; the revamp redraws it (S1). <span class="rec">Recommended.</span></p></div></div>
+    <div class="brief"><div class="bid">F7<small>faithful</small></div><div>
+      <p><strong>The condition's status chips onto <code>ChipGroup</code>.</strong> Today two hand built chips carry a label and an 11pt description each, and the chosen one goes near black. The kit chip carries one line, so the faithful column shows the chosen status's description as one caption under the group ("Currently affecting the pet", verbatim). <span class="rec">Recommended.</span> P6 names the pet in it.</p></div></div>
+    <div class="brief"><div class="bid">F8<small>faithful</small></div><div>
+      <p><strong>The empty page uses <code>EmptyState</code> and the tab's own cards</strong> (§02); the three empty lines (conditions, medicines, weight) keep their copy. <span class="rec">Recommended.</span></p></div></div>
+
+    <div class="brief"><div class="bid">P1<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the shape of the pet's identity. <strong>(A)</strong> As today: a centred card, 112pt photo, Change photo, the name, species and breed, an outlined Edit profile. <strong>(B) An identity row on the page's ground:</strong> a 96pt photo left, the name (the switcher, with two pets) and one fact line right, Edit profile as a text link under them; the photo itself is the button that changes it. <span class="rec">Recommended (B):</span> the first record fact rises onto the first screen (§16), the name and photo read as a person's page rather than a settings card, and "Change photo" stops being a third control around one picture.</p>
+      <p><strong>Consequence:</strong> at 320pt and the largest text the row stacks (§13, §14). The photo's button gets a label naming the pet and what it does (§15).</p></div></div>
+    <div class="brief"><div class="bid">P2<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the three cell facts row (Age, Sex, Weight). <strong>(A)</strong> As today. <strong>(B) Age and sex join the identity line</strong> ("Dog · Labrador Retriever · 4yr 2mo · Male"); weight leaves the row because the Weight card directly under it already says it, with its date. An unknown sex is left out rather than shown as "—". <span class="rec">Recommended (B):</span> one weight on screen instead of two (the row's has no date; the card's does), and three cells and a divider become one line.</p>
+      <p><strong>Direction:</strong> neither. The profile weight still shows, in the Weight card, labelled "From Biscuit's profile" when no weigh-in exists (§02).</p></div></div>
+    <div class="brief"><div class="bid">P3<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> how a condition row acts. <strong>(A)</strong> As today: 11pt underlined Edit · Resolve under a badge, raw dot separators. <strong>(B) The row is a door:</strong> the whole row opens Edit condition (<code>DoorMark</code> ›), and <b>Mark resolved</b> lives at the foot of that form, opening today's confirm word for word. <span class="rec">Recommended (B):</span> one 44pt target per row instead of two small ones sharing reach, and the one action that removes the row from the tab moves one step further from a stray tap.</p>
+      <p><strong>Direction:</strong> neither. "Mark resolved" keeps its confirm and its line that a resolved condition still appears in vet reports.</p></div></div>
+    <div class="brief"><div class="bid">P4<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> where the diet trial's door sits while a trial runs. <strong>(A)</strong> As today: under the medicines, above the vet report. <strong>(B) Directly under the identity,</strong> above Weight, while a trial runs or is in its grace; the start card (no trial) stays where it is. <span class="rec">Recommended (B):</span> the trial is the wedge, and for an owner in one it is the reason they open this tab. The row itself is the trial track's, unchanged.</p>
+      <p><strong>Direction:</strong> LOUD (the trial's alert lines, when it has any, move up the page).</p></div></div>
+    <div class="brief"><div class="bid">P5<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the condition's status badge colour. <strong>(A)</strong> As today: Active on the concern wash, Monitoring on teal. <strong>(B) Monitoring on the muted badge;</strong> Active unchanged. <strong>(C)</strong> Monitoring on the attention wash. <span class="rec">Recommended (B):</span> under the ruled roles teal says "good", and "under observation" is not good news; muted says neither good nor alarming, which is what monitoring is. (C) would make every watched condition look like something to act on.</p>
+      <p><strong>Direction:</strong> LOUD against today (it stops reading as an all clear).</p></div></div>
+    <div class="brief"><div class="bid">P6<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the condition form's words. <strong>(A)</strong> As today: "Currently affecting the pet", "Under observation", "Diagnosed (optional)", "Not known". <strong>(B) Name the pet:</strong> the status caption says "Currently affecting Biscuit" / "Being watched, not treated", and the header says "Add a condition for Biscuit". <span class="rec">Recommended (B):</span> with two pets the form never says whose record it writes to (§06), and a record surface names its pet (C-9). nyx-voice read at build.</p></div></div>
+    <div class="brief"><div class="bid">P7<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the archive confirm's commit. <strong>(A)</strong> Faithful: <code>destructiveFilled</code> (red). <strong>(B) <code>primary</code> (near black), as today's colour,</strong> on <code>PrimaryButton</code>. <span class="rec">Recommended (B):</span> archiving is reversible and the sheet says so ("You can bring him back anytime"); red is for the irreversible commit. The faithful column draws (A) because the kit rule names it; this brief asks you to keep today's register.</p></div></div>
+    <div class="brief"><div class="bid">P8<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> what a failed or offline save says. <strong>(A)</strong> As today: an alert, "Could not save / Something went wrong. Try again." <strong>(B) Inline, and said before:</strong> offline, a quiet band at the top of the form ("You're offline. Changes to Biscuit's profile save once you're back.") and Save disabled with that reason; a failed save keeps every typed value and says so in the band ("Couldn't save. Your changes are still here."). <span class="rec">Recommended (B):</span> both forms write straight to the server (no local queue), so offline can only fail; the owner should know before they type, not after.</p></div></div>
+    <div class="brief"><div class="bid">P9<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> what the weight field in Edit profile says. <strong>(A)</strong> As today: "Weight (lbs)", a bare field. <strong>(B) One line under it:</strong> "This is Biscuit's profile weight. To track a change over time, log a weigh-in." <span class="rec">Recommended (B):</span> editing this number writes no weigh-in, so the Weight card's trend never sees it; an owner who corrects the weight here believes they logged one.</p>
+      <p><strong>Direction:</strong> LOUD (it sends the owner to the record that the trend reads).</p></div></div>
+    <div class="brief"><div class="bid">P10<small>design pass</small></div><div>
+      <p><strong>Deciding:</strong> the page's foot. <strong>(A)</strong> Faithful: Add a pet and Archive Biscuit as two outlined buttons. <strong>(B) Two quiet text rows under a hairline</strong> (<code>new: PrimaryButton plain variant</code>, shared with the capture round's P-series). <span class="rec">Recommended (B):</span> the comment in the code already says these are a rare lifecycle moment "styled to recede"; outlined buttons are the loudest thing at the foot. The plain variant is already a gate on CUL-1910, so this adds no new part.</p></div></div>
+
+    <div class="brief"><div class="bid">D-1<small>defect · live</small></div><div>
+      <p><strong>A failed read after a pet switch shows the previous pet's rows.</strong> The name is the switcher and the page changes in place; when the new pet's conditions or medicines read fails, neither list is cleared, so Biscuit's rows sit under "Mochi". "Log a dose" then writes a dose for Mochi linked to Biscuit's course (a local first write, so it succeeds offline), and "Resolve" resolves Biscuit's condition. A first load failure shows the empty state over a read that never answered (C-12). Filed as one class, Live harm: <a href="https://linear.app/projectnyx/issue/CUL-2174">CUL-2174</a>.</p>
+      <p><strong>Options:</strong> <strong>(A) Key every list to the pet it was read for</strong> (clear on switch, like the vet visits card) and give a failed read error plus retry. <strong>(B)</strong> (A) plus a server same pet guard on a dose's course (a migration, its own PR). <span class="rec">Recommended (A)</span> now, in its own fix row (no ruling needed); (B) as the backstop. <strong>Direction:</strong> QUIET today; (A) adds nothing quieter.</p></div></div>
+  </div>
+</section>
+
+<section class="state" id="lenses">
+  <div class="sec-head"><span class="sec-id">§19</span><h2>The lenses</h2></div>
+  <div class="lens">
+    <div class="box"><h3>Jordan (diet trial dog)</h3><p>The trial is why I'm on this tab. P4 puts it under Biscuit's name instead of after his pills. P9 would have stopped me thinking I'd logged his weigh-in when I'd only fixed a typo.</p></div>
+    <div class="box"><h3>Sam (two cats)</h3><p>§05 today is the scary one: I switch to Mochi on a bad signal and see Biscuit's pills under her name. P6 tells me whose condition I'm adding.</p></div>
+    <div class="box"><h3>Designer</h3><p>Principles 3, 5, 8, 9 checked per frame. The pass adds no card language; it removes one card (the facts row) and one control (Change photo). Open parts: <code>new: PickerRow</code> (F3), the plain button variant (P10, already gated).</p></div>
+    <div class="box"><h3>Dr. Chen</h3><p>No frame changes what reaches the report. P5 stops "Monitoring" reading as good news. The refusal flag on a medicine stays on the concern wash. The resolve confirm keeps its line that a resolved condition stays in the report.</p></div>
+    <div class="box"><h3>QA</h3><p>State set in §17; the real payload is the one gap and it is named. 44pt floors held at 320pt; largest text stacks without clipping in the pass column (§14). D-1 is reproducible from the code path, not yet on a phone.</p></div>
+    <div class="box"><h3>Trust &amp; Safety</h3><p>D-1 is a wrong pet surface with a write behind it; it is filed live. Nothing on this page changes what is sent or stored. The photo stays on the pet's own Storage path.</p></div>
+  </div>
+</section>
+
+<footer class="end">Round 1 · drawn 2026-10-23 for CUL-1989 · colours from <code>docs/mockups/theme.css</code> (generated from <code>constants/theme.ts</code>) · supersedes nothing.</footer>
+</div>
+<script>
+(function () {
+  'use strict';
+  // ── copy, verbatim from the shipped modules (fixture values marked) ──
+  var PETS = {
+    Biscuit: { sp: 'Dog', breed: 'Labrador Retriever', age: '4yr 2mo', sex: 'Male', w: '62.4 lbs', ini: 'BI', him: 'him', his: 'His', he: 'he' },
+    Mochi: { sp: 'Cat', breed: 'Domestic Shorthair', age: '~6yr', sex: 'Female', w: '9.8 lbs', ini: 'MO', him: 'her', his: 'Her', he: 'she' }
+  };
+  var EMPTY_COND = function (p) { return 'No conditions on file yet. Add anything ' + p + ' has been diagnosed with, like allergies or a sensitive stomach.'; };
+  var EMPTY_MED = 'No medications yet. Add a regimen once and logging each dose becomes a single tap.';
+  var W_SNAP = function (p) { return 'From ' + p + "'s profile. Log a weigh-in to start tracking changes over time."; };
+  var REPORT = function (p) { return 'A clinical summary of ' + p + '’s symptoms, diet, and trends — view it here, then send it to your vet as a PDF.'; };
+  var VV_EMPTY = function (p) { return p + '’s next appointment, what each visit changed, and everything to bring.'; };
+  var TRIAL_FWD = function (p, him) { return 'If ' + p + '’s vet has put ' + him + ' on an elimination diet, tell Culprit — it keeps the dated record your vet will ask for at the recheck.'; };
+  var ARCH_BODY = function (P) { return P.his + ' history stays safe, and ' + P.he + ' comes off your pet list. You can bring ' + P.him + ' back anytime from Archived pets.'; };
+  var ARCH_SUB = 'Their history stays safe. Bring a pet back anytime and everything picks up where it left off.';
+  var DOB_NOTE = 'Estimated from age — pick a date to set an exact birthday.';
+  // design pass copy (briefed; nyx-voice read at build)
+  var P_W_NOTE = function (p) { return 'This is ' + p + "'s profile weight. To track a change over time, log a weigh-in."; };
+  var P_OFFLINE = function (p) { return "You're offline. Changes to " + p + "'s profile save once you're back."; };
+  var P_FAILED = "Couldn't save. Your changes are still here.";
+  var READ_FAIL = function (p, what) { return "Couldn't load " + p + "'s " + what + '.'; };
+
+  function k(kit) { return ' data-kit="' + kit.replace(/"/g, '&quot;') + '"'; }
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  var T = function (c) { return c === 'today'; };
+
+  // ── phone pieces ──
+  function statusBar() { return '<div class="sb"' + k('system status bar') + '><span>7:54</span><span>●●● ▮</span></div>'; }
+  function homeInd() { return '<div class="homeind"' + k('system home indicator') + '><i></i></div>'; }
+  function shell(inner, o) {
+    o = o || {};
+    return '<div class="ph ' + (o.cls || '') + '"' + k('device · 390 × 844pt' + (o.cls && o.cls.indexOf('w320') > -1 ? ' (320pt)' : '')) + '>' + statusBar() + inner + homeInd() + '</div>';
+  }
+  function scr(inner, ground) { return '<div class="scr' + (ground ? ' ground' : '') + '">' + inner + '</div>'; }
+  function link(col, label, o) {
+    o = o || {};
+    var al = o.align ? ' style="justify-content:' + o.align + '"' : '';
+    if (T(col)) return '<div class="lnk tMD cPos"' + al + k('drift: TouchableOpacity text · colorAccentInk (teal as a control)' + (o.norole ? ', no button role' : '')) + '>' + label + '</div>';
+    return '<div class="lnk tMD cAct"' + al + k('text link · action.onLight (colorAction), hitTarget, button role') + '>' + label + '</div>';
+  }
+  function btn(col, label, variant, todayKit) {
+    if (T(col) && todayKit) {
+      var cls = variant === 'dark' ? 'btn tMD' : 'btn sec tSM';
+      return '<div class="' + cls + '"' + k('drift: ' + todayKit) + '>' + label + '</div>';
+    }
+    var map = {
+      primary: ['btn tMD', 'PrimaryButton primary · colorNeutralDark, colorTextOnDark, radiusMedium'],
+      secondary: ['btn sec tMD', 'PrimaryButton secondary · colorBorder, colorTextSecondary, radiusMedium'],
+      dfill: ['btn tMD', 'PrimaryButton destructiveFilled · colorDestructive, colorTextOnDark'],
+      plain: ['btn plain tMD', 'new: PrimaryButton plain variant · colorTextSecondary, hitTarget']
+    };
+    var m = map[variant] || map.primary;
+    var st = variant === 'dfill' ? ' style="background:var(--colorDestructive)"' : '';
+    return '<div class="' + m[0] + '"' + st + k(m[1]) + '>' + label + '</div>';
+  }
+  function sectionLabel(t) { return '<div class="label"' + k('SectionLabel · textXS, weightMedium, trackingWidest, colorTextSecondary') + '>' + t + '</div>'; }
+  function whorl() { return '<div style="align-self:center;padding:calc(var(--space2) * var(--k)) 0"' + k('drift: WhorlSpinner sm (retiring, CUL-1593)') + '><div class="whorl"></div></div>'; }
+  function skel(n) {
+    var out = '<div class="blk" aria-hidden="true"' + k('Skeleton rows · colorChartEmpty, hidden from assistive tech') + '>';
+    for (var i = 0; i < n; i++) out += '<div class="sil line" style="width:' + (i % 2 ? 46 : 78) + '%"></div>';
+    return out + '</div>';
+  }
+  function tick(label) { return '<div style="display:flex;align-items:center;gap:calc(var(--space1) * var(--k))"' + k('Tick · colorBorderStrong, the one loop, named') + '><span class="tick"></span><span class="tSM c2">' + label + '</span></div>'; }
+  function failBand(col, p, what) {
+    return '<div class="band quiet"' + k('quiet band · colorSurfaceSubtle, colorBorder (C-12: error + retry, never the empty state)') + '><span class="tSM cP">' + READ_FAIL(p, what) + '</span><span class="lnk tSM cAct" style="justify-content:flex-start"' + k('text link · action.onLight, hitTarget') + '>Try again</span></div>';
+  }
+  function avatar(col, o, size) {
+    var s = size === 96 ? ' s96' : '';
+    var P = PETS[o.pet];
+    var tag;
+    if (o.photo === 'none') {
+      if (col === 'pass') return '<div class="av add' + s + '"' + k('new: PhotoSlot add · colorSurfaceSubtle, dashed colorBorderStrong, action ink; the button IS the photo') + '><span class="cam"></span><span class="tXS wM">Add photo</span></div>';
+      tag = T(col) ? 'drift: initials disc · 112 literal, fontSize 38 literal, colorNeutralDark' : 'PetAvatar initials · (space6 + space5), textOnDark';
+      return '<div class="av ini' + s + '"' + k(tag) + '>' + P.ini + '</div>';
+    }
+    tag = T(col) ? 'drift: Image · 112×112 literal, borderRadius 56 literal' : col === 'pass' ? 'PetAvatar photo · (space6 + space4), radiusFull, button: opens photo options' : 'PetAvatar photo · (space6 + space5), radiusFull';
+    var ovl = '';
+    if (o.photo === 'uploading') ovl = T(col) ? '<span class="ovl"' + k('drift: photoOverlay · colorScrimPhoto, WhorlSpinner md (retiring)') + '><span class="whorl" style="border-color:var(--colorTextOnDark);border-right-color:transparent"></span></span>' : '<span class="ovl"' + k('overlay · colorScrimPhoto, Tick on colorTextOnDark') + '><span class="tick"></span></span>';
+    return '<div class="av pic' + s + '"' + k(tag) + '>' + ovl + '</div>';
+  }
+
+  // ── the tab's parts ──
+  function identity(col, o) {
+    var P = PETS[o.pet];
+    var name = '<div class="namerow' + (col === 'pass' ? ' left' : '') + '"' + k(o.multi ? 'name as switcher · button, hitTarget, ChevronDown HEADER_CHEVRON_SIZE' : 'name row · hitTarget') + '><span class="t2XL wM cDark" style="min-width:0;overflow-wrap:anywhere">' + o.pet + '</span>' + (o.multi ? '<i class="chev" aria-hidden="true"></i>' : '') + '</div>';
+    if (col === 'pass') {
+      var facts = [P.sp, P.breed, P.age].concat(P.sex === 'Unknown' ? [] : [P.sex]).join(' · ');
+      return '<div class="idrow"' + k('new: IdentityRow · on the ground, space2 gap (P1)') + '>' + avatar(col, o, 96) +
+        '<div class="blk" style="flex:1">' + name +
+        '<span class="tMD c2"' + k('ThemedText body · textMD, colorTextSecondary · one fact line (P2)') + '>' + facts + '</span>' +
+        (o.photo === 'uploading' ? tick('Saving the photo…') : '') +
+        '<div class="lnk tMD cAct" style="justify-content:flex-start"' + k('text link · action.onLight, hitTarget, label "Edit ' + o.pet + '\'s profile"') + '>Edit profile</div></div></div>';
+    }
+    var sub = P.sp + ' · ' + P.breed;
+    var html = '<div class="card idcard"' + k(T(col) ? 'Card · colorSurface, colorBorder, radiusMedium, paddingVertical space4' : 'Card · colorSurface, colorBorder, radiusMedium') + '>' + avatar(col, o) +
+      (T(col) ? '<div class="tSM wM cPos" style="min-height:calc(var(--hitTarget) * var(--k));display:flex;align-items:center"' + k('drift: photoLabel · colorAccentInk (teal as a control), hitSlop 8') + '>' + (o.photo === 'none' ? 'Add photo' : 'Change photo') + '</div>'
+        : '<div class="lnk tSM cAct"' + k('text link · action.onLight, hitTarget') + '>' + (o.photo === 'none' ? 'Add photo' : 'Change photo') + '</div>') +
+      name + '<span class="tMD c2 ctr"' + k('ThemedText · textMD, colorTextSecondary') + '>' + sub + '</span>' +
+      (T(col) ? '<div class="btn sec tSM" style="padding:calc(var(--space1) * var(--k)) calc(var(--space2) * var(--k));border-radius:calc(var(--radiusSmall) * var(--k))"' + k('drift: TouchableOpacity editBtn · paddingVertical 8 literal, no button role') + '>Edit profile</div>'
+        : '<div style="align-self:stretch">' + btn(col, 'Edit profile', 'secondary') + '</div>') + '</div>';
+    html += '<div class="card np"' + k(T(col) ? 'Card noPadding · infoRow' : 'Card noPadding · three facts') + '><div class="irow">' +
+      [['Age', P.age], ['Sex', P.sex === 'Unknown' ? '—' : P.sex], ['Weight', o.noweight ? '—' : P.w]].map(function (f, i) {
+        return (i ? '<span class="idiv"></span>' : '') + '<div class="icell"' + k(T(col) ? 'drift: infoChip · gap 3 literal' : 'fact cell · gap spaceMicro') + '><span class="label">' + f[0] + '</span><span class="tMD wM cDark">' + f[1] + '</span></div>';
+      }).join('') + '</div></div>';
+    return html;
+  }
+  function weight(col, o) {
+    var P = PETS[o.pet], body;
+    if (o.loading) body = T(col) ? whorl() : skel(2);
+    else if (o.empty) body = '<div class="blk"><span class="wval cP">' + P.w.replace(' lbs', '') + '<span class="tMD c2"> lbs</span></span><span class="tSM c2">' + W_SNAP(o.pet) + '</span></div>';
+    else body = '<div class="wrow"><span class="wval cP">' + P.w.replace(' lbs', '') + '<span class="tMD c2"> lbs</span></span><svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"' + k('Sparkline · colorTextTertiary') + '><polyline points="0,8 20,10 40,14 60,18 80,22 100,26"/></svg></div>' +
+      '<span class="tSM c2"' + k('DeltaLine · textSM, colorTextSecondary, ArrowDown 14') + '>↓ Down 0.4 lbs since Sep 12</span>' +
+      '<span class="tSM c2" style="display:flex;justify-content:space-between;min-height:calc(var(--hitTarget) * var(--k));align-items:center"' + k('ReadingsLink · hitTarget, ChevronRight 14') + '><span>Last weighed Oct 20 · 6 readings</span><span class="c3">›</span></span>';
+    return '<div class="card"' + k('WeightTrendCard · Card, gap space1 (unchanged but its link)') + '><span class="tSM wM c2">Weight</span>' + body + link(col, 'Log a weigh-in', { align: 'flex-start' }) + '</div>';
+  }
+  var CONDS = [
+    { n: 'Food sensitivity', d: 'Mar 2026', s: 'Active' },
+    { n: 'Atopic dermatitis', d: null, s: 'Monitoring' }
+  ];
+  function badge(col, s) {
+    if (s === 'Active') return '<span class="badge sym"' + k('Badge symptom · colorEventSymptomLight, colorEventSymptomInk') + '>Active</span>';
+    if (col === 'pass') return '<span class="badge mut"' + k('Badge muted · colorNeutralLight, colorTextSecondary (P5)') + '>Monitoring</span>';
+    return '<span class="badge acc"' + k('Badge accent · colorAccentLight, colorAccentInk (teal reads as good, P5)') + '>Monitoring</span>';
+  }
+  function conditions(col, o) {
+    var add = T(col) ? '<span class="tMD wM cPos"' + k('drift: sectionAction "+ Add" · colorAccentInk, hitSlop 8, no button role') + ' style="min-height:calc(var(--hitTarget) * var(--k));display:inline-flex;align-items:center">+ Add</span>'
+      : '<span class="tMD wM cAct"' + k('text link · action.onLight, hitTarget, label "Add a condition"') + ' style="min-height:calc(var(--hitTarget) * var(--k));display:inline-flex;align-items:center">' + (col === 'pass' ? 'Add' : '+ Add') + '</span>';
+    var html = '<div class="card"' + k('Card · Conditions, gap space2') + '><div class="sechd"><span class="tMD wM cDark"' + k('section title · textMD, weightMedium (heading role in pass)') + '>Conditions</span>' + add + '</div>';
+    if (o.loading) html += T(col) ? whorl() : skel(3);
+    else if (o.failed && col !== 'today') html += failBand(col, o.pet, 'conditions');
+    else if (o.empty) html += '<span class="tSM c2"' + k('ThemedText empty · textSM, lineHeightBody') + '>' + EMPTY_COND(o.pet) + '</span>';
+    else CONDS.forEach(function (c) {
+      if (col === 'pass') {
+        html += '<div class="drow"' + k('new: DoorRow · whole row opens Edit condition, DoorMark ›, hitTarget (P3)') + '><div class="ci"><span class="tMD wM cP">' + c.n + '</span>' + (c.d ? '<span class="tXS c2">Diagnosed ' + c.d + '</span>' : '') + '</div>' + badge(col, c.s) + '<span class="door"' + k('DoorMark ›') + '>›</span></div>';
+      } else {
+        var lk = T(col) ? 'tXS c2 ul' : 'tXS c2 ul';
+        html += '<div class="crow"' + k(T(col) ? 'drift: conditionRow · Divider, gap 6 literal' : 'row · Divider, gap space0_75') + '><div class="ci"><span class="tMD wM cP">' + c.n + '</span>' + (c.d ? '<span class="tXS c2">Diagnosed ' + c.d + '</span>' : '') + '</div><div class="cr">' + badge(col, c.s) +
+          '<div class="acts"' + k(T(col) ? 'drift: Edit · Resolve, textXS underline, raw "·" Text nodes' : 'text links · textXS, hitTarget, label names the condition') + '><span class="' + lk + '">Edit</span><span class="tXS" style="color:var(--colorBorder)">·</span><span class="' + lk + '">Resolve</span></div></div></div>';
+      }
+    });
+    return html + '</div>';
+  }
+  function meds(col, o) {
+    var add = T(col) ? '<span class="tMD wM cPos"' + k('drift: sectionAction · colorAccentInk, no button role') + ' style="min-height:calc(var(--hitTarget) * var(--k));display:inline-flex;align-items:center">+ Add</span>'
+      : '<span class="tMD wM cAct"' + k('text link · action.onLight, hitTarget') + ' style="min-height:calc(var(--hitTarget) * var(--k));display:inline-flex;align-items:center">+ Add</span>';
+    var html = '<div class="card"' + k(col === 'pass' ? 'Card · Current medications · the medication revamp\'s (S1): faithful moves only' : 'Card · Current medications') + '><div class="sechd"><span class="tMD wM cDark">Current medications</span>' + add + '</div>';
+    if (o.loading) html += T(col) ? whorl() : skel(3);
+    else if (o.failed && col !== 'today') html += failBand(col, o.pet, 'medicines');
+    else if (o.empty) html += '<span class="tSM c2">' + EMPTY_MED + '</span>';
+    else {
+      html += '<div class="medrow"' + k(T(col) ? 'drift: medRow · gap 4 literal' : 'row · gap space0_5') + '><span class="tLG wM cDark">Apoquel</span><span class="tSM c2">16 mg · Oral · Once a day</span><span class="tSM c2">Day 12 of 30</span>' +
+        '<div class="prog"' + k(T(col) ? 'drift: progressTrack · height 5, radius 3 literal' : 'progress · space0_75, colorChartEmpty, colorAccent') + '><i style="width:92%"></i></div>' +
+        '<span class="tSM c2">92% given · 11 of 12 doses</span><span class="tSM c2">For itchy skin</span><span class="tSM c2">Prescribed by Dr. Okafor</span>' +
+        '<div class="acts"' + k(T(col) ? 'drift: Log a dose (colorAccentInk) · Edit · End (colorDestructive), raw "·"' : 'text links · Log a dose action.onLight · Edit · End colorDestructive') + '><span class="tXS wM ' + (T(col) ? 'cPos ul' : 'cAct ul') + '">Log a dose</span><span class="tXS" style="color:var(--colorBorder)">·</span><span class="tXS c2 ul">Edit</span><span class="tXS" style="color:var(--colorBorder)">·</span><span class="tXS cDes ul">End</span></div></div>';
+    }
+    if (col === 'pass') html += '<span class="tXS c3"' + k('page note, not app copy') + '>The revamp redraws this card (S1).</span>';
+    return html + '</div>';
+  }
+  function trialDoor() {
+    return '<div class="card c2"' + k('TrialDoorRow · the trial track\'s, unchanged (fixture lines)') + '><div class="drow" style="border-top:0;padding:0"><div class="ci"><span class="tMD wM cP">Diet trial · day 18 of 56</span><span class="tSM c2">Salmon &amp; Rice · 17 of 18 days logged</span></div><span class="door">›</span></div></div>';
+  }
+  function trialStart(col, o) {
+    var P = PETS[o.pet];
+    return '<div class="card"' + k('DietTrialCard no_trial · the trial track\'s, unchanged') + '>' + sectionLabel('Diet trial') + '<span class="tMD wM cP">No trial running.</span><span class="tSM c2">' + TRIAL_FWD(o.pet, P.him) + '</span>' + btn('faith', 'Start a diet trial', 'secondary') + '</div>';
+  }
+  function pastMeds() {
+    return '<div class="card c2"' + k('PastMedicationsSection · collapsed, unchanged') + '><div class="drow" style="border-top:0;padding:0"><div class="ci"><span class="tMD wM cP">Past medications</span></div><span class="tSM c2">2</span><span class="door">›</span></div></div>';
+  }
+  function report(col, o) {
+    return '<div class="card"' + k('Card · Vet report') + '><span class="tMD wM cDark">Vet report</span><span class="tSM c2">' + REPORT(o.pet) + '</span>' + btn('faith', 'Open vet report', 'primary') + '</div>';
+  }
+  function visits(col, o) {
+    if (o.empty) return '<div class="card"' + k('VetVisitsCard empty · unchanged') + '><span class="tMD wM cDark">Vet visits</span><span class="tSM c2">' + VV_EMPTY(o.pet) + '</span>' + btn('faith', 'Add the next visit', 'secondary') + btn('faith', 'Log a visit that already happened', 'secondary') + '</div>';
+    return '<div class="card"' + k('VetVisitsCard · unchanged (fixture lines)') + '><div class="sechd"><span class="tMD wM cDark">Vet visits</span><span class="tSM c2">2 visits</span></div><span class="tSM c2">Recheck with Dr. Okafor · Tue, Nov 4</span>' + btn('faith', 'Open visits', 'secondary') + '</div>';
+  }
+  function foot(col, o) {
+    if (col === 'pass') return '<div class="foot hl"' + k('lifecycle rows · hairline, quiet (P10)') + '>' + (o.multi ? '' : btn(col, 'Add a pet', 'plain')) + btn(col, 'Archive ' + o.pet, 'plain') + '</div>';
+    if (T(col)) return (o.multi ? '' : '<div class="btn sec tSM"' + k('drift: addPetBtn · paddingVertical 13 literal') + '>Add a pet</div>') + '<div class="btn sec tSM c3"' + k('drift: archiveBtn · paddingVertical 13 literal, colorTextTertiary') + '><span class="c3">Archive ' + o.pet + '</span></div>';
+    return (o.multi ? '' : btn(col, 'Add a pet', 'secondary')) + btn(col, 'Archive ' + o.pet, 'secondary');
+  }
+  function tab(col, o) {
+    o.pet = o.pet || 'Biscuit';
+    o.photo = o.photo || 'pic';
+    var parts = [];
+    if (o.onlyTop) {
+      parts.push(identity(col, o));
+      if (o.withCond) parts.push(conditions(col, o));
+    } else if (col === 'pass') {
+      parts.push(identity(col, o));
+      if (o.trial === 'running') parts.push(trialDoor());
+      parts.push(weight(col, o), conditions(col, o), meds(col, o));
+      if (!o.empty && !o.loading) parts.push(pastMeds());
+      if (o.trial !== 'running') parts.push(trialStart(col, o));
+      parts.push(report(col, o), visits(col, o), foot(col, o));
+    } else {
+      parts.push(identity(col, o));
+      if (o.widget) parts.push('<span class="tXS c3" style="padding:0 calc(var(--space1) * var(--k))"' + k('widgetSlotLine · textXS, colorTextTertiary') + '>Home Screen widget · Pet 1</span>');
+      parts.push(weight(col, o), conditions(col, o), meds(col, o));
+      if (!o.empty && !o.loading) parts.push(pastMeds());
+      parts.push(o.trial === 'running' ? trialDoor() : trialStart(col, o));
+      parts.push(report(col, o), visits(col, o), foot(col, o));
+    }
+    if (o.wrongPet && T(col)) {
+      // today's failure: the previous pet's rows under the new pet's name (D-1)
+    }
+    return scr('<div class="stack"' + k('ScrollView · colorNeutralLight, padding space3, gap space2') + '>' + parts.join('') + '</div>', true);
+  }
+
+  // ── the forms ──
+  function mhd(col, title, save, o) {
+    o = o || {};
+    if (T(col)) return '<div class="mhd"' + k('drift: hand rolled header · paddingVertical space2, fontSize 16/17 literal') + '><span class="tMD c2">Cancel</span><span class="ti tLG">' + title + '</span><span class="tMD wM cPos"' + (o.dis ? ' style="opacity:var(--opacityDisabled)"' : '') + k('drift: Save · colorAccentInk, opacityDisabled, no reason') + '>' + (o.saving ? '<span class="whorl"></span>' : save) + '</span></div>';
+    return '<div class="mhd"' + k('Header · left Cancel, right action, colorSurface, colorBorder') + '><span class="tMD c2"' + k('Header left · Cancel') + '>Cancel</span><span class="ti tLG"' + k('Header title · textLG') + '>' + title + '</span><span class="tMD wM ' + (o.dis ? 'c3' : 'cAct') + '"' + k(o.dis ? 'Header right · disabled, reason in label (C-7): "' + save + ', ' + (o.reason || 'add a name first') + '"' : 'Header right · action.onLight') + '>' + (o.saving ? '<span class="tick"></span>' : save) + '</span></div>';
+  }
+  function input(col, label, value, ph, o) {
+    o = o || {};
+    if (T(col)) return (o.raw ? '<div class="label flab"' + k('drift: label · fontSize 12, letterSpacing 0.6 literal') + '>' + label + '</div>' : '<div class="flab">' + sectionLabel(label) + '</div>') +
+      '<div class="inp' + (o.focus ? ' focus' : '') + ' tMD ' + (value ? 'cP' : 'c2') + '"' + k('drift: raw TextInput · paddingVertical 12, fontSize 16 literal, colorNeutralLight') + '>' + (value || ph) + '</div>';
+    return '<div class="fgrp"' + k('TextField · label, colorBorder, radiusSmall, space5 min, focus colorAction') + '><span class="fieldlab">' + label + '</span><div class="field' + (o.focus ? ' focus' : '') + ' tMD ' + (value ? 'cP' : 'c3') + '">' + (value || ph) + '</div>' + (o.note ? o.note : '') + '</div>';
+  }
+  function picker(col, label, value, ph, action) {
+    if (T(col)) return '<div class="flab">' + sectionLabel(label) + '</div><div class="fbtn"' + k('drift: TouchableOpacity fieldBtn · paddingVertical 12, fontSize 16/14 literal') + '><span class="tMD ' + (value ? 'cP' : 'c2') + '">' + (value || ph) + '</span><span class="tSM wM cPos">' + action + '</span></div>';
+    return '<div class="fgrp"><span class="fieldlab">' + label + '</span><div class="fbtn tok"' + k('new: PickerRow · colorSurface, colorBorder, radiusSmall, space5 min, trailing action.onLight') + '><span class="tMD ' + (value ? 'cP' : 'c3') + '">' + (value || ph) + '</span><span class="tSM wM cAct">' + action + '</span></div></div>';
+  }
+  function chips(col, label, opts, on) {
+    if (T(col)) return '<div class="flab">' + sectionLabel(label) + '</div><div class="chiprow"' + k('drift: chipRow · FilterChip filled ×' + opts.length + ', flex 1, no radio role') + '>' + opts.map(function (x) { return '<span class="chip tSM ' + (x === on ? 'on-filled' : '') + '">' + x + '</span>'; }).join('') + '</div>';
+    return '<div class="fgrp"><span class="fieldlab">' + label + '</span><div class="chips"' + k('ChipGroup · radiogroup "' + label + '", selected role colorAction on colorTextOnNight') + '>' + opts.map(function (x) { return '<span class="chip tSM ' + (x === on ? 'on-sel' : '') + '">' + x + '</span>'; }).join('') + '</div></div>';
+  }
+  function clearLink(col) {
+    if (T(col)) return '<span class="tSM c2 ul" style="margin-top:calc(var(--space0_75) * var(--k))"' + k('drift: clearBtn · fontSize 13, marginTop 6 literal, hitSlop 8') + '>Clear date</span>';
+    return '<div class="lnk tSM c2" style="justify-content:flex-start"' + k('text link · colorTextSecondary, hitTarget') + '>Clear date</div>';
+  }
+  function editPet(col, o) {
+    o = o || {};
+    var p = o.pet || 'Biscuit', P = PETS[p];
+    var band = '';
+    if (col === 'pass' && o.offline) band = '<div class="band quiet"' + k('quiet band · colorSurfaceSubtle, colorBorder, useIsOnline (P8)') + '><span class="tSM cP">' + P_OFFLINE(p) + '</span></div>';
+    if (col === 'pass' && o.failed) band = '<div class="band quiet"' + k('quiet band · colorSurfaceSubtle, colorBorder (P8)') + '><span class="tSM cP">' + P_FAILED + '</span></div>';
+    var saveOpts = { saving: o.saving };
+    if (col === 'pass' && o.offline) { saveOpts.dis = true; saveOpts.reason = 'you\'re offline'; }
+    var form = band + input(col, 'Name', p, '') + chips(col, 'Species', ['Dog', 'Cat', 'Other'], P.sp) +
+      picker(col, 'Breed', P.breed, 'Select breed', 'Change') + chips(col, 'Sex', ['Male', 'Female', 'Unknown'], P.sex) +
+      picker(col, 'Date of birth', p === 'Mochi' ? 'About May 2020' : 'August 14, 2022', 'Not set', 'Change') +
+      (p === 'Mochi' ? '<span class="tSM c2"' + k('ThemedText note · textSM, lineHeightSM') + '>' + DOB_NOTE + '</span>' : '') + clearLink(col) +
+      input(col, 'Weight (lbs)', P.w.replace(' lbs', ''), 'e.g. 28', col === 'pass' ? { note: '<span class="tSM c2"' + k('ThemedText caption · textSM, colorTextSecondary (P9)') + '>' + P_W_NOTE(p) + '</span>' } : {});
+    var alert = '';
+    if (o.failed && col !== 'pass') alert = '<div class="archcard" style="position:relative;margin:calc(var(--space3) * var(--k));text-align:center;gap:calc(var(--space0_5) * var(--k))"' + k('system Alert') + '><span class="tMD wS cP">Could not save</span><span class="tSM c2">Something went wrong. Try again.</span><span class="tMD cAct" style="padding-top:calc(var(--space1) * var(--k))">OK</span></div>';
+    return mhd(col, 'Edit profile', 'Save', saveOpts) + scr(alert + '<div class="form' + (T(col) ? '' : ' kit') + '"' + k(T(col) ? 'drift: form · gap space1, label marginBottom 4 literal' : 'form · padding space3, gap space2') + '>' + form + '</div>');
+  }
+  function condForm(col, o) {
+    o = o || {};
+    var p = o.pet || 'Biscuit';
+    var edit = !!o.edit;
+    var title = col === 'pass' ? (edit ? 'Edit condition' : 'Add a condition for ' + p) : (edit ? 'Edit condition' : 'Add condition');
+    var save = edit ? 'Save' : 'Add';
+    var hd = mhd(col, title, save, { dis: !edit, reason: 'name the condition first' });
+    var name = edit ? 'Food sensitivity' : '';
+    var status = edit ? 'Active' : 'Active';
+    var desc = col === 'pass' ? 'Currently affecting ' + p : 'Currently affecting the pet';
+    var statusHtml;
+    if (T(col)) {
+      statusHtml = '<div class="label flab">Status</div><div class="chiprow"' + k('drift: hand built status chips · paddingVertical 10, fontSize 14/11 literal, active colorNeutralDark') + '>' +
+        '<div class="schip on"><span class="tSM wM cOD">Active</span><span class="tXS" style="color:var(--colorTextOnDarkSubtle)">Currently affecting the pet</span></div>' +
+        '<div class="schip"><span class="tSM wM c2">Monitoring</span><span class="tXS c2">Under observation</span></div></div>';
+    } else {
+      statusHtml = chips(col, 'Status', ['Active', 'Monitoring'], status) + '<span class="tSM c2"' + k('ThemedText caption · the chosen status\'s meaning (F7' + (col === 'pass' ? ', P6' : '') + ')') + '>' + desc + '</span>';
+    }
+    var dateHtml = picker(col, 'Diagnosed (optional)', edit ? 'March 3, 2026' : '', 'Not known', 'Set date') + (edit ? clearLink(col) : '');
+    if (T(col)) dateHtml = '<div class="label flab">Diagnosed (optional)</div><div class="fbtn"' + k('drift: fieldBtn · paddingVertical 12, fontSize 16/14 literal') + '><span class="tMD ' + (edit ? 'cP' : 'c2') + '">' + (edit ? 'March 3, 2026' : 'Not known') + '</span><span class="tSM wM cPos">Set date</span></div>' + (edit ? clearLink(col) : '');
+    var resolve = (edit && col === 'pass') ? '<div style="margin-top:calc(var(--space3) * var(--k))" class="hl"></div>' + btn(col, 'Mark resolved', 'secondary') + '<span class="tSM c2"' + k('ThemedText caption · the confirm\'s line, said up front (P3)') + '>It will still appear in vet reports for the relevant date range.</span>' : '';
+    var nameHtml = T(col) ? input(col, 'Condition name', name, 'e.g. Food sensitivity, IBD, atopy', { raw: true, focus: !edit }) : input(col, 'Condition name', name, 'e.g. Food sensitivity, IBD, atopy', { focus: !edit });
+    return hd + scr('<div class="form' + (T(col) ? '' : ' kit') + '">' + nameHtml + statusHtml + dateHtml + resolve + '</div>');
+  }
+  function archiveSheet(col, o) {
+    var p = o.pet || 'Biscuit', P = PETS[p];
+    var commit = T(col) ? '<div class="btn tMD"' + k('drift: archiveBtn · colorNeutralDark, hand built, WhorlSpinner while archiving') + '>Archive</div>' : col === 'pass' ? btn(col, 'Archive', 'primary') : btn(col, 'Archive', 'dfill');
+    var cancel = T(col) ? '<div class="btn plain tMD"' + k('drift: cancelBtn · hand built') + '>Cancel</div>' : btn(col, 'Cancel', 'plain');
+    var under = tab(col, { pet: p, onlyTop: true });
+    return '<div class="archwrap" style="position:relative;flex:1;display:flex;flex-direction:column">' + under + '<div class="scrim"' + k('scrim · colorScrim') + '></div><div class="archcard"' + k(T(col) ? 'drift: ArchivePetSheet card · marginBottom insets + 18 literal' : 'sheet card · colorSurface, radiusLarge, shadow-lg') + '><span class="tLG wS cP">Archive ' + p + '?</span><span class="tSM c2">' + ARCH_BODY(P) + '</span>' + commit + cancel + '</div></div>';
+  }
+  function archivedList(col) {
+    var hd = T(col) ? '<div style="padding:calc(var(--space3) * var(--k)) calc(var(--space3) * var(--k)) 0"' + k('drift: title Text · no Header, no close control (a modal with only a swipe)') + '><span class="tXL wM cP">Archived pets</span></div>'
+      : '<div class="hd"' + k('Header · leading close ✕, title (sharedHeader guard)') + '><span class="lead">✕</span><span class="ti tLG">Archived pets</span><span></span></div>';
+    var restore = T(col) ? '<span class="pill tSM wM c2"' + k('drift: restoreBtn · hand built') + '>Bring back</span>' : '<span class="pill tSM wM cAct"' + k('PrimaryButton secondary compact · label "Bring Pepper back"') + '>Bring back</span>';
+    return hd + scr('<div class="form kit"><span class="tSM c2">' + ARCH_SUB + '</span><div class="prow"' + k('row · PetAvatar 38 → (space4 + space0_75), Divider') + '><div class="av pic"></div><div class="blk" style="flex:1"><span class="tMD wM cP">Pepper</span><span class="tSM c2">Dog · Beagle</span></div>' + restore + '</div></div>');
+  }
+
+  var COLS = [['today', 'Today'], ['faith', 'Faithful'], ['pass', 'Design pass']];
+  var STATES = [
+    { id: 's01', n: '§01', t: 'The tab, a lived in record', why: 'Biscuit, one pet: a photo, two conditions, one course, six weigh-ins, a diet trial on day 18, two vet visits. Drawn full length; switch to Phone height to see the first screen.',
+      f: function (c) { return shell(tab(c, { trial: 'running', widget: true })); },
+      cap: ['A 300pt identity card and a facts row before the first record fact. Teal links throughout; the trial door sits under the medicines.', '<span class="bref">F1 F2 F5 F6</span> Same page on the kit: indigo links, PrimaryButton, tokens.', '<span class="bref">P1 P2 P3 P4 P5 P10</span> An identity row; the trial door under it; conditions as doors; the foot recedes.'] },
+    { id: 's02', n: '§02', t: 'Empty: a new pet, nothing logged', why: 'Mochi just added from onboarding: a profile weight, no photo, no conditions, no medicines, no weigh-ins, no trial, no visits. Empty states are features (Principle 5).',
+      f: function (c) { return shell(tab(c, { pet: 'Mochi', photo: 'none', empty: true })); },
+      cap: ['Initials on a black disc; every empty line already warm and specific.', '<span class="bref">F8</span> Same copy on the kit.', '<span class="bref">P1</span> The photo slot is the ask ("Add photo"), the warmth CUL-627 bets on.'] },
+    { id: 's03', n: '§03', t: 'The photo: none, saving', why: 'The top of the tab only. Left: no photo; the frame below each is the upload in flight.',
+      f: function (c) { return shell(tab(c, { photo: 'none', onlyTop: true })) + shell(tab(c, { photo: 'uploading', onlyTop: true })); },
+      cap: ['Initials; then a WhorlSpinner on a scrim over the photo.', '<span class="bref">F4</span> The tick on the scrim.', '<span class="bref">P1 F4</span> Add photo is the slot itself; saving is the tick, named.'] },
+    { id: 's04', n: '§04', t: 'Loading', why: 'The first read after the tab opens. Conditions and medicines read from the server; Weight reads too.',
+      f: function (c) { return shell(tab(c, { loading: true }), { cls: 'vp' }); },
+      cap: ['Three WhorlSpinners.', '<span class="bref">F4</span> Skeleton rows in each card\'s shape, hidden from VoiceOver.', 'Same as faithful, on the pass layout.'] },
+    { id: 's05', n: '§05', t: 'Failed read, after switching to Mochi', why: 'Two pets. The owner taps the name, picks Mochi, and the reads fail (offline). Today neither list is cleared (D-1, CUL-2174).',
+      f: function (c) {
+        if (c === 'today') return shell(scr('<div class="stack">' + identity('today', { pet: 'Mochi', photo: 'none', multi: true }) + conditions('today', { pet: 'Mochi' }) + meds('today', { pet: 'Mochi' }) + '</div>', true), { cls: 'vp' });
+        return shell(scr('<div class="stack">' + (c === 'pass' ? identity(c, { pet: 'Mochi', photo: 'none', multi: true }) : identity(c, { pet: 'Mochi', photo: 'none', multi: true })) + conditions(c, { pet: 'Mochi', failed: true }) + meds(c, { pet: 'Mochi', failed: true }) + '</div>', true), { cls: 'vp' });
+      },
+      cap: ['<b style="display:inline;color:var(--con)">D-1.</b> Biscuit\'s Food sensitivity and Apoquel under "Mochi". Log a dose writes Mochi\'s dose against Biscuit\'s course.', 'Lists keyed to the pet read; a failed read says so with Try again (C-12).', 'Same, on the pass layout. Copy is new (nyx-voice at build).'] },
+    { id: 's06', n: '§06', t: 'Two pets', why: 'Biscuit active, Mochi second. The name is the switcher (CUL-618); Add a pet leaves the foot (it lives in the switcher).',
+      f: function (c) { return shell(tab(c, { multi: true, onlyTop: true, withCond: true })); },
+      cap: ['Chevron on the name; "+ Add" never says for whom.', 'Same on the kit.', '<span class="bref">P1 P6</span> Name and chevron lead the row; Add opens "Add a condition for Biscuit".'] },
+    { id: 's07', n: '§07', t: 'Archive', why: 'The confirm, from the foot of the tab. Archiving is reversible (Archived pets brings a pet back).',
+      f: function (c) { return shell(archiveSheet(c, {}), { cls: 'vp' }); },
+      cap: ['A dark hand built button.', '<span class="bref">F2</span> destructiveFilled, as the kit names an irreversible commit.', '<span class="bref">P7</span> primary: reversible, so not red.'] },
+    { id: 's08', n: '§08', t: 'An archived pet: the list it waits in', why: 'Opened from the switcher\'s Archived pets row. A modal screen.',
+      f: function (c) { return shell(archivedList(c), { cls: 'vp' }); },
+      cap: ['No header and no close control: a swipe is the only way out.', '<span class="bref">F2</span> Header with ✕; Bring back on the kit, label names the pet.', 'Same as faithful.'] },
+    { id: 's09', n: '§09', t: 'Edit profile', why: 'Mochi, an approximate birthday from onboarding (the estimate note shows). Opened from Edit profile.',
+      f: function (c) { return shell(editPet(c, { pet: 'Mochi' })); },
+      cap: ['Hand rolled header, raw inputs, filled FilterChips, teal Change and Save.', '<span class="bref">F3</span> Header, TextField, ChipGroup, PickerRow.', '<span class="bref">P9</span> The weight field says it is the profile weight, not a weigh-in.'] },
+    { id: 's10', n: '§10', t: 'Edit profile: save failed, and offline', why: 'The form writes straight to the server; offline, Save can only fail. Today\'s answer is an alert after the tap.',
+      f: function (c) { return c === 'pass' ? shell(editPet(c, { offline: true })) + shell(editPet(c, { failed: true })) : shell(editPet(c, { failed: true })); },
+      cap: ['An alert; dismiss it and the form is still there, unsaid.', 'Same alert (F does not change behaviour).', '<span class="bref">P8</span> Offline said before (Save waits with its reason); a failed save said in place.'] },
+    { id: 's11', n: '§11', t: 'Add condition', why: 'From "+ Add" on Conditions. The keyboard is up in the app; drawn without it.',
+      f: function (c) { return shell(condForm(c, {})); },
+      cap: ['Two hand built chips, each with an 11pt description; the chosen one near black.', '<span class="bref">F7</span> ChipGroup and one caption for the chosen status.', '<span class="bref">P6</span> The header and caption name Biscuit.'] },
+    { id: 's12', n: '§12', t: 'Edit condition', why: 'From a condition row. Today Resolve sits on the tab\'s row; Edit here.',
+      f: function (c) { return shell(condForm(c, { edit: true })); },
+      cap: ['No way to resolve from here.', 'Same as today, on the kit.', '<span class="bref">P3</span> Mark resolved at the foot, its report line said up front; the confirm stays word for word.'] },
+    { id: 's13', n: '§13', t: 'Stress: 320pt, the top of the tab', why: 'iPhone SE width, two pets. The 44pt floors and the name must hold.',
+      f: function (c) { return shell(tab(c, { multi: true, onlyTop: true, withCond: true }), { cls: 'w320' }); },
+      cap: ['Fits; the facts row\'s cells narrow.', 'Fits.', 'The identity row stacks photo over name; doors keep 44pt.'] },
+    { id: 's14', n: '§14', t: 'Stress: largest text, the top of the tab', why: 'fontScale 3.1 (AX5); the app sets no cap. Drawn full length: what matters is what clips.',
+      f: function (c) { return shell(tab(c, { onlyTop: true, withCond: true }), { cls: 'ax5' }); },
+      cap: ['The facts row stacks (drawn as a build note); Edit · Resolve wrap under the badge.', 'Same.', 'One fact line wraps; each condition is one door that wraps.'] }
+  ];
+
+  var html = '';
+  STATES.forEach(function (S) {
+    html += '<section class="state" id="' + S.id + '"><div class="sec-head"><span class="sec-id">' + S.n + '</span><h2>' + S.t + '</h2></div><p class="why">' + S.why + '</p><div class="frames">';
+    COLS.forEach(function (C, i) {
+      html += '<div class="slot"><span class="tag ' + C[0] + '">' + C[1] + '</span>' + S.f(C[0]) + '<p class="cap"><b>' + C[1] + '</b>' + S.cap[i] + '</p></div>';
+    });
+    html += '</div></section>';
+  });
+  document.getElementById('states').innerHTML = html;
+
+  function wire(onId, offId, apply) {
+    var on = document.getElementById(onId), off = document.getElementById(offId);
+    function set(v) { on.setAttribute('aria-pressed', String(v)); off.setAttribute('aria-pressed', String(!v)); apply(v); }
+    on.addEventListener('click', function () { set(true); });
+    off.addEventListener('click', function () { set(false); });
+  }
+  wire('b-parts-on', 'b-parts-off', function (v) { document.body.classList.toggle('parts', v); });
+  // States drawn at phone height keep it; the rest follow the toggle.
+  Array.prototype.forEach.call(document.querySelectorAll('.ph.vp'), function (p) { p.setAttribute('data-fixed', '1'); });
+  wire('b-vp', 'b-full', function (v) {
+    Array.prototype.forEach.call(document.querySelectorAll('.ph'), function (p) { if (!p.classList.contains('ax5') && !p.hasAttribute('data-fixed')) p.classList.toggle('vp', v); });
+  });
+})();
+</script>
+</body>
+</html>

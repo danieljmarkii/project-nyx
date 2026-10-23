@@ -20,7 +20,7 @@
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
-import { Tick } from '../designV2/waits/Tick';
+import { Tick } from '../surfaces/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
 import { type TierTone } from '../../lib/incidentTierWords';
@@ -51,7 +51,7 @@ export const INCIDENT_READ_NOT_ENOUGH_LINE = 'Not enough to say about this one y
 
 /** The rail's width, and the height of its pending TICK (§5.2). Exported because PR 3's
  *  arrival animates the tick to the card's height and needs the same two numbers. */
-export const RAIL_WIDTH = 3;
+export const RAIL_WIDTH = theme.railWidth;
 export const RAIL_TICK_HEIGHT = 16;
 
 /**

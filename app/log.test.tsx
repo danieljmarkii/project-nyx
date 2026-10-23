@@ -24,6 +24,11 @@ jest.mock('expo-router', () => ({
     push: (...a: unknown[]) => mockPush(...a),
   },
   useLocalSearchParams: () => ({ ...(mockTypeParam ? { type: mockTypeParam } : {}), ...mockWidgetParams }),
+  // The food picker's load (CUL-2090's meal-step test): fired once on mount.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const React = jest.requireActual('react');
+    React.useEffect(() => cb(), []);
+  },
 }));
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: require('react-native').View,
@@ -61,6 +66,25 @@ jest.mock('../lib/weight', () => ({
   ...jest.requireActual('../lib/weight'),
   insertWeightCheck: (...a: unknown[]) => mockInsertWeightCheck(...a),
   getLatestWeightKg: jest.fn().mockResolvedValue(null),
+}));
+
+// The meal step's writes (CUL-2090): the meal writer, the trial heads-up and the rotation
+// shelf's read, stubbed so a mix tile can be tapped. The real mix helpers stay live.
+const mockInsertMeal = jest.fn().mockResolvedValue({
+  eventId: 'meal-1', occurredAtIso: '2026-10-23T12:00:00.000Z', now: '2026-10-23T12:00:00.000Z',
+});
+jest.mock('../lib/meals', () => ({
+  ...jest.requireActual('../lib/meals'),
+  insertMeal: (...a: unknown[]) => mockInsertMeal(...a),
+}));
+const mockApplyMealTrialFlag = jest.fn().mockResolvedValue(undefined);
+jest.mock('../lib/mealTrialFlag', () => ({
+  applyMealTrialFlag: (...a: unknown[]) => mockApplyMealTrialFlag(...a),
+}));
+const mockRotation = jest.fn().mockResolvedValue([]);
+jest.mock('../lib/fabRecentItems', () => ({
+  ...jest.requireActual('../lib/fabRecentItems'),
+  getPickerRotationItems: (...a: unknown[]) => mockRotation(...a),
 }));
 
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
@@ -345,5 +369,56 @@ describe('/log — a ?type= this screen cannot log opens the type picker', () =>
     expect(getByText('Log for Biscuit')).toBeTruthy();
     expect(queryByText('Log noticed')).toBeNull();
     expect(mockInsertSimpleEvent).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-2090 (spec §7.4) — a recent mix tapped on the picker's rotation shelf writes the bowl
+// as the FAB's MIX pill does: its foods in one transaction with the event, a row naming no
+// food (T2), the card back as the mix, the heads-up over every food in it (§5.2).
+describe('/log — a MIX tile on the rotation shelf (CUL-2090)', () => {
+  const pf = (id: string, product: string) => ({
+    id, brand: 'Acme', product_name: product, format: 'wet_canned', food_type: 'meal', photo_path: null,
+  });
+  const MIX = {
+    key: 'b1|c1',
+    foods: [
+      { food: pf('c1', 'Chicken Pâté'), rowName: 'Chicken Pâté', share: 1 / 3, written: { share: 0.333, shareSource: 'preset' as const } },
+      { food: pf('b1', 'Rabbit Pâté'), rowName: 'Rabbit Pâté', share: 2 / 3, written: { share: 0.667, shareSource: 'preset' as const } },
+    ],
+  };
+
+  it('writes the whole bowl once and brings the card back as the mix', async () => {
+    mockTypeParam = 'meal';
+    mockRotation.mockResolvedValue([{
+      id: 'mix:b1|c1', brand: '', product_name: '⅓ Chicken Pâté + ⅔ Rabbit Pâté', format: '',
+      food_type: 'meal', photo_path: null, mix: MIX,
+    }]);
+    // The picker's other reads answer empty: only the shelf matters here.
+    jest.spyOn(require('../lib/db'), 'getLibraryFoods').mockResolvedValue([]);
+    jest.spyOn(require('../lib/feedingArrangements'), 'getActiveArrangementsForPets').mockResolvedValue([]);
+    const { findByLabelText } = render(<LogScreen />);
+    const tile = await findByLabelText('Mixed bowl, ⅓ Chicken Pâté + ⅔ Rabbit Pâté');
+    await act(async () => { fireEvent.press(tile); fireEvent.press(tile); });
+    await waitFor(() => expect(mockApplyMealTrialFlag).toHaveBeenCalledTimes(1));
+    expect(mockInsertMeal).toHaveBeenCalledTimes(1);
+    expect(mockInsertMeal.mock.calls[0][0]).toEqual(expect.objectContaining({
+      petId: 'p1',
+      foodId: 'c1',
+      components: [
+        expect.objectContaining({ foodItemId: 'c1', share: 0.333, shareSource: 'preset' }),
+        expect.objectContaining({ foodItemId: 'b1', share: 0.667, shareSource: 'preset' }),
+      ],
+    }));
+    expect(mockApplyMealTrialFlag).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'meal-1',
+      foodId: null,
+      components: [expect.objectContaining({ foodId: 'c1' }), expect.objectContaining({ foodId: 'b1' })],
+    }));
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(useMomentStore.getState().payload).not.toBeNull());
+    const card = useMomentStore.getState().payload as { kind: string; bowl?: { foods: { rowName: string }[] }; foodProductName: string | null };
+    expect(card.kind).toBe('meal');
+    expect(card.foodProductName).toBeNull();
+    expect(card.bowl?.foods.map((f) => f.rowName)).toEqual(['Chicken Pâté', 'Rabbit Pâté']);
   });
 });

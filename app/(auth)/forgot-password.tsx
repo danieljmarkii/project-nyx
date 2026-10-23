@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, Mail, WifiOff } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
@@ -148,7 +148,7 @@ export default function ForgotPasswordScreen() {
         <View style={styles.stateBody}>
           <View style={styles.grow} />
           <View style={styles.icon}>
-            <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
+            <Mail size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />
           </View>
           <ThemedText style={styles.title}>Check your inbox</ThemedText>
           <ThemedText style={styles.sub}>
@@ -234,7 +234,7 @@ export default function ForgotPasswordScreen() {
         <View style={styles.stateBody}>
           <View style={styles.grow} />
           <View style={styles.icon}>
-            <WifiOff size={44} color={theme.colorAccent} strokeWidth={1.5} />
+            <WifiOff size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />
           </View>
           <ThemedText style={styles.title}>Couldn't send that link</ThemedText>
           <ThemedText style={styles.sub}>

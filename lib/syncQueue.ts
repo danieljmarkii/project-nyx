@@ -320,14 +320,18 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'meals', pendingSince: 'updated_at' },
   { table: 'weight_checks', pendingSince: 'updated_at' },
   // CUL-868 looks — Noticed's child. LWW on updated_at like every other row queue;
-  // its push is PARENT-GATED (drainLooksQueue joins events and requires the parent
-  // check_in to have landed), because the server's trg_looks_same_pet refuses a child
-  // whose parent it cannot see.
+  // its push is PARENT-GATED (`parentLandedSql`), because the server's
+  // trg_looks_same_pet refuses a child whose parent it cannot see.
   { table: 'looks', pendingSince: 'updated_at' },
   // Engines v3 PR-30q (CUL-1724) — the answer to "Has she eaten?" under a vomit read.
   // LWW on updated_at (Change edits the row). PARENT-GATED: 097's same-pet guard runs
   // before the foreign key, so an answer sent ahead of its vomit is a TERMINAL 23514.
   { table: 'intake_checks', pendingSince: 'updated_at' },
+  // Mixed meals row 2 (CUL-2051) — the foods in a mixed bowl. LWW on updated_at (a food
+  // taken out is a tombstone). PARENT-GATED on its event AND its meal row
+  // (`mealComponentsLandedSql`): 105's same-pet guard answers an unseen event with a
+  // TERMINAL 23514.
+  { table: 'meal_components', pendingSince: 'updated_at' },
   // Insert-only: no updated_at column exists (an attachment row is never edited
   // in place), so created_at is the honest and only age.
   { table: 'event_attachments', pendingSince: 'created_at' },
@@ -426,8 +430,8 @@ export type VisitLinkedTable = (typeof VISIT_LINKED_TABLES)[number];
  * course or trial in the same tick), and a visit push that fails transiently loses it
  * outright (release QA, 2026-10-02).
  *
- * So each of these queues holds a row while its visit is still waiting to land: the
- * looks drain's `e.synced = 1`, except for a parent that is quarantined. A visit that
+ * So each of these queues holds a row while its visit is still waiting to land, the
+ * same rule `parentLandedSql` applies to a child and its parent. A visit that
  * is itself quarantined holds nothing, because there is no landing left to wait for. The
  * row goes up and takes its own answer: it lands if the server holds an earlier version
  * of the visit, and otherwise it is refused with the same 23514 and quarantined, counted
@@ -524,13 +528,28 @@ export const PARENT_GATED_QUEUES = {
   //   runs BEFORE the foreign key, so an answer under a vomit logged a minute ago offline
   //   would otherwise be refused with a TERMINAL 23514, not a retryable 23503.
   intake_checks: [{ parent: 'events', column: 'event_id' }],
+  // • meals / weight_checks / looks → the log they belong to (CUL-1986). A meal or weigh-in
+  //   sent ahead of its event meets a plain foreign key (23503); a look meets 064's
+  //   trg_looks_same_pet, a TERMINAL 23514. These drains used to wait on `e.synced = 1`,
+  //   which a REFUSED log never reaches, so a meal re-rated to refused stayed on this phone
+  //   for good even when the log's earlier version was on the server and the rating would
+  //   land. A refused log now holds nothing, as everywhere else: the child goes up and takes
+  //   its own answer. Its 23503 is final there (`pushRows`' `parentRefused`), and when the
+  //   log is fixed and lands, its children get a fresh try (`rearmChildrenOf`, lib/sync.ts).
+  meals: [{ parent: 'events', column: 'event_id' }],
+  // • meal_components (Mixed meals row 2, CUL-2051) → the bowl's event. 105's same-pet
+  //   guard runs BEFORE the foreign key, so a component sent ahead of an offline-logged
+  //   meal is a TERMINAL 23514. Its meal row is keyed by event_id, not id, so that half of
+  //   the gate is `mealComponentsLandedSql`'s own clause.
+  meal_components: [{ parent: 'events', column: 'event_id' }],
+  weight_checks: [{ parent: 'events', column: 'event_id' }],
+  looks: [{ parent: 'events', column: 'event_id' }],
 } as const satisfies Record<string, readonly { parent: string; column: string }[]>;
 export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
 
 /**
  * A child row is never pushed ahead of its parent: it waits while the parent is on this
- * phone and still waiting to land (`synced = 0`, not quarantined). The looks drain's
- * `e.synced = 1` is the same idea, with two differences that are deliberate. A parent
+ * phone and still waiting to land (`synced = 0`, not quarantined). A parent
  * that is QUARANTINED holds nothing, as a quarantined visit holds nothing: there is no
  * landing left to wait for, and a child held behind it would count as pending forever,
  * telling the owner to find a connection no connection will help. The child goes up and
@@ -549,13 +568,66 @@ export function parentLandedSql(child: ParentGatedQueue): string {
     .join('\n     AND ');
 }
 
+/** One link from a child queue to a parent whose absence from the server can refuse it. */
+export type ParentLink = { readonly child: string; readonly parent: string; readonly column: string };
+
+/**
+ * CUL-2032 — every child → parent link a refusal can come from: each gate in
+ * `PARENT_GATED_QUEUES`, plus every visit-linked queue → `vet_visits` (`visitLandedSql`).
+ * A refused parent holds nothing, so its child goes up and, when the server lacks the
+ * parent, is refused itself; this is the list `lib/sync.ts` reads to give that child a fresh
+ * try when the parent lands, and to park the refusal only while the parent is still refused.
+ * Derived, never restated, so a new gate is re-armed the day it is added.
+ */
+export const PARENT_LINKS: readonly ParentLink[] = [
+  ...Object.entries(PARENT_GATED_QUEUES).flatMap(([child, gates]) =>
+    gates.map(({ parent, column }) => ({ child, parent, column }))),
+  ...VISIT_LINKED_TABLES.map((child) => ({ child, parent: 'vet_visits', column: 'vet_visit_id' })),
+];
+
+/**
+ * CUL-2046 — the links a refusal can come from on a child the push never holds: a dose
+ * (its course, its own log, the log it was paired with) and the photos on a log or a visit.
+ * Sent ahead of a parent the server lacks, each meets a budgeted 23503 (or 023's same-pet
+ * 23514 on a dose's paired log). Behind a REFUSED parent that wait never ends, so the row
+ * parks after its budget, and without these links nothing re-sent it once the parent was
+ * fixed and landed: a Refused dose stayed on this phone for good. Re-armed only, never
+ * gated: a held dose is a held correction (`PARENT_GATED_QUEUES` says why), and the push
+ * reads `PARENT_LINKS` alone (`childPushContext`), so these keep the ordinary budget.
+ */
+export const REARM_ONLY_LINKS: readonly ParentLink[] = [
+  { child: 'medication_administrations', parent: 'medications', column: 'medication_id' },
+  { child: 'medication_administrations', parent: 'events', column: 'event_id' },
+  { child: 'medication_administrations', parent: 'events', column: 'paired_event_id' },
+  { child: 'event_attachments', parent: 'events', column: 'event_id' },
+  { child: 'vet_visit_attachments', parent: 'vet_visits', column: 'vet_visit_id' },
+];
+
+/** Every link a parent's landing re-arms: the gated ones and the ungated ones. */
+export const REARM_LINKS: readonly ParentLink[] = [...PARENT_LINKS, ...REARM_ONLY_LINKS];
+
+/**
+ * CUL-2032 — the `sync_error` shapes a parent missing from the server explains, for one
+ * link: a same-pet guard's 23514 (041, 045/066/067, 064, 082, 097 all run before the
+ * foreign key), or the foreign key's own 23503 naming the link's column, budgeted or final.
+ * The re-check marker is not a table write: the edge function reads its event and answers
+ * 404 when the server lacks it, budgeted (`classifyFloorCheckFailure`). A 23514 can also be
+ * the child's own fault; such a row is refused again on its next push, once per landing of
+ * its parent, which is the cost of never leaving a parent-caused refusal parked.
+ */
+export function parentCausedRefusalSql(link: ParentLink): string {
+  if (link.child === 'incident_floor_queue') return `sync_error LIKE 'refloor-404:%'`;
+  return `(sync_error LIKE '23514:%' OR sync_error LIKE '23503:%${link.column}%')`;
+}
+
 /**
  * EN-4's re-check marker waits on its event AND, for a meal, on the meal's row (Engines v3
  * PR-28b, CUL-1436). A rating lives on `meals`, keyed by `event_id` rather than by the
  * marker's column the generic gate joins on, and the server's re-floor reads the rating
  * through the vomit read's intake flag: sent first, the check would floor over the rating
- * the owner had just replaced. The same "a quarantined parent holds nothing" rule.
- * EN-5's answer under a vomit (`intake_checks`, PR-30q) is keyed the same way and read by
+ * the owner had just replaced. The same "a quarantined parent holds nothing" rule, and
+ * the meal is never held for good itself: behind a refused log it goes up and lands or is
+ * quarantined (CUL-1986), and either releases the marker. EN-5's answer under a vomit (`intake_checks`, PR-30q) is keyed the same way and read by
  * the same flag, so a re-check owed by an answer waits for the answer too.
  */
 export function floorTriggerLandedSql(): string {
@@ -566,6 +638,33 @@ export function floorTriggerLandedSql(): string {
      AND NOT EXISTS (SELECT 1 FROM intake_checks gate_i
      WHERE gate_i.event_id = incident_floor_queue.event_id
        AND gate_i.synced = 0 AND gate_i.sync_error IS NULL)`;
+}
+
+/**
+ * A bowl's components go up after its event AND its meal row (spec §3: events → meals →
+ * components), in EN-4's shape above. The event half is the 23514 the guard would answer;
+ * the meal half keeps the parent's `food_item_id = NULL` and count landing no later than
+ * the rows they describe, so an older build never reads a mix's components beside a parent
+ * that still names one food. A quarantined parent holds nothing, as everywhere else, so a
+ * REFUSED meal row does let its components go up: current builds then read the bowl as a
+ * mix (live components win), and an installed older build reads the parent's one food.
+ * Stated residual (adversarial review, CUL-2051); a held set would count pending forever.
+ */
+export function mealComponentsLandedSql(): string {
+  return `${parentLandedSql('meal_components')}
+     AND NOT EXISTS (SELECT 1 FROM meals gate_m
+     WHERE gate_m.event_id = meal_components.event_id
+       AND gate_m.synced = 0 AND gate_m.sync_error IS NULL)`;
+}
+
+/** The components drain's queue read, exported so a test replays the shipped statement.
+ *  Ordered by event and position so a bowl's set travels in one batch where it can. A set
+ *  split by the LIMIT lands in two pushes, and a reader between them sees `incomplete`,
+ *  never one food (lib/mealComposition.ts). */
+export function mealComponentsPushQueueSql(): string {
+  return `SELECT * FROM meal_components WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${mealComponentsLandedSql()}
+      ORDER BY event_id ASC, position ASC, id ASC LIMIT 200`;
 }
 
 /** The re-check drain's queue read, exported so `syncQueue.visitLink.test.ts` replays the
@@ -643,6 +742,47 @@ export function pendingStatusSql(queues: readonly SyncQueue[] = SYNC_QUEUES): st
   );
   return (
     'SELECT COUNT(*) AS count, MIN(pending_since) AS oldest FROM (\n  ' +
+    arms.join('\n  UNION ALL\n  ') +
+    '\n)'
+  );
+}
+
+/**
+ * Q14 (CUL-772): "does this device hold rows the server has not received and still could?"
+ * — the flag a Signal rebuild sends generate-signal, which then takes the 1-hour expiry.
+ * Exactly `pendingStatusSql`'s rows (every queue, any age, not refused). PR-24 had to leave
+ * out a meal, weigh-in or look held for good behind a refused log, and the EN-4 marker held
+ * behind such a meal; since CUL-1986 no drain holds a row for good (a refused parent holds
+ * nothing, `parentLandedSql`), so every row counted here is one a drain will still send, and
+ * a child behind a refused log stops counting within a cycle, when it lands or is refused
+ * itself. syncQueue.unsentForSignal.test.ts fails the build if a drain gates on
+ * `e.synced = 1` again, which is the shape that brought the exclusion in.
+ */
+export function unsentForSignalSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
+  const arms = queues.map(
+    (q) => `SELECT 1 AS unsent FROM ${q.table} WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}`,
+  );
+  return 'SELECT COUNT(*) AS count FROM (\n  ' + arms.join('\n  UNION ALL\n  ') + '\n)';
+}
+
+/**
+ * CUL-2004: "is the server's copy missing an entry this device holds, and will one need the
+ * owner?" — Ask's two flags from ONE statement. `unsent` is exactly `unsentForSignalSql`'s rows
+ * (pinned equal by askRecordGaps.test.ts); `refused` is its complement among unsynced rows
+ * (`sync_error` set: the server refused it and it never sends without an edit). One read, not
+ * two: a drain that re-arms a parked child between two reads (refused → pending) would make
+ * both answer no while the child is still off the server. Same refused rows as the banner's
+ * `quarantineCountSql` today, kept apart because the questions differ (C-34). Nothing waits
+ * behind a refused row since CUL-1986, so its children count as `unsent`.
+ */
+export function recordGapsForAskSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
+  const arms = queues.map(
+    (q) =>
+      `SELECT CASE WHEN ${NOT_QUARANTINED_SQL} THEN 1 ELSE 0 END AS unsent, ` +
+      `CASE WHEN ${NOT_QUARANTINED_SQL} THEN 0 ELSE 1 END AS refused FROM ${q.table} WHERE synced = 0`,
+  );
+  return (
+    'SELECT COALESCE(SUM(unsent), 0) AS unsent, COALESCE(SUM(refused), 0) AS refused FROM (\n  ' +
     arms.join('\n  UNION ALL\n  ') +
     '\n)'
   );

@@ -4,10 +4,12 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Camera } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
+import { PickerSilhouette } from '../surfaces/waits/PickerSilhouette';
+import { PickerReadFailed } from './PickerReadFailed';
 
 // The medication twin of FoodPicker (spec §9), deliberately leaner: a drug
 // library has no "always available" free-choice facts and no wall-of-Fancy-Feast
@@ -31,6 +33,13 @@ const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
 const SCREEN_PADDING = theme.space2;
 
+// CUL-2168 (C-12): `recent` and `library` start as [], so an empty array alone cannot
+// tell "no medications" from "not read yet" or "the read threw". Only 'answered' may
+// say the library is empty; the empty copy behind a read that never answered was the
+// path to capturing a drug twice, and a dose against the copy sits outside its course.
+export const MED_READ_FAILED = "Couldn't load your medications.";
+type LibraryRead = 'reading' | 'answered' | 'failed';
+
 interface Props {
   petId: string;
   // Fires when the user taps a Recent or Library tile — one-tap dose log.
@@ -48,6 +57,9 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
   const [recent, setRecent] = useState<PickerMedication[]>([]);
   const [library, setLibrary] = useState<PickerMedication[]>([]);
   const [search, setSearch] = useState('');
+  const [read, setRead] = useState<LibraryRead>('reading');
+  // Bumped by Try again: a new callback identity re-runs the focus load in place.
+  const [retryTick, setRetryTick] = useState(0);
 
   // Reload on every focus so a drug added (or logged) elsewhere is reflected when
   // the picker comes back into view (router.back() doesn't remount it).
@@ -63,16 +75,22 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
           if (!cancelled) {
             setRecent(r);
             setLibrary(l);
+            setRead('answered');
           }
         } catch (err) {
-          // No silent failures in the data path (house rule). Leave prior state
-          // intact — navigating away and back re-runs this load.
+          // No silent failures in the data path (house rule): the band says so.
           console.warn('[MedicationPicker] load failed:', err);
+          if (!cancelled) setRead('failed');
         }
       })();
       return () => { cancelled = true; };
-    }, [petId]),
+    }, [petId, retryTick]),
   );
+
+  const retry = useCallback(() => {
+    setRead('reading');
+    setRetryTick((t) => t + 1);
+  }, []);
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -91,6 +109,8 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
+        {read === 'failed' && <PickerReadFailed message={MED_READ_FAILED} onRetry={retry} />}
+
         <View style={styles.zone}>
           <TouchableOpacity
             style={styles.addCta}
@@ -100,7 +120,7 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
             accessibilityLabel="Add a medication"
           >
             <View style={styles.addCtaIcon}>
-              <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
+              <Camera size={20} color={colorRoles.action.onLight} strokeWidth={2} />
             </View>
             <View style={styles.addCtaText}>
               <ThemedText style={styles.addCtaTitle}>Add a medication</ThemedText>
@@ -109,7 +129,9 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
           </TouchableOpacity>
         </View>
 
-        {recent.length > 0 && (
+        {read === 'reading' && <PickerSilhouette />}
+
+        {read === 'answered' && recent.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label="Recent" header />
             {/* B-355 — a wrapped compact 2-up grid (not a horizontal scroll): every
@@ -126,34 +148,36 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
           </View>
         )}
 
-        <View style={styles.zone}>
-          {library.length > 0 && (
-            <TextInput
-              style={styles.search}
-              placeholder="Search medications"
-              placeholderTextColor={theme.colorTextTertiary}
-              value={search}
-              onChangeText={setSearch}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-            />
-          )}
-          {filteredLibrary.length === 0 ? (
-            <ThemedText style={styles.empty}>
-              {library.length === 0
-                ? "No medications yet. Add one above and we'll keep it handy for next time."
-                : 'No matches.'}
-            </ThemedText>
-          ) : (
-            <MedGrid
-              meds={filteredLibrary}
-              onPickMedication={onPickMedication}
-              onOpenDetail={onOpenDetail}
-            />
-          )}
-        </View>
+        {read === 'answered' && (
+          <View style={styles.zone}>
+            {library.length > 0 && (
+              <TextInput
+                style={styles.search}
+                placeholder="Search medications"
+                placeholderTextColor={theme.colorTextTertiary}
+                value={search}
+                onChangeText={setSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+            )}
+            {filteredLibrary.length === 0 ? (
+              <ThemedText style={styles.empty}>
+                {library.length === 0
+                  ? "No medications yet. Add one above and we'll keep it handy for next time."
+                  : 'No matches.'}
+              </ThemedText>
+            ) : (
+              <MedGrid
+                meds={filteredLibrary}
+                onPickMedication={onPickMedication}
+                onOpenDetail={onOpenDetail}
+              />
+            )}
+          </View>
+        )}
     </ScrollView>
   );
 }

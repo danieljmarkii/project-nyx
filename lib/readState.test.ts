@@ -130,8 +130,15 @@ describe('precedence: the edges the header names', () => {
     });
   });
 
-  it('an unclear read with photo reading off is off, never marked (H-4b)', () => {
-    expect(readStateOf(base({ copy: copy('uncertain', 'not_enough_to_say'), readingOff: true }))).toBe('off');
+  // PR-15's adversarial pass (CUL-1174): the unclear read RAN, before the no, and its
+  // record still says *Not enough to say yet*. Off here drew a silent row that reads like
+  // a calm one, so it keeps the grey mark; so does a read that failed. Off stays for the
+  // reads that were never attempted. Built the louder way while the PM rules on it.
+  it('an unclear or failed read keeps its mark with photo reading off; one never attempted is off', () => {
+    expect(readStateOf(base({ copy: copy('uncertain', 'not_enough_to_say'), readingOff: true }))).toBe('unread');
+    expect(readStateOf(base({ copy: copy('failed', null), readingOff: true }))).toBe('unread');
+    expect(readStateOf(base({ copy: copy('capped', null), readingOff: true }))).toBe('off');
+    expect(readStateOf(base({ copy: copy('read_disabled', null), readingOff: true }))).toBe('off');
   });
 
   it('a standing calm read outranks the owner turning photo reading off', () => {

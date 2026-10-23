@@ -53,15 +53,15 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 import { blankComments } from './blankComments';
+import { HOME_ENTRY_FILE, homeClosure } from './homeClosure';
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
 
 const ROOT = path.resolve(__dirname, '..');
 
-/** Home itself, and every card it composes. Both halves matter: a card that Home does
- *  not currently mount is still a Home card, and a write added to it would ship the
- *  moment it is slotted in. */
-const ENTRY_FILE = 'app/(tabs)/index.tsx';
-const ENTRY_DIR = 'components/home';
+/** Home itself, and every card it composes (`guards/homeClosure.ts`). Both halves matter:
+ *  a card that Home does not currently mount is still a Home card, and a write added to it
+ *  would ship the moment it is slotted in. */
+const ENTRY_FILE = HOME_ENTRY_FILE;
 
 /**
  * Directories a closure file must live in to be scanned.
@@ -218,7 +218,7 @@ const ALLOW: Record<string, readonly string[]> = {
   // allow-set would be pre-authorising (C-32). The med strip's one-tap confirm retired
   // with its file, so Home carries two write classes: this look and the appointment
   // strip's resolution.
-  'components/designV2/home/LookHeader.tsx': ['insertLook'],
+  'components/surfaces/home/LookHeader.tsx': ['insertLook'],
 };
 
 /**
@@ -269,17 +269,32 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
   },
   'lib/simpleEvent.ts': { helpers: ['insertSimpleEvent'], why: 'declares insertSimpleEvent' },
   'lib/undoLog.ts': {
-    helpers: ['reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete', 'writeOwingFloorCheck'],
+    helpers: [
+      'reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete', 'writeOwingFloorCheck',
+      'queueRemovedLogPhotosForPurge',
+    ],
     why:
       'declares the ONE shared reversal, whose implementation is softDeleteEvent (C-20), ' +
       'and which un-writes a weigh-in\u2019s snapshot on the way out (CUL-641). Since ' +
       'Engines v3 PR-28b the soft delete runs inside writeOwingFloorCheck, so the re-check ' +
-      'marker it owes shares its transaction (CUL-1436)',
+      'marker it owes shares its transaction (CUL-1436). An Undo re-queues the undone ' +
+      'log\u2019s photo so the queue deletes it from the server (CUL-639)',
+  },
+  'lib/attachments.ts': {
+    helpers: [
+      'deleteEventAttachmentLocal', 'detachEventAttachment', 'purgeRemovedAttachment',
+      'markAttachmentSyncedIfLive', 'queueRemovedLogPhotosForPurge',
+    ],
+    why:
+      'the one place an event photo is detached (B-105), and since CUL-639 the purge of a ' +
+      'removed log\u2019s photo; reached from Home only through the shared reversal',
   },
   'lib/sync.ts': {
     // onFloorLanded: the re-check drain hands the server's answer to the arrival rule,
     // which copies the reads and records what the phone said (Engines v3 PR-28b).
-    helpers: ['onFloorLanded'],
+    // purgeRemovedAttachment / markAttachmentSyncedIfLive: the photo queue's drain
+    // deletes a removed log's photo and marks a pushed one only while its log is live (CUL-639).
+    helpers: ['onFloorLanded', 'purgeRemovedAttachment', 'markAttachmentSyncedIfLive'],
     why: 'the queue drains and the hydration mirror \u2014 this IS the durable-write layer',
   },
   'lib/weight.ts': {
@@ -672,78 +687,6 @@ function writeHelpers(): string[] {
   return helpersCache;
 }
 
-/** Every relative specifier a file imports or re-exports, via the TS parser rather than
- *  a regex (robust to multiline imports and to a specifier inside a comment). */
-function relativeSpecifiers(absFile: string, src: string): string[] {
-  const kind = absFile.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sf = ts.createSourceFile(absFile, src, ts.ScriptTarget.Latest, true, kind);
-  const out: string[] = [];
-  const push = (spec: string | undefined) => {
-    if (spec && (spec.startsWith('./') || spec.startsWith('../'))) out.push(spec);
-  };
-  const visit = (node: ts.Node) => {
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    ) {
-      push(node.moduleSpecifier.text);
-    } else if (
-      ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-      node.arguments[0] &&
-      ts.isStringLiteral(node.arguments[0])
-    ) {
-      push((node.arguments[0] as ts.StringLiteral).text);
-    }
-    node.forEachChild(visit);
-  };
-  visit(sf);
-  return out;
-}
-
-function resolveSpec(fromFile: string, spec: string): string | null {
-  const base = path.resolve(path.dirname(fromFile), spec);
-  const candidates = /\.(ts|tsx)$/.test(spec)
-    ? [base]
-    : [base + '.ts', base + '.tsx', path.join(base, 'index.ts'), path.join(base, 'index.tsx')];
-  for (const candidate of candidates) {
-    try {
-      if (fs.statSync(candidate).isFile()) return candidate;
-    } catch {
-      /* not this candidate */
-    }
-  }
-  return null;
-}
-
-const rel = (root: string, abs: string) => path.relative(root, abs).split(path.sep).join('/');
-
-/** Home's transitive local-import closure, as repo-relative paths, sorted. */
-export function homeClosure(root: string): string[] {
-  const entries: string[] = [];
-  const entryFile = path.join(root, ENTRY_FILE);
-  if (fs.existsSync(entryFile)) entries.push(entryFile);
-  const entryDir = path.join(root, ENTRY_DIR);
-  if (fs.existsSync(entryDir)) {
-    for (const name of fs.readdirSync(entryDir)) {
-      if (/\.tsx?$/.test(name) && !name.includes('.test.')) entries.push(path.join(entryDir, name));
-    }
-  }
-  const seen = new Set<string>();
-  const stack = [...entries];
-  while (stack.length) {
-    const cur = stack.pop() as string;
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-    for (const spec of relativeSpecifiers(cur, fs.readFileSync(cur, 'utf8'))) {
-      const resolved = resolveSpec(cur, spec);
-      if (resolved && !seen.has(resolved)) stack.push(resolved);
-    }
-  }
-  return [...seen].map((abs) => rel(root, abs)).sort();
-}
-
 /** The closure files this rule applies to. */
 export function scannedFiles(root: string): string[] {
   return homeClosure(root).filter(
@@ -846,7 +789,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // the same floor `haptics.test.ts` and `completionCard.test.ts` pin.
     const files = scannedFiles(ROOT);
     expect(files).toContain(ENTRY_FILE);
-    expect(files).toContain('components/designV2/home/LookHeader.tsx');
+    expect(files).toContain('components/surfaces/home/LookHeader.tsx');
     expect(files).toContain('components/vetvisits/AppointmentStrip.tsx');
     expect(files.length).toBeGreaterThan(20);
   });
@@ -898,7 +841,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // is on the ALLOW entry above.
     //
     // It fired a THIRD time on CUL-1066 (D2-4), and that one is NOT a new class: the
-    // look, drawn by a second file (`components/designV2/home/LookHeader.tsx`) behind
+    // look, drawn by a second file (`components/surfaces/home/LookHeader.tsx`) behind
     // the Design v2 flag, reaching ONE of the look's two helpers. It passes the three tests
     // above in the same words the note did — the look's own row, no new record, ruled
     // (the round-4 page §01). What the flag changes is which classes are MOUNTED: flag-on
@@ -911,7 +854,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // a file that no longer exists is an exemption for nothing, C-32). Two classes remain.
     expect(ALLOW).toEqual({
       'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
-      'components/designV2/home/LookHeader.tsx': ['insertLook'],
+      'components/surfaces/home/LookHeader.tsx': ['insertLook'],
     });
   });
 
@@ -1103,7 +1046,7 @@ describe('the detector itself', () => {
 
   it('lets an allowed file make ONLY its own write', () => {
     const src = 'await insertLook({ petId });\nawait insertSimpleEvent({ type: "itch" });\n';
-    const findings = findWrites('components/designV2/home/LookHeader.tsx', src);
+    const findings = findWrites('components/surfaces/home/LookHeader.tsx', src);
     // The third adversarial pass's mutant: the look's own write passes, the prompted
     // symptom row does not.
     expect(findings.map((f) => f.what)).toEqual(['insertSimpleEvent(']);

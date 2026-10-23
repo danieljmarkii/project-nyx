@@ -35,7 +35,8 @@ describe('CompositionCard', () => {
   it('paints the segments in the calm brand-teal palette, not the old grey/near-black ramp (B-098)', () => {
     const composition: MealTreatComposition = { meal: 18, treat: 6, other: 0, unclassified: 0, total: 24 };
     const { getByTestId } = render(<CompositionCard composition={composition} />);
-    expect(bgOf(getByTestId('composition-seg-meal'))).toBe(theme.colorEventMeal);
+    // The glyph teal on the white card (CUL-1666 W5): the bright meal teal was 2.26:1.
+    expect(bgOf(getByTestId('composition-seg-meal'))).toBe(theme.colorAccentGlyph);
     expect(bgOf(getByTestId('composition-seg-treat'))).toBe(theme.colorAccentSoft);
     // The treat fill is never the symptom/alarm colour — treats are coverage, not a warning.
     expect(bgOf(getByTestId('composition-seg-treat'))).not.toBe(theme.colorEventSymptom);

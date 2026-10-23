@@ -106,6 +106,19 @@ function watchUntilCopied(eventId: string): void {
 export { claimAnalysisChain, awaitAnalysisChain, analysisChainOutstanding } from './analysisChain';
 export type { AnalysisChainClaim } from './analysisChain';
 
+// CUL-1835 (PM ruling on CUL-1913): the server reads a photo logged before the owner's
+// current AI yes only when the request says the owner tapped for it ("sent only if you tap
+// Read this photo"). `ownerTap` is set by the record's tapped re-reads (Read this photo,
+// Allow on the record, Re-run, Try again) and by nothing else: the mount, the log path and
+// the photo-add re-read never claim a tap, so the server holds what predates the yes.
+export interface TriggerOpts {
+  ownerTap?: boolean;
+}
+
+function invokeBody(eventId: string, opts: TriggerOpts): { event_id: string; owner_tap?: true } {
+  return opts.ownerTap === true ? { event_id: eventId, owner_tap: true } : { event_id: eventId };
+}
+
 // Kicks off per-incident AI analysis for a vomit event (B-027). The
 // analyze-vomit Edge Function reads the event AND its photo from Supabase, so we
 // flush the event first (attachment rows FK to it), then force THIS event's
@@ -117,7 +130,7 @@ export type { AnalysisChainClaim } from './analysisChain';
 // upserts by event_id, so a second call CORRUPTS nothing — but it is not free
 // (CUL-801: a second call burns a second cap unit and races the first one's
 // write-back), so the claim above is what keeps it to one read per photo.
-export async function triggerVomitAnalysis(eventId: string): Promise<{ error: string | null }> {
+export async function triggerVomitAnalysis(eventId: string, opts: TriggerOpts = {}): Promise<{ error: string | null }> {
   // Claim the chain if nobody owns it yet (CUL-801), so a concurrent mount awaits
   // this invoke instead of making a second one. A null claim means SOMEONE ELSE
   // owns the chain and will settle it around this call — the log path, another
@@ -133,7 +146,7 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
     await syncPendingEvents().catch(() => {});
     await ensureEventAttachmentsSynced(eventId).catch(() => {});
     const { error } = await supabase.functions.invoke('analyze-vomit', {
-      body: { event_id: eventId },
+      body: invokeBody(eventId, opts),
     });
     // A refused invoke is NOT a read: settle false so a waiter retries rather
     // than watching for a row nothing is going to write.
@@ -161,7 +174,7 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
 // photoless-and-no-flag read collapses to not_enough_to_say; the detail section
 // suppresses that dead result (B-363). Same idempotence caveat as vomit: a second
 // call corrupts nothing but costs a cap unit and races the first (CUL-801).
-export async function triggerStoolAnalysis(eventId: string): Promise<{ error: string | null }> {
+export async function triggerStoolAnalysis(eventId: string, opts: TriggerOpts = {}): Promise<{ error: string | null }> {
   // Claim the chain if nobody owns it yet (CUL-801), so a concurrent mount awaits
   // this invoke instead of making a second one. A null claim means SOMEONE ELSE
   // owns the chain and will settle it around this call — the log path, another
@@ -177,7 +190,7 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
     await syncPendingEvents().catch(() => {});
     await ensureEventAttachmentsSynced(eventId).catch(() => {});
     const { error } = await supabase.functions.invoke('analyze-stool', {
-      body: { event_id: eventId },
+      body: invokeBody(eventId, opts),
     });
     // A refused invoke is NOT a read: settle false so a waiter retries rather
     // than watching for a row nothing is going to write.

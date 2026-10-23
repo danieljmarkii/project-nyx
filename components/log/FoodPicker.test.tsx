@@ -5,8 +5,12 @@
 // rendering above the filtered results, so on smaller phones typing a search
 // visibly changed nothing — the matches were correct but off-screen.
 jest.mock('../../lib/db', () => ({
-  getRecentFoods: jest.fn(),
   getLibraryFoods: jest.fn(),
+}));
+// The rotation shelf's read (foods fed lately, mixes among them; CUL-2090), pinned against
+// a real engine in lib/foodQueries.test.ts.
+jest.mock('../../lib/fabRecentItems', () => ({
+  getPickerRotationItems: jest.fn(),
 }));
 // Mock the arrangements module whole (its module graph reaches expo-sqlite /
 // supabase, which can't import under jest) — this test seeds zero arrangements
@@ -30,23 +34,28 @@ jest.mock('../../hooks/useTrialAllowedSet', () => ({
 jest.mock('expo-router', () => {
   const React = jest.requireActual('react');
   return {
-    // Fire the focus callback once on mount — the picker's data load.
+    // Fire the focus callback on mount — the picker's data load — and again whenever
+    // its identity changes, as the real hook does while focused (Try again, CUL-2168).
     useFocusEffect: (cb: () => void | (() => void)) => {
-      React.useEffect(() => cb(), []);
+      React.useEffect(() => cb(), [cb]);
     },
   };
 });
 
 import { render, fireEvent } from '@testing-library/react-native';
-import { FoodPicker } from './FoodPicker';
+import { FoodPicker, FOOD_READ_FAILED } from './FoodPicker';
+import { PICKER_SILHOUETTE_TEST_ID } from '../surfaces/waits/PickerSilhouette';
 import { usePetStore } from '../../store/petStore';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { buildTrialContext, type AllowedFood } from '../../lib/dietTrial';
 import type { TrialAllowedSet } from '../../lib/trialAllowedSet';
 import * as db from '../../lib/db';
 import type { PickerFood, LibraryFood } from '../../lib/db';
+import * as recent from '../../lib/fabRecentItems';
+import type { FabMix, FabRecentItem } from '../../lib/fabRecentItems';
 
 const DB = db as jest.Mocked<typeof db>;
+const ROT = recent.getPickerRotationItems as jest.MockedFunction<typeof recent.getPickerRotationItems>;
 const TRIAL_SET = useTrialAllowedSet as jest.MockedFunction<typeof useTrialAllowedSet>;
 
 const food = (id: string, brand: string, product: string): PickerFood => ({
@@ -83,7 +92,7 @@ beforeEach(() => {
       date_of_birth_precision: 'exact', sex: 'unknown', weight_kg: null, photo_path: null,
     }],
   });
-  DB.getRecentFoods.mockResolvedValue(ROTATION);
+  ROT.mockResolvedValue(ROTATION);
   DB.getLibraryFoods.mockResolvedValue(LIBRARY);
 });
 
@@ -98,6 +107,52 @@ function renderPicker() {
   );
 }
 
+// CUL-2168 (C-12) — a read that hasn't answered is never an empty record. The picker's
+// arrays start as [], so before this the first frame and every failed read said
+// "No foods yet" to an owner with a full library.
+describe('FoodPicker — the read’s three states below "has rows" (CUL-2168)', () => {
+  const EMPTY = 'No foods yet. Snap one above.';
+  const hidden = { includeHiddenElements: true };
+
+  it('while the read is unanswered: the silhouette, never the empty copy', () => {
+    DB.getLibraryFoods.mockReturnValue(new Promise(() => {}));
+    const { getByTestId, queryByText } = renderPicker();
+    expect(getByTestId(PICKER_SILHOUETTE_TEST_ID, hidden)).toBeTruthy();
+    expect(queryByText(EMPTY)).toBeNull();
+    expect(queryByText(/Nothing always-out yet/)).toBeNull();
+    expect(queryByText(FOOD_READ_FAILED)).toBeNull();
+    // The way to add a food stays open while the library reads.
+    expect(queryByText('Snap a new food')).toBeTruthy();
+  });
+
+  it('once a read answers with nothing: the empty copy, and no silhouette', async () => {
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([]);
+    const { findByText, queryByTestId, queryByText } = renderPicker();
+    expect(await findByText(EMPTY)).toBeTruthy();
+    expect(queryByTestId(PICKER_SILHOUETTE_TEST_ID, hidden)).toBeNull();
+    expect(queryByText(FOOD_READ_FAILED)).toBeNull();
+  });
+
+  it('when the read throws: the quiet band, never the empty copy, and Try again reads again', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    DB.getLibraryFoods.mockRejectedValue(new Error('SQLITE_BUSY'));
+    const { findByText, getByText, queryByText, queryByTestId } = renderPicker();
+    expect(await findByText(FOOD_READ_FAILED)).toBeTruthy();
+    expect(queryByText(EMPTY)).toBeNull();
+    expect(queryByText(/Nothing always-out yet/)).toBeNull();
+    expect(queryByTestId(PICKER_SILHOUETTE_TEST_ID, hidden)).toBeNull();
+    expect(getByText('Snap a new food')).toBeTruthy();
+
+    DB.getLibraryFoods.mockResolvedValue(LIBRARY);
+    fireEvent.press(getByText('Try again'));
+    expect(await findByText("Nyx's rotation")).toBeTruthy();
+    expect(getByText('Chicken')).toBeTruthy();
+    expect(queryByText(FOOD_READ_FAILED)).toBeNull();
+    warn.mockRestore();
+  });
+});
+
 describe('FoodPicker search-results mode', () => {
   it('browse mode shows the add CTA, rotation shelf, and Always available', async () => {
     const { findByText, getByText } = renderPicker();
@@ -110,7 +165,7 @@ describe('FoodPicker search-results mode', () => {
   // elimination diet feeds exactly one, so the shelf label degrades to the
   // neutral, still recency-factual "Recently fed".
   it('labels a single-food shelf "Recently fed", never "{pet}\'s rotation" (B-356)', async () => {
-    DB.getRecentFoods.mockResolvedValue([ROTATION[0]]);
+    ROT.mockResolvedValue([ROTATION[0]]);
     const { findByText, queryByText } = renderPicker();
     expect(await findByText('Recently fed')).toBeTruthy();
     expect(queryByText("Nyx's rotation")).toBeNull();
@@ -184,7 +239,7 @@ describe('FoodPicker initialScope (B-406)', () => {
   beforeEach(() => {
     // Empty the rotation so only the (scope-filtered) library renders — the
     // rotation shelf shows recency regardless of scope, by B-347 design.
-    DB.getRecentFoods.mockResolvedValue([]);
+    ROT.mockResolvedValue([]);
     DB.getLibraryFoods.mockResolvedValue(LIB as never);
   });
 
@@ -434,5 +489,201 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
     await findByText('On the trial list');
     fireEvent.changeText(getByPlaceholderText('Search brand or product'), 'chick');
     expect(queryByText('On the trial list')).toBeNull();
+  });
+});
+
+// Mixed meals row 5 (CUL-2054; R1) — the picker for a bowl's second food offers meal foods
+// only, in the rotation shelf and the library alike, and drops "+ Add new" (its capture
+// flow logs a meal of its own).
+describe('FoodPicker mixableOnly (row 5)', () => {
+  const pf = (id: string, product: string, food_type: string, format: string): PickerFood => ({
+    id, brand: 'B', product_name: product, format, food_type, photo_path: null,
+  });
+  const FOODS: PickerFood[] = [
+    pf('m1', 'Rabbit Pâté', 'meal', 'wet'),
+    pf('t1', 'Jerky', 'treat', 'jerky'),
+    pf('p1', 'Sprinkle', 'meal', 'topper'),
+  ];
+
+  // CUL-2089 (mock A1): the add row stays, so a food not saved yet can join the bowl. The
+  // caller opens capture add only; the picker just hands the tap over.
+  it('keeps the add row, and hands its tap to the caller', async () => {
+    ROT.mockResolvedValue(FOODS);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const onAddNew = jest.fn();
+    const { findByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={jest.fn()} onAddNew={onAddNew} />,
+    );
+    fireEvent.press(await findByText('Snap a new food'));
+    expect(onAddNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a meal food as a pick, and keeps a topper off the rotation shelf', async () => {
+    ROT.mockResolvedValue(FOODS);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const onPickFood = jest.fn();
+    const { findAllByText, getAllByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onAddNew={jest.fn()} />,
+    );
+    const rabbit = await findAllByText('Rabbit Pâté');
+    fireEvent.press(rabbit[0]);
+    expect(onPickFood).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
+    // Once, in the library with its reason; never as a pickable shelf tile.
+    expect(getAllByText('Sprinkle')).toHaveLength(1);
+  });
+
+  // CUL-2134 (mock M1b): a treat shows, dimmed, with the reason, and is no control.
+  it('shows a treat dimmed with its reason, and a tap on it picks nothing', async () => {
+    ROT.mockResolvedValue(FOODS);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const onPickFood = jest.fn();
+    const { findByText, getByText, getByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onAddNew={jest.fn()} />,
+    );
+    const name = await findByText('Jerky');
+    getByText('Treat · logged on its own');
+    // Inert by host (C-7): no touchable owns the tile, and it claims no `disabled`.
+    const tile = getByLabelText('B Jerky. Treat · logged on its own');
+    expect(tile.props.accessibilityState).toBeUndefined();
+    expect(tile.props.onPress).toBeUndefined();
+    // C-6: walk UP the host nodes; none between the label and the root is a responder.
+    let node: typeof name | null = name;
+    while (node) {
+      if (typeof node.type === 'string') expect(node.props.onStartShouldSetResponder).toBeUndefined();
+      node = node.parent as typeof name | null;
+    }
+    fireEvent.press(name);
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  // CUL-2143: a topper shows the same way, with its own reason, whatever its type says.
+  it('shows a topper dimmed with its reason, inert', async () => {
+    const otherTopper = pf('p2', 'Broth', 'other', 'topper');
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([...FOODS, otherTopper] as never);
+    const onPickFood = jest.fn();
+    const onOpenDetail = jest.fn();
+    const { findByLabelText, getByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onOpenDetail={onOpenDetail} onAddNew={jest.fn()} />,
+    );
+    for (const label of ['B Sprinkle. Topper · logged on its own', 'B Broth. Topper · logged on its own']) {
+      const tile = await findByLabelText(label);
+      expect(tile.props.onPress).toBeUndefined();
+      expect(tile.props.accessibilityState).toBeUndefined();
+    }
+    fireEvent.press(getByText('Sprinkle'));
+    fireEvent.press(getByText('Broth'));
+    expect(onPickFood).not.toHaveBeenCalled();
+    expect(onOpenDetail).not.toHaveBeenCalled();
+  });
+
+  // CUL-2089 (mock A1): a food not set as a meal is a button that opens its page, where the
+  // type is set; it is never handed to the bowl, whose writer would refuse it.
+  it('a food not set as a meal opens its page, and is never picked', async () => {
+    const unset = [pf('o1', 'Duck Stew', 'other', 'wet'), { ...pf('n1', 'Old Bag', 'meal', 'dry'), food_type: null }];
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue(unset as never);
+    const onPickFood = jest.fn();
+    const onOpenDetail = jest.fn();
+    const { findByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onOpenDetail={onOpenDetail} onAddNew={jest.fn()} />,
+    );
+    for (const [label, id] of [['B Duck Stew. Not set as a meal · tap to set it', 'o1'], ['B Old Bag. Not set as a meal · tap to set it', 'n1']]) {
+      const tile = await findByLabelText(label);
+      // A button with its own hint, never a checkbox: a tap toggles nothing here.
+      expect(tile.props.accessibilityRole).toBe('button');
+      expect(tile.props.accessibilityHint).toBe('Opens the food to set its type');
+      fireEvent.press(tile);
+      expect(onOpenDetail).toHaveBeenLastCalledWith(expect.objectContaining({ id }));
+    }
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  it('with no way to open a food, one not set as a meal is inert and says so', async () => {
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([pf('o1', 'Duck Stew', 'other', 'wet')] as never);
+    const onPickFood = jest.fn();
+    const { findByLabelText, getByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={[]}
+        onPickFood={onPickFood} onAddNew={jest.fn()} />,
+    );
+    const tile = await findByLabelText('B Duck Stew. Not set as a meal');
+    expect(tile.props.onPress).toBeUndefined();
+    fireEvent.press(getByText('Duck Stew'));
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  it('without it, the same foods all show (the control)', async () => {
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue(FOODS as never);
+    const { findByText, queryByText } = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await findByText('Jerky')).toBeTruthy();
+    expect(await findByText('Sprinkle')).toBeTruthy();
+    expect(queryByText('Treat · logged on its own')).toBeNull();
+  });
+});
+
+// CUL-2090 (mixed meals spec §7.4) — a recent mix lives on the rotation shelf as its own
+// tile, beside the FAB pill. A tap logs the bowl again; it never shows where a whole bowl
+// is not an answer (building a set, picking a bowl's second food).
+describe('FoodPicker rotation shelf: recent mixes (CUL-2090)', () => {
+  const chicken = food('c1', 'Acme', 'Chicken Pâté');
+  const rabbit = food('b1', 'Acme', 'Rabbit Pâté');
+  const MIX: FabMix = {
+    key: 'b1|c1',
+    foods: [
+      { food: chicken, rowName: 'Chicken Pâté', share: 1 / 3, written: { share: 1 / 3, shareSource: 'preset' } },
+      { food: rabbit, rowName: 'Rabbit Pâté', share: 2 / 3, written: { share: 2 / 3, shareSource: 'preset' } },
+    ],
+  };
+  const MIX_ITEM: FabRecentItem = {
+    id: 'mix:b1|c1', brand: '', product_name: '⅓ Chicken Pâté + ⅔ Rabbit Pâté', format: '',
+    food_type: 'meal', photo_path: null, mix: MIX,
+  };
+
+  it('shows the mix as a tile, and a tap hands the bowl to onPickMix, not onPickFood', async () => {
+    ROT.mockResolvedValue([MIX_ITEM, rabbit, chicken]);
+    const onPickFood = jest.fn();
+    const onPickMix = jest.fn();
+    const { findByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={onPickFood} onPickMix={onPickMix} onAddNew={jest.fn()} />,
+    );
+    fireEvent.press(await findByLabelText('Mixed bowl, ⅓ Chicken Pâté + ⅔ Rabbit Pâté'));
+    expect(onPickMix).toHaveBeenCalledWith(MIX);
+    expect(onPickFood).not.toHaveBeenCalled();
+  });
+
+  it('a food fed only in the mix keeps its own plain tile', async () => {
+    ROT.mockResolvedValue([MIX_ITEM, rabbit]);
+    const onPickFood = jest.fn();
+    const { findByLabelText } = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={onPickFood} onPickMix={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    fireEvent.press(await findByLabelText('Acme Rabbit Pâté'));
+    expect(onPickFood).toHaveBeenCalledWith(rabbit);
+  });
+
+  it('no mix tile without onPickMix, or while picking a bowl’s second food', async () => {
+    ROT.mockResolvedValue([MIX_ITEM, rabbit]);
+    const plain = render(
+      <FoodPicker petId="p1" petName="Nyx" onPickFood={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect(await plain.findByLabelText('Acme Rabbit Pâté')).toBeTruthy();
+    expect(plain.queryByLabelText(/Mixed bowl/)).toBeNull();
+    plain.unmount();
+
+    const second = render(
+      <FoodPicker petId="p1" petName="Nyx" mixableOnly selectedFoodIds={['c1']}
+        onPickFood={jest.fn()} onPickMix={jest.fn()} onAddNew={jest.fn()} />,
+    );
+    expect((await second.findAllByText('Rabbit Pâté')).length).toBeGreaterThan(0);
+    expect(second.queryByLabelText(/Mixed bowl/)).toBeNull();
   });
 });

@@ -37,7 +37,7 @@ jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStr
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
 // Counts Home's renders: an unmemoized child re-renders every time its parent does.
 let mockTodayRenders = 0;
-jest.mock('../../components/designV2/home/TodayCard', () => {
+jest.mock('../../components/surfaces/home/TodayCard', () => {
   const { View } = require('react-native');
   const React = require('react');
   return {
@@ -60,11 +60,17 @@ jest.mock('../../components/home/LookExits', () => ({
     return null;
   },
 }));
-jest.mock('../../components/designV2/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
+jest.mock('../../components/surfaces/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: mockLoadTodayEvents }),
 }));
 const mockLoadTodayEvents = jest.fn();
+// CUL-1975: Home's own eating check, answered "no decline" so this suite keeps its subject
+// and never touches SQLite. `index.intakeDecline.test.tsx` owns what the read does.
+jest.mock('../../lib/dietTrialFacts', () => ({
+  readIntakeDecline: jest.fn(async () => []),
+  vomitLineMayReassure: jest.requireActual('../../lib/dietTrialFacts').vomitLineMayReassure,
+}));
 jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({ input: null, inputIsForPet: true }),
 }));

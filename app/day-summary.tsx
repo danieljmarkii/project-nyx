@@ -206,6 +206,8 @@ function SinglePetRecap({
       {model.trialStrip ? (
         <RecapStrip
           glyph={UtensilsCrossed}
+          // Ground: RecapStrip's colorBrandNightElevated, where the bright teal reads
+          // (6.57:1, pinned in theme.contrast.test.ts; CUL-1666).
           tint={theme.colorAccent}
           title={model.trialStrip.title}
           fact={model.trialStrip.fact}

@@ -39,7 +39,7 @@ jest.mock('../components/brand/WhorlSpinner', () => {
   const React = require('react');
   return { WhorlSpinner: () => React.createElement(Text, { testID: 'whorl' }, 'whorl') };
 });
-jest.mock('../components/designV2/waits/ReportSilhouette', () => {
+jest.mock('../components/surfaces/waits/ReportSilhouette', () => {
   const { Text } = require('react-native');
   const React = require('react');
   return {
@@ -47,7 +47,7 @@ jest.mock('../components/designV2/waits/ReportSilhouette', () => {
       React.createElement(Text, { testID: 'report-silhouette' }, `${petName} ${working}`),
   };
 });
-jest.mock('../components/designV2/waits/Tick', () => {
+jest.mock('../components/surfaces/waits/Tick', () => {
   const { Text } = require('react-native');
   const React = require('react');
   return {

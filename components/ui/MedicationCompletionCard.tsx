@@ -7,7 +7,7 @@ import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import {
-  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
+  removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT, ACTION_PAIR_GAP,
 } from '../../lib/completionCard';
 import { useMomentStore, completionTone } from '../../store/momentStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -15,6 +15,8 @@ import { useAppActive } from '../../hooks/useAppActive';
 import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
 import { FOLD_LAYOUT } from '../motion/foldMotion';
 import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { getDoubleDoseFlag, getEventSource, updateEvent } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
@@ -196,6 +198,10 @@ export function MedicationCompletionCard() {
     // The card moved on to another dose while the sheet was open: write nothing
     // and close (CUL-709; mirrors the meal card).
     if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
+    // Hoisted so the finally below sees it (CUL-1947, adversarial pass 2).
+    let changed = false;
+    // Set the moment the write resolves, so the finally can tell a landed write (CUL-1948).
+    let landed = false;
     setSaving(true);
     try {
       const iso = next.toISOString();
@@ -212,7 +218,7 @@ export function MedicationCompletionCard() {
       // photo path onto this card), so the cost is the false claim alone. It goes
       // through the same shared predicate anyway, so the two cards cannot drift
       // and a dose path that DID carry a stamp would inherit the rule.
-      const changed = next.getTime() !== new Date(payload.occurredAt).getTime();
+      changed = next.getTime() !== new Date(payload.occurredAt).getTime();
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
       // Doses are always witnessed point-in-time (you administer the dose yourself
       // — the B-010 found/window path never applies to a med, exactly as
@@ -226,6 +232,7 @@ export function MedicationCompletionCard() {
         occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       });
+      landed = true;
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
       setPickerFor(null);
@@ -237,6 +244,18 @@ export function MedicationCompletionCard() {
       console.error('[medication-card] failed to update dose time:', e);
       Alert.alert('Could not update time', 'Try again or edit from History.');
     } finally {
+      // CUL-1947 — a moved time moves the gap warning's inputs (a vomit onset, or a cut on
+      // its logged clock), and this path schedules no regen, so Home (still focused under
+      // the card) re-reads on the local write. In the finally: a write that lands and then
+      // throws (the floor marker, adversarial pass 2) must still re-read; an extra re-read
+      // after a write that never landed only errs loud. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
+      // CUL-1948 — the server half: a moved time moves what generate-signal counted, so the
+      // Signal rebuilds, as app/edit-event.tsx does on the same edit (its `engineInputMoved`).
+      // Gated on `changed` so a peek-and-save spends no daily cap unit (CUL-1087), and on
+      // `landed` so a write that never reached the record asks for nothing; a write that
+      // lands and then throws still asks. The record's own pet, captured at log time.
+      if (changed && landed) triggerSignalRegenDebounced(payload.petId);
       setSaving(false);
     }
   }
@@ -689,7 +708,7 @@ const styles = StyleSheet.create({
   actionPair: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.space1,
+    gap: ACTION_PAIR_GAP, // the hitSlop pair's facing edges derive from it
   },
   actionBtn: {
     minHeight: 44,

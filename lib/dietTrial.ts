@@ -189,6 +189,48 @@ export interface TrialFeeding {
    *  `trialDietRefusal` below, which is what stops the clean two-fact card
    *  rendering over an animal that has not eaten. */
   intakeRating?: string | null;
+  /**
+   * MIXED MEALS (CUL-2052, spec docs/nyx-mixed-meals-requirements.md §5.2): a bowl's
+   * live components, as the one composition helper (`lib/mealComposition.ts`) read
+   * them. Present and non-empty only for a MIX; a plain meal leaves it absent and is
+   * read from the fields above exactly as before. For a mix the fields above describe
+   * the BOWL (`foodItemId` is NULL by T2) and no rule may read them as one food.
+   */
+  components?: readonly TrialFeedingComponent[];
+  /** The parent or the rows say a mix and the live set is smaller (spec §3). Never
+   *  one food: the bowl is `unclassifiable`, disclosed, whatever its components say. */
+  incompleteBowl?: boolean;
+}
+
+/** One food in a mixed bowl. Identity, type and proteins are the component's own. */
+export interface TrialFeedingComponent {
+  foodItemId: string | null;
+  foodKey: string | null;
+  label: string | null;
+  /** `food_items.food_type` of THIS component; a reader evaluates it per component,
+   *  because a synced or future mix may not obey the picker's meal-only rule. */
+  foodType: string | null;
+  proteins: readonly string[];
+  /** The owner's share over the bowl, normalised; null when unknown. Stored, never
+   *  fed to a verdict (§5.3, T3): it is carried only for the ratio a report prints. */
+  share?: number | null;
+  /** The caller's own handle for this component (an opaque key), carried through
+   *  `classification.componentFoods` so a surface can find its row again. */
+  ref?: string;
+}
+
+/** Is this feeding a mixed bowl (components present, or an incomplete one)? */
+export function isBowlFeeding(feeding: TrialFeeding): boolean {
+  return feeding.incompleteBowl === true || (feeding.components?.length ?? 0) > 0;
+}
+
+/** A treat, for coverage and the refusal populations. A bowl is a treat only when
+ *  EVERY component is one (§10: "a bowl with any non-treat component counts toward
+ *  coverage; an all-treat bowl does not"). A NULL type is never assumed a treat. */
+export function isTreatFeeding(feeding: TrialFeeding): boolean {
+  const parts = feeding.components ?? [];
+  if (parts.length > 0) return parts.every((c) => c.foodType === 'treat');
+  return feeding.foodType === 'treat';
 }
 
 /** One logged dose, for rung 4 (C3 — the oral route). */
@@ -947,6 +989,14 @@ export interface FeedingClassification {
    * byte-identical input. Any surface rendering a REASON must gate on this.
    */
   attributionChecked: boolean;
+  /** A mixed bowl's per-component classifications, in component order after
+   *  same-food components collapse (§5.2). Absent for a plain feeding. A surface that
+   *  names the offending food reads the worst entry here, never the bowl's dominant
+   *  food (spec §7.3, appendix C). */
+  components?: FeedingClassification[];
+  /** For a bowl: the component foods that carry each classification, aligned with
+   *  `components`. */
+  componentFoods?: TrialFeedingComponent[];
 }
 
 /**
@@ -977,6 +1027,7 @@ export function classifyFeeding(
   if (!isInTrialWindow(ctx, dayIndex)) {
     return blank('out_of_window', 'out_of_window', { countsAsFeeding: false });
   }
+  if (isBowlFeeding(feeding)) return classifyBowl(ctx, feeding);
   const day = dayIndex as number;
   const sanctioned = sanctionedProteinsOn(ctx, day);
   // AN EMPTY SANCTIONED SET TURNS THE PROTEIN ARM OFF, it does not turn it on.
@@ -1104,6 +1155,146 @@ export function classifyFeeding(
     offDiet: true,
     attributionChecked: canAttributeUnrecognised,
   });
+}
+
+/** §5.2's order, worst first. `out_of_window` never reaches a bowl's fold: the bowl's
+ *  own date decides the window before any component is read. */
+const BOWL_VERDICT_ORDER: readonly FeedingVerdict[] = [
+  'off_diet_protein',
+  'off_diet_unrecognised',
+  'unclassifiable',
+  'permitted',
+];
+
+/** One identity per food in a bowl: two components with the same food (by id, else by
+ *  key) are one food, so a duplicate row can neither double an antigen nor hide one. */
+function distinctComponents(parts: readonly TrialFeedingComponent[]): TrialFeedingComponent[] {
+  const seen = new Set<string>();
+  const out: TrialFeedingComponent[] = [];
+  for (const c of parts) {
+    const k = c.foodItemId
+      ? `id:${c.foodItemId}`
+      : isUsableFoodKey(c.foodKey)
+        ? `key:${c.foodKey}`
+        : null;
+    if (k !== null) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+    }
+    out.push(c);
+  }
+  return out;
+}
+
+/**
+ * A MIXED BOWL (spec §5.2, CUL-2052). Each component is classified as the feeding it
+ * would be on its own, by the one predicate, and the bowl takes:
+ *
+ * - the WORST verdict, `off_diet_protein` > `off_diet_unrecognised` > `unclassifiable`
+ *   > `permitted`. A permitted + nameless bowl is `unclassifiable`: never permitted
+ *   (reassurance) and never off-diet (blaming a gap in the record).
+ * - the UNION of every component's antigens, a permitted component's included (D-B).
+ * - `attributionChecked` as the AND (break 5: an unchecked component under appendix
+ *   C's "carries nothing the trial diet does not" is the R7(c) failure, in a bowl).
+ *
+ * Share never enters (T3, §5.1): exposure is presence. The bowl counts ONCE.
+ * An incomplete bowl is unclassifiable whatever its live components say (§3).
+ */
+function classifyBowl(ctx: TrialContext, feeding: TrialFeeding): FeedingClassification {
+  const parts = distinctComponents(feeding.components ?? []);
+  const perComponent = parts.map((c) =>
+    classifyFeeding(ctx, {
+      eventId: feeding.eventId,
+      occurredAt: feeding.occurredAt,
+      foodItemId: c.foodItemId,
+      foodKey: c.foodKey,
+      label: c.label,
+      foodType: c.foodType,
+      proteins: c.proteins,
+      intakeRating: feeding.intakeRating,
+    }),
+  );
+  const attributionChecked = perComponent.every((c) => c.attributionChecked);
+  const antigens: string[] = [];
+  for (const c of perComponent) {
+    for (const a of c.antigens) if (!antigens.includes(a)) antigens.push(a);
+  }
+  // Sorted, so the bowl reads the same whichever food the owner logged first.
+  antigens.sort();
+  const detail = { components: perComponent, componentFoods: parts };
+
+  if (parts.length === 0) {
+    return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
+  }
+  let worstIndex = 0;
+  for (let i = 1; i < perComponent.length; i++) {
+    if (
+      BOWL_VERDICT_ORDER.indexOf(perComponent[i].verdict) <
+      BOWL_VERDICT_ORDER.indexOf(perComponent[worstIndex].verdict)
+    ) {
+      worstIndex = i;
+    }
+  }
+  const worst = perComponent[worstIndex];
+  // AN INCOMPLETE BOWL is never one food and never "matched" (§3). But a component we CAN
+  // see that is off the list is a known exposure, and §5.2's order puts off-diet above
+  // unclassifiable: the bowl is off-diet on that food (adversarial pass 2, break 3, the
+  // louder reading of a spec conflict, put to the PM on CUL-2052). With no off-diet
+  // component visible it stays unclassifiable, disclosed.
+  if (feeding.incompleteBowl && !worst.offDiet) {
+    return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
+  }
+  if (worst.verdict === 'unclassifiable') {
+    return { ...blank('unclassifiable', 'no_identity', { countsAsFeeding: false, attributionChecked }), antigens, ...detail };
+  }
+  // Every component permitted: the role and the permitting row are the trial diet's
+  // when the bowl holds it, so the refusal lane and the report's "permitted" counts
+  // read the bowl as the prescribed diet it carries.
+  const representative =
+    worst.verdict === 'permitted'
+      ? perComponent.find((c) => c.role === 'primary_diet') ?? worst
+      : worst;
+  return {
+    verdict: worst.verdict,
+    rung: worst.rung,
+    offDiet: worst.offDiet,
+    countsAsFeeding: true,
+    antigens,
+    role: representative.role,
+    matchedBy: representative.matchedBy,
+    permittedBy: representative.permittedBy,
+    attributionChecked,
+    ...detail,
+  };
+}
+
+/** Does this classification carry the TRIAL DIET in it? A plain feeding by its role; a
+ *  bowl by any component's, whatever the bowl's verdict (spec §5.2, the refusal lane). */
+export function carriesTrialDiet(c: FeedingClassification): boolean {
+  if (c.components) return c.components.some((x) => x.role === 'primary_diet');
+  return c.role === 'primary_diet';
+}
+
+/**
+ * D-B's provenance, per component (spec §5.2): did this antigen come from a PERMITTED
+ * food? A plain feeding answers by its verdict. In a bowl a permitted component's
+ * antigen keeps its credit inside an off-diet bowl, and loses it when ANY other
+ * component lists the same protein: "all from an approved treat" must never stand
+ * over a chicken the off-list food also carried (the loud direction).
+ */
+export function antigenFromPermitted(c: FeedingClassification, protein: string): boolean {
+  if (!c.components || !c.componentFoods) return c.verdict === 'permitted';
+  let fromPermitted = false;
+  for (let i = 0; i < c.components.length; i++) {
+    const part = c.components[i];
+    const listed = canonicalProteins(c.componentFoods[i]?.proteins ?? []).includes(protein);
+    if (part.verdict === 'permitted') {
+      if (part.antigens.includes(protein)) fromPermitted = true;
+    } else if (listed || part.antigens.includes(protein)) {
+      return false;
+    }
+  }
+  return fromPermitted;
 }
 
 function blank(
@@ -1473,6 +1664,71 @@ export interface TrialDietRefusal {
    *  things, and copy that names "the trial diet" over a `meal_record` fact
    *  asserts an identity the app has just admitted it could not resolve. */
   population: TrialRefusalPopulation;
+  /** CUL-54 (R2) — the range fact's own dates, so a live card can tell a refusal
+   *  happening now from one it is only remembering. Set on `rangeRefusal`; never on
+   *  the now-fact, which is recent by construction. Optional so a fixture that
+   *  predates it reads as "recent", the louder present tense. */
+  history?: TrialRefusalHistory;
+  /** CUL-57 (R4) — the trailing run of refused / picked ratings, or null. Over the
+   *  same population as the counts above. */
+  run?: TrialRefusalRun | null;
+}
+
+/**
+ * CUL-54 (R2, ruled 2026-10-01) — WHEN THE REFUSALS HAPPENED.
+ *
+ * The range fact holds the live card when the owner stops rating, which is right
+ * (silence must not cancel an alarm) and made the card speak present tense ("needs
+ * a call today") over refusals weeks old. The ruling keeps the card and dates it:
+ * the past tense applies only when NO unfinished rated feeding of the population
+ * lies inside the last `REFUSAL_WINDOW_DAYS`. Any recent one keeps the present
+ * tense, so no record that fired loudly before reads softer unless its evidence is
+ * genuinely old. No new number: the window is the now-fact's own.
+ */
+export interface TrialRefusalHistory {
+  /** First and last local day carrying an unfinished rated feeding. DAYS, not a
+   *  span: the copy says "on N days between A and B", never "between A and B". */
+  firstUnfinishedDayIndex: number;
+  lastUnfinishedDayIndex: number;
+  /** Rated feedings logged after the last unfinished one. Every one of them was
+   *  finished, by definition of "last". Zero means nothing rated since. */
+  ratedSinceLastUnfinished: number;
+  /** The same, over EVERYTHING rated (every non-treat meal and every treat). What
+   *  lets the card say "nothing rated since" only when that is true of every
+   *  feeding, not only of the population it speaks for. */
+  ratedMealsSinceLastUnfinished: number;
+  /** Anything rated after the last dated refusal (any food, treats included) left
+   *  unfinished. True keeps the present tense: the dated refusals are not the latest
+   *  evidence. */
+  unfinishedSinceElsewhere: boolean;
+  /** Any unfinished rated feeding inside the recency window, of the speaking
+   *  population, the meal record or the treats. False (with the field above) is the
+   *  ruling's past-tense gate. */
+  unfinishedInRecentWindow: boolean;
+}
+
+/**
+ * CUL-57 (R4, ruled 2026-10-01) — THE RUN: A SHARE CANNOT TELL A PICKER FROM A CAT
+ * EATING NOTHING.
+ *
+ * The register keys on a share, so a cat eating a third of every bowl and a cat
+ * refusing everything since Tuesday read the same sentence. The ruling adds a lead
+ * for the worse case and leaves the picker's sentence alone: walking back from the
+ * most recent RATED feeding of the population, every rating Refused or Picked
+ * extends the run, the first Some / Most / All ends it, and unrated feedings are
+ * skipped (unknown, not eaten and not refused).
+ *
+ * It states a COUNT and a START, never a duration ("nothing eaten for 52 hours"):
+ * the unrated meals inside the run are unknown, and a duration over unknown meals
+ * would alarm on absence (C-19). No new number: it needs `REFUSAL_MIN_RATED`
+ * members spanning `REFUSAL_MIN_SPAN_MS`, the floors the register already fires on,
+ * and its most recent member inside `REFUSAL_WINDOW_DAYS` (a run is about now).
+ */
+export interface TrialRefusalRun {
+  feedings: number;
+  /** ISO instant of the run's earliest member. */
+  startedAt: string;
+  startDayIndex: number;
 }
 
 /**
@@ -1488,10 +1744,10 @@ export interface TrialDietRefusal {
  * fell out of the one lane built to catch her, because a photo was retaken.
  *
  * WHAT THIS FIXES, STATED NARROWLY, because two `adversarial-reviewer` rounds
- * falsified the wider claim it originally carried. When the app has ALREADY
- * concluded it cannot identify the trial diet at all (`allowedSetUnavailable` — no
- * usable `primary_diet` row, or one that matched nothing across ten-plus feedings),
- * the same floors are measured over the MEAL RECORD instead: every in-range
+ * falsified the wider claim it originally carried. When the app cannot identify
+ * the trial diet at all (no usable `primary_diet` row, or one that has matched no
+ * feeding: CUL-60(b) dropped the ten-feeding count `allowedSetUnavailable` waits
+ * for), the same floors are measured over the MEAL RECORD instead: every in-range
  * non-treat feeding, identity or no identity. That covers the un-hydrated allowed
  * set and the bag that never matched once.
  *
@@ -1523,9 +1779,9 @@ export interface TrialDietRefusal {
  *
  *   • OVER-FIRE (alarming, the survivable direction). The wider population cannot
  *     name the food, so a cat refusing a rival kibble while eating its hydrolysate
- *     reads the same as one refusing the hydrolysate. Reachable only under
- *     `allowedSetUnavailable` — a state every surface already treats as degraded,
- *     and where `mayClaimAllMatched` has already returned false.
+ *     reads the same as one refusing the hydrolysate. Reachable only when nothing
+ *     has matched the trial diet, a state the card discloses with its can't-match
+ *     caveat (CUL-60(b)).
  *
  * The alternative to both is the measured one: silence over an animal that is not
  * eating.
@@ -1533,9 +1789,10 @@ export interface TrialDietRefusal {
  * WHAT IT DOES NOT COST. R1a is untouched — both populations count RATED feedings
  * only, so an owner who never taps intake is still never told her cat isn't
  * eating. Absence of data does not alarm in either population. And the fallback can
- * only ever ADD disclosure: it is reachable exclusively from the state where the
- * narrow population is EMPTY, so there is no record that fired before and is quiet
- * now.
+ * only ever ADD disclosure: it is reachable from the state where the narrow
+ * population is EMPTY, and (CUL-1993) from one where it fired in that state inside
+ * the recency window and nothing since has met the stand-down, so there is no record
+ * that fired before and is quiet now.
  *
  * ⚠️ TWO THINGS IT DELIBERATELY DOES NOT FIX. Both were executed against this code,
  * both are UNDER-fire, and neither is a regression — the shipped behaviour in both
@@ -2233,6 +2490,8 @@ interface RefusalCounters {
   rangeNotFinished: number;
   rangeDays: Set<number>;
   rangeStamps: number[];
+  /** Every rated feeding, for the run and the history (CUL-57, CUL-54). */
+  ratedLog: { stamp: number; day: number; score: number }[];
 }
 
 function emptyRefusalCounters(): RefusalCounters {
@@ -2248,6 +2507,7 @@ function emptyRefusalCounters(): RefusalCounters {
     rangeNotFinished: 0,
     rangeDays: new Set<number>(),
     rangeStamps: [],
+    ratedLog: [],
   };
 }
 
@@ -2272,6 +2532,10 @@ function tallyRefusal(
   if (finished === null) return;
   c.rated += 1;
   c.rangeRated += 1;
+  const stamp = Date.parse(feeding.occurredAt);
+  if (Number.isFinite(stamp)) {
+    c.ratedLog.push({ stamp, day, score: INTAKE_SCORE[feeding.intakeRating!.trim().toLowerCase()] });
+  }
   if (!finished) {
     c.rangeNotFinished += 1;
     c.rangeDays.add(day);
@@ -2290,6 +2554,123 @@ function tallyRefusal(
 
 function spanMsOf(stamps: readonly number[]): number {
   return stamps.length > 1 ? Math.max(...stamps) - Math.min(...stamps) : 0;
+}
+
+/** The recent fact's four floors, over one population. ONE predicate, because
+ *  CUL-1993's hold asks "did the meal-record fallback fire?", and an answer measured
+ *  any other way than the way the fact fires would be a second definition of firing. */
+function recentRefusalFires(c: RefusalCounters): boolean {
+  return (
+    c.recentRated >= REFUSAL_MIN_RATED &&
+    c.recentDays.size >= REFUSAL_MIN_DAYS &&
+    spanMsOf(c.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
+    c.recentNotFinished / c.recentRated >= REFUSAL_SHARE
+  );
+}
+
+/** The range fact's floors (no span guard — see `TrialFacts.rangeRefusal`). */
+function rangeRefusalFires(c: RefusalCounters): boolean {
+  return (
+    c.rangeRated >= REFUSAL_MIN_RATED &&
+    c.rangeDays.size >= REFUSAL_MIN_DAYS &&
+    c.rangeNotFinished / c.rangeRated >= REFUSAL_SHARE
+  );
+}
+
+/** The stand-down's own evidence: `REFUSAL_MIN_RATED` recent ratings, a finished
+ *  share clearing `1 - REFUSAL_SHARE`. MIRRORED from `isEatingNow`
+ *  (`lib/dietTrialCard.ts`), which asks the same question of the card's input; the
+ *  card imports this file, so the two cannot share one function. Ratings only: an
+ *  unrated bowl is unknown, never evidence of eating. */
+function eatingNowOf(c: RefusalCounters): boolean {
+  if (c.recentRated < REFUSAL_MIN_RATED) return false;
+  return c.recentFinished / c.recentRated >= 1 - REFUSAL_SHARE;
+}
+
+/** `picked` — the highest rating a run may carry. Some is food going in. */
+const RUN_MAX_SCORE = INTAKE_SCORE.picked;
+
+/** See `TrialRefusalRun`. */
+function refusalRunOf(c: RefusalCounters, recencyStart: number): TrialRefusalRun | null {
+  const latestFirst = [...c.ratedLog].sort((a, b) => b.stamp - a.stamp);
+  if (latestFirst.length === 0 || latestFirst[0].day < recencyStart) return null;
+  const members: typeof latestFirst = [];
+  for (const r of latestFirst) {
+    if (r.score > RUN_MAX_SCORE) break;
+    members.push(r);
+  }
+  if (members.length < REFUSAL_MIN_RATED) return null;
+  const first = members[members.length - 1];
+  if (members[0].stamp - first.stamp < REFUSAL_MIN_SPAN_MS) return null;
+  return {
+    feedings: members.length,
+    startedAt: new Date(first.stamp).toISOString(),
+    startDayIndex: first.day,
+  };
+}
+
+/** See `TrialRefusalHistory`. Undefined when nothing was left unfinished.
+ *
+ *  `c` is the population that speaks; `meals` is the WIDE meal record, always. The
+ *  recency gate and the "rated since" count read both, because the first cut read
+ *  `c` alone and `adversarial-reviewer` executed what that cost: three matched
+ *  refusals on Jul 1–2, then twelve refused bowls this week logged against a
+ *  re-photographed bag. One match keeps the narrow population, which saw nothing
+ *  recent, so the card went to the past tense and printed "Nothing rated since"
+ *  over a cat refusing every bowl — quieter than before this PR. A recent unfinished
+ *  meal of ANY food keeps the present tense: the louder reading of "the population
+ *  it speaks for" when the app cannot tell which food the bowl held. */
+function refusalHistoryOf(
+  c: RefusalCounters,
+  everythingRated: readonly RefusalCounters[],
+): TrialRefusalHistory | undefined {
+  const stamps = c.rangeStamps.filter(Number.isFinite);
+  if (c.rangeDays.size === 0 || stamps.length === 0) return undefined;
+  const days = [...c.rangeDays];
+  const lastUnfinished = Math.max(...stamps);
+  const since = everythingRated.flatMap((o) => o.ratedLog.filter((r) => r.stamp > lastUnfinished));
+  return {
+    firstUnfinishedDayIndex: Math.min(...days),
+    lastUnfinishedDayIndex: Math.max(...days),
+    ratedSinceLastUnfinished: c.ratedLog.filter((r) => r.stamp > lastUnfinished).length,
+    ratedMealsSinceLastUnfinished: since.length,
+    unfinishedInRecentWindow:
+      c.recentNotFinished > 0 || everythingRated.some((o) => o.recentNotFinished > 0),
+    // The second pass's S1d: trial-diet refusals on Jul 1–2, two finished on Jul 3,
+    // then ten refused bowls of a re-photographed bag on Jul 4–8. Dating the
+    // trial-diet refusals and saying "since then, 2 were finished" told the opposite
+    // of the latest evidence. Anything left unfinished after the last dated refusal
+    // keeps the present tense instead: louder, and what the card said before R2.
+    unfinishedSinceElsewhere: since.some((r) => r.score < FINISHED_SCORE),
+  };
+}
+
+/** The widest gap between two IANA zones' calendar dates at one instant: UTC+14
+ *  (Kiritimati) against UTC−12 (Baker Island) is 26 hours, which spans two dates. */
+export const MAX_ZONE_DATE_LEAD_DAYS = 2;
+
+/**
+ * CUL-2094 — "today" on the OWNER's calendar, for a trial they have ended.
+ *
+ * `started_at` and `ended_at` are DATE columns written from the writing device's own
+ * local day, so both ends of a trial are owner-local and read zone-free. Today is the
+ * READER's local day. When the owner ends a trial just after midnight in a zone ahead
+ * of the reader's (another device, the web, a profile zone that lags the phone), the
+ * stored end is a day past the reader's today, and `min(today, end)` cut a trial run
+ * to its 56th day to 55: "Marked complete at day 55 — 1 day short of the 56-day
+ * window", in bold, on the vet report, over an owner who did everything asked.
+ *
+ * Having written that date, the owner's clock had reached it, so for an ENDED trial
+ * "now" is at least its end. Bounded at the widest real gap between two zones' dates:
+ * an end further ahead than any zone can be is not a clock, and keeps the reader's
+ * today — the shorter count, which can only say "short", never "complete".
+ *
+ * An active trial, or an end on or before the reader's today, returns the reader's
+ * today unchanged, so every other trial takes exactly the path it always did.
+ */
+export function ownerTodayIndex(readerToday: number, endDayIndex: number | null): number {
+  if (endDayIndex === null || endDayIndex <= readerToday) return readerToday;
+  return endDayIndex - readerToday <= MAX_ZONE_DATE_LEAD_DAYS ? endDayIndex : readerToday;
 }
 
 export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
@@ -2587,7 +2968,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // arithmetic knew the two were different. A surface that states an
   // interpretability verdict reads this first: a view of a trial is not the trial,
   // and eleven days may not certify eighty-four.
-  const trialElapsedEnd = Math.min(todayIndex, ctx.endDayIndex ?? todayIndex);
+  //
+  // CUL-2094 — THE LENGTH IS COUNTED ON THE OWNER'S CALENDAR, THE EVIDENCE ON THE
+  // READER'S. `ownerTodayIndex` lets an ended trial's length reach the end date the
+  // owner's device wrote, even when that date is a day past the reader's today. It
+  // must not move `evidenceEnd`: the first cut lifted that too, and the adversarial
+  // pass priced it at once. The 14-day refusal window is anchored on `evidenceEnd`, so
+  // it slid onto days the reader's zone had not reached and dropped a cat's three
+  // refused bowls from 13 days before the report, with no real time passed; and the
+  // coverage denominator gained a day no meal could yet be bucketed on (55 of 56).
+  // So the record is read to the reader's today, as before, and the owner's last day
+  // shows as a trial day after it (`trialDaysOutsideRange.after`), which is true.
+  const trialElapsedEnd = Math.min(
+    ownerTodayIndex(todayIndex, ctx.endDayIndex),
+    ctx.endDayIndex ?? todayIndex,
+  );
   const trialDaysOutsideRange = {
     before: Math.max(0, scopedStart - ctx.startDayIndex),
     after: Math.max(0, trialElapsedEnd - evidenceEnd),
@@ -2656,6 +3051,16 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // when food identity misses.
   const narrow = emptyRefusalCounters();
   const wide = emptyRefusalCounters();
+  // CUL-1993: the wide members, kept so the meal record can be re-read as it stood
+  // before the first matched trial-diet feeding (see the hold at the selection site).
+  const wideMembers: { feeding: TrialFeeding; day: number }[] = [];
+  const narrowIds = new Set<string>();
+  let firstNarrowStamp = Number.POSITIVE_INFINITY;
+  let firstNarrowDay = Number.POSITIVE_INFINITY;
+  // Rated TREATS, read only by R2's history (CUL-54): never a refusal population (82%
+  // of feedings are treats, and R1b's denominator excludes them), but a treat rated
+  // Refused today is still something rated since, and something left unfinished now.
+  const treats = emptyRefusalCounters();
   // The viability fact is about the pet NOW, not about the whole trial.
   // ANCHORED ON THE EVIDENCE END, NOT THE COVERAGE END (B-422). This comment's
   // claim — the fact is about the pet NOW — is only true if "now" is the last day
@@ -2688,7 +3093,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // than had elapsed — 100 of 112, `supports`, on a record that read 19 of 56
     // and `does_not_support` the moment they tapped Complete on the same data.
     // Post-trial logging was un-suppressing §5.2's record claim.
-    if (feeding.foodType !== 'treat' && day >= startDayIndex && day <= endDayIndex) {
+    const treat = isTreatFeeding(feeding);
+    if (!treat && day >= startDayIndex && day <= endDayIndex) {
       coveredDays.add(day);
     }
 
@@ -2703,11 +3109,35 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // test: the record R1b teaches about and the record the refusal lane falls
     // back to when identity misses are THE SAME SET, deliberately, so a surface
     // can never teach the tap off one denominator and speak from another.
-    if (feeding.foodType !== 'treat' && day >= startDayIndex) {
+    if (!treat && day >= startDayIndex) {
       tallyRefusal(wide, feeding, day, refusalWindowStart);
+      wideMembers.push({ feeding, day });
+    } else if (treat && day >= startDayIndex) {
+      tallyRefusal(treats, feeding, day, refusalWindowStart);
     }
 
     const classification = classifyFeeding(ctx, feeding);
+    const bowl = isBowlFeeding(feeding);
+    if (bowl) {
+      // A MIXED BOWL (spec §5.2), two rules the bowl verdict must not erase, both
+      // applied BEFORE the unclassifiable skip below:
+      // • darkness is per component (break 5): any component the arm did not
+      //   consult darkens the day, whatever the bowl's verdict;
+      // • the refusal lane (break 1): a bowl carrying the trial diet joins the
+      //   trial-diet population with the bowl's rating, WHATEVER the bowl's verdict.
+      //   Otherwise a cat refusing every mixed bowl on days 1–14 while eating two
+      //   plain trial bowls reads as eating the trial diet.
+      if ((classification.components ?? []).some((c) => !c.attributionChecked)) darkDays.add(day);
+      if (carriesTrialDiet(classification) && day >= startDayIndex) {
+        tallyRefusal(narrow, feeding, day, refusalWindowStart);
+        narrowIds.add(feeding.eventId);
+        const stamp = Date.parse(feeding.occurredAt);
+        if (stamp < firstNarrowStamp) {
+          firstNarrowStamp = stamp;
+          firstNarrowDay = day;
+        }
+      }
+    }
     if (classification.verdict === 'unclassifiable') {
       unclassifiable += 1;
       continue;
@@ -2748,8 +3178,15 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // R1b's narrow denominator, and `allowedSetUnavailable`'s second disjunct: a
     // `primary_diet` row that matches NOTHING is the same fact as no row at all,
     // and commoner.
-    if (classification.role === 'primary_diet' && day >= startDayIndex) {
+    if (!bowl && classification.role === 'primary_diet' && day >= startDayIndex) {
       tallyRefusal(narrow, feeding, day, refusalWindowStart);
+      // `day` is non-null here, so the stamp parsed (`dayIndexOf` skips the row first).
+      narrowIds.add(feeding.eventId);
+      const stamp = Date.parse(feeding.occurredAt);
+      if (stamp < firstNarrowStamp) {
+        firstNarrowStamp = stamp;
+        firstNarrowDay = day;
+      }
     }
 
     totalFeedings += 1;
@@ -2771,7 +3208,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     for (const protein of classification.antigens) {
       const entry = antigens.get(protein) ?? { protein, feedings: 0, fromPermitted: 0 };
       entry.feedings += 1;
-      if (classification.verdict === 'permitted') entry.fromPermitted += 1;
+      if (antigenFromPermitted(classification, protein)) entry.fromPermitted += 1;
       antigens.set(protein, entry);
     }
   }
@@ -2908,12 +3345,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // share test is the obvious next idea and is the one that cannot distinguish a
   // broken join from a genuinely dirty trial.
   //
-  // So the gate stays where round 1 put it: the fallback speaks only where the
-  // module has ALREADY concluded it cannot identify the diet at all — no usable
-  // `primary_diet` row, or one that matched nothing across ten-plus feedings. That
-  // is conservative, its failure mode is SILENCE (the status quo, never a
-  // regression), and it carries no over-fire. Everything it misses is filed as
-  // B-579 and gated on B-529.
+  // So the gate stays where round 1 put it: the fallback speaks only where nothing
+  // has matched the trial diet at all — no usable `primary_diet` row, or one that
+  // matched no feeding (R1 below dropped the ten-feeding count this once carried).
+  // Its failure mode is SILENCE (the status quo, never a regression); its over-fire
+  // is a rival food refused before the trial food is ever logged, under copy that
+  // already says it cannot name the food. Everything it misses is filed as B-579
+  // and gated on B-529.
   //
   // ONE population for both facts is load-bearing on its own: `rangeRefusal` and
   // `trialDietRefusal` are read together by `lib/dietTrialCard.ts` and by
@@ -2921,32 +3359,129 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // different rows put a smaller, staler number on the vet's safety band than the
   // one on the owner's card. The same coupling covers the stand-down pair
   // (`recentFinished / recentRated`) and the episode span.
-  const population: TrialRefusalPopulation = allowedSetUnavailable ? 'meal_record' : 'trial_diet';
-  const pop = allowedSetUnavailable ? wide : narrow;
+  //
+  // CUL-60(b), R1 (ruled 2026-10-01): THE GATE IS SPLIT FROM `allowedSetUnavailable`.
+  // That flag's second disjunct waits for `UNHYDRATED_SET_FLOOR` feedings, a number
+  // derived for "is the join broken?", not "is the cat eating?" (C-34). Borrowed here,
+  // it kept a once-a-day cat whose trial food never matched silent for nine days,
+  // past the 48–72h window the feline note cites, where the matched cat fires on day
+  // 3. So the lane falls back whenever NOTHING has ever matched the trial food, at any
+  // count. Round 1's condition (nothing matched, over the whole range) is kept and only
+  // the count is dropped, so neither round 2 break is reachable: a partial match still
+  // keeps the narrow population, and both facts still come from one population. It is
+  // strictly louder: below the floor the narrow counters are all zero, so no stand-down
+  // can be lost. `allowedSetUnavailable` and its other readers keep their floor.
+  //
+  // CUL-1993, ruling (a) (PM, 2026-10-18): ONE RECOGNISED BOWL NEVER TAKES BACK THE
+  // WARNING. After R1 the meal record speaks first for an unmatched cat, so the round-1
+  // condition above turned a partial match from silence into a WITHDRAWAL: refusals on
+  // days 1–3 fired the card, one matched bowl on day 4 (refused or unrated) moved the
+  // lane to a one-feeding narrow population, and the card read "Keep going with the
+  // trial diet" over 4 of 4 refused bowls. The ruling: once the fallback has fired
+  // it holds until the stand-down's own evidence says otherwise (CUL-2015 below
+  // removed the ruling's original recency-window scope). Silence never cancels an alarm, and neither does an unrated bowl.
+  //
+  // "HAS FIRED" IS READ OFF THE RECORD, NOT STORED. The fallback can only have spoken
+  // while nothing had matched, and it was still speaking at the first match if the
+  // facts' own questions (`recentRefusalFires`, `rangeRefusalFires`) hold over the
+  // meal record as it stood then: every non-treat feeding up to that moment except the
+  // matched ones, the now-fact over the recency window ending on the match's day. The
+  // window is the one that ended at the match, not today's: the
+  // first cut measured today's and `adversarial-reviewer` executed the cost (refusals
+  // on days 1–3, a match on day 4, read on day 15: day 1 had aged out, the prefix fell
+  // below the floor and the card went silent, though the fallback fired on day 3).
+  // Same-moment rows count as before the match (`<=`, the matched rows themselves
+  // excluded): a minute-resolution picker puts a refusal and a match on one stamp.
+  //
+  // WHY THIS DOES NOT REOPEN ROUND 2. The hold needs refusals BEFORE any match, so a
+  // record whose matches came first (the re-shot bag) is exactly as before, and both
+  // facts still come from one population. Its loud edge is ruled, not accidental: three
+  // unmatched refusals followed by any number of matched UNRATED bowls stays held,
+  // because unrated is not eating.
+  //
+  // IT RELEASES ONLY ON THE STAND-DOWN'S OWN EVIDENCE, over the meal record it speaks
+  // from: `eatingNowOf`, and only once the now-fact over that record has stopped
+  // firing. At exactly `REFUSAL_SHARE` both are true (3 refused, 3 finished), and the
+  // card's `isEatingNow` stands down only the RANGE fact, never a live now-fact, so
+  // releasing at the tie withdrew a warning the record still fires (the second pass).
+  //
+  // AND ONLY WHILE THE TRIAL DIET IS NOT SPEAKING FOR ITSELF. When the narrow
+  // now-fact fires, the card already warns in the present tense, names the food and
+  // carries R4's run; switching to the meal record there lost the run to one finished
+  // rival bowl (the first pass) and put "can't match these meals" over matched ones.
+  // Nor when the trial diet's RANGE fact fires and the meal record's does not: finished
+  // rival bowls weeks old dilute the wide share, and the second pass executed a held
+  // record erasing a narrow range fact the report and the withheld card read.
+  // CUL-2015: PAST TODAY'S WINDOW THE HOLD ONLY EVER ADDS. Inside the window the
+  // carve-out is CUL-1993's as shipped. Past it, a first match that the old scope left
+  // to the trial diet stays there whenever the trial diet's range fact fires, so the
+  // hold reaches only a record where the trial diet says nothing at all and can never
+  // trade one warning for another. Two passes executed what a single rule cost:
+  // keeping the in-window carve-out past the window traded a trial-diet 3 of 3 with
+  // R4's run for a meal-record "largely" (rival refusals days 1–3, matched refusals
+  // days 4–5, a finished rival bowl on day 10, a matched refusal on day 30); asking
+  // for the meal record's NOW-fact instead silenced the card in the window (a trial-
+  // diet range fact under the span guard) and dropped the run past it. Which of two
+  // firing facts should speak is the PM's fork, filed beside CUL-2015.
+  //
+  // CUL-2015, ruling (a) (PM, 2026-10-19): THE HOLD HAS NO RECENCY SCOPE. It applies
+  // whenever the pre-match meal record fired EITHER refusal fact, however long ago the
+  // first match was, and only the stand-down releases it. R2's "dated, not expired"
+  // (CUL-54), carried through the population switch: before this, refusals weeks ago,
+  // a match, then only unrated bowls let go (20 of 20 refused, then nothing on the
+  // card), where the same record with no match kept R2's past-tense range fact. The
+  // range fact joins the now-fact because the meal record can have been speaking ONLY
+  // in the past tense when the first recognised bowl arrived (refusals on days 1–3, a
+  // first match on day 30), and the card was still showing it. Ruled loud edge: rival
+  // refusals logged long before the trial food stay held, in the past tense, until
+  // REFUSAL_MIN_RATED recent ratings say eating.
+  let fallbackHeld = false;
+  if (
+    !allowedSetUnavailable &&
+    narrow.feedings > 0 &&
+    !recentRefusalFires(narrow) &&
+    (firstNarrowDay >= refusalWindowStart
+      ? !rangeRefusalFires(narrow) || rangeRefusalFires(wide)
+      : !rangeRefusalFires(narrow))
+  ) {
+    const preMatch = emptyRefusalCounters();
+    const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);
+    for (const m of wideMembers) {
+      if (narrowIds.has(m.feeding.eventId)) continue;
+      if (Date.parse(m.feeding.occurredAt) <= firstNarrowStamp) {
+        tallyRefusal(preMatch, m.feeding, m.day, preMatchWindowStart);
+      }
+    }
+    fallbackHeld =
+      (recentRefusalFires(preMatch) || rangeRefusalFires(preMatch)) &&
+      (recentRefusalFires(wide) || !eatingNowOf(wide));
+  }
+  const refusalFallback = allowedSetUnavailable || narrow.feedings === 0 || fallbackHeld;
+  const population: TrialRefusalPopulation = refusalFallback ? 'meal_record' : 'trial_diet';
+  const pop = refusalFallback ? wide : narrow;
+  const run = refusalRunOf(pop, refusalWindowStart);
 
   const trialDietRefusal: TrialDietRefusal | null =
-    pop.recentRated >= REFUSAL_MIN_RATED &&
-    pop.recentDays.size >= REFUSAL_MIN_DAYS &&
-    spanMsOf(pop.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
-    pop.recentNotFinished / pop.recentRated >= REFUSAL_SHARE
+    recentRefusalFires(pop)
       ? {
           refusedFeedings: pop.recentNotFinished,
           ratedFeedings: pop.recentRated,
           days: pop.recentDays.size,
           population,
+          run,
         }
       : null;
 
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
-    pop.rangeRated >= REFUSAL_MIN_RATED &&
-    pop.rangeDays.size >= REFUSAL_MIN_DAYS &&
-    pop.rangeNotFinished / pop.rangeRated >= REFUSAL_SHARE
+    rangeRefusalFires(pop)
       ? {
           refusedFeedings: pop.rangeNotFinished,
           ratedFeedings: pop.rangeRated,
           days: pop.rangeDays.size,
           population,
+          history: refusalHistoryOf(pop, [wide, treats]),
+          run,
         }
       : null;
 
@@ -3131,6 +3666,309 @@ export function isWithinChallengeWindow(
 ): boolean {
   const delta = symptomDayIndex - exposureDayIndex;
   return delta >= 1 && delta <= CHALLENGE_WINDOW_DAYS[species];
+}
+
+// ── §6 — the transition, derived at read (Mixed meals, CUL-2052) ─────────────
+//
+// `transition_started_at` stays NULL and `started_at` is never moved by the app (T6):
+// everything below is computed from the record, at read, beside `classifyFeeding`,
+// and never shown to the owner as a state. The vet report prints it beside the
+// owner-entered Day 1 (spec §7.3, P-6) and never in place of it.
+
+/** How far before Day 1 "first fed" looks. The published ramps run 7 days (Ollie,
+ *  The Farmer's Dog) to 14 (a vet dermatologist's stretch; spec §1), so 60 days
+ *  covers a slow transition four times over while staying a bounded read: a food
+ *  fed months earlier and dropped is the old diet's history, not this switch. */
+export const TRANSITION_LOOKBACK_DAYS = 60;
+
+export interface TrialTransitionInput {
+  trial: TrialSpec;
+  allowedFoods: readonly AllowedFood[];
+  feedings: readonly TrialFeeding[];
+  arrangements?: readonly TrialArrangement[];
+  nowMs: number;
+  timeZone?: string;
+}
+
+export type FirstExclusiveDay =
+  /** The unbroken run of trial-food-only days reaches Day 1; its first day. */
+  | { kind: 'by_day1'; dayIndex: number }
+  /** Day 1 did not qualify; the run that reaches today starts here, after Day 1. */
+  | { kind: 'after_day1'; dayIndex: number }
+  /** The record cannot say: a gap sits where the run would start, or the run
+   *  does not reach today at all. */
+  | { kind: 'unknown' };
+
+export interface TrialTransition {
+  /** The earliest feeding, inside the lookback before Day 1, that carried a food on
+   *  the trial-diet list in force on Day 1. Null when there is none. */
+  firstFed: {
+    eventId: string;
+    occurredAt: string;
+    dayIndex: number;
+    /** In a bowl with another food. */
+    mixed: boolean;
+    /** The trial diet's share of that bowl (1 for a plain feeding); null when the
+     *  ratio is unknown. The OWNER'S estimate, printed as such. */
+    share: number | null;
+  } | null;
+  /** Local days before Day 1 on which the trial diet was fed at all, mixed or not. */
+  fedDaysBeforeDay1: number;
+  /** Local days before Day 1 holding a bowl that mixed the trial diet with another food. */
+  mixedDaysBeforeDay1: number;
+  /** The other foods in those bowls, most often first. */
+  otherFoodLabels: string[];
+  firstExclusive: FirstExclusiveDay;
+}
+
+interface FedFood {
+  foodItemId: string | null;
+  foodKey: string | null;
+  label: string | null;
+  foodType: string | null;
+  proteins: readonly string[];
+  share: number | null;
+}
+
+/** The foods a feeding put in front of the pet: a bowl's distinct components, or the
+ *  plain feeding as one food at the whole share. */
+function fedFoods(f: TrialFeeding): FedFood[] {
+  if ((f.components?.length ?? 0) > 0) {
+    return distinctComponents(f.components ?? []).map((c) => ({
+      foodItemId: c.foodItemId,
+      foodKey: c.foodKey,
+      label: c.label,
+      foodType: c.foodType,
+      proteins: c.proteins,
+      share: c.share ?? null,
+    }));
+  }
+  return [{
+    foodItemId: f.foodItemId,
+    foodKey: f.foodKey,
+    label: f.label,
+    foodType: f.foodType,
+    proteins: f.proteins,
+    share: 1,
+  }];
+}
+
+function hasIdentity(f: { foodItemId: string | null; foodKey: string | null }): boolean {
+  return f.foodItemId !== null || isUsableFoodKey(f.foodKey);
+}
+
+/**
+ * The transition IN (spec §6.1).
+ *
+ * MATCHING IS ON UNDATED IDENTITY (pass 1, break 6b): allowed-set membership is dated
+ * from `started_at`, so before Day 1 nothing is "in" the set. Each food is matched
+ * against the rows in force ON `started_at`, never on the meal's own date; otherwise
+ * "first fed" comes back empty and the disclosure silently vanishes.
+ *
+ * THE FIRST EXCLUSIVE DAY is the first day of the UNBROKEN run of logged days where
+ * the day has at least one non-treat feeding, every food fed is on the list, and no
+ * free-choice bowl of an off-list food is down. A treat-only day and an unlogged day
+ * both break the run (break 6a). Falsification (held): out of chicken on day 3,
+ * rabbit-only for a day, back to mixing — a naive "first trial-only day" lands on day
+ * 3; the run does not. Where a gap sits right before the run that reaches today, the
+ * start is unknowable and the answer is `unknown`, never the day after the gap.
+ */
+export function deriveTrialTransition(input: TrialTransitionInput): TrialTransition {
+  const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
+  const empty: TrialTransition = { firstFed: null, fedDaysBeforeDay1: 0, mixedDaysBeforeDay1: 0, otherFoodLabels: [], firstExclusive: { kind: 'unknown' } };
+  if (ctx.startDayIndex === null) return empty;
+  const start = ctx.startDayIndex;
+  const onDay1 = allowedFoodsOn(ctx, start);
+  const trialDiet = onDay1.filter((f) => f.role === 'primary_diet');
+  const isTrialDiet = (f: FedFood) => matchAllowed(trialDiet, f.foodItemId, f.foodKey) !== null;
+  // Before Day 1 against the list in force ON Day 1 (undated identity, break 6b); from Day 1
+  // on, against the list in force THAT day, as the classifier reads it, so a food withdrawn
+  // after Day 1 never starts an "only foods on the list" run beside an off-diet count
+  // (adversarial pass 2, break 6).
+  const listOn = (d: number) => (d < start ? onDay1 : allowedFoodsOn(ctx, d));
+  const isAllowedOn = (f: FedFood, d: number) => matchAllowed(listOn(d), f.foodItemId, f.foodKey) !== null;
+  const lookbackStart = start - TRANSITION_LOOKBACK_DAYS;
+  const today = localDayIndexOf(new Date(input.nowMs).toISOString(), input.timeZone) ?? start;
+
+  const byDay = new Map<number, TrialFeeding[]>();
+  for (const f of input.feedings) {
+    const d = dayIndexOf(ctx, f.occurredAt);
+    if (d === null || d < lookbackStart || d > today) continue;
+    const list = byDay.get(d) ?? [];
+    list.push(f);
+    byDay.set(d, list);
+  }
+
+  // First fed, and the mixed days, before Day 1.
+  let firstFed: TrialTransition['firstFed'] = null;
+  const mixedDays = new Set<number>();
+  const fedDays = new Set<number>();
+  const others = new Map<string, number>();
+  for (const [d, list] of byDay) {
+    if (d >= start) continue;
+    for (const f of list) {
+      const foods = fedFoods(f);
+      const trialParts = foods.filter(isTrialDiet);
+      if (trialParts.length === 0) continue;
+      fedDays.add(d);
+      const otherParts = foods.filter((x) => !isTrialDiet(x));
+      const mixed = otherParts.length > 0;
+      if (mixed) {
+        mixedDays.add(d);
+        for (const o of otherParts) {
+          const label = o.label ?? '';
+          if (label) others.set(label, (others.get(label) ?? 0) + 1);
+        }
+      }
+      const share = trialParts.some((x) => x.share === null)
+        ? null
+        : trialParts.reduce((sum, x) => sum + (x.share as number), 0);
+      if (firstFed === null || Date.parse(f.occurredAt) < Date.parse(firstFed.occurredAt)) {
+        firstFed = { eventId: f.eventId, occurredAt: f.occurredAt, dayIndex: d, mixed, share };
+      }
+    }
+  }
+
+  const offListBowlDown = (d: number) =>
+    (input.arrangements ?? []).some((a) => {
+      if (matchAllowed(listOn(d), a.foodItemId, a.foodKey) !== null) return false;
+      const from = dayIndexOf(ctx, a.startedAt) ?? -Infinity;
+      const until = a.endedAt ? dayIndexOf(ctx, a.endedAt) ?? Infinity : Infinity;
+      return from <= d && d <= until;
+    });
+  // A day counts as LOGGED, for knowing where a run starts, only with a non-treat feeding:
+  // a treat-only day does not show what the bowl held (adversarial pass 2, break 8).
+  const logged = (d: number) => (byDay.get(d) ?? []).some((f) => !isTreatFeeding(f));
+  const qualifies = (d: number): boolean => {
+    const list = byDay.get(d);
+    if (!list || list.length === 0) return false;
+    if (!list.some((f) => !isTreatFeeding(f))) return false;
+    for (const f of list) {
+      if (f.incompleteBowl) return false;
+      for (const food of fedFoods(f)) {
+        if (!hasIdentity(food) || !isAllowedOn(food, d)) return false;
+      }
+    }
+    return !offListBowlDown(d);
+  };
+
+  let firstExclusive: FirstExclusiveDay = { kind: 'unknown' };
+  if (qualifies(start)) {
+    let d = start;
+    while (d - 1 >= lookbackStart && qualifies(d - 1)) d -= 1;
+    firstExclusive = { kind: 'by_day1', dayIndex: d };
+  } else {
+    // The run that reaches today. Today still being logged is not a gap.
+    const evidenceEnd = Math.min(ctx.endDayIndex ?? today, today);
+    const end = evidenceEnd === today && !logged(today) ? today - 1 : evidenceEnd;
+    if (end > start && qualifies(end)) {
+      let d = end;
+      while (d - 1 > start && qualifies(d - 1)) d -= 1;
+      // The day before the run must be LOGGED and not qualify for the start to be
+      // known: after a gap, the switch could have finished on any unlogged day.
+      if (logged(d - 1)) firstExclusive = { kind: 'after_day1', dayIndex: d };
+    }
+  }
+
+  return {
+    firstFed,
+    fedDaysBeforeDay1: fedDays.size,
+    mixedDaysBeforeDay1: mixedDays.size,
+    otherFoodLabels: [...others.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([label]) => label),
+    firstExclusive,
+  };
+}
+
+export interface NewFoodsInput extends TrialTransitionInput {
+  /** Symptom events to show side by side, never as attribution. */
+  symptoms: readonly { occurredAt: string; eventType: string }[];
+}
+
+export interface NewFoodIntroduced {
+  label: string;
+  firstFedDayIndex: number;
+  lastFedDayIndex: number;
+  /** Every feeding of the food, in order: its share of that bowl (1 when fed on its
+   *  own, null when the ratio is unknown). Context, never a dose (§5.3). */
+  ramp: { dayIndex: number; share: number | null }[];
+  /** Distinct local days the food was fed: the span alone implies daily feeding. */
+  fedDays: number;
+  /** Days of the union window that have elapsed (to today), and how many of them hold
+   *  ANY logged feeding or symptom: the denominator behind a symptom count, so a quiet
+   *  window over unlogged days never reads as a clean one (cold read, CUL-2052). */
+  windowDaysElapsed: number;
+  windowDaysLogged: number;
+  /** Symptoms inside the UNION of per-exposure windows. Empty is "none logged in the
+   *  window", never "none": unlogged days are always possible (§5.2). */
+  symptomsInWindow: { occurredAt: string; eventType: string; dayIndex: number }[];
+}
+
+/**
+ * Coming off a trial (spec §6.3): the foods fed after the trial ENDED that were never
+ * on its list. Not a declared rechallenge (D8). First fed is the first date ANY amount
+ * was fed (share does not matter). The symptom window is the UNION of per-exposure
+ * windows, from first fed to last fed plus the species window, same day excluded —
+ * exactly `isWithinChallengeWindow` per feeding day. A window anchored only at first
+ * fed misses a day-11 flare after a ramp that reached 100% on day 10 (break 7).
+ * Empty while the trial runs: there is no "after" yet.
+ */
+export function newFoodsIntroduced(input: NewFoodsInput): NewFoodIntroduced[] {
+  const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
+  if (ctx.startDayIndex === null || ctx.endDayIndex === null) return [];
+  const end = ctx.endDayIndex;
+  const today = localDayIndexOf(new Date(input.nowMs).toISOString(), input.timeZone);
+  if (today === null || today <= end) return [];
+  const everListed = (f: FedFood) => matchAllowed(input.allowedFoods, f.foodItemId, f.foodKey) !== null;
+
+  const byFood = new Map<string, Omit<NewFoodIntroduced, 'fedDays' | 'windowDaysElapsed' | 'windowDaysLogged'> & { days: Set<number> }>();
+  const sorted = [...input.feedings].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  for (const f of sorted) {
+    const d = dayIndexOf(ctx, f.occurredAt);
+    if (d === null || d <= end || d > today) continue;
+    for (const food of fedFoods(f)) {
+      if (!hasIdentity(food) || everListed(food)) continue;
+      const key = food.foodItemId ? `id:${food.foodItemId}` : `key:${food.foodKey}`;
+      const entry = byFood.get(key) ?? {
+        label: food.label ?? '',
+        firstFedDayIndex: d,
+        lastFedDayIndex: d,
+        ramp: [],
+        symptomsInWindow: [],
+        days: new Set<number>(),
+      };
+      entry.lastFedDayIndex = Math.max(entry.lastFedDayIndex, d);
+      entry.ramp.push({ dayIndex: d, share: food.share });
+      entry.days.add(d);
+      byFood.set(key, entry);
+    }
+  }
+  const species = ctx.species;
+  const symptoms = input.symptoms
+    .map((s) => ({ ...s, dayIndex: dayIndexOf(ctx, s.occurredAt) }))
+    .filter((s): s is { occurredAt: string; eventType: string; dayIndex: number } => s.dayIndex !== null)
+    .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  const loggedDays = new Set<number>(symptoms.map((s) => s.dayIndex));
+  for (const f of input.feedings) {
+    const d = dayIndexOf(ctx, f.occurredAt);
+    if (d !== null) loggedDays.add(d);
+  }
+  return [...byFood.values()]
+    .map(({ days, ...food }) => {
+      const windowDays = new Set<number>();
+      for (const d of days) {
+        for (let w = d + 1; w <= Math.min(d + CHALLENGE_WINDOW_DAYS[species], today); w++) windowDays.add(w);
+      }
+      return {
+        ...food,
+        fedDays: days.size,
+        windowDaysElapsed: windowDays.size,
+        windowDaysLogged: [...windowDays].filter((w) => loggedDays.has(w)).length,
+        symptomsInWindow: symptoms.filter((s) => [...days].some((d) => isWithinChallengeWindow(d, s.dayIndex, species))),
+      };
+    })
+    .sort((a, b) => a.firstFedDayIndex - b.firstFedDayIndex || a.label.localeCompare(b.label));
 }
 
 // ── Copy (nyx-voice + clinical-guardrails) ───────────────────────────────────

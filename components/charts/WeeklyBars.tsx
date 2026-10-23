@@ -4,7 +4,7 @@ import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { daysSoFarLabel, type WeeklyBucketsModel } from '../../lib/chartModels';
-import { dateWord, markWord, weeklyBarsA11yLabel, weeklyOutsideLine } from '../../lib/chartCopy';
+import { dateWord, markWord, weeklyBarsA11yLabel, weeklyCarriedLine, weeklyOutsideLine } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
 import { DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
 import { CoverageTick } from './CoverageTick';
@@ -55,6 +55,12 @@ interface Props {
   masked?: readonly boolean[];
   /** The words under the chart naming what the hatch stands for; drawn only with `masked`. */
   maskCaption?: string | null;
+  /**
+   * The last week's carried-in bout (Q12, `weeklyCarriedLine`) is already said by a line beside
+   * the chart (the Home lead card's week line), so the words under the chart name only the
+   * earlier weeks. The spoken label always names every one.
+   */
+  lastCarriedSaidBeside?: boolean;
 }
 
 const DEFAULT_PLOT_HEIGHT = 64;
@@ -64,7 +70,7 @@ const MIN_BAR_HEIGHT = 4;
 const ZERO_STUB_HEIGHT = 2;
 const MAX_BAR_WIDTH = 26;
 
-export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identity = 'weekly', plotHeight = DEFAULT_PLOT_HEIGHT, masked, maskCaption = null }: Props) {
+export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identity = 'weekly', plotHeight = DEFAULT_PLOT_HEIGHT, masked, maskCaption = null, lastCarriedSaidBeside = false }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const { markStyle, labelStyle } = useDrawIn({
@@ -84,6 +90,7 @@ export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identit
   const partialLabel = partial ? daysSoFarLabel(partial) : null;
   const markX = model.mark && model.mark.slot != null && width > 0 ? model.mark.slot * slot : null;
   const outside = weeklyOutsideLine(model);
+  const carried = weeklyCarriedLine(model, lastCarriedSaidBeside);
   const middle = n >= 5 && n % 2 === 1 ? Math.floor(n / 2) : -1;
 
   return (
@@ -152,6 +159,16 @@ export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identit
           <Animated.View style={labelStyle}>
             <ThemedText style={styles.outside} testID="weekly-outside-line">
               {outside}
+            </ThemedText>
+          </Animated.View>
+        )}
+
+        {/* A bout still going from an earlier week, named (Q12): a bar counts the bouts that
+            began in its week, so this is what keeps a 0 there from reading as none. */}
+        {carried != null && (
+          <Animated.View style={labelStyle}>
+            <ThemedText style={styles.outside} testID="weekly-carried-line">
+              {carried}
             </ThemedText>
           </Animated.View>
         )}

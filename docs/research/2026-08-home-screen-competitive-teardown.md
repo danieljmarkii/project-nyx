@@ -180,7 +180,7 @@
 - **Read:** Apple is currently rewarding **calm, dense, data-forward tracker presentation** — the "clinical data made legible" register — over gamified health. A pet-health home built like a Tide-Guide-grade data surface with a briefing on top has a genuine awards-shaped story.
 
 ### The "AI daily briefing" pattern — who ships one and what it looks like
-- **ChatGPT Pulse (OpenAI, 2025-09-25; TechCrunch `[fetched]`):** proactive overnight research delivered as "five to 10 briefs" rendered as **cards**; tapping opens the full report; deliberately bounded — generation stops with "**Great, that's it for today**," framed by TechCrunch as anti-engagement-feed design.
+- **ChatGPT Pulse **(⚠ §V.1: retired)** (OpenAI, 2025-09-25; TechCrunch `[fetched]`):** proactive overnight research delivered as "five to 10 briefs" rendered as **cards**; tapping opens the full report; deliberately bounded — generation stops with "**Great, that's it for today**," framed by TechCrunch as anti-engagement-feed design.
 - **Oura:** Today as "Top Stories" + "one big thing" — the briefing *is* the home. **Whoop:** Daily Outlook, a named morning-summary object. **Strava Athlete Intelligence:** out of beta ~2025-02; per-activity natural-language summaries; subscriber-only; vendor claims "80% or more of users say… very helpful" `[search-snippet]`.
 - **In the pet category:** briefing-*shaped copy* now exists at Tractive ("weekly, plain-language insights"), Maven ("Daily summaries"), VetPati ("proactive daily insights" incl. reassurance), Petalife ("daily health snapshot" home), CompanAIn (LPRA trend narration) — all `[fetched]`. **None of these five describes the briefing as prioritized/curated with safety-first ordering or attached evidence; four of the five have ≤27 ratings, and Tractive's is weekly + hardware-fed.**
 - **Read:** the daily AI briefing is the consumer pattern of 2025–26. The credibility differentiator available here — per the July doc's verified engine facts — is a briefing whose sentences are **backed by named deterministic findings and counts** rather than LLM prose; the bounded "that's it for today" register (Pulse) matches Principle 3's never-a-firehose rule.
@@ -287,3 +287,10 @@
 ---
 
 *Carries evidence + research debt, not decisions. Prepared by session `2026-08-31-home-redesign-spike-kickoff` (CUL-773); decisions live on CUL-775 and in the spike's spec (CUL-777).*
+
+---
+
+## §V Verification addendum (2026-10-12, CUL-1776)
+
+### §V.1 ChatGPT Pulse is retired
+OpenAI retired ChatGPT Pulse into scheduled tasks (help-center notice of 2026-06-18, independent coverage). The design lesson stands; the "shipped precedent" claim does not. Gemini's Daily Brief is the current shipped analog. Source: `docs/culprit-competitive-landscape-2026-10.md` §1 ⑥ and §14 item 2, ratified on CUL-1768.

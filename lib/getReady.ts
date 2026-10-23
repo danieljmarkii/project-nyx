@@ -106,6 +106,13 @@ export interface WorthRaising {
    * SQLite, so the page is useful, just not whole.
    */
   signalUnavailable: boolean;
+  /**
+   * True when the device's own eating check did not answer (CUL-1972): the read threw,
+   * as distinct from a check that ran and saw no decline. Like `signalUnavailable` it
+   * names a gap, never an error, and with it set the section can never render as the
+   * quiet record: a cat whose eating nobody checked is not a calm one.
+   */
+  intakeUnavailable: boolean;
 }
 
 /** Jordan: "never more than four." Governs the optional rows; safety sits above it. */
@@ -178,6 +185,14 @@ export interface WorthRaisingInput {
    */
   intakeDecline: readonly LocalIntakeDecline[];
   /**
+   * True when the pet's own intake-decline read did not answer (`readIntakeDecline`
+   * returned null, CUL-1972). Then `intakeDecline` above is only what the trial input
+   * held, which may be nothing, and nothing here may treat it as "no decline": the
+   * falling vomit pair is withheld (unknown withholds, as Home's B-789 rule does on
+   * unloaded facts) and the section names the gap. REQUIRED, never defaulted (C-37).
+   */
+  intakeUnavailable: boolean;
+  /**
    * The Signal screen's composed sentence for each finding whose screen recounts it from the
    * record (GC-4 PR 3, CUL-1570), keyed by `screenSentenceKey` of the cached finding it was
    * composed from. Under Design v2 the screen states a counted finding (chronicity, worsening,
@@ -221,6 +236,37 @@ export function localIntakeDeclines(
   return trial.intakeDeclineHeadline
     ? [{ trigger: null, refusedFoodLabel: null, headline: trial.intakeDeclineHeadline }]
     : [];
+}
+
+/**
+ * The declines Get ready states (CUL-1093): the pet's own read, for every pet, joined
+ * by any the trial input holds that the pet's read does not.
+ *
+ * `loadDietTrialFacts` returns before its decline read when the pet has no trial, so
+ * the trial input alone handed this page nothing for a cat that stopped eating with no
+ * trial running. For a trial pet the two are the same detector on the same clock from
+ * two reads, so they agree; when they do not (one read failed soft to `[]`, or a meal
+ * landed between them) the union keeps both rather than choosing. This can add a row
+ * to the page, never remove one.
+ */
+export function getReadyIntakeDeclines(
+  petDeclines: readonly LocalIntakeDecline[],
+  trial: Pick<TrialCardInput, 'intakeDeclineHeadline' | 'intakeDeclineFacts'> | null,
+): LocalIntakeDecline[] {
+  const merged = [...petDeclines];
+  for (const t of localIntakeDeclines(trial)) {
+    if (!merged.some((p) => sameLocalDecline(p, t))) merged.push(t);
+  }
+  return merged;
+}
+
+/** One decline, two reads: the same trigger and, for a refusal, the same food. An
+ *  unknown decline (no trigger) matches only its own sentence, so it is kept. */
+function sameLocalDecline(a: LocalIntakeDecline, b: LocalIntakeDecline): boolean {
+  if (a.trigger === null || b.trigger === null) return a.headline === b.headline;
+  if (a.trigger !== b.trigger) return false;
+  if (a.trigger !== 'refused_normal_food') return true;
+  return (a.refusedFoodLabel ?? '').trim().toLowerCase() === (b.refusedFoodLabel ?? '').trim().toLowerCase();
 }
 
 /**
@@ -341,6 +387,7 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   return {
     rows,
     signalUnavailable: input.findings === null,
+    intakeUnavailable: input.intakeUnavailable,
   };
 }
 
@@ -380,7 +427,11 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   // where it appears nowhere else. The rundown block has a tile for timing and none for
   // a correlation; the correlation is the row with no second home.
   let standDowns = 0;
-  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs, input.signalAnchor)
+  // An eating check that did not answer withholds on its own (CUL-1972), whatever the
+  // caller computed: the page cannot know the pet is eating, so a falling pair may not
+  // be raised as good news. Here, not only at the caller, so no host can forget it.
+  const withhold = input.withholdFallingVomit || input.intakeUnavailable;
+  return visibleFindings(input.findings, withhold, input.nowMs, input.signalAnchor)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
       finding: f.finding,
@@ -590,8 +641,13 @@ function foldLabel(label: string): string {
  */
 function intakeRow(decline: LocalIntakeDecline): WorthRaisingRow {
   return {
-    // Keyed by the decline, so two device rows never share a React key.
-    id: `intake-${decline.trigger ?? 'decline'}`,
+    // Keyed by the decline, so two device rows never share a React key: the trigger,
+    // and the food for a refusal, since two refusals of two foods are two rows
+    // (CUL-1093). An unknown decline is keyed by its sentence.
+    id:
+      decline.trigger === null
+        ? `intake-decline-${decline.headline}`
+        : `intake-${decline.trigger}${decline.refusedFoodLabel === null ? '' : `-${decline.refusedFoodLabel.trim().toLowerCase()}`}`,
     text: decline.headline,
     detail: null,
     source: 'intake',

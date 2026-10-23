@@ -9,7 +9,8 @@ import type { FoodIntakeStat, PickerFood } from './db';
 // The placeholder a photo capture's food_items row carries until extraction names it
 // (app/food-capture.tsx). The reaper (lib/sync.ts reapStalePendingFoods) requires it on
 // top of 'pending', because the status alone does not mean unconfirmed: retrying
-// extraction re-writes 'pending' onto a confirmed food (CUL-769). It means the SERVER
+// extraction once re-wrote 'pending' onto a confirmed food (CUL-769; the retry no longer
+// writes it, and this guard stays so the next screen that does cannot delete a food). It means the SERVER
 // never received the owner's names, which a lost confirm write also leaves (CUL-1467).
 export const PENDING_CAPTURE_LABEL = 'Extracting…';
 
@@ -52,6 +53,15 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
 // this and never restate it. `EVENT_TYPES.meal.label` (constants/eventTypes.ts)
 // spells the same word for the type grid from its own literal; a taxonomy rename
 // of that label must visit this helper too, or the grid and the rows diverge.
+/**
+ * Mixed meals R1: the one rule for a food that can go in a bowl with another. Treats, toppers
+ * and anything not set as a meal stay their own logs. The bowl's writer (`assertMixableFoods`)
+ * refuses by it and the bowl picker offers by it, so the two cannot disagree.
+ */
+export function isMixableFood(f: { food_type: string | null; format: string | null }): boolean {
+  return f.food_type === 'meal' && f.format !== 'topper';
+}
+
 export function mealRowLabel(foodType: string | null | undefined): 'Meal' | 'Treat' {
   return foodType === 'treat' ? 'Treat' : 'Meal';
 }
@@ -85,6 +95,7 @@ export function foodLabelOf(
 // foods too). Re-exported here because the three library surfaces already import
 // FORMAT_LABEL from this module; splitting the file must not move their import.
 export { FORMAT_LABEL, foodFormatTag, foodFormatWord } from './foodFormat';
+import { FORMAT_LABEL as FORMAT_WORD, foodFormatTag as formatTagOf } from './foodFormat';
 
 // ── Picker scope chips (B-347 / B-020) ─────────────────────────────────────────
 // The pinned scope-chip row filters the picker's library by a FACT the food
@@ -148,8 +159,8 @@ export function filterFoodsByScope<T extends { food_type: string | null; format:
 // 2-col grid with matching tile heights (driven by the tallest tile in the
 // row). A trailing odd tile lands in a one-element row, which the caller pads
 // with a spacer. Empty in → empty out; order is preserved row-major.
-export function toFoodRows(foods: PickerFood[]): PickerFood[][] {
-  const rows: PickerFood[][] = [];
+export function toFoodRows<T extends PickerFood>(foods: T[]): T[][] {
+  const rows: T[][] = [];
   for (let i = 0; i < foods.length; i += 2) {
     rows.push(foods.slice(i, i + 2));
   }
@@ -324,7 +335,9 @@ export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): s
   const when = relativeDayLabel(stat.last_fed_at, now);
   if (!when) return null; // unreadable timestamp — no honest recency to show
   const recency = `Last logged ${when}`;
-  return stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
+  const counted = stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
+  // Mixed bowls counted above are disclosed (spec §7.4): "· 8 in a mix".
+  return (stat.mix_count ?? 0) > 0 ? `${counted} · ${stat.mix_count} in a mix` : counted;
 }
 
 // ── Reliable-favorites shelf (B-004 PR 5) ──────────────────────────────────────
@@ -515,4 +528,45 @@ export function foodFavoriteNote(fav: ReliableFavorite): string {
 // the IntakeDeclineResult.status the wrapper reads from getIntakeDecline.
 export function shouldSuppressFavorites(declineStatus: string): boolean {
   return declineStatus === 'watch';
+}
+
+/** A regex-safe copy of a format word ("Freeze-dried" carries a hyphen). */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The product's name as a row prints it BESIDE its format tag: a trailing qualifier that
+ * only restates the item's own recorded format is dropped, because the tag already says
+ * it ("Selected Protein PR, Dry" beside DRY reads "Selected Protein PR").
+ *
+ * WHY THIS IS A DATA KEY, NOT A ", Wet" REGEX (BRK-12, the round-3 critique): the owner's
+ * library holds one prescription line as two items, "Selected Protein PR, Dry"
+ * (dry_kibble) and "Selected Protein PR, Wet" (wet_canned), and rule B's run crosses wet
+ * and dry of ONE product. What decides that the trailing word is a qualifier is the
+ * item's own `format` column: only the word `FORMAT_LABEL` gives that format can be
+ * dropped, and only when the row shows it as a tag. A dry item named "…, Wet" keeps its
+ * name (the record disagrees with itself, and the row shows both halves rather than
+ * choosing); a name that merely ends in a format word with no separator ("Hill's Dry")
+ * is never touched; an unknown or 'other' format has no tag, so nothing is dropped.
+ *
+ * A Class A canonical key in CLAUDE.md's sense (a form-qualifier spelling), so it is
+ * CONVERGENT: it strips until nothing more matches, and never strips a name to nothing
+ * (", Dry" alone is kept). `f(f(x)) === f(x)` is pinned by a property test.
+ */
+export function productNameBesideTag(
+  product: string | null | undefined,
+  format: string | null | undefined,
+  rowLabel?: string | null,
+): string | null {
+  const name = product?.trim() || null;
+  if (name === null || !format || formatTagOf(format, rowLabel) === null) return name;
+  const word = escapeRegExp(FORMAT_WORD[format]);
+  const qualifier = new RegExp(`(?:\\s*,\\s*|\\s+[-–—]\\s+)${word}$|\\s*\\(${word}\\)$`, 'i');
+  let out = name;
+  for (;;) {
+    const next = out.replace(qualifier, '').trim();
+    if (next === out || next.length === 0) return out;
+    out = next;
+  }
 }

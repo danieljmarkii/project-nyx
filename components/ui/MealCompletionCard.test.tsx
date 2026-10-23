@@ -46,6 +46,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+// Mixed meals row 5 — the bowl's one writer, observable; the stepper's tests drive it.
+const mockSetMealComponents = jest.fn().mockResolvedValue({ food_item_id: null, component_count: 2 });
+jest.mock('../../lib/mealComponents', () => ({
+  setMealComponents: (...a: unknown[]) => mockSetMealComponents(...a),
+}));
 // The door the floor line and the combo row open, observable (CUL-1691 §2.3's guards).
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: (...a: unknown[]) => mockPush(...a) }, usePathname: () => '/' }));
@@ -142,6 +147,156 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+});
+
+// Mixed meals row 5 (CUL-2054; spec §7.1, §7.5) — the card's one mixing slot.
+describe('MealCompletionCard — mixing (row 5)', () => {
+  const BOWL = {
+    foods: [
+      { foodItemId: 'chicken', foodLabel: 'Weruva Chicken Pâté', rowName: 'Chicken Pâté', share: 1 / 3 },
+      { foodItemId: 'rabbit', foodLabel: 'Weruva Rabbit Pâté', rowName: 'Rabbit Pâté', share: 2 / 3 },
+    ],
+  };
+  beforeEach(() => mockSetMealComponents.mockClear());
+
+  it('a plain meal offers "+ Mixed with another food" and opens the mix route bound to this meal', () => {
+    seedMeal({ foodType: 'meal' }, 'p2');
+    const { getByText } = render(<MealCompletionCard />);
+    fireEvent.press(getByText('+ Mixed with another food'));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/mix', params: { event: 'e1', pet: 'p1', from: 'card' } });
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  // §10 "a single-food meal logs, reads and renders exactly as before" (this replaces the
+  // flag-off differential: there is no flag). Every word a plain meal's card paints, pinned:
+  // the one addition is the mixing door, and nothing of a bowl leaks into it.
+  it('a single-food meal renders as before, with the mixing door its only new line', () => {
+    seedMeal({ foodType: 'meal', foodBrand: 'Weruva', foodProductName: 'Rabbit Pâté', foodFormat: null });
+    const view = render(<MealCompletionCard />);
+    type Node = typeof view.UNSAFE_root;
+    const words = view.UNSAFE_root.findAll((n: Node) => typeof n.type === 'string' && n.type === 'Text')
+      .map((n: Node) => [n.props.children].flat().join(''))
+      .filter((t: string) => t.trim().length > 0);
+    expect(words).toEqual([
+      'Logged · Weruva Rabbit Pâté',
+      formatTime(new Date('2026-06-07T14:00:00.000Z')),
+      'Undo',
+      'Change time',
+      'How much did Biscuit eat?',
+      ...['Refused', 'Picked', 'Some', 'Most', 'All'],
+      '+ Mixed with another food',
+      '+ Add a med given with this',
+    ]);
+    expect(view.queryByTestId('mix-step-first')).toBeNull();
+  });
+
+  it('a treat offers no mixing line (treats stay their own logs, R1)', () => {
+    seedMeal({ foodType: 'treat' });
+    const { queryByText } = render(<MealCompletionCard />);
+    expect(queryByText('+ Mixed with another food')).toBeNull();
+  });
+
+  it('a bowl is titled as History names it, and the slot is the stepper', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('Logged · ⅓ Chicken Pâté + ⅔ Rabbit Pâté');
+    getByText('⅓·⅔');
+    getByText('‹ More Chicken Pâté');
+    getByText('More Rabbit Pâté ›');
+    expect(queryByText('+ Mixed with another food')).toBeNull();
+  });
+
+  // CUL-2090: on a bowl, "Undo" says the whole bowl goes (§7.1), so it can't read as
+  // "undo the mix". A plain meal keeps "Undo" (pinned in the single-food test above).
+  it('a bowl\'s Undo reads "Undo bowl" and says the whole bowl goes', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByText, queryByText, getByLabelText } = render(<MealCompletionCard />);
+    getByText('Undo bowl');
+    expect(queryByText('Undo')).toBeNull();
+    getByLabelText('Undo bowl — remove every food in it');
+  });
+
+  it('a step moves one stop toward the named food and writes the bowl', async () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByTestId, getByText } = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(getByTestId('mix-step-first')); });
+    getByText('½·½');
+    expect(mockSetMealComponents).toHaveBeenCalledWith('e1', [
+      expect.objectContaining({ foodItemId: 'chicken', share: 0.5, shareSource: 'preset' }),
+      expect.objectContaining({ foodItemId: 'rabbit', share: 0.5, shareSource: 'preset' }),
+    ]);
+  });
+
+  it('an end stop is dimmed, says why, and writes nothing', async () => {
+    seedMeal({ foodType: 'meal', bowl: { foods: [{ ...BOWL.foods[0], share: 0.25 }, { ...BOWL.foods[1], share: 0.75 }] } });
+    const { getByTestId } = render(<MealCompletionCard />);
+    const end = getByTestId('mix-step-second');
+    expect(end.props.accessibilityState).toEqual({ disabled: true });
+    expect(end.props.accessibilityLabel).toBe('More Rabbit Pâté in this bowl. ¾ Rabbit Pâté is as far as the steps go.');
+    // CUL-2134: the reason is a line a sighted owner reads, not only the button's label.
+    expect(getByTestId('mix-step-why', { includeHiddenElements: true }).props.children).toBe('¾ Rabbit Pâté is as far as the steps go.');
+    await act(async () => { fireEvent.press(end); });
+    expect(mockSetMealComponents).not.toHaveBeenCalled();
+  });
+
+  it('between the ends there is no end-stop line', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { queryByTestId } = render(<MealCompletionCard />);
+    expect(queryByTestId('mix-step-why', { includeHiddenElements: true })).toBeNull();
+  });
+
+  // CUL-2134 (mock M3): the subtitle says the two foods are one record; a plain meal's
+  // subtitle stays the time alone.
+  it('a bowl\'s subtitle says "one bowl"', () => {
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByText } = render(<MealCompletionCard />);
+    getByText(/ · one bowl$/);
+  });
+
+  it('a plain meal\'s subtitle has no "one bowl"', () => {
+    seedMeal({ foodType: 'meal' });
+    const { queryByText } = render(<MealCompletionCard />);
+    expect(queryByText(/one bowl/)).toBeNull();
+  });
+
+  it('a failed step goes back and says so', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockSetMealComponents.mockRejectedValueOnce(new Error('disk'));
+    seedMeal({ foodType: 'meal', bowl: BOWL });
+    const { getByTestId, getByText } = render(<MealCompletionCard />);
+    await act(async () => { fireEvent.press(getByTestId('mix-step-second')); });
+    getByText('⅓·⅔');
+    expect(alert).toHaveBeenCalledWith('Couldn’t save that', 'Something went wrong. Please try again.');
+    alert.mockRestore();
+  });
+});
+
+// CUL-2084 — a mixed bowl fed past the trial's target: the eyebrow frames P-5's sentence,
+// "+ End the trial" opens the trial screen's own decision sheet for the MEAL's pet, and
+// "Add to the trial list" is hidden on that variant (PM, 2026-10-21).
+describe('MealCompletionCard — the past-target bowl heads-up (CUL-2084)', () => {
+  const PAST = { foodLabel: 'Chicken Pâté', pastTarget: true, trialLabel: 'Rabbit trial', targetDays: 42 };
+
+  it.each([
+    ['membership', { ...MEMBERSHIP_FLAG, bowl: PAST }],
+    ['contents', { ...CONTENTS_FLAG, bowl: PAST }],
+  ] as const)('%s: eyebrow and the end door, no add hatch', (_k, flag) => {
+    seedMeal({ trialFlag: flag as LogTimeTrialFlag, foodType: 'meal' }, 'p2');
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('Rabbit trial · past its 42 days');
+    getByText(/If Biscuit’s trial is over, ending it here keeps the record straight\./);
+    expect(queryByText('+ Add to the trial list')).toBeNull();
+    fireEvent.press(getByText('+ End the trial'));
+    expect(mockPush).toHaveBeenCalledWith('/trial/p1?open=end');
+  });
+
+  it('a bowl inside the trial keeps "Add to the trial list" and has no end door', () => {
+    seedMeal({ trialFlag: { ...MEMBERSHIP_FLAG, bowl: { ...PAST, pastTarget: false } }, foodType: 'meal' });
+    const { getByText, queryByText } = render(<MealCompletionCard />);
+    getByText('+ Add to the trial list');
+    getByText('Off the trial list');
+    expect(queryByText('+ End the trial')).toBeNull();
+  });
 });
 
 describe('MealCompletionCard — the two trial-flag registers (B-693)', () => {
@@ -242,7 +397,7 @@ describe('MealCompletionCard — Undo', () => {
     seedMeal();
     const view = render(<MealCompletionCard />);
     await pressUndo(view);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     view.getByText('Removed');
     view.getByText('Taken out of Biscuit’s record');
   });
@@ -627,6 +782,129 @@ describe('MealCompletionCard — Change time', () => {
     await act(async () => { fireEvent.press(view.getByText('Save')); });
 
     expect((updateEvent as jest.Mock).mock.calls[0][1].occurred_at_source).toBe('now');
+  });
+
+  // CUL-1947 — a moved time moves a cut on the gap warning's logged clock, and this
+  // card schedules no regen, so Home's gap read re-runs on the local record tick alone,
+  // after the write. A peek-and-save moved nothing and owes no re-read.
+  it('a moved time bumps the record tick, after the write; a peek-and-save does not', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    seedMeal();
+    const peek = render(<MealCompletionCard />);
+    openPicker(peek);
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(useSyncStore.getState().recordTick).toBe(0);
+    peek.unmount();
+
+    let tickAtWrite = -1;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => {
+      tickAtWrite = useSyncStore.getState().recordTick;
+    });
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(tickAtWrite).toBe(0);
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
+  // CUL-1948 — the server half of a moved time. The edit screen rebuilds the Signal when the
+  // instant moved (app/edit-event.tsx, `engineInputMoved`); this card did not, so every
+  // server-built finding kept counting the record at its old time. The regen is for the
+  // RECORD's pet (the active pet here is another one), only after the write has landed,
+  // and never for a peek-and-save, which would spend a daily cap unit on nothing (CUL-1087).
+  it('a moved time schedules the Signal regen for the record\'s pet after the write lands; a peek-and-save schedules none', async () => {
+    seedMeal({}, 'p2');
+    const peek = render(<MealCompletionCard />);
+    openPicker(peek);
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+    peek.unmount();
+
+    let writeLanded = false;
+    let landedAtRegen: boolean | null = null;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => { writeLanded = true; });
+    (triggerSignalRegenDebounced as jest.Mock).mockImplementationOnce(() => { landedAtRegen = writeLanded; });
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledWith('p1');
+    expect(landedAtRegen).toBe(true);
+  });
+
+  // A write that lands and then throws (anything after it in the try) has still moved the
+  // record, so the regen still goes; a write that never landed asks for nothing.
+  it('a moved time whose save lands then throws still schedules the regen; one that never lands does not', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { syncPendingEvents } = require('../../lib/sync');
+    (syncPendingEvents as jest.Mock).mockImplementationOnce(() => { throw new Error('push refused'); });
+    seedMeal({}, 'p1');
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledWith('p1');
+    view.unmount();
+
+    (updateEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    seedMeal({}, 'p1');
+    const failed = render(<MealCompletionCard />);
+    openPicker(failed);
+    await act(async () => {
+      fireEvent(failed.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 45));
+    });
+    await act(async () => { fireEvent.press(failed.getByText('Save')); });
+    expect(alert).toHaveBeenCalledTimes(2);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+    alert.mockRestore();
+  });
+
+  // The floor wrapper's nested-transaction fallback (lib/incidentFloorQueue.ts runOwingCheck):
+  // BEGIN is refused, the write persists, then the marker throws out of the wrapper. The row
+  // moved, so the regen must still go, which holds only while `landed` is set INSIDE the
+  // wrapper's closure (adversarial review, CUL-1948: set after the wrapper, it survived).
+  it('a moved time whose floor marker throws after the write still schedules the regen', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const floor = jest.spyOn(require('../../lib/incidentFloorQueue'), 'writeOwingFloorCheck')
+      .mockImplementationOnce(async (...a: unknown[]) => {
+        await (a[1] as () => Promise<unknown>)();
+        throw new Error('marker insert failed');
+      });
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(floor).toHaveBeenCalledTimes(1);
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledWith('p1');
+    floor.mockRestore();
+    err.mockRestore();
+    alert.mockRestore();
   });
 
   it('Cancel writes nothing and leaves the card standing', async () => {

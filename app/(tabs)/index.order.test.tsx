@@ -50,13 +50,19 @@ jest.mock('../../components/home/LookExits', () => ({
 // v2 surfaces are markers too, so a flag-on order can be pinned beside it below without
 // mounting the spine's reads. The hook is mocked at the module boundary because its
 // real import reaches `lib/supabase`, which throws at import with no env.
-jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
-jest.mock('../../components/designV2/home/CoverageDoor', () => ({
+jest.mock('../../components/surfaces/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
+jest.mock('../../components/surfaces/home/CoverageDoor', () => ({
   CoverageDoor: marker('coverage-door'),
 }));
 
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }),
+}));
+// CUL-1975: Home's own eating check, answered "no decline" so this suite keeps its subject
+// and never touches SQLite. `index.intakeDecline.test.tsx` owns what the read does.
+jest.mock('../../lib/dietTrialFacts', () => ({
+  readIntakeDecline: jest.fn(async () => []),
+  vomitLineMayReassure: jest.requireActual('../../lib/dietTrialFacts').vomitLineMayReassure,
 }));
 jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({ input: null, inputIsForPet: true }),

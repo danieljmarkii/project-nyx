@@ -288,12 +288,24 @@ describe('loadMedStripInput — assembly + failure posture', () => {
     await expect(loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW)).resolves.toBeNull();
   });
 
-  it('an intake-decline read failure defaults to false without failing the load', async () => {
+  // CUL-1972: a check that did not answer is never "eating fine". Mutation-proven: the
+  // old `let intakeDeclineActive = false` reds both assertions below.
+  it('an intake-decline read failure fails CLOSED without failing the load', async () => {
     coreReads([REGIMEN], [], [ITEM]);
     mockGetIntakeDecline.mockRejectedValue(new Error('decline read failed'));
     const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
     expect(input).not.toBeNull(); // the card still renders its med-specific facts
-    expect(input!.intakeDeclineActive).toBe(false); // the redundant safety lane fails soft
+    expect(input!.intakeDeclineActive).toBe(true);
+    // Through the real resolver: the card withholds, and says nothing it did not see.
+    const [card] = jest.requireActual('./medStrip').resolveMedStrips(input!);
+    expect(card.withholding).toContain('intake_decline');
+  });
+
+  it('a check that answered with no decline is not active (the unknown is only a throw)', async () => {
+    coreReads([REGIMEN], [], [ITEM]);
+    mockGetIntakeDecline.mockResolvedValue({ status: 'none', flags: [] });
+    const input = await loadMedStripInput({ id: 'pet-1', species: 'cat' }, NOW);
+    expect(input!.intakeDeclineActive).toBe(false);
   });
 
   it('a live intake-decline flag sets intakeDeclineActive true', async () => {

@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { dayMarkA11yLabel, type DayMarkCoverage, type DayMarkPhoto } from '../../lib/chartCopy';
 import { isCallDisplay, type CallDisplay } from '../../lib/incidentTierWords';
 import { holdsVomit } from '../../lib/monthModel';
@@ -120,7 +120,7 @@ export function DayMarkLine({
           y1={LINE_HEIGHT / 2}
           x2="100%"
           y2={LINE_HEIGHT / 2}
-          stroke={onRose ? theme.colorTextOnDark : theme.colorAccentGlyph}
+          stroke={onRose ? theme.colorTextOnDark : colorRoles.positive.glyphOnLight}
           strokeWidth={LINE_HEIGHT}
           strokeDasharray={[...DAY_MARK_DASH]}
           strokeLinecap="butt"
@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
   lineOnWhite: {
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
   },
   // On the rose: solid white, 3.67:1 (the retired 55% white was 2.0:1).
   lineOnRose: {

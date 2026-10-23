@@ -27,6 +27,10 @@ jest.mock('./trialContaminant', () => ({
   evaluateMealLogTimeFlag: (...a: unknown[]) => { calls.push('evaluate'); return mockEvaluate(...a); },
   noteTrialFlagShown: (...a: unknown[]) => { calls.push('note'); return mockNote(...a); },
 }));
+// A lost card hands the heads-up to the meal's screen (CUL-2106), which reads the food's
+// row; no row here, so the hand-off carries no add door. `lib/mealTrialFlag.freshLog.test.ts`
+// covers the hand-off itself.
+jest.mock('./db', () => ({ getDb: () => ({ getFirstAsync: async () => null }) }));
 jest.mock('../store/momentStore', () => ({
   MEAL_FLAGGED_DURATION_MS: 7000,
   whenMealCardVisible: (...a: unknown[]) => { calls.push('wait'); return mockWhenVisible(...a); },
@@ -84,7 +88,7 @@ describe('applyMealTrialFlag — the gates, in order', () => {
     await expect(applyMealTrialFlag(ARGS)).resolves.toBe('shown');
     expect(calls).toEqual(['evaluate', 'wait', 'patch', 'reschedule', 'note']);
     expect(mockReschedule).toHaveBeenCalledWith(7000);
-    expect(mockNote).toHaveBeenCalledWith(FLAG);
+    expect(mockNote).toHaveBeenCalledWith(FLAG, 'ev1');
   });
 
   it('the picker path is the reason for the wait: the evaluation resolves before the card reveals', async () => {

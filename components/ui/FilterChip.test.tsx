@@ -1,7 +1,7 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { FilterChip } from './FilterChip';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 type Node = { type: unknown; props: Record<string, any>; parent: Node | null };
 type A11yState = { selected?: boolean; checked?: boolean } | undefined;
@@ -101,10 +101,11 @@ describe('FilterChip — the active label is legible on its own fill (CUL-744)',
     };
   }
 
-  it('renders the default variant in accent INK on the accent tint', () => {
+  it('renders the default variant in the selected ink on the selected ground', () => {
+    // Choosing is acting, so the state is indigo (CUL-2145 R2; CUL-1666's walk).
     const { color, backgroundColor } = activePair('default');
-    expect(backgroundColor).toBe(theme.colorAccentLight);
-    expect(color).toBe(theme.colorAccentInk);
+    expect(backgroundColor).toBe(colorRoles.selected.ground);
+    expect(color).toBe(colorRoles.selected.ink);
     // Named, so the bright teal here reads as the defect rather than a near-miss.
     expect(color).not.toBe(theme.colorAccent);
   });
@@ -113,5 +114,28 @@ describe('FilterChip — the active label is legible on its own fill (CUL-744)',
     const { color, backgroundColor } = activePair('filled');
     expect(backgroundColor).toBe(theme.colorNeutralDark);
     expect(color).toBe(theme.colorTextOnDark);
+  });
+});
+
+// CUL-658 — the tap target is computed from the chip's own PINNED box (lib/tapTarget),
+// where it used to be a typed { top: 6, bottom: 6 } over a font's line box. The move is
+// a refactor only if the rendered hit area is the one it replaced.
+describe('FilterChip — the touch target (CUL-658)', () => {
+  function host() {
+    const { toJSON } = render(<FilterChip label="Oral" active={false} onPress={() => {}} />);
+    return toJSON() as unknown as { props: { style?: unknown; hitSlop?: unknown } };
+  }
+
+  it('renders the same vertical-only slop the literal gave, on a pinned 32pt box', () => {
+    const node = host();
+    expect(node.props.hitSlop).toEqual({ top: 6, bottom: 6 });
+    expect((StyleSheet.flatten(node.props.style) as { minHeight?: number }).minHeight).toBe(32);
+  });
+
+  it('the pinned box plus the slop reaches the 44pt floor', () => {
+    const node = host();
+    const { minHeight } = StyleSheet.flatten(node.props.style) as { minHeight: number };
+    const slop = node.props.hitSlop as { top: number; bottom: number };
+    expect(minHeight + slop.top + slop.bottom).toBeGreaterThanOrEqual(theme.hitTarget);
   });
 });

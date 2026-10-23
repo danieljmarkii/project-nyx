@@ -82,4 +82,73 @@ describe('PrimaryButton', () => {
     );
     expect(getByTestId('btn-spinner').props.color).toBe(theme.colorNeutralDark);
   });
+
+  // CUL-1900: the filled red commit (DeleteAccountSheet's hand rolled button) is a
+  // variant, apart from the quiet 'destructive' label it must not replace.
+  it('paints destructiveFilled red with a white label and spinner, and leaves destructive quiet', () => {
+    const { getByTestId, getByText, rerender } = render(
+      <PrimaryButton label="Delete account" onPress={() => {}} variant="destructiveFilled" testID="btn" />,
+    );
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe(theme.colorDestructive);
+    expect(StyleSheet.flatten(getByText('Delete account').props.style).color).toBe(theme.colorTextOnDark);
+
+    rerender(<PrimaryButton label="Delete account" onPress={() => {}} variant="destructiveFilled" loading testID="btn" />);
+    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorTextOnDark);
+
+    rerender(<PrimaryButton label="Remove" onPress={() => {}} variant="destructive" testID="btn" />);
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe('transparent');
+    expect(StyleSheet.flatten(getByText('Remove').props.style).color).toBe(theme.colorDestructive);
+  });
+
+  it('greys a disabled destructiveFilled like every other variant', () => {
+    const { getByTestId } = render(
+      <PrimaryButton label="Delete account" onPress={() => {}} variant="destructiveFilled" disabled testID="btn" />,
+    );
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe(theme.colorBorder);
+  });
+
+  // CUL-1911 — the plain variant is a quiet row: no fill, no edge, and the 44pt floor by
+  // its own box, since it drops the padding the filled variants reach the floor with.
+  it('plain: no fill or edge, secondary ink, and the 44pt floor by construction', () => {
+    const { getByTestId, getByText } = render(
+      <PrimaryButton label="Archive Mochi" variant="plain" onPress={jest.fn()} testID="btn" />,
+    );
+    const box = StyleSheet.flatten(getByTestId('btn').props.style);
+    expect(box.backgroundColor).toBe('transparent');
+    expect(box.borderWidth).toBeUndefined();
+    expect(box.minHeight).toBe(theme.hitTarget);
+    expect(StyleSheet.flatten(getByText('Archive Mochi').props.style).color).toBe(theme.colorTextSecondary);
+  });
+
+  it('plain, disabled: the label greys and no grey fill appears', () => {
+    const { getByTestId, getByText } = render(
+      <PrimaryButton label="Archive Mochi" variant="plain" disabled onPress={jest.fn()} testID="btn" />,
+    );
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor).toBe('transparent');
+    expect(StyleSheet.flatten(getByText('Archive Mochi').props.style).color).toBe(theme.colorTextTertiary);
+  });
+
+  // The icon slot (CUL-1910): the glyph takes the label's colour on every variant, and
+  // the disabled grey with it, so an icon can never sit a different colour from its label.
+  it('tints its icon with the label colour, and greys it with the label when disabled', () => {
+    const seen: (string | undefined)[] = [];
+    const Glyph = ({ color }: { color?: string }) => {
+      seen.push(color);
+      return null;
+    };
+    const { rerender } = render(<PrimaryButton label="Take a photo" onPress={() => {}} icon={Glyph} />);
+    expect(seen.pop()).toBe(theme.colorTextOnDark);
+    rerender(<PrimaryButton label="Take a photo" onPress={() => {}} icon={Glyph} variant="secondary" />);
+    expect(seen.pop()).toBe(theme.colorTextSecondary);
+    rerender(<PrimaryButton label="Take a photo" onPress={() => {}} icon={Glyph} disabled />);
+    expect(seen.pop()).toBe(theme.colorTextTertiary);
+  });
+
+  it('lays the icon and label out in a row only when an icon is passed', () => {
+    const Glyph = () => null;
+    const { getByTestId, rerender } = render(<PrimaryButton label="Go" onPress={() => {}} testID="btn" />);
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).flexDirection).toBeUndefined();
+    rerender(<PrimaryButton label="Go" onPress={() => {}} icon={Glyph} testID="btn" />);
+    expect(StyleSheet.flatten(getByTestId('btn').props.style).flexDirection).toBe('row');
+  });
 });

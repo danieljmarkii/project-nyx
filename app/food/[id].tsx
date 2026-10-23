@@ -28,8 +28,14 @@ import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { ExtractionFailedBanner } from '../../components/food/ExtractionFailedBanner';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
+import { parseGateResponse } from '../../lib/appConfig';
+import { retryNoticeOf, RETRY_READING_OFF_NOTICE, RETRY_TRANSPORT_NOTICE, type RetryOutcome } from '../../lib/foodRetry';
+import { useAiConsentDoor } from '../../hooks/useAiConsentDoor';
+import { AiConsentSheet } from '../../components/consent/AiConsentSheet';
+import { useAuthStore } from '../../store/authStore';
+import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
-import { getDb } from '../../lib/db';
+import { getDb, getMixedBowls } from '../../lib/db';
 import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';
 import { foodIntakeKey } from '../../lib/food';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
@@ -51,6 +57,9 @@ import { addToTrialListLabel, trialMembershipLine } from '../../lib/trialLibrary
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel } from '../../lib/dietTrialSetup';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { MixedBowlsSection, type MixedBowlsState } from '../../components/food/MixedBowlsSection';
+import { foodMixLines } from '../../lib/foodMixedBowls';
+import { historyDayHref } from '../../lib/historyDateFilter';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -155,6 +164,13 @@ export default function FoodDetailScreen() {
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // CUL-1905: the retry sends the stored label photos to Anthropic, so it passes the
+  // same consent door as Add by photo (CUL-1834) before the invoke, on both buttons.
+  const consentDoor = useAiConsentDoor('label');
+  // The row as it is now, for a handler that resumes after the door: the closure's `row`
+  // is the one from the tap, and a realtime update can land while the sheet is up.
+  const rowRef = useRef<FoodRow | null>(null);
+  rowRef.current = row;
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -215,6 +231,26 @@ export default function FoodDetailScreen() {
       .catch(() => { if (!cancelled) setTrialCtx(null); });
     return () => { cancelled = true; };
   }, [activePet?.id]);
+
+  // Spec §7.4: the bowls this food was mixed into, for the ACTIVE pet (bowls belong to a
+  // pet; the library is per-account, the trial note above scopes the same way). Keyed on
+  // the SAVED brand+product, the key the Foods tab's "in a mix" note counts on.
+  const [mixState, setMixState] = useState<MixedBowlsState>({ status: 'loading' });
+  const [mixReadTick, setMixReadTick] = useState(0);
+  const mixFoodKey = row ? foodIntakeKey(row.brand, row.product_name) : null;
+  useEffect(() => {
+    const petId = activePet?.id;
+    if (!petId || mixFoodKey === null) { setMixState({ status: 'loading' }); return; }
+    let cancelled = false;
+    setMixState({ status: 'loading' });
+    getMixedBowls(petId)
+      .then((bowls) => { if (!cancelled) setMixState({ status: 'ready', lines: foodMixLines(mixFoodKey, bowls) }); })
+      .catch((e) => {
+        console.error('[food-detail] mixed bowls read failed:', e);
+        if (!cancelled) setMixState({ status: 'error' });
+      });
+    return () => { cancelled = true; };
+  }, [activePet?.id, mixFoodKey, mixReadTick]);
 
   function applyRow(next: FoodRow) {
     // CUL-651 — where the raw failure string goes now that it is off the screen.
@@ -435,13 +471,9 @@ export default function FoodDetailScreen() {
         Alert.alert('Camera access needed', 'Allow camera access in Settings.');
         return;
       }
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Photo access needed', 'Allow photo access in Settings.');
-        return;
-      }
     }
+    // The library needs no grant: the system picker hands back only the chosen
+    // photo (CUL-1840, App Review 5.1.1(iii)).
 
     const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
@@ -496,31 +528,88 @@ export default function FoodDetailScreen() {
   }
 
   // ── Re-run extraction ──
+  //
+  // CUL-769: the retry NEVER writes 'pending' to the server. It used to, so another
+  // device would see the read in flight, and a call that never came back (offline, the
+  // cap, the flag, a declined owner: the last three answer with a typed 200 and touch
+  // nothing) left a CONFIRMED food at 'pending' for good: the Ingredients field became a
+  // "Reading the label…" spinner, the retry vanished, and the stale-capture reaper was one
+  // guard away from hard-deleting it with its trial and feeding links. The flip is local
+  // now; the function writes the only statuses the server ever sees here ('completed', or
+  // 'failed' from its catch), and the screen re-reads the row once the call answers, so
+  // it ends on the server's truth whatever happened. A few seconds of "in flight" on a
+  // second phone is what that costs.
   async function handleRetry() {
     if (!row) return;
     if (row.photo_paths.length === 0) {
       Alert.alert('Add a photo first', 'The AI needs at least one photo to extract from.');
       return;
     }
-    setRetrying(true);
-    // Flip status locally so the UI moves out of the 'failed' state immediately —
-    // the Edge Function will write the canonical status on completion via realtime.
-    setRow({ ...row, ai_extraction_status: 'pending', ai_extraction_error: null });
-    // Also write through to the DB so a backgrounded screen or another device
-    // sees pending while extraction runs.
-    await supabase
-      .from('food_items')
-      .update({ ai_extraction_status: 'pending', ai_extraction_error: null })
-      .eq('id', row.id);
-
-    const { error } = await supabase.functions.invoke('extract-food-from-photo', {
-      body: { food_item_id: row.id, photo_paths: row.photo_paths },
-    });
-    setRetrying(false);
-    if (error) {
-      console.warn('[food-detail] extraction retry failed:', error.message);
-      Alert.alert("Couldn't start reading the label", 'Try again in a moment.');
+    // The door answers before anything is sent. Not now leaves the food as it was (the
+    // owner can tap again); a no, given now or already on file, sends nothing and says
+    // the label wasn't read, so the tap never reads as a read that ran.
+    const answer = await consentDoor.ask();
+    if (answer === 'not_now') return;
+    if (answer === 'declined') {
+      Alert.alert(RETRY_READING_OFF_NOTICE.title, RETRY_READING_OFF_NOTICE.body);
+      return;
     }
+    // A read that failed or stalled answers 'unreadable' (CUL-1933): nothing is sent,
+    // since the server's gate is still held (CUL-552). The cached check is the second
+    // lock this door had first (#1213): the retry loses nothing by waiting (the food
+    // and its photos are saved), so it sends only on a yes this phone actually holds.
+    const userId = useAuthStore.getState().user?.id ?? null;
+    if (answer === 'unreadable' || !userId || cachedAiConsent(userId)?.granted !== true) {
+      Alert.alert(RETRY_TRANSPORT_NOTICE.title, RETRY_TRANSPORT_NOTICE.body);
+      return;
+    }
+    const before = rowRef.current;
+    if (!before || before.photo_paths.length === 0) return;
+    setRetrying(true);
+    // Local only: the UI leaves the 'failed' state at once.
+    setRow((cur) => (cur ? { ...cur, ai_extraction_status: 'pending', ai_extraction_error: null } : cur));
+
+    let outcome: RetryOutcome;
+    try {
+      const { data, error } = await supabase.functions.invoke('extract-food-from-photo', {
+        body: { food_item_id: before.id, photo_paths: before.photo_paths },
+      });
+      if (error) console.warn('[food-detail] extraction retry failed:', error.message);
+      outcome = error ? { kind: 'transport_error' } : { kind: 'answered', gate: parseGateResponse(data) };
+    } catch (err) {
+      console.warn('[food-detail] extraction retry threw:', err);
+      outcome = { kind: 'transport_error' };
+    }
+
+    await settleAfterRetry(before);
+    setRetrying(false);
+    const notice = retryNoticeOf(outcome, cachedAiConsent(userId));
+    if (notice) Alert.alert(notice.title, notice.body);
+  }
+
+  // The row as the server holds it after a retry. If that read fails too, the status the
+  // screen had before the tap comes back (the server's, since the retry wrote nothing), so
+  // the local 'pending' never outlives the call that set it.
+  async function settleAfterRetry(before: FoodRow) {
+    try {
+      const { data, error } = await supabase
+        .from('food_items')
+        .select(SELECT_COLS)
+        .eq('id', before.id)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        applyRow(data as FoodRow);
+        return;
+      }
+    } catch (err) {
+      console.warn('[food-detail] re-read after retry failed:', err);
+    }
+    setRow((cur) =>
+      cur && cur.ai_extraction_status === 'pending'
+        ? { ...cur, ai_extraction_status: before.ai_extraction_status, ai_extraction_error: before.ai_extraction_error }
+        : cur,
+    );
   }
 
   // ── Remove from library (archive) ─────────────────────────────────────────
@@ -714,14 +803,13 @@ export default function FoodDetailScreen() {
                 client that separates "we tried and could not read it" from "we
                 did not try".
 
-                That matters because the retry is DESTRUCTIVE on the rows it
-                separates out. `handleRetry` writes `'pending'` to the server; the
-                cap and flag-off paths answer with a typed 200, so `error` is null,
-                nothing writes back, and the row stays `'pending'` — where the
-                Ingredients field below becomes a "Reading the label…" spinner (the
-                one field this banner's own copy tells the owner to fill in) and
-                `reapStalePendingFoods` becomes eligible to hard-delete the food,
-                cascading into `diet_trial_foods`. Details: CUL-769.
+                That mattered because the retry USED to be destructive on the rows
+                it separates out: it wrote `'pending'` to the server, the cap and
+                flag-off paths answered with a typed 200 that wrote nothing back, and
+                the row stayed `'pending'`, its Ingredients field a spinner and the
+                food one guard from the reaper. Since CUL-769 the retry writes nothing
+                to the server and tells the owner what the gate said, so the button is
+                safe; whether these rows should show it is still CUL-768's state model.
 
                 This session widened the gate to `isFailed` alone — the silent-
                 failure argument is real, and the spec forbids a silent extraction
@@ -733,7 +821,7 @@ export default function FoodDetailScreen() {
                 `'failed'` is currently collapsing three ways, and it is CUL-768.
                 Do not re-widen this without it. */}
             {isFailed && row.ai_extraction_error && (
-              <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying} />
+              <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying || consentDoor.settling} />
             )}
 
             {/* B-616 FR-13/FR-14 (mock D) — the food's relationship to the
@@ -858,6 +946,14 @@ export default function FoodDetailScreen() {
                 single toggle otherwise. */}
             <AlwaysAvailableCard foodItemId={row.id} />
 
+            {/* Mixed meals §7.4 (CUL-2085): read-only, absent unless the food was mixed;
+                each line lands on its newest bowl's day in History. */}
+            <MixedBowlsSection
+              state={mixState}
+              onOpenDay={(dayKey) => router.push(historyDayHref(dayKey))}
+              onRetry={() => setMixReadTick((t) => t + 1)}
+            />
+
             {/* A "try again" affordance for completed extractions — useful when
                 the AI got it wrong but the user wants to re-run rather than
                 hand-edit everything. Hidden during pending to keep the UI calm. */}
@@ -867,9 +963,10 @@ export default function FoodDetailScreen() {
                 onPress={handleRetry}
                 disabled={retrying}
                 hitSlop={8}
+                testID="food-extraction-rerun"
                 activeOpacity={0.7}
               >
-                {retrying
+                {retrying || consentDoor.settling
                   ? <WhorlSpinner size="sm" ground="day" />
                   : <ThemedText style={styles.secondaryActionText}>Re-run AI extraction</ThemedText>}
               </TouchableOpacity>
@@ -929,6 +1026,8 @@ export default function FoodDetailScreen() {
           }}
         />
       )}
+
+      <AiConsentSheet {...consentDoor.sheetProps} />
     </SafeAreaView>
   );
 }

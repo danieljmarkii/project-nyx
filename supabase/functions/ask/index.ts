@@ -40,6 +40,7 @@ import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 // MAX_TOOL_ITERATIONS.
 import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and generate-signal.
+import { ASK_MEALS_SELECT, mapAskMealRows, type AskMealRowDb } from './meals.ts'
 import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { intakeCorrectionOf, intakeCorrectionSentence, type IntakeCorrectionColumns } from '../../../lib/readCorrection.ts'
@@ -145,15 +146,45 @@ function serviceClient(): SupabaseClient {
 // Reads only the pet's freshest Signal cache row (RLS-scoped). A failed read leads with
 // nothing, the same survivable-as-absence shape fetchContext gives it. Never throws.
 export async function consentOffAnswer(client: SupabaseClient, petId: string, petName: string): Promise<AskAnswerBody> {
-  let safetyLead: string | null = null
+  return { ...buildDeflection('consent_off', petName), safetyLead: await cachedSafetyLead(client, petId, petName), conversationCredited: false }
+}
+
+// The engine's live safety finding from the Signal cache alone, for a decline that answers
+// before any record read (consent off, a refused entry). A failed read relays nothing and says so.
+async function cachedSafetyLead(client: SupabaseClient, petId: string, petName: string): Promise<string | null> {
   try {
     const { data, error } = await client.from('ai_signals').select('findings').eq('pet_id', petId).order('generated_at', { ascending: false }).limit(1)
-    if (error) console.warn('ask: ai_signals read failed, no engine findings relayed:', error.message)
-    else safetyLead = leadingSafetyText(mapEngineFindings(data), petName)
+    if (error) {
+      console.warn('ask: ai_signals read failed, no engine findings relayed:', error.message)
+      return null
+    }
+    return leadingSafetyText(mapEngineFindings(data), petName)
   } catch (err) {
     console.warn('ask: ai_signals read threw, no engine findings relayed:', err instanceof Error ? err.message : String(err))
+    return null
   }
-  return { ...buildDeflection('consent_off', petName), safetyLead, conversationCredited: false }
+}
+
+// CUL-2004: the phone sends `refused_rows: true` when it holds an entry the server refused
+// (`recordGapsForAskSql`, lib/syncQueue.ts). The server's copy is missing that entry until the owner
+// saves it again or removes it, so Ask answers nothing over it, and says so in copy that names the
+// fix. It declines BEFORE any cap read or increment: Ask stays closed until the owner acts, so a
+// retry must not spend the daily message backstop either. Strictly `true`, as `unsent_rows` is.
+export function refusedRowsClaimed(refusedRows: unknown): boolean {
+  return refusedRows === true
+}
+
+export async function refusedRowsAnswer(
+  client: SupabaseClient,
+  petId: string,
+  petName: string,
+  conversationCredited: boolean,
+): Promise<AskAnswerBody> {
+  return {
+    ...buildDeflection('refused_rows', petName),
+    safetyLead: await cachedSafetyLead(client, petId, petName),
+    conversationCredited,
+  }
 }
 
 // ── Usage I/O (§9) ────────────────────────────────────────────────────────────────
@@ -659,10 +690,10 @@ async function fetchContext(
       .order('id', { ascending: false })
       .range(from, to)),
     // Meal events with their food/protein/intake join (the rate/food/protein aggregates).
-    fetchAll<MealRowDb>('events', (r) => r.id, (from, to) =>
+    fetchAll<AskMealRowDb>('events', (r) => r.id, (from, to) =>
       client
       .from('events')
-      .select('id, occurred_at, occurred_at_confidence, event_attachments(id), meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, brand, product_name))', { count: 'exact' })
+      .select(ASK_MEALS_SELECT, { count: 'exact' })
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
@@ -779,35 +810,8 @@ async function fetchContext(
     deletedAt: null, // filtered in the query
   }))
 
-  // ── meals ──
-  type FoodItemDb = { primary_protein: string | null; proteins: string[] | null; food_type: string | null; brand: string | null; product_name: string | null }
-  type MealRowDb = {
-    id: string
-    occurred_at: string
-    occurred_at_confidence: string | null
-    event_attachments: { id: string }[] | null
-    meals: { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | null } | { food_item_id: string | null; intake_rating: string | null; food_items: unknown }[] | null
-  }
-  const meals: AskMealRow[] = mealsPull.rows.map((r) => {
-    const meal = first(r.meals) as { food_item_id: string | null; intake_rating: string | null; food_items: FoodItemDb | FoodItemDb[] | null } | null
-    const fi = first(meal?.food_items ?? null) as FoodItemDb | null
-    return {
-      id: r.id,
-      occurredAt: r.occurred_at,
-      occurredAtConfidence: (r.occurred_at_confidence ?? null) as AskMealRow['occurredAtConfidence'],
-      foodItemId: meal?.food_item_id ?? null,
-      foodLabel: fi ? `${fi.brand ?? ''} ${fi.product_name ?? ''}`.trim() || null : null,
-      foodType: fi?.food_type ?? null,
-      primaryProtein: fi?.primary_protein ?? null,
-      // B-467: the full captured protein set rides beside the primary so topProteins pools
-      // hidden secondaries — read through readProteinSet inside the tool, never here.
-      proteins: fi?.proteins ?? null,
-      intakeRating: meal?.intake_rating ?? null,
-      note: null, // aggregates carry no note (scoped-retrieval §6.1); event notes ride recall
-      hasPhoto: Array.isArray(r.event_attachments) && r.event_attachments.length > 0,
-      deletedAt: null,
-    }
-  })
+  // ── meals ── (the mapper lives in ./meals.ts so its test drives the real mapping)
+  const meals: AskMealRow[] = mapAskMealRows(mealsPull.rows)
 
   // ── weights ──
   type WeightRowDb = { event_id: string; weight_kg: number; events: { occurred_at: string } | { occurred_at: string }[] | null }
@@ -937,6 +941,18 @@ async function fetchContext(
   }
 }
 
+// CUL-1982: the name a device's unsent rows take in `recordIncomplete` (generate-signal's
+// UNSENT_ROWS_PULL, the same claim). The phone sends `unsent_rows: true` when it holds rows the
+// server has not received (`readRecordGaps`, lib/ask.ts: any queue, any age, a failed read counts
+// as yes; a refused row sets it too, and also `refused_rows`, which declines earlier). The
+// server's copy is then missing entries, which is an incomplete read like any short pull: Ask answers nothing over it. Strictly `true`: an older build sends nothing
+// and anything else is not the client's claim, so both keep today's behaviour.
+export const UNSENT_ROWS_PULL = 'unsent'
+
+export function withUnsentRows(pulls: readonly string[], unsentRows: unknown): string[] {
+  return unsentRows === true ? [...pulls, UNSENT_ROWS_PULL] : [...pulls]
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────────
 
 const handler = async (req: Request): Promise<Response> => {
@@ -945,7 +961,7 @@ const handler = async (req: Request): Promise<Response> => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string }
+  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string; unsent_rows?: unknown; refused_rows?: unknown }
   try {
     body = (await req.json()) as typeof body
   } catch {
@@ -955,6 +971,7 @@ const handler = async (req: Request): Promise<Response> => {
   // The caller's device IANA zone (B-443) — validated in resolveIanaZone before use, so a
   // garbage or spoofed value is simply ignored in favour of the stored zone, never trusted.
   const requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
+  const unsentRows = body.unsent_rows
   const question = typeof body.question === 'string' ? body.question.trim() : ''
   const conversation: AskTurn[] = Array.isArray(body.conversation)
     ? (body.conversation as unknown[])
@@ -1001,6 +1018,12 @@ const handler = async (req: Request): Promise<Response> => {
     if (!(await readAiBoundaryConsent(serviceClient(), user.id))) {
       return answerResponse(await consentOffAnswer(client, petId, pet.name || 'your pet'))
     }
+    // 2c. CUL-2004: an entry the server refused is missing from its copy until the owner acts, so
+    //     Ask answers nothing over it (the safety finding still leads), before any cap is touched.
+    if (refusedRowsClaimed(body.refused_rows)) {
+      console.warn('ask: declined over refused rows on the device:', petId)
+      return answerResponse(await refusedRowsAnswer(client, petId, pet.name || 'your pet', conversationAlreadyCredited(conversation)))
+    }
     const caps = resolveAskCaps(cfgRows.find((r) => r.key === 'ai_caps')?.value)
 
     // 3. PRE-model cap gate (§9 / D9). Computed from the client-passed in-memory conversation
@@ -1034,7 +1057,8 @@ const handler = async (req: Request): Promise<Response> => {
     const model = Deno.env.get('ASK_MODEL') || ASK_MODEL // S3 — model id via env override
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
-    const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
+    const fetched = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
+    const ctx = { ...fetched, recordIncomplete: withUnsentRows(fetched.recordIncomplete, unsentRows) }
 
     // 6a. CUL-989 — a pull that did not read to the end answers NOTHING. Ask speaks counts, dates
     //     and "how is she doing" in the record's voice, and over a partial record every one of
@@ -1044,7 +1068,11 @@ const handler = async (req: Request): Promise<Response> => {
     //     and an error-level log naming the pulls, because a silent shortfall is the whole defect.
     if (ctx.recordIncomplete.length > 0) {
       console.error('ask incomplete pulls:', petId, ctx.recordIncomplete.join(', '))
-      const withheld = buildDeflection('llm_unavailable', ctx.petName)
+      // CUL-1982: the phone's unsent entries are named when they are a cause (the owner can act
+      // on that one); a server-side short pull alone keeps the cause-neutral copy.
+      const withheld = ctx.recordIncomplete.includes(UNSENT_ROWS_PULL)
+        ? buildDeflection('unsent_rows', ctx.petName)
+        : buildDeflection('llm_unavailable', ctx.petName)
       return answerResponse({
         ...withheld,
         safetyLead: leadingSafetyText(ctx.engineFindingsRaw, ctx.petName),

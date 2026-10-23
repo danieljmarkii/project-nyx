@@ -266,9 +266,13 @@ describe('readNotReadDays: photographed rows whose read never landed (§5.4, H-4
     expect(after.get('2026-09-15')).toBe(1);
   });
 
-  it('counts nothing when the owner turned photo reading off: those rows are off, not unread', async () => {
+  // With photo reading off, a photo never sent is off, not unread; the stool whose read
+  // RAN and failed keeps its mark, as its record keeps "Couldn't finish reading" (PR-15's
+  // adversarial pass, CUL-1174). The screen counts with reading on regardless and the
+  // sheet decides; this pins what the predicate itself says.
+  it('counts only the reads that ran when the owner turned photo reading off', async () => {
     seedPhotos();
-    expect([...(await readNotReadDays(PET, RANGE, true)).entries()]).toEqual([]);
+    expect([...(await readNotReadDays(PET, RANGE, true)).entries()]).toEqual([['2026-09-10', 1]]);
   });
 
   it('never counts more than the day’s photographed rows', async () => {

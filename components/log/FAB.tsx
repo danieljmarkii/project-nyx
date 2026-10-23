@@ -30,6 +30,8 @@ import { FlightVessel, MealMark } from '../ui/MealMark';
 import { measureNodeInWindow, measureNodeOnPage, type WindowRect } from '../../lib/measureNode';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { fabFoodDay } from '../../lib/fabRecentFoods';
+import { fabMixComponents, fabMixLabel, withRecentMixes, type FabRecentItem } from '../../lib/fabRecentItems';
+import { cardBowlFrom } from '../../lib/mixCard';
 import { insertMeal } from '../../lib/meals';
 import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
@@ -395,7 +397,7 @@ export function FAB() {
   // also closes the hole, but it renders nothing to an owner whose pet has foods —
   // trading a wrong list for a wrong absence. Holding the id alongside the list
   // makes the mismatch unrenderable instead of briefly empty.
-  const [recentFoods, setRecentFoods] = useState<{ petId: string; foods: PickerFood[] } | null>(null);
+  const [recentFoods, setRecentFoods] = useState<{ petId: string; foods: FabRecentItem[] } | null>(null);
   const [logging, setLogging] = useState<string | null>(null);
   // CUL-1643 — the food a one-tap log chose: its pill stays while the others retract,
   // and `flown` hides its mark while the clone carries it to the card. The glyph nodes
@@ -962,7 +964,12 @@ export function FAB() {
     // pets and was reset to NULL on every sync, so the old query returned an
     // effectively random 3. No rolling window (`null`): the day's bounds are the
     // window. Async, so the answer is checked against the pet it was read for.
-    getRecentFoods(activePetId, null, 3, fabFoodDay(Date.now()))
+    // Mixed meals row 5: then the recent mixes, one pill per set of foods at its latest
+    // split (lib/fabRecentItems.ts). A pet with no mixes keeps exactly this read's answer,
+    // and a mix read that fails leaves it untouched.
+    const day = fabFoodDay(Date.now());
+    getRecentFoods(activePetId, null, 3, day)
+      .then((foods) => withRecentMixes(activePetId, foods, day, 3))
       .then((foods) => {
         if (seq !== readSeq.current) return;
         if (latestPetId.current !== activePetId) return;
@@ -1054,7 +1061,11 @@ export function FAB() {
     measureSlideTargets();
   });
 
-  async function handleQuickMeal(food: PickerFood, slot: number) {
+  async function handleQuickMeal(food: FabRecentItem, slot: number) {
+    // Mixed meals row 5: a mix pill writes the latest bowl of its foods in one press, in
+    // ONE transaction with the event (insertMeal's components), so it can never land as
+    // its first food alone.
+    const bowl = food.mix ? fabMixComponents(food.mix) : null;
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, not the render-time closure (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
@@ -1092,9 +1103,10 @@ export function FAB() {
       try {
         written = await insertMeal({
           petId: pet.id,
-          foodId: food.id,
+          foodId: bowl ? bowl[0].foodItemId : food.id,
           occurredAt: new Date(),
           occurredAtSource: 'now',
+          ...(bowl ? { components: bowl } : {}),
         });
       } catch (e) {
         // A failed write is always said (CUL-575), in the words every other log path
@@ -1113,6 +1125,8 @@ export function FAB() {
         food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
           ? food.food_type
           : null;
+      // A mix names no food on its row (T2); the bowl is read back from its components.
+      const named = bowl ? null : food;
       prependEvent({
         id: eventId,
         pet_id: pet.id,
@@ -1125,10 +1139,10 @@ export function FAB() {
         deleted_at: null,
         created_at: now,
         updated_at: now,
-        food_item_id: food.id,
-        food_brand: food.brand,
-        food_product_name: food.product_name,
-        food_format: food.format,
+        food_item_id: named?.id ?? null,
+        food_brand: named?.brand ?? null,
+        food_product_name: named?.product_name ?? null,
+        food_format: named?.format ?? null,
         food_type: foodType,
       });
       // ── THE MEAL LANDS IN ITS CARD (CUL-1643, PM ruling D3 of CUL-1625) ──────────
@@ -1166,10 +1180,13 @@ export function FAB() {
         petId: pet.id,
         occurredAt: occurredAtIso,
         foodType,
-        foodBrand: food.brand,
-        foodProductName: food.product_name,
-        foodFormat: food.format,
+        foodBrand: named?.brand ?? null,
+        foodProductName: named?.product_name ?? null,
+        foodFormat: named?.format ?? null,
         intakeRating: null,
+        ...(bowl && food.mix
+          ? { bowl: cardBowlFrom(bowl, Object.fromEntries(food.mix.foods.map((f) => [f.food.id, f.rowName]))) }
+          : {}),
       });
       // B-351 slice 4 / B-693 — resolve the trial heads-up and patch it onto the
       // card. Fire-and-forget (not awaited here) so the tapped row's held press
@@ -1183,7 +1200,14 @@ export function FAB() {
       // CUL-1643: with a flight up, both wait for the mark to land. The dwell restarts
       // there, so Undo and the intake chips keep their whole window (C-21), and the
       // heads-up lands after the mark rather than growing the card under it.
-      void landThenFlag(flies, { eventId, petId: pet.id, foodId: food.id, occurredAt: occurredAtIso });
+      void landThenFlag(flies, {
+        eventId,
+        petId: pet.id,
+        foodId: bowl ? null : food.id,
+        occurredAt: occurredAtIso,
+        // A mix's heads-up evaluates every food in it and names the offending one (§5.2).
+        ...(bowl ? { components: bowl.map((c) => ({ foodId: c.foodItemId, foodLabel: c.foodLabel })) } : {}),
+      });
     } finally {
       setLogging(null);
     }
@@ -1242,8 +1266,12 @@ export function FAB() {
   // pet only the no-pet card renders, so nothing is planned for doors it never draws.
   const foodText = new Map(
     (foodsForActivePet ?? []).map((food) => [food.id, {
-      label: rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food',
-      tag: foodFormatTag(food.format),
+      label: food.mix
+        ? fabMixLabel(food.mix)
+        : rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food',
+      // P-1 kept the FAB's MIX label: the tag slot a format uses, so a mix pill reads apart
+      // from a food pill without new chrome (mock round 2, the fan frame).
+      tag: food.mix ? 'MIX' : foodFormatTag(food.format),
     }]),
   );
   const fanPlan = planFan({

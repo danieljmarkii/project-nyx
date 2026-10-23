@@ -238,7 +238,7 @@ describe('every link into History is a registered door (AC 36)', () => {
     // last component that spelled the route inline) every component reaches History
     // through a builder. The hop is what reaches it there: a real builder's caller.
     expect(dirs).toContain('components');
-    expect(sources.get('components/designV2/patterns/MonthInstrument.tsx')).toMatch(/\bhistoryDayHref\b/);
+    expect(sources.get('components/surfaces/patterns/MonthInstrument.tsx')).toMatch(/\bhistoryDayHref\b/);
   });
 
   it('every exclusion names a directory the repository has, so none is stale', () => {

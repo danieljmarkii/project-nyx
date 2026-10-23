@@ -345,3 +345,80 @@ describe('foodIntakeKey sanity (the fixture keys match the real derivation)', ()
     expect(foodIntakeKey('PetCo', 'Dental Treats')).toBe(`petco${SEP}dental treats`);
   });
 });
+
+// ── Mixed meals (CUL-2053, spec §5.2, P-5): the heads-up reads every food in a bowl ──
+
+import { evaluateBowlLogTimeFlag, mealFlagCopy, membershipFlagCopy, pastTargetLine } from './trialContaminant';
+
+describe('evaluateBowlLogTimeFlag — every component, the offending one named', () => {
+  const DIET = { foodId: 'diet', foodLabel: 'Zignature Duck Formula' };
+  const CHEW = { foodId: 'chicken-chew', foodLabel: 'Acme Chicken Chew' };
+  const DENTAL = { foodId: 'dental-treats', foodLabel: 'PetCo Dental Treats' };
+
+  it('a trial-diet-dominant bowl with chicken in it flags the chicken, not the bowl’s first food', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 56 });
+    const flag = await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DIET, CHEW], occurredAt: NOW() });
+    expect(flag).toMatchObject({ kind: 'off_diet_protein', foodId: 'chicken-chew', bowl: { foodLabel: 'Acme Chicken Chew', pastTarget: false } });
+    const copy = mealFlagCopy(flag as never, 'Biscuit');
+    expect(copy.headline).toBe('This bowl has chicken in it, from Acme Chicken Chew.');
+  });
+
+  it('a contents flag on any food beats a membership flag on an earlier one (the bowl’s worst)', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 56 });
+    const flag = await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DENTAL, CHEW], occurredAt: NOW() });
+    expect(flag?.kind).toBe('off_diet_protein');
+    expect(flag?.foodId).toBe('chicken-chew');
+  });
+
+  it('an off-list food in a bowl flags membership, naming it', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 56 });
+    const flag = await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DIET, DENTAL], occurredAt: NOW() });
+    expect(flag).toMatchObject({ kind: 'off_trial_list', foodId: 'dental-treats' });
+    expect(membershipFlagCopy('Biscuit', flag!.bowl).headline).toBe('PetCo Dental Treats isn’t on Biscuit’s trial list.');
+  });
+
+  it('a food already spoken for is skipped and the next offending food speaks; the bowl never goes quiet for it', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 56 });
+    await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'chicken-chew' });
+    const flag = await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [CHEW, DENTAL], occurredAt: NOW() });
+    expect(flag).toMatchObject({ kind: 'off_trial_list', foodId: 'dental-treats' });
+  });
+
+  it('a bowl of only the trial diet raises nothing', async () => {
+    seedDuckTrial({ startedDaysAgo: 5, targetDays: 56 });
+    // The diet's own cache row, so this is a real "permitted" answer and not a missing read.
+    mockFoodRows.diet = {
+      brand: 'Zignature', product_name: 'Duck Formula',
+      proteins: '["duck"]', ingredients_notes: 'duck, duck meal', ai_extraction_confidence: null,
+    };
+    expect(await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DIET, DIET], occurredAt: NOW() })).toBeNull();
+  });
+
+  it('past the target end (P-5): the headline still names the food, the detail names ending the trial', async () => {
+    seedDuckTrial({ startedDaysAgo: 60, targetDays: 56 });
+    const flag = await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DIET, CHEW], occurredAt: NOW() });
+    expect(flag?.bowl?.pastTarget).toBe(true);
+    const copy = mealFlagCopy(flag as never, 'Biscuit');
+    expect(copy.headline).toBe('This bowl has chicken in it, from Acme Chicken Chew.');
+    expect(copy.detail).toBe(`The meal’s saved, and it counts in the trial record. ${pastTargetLine('Biscuit')}`);
+  });
+
+  it('P-5 is bowls only: a plain meal past the target keeps today’s copy', async () => {
+    seedDuckTrial({ startedDaysAgo: 60, targetDays: 56 });
+    const flag = await evaluateMealLogTimeFlag({ petId: 'pet-1', foodId: 'chicken-chew', occurredAt: NOW() });
+    expect(flag?.bowl).toBeUndefined();
+    expect(mealFlagCopy(flag as never, 'Biscuit').headline).toBe('This one has chicken.');
+  });
+
+  it('a trial past its grace says nothing, as for a plain meal (B-595)', async () => {
+    seedDuckTrial({ startedDaysAgo: 200, targetDays: 56 });
+    expect(await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DIET, CHEW], occurredAt: NOW() })).toBeNull();
+  });
+
+  it('copy carries no "!", no share and no softening words (§5.1)', async () => {
+    seedDuckTrial({ startedDaysAgo: 60, targetDays: 56 });
+    const flag = await evaluateBowlLogTimeFlag({ petId: 'pet-1', components: [DIET, CHEW], occurredAt: NOW() });
+    const text = Object.values(mealFlagCopy(flag as never, 'Biscuit')).join(' ');
+    expect(text).not.toMatch(/!|%|a little|only|small/i);
+  });
+});

@@ -97,7 +97,7 @@ const ALWAYS_SCANNED = [
   // the phone rewarding the owner for bad news — the exact D7 row — so its silence is
   // pinned by name rather than left to a heuristic that cannot see it.
   //
-  // Its sibling, the look itself (`components/designV2/home/LookHeader.tsx` since
+  // Its sibling, the look itself (`components/surfaces/home/LookHeader.tsx` since
   // CUL-1071 retired `LookCard.tsx`), is deliberately NOT here: it ticks on every chip tap
   // (`selectChip`, T-10) and is not a safety surface. The door is the half that
   // escalates, and the split is the point.
@@ -125,8 +125,8 @@ const ALWAYS_SCANNED = [
   // MARKERS (the verdict key rides a model field, the script comes in through an import),
   // so both are named here the PR they ship — C-16's rule, its fourth turn. Proven by
   // mutation on CUL-1065: a `commitSymptom` import in each reds the build.
-  'components/designV2/signal/SignalScreen.tsx',
-  'components/designV2/signal/EpisodeGallery.tsx',
+  'components/surfaces/signal/SignalScreen.tsx',
+  'components/surfaces/signal/EpisodeGallery.tsx',
   // CUL-1069 (D2-6) — the Signal chart's flight: the module that owns the spring and the
   // root host that draws the clone. The landing is exactly where a "landed" buzz would
   // read as natural, on the chart of a screen that paints `worth_a_call`; neither file
@@ -152,7 +152,7 @@ const ALWAYS_SCANNED = [
   // that day is where a "landed" haptic would read as natural, exactly the fold's and
   // the arrival's case above. Both named the PR they ship; proven by mutation (a
   // `commitSymptom` import in either reds the build).
-  'components/designV2/patterns/MonthInstrument.tsx',
+  'components/surfaces/patterns/MonthInstrument.tsx',
   'components/motion/openInPlaceMotion.ts',
   // CUL-1734 — the run's own open, which the day's list (Home and History, beside
   // `worth_a_call`) now rides instead of the month's machine. A `.ts` hook, so invisible

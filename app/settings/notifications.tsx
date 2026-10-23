@@ -5,7 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { AlertTriangle } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
 import { FollowUpNotificationRow } from '../../components/settings/FollowUpNotificationRow';
@@ -330,7 +330,7 @@ export default function NotificationsScreen() {
                   value={switchOn}
                   onValueChange={handleToggleDailySummary}
                   disabled={denied || busy}
-                  trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                  trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
                   ios_backgroundColor={theme.colorBorderStrong}
                   accessibilityLabel="Daily summary"
                 />
@@ -362,7 +362,7 @@ export default function NotificationsScreen() {
                   value={usePetName}
                   onValueChange={handleTogglePetName}
                   disabled={petNameBusy}
-                  trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                  trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
                   ios_backgroundColor={theme.colorBorderStrong}
                   accessibilityLabel={`Use ${primerPetName}’s name in notifications`}
                 />
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
   deniedActionText: {
     fontFamily: theme.fontBodyMedium,
     fontSize: theme.textSM,
-    color: theme.colorDestructive,
+    color: colorRoles.destructive.textOnWash,
   },
 
   // ── Intro framing (states a/b) + the relocated lock-screen privacy note (DR-4),

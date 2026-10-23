@@ -5,6 +5,7 @@ import { FAB, HiddenUnderFabMenu } from '../../components/log/FAB';
 import { SyncBanner } from '../../components/ui';
 import { NyxTabBar, type TabBarProps } from '../../components/nav/NyxTabBar';
 import { useAuthStore } from '../../store/authStore';
+import { useAiConsentPreload } from '../../hooks/useAiConsentPreload';
 
 export default function TabsLayout() {
   // §6.5 — the recovery gate's enforcement point. FR-6 says the router holds the
@@ -16,6 +17,8 @@ export default function TabsLayout() {
   // a no-op unless `PASSWORD_RECOVERY_ENABLED` is on and a reset is live.
   const recoveryInProgress = useAuthStore((s) => s.recoveryInProgress);
   usePet();
+  // The AI consent answer the rows draw by (CUL-1174), read once per account.
+  useAiConsentPreload();
 
   if (recoveryInProgress) {
     return <Redirect href="/(auth)/reset-password" />;

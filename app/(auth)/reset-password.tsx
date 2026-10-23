@@ -10,10 +10,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as Linking from 'expo-linking';
 import { MailOpen, Smartphone, RefreshCw } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
-import { theme } from '../../constants/theme';
+import { abandonRecovery } from '../../lib/recoveryDeepLink';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -22,8 +22,6 @@ import { authErrorCopy, isOffline } from '../../lib/authErrors';
 import { useAuthStore, releaseRecoveryGate } from '../../store/authStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { usePetStore } from '../../store/petStore';
-import { parseRecoveryLink } from '../../lib/passwordRecovery';
-import { retryRecoveryExchange } from '../../lib/recoveryDeepLink';
 import { ThemedText } from '../../components/ui/ThemedText';
 
 // The set-new-password screen and every terminal state the exchange can produce
@@ -45,15 +43,31 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // connection RN's fetch won't time out on, so the owner is never stranded.
 const WORKING_WATCHDOG_MS = 20_000;
 
+// Whether auth-js holds the user this reset is for. `updateUser` writes to whoever
+// auth-js holds, and once the exchange window closes the root listener adopts any
+// sign-in (a Change password re-auth, a login from the failed screen), so the store
+// can agree with auth-js on the wrong account (rls-privacy-reviewer, reproduced).
+// The exchange pinned `recoveryUserId`; a resume after a force-quit has none, and
+// falls back to the store's user (CUL-1973 owns that path).
+async function authHoldsRecoveryUser(): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const st = useAuthStore.getState();
+    const expected = st.recoveryUserId ?? st.session?.user.id ?? null;
+    return !!expected && data.session?.user.id === expected;
+  } catch (e) {
+    // A read that fails counts as a mismatch: refusing the write is the safe direction.
+    console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 export default function ResetPasswordScreen() {
   const recoveryScreen = useAuthStore((s) => s.recoveryScreen);
   const session = useAuthStore((s) => s.session);
   const recoveryInProgress = useAuthStore((s) => s.recoveryInProgress);
   const recoveryEmail = useAuthStore((s) => s.recoveryEmail);
   const pets = usePetStore((s) => s.pets);
-  // The launch/warm URL still carries the code, so a `failed` (transport) exchange
-  // can retry the SAME code (§5.6) rather than forcing a whole new link.
-  const url = Linking.useLinkingURL();
 
   const [password, setPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -64,7 +78,7 @@ export default function ResetPasswordScreen() {
   // of its own, so it must never be a dead end. `exchangeCodeForSession` makes a
   // network call that RN's fetch does not time out, so a stalled-but-open connection
   // could hang it. If no outcome arrives within the window, fall to the §5.6 failed
-  // state (which has Try again + Back to log in). Generous (a normal exchange is
+  // state (Send a new link + Back to log in). Generous (a normal exchange is
   // ~1-2s) and SAFE: it does not cancel the in-flight exchange — if that resolves,
   // its outcome overrides this, and this does not fire once a session or a failure
   // state has landed. (pm-feature-review: the one exit-less state.)
@@ -88,6 +102,14 @@ export default function ResetPasswordScreen() {
     setSubmitted(true);
     if (passwordError(password)) return;
     setSaving(true);
+    // Write only to the account this reset is for (CUL-1205). Otherwise end the reset
+    // as every failure does (FR-15): failed state, local sign-out, gate released, so
+    // nothing armed is left behind a screen that says the reset failed.
+    if (!(await authHoldsRecoveryUser())) {
+      setSaving(false);
+      await abandonRecovery('failed');
+      return;
+    }
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
       setSaving(false);
@@ -156,25 +178,11 @@ export default function ResetPasswordScreen() {
     router.replace('/(auth)/login');
   }
 
-  // §5.6 "Try again" for a `failed` exchange: retry the same code if the URL still
-  // carries one; otherwise the honest fallback is to send a fresh link.
-  async function retryFailed() {
-    if (busy) return;
-    const link = parseRecoveryLink(url);
-    if (link.kind !== 'valid') {
-      sendNewLink();
-      return;
-    }
-    setBusy(true);
-    await retryRecoveryExchange(link.code);
-    setBusy(false);
-  }
-
   // ── §5.5b — wrong device (PKCE verifier absent, or no local request) ───────────
   if (recoveryScreen === 'wrong_device') {
     return (
       <StateScreen
-        icon={<Smartphone size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<Smartphone size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="Open this link on the phone you asked from"
         body="For your security, a reset link only works on the device that asked for it. You can send a fresh one from this device instead."
         primaryLabel="Send a link from this device"
@@ -189,7 +197,7 @@ export default function ResetPasswordScreen() {
   if (recoveryScreen === 'link_unusable') {
     return (
       <StateScreen
-        icon={<MailOpen size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<MailOpen size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="That link no longer works"
         body="Reset links only work once, and they don't last long. Send yourself a fresh one."
         primaryLabel="Send a new link"
@@ -200,16 +208,20 @@ export default function ResetPasswordScreen() {
     );
   }
 
-  // ── §5.6 — the exchange failed on transport (the link may still be good) ───────
+  // ── §5.6 — the exchange failed on transport, or the watchdog gave up ───────────
+  // No "Try again" (CUL-1888): auth-js deletes the PKCE verifier on EVERY failed
+  // exchange, network failures included, and the step 8 reconcile signOut deletes it
+  // again, so a retry of the same code can only come back `wrong_device`. The one
+  // forward action this phone can honour is a fresh link, pre-filled (FR-12).
+  // Pinned against the real library by lib/recoveryVerifierContract.test.ts.
   if (recoveryScreen === 'failed') {
     return (
       <StateScreen
-        icon={<RefreshCw size={44} color={theme.colorAccent} strokeWidth={1.5} />}
+        icon={<RefreshCw size={44} color={colorRoles.positive.glyphOnLight} strokeWidth={1.5} />}
         title="Couldn't finish that"
-        body="Something interrupted the connection. Your link may still be good — try again in a moment."
-        primaryLabel="Try again"
-        onPrimary={retryFailed}
-        primaryLoading={busy}
+        body="Something interrupted the connection, and a reset link can't be tried twice. Send yourself a fresh one."
+        primaryLabel="Send a new link"
+        onPrimary={sendNewLink}
         onBack={backToLogin}
         testID="reset-failed"
       />
@@ -309,7 +321,6 @@ function StateScreen({
   body,
   primaryLabel,
   onPrimary,
-  primaryLoading,
   onBack,
   testID,
 }: {
@@ -318,7 +329,6 @@ function StateScreen({
   body: string;
   primaryLabel: string;
   onPrimary: () => void;
-  primaryLoading?: boolean;
   onBack: () => void;
   testID: string;
 }) {
@@ -334,7 +344,6 @@ function StateScreen({
           <PrimaryButton
             label={primaryLabel}
             onPress={onPrimary}
-            loading={primaryLoading}
             testID={`${testID}-primary`}
           />
           <TouchableOpacity

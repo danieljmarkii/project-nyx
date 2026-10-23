@@ -152,7 +152,7 @@ describe('Undo (CUL-964 — the R1 rule, inherited)', () => {
     // well as the count, because the id is what the register checks its own payload
     // against — a beat that removed some other row would satisfy a bare count.
     expect(reverseLoggedEvent).toHaveBeenCalledTimes(1);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     // The rigid tap fires on the confirm, and the confirm here IS the tap (§5.6).
     expect(destructiveConfirm).toHaveBeenCalledTimes(1);
   });
@@ -494,5 +494,28 @@ describe('the VoiceOver announcement (CUL-1275)', () => {
     Platform.OS = 'android';
     showAndRender();
     expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-1835, frame D0 — the sheet is the default symptom path, so its beat offers the read too.
+describe('SheetLogBeat — the read offer (frame D0)', () => {
+  it('offers the read and hands the record to the host as the landing', () => {
+    const onOpen = jest.fn();
+    act(() => {
+      useMomentStore.getState().showSheetBeat({
+        tone: 'calm', eventId: 'e1', occurredAt: '2026-09-14T17:33:00.000Z', hasAttachment: true, offerRead: true,
+      });
+    });
+    const view = render(
+      <SheetLogBeat onOpenRaisedRead={onOpen} tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={jest.fn()} />,
+    );
+    expect(view.getByText('Photo saved. Want an AI to describe it?')).toBeTruthy();
+    fireEvent.press(view.getByTestId('named-card-read-offer'));
+    expect(onOpen).toHaveBeenCalledWith('e1');
+  });
+
+  it('absent without the flag', () => {
+    const view = showAndRender({ hasAttachment: true });
+    expect(view.queryByTestId('named-card-read-offer')).toBeNull();
   });
 });

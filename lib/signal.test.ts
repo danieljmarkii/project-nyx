@@ -252,6 +252,20 @@ describe('triggerSignalRegenDebounced — acknowledgment flag (SR-3 §5.3)', () 
     expect(useSyncStore.getState().signalAcknowledging['pet-b']).toBeUndefined();
   });
 
+  // CUL-1947 — the phone's own reads re-run on the write, never on the server's answer.
+  it('bumps the record tick the moment a write schedules a regen, whether the regen never runs or fails', async () => {
+    useSyncStore.setState({ recordTick: 0, signalTick: 0 });
+    mockedInvoke.mockResolvedValue({ error: { message: 'offline' } });
+    triggerSignalRegenDebounced('pet-a', 5000);
+    // Before the debounce: the regen has not run at all.
+    expect(useSyncStore.getState().recordTick).toBe(1);
+    await jest.advanceTimersByTimeAsync(5000);
+    // The regen ran and failed: no signalTick, and the record tick stands.
+    expect(mockedInvoke).toHaveBeenCalled();
+    expect(useSyncStore.getState().signalTick).toBe(0);
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
   it('clears the ack when the debounced regen settles (the picture landed)', async () => {
     triggerSignalRegenDebounced('pet-a', 5000);
     expect(useSyncStore.getState().signalAcknowledging['pet-a']).toBe(true);

@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
+import { recordGapsForAskSql } from './syncQueue';
 // The row predicate rather than monthReads' LOOK_EVENT_TYPE: lookDisplay has no RN or
 // lucide edge, where monthReads reaches constants/eventTypes (see the note below).
 import { isLookRow } from './lookDisplay';
@@ -132,6 +133,10 @@ export async function askQuestion(params: {
   conversation: AskTurn[];
 }): Promise<AskResponse> {
   try {
+    // CUL-1982 / CUL-2004: whether this phone still holds entries the server lacks, pending or
+    // refused. Ask answers from the server's copy, so either one makes it deflect rather than
+    // answer as if that copy were whole.
+    const { unsentRows, refusedRows } = await readRecordGaps();
     const { data, error } = await supabase.functions.invoke('ask', {
       // timezone: the DEVICE zone, so the server's trial "Day N" buckets by the same clock the
       // card does (B-443). null when the runtime can't resolve one → the server falls back to
@@ -141,12 +146,29 @@ export async function askQuestion(params: {
         question: params.question,
         conversation: params.conversation,
         timezone: getDeviceTimezone(),
+        unsent_rows: unsentRows,
+        refused_rows: refusedRows,
       },
     });
     if (error) return { ok: false, error: error.message };
     return parseAskResponse(data);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** CUL-2004: the two gaps the phone reports, from one statement (a drain can move a row from
+ *  refused to pending between two reads). A refused row also sets `unsent_rows`, so a server
+ *  without the refused gate (a rollback) still declines; the current one lets refused lead. A
+ *  failed read declines as unsent (CUL-1982's rule) and never claims an entry couldn't be saved
+ *  when the phone could not look. Exported for unit tests. */
+export async function readRecordGaps(): Promise<{ unsentRows: boolean; refusedRows: boolean }> {
+  try {
+    const row = await getDb().getFirstAsync<{ unsent: number; refused: number }>(recordGapsForAskSql());
+    const refusedRows = (row?.refused ?? 0) > 0;
+    return { unsentRows: (row?.unsent ?? 0) > 0 || refusedRows, refusedRows };
+  } catch {
+    return { unsentRows: true, refusedRows: false };
   }
 }
 

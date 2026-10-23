@@ -45,6 +45,7 @@ function freshDb(): RawDb {
   // The queues the flush consults so it never orphans an offline-captured row's
   // pending FK pre-sync. Minimal mirrors of the columns the WHERE-guards read.
   db.exec(`CREATE TABLE meals (id TEXT PRIMARY KEY, food_item_id TEXT, synced INTEGER);`);
+  db.exec(`CREATE TABLE meal_components (id TEXT PRIMARY KEY, food_item_id TEXT, synced INTEGER);`);
   db.exec(`CREATE TABLE feeding_arrangements (id TEXT PRIMARY KEY, food_item_id TEXT, synced INTEGER);`);
   db.exec(`CREATE TABLE medications (id TEXT PRIMARY KEY, medication_item_id TEXT, synced INTEGER);`);
   db.exec(`CREATE TABLE medication_administrations (id TEXT PRIMARY KEY, medication_item_id TEXT, synced INTEGER);`);
@@ -118,6 +119,18 @@ describe('flushLegacyCatalogCachesIfNeeded (B-354 PR 2 — one-time per-account 
     expect(flushed).toBe(true);
     expect(counts(db)).toEqual({ foods: 0, meds: 0 });
     expect(userVersion(db)).toBe(2);
+    db.close();
+  });
+
+  it('preserves a food named only by an UNSYNCED mixed-bowl component (CUL-2051, spec §3 point 6)', async () => {
+    const db = freshDb();
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ('f1', 'Own Offline'), ('f2', 'Stranger'), ('f3', 'Synced');`);
+    db.exec(`INSERT INTO meal_components (id, food_item_id, synced) VALUES ('mc1', 'f1', 0), ('mc2', 'f3', 1);`);
+
+    await flushLegacyCatalogCachesIfNeeded(asyncAdapter(db));
+
+    const foodIds = (db.prepare('SELECT id FROM food_items_cache ORDER BY id').all() as { id: string }[]).map((r) => r.id);
+    expect(foodIds).toEqual(['f1']);
     db.close();
   });
 

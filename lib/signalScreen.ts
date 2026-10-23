@@ -42,9 +42,9 @@ import { getDietTrialProgress } from './analytics';
 import { episodeDaysOf, type CompareWindowsModel, type WeeklyBucketsModel } from './chartModels';
 import { getDb } from './db';
 import { LOOK_EVENT_TYPE } from './monthReads';
-import { isAnimalNotEating, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
+import { notEatingFact, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
 import { isTrialRunning } from './dietTrial';
-import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
+import { loadDietTrialFacts, loadTrialPredicateFacts, readIntakeDecline } from './dietTrialFacts';
 import { classifyEpisodeSet, collapseEpisodes, compareOnsets, DEFAULT_MEAL_TIMING_CONFIG, type OnsetConfidence } from './mealTiming';
 import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
@@ -97,6 +97,7 @@ import {
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
 import {
+  boutSpansOfEpisodes,
   signalCompare,
   signalCompareSpec,
   signalLanes,
@@ -149,6 +150,9 @@ export interface SignalScreenEpisode {
    *  own row among them. The loader reads the bout's verdicts from it; the builder never
    *  does. Absent reads as the one row `eventId` names. */
   boutIds?: readonly string[];
+  /** The local day of the bout's LAST row, so a week the bout carries into says so (Q12,
+   *  CUL-1791). Required: a fallback to `dayKey` would be the silent zero one hop down. */
+  endDayKey: string;
 }
 
 /** One delivered dose on one local day. */
@@ -181,9 +185,10 @@ export interface SignalScreenInput {
   verdicts: Readonly<Record<string, EpisodeVerdict | null>>;
   doses: readonly SignalDoseDay[];
   /**
-   * The pet's not-eating register (CUL-1216, BRK-6): `isAnimalNotEating` over the route's
-   * pet's trial facts, OR'd with an `intake_decline` in its Signal; null when the facts did
-   * not answer. A falling vomit pair is withheld on true AND on null (fail closed).
+   * The pet's not-eating register (CUL-1216, BRK-6): `notEatingFact` over the route's pet's
+   * trial facts, OR'd with the device's own eating check and an `intake_decline` in its
+   * Signal; null when the facts or the check did not answer (CUL-2006). A falling vomit pair
+   * is withheld on true AND on null (fail closed).
    */
   notEating: NotEatingFact;
   /**
@@ -242,8 +247,11 @@ export interface PhotolessEpisode {
 }
 
 export interface SignalScreenEpisodes {
-  /** Every episode in the drawn weeks. */
+  /** Every episode that BEGAN in the drawn weeks: the bars' total. */
   total: number;
+  /** Bouts that began before the first drawn week and ran into it (CUL-1958): shown as tiles
+   *  (or photoless reads), said beside `total`, never added to it. 0 or 1. */
+  carriedIn: number;
   photographedCount: number;
   /** How many weeks are drawn: the count line's window. */
   weeks: number;
@@ -332,17 +340,28 @@ function indexOf(key: string): number {
   return i;
 }
 
-/** The episodes inside the drawn weeks — what the chart counts and the gallery shows.
- *  Bounded above by TODAY, the bound the buckets use: a mis-dated episode tomorrow is
- *  "dated after what is drawn" on the chart and must not be a tile (C-4 — the two counts
- *  partition; adversarial pass, B6). */
-function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: WeeklyBucketsModel, today: string): SignalScreenEpisode[] {
+/** The episodes the gallery shows: every bout with a row inside the drawn weeks. `onset` is
+ *  those that BEGAN there — what the chart counts; `carried` is the bout that began before the
+ *  first drawn day and ran into it (CUL-1958): its photographed re-log is inside the window, so
+ *  it keeps its tile, and the count line says it is not in the bars (Q12). Bouts never overlap,
+ *  so at most one is carried. Bounded above by TODAY, the bound the buckets use: a mis-dated
+ *  episode tomorrow is "dated after what is drawn" on the chart and must not be a tile (C-4 —
+ *  the two counts partition; adversarial pass, B6). */
+function episodesInWeeks(
+  episodes: readonly SignalScreenEpisode[],
+  weekly: WeeklyBucketsModel,
+  today: string,
+): { onset: SignalScreenEpisode[]; carried: SignalScreenEpisode[] } {
   const first = indexOf(weekly.firstKey);
   const last = Math.min(indexOf(weekly.lastKey), indexOf(today));
-  return episodes.filter((e) => {
+  const onset: SignalScreenEpisode[] = [];
+  const carried: SignalScreenEpisode[] = [];
+  for (const e of episodes) {
     const i = indexOf(e.dayKey);
-    return i >= first && i <= last;
-  });
+    if (i >= first && i <= last) onset.push(e);
+    else if (i < first && indexOf(e.endDayKey) >= first) carried.push(e);
+  }
+  return { onset, carried };
 }
 
 /**
@@ -397,12 +416,13 @@ export function findingTracksPattern(finding: SignalFinding): boolean {
 }
 
 function galleryOf(
-  inWeeks: readonly SignalScreenEpisode[],
+  inWeeks: { onset: readonly SignalScreenEpisode[]; carried: readonly SignalScreenEpisode[] },
   verdicts: SignalScreenInput['verdicts'],
   weeks: number,
   tracksPattern: boolean,
 ): SignalScreenEpisodes {
-  const photographed = inWeeks
+  const shown = [...inWeeks.onset, ...inWeeks.carried];
+  const photographed = shown
     .filter((e): e is SignalScreenEpisode & { photo: SignalScreenPhoto } => e.photo != null)
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
   const tiles: GalleryTile[] = photographed.map((e) => {
@@ -421,15 +441,25 @@ function galleryOf(
       ...(e.boutIds ? { boutIds: [...e.boutIds] } : {}),
     };
   });
-  const photoless: PhotolessEpisode[] = inWeeks
+  const photoless: PhotolessEpisode[] = shown
     .filter((e) => e.photo == null)
     .map((e) => {
       const v = verdicts[e.eventId] ?? null;
       return { eventId: e.eventId, boutKey: boutKeyOf(e.eventId, e.boutIds), call: isCallDisplay(v) ? v : null };
     });
-  const total = inWeeks.length;
+  const total = inWeeks.onset.length;
+  const carriedIn = inWeeks.carried.length;
   const n = photographed.length;
-  return { total, photographedCount: n, weeks, countLine: galleryCountLine(total, weeks, n, photoless), tiles, photoless, tracksPattern };
+  return {
+    total,
+    carriedIn,
+    photographedCount: n,
+    weeks,
+    countLine: galleryCountLine(total, weeks, n, photoless, carriedIn),
+    tiles,
+    photoless,
+    tracksPattern,
+  };
 }
 
 /** A bout's rows as one key, the tile's own row among them. */
@@ -444,10 +474,27 @@ function boutKeyOf(eventId: string, boutIds: readonly string[] | undefined): str
  * own clause, never summed (EN-3). Nothing is said when there are none: "none read as a
  * call" would be an all-clear the record cannot give (n=1 never reassures).
  */
-export function galleryCountLine(total: number, weeks: number, photographedCount: number, photoless: readonly Pick<PhotolessEpisode, 'call'>[]): string {
+export function galleryCountLine(
+  total: number,
+  weeks: number,
+  photographedCount: number,
+  photoless: readonly Pick<PhotolessEpisode, 'call'>[],
+  /** Bouts that began before the first drawn week and ran into it (CUL-1958): tiles and
+   *  photoless reads the bars do not count, so the line says so beside the bars' total. */
+  carriedIn: number,
+): string {
   // The count names its window (CUL-223: a display-window count spoken as a record fact
-  // is the anti-pattern; adversarial pass, B8): these are the drawn weeks' episodes.
-  const scope = `${total} in these ${weeks} ${plural(weeks, 'week')}`;
+  // is the anti-pattern; adversarial pass, B8): these are the drawn weeks' episodes. A bout
+  // that began earlier and ran in is said beside it, never added (the bars count onsets, Q12).
+  // With nothing that began in the window, the carried bout is the line, and no "0" leads it:
+  // a zero over masked weeks is the numeral D1 withholds (CUL-1440; the adversarial pass).
+  const span = `${weeks} ${plural(weeks, 'week')}`;
+  const scope =
+    carriedIn > 0
+      ? total === 0
+        ? `A bout that began earlier ran into these ${span}`
+        : `${total} in these ${span}, and a bout that began earlier ran into them`
+      : `${total} in these ${span}`;
   const parts = [photographedCount === 0 ? `${scope}, none photographed` : `${scope}, ${smallNumber(photographedCount)} photographed`];
   let earlier = 0;
   let tiered = 0;
@@ -778,6 +825,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     today: input.today,
     trial: input.trial,
     episodeDays,
+    boutSpans: boutSpansOfEpisodes(input.episodes),
     loggedDays: input.loggedDays,
     recordStart: input.recordStart,
   };
@@ -841,7 +889,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
   // the engine's and no masking span touches their windows; otherwise the engine's sentence
   // stands, dated, and the line under it says the bars count the record as it is now.
   const counted = isCountedFinding(finding) ? finding : null;
-  const counts = counted ? signalCountsOf(counted, weekly, episodeDays, input.today) : null;
+  const counts = counted ? signalCountsOf(counted, weekly, input.episodes, input.today) : null;
   const composed =
     counted &&
     counts &&
@@ -879,7 +927,10 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     lanes,
     // A masked record with nothing in the drawn weeks prints no "0 in these 5 weeks" (CUL-1440,
     // the adversarial pass): the gallery's count line is a count over those weeks too.
-    episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length, findingTracksPattern(finding)),
+    episodes:
+      inWeeks.onset.length === 0 && inWeeks.carried.length === 0 && weeklyMaskOf(input.masking, weekly, input.today)
+        ? null
+        : galleryOf(inWeeks, input.verdicts, weekly.weeks.length, findingTracksPattern(finding)),
     why,
     context: careContextLinesOf(finding),
     safety,
@@ -1156,8 +1207,12 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
     minutesByOnset = new Map(timing.eligible.map((t) => [t.onsetMs, t.minutesSinceFeeding]));
   }
 
+  const msById = new Map(stamped.map((r) => [r.id, r.ms]));
   return episodes.map((e) => {
     const held = photoByEpisode.get(e.id) ?? null;
+    const boutIds = members.get(e.id) ?? [e.id];
+    // The bout's last row, by instant, from its own members — the same membership the tiles read.
+    const lastMs = boutIds.reduce((m, id) => Math.max(m, msById.get(id) ?? e.ms), e.ms);
     return {
       eventId: held ? held.eventId : e.id,
       occurredAt: e.occurred_at,
@@ -1165,7 +1220,8 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
       minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
       photo: held ? held.photo : null,
       ...(held && held.eventId !== e.id ? { openedAt: occurredAtById.get(held.eventId) ?? e.occurred_at } : {}),
-      boutIds: members.get(e.id) ?? [e.id],
+      boutIds,
+      endDayKey: toLocalDayKey(new Date(lastMs)),
     };
   });
 }
@@ -1336,7 +1392,8 @@ export async function readVerdicts(
       hasPhoto: true,
       copy: copies.get(eventId),
       inFlight: analysisChainOutstanding(eventId),
-      // The owner's photo-reading choice arrives with CUL-552 (HV-18).
+      // The gallery speaks only `display`, which `off` and `unread` share, so the owner's
+      // choice changes nothing here (CUL-1174 wires it where the STATE draws: the rows).
       readingOff: false,
     }).display;
   }
@@ -1415,7 +1472,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const pet = pets.find((p) => p.id === petId) ?? null;
   const symptom = signalChartSymptomOf(cached.finding);
 
-  const [episodes, logged, gateRead, trialFacts] = await Promise.all([
+  const [episodes, logged, gateRead, trialFacts, deviceDecline] = await Promise.all([
     symptom ? readSignalEpisodes(petId, symptom) : Promise.resolve([]),
     readLoggedDays(petId),
     // A gate that cannot read its days is UNANSWERED (C-12): no compare is drawn, and the
@@ -1437,6 +1494,11 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
           return null;
         })
       : Promise.resolve(null),
+    // CUL-2006 — the device's own eating check, for every pet, as Home reads it (CUL-1975).
+    // For a pet with no trial the loader above returns its base input before any decline
+    // read, so without this the screen never saw a decline the phone can see. Null is "did
+    // not answer" (it catches its own throw), never "eating".
+    pet ? readIntakeDecline({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs) : Promise.resolve(null),
   ]);
   // CUL-1360: which trial the cached finding counted. A trial finding from a trial since
   // replaced or restarted is not this trial's: the screen draws a rising one in its own day
@@ -1447,13 +1509,18 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trial: trialFacts?.trial ? signalTrialWindowOf(trialFacts.trial, nowMs) : null,
   };
   const trial = signalTrialWindowFor(cached.finding, trialAnchor);
-  // Either fact withholds: the Signal's own intake decline answers on its own, whatever the
-  // trial read did (a positive fact in hand is never downgraded to "unknown").
-  const notEating: NotEatingFact = signalSaysNotEating(row?.findings ?? [])
-    ? true
-    : trialFacts
-      ? isAnimalNotEating(trialFacts)
-      : null;
+  // Any positive fact withholds: the Signal's own intake decline, the trial register or the
+  // device's decline answers on its own, whatever the other reads did (a positive fact in
+  // hand is never downgraded to "unknown"). Otherwise an eating check that did not answer —
+  // the trial read thrown, its decline read thrown (`notEatingFact` null, CUL-1972) or the
+  // device read thrown — is null, never "eating" (CUL-2006): the falling pair stays out.
+  const trialNotEating = trialFacts ? notEatingFact(trialFacts) : null;
+  const notEating: NotEatingFact =
+    signalSaysNotEating(row?.findings ?? []) || trialNotEating === true || (deviceDecline?.length ?? 0) > 0
+      ? true
+      : trialNotEating === null || deviceDecline === null
+        ? null
+        : false;
   // THE SCREEN ANSWERS ONLY FOR A FINDING HOME WOULD DRAW (TS-9 · CUL-1305, adversarial pass).
   // The route is reachable without Home's stack in between: a stale door (the trial screen's
   // Signal row, a card tapped a beat before a regen landed), a deep link. The sentence is the
@@ -1588,7 +1655,7 @@ export function carryTileRoses(
     const now = new Set(p.boutKey.split('|'));
     return last.boutKey.split('|').every((id) => now.has(id)) ? { ...p, call: last.call } : p;
   });
-  const countLine = galleryCountLine(episodes.total, episodes.weeks, episodes.photographedCount, photoless);
+  const countLine = galleryCountLine(episodes.total, episodes.weeks, episodes.photographedCount, photoless, episodes.carriedIn);
   return { ...next, model: { ...next.model, episodes: { ...episodes, tiles, photoless, countLine } } };
 }
 

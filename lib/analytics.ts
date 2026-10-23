@@ -43,6 +43,7 @@
 // day convention).
 
 import { getDb } from './db';
+import { bowlFoodType, bowlProteins, componentDisplayName, loadMealBowls, type AppBowl } from './mealBowls';
 import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
 import {
   FINISHED_SCORE,
@@ -221,6 +222,87 @@ export interface AnalyticsMeal {
   proteins?: string[] | null;
   /** WSAVA rating string, or null when unrated. */
   intakeRating: string | null;
+  /** A MIXED BOWL (Mixed meals, CUL-2053; spec §5.4), the twin of the server's
+   *  `MealEventBowl`. Then `foodItemId` and `primaryProtein` are null (T2), `proteins`
+   *  is the union of the components' (exposure is presence, §5.1), `foodType` is the
+   *  bowl's, and `foodLabel` names the bowl. Absent for a single food. */
+  bowl?: AnalyticsBowl | null;
+}
+
+export interface AnalyticsBowl {
+  /** `incomplete`: the live set is smaller than the bowl says; its contents are not all
+   *  known, so it feeds no food history (§3). */
+  status: 'mix' | 'incomplete';
+  /** The sorted set of food keys: one mix's identity, whatever its ratio. */
+  compositionKey: string;
+  components: {
+    foodItemId: string | null;
+    foodLabel: string;
+    foodType: string | null;
+    primaryProtein: string | null;
+    proteins: string[];
+  }[];
+}
+
+/** A bowl's label as the decline card names it: "A mixed with B" (the server's
+ *  `mapMealRows` wording, so a refused mix reads the same on both surfaces). */
+export function bowlDeclineLabel(labels: readonly string[]): string | null {
+  if (labels.length === 0) return null;
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(', ')} mixed with ${labels[labels.length - 1]}`;
+}
+
+/** An `AnalyticsMeal` for a mixed bowl, from the app's one bowl read. EXPORTED so the
+ *  decline parity suite builds the phone's input the way the phone does. */
+export function analyticsMealOfBowl(ms: number, intakeRating: string | null, bowl: AppBowl): AnalyticsMeal {
+  return {
+    ms,
+    foodItemId: null,
+    foodLabel: bowlDeclineLabel(bowl.components.map(componentDisplayName)),
+    foodType: bowlFoodType(bowl.components.map((c) => c.food?.foodType ?? null)),
+    primaryProtein: null,
+    proteins: bowlProteins(bowl),
+    intakeRating,
+    bowl: {
+      status: bowl.status,
+      compositionKey: bowl.compositionKey,
+      components: bowl.components.map((c) => ({
+        foodItemId: c.foodItemId,
+        foodLabel: componentDisplayName(c),
+        foodType: c.food?.foodType ?? null,
+        primaryProtein: c.food?.primaryProtein ?? null,
+        proteins: c.food?.proteins ?? [],
+      })),
+    },
+  };
+}
+
+/**
+ * The rows a FOOD-level count reads (Mixed meals, spec §5.4 and §7.4): a plain meal is
+ * itself; a bowl is one row per distinct component food, each with its rating REMOVED,
+ * because a bowl's rating is a fact about the bowl and never about either food (no
+ * per-food or per-protein finished rate may read it). The bowl still counts as a
+ * feeding of each food it held.
+ */
+function foodExposureRows(m: AnalyticsMeal): AnalyticsMeal[] {
+  if (!m.bowl) return [m];
+  const seen = new Set<string>();
+  const out: AnalyticsMeal[] = [];
+  for (const c of m.bowl.components) {
+    const key = c.foodItemId ?? `label:${c.foodLabel}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      ms: m.ms,
+      foodItemId: c.foodItemId,
+      foodLabel: c.foodLabel,
+      foodType: c.foodType,
+      primaryProtein: c.primaryProtein,
+      proteins: c.proteins,
+      intakeRating: null,
+    });
+  }
+  return out;
 }
 
 // ── A. Symptom counts + prior-period delta (the count card) ─────────────────────
@@ -591,18 +673,24 @@ export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): 
   // B-115: collapse exact-timestamp same-treat re-logs BEFORE counting so a per-piece
   // handful can't inflate a treat's count/share/floor (meals untouched → finished-rate
   // and the decline lane are unaffected). See collapseTreatRelogs for the exact-ms scope.
-  const candidates = collapseTreatRelogs(rows).filter((m) => m.foodItemId !== null && !!m.foodLabel);
-  if (candidates.length < ANALYTICS_FLOORS.minMealsForRanking) {
-    return notEnoughData(candidates.length, ANALYTICS_FLOORS.minMealsForRanking);
+  // A mixed bowl is one FEEDING of each food it held, with no rating (spec §5.4, §7.4):
+  // it counts toward each food's count and the feeding total once, and toward no food's
+  // finished rate.
+  const feedings = collapseTreatRelogs(rows).filter((m) =>
+    foodExposureRows(m).some((r) => r.foodItemId !== null && !!r.foodLabel),
+  );
+  if (feedings.length < ANALYTICS_FLOORS.minMealsForRanking) {
+    return notEnoughData(feedings.length, ANALYTICS_FLOORS.minMealsForRanking);
   }
   const byFood = new Map<string, AnalyticsMeal[]>();
-  for (const m of candidates) {
-    const id = m.foodItemId as string;
+  for (const m of feedings.flatMap(foodExposureRows)) {
+    if (m.foodItemId === null || !m.foodLabel) continue;
+    const id = m.foodItemId;
     const arr = byFood.get(id);
     if (arr) arr.push(m);
     else byFood.set(id, [m]);
   }
-  const total = candidates.length;
+  const total = feedings.length;
   const ranked: RankedFood[] = [];
   for (const [id, meals] of byFood) {
     // treat-if-ANY row (order-independent) so a mixed/legacy classification errs toward
@@ -701,13 +789,23 @@ export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}
     // reaches the pet as a hidden SECONDARY (the chicken in a "duck" formula) is counted
     // as the real exposure it is — the same widening the correlation engine got, applied
     // here so the dashboard and the engine cannot disagree about what the pet ate.
-    const keys = readProteinSet(m.proteins, m.primaryProtein);
-    if (keys.length === 0) continue;
+    // A MIXED BOWL (spec §5.1, §5.4) is ONE feeding exposing the union of its foods'
+    // proteins, each carried by its own component row: type per component, and no
+    // rating, so a bowl never reaches a per-protein finished rate.
+    const byKey = new Map<string, AnalyticsMeal>();
+    for (const r of foodExposureRows(m)) {
+      for (const key of readProteinSet(r.proteins, r.primaryProtein)) {
+        const held = byKey.get(key);
+        // A key carried by a meal component and a treat component reads as a meal.
+        if (!held || (held.foodType === 'treat' && r.foodType !== 'treat')) byKey.set(key, r);
+      }
+    }
+    if (byKey.size === 0) continue;
     identified += 1; // treats count as protein EXPOSURE (B-111) — no longer dropped
-    for (const key of keys) {
+    for (const [key, r] of byKey) {
       const arr = byProtein.get(key);
-      if (arr) arr.push(m);
-      else byProtein.set(key, [m]);
+      if (arr) arr.push(r);
+      else byProtein.set(key, [r]);
     }
   }
   if (identified < ANALYTICS_FLOORS.minMealsForRanking) {
@@ -1003,6 +1101,8 @@ interface RatedMeal {
   score: number;
   foodItemId: string | null;
   foodLabel: string | null;
+  /** A mixed bowl's composition (CUL-2053), read by Trigger B's two histories only. */
+  bowl?: AnalyticsBowl | null;
 }
 
 /** Rated 'meal'-type foods only, free-fed excluded, sorted ascending — the exact
@@ -1018,6 +1118,7 @@ function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeF
       score: INTAKE_SCORE[m.intakeRating as string] ?? 0,
       foodItemId: m.foodItemId,
       foodLabel: m.foodLabel,
+      bowl: m.bowl ?? null,
     }))
     .filter((m) => Number.isFinite(m.ms))
     .sort((a, b) => a.ms - b.ms);
@@ -1099,18 +1200,69 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   // ── Trigger B: refusal of a normally-eaten food ────────────────────────────
   // A food with a solid history of being eaten well, just refused, is meaningful
   // even when overall daily means look ok.
+  //
+  // MIXED BOWLS (CUL-2053, spec §5.4): a byte port of detection.ts detector ②'s two
+  // histories (CUL-2052), parity-pinned in `intakeDeclineLocalDay.test.ts`. Each
+  // component's SINGLE-food meals, and the mix's own composition key (whatever its
+  // ratio); a refused mix is tested against both, and the finding names the BOWL. An
+  // incomplete bowl feeds neither history, but its visible components are tested.
   const byFood = new Map<string, RatedMeal[]>();
-  for (const m of windowMeals) {
-    if (!m.foodItemId) continue;
-    const arr = byFood.get(m.foodItemId) ?? [];
+  const push = (key: string, m: RatedMeal) => {
+    const arr = byFood.get(key) ?? [];
     arr.push(m);
-    byFood.set(m.foodItemId, arr);
+    byFood.set(key, arr);
+  };
+  for (const m of windowMeals) {
+    if (m.bowl) {
+      if (m.bowl.status === 'mix') push(`mix|${m.bowl.compositionKey}`, m);
+      continue;
+    }
+    if (!m.foodItemId) continue;
+    push(`food|${m.foodItemId}`, m);
   }
   const refusalRecencyStart = nowMs - DECLINE.refusalRecencyDays * MS_PER_DAY;
-  let refusalFlag: IntakeDeclineFlag | null = null;
-  for (const meals of byFood.values()) {
+  // Each history whose LATEST exposure is a recent outright refusal, with that refusal.
+  const tested: { meals: RatedMeal[]; latest: RatedMeal }[] = [];
+  for (const [, meals] of byFood) {
+    const sorted = [...meals].sort((x, y) => x.ms - y.ms);
+    tested.push({ meals: sorted, latest: sorted[sorted.length - 1] });
+  }
+  // A component's history, FOR FIRING ONLY: its single-food meals, alone and with the
+  // earlier mixes that held it, and the accusing reading stands. Only a later PLAIN meal
+  // stands a component down: a bowl rating never claims a food was eaten (§5.4).
+  for (const m of windowMeals) {
+    if (!m.bowl) continue;
+    for (const c of m.bowl.components) {
+      if (!c.foodItemId) continue;
+      const singles = byFood.get(`food|${c.foodItemId}`) ?? [];
+      if (singles.some((x) => x.ms > m.ms)) continue;
+      const earlierMixes = windowMeals.filter(
+        (x) => x.ms < m.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === c.foodItemId),
+      );
+      const plainBefore = singles.filter((x) => x.ms < m.ms);
+      for (const history of [plainBefore, [...plainBefore, ...earlierMixes]]) {
+        if (history.length === 0) continue;
+        tested.push({ meals: [...history, m].sort((x, y) => x.ms - y.ms), latest: m });
+      }
+    }
+  }
+  // A PLAIN refusal after a mixed switch (CUL-2083): the food's latest plain meal is also
+  // tested over its plain meals with the earlier mixes that held it. The plain-only
+  // reading still stands, so this only adds a finding. Lockstep with detection.ts.
+  for (const [key, meals] of byFood) {
+    if (!key.startsWith('food|')) continue;
+    const foodId = key.slice('food|'.length);
     const sorted = [...meals].sort((x, y) => x.ms - y.ms);
     const latest = sorted[sorted.length - 1];
+    const earlierMixes = windowMeals.filter(
+      (x) => x.ms < latest.ms && x.bowl?.status === 'mix' && x.bowl.components.some((y) => y.foodItemId === foodId),
+    );
+    if (earlierMixes.length === 0) continue;
+    tested.push({ meals: [...sorted, ...earlierMixes].sort((x, y) => x.ms - y.ms), latest });
+  }
+  let refusalFlag: IntakeDeclineFlag | null = null;
+  for (const { meals, latest } of tested) {
+    const sorted = meals;
     if (latest.ms < refusalRecencyStart) continue;
     if (latest.score > INTAKE_SCORE.refused) continue; // only an outright refusal trips this
     // `prior` = this food's history on days BEFORE the latest meal's day. We exclude
@@ -1169,6 +1321,7 @@ async function readSymptomRows(petId: string, startMs: number, endMs: number): P
 async function readMealRows(petId: string, startMs: number, endMs: number): Promise<AnalyticsMeal[]> {
   const db = getDb();
   const rows = await db.getAllAsync<{
+    event_id: string;
     food_item_id: string | null;
     intake_rating: string | null;
     occurred_at: string;
@@ -1179,7 +1332,7 @@ async function readMealRows(petId: string, startMs: number, endMs: number): Prom
     brand: string | null;
     product_name: string | null;
   }>(
-    `SELECT m.food_item_id, m.intake_rating, e.occurred_at,
+    `SELECT m.event_id, m.food_item_id, m.intake_rating, e.occurred_at,
             f.food_type, f.primary_protein, f.proteins, f.brand, f.product_name
      FROM meals m
      JOIN events e ON e.id = m.event_id
@@ -1191,16 +1344,24 @@ async function readMealRows(petId: string, startMs: number, endMs: number): Prom
        AND e.occurred_at >= ? AND e.occurred_at < ?`,
     [petId, new Date(startMs).toISOString(), new Date(endMs).toISOString()],
   );
+  // MIXED BOWLS (CUL-2053): every meal through the one bowl read; a failed read throws,
+  // as the meal read itself does, rather than reading a mix as a meal naming no food.
+  const bowls = await loadMealBowls(rows.map((r) => r.event_id));
   return rows
-    .map((r) => ({
-      ms: Date.parse(r.occurred_at),
-      foodItemId: r.food_item_id,
-      foodLabel: foodLabelOf(r.brand, r.product_name),
-      foodType: r.food_type,
-      primaryProtein: r.primary_protein,
-      proteins: proteinsFromCacheText(r.proteins),
-      intakeRating: r.intake_rating,
-    }))
+    .map((r): AnalyticsMeal => {
+      const ms = Date.parse(r.occurred_at);
+      const bowl = bowls.get(r.event_id);
+      if (bowl) return analyticsMealOfBowl(ms, r.intake_rating, bowl);
+      return {
+        ms,
+        foodItemId: r.food_item_id,
+        foodLabel: foodLabelOf(r.brand, r.product_name),
+        foodType: r.food_type,
+        primaryProtein: r.primary_protein,
+        proteins: proteinsFromCacheText(r.proteins),
+        intakeRating: r.intake_rating,
+      };
+    })
     .filter((r) => Number.isFinite(r.ms));
 }
 

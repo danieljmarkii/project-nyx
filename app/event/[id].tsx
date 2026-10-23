@@ -1,12 +1,16 @@
 import { useState, useCallback, useRef } from 'react';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import { isWhollyInView, scrollDeltaToReveal } from '../../lib/revealInScroll';
+import { measureNodeInWindow } from '../../lib/measureNode';
+import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
-import { EventSilhouette } from '../../components/designV2/waits/EventSilhouette';
+import { EventSilhouette } from '../../components/surfaces/waits/EventSilhouette';
 import * as ImagePicker from 'expo-image-picker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
   getDb,
@@ -36,6 +40,9 @@ import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { describeLook, isLookRow } from '../../lib/lookDisplay';
 import { LookRecordSection } from '../../components/event/LookRecordSection';
+import { bowlFoodType, loadMealBowls, type AppBowl } from '../../lib/mealBowls';
+import { TrialHeadsUpLine } from '../../components/event/TrialHeadsUpLine';
+import { bowlDetailLine } from '../../lib/mixDetail';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
@@ -142,10 +149,15 @@ function ComboLinkRow({
           <ThemedText style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</ThemedText>
         </View>
       ) : null}
-      <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
+      <ChevronRight size={16} color={colorRoles.action.onLight} strokeWidth={2} />
     </TouchableOpacity>
   );
 }
+
+// CUL-2088 — the room left under the trial heads-up line when it is scrolled into view,
+// and how long a scroll takes to settle before the line is measured again.
+const REVEAL_MARGIN = theme.space2;
+const REVEAL_SETTLE_MS = 400;
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -176,6 +188,40 @@ export default function EventDetailScreen() {
   // "add a med given with this" entry to real vehicles (meal/treat), mirroring the
   // completion card's own showIntake gate; 'other'/unclassified foods never show it.
   const [foodType, setFoodType] = useState<string | null>(null);
+  // Mixed meals row 5 — the meal's bowl when it is a mix (null for a plain meal).
+  const [bowl, setBowl] = useState<AppBowl | null>(null);
+  // CUL-2088 — the foods this meal holds, from this load's own read (null until it answers),
+  // so a trial heads-up waiting for this screen is shown only for a food still in the meal.
+  const [mealFoodIds, setMealFoodIds] = useState<string[] | null>(null);
+  // CUL-2088 — the scroll the heads-up line asks to be brought into view in, so it is
+  // spent only once it is on screen (adversarial pass 1).
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollFrameRef = useRef<View>(null);
+  const scrollYRef = useRef(0);
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollYRef.current = e.nativeEvent.contentOffset.y;
+  }, []);
+  const revealInScroll = useCallback((node: View) => {
+    // Through the shared helper: a node the platform will not measure is null, never a hang.
+    const rectOf = (n: View | null) => new Promise<{ top: number; bottom: number } | null>((done) =>
+      measureNodeInWindow(n, (r) => done(r && r.height > 0 ? { top: r.y, bottom: r.y + r.height } : null)));
+    const measure = async () => {
+      const [frame, line] = await Promise.all([rectOf(scrollFrameRef.current), rectOf(node)]);
+      return frame && line ? { frame, line } : null;
+    };
+    return measure().then(async (m) => {
+      if (!m) return false;
+      const dy = scrollDeltaToReveal(m.line, m.frame, REVEAL_MARGIN);
+      if (dy !== 0) {
+        scrollRef.current?.scrollTo({ y: Math.max(0, scrollYRef.current + dy), animated: !reducedMotionNow() });
+      }
+      // Measure again after a beat, even when no scroll was needed (adversarial pass 2):
+      // only a line still wholly in view after it has had time to be read is seen.
+      await new Promise((r) => setTimeout(r, REVEAL_SETTLE_MS));
+      const after = await measure();
+      return after !== null && isWhollyInView(after.line, after.frame);
+    });
+  }, []);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   // Medication (dose) detail — B-117 PR 8. `dose` carries the drug-library display
   // fields; `adherence` is the mutable rating (the intakeRating analog); `doubleDose`
@@ -211,6 +257,8 @@ export default function EventDetailScreen() {
     // doesn't briefly flash A's food label / rating until B's queries return.
     setFoodLabel(null);
     setFoodType(null);
+    setBowl(null);
+    setMealFoodIds(null);
     setIntakeRating(null);
     setDose(null);
     setAdherence(null);
@@ -295,6 +343,23 @@ export default function EventDetailScreen() {
             format: meal.food_format,
           });
           setFoodType(meal.food_type);
+          // A mix names no food on its own row (T2): its foods are its components. A
+          // failed bowl read leaves the section out rather than calling the meal plain.
+          if (!meal.food_item_id) {
+            try {
+              const b = (await loadMealBowls([id])).get(id) ?? null;
+              setBowl(b);
+              if (b) setFoodType(bowlFoodType(b.components.map((c) => c.food?.foodType)));
+              // A failed read leaves the ids unanswered, so a waiting heads-up waits too.
+              setMealFoodIds(
+                (b?.components ?? []).map((c) => c.foodItemId).filter((f): f is string => f !== null),
+              );
+            } catch (e) {
+              console.warn('[event] bowl read failed:', e);
+            }
+          } else {
+            setMealFoodIds([meal.food_item_id]);
+          }
           const rating = meal.intake_rating;
           setIntakeRating(
             rating === 'refused' || rating === 'picked' || rating === 'some'
@@ -420,7 +485,9 @@ export default function EventDetailScreen() {
   // it links to this real, owner-logged event.
   function handleAddMed() {
     if (!event) return;
-    const foodName = [foodLabel?.brand, foodLabel?.product].filter(Boolean).join(' ').trim();
+    const foodName = bowl
+      ? bowlDetailLine(bowl)
+      : [foodLabel?.brand, foodLabel?.product].filter(Boolean).join(' ').trim();
     router.push({
       pathname: '/log',
       params: {
@@ -432,6 +499,13 @@ export default function EventDetailScreen() {
         comboSource: 'detail',
       },
     });
+  }
+
+  // Mixed meals row 5 (§7.1) — the after-the-fact mix, twin of the retroactive med line:
+  // the mix route bound to THIS meal and its pet; this screen re-reads on its return.
+  function handleMix() {
+    if (!event) return;
+    router.push({ pathname: '/mix', params: { event: event.id, pet: event.pet_id, from: 'detail' } });
   }
 
   function handleEdit() {
@@ -658,9 +732,13 @@ export default function EventDetailScreen() {
             // read lands last and wins); skipping would silently drop the very
             // re-read this path exists for.
             if (readClaim === null) await awaitAnalysisChain(event.id);
+            // CUL-1835: the owner just added or replaced this photo, so the read is theirs to
+            // ask for: a tap, under whatever answer is on file now (a no still declines). Without
+            // it, a photo added under the yes to a record logged before it is held behind the old
+            // read, unseen (adversarial pass 2, finding 1).
             const { error: readErr } = event.event_type === 'vomit'
-              ? await triggerVomitAnalysis(event.id)
-              : await triggerStoolAnalysis(event.id);
+              ? await triggerVomitAnalysis(event.id, { ownerTap: true })
+              : await triggerStoolAnalysis(event.id, { ownerTap: true });
             if (readErr) console.warn('[event-detail] per-incident read trigger failed:', readErr);
             readInvoked = !readErr;
           }
@@ -736,6 +814,9 @@ export default function EventDetailScreen() {
   // a meal/treat food (never 'other'/unclassified), matching the completion card's showIntake
   // gate. A dose event's own screen never shows it — that's direction ② (held).
   const showAddMed = isMeal && (foodType === 'meal' || foodType === 'treat');
+  // Mixed meals row 5 — a plain MEAL can be mixed after the fact (treats stay their own
+  // logs, R1); a bowl already mixed is changed through Edit.
+  const showMix = isMeal && foodType === 'meal' && !bowl && !!foodLabel;
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
   // flashes an add-photo target over an existing photo mid-fallback). B-207.
@@ -811,7 +892,8 @@ export default function EventDetailScreen() {
         onLeadingPress={() => router.back()}
       />
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <View ref={scrollFrameRef} collapsable={false} style={styles.scrollFrame}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} onScroll={onScroll} scrollEventThrottle={16}>
         {/* Hero photo — present when a photo exists; on symptom events without
             a photo, an empty-state tap-to-add hero. Meals skip the empty hero. */}
         {photoUri ? (
@@ -986,6 +1068,32 @@ export default function EventDetailScreen() {
             </View>
           ) : null}
 
+          {/* Mixed meals row 5 (§11) — a mixed bowl's foods, as measured or as History
+              names them. To change a food or take one out, Edit (spec §7.1). */}
+          {bowl ? (
+            <View style={styles.section} accessible accessibilityLabel={`Mixed bowl. ${bowlDetailLine(bowl)}`}>
+              <ThemedText style={styles.sectionLabel}>MIXED BOWL</ThemedText>
+              <ThemedText style={styles.foodProduct}>{bowlDetailLine(bowl)}</ThemedText>
+            </View>
+          ) : null}
+
+          {/* CUL-2088 — a trial heads-up for a food put in after the fact (Change on the
+              edit screen, a mix from here, a bowl-editor save): the card's line, under the
+              food, spent only once it shows. */}
+          {EVENT_TYPES[event.event_type as EventTypeKey]?.hasFood ? (
+            <TrialHeadsUpLine
+              key={event.id}
+              eventId={event.id}
+              petId={event.pet_id}
+              petName={eventPetName}
+              mealFoodIds={mealFoodIds}
+              reveal={revealInScroll}
+              // A remote photo still resolving would land above the line and push it
+              // down after it was measured (adversarial pass 2); the viewer covers it.
+              revealReady={(!attachment || photoUri !== null) && !photoViewerVisible}
+            />
+          ) : null}
+
           {isMeal ? (
             <View style={styles.section}>
               <ThemedText style={styles.sectionLabel}>INTAKE</ThemedText>
@@ -1032,6 +1140,18 @@ export default function EventDetailScreen() {
             </TouchableOpacity>
           ) : null}
 
+          {showMix ? (
+            <TouchableOpacity
+              style={styles.addMedRow}
+              onPress={handleMix}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Mixed with another food. Add the other food in ${eventPetName}’s bowl`}
+            >
+              <ThemedText style={styles.addMedText}>+ Mixed with another food</ThemedText>
+            </TouchableOpacity>
+          ) : null}
+
           {isMedication && dose ? (
             <>
               <View style={styles.section}>
@@ -1053,7 +1173,7 @@ export default function EventDetailScreen() {
                       <ThemedText style={styles.foodProduct}>{drugPrimary}</ThemedText>
                       {drugSecondary ? <ThemedText style={styles.foodBrand}>{drugSecondary}</ThemedText> : null}
                     </View>
-                    <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                    <ChevronRight size={18} color={colorRoles.action.onLight} strokeWidth={2} />
                   </TouchableOpacity>
                 ) : (
                   <>
@@ -1129,6 +1249,7 @@ export default function EventDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
+      </View>
 
       {/* Bottom actions — Edit is the filled primary; Remove is a subordinate,
           destructive text action below it (PM call: a single secondary action
@@ -1165,6 +1286,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
+  },
+  scrollFrame: {
+    flex: 1,
   },
   scroll: {
     paddingBottom: theme.space5,

@@ -53,8 +53,8 @@ beforeEach(() => {
 describe('loadSignalLead', () => {
   it('reads the ROUTE’s pet’s record — the trial for that pet, the episodes for the finding’s symptom — and draws the weeks', async () => {
     mockReadSignalEpisodes.mockResolvedValue([
-      { eventId: 'a', occurredAt: '', dayKey: today, minutesSinceMeal: null, photo: null },
-      { eventId: 'b', occurredAt: '', dayKey: shift(today, -8), minutesSinceMeal: null, photo: null },
+      { eventId: 'a', occurredAt: '', dayKey: today, endDayKey: today, minutesSinceMeal: null, photo: null },
+      { eventId: 'b', occurredAt: '', dayKey: shift(today, -8), endDayKey: shift(today, -8), minutesSinceMeal: null, photo: null },
     ]);
     const model = await loadSignalLead('pet-1', reflection, false, null);
     expect(mockReadSignalTrial).toHaveBeenCalledWith(expect.objectContaining({ id: 'pet-1', name: 'Nyx', species: 'cat' }), expect.any(Number));
@@ -64,6 +64,17 @@ describe('loadSignalLead', () => {
     expect(model.weekly?.total).toBe(2);
     const weeks = model.weekly?.weeks ?? [];
     expect(model.line).toBe(`${weeks[weeks.length - 1].count} in the last 7 days · ${weeks[weeks.length - 2].count} in the 7 before`);
+  });
+
+  it('Q12 wiring: a bout from before the last 7 days that ran into them leads the line (CUL-1791)', async () => {
+    // Began eight days ago, last row five days ago: 0 onsets in the last 7 days, 1 before.
+    mockReadSignalEpisodes.mockResolvedValue([
+      { eventId: 'c', occurredAt: '', dayKey: shift(today, -8), endDayKey: shift(today, -5), minutesSinceMeal: null, photo: null },
+    ]);
+    const model = await loadSignalLead('pet-1', reflection, false, null);
+    const weeks = model.weekly?.weeks ?? [];
+    expect(weeks[weeks.length - 1]).toMatchObject({ count: 0, carriedIn: true });
+    expect(model.line?.startsWith('A bout from earlier ran into the last 7 days · 0 new')).toBe(true);
   });
 
   it('a running trial marks the chart; the title is the claim, the same on a trial day (D2, CUL-1270)', async () => {
@@ -130,6 +141,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     eventId: `e${d}`,
     occurredAt: '',
     dayKey: dayKeyFromIndex(recentStart - d),
+    endDayKey: dayKeyFromIndex(recentStart - d),
     minutesSinceMeal: null,
     photo: null,
   }));
@@ -177,7 +189,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
   });
 
   it('a RISE is never withheld, not even beside a not-eating record', async () => {
-    mockReadSignalEpisodes.mockResolvedValue([{ eventId: 't', occurredAt: '', dayKey: today, minutesSinceMeal: null, photo: null }]);
+    mockReadSignalEpisodes.mockResolvedValue([{ eventId: 't', occurredAt: '', dayKey: today, endDayKey: today, minutesSinceMeal: null, photo: null }]);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: thisWeekDays, recordStart: shift(today, -100) });
     const model = await loadSignalLead('pet-1', reflection, true, null, NOW);
     expect(model.lineWithheld).toBeNull();

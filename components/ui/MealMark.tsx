@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PILL_GLYPH } from '../../lib/fanBudget';
 import { EventIcon } from '../event/EventIcon';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     height: PILL_GLYPH,
     borderRadius: PILL_GLYPH / 2,
     overflow: 'hidden',
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
   },
   fillCheck: {
     position: 'absolute',

@@ -56,7 +56,7 @@ Rules:
 
 ## 4. Surfaces
 
-Every surface that reads `recommendation` moves in PR-27 (`components/designV2/`), reading the tier through the map. The per-surface table is §03 of the mock and is normative. The fixed points:
+Every surface that reads `recommendation` moves in PR-27 (`components/surfaces/`), reading the tier through the map. The per-surface table is §03 of the mock and is normative. The fixed points:
 
 - **Vet report: renders no tier** (GAP-27). CUL-1133's acceptance line "the vet report renders tiers" is corrected to this; the present-only blood and foreign-material line is unchanged. Tier-2 note in §8.
 - **Get ready's Copy as text** carries dated facts only, never a tier word.

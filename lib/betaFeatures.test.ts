@@ -51,21 +51,16 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget beta alone, client-only (no server cost)', () => {
+  it('is empty at 1.2.0: the widget, the last beta, graduated (CUL-1842)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
     // retired from the shelf (CUL-547 + CUL-548), the two capture betas (the log
     // screen redesign, B-745, and more event types, B-756) followed (CUL-962), and
     // then Vet visits, the appointment companion (CUL-905), Noticed, the daily look
-    // (CUL-876), the diet trial's own screen (CUL-1307), History v2 (CUL-1175) and
-    // Design v2 (CUL-1071).
-    const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
-    expect(widget).toBeDefined();
-    expect((widget as BetaFeature).serverCost).toBe(false);
-
-    // The nine graduated keys (Design v2 last, CUL-1071) are no longer in the
-    // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
-    // length assertion + the missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(1);
+    // (CUL-876), the diet trial's own screen (CUL-1307), History v2 (CUL-1175),
+    // Design v2 (CUL-1071) and the Home Screen widget (CUL-1842, D8). The graduated
+    // keys are out of the AllowlistFlagKey union, so the length is what pins it.
+    expect(BETA_REGISTRY).toHaveLength(0);
+    expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('widget_enabled');
   });
 });
 
@@ -73,9 +68,9 @@ describe('BETA_REGISTRY', () => {
 // The pure derivation both app/settings.tsx (the Beta row + "N on" count) and
 // app/settings/beta.tsx (cards vs. the B-729 empty state) read through
 // hooks/useBetaShelf. The headline contract is the B-747 regression: eligibility
-// is an OR over EVERY registry key, never one hard-coded flag. With the widget the
-// one beta left on the shelf (Design v2 graduated, CUL-1071), the OR has one term;
-// the derivation is unchanged and the cases below hold for whatever joins next.
+// is an OR over EVERY registry key, never one hard-coded flag. The shipped registry
+// is empty at 1.2.0 (CUL-1842), so these cases run over a fixture registry keyed on
+// a real allowlist flag; the derivation is unchanged for whatever joins next.
 
 describe('deriveBetaShelf (B-747)', () => {
   const gatedTo = (uid: string) => ({ enabled: false, allowlist: [uid] });
@@ -84,53 +79,68 @@ describe('deriveBetaShelf (B-747)', () => {
     ...ALLOWLIST_FLAGS_UNSET,
     ...over,
   });
+  const fixture = (key: BetaFeature['key']): BetaFeature => ({
+    key,
+    title: `Fixture ${key}`,
+    blurb: 'A fixture beta.',
+    owner: 'Test',
+    addedDate: '2026-10-01',
+    reviewBy: '2027-01-01',
+    serverCost: false,
+  });
+  const REG = [fixture('ask_enabled'), fixture('ask_general_enabled')];
+
+  it('the shipped (empty) registry gives every account no shelf (CUL-1842)', () => {
+    expect(deriveBetaShelf(allow({ ask_enabled: { enabled: true, allowlist: [] } }), 'uid-1', {}).eligible).toEqual([]);
+  });
 
   it('an eligible account gets the shelf, and eligibility turns nothing on', () => {
-    const shelf = deriveBetaShelf(allow({ widget_enabled: gatedTo('uid-1') }), 'uid-1', {});
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['widget_enabled']);
+    const shelf = deriveBetaShelf(allow({ ask_enabled: gatedTo('uid-1') }), 'uid-1', {}, REG);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['ask_enabled']);
     expect(shelf.activeCount).toBe(0); // eligible turns nothing on (Gate 2 untouched)
   });
 
   it('the unset baseline and a signed-out caller both yield no eligible betas (fail closed)', () => {
-    expect(deriveBetaShelf(ALLOWLIST_FLAGS_UNSET, 'uid-1', {}).eligible).toEqual([]);
+    expect(deriveBetaShelf(ALLOWLIST_FLAGS_UNSET, 'uid-1', {}, REG).eligible).toEqual([]);
     expect(
-      deriveBetaShelf(allow({ widget_enabled: gatedTo('uid-1') }), null, {}).eligible,
+      deriveBetaShelf(allow({ ask_enabled: gatedTo('uid-1') }), null, {}, REG).eligible,
     ).toEqual([]);
   });
 
   it('activeCount counts only betas that are eligible AND opted in', () => {
-    const allowlist = allow({ widget_enabled: gatedTo('uid-1') });
-    expect(deriveBetaShelf(allowlist, 'uid-1', {}).activeCount).toBe(0);
-    expect(deriveBetaShelf(allowlist, 'uid-1', { widget_enabled: true }).activeCount).toBe(1);
+    const allowlist = allow({ ask_enabled: gatedTo('uid-1') });
+    expect(deriveBetaShelf(allowlist, 'uid-1', {}, REG).activeCount).toBe(0);
+    expect(deriveBetaShelf(allowlist, 'uid-1', { ask_enabled: true }, REG).activeCount).toBe(1);
   });
 
   it('an opted-in but no-longer-eligible beta (a killed flag) is not counted as on', () => {
-    // The widget path has already stopped rendering for this account, so telling
+    // The feature has already stopped rendering for this account, so telling
     // the owner it's "on" would claim something the app isn't doing.
-    const shelf = deriveBetaShelf(allow({ widget_enabled: dark }), 'uid-1', { widget_enabled: true });
+    const shelf = deriveBetaShelf(allow({ ask_enabled: dark }), 'uid-1', { ask_enabled: true }, REG);
     expect(shelf.eligible).toEqual([]);
     expect(shelf.activeCount).toBe(0);
   });
 
   it('enabled:true (a GA’d flag) is eligible for everyone, allowlist ignored', () => {
     const shelf = deriveBetaShelf(
-      allow({ widget_enabled: { enabled: true, allowlist: [] } }),
+      allow({ ask_enabled: { enabled: true, allowlist: [] } }),
       'anyone',
       {},
+      REG,
     );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['widget_enabled']);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['ask_enabled']);
   });
 
   it('eligible preserves registry order (the shelf renders in registry order)', () => {
-    const everything = allow({ widget_enabled: gatedTo('uid-1') });
-    expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(
-      BETA_REGISTRY.map((b) => b.key),
+    const everything = allow({ ask_enabled: gatedTo('uid-1'), ask_general_enabled: gatedTo('uid-1') });
+    expect(deriveBetaShelf(everything, 'uid-1', {}, REG).eligible.map((b) => b.key)).toEqual(
+      REG.map((b) => b.key),
     );
   });
 });
 
 // ── serverCost ⇒ a server-side gate too (D6 / §4.2) ───────────────────────────
-// The widget gates client-only and that's correct. The STANDING rule for beta #2+
+// The widget, as a beta, gated client-only and that was correct. The STANDING rule
 // is that any beta spending a server resource must ALSO re-check eligibility in its
 // Edge Function (the client-only gate does not generalise). This test makes the
 // rule grep-able: every serverCost:true entry's key must appear in the
@@ -189,17 +199,18 @@ describe('parseBetaOptIns — tolerant decode', () => {
 
   it('keeps only known keys with real booleans (a tampered blob can inject nothing)', () => {
     const raw = JSON.stringify({
-      widget_enabled: true,
+      engines_v3_en14: true,
       ask_enabled: false,
+      widget_enabled: true, // the widget graduated; its persisted opt-in self-cleans (CUL-1842)
       not_a_flag: true, // unknown key — dropped
       design_v2: true, // a graduated beta's persisted opt-in self-cleans (CUL-1071)
       ask_general_enabled: 'yes', // non-boolean — dropped
     });
-    expect(parseBetaOptIns(raw)).toEqual({ widget_enabled: true, ask_enabled: false });
+    expect(parseBetaOptIns(raw)).toEqual({ engines_v3_en14: true, ask_enabled: false });
   });
 
   it('round-trips through serialize', () => {
-    const map = { widget_enabled: true };
+    const map = { ask_enabled: true };
     expect(parseBetaOptIns(serializeBetaOptIns(map))).toEqual(map);
   });
 });
@@ -212,38 +223,38 @@ describe('useBetaOptInStore (Gate 2 / D4)', () => {
 
   it('defaults every beta OFF — being eligible turns nothing on', () => {
     const { optIns } = useBetaOptInStore.getState();
-    expect(optIns.widget_enabled ?? false).toBe(false);
+    expect(optIns.ask_enabled ?? false).toBe(false);
   });
 
   it('setOptIn flips a key and persists it write-through', async () => {
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
-    expect(useBetaOptInStore.getState().optIns.widget_enabled).toBe(true);
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
+    expect(useBetaOptInStore.getState().optIns.ask_enabled).toBe(true);
 
     // Write-through hit AsyncStorage (fire-and-forget, so let the microtask flush).
     await Promise.resolve();
     const persisted = parseBetaOptIns(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY));
-    expect(persisted.widget_enabled).toBe(true);
+    expect(persisted.ask_enabled).toBe(true);
   });
 
   it('setOptIn(false) turns it back off (reversible)', async () => {
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
-    useBetaOptInStore.getState().setOptIn('widget_enabled', false);
-    expect(useBetaOptInStore.getState().optIns.widget_enabled).toBe(false);
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
+    useBetaOptInStore.getState().setOptIn('ask_enabled', false);
+    expect(useBetaOptInStore.getState().optIns.ask_enabled).toBe(false);
     await Promise.resolve();
     const persisted = parseBetaOptIns(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY));
-    expect(persisted.widget_enabled).toBe(false);
+    expect(persisted.ask_enabled).toBe(false);
   });
 
   it('hydrateBetaOptIns loads the persisted choice into the store', async () => {
     await AsyncStorage.setItem(
       BETA_OPT_IN_STORAGE_KEY,
-      serializeBetaOptIns({ widget_enabled: true }),
+      serializeBetaOptIns({ ask_enabled: true }),
     );
     expect(useBetaOptInStore.getState().hydrated).toBe(false);
 
     await hydrateBetaOptIns();
 
-    expect(useBetaOptInStore.getState().optIns.widget_enabled).toBe(true);
+    expect(useBetaOptInStore.getState().optIns.ask_enabled).toBe(true);
     expect(useBetaOptInStore.getState().hydrated).toBe(true);
   });
 
@@ -259,18 +270,18 @@ describe('useBetaOptInStore (Gate 2 / D4)', () => {
     // the OLD value; the owner flips the NEW one first; hydration must not overwrite it.
     await AsyncStorage.setItem(
       BETA_OPT_IN_STORAGE_KEY,
-      serializeBetaOptIns({ widget_enabled: true }), // stale on-disk value
+      serializeBetaOptIns({ ask_enabled: true }), // stale on-disk value
     );
-    useBetaOptInStore.getState().setOptIn('widget_enabled', false); // fresh intent, mid-flight
+    useBetaOptInStore.getState().setOptIn('ask_enabled', false); // fresh intent, mid-flight
 
-    useBetaOptInStore.getState().hydrateFrom({ widget_enabled: true }); // the stale read lands
+    useBetaOptInStore.getState().hydrateFrom({ ask_enabled: true }); // the stale read lands
 
-    expect(useBetaOptInStore.getState().optIns.widget_enabled).toBe(false); // fresh intent wins
+    expect(useBetaOptInStore.getState().optIns.ask_enabled).toBe(false); // fresh intent wins
     expect(useBetaOptInStore.getState().hydrated).toBe(true);
   });
 
   it('clearBetaOptIns wipes memory AND the persisted key (sign-out parity)', async () => {
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
     await Promise.resolve();
 
     await clearBetaOptIns();

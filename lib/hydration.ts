@@ -259,6 +259,14 @@ export function reconcileBatch<T extends RemoteRow>(
 // the global (non-private) read-through cache, cleared for the same reason and
 // re-hydrated by refreshMedicationCache on the next login.
 export const LOCAL_WIPE_TABLES = [
+  // Mixed meals row 2 (CUL-2051) meal_components — the foods in a mixed bowl. It names its
+  // meal's event (no local FK, see localSchema.ts), so it leads 'meals' and 'events' under
+  // the children-before-parents contract.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping: a row says what a named household's
+  // animal was fed, and when, with the food's name as free text. It must not survive a
+  // sign-out onto a device now in someone else's hands.
+  'meal_components',
   'meals',
   'event_attachments',
   // HV-5 (CUL-1162) event_ai_verdicts — the per-incident read's copy on the phone. It

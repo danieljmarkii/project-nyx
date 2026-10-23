@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { publishWidgetSnapshots, type SnapshotPet } from '../lib/widgetSnapshot';
+import {
+  publishWidgetSnapshots,
+  widgetPublishEpoch,
+  type SnapshotPet,
+} from '../lib/widgetSnapshot';
 import { buildWidgetProps, type CulpritWidgetProps } from '../lib/widgetProps';
 import { publishWidgetPass } from '../lib/widgetBridge';
-import { clearWidgetData } from '../lib/appGroup';
-import { useAllowlistFlag } from './useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { usePetStore } from '../store/petStore';
@@ -24,20 +25,16 @@ import { useSyncStore } from '../store/syncStore';
 // no-op once the timeline is already v2), so a build-35 user's un-drained tap is
 // applied before the v2 publish replaces the timeline that held it.
 //
-// ── The B-712 widget gate (Beta features, spec §2 / §4.1) ─────────────────────
-// The widget publishes REAL per-pet data only when the account is LIVE for it:
-//   live = eligible (Gate 1, `widget_enabled` allowlist) && optedIn (Gate 2, the
-//   local beta toggle). Everyone else — off the allowlist, OR eligible but not
-// opted in — gets a NEUTRAL signed-in-empty payload so an added widget shows the
-// honest "No pet in this slot yet" door rather than looking broken (or the "Sign
-// in" lie). The widget can't be hidden per-account on iOS (D5), so its ungated
-// state must be presentable, and this path must ship in the App Store submission
-// binary. The whole gate is app-process JS (OTA-able); the choke is
-// `buildWidgetPublishProps` below.
-//
-// PR 3 added Gate 2: PR 2 published on eligibility alone (Phase 1); now a cohort
-// owner opts in once on the beta page (Phase 2, opt-in default off — spec §2 phase
-// transition). Eligible-but-not-opted-in is exactly the neutral-empty path.
+// ── Every account gets the widget (CUL-1842, D8 ruled 2026-10-12) ─────────
+// The widget graduated at 1.2.0: the `widget_enabled` allowlist (Gate 1) and the
+// local beta opt-in (Gate 2) are retired, so every signed-in account publishes its
+// real per-pet data. Before this, an owner off the beta list who added the widget
+// from the gallery (iOS can't hide it per account, D5) got "No pet in this slot
+// yet / Touch and hold the widget to pick a pet", a door picking a pet could not
+// open. The neutral empty payload that served those owners went with the gate.
+// Signed out, the effect does not run, and sign-out's wipe (lib/session.ts) clears
+// the snapshot files and pushes the "Sign in" timeline. A publish running or
+// scheduled when that wipe lands is fenced (CUL-1952): see `sessionEpoch` below.
 //
 // Debounced: a burst (hydration writing dozens of rows, a log + its optimistic
 // store update) collapses into one publish. On non-iOS / entitlement-less builds
@@ -45,62 +42,52 @@ import { useSyncStore } from '../store/syncStore';
 const PUBLISH_DEBOUNCE_MS = 1000;
 
 // The dependency seam for `buildWidgetPublishProps` — the real functions by
-// default, swapped in the unit test so the eligibility branches run without a
-// device (no App Group container, no SQLite). Mirrors lib/widgetBridge's DrainDeps.
+// default, swapped in the unit test so the publish runs without a device (no App
+// Group container, no SQLite). Mirrors lib/widgetBridge's DrainDeps.
 export interface WidgetPublishDeps {
   publishSnapshots: typeof publishWidgetSnapshots;
-  clearData: typeof clearWidgetData;
   getPets: () => SnapshotPet[];
+  currentEpoch: () => number;
 }
 
 function defaultPublishDeps(): WidgetPublishDeps {
   return {
     publishSnapshots: publishWidgetSnapshots,
-    clearData: clearWidgetData,
     getPets: () => usePetStore.getState().pets,
+    currentEpoch: widgetPublishEpoch,
   };
 }
 
-// The gate itself (spec §2 / §4.1), extracted so BOTH the live and not-live
-// branches are unit-tested rather than buried in the effect — the lib/widgetBridge
-// lesson: CI cannot reach a flag's on-state unless a test sets it (spec §7). `live`
-// is `eligible && optedIn` (computed in the hook). Returns the props the publish
-// pass will push to the timeline:
-//   • live → the real per-pet snapshot the publisher writes today.
-//   • not live → drop the per-pet snapshot FILES (they hold pet names, trial day
-//     counts, meal counts — health state that must not linger in the App Group for
-//     an account not currently running the widget) and return a NEUTRAL
-//     signed-in-EMPTY payload. That renders the "No pet in this slot yet" door on
-//     an added widget. `signedIn` STAYS true — the "Sign in" door
-//     (`clearWidgetTimeline`, which pushes `signedIn:false`) is a lie for a
-//     signed-in owner and is deliberately NOT used here (§4.1).
-// The owner's own logs are never withheld by this gate: it runs INSIDE
-// `publishWidgetPass`, so the §3 residual-v1 drain has already applied any
-// build-35 capture to the record regardless of the gate — this withholds the
-// widget's DATA, not the log.
-export async function buildWidgetPublishProps(
-  live: boolean,
-  deps: WidgetPublishDeps = defaultPublishDeps(),
-): Promise<CulpritWidgetProps> {
-  if (!live) {
-    deps.clearData();
-    return buildWidgetProps({ index: null, snapshots: [], signedIn: true });
+// Thrown when sign-out's wipe moved the publish epoch while this pass was reading
+// (CUL-1952). `publishWidgetPass` calls `publishWidgetTimeline` on the same tick
+// `buildProps` resolves, with no await between, so refusing to resolve HERE is the
+// last moment before the timeline push: the throw is what keeps the previous
+// owner's signed-in props off a signed-out Home Screen. A rejection rather than an
+// option on `publishWidgetPass` keeps the PUBLISH fence out of lib/widgetBridge.ts (PM, plan
+// option A). TRIP-WIRE: a second caller of `publishWidgetPass` must build its props
+// through this function, or carry its own check, or it is unfenced.
+export class WidgetPublishFenced extends Error {
+  constructor() {
+    super('widget publish fenced by sign-out');
+    this.name = 'WidgetPublishFenced';
   }
-  const { snapshots, index } = await deps.publishSnapshots(deps.getPets());
+}
+
+// The props the publish pass pushes to the timeline: the real per-pet snapshot,
+// for every signed-in account. It runs INSIDE `publishWidgetPass`, so the §3
+// residual-v1 drain has already applied any build-35 capture to the record first.
+// `epoch` is the session's, captured when the hook's effect ran for it.
+export async function buildWidgetPublishProps(
+  deps: WidgetPublishDeps = defaultPublishDeps(),
+  epoch: number = deps.currentEpoch(),
+): Promise<CulpritWidgetProps> {
+  const { snapshots, index } = await deps.publishSnapshots(deps.getPets(), epoch);
+  if (deps.currentEpoch() !== epoch) throw new WidgetPublishFenced();
   return buildWidgetProps({ index, snapshots, signedIn: true });
 }
 
 export function useWidgetSnapshots() {
   const { session } = useAuthStore();
-  // Gate 1 (server allowlist). Render-only + fail-CLOSED (useAllowlistFlag): an
-  // unset / unreachable / malformed flag, or a signed-out caller, resolves false.
-  const widgetEligible = useAllowlistFlag('widget_enabled');
-  // Gate 2 (local opt-in, PR 3). Default off until the owner opts in on the beta
-  // page — being eligible turns nothing on (spec §2 phase transition).
-  const widgetOptedIn = useBetaOptIn('widget_enabled');
-  // live = both gates. In the effect deps below, so adding/removing the account
-  // from the allowlist OR flipping the toggle re-publishes on the next render.
-  const widgetLive = widgetEligible && widgetOptedIn;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -121,23 +108,39 @@ export function useWidgetSnapshots() {
     // an untested hook.
     let drainDone = false;
 
+    // CUL-1952: the epoch belongs to the SESSION, captured once per effect run, never
+    // per pass. `app/_layout.tsx` and the delete fallback run `await wipeLocalSession()`
+    // BEFORE `setSession(null)`, so this effect, its timer and its store subscriptions
+    // stay live through the whole wipe; a pass that captured the epoch when it started
+    // would take the wipe's moved epoch as its own and publish the old pet after the
+    // clears (rls-privacy-reviewer, attack 1). Once the wipe moves it, nothing this
+    // effect run schedules can start; the next session's run captures the new epoch.
+    const sessionEpoch = widgetPublishEpoch();
+    const fenced = () => widgetPublishEpoch() !== sessionEpoch;
+
     const publish = async () => {
-      // `buildWidgetPublishProps` chooses real data vs. the neutral empty payload
-      // by `live` (eligible && optedIn); `publishWidgetPass` runs the §3 drain
-      // first and only publishes on a clean drain (so a failed build-35 capture is
-      // never lost).
+      // `publishWidgetPass` runs the §3 drain first and only publishes on a clean
+      // drain (so a failed build-35 capture is never lost).
       const { drainComplete } = await publishWidgetPass(
-        () => buildWidgetPublishProps(widgetLive),
-        { needsDrain: !drainDone },
+        () => buildWidgetPublishProps(undefined, sessionEpoch),
+        { needsDrain: !drainDone, epoch: sessionEpoch },
       );
       if (drainComplete) drainDone = true;
     };
 
     const schedule = () => {
+      if (fenced()) return;
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = null;
-        publish().catch((e) => console.warn('[widgetSnapshots] publish failed:', e));
+        // A timer armed before the wipe and firing during it starts nothing, the
+        // residual drain included.
+        if (fenced()) return;
+        publish().catch((e) => {
+          // A fenced pass is the sign-out doing its job, not a failure.
+          if (e instanceof WidgetPublishFenced) return;
+          console.warn('[widgetSnapshots] publish failed:', e);
+        });
       }, PUBLISH_DEBOUNCE_MS);
     };
 
@@ -157,5 +160,5 @@ export function useWidgetSnapshots() {
         timer.current = null;
       }
     };
-  }, [session, widgetLive]);
+  }, [session]);
 }

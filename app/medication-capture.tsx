@@ -50,8 +50,12 @@ import {
 import {
   uploadPhoto, compressForUpload, buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET,
 } from '../lib/storage';
+import { uploadedPhotoPath } from '../lib/captureUploads';
 import { uuid } from '../lib/utils';
 import { useAppConfig } from '../hooks/useAppConfig';
+import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
+import { consentUnreadableNotice } from '../constants/aiConsentCopy';
+import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, medicationCapCopy, careFirstLine } from '../constants/monetizationCopy';
 
@@ -97,6 +101,7 @@ export default function MedicationCaptureScreen() {
   // server-side (B-252). The §6.5 strength-confirm safety gate is independent of all
   // of this and always applies.
   const config = useAppConfig();
+  const consentDoor = useAiConsentDoor('label');
   const extractionEnabled = config.ai_med_extraction_enabled;
 
   const [step, setStep] = useState<CaptureStep>('intro');
@@ -118,6 +123,11 @@ export default function MedicationCaptureScreen() {
   // catalog column default). The owner toggles it on the PR 6 detail screen.
   const [isPrescription, setIsPrescription] = useState<boolean | null>(null);
   const [extractionFailed, setExtractionFailed] = useState(false);
+  const [labelUploaded, setLabelUploaded] = useState(false);
+  // Local URIs of the label photos whose upload resolved (CUL-2170). The commit
+  // reads this rather than `labelUploaded`, which drives the band's sentence, so
+  // the record and the band each answer their own question from one write.
+  const uploadedUris = useRef<Set<string>>(new Set());
 
   // §6.5 dose-confirm gate. True = the owner has DELIBERATELY confirmed the
   // strength by ticking "matches the label". Seeded CLOSED (false): a present
@@ -188,13 +198,9 @@ export default function MedicationCaptureScreen() {
         );
         return null;
       }
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Photo access needed', 'Allow photo access in Settings to choose a photo.');
-        return null;
-      }
     }
+    // The library needs no grant: the system picker hands back only the chosen
+    // photo (CUL-1840, App Review 5.1.1(iii)).
 
     const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
@@ -218,7 +224,22 @@ export default function MedicationCaptureScreen() {
     };
   }
 
+  // CUL-1834 (mock frame A): the AI consent door sits before the picker, camera and
+  // library alike, so no label is photographed and then held behind a question.
+  // Don't allow and Not now both open the typed form.
   async function handleSnap(source: 'camera' | 'library') {
+    const answer = await consentDoor.ask();
+    if (answer === 'declined' || answer === 'not_now') {
+      handleManualEntry();
+      return;
+    }
+    // An answer the phone couldn't read sends nothing (CUL-1933): no photo is taken,
+    // the owner stays on this step and the next tap reads again.
+    if (answer === 'unreadable') {
+      const notice = consentUnreadableNotice('label');
+      Alert.alert(notice.title, notice.body);
+      return;
+    }
     const photo = await pickPhoto(source);
     if (!photo) return;
     setLabelPhoto(photo);
@@ -234,11 +255,14 @@ export default function MedicationCaptureScreen() {
     setStep('uploading');
     setExtracting(true);
     setExtractionFailed(false);
+    setLabelUploaded(false);
     setCapReached(null);
 
     try {
       const compressedUri = await compressForUpload(photo.localUri, photo.width, photo.height);
       await uploadPhoto(MEDICATION_PHOTOS_BUCKET, photo.storagePath, compressedUri);
+      uploadedUris.current.add(photo.localUri);
+      setLabelUploaded(true);
 
       // Body carries ONLY the item id — the function builds the label path from
       // the authed uid server-side (never a body path, B-123).
@@ -315,7 +339,9 @@ export default function MedicationCaptureScreen() {
   async function commitInner() {
     const db = getDb();
     const now = new Date().toISOString();
-    const labelPath = labelPhoto?.storagePath ?? null;
+    // Only a label whose upload finished is recorded (CUL-2170), in the local
+    // cache and the remote row alike.
+    const labelPath = uploadedPhotoPath(labelPhoto, uploadedUris.current);
     const trimmedGeneric = genericName.trim();
     const trimmedBrand = brandName.trim() || null;
     const trimmedStrength = strength.trim() || null;
@@ -515,6 +541,7 @@ export default function MedicationCaptureScreen() {
             <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
           </TouchableOpacity>
         </ScrollView>
+        <AiConsentSheet {...consentDoor.sheetProps} />
       </SafeAreaView>
     );
   }
@@ -645,9 +672,12 @@ export default function MedicationCaptureScreen() {
               </View>
             ) : extractionFailed ? (
               <View style={styles.failedBanner}>
+                {/* CUL-2164: the photo is claimed only once its upload finished; an offline
+                    capture fails before any photo reaches storage. */}
                 <ThemedText style={styles.failedBannerText}>
-                  Couldn't read the label automatically. You can fill it in below —
-                  the label photo is saved either way.
+                  {labelUploaded
+                    ? "Couldn't read the label. Fill in what you know below; the label photo is saved."
+                    : "Couldn't read the label. Fill in what you know below."}
                 </ThemedText>
               </View>
             ) : null}

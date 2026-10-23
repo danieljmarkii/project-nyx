@@ -521,7 +521,7 @@ Deno.test('buildProvenance: recall/photo tap-through points at the event(s)', ()
 
 const DEFLECTION_REASONS = [
   'clinical_judgment', 'reassurance_fishing', 'general', 'bulk_export', 'unsupported', 'ambiguous', 'data_gap', 'llm_unavailable',
-  'consent_off',
+  'consent_off', 'unsent_rows', 'refused_rows',
 ] as const
 
 // CUL-552 PR 2: consent_off offers no chip, because every chip is a question re-sent to Ask
@@ -559,6 +559,22 @@ Deno.test('buildDeflection consent_off: a status, never a verdict, a retry or a 
   // Never "try again" (it would deflect the same way), never a word about how the pet is.
   assert.doesNotMatch(text, /try again/i)
   assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay)\b/i)
+  assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
+})
+
+Deno.test('buildDeflection unsent_rows: says why Ask waits, never a verdict on the pet (CUL-1982)', () => {
+  const d = buildDeflection('unsent_rows', 'Biscuit')
+  // Rendered by every shipped build, and free on the credit grain.
+  assert.equal(d.outcome, 'llm_unavailable')
+  assert.equal(isSubstantiveOutcome(d.outcome), false)
+  assert.equal(d.substantive, false)
+  assert.equal(d.component, null)
+  assert.equal(d.provenance, null)
+  const text = `${d.headline} ${d.detail}`
+  assert.match(d.headline, /Biscuit's entries haven't sent yet/)
+  assert.match(text, /won't guess/)
+  assert.deepEqual(d.followups, ['Put together a vet-visit rundown'])
+  assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay|no sign)\b/i)
   assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
 })
 
@@ -1313,4 +1329,29 @@ Deno.test('featuredNonEscalatingRead — a call the record raised with no photo 
     assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [], tierWords: words })) }]), true, String(words))
   }
   assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('capped', projected({ tierWords: 'Call your vet now' })) }]), true)
+})
+
+Deno.test('buildDeflection refused_rows: names the fix, never "in a moment", never a verdict on the pet (CUL-2004)', () => {
+  const d = buildDeflection('refused_rows', 'Biscuit')
+  assert.equal(d.outcome, 'llm_unavailable')
+  assert.equal(isSubstantiveOutcome(d.outcome), false)
+  assert.equal(d.substantive, false)
+  assert.equal(d.component, null)
+  assert.equal(d.provenance, null)
+  assert.equal(d.conversationCredited, false)
+  const text = `${d.headline} ${d.detail}`
+  assert.equal(d.headline, `An entry on this phone couldn't be saved.`)
+  assert.equal(
+    d.detail,
+    `I'd be answering about Biscuit without it, so I won't guess. Open that entry and save it again, or remove it, then ask again. The vet-visit rundown works in the meantime.`,
+  )
+  // The flag covers every pet on the phone, so the headline never claims the entry is this pet's.
+  assert.doesNotMatch(d.headline, /Biscuit/)
+  // A refused row never sends on its own: waiting would not reopen Ask.
+  assert.doesNotMatch(text, /in a moment|once they've sent|try again/i)
+  assert.deepEqual(d.followups, ['Put together a vet-visit rundown'])
+  assert.doesNotMatch(text, /!/)
+  assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay|no sign)\b/i)
+  assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
+  assert.match(buildDeflection('refused_rows', '').detail, /about your pet without it/)
 })

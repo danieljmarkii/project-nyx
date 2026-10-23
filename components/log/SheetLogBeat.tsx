@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { StyleSheet, Animated, Easing, View, TouchableOpacity, Alert } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../ui/ThemedText';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
@@ -10,6 +10,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { removedNoticeCopy, undoGateCopy, HITSLOP_ACTION_SOLO } from '../../lib/completionCard';
 import type { MomentTone } from '../../store/momentStore';
 import { FloorRaiseLine } from '../ui/FloorRaiseLine';
+import { ReadOfferLine } from '../ui/ReadOfferLine';
 
 // The completion beat that lands IN the sheet (B-745 PR 3). The root <CompletionMoment/>
 // can't be reused here: it's absoluteFill at the app root, so it renders UNDER the
@@ -130,6 +131,8 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
   const mine = minePayload !== null;
   const removed = mine && storeRemoved;
   const floorLine = !removed ? minePayload?.floorLine ?? null : null;
+  // CUL-1835, frame D0: the read offered, never beside a floor line (a call keeps the slot).
+  const offerRead = !removed && !floorLine && minePayload?.offerRead === true;
 
   const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
   const surfaceOpacity = useRef(new Animated.Value(reduced ? 1 : 0)).current;
@@ -303,7 +306,7 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
           would be two contradictory signals, and the quiet is the point. */}
       {!removed && (
         <Animated.View style={[styles.ring, celebrate && styles.ringCelebrate, { transform: [{ scale: checkScale }] }]}>
-          <Check size={38} color={theme.colorMomentConfirm} strokeWidth={3} />
+          <Check size={38} color={colorRoles.positive.glyphOnLight} strokeWidth={3} />
         </Animated.View>
       )}
       {/* A sentence, not a word: it wraps to two lines and centres, rather than
@@ -333,6 +336,9 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
           onOpen={() => onOpenRaisedRead(floorLine.eventId)}
         />
       ) : null}
+      {/* CUL-1835, frame D0 — opens this log's record, where the question is asked. The
+          same door and the same spacing as the floor line above. */}
+      {offerRead ? <ReadOfferLine onOpen={() => onOpenRaisedRead(eventId)} /> : null}
       {/* Undo renders UNCONDITIONALLY while the row is still there — the R1 rule,
           inherited rather than restated: the records with no other in-place way back
           are exactly the ones a conditional affordance would drop. Once removed it is
@@ -374,7 +380,7 @@ const styles = StyleSheet.create({
     borderRadius: CHECK_RING_SIZE / 2,
     backgroundColor: theme.colorSurface,
     borderWidth: 2,
-    borderColor: theme.colorMomentConfirm,
+    borderColor: colorRoles.positive.glyphOnLight,
     alignItems: 'center',
     justifyContent: 'center',
   },

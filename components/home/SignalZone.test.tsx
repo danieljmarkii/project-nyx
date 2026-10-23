@@ -1,7 +1,7 @@
 // SignalZone — the Signal/Home surface after the GA of the design uplift + the Signals-v2
-// lanes (CUL-547 + CUL-548). The uplift E1/E2 empty states, the SR-3 register (receded
-// chrome + acknowledgment line), the CUL-14 watching system, and the v2 story/trial cards
-// all render UNCONDITIONALLY now — the beta flags are gone. What stays gated is the B-789
+// lanes (CUL-547 + CUL-548), and the quiet line (CUL-1838). The quiet line's three states
+// and the gap warning, the SR-3 register (receded chrome + acknowledgment line), and the v2
+// story/trial cards all render UNCONDITIONALLY. What stays gated is the B-789
 // safety suppression (a reassuring trial_response card over a not-eating record), which is
 // a safety gate, not a beta gate.
 
@@ -14,6 +14,12 @@ jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions:
 jest.mock('../../lib/db', () => ({
   getDb: () => ({ getAllSync: () => [{ last: null }] }),
 }));
+// The vet door's read (round 7's foot): answered and quiet unless a test says otherwise.
+const mockLoadEmergencyRead = jest.fn();
+jest.mock('../../lib/emergencyDoorRead', () => ({
+  loadEmergencyRead: (...a: unknown[]) => mockLoadEmergencyRead(...a),
+}));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 
 // The lead card's and the rows' own reads; the argument the lead card is handed says which
 // finding took the lead canvas. The lead read never answers here, so the card holds its
@@ -30,16 +36,11 @@ jest.mock('../../hooks/useSignal', () => ({
   useSignal: () => mockUseSignal(),
 }));
 
-// The watching-rows hook does a local SQLite read on focus; here we drive its output
-// directly. Default [] so the watching block is inert unless a test opts into rows.
-const mockUseWatchingRows = jest.fn();
-let mockWatchingAnswered = true;
-jest.mock('../../hooks/useWatchingRows', () => ({
-  useWatchingRows: (enabled: boolean, dayNumber: number) => mockUseWatchingRows(enabled, dayNumber),
-  useWatchingRowsRead: (enabled: boolean, dayNumber: number) => ({
-    rows: mockUseWatchingRows(enabled, dayNumber),
-    answered: mockWatchingAnswered,
-  }),
+// The gap warning's hook does a local SQLite read on focus; here we drive its output
+// directly. Default: no warning, answered.
+const mockUseGapWarning = jest.fn();
+jest.mock('../../hooks/useGapWarning', () => ({
+  useGapWarning: (enabled: boolean) => mockUseGapWarning(enabled),
 }));
 
 // CUL-601 (§4) — the arrival moment's collaborators. Motion + foreground are pinned so
@@ -61,7 +62,7 @@ jest.mock('../../lib/signalArrival', () => ({
 const mockInsightArrival = jest.fn();
 jest.mock('../../lib/haptics', () => ({ insightArrival: () => mockInsightArrival() }));
 
-import { act, render, within } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform, StyleSheet } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
@@ -70,19 +71,17 @@ import type { CachedFinding, CoverageDiagnostic, TrialResponseFinding } from '..
 import {
   ackUpdatingCopy,
   arrivalAnnouncementCopy,
-  buildingHeadline,
-  BUILDING_SUB,
-  BUILDING_SUB_SPARSE,
-  BUILDING_WATCHING_FOR,
-  BUILDING_FLOOR,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
-  WATCHING_SUB,
-  watchingTimingRow,
-  watchingChangeRow,
+  QUIET_TOO_EARLY_HEADER,
+  QUIET_GONE_QUIET_SUB,
+  quietTooEarlySub,
   watchingGapRow,
 } from '../../lib/signalCopy';
-import type { WatchingRow } from '../../lib/signalWatching';
+import { SIGNAL_DOOR_CALL_TODAY, SIGNAL_DOOR_LABEL } from '../../lib/lookEmergency';
+import { usePetStore } from '../../store/petStore';
+import { router } from 'expo-router';
+import { RowSpeechContext } from '../dayRow/rowSpeech';
 import type { TrialCardTrial } from '../../lib/dietTrialCard';
 
 // A minimal live finding so the register (live state) renders a stack.
@@ -100,34 +99,35 @@ const liveFinding: CachedFinding = {
   },
 };
 
-function signalState(over: Partial<SignalState> = {}): SignalState {
+/** The hook's state. `displayState` is a shorthand for the local facts that route to it
+ *  (the zone derives the state itself, CUL-1838); `live` needs findings, as before. */
+function signalState(
+  over: Partial<SignalState> & { displayState?: 'building' | 'stale' | 'no_pattern' | 'live' } = {},
+): SignalState {
+  const { displayState = 'building', ...rest } = over;
+  const facts =
+    displayState === 'stale'
+      ? { hasRecentActivity: false, hasSubstantialHistory: false }
+      : displayState === 'no_pattern'
+        ? { hasRecentActivity: true, hasSubstantialHistory: true }
+        : { hasRecentActivity: true, hasSubstantialHistory: false };
   return {
     petId: 'pet-1',
     findings: [],
     coverage: [],
-    displayState: 'building',
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    dayNumber: 3,
     eventCount: 11,
+    lastLoggedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    lookSinceLastLogged: false,
     acknowledging: false,
     generatedAt: null,
     answered: true,
-    ...over,
+    ...facts,
+    ...rest,
   };
 }
-
-// The top B-053 coverage diagnostic E2 restyles (an action-carrying one so the
-// action arm renders too).
-const rateMeals: CoverageDiagnostic = {
-  type: 'rate_meals',
-  actionability: 'action',
-  ratedMeals: 1,
-  ratedMealsNeeded: 4,
-};
-
-const EM_DASH = '—';
 
 /** The row headlines on Home, in rank order. A row's face is its headline, never the
  *  finding's sentence (that lives on the finding's own screen). */
@@ -141,225 +141,654 @@ function leadCardFinding(): unknown {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default: no watching rows, so the watching block never renders unless a test opts in.
-  mockUseWatchingRows.mockReturnValue([]);
-  mockWatchingAnswered = true;
+  // Default: no gap warning, answered.
+  mockUseGapWarning.mockReturnValue({ text: null, answered: true });
+  mockLoadEmergencyRead.mockResolvedValue({
+    status: 'ready',
+    facts: { refusedRecently: false, vomitCount24h: 0, lethargyRecently: false },
+  });
+  usePetStore.setState({
+    pets: [{ id: 'pet-1', name: 'Nyx', species: 'cat' }],
+    activePet: { id: 'pet-1', name: 'Nyx', species: 'cat' },
+  } as never);
   mockUseReducedMotion.mockReturnValue(false);
   mockHasPlayedArrival.mockResolvedValue(false);
   mockMarkArrivalPlayed.mockResolvedValue(undefined);
 });
 
-// ── SR-2 empty states (E1 building / E2 no_pattern) — now the only empty surface ──
-describe('SignalZone — SR-2 empty states', () => {
-  it('E1 building: headline + watching-for rows + safety floor', () => {
+// ── The quiet line (CUL-1838; round 7 of the Signal mock) ─────────────────────────────
+const GAP = watchingGapRow('vomiting', '12 days, then 7, then 3');
+const RETIRED = [
+  /getting to know/i,
+  /Day \d+ —/,
+  /events? so far/,
+  /This is week/,
+  /watching for/i,
+  /won't wait for the week/,
+  /keep logging/i,
+  /Not enough recent data/,
+];
+function expectNoRetiredCopy(view: ReturnType<typeof render>) {
+  for (const re of RETIRED) expect(view.queryByText(re)).toBeNull();
+  expect(view.queryByText('Last week')).toBeNull(); // the ghost compare
+}
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+describe('SignalZone — the quiet line (CUL-1838)', () => {
+  it('0 events: "Too early to tell", the subtitle, and only the vet door (nothing logged, no report)', async () => {
     mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'building', dayNumber: 3, eventCount: 11 }),
+      signalState({ eventCount: 0, hasRecentActivity: false, hasSubstantialHistory: false, lastLoggedAt: null }),
     );
-    const { getByText, getByLabelText, getAllByText } = render(<SignalZone />);
-
-    expect(getByLabelText(buildingHeadline('Nyx', 3, 11))).toBeTruthy();
-    expect(getByText(BUILDING_SUB)).toBeTruthy();
-    for (const row of BUILDING_WATCHING_FOR) expect(getByText(row)).toBeTruthy();
-    expect(getByText(BUILDING_FLOOR)).toBeTruthy();
-
-    // The ghost compare shows its two labeled rows with DASHES for counts — never a
-    // fabricated number (§6). Two standalone em-dash nodes, one per row.
-    expect(getByText('Last week')).toBeTruthy();
-    expect(getByText('This week')).toBeTruthy();
-    expect(getAllByText(EM_DASH)).toHaveLength(2);
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
+    expect(view.getByText(quietTooEarlySub('Nyx'))).toBeTruthy();
+    expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
+    expect(view.queryByTestId('signal-zone-report')).toBeNull();
+    // Zero events is never stale, even with no recent activity.
+    expect(view.queryByText(/Nothing logged since/)).toBeNull();
+    expectNoRetiredCopy(view);
   });
 
-  it('E2 no_pattern: verbatim §9 copy + the top coverage diagnostic', () => {
+  it('looks only (CUL-1484): a record of daily looks reads too early, never "week 1" and never gone quiet', async () => {
     mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'no_pattern', coverage: [rateMeals] }),
+      signalState({ eventCount: 0, hasRecentActivity: false, lastLoggedAt: null, lookSinceLastLogged: false }),
     );
-    const { getByText } = render(<SignalZone />);
-
-    expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy();
-    expect(getByText(NO_PATTERN_SUB)).toBeTruthy();
-    // The B-053 diagnostic renders (restyled) — its why line names the pet.
-    expect(getByText(/Nyx's meals aren't rated often enough/)).toBeTruthy();
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
+    expect(view.queryByText(/week 1|This is week/i)).toBeNull();
+    expectNoRetiredCopy(view);
   });
 
-  it('E1 building: holds the day-count clause back on the pre-read frame (eventCount 0)', () => {
-    // The isLoading→building override can render E1 before the local read lands; a real
-    // building pet always has ≥1 recent event, so eventCount 0 is the pre-read sentinel —
-    // it must NOT flash a fabricated "Day 1 — 0 events so far" (§6 no fabricated numbers).
-    mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'building', dayNumber: 1, eventCount: 0 }),
-    );
-    const { getByText, queryByText } = render(<SignalZone />);
-    expect(getByText("We're getting to know Nyx.")).toBeTruthy(); // the warm lead still renders
-    expect(queryByText(/Day \d+ —/)).toBeNull(); // no day-count clause
-    expect(queryByText(/0 events/)).toBeNull(); // never a zero count
+  it('a few days in: still too early, and "Vet report ›" opens the record\'s pet\'s report', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', eventCount: 3 }));
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
+    fireEvent.press(view.getByTestId('signal-zone-report'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/report', params: { pet: 'pet-1' } });
   });
 
-  it('E2 with no coverage diagnostic: the §9 copy stands alone', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [] }));
-    const { getByText } = render(<SignalZone />);
-    expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy();
-    expect(getByText(NO_PATTERN_SUB)).toBeTruthy();
-  });
-});
-
-// ── CUL-14 — the watching system (per-lane rows with real counts, §4.4 / D5) ──────
-describe('SignalZone — CUL-14 watching system', () => {
-  // The three mock §05 rows for Nyx-at-12-days (representative). buildWatchingRows +
-  // every count/gap predicate is unit-tested in lib/signalWatching.test.ts; here the hook
-  // is mocked so the wiring + composition are what's exercised.
-  const timingRow: WatchingRow = { key: 'timing', text: watchingTimingRow(4, 6) };
-  const changeRow: WatchingRow = { key: 'change', text: watchingChangeRow(2, 2) };
-  const gapRow: WatchingRow = { key: 'gap', text: watchingGapRow('vomiting', '6 days, then 3, then 2') };
-  const allRows = [timingRow, changeRow, gapRow];
-
-  it('E1 building: the real-count rows replace the ghost watching-for list; the headline + floor stay', () => {
-    mockUseWatchingRows.mockReturnValue(allRows);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 12, eventCount: 31 }));
-    const { getByText, getByLabelText, queryByText, getAllByText } = render(<SignalZone />);
-
-    expect(getByLabelText(buildingHeadline('Nyx', 12, 31))).toBeTruthy(); // headline stays
-    expect(queryByText(BUILDING_SUB)).toBeNull(); // ghost sub replaced
-    for (const row of BUILDING_WATCHING_FOR) expect(queryByText(row)).toBeNull(); // ghost list replaced
-    expect(getByText(WATCHING_SUB)).toBeTruthy();
-    for (const r of allRows) expect(getByText(r.text)).toBeTruthy();
-    expect(getAllByText(BUILDING_FLOOR)).toHaveLength(1); // no duplicate floor
-  });
-
-  it('the gap row is escalate-only — it renders only when the hook supplies it', () => {
-    mockUseWatchingRows.mockReturnValue([timingRow, changeRow]); // no gap row
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    expect(render(<SignalZone />).queryByText(/Gaps between/)).toBeNull();
-  });
-
-  it('E2 no_pattern: the watching rows compose in additively beside the §9 copy + coverage', () => {
-    mockUseWatchingRows.mockReturnValue([gapRow]); // mature record: only the gap lane escalates
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
-    const { getByText } = render(<SignalZone />);
-    expect(getByText(NO_PATTERN_HEADLINE)).toBeTruthy(); // E2 copy intact
-    expect(getByText(/Nyx's meals aren't rated often enough/)).toBeTruthy(); // coverage intact
-    expect(getByText(gapRow.text)).toBeTruthy(); // gap row added under them
-    expect(getByText(BUILDING_FLOOR)).toBeTruthy();
-  });
-
-  it('no qualifying row (hook returns []): the frame renders its normal ghost content, no empty block', () => {
-    mockUseWatchingRows.mockReturnValue([]);
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
-    const { getByText, queryByText } = render(<SignalZone />);
-    expect(queryByText(WATCHING_SUB)).toBeNull(); // no sub with no rows
-    for (const row of BUILDING_WATCHING_FOR) expect(getByText(row)).toBeTruthy(); // ghost list intact
-  });
-
-  it('gates the hook on an empty state — enabled is false in the live register (no watching read)', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
-    render(<SignalZone />);
-    expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
-  });
-
-  // ── B-769 (CUL-29, PM-ruled D3a/D4): the gap row's own register ─────────────────
-  describe('the gap row leaves the "still needs" umbrella (D3a)', () => {
-    it('a lone gap row renders WITHOUT the WATCHING_SUB umbrella (an escalation is not an unmet need)', () => {
-      mockUseWatchingRows.mockReturnValue([gapRow]);
-      mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
-      const { getByText, queryByText } = render(<SignalZone />);
-      expect(getByText(gapRow.text)).toBeTruthy();
-      expect(queryByText(WATCHING_SUB)).toBeNull(); // the umbrella never renders for gap alone
-      expect(getByText(BUILDING_FLOOR)).toBeTruthy(); // the safety floor still travels
-    });
-
-    it('the gap row renders ABOVE the coverage nag on no_pattern (Principle 3 — the escalation leads)', () => {
-      mockUseWatchingRows.mockReturnValue(allRows);
-      mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', coverage: [rateMeals] }));
-      const tree = JSON.stringify(render(<SignalZone />).toJSON());
-      const gapAt = tree.indexOf('are getting shorter');
-      const coverageAt = tree.indexOf("meals aren't rated often enough");
-      const needsAt = tree.indexOf(WATCHING_SUB);
-      expect(gapAt).toBeGreaterThan(-1);
-      expect(coverageAt).toBeGreaterThan(-1);
-      expect(needsAt).toBeGreaterThan(-1);
-      expect(gapAt).toBeLessThan(coverageAt); // escalation above the data-quality nag
-      expect(coverageAt).toBeLessThan(needsAt); // needs rows keep their place below
-    });
-
-    it('the gap row leads the watching area in the E1 frame too', () => {
-      mockUseWatchingRows.mockReturnValue(allRows);
-      mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 12, eventCount: 31 }));
-      const tree = JSON.stringify(render(<SignalZone />).toJSON());
-      expect(tree.indexOf('are getting shorter')).toBeLessThan(tree.indexOf(WATCHING_SUB));
-    });
-  });
-});
-
-// ── B-734 (CUL-72) the load window, B-735 (CUL-430) the sparse sub ────────────────
-describe('SignalZone — B-734 first-load window (content-shaped skeleton, never the heavy E1)', () => {
-  it('loading renders the content-shaped skeleton, none of the E1 copy', () => {
-    // The pet-switch reset state: findings cleared, localCtx at the sentinel, read in flight.
-    mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'stale', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
-    );
-    const { getByTestId, queryByText } = render(<SignalZone />);
-    expect(getByTestId('signal-loading-skeleton')).toBeTruthy();
-    expect(queryByText(/getting to know/)).toBeNull(); // no E1 headline flash
-    expect(queryByText(BUILDING_SUB)).toBeNull();
-    expect(queryByText(BUILDING_FLOOR)).toBeNull();
-  });
-
-  it('the watching hook is disabled while loading (no read keyed on the sentinel day count)', () => {
-    mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'stale', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
-    );
-    render(<SignalZone />);
-    expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false);
-  });
-
-  it('the skeleton is TIME-BOXED — a hung read falls through to the derived state and re-enables the watching read (adversarial ④)', () => {
-    jest.useFakeTimers();
+  it('gone quiet: dated, never calm, with both doors', async () => {
+    const tue = new Date(2026, 9, 13, 9, 0); // a Tuesday
+    jest.useFakeTimers({ now: new Date(2026, 9, 15, 12, 0), doNotFake: ['nextTick', 'setImmediate'] });
     try {
-      mockUseSignal.mockReturnValue(
-        signalState({ displayState: 'building', isLoading: true, findings: [], dayNumber: 1, eventCount: 0 }),
-      );
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', lastLoggedAt: tue.toISOString() }));
       const view = render(<SignalZone />);
-      expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
-      expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(false); // suppressed only while the skeleton shows
-      act(() => {
-        jest.advanceTimersByTime(1500);
-      });
-      // Past the box: the honestly-derived state renders and the escalate-only watching
-      // read is live again — a hung network read can never silence the gap row for good.
-      expect(view.queryByTestId('signal-loading-skeleton')).toBeNull();
-      expect(mockUseWatchingRows.mock.calls.at(-1)?.[0]).toBe(true);
+      await settle();
+      expect(view.getByText('Nothing logged since Tue')).toBeTruthy();
+      expect(view.getByText(QUIET_GONE_QUIET_SUB)).toBeTruthy();
+      expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
+      expect(view.getByTestId('signal-zone-report')).toBeTruthy();
+      expectNoRetiredCopy(view);
     } finally {
       jest.useRealTimers();
     }
   });
 
-  it('once the read lands (isLoading false), the real state renders — no lingering skeleton', () => {
+  it('a look logged after it went quiet: the header names meals and symptoms', async () => {
+    const tue = new Date(2026, 9, 13, 9, 0);
+    jest.useFakeTimers({ now: new Date(2026, 9, 15, 12, 0), doNotFake: ['nextTick', 'setImmediate'] });
+    try {
+      mockUseSignal.mockReturnValue(
+        signalState({ displayState: 'stale', lastLoggedAt: tue.toISOString(), lookSinceLastLogged: true }),
+      );
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.getByText('No meals or symptoms since Tue')).toBeTruthy();
+      expect(view.queryByText(/Nothing logged since/)).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('nothing found: "No pattern right now" / "That isn\'t an all-clear." — no coverage nag, no Patterns door, no disclaimer', async () => {
     mockUseSignal.mockReturnValue(
-      signalState({ displayState: 'building', isLoading: false, dayNumber: 3, eventCount: 11 }),
+      signalState({
+        displayState: 'no_pattern',
+        coverage: [{ type: 'rate_meals', actionability: 'action', ratedMeals: 1, ratedMealsNeeded: 4 }],
+      }),
     );
-    const { queryByTestId, getByLabelText } = render(<SignalZone />);
-    expect(queryByTestId('signal-loading-skeleton')).toBeNull();
-    expect(getByLabelText(buildingHeadline('Nyx', 3, 11))).toBeTruthy();
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(NO_PATTERN_HEADLINE)).toBeTruthy();
+    expect(view.getByText(NO_PATTERN_SUB)).toBeTruthy();
+    expect(view.queryByText(/aren't rated often enough/)).toBeNull();
+    expect(view.queryByTestId('signal-zone-patterns')).toBeNull();
+    expect(view.queryByTestId('signal-zone-disclaimer')).toBeNull();
+    expectNoRetiredCopy(view);
+  });
+
+  it('the live foot is unchanged: the disclaimer and the Patterns door, no vet door', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    expect(view.getByTestId('signal-zone-patterns')).toBeTruthy();
+    expect(view.getByTestId('signal-zone-disclaimer')).toBeTruthy();
+    expect(view.queryByTestId('signal-zone-vet-door')).toBeNull();
+  });
+
+  describe('the vet door (Dr. Chen, ruled 2026-10-15)', () => {
+    it('at rest it is labelled for the sheet', async () => {
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.getByText(SIGNAL_DOOR_LABEL)).toBeTruthy();
+    });
+
+    it('once the record meets a call sign it says the imperative, from the sheet\'s own resolver', async () => {
+      mockLoadEmergencyRead.mockResolvedValue({
+        status: 'ready',
+        // A cat not eating for a day: a call-today sign the record can settle.
+        facts: { refusedRecently: true, vomitCount24h: 0, lethargyRecently: false },
+      });
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+      const view = render(<SignalZone />);
+      expect(await view.findByText(SIGNAL_DOOR_CALL_TODAY)).toBeTruthy();
+    });
+
+    it('reads the trial\'s refusal register Home hands it, for the zone\'s own pet', async () => {
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+      render(<SignalZone trialNotEating />);
+      await settle();
+      expect(mockLoadEmergencyRead).toHaveBeenCalledWith({ id: 'pet-1', species: 'cat' }, true);
+    });
+
+    it('an unanswered read keeps the resting label (a door never shouts on unknown facts, T-20)', async () => {
+      mockLoadEmergencyRead.mockResolvedValue({ status: 'failed' });
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.getByText(SIGNAL_DOOR_LABEL)).toBeTruthy();
+    });
+
+    it('opens the shipped sheet for the zone\'s pet', async () => {
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+      const view = render(<SignalZone />);
+      await settle();
+      fireEvent.press(view.getByTestId('signal-zone-vet-door'));
+      expect(view.getByText('For Nyx')).toBeTruthy();
+    });
+
+    it('a species the sheet has no signs for gets no vet door, and the report still shows', async () => {
+      usePetStore.setState({
+        pets: [{ id: 'pet-1', name: 'Nyx', species: 'rabbit' }],
+        activePet: { id: 'pet-1', name: 'Nyx', species: 'rabbit' },
+      } as never);
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.queryByTestId('signal-zone-vet-door')).toBeNull();
+      expect(view.getByTestId('signal-zone-report')).toBeTruthy();
+    });
   });
 });
 
-describe('SignalZone — B-735 sparse-logger E1 sub (D5a)', () => {
-  it('day ≤ 7 keeps the first-week sub; day > 7 swaps to the events-not-days framing', () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 3, eventCount: 11 }));
-    const early = render(<SignalZone />);
-    expect(early.getByText(BUILDING_SUB)).toBeTruthy();
-    expect(early.queryByText(BUILDING_SUB_SPARSE)).toBeNull();
+// ── The gap warning (CUL-1468, CUL-1941) ───────────────────────────────────────────
+describe('SignalZone — the gap warning takes the card', () => {
+  for (const displayState of ['building', 'stale', 'no_pattern'] as const) {
+    it(`in ${displayState}: the warning replaces the quiet line, with both doors`, async () => {
+      mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+      mockUseSignal.mockReturnValue(signalState({ displayState }));
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.getByText(GAP)).toBeTruthy();
+      expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+      expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
+      expect(view.getByTestId('signal-zone-report')).toBeTruthy();
+    });
+  }
 
-    // Sam's grazing cat: day 24, 6 events — "Day 24" must never sit above "within the
-    // first week" (the B-735 dissonance).
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', dayNumber: 24, eventCount: 6 }));
-    const sparse = render(<SignalZone />);
-    expect(sparse.getByLabelText(buildingHeadline('Nyx', 24, 6))).toBeTruthy();
-    expect(sparse.getByText(BUILDING_SUB_SPARSE)).toBeTruthy();
-    expect(sparse.queryByText(BUILDING_SUB)).toBeNull();
+  it('the read is on in stale (CUL-1468) and in live; off only while the skeleton shows', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    expect(mockUseGapWarning.mock.calls.at(-1)?.[0]).toBe(true);
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    view.rerender(<SignalZone />);
+    expect(mockUseGapWarning.mock.calls.at(-1)?.[0]).toBe(true);
+  });
+
+  it('in live it sits under the stack — Home has no row for the server gap finding', () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.getByTestId('signal-zone-patterns')).toBeTruthy();
+  });
+
+  it('CUL-1941: a lone server gap_shortening no longer blanks the card — the warning takes it', async () => {
+    const serverGap = {
+      rank: 0,
+      text: 'Gaps between vomiting episodes are getting shorter — 12 days, then 7, then 4, then 3.',
+      finding: { type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' },
+    } as unknown as CachedFinding;
+    // Control, and the shape that used to blank: the client read has not reproduced it.
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', findings: [serverGap] }));
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(serverGap.text)).toBeTruthy();
+    expect(view.queryByTestId('signal-zone-patterns')).toBeNull(); // not the live foot over an empty stack
+  });
+
+  it('no warning: the quiet line stands (the warning is escalate-only, never invented)', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.queryByTestId('signal-gap-warning')).toBeNull();
+    expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
   });
 });
 
-// ── SR-3 (B-721) — the register: acknowledgment line + receded chrome ─────────────
+// ── CUL-1943: an unanswered or failed gap read is never "no warning" ─────────────────
+describe('SignalZone — a gap read that did not answer never draws the quiet line (CUL-1943)', () => {
+  const FAILED = /^Couldn't check Nyx's vomiting pattern just now, so this isn't an all-clear\.$/;
+
+  for (const displayState of ['building', 'stale', 'no_pattern'] as const) {
+    it(`in ${displayState}: a thrown read says so, with Try again, and no quiet line`, async () => {
+      const retry = jest.fn();
+      mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry });
+      mockUseSignal.mockReturnValue(signalState({ displayState }));
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+      expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+      expect(view.getByText(FAILED)).toBeTruthy();
+      fireEvent.press(view.getByTestId('signal-gap-retry'));
+      expect(retry).toHaveBeenCalledTimes(1);
+      // The vet door stays: a check that did not run takes no door away.
+      expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
+    });
+
+    it(`in ${displayState}: an unanswered read holds the skeleton, never the quiet line`, () => {
+      mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+      mockUseSignal.mockReturnValue(signalState({ displayState }));
+      const view = render(<SignalZone />);
+      expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+      expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
+    });
+  }
+
+  it('the answer, once in, replaces the held frame (control: the quiet line is reachable)', async () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn() });
+    view.rerender(<SignalZone />);
+    await settle();
+    expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
+    expect(view.queryByTestId('signal-gap-read-failed')).toBeNull();
+  });
+
+  it('C-5: Try again reaches nothing downward into the foot, and holds the 44pt floor in its own box', async () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    await settle();
+    const retry = view.getByTestId('signal-gap-retry');
+    expect(retry.props.hitSlop?.bottom ?? 0).toBe(0);
+    expect(StyleSheet.flatten(retry.props.style).minHeight).toBeGreaterThanOrEqual(44);
+  });
+
+  it('a failed read that still holds a sentence draws the warning, not the failure line', async () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.queryByTestId('signal-gap-read-failed')).toBeNull();
+  });
+
+  it('in live: a failed read draws the failure row under the stack', () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+    expect(view.getByTestId('signal-zone-patterns')).toBeTruthy();
+  });
+});
+
+// ── CUL-1937: a warning is never celebrated ─────────────────────────────────────────
+describe('SignalZone — the first gap warning plays no celebration (CUL-1937)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
+  });
+  async function flush() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+  const benign: CachedFinding = {
+    rank: 0,
+    text: 'Vomiting most often follows meals within two hours.',
+    finding: {
+      type: 'postprandial_timing',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      rapidCount: 5,
+      eligibleCount: 7,
+      totalEpisodes: 9,
+      rapidWindowMinutes: 120,
+      windowDays: 60,
+    } as never,
+  };
+  const serverGap = {
+    rank: 1,
+    text: 'Gaps between vomiting episodes are getting shorter — 12 days, then 7, then 4, then 3.',
+    finding: { type: 'gap_shortening', priorityClass: 'insight', symptomType: 'vomit' },
+  } as unknown as CachedFinding;
+
+  it('a pet whose first finding is gap_shortening: no wash, no tap, no announcement, and the marker is spent', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [serverGap] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalledWith(arrivalAnnouncementCopy('Nyx'));
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+    expect(view.getByText(serverGap.text)).toBeTruthy();
+    announce.mockRestore();
+  });
+
+  it('a gap finding beside a titled insight withholds the moment too, and spends it', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign, serverGap] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('CUL-1943 B1: a failed gap read withholds the arrival, and the quiet line is never its outgoing frame', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+  });
+
+  it('CUL-1943 B1: a held gap read defers the arrival (never spends it), then it plays once the read answers', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn() });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('CUL-1943 R1: a regen re-read in flight defers the arrival; the warning it finds then withholds it', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    // The regen's tick: the state turns live while the gap re-read it started is in flight.
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn(), reading: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true, failed: false, retry: jest.fn(), reading: false });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(view.getByText(GAP)).toBeTruthy();
+  });
+
+  it('CUL-1943 R1 control: the re-read answering calm lets the deferred arrival play', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn(), reading: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn(), reading: false });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+  });
+
+  it('control: the same insight alone still arrives (the gate was what held it)', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+  });
+
+  it('the client warning arriving on the quiet line: the Signal holds the quiet words over the lead, then lands the sentence', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    // The lead: the quiet words still drawn (fading, hidden from VoiceOver), the sentence not yet in.
+    expect(view.getByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeTruthy();
+    expect(view.queryByText(GAP)).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('a cold mount that already has a warning draws it still', async () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    await flush();
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+  });
+});
+
+// Adversarial pass, PR-21: a safety finding this build cannot title must never fall to a
+// quiet line that asserts "No pattern right now" over it.
+describe('SignalZone — an untitled SAFETY finding holds live', () => {
+  const weightLoss = {
+    rank: 0,
+    text: 'Nyx has lost weight between two weigh-ins.',
+    finding: { type: 'weight_loss', priorityClass: 'safety' },
+  } as unknown as CachedFinding;
+
+  it('never reads "No pattern right now" or "Too early to tell" over it', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', findings: [weightLoss] }));
+    const view = render(<SignalZone />);
+    expect(view.queryByText(NO_PATTERN_HEADLINE)).toBeNull();
+    expect(view.queryByText(QUIET_TOO_EARLY_HEADER)).toBeNull();
+    expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+  });
+
+  it('keeps the vet door, and its imperative, on a card that draws nothing (adversarial pass 2)', async () => {
+    mockLoadEmergencyRead.mockResolvedValue({
+      status: 'ready',
+      facts: { refusedRecently: true, vomitCount24h: 0, lethargyRecently: false },
+    });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', findings: [weightLoss] }));
+    const view = render(<SignalZone />);
+    expect(await view.findByText(SIGNAL_DOOR_CALL_TODAY)).toBeTruthy();
+    expect(view.queryByTestId('signal-zone-patterns')).toBeNull();
+  });
+
+  it('control: an untitled INSIGHT alone does fall to the quiet line (CUL-1941)', () => {
+    const untitledInsight = { ...weightLoss, finding: { type: 'gap_shortening', priorityClass: 'insight' } } as unknown as CachedFinding;
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', findings: [untitledInsight] }));
+    const view = render(<SignalZone />);
+    expect(view.getByText(untitledInsight.text)).toBeTruthy(); // the server's own gap sentence takes the card
+  });
+});
+
+describe('SignalZone — the warning arrives once, and is said', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
+  });
+
+  it('F2: a warning already drawn under a live stack does not re-arrive when the stack empties', async () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    await act(async () => {});
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    // No lead: the sentence is drawn at once, no quiet line fading over it.
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('a warning that arrives while Home is in front is spoken once, queued', async () => {
+    // `announceQueued` uses the queued iOS call where it exists, else the plain one.
+    const plain = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    const queued =
+      typeof AccessibilityInfo.announceForAccessibilityWithOptions === 'function'
+        ? jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {})
+        : null;
+    const announce = { mock: { get calls() { return [...plain.mock.calls, ...(queued?.mock.calls ?? [])] as unknown[][]; } } };
+    const speech = { petName: 'Nyx', mayAnnounce: () => true };
+    const zone = () => (
+      <RowSpeechContext.Provider value={speech}>
+        <SignalZone />
+      </RowSpeechContext.Provider>
+    );
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(zone());
+    await act(async () => {});
+    expect(announce.mock.calls.filter(([m]) => m === GAP)).toHaveLength(0);
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(announce.mock.calls.filter(([m]) => m === GAP)).toHaveLength(1);
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(announce.mock.calls.filter(([m]) => m === GAP)).toHaveLength(1);
+    plain.mockRestore();
+    queued?.mockRestore();
+  });
+});
+
+describe('SignalZone — B-734 first-load window (content-shaped skeleton, never a quiet line)', () => {
+  it('loading renders the content-shaped skeleton and no quiet line, no foot', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', isLoading: true, findings: [], eventCount: 0 }));
+    const view = render(<SignalZone />);
+    expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+    expect(view.queryByTestId('signal-zone-foot')).toBeNull();
+  });
+
+  it('the gap read is off while the skeleton shows', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', isLoading: true, findings: [], eventCount: 0 }));
+    render(<SignalZone />);
+    expect(mockUseGapWarning.mock.calls.at(-1)?.[0]).toBe(false);
+  });
+
+  it('the skeleton is TIME-BOXED — a hung read falls through to the derived state and re-enables the gap read (adversarial ④)', () => {
+    jest.useFakeTimers();
+    try {
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'building', isLoading: true, findings: [], eventCount: 0 }));
+      const view = render(<SignalZone />);
+      expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
+      expect(mockUseGapWarning.mock.calls.at(-1)?.[0]).toBe(false);
+      act(() => {
+        jest.advanceTimersByTime(1500);
+      });
+      expect(view.queryByTestId('signal-loading-skeleton')).toBeNull();
+      expect(mockUseGapWarning.mock.calls.at(-1)?.[0]).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('once the read lands (isLoading false), the quiet line renders — no lingering skeleton', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', isLoading: false }));
+    const view = render(<SignalZone />);
+    expect(view.queryByTestId('signal-loading-skeleton')).toBeNull();
+    expect(view.getByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
+  });
+});
+
 describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
   it('shows the "Noted — updating …" line when a regen is in flight in the live register', () => {
     mockUseSignal.mockReturnValue(
@@ -378,12 +807,12 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
     expect(render(<SignalZone />).queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
   });
 
-  it('is scoped to the live register — no ack over the E1 building state (E1 owns that reassurance)', () => {
+  it('is scoped to the live register — on a log the quiet line holds still (round 7)', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building', acknowledging: true }));
     const view = render(<SignalZone />);
     expect(view.queryByText(ackUpdatingCopy('Nyx'))).toBeNull();
-    // E1 renders intact (the empty state is never blanked by the ack machinery).
-    expect(view.getByText(BUILDING_SUB)).toBeTruthy();
+    // The quiet line renders intact (never blanked by the ack machinery).
+    expect(view.getByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
   });
 
   it('announces the ack to VoiceOver on iOS when it appears (accessibilityLiveRegion is Android-only)', () => {
@@ -1215,7 +1644,9 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     // exactly one child (its ThemedText) and no rail.
     expect(line.children).toHaveLength(1);
     const flat = Array.isArray(line.props.style) ? Object.assign({}, ...line.props.style) : line.props.style;
-    expect(flat.paddingLeft).toBe(3 + theme.space2);
+    // On the card's one text edge (CUL-1525): the rails hang in the gutter, so no row indents
+    // past one.
+    expect(flat.paddingLeft).toBeUndefined();
   });
 
   it('renders alone when the stood-down card was the only finding — the live register, one line', () => {

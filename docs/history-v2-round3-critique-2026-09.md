@@ -812,7 +812,7 @@ _the underlying findings; the briefs to rule are H-1 to H-11 above_
 
 *high · **gates the requirements** · lenses: Designer, Mobile IA, Data, Sam, Engineering, Jordan · sources: DES-01, MIA-03, MIA-13, SAM-02, ENG-04, JOR-14, JOR-08, VET-07*
 
-- **Where:** §03 'borrowed whole from Home's spine'; rules B, D, K and H; components/recap/DaySpine.tsx; components/designV2/home/SpineNodeRow.tsx; lib/spineCompaction.ts; docs/culprit-design-v4-mockups.html:292-457
+- **Where:** §03 'borrowed whole from Home's spine'; rules B, D, K and H; components/recap/DaySpine.tsx; components/dayRow/SpineNodeRow.tsx; lib/spineCompaction.ts; docs/culprit-design-v4-mockups.html:292-457
 - **Evidence:** History's row is not Home's shipped node. Shipped SpineRowFrame puts the time in a fixed 56pt left column and a chevron on every row, uses the Camera glyph and calm words, and groups meals more loosely: runs split only on kind and photo, same-time ties keep input order, and looks are dropped. Home's own v4 mock, however, draws the same node History does: time on the right, no chevron on single rows. Rules B, D and K were ruled on the 'borrowed whole' premise, which is false in both directions. Home's fixed column may already truncate a range label like '12:41 – 5:07 PM' at default size.
 - **Counterexample:** Sep 17 on Home's Today and on History: time on the left versus the right, chevrons versus none, and '2 meals' folding 5:47 and 10:55 versus two named rows. Two languages, one tap apart.
 - **What the requirements must say:** Better-than-the-rule brief. The rules are B, D and K, settled in rounds 2 and 3 on the premise that History borrows Home's node. They protect less noise and every meal named, and that protection holds under every option. The better thing: name ONE node component and ONE compaction predicate in lib/spineCompaction.ts, imported by both surfaces. The predicate keeps rule B's splits, adds a kind rule so treats never join meals (the run's noun comes from the kind), and breaks ties on (occurred_at, id). Before ruling, measure on a device whether Home's shipped 56pt one-line time column truncates '12:41 – 5:07 PM' at default text size. Decision brief in H-1; the product-split conflict is in conflicts.
@@ -925,7 +925,7 @@ _the underlying findings; the briefs to rule are H-1 to H-11 above_
 
 *medium · **gates the requirements** · lenses: Motion, Engineering · sources: MOT-11, ENG-14, MOTF-4*
 
-- **Where:** Rule J; §07 R2-3 and R1-4; components/designV2/home/SpineNodeRow.tsx:277-311; lib/appConfig.ts:102
+- **Where:** Rule J; §07 R2-3 and R1-4; components/dayRow/SpineNodeRow.tsx:277-311; lib/appConfig.ts:102
 - **Evidence:** Round 1 recommended that History v2 ship on its own history_v2 flag. Home's first paint 'in the same PR' would then cross two flags. No shipped module draws a thread, though useOpenInPlace's rail lead is the building block. Home's compact row opens on a bare configureNext with a chevron swap, where History rotates a down chevron, and under Reduce Motion Home pops while the modules crossfade.
 - **Counterexample:** An owner with design_v2 on and History v2 off: if Home's paint rides design_v2, Home changes the day History's PR merges while History stays dark.
 - **What the requirements must say:** Decision brief in H-8. Whatever wins: one module in components/motion/ built on the rail-lead building block; Home's compact row on useOpenInPlace; identity (pet, mount); a flag-off guard that follows R1-4 (history_v2 in the vetVisitsFlagOff shape).
@@ -994,7 +994,7 @@ _the underlying findings; the briefs to rule are H-1 to H-11 above_
 
 *high · **gates the requirements** · lenses: Jordan · sources: JORF-1, JORF-4*
 
-- **Where:** frame-p-days-fold.png, frame-p-lens-fold.png; rule I; §02; components/charts/DayMark.tsx; components/designV2/home/CoverageDoor.tsx
+- **Where:** frame-p-days-fold.png, frame-p-lens-fold.png; rule I; §02; components/charts/DayMark.tsx; components/surfaces/home/CoverageDoor.tsx
 - **Evidence:** Seen as Jordan, both folds read as a log. The header counts are the only numbers with a shape. The lens's '13 vomits since the trial' has no shape, and no door to the shipped shapes that answer it (the Signal's CompareBars, the trial view). Round 3 has no Principle 8 check. Separately, the round-2 '5' the PM called clutter was the day's total logged, mostly meals. The shipped DayMark draws a count only on a symptom day, so under the Vomit lens Sep 17 (2 vomits) and Sep 21 (1) now carry the same dot.
 - **Counterexample:** At the 8-week recheck the vet asks whether 13 is better than before. The record answers 32 vomits in the 73 days before Jul 26 and 13 in the 58 since, roughly halved. History gives only 45 and 13 on the date sheet, with no spans.
 - **What the requirements must say:** Better-than-the-rule brief, in H-2. The ruling is 'marks not numbers' (2026-09-23). It protected the cell from meal totals, and that holds under every option, because DayMark never draws a total. The options are a door from the lensed count line to the shipped shape, which keeps every ruling, plus, optionally, DayMark's symptom-day count in the cell.

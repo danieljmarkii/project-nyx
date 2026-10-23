@@ -8,6 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -33,6 +34,11 @@ import {
   type AskSuggestions,
 } from '../lib/ask';
 import { askCapCopy } from '../constants/monetizationCopy';
+import { useAiConsentDoor, type ConsentDoorOutcome } from '../hooks/useAiConsentDoor';
+import { cachedAiConsent } from '../store/aiConsentStore';
+import { useAuthStore } from '../store/authStore';
+import { consentUnreadableNotice } from '../constants/aiConsentCopy';
+import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { reducedMotionNow } from '../store/reducedMotionStore';
 
 // Ask — the client surface (B-228, PR A5; requirements §3, §4, §9.3). Owner-initiated
@@ -77,6 +83,40 @@ export default function AskScreen() {
   const petName = activePet?.name ?? 'your pet';
 
   const [input, setInput] = useState('');
+
+  // CUL-1834 (mock frame C): Ask's first open asks for AI consent while no answer is
+  // on file, and never answers a question before the owner answers this. Ask is only
+  // reachable where `ask_enabled` resolves on (HomeHeader), so the door needs no flag
+  // check of its own. Don't allow and Not now close Ask ("Without it, Ask stays
+  // closed"), and so does a no already on file: Ask stays closed until Settings turns
+  // AI reading on. The owner lands back on Home, whose Signal carries the same safety
+  // finding Ask's consent-off answer would have led with.
+  //
+  // A question is sent only on a yes this phone holds (CUL-1933). An answer the open
+  // couldn't read leaves Ask open and asks again at the first send; if that read fails
+  // too, the question stays in the field and the owner is told to try again.
+  const consentDoor = useAiConsentDoor('ask');
+  const askConsent = consentDoor.ask;
+  const consentAsked = useRef(false);
+  const consentRereading = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  const closeAsk = useCallback(() => {
+    // A cold link into Ask has no screen behind it, so back would do nothing and
+    // leave the owner on a closed Ask.
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  }, []);
+  const settleConsent = useCallback((outcome: ConsentDoorOutcome): boolean => {
+    if (outcome === 'proceed' || outcome === 'allowed') return true;
+    if (outcome === 'declined' || outcome === 'not_now') closeAsk();
+    return false;
+  }, [closeAsk]);
+  useEffect(() => {
+    if (consentAsked.current) return;
+    consentAsked.current = true;
+    askConsent().then(settleConsent).catch((e) => console.warn('[Ask] consent door failed:', e));
+  }, [askConsent, settleConsent]);
   const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [], hasLooks: false });
   const scrollRef = useRef<ScrollView>(null);
 
@@ -115,7 +155,34 @@ export default function AskScreen() {
   const send = useCallback(
     async (raw: string) => {
       const question = raw.trim();
-      if (!question || thinking || !petId) return;
+      if (!question || thinking || !petId || consentDoor.settling) return;
+
+      // Offline and rundown sends reach no model, so they need no answer read. Every
+      // other send checks the cache afresh rather than remembering the open's answer,
+      // so a no given in Settings while Ask stays mounted stops the next send.
+      const userId = useAuthStore.getState().user?.id ?? null;
+      const yesHeld = !!userId && cachedAiConsent(userId)?.granted === true;
+      if (online && !isRundownRequest(question) && !yesHeld) {
+        // A second tap while this read is out would come back 'not_now' and close Ask.
+        // `settling` is state and lags a render behind a fast double tap; the ref doesn't.
+        if (consentRereading.current) return;
+        consentRereading.current = true;
+        let outcome: ConsentDoorOutcome;
+        try {
+          outcome = await askConsent();
+        } finally {
+          consentRereading.current = false;
+        }
+        // The owner left during the read: nothing to close, nothing to send.
+        if (!mounted.current) return;
+        if (!settleConsent(outcome)) {
+          if (outcome === 'unreadable') {
+            const notice = consentUnreadableNotice('ask');
+            Alert.alert(notice.title, notice.body);
+          }
+          return;
+        }
+      }
       setInput('');
 
       // Rundown-intent (a deflection follow-up or the offline CTA) opens the deterministic
@@ -148,7 +215,7 @@ export default function AskScreen() {
       else if ('capped' in res) resolveCapped(res.capped);
       else resolveDisabled();
     },
-    [thinking, petId, online, petName, pushQuestion, resolveAnswer, resolveCapped, resolveDisabled],
+    [thinking, petId, online, petName, pushQuestion, resolveAnswer, resolveCapped, resolveDisabled, consentDoor.settling, askConsent, settleConsent],
   );
 
   const goTapThrough = useCallback((nav: AskNav) => {
@@ -272,6 +339,7 @@ export default function AskScreen() {
           </View>
         ) : null}
       </KeyboardAvoidingView>
+      <AiConsentSheet {...consentDoor.sheetProps} />
     </SafeAreaView>
   );
 }

@@ -8,7 +8,7 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import { Pill } from 'lucide-react-native';
 import { ScopeMenu, ScopeMenuOption } from './ScopeMenu';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 const OPTIONS: ScopeMenuOption[] = [
   { key: null, label: 'All types' },
@@ -92,10 +92,11 @@ describe('ScopeMenu — both accent labels are legible on their own grounds (CUL
   const flat = (node: { props: { style?: unknown } }) =>
     StyleSheet.flatten(node.props.style) as { color?: string; backgroundColor?: string };
 
-  it('renders the FILTERED pill label in accent ink on the accent tint', () => {
+  it('renders the FILTERED pill label in the selected ink on the selected ground', () => {
     // Non-default value ⇒ the pill takes its tinted active state (the ScopeMenu tint rule).
+    // Choosing is acting, so the state is indigo (CUL-2145 R2; CUL-1666's walk).
     const { getByText } = renderMenu({ value: 'medication' });
-    expect(flat(getByText('Medication') as never).color).toBe(theme.colorAccentInk);
+    expect(flat(getByText('Medication') as never).color).toBe(colorRoles.selected.ink);
     expect(flat(getByText('Medication') as never).color).not.toBe(theme.colorAccent);
   });
 
@@ -106,7 +107,7 @@ describe('ScopeMenu — both accent labels are legible on their own grounds (CUL
     expect(flat(getByText('All types') as never).color).toBe(theme.colorTextSecondary);
   });
 
-  it('renders the SELECTED sheet row in accent ink, on the white sheet', () => {
+  it('renders the SELECTED sheet row in the selected ink, on the white sheet', () => {
     const { getByLabelText } = renderMenu({ value: 'medication' });
     fireEvent.press(getByLabelText('Event type: Medication'));
 
@@ -119,7 +120,7 @@ describe('ScopeMenu — both accent labels are legible on their own grounds (CUL
     const row = getByLabelText('Medication');
     expect(row.props.accessibilityState.selected).toBe(true);
     const [label] = row.findAllByType(Text);
-    expect(flat(label as never).color).toBe(theme.colorAccentInk);
+    expect(flat(label as never).color).toBe(colorRoles.selected.ink);
     expect(flat(label as never).color).not.toBe(theme.colorAccent);
   });
 });

@@ -87,7 +87,9 @@ describe('SignupScreen — validation gate', () => {
     fireEvent.press(utils.getByTestId('signup-submit'));
 
     expect(mockSignUp).not.toHaveBeenCalled();
-    expect(utils.getByText('Add your first name')).toBeTruthy();
+    // The name is asked, never required (CUL-1840): no name error, ever.
+    expect(utils.queryByText('Add your first name')).toBeNull();
+    expect(utils.queryByText('Add your last name')).toBeNull();
     expect(utils.getByText('Enter your email address')).toBeTruthy();
     expect(utils.getByText('Choose a password')).toBeTruthy();
   });
@@ -107,6 +109,35 @@ describe('SignupScreen — validation gate', () => {
 });
 
 describe('SignupScreen — session present (email confirmation off)', () => {
+  it('signs up with no name at all — App Review 5.1.1, D10 on CUL-1825', async () => {
+    // The defect this pins: a required name blocked an account on data nothing
+    // runs on. A blank name must reach signUp and onboarding, and skip the
+    // owner-name write (the trigger's row already holds nulls).
+    mockSignUp.mockResolvedValue({ data: { user: { id: 'u1' }, session: { access_token: 't' } }, error: null });
+    const utils = render(<SignupScreen />);
+    fireEvent.changeText(utils.getByTestId('signup-email'), 'jordan@email.com');
+    fireEvent.changeText(utils.getByTestId('signup-password'), 'password123');
+    fireEvent.press(utils.getByTestId('signup-submit'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/disclaimer'));
+    expect(mockSignUp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'jordan@email.com', password: 'password123' }),
+    );
+    expect(mockUpdateOwnerName).not.toHaveBeenCalled();
+  });
+
+  it('writes a first name alone when that is all the owner gave', async () => {
+    mockSignUp.mockResolvedValue({ data: { user: { id: 'u1' }, session: { access_token: 't' } }, error: null });
+    const utils = render(<SignupScreen />);
+    fireEvent.changeText(utils.getByTestId('signup-first-name'), 'Sam');
+    fireEvent.changeText(utils.getByTestId('signup-email'), 'sam@email.com');
+    fireEvent.changeText(utils.getByTestId('signup-password'), 'password123');
+    fireEvent.press(utils.getByTestId('signup-submit'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/disclaimer'));
+    expect(mockUpdateOwnerName).toHaveBeenCalledWith('u1', 'Sam', '');
+  });
+
   it('signs up with the trimmed email, writes the owner name, and routes to onboarding', async () => {
     mockSignUp.mockResolvedValue({
       data: { session: { access_token: 't' }, user: { id: 'u1', identities: [{}] } },

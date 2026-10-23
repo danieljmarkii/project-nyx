@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 2.0 | **Status:** Stable | **Last Updated:** 2026-10-05
+**Version:** 2.1 | **Status:** Stable | **Last Updated:** 2026-10-23
 
 ---
 
@@ -186,7 +186,20 @@ Two weights of one typeface for body and UI. One display typeface for the Signal
 
 ### Color
 
-One dominant neutral (dark or light depending on theme). One accent — used sparingly, only for interactive elements and the primary trend line in charts. Never decorative. Never used to fill space.
+One dominant neutral. One action colour, indigo, used only for what the owner can tap or change. Never decorative. Never used to fill space.
+
+Each hue has one meaning, and a screen picks a colour by its job and its ground, never by its hue: the roles in `constants/theme.ts` (action, positive, selected, concern, attention, medication, destructive, text), each on light and on night, every one pinned to its ground by a contrast test.
+
+| Hue | Means | Never |
+|---|---|---|
+| Indigo | You can act: a link, a control, a selection. The brand night is its ground form. | A fact or a state |
+| Teal | A good fact: a meal eaten, a dose given, a clean day. | A control |
+| Rose | A symptom or a concern, and every safety surface. | Decoration. A rose role may keep or raise its contrast, never lower it |
+| Red | Destructive: delete, remove, end. | A symptom |
+| Amber | A heads up, as strong as the record knows. Not danger. | A warning of harm |
+| Gold | The completion moment, while it happens. | A lasting state |
+| Slate blue | Medication. | Any other category |
+| Neutral ink | Text and structure. Chart text always. | — |
 
 The trend chart line color should carry emotional weight: green is not required, but the direction of the line should be immediately readable without a legend.
 
@@ -293,6 +306,7 @@ These are intentionally deferred — answers belong in a future design sprint in
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2.1 | 2026-10-23 | Color: one accent becomes one action colour, indigo, and the hue table gives each hue one meaning (CUL-2145, D4 of CUL-1898; wording PM-approved 2026-10-23, building on G4 (C) of 2026-10-03). The trend line and chart paragraphs unchanged. |
 | v2.0 | 2026-10-05 | Design v2 GA (CUL-1071; PM-approved 1a). Principle 3 revised: Home has two jobs, not a list of zones. Two principles added: 8, the data is the delight (with the five things every chart shows), and 9, motion is the record moving (the gestures as shipped, the tick's carve-out, Reduce Motion's three-way rule). The Motion section rewritten in that vocabulary (absorbing CUL-635's D4 line, and recording the Signal's flight, CUL-1077 (a)). Philosophy gains *Calm is not quiet*; Color gains the never-colour-alone chart rule; the lens shapes gain a fifth invariant (scope resets on a pet switch). Principles 1, 2 and 4 to 7 unchanged. |
 | v1.1 | 2026-08-08 | Two Tier-2 additions from the Signal/Home design uplift (B-721, spec §10 — PM-approved). Principle 3 gains the S1 register-drop rule (richer evidence lives on the insight lane only; safety cards stay deliberately plain so plainness signals severity). Principle 5 gains the S6 quiet-is-labeled rule (a presence-gated surface labels its quiet in one explicit line, never shortens silently). No principle revised; both are additions. |
 | v1.0 | May 2026 | Initial document. Core philosophy, seven design principles, visual language, copy principles, interaction principles. Based on product trio design session May 2026. |

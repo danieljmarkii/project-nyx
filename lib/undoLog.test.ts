@@ -16,13 +16,19 @@ jest.mock('./db', () => ({
   getEventPetId: jest.fn(async () => 'pet-1'),
 }));
 jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
-jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(async () => {}) }));
+jest.mock('./sync', () => ({
+  syncPendingEvents: jest.fn(async () => {}),
+  syncPendingAttachments: jest.fn(async () => {}),
+}));
+jest.mock('./attachments', () => ({ queueRemovedLogPhotosForPurge: jest.fn(async () => {}) }));
 jest.mock('./weight', () => ({ reconcileWeightSnapshotAfterDelete: jest.fn(async () => null) }));
 
 import { getEventPetId, softDeleteEvent } from './db';
 import { triggerSignalRegenDebounced } from './signal';
-import { syncPendingEvents } from './sync';
+import { syncPendingAttachments, syncPendingEvents } from './sync';
+import { queueRemovedLogPhotosForPurge } from './attachments';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { reverseLoggedEvent } from './undoLog';
 import { useRecordChangeStore } from '../store/recordChangeStore';
 
@@ -33,6 +39,18 @@ describe('reverseLoggedEvent', () => {
     (reconcileWeightSnapshotAfterDelete as jest.Mock).mockClear().mockResolvedValue(null);
     (getEventPetId as jest.Mock).mockClear().mockResolvedValue('pet-1');
     (triggerSignalRegenDebounced as jest.Mock).mockClear();
+  });
+
+  // CUL-1947 (adversarial pass 2): the soft delete can land and its floor marker then
+  // throw, skipping the regen trigger that re-reads Home's gap warning. The local record
+  // tick re-reads it anyway, and the failure still reaches the caller.
+  it('a removal that throws still bumps the record tick, and still throws', async () => {
+    const { useSyncStore } = require('../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    (softDeleteEvent as jest.Mock).mockRejectedValueOnce(new Error('marker insert failed'));
+    await expect(reverseLoggedEvent('ev-1')).rejects.toThrow('marker insert failed');
+    expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+    expect(useSyncStore.getState().recordTick).toBe(1);
   });
 
   it('soft-deletes the event and queues the tombstone', async () => {
@@ -74,14 +92,29 @@ describe('reverseLoggedEvent', () => {
     // Engines v3 PR-28b (CUL-1436) added `writeOwingFloorCheck`: the soft delete runs inside
     // it so a re-check marker shares its transaction. The marker asks the server to re-floor
     // the reads around the deleted log; it writes no adherence and no event field.
+    // CUL-639 added `syncPendingAttachments` and `queueRemovedLogPhotosForPurge`: on the
+    // completion card's Undo only (`purgePhotos`), the undone log's photo is put back in
+    // the queue, whose purge deletes it from the server (PM ruling (a)). That is a real
+    // widening, a hard delete reached from a reversal, and it is bounded on purpose: it
+    // touches only the photo of the event just removed, never a record row, and every
+    // other caller passes no flag. Its tests are below ("an undone log's photo").
+    // CUL-1947 added the sync store's record tick, on the failure path only: a data-free
+    // counter that re-reads Home's gap warning when the delete landed and its floor marker
+    // then threw. It writes no record.
+    // CUL-2087 added `forgetFlagsSpentByEvent`: the device-local trial heads-up ledger
+    // gives back the warnings the removed feeding spent. It writes no record row, and it
+    // can only make a later heads-up MORE likely, never less (its tests are below).
     expect(imports.join('\n')).toBe(
       "import { useRecordChangeStore } from '../store/recordChangeStore';\n" +
+      "import { useSyncStore } from '../store/syncStore';\n" +
       "import { getEventPetId, softDeleteEvent } from './db';\n" +
       "import { noteRemoval } from './removalNotice';\n" +
       "import { triggerSignalRegenDebounced } from './signal';\n" +
-      "import { syncPendingEvents } from './sync';\n" +
+      "import { syncPendingAttachments, syncPendingEvents } from './sync';\n" +
+      "import { queueRemovedLogPhotosForPurge } from './attachments';\n" +
       "import { writeOwingFloorCheck } from './incidentFloorQueue';\n" +
-      "import { reconcileWeightSnapshotAfterDelete } from './weight';",
+      "import { reconcileWeightSnapshotAfterDelete } from './weight';\n" +
+      "import { forgetFlagsSpentByEvent } from './trialContaminant';",
     );
     expect(body()).not.toMatch(/adherence|updateEvent|updateMealIntake/);
   });
@@ -104,6 +137,48 @@ describe('reverseLoggedEvent', () => {
     expect(body()).not.toMatch(/insert|update[A-Z]|\bDELETE\b/);
     expect(body()).toMatch(/reconcileWeightSnapshotAfterDelete/);
     expect(body()).toMatch(/triggerSignalRegenDebounced/);
+  });
+
+  // ── CUL-639: an undone log's photo ─────────────────────────────────────────
+  describe("an undone log's photo (CUL-639)", () => {
+    beforeEach(() => {
+      (queueRemovedLogPhotosForPurge as jest.Mock).mockClear().mockResolvedValue(undefined);
+      (syncPendingAttachments as jest.Mock).mockClear().mockResolvedValue(undefined);
+    });
+
+    it('Undo (purgePhotos) queues the photo for deletion AFTER the soft delete, and kicks the queue', async () => {
+      // After, because the queue purges an unsynced photo only once its event reads
+      // as deleted: queued first, a drain in between would push it as a live one.
+      const order: string[] = [];
+      (softDeleteEvent as jest.Mock).mockImplementation(async () => { order.push('delete'); });
+      (queueRemovedLogPhotosForPurge as jest.Mock).mockImplementation(async () => { order.push('queue'); });
+      await reverseLoggedEvent('ev-1', { purgePhotos: true });
+      expect(order).toEqual(['delete', 'queue']);
+      expect(queueRemovedLogPhotosForPurge).toHaveBeenCalledWith('ev-1');
+      expect(syncPendingAttachments).toHaveBeenCalledTimes(1);
+    });
+
+    it('every other removal leaves an uploaded photo where it is (for Recently deleted, CUL-707)', async () => {
+      await reverseLoggedEvent('ev-1');
+      await reverseLoggedEvent('ev-2', { restoreWeightSnapshotToKg: 4.2 });
+      expect(queueRemovedLogPhotosForPurge).not.toHaveBeenCalled();
+      expect(syncPendingAttachments).not.toHaveBeenCalled();
+    });
+
+    it('a failed re-queue never fails the reversal: the log is already gone', async () => {
+      (queueRemovedLogPhotosForPurge as jest.Mock).mockRejectedValueOnce(new Error('disk'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await expect(reverseLoggedEvent('ev-1', { purgePhotos: true })).resolves.toBeUndefined();
+      expect(syncPendingAttachments).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('purgePhotos does not read as a weight restore', async () => {
+      // `restoreWeightSnapshotToKg` absent is not `null`; the reconcile must get no opts.
+      await reverseLoggedEvent('ev-1', { purgePhotos: true });
+      expect(reconcileWeightSnapshotAfterDelete).toHaveBeenCalledWith('ev-1', undefined);
+    });
   });
 
   // ── CUL-1665: the record's change counter ──────────────────────────────────
@@ -261,6 +336,77 @@ describe('reverseLoggedEvent', () => {
       expect(softDeleteEvent).toHaveBeenCalledWith('ev-7');
       expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+  });
+  // ── CUL-2087: a removed feeding gives its trial heads-ups back ──────────────
+  // Against the REAL ledger (AsyncStorage's jest mock): History's and the record screen's
+  // Remove reach no card, so the reversal itself has to give back what the meal spent, or
+  // the food's real feeding later on the trial gets no warning.
+  describe('the trial heads-up a removed meal spent (CUL-2087)', () => {
+    const ledger = () => jest.requireActual('./trialContaminant') as typeof import('./trialContaminant');
+    beforeEach(async () => {
+      await AsyncStorage.clear();
+      await ledger().clearTrialHeadsUpLedger();
+    });
+
+    it('gives back every food that meal spent, and only that meal\'s', async () => {
+      const { hasFlaggedFoodInTrial, noteTrialFlagShown } = ledger();
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-y' }, 'ev-meal');
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-z' }, 'ev-other');
+      await reverseLoggedEvent('ev-meal');
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(false);
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-y')).toBe(false);
+      // Another meal's spend is that meal's: removing this one must not re-open it.
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-z')).toBe(true);
+    });
+
+    it('gives nothing back for a removal whose local write failed', async () => {
+      const { hasFlaggedFoodInTrial, noteTrialFlagShown } = ledger();
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
+      (softDeleteEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+      await expect(reverseLoggedEvent('ev-meal')).rejects.toThrow('disk full');
+      // The meal is still in the record, so its heads-up is still spoken for.
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(true);
+    });
+
+    it('a give-back whose ledger write failed can still be retried after a restart', async () => {
+      // Adversarial pass 1: the attribution used to be dropped BEFORE the ledger write, so a
+      // failed write left the food spent on disk with nothing naming its meal, and no later
+      // retry could give it back. Now a failed ledger write keeps the attribution. (The
+      // retry here is by hand: nothing in production replays it after a restart, CUL-2099.)
+      const { hasFlaggedFoodInTrial, noteTrialFlagShown, resetHeadsUpLedgerCache } = ledger();
+      await noteTrialFlagShown({ trialId: 'trial-1', foodId: 'food-x' }, 'ev-meal');
+      // The storage mock's setItem is itself a jest.fn, so swap its implementation and put
+      // the original back, rather than spying (a spy on it would call itself).
+      const setItem = AsyncStorage.setItem as jest.Mock;
+      const original = setItem.getMockImplementation();
+      setItem.mockImplementation(async (k: string, v: string) => {
+        if (k === 'nyx.trialHeadsUp.v1') throw new Error('storage full');
+        return AsyncStorage.multiSet([[k, v]]);
+      });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        await reverseLoggedEvent('ev-meal');
+      } finally {
+        setItem.mockImplementation(original);
+      }
+      resetHeadsUpLedgerCache(); // the cold start: memory gone, storage is the truth
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(true);
+      await ledger().forgetFlagsSpentByEvent('ev-meal', []);
+      expect(await hasFlaggedFoodInTrial('trial-1', 'food-x')).toBe(false);
+      warn.mockRestore();
+    });
+
+    it('a failed give-back never fails a removal that already landed', async () => {
+      const spy = jest.spyOn(ledger(), 'forgetFlagsSpentByEvent').mockRejectedValueOnce(new Error('storage gone'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await expect(reverseLoggedEvent('ev-meal')).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalledWith('ev-meal', []);
+      expect(syncPendingEvents).toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+      spy.mockRestore();
     });
   });
 });

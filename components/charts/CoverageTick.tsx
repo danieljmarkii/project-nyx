@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 // CoverageTick — one day's coverage under a bar (CUL-1064, §05 "the denominator in
 // view"). Filled = logged, hollow = unlogged, ahead = the slot is held but nothing is
@@ -15,7 +15,7 @@ import { theme } from '../../constants/theme';
 // that sentence, not a second source of it.
 //
 // A DISCLOSED EXCEPTION to the Data Visualization Designer's floor ("no strip under ~20pt
-// per mark on a phone", docs/personas.md § Specialist lenses). Seven ticks under a 26pt
+// per mark on a phone", `docs/nyx-chart-standard.md` §2). Seven ticks under a 26pt
 // bar are ~3pt each and a 55-day strip is ~4pt a day. The floor is written for a mark
 // that CARRIES a fact the reader must pick out (a dot per episode); a coverage tick
 // carries none on its own — the fact is the count in words: "logged 8 of 10 days" beside
@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
   // The soft teal it replaced and the idle grey's outline were 1.01:1 apart, ΔE2000 3.9
   // under deuteranopia; the glyph teal is 1.97:1 from the grey and 3.27:1 on white.
   logged: {
-    backgroundColor: theme.colorAccentGlyph,
+    backgroundColor: colorRoles.positive.glyphOnLight,
   },
   unlogged: {
     borderWidth: StyleSheet.hairlineWidth * 2,

@@ -50,6 +50,7 @@ import {
   buildAnalysisWriteBack as buildIncidentAnalysisWriteBack,
   runIncidentAnalysis,
 } from '../_shared/incident-analysis.ts'
+import { MEAL_BOWL_SELECT } from '../_shared/mealBowl.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { meetsVomitRepeatRuleAt } from '../_shared/vomitRepeat.ts'
 import type { FloorResult, FloorTier } from '../../../lib/incidentFloor.ts'
@@ -773,7 +774,9 @@ async function assembleContext(
   // EN-5 (engines_v3_en5) reads each meal's food and the pet's free-fed bowls, which the
   // Noticed predicate needs to set treats and bowls aside. Flag-off the selects are unchanged.
   const en5 = isEngineKeyOn(engineFlags, 'engines_v3_en5')
-  const mealSelect = en5 ? 'occurred_at, meals(intake_rating, food_item_id, food_items(food_type))' : 'occurred_at, meals(intake_rating)'
+  const mealSelect = en5
+    ? `occurred_at, meals(intake_rating, food_item_id, component_count, food_items(food_type)), ${MEAL_BOWL_SELECT('food_type')}`
+    : 'occurred_at, meals(intake_rating)'
   const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes, arrangementsRes, answersRes] = await Promise.all([
     userClient
       .from('events')

@@ -6,7 +6,7 @@ description: End-of-session wrap-up — run the DoD, write the session record, c
 
 Run the project's end-of-session ritual **in this exact order**. This is the canonical close-out — do not improvise a different shape. The goal is that every session ends the same way, and the PM always walks away knowing *what shipped* and *exactly what prompt to paste next*.
 
-**A session launched by `/dispatch` runs `/wrap --dispatched` instead** (§ Dispatched sessions, below): the same record keeping, a five-line return in place of everything written for a human reader.
+**A session launched by `/dispatch` runs `/wrap --dispatched` instead** (§ Dispatched sessions, below): the PR body is its one record, and a five-line return replaces everything written for a human reader.
 
 CLAUDE.md (the stable operating manual) is the source of truth for the formats referenced below — follow it, don't restate it from memory. `STATUS.md` is a pointer card and usually needs no edit at all (step 3b); the volatile state lives in Linear.
 
@@ -53,12 +53,13 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
      - **After the merge, read back every issue the PR named.** Any that went `Done` without being finished (a parent, a found issue, a scope item still open): set it back to its earlier state and say so in a comment. Never leave an issue reading `Todo` while its work sits in an open PR, or `Done` while its work does not.
    - **Post an outcome comment** on the issue (`save_comment`): what shipped, the decisions made, any `adversarial-reviewer` / `pm-feature-review` findings, and the residuals — with a light attribution line (which persona / session). This is the per-issue trail; `docs/sessions/` still carries the cross-issue narrative (CLAUDE.md § Backlog Protocol → "Working the issues in Linear").
    - **This comment also releases the start-of-session claim** (`/kickoff` step 0), so post one **even when nothing shipped** — a DISCOVERY session, an abandoned attempt, a session that stopped on a blocker. Say so plainly and set the status back to what is true (`Todo` if the work is genuinely un-started). A claim left standing with no outcome and no PR is precisely the stale `In Progress` the next session has to adjudicate, and the one residual the claim rule knowingly accepts — don't be the session that creates it.
+   - **File every finding through the sort** (`.claude/commands/dispatch.md` § The sort, D1 to D3 ruled 2026-10-11, CUL-1858), in an interactive session as in a dispatched one, whether a reviewer raised it or your own build did. Tag it `Direction: QUIET | LOUD | neither` (no tag counts as QUIET); file the class, not the instance; then the door: **harm** (QUIET, untagged and not plainly LOUD-only or polish, or able to expose, lose or corrupt data) → `Live harm`, `Todo`, fixed now, with a stopgap first if the fix needs a ruling (the louder behaviour forced on, or the leak shut; never a warning removed with nothing as loud in its place); in code you believe dark it is **still** `Live harm`, plus `blocks` to every go-live it sits behind and `Gate: clinical` or `Gate: privacy`, because only a dispatcher's production read proves dark and removes the label; **tagged `neither` and blocking a row on the page's `Done means (rows):`** → `Todo` and a `blocks` relation to that row's issue; **anything else** → `Backlog` in the project's *Found along the way* milestone, `relatedTo` its source, `**Blocks:** —`, never a sub-issue, never a `blocks` relation. Outside a project with a run order, door 3 does not exist and the parked door is `Backlog` with no project and an `Area: *` label. **`Waiting on PM` goes on a finding only when it is `Live harm` and touches safety or privacy (or sits unclaimed 24 hours, dispatch step 1), or when it is pulled into a run order** (a ruling travels with its work, D2); the label count stays honest that way.
    - **File every PM action as an issue, not as prose.** Anything only the PM can finish — a dashboard toggle, a deploy, an on-device check, a ruling — gets a Linear issue (team Culprit, `Todo`, the **`Waiting on PM`** label, the single remaining step as its first line), or a comment on the issue it already belongs to. The Session Summary then lists `CUL-NNN — <action>` links rather than a second checklist. **Before filing, apply CLAUDE.md § Backlog Protocol's PM queue rules:** a team call (ruling 1) is logged on its issue, not filed; findings from one review round share one issue; a device check waits for the TestFlight cut's sitting; and over the cap of 30 (`list_issues` `label: "Waiting on PM"`) a low-risk call carrying your recommendation is applied and logged instead (never one on the never-list). This is the rule that keeps the PM's queue in one sweepable view; before it existed, 102 unchecked bullets accumulated in `STATUS.md` and roughly half were already done.
-   - **File genuinely new scope as a new Linear issue** (`save_issue`, team Culprit, `Todo`) — never as a backlog row, never silently folded into an unrelated issue.
+   - **File genuinely new scope as a new Linear issue** (`save_issue`, team Culprit; a finding by the sort above, scope the PM asked for `Todo`) — never as a backlog row, never silently folded into an unrelated issue.
 
    There is **no** duplicate-ID check and **no** renumbering ritual: `CUL-NNN` IDs are assigned server-side and cannot collide, which is the entire reason that machinery is gone. (The reconciliation that used to be a `docs/backlog.md` grooming pass is now just "keep the touched issues honest"; the `backlog-groomer` skill is the on-demand Linear-hygiene version — reconcile issue status vs. shipped PRs, surface phase-blockers, flag stale `In Progress`.)
 
-5. **Emit the full Session Summary** in the exact format from CLAUDE.md (§ "Session End — Automatic Summary"): Build Phase, What Was Built, Decisions Made, Persona Flags Raised, Open Questions Surfaced, Known Issues / Tech Debt, PM Action Items, Recommended Next Steps, Next Session Kickoff, Documentation Updates. Name the persona lenses from `docs/personas.md` that applied.
+5. **Emit the full Session Summary** in the exact format in § Formats below: Build Phase, What Was Built, Decisions Made, Persona Flags Raised, Open Questions Surfaced, Known Issues / Tech Debt, PM Action Items, Recommended Next Steps, Next Session Kickoff, Documentation Updates. Name the persona lenses from `docs/personas.md` that applied.
 
 6. **Emit the Dev Handoff** if anything was pushed this session — pull the exact runtime commands from `docs/dev-handoff-runbook.md` (default to Runtime B; the installed build and the traps are that file's § Current build state) and include the numbered **Manual QA Script** tied to acceptance criteria.
 
@@ -68,13 +69,26 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
    **Surface efficiencies, not just a linear next step.** When two or more tracks are independent — *disjoint files, no logical dependency either direction* — say so explicitly and note they can run **concurrently as separate sessions/branches** (name any shared-file collision to expect — `STATUS.md` is no longer one of them for most sessions, since a wrap normally doesn't touch it). Flag any single decision that unblocks multiple tracks, any batchable work, and which items are **ready-to-run vs. gated on a PM/expert call**. The recommended prompt is still the best *single* next step; the alternates + a short "Parallel / efficiencies" note exist so the PM can fan work out instead of running a needlessly serial plan. Don't present a linear plan when the work can fan out.
 
-## Dispatched sessions (`/wrap --dispatched`, CUL-1505, CUL-1546)
+## Dispatched sessions (`/wrap --dispatched`, CUL-1505, CUL-1546, CUL-1873)
 
-A session `/dispatch` launched has no human reading its chat: the PM reads the dispatcher's round digest, and the dispatcher decides what runs next. So `--dispatched` keeps every step that writes the record and drops every step written for a reader. **The order differs from a normal wrap**, because the record must ride in the PR and the return must report the merge:
+A session `/dispatch` launched has no human reading its chat: the PM reads the dispatcher's round digest, and the dispatcher decides what runs next. So `--dispatched` keeps every step that writes the record and drops every step written for a reader. **One change gets one write-up (D7, retro 4, ruled A 2026-10-11, CUL-1858): the PR body is the record.** The outcome comment points at it, and a session record is written only when the session teaches or discovers. **The order differs from a normal wrap**, because the record must ride in the PR and the return must report the merge:
 
-1. **Before the merge:** steps 1–4 unchanged. That means the DoD with its adversarial line, the session record in `docs/sessions/` (committed to the PR, `shipped via #<n>`), the issue status, the outcome comment that releases the claim, and PM actions filed on the label.
-2. **Then the merge, or the stop**, under the prompt's merge conditions.
-3. **Then the post-merge read-back** from step 4: every issue the PR named, reopened if it closed early.
+1. **Before the merge:**
+   - **Step 1** unchanged.
+   - **Step 2, the DoD, goes in the PR body** under a `## Definition of Done` heading, as exactly five lines:
+     ```
+     Acceptance criteria: <each criterion from the issue, pass / fail>
+     CI: <green on <short sha> | what is red or still running>
+     Adversarial: <the verdict and the counterexample tried, at <short sha> | N/A — <why no load-bearing logic changed>>
+     QA script: <below | N/A — <why nothing is testable on a device>>
+     PM actions filed: <CUL-NNN — the action, … | none>
+     ```
+     The types and tests lines are CI's (the required checks run them); the persona and future-self lines go in the body's prose only when they found something. The Manual QA Script follows under its own heading (step 6). The adversarial verdict names the commit it read: a later push that changes the logic it read needs the verdict again.
+   - **Step 3, the session record, only for a DISCOVERY row or a `Teach: yes` row.** It is written as step 3a says, committed to the PR, `shipped via #<n>`. Every other dispatched row writes none. `STATUS.md` (3b) and the branch check (3d) are unchanged.
+   - **Step 4** unchanged except three things. **Never set `In Review` by hand**: the Linear integration moves the issue when the PR opens. **The outcome comment is three lines**: `**Released** — branch \`<outcome branch>\`, <UTC>` (the marker `/dispatch` step 1 reads), the PR link (`#<n>` and its URL, or `no PR: <reason>`), and `Residual: <the one thing a reviewer should know>` or `Residual: none`; the story is the PR body's. Findings and PM actions are filed exactly as step 4 says.
+   - **Do not name the mode** (CLAUDE.md's ritual step 2): the prompt set it.
+2. **Then the merge, or the stop**, under the prompt's merge conditions. Run the steward skill §7's sequence through its step 4 and **skip its step 5 (the post-merge report of PRs now conflicting)**: the dispatcher re-reads every open PR on each merge (`dispatch.md` step 9) and each conflicting PR's own subscription wakes it.
+3. **Then the post-merge read-back** from step 4: every issue the PR named, reopened if it closed early. This one stays the child's.
 4. **Last, the Dispatch return**, printed and sent to the dispatcher as the body of the terminal message the prompt describes, always the session's last act (its first line is the wake line, `merged #<n>` or `done: <reason>`):
 
    ```
@@ -90,8 +104,8 @@ A session `/dispatch` launched has no human reading its chat: the PM reads the d
 What changes in the other steps:
 
 - **Step 5 (Session Summary):** replaced by the return.
-- **Step 6 (Dev Handoff):** nothing in chat. The Manual QA Script goes in the PR body, where the TestFlight cut's device sitting finds it. There are no runtime commands.
-- **Step 7 (One thing):** written only when the prompt says `Teach: yes`. The ledger line goes in the record as usual (`**One thing:** <ID> L<n> — <title> · check: pending`). The block itself goes in the record under a `## Teach` heading, and again under `## Teach` at the end of the return, so the dispatcher can quote it. No line of the block may start with `**One thing`, because the ledger is read by grepping that prefix. Without `Teach: yes`, the ledger line reads `**One thing:** none — dispatched session, not this round's teach row`.
+- **Step 6 (Dev Handoff):** nothing in chat. The Manual QA Script goes in the PR body under the DoD, where the TestFlight cut's device sitting finds it. There are no runtime commands.
+- **Step 7 (One thing):** written only when the prompt says `Teach: yes`. The ledger line goes in the record as usual (`**One thing:** <ID> L<n> — <title> · check: pending`). The block itself goes in the record under a `## Teach` heading, and again under `## Teach` at the end of the return, so the dispatcher can quote it. No line of the block may start with `**One thing`, because the ledger is read by grepping that prefix. A DISCOVERY row without `Teach: yes` writes the ledger line `**One thing:** none — dispatched session, not this round's teach row`; a BUILD row without it writes no record, so no line.
 - **Step 8 (Next Session Kickoff):** none. The real next steps go to Linear as issues or comments, where the dispatcher reads them.
 
 ## Rules
@@ -104,3 +118,76 @@ What changes in the other steps:
 - Keep `STATUS.md` a pointer card; the long story belongs in the Session Summary, the `docs/sessions/` record, and the touched issues' Linear comments.
 
 $ARGUMENTS
+
+## Formats (moved from `CLAUDE.md` § Session Protocol, 2026-10-12, CUL-1874)
+
+### Next Session Kickoff format
+
+When a PR is opened or pushed that completes a chunk of work (a milestone ✓, an issue ✓, or a self-contained feature), emit a **Next Session Kickoff** block alongside the Dev Handoff. The PM uses these prompts to start the next session cleanly without re-explaining context.
+
+Format:
+
+```
+### Next Session Kickoff
+**Recommended first prompt:**
+> <copy-pasteable prompt, 1–3 sentences, names the issue (`CUL-NNN`) and concrete first task>
+
+**Alternate prompts (if priorities shift):**
+- <prompt for a parallel-track item>
+- <prompt for an open question that's now ready to decide>
+
+**Parallel / efficiencies (when the work can fan out):**
+- <tracks that are independent — disjoint files, no logical dependency — and can run concurrently as separate sessions/branches; name any shared-file collision to expect (STATUS.md is no longer one for most sessions — a wrap normally doesn't touch it)>
+- <a single decision that unblocks several tracks; batchable work; which items are ready-to-run vs. gated on a PM/expert call>
+```
+
+Rules:
+- The recommended prompt always points at the next issue in the live Linear project — its next milestone, or the project description's PR-by-PR run order — unless a blocking open question makes that impossible, in which case the prompt is "resolve open question X."
+- Each prompt is self-contained: it names the file, step number, or doc the next session should read first.
+- If a PM Action Item from this session is a prerequisite (e.g. "deploy function X first"), say so explicitly in the prompt.
+
+### Session Summary format
+
+Produce this summary automatically at the end of every session without being asked. If the session ends abruptly, produce a partial summary covering what was completed.
+
+**Shortcut:** run `/wrap` to produce the whole close-out deterministically — it runs the DoD, writes the `docs/sessions/` record, reconciles the touched Linear issues (and updates CLAUDE.md if a decision changed the manual, or `STATUS.md` if a track boundary moved), emits this summary and the Dev Handoff, and always finishes with a paste-ready Next Session Kickoff prompt. Use it every session so the wrap-up is identical each time.
+
+```
+## Session Summary — [Date]
+
+### Build Phase
+[Which step you were on. Whether it is now complete or still in progress.]
+
+### What Was Built
+[Concise list of completed work with file paths where relevant]
+
+### Decisions Made
+[Any architectural, design, or product decisions made this session]
+
+### Persona Flags Raised
+[Any conflicts or concerns surfaced by the team during the session, and how they were resolved or escalated]
+
+### Open Questions Surfaced
+[New questions that emerged and need PM input — add these to `docs/open-questions.md`]
+
+### Known Issues / Tech Debt
+[Anything intentionally deferred or left rough, with a note on why]
+
+### PM Action Items
+[Consolidated list of every action only the PM can take, deduplicated across the session. Examples: apply migration X; deploy Edge Function Y; provision secret Z; rule on open question W; run an on-device check.
+
+**Each one gets a Linear home before the wrap ends** — either a new issue (team Culprit, `Todo`, the **`Waiting on PM`** label, the single remaining step named in the first line) or a comment on the issue it belongs to. Then list them here as `CUL-NNN — <action>`, so the summary is a set of links rather than a second, drifting checklist. If there are none, write "None."]
+
+### Recommended Next Steps
+[Ordered list of what to tackle next session, with rationale for the ordering. **Explicitly surface parallelism + efficiencies** — which items are independent and can run concurrently (disjoint files / no logical dependency), which are gated on a PM/expert decision vs. ready-to-run, and any single decision that unblocks several tracks. Don't present a linear plan when the work can fan out.]
+
+### Next Session Kickoff
+[Copy-pasteable prompts the PM can paste into a new session — see Next Session Kickoff format above. Always include the recommended first prompt; include alternates if multiple tracks are live.]
+
+### Documentation Updates
+CLAUDE.md — [Changes made this session. Already applied inline.]
+
+/docs/ files — [Proposed edits with specific section and proposed change described. Needs PM confirmation before writing.]
+
+Project Brief (Claude.ai) — [Flag if the brief in project instructions needs updating. Remind PM this requires manual update via the protocol in the brief — it cannot be edited by Claude Code.]
+```

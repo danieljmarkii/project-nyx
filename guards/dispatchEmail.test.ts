@@ -2,7 +2,7 @@
 //
 // WHY. The never-line forbids every session from sending anything. The PM carved out one
 // exception on 2026-10-06 (CUL-1624's ruling comment): the dispatcher session may email the
-// PM's own address the five-line progress update, through the Gmail connector, to self. A
+// PM's own address the six-line progress update, through the Gmail connector, to self. A
 // prose rule fires approximately never (retro L2), and this one is a send: so the scope is
 // pinned here, not trusted to a paragraph.
 //
@@ -65,7 +65,7 @@ describe('the dispatcher\'s email exception (CUL-1624)', () => {
       "read from the dispatcher's session context",
       'never a literal in the repo',
       'never any other recipient',
-      '**The five-line progress update only**',
+      '**The six-line progress update only**',
       'no PR bodies',
       'no session transcripts',
       'no health data',

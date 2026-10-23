@@ -315,7 +315,7 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
 
 * **Today:** one merged "meals not finished" count (`lib/historyDays.ts:187`, :350), printed on History's All-types
   day header and, since #1034, on the Meal filter row. The Patterns month keeps refused and left-some apart
-  (`components/designV2/patterns/MonthInstrument.tsx:543-544`) but counts Picked as left-some
+  (`components/surfaces/patterns/MonthInstrument.tsx:543-544`) but counts Picked as left-some
   (`lib/monthReads.ts:302-303`), while the engine counts Picked as refusal (`lib/intakeEvidence.ts:36-50`).
 * **Recommendation (A):** "N refused or picked at · N left some" in the header's grey, on the All-types header **and**
   the Meal filter row, from one predicate built on `intakeEvidence`'s classes; the month moves to the same classes,

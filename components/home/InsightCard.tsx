@@ -76,20 +76,14 @@ import {
 } from '../../lib/signalCopy';
 import type { PhoneScriptMasking } from '../../lib/screenMasking';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
-import type { CachedFinding, InsightType, PriorityClass, SignalFinding } from '../../lib/signal';
+import { signalRailStyle } from '../surfaces/signal/railTint';
+import type { CachedFinding, InsightType, SignalFinding } from '../../lib/signal';
 
 // Enable the height animation on Android (off by default there).
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Priority rail colour (the designed "this one matters more" cue, read before a
-// word is). Safety leads in warm terracotta — clear, not alarm-red (Principle 4 /
-// Dr. Chen); everything benign rides the single product accent.
-const RAIL_COLOR: Record<PriorityClass, string> = {
-  safety: theme.colorEventSymptom,
-  insight: theme.colorAccent,
-};
 
 // ── The fold's touch geometry (CUL-784, fold spec §3.3, C-5) ─────────────────
 //
@@ -570,7 +564,7 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
 
 /** The safety/insight rail's width — exported so the stand-down line (which has NO rail) can
  *  sit in the same text column as the cards above and below it. */
-export const RAIL_WIDTH = 3;
+export const RAIL_WIDTH = theme.railWidth;
 
 interface Props {
   cached: CachedFinding;
@@ -662,7 +656,9 @@ export function InsightCard({
   const isStory = isTimingStory(cached.finding);
   const isTrial = isTrialResponse(cached.finding);
 
-  const rail = RAIL_COLOR[cached.finding.priorityClass];
+  // The priority rail (the "this one matters more" cue, read before a word is) is the
+  // Signal doors' one map, colour and opacity (railTint.ts, CUL-1666 / CUL-2163).
+  const rail = signalRailStyle(cached.finding.priorityClass);
 
   // The card is one accessible button (the whole row), so its label must carry the
   // card-face glance evidence too — a self-label on the receipt Views (or the med line)
@@ -752,7 +748,7 @@ export function InsightCard({
       testID="insight-rail"
       style={[
         styles.rail,
-        { backgroundColor: rail },
+        rail,
         railOut
           ? [
               styles.railOut,
@@ -766,9 +762,9 @@ export function InsightCard({
       ]}
     />
   ) : folded ? (
-    <View style={[styles.rail, { backgroundColor: rail }, styles.railStrip]} />
+    <View style={[styles.rail, rail, styles.railStrip]} />
   ) : (
-    <View style={[styles.rail, { backgroundColor: rail }]} />
+    <View style={[styles.rail, rail]} />
   );
   const rowStyle = folded
     ? motion.inFlight
@@ -984,6 +980,8 @@ export function FoldedStrip({
       {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
           (the B-745 GlyphSvg migration owns them), so they keep the system face rather
           than taking the body family a sweep would give them. CUL-364 §7. */}
+      {/* door-mark-ok: InsightCard is not mounted on Home since CUL-1270 (the zone draws
+          SignalRow); its folded strip retires with it rather than taking the shared mark. */}
       <Text style={styles.stripChevron}>›</Text>
     </Pressable>
   );
@@ -1004,7 +1002,6 @@ const styles = StyleSheet.create({
   rail: {
     width: RAIL_WIDTH,
     borderRadius: 2,
-    opacity: 0.85,
   },
   // ── The fold motion's anatomy (CUL-788, §12) ──────────────────────────────────
   // The folded row carries no padding of its own: the strip inside it does (`strip`), so

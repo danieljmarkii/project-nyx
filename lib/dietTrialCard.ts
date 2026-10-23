@@ -103,6 +103,10 @@ import {
   type TrialDietRefusal,
   type TrialFacts,
   type TrialIntakeRating,
+  type TrialRefusalHistory,
+  type TrialRefusalPopulation,
+  type TrialRefusalRun,
+  type TrialSpecies,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { type TrialProteinSource } from './trialProtein';
@@ -341,6 +345,15 @@ export interface TrialCardInput {
   exposures?: TrialExposureFacts | null;
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
+  /**
+   * CUL-1972 — the intake-decline read THREW: the device's eating check did not answer.
+   * Distinct from a null headline (the check ran and saw no decline): only the second
+   * may read as calm. Not a not-eating fact, so `isAnimalNotEating` stays false on it
+   * (the emergency door must never fire on a read failure, T-20); it is its own
+   * withholding reason, and `notEatingFact` answers null for it. Optional: absent means
+   * the check answered, as every hand-built input in the card's tests assumes.
+   */
+  intakeDeclineUnknown?: boolean;
   /**
    * EVERY live intake-decline flag the device holds, in the detector's order, each
    * with its own sentence — where `intakeDeclineHeadline` is the first one's sentence
@@ -856,7 +869,8 @@ export type TrialCardWithholding =
   | 'allowed_set_unavailable'
   | 'antigen_arm_dark'
   | 'untracked_head'
-  | 'below_floor';
+  | 'below_floor'
+  | 'intake_unknown';
 
 export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[] {
   const reasons: TrialCardWithholding[] = [];
@@ -902,6 +916,10 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   // out-of-contract values to a field only ever generated in contract.
   if ((input.untrackedDaysBeforeFirstLog ?? 0) !== 0) reasons.push('untracked_head');
   if (input.belowCoverageFloor) reasons.push('below_floor');
+  // CUL-1972 — the eating check did not answer. A reason the strip cannot state its ratio
+  // plainly beside (it has nowhere to say the check is missing), and NOT a not-eating
+  // reason: it is ignorance, which withholds a reassurance but never raises an alarm.
+  if (input.intakeDeclineUnknown && !input.intakeDeclineHeadline) reasons.push('intake_unknown');
   return reasons;
 }
 
@@ -940,6 +958,18 @@ const NOT_EATING_WITHHOLDING: readonly TrialCardWithholding[] = [
  */
 export function isAnimalNotEating(input: TrialCardInput): boolean {
   return withholdingReasons(input).some((r) => NOT_EATING_WITHHOLDING.includes(r));
+}
+
+/**
+ * The not-eating register in THREE states (CUL-1972, C-12): true on a not-eating fact,
+ * null when the eating check did not answer and nothing else says the animal is not
+ * eating, false only when the check answered and found nothing. For a caller whose
+ * reassurance must fail closed on ignorance (a withheld quiet run) while its alarm reads
+ * `=== true` (the emergency door). A positive fact is never downgraded to unknown.
+ */
+export function notEatingFact(input: TrialCardInput): boolean | null {
+  if (isAnimalNotEating(input)) return true;
+  return input.intakeDeclineUnknown ? null : false;
 }
 
 /**
@@ -988,13 +1018,12 @@ export function isAnimalNotEating(input: TrialCardInput): boolean {
  * present-tense register), so one midnight-straddling bout would otherwise fire
  * "needs a call today" for the next 36 days over a cat that ate throughout.
  *
- * ⚠️ STILL OPEN, STILL DR. CHEN’S — B-572. That span guard is only a >=12h test,
- * which any two-calendar-day cluster clears: three refusals in week one followed
- * by 41 unrated days still speaks in the present tense on 41-day-old evidence.
- * Making the range fact EXPIRE needs a recency threshold, and a threshold is a
- * clinical number rather than an engineering one — as is the now-fact’s own floor
- * firing on a day-2 some/all/some dog. Both are OVER-fire, the survivable
- * direction, which is why they are filed rather than guessed at here.
+ * ── RULED: OLD EVIDENCE IS DATED, NOT EXPIRED (CUL-54, R2, 2026-10-01) ──────
+ * That span guard is only a >=12h test, so three refusals in week one followed by
+ * 41 unrated days spoke present tense on 41-day-old evidence. The ruling keeps the
+ * card (expiry would let silence cancel the alarm) and changes its TENSE:
+ * `refusalIsPastTense` below. Whether the now-fact needs a minimum trial day (the
+ * day-2 some/all/some dog) was ruled "no floor" (R3) and sits on the real-vet list.
  */
 export function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
   if (input.trialDietRefusal) return input.trialDietRefusal;
@@ -1002,6 +1031,144 @@ export function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
     return input.rangeRefusal;
   }
   return null;
+}
+
+/**
+ * CUL-54 (R2) — DOES THE LIVE REGISTER SPEAK FROM A MEMORY RATHER THAN FROM NOW?
+ *
+ * True only when the RANGE fact holds the card (the now-fact is null) and no
+ * unfinished rated feeding of its population lies inside the last
+ * `REFUSAL_WINDOW_DAYS`. Keyed on "no unfinished feeding in the window", not on
+ * "the now-fact is null": the ruling's adversarial pass executed a cat refusing
+ * twice today under a range-fact hold (the now-fact needs two recent days), and
+ * the null-now-fact key rendered "nothing rated since" over her. A missing
+ * `history` reads as recent, the louder present tense.
+ */
+export function refusalIsPastTense(input: TrialCardInput, refusal: TrialDietRefusal): boolean {
+  if (input.trialDietRefusal) return false;
+  return (
+    refusal.history?.unfinishedInRecentWindow === false &&
+    refusal.history.unfinishedSinceElsewhere === false
+  );
+}
+
+/**
+ * R2's headline. DAYS AND SPAN NAMED APART ("on 2 days between Mar 3 and Mar 4"),
+ * because the range counts distinct days, and "between Mar 1 and Mar 25" alone
+ * turns three days into a 25-day span. "Nothing rated since" is said only when it
+ * is true; otherwise the line says what was rated since, all of it finished by
+ * definition of the last unfinished feeding. The noun follows the population (B-530).
+ */
+export function pastRefusalHeadline(
+  refusal: TrialDietRefusal,
+  history: TrialRefusalHistory,
+  today: string,
+): string {
+  const wide = refusal.population === 'meal_record';
+  const from = formatTrialDate(history.firstUnfinishedDayIndex, today);
+  const to = formatTrialDate(history.lastUnfinishedDayIndex, today);
+  // THE DATES BELONG TO THE UNFINISHED FEEDINGS, NOT THE DENOMINATOR. The first cut
+  // opened "On 2 days between Jul 2 and Jul 3, 4 of the 6 …", and two of the six were
+  // rated on Jul 1, outside the dates the sentence put them in (C-37,
+  // `adversarial-reviewer`). The whole-range count leads; the dates follow the
+  // numerator they describe.
+  const when =
+    history.firstUnfinishedDayIndex === history.lastUnfinishedDayIndex
+      ? `on ${from}`
+      : `on ${refusal.days} days between ${from} and ${to}`;
+  const qualified = wide ? 'meals' : 'trial-diet feedings';
+  const verb = refusal.refusedFeedings === 1 ? 'was' : 'were';
+  const head =
+    `Of the ${refusal.ratedFeedings} ${qualified} you rated, ${refusal.refusedFeedings} ` +
+    `${verb} left unfinished, ${when}.`;
+  const n = history.ratedSinceLastUnfinished;
+  // The unit names the population, never a bare "feeding" an owner reads as all of
+  // them (the second pass). Everything rated since was finished here: an unfinished
+  // one keeps the present tense (`unfinishedSinceElsewhere`).
+  const unit = wide ? 'meal' : 'trial-diet feeding';
+  if (n > 0) {
+    return n === 1
+      ? `${head} Since then, 1 rated ${unit} was finished.`
+      : `${head} Since then, ${n} rated ${unit}s were finished.`;
+  }
+  // "Nothing rated since" only when it is true of every feeding, treats included.
+  // A finished topper or treat rated since is something rated; it says nothing about
+  // the population this card speaks for.
+  if ((history.ratedMealsSinceLastUnfinished ?? 0) > 0) {
+    return wide
+      ? `${head} No meal rated since shows whether that has changed.`
+      : `${head} No trial-diet feeding rated since shows whether that has changed.`;
+  }
+  return `${head} Nothing rated since shows whether that has changed.`;
+}
+
+/**
+ * R2's note. Conditional ("if Mochi still isn't eating it"), because the record
+ * cannot say she still isn't, and the feline call keeps its "today" because the
+ * condition, if true, is the 48h clock. It names what would answer the question
+ * ("the next few meals": standing down and re-firing both need three ratings) and
+ * keeps the closing the present note carries, because the card still withholds the
+ * clean reading over this record.
+ */
+export function pastRefusalNote(
+  petName: string,
+  species: TrialSpecies,
+  population: TrialRefusalPopulation,
+): string {
+  const call =
+    species === 'cat'
+      ? 'a cat that isn’t eating needs a call today, whatever the trial is doing'
+      : 'it’s worth a call to your vet';
+  const tail = ' Rating the next few meals tells Culprit. Culprit isn’t reading this trial as a clean run.';
+  if (population === 'meal_record') {
+    return (
+      'Culprit can’t match these meals to the foods on this trial’s list, so it can’t name ' +
+      `which one went untouched. If ${petName} still isn’t eating, ${call}.` + tail
+    );
+  }
+  return `If ${petName} still isn’t eating it, ${call}.` + tail;
+}
+
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** "6 PM", "6:30 AM", on the device clock (the card's own "today" is the device day). */
+function clockTime(iso: string): string {
+  const d = new Date(iso);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const suffix = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${h12} ${suffix}` : `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+/** Where the run began: "6 AM today", "Tuesday 6 PM" inside six days, a date beyond. */
+function runStartPhrase(run: TrialRefusalRun, nowMs: number): string {
+  const today = toLocalDayKey(new Date(nowMs));
+  const todayIndex = localDayIndexOf(today);
+  const daysAgo = todayIndex === null ? Number.POSITIVE_INFINITY : todayIndex - run.startDayIndex;
+  if (daysAgo === 0) return `${clockTime(run.startedAt)} today`;
+  if (daysAgo >= 1 && daysAgo <= 6) {
+    const weekday = WEEKDAY_NAMES[new Date(`${dayKeyFromIndex(run.startDayIndex)}T00:00:00Z`).getUTCDay()];
+    return `${weekday} ${clockTime(run.startedAt)}`;
+  }
+  return formatTrialDate(run.startDayIndex, today);
+}
+
+/**
+ * CUL-57 (R4) — the lead over the worst records. Reports the RECORD ("refused or
+ * only picked at"), never "won't eat" (volitional) and never "picky"; a count and a
+ * start, never a duration (see `TrialRefusalRun`). The noun follows the population:
+ * under the narrow one, toppers the cat finished are not in the run, so "meals"
+ * would be false (the ruling's adversarial pass).
+ */
+export function refusalRunLine(refusal: TrialDietRefusal, nowMs: number): string | null {
+  const run = refusal.run;
+  if (!run) return null;
+  const noun = refusal.population === 'meal_record' ? 'meals' : 'trial-diet feedings';
+  return (
+    `The last ${run.feedings} ${noun} you rated, back to ${runStartPhrase(run, nowMs)}, ` +
+    'were refused or only picked at.'
+  );
 }
 
 /**
@@ -1703,7 +1870,8 @@ function recordRegion(
   // a total" suffix, and whether the record QUALIFIER does. Keying any of them
   // on a proxy for the others is what put two opposite arrows on one card,
   // twice — "at least 5" welded to "maybe fewer" (rounds 4 and 9).
-  const caveat = policy.unmatched && unmatchedCaveatApplies(input);
+  const caveat =
+    policy.unmatched && (unmatchedCaveatApplies(input) || refusalSpeaksFromMealRecord(register, input));
 
   const lines: TrialCardLine[] = [];
   pushRegisterBody(lines, register, input, rc, caveat);
@@ -1750,6 +1918,23 @@ function pushRegisterBody(
     case 'trial_refusal': {
       const refusal = liveRefusal(input);
       if (!refusal) return;
+      const species = input.species ?? 'other';
+      // CUL-54 (R2): the stale range fact speaks in the dated past tense.
+      if (refusalIsPastTense(input, refusal) && refusal.history) {
+        const today = toLocalDayKey(new Date(input.nowMs));
+        lines.push({ role: 'flag', text: pastRefusalHeadline(refusal, refusal.history, today) });
+        lines.push({ role: 'flag', text: pastRefusalNote(input.petName, species, refusal.population) });
+        return;
+      }
+      // CUL-57 (R4): the worse case leads, above the share sentence it leaves alone.
+      // Not on a terminal card: its facts stop at `ended_at`, so "the last N you
+      // rated" would be false over feedings rated after the end (executed by
+      // `adversarial-reviewer`: an abandoned trial, then three bowls rated All).
+      // An `ended_at` on a row still marked active (a sync artefact) stops the facts
+      // the same way, so it suppresses the line too (the second pass).
+      const ended = isTerminalTrial(input) || Boolean(input.trial?.endedAt);
+      const runLine = ended ? null : refusalRunLine(refusal, input.nowMs);
+      if (runLine) lines.push({ role: 'flag', text: runLine });
       lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
       lines.push({
         role: 'flag',
@@ -1758,7 +1943,7 @@ function pushRegisterBody(
         // the note must not name a diet the app could not identify — the headline
         // above already widened its noun for the same reason. Passing the field
         // rather than re-deriving it is what keeps the two sentences agreeing.
-        text: trialViabilityNote(input.petName, input.species ?? 'other', refusal.population),
+        text: trialViabilityNote(input.petName, species, refusal.population),
       });
       return;
     }
@@ -2445,9 +2630,24 @@ function unmatchedCaveatApplies(input: TrialCardInput): boolean {
   return true;
 }
 
+/** CUL-60(b), R1 — the POLICY half's second case. When the refusal register speaks
+ *  from the meal record (nothing has matched the trial food), the off-diet count on
+ *  the same card is counting the prescribed bowls too, below the ten-feeding floor
+ *  that would otherwise raise the caveat. One card, two answers, unless the count
+ *  carries the same can't-match caveat the note does. Caveated, not hidden: hiding
+ *  would be quieter. */
+function refusalSpeaksFromMealRecord(register: TrialCardRegister, input: TrialCardInput): boolean {
+  if (register !== 'trial_refusal') return false;
+  // The caveat qualifies a COUNT; with no off-diet count on the card, "these" would
+  // point at nothing.
+  if ((input.exposures?.offDiet ?? 0) <= 0) return false;
+  return liveRefusal(input)?.population === 'meal_record';
+}
+
+/** Renders only when `recordRegion`'s single caveat answer said so. */
 function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
   const ex = input.exposures;
-  if (!unmatchedCaveatApplies(input) || !ex) return;
+  if (!ex) return;
   lines.push({
     role: 'qualifier',
     // TWO-SIDED, and that is the correction. The first draft named only the
@@ -2976,7 +3176,7 @@ export interface TrialStripModel {
   trialResponseLine: string | null;
   /**
    * CUL-1526 (G2 B + G3 B, the CUL-1519 mock round 2 §04) — Design v2's ONE line, drawn by
-   * `components/designV2/home/TrialCard`: the end date
+   * `components/surfaces/home/TrialCard`: the end date
    * ALWAYS leads ("Ends Oct 17" | "Window ended Oct 17"), then the off-diet floor when there is
    * one ("· 3 off-diet feedings logged"). Nothing else: the food label, the coverage ratio and
    * the vomiting pair live on `/trial`. An end date has no direction, so it cannot reassure;
@@ -3032,6 +3232,21 @@ export function trialResponseLineCompares(counts: TrialResponseCounts): boolean 
     counts.baselineLoggedDays >= floor &&
     (counts.densityComparable || !reduction)
   );
+}
+
+/**
+ * Whether the standing vomit line could read as improvement: it takes its comparing form
+ * (`trialResponseLineCompares`, the line's own rule) AND the trial count is below the
+ * baseline's. Switches on the COUNT, the reader's question (C-35).
+ *
+ * The eating-unknown withhold (CUL-1972 / CUL-1975) asks this, not "is there a line":
+ * with the check merely unanswered nothing louder leads the surface, so a RISE (or the
+ * trial-so-far count) must keep showing — a rise always shows. Only the fall, the half
+ * that can soften a not-eating cat, is withheld.
+ */
+export function vomitLineMayReassure(counts: TrialResponseCounts | null | undefined): boolean {
+  if (!counts) return false;
+  return trialResponseLineCompares(counts) && counts.trialCount < counts.baselineCount;
 }
 
 export function trialResponseStandingLine(counts: TrialResponseCounts): string | null {
@@ -3195,8 +3410,12 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
     // byte-identical off the flag. Withheld on a not-eating record (above) so it never reassures over a
     // refusing/anorexic cat; its own render rule (comparison vs trial-so-far vs nothing) lives in
     // `trialResponseStandingLine`.
+    // CUL-1972 — and its FALLING form on an eating check that did not answer: ignorance
+    // is not eating, but nothing louder leads, so a rise keeps its line.
     trialResponseLine:
-      input.trialResponse && !animalNotEating
+      input.trialResponse &&
+      !animalNotEating &&
+      !(input.intakeDeclineUnknown && vomitLineMayReassure(input.trialResponse))
         ? trialResponseStandingLine(input.trialResponse)
         : null,
   };

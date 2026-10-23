@@ -26,6 +26,10 @@
 //     the phone around to a vet. Rather than rank the rows clinically — a second symptom
 //     predicate, which the house forbids — the acute case simply does not fold. That is
 //     the Signal fold's own DF-2 shape: standing findings fold, acute ones never.
+//     "Escalating" is the caller's fact, not only the stored verdict: an owner edit writes
+//     the fields and leaves the verdict alone, so a quiet read can carry an owner-set red
+//     flag, and the sections pass that too (`vomitRedFlagPresent` / `stoolRedFlagPresent`,
+//     CUL-2142).
 //  2. THE RECORD RE-OPENS A FOLD. The first cut argued no re-open rule was needed because
 //     "the only thing that moves these facts is the owner editing them, and an owner
 //     editing is already looking at the open grid." That is false, and the counterexample
@@ -86,7 +90,8 @@ export function ObservationGrid({
   editLabel?: string;
   /** When given, the editor replaces the grid and the fold is not offered. */
   editor?: ReactNode;
-  /** The read is a `worth_a_call`. Its facts never fold — see rule 1 in the header. */
+  /** The read is a call, or a red-flag field reads present under any verdict. Its facts
+   *  never fold — see rule 1 in the header. */
   escalating?: boolean;
   folded: boolean;
   onToggleFold: (next: boolean) => void;

@@ -293,3 +293,20 @@ async function removeItem(key: string): Promise<void> {
 
 // Shape matches the Supabase `auth.storage` contract (SupportedStorage).
 export const ChunkedSecureStoreAdapter = { getItem, setItem, removeItem };
+
+/**
+ * Whether anything a reader could restore `key` from is still in the keychain: a live
+ * or retained pointer on any tier, or the legacy single-key copy. Unlike `getItem` it
+ * swallows nothing, so a keychain failing on reads THROWS here rather than reading as
+ * empty (CUL-1976). A purge's read-back uses it: `getItem` returns null both for an
+ * absent value and for a failed read, so it cannot tell a purged key from a keychain
+ * that refused to answer. Chunks are not checked: no reader follows a chunk without a
+ * pointer, and `clearTier` deletes the pointers last.
+ */
+export async function hasItem(key: string): Promise<boolean> {
+  for (const tier of readTiers()) {
+    if ((await SecureStore.getItemAsync(tier.pointerKey(key), tier.options)) != null) return true;
+    if ((await SecureStore.getItemAsync(tier.retainedKey(key), tier.options)) != null) return true;
+  }
+  return (await SecureStore.getItemAsync(key)) != null;
+}

@@ -46,7 +46,16 @@
 // (unit-tested in plan.test.ts); this file is the I/O shell.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildDeletionPlan, chunk, extractPassword, STORAGE_REMOVE_CHUNK, type OwnedStoragePaths } from './plan.ts'
+import {
+  buildDeletionPlan,
+  chunk,
+  extractPassword,
+  listPrefixRecursive,
+  STORAGE_BUCKETS,
+  STORAGE_REMOVE_CHUNK,
+  type OwnedStoragePaths,
+  type StorageLister,
+} from './plan.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -141,9 +150,9 @@ async function readAllOwnedPaths(
 }
 
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
-  // Three independent top-level reads, in parallel: the user's pets (their own photos
-  // PLUS the ownership scope for the child tables below), and the medication_items and
-  // food_items the user created.
+  // Four independent top-level reads, in parallel: the user's pets (their own photos
+  // PLUS the ownership scope for the child tables below), the medication_items and
+  // food_items the user created, and the user's `{uid}/` folder in the label bucket.
   //
   // Both catalogs are scoped by `created_by_user_id`, NOT `pet_id` — neither has a
   // `pet_id` (B-127 / B-354). Two consequences: (1) a user with ZERO pets can still have
@@ -153,7 +162,19 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   // cascades/nulls the rows that hold these paths, orphaning the photos with no row left
   // to find them by (food rows CASCADE-delete since migration 033; medication rows survive
   // via SET NULL, but their photo_paths would be gone from memory just the same).
-  const [petsRes, medItemsRes, foodItemsRes] = await Promise.all([
+  // CUL-1764: a label snap the owner backed out of has no medication_items row, so
+  // the account's `{uid}/` folder in the label bucket is listed as well. A list
+  // error rejects here and aborts the run (account intact, retryable) rather than
+  // reporting a clean deletion over a surviving prescription label.
+  const medicationLister: StorageLister = async (prefix, offset, limit) => {
+    const { data, error } = await adminClient.storage
+      .from(STORAGE_BUCKETS.medicationPhotos)
+      .list(prefix, { limit, offset, sortBy: { column: 'name', order: 'asc' } })
+    if (error) throw new Error(`Failed to list ${STORAGE_BUCKETS.medicationPhotos}: ${error.message}`)
+    // storage-api returns a folder with a null id; supabase-js types id as string.
+    return (data ?? []).map((e) => ({ name: e.name, id: (e.id as string | null) ?? null }))
+  }
+  const [petsRes, medItemsRes, foodItemsRes, listedMedicationPaths] = await Promise.all([
     adminClient.from('pets').select('id, photo_path').eq('user_id', userId),
     adminClient.from('medication_items').select('photo_paths').eq('created_by_user_id', userId),
     // food_items is now PER-ACCOUNT (migration 033) — `created_by_user_id` is the
@@ -163,6 +184,7 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     // path. Like meds, this is NOT pet-scoped, so it must sit ABOVE the no-pets early
     // return and run BEFORE the auth delete (the FK CASCADE will hard-delete these rows).
     adminClient.from('food_items').select('id, photo_paths').eq('created_by_user_id', userId),
+    listPrefixRecursive(medicationLister, userId),
   ])
   if (petsRes.error) throw new Error(`Failed to read pets: ${petsRes.error.message}`)
   // medication_items exists today (migration 020, applied to live DB) — unlike the
@@ -181,9 +203,13 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   // photo_paths is a TEXT[] per drug row — flatten every owned row's array into the
   // single flat list the pure plan consumes. It is NOT NULL DEFAULT '{}' at the DB
   // level, but guard against a null defensively; cleanPaths drops blanks/dupes.
-  const medicationPhotoPaths = (medItemsRes.data ?? []).flatMap(
-    (m) => (m.photo_paths as (string | null)[] | null) ?? [],
-  )
+  // The rows and the folder listing both feed the purge: a row may name a path the
+  // listing also found (cleanPaths dedupes), and the listing finds what no row names.
+  // Both still pass scopeMedicationPaths' `{uid}/` guard in plan.ts.
+  const medicationPhotoPaths = [
+    ...(medItemsRes.data ?? []).flatMap((m) => (m.photo_paths as (string | null)[] | null) ?? []),
+    ...listedMedicationPaths,
+  ]
   // Same flatten for food label photos, PLUS the owned-food-id set that scopeFoodPaths
   // keys on. Both come from the same owned rows so a path and its permitting id always
   // travel together — an owned row's photos are only ever purged under an id we vouch for.

@@ -72,6 +72,7 @@ import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../li
 import { localDayIndexOf } from '../../lib/utils';
 import { latestVisitBefore } from '../../lib/visitWindow';
 import type { StoreApi, UseBoundStore } from 'zustand';
+import { useAiConsentStore } from '../../store/aiConsentState';
 import { useAuthStore } from '../../store/authStore';
 import { useHistoryListStore } from '../../store/historyListStore';
 import { useHistoryScopeStore } from '../../store/historyScopeStore';
@@ -215,6 +216,7 @@ const store = () => useHistoryScopeStore.getState();
 beforeEach(() => {
   jest.clearAllMocks();
   useAuthStore.setState({ user: { id: 'u1' } } as never);
+  useAiConsentStore.getState().reset();
   // Through no pet and back, so the scope store's own subscription starts every test
   // from Nyx's defaults (the store is module state and outlives a render).
   act(() => usePetStore.setState({ activePet: null, pets: [] }));
@@ -318,6 +320,26 @@ describe('the type sheet (§3.8)', () => {
     expect(view.getByLabelText('Noticed').props.accessibilityState).toMatchObject({ selected: false });
     expect(view.getByText('Photos and notes')).toBeTruthy();
     expect(view.getByText('The daily look')).toBeTruthy();
+  });
+
+  it('with photo reading off (a recorded no), Photographed says so once, in place of the count (AC 23, CUL-1174)', async () => {
+    // The real consent store, as the owner's Don't allow leaves it.
+    act(() =>
+      useAiConsentStore
+        .getState()
+        .setRow('u1', { granted: false, copyVersion: 'v', source: 'settings', decidedAt: '2026-10-12T00:00:00Z' }),
+    );
+    const view = await renderAnswered();
+    fireEvent.press(view.getByLabelText('Filter: All types'));
+    expect(view.getByLabelText('Photographed, photo reading is off, 2 logged')).toBeTruthy();
+    expect(view.queryByText('1 not read')).toBeNull();
+    // A yes puts the count back: the store kept the true count under the no.
+    act(() =>
+      useAiConsentStore
+        .getState()
+        .setRow('u1', { granted: true, copyVersion: 'v', source: 'settings', decidedAt: '2026-10-12T00:00:00Z' }),
+    );
+    expect(view.getByLabelText('Photographed, 1 not read, 2 logged')).toBeTruthy();
   });
 
   it('Noticed is not offered for a pet the look has no words for (CUL-864)', async () => {

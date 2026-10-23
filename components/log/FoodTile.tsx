@@ -35,6 +35,20 @@ interface Props {
   // checkbox with its checked state instead of a button whose hint says "Logs this
   // food" — a lie in a surface where a tap adds a food to a list and logs nothing.
   selected?: boolean;
+  // CUL-2090 (mixed meals spec §7.4) — a recent mix on the rotation shelf. It names no
+  // brand or format of its own, so the eyebrow reads "MIX" (the FAB pill's tag) and the
+  // label says what a tap writes: the whole bowl, at its latest split.
+  mix?: boolean;
+  // CUL-2134 (mock M1b) — why this food cannot be picked HERE ("Treat · logged on its
+  // own" in a bowl's second-food picker). The tile then shows dimmed with the reason under
+  // its name, and is no control at all: a plain View read as one sentence, never a
+  // `disabled` button (C-7), because nothing on this surface can make it pickable.
+  notHere?: string;
+  // CUL-2089 (mock A1) — a food the bowl can take once the owner acts on it ("Not set as a
+  // meal · tap to set it"). Unlike `notHere` it stays a real button, dashed rather than
+  // dimmed, because a tap does something: it opens the food, never picks it. It announces
+  // as a button with its own hint even in a selecting picker, since it toggles nothing.
+  ask?: { line: string; hint: string };
 }
 
 // Text-only food tile. Product name is the primary line — for a single-brand
@@ -54,7 +68,7 @@ interface Props {
 // FoodRow tap navigates to detail.
 export function FoodTile({
   brand, productName, format, onPress, onLongPress,
-  hideBrand = false, compact = false, selected,
+  hideBrand = false, compact = false, selected, mix = false, notHere, ask,
 }: Props) {
   const selecting = selected !== undefined;
   const typeLabel = FORMAT_LABEL[format] ?? '';
@@ -62,11 +76,62 @@ export function FoodTile({
   // Under a brand header the brand is redundant — show the format alone (or
   // nothing when unspecified). Otherwise the brand leads, with the format chip
   // when there is one. Identical shape to FoodRow's meta line.
-  const metaLine = hideBrand
+  const metaLine = mix
+    ? 'MIX'
+    : hideBrand
     ? formatMeta
     : typeLabel
       ? `${brand.toUpperCase()} · ${formatMeta}`
       : brand.toUpperCase();
+
+  if (notHere) {
+    return (
+      <View
+        style={[styles.tile, compact && styles.tileCompact, styles.tileNotHere]}
+        accessible
+        accessibilityLabel={`${brand} ${productName}. ${notHere}`}
+      >
+        {metaLine ? (
+          <ThemedText style={styles.meta} numberOfLines={1}>
+            {metaLine}
+          </ThemedText>
+        ) : null}
+        <ThemedText style={styles.product} numberOfLines={2}>
+          {productName}
+        </ThemedText>
+        <ThemedText style={styles.notHere} numberOfLines={1}>
+          {notHere}
+        </ThemedText>
+      </View>
+    );
+  }
+
+  if (ask) {
+    return (
+      <TouchableOpacity
+        style={[styles.tile, compact && styles.tileCompact, styles.tileAsk]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`${brand} ${productName}. ${ask.line}`}
+        accessibilityHint={ask.hint}
+      >
+        {metaLine ? (
+          <ThemedText style={styles.meta} numberOfLines={1}>
+            {metaLine}
+          </ThemedText>
+        ) : null}
+        <ThemedText style={styles.product} numberOfLines={2}>
+          {productName}
+        </ThemedText>
+        <ThemedText style={styles.askLine} numberOfLines={2}>
+          {ask.line}
+        </ThemedText>
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <TouchableOpacity
@@ -76,9 +141,9 @@ export function FoodTile({
       delayLongPress={350}
       activeOpacity={0.7}
       accessibilityRole={selecting ? 'checkbox' : 'button'}
-      accessibilityLabel={`${brand} ${productName}`}
+      accessibilityLabel={mix ? `Mixed bowl, ${productName}` : `${brand} ${productName}`}
       accessibilityState={selecting ? { checked: selected } : undefined}
-      accessibilityHint={selecting ? undefined : 'Logs this food'}
+      accessibilityHint={selecting ? undefined : mix ? 'Logs this bowl again' : 'Logs this food'}
     >
       {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
           render an empty eyebrow line above the product name. */}
@@ -141,6 +206,23 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
     letterSpacing: theme.trackingWidest,
+  },
+  // The stepper's end-stop dim (0.4), so "can't go here" reads one way across the mix flow.
+  tileNotHere: {
+    opacity: 0.4,
+  },
+  // Dashed, not dimmed: this tile still does something (CUL-2089).
+  tileAsk: {
+    borderStyle: 'dashed',
+    borderColor: theme.colorBorderStrong,
+  },
+  askLine: {
+    fontSize: theme.textXS,
+    color: theme.colorAccentInk,
+  },
+  notHere: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
   },
   product: {
     fontSize: theme.textMD,

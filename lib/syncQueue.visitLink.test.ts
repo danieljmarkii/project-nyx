@@ -25,6 +25,7 @@ import {
   VISIT_LINKED_TABLES,
   parentLandedSql,
   incidentFloorPushQueueSql,
+  mealComponentsPushQueueSql,
   visitLandedSql,
   type ParentGatedQueue,
   type VisitLinkedTable,
@@ -44,7 +45,10 @@ async function runtimeDb(): Promise<Db> {
 
 /** A drain's row-selection statement exactly as lib/sync.ts ships it. */
 function shippedSelect(
-  table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations' | 'vet_calls' | 'vet_call_follow_ups' | 'intake_checks',
+  table:
+    | Exclude<VisitLinkedTable, 'diet_trials'>
+    | 'medication_administrations' | 'vet_calls' | 'vet_call_follow_ups' | 'intake_checks'
+    | 'meals' | 'weight_checks' | 'looks',
 ): string {
   // A drain may SELECT its named columns rather than `*`, so the anchor is the table
   // and its queue predicate; the column list ahead of it is the drain's own business.
@@ -211,6 +215,10 @@ const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   vet_call_follow_ups: () => shippedSelect('vet_call_follow_ups'),
   incident_floor_queue: () => incidentFloorPushQueueSql(),
   intake_checks: () => shippedSelect('intake_checks'),
+  meals: () => shippedSelect('meals'),
+  meal_components: () => mealComponentsPushQueueSql(),
+  weight_checks: () => shippedSelect('weight_checks'),
+  looks: () => shippedSelect('looks'),
 };
 
 function pickedChildren(db: Db, child: ParentGatedQueue): string[] {
@@ -225,6 +233,7 @@ const PARENT_GATES = (Object.keys(PARENT_GATED_QUEUES) as ParentGatedQueue[]).fl
 );
 
 describe.each(PARENT_GATES)('the %s push gate', (_name, child, parent, column) => {
+  const ORPHAN_IMPOSSIBLE = (['meals', 'weight_checks', 'looks'] as readonly string[]).includes(child);
   let db: Db;
   beforeEach(async () => {
     db = await runtimeDb();
@@ -236,14 +245,16 @@ describe.each(PARENT_GATES)('the %s push gate', (_name, child, parent, column) =
     row('waits', 'p-waiting');
     row('after-landing', 'p-landed');
     row('after-quarantine', 'p-quarantined');
-    row('parent-not-held-here', 'p-elsewhere');
+    // A child whose parent this phone does not hold can only exist where no local foreign key
+    // forbids it; a meal, weigh-in or look is its event's child on this phone (CUL-1986).
+    if (!ORPHAN_IMPOSSIBLE) row('parent-not-held-here', 'p-elsewhere');
   });
   afterEach(() => db.close());
 
   // A gate on a row of the child's OWN table (an Undo's `retracts`): the waiting parent
   // is itself a queued row, and goes out first.
   const SELF = parent === child ? ['p-waiting'] : [];
-  const UNHELD = ['after-landing', 'after-quarantine', 'parent-not-held-here', ...SELF].sort();
+  const UNHELD = ['after-landing', 'after-quarantine', ...(ORPHAN_IMPOSSIBLE ? [] : ['parent-not-held-here']), ...SELF].sort();
 
   it(`holds a row whose ${parent} row has not landed, and only that row`, () => {
     expect(pickedChildren(db, child)).toEqual(UNHELD);
@@ -309,8 +320,8 @@ const UNGATED_PARENT_COLUMNS: Record<string, string> = {
 // scan's scope, and said so: `vet_visit_id` is the visit gate's (pinned above); a dose's
 // EVENT parents (`event_id`, and `paired_event_id`, whose 023 trigger refuses with a
 // terminal 23514) are tracked separately; and the other `event_id` children are each
-// their own drain's (meals, weight checks and looks join `events`; event attachments do
-// not, which this scan does not judge).
+// their own drain's (meals, weight checks and looks are parent-gated on `events`, CUL-1986;
+// event attachments are not, which this scan does not judge).
 it('every queue column that names another queue table\'s row is parent-gated, or exempt with a reason', async () => {
   const db = await runtimeDb();
   const queues = (db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[])

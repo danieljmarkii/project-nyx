@@ -26,6 +26,8 @@ import type { LogSheetConfirmType } from '../../store/uiStore';
 import { useSheetMotion, type SheetVeil } from '../motion/sheetMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
+import { useAuthStore } from '../../store/authStore';
+import { cachedAiConsent, loadAiConsent } from '../../store/aiConsentStore';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -214,6 +216,14 @@ export function EventTypeSheet({
   // if that happened, so a write that resolves AFTER a dismiss can't flip a hidden
   // sheet to a stale 'done' beat that would then flash on the next open.
   const visibleRef = useRef(visible);
+  // CUL-1835 (frame D0) — the beat offers a photo's read only to an owner who has not
+  // answered, so the answer is read when the sheet opens, never at the save.
+  const consentUserId = useAuthStore((st) => st.user?.id ?? null);
+  useEffect(() => {
+    if (visible && consentUserId && cachedAiConsent(consentUserId) === undefined) {
+      void loadAiConsent(consentUserId).catch(() => undefined);
+    }
+  }, [visible, consentUserId]);
 
   // Every open starts at the grid, unless it names an `initialType` (the state
   // initialisers above). Reset when the sheet is dismissed (by any path — backdrop, the
@@ -353,6 +363,10 @@ export function EventTypeSheet({
       hasAttachment: result.hasAttachment,
       hasNote: result.hasNote,
       floorLine: result.floor,
+      // CUL-1835, frame D0: a photo whose read the record would ask about, unanswered.
+      offerRead:
+        result.hasAttachment && !!confirm && hasPerIncidentRead(confirm.type) &&
+        !!consentUserId && cachedAiConsent(consentUserId) === null,
     });
     setBeatEventId(result.eventId);
     setStage('done');
