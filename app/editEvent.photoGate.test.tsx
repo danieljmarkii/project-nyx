@@ -108,6 +108,10 @@ jest.mock('../store/petStore', () => {
   const pets = [{ id: 'pet-cat', name: 'Pixel', species: 'cat', sex: 'female' }];
   const state = { pets, activePet: pets[0], updatePet: jest.fn() };
   return {
+    // The real resolver's shape (C-9): the record's pet by id, never the active one.
+    ANONYMOUS_PET_NAME: 'your pet',
+    resolveRecordPetName: (ps: { id: string; name?: string }[], petId: string | null) =>
+      ps.find((p) => p.id === petId)?.name?.trim() || 'your pet',
     usePetStore: Object.assign(
       (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state),
       { getState: () => state },

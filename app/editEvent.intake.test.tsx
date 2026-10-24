@@ -64,6 +64,24 @@ jest.mock('../lib/meals', () => ({
 const mockTriggerRegen = jest.fn();
 jest.mock('../lib/signal', () => ({ triggerSignalRegenDebounced: (...a: unknown[]) => mockTriggerRegen(...a) }));
 
+// P3: the meal's food is picked on the log form's food step. Its tiles come from the same
+// library read the old inline list used, so each case's food fixture still drives it.
+jest.mock('../components/log/FoodPicker', () => {
+  const react = require('react');
+  const { Pressable, Text } = require('react-native');
+  return {
+    FoodPicker: ({ onPickFood }: { onPickFood: (f: unknown) => void }) => {
+      const [foods, setFoods] = react.useState([]);
+      react.useEffect(() => {
+        require('../lib/db').getDb().getAllAsync().then(setFoods);
+      }, []);
+      return foods.map((f: { id: string; product_name: string }) =>
+        react.createElement(Pressable, { key: f.id, onPress: () => onPickFood({ ...f, food_type: 'meal', photo_path: null }) },
+          react.createElement(Text, null, f.product_name)));
+    },
+  };
+});
+
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: () => ({ id: 'evt-1', type: 'meal', occurredAt: '2026-09-22T07:30:00.000Z', notes: '' }),
@@ -76,6 +94,10 @@ jest.mock('../store/petStore', () => {
   const pets = [{ id: 'pet-cat', name: 'Pixel', species: 'cat', sex: 'female' }];
   const state = { pets, activePet: pets[0], updatePet: jest.fn() };
   return {
+    // The real resolver's shape (C-9): the record's pet by id, never the active one.
+    ANONYMOUS_PET_NAME: 'your pet',
+    resolveRecordPetName: (ps: { id: string; name?: string }[], petId: string | null) =>
+      ps.find((p) => p.id === petId)?.name?.trim() || 'your pet',
     usePetStore: Object.assign(
       (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state),
       { getState: () => state },
@@ -142,19 +164,33 @@ describe('the meal rating on the edit screen (CUL-1087)', () => {
 // and so wrote that null on an untouched Save: over a stored refusal, it erased the
 // refusal and its rebuild took the decline off Home (adversarial-reviewer, at the wrap).
 describe('a Save before the meal read answers (CUL-1087)', () => {
-  it('a read still pending: the blank chips write nothing', async () => {
+  // Since CUL-1909 P6 the form does not paint until the record's reads answer, so there
+  // are no blank chips to save over a stored rating: Save waits, disabled with its reason.
+  const updateEvent = () => (jest.requireMock('../lib/db') as { updateEvent: jest.Mock }).updateEvent;
+
+  it('a read still pending: Save waits, and writes nothing', async () => {
     mockGetMealForEvent.mockReturnValue(new Promise(() => {}));
-    const { getByText } = await open();
+    const { getByText, getByLabelText, queryByText } = await open();
+    expect(queryByText('Refused')).toBeNull();
+    expect(getByLabelText('Save, loading the record').props.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: true }),
+    );
     await act(async () => { fireEvent.press(getByText('Save')); });
     expect(mockRateMealIntake).not.toHaveBeenCalled();
+    expect(updateEvent()).not.toHaveBeenCalled();
   });
 
-  it('a read that failed: the stored rating is left alone', async () => {
+  it('a read that failed: the form says so, offers Try again, and Save writes nothing', async () => {
     const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
-    mockGetMealForEvent.mockRejectedValue(new Error('database is locked'));
-    const { getByText } = await open();
+    mockGetMealForEvent.mockRejectedValueOnce(new Error('database is locked')).mockResolvedValue(meal('most'));
+    const { getByText, findByText } = await open();
+    expect(await findByText(/This record didn’t load/)).toBeTruthy();
     await act(async () => { fireEvent.press(getByText('Save')); });
     expect(mockRateMealIntake).not.toHaveBeenCalled();
+    expect(updateEvent()).not.toHaveBeenCalled();
+    // Try again reads the record afresh, and the form arrives.
+    await act(async () => { fireEvent.press(getByText('Try again')); });
+    expect(await findByText('Most')).toBeTruthy();
     quiet.mockRestore();
   });
 
@@ -168,10 +204,10 @@ describe('a Save before the meal read answers (CUL-1087)', () => {
     expect(mockRateMealIntake).not.toHaveBeenCalled();
   });
 
-  it('a rating the owner picked still saves, read or no read', async () => {
+  it('a rating the owner picked on a rowless meal still saves', async () => {
     // Refactor safety for the fix's shape: "skip the write until the read answers with
     // a rating" would drop a deliberate pick silently.
-    mockGetMealForEvent.mockReturnValue(new Promise(() => {}));
+    mockGetMealForEvent.mockResolvedValue(null);
     const { getByText } = await open();
     fireEvent.press(getByText('Refused'));
     await act(async () => { fireEvent.press(getByText('Save')); });
@@ -192,9 +228,9 @@ describe('the Signal refresh on an edit (CUL-1219)', () => {
   it('a changed food rebuilds the record’s pet’s Signal', async () => {
     mockGetMealForEvent.mockResolvedValue(meal('most'));
     mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
-    const { getByText } = await open();
+    const { getByText, getByTestId } = await open();
     // The food row's own "Change" (the time row carries one too): the one beside the food.
-    fireEvent.press(getByText(/^Pate/));
+    fireEvent.press(getByTestId('edit-food'));
     await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });
@@ -204,10 +240,11 @@ describe('the Signal refresh on an edit (CUL-1219)', () => {
   it('a failed pet lookup skips the refresh and never fails a save that already landed', async () => {
     mockGetMealForEvent.mockResolvedValue(meal('most'));
     mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
-    mockGetFirstAsync.mockRejectedValue(new Error('sqlite busy'));
+    // The record's pet answers at load (it opens the food step); the save's own lookups fail.
+    mockGetFirstAsync.mockResolvedValueOnce({ pet_id: 'pet-cat' }).mockRejectedValue(new Error('sqlite busy'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const { getByText } = await open();
-    fireEvent.press(getByText(/^Pate/));
+    const { getByText, getByTestId } = await open();
+    fireEvent.press(getByTestId('edit-food'));
     await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });

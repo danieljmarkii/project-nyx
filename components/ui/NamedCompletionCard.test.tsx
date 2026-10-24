@@ -857,7 +857,7 @@ describe('NamedCompletionCard — Undo asks first when a photo rides along', () 
     const view = render(<NamedCompletionCard />);
     seed({ hasAttachment: true });
     await tapUndo(view);
-    expect(alert.mock.calls[0][0]).toBe('Remove this log?');
+    expect(alert.mock.calls[0][0]).toBe('Remove this vomit?');
     expect(alert.mock.calls[0][1]).toContain('photo');
     alert.mockRestore();
   });
@@ -993,8 +993,8 @@ describe('Undo — the note gate (CUL-869)', () => {
     seed({ hasNote: true });
     await tapUndo(view);
     expect(reverseLoggedEvent).not.toHaveBeenCalled();
-    expect(alert.mock.calls[0][0]).toBe('Remove this log?');
-    expect(alert.mock.calls[0][1]).toBe('The note you wrote will be removed with it.');
+    expect(alert.mock.calls[0][0]).toBe('Remove this vomit?');
+    expect(alert.mock.calls[0][1]).toBe('The note you wrote goes with it.');
     alert.mockRestore();
   });
 
@@ -1017,7 +1017,7 @@ describe('Undo — the note gate (CUL-869)', () => {
     seed({ hasAttachment: true, hasNote: true });
     await tapUndo(view);
     expect(alert.mock.calls[0][1])
-      .toBe('The photo you attached and the note you wrote will be removed with it.');
+      .toBe('The photo you attached and the note you wrote go with it.');
     alert.mockRestore();
   });
 });

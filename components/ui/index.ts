@@ -29,3 +29,4 @@ export { QuietBand } from './QuietBand';
 export { FactRows } from './FactRows';
 export { SlotRow } from './SlotRow';
 export { PhotoThumb } from './PhotoThumb';
+export { EditCard, EditRow, EditBlock } from './EditCard';

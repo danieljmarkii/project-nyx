@@ -322,14 +322,18 @@ describe('T-22 — the editor never offers the parent Notes field for a look', (
     expect(src).toMatch(/const\s+isLook\s*=\s*eventType\s*===\s*'check_in'/);
   });
 
-  it('gates the "Notes" SectionLabel behind it', () => {
-    // The parent's field is the one labelled `Notes` (plural); the look's own field
-    // is labelled `Note`. The gate must sit above the plural one.
-    const notesLabel = src.indexOf('label="Notes"');
-    expect(notesLabel).toBeGreaterThan(-1);
-    const before = src.slice(0, notesLabel);
+  it('gates the parent’s note field behind it', () => {
+    // The parent's field is the one bound to `notes`; the look's own field is bound to
+    // `lookNote`. Both are labelled "Note" since CUL-1909, so the anchor is the binding.
+    const notesField = src.indexOf('value={notes}');
+    expect(notesField).toBeGreaterThan(-1);
+    const before = src.slice(0, notesField);
     // The nearest preceding conditional is the look gate.
-    expect(before).toMatch(/\{isLook\s*\?\s*null\s*:\s*\($/m);
+    const gate = before.lastIndexOf('isLook ? null : (');
+    expect(gate).toBeGreaterThan(-1);
+    // …and nothing between the gate and the field opens another branch it could sit in.
+    const between = before.slice(gate + 'isLook ? null : ('.length);
+    expect(between).not.toMatch(/\?\s*\(|\)\s*:\s*\(/);
   });
 
   it('writes NULL to the parent’s notes for a look, rather than the form value', () => {

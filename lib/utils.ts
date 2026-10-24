@@ -37,6 +37,18 @@ export function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// A record's moment as its own row names it (the event editor's When, CUL-1909): the
+// weekday, the date and the time, in the device's locale.
+export function formatRecordWhen(date: Date): string {
+  return `${formatRecordDate(date)}, ${formatTime(date)}`;
+}
+
+// The same date with no time: for a record whose time is a guess or a range, where a
+// clock time would claim a precision the row does not hold.
+export function formatRecordDate(date: Date): string {
+  return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 // Local calendar day (YYYY-MM-DD) from a Date's LOCAL components. Used for
 // report-window bounds (B-222), which the server treats as local calendar days
 // — a UTC round-trip (toISOString) would shift the day for anyone behind UTC.

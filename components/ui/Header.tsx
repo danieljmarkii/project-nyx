@@ -1,8 +1,9 @@
 import { ReactNode } from 'react';
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { ChevronLeft, X } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { HEADER_ACTION_MAX_SCALE } from './HeaderAction';
 
 // Shared navigation header (B-075) — one bar for every full screen: a leading
 // slot (back ‹ / close ✕ / none), a centered title, and an optional trailing
@@ -39,33 +40,53 @@ interface HeaderProps {
   // Daily Recap: brand-night ground, borderless, on-night text/glyphs. Additive and
   // defaulted off, so every existing (light) call site is byte-identical.
   night?: boolean;
+  // Past the text size the side actions stop following (HEADER_ACTION_MAX_SCALE), the
+  // title leaves the bar and wraps on its own line under Cancel and Save, rather than
+  // truncating between them (the event editor round, CUL-1909). Opt in, so every other
+  // header is unchanged.
+  titleBelowAtLargeText?: boolean;
 }
 
 // 24–26px glyphs + 12pt hitSlop ⇒ ~48–50pt tap target, clears the 44pt
 // 3am-stumbling minimum without inflating the visual size.
 const HIT = { top: 12, bottom: 12, left: 12, right: 12 };
 
-export function Header({ title, leading = 'none', onLeadingPress, left, right, night }: HeaderProps) {
+export function Header({ title, leading = 'none', onLeadingPress, left, right, night, titleBelowAtLargeText }: HeaderProps) {
+  const { fontScale } = useWindowDimensions();
+  const leadingSlot = left !== undefined ? (
+    left
+  ) : leading !== 'none' ? (
+    <TouchableOpacity
+      onPress={onLeadingPress}
+      hitSlop={HIT}
+      accessibilityRole="button"
+      accessibilityLabel={leading === 'back' ? 'Back' : 'Close'}
+    >
+      {leading === 'back' ? (
+        <ChevronLeft size={26} color={night ? theme.colorTextOnNight : theme.colorTextPrimary} />
+      ) : (
+        <X size={24} color={night ? theme.colorTextOnNightMuted : theme.colorTextSecondary} />
+      )}
+    </TouchableOpacity>
+  ) : null;
+
+  if (titleBelowAtLargeText && title && fontScale > HEADER_ACTION_MAX_SCALE) {
+    return (
+      <View style={[styles.stack, night && styles.barNight]}>
+        <View style={styles.stackRow}>
+          <View style={styles.side}>{leadingSlot}</View>
+          <View style={[styles.side, styles.sideRight]}>{right}</View>
+        </View>
+        <ThemedText accessibilityRole="header" style={[styles.titleBelow, night && styles.titleNight]}>
+          {title}
+        </ThemedText>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.bar, night && styles.barNight]}>
-      <View style={styles.side}>
-        {left !== undefined ? (
-          left
-        ) : leading !== 'none' ? (
-          <TouchableOpacity
-            onPress={onLeadingPress}
-            hitSlop={HIT}
-            accessibilityRole="button"
-            accessibilityLabel={leading === 'back' ? 'Back' : 'Close'}
-          >
-            {leading === 'back' ? (
-              <ChevronLeft size={26} color={night ? theme.colorTextOnNight : theme.colorTextPrimary} />
-            ) : (
-              <X size={24} color={night ? theme.colorTextOnNightMuted : theme.colorTextSecondary} />
-            )}
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <View style={styles.side}>{leadingSlot}</View>
 
       {/* Equal-width sides (below) guarantee the flex title sits truly centered
           regardless of which slots are filled. */}
@@ -114,6 +135,23 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     textAlign: 'center',
+    fontSize: theme.textLG,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
+  },
+  stack: {
+    paddingHorizontal: theme.space2,
+    paddingBottom: theme.space1,
+    backgroundColor: theme.colorSurface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
+  stackRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  titleBelow: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,

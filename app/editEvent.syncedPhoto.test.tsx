@@ -105,6 +105,10 @@ jest.mock('../store/petStore', () => {
   const pets = [{ id: 'pet-cat', name: 'Pixel', species: 'cat', sex: 'female' }];
   const state = { pets, activePet: pets[0], updatePet: jest.fn() };
   return {
+    // The real resolver's shape (C-9): the record's pet by id, never the active one.
+    ANONYMOUS_PET_NAME: 'your pet',
+    resolveRecordPetName: (ps: { id: string; name?: string }[], petId: string | null) =>
+      ps.find((p) => p.id === petId)?.name?.trim() || 'your pet',
     usePetStore: Object.assign(
       (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state),
       { getState: () => state },
@@ -162,7 +166,7 @@ describe('a photo that arrived by sync (CUL-2176)', () => {
     mockGetEventAttachments.mockResolvedValue([HYDRATED]);
     const utils = await open();
     await waitFor(() => expect(utils.getByText('Photo attached')).toBeTruthy());
-    expect(utils.queryByText('Attach a photo')).toBeNull();
+    expect(utils.queryByText('Add a photo')).toBeNull();
     expect(mockGetSignedUrl).toHaveBeenCalledWith('nyx-event-attachments', HYDRATED.storage_path, expect.any(Number));
     await waitFor(() => expect(thumbUris(utils)).toContain('https://signed/att-old'));
   });
@@ -172,7 +176,7 @@ describe('a photo that arrived by sync (CUL-2176)', () => {
     mockGetSignedUrl.mockRejectedValue(new Error('offline'));
     const utils = await open();
     await waitFor(() => expect(utils.getByText('Photo attached')).toBeTruthy());
-    expect(utils.queryByText('Attach a photo')).toBeNull();
+    expect(utils.queryByText('Add a photo')).toBeNull();
   });
 
   it('the source sheet says Replace, and Save removes the shown row', async () => {
@@ -214,7 +218,7 @@ describe('the attachment read fails (CUL-2176)', () => {
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     const utils = await open();
     await waitFor(() => expect(utils.getByText("Couldn't check for a photo. Close and reopen to try again.")).toBeTruthy());
-    expect(utils.queryByText('Attach a photo')).toBeNull();
+    expect(utils.queryByText('Add a photo')).toBeNull();
     expect(utils.queryByText('Photo attached')).toBeNull();
     err.mockRestore();
   });
@@ -233,7 +237,7 @@ describe('a photo taken on this phone (CUL-2176)', () => {
   it('a record with no photo offers Attach, and Save removes nothing it did not show', async () => {
     mockGetEventAttachments.mockResolvedValueOnce([]).mockResolvedValue([LATE]);
     const utils = await open();
-    await act(async () => { fireEvent.press(utils.getByText('Attach a photo')); });
+    await act(async () => { fireEvent.press(utils.getByText('Add a photo')); });
     expect(alertTitles).toEqual(['Attach photo']);
     await act(async () => { fireEvent.press(utils.getByText('Save')); });
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });

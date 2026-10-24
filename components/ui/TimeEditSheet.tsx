@@ -44,16 +44,25 @@ interface Props {
    * field it is editing instead of inheriting a question that may not match it.
    */
   title: string;
+  /**
+   * A later bound than now, never a later one: a window's earliest edge may not pass its
+   * latest (chk_occurred_window_order, migration 012). The sheet takes the earlier of this
+   * and its open time.
+   */
+  maximumDate?: Date;
   saving?: boolean;
   onCancel: () => void;
   onSave: (next: Date) => void;
 }
 
-export function TimeEditSheet({ value, title, saving = false, onCancel, onSave }: Props) {
+export function TimeEditSheet({ value, title, maximumDate, saving = false, onCancel, onSave }: Props) {
   // Local draft, separate from the caller's authoritative time, so the picker can
   // be opened, scrubbed and cancelled without mutating anything.
   const [draft, setDraft] = useState<Date>(value);
-  const [maximum] = useState(() => new Date());
+  const [maximum] = useState(() => {
+    const now = new Date();
+    return maximumDate && maximumDate.getTime() < now.getTime() ? maximumDate : now;
+  });
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>

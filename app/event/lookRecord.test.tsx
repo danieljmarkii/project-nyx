@@ -281,7 +281,7 @@ describe('Remove — the whole look', () => {
     // The footer's Remove is the LAST one on screen.
     const removes = getAllByText('Remove');
     await act(async () => { fireEvent.press(removes[removes.length - 1]); });
-    expect(alertBody()).toContain('The note you wrote will be removed with it.');
+    expect(alertBody()).toContain('The note you wrote goes with it.');
   });
 
   it('says nothing about a note when there is none — never warn about one that is not there', async () => {
@@ -293,7 +293,7 @@ describe('Remove — the whole look', () => {
     // "the Noticed" — the template was written for noun labels and `check_in` is the
     // first type without one. Fixed by naming the SUBJECT per type, not by rewording
     // the sentence, so every other type's confirm is byte-identical.
-    expect(alertBody()).toBe('This will remove what you noticed from history.');
+    expect(alertBody()).toMatch(/^What you noticed about .+ leaves the history\.$/);
   });
 
   it('every other type keeps the sentence it has always had', async () => {
@@ -301,6 +301,6 @@ describe('Remove — the whole look', () => {
     const { findAllByText, getByText } = render(<EventDetailScreen />);
     expect((await findAllByText(/Jun/)).length).toBeGreaterThan(0);
     await act(async () => { fireEvent.press(getByText('Remove')); });
-    expect(alertBody()).toBe('This will remove the Vomit from history.');
+    expect(alertBody()).toMatch(/^.+’s vomit from .+ leaves the history\.$/);
   });
 });

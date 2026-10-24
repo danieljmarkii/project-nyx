@@ -56,6 +56,8 @@ const accessToken = `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url({ sub: use
 const session = { access_token: accessToken, refresh_token: 'fixture-refresh', token_type: 'bearer', expires_in: 365 * 86400, expires_at: exp, user };
 
 const pet = (key) => tables.pets.find((p) => p.name.toLowerCase() === key);
+const latestOf = (petId, type) =>
+  tables.events.filter((e) => e.pet_id === petId && e.event_type === type).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
 const firstVomit = (petId) =>
   tables.events.filter((e) => e.pet_id === petId && e.event_type === 'vomit').sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
 
@@ -77,6 +79,9 @@ const SHOTS = [
   { name: 'home-pepper', pet: 'pepper', go: [] },
   { name: 'history-pepper', pet: 'pepper', go: [tab('History')] },
   { name: 'incident-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page)] },
+  // CUL-1909: the event editor, reached the one way an owner reaches it (the record's Edit).
+  { name: 'edit-vomit-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page), link(/^Edit$/)] },
+  { name: 'edit-meal-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${latestOf(pet('juniper').id, 'meal').id}`)(page), link(/^Edit$/)] },
   { name: 'patterns-juniper', pet: 'juniper', go: [link(/^Patterns/)] },
   // CUL-1282's path: a tap on an earlier day in History's week strip must bring the
   // list to that day (Sunday the 11th, three cards down, past the 21-row long day).
