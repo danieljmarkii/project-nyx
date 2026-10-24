@@ -24,6 +24,8 @@ jest.mock('expo-router', () => ({
     push: (...a: unknown[]) => mockPush(...a),
   },
   useLocalSearchParams: () => ({ ...(mockTypeParam ? { type: mockTypeParam } : {}), ...mockWidgetParams }),
+  // The named card's offset reads the route (CUL-2197's suite renders the card).
+  usePathname: () => '/(tabs)',
   // The food picker's load (CUL-2090's meal-step test): fired once on mount.
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React = jest.requireActual('react');
@@ -47,6 +49,10 @@ jest.mock('expo-image-picker', () => ({
 // env. Stubbed to the shape the screen's own paths touch; nothing under test
 // makes a network call.
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
+// CUL-2197 renders the named card beside the screen; an Undo that skipped its confirm
+// would reach the one reversal, so it is stubbed and its calls are counted.
+const mockReverse = jest.fn().mockResolvedValue(undefined);
+jest.mock('../lib/undoLog', () => ({ reverseLoggedEvent: (...a: unknown[]) => mockReverse(...a) }));
 
 const mockInsertSimpleEvent = jest.fn().mockResolvedValue({
   eventId: 'ev-1', occurredAtIso: '2026-09-05T17:33:00.000Z', now: '2026-09-05T17:33:00.000Z',
@@ -93,6 +99,7 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import LogScreen from './log';
+import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { usePetStore } from '../store/petStore';
 import { useMomentStore } from '../store/momentStore';
 
@@ -569,5 +576,66 @@ describe('/log — the dose step from the meal card (CUL-1908 P8)', () => {
     const day = earlier.toLocaleDateString([], { month: 'short', day: 'numeric' });
     const { findByText } = render(<LogScreen />);
     expect(await findByText(new RegExp(`^Biscuit's treat · ${day}`))).toBeTruthy();
+  });
+});
+
+// CUL-2197 — the full log form's Undo on a record carrying a NOTE. The note is the
+// owner's own sentence and cannot be made again, so the card's Undo confirms and names
+// it (C-21), as the in-sheet beat, the record's Remove and the editor's Remove do. The
+// card is rendered beside the screen so the assertion is the confirm itself, not a flag.
+describe('/log — Undo on a note-only record confirms and names the note (CUL-2197)', () => {
+  function renderWithCard() {
+    return render(<><LogScreen /><NamedCompletionCard /></>);
+  }
+
+  async function logAndUndo(tree: ReturnType<typeof render>, commit: string) {
+    fireEvent.press(tree.getByText(commit));
+    await waitFor(() => expect(useMomentStore.getState().visible).toBe(true));
+    await act(async () => { fireEvent.press(tree.getByLabelText('Undo — remove this log')); });
+  }
+
+  function lastAlert() {
+    const calls = (Alert.alert as unknown as jest.Mock).mock.calls;
+    return calls[calls.length - 1] as [string, string, { text: string }[]];
+  }
+
+  it('a photoless vomit with a note raises the confirm naming the note, and removes nothing yet', async () => {
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByLabelText('Note'), 'Grass in it, twice');
+    await logAndUndo(tree, 'Log vomit');
+    const [title, body, buttons] = lastAlert();
+    expect(title).toBe('Remove this vomit?');
+    expect(body).toBe('The note you wrote goes with it.');
+    expect(buttons.map((b) => b.text)).toEqual(['Keep it', 'Remove']);
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
+  it('an Other, whose note is the whole record, confirms too', async () => {
+    mockTypeParam = 'other';
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByLabelText('What did you notice?'), 'Hid under the bed all morning');
+    await logAndUndo(tree, 'Log for Biscuit');
+    expect(lastAlert()[1]).toBe('The note you wrote goes with it.');
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
+  it('a weight check with a note confirms too (the screen\'s other named card)', async () => {
+    mockTypeParam = 'weight_check';
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByPlaceholderText('e.g. 12.5'), '12.4');
+    fireEvent.changeText(tree.getByLabelText('Note'), 'After the long walk');
+    await logAndUndo(tree, 'Log 12.4 lbs');
+    expect(lastAlert()[1]).toBe('The note you wrote goes with it.');
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
+  // The other edge: a blank or whitespace-only note is no note, so Undo stays the one
+  // tap §5.6 makes it, with no confirm over nothing.
+  it('a whitespace-only note is no note: Undo stays one tap', async () => {
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByLabelText('Note'), '   ');
+    await logAndUndo(tree, 'Log vomit');
+    expect(Alert.alert).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockReverse).toHaveBeenCalledTimes(1));
   });
 });
