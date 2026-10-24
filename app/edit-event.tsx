@@ -124,24 +124,54 @@ export default function EditEventModal() {
   // flips to 'manual' the moment the user taps the time row.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
 
+  // Does the STORED row already carry a confidence its leaf says is unwritable? Only
+  // ever true for a row stamped before its leaf's gate existed. Seeded false and set by
+  // the mount read below. The seed is never seen: the form renders skeleton rows, and
+  // Save waits, until that read answers (`reads === 'answered'` waits on it), so the
+  // time card never paints the leaf's answer over a row that contradicts it (C-12).
+  // What this does NOT cover is a sync landing a window while the editor is open; the
+  // plain point stays on screen for that row, as it always has on a meal or a dose.
+  const [storedContradictsLeaf, setStoredContradictsLeaf] = useState(false);
+
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
-  // editable after logging). Shown only for non-meal events; meals are always
-  // witnessed — and so is a weight check (you read the scale), so it uses the
-  // plain point picker too and never the Saw-it/Found-it control (B-197).
-  // Reconstructed from stored fields on mount (reconstructTimeControl).
-  // CUL-869 adds `!isLook`, and it is a second gate rather than a rewrite of this
-  // expression. A look's stored time-confidence is WITNESSED BY CONSTRUCTION (§5.4,
-  // taxonomy D10) — it is a perception at a moment the owner was there for, so there
-  // is nothing to have found and the Saw-it / Found-it control has no honest answer
-  // to offer. `insertLook` is where that value is written, and this screen still
-  // writes none: the branch below hands the save a witnessed form value that
-  // `confidenceUpdateForEdit` then discards, exactly as it does for a meal.
+  // editable after logging). Reconstructed from stored fields on mount
+  // (reconstructTimeControl).
   //
-  // The tempting refactor is to read `config.confidenceModel` instead of naming
-  // three types. It is wrong here: `cough` and `sneeze` carry the same model and DO
-  // get this control today, so that version would silently change two shipped types
-  // under an unrelated PR.
-  const showConfidenceControl = !config.hasFood && !isWeight && !isMedication && !isLook;
+  // CUL-2195 — THE GATE IS THE LEAF CONTRACT, not a hand-listed set of types.
+  // `confidenceModel: 'witnessed'` marks a leaf on which Saw it / Found it has no
+  // honest answer, because the act is witnessed BY CONSTRUCTION: a meal is the bowl
+  // going down; a weight check is reading the scale; a dose is performed, never
+  // discovered (a mis-classified administration time would degrade the §6.4
+  // double-dose check and the Signal confounder pass); a look is a perception at a
+  // moment the owner was present for (daily-look §5.4); a cough is HEARD, never found
+  // later (taxonomy D10). Both capture surfaces already ask it this way (`app/log.tsx`,
+  // `components/log/SimpleEventConfirm.tsx`).
+  //
+  // This replaced `!config.hasFood && !isWeight && !isMedication && !isLook`: the same
+  // predicate spelled as four types and MISSING cough and sneeze, so the editor was the
+  // one door that could stamp a window claim on a leaf that declares it cannot hold
+  // one, and that claim feeds detector ⑦ and the vet report. Walked leaf by leaf the
+  // swap changes exactly those two, and `app/editEvent.leafContract.test.tsx` walks the
+  // whole of EVENT_TYPES so a future leaf cannot land on the wrong side unnoticed. An
+  // UNKNOWN type has no entry, the comparison is false, and the control SHOWS — today's
+  // generic behaviour, per the §8 degradation contract.
+  //
+  // — THE EXCEPTION (the adversarial pass on 6201a97, PM-ruled A 2026-09-14).
+  // Suppressing the control suppresses the ability to MAKE the claim, never the
+  // ability to SEE and correct one the record ALREADY HOLDS. Without
+  // `storedContradictsLeaf`, a windowed cough fell to the plain point picker, which
+  // moves `occurred_at` without touching the bounds (`handlePointChange` deliberately
+  // does not mark the edit confidence-bearing, C-10), so one tap left the point
+  // OUTSIDE its own retained window. Nothing rejects that: migration 012's CHECKs
+  // order the bounds against each other, never against the point. And on a windowed
+  // row no read surface renders `occurred_at` (`describeOccurredAt` renders the
+  // bounds), so the "correction" would show nothing while moving ⑦'s span and onset.
+  // Measured zero such rows in production: reachability is the bar, not population.
+  //
+  // (The wording above avoids the column-name-colon-literal shape on purpose:
+  // `lib/occurredAtConfidence.guard.test.ts` scans raw source, CUL-885.)
+  const leafIsWitnessedByConstruction = EVENT_TYPES[eventType]?.confidenceModel === 'witnessed';
+  const showConfidenceControl = !leafIsWitnessedByConstruction || storedContradictsLeaf;
   // CUL-887 — the photo half of the leaf contract (§6/§7 hasPhoto). `?? true` is the §8
   // posture: an unknown future leaf keeps today's generic offer, as the record screen's
   // empty hero does. What it gates is narrower than the section: see the Photo block.
@@ -429,6 +459,10 @@ export default function EditEventModal() {
       }
       if (seed.earliest) setEarliest(new Date(seed.earliest));
       if (seed.latest) setFoundLatest(new Date(seed.latest));
+      // A NULL confidence is not a contradiction — it is the absence of a claim, and
+      // 012's backfill is the PM's to make, not this screen's. Only a row that
+      // positively asserts a non-witnessed confidence re-opens the control.
+      if (stored.confidence && stored.confidence !== 'witnessed') setStoredContradictsLeaf(true);
     }));
 
     Promise.all([Promise.all(core), attachmentsSettled])
@@ -669,14 +703,22 @@ export default function EditEventModal() {
 
     setSaving(true);
     try {
-      // Meals/weight/doses don't show the confidence control — the event type
-      // itself carries the claim (you see yourself put the bowl down, read the
-      // scale, give the pill), so there is no affordance to touch and nothing
-      // for this edit to restate. Their branch's 'witnessed' is inert: with no
-      // control there is nothing to mark confidenceTouched, so the save below
-      // never reaches this value. What the row already holds is what it keeps —
-      // including a legacy NULL, which stays the PM's backfill to make (012),
-      // not something an unrelated edit does one row at a time.
+      // A witnessed-by-construction leaf shows no confidence control — the event
+      // type itself carries the claim (you see yourself put the bowl down, read the
+      // scale, give the pill, hear the cough), so there is no affordance to touch
+      // and nothing for this edit to restate. This branch's 'witnessed' is inert:
+      // with no control there is nothing to mark confidenceTouched, so the save
+      // below never reaches this value. What the row already holds is what it keeps
+      // — including a legacy NULL, which stays the PM's backfill to make (012), not
+      // something an unrelated edit does one row at a time.
+      //
+      // Since CUL-2195's exception this ternary is equivalent by construction: the
+      // control is hidden only when the stored confidence is witnessed or NULL,
+      // `reconstructTimeControl` maps those to 'saw' and null, and `buildTimeFields`
+      // returns exactly this literal for every mode but 'found'. Deleting the branch
+      // reds no test, and that is a redundancy, not a coverage gap. It stays as the
+      // belt: if a future change hides the control on a row that DOES hold a window,
+      // this stops the save reading a control the owner could not see.
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
@@ -1097,7 +1139,7 @@ export default function EditEventModal() {
           onLatestChange={handleLatestChange}
         />
       ) : (
-        // A witnessed-by-construction act (a meal, a dose, a weigh-in, a look) keeps the
+        // A witnessed-by-construction act (a meal, a dose, a weigh-in, a look, a cough) keeps the
         // plain point, on the kit's one time sheet.
         <EditRow
           first
