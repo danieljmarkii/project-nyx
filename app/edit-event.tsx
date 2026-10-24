@@ -126,10 +126,11 @@ export default function EditEventModal() {
 
   // Does the STORED row already carry a confidence its leaf says is unwritable? Only
   // ever true for a row stamped before its leaf's gate existed. Seeded false and set by
-  // the mount read below, so the first frame shows the leaf's own answer: a renderer is
-  // the right level for a hydration-dependent predicate (C-12), and the save re-reads
-  // the stored fields anyway, so a point moved inside that tick still cannot erase a
-  // window (`confidenceTouched` gates the write).
+  // the mount read below. The seed is never seen: the form renders skeleton rows, and
+  // Save waits, until that read answers (`reads === 'answered'` waits on it), so the
+  // time card never paints the leaf's answer over a row that contradicts it (C-12).
+  // What this does NOT cover is a sync landing a window while the editor is open; the
+  // plain point stays on screen for that row, as it always has on a meal or a dose.
   const [storedContradictsLeaf, setStoredContradictsLeaf] = useState(false);
 
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
