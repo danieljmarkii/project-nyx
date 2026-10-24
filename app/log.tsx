@@ -896,6 +896,9 @@ export default function LogModal() {
         // weigh-in's pre-fill. Always passed (never conditionally), so the
         // key's PRESENCE means "the log site knew" and its value may be null.
         previousSnapshotKg: displacedSnapshotKg,
+        // CUL-2197 — the note this form wrote is not recreatable, so Undo confirms and
+        // names it (C-21), as every other door to this record does.
+        hasNote: !!notes.trim(),
       },
       { delayMs: 300 },
     );
@@ -1081,6 +1084,9 @@ export default function LogModal() {
           // and cannot be taken again. Same line the discard guard draws one step
           // earlier in this very flow — guard what cannot be recreated.
           hasAttachment: !!attachmentUri,
+          // CUL-2197 — the note's sibling: for an Other it is the whole record. Without
+          // it a note-only log's Undo stayed one tap and took the sentence with it.
+          hasNote: !!notes.trim(),
           floorLine: floor,
           // CUL-1835, frame D0: only for a photo whose read the record would ask about.
           offerRead:

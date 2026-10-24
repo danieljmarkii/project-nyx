@@ -111,8 +111,8 @@ export interface NamedPayload {
   // off, didn't want the walk · 7:12" is the same sentence with or without a note,
   // and `summarizeLoggedRecord` has no business knowing about one.
   //
-  // The look is the only record that can produce it, and it is why the field exists:
-  // a look's note is the owner's own words about her animal, written in a moment she
+  // The look is why the field exists (the full log form's symptom, Other and weight
+  // paths pass it too since CUL-2197): a look's note is the owner's own words about her animal, written in a moment she
   // will not reconstruct, and nothing in the app surfaces a removed one. The event
   // itself is re-loggable from what she saw; the sentence she wrote about it is not.
   // Optional, and absent means the same as `false` — every path that cannot carry a
