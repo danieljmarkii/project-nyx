@@ -196,12 +196,16 @@
   .cs-field .caret { display: inline-block; width: 1.5px; height: 14px; background: var(--app-ink); vertical-align: -2px; margin-left: 1px; animation: caret 1s steps(1) infinite; }
   @keyframes caret { 50% { opacity: 0; } }
   .cs-verbs { display: flex; gap: 8px; justify-content: flex-end; opacity: 0; transition: opacity 150ms ease; }
+  .cs-verbs.dock { margin-top: auto; padding-bottom: 8px; }
+  .cs-disclose { font-size: 10.5px; line-height: 1.3; color: var(--app-ink-3); min-height: 21px; }
+  .cs.kbd-down .cs-disclose { display: none; }
+  .cs.kbd-down .cs-verbs.cs-after { display: flex; opacity: 1; }
   .cs.has-text .cs-verbs { opacity: 1; }
   .verb { border-radius: 999px; padding: 8px 15px; font-size: 12.5px; font-weight: 600; min-height: 36px; display: inline-flex; align-items: center; gap: 6px; }
   .verb.save { background: var(--app-ink); color: #fff; }
   .verb.ask { border: 1px solid var(--app-rule); color: var(--app-ink); }
   .verb.ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); display: inline-block; }
-  .cs-kbd { margin: auto -14px 0; background: var(--kbd); height: 272px; padding: 8px 4px 0; display: grid; grid-template-rows: repeat(4, 1fr) 36px; gap: 7px; flex-shrink: 0; }
+  .cs-kbd { margin: 0 -14px 0; background: var(--kbd); height: 272px; padding: 8px 4px 0; display: grid; grid-template-rows: repeat(4, 1fr) 36px; gap: 7px; flex-shrink: 0; }
   .cs-kbd .r { display: flex; gap: 4px; justify-content: center; }
   .cs-kbd .r i { display: block; flex: 1; max-width: 28px; height: 34px; background: var(--kbd-key); border-radius: 4px; box-shadow: 0 1px 0 rgba(0,0,0,0.3); }
   .cs-kbd .r i.d { background: var(--kbd-dark); max-width: 38px; }
@@ -219,12 +223,8 @@
   .cs-note .txt mark { background: var(--app-action-wash); color: inherit; border-radius: 3px; padding: 0 1px; }
   .cs-status { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--app-ink-2); min-height: 22px; flex-shrink: 0; }
   .cs-status .door { margin: 0; padding: 0; border: 0; min-height: 0; color: var(--app-action); font-weight: 600; gap: 2px; }
-  .tick { display: inline-flex; gap: 3px; width: 16px; height: 16px; align-items: flex-end; flex-shrink: 0; }
-  .tick i { display: block; width: 3px; height: 16px; border-radius: 2px; background: var(--app-ink-2); animation: breath 1400ms ease-in-out infinite; }
-  .tick i:nth-child(2) { animation-delay: 200ms; } .tick i:nth-child(3) { animation-delay: 400ms; }
-  @keyframes breath { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
-  .tick.still i { animation: none; opacity: 1; }
-  .tick.rest i { animation: none; opacity: 0.35; }
+  .tick { display: inline-block; width: 3px; height: 13px; border-radius: 1.5px; background: #D4D4D4; flex-shrink: 0; animation: breath 1400ms ease-in-out infinite; }
+  @keyframes breath { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
   .cs-stack { display: flex; flex-direction: column; gap: 8px; overflow: auto; min-height: 0; scrollbar-width: none; }
   .card { position: relative; border-radius: 16px; background: var(--app-card); border: 1px solid var(--app-rule); padding: 8px 10px 8px 14px; flex-shrink: 0; }
   .card::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--app-ink-3); transform-origin: top; }
@@ -241,7 +241,7 @@
   .card .chips .qlbl { font-size: 11px; color: var(--app-action); font-weight: 600; align-self: center; margin-right: 2px; }
   .chip { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 9px; font-size: 11px; min-height: 26px; display: inline-flex; align-items: center; background: var(--app-card); }
   .chip.on { background: var(--app-ink); color: #fff; border-color: var(--app-ink); }
-  .chip.prop { border-color: var(--app-accent-ink); color: var(--app-accent-ink); }
+  .chip.prop { border-style: dashed; border-color: var(--app-ink-2); }
   .card .pillrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 7px; background: var(--app-subtle); border-radius: 999px; padding: 4px 4px 4px 11px; font-size: 11.5px; }
   .card .pillrow .logit { background: var(--app-ink); color: #fff; border-radius: 999px; padding: 6px 11px; font-weight: 600; font-size: 11.5px; flex-shrink: 0; }
   .card .pillrow.blocked .logit { background: var(--app-card); color: var(--app-ink); border: 1px solid var(--app-rule); }
@@ -263,17 +263,18 @@
   .crisis.loud .door { border-top-color: rgba(255,255,255,0.18); color: #fff; }
   .crisis.loud .call { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--rose); color: #fff; border-radius: 999px; padding: 11px; font-weight: 600; font-size: 13px; margin-top: 12px; }
   .after { font-size: 11.5px; color: var(--app-ink-3); display: flex; align-items: center; gap: 6px; }
-  .beat { margin-top: auto; margin-bottom: 30px; background: var(--app-ink); color: #fff; border-radius: 16px; padding: 11px 12px 12px; display: flex; flex-direction: column; gap: 9px; flex-shrink: 0; }
-  .beat .hr { display: flex; align-items: center; gap: 9px; }
-  .beat .tk { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.12); display: grid; place-items: center; flex-shrink: 0; }
-  .beat .tk svg { width: 14px; height: 14px; }
+  .beat { margin-top: auto; margin-bottom: 40px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; flex-shrink: 0; padding: 12px; }
+  .beat .hr { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .beat .tk { width: 68px; height: 68px; border-radius: 50%; background: var(--app-card); border: 1px solid var(--app-rule); box-shadow: 0 2px 10px rgba(0,0,0,0.06); display: grid; place-items: center; color: var(--app-ink); }
+  .beat .tk svg { width: 30px; height: 30px; }
   .beat .tk svg path { stroke-dasharray: 24; stroke-dashoffset: 0; }
   .beat.arrive .tk svg path { animation: write 160ms ease-out 120ms both; }
   @keyframes write { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
-  .beat .tt { flex: 1; min-width: 0; }
-  .beat b { display: block; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .beat .tt span { font-size: 11px; color: #A3A3A3; }
-  .beat .acts { display: flex; gap: 10px; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .beat .tt { min-width: 0; }
+  .beat b { display: block; font-size: 18px; font-weight: 600; line-height: 1.25; }
+  .beat .tt span { font-size: 11px; color: var(--app-ink-2); }
+  .beat .acts { font-size: 11px; font-weight: 600; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 14px; min-height: 30px; display: inline-flex; align-items: center; }
+  .beat .acts:empty { display: none; }
   .layer { position: absolute; left: 0; right: 0; bottom: 0; background: var(--app-card); border-top: 1px solid var(--app-rule); border-radius: 18px 18px 0 0; padding: 12px 14px 30px; z-index: 6; box-shadow: 0 -8px 30px rgba(19,17,46,0.14); transform: translateY(104%); transition: transform 370ms cubic-bezier(.32,.72,0,1); }
   .layer.in { transform: none; }
   .layer .lh { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 13px; margin-bottom: 8px; }
@@ -282,6 +283,18 @@
   .wheel div { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--app-ink-4); }
   .wheel div b { color: var(--app-ink); font-weight: 600; font-size: 17px; }
   .hint { font-size: 11px; color: var(--app-ink-3); text-align: center; margin-top: 6px; }
+
+  .tile { display: flex; align-items: center; gap: 8px; border: 1px solid var(--app-rule); border-radius: 13px; padding: 8px; min-height: 44px; font-size: 12.5px; font-weight: 500; background: var(--app-card); text-align: left; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile.new { outline: 2px solid var(--app-action); outline-offset: 2px; margin: 2px; }
+  .tile .g { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--app-sym-wash); color: var(--app-sym); }
+  .tile .g svg { width: 14px; height: 14px; }
+  .tile .g.quiet { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tile small { font-weight: 400; color: var(--app-ink-2); font-size: 10.5px; }
+  .tile .chips { margin-left: auto; display: flex; gap: 5px; }
+  .tile .chips span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+  .cs .fam { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 8px 0 2px; }
+  .cs .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 
   /* The ask screen (the hand-off) */
   .askscr { position: absolute; inset: 0; background: var(--app-ground); padding: 40px 14px 0; display: none; flex-direction: column; gap: 12px; z-index: 7; }
@@ -299,7 +312,7 @@
   /* Arrival physics (motion on). Rail 160, box 370, sentence +40 over 300 from 8pt; stagger 28 per card. */
   .arrive .card::before, .arrive .crisis::before, .arrive .ans::before, .arrive.cs-note::before { animation: rail 160ms cubic-bezier(.2,.8,.2,1) both; }
   .arrive .card, .arrive .crisis { animation: box 370ms cubic-bezier(.2,.8,.2,1) both; }
-  .arrive .card > *:not(.rail), .arrive .crisis > *, .arrive.cs-note > .txt, .arrive.cs-note > .meta, .arrive .ans > * { animation: land 300ms cubic-bezier(.2,.8,.2,1) 40ms both; }
+  .arrive .card > *:not(.rail), .arrive .crisis > *, .arrive.cs-note > .meta, .arrive .ans > * { animation: land 300ms cubic-bezier(.2,.8,.2,1) 40ms both; }
   .arrive .card:nth-child(2), .arrive .card:nth-child(2)::before, .arrive .card:nth-child(2) > * { animation-delay: 28ms; }
   .arrive .card:nth-child(2) > * { animation-delay: 68ms; }
   .arrive .card:nth-child(3), .arrive .card:nth-child(3)::before { animation-delay: 56ms; }
@@ -317,8 +330,8 @@
   .rm .cs, .rm .layer, .rm .ph-veil { transition: opacity 150ms linear !important; transform: none !important; }
   .rm .cs { opacity: 0; pointer-events: none; } .rm .ph.open .cs { opacity: 1; pointer-events: auto; }
   .rm .layer { opacity: 0; } .rm .layer.in { opacity: 1; }
-  .rm .arrive .card, .rm .arrive .crisis, .rm .arrive .card::before, .rm .arrive .crisis::before, .rm .arrive .card > *, .rm .arrive .crisis > *, .rm .arrive.cs-note::before, .rm .arrive.cs-note > *, .rm .arrive .ans::before, .rm .arrive .ans > * { animation: fadein 150ms linear both !important; }
-  .rm .tick i { animation: none !important; opacity: 1 !important; }
+  .rm .arrive .card, .rm .arrive .crisis, .rm .arrive .card::before, .rm .arrive .crisis::before, .rm .arrive .card > *, .rm .arrive .crisis > *, .rm .arrive.cs-note::before, .rm .arrive.cs-note > .meta, .rm .arrive .ans::before, .rm .arrive .ans > * { animation: fadein 150ms linear both !important; }
+  .rm .tick { animation: none !important; opacity: 1 !important; }
   .rm .leave { animation: fadeout 150ms linear both !important; }
   .rm .beat.arrive .tk svg path { animation: none !important; }
   .rm .cs-field .caret { animation: none; }
@@ -327,8 +340,8 @@
     .cs, .layer, .ph-veil { transition: opacity 150ms linear !important; transform: none !important; }
     .cs { opacity: 0; pointer-events: none; } .ph.open .cs { opacity: 1; pointer-events: auto; }
     .layer { opacity: 0; } .layer.in { opacity: 1; }
-    .arrive .card, .arrive .crisis, .arrive .card::before, .arrive .crisis::before, .arrive .card > *, .arrive .crisis > *, .arrive.cs-note::before, .arrive.cs-note > *, .arrive .ans::before, .arrive .ans > * { animation: fadein 150ms linear both !important; }
-    .tick i { animation: none !important; opacity: 1 !important; }
+    .arrive .card, .arrive .crisis, .arrive .card::before, .arrive .crisis::before, .arrive .card > *, .arrive .crisis > *, .arrive.cs-note::before, .arrive.cs-note > .meta, .arrive .ans::before, .arrive .ans > * { animation: fadein 150ms linear both !important; }
+    .tick { animation: none !important; opacity: 1 !important; }
     .leave { animation: fadeout 150ms linear both !important; }
     .beat.arrive .tk svg path { animation: none !important; }
     .cs-field .caret { animation: none; }
@@ -357,8 +370,9 @@
     <p class="standfirst">You type a sentence about Nyx. Her words are saved as you wrote them, before anything else happens. What fits her record is offered back as the cards you already know; one tap writes a row, and nothing writes without it.</p>
     <div class="ledger">
       <div><span>What you said</span><span><q>I'll likely go w the team's recommendation. But if there's a better way we should explore that in the mocks.</q> Direction B is the current frame; A and C stand beside it in §02, and the three places the team disagreed are drawn side by side in §04.</span></div>
-      <div><span>The sentences</span><span><q>Stub out the sentences you think I'd type based on her data.</q> Ten, from the record she has now: the rabbit trial that ended on Oct 20, the chicken foods since the 19th, the prednisolone that ran to Oct 11, the vomits and coughs of October, Cooper on the same account. §03.</span></div>
+      <div><span>The sentences</span><span><q>Stub out the sentences you think I'd type based on her data.</q> Ten, from her record as it stands: the trial that ended last week, the foods since, the course that ended this month, this month's incidents, the dog on the same account. §03.</span></div>
       <div><span>The consultants</span><span><q>I want the motion designer in on this as well as a consultant.</q> Seated for the critique that follows this page: a motion designer beside Motion &amp; IA, conversational UX, dictation, accessibility, the veterinary behaviourist, Dr. Chen, Trust &amp; Safety, QA. §07.</span></div>
+      <div><span>Republished after the critique</span><span>The twelve lenses read the first publish on 2026-10-23. The demo defects they confirmed are fixed here (the tick's shape, the beat's register, the hidden Ask verb, the time forms, the intake tap as the rating, the fixture errors); the design questions they raised are briefs on the issue and round 2's scope.</span></div>
       <div><span>How to read it</span><span>Every beat in §01 is a button; press them in order, or jump. The Reduce Motion switch is read as each beat starts. Frames are 81% of a 390 × 844 phone. <span class="pill cur">current</span> is the frame the team recommends; <span class="pill open">still open</span> is drawn for you to rule on.</span></div>
     </div>
   </header>
@@ -392,7 +406,7 @@
             <tr><td>Undo</td><td>The check unwrites; "Removed · your note is still saved". The stack does not return.</td><td><code>180</code> · <code>2400</code> REMOVED_DURATION_MS</td><td><code>destructiveConfirm</code></td></tr>
             <tr><td>Failed · offline · off · capped</td><td>The tick leaves, or never starts; one line says what happened and offers the by-hand door. The note is saved in every one.</td><td><code>150</code></td><td>none: a failure is read, not felt</td></tr>
             <tr><td>Crisis sentence</td><td>The deterministic gate runs at Save, before the haptic and before any request. The deflection arrives where the stack would, by the same arrival, on the rose rail, plain.</td><td><code>160 · 370 · 300</code>, not one millisecond harder</td><td>none; <code>commitNote</code> withheld</td></tr>
-            <tr><td>Ask</td><td>The sheet exits carrying the words; /ask pushes with them; thinking is the tick and the card's skeleton; the answer arrives out of the tick with a rail.</td><td>exit <code>180</code> · route, shipped</td><td><code>sendQuestion</code> light · <code>answerArrival</code> soft, silent on deflection</td></tr>
+            <tr><td>Ask</td><td>The sheet exits carrying the words; /ask pushes with them; thinking is the tick and the card's skeleton; the answer arrives out of the tick with a rail.</td><td>exit <code>180</code> · route, shipped</td><td>two new verbs, <code>sendQuestion</code> light and <code>answerArrival</code> soft, silent on a deflection; none of the nine in <code>lib/haptics.ts</code> covers Ask today</td></tr>
           </tbody>
         </table>
       </div>
@@ -535,24 +549,26 @@
   var CAT_CHIPS = ['Off', 'Sleeping more', 'Hiding', 'Not grooming', 'Lip-licking', 'Outside the box', 'Lively', 'Played'];
   function doorHTML(kind, pet) {
     if (kind === 'row') {
-      return '<div class="door" data-k="door"><span class="mic">' + SVG.mic + '</span><span class="t"><b>Tell ' + pet + '’s record</b><span>a note, a food, a dose, in your words</span></span><span class="dm">›</span></div>';
+      return '<div class="door" data-k="door"><span class="mic">' + SVG.note + '</span><span class="t"><b>Tell ' + pet + '’s record</b><span>a note, a food, a dose, in your words</span></span><span class="dm">›</span></div>';
     }
     if (kind === 'box') {
-      return '<div class="door box" data-k="door"><span class="t"><span class="phd">Anything about ' + pet + ' today?</span><span>Tell her record, or ask it.</span></span><span class="mic">' + SVG.mic + '</span></div>';
+      return '<div class="door box" data-k="door"><span class="t"><span class="phd">Anything about ' + pet + ' today?</span><span>Tell her record, or ask it.</span></span><span class="mic">' + SVG.note + '</span></div>';
     }
     return '';
   }
   function spineHTML(o) {
-    var rows = '<div class="node meal"><span>Royal Canin Selected Protein PR · Dry</span><span class="w">7:10 AM</span></div>';
+    var rows = o.pet === 'Pixel'
+      ? '<div class="node meal"><span>Sheba Perfect Portions · Wet</span><span class="w">7:40 AM</span></div>'
+      : '<div class="node meal"><span>Royal Canin Selected Protein PR · Dry</span><span class="w">7:10 AM</span></div>';
     if (o.committed) {
       rows += '<div class="node sym"><span>Cough</span><span class="w">~7:00 AM</span></div>' +
-              '<div class="node sym"><span>Vomit</span><span class="w">after 7:10 AM</span></div>' +
-              '<div class="node meal"><span>Didn’t eat · Royal Canin PR, Wet</span><span class="w">~4:00 PM</span></div>' +
+              '<div class="node sym"><span>Vomit</span><span class="w">7:10 AM–4:12 PM</span></div>' +
+              '<div class="node meal"><span>Royal Canin PR, Wet · refused</span><span class="w">~4:00 PM</span></div>' +
               '<div class="node note"><span>Note</span><span class="w">4:12 PM</span></div>';
     }
     if (o.margin) {
       rows += '<div class="node prov"><span>Cough · offered</span><span class="w">~7:00 AM</span></div>' +
-              '<div class="node prov"><span>Vomit · offered</span><span class="w">after 7:10 AM</span></div>' +
+              '<div class="node prov"><span>Vomit · offered</span><span class="w">7:10 AM–4:12 PM</span></div>' +
               '<div class="node add"><span>+ Note</span></div>';
     }
     return '<div class="spine">' + rows + '</div>';
@@ -563,20 +579,24 @@
   }
   function homeHTML(o) {
     var pet = o.pet || 'Nyx';
-    var count = o.committed ? '<div class="count"><b>5</b> logged today · 1 note</div>' : '<div class="count"><b>1</b> logged today</div>';
-    return '<div class="ph-home">' +
-      '<div class="ph-bar"><span class="pet"><i class="avatar"></i>' + pet + ' <small>▾</small></span><span class="date">Fri, Oct 23</span><span class="ask"><i></i>Ask</span><span class="me">D</span></div>' +
-      '<div class="ph-card"><div class="ph-label">Signal</div>' +
+    var sam = pet === 'Pixel';
+    var count = o.committed ? '<div class="count"><b>4</b> logged · 2 symptoms · 2 meals</div>' : '<div class="count"><b>1</b> logged · 1 meal</div>';
+    var signal = sam
+      ? '<div class="ph-card"><div class="ph-label">Signal</div><div class="ph-row"><div class="h s">Vomiting in 2 of the last 8 weeks</div><div class="s">3 episodes since Sep 2</div></div></div>'
+      : '<div class="ph-card"><div class="ph-label">Signal</div>' +
         '<div class="ph-row"><div class="h">Vomiting in 2 of the last 4 weeks</div><div class="s">4 episodes since Oct 9 · 2 soon after a meal</div></div>' +
         '<div class="ph-row"><div class="h s">Coughing in 2 of the last 4 weeks</div><div class="s">3 episodes since Oct 2</div></div>' +
       '</div>' +
-      '<div class="ph-card ph-trial"><b>Rabbit trial</b> ended Oct 20 · improved <span class="dm">›</span></div>' +
+      '<div class="ph-card ph-trial"><b>Rabbit trial</b> ended Oct 20 · you said better <span class="dm">›</span></div>';
+    return '<div class="ph-home">' +
+      '<div class="ph-bar"><span class="pet"><i class="avatar"></i>' + pet + ' <small>▾</small></span><span class="date">Fri, Oct 23</span><span class="ask"><i></i>Ask</span><span class="me">D</span></div>' +
+      signal +
       '<div class="ph-card"><div class="ph-label">Today</div>' +
         '<div class="look-q">How does ' + pet + ' seem today?</div>' +
         '<div class="look-chips">' + CAT_CHIPS.slice(0, 6).map(function (c) { return '<span>' + c + '</span>'; }).join('') + '<span class="more">More…</span></div>' +
         doorHTML(o.door, pet) +
         count +
-        spineHTML(o) +
+        spineHTML(Object.assign({ pet: pet }, o)) +
         (o.margin ? marginComposer(pet) : '') +
       '</div>' +
     '</div>';
@@ -611,7 +631,8 @@
   function headHTML(pet) { return '<div class="grab"></div><div class="cs-head"><b>' + pet + '’s record</b><span class="x">×</span></div>'; }
   function fieldHTML(text, pet) {
     return '<div class="cs-field">' + (text ? '<span class="live">' + text + '</span><span class="caret"></span>' : '<span class="phd">Anything about ' + pet + ' today?</span><span class="caret"></span>') + '</div>' +
-      '<div class="cs-verbs"><span class="verb ask"><i></i>Ask</span><span class="verb save">Save note</span></div>';
+      '<div class="cs-disclose">Kept as you write it. Anything that fits ' + pet + '’s record I’ll offer; you decide what goes in.</div>' +
+      '<div class="cs-verbs dock"><span class="verb ask"><i></i>Ask</span><span class="verb save">Save note</span></div>';
   }
   function noteHTML(text, time, pet, mark) {
     var t = text;
@@ -619,7 +640,7 @@
     return '<div class="cs-note"><div class="meta">Note · ' + time + '</div><div class="txt">' + t + '</div></div>';
   }
   function statusHTML(kind, text, door) {
-    var tick = kind === 'live' ? '<span class="tick"><i></i><i></i><i></i></span>' : kind === 'still' ? '<span class="tick rest"><i></i><i></i><i></i></span>' : '';
+    var tick = kind === 'live' ? '<span class="tick"></span>' : '';
     return '<div class="cs-status">' + tick + '<span class="line">' + text + '</span>' + (door ? '<span class="door">' + door + ' ›</span>' : '') + '</div>';
   }
   function chipsHTML(c) {
@@ -642,15 +663,15 @@
     h += '<div class="just">Just the note</div></div>';
     return h;
   }
-  var RECEIPT = '<div class="cs-receipt">Read from your note by AI · logged only when you tap</div>';
-  function barHTML(n, blocker) {
+    function barHTML(n, open, blocker) {
     if (n < 2) return '';
-    return '<div class="cs-bar' + (blocker ? ' blocked' : '') + '"><span>' + n + ' ready · one tap writes them all</span><span class="go">' + (blocker ? blocker : 'Log all ' + n) + '</span></div>';
+    var left = open ? (n - open) + ' ready · ' + open + (open === 1 ? ' needs an answer' : ' need an answer') : n + ' ready · one tap writes them all';
+    return '<div class="cs-bar' + (blocker ? ' blocked' : '') + '"><span>' + left + '</span><span class="go">' + (blocker ? blocker : 'Log all ' + n) + '</span></div>';
   }
   function stackHTML(cards, arrive) {
-    var blocker = null;
-    cards.forEach(function (c) { if (c.blocked && !blocker) blocker = c.blocked.replace(/ it$/, ' ' + cards.length); });
-    return '<div class="cs-stack' + (arrive ? ' arrive' : '') + '">' + cards.map(cardHTML).join('') + RECEIPT + '</div>' + barHTML(cards.length, blocker);
+    var blocker = null, open = 0;
+    cards.forEach(function (c) { if (c.blocked) { open++; if (!blocker) blocker = c.blocked.replace(/ to log it$/, ''); } });
+    return '<div class="cs-stack' + (arrive ? ' arrive' : '') + '">' + cards.map(cardHTML).join('') + '</div>' + barHTML(cards.length, open, blocker);
   }
   function crisisHTML(loud) {
     var h = '<div class="crisis' + (loud ? ' loud' : '') + '">' +
@@ -661,7 +682,7 @@
     return h + '</div>';
   }
   function beatHTML(removed) {
-    return '<div class="beat arrive"><div class="hr"><span class="tk">' + SVG.check + '</span><span class="tt"><b>' + (removed ? 'Removed' : 'Cough logged · and 2 more') + '</b><span>' + (removed ? 'Your note is still saved' : 'Saved to Nyx’s record') + '</span></span><span class="acts">' + (removed ? '' : 'Undo') + '</span></div></div>';
+    return '<div class="beat arrive"><div class="hr"><span class="tk">' + SVG.check + '</span><span class="tt"><b>' + (removed ? 'Removed' : 'Cough, Vomit and 1 more logged') + '</b><span>' + (removed ? 'Your note is still saved' : 'Saved to Nyx’s record') + '</span></span><span class="acts">' + (removed ? '' : 'Undo') + '</span></div></div>';
   }
   function layerHTML() {
     return '<div class="layer in"><div class="lh">Change time<span>Done</span></div><div class="wheel"><div><span>6</span><b>7</b><span>8</span></div><div><span>59</span><b>00</b><span>01</span></div><div><span>&nbsp;</span><b>AM</b><span>PM</span></div></div><div class="hint">From “around 7” in your note · estimated</div></div>';
@@ -669,7 +690,7 @@
   function askHTML(q, answer, receipt, thinking) {
     return '<div class="bar"><span class="back">‹ Home</span><span>Ask · Nyx</span></div>' +
       '<div class="q"><small>You asked</small>' + q + '</div>' +
-      (thinking ? '<div class="cs-status"><span class="tick"><i></i><i></i><i></i></span><span>Reading Nyx’s record</span></div>'
+      (thinking ? '<div class="cs-status"><span class="tick"></span><span>Reading Nyx’s record</span></div>'
                 : '<div class="ans arrive"><p>' + answer + '</p><div class="rc">' + receipt + '</div></div>') +
       '<div class="fieldrow">Ask about Nyx…</div>';
   }
@@ -680,10 +701,10 @@
   function heroCards(answered) {
     return [
       { tone: 'sym', type: 'Cough', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 7:00 AM', tag: 'estimated' }], pill: 'Cough · around 7:00 AM' },
-      { tone: 'sym', type: 'Vomit', pet: 'Nyx', rows: [{ lbl: 'When', val: 'After 7:10 AM', inf: true, tag: 'your breakfast meal' }], pill: 'Vomit · after 7:10 AM' },
+      { tone: 'sym', type: 'Vomit', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Between 7:10 AM and 4:12 PM', inf: true, tag: 'breakfast to this note' }], pill: 'Vomit · between 7:10 AM and 4:12 PM' },
       answered
-        ? { tone: 'meal', type: 'Didn’t eat', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ opts: ['Royal Canin Selected Protein PR · Wet'], on: 'Royal Canin Selected Protein PR · Wet' }, { opts: ['Refused', 'Picked', 'Some', 'Most', 'All'], prop: ['Refused'] }], pill: 'Didn’t eat · around 4:00 PM' }
-        : { tone: 'meal', type: 'Didn’t eat', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ q: 'Which food?', opts: ['Royal Canin PR · Wet', 'Blue Buffalo purée', 'Not sure'] }, { opts: ['Refused', 'Picked', 'Some', 'Most', 'All'], prop: ['Refused'] }], blocked: 'Answer which food to log it' }
+        ? { tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ opts: ['Royal Canin Selected Protein PR · Wet'], on: 'Royal Canin Selected Protein PR · Wet' }, { q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'], on: 'Refused' }], pill: 'Meal · refused · around 4:00 PM' }
+        : { tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ q: 'Which food?', opts: ['Royal Canin PR · Wet', 'Blue Buffalo purée', 'Not sure'] }, { q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'] }], blocked: 'Answer which food and how much to log it' }
     ];
   }
 
@@ -692,7 +713,7 @@
   var heroCap = document.getElementById('hero-cap');
   var beatnote = document.getElementById('beatnote');
   var timers = [];
-  function later(ms, fn) { if (reduced()) { fn(); return; } timers.push(setTimeout(fn, ms)); }
+  function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
   function clear() { timers.forEach(clearTimeout); timers = []; }
   function setHero(o) {
     hero.className = 'ph' + (o.open ? ' open' : '') + (o.fan ? ' fanopen' : '') + (o.ask ? ' askmode' : '');
@@ -719,10 +740,10 @@
         var step = function () { i += 3; span.textContent = HERO_TEXT.slice(0, i); if (i === 3) cs.classList.add('has-text'); if (i < HERO_TEXT.length) timers.push(setTimeout(step, 22)); };
         step();
       } },
-    { k: 'save', label: 'Save', cap: 'The note is written in the tap. The rail draws, the keyboard leaves, "Saved to Nyx’s record" lands. Then the tick starts.', note: '<b>Save.</b> Chrome 150 · rail 160 (railLeadMs: the line leads, a rail is what a record has) · sentence +40 over 300. Haptic <code>commitNote</code>, new, one soft impact, the calm tone (CUL-1632). The tick starts only once a request is in flight; at 1.5s the line reads "Reading your note".',
+    { k: 'save', label: 'Save', cap: 'The note is written in the tap. The rail draws, the keyboard leaves, "Saved to Nyx’s record" lands. Then the tick starts.', note: '<b>Save.</b> Chrome 150 · rail 160 (railLeadMs: the line leads, a rail is what a record has) · sentence +40 over 300. Haptic <code>commitNote</code>, new, one soft impact, the calm tone (CUL-1632). The tick starts with the request, in the Save tap’s frame (Tick.tsx: working is the request’s fact); at 1.5s the line swaps to "Reading your note".',
       run: function () {
-        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet(['<div class="cs-note arrive"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + HERO_TEXT + '</div></div>', statusHTML('none', savedLine)]) });
-        later(1500, function () { var st = hero.querySelector('.cs-status'); if (st) st.outerHTML = statusHTML('live', 'Reading your note'); });
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet(['<div class="cs-note arrive"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + HERO_TEXT + '</div></div>', statusHTML('live', savedLine)]) });
+        later(1500, function () { var l = hero.querySelector('.cs-status .line'); if (l) { l.textContent = 'Reading your note'; l.classList.add('fade-in'); } });
       } },
     { k: 'reading', label: 'The wait', cap: 'The tick breathes where row 1’s rail will begin. At 5s the line says what the time means.', note: '<b>The wait.</b> TICK_BREATH 1400ms to 0.35, the one loop. The line swaps in place at 0 / 1.5s / 5s: "Still reading · the note is saved, you can close this". A counter is a second loop and a false precision. Closing keeps the note and abandons the parse.',
       run: function () {
@@ -731,27 +752,27 @@
       } },
     { k: 'proposals', label: 'Proposals arrive', cap: 'Three facts, three cards, in the order she wrote them. Black is hers; grey was inferred; the third card asks one question as chips.', note: '<b>Proposals arrive.</b> The tick grows into row 1’s rail (160); one box opens (370); sentences land top to bottom (+40 over 300), staggered 28ms (dotStaggerMs). Jot order, never confidence. No haptic: a proposal is a question. The commit bar names the blocker instead of greying out (C-7).',
       run: function () {
-        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'From your note · nothing is logged until you tap'), stackHTML(heroCards(false), true)]) });
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(heroCards(false), true)]) });
       } },
-    { k: 'question', label: 'A question, answered', cap: 'She taps Royal Canin PR · Wet. The chip group crossfades to one chip; the card’s pill and the bar unblock.', note: '<b>A question.</b> The question was the row’s field, drawn as chips in the value’s slot; nothing arrived later. 150ms crossfade; a slide would reflow siblings. Haptic <code>selectChip</code>. Not sure would keep the note and write nothing typed.',
+    { k: 'question', label: 'A question, answered', cap: 'She taps Royal Canin PR · Wet, then Refused: the intake tap is the rating, as in the meal sheet. The food chips crossfade to one; the card’s pill and the bar unblock.', note: '<b>A question.</b> The question was the row’s field, drawn as chips in the value’s slot; nothing arrived later. 150ms crossfade; a slide would reflow siblings. Haptic <code>selectChip</code>. Not sure would keep the note and write nothing typed.',
       run: function () {
-        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'From your note · nothing is logged until you tap'), stackHTML(heroCards(true), false)]) });
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(heroCards(true), false)]) });
         var third = hero.querySelectorAll('.card')[2]; if (third) third.classList.add('fade-in');
       } },
     { k: 'correct', label: 'Correct a field', cap: 'A tap on the Cough card’s time opens the time panel as a layer inside the sheet, and the phrase that produced it lights in the note.', note: '<b>Correct a field.</b> The layer rises on the sheet’s own curve (370 / 180), the TimeEditSheet split of panel and wrapper (C-14). Back: that chip alone crossfades, typed ink over inferred grey; rows are fixed-height (C-8). Never a free-text box.',
       run: function () {
-        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx', 'around 7'), statusHTML('none', 'From your note · nothing is logged until you tap'), stackHTML(heroCards(true), false)]) + layerHTML() });
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx', 'around 7'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(heroCards(true), false)]) + layerHTML() });
       } },
     { k: 'commit', label: 'Commit', cap: 'Log all 3. The shipped sheet beat, calm because a symptom is in the stack; one buzz for three rows. The sheet closes; the note’s hollow ring lands on Today’s spine.', note: '<b>Commit.</b> The stack leaves (180, 8pt drift); the disc from 0.6; the check writes over 160; the sentence names two then "and 1 more"; dwell 1800 (SHEET_BEAT_DWELL_MS). Tone by <code>commitToneOf</code> over the stack: calm if any symptom, never gold. Undo armed. The note joins no count.',
       run: function () {
-        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'From your note · nothing is logged until you tap'), '<div class="cs-stack leave">' + heroCards(true).map(cardHTML).join('') + '</div>']) });
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), '<div class="cs-stack leave">' + heroCards(true).map(cardHTML).join('') + '</div>']) });
         later(180, function () { var st = hero.querySelector('.cs-stack'); if (st) st.outerHTML = beatHTML(false); });
         later(2200, function () { setHero({ door: 'row', committed: true }); heroCap.textContent = 'Home after the commit: three rows and the note’s hollow ring on the spine, joining no count.'; });
       } },
     { k: 'undo', label: 'Undo', cap: 'Undo unwrites the check. "Removed · your note is still saved." The stack does not return.', note: '<b>Undo.</b> 180ms unwrite; the line holds 2400 (REMOVED_DURATION_MS). A reversal snaps, never re-proposes: the owner can read the note and log by hand. Haptic <code>destructiveConfirm</code> (C-21).',
       run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', savedLine), beatHTML(true)]) }); } },
     { k: 'failed', label: 'Nothing fits', cap: 'Sentence 4. No leaf fits an ear: the note stays, the tick rests grey, one line says so, and the by-hand door is beneath. No toast.', note: '<b>Failed parse.</b> The tick leaves (150) or rests as a still grey mark; the line: "Saved as you wrote it. Nothing in it I could offer for Nyx’s record." Nothing is ever proposed as Other. No haptic: the save buzzed; a failure is read, not felt.',
-      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML('Shaking her head again and tipping the left ear down, like before the ear infection.', '9:40 PM', 'Nyx'), statusHTML('still', 'Saved as you wrote it. Nothing in it I could offer for Nyx’s record.'), '<div class="after"><span class="door" style="margin:0;padding:0;border:0;min-height:0;color:var(--app-action);font-weight:600">Log something by hand ›</span></div>']) }); } },
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML('Shaking her head again and tipping the left ear down, like before the ear infection.', '9:40 PM', 'Nyx'), statusHTML('none', 'Saved as you wrote it. Nothing in it I could offer for Nyx’s record.'), '<div class="after"><span class="door" style="margin:0;padding:0;border:0;min-height:0;color:var(--app-action);font-weight:600">Log something by hand ›</span></div>']) }); } },
     { k: 'offline', label: 'Offline', cap: 'No connection: the tick never starts. The note is saved, and the line says it will not be read later.', note: '<b>Offline.</b> No tick, no queue: nothing lands where the owner is not looking. "Saved as you wrote it. Reading it needs a connection, and it won’t be read later." The by-hand door dismisses this sheet first.',
       run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Saved as you wrote it. Reading it needs a connection, and it won’t be read later.', 'Log it by hand')]) }); } },
     { k: 'consent', label: 'AI reading off', cap: 'Consent declined: the note saves, nothing is sent, the line says where the switch is.', note: '<b>Consent off.</b> The first Save ever shows the consent sheet as a layer; "What’s sent" names typed notes. Declined, the composer is a notebook: "Saved as you wrote it. Reading notes is off in Settings; Nyx’s record is all here." No meter, no lock on the note path.',
@@ -760,7 +781,7 @@
       run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Saved as you wrote it. Reading is used up until Monday.', 'Log it by hand')]) }); } },
     { k: 'crisis', label: 'Crisis sentence', cap: 'Sentence 9. The deterministic gate fires at Save, before any model. The deflection arrives where the stack would, on the rose rail, plain, with one door.', note: '<b>Crisis.</b> 160 · 370 · 300, not one millisecond harder. No proposals, no wait, no change of height or ground. <code>commitNote</code> withheld; no haptic. Plainness is the severity signal; the three vomit rows wait behind the floor until after the call.',
       run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack arrive">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }); } },
-    { k: 'ask', label: 'Ask', cap: 'Sentence 8, routed by the owner’s verb. The sheet exits carrying the words; /ask answers from the record, out of the tick, with a rail.', note: '<b>Ask.</b> The sheet exits (180) to the ask store; /ask pushes with the words; thinking is the tick and the card’s skeleton; the answer arrives with a rail. <code>sendQuestion</code> light at the verb, <code>answerArrival</code> soft at t0, silent on a deflection. The Whorl retires for the tick (CUL-1593).',
+    { k: 'ask', label: 'Ask', cap: 'Sentence 8, routed by the owner’s verb. The sheet exits carrying the words; /ask answers from the record, out of the tick, with a rail.', note: '<b>Ask.</b> The sheet exits (180) to the ask store; /ask pushes with the words; thinking is the tick and the card’s skeleton; the answer arrives with a rail. Two new haptic verbs (none of the nine shipped covers Ask): <code>sendQuestion</code> light at the verb, <code>answerArrival</code> soft at t0, silent on a deflection. The Whorl retires for the tick (CUL-1593).',
       run: function () {
         setHero({ door: 'row', ask: askHTML('Did I already log her pred this morning?', '', '', true) });
         later(1400, function () { var a = hero.querySelector('.askscr'); if (a) a.innerHTML = askHTML('Did I already log her pred this morning?', 'No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.', 'From Nyx’s logged rows · Ask', false); });
@@ -792,28 +813,29 @@
   // §02 Directions
   var dirs = document.getElementById('dir-frames');
   frame(dirs, { door: 'none', fan: true }, '<b>A · The Note tile <span class="pill dir">direction</span></b><span>A Note pill in the fan; nothing on Home. The composer is a fourth family inside the log sheet, and the proposals are its confirm stage. For Jordan at 9:20pm on the sofa. Ask stays where it is.</span>');
+  frame(dirs, { door: 'none', open: true, kbdDown: true, sheet: '<div class="grab"></div><div class="cs-head"><b>Log for Nyx</b><span class="x">×</span></div><div class="cs-body"><div class="tile wide new"><span class="g quiet">' + SVG.note + '</span><span>Note<br><small>in your words</small></span><span class="chips"><span>Tell</span></span></div><div class="fam">Digestion</div><div class="grid"><div class="tile"><span class="g">' + SVG.vomit + '</span>Vomit</div><div class="tile"><span class="g">' + SVG.stool + '</span>Stool</div></div><div class="fam">Respiratory</div><div class="grid"><div class="tile"><span class="g">' + SVG.plusq + '</span>Cough</div><div class="tile"><span class="g">' + SVG.plusq + '</span>Sneeze</div></div><div class="fam">Energy &amp; behaviour · Food &amp; care · Skin &amp; coat · Measurements</div><div class="grid"><div class="tile"><span class="g quiet">' + SVG.dots + '</span>More…</div></div></div>' }, '<b>A · The Note tile, its composer <span class="pill dir">direction</span></b><span>Inside the shipped log sheet, a Note tile above the families; the tap swaps the grid for the composer and the proposals are the sheet’s confirm stage. One sheet carries two stage machines (C-30), and Ask stays in the header.</span>');
   frame(dirs, { door: 'row' }, '<b>B · Tell the record <span class="pill cur">current</span></b><span>The composer is the record’s present tense, reachable from where the owner stands: a door on Today, the fan’s Note pill and the header’s Ask pill open one sheet, a sibling of the log sheet. For all three owners; Jordan at 2am still taps chips.</span>');
   frame(dirs, { door: 'none', margin: true }, '<b>C · The day’s margin <span class="pill dir">direction</span></b><span>"+ Note" at the foot of Today’s spine; the note is written on the day itself and the proposals land as provisional hollow nodes, tap to fill, ignore to drop. For Sam and the 9pm note-taker. Home gains a form, and History v2 a provisional state.</span>');
 
   // §03 The ten sentences, and Sam's
   var SENT = [
     { n: 1, type: 'Vomit', text: 'Threw up again right after breakfast, mostly the dry food. Slow feeder didn’t help this time.', time: '8:02 AM',
-      cards: [{ tone: 'sym', type: 'Vomit', pet: 'Nyx', rows: [{ lbl: 'When', val: 'After 7:10 AM', inf: true, tag: 'your breakfast meal' }], pill: 'Vomit · after 7:10 AM' }],
+      cards: [{ tone: 'sym', type: 'Vomit', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Between 7:10 AM and 8:02 AM', inf: true, tag: 'breakfast to this note' }], pill: 'Vomit · between 7:10 AM and 8:02 AM' }],
       offers: 'One vomit, after the breakfast row already in her record; the sentence kept whole as the note.', never: 'A severity; "witnessed"; a count from "again"; the dry food as a cause.' },
     { n: 2, type: 'Cough', text: 'She coughed a few times this morning around 7, that same dry hacking thing.', time: '7:31 AM',
       cards: [{ tone: 'sym', type: 'Cough', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 7:00 AM', tag: 'estimated' }], pill: 'Cough · around 7:00 AM' }],
       offers: 'One cough row, the time from her words in black, estimated.', never: 'Several rows from "a few"; an invented count.' },
     { n: 3, type: 'Dose', text: 'Gave her the pred in her wet food at 8, pretty sure she ate most of it.', time: '8:14 AM',
-      cards: [{ tone: 'med', type: 'Dose', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 8:00 AM', tag: 'estimated' }], chips: [{ q: 'Which course?', opts: ['Prednisolone, ended Oct 11', 'A new course', 'Not sure'] }, { opts: ['Given', 'Partial'] }], blocked: 'Answer which course to log it' }],
-      offers: 'A dose with two open fields: the course (hers ended Oct 11) and given or partial, nothing pre-picked.', never: 'Picking given or partial for her; attaching to an ended course unasked.' },
+      cards: [{ tone: 'med', type: 'Dose', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 8:00 AM', tag: 'estimated' }], chips: [{ q: 'Which course?', opts: ['Prednisolone, ended Oct 11', 'Not sure'] }, { q: 'Taken?', opts: ['Given', 'Partial'] }], blocked: 'Answer which course and whether it was taken to log it' }],
+      offers: 'A dose with two open fields: the course (hers ended Oct 11; a jot never creates one) and given or partial, nothing pre-picked.', never: 'Picking given or partial for her; attaching to an ended course unasked; minting a course.' },
     { n: 4, type: 'Nothing fits', text: 'Shaking her head again and tipping the left ear down, like before the ear infection.', time: '9:40 PM', none: true,
       offers: 'No leaf fits an ear. The note is kept; the line says so; the by-hand door is beneath. A "Save for the vet" chip is worth drawing in round 2, not ruled.', never: 'Proposing Other; inventing an ear symptom; a look word not in the cat set.' },
     { n: 5, type: 'Noticed + a meal', text: 'Hid under the bed most of the afternoon and skipped her 4pm wet food.', time: '5:20 PM',
-      cards: [{ tone: 'look', type: 'Noticed', pet: 'Nyx', rows: [{ lbl: 'When', val: 'This afternoon', inf: true }], chips: [{ opts: ['Off', 'Hiding', 'Lip-licking', 'Lively'], prop: ['Hiding'] }], pill: 'Noticed · Hiding' },
-              { tone: 'meal', type: 'Didn’t eat', pet: 'Nyx', rows: [{ lbl: 'Food', val: 'Royal Canin Selected Protein PR · Wet', inf: true }, { lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ opts: ['Refused', 'Picked', 'Some', 'Most', 'All'], prop: ['Refused'] }], pill: 'Didn’t eat · around 4:00 PM' }],
+      cards: [{ tone: 'look', type: 'Noticed', pet: 'Nyx', rows: [], chips: [{ opts: CAT_CHIPS, prop: ['Hiding'] }], pill: 'Noticed · Hiding' },
+              { tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'Food', val: 'Royal Canin Selected Protein PR · Wet', inf: true }, { lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'] }], blocked: 'Tap how much she ate to log it' }],
       offers: 'Two cards: the Noticed chip "Hiding", hairline, from the frozen cat set, in its usual place; and a Didn’t-eat card through the intake-first meal path.', never: '"Skipped" as a look word (T-3); "picky"; reordered chips.' },
     { n: 6, type: 'Meal', text: 'Tried the Blue Buffalo chicken purée tonight, first chicken since the trial ended, she licked the bowl clean.', time: '7:48 PM',
-      cards: [{ tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'Food', val: 'Blue Buffalo Tastefuls Purées with Chicken', tag: 'from her foods' }, { lbl: 'When', val: 'This evening', inf: true }], chips: [{ opts: ['Refused', 'Picked', 'Some', 'Most', 'All'], prop: ['All'] }], pill: 'Meal · this evening' }],
+      cards: [{ tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'Food', val: 'Blue Buffalo Tastefuls Purées with Chicken', tag: 'from her foods' }, { lbl: 'When', val: 'Between 5:00 PM and 7:48 PM', inf: true, tag: 'tonight' }], chips: [{ q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'] }], blocked: 'Tap how much she ate to log it' }],
       offers: 'A meal of a food already in her library; "All" offered from her words, not set.', never: 'Setting the rating itself; "safe" or "cleared" about the trial; adding chicken to anything.' },
     { n: 7, type: 'Nothing fits', text: 'No vomiting today, first clean day since Tuesday.', time: '9:05 PM', none: true,
       offers: 'Nothing proposed. The note is saved and the line says so plainly.', never: 'A vomit (the negation trap); a logged zero; a word about wellness.' },
@@ -822,21 +844,21 @@
     { n: 9, type: 'Crisis', text: 'She’s thrown up three times since noon and won’t touch water.', time: '1:58 AM', crisis: true,
       offers: 'The deterministic gate fires before any model. The deflection, plain, with the call door; the note is saved; the rows wait behind the floor.', never: 'The model first; a quiet proposal; a softer line; a withheld save.' },
     { n: 10, type: 'Which pet', text: 'Cooper ate the rest of Nyx’s rabbit treats off the counter.', time: '6:31 PM',
-      cards: [{ tone: 'meal', type: 'Treat', petQ: 'pet', rows: [{ lbl: 'Food', val: 'Rayne Rewards S.I.T. · Treat', inf: true }], chips: [{ q: 'Which pet?', opts: ['Cooper', 'Nyx', 'Not sure'] }, { q: 'When?', opts: ['Just now', 'Earlier today'] }], blocked: 'Answer which pet to log it' }],
+      cards: [{ tone: 'meal', type: 'Treat', petQ: 'pet', rows: [{ lbl: 'Food', val: 'Rayne Rewards S.I.T. · Treat', inf: true }, { lbl: 'When', val: 'Found by 6:31 PM', inf: true, tag: 'approximate' }], chips: [{ q: 'Which pet?', opts: ['Cooper', 'Nyx', 'Not sure'] }], blocked: 'Answer which pet to log it' }],
       offers: 'The sentence names two pets, so the card asks. Cooper: a treat on Cooper. Not sure: the note holds and nothing typed is written.', never: 'A row on the active pet; a row on both. Stands on CUL-807, unbuilt.' }
   ];
   var sents = document.getElementById('sent-frames');
   SENT.forEach(function (s) {
     var parts = [noteHTML(s.text, s.time, 'Nyx')];
-    if (s.none) parts.push(statusHTML('still', 'Saved as you wrote it. Nothing in it I could offer for Nyx’s record.'), '<div class="after"><span style="color:var(--app-action);font-weight:600">Log something by hand ›</span></div>');
-    else if (s.question) parts.push(statusHTML('none', 'That reads like a question. Ask it?'), '<div class="cs-verbs" style="opacity:1"><span class="verb ask"><i></i>Ask</span></div>');
+    if (s.none) parts.push(statusHTML('none', 'Saved as you wrote it. Nothing in it I could offer for Nyx’s record.'), '<div class="after"><span style="color:var(--app-action);font-weight:600">Log something by hand ›</span></div>');
+    else if (s.question) parts.push(statusHTML('none', 'That reads like a question. Ask it?'), '<div class="cs-verbs cs-after"><span class="verb ask"><i></i>Ask</span></div>');
     else if (s.crisis) parts.push(statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>');
-    else parts.push(statusHTML('none', 'From your note · nothing is logged until you tap'), stackHTML(s.cards, false));
+    else parts.push(statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(s.cards, false));
     frame(sents, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', parts) },
       '<b>' + s.n + ' · ' + s.type + '</b><span class="sent">“' + s.text + '”</span><span>' + s.offers + '</span><span><b style="font-size:12px;color:var(--rose-ink)">Never</b> ' + s.never + '</span>');
   });
   // Sam's frame: Pixel and Juniper
-  frame(sents, { door: 'row', open: true, kbdDown: true, pet: 'Pixel', sheet: sheetFor('Pixel', [noteHTML('One of them was sick on the stairs, pretty sure Pixel.', '9:14 PM', 'Pixel'), statusHTML('none', 'From your note · nothing is logged until you tap'), stackHTML([{ tone: 'sym', type: 'Vomit', petQ: 'cat', rows: [{ lbl: 'When', val: 'Found by 9:14 PM', inf: true, tag: 'approximate' }], chips: [{ q: 'Which cat?', opts: ['Pixel', 'Juniper', 'Not sure'] }], blocked: 'Answer which cat to log it' }], false)]) },
+  frame(sents, { door: 'row', open: true, kbdDown: true, pet: 'Pixel', sheet: sheetFor('Pixel', [noteHTML('One of them was sick on the stairs, pretty sure Pixel.', '9:14 PM', 'Pixel'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML([{ tone: 'sym', type: 'Vomit', petQ: 'cat', rows: [{ lbl: 'When', val: 'Found by 9:14 PM', inf: true, tag: 'approximate' }], chips: [{ q: 'Which cat?', opts: ['Pixel', 'Juniper', 'Not sure'] }], blocked: 'Answer which cat to log it' }], false)]) },
     '<b>Sam · Which cat</b><span class="sent">“One of them was sick on the stairs, pretty sure Pixel.”</span><span>Dictated at 9pm with two cats in the house. "Was sick on the stairs" is a found incident, so the time is a window ending now; "pretty sure" is not sure enough to pre-pick, so the card asks. Not sure saves the note and writes nothing typed.</span><span><b style="font-size:12px;color:var(--rose-ink)">Never</b> The proposal sliding to the active cat; a misheard name landing unseen (the words are on screen before Save).</span>');
 
   // §04 The decisions
@@ -847,10 +869,10 @@
 
   var asks = document.getElementById('ask-frames');
   frame(asks, { door: 'row', ask: askHTML('Did I already log her pred this morning?', 'No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.', 'From Nyx’s logged rows · Ask', false) }, '<b>(a) Hand off to /ask <span class="pill cur">current</span></b><span>The sheet exits carrying the words and the built screen answers, out of the tick, with a rail. One screen holds Ask’s rules; the Whorl retires for the tick.</span>', 'option');
-  frame(asks, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('Did I already log her pred this morning?', '8:09 AM', 'Nyx'), statusHTML('none', 'Asked · from Nyx’s logged rows'), '<div class="cs-stack arrive"><div class="askscr" style="position:static;display:block;padding:0;background:none"><div class="ans"><p>No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.</p><div class="rc">From Nyx’s logged rows · Ask</div></div></div></div>', '<div class="cs-verbs" style="opacity:1;margin-top:auto;margin-bottom:30px"><span class="verb ask"><i></i>Ask another</span><span class="verb save">Save as a note</span></div>']) }, '<b>(b) The sheet answers <span class="pill open">still open</span></b><span>One surface for telling and asking: the answer lands under the question, in the sheet. A second place Ask’s rules must hold (D5, D8), and a composer that is sometimes a chat.</span>', 'option');
+  frame(asks, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('Did I already log her pred this morning?', '8:09 AM', 'Nyx'), statusHTML('none', 'Asked · from Nyx’s logged rows'), '<div class="cs-stack arrive"><div class="askscr" style="position:static;display:block;padding:0;background:none"><div class="ans"><p>No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.</p><div class="rc">From Nyx’s logged rows · Ask</div></div></div></div>', '<div class="cs-verbs cs-after" style="margin-top:auto;margin-bottom:30px"><span class="verb ask"><i></i>Ask another</span><span class="verb save">Save as a note</span></div>']) }, '<b>(b) The sheet answers <span class="pill open">still open</span></b><span>One surface for telling and asking: the answer lands under the question, in the sheet. A second place Ask’s rules must hold (D5, D8), and a composer that is sometimes a chat.</span>', 'option');
 
   var crises = document.getElementById('crisis-frames');
   frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }, '<b>(a) The same physics, plain <span class="pill cur">current</span></b><span>The safety card’s register (S1): it lands where the stack would, above everything, on the rose rail, with one door and the save’s buzz withheld. Louder teaches that quiet means fine.</span>', 'option');
-  frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), '<div class="cs-stack">' + crisisHTML(true) + '</div>']) }, '<b>(b) A distinct register <span class="pill open">still open</span></b><span>Dr. Chen’s 2am: the night ground, the clinic’s number ready to dial, a second door to the nearest emergency clinic, a warning haptic. Louder, and a second register the app would have to keep honest everywhere else.</span>', 'option');
+  frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(true) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }, '<b>(b) A distinct register <span class="pill open">still open</span></b><span>Dr. Chen’s 2am: the night ground, the clinic’s number ready to dial, a second door to the nearest emergency clinic, a warning haptic. Louder, and a second register the app would have to keep honest everywhere else.</span>', 'option');
 })();
 </script>
