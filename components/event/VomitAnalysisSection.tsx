@@ -16,8 +16,7 @@
 // reassuring value, so this component never renders an "all clear".
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { theme } from '../../constants/theme';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
+import { textStyles, theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import {
   writeAnalysisDismissal,
@@ -77,9 +76,11 @@ import {
   BLOOD_OPTIONS,
 } from './vomitFields';
 import { ThemedText } from '../ui/ThemedText';
+import { PrimaryButton } from '../ui/PrimaryButton';
+import { Tick } from '../surfaces/waits/Tick';
 import { intakeCorrectionDisplay, type IntakeCorrectionColumns } from '../../lib/readCorrection';
 import {
-  IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
+  IncidentReadCard, IncidentReadFrame, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE,
   INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
 } from './IncidentReadCard';
 import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
@@ -92,7 +93,7 @@ import { recordShownTiers } from '../../lib/incidentTierShown';
 import { useShownTier } from '../../hooks/useShownTier';
 import { effectiveTierRank, TIER_RANK } from '../../lib/incidentTier';
 import type { FloorTier } from '../../lib/incidentFloor';
-import { IncidentReadSection } from './IncidentReadSection';
+import { IncidentReadSection, ReadSectionInset } from './IncidentReadSection';
 import { ObservationGrid } from './ObservationGrid';
 import { useIncidentArrival } from '../motion/arrivalMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -114,7 +115,10 @@ import {
   RECORD_ASK_TITLE,
   RECORD_NOT_READ_YET_HEADING,
   RECORD_OFF_HEADING,
+  RECORD_TRY_AGAIN,
   RECORD_UNREAD_HEADING,
+  recordUnreadRetryBody,
+  recordVetLine,
 } from '../../constants/aiConsentCopy';
 
 // 'capped' / 'read_disabled' are the two states the analyze-vomit function writes
@@ -647,13 +651,6 @@ export function VomitAnalysisSection(
     );
   }
 
-  // First load, nothing known yet. Only shown WITH a photo — a photoless event
-  // stays silent until it resolves (to an escalation, or to nothing), so the
-  // section never appears-then-vanishes on the common photoless path (B-363).
-  if (hasPhoto && row === undefined && !working) {
-    return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
-  }
-
   const status: Status | undefined = row?.status;
 
   // CUL-1835 — what sits where an unread photo's read would: the ask (frame D), a recorded
@@ -663,8 +660,10 @@ export function VomitAnalysisSection(
   function unreadSlot(frame: UnreadFrame) {
     if (frame === 'ask' && !askDismissed) {
       return (
-        <IncidentReadSection arrival={arrival} announcer={announcer} announcement={RECORD_ASK_TITLE} pending={false}>
-          <RecordAskCard kind="vomit" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+        <IncidentReadSection arrival={arrival} announcer={announcer} announcement={RECORD_ASK_TITLE} pending={false} labelAbove>
+          <ReadSectionInset>
+            <RecordAskCard kind="vomit" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+          </ReadSectionInset>
         </IncidentReadSection>
       );
     }
@@ -675,14 +674,18 @@ export function VomitAnalysisSection(
       : RECORD_UNREAD_HEADING;
     return (
       <IncidentReadSection arrival={arrival} announcer={announcer} announcement={heading} pending={false}>
-        <RecordUnreadStatus
-          kind="vomit"
-          variant={variant}
-          petName={consentPet}
-          onTurnOn={() => router.push('/settings/ai-reading')}
-          onRead={handleRetry}
-          reading={retrying}
-        />
+        {/* P3: the unread frames take the dashed edge every state that is not a read takes. */}
+        <IncidentReadFrame surface="dashed" testID="incident-read-consent">
+          <RecordUnreadStatus
+            kind="vomit"
+            variant={variant}
+            petName={consentPet}
+            onTurnOn={() => router.push('/settings/ai-reading')}
+            onRead={handleRetry}
+            reading={retrying}
+            framed
+          />
+        </IncidentReadFrame>
       </IncidentReadSection>
     );
   }
@@ -696,6 +699,27 @@ export function VomitAnalysisSection(
   // nothing in flight falls through to the frames below, each of which carries a retry.
   const reading = working || retrying;
 
+
+  // CUL-823 (D-823): on an account that said no, the answer is on this phone, so the off
+  // frame paints on the first frame instead of a tick that promises a read the server will
+  // not run. Two waits qualify: the stored row still loading, and a first read the server
+  // was just asked for with NO row behind it (it can still return a check that needs no
+  // photo, which then lands over this frame as a call, spoken by the announcer as any
+  // landing is). Never over a row already here: the server never writes `pending`, so a
+  // pending row is this phone's own Re-run, and over a stored call that must stay on screen
+  // through the re-read (CUL-827). `retrying` falls before the watch starts, so it cannot
+  // be what guards that (adversarial pass 1 on CUL-1912).
+  const offBeforeRow =
+    hasPhoto && consent === 'declined' && !retrying &&
+    (row === undefined || (working && row === null));
+  if (offBeforeRow) return unreadSlot('off');
+
+  // First load, nothing known yet. Only shown WITH a photo — a photoless event
+  // stays silent until it resolves (to an escalation, or to nothing), so the
+  // section never appears-then-vanishes on the common photoless path (B-363).
+  if (hasPhoto && row === undefined && !working) {
+    return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
+  }
 
   // Pending / actively working — UNLESS the record already holds an escalation, which
   // stays on screen through the re-read with the re-read shown in place beside it
@@ -719,20 +743,13 @@ export function VomitAnalysisSection(
         announcement={INCIDENT_READ_FAILED_LINE}
         pending={false}
       >
-        <View style={styles.failedBox}>
-          <ThemedText style={styles.failedText}>{INCIDENT_READ_FAILED_LINE}</ThemedText>
-          <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={handleRetry}
-            disabled={retrying}
-            hitSlop={8}
-            activeOpacity={0.8}
-          >
-            {retrying
-              ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
-              : <ThemedText style={styles.retryBtnText}>Try again</ThemedText>}
-          </TouchableOpacity>
-        </View>
+        {/* The dashed frame every non-read shares (P3), and the vet line rides it, as it
+            rides every state that is not a read (D-820 extends it to this frame). */}
+        <IncidentReadFrame surface="dashed" testID="incident-read-failed">
+          <ThemedText style={styles.frameText}>{INCIDENT_READ_FAILED_LINE}</ThemedText>
+          <ThemedText style={styles.frameText}>{recordVetLine('vomit', consentPet)}</ThemedText>
+          <PrimaryButton label="Try again" variant="secondary" onPress={handleRetry} loading={retrying} style={styles.frameButton} />
+        </IncidentReadFrame>
       </IncidentReadSection>
     );
   }
@@ -764,9 +781,9 @@ export function VomitAnalysisSection(
         announcement={vomitCapCopy(petName, 'daily')}
         pending={false}
       >
-        <View style={styles.capBox}>
-          <ThemedText style={styles.capText}>{vomitCapCopy(petName, 'daily')}</ThemedText>
-        </View>
+        <IncidentReadFrame surface="dashed" testID="incident-read-capped">
+          <ThemedText style={styles.frameText}>{vomitCapCopy(petName, 'daily')}</ThemedText>
+        </IncidentReadFrame>
       </IncidentReadSection>
     );
   }
@@ -817,14 +834,17 @@ export function VomitAnalysisSection(
         announcer={announcer}
         announcement={row.dismissed_at ? DISMISSED_LINE : TIER_WORDS.not_enough_to_say.label}
         pending={false}
+        labelAbove={!!row.dismissed_at}
       >
         {row.dismissed_at ? (
-          <View style={styles.dismissedRow}>
-            <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
-            <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
-              <ThemedText style={styles.linkText}>Show</ThemedText>
-            </TouchableOpacity>
-          </View>
+          <ReadSectionInset>
+            <View style={styles.dismissedRow}>
+              <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
+              <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
+                <ThemedText style={styles.linkText}>Show</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </ReadSectionInset>
         ) : (
           <IncidentReadCard
             verdict="not_enough_to_say"
@@ -850,16 +870,28 @@ export function VomitAnalysisSection(
       <IncidentReadSection
         arrival={arrival}
         announcer={announcer}
-        announcement={INCIDENT_READ_NOT_ENOUGH_LINE}
+        announcement={RECORD_UNREAD_HEADING}
         pending={false}
       >
-        <View style={styles.neutralCard}>
-          <ThemedText style={styles.readText}>{INCIDENT_READ_NOT_ENOUGH_LINE}</ThemedText>
-          <TouchableOpacity onPress={handleRetry} hitSlop={16} disabled={retrying}>
-            <ThemedText style={styles.linkText}>{retrying ? 'Working…' : 'Try analysis'}</ThemedText>
+        {/* CUL-820 (D-820, ruled B): the consent family's unread frame. It says no read
+            happened and names no cause this branch cannot know (an unsynced photo, a watch
+            that gave up), so it is never heard as a verdict on a photo nobody read; the vet
+            line and Try again ride it. */}
+        <IncidentReadFrame surface="dashed" testID="incident-read-unread">
+          <ThemedText style={styles.frameHeadline}>{RECORD_UNREAD_HEADING}</ThemedText>
+          <ThemedText style={styles.frameText}>{recordUnreadRetryBody(consentPet)}</ThemedText>
+          <ThemedText style={styles.frameText}>{recordVetLine('vomit', consentPet)}</ThemedText>
+          {/* Never `disabled`: a tap that starts a read routes this section to the pending
+              wait at once, so no frame of this state is ever on screen mid-retry (C-7). */}
+          <TouchableOpacity
+            onPress={handleRetry}
+            accessibilityRole="button"
+            style={styles.frameLink}
+            testID="incident-read-try-again"
+          >
+            <ThemedText style={styles.frameLinkText}>{RECORD_TRY_AGAIN}</ThemedText>
           </TouchableOpacity>
-        </View>
-        <ThemedText style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</ThemedText>
+        </IncidentReadFrame>
       </IncidentReadSection>
     );
   }
@@ -955,14 +987,17 @@ export function VomitAnalysisSection(
         : callLabel
       }
       pending={false}
+      labelAbove={dismissed}
     >
       {dismissed ? (
-        <View style={styles.dismissedRow}>
-          <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
-          <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
-            <ThemedText style={styles.linkText}>Show</ThemedText>
-          </TouchableOpacity>
-        </View>
+        <ReadSectionInset>
+          <View style={styles.dismissedRow}>
+            <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
+            <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
+              <ThemedText style={styles.linkText}>Show</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </ReadSectionInset>
       ) : (
         <IncidentReadCard
           verdict={rec}
@@ -1010,78 +1045,82 @@ export function VomitAnalysisSection(
         />
       )}
 
-      {/* CUL-1835, frame G — a check that needs no photo fired while the photo went unread.
-          The call above leads exactly as before; under it, the off line (no Turn on link
-          under a warning) or, with no answer yet, the ask card. Shown over a hidden note too:
-          it says what happened to the photo, not what the read said. */}
-      {besideCall === 'off_line' ? <RecordOffBesideCall petName={consentPet} /> : null}
-      {besideCall === 'ask' && !askDismissed ? (
-        <View style={styles.besideCallAsk}>
-          <RecordAskCard kind="vomit" petName={consentPet} besideCall onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
-        </View>
-      ) : null}
+      {/* Everything under the card sits back on the record's edge (P4). */}
+      <ReadSectionInset>
+        {/* CUL-1835, frame G — a check that needs no photo fired while the photo went unread.
+            The call above leads exactly as before; under it, the off line (no Turn on link
+            under a warning) or, with no answer yet, the ask card. Shown over a hidden note too:
+            it says what happened to the photo, not what the read said. */}
+        {besideCall === 'off_line' ? <RecordOffBesideCall petName={consentPet} /> : null}
+        {besideCall === 'ask' && !askDismissed ? (
+          <View style={styles.besideCallAsk}>
+            <RecordAskCard kind="vomit" petName={consentPet} besideCall onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+          </View>
+        ) : null}
 
-      {!dismissed && (observations.length > 0 || canEdit) ? (
-        <ObservationGrid
-          rows={observations.map((o) => ({
-            key: o.field,
-            label: o.label,
-            value: o.value,
-            edited: isObsRowEdited(editedSet, o.field),
-          }))}
-          description={row.description}
-          descriptionEdited={editedSet.has('description')}
-          editedAtLabel={row.edited_at ? `Edited ${formatEditedDate(row.edited_at)}` : null}
-          onEdit={!editing && canEdit ? () => setEditing(true) : null}
-          editLabel={observations.length > 0 ? 'Edit' : 'Add details'}
-          editor={editing ? (
-            <VomitFieldsEditor
-              initial={currentEditable(row)}
-              saving={saving}
-              onSave={handleSaveEdits}
-              onCancel={() => setEditing(false)}
-            />
-          ) : undefined}
-          // Any verdict off the quiet list, one this build does not know included: its
-          // facts never fold (CUL-1277). Nor do they under a quiet verdict whose fields
-          // carry a red flag, the owner's own edit included (CUL-2142).
-          escalating={isCallRow(row) || vomitRedFlagPresent(row)}
-          heading={heldDisclosure ? EARLIER_READ_LABEL : undefined}
-          folded={folded}
-          onToggleFold={setFolded}
-        />
-      ) : null}
+        {!dismissed && (observations.length > 0 || canEdit) ? (
+          <ObservationGrid
+            rows={observations.map((o) => ({
+              key: o.field,
+              label: o.label,
+              value: o.value,
+              edited: isObsRowEdited(editedSet, o.field),
+              absence: o.absence,
+            }))}
+            description={row.description}
+            descriptionEdited={editedSet.has('description')}
+            editedAtLabel={row.edited_at ? `Edited ${formatEditedDate(row.edited_at)}` : null}
+            onEdit={!editing && canEdit ? () => setEditing(true) : null}
+            editLabel={observations.length > 0 ? 'Edit' : 'Add details'}
+            editor={editing ? (
+              <VomitFieldsEditor
+                initial={currentEditable(row)}
+                saving={saving}
+                onSave={handleSaveEdits}
+                onCancel={() => setEditing(false)}
+              />
+            ) : undefined}
+            // Any verdict off the quiet list, one this build does not know included: its
+            // facts never fold (CUL-1277). Nor do they under a quiet verdict whose fields
+            // carry a red flag, the owner's own edit included (CUL-2142).
+            escalating={isCallRow(row) || vomitRedFlagPresent(row)}
+            heading={heldDisclosure ? EARLIER_READ_LABEL : undefined}
+            folded={folded}
+            onToggleFold={setFolded}
+          />
+        ) : null}
 
-      {/* CUL-803 — no `hitSlop`. This control's previous sibling used to be inert text
-          (the last observation row), and is now a touchable: the grid's `Keep it compact`
-          when open, the fold strip when shut, both flush against it with no separation.
-          Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
-          for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
-          floor in `minHeight` instead. */}
-      {/* CUL-827 — over an escalation a re-read no longer swaps the card for the pending
-          box, so the re-read is shown HERE, in place, and the control is unavailable for
-          as long as it runs (its label says why). Once nothing is in flight — the read
-          landed, the invoke was refused, or the watch gave up — it is `Re-run analysis`
-          again, so no path leaves an escalation beside a wait with no way on. */}
-      {!dismissed && !editing ? (
-        <TouchableOpacity
-          onPress={handleRetry}
-          disabled={retrying || reading}
-          accessibilityRole="button"
-          style={[styles.rerunRow, retrying || reading ? styles.rerunRowReading : null]}
-        >
-          {retrying || reading ? (
-            <>
-              <WhorlSpinner size="sm" ground="day" />
-              <ThemedText style={styles.rerunReadingText}>
-                {hasPhoto ? INCIDENT_RE_READING_PHOTO_LINE : INCIDENT_RE_READING_LINE}
-              </ThemedText>
-            </>
-          ) : (
-            <ThemedText style={styles.linkText}>Re-run analysis</ThemedText>
-          )}
-        </TouchableOpacity>
-      ) : null}
+        {/* CUL-803 — no `hitSlop`. This control's previous sibling used to be inert text
+            (the last observation row), and is now a touchable: the grid's `Keep it compact`
+            when open, the fold strip when shut, both flush against it with no separation.
+            Two slopped controls facing each other at a zero gap overlap (C-5), and the fix
+            for controls already flush is to grow the BOX — `rerunRow` carries the 44pt
+            floor in `minHeight` instead. */}
+        {/* CUL-827 — over an escalation a re-read no longer swaps the card for the pending
+            box, so the re-read is shown HERE, in place, and the control is unavailable for
+            as long as it runs (its label says why). Once nothing is in flight — the read
+            landed, the invoke was refused, or the watch gave up — it is `Re-run analysis`
+            again, so no path leaves an escalation beside a wait with no way on. */}
+        {!dismissed && !editing ? (
+          <TouchableOpacity
+            onPress={handleRetry}
+            disabled={retrying || reading}
+            accessibilityRole="button"
+            style={[styles.rerunRow, retrying || reading ? styles.rerunRowReading : null]}
+          >
+            {retrying || reading ? (
+              <>
+                <Tick working />
+                <ThemedText style={styles.rerunReadingText}>
+                  {hasPhoto ? INCIDENT_RE_READING_PHOTO_LINE : INCIDENT_RE_READING_LINE}
+                </ThemedText>
+              </>
+            ) : (
+              <ThemedText style={styles.linkText}>Re-run analysis</ThemedText>
+            )}
+          </TouchableOpacity>
+        ) : null}
+      </ReadSectionInset>
     </IncidentReadSection>
   );
 }
@@ -1090,6 +1129,9 @@ interface Observation {
   field: EditableVomitField;
   label: string;
   value: string;
+  /** The stored value is the field's absence enum (CUL-828): read off the enum, never the
+   *  words, so the folded strip keeps the label beside it. */
+  absence?: boolean;
 }
 
 function buildObservations(row: AnalysisRow): Observation[] {
@@ -1105,7 +1147,7 @@ function buildObservations(row: AnalysisRow): Observation[] {
   // Blood is clinically central — show it even when none is visible (a factual
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
   const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
-  if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
+  if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood, absence: row.blood_present === 'none_visible' });
   // Foreign material. The 'yes' path shows the model's own note. Since CUL-534 (the
   // analyze-stool parity) analyze-vomit's parse DERIVES the suspected_foreign_material
   // visual flag from foreign_material_present === 'yes', so a 'yes' the model wrote reaches
@@ -1183,26 +1225,40 @@ function formatEditedDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  besideCallAsk: {
-    marginTop: theme.space2,
-  },
-  neutralCard: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    borderWidth: 1,
-  },
-  readText: {
+  // The non-read frames' words (P3): body type, the frame's own heading above them.
+  frameText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightBody,
+  },
+  // The unread frame's headline: the verdict's size and weight, in the quiet grey, so it
+  // reads as the same card speaking and never as a call.
+  frameHeadline: {
+    ...textStyles.subheading,
+    color: theme.colorTextSecondary,
+  },
+  frameButton: {
+    marginTop: theme.space0_5,
+  },
+  // Try again in the frame's foot (D-820): the box carries the 44pt floor, no slop.
+  frameLink: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+    alignSelf: 'flex-end',
+  },
+  frameLinkText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccentInk,
+    fontWeight: theme.fontWeightMedium,
+  },
+  besideCallAsk: {
+    marginTop: theme.space2,
   },
   linkText: {
     fontSize: theme.textSM,
     color: theme.colorAccentInk,
     fontWeight: theme.fontWeightMedium,
-    marginTop: 6,
+    marginTop: theme.space0_75,
   },
   rerunRow: {
     paddingVertical: theme.space1,
@@ -1210,7 +1266,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     // Pinned explicitly because the 44pt floor depends on it and the slop that used to
     // reach it is gone (C-5).
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   // The in-place re-read (CUL-827): the spinner and its line side by side, in the row's
   // own box so the 44pt floor above still holds.
@@ -1232,52 +1288,5 @@ const styles = StyleSheet.create({
   dismissedText: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-  },
-  disclaimer: {
-    fontSize: theme.textXS,
-    color: theme.colorTextTertiary,
-    marginTop: theme.space1,
-    lineHeight: 15,
-  },
-  failedBox: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderColor: theme.colorBorder,
-    borderWidth: 1,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    gap: theme.space1,
-  },
-  // §7.3 vomit cap — a calm neutral surface, deliberately identical in weight to
-  // the neutral/failed cards (NOT the attention card, no accent border). It must
-  // never read as alarm and never as an error.
-  capBox: {
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderColor: theme.colorBorder,
-    borderWidth: 1,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-  },
-  capText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightBody,
-  },
-  failedText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-  },
-  retryBtn: {
-    marginTop: 4,
-    backgroundColor: theme.colorNeutralDark,
-    borderRadius: theme.radiusSmall,
-    paddingVertical: theme.space1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  retryBtnText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
-    fontWeight: theme.fontWeightMedium,
   },
 });

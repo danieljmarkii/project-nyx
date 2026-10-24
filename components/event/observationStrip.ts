@@ -27,18 +27,33 @@ export const STRIP_NAMED_MAX = 3;
  */
 const VALUE_PART_SEPARATOR = ' / ';
 
+/** One row as the strip reads it. */
+export interface StripRow {
+  /** The row's value, as the open grid prints it. */
+  value: string;
+  /** The row's label ("Blood"). Printed only beside an absence. */
+  label?: string;
+  /** The row's stored value is its field's ABSENCE enum (vomit `none_visible`, stool
+   *  `no`): decided by the caller from the enum, never from the display string, so a
+   *  relabelled option cannot drop the label (CUL-828, D-828). */
+  absence?: boolean;
+  /** The owner changed this row's value. */
+  edited?: boolean;
+}
+
 /** The two halves of the strip's line, kept APART on purpose. The renderer lays them out
  *  as separate nodes so the count can be pinned against truncation while the named list
  *  shrinks — see `observationStripLine`'s note on which half yields. */
 export interface ObservationStripLine {
   /** "Yellow, foamy, bile" — a partial enumeration by design. */
   named: string;
-  /** "4 findings" — the whole population, and the reason the partial list is honest. */
+  /** "4 findings" — the whole population, and the reason the partial list is honest; then
+   *  "· 1 edited" when the owner changed any of them (CUL-828). */
   count: string;
 }
 
 /**
- * "Yellow, foamy, bile" + "4 findings".
+ * "Yellow, foamy, bile" + "4 findings"; "Blood: none visible" + "1 finding · 1 edited".
  *
  * The first value keeps its case (it opens the line); the rest are lowered at the first
  * character so the line reads as one phrase rather than a list of headings. Returns
@@ -54,16 +69,27 @@ export interface ObservationStripLine {
  * and the heading and lets the named list ellipse — which is why this returns two strings
  * and not one.
  */
-export function observationStripLine(values: readonly string[]): ObservationStripLine | null {
-  const clean = values.map((v) => v.trim()).filter((v) => v.length > 0);
+export function observationStripLine(rows: readonly StripRow[]): ObservationStripLine | null {
+  const clean = rows
+    .map((r) => ({ ...r, value: r.value.trim() }))
+    .filter((r) => r.value.length > 0);
   if (clean.length === 0) return null;
   const named = clean
     .slice(0, STRIP_NAMED_MAX)
-    .map((v) => v.split(', ').join(VALUE_PART_SEPARATOR))
+    // An absence alone is a value with no referent ("None visible" of what?), so it keeps
+    // its label (CUL-828). A present finding names itself.
+    .map((r) => {
+      const value = r.value.split(', ').join(VALUE_PART_SEPARATOR);
+      return r.absence && r.label ? `${r.label}: ${lowerFirst(value)}` : value;
+    })
     .map((v, i) => (i === 0 ? v : lowerFirst(v)));
+  const edited = clean.filter((r) => r.edited).length;
+  const total = `${clean.length} finding${clean.length === 1 ? '' : 's'}`;
   return {
     named: named.join(', '),
-    count: `${clean.length} finding${clean.length === 1 ? '' : 's'}`,
+    // The count stays pinned whole (C-8), so the edit rides inside it and survives with it:
+    // a folded strip never hides that the owner corrected what the read said.
+    count: edited > 0 ? `${total} · ${edited} edited` : total,
   };
 }
 

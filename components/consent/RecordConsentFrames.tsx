@@ -177,6 +177,7 @@ export function RecordUnreadStatus({
   onRead,
   reading,
   onTryAgain,
+  framed = false,
 }: {
   kind: RecordKind;
   variant: RecordUnreadVariant;
@@ -188,6 +189,9 @@ export function RecordUnreadStatus({
   reading?: boolean;
   /** The unread frame, when the photo was held because a read failed. */
   onTryAgain?: () => void;
+  /** Drawn inside the record's read frame (CUL-1912, P3: every state that is not a read
+   *  sits on the dashed edge), which supplies the box; this then draws only its content. */
+  framed?: boolean;
 }) {
   const heading =
     variant === 'off' ? RECORD_OFF_HEADING
@@ -198,7 +202,7 @@ export function RecordUnreadStatus({
     : variant === 'read_this' ? RECORD_NOT_READ_YET_BODY
     : null;
   return (
-    <View style={styles.status} testID={`record-consent-${variant}`}>
+    <View style={framed ? styles.statusFramed : styles.status} testID={`record-consent-${variant}`}>
       <View style={styles.headingRow} accessible accessibilityRole="header">
         {/* A hollow dot, never a tick or a colour: nothing was found, nothing was checked. */}
         <View style={styles.dot} />
@@ -330,6 +334,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: theme.radiusMedium,
     padding: theme.space2,
+    gap: theme.space1,
+  },
+  statusFramed: {
     gap: theme.space1,
   },
   besideCall: {

@@ -132,7 +132,8 @@ describe('the words', () => {
   it('names whose record it is', async () => {
     mockGetEventById.mockResolvedValue(observed);
     const { getByText } = render(<EventDetailScreen />);
-    await waitFor(() => expect(getByText("Mochi's record")).toBeTruthy());
+    // The clause closes the record line (CUL-1912, P2).
+    await waitFor(() => expect(getByText(/· Mochi's record$/)).toBeTruthy());
   });
 
   it('an absence renders the owner’s claim — never a good day (§5.6)', async () => {
@@ -213,10 +214,12 @@ describe('the note (T-22)', () => {
     // Quoted: the marks are what say the words are HERS rather than the app's — the
     // same job the ❞ does on the collapsed row and the report's Appendix G.
     await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
-    // Two of each on screen: the note's pair, and the screen footer's. The note's
-    // are the EXTRA ones — a note-less look shows one of each — which is the claim.
+    // The note's pair, beside the screen's own: Edit in the header and the record's
+    // "Remove what you noticed" row (CUL-1912, P1). The note's are the EXTRA ones — a
+    // note-less look shows only the screen's — which is the claim.
     expect(getAllByText('Edit')).toHaveLength(2);
-    expect(getAllByText('Remove')).toHaveLength(2);
+    expect(getAllByText('Remove')).toHaveLength(1);
+    expect(getByText('Remove what you noticed')).toBeTruthy();
   });
 
   it('removing the note CONFIRMS, and says what survives (C-21)', async () => {
@@ -224,8 +227,8 @@ describe('the note (T-22)', () => {
     const { getByText, getAllByText } = render(<EventDetailScreen />);
     await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
 
-    // The note's own Remove is the first of the two on screen (the screen's footer
-    // Remove is the other); both open a confirm, so identify by the body.
+    // The note's own Remove (the screen's is "Remove what you noticed"); both open a
+    // confirm, so identify by the body.
     fireEvent.press(getAllByText('Remove')[0]);
     expect(alertSpy).toHaveBeenCalled();
     expect(alertBody()).toContain('What you noticed stays.');
@@ -275,21 +278,20 @@ describe('the note (T-22)', () => {
 describe('Remove — the whole look', () => {
   it('names the note when the look carries one', async () => {
     mockGetEventById.mockResolvedValue({ ...observed, look_note: 'he hung back at the corner' });
-    const { getByText, getAllByText } = render(<EventDetailScreen />);
+    const { getByText, getByTestId } = render(<EventDetailScreen />);
     await waitFor(() => expect(getByText('“he hung back at the corner”')).toBeTruthy());
 
-    // The footer's Remove is the LAST one on screen.
-    const removes = getAllByText('Remove');
-    await act(async () => { fireEvent.press(removes[removes.length - 1]); });
+    // The record's own Remove row (CUL-1912, P1), not the note's.
+    await act(async () => { fireEvent.press(getByTestId('event-remove')); });
     expect(alertBody()).toContain('The note you wrote goes with it.');
   });
 
   it('says nothing about a note when there is none — never warn about one that is not there', async () => {
     mockGetEventById.mockResolvedValue(observed);
-    const { getByText } = render(<EventDetailScreen />);
+    const { getByText, getByTestId } = render(<EventDetailScreen />);
     await waitFor(() => expect(getByText('Off')).toBeTruthy());
 
-    await act(async () => { fireEvent.press(getByText('Remove')); });
+    await act(async () => { fireEvent.press(getByTestId('event-remove')); });
     // "the Noticed" — the template was written for noun labels and `check_in` is the
     // first type without one. Fixed by naming the SUBJECT per type, not by rewording
     // the sentence, so every other type's confirm is byte-identical.
@@ -298,9 +300,9 @@ describe('Remove — the whole look', () => {
 
   it('every other type keeps the sentence it has always had', async () => {
     mockGetEventById.mockResolvedValue({ ...baseRow, event_type: 'vomit' });
-    const { findAllByText, getByText } = render(<EventDetailScreen />);
+    const { findAllByText, getByTestId } = render(<EventDetailScreen />);
     expect((await findAllByText(/Jun/)).length).toBeGreaterThan(0);
-    await act(async () => { fireEvent.press(getByText('Remove')); });
+    await act(async () => { fireEvent.press(getByTestId('event-remove')); });
     expect(alertBody()).toMatch(/^.+’s vomit from .+ leaves the history\.$/);
   });
 });

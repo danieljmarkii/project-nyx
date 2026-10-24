@@ -205,7 +205,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // No retry affordance on a cap state.
     expect(queryByText(/Try again/i)).toBeNull();
     expect(queryByText(/Re-run/i)).toBeNull();
-    expect(queryByText(/Try analysis/i)).toBeNull();
+    expect(queryByText(/^Try again$/)).toBeNull();
     // Never reassures on absence.
     expect(queryByText(REASSURANCE)).toBeNull();
   });
@@ -369,7 +369,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     mockRow = row({ status: 'capped' });
     const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e4" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
-    expect(queryByText(/Not enough to say about this one yet/i)).toBeNull();
+    expect(queryByText(/The photo wasn't read/)).toBeNull();
   });
 });
 
@@ -407,8 +407,8 @@ describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
   it('WITH a photo + no row/recommendation: keeps the "Try analysis" fallback', async () => {
     mockRow = row({ recommendation: null });
     const { findByText } = render(<VomitAnalysisSection eventId="p4" petId="pet-1" petName="Rex" hasPhoto />);
-    expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
-    expect(await findByText(/Try analysis/i)).toBeTruthy();
+    expect(await findByText(/The photo wasn't read/)).toBeTruthy();
+    expect(await findByText(/^Try again$/)).toBeTruthy();
   });
 });
 
@@ -545,8 +545,8 @@ describe('VomitAnalysisSection — realtime resolution (CUL-171)', () => {
     const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
     await act(async () => { onGiveUp(); });
 
-    expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
-    expect(await findByText(/Try analysis/i)).toBeTruthy();
+    expect(await findByText(/The photo wasn't read/)).toBeTruthy();
+    expect(await findByText(/^Try again$/)).toBeTruthy();
   });
 });
 
@@ -845,7 +845,7 @@ describe('VomitAnalysisSection — an escalation stays on screen through a re-ru
     // The calm verdict is NOT put back over a read that never finished (CUL-1277): the
     // honest not-read-yet frame, with its retry.
     expect(view.queryByText('Keep an eye out')).toBeNull();
-    expect(view.getByText('Try analysis')).toBeTruthy();
+    expect(view.getByText('Try again')).toBeTruthy();
   });
 
   it('a stale pending row on mount whose watch gives up ends in a retry too', async () => {
@@ -856,7 +856,7 @@ describe('VomitAnalysisSection — an escalation stays on screen through a re-ru
     const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
     await act(async () => { onGiveUp(); });
     expect(view.queryByText(PENDING)).toBeNull();
-    expect(view.getByText('Try analysis')).toBeTruthy();
+    expect(view.getByText('Try again')).toBeTruthy();
   });
 });
 
@@ -1357,7 +1357,7 @@ describe('VomitAnalysisSection — the arrival fires only for a read the screen 
     // The pending box's own geometry — without it the rail beat degrades to riding the
     // box, which would make the assertions below pass for the wrong reason.
     await act(async () => {
-      fireEvent(view.getByTestId('incident-read-section').children[1] as never, 'layout', {
+      fireEvent(view.getByTestId('incident-read-pending'), 'layout', {
         nativeEvent: { layout: { x: 0, y: 22, width: 320, height: 48 } },
       });
     });
@@ -1366,12 +1366,14 @@ describe('VomitAnalysisSection — the arrival fires only for a read the screen 
     const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
     await act(async () => { await check(); });
 
-    const card = await view.findByTestId('incident-read-card');
-    expect(card.props.onLayout).toBeDefined();
+    // The card's body is the rail's track (CUL-1912, P4): it is what reports the height.
+    await view.findByTestId('incident-read-card');
+    const body = view.getByTestId('incident-read-body');
+    expect(body.props.onLayout).toBeDefined();
     await act(async () => {
-      fireEvent(card, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 152 } } });
+      fireEvent(body, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 152 } } });
     });
-    // The rail took the card's height and left the flow — the beat actually ran.
+    // The rail took the track's height — the beat actually ran.
     const rail = StyleSheet.flatten(view.getByTestId('incident-read-rail').props.style as never) as Record<string, unknown>;
     expect(rail.height).toBe(152);
     expect(rail.position).toBe('absolute');
@@ -1531,7 +1533,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     const onGiveUp = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![2] as () => void;
     await act(async () => { onGiveUp(); });
-    expect(await view.findByText(/Not enough to say about this one yet/)).toBeTruthy();
+    expect(await view.findByText(/The photo wasn't read/)).toBeTruthy();
     expect(announce).not.toHaveBeenCalled();
   });
 
@@ -1619,7 +1621,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { onGiveUp(); });
     const held = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T10:00:00.000Z' });
     mockRow = held; // the server had it all along; the client never heard
-    fireEvent.press(await view.findByText('Try analysis'));
+    fireEvent.press(await view.findByText('Try again'));
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(2));
     await land(held);
     expect(await view.findByText('Worth a call')).toBeTruthy();
@@ -1671,7 +1673,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { onGiveUp(); });
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T10:00:00.000Z' });
     (triggerVomitAnalysis as jest.Mock).mockResolvedValueOnce({ error: 'offline' });
-    const tryIt = await view.findByText('Try analysis');
+    const tryIt = await view.findByText('Try again');
     await act(async () => { fireEvent.press(tryIt); });
     await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
     expect(await view.findByText('Worth a call')).toBeTruthy();
@@ -1718,7 +1720,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { onGiveUp(); });
     mockRow = row({ recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T10:00:00.000Z' });
     failWritingFailure(row({ status: 'failed', recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T12:00:09.000Z' }));
-    const tryIt = await view.findByText('Try analysis');
+    const tryIt = await view.findByText('Try again');
     await act(async () => { fireEvent.press(tryIt); });
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
     expect(view.queryByText('Keep an eye out')).toBeNull();
@@ -1755,10 +1757,10 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
       mockRow = null; // the function wrote `failed`, and the read after it fails
       return { error: 'FunctionsHttpError: 500' };
     });
-    const tryIt = await view.findByText('Try analysis');
+    const tryIt = await view.findByText('Try again');
     await act(async () => { fireEvent.press(tryIt); });
     await waitFor(() => expect(alert).toHaveBeenCalled());
-    expect(await view.findByText('Try analysis')).toBeTruthy();
+    expect(await view.findByText('Try again')).toBeTruthy();
     expect(view.queryByText('Keep an eye out')).toBeNull();
     expect(announce).not.toHaveBeenCalled();
     alert.mockRestore();
@@ -2053,7 +2055,7 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     const view = render(<VomitAnalysisSection eventId="f4" petId="pet-1" petName="Rex" hasPhoto={false} />);
     await view.findByText('Not enough to say yet');
     expect(view.getByTestId('incident-read-watch-for')).toBeTruthy();
-    expect(view.queryByText('Try analysis')).toBeNull();
+    expect(view.queryByText('Try again')).toBeNull();
     expect(view.queryByText('Re-run analysis')).toBeNull();
   });
 
@@ -2450,5 +2452,91 @@ describe('VomitAnalysisSection — "Part of a pattern" (K2)', () => {
     await waitFor(() => expect(view.queryByText('Not enough to say yet')).toBeTruthy());
     expect(view.queryByText('Part of a pattern')).toBeNull();
     expect(mockReadPattern).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-1912: the event detail round's defects, built ──────────────────────────────
+describe('VomitAnalysisSection — the ruled states (CUL-1912)', () => {
+  const REASSURE = /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i;
+  afterEach(() => { mockRow = null; mockReadQueue = null; });
+
+  it('D-820: a photo with no read says it was not read, with the vet line and Try again', async () => {
+    mockRow = row({ recommendation: null });
+    (triggerVomitAnalysis as jest.Mock).mockClear();
+    const view = render(<VomitAnalysisSection eventId="d820" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText("The photo wasn't read")).toBeTruthy();
+    const body = view.getByText("This photo hasn't been read yet. It's saved on Rex's record, and Try again sends it now.");
+    const vet = view.getByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.');
+    // Never heard as a verdict on a photo nobody read: no calm words, no "Not enough".
+    for (const t of ["The photo wasn't read", body.props.children, vet.props.children]) {
+      expect(REASSURE.test(String(t))).toBe(false);
+      expect(String(t)).not.toContain('!');
+    }
+    expect(view.queryByText(/Not enough to say/)).toBeNull();
+    expect(view.getByText('AI READ').props.accessibilityRole).toBe('header');
+    await act(async () => { fireEvent.press(view.getByTestId('incident-read-try-again')); });
+    expect(triggerVomitAnalysis as jest.Mock).toHaveBeenCalled();
+  });
+
+  it('D-820: the failed frame carries the vet line too', async () => {
+    mockRow = row({ status: 'failed', recommendation: null, error: 'x' });
+    const view = render(<VomitAnalysisSection eventId="d820f" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
+    expect(view.getByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(view.getByTestId('incident-read-failed')).toBeTruthy();
+  });
+
+  it('D-823: on a declined account the off frame paints while the stored row is still loading', async () => {
+    mockConsent = 'declined';
+    mockReadQueue = [];
+    const view = render(<VomitAnalysisSection eventId="d823a" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(view.getByTestId('record-consent-off')).toBeTruthy();
+    expect(view.queryByTestId('incident-read-pending')).toBeNull();
+    // P3: the off frame sits on the dashed edge, its heading inside the frame.
+    expect(StyleSheet.flatten(view.getByTestId('incident-read-consent').props.style).borderStyle).toBe('dashed');
+    expect(view.getAllByText('AI READ')).toHaveLength(1);
+  });
+
+  it('D-823: a first read asked of the server on a declined account shows the off frame, never the tick', async () => {
+    mockConsent = 'declined';
+    mockRow = null;
+    const view = render(<VomitAnalysisSection eventId="d823b" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalled());
+    expect(view.getByTestId('record-consent-off')).toBeTruthy();
+    expect(view.queryByTestId('incident-read-pending')).toBeNull();
+    // A check that needs no photo can still come back as a call, and it lands over the frame.
+    mockRow = row({ recommendation: 'worth_a_call', contextual_flags: ['repeated_vomiting'], read_text: 'Repeated.' });
+    const check = (watchAnalysisRow as jest.Mock).mock.calls.at(-1)![1] as () => Promise<boolean>;
+    await act(async () => { await check(); });
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+  });
+
+  it('D-823: a Re-run under a stored call on a declined account keeps the call on screen (CUL-827)', async () => {
+    // Adversarial pass 1: `retrying` falls before the watch starts, and the local copy is
+    // marked pending, so a rule keyed on either painted the off frame over the call.
+    mockConsent = 'declined';
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Repeated.', ai_raw_payload: { x: 1 } });
+    (watchAnalysisRow as jest.Mock).mockClear();
+    const view = render(<VomitAnalysisSection eventId="d823r" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Worth a call')).toBeTruthy();
+    await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalled());
+    expect(view.getByText('Worth a call')).toBeTruthy();
+    expect(view.queryByTestId('record-consent-off')).toBeNull();
+  });
+
+  it('D-823: the same waits on an account that said yes keep the tick (the non-vacuity half)', async () => {
+    mockConsent = 'granted';
+    mockReadQueue = [];
+    const view = render(<VomitAnalysisSection eventId="d823c" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(view.getByTestId('incident-read-pending')).toBeTruthy();
+    expect(view.queryByTestId('record-consent-off')).toBeNull();
+  });
+
+  it('D-828: a folded strip labels an absence keyed on the stored enum', async () => {
+    mockRow = row({ recommendation: 'monitor', read_text: 'x', colour: 'yellow', blood_present: 'none_visible' });
+    const view = render(<VomitAnalysisSection eventId="d828" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await view.findByText('Keep it compact'));
+    expect(await view.findByText(' · Yellow, blood: none visible')).toBeTruthy();
   });
 });

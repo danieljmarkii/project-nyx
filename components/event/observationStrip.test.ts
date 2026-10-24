@@ -1,4 +1,7 @@
-import { observationStripLine, STRIP_NAMED_MAX } from './observationStrip';
+import { observationStripLine as stripOf, STRIP_NAMED_MAX, type StripRow } from './observationStrip';
+
+/** The plain-values form of the rows: no labels, no absences, no edits. */
+const observationStripLine = (values: readonly string[]) => stripOf(values.map((value) => ({ value })));
 
 describe('observationStripLine (CUL-803 §5.3)', () => {
   it('reproduces the round-2 mock line: three named, all counted', () => {
@@ -83,5 +86,44 @@ describe('observationStripLine — the named list never out-counts the count (C-
       // …and the count still describes the WHOLE population, not the named subset.
       expect(line.count).toBe(`${values.length} finding${values.length === 1 ? '' : 's'}`);
     }
+  });
+});
+
+// ── CUL-828 (D-828): an absence keeps its label, and the count names an edit ─────────
+describe('observationStripLine — an absence keeps its referent (CUL-828)', () => {
+  const blood = (over: Partial<StripRow> = {}): StripRow => ({ label: 'Blood', value: 'None visible', absence: true, ...over });
+
+  it('a lone absence prints its label: "Blood: none visible", never "None visible"', () => {
+    expect(stripOf([blood()])).toEqual({ named: 'Blood: none visible', count: '1 finding' });
+  });
+
+  it('the label rides the absence wherever it falls in the named slots', () => {
+    expect(stripOf([{ value: 'Yellow' }, blood()])!.named).toBe('Yellow, blood: none visible');
+  });
+
+  it('keys on the caller\'s enum flag, never the display string', () => {
+    // The same words with no absence flag stay bare: the string is not the decision.
+    expect(stripOf([{ label: 'Blood', value: 'None visible' }])!.named).toBe('None visible');
+    // And a relabelled absence option still carries its label.
+    expect(stripOf([blood({ value: 'Not seen' })])!.named).toBe('Blood: not seen');
+  });
+
+  it('a present finding never takes its label', () => {
+    expect(stripOf([{ label: 'Blood', value: 'Fresh red' }])!.named).toBe('Fresh red');
+  });
+
+  it('the count names the edits, inside the pinned half', () => {
+    expect(stripOf([blood({ edited: true })])).toEqual({ named: 'Blood: none visible', count: '1 finding · 1 edited' });
+    expect(stripOf([{ value: 'Yellow', edited: true }, { value: 'Foamy' }, blood({ edited: true })])!.count)
+      .toBe('3 findings · 2 edited');
+  });
+
+  it('an edit on a row past the named slots still counts', () => {
+    const rows: StripRow[] = [{ value: 'A' }, { value: 'B' }, { value: 'C' }, { value: 'D', edited: true }];
+    expect(stripOf(rows)).toEqual({ named: 'A, b, c', count: '4 findings · 1 edited' });
+  });
+
+  it('a blank row is neither named, counted nor counted as edited', () => {
+    expect(stripOf([{ value: 'Yellow' }, { value: '  ', edited: true }])!.count).toBe('1 finding');
   });
 });
