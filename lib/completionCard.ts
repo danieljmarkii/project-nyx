@@ -31,7 +31,8 @@
 
 import { kgToLbs } from './weight';
 import { summarizeSimpleEvent } from './logCopy';
-import { describeOccurredAt, formatRecordDate, formatRecordWhen, type OccurredConfidence } from './utils';
+import { describeOccurredAt, type OccurredConfidence } from './utils';
+import { formatRecordDate, formatRecordWhen } from './recordWhen';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 import { isLookRow } from './lookDisplay';
 import { EVENT_TYPES, type EventTypeKey } from '../constants/eventTypes';

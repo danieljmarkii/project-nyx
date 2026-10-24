@@ -36,7 +36,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { foodFormatTag } from '../lib/food';
 import { useEventStore } from '../store/eventStore';
-import { uuid, formatExifAttribution, formatRecordWhen, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
+import { uuid, formatExifAttribution, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
+import { formatRecordWhen } from '../lib/recordWhen';
 import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
 import { usePetStore } from '../store/petStore';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';

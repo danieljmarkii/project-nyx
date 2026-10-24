@@ -17,7 +17,8 @@ import {
   eventHasNote, removeConfirmCopy,
   type LoggedRecord,
 } from './completionCard';
-import { formatTime, describeOccurredAt, formatRecordDate, formatRecordWhen } from './utils';
+import { formatTime, describeOccurredAt } from './utils';
+import { formatRecordDate, formatRecordWhen } from './recordWhen';
 
 // B-514 — the day boundary is LOCAL midnight, and summarizeLoggedRecord's
 // "today/yesterday" phrasing reads it. A UTC literal for a local-day question is

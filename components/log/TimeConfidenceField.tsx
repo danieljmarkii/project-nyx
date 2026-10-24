@@ -6,7 +6,8 @@ import { ThemedText } from '../ui/ThemedText';
 import { SegmentedControl, type SegmentOption } from '../ui/SegmentedControl';
 import { TimeEditSheet } from '../ui/TimeEditSheet';
 import { EditBlock, EditRow } from '../ui/EditCard';
-import { formatTime, formatExifAttribution, formatRecordWhen } from '../../lib/utils';
+import { formatTime, formatExifAttribution } from '../../lib/utils';
+import { formatRecordWhen } from '../../lib/recordWhen';
 
 // B-010 Direction 2 — explicit "Saw it / Found it" capture for discovery-prone
 // events. Controlled: the parent owns the canonical state and the stored
