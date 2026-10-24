@@ -257,6 +257,17 @@ describe('Remove at the foot (P4, P5)', () => {
     expect(body).toContain('The photo you attached goes with it.');
   });
 
+  it('a photo that could not be checked is said, hedged, never left out', async () => {
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetEventAttachments.mockRejectedValue(new Error('db closed'));
+    const utils = await open('vomit');
+    const [, body] = await pressRemove(utils);
+    expect(body).toMatch(/leaves the history\. Any photo on it goes with it\.$/);
+    quiet.mockRestore();
+    warn.mockRestore();
+  });
+
   it('the confirm soft deletes through the one reversal, and closes the editor and the record together', async () => {
     const utils = await open('vomit');
     const [, , buttons] = await pressRemove(utils);

@@ -544,6 +544,12 @@ describe('removeConfirmCopy', () => {
     usePetStore.setState({ pets: [], activePet: null });
   });
 
+  it('a photo the caller could not check is said, hedged, beside the note', () => {
+    expect(removeConfirmCopy({ ...meal, event_type: 'vomit', notes: 'Grass first' }, { hasAttachment: null, petName: 'Biscuit' }).body).toBe(
+      `Biscuit\u2019s vomit from ${WHEN} leaves the history. Any photo on it and the note you wrote go with it.`,
+    );
+  });
+
   it('a look is "what you noticed", never "the Noticed", and its note is named', () => {
     expect(
       removeConfirmCopy({ event_type: 'check_in', notes: null, look_note: 'Off her food', occurred_at: AT }, facts(false)),

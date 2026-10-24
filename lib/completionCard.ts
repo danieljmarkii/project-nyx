@@ -370,9 +370,11 @@ export function undoGateCopy(
 }
 
 /** "The photo you attached and the note you wrote go with it.", or null with neither. */
-function takesWithItClause(record: { hasAttachment?: boolean; hasNote?: boolean }): string | null {
+function takesWithItClause(record: { hasAttachment?: boolean | null; hasNote?: boolean }): string | null {
+  // null: the photo could not be checked. The confirm then says any photo goes, never
+  // nothing: silence would read as "no photo" (C-12) over one that may be there.
   const takesWithIt = [
-    record.hasAttachment ? 'the photo you attached' : null,
+    record.hasAttachment ? 'the photo you attached' : record.hasAttachment === null ? 'any photo on it' : null,
     record.hasNote ? 'the note you wrote' : null,
   ].filter((x): x is string => x !== null);
   if (takesWithIt.length === 0) return null;
@@ -426,7 +428,8 @@ export function eventHasNote(record: RemovableRecord): boolean {
  */
 export function removeConfirmCopy(
   record: RemovableRecord,
-  facts: { hasAttachment: boolean; petName?: string },
+  // `hasAttachment` null: the record could not be asked (a failed read). Said, hedged.
+  facts: { hasAttachment: boolean | null; petName?: string },
 ): { title: string; body: string } {
   // CUL-1909 P5: the confirm names which record goes, by its pet, its type and its time.
   // The pet is the RECORD's (C-9), resolved from its own pet id when the caller has not

@@ -473,11 +473,14 @@ export default function EditEventModal() {
     // Never while a save is writing: the two would race the same row and both close the screen.
     if (!id || saving || removeAskingRef.current) return;
     removeAskingRef.current = true;
-    let hasAttachment = shownAttachmentIdsRef.current.size > 0;
+    // null when neither the load nor the re-check could answer: the confirm then says any
+    // photo goes with it, never nothing (the adversarial pass on this PR).
+    let hasAttachment: boolean | null = shownAttachmentIdsRef.current.size > 0;
     try {
       if (!hasAttachment) hasAttachment = (await getEventAttachments(id)).length > 0;
     } catch (e) {
       console.warn('[edit-event] attachment re-check before remove failed:', e);
+      if (!attachmentsLoaded) hasAttachment = null;
     } finally {
       removeAskingRef.current = false;
     }
