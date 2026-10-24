@@ -1,6 +1,8 @@
 # Session: Backlog grooming (Linear, team Culprit), the first pass under steps 12 to 18
 
 **Date:** 2026-10-16
+**One thing:** P1 L1 — The strategy kernel: an action has to pass the policy it cites (D5 (a) cited the sort, which never parks the 46 harm findings it would have parked) · check: pending
+**One thing (re-ask):** P7 L1 — Writing for decisions: a brief is only as good as its freshest evidence (from 2026-10-02, the ruling sheet part 2; asked again on D5: what did the 10-16 brief never check before it recommended parking all 54?) · check: pending
 **Mode:** DISCOVERY (Product Owner / Backlog Steward lens), attended: the PM asked for the pass
 **Outcome:** shipped via #1233 (this record only; the pass's writes are in Linear)
 **Branch:** `claude/serene-noether-jgdean`
