@@ -92,6 +92,10 @@ jest.mock('../store/petStore', () => {
   ];
   const state = { pets, activePet: pets[1], updatePet: jest.fn() }; // the CAT is active
   return {
+    // The real resolver's shape (C-9): the record's pet by id, never the active one.
+    ANONYMOUS_PET_NAME: 'your pet',
+    resolveRecordPetName: (ps: { id: string; name?: string }[], petId: string | null) =>
+      ps.find((p) => p.id === petId)?.name?.trim() || 'your pet',
     usePetStore: Object.assign(
       (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state),
       { getState: () => state },
@@ -138,16 +142,16 @@ async function open() {
 }
 
 describe('the parent Notes field is gated off for a look (E-7, T-22)', () => {
-  it('renders no "Notes" section on a check_in', async () => {
-    const { queryByText } = await open();
-    expect(queryByText('Notes')).toBeNull();
+  it('renders no parent note on a check_in', async () => {
+    const { queryByText, queryByTestId } = await open();
+    expect(queryByTestId('edit-card-note')).toBeNull();
     expect(queryByText('Add a note (optional)')).toBeNull();
   });
 
   it('still renders it for every other type — the gate is a branch, not a removal', async () => {
     mockRouteParams = { id: 'evt-1', type: 'vomit', occurredAt: AT, notes: '' };
-    const { getByText } = render(<EditEventModal />);
-    await waitFor(() => expect(getByText('Notes')).toBeTruthy());
+    const { getByTestId } = render(<EditEventModal />);
+    await waitFor(() => expect(getByTestId('edit-card-note')).toBeTruthy());
   });
 
   it('writes NULL to the parent’s notes on save, whatever the route param says', async () => {
@@ -264,9 +268,10 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
     const moved = new Date('2026-03-15T10:03:00.000Z');
     mockMovedTo.current = moved;
 
-    const { getByText } = await open();
-    fireEvent.press(getByText('Change'));           // opens the picker
+    const { getByText, getAllByText, getByTestId } = await open();
+    fireEvent.press(getByTestId('time-when'));      // opens the time sheet
     await act(async () => { fireEvent.press(getByText('move-the-point')); });
+    await act(async () => { fireEvent.press(getAllByText('Save')[1]); }); // the sheet's Save
     await act(async () => { fireEvent.press(getByText('Save')); });
 
     const edit = mockUpdateLookForEdit.mock.calls[0][1] as { localDay?: string };
@@ -304,12 +309,13 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
   });
 
   it('a picker OPENED and dismissed without a change re-derives nothing', async () => {
-    // C-10's peek-and-save, exactly: the owner taps Change, looks, and saves. The
+    // C-10's peek-and-save, exactly: the owner taps Change time, looks, and saves. The
     // day key must not move, and the row must not re-queue.
     mockMovedTo.current = new Date('2026-03-15T09:58:00.000Z'); // the SAME instant
-    const { getByText } = await open();
-    fireEvent.press(getByText('Change'));
+    const { getByText, getAllByText, getByTestId } = await open();
+    fireEvent.press(getByTestId('time-when'));
     await act(async () => { fireEvent.press(getByText('move-the-point')); });
+    await act(async () => { fireEvent.press(getAllByText('Save')[1]); }); // the sheet's Save
     await act(async () => { fireEvent.press(getByText('Save')); });
 
     expect('localDay' in (mockUpdateLookForEdit.mock.calls[0][1] as object)).toBe(false);
@@ -322,13 +328,13 @@ describe('the photo row', () => {
     // so the door has to be closed rather than the render gated.
     const { queryByText } = await open();
     expect(queryByText('Photo')).toBeNull();
-    expect(queryByText('Attach a photo')).toBeNull();
+    expect(queryByText('Add a photo')).toBeNull();
   });
 
   it('is still offered on a symptom — the gate is a branch, not a removal', async () => {
     mockRouteParams = { id: 'evt-1', type: 'vomit', occurredAt: AT, notes: '' };
     const { findByText } = render(<EditEventModal />);
-    expect(await findByText('Attach a photo')).toBeTruthy();
+    expect(await findByText('Add a photo')).toBeTruthy();
   });
 });
 

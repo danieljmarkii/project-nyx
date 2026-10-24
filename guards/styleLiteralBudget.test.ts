@@ -71,10 +71,10 @@ const MOTION_DIR = 'components/motion/';
  */
 const CEILINGS = {
   colour: 8,
-  fontSize: 41, // 71 until CUL-1910 moved food capture onto the kit; 48 after CUL-1911 (the pet profile); 41 after CUL-1908
-  lineHeight: 67,
+  fontSize: 23, // 71 until CUL-1910 moved food capture onto the kit; 48 after CUL-1911 (the pet profile); 41 after CUL-1908; 23 after CUL-1909 (the event editor)
+  lineHeight: 66, // 67 until CUL-1909
   letterSpacing: 8,
-  spacing: 336,
+  spacing: 317, // 336 until CUL-1909
   radius: 75,
   duration: 90,
   whorlSpinner: 43,

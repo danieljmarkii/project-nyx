@@ -112,6 +112,19 @@ describe('TimeEditSheet', () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
+  it('takes an earlier bound than now, never a later one (a window’s earliest edge, CUL-1909)', () => {
+    const latest = new Date(2026, 5, 7, 12, 0);
+    const capped = render(
+      <TimeEditSheet value={VALUE} title="The earliest it could have been" maximumDate={latest} onCancel={jest.fn()} onSave={jest.fn()} />,
+    );
+    expect(capped.UNSAFE_getByType('DateTimePicker' as never).props.maximumDate).toEqual(latest);
+    // A bound after now never lets a scrub into the future.
+    const later = render(
+      <TimeEditSheet value={VALUE} title="x" maximumDate={new Date(2026, 5, 8)} onCancel={jest.fn()} onSave={jest.fn()} />,
+    );
+    expect(later.UNSAFE_getByType('DateTimePicker' as never).props.maximumDate).toEqual(new Date(2026, 5, 7, 14, 30));
+  });
+
   it('pins maximumDate to the moment it opened, not a live clock', () => {
     // The sheet stays mounted while the owner scrubs. If maximumDate re-read the
     // clock on every render, a wheel held open past the minute would accept a

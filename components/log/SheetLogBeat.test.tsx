@@ -241,7 +241,7 @@ describe('the confirm gate — what this removal takes with it (CUL-645 / CUL-86
     // Nothing is destroyed before the answer — the whole point of the gate.
     expect(reverseLoggedEvent).not.toHaveBeenCalled();
     expect(alertSpy.mock.calls[0][0]).toBe('Remove this log?');
-    expect(alertSpy.mock.calls[0][1]).toBe('The photo you attached will be removed with it.');
+    expect(alertSpy.mock.calls[0][1]).toBe('The photo you attached goes with it.');
     await confirmRemove();
     expect(reverseLoggedEvent).toHaveBeenCalledTimes(1);
   });
@@ -252,14 +252,14 @@ describe('the confirm gate — what this removal takes with it (CUL-645 / CUL-86
     const { getByLabelText } = showAndRender({ hasAttachment: true, hasNote: true });
     await act(async () => { fireEvent.press(getByLabelText(UNDO_LABEL)); });
     expect(alertSpy.mock.calls[0][1]).toBe(
-      'The photo you attached and the note you wrote will be removed with it.',
+      'The photo you attached and the note you wrote go with it.',
     );
   });
 
   it('a NOTE alone asks too — the sentence she typed is not recreatable either', async () => {
     const { getByLabelText } = showAndRender({ hasNote: true });
     await act(async () => { fireEvent.press(getByLabelText(UNDO_LABEL)); });
-    expect(alertSpy.mock.calls[0][1]).toBe('The note you wrote will be removed with it.');
+    expect(alertSpy.mock.calls[0][1]).toBe('The note you wrote goes with it.');
   });
 
   it('holds the beat open across the dialog, even though the finger has lifted', () => {

@@ -176,3 +176,49 @@ describe('TimeConfidenceField', () => {
     });
   });
 });
+
+// CUL-1909 F3 and P1 — the event editor's layout: the record in edit mode. The point is a
+// When row that opens the kit's one time sheet, the switch sits under "How you know", and
+// each bound is a row that opens the sheet titled for the bound it writes.
+describe('TimeConfidenceField — the rows layout', () => {
+  it('a seen record: the When row opens the sheet, and How you know holds the switch', () => {
+    const { getByTestId, getByText, queryByText, props } = setup({ layout: 'rows', mode: 'saw' });
+    expect(getByText('How you know')).toBeTruthy();
+    expect(queryByText('When did this happen?')).toBeNull();
+    fireEvent.press(getByTestId('time-when'));
+    expect(getByText('When did this happen?')).toBeTruthy();
+    expect(props.onPointChange).not.toHaveBeenCalled();
+  });
+
+  it('an unclassified record keeps its honest line', () => {
+    const { getByText } = setup({ layout: 'rows', mode: null });
+    expect(getByText('Not recorded as seen or found — choose one if you\'d like.')).toBeTruthy();
+  });
+
+  it.each([
+    ['before' as const, 'time-latest', 'When did you find it?'],
+    ['around' as const, 'time-estimated', 'About when did it happen?'],
+  ])('%s: the bound row opens the sheet asking for that bound', (foundMode, row, title) => {
+    const { getByTestId, getByText } = setup({ layout: 'rows', foundMode });
+    fireEvent.press(getByTestId(row));
+    expect(getByText(title)).toBeTruthy();
+  });
+
+  it('between: From is capped at To, so the window cannot invert', () => {
+    const EARLIEST = new Date(2026, 6, 24, 9, 0);
+    const { getByTestId, getByText, UNSAFE_getByType } = setup({ layout: 'rows', foundMode: 'between', earliest: EARLIEST });
+    fireEvent.press(getByTestId('time-earliest'));
+    expect(getByText('The earliest it could have been')).toBeTruthy();
+    expect(UNSAFE_getByType('DateTimePicker' as never).props.maximumDate).toEqual(LATEST);
+  });
+
+  it('between: To writes the latest bound, through its own handler', () => {
+    const { getByTestId, getByText, props } = setup({ layout: 'rows', foundMode: 'between', earliest: new Date(2026, 6, 24, 9, 0) });
+    fireEvent.press(getByTestId('time-latest'));
+    expect(getByText('The latest it could have been')).toBeTruthy();
+    fireEvent.press(getByText('Save'));
+    expect(props.onLatestChange).toHaveBeenCalledWith(LATEST);
+    expect(props.onEarliestChange).not.toHaveBeenCalled();
+  });
+});
+

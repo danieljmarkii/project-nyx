@@ -99,6 +99,10 @@ jest.mock('../store/petStore', () => {
   const pets = [{ id: 'pet-cat', name: 'Pixel', species: 'cat', sex: 'female' }];
   const state = { pets, activePet: pets[0], updatePet: jest.fn() };
   return {
+    // The real resolver's shape (C-9): the record's pet by id, never the active one.
+    ANONYMOUS_PET_NAME: 'your pet',
+    resolveRecordPetName: (ps: { id: string; name?: string }[], petId: string | null) =>
+      ps.find((p) => p.id === petId)?.name?.trim() || 'your pet',
     usePetStore: Object.assign(
       (sel?: (s: typeof state) => unknown) => (sel ? sel(state) : state),
       { getState: () => state },
@@ -138,7 +142,7 @@ async function open(type: string) {
 }
 
 async function attachAndSave(utils: ReturnType<typeof render>) {
-  await act(async () => { fireEvent.press(utils.getByText('Attach a photo')); });
+  await act(async () => { fireEvent.press(utils.getByText('Add a photo')); });
   await waitFor(() => expect(utils.getByText('Photo attached')).toBeTruthy());
   await act(async () => { fireEvent.press(utils.getByText('Save')); });
   // Let the fire-and-forget upload chain run to its settle.
@@ -211,8 +215,9 @@ describe('a photo changed on the edit screen gets its read (CUL-1680)', () => {
     expect(mockSettle).toHaveBeenCalledWith(false);
   });
 
-  it('a meal photo takes no read and keeps the immediate Signal refresh', async () => {
-    const utils = await open('meal');
+  // A meal offers no photo (CUL-887), so the type with a photo and no read is Other.
+  it('an Other photo takes no read and keeps the immediate Signal refresh', async () => {
+    const utils = await open('other');
     await attachAndSave(utils);
     expect(mockClaim).not.toHaveBeenCalled();
     expect(mockVomit).not.toHaveBeenCalled();
