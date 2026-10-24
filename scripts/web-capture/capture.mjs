@@ -137,6 +137,8 @@ const readStateOverlay = (consent) => ({
     source: 'settings', decided_at: READ_STATE_AT,
   }],
 });
+const latestOf = (petId, type) =>
+  tables.events.filter((e) => e.pet_id === petId && e.event_type === type).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
 const firstVomit = (petId) =>
   tables.events.filter((e) => e.pet_id === petId && e.event_type === 'vomit').sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
 
@@ -158,6 +160,9 @@ const SHOTS = [
   { name: 'home-pepper', pet: 'pepper', go: [] },
   { name: 'history-pepper', pet: 'pepper', go: [tab('History')] },
   { name: 'incident-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page)] },
+  // CUL-1909: the event editor, reached the one way an owner reaches it (the record's Edit).
+  { name: 'edit-vomit-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page), link(/^Edit$/)] },
+  { name: 'edit-meal-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${latestOf(pet('juniper').id, 'meal').id}`)(page), link(/^Edit$/)] },
   { name: 'patterns-juniper', pet: 'juniper', go: [link(/^Patterns/)] },
   // CUL-1912: the incident screen's read states (see READ_STATES above).
   { name: 'incident-call-juniper', pet: 'juniper', overlay: readStateOverlay(true), go: [() => {}, push(`/event/${READ_STATES[0].eventId}`)] },

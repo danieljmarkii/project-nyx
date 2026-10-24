@@ -7,6 +7,11 @@
 jest.mock('../../lib/db', () => ({
   getLibraryFoods: jest.fn(),
 }));
+// The tile photos (CUL-1908 P3) are signed from the private bucket; the network call is
+// stubbed, answering nothing unless a test hands it paths to sign.
+jest.mock('../../lib/storage', () => ({
+  getSignedUrls: jest.fn().mockResolvedValue(new Map()),
+}));
 // The rotation shelf's read (foods fed lately, mixes among them; CUL-2090), pinned against
 // a real engine in lib/foodQueries.test.ts.
 jest.mock('../../lib/fabRecentItems', () => ({
@@ -111,7 +116,8 @@ function renderPicker() {
 // arrays start as [], so before this the first frame and every failed read said
 // "No foods yet" to an owner with a full library.
 describe('FoodPicker — the read’s three states below "has rows" (CUL-2168)', () => {
-  const EMPTY = 'No foods yet. Snap one above.';
+  // The first week's designed empty state (CUL-1908 P6).
+  const EMPTY = "Nyx's foods will live here";
   const hidden = { includeHiddenElements: true };
 
   it('while the read is unanswered: the silhouette, never the empty copy', () => {
@@ -382,7 +388,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
 
   it('renders the section, holding only the foods on the list', async () => {
     const { findByText, getAllByLabelText, queryAllByLabelText } = renderPicker();
-    expect(await findByText('On the trial list')).toBeTruthy();
+    expect(await findByText("On Nyx's trial list")).toBeTruthy();
     // Both on-list foods are in it (each also renders elsewhere — see FR-17).
     expect(getAllByLabelText('Tiki Cat Chicken').length).toBeGreaterThanOrEqual(2);
     // Orijen Fish is not on the list, so it appears exactly where it always did
@@ -392,7 +398,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
 
   it('puts the trial diet first, ahead of a permitted extra', async () => {
     const { findByText, getAllByLabelText } = renderPicker();
-    await findByText('On the trial list');
+    await findByText("On Nyx's trial list");
     // The first rendered instance of each is the one inside the section (it is the
     // first zone in the scroll view).
     const diet = getAllByLabelText('Tiki Cat Chicken')[0];
@@ -417,7 +423,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
   // means "what this pet was actually fed", not "what the trial permits".
   it('leaves the rotation shelf and library zones exactly as they were', async () => {
     const { findByText, getByText, getAllByLabelText } = renderPicker();
-    await findByText('On the trial list');
+    await findByText("On Nyx's trial list");
     expect(getByText("Nyx's rotation")).toBeTruthy();
     expect(getByText('Snap a new food')).toBeTruthy();
     expect(getByText('Always available')).toBeTruthy();
@@ -438,7 +444,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
       />,
     );
     await findByText("Nyx's rotation");
-    expect(queryByText('On the trial list')).toBeNull();
+    expect(queryByText("On Nyx's trial list")).toBeNull();
   });
 
   // D7 — the library is per-account, the trial is per-pet. Marking pet A's allowed
@@ -449,7 +455,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
     usePetStore.setState({ activePet: { ...PET, id: 'p2', name: 'Mochi' } });
     const { findByText, queryByText } = renderPicker();
     await findByText("Nyx's rotation");
-    expect(queryByText('On the trial list')).toBeNull();
+    expect(queryByText("On Nyx's trial list")).toBeNull();
   });
 
   it('renders nothing while the set is unknown, and nothing once the trial ends', async () => {
@@ -457,7 +463,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
       TRIAL_SET.mockReturnValue(set);
       const { findByText, queryByText, unmount } = renderPicker();
       await findByText("Nyx's rotation");
-      expect(queryByText('On the trial list')).toBeNull();
+      expect(queryByText("On Nyx's trial list")).toBeNull();
       unmount();
     }
   });
@@ -468,7 +474,7 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
   // picker answering a question the owner did not ask.
   it('is filtered by the scope chip, and disappears when the scope empties it', async () => {
     const { findByText, getAllByRole, queryByText, getAllByLabelText } = renderPicker();
-    await findByText('On the trial list');
+    await findByText("On Nyx's trial list");
 
     // The scope chips are the radios in the pinned bar, in FOOD_SCOPE_OPTIONS
     // order: All / Meals / Treats / Wet / Dry.
@@ -476,19 +482,19 @@ describe('FoodPicker — the pinned "On the trial list" section', () => {
 
     // Both on-list foods are meals in this fixture, so Treats empties the section.
     fireEvent.press(chips[2]);
-    expect(queryByText('On the trial list')).toBeNull();
+    expect(queryByText("On Nyx's trial list")).toBeNull();
 
     // Meals keeps it — and the section holds only what the scope admits.
     fireEvent.press(chips[1]);
-    expect(queryByText('On the trial list')).toBeTruthy();
+    expect(queryByText("On Nyx's trial list")).toBeTruthy();
     expect(getAllByLabelText('Tiki Cat Chicken').length).toBeGreaterThanOrEqual(2);
   });
 
   it('steps aside in search-results mode, like every other browse zone', async () => {
     const { findByText, getByPlaceholderText, queryByText } = renderPicker();
-    await findByText('On the trial list');
+    await findByText("On Nyx's trial list");
     fireEvent.changeText(getByPlaceholderText('Search brand or product'), 'chick');
-    expect(queryByText('On the trial list')).toBeNull();
+    expect(queryByText("On Nyx's trial list")).toBeNull();
   });
 });
 
@@ -685,5 +691,60 @@ describe('FoodPicker rotation shelf: recent mixes (CUL-2090)', () => {
     );
     expect((await second.findAllByText('Rabbit Pâté')).length).toBeGreaterThan(0);
     expect(second.queryByLabelText(/Mixed bowl/)).toBeNull();
+  });
+});
+
+// CUL-1908 — the log form round's design pass, as the PM ruled it (2026-10-23).
+describe('FoodPicker — the log form design pass (CUL-1908)', () => {
+  const STORAGE = jest.requireMock('../../lib/storage') as { getSignedUrls: jest.Mock };
+
+  /** The rendered text, in tree order, so a test can ask what sits above what. */
+  function order(tree: ReturnType<typeof renderPicker>): string {
+    return JSON.stringify(tree.toJSON());
+  }
+
+  it('P2: the door sits under the rotation, not above it', async () => {
+    const tree = renderPicker();
+    await tree.findByText("Nyx's rotation");
+    const text = order(tree);
+    expect(text.indexOf("Nyx's rotation")).toBeLessThan(text.indexOf('Snap a new food'));
+  });
+
+  it('P6: an empty library says what it becomes, then offers the door', async () => {
+    ROT.mockResolvedValue([]);
+    DB.getLibraryFoods.mockResolvedValue([]);
+    const tree = renderPicker();
+    await tree.findByText("Nyx's foods will live here");
+    expect(tree.getByText('Snap the bag once. After that, logging it is one tap.')).toBeTruthy();
+    expect(tree.queryByText('No foods yet. Snap one above.')).toBeNull();
+    const text = order(tree);
+    expect(text.indexOf("Nyx's foods will live here")).toBeLessThan(text.indexOf('Snap a new food'));
+  });
+
+  it('P5: the library headings are the quiet section labels, announced as headings', async () => {
+    const tree = renderPicker();
+    await tree.findByText("Nyx's rotation");
+    // "Meals" is also a scope chip; the heading is the one announced as a header.
+    const headings = tree.getAllByText('Meals').filter((n) => n.props.accessibilityRole === 'header');
+    expect(headings).toHaveLength(1);
+  });
+
+  it('P3: a food with no photo keeps an even empty slot; the tile reads as it did', async () => {
+    const tree = renderPicker();
+    await tree.findByText("Nyx's rotation");
+    expect(tree.getAllByTestId('food-tile-photo-slot').length).toBeGreaterThan(0);
+    expect(tree.queryByTestId('food-tile-photo')).toBeNull();
+    expect(tree.getAllByLabelText('Tiki Cat Chicken').length).toBeGreaterThan(0);
+  });
+
+  it('P3: a food with a photo shows its signed front photo, signed in one batch', async () => {
+    DB.getLibraryFoods.mockResolvedValue(
+      LIBRARY.map((f) => (f.id === 'l1' ? { ...f, photo_path: 'u1/front.jpg' } : f)),
+    );
+    STORAGE.getSignedUrls.mockResolvedValueOnce(new Map([['u1/front.jpg', 'https://signed/front']]));
+    const tree = renderPicker();
+    const photo = await tree.findByTestId('food-tile-photo');
+    expect(photo.props.source).toEqual({ uri: 'https://signed/front' });
+    expect(STORAGE.getSignedUrls).toHaveBeenCalledWith('nyx-food-photos', ['u1/front.jpg'], expect.any(Number));
   });
 });

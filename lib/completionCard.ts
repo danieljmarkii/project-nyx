@@ -32,6 +32,8 @@
 import { kgToLbs } from './weight';
 import { summarizeSimpleEvent } from './logCopy';
 import { describeOccurredAt, type OccurredConfidence } from './utils';
+import { formatRecordDate, formatRecordWhen } from './recordWhen';
+import { resolveRecordPetName, usePetStore } from '../store/petStore';
 import { isLookRow } from './lookDisplay';
 import { EVENT_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { theme } from '../constants/theme';
@@ -304,8 +306,31 @@ export const HITSLOP_ACTION_SOLO = {
   top: REACH, bottom: REACH, left: REACH, right: REACH,
 } as const;
 
-/** Every removal confirm's title: the Undo gate's and both Removes'. */
+/** A removal confirm's title when it cannot name the record's type (the sheet's beat). */
 const REMOVE_TITLE = 'Remove this log?';
+
+/**
+ * The record's type as a word in a sentence (CUL-1909 P5): "vomit", "loose stool", and
+ * for a look, whose label is "Noticed", "what you noticed". Also the event editor's title
+ * and its Remove row, so the three say the same thing.
+ */
+export function recordTypeWord(eventType: string): string {
+  return TYPE_WORD[eventType] ?? (EVENT_TYPES[eventType as EventTypeKey]?.label ?? 'event').toLowerCase();
+}
+
+// Labels written as nouns for a picker that do not read as one mid-sentence ("Remove this
+// other?"). nyx-voice: the plain word an owner would say.
+const TYPE_WORD: Readonly<Record<string, string>> = {
+  check_in: 'what you noticed',
+  other: 'entry',
+  itch: 'itch',
+};
+
+/** "Remove this vomit?" / "Remove what you noticed?" */
+function removeTitleFor(eventType: string): string {
+  const word = recordTypeWord(eventType);
+  return eventType === 'check_in' ? `Remove ${word}?` : `Remove this ${word}?`;
+}
 
 /** What the Undo confirm says, or `null` when this record needs no confirm.
  *
@@ -332,18 +357,31 @@ const REMOVE_TITLE = 'Remove this log?';
  * are two copies to keep in step.
  */
 export function undoGateCopy(
-  record: { hasAttachment?: boolean; hasNote?: boolean },
+  record: { hasAttachment?: boolean; hasNote?: boolean; record?: LoggedRecord },
 ): { title: string; body: string } | null {
+  const clause = takesWithItClause(record);
+  if (!clause) return null;
+  // The named card's record carries its type label; the sheet's beat carries none, and
+  // keeps the generic title rather than guessing one.
+  const label = record.record?.kind === 'event' ? record.record.typeLabel : null;
+  return {
+    title: label ? `Remove this ${label.toLowerCase()}?` : REMOVE_TITLE,
+    body: clause,
+  };
+}
+
+/** "The photo you attached and the note you wrote go with it.", or null with neither. */
+function takesWithItClause(record: { hasAttachment?: boolean | null; hasNote?: boolean }): string | null {
+  // null: the photo could not be checked. The confirm then says any photo goes, never
+  // nothing: silence would read as "no photo" (C-12) over one that may be there.
   const takesWithIt = [
-    record.hasAttachment ? 'the photo you attached' : null,
+    record.hasAttachment ? 'the photo you attached' : record.hasAttachment === null ? 'any photo on it' : null,
     record.hasNote ? 'the note you wrote' : null,
   ].filter((x): x is string => x !== null);
   if (takesWithIt.length === 0) return null;
   const clause = takesWithIt.join(' and ');
-  return {
-    title: REMOVE_TITLE,
-    body: `${clause.charAt(0).toUpperCase()}${clause.slice(1)} will be removed with it.`,
-  };
+  const verb = takesWithIt.length > 1 ? 'go' : 'goes';
+  return `${clause.charAt(0).toUpperCase()}${clause.slice(1)} ${verb} with it.`;
 }
 
 /** A record a Remove confirm is about: its type, and the two columns a note can live in. */
@@ -351,6 +389,11 @@ export interface RemovableRecord {
   event_type: string;
   notes?: string | null;
   look_note?: string | null;
+  /** The record's own pet, so the confirm names whose record goes (C-9). */
+  pet_id?: string | null;
+  occurred_at?: string | null;
+  /** As stored: a TEXT column, read for its two non-witnessed values only. */
+  occurred_at_confidence?: string | null;
 }
 
 /**
@@ -386,12 +429,28 @@ export function eventHasNote(record: RemovableRecord): boolean {
  */
 export function removeConfirmCopy(
   record: RemovableRecord,
-  facts: { hasAttachment: boolean },
+  // `hasAttachment` null: the record could not be asked (a failed read). Said, hedged.
+  facts: { hasAttachment: boolean | null; petName?: string },
 ): { title: string; body: string } {
-  const subject = isLookRow(record)
-    ? 'what you noticed'
-    : `the ${EVENT_TYPES[record.event_type as EventTypeKey]?.label ?? 'event'}`;
-  const lead = `This will remove ${subject} from history.`;
-  const gate = undoGateCopy({ hasAttachment: facts.hasAttachment, hasNote: eventHasNote(record) });
-  return { title: REMOVE_TITLE, body: gate ? `${lead} ${gate.body}` : lead };
+  // CUL-1909 P5: the confirm names which record goes, by its pet, its type and its time.
+  // The pet is the RECORD's (C-9), resolved from its own pet id when the caller has not
+  // already resolved it; a blank resolves to "your pet", never to the active pet.
+  const pet = facts.petName?.trim()
+    || resolveRecordPetName(usePetStore.getState().pets, record.pet_id ?? null);
+  // A guessed or ranged time keeps to its date: a clock time would claim a precision the
+  // record does not hold (C-10).
+  const at = record.occurred_at ? new Date(record.occurred_at) : null;
+  const when = at && Number.isFinite(at.getTime())
+    ? record.occurred_at_confidence === 'estimated' || record.occurred_at_confidence === 'window'
+      ? formatRecordDate(at)
+      : formatRecordWhen(at)
+    : null;
+  const lead = isLookRow(record)
+    ? `What you noticed about ${pet}${when ? ` on ${when}` : ''} leaves the history.`
+    : `${pet.charAt(0).toUpperCase()}${pet.slice(1)}’s ${recordTypeWord(record.event_type)}${when ? ` from ${when}` : ''} leaves the history.`;
+  const clause = takesWithItClause({ hasAttachment: facts.hasAttachment, hasNote: eventHasNote(record) });
+  return {
+    title: removeTitleFor(isLookRow(record) ? 'check_in' : record.event_type),
+    body: clause ? `${lead} ${clause}` : lead,
+  };
 }

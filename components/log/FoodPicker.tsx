@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, StyleSheet, ScrollView, TextInput, TouchableOpacity,
+  View, StyleSheet, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Camera } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
+import { EmptyState } from '../ui/EmptyState';
 import { ChipGroup } from '../ui/ChipGroup';
+import { SearchField } from '../ui/SearchField';
 import { getLibraryFoods, PickerFood } from '../../lib/db';
+import { getSignedUrls } from '../../lib/storage';
 import { getPickerRotationItems, type FabMix, type FabRecentItem } from '../../lib/fabRecentItems';
 import {
   groupFoodsByType, toFoodRows, splitBrandGroupsForPicker,
@@ -25,6 +27,8 @@ import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { trialListMembership } from '../../lib/trialAllowedSet';
 import { FoodTile } from './FoodTile';
 import { PickerReadFailed } from './PickerReadFailed';
+import { PickerAddDoor } from './PickerAddDoor';
+import { usePickerColumns } from './pickerColumns';
 import { PickerSilhouette } from '../surfaces/waits/PickerSilhouette';
 
 interface Props {
@@ -205,6 +209,36 @@ export function FoodPicker({
     setRetryTick((t) => t + 1);
   }, []);
 
+  // CUL-1908 P3 — the bag on each tile. The photo bucket is private, so the paths are
+  // signed in ONE batch (the Foods tab's shape), held for this mount, and only paths not
+  // already held are asked for. A progressive enhancement: until a path signs, or when it
+  // cannot (offline), the tile keeps its even empty slot; the log never waits on it.
+  const [photoUrls, setPhotoUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    const missing = Array.from(
+      new Set([...library, ...rotation].map((f) => f.photo_path).filter((p): p is string => !!p)),
+    ).filter((p) => !photoUrls.has(p));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    // A day, like the Foods tab: a signed link must outlive the screen it is drawn on.
+    void getSignedUrls('nyx-food-photos', missing, 60 * 60 * 24).then((signed) => {
+      if (cancelled || signed.size === 0) return;
+      setPhotoUrls((prev) => {
+        const next = new Map(prev);
+        signed.forEach((url, path) => next.set(path, url));
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+    // photoUrls is read only to skip held paths; re-running on its change would re-sign
+    // nothing (every path is then held), so it is left out of the dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [library, rotation]);
+  const photoFor = useCallback(
+    (f: FabRecentItem): string | null => (f.photo_path ? photoUrls.get(f.photo_path) ?? null : null),
+    [photoUrls],
+  );
+
   // B-005: also reload when the library changes while the picker is already
   // focused. Archiving happens on the food detail screen (opened via onOpenDetail
   // → /food/[id]); an Undo tapped on the root snackbar afterward restores the food
@@ -378,16 +412,10 @@ export function FoodPicker({
           keyboard would cover the rotation tiles that serve the 80% confirm-don't-
           search case (Designer — search is the fallback lane, not the hero). */}
       <View style={styles.pin}>
-        <TextInput
-          style={styles.search}
+        <SearchField
           placeholder="Search brand or product"
-          placeholderTextColor={theme.colorTextTertiary}
           value={search}
           onChangeText={setSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
         />
         {/* Scope chips for the no-typing, one-handed case (All/Meals/Treats/Wet/
             Dry) — a closed single-select set rendered through the wrapping ChipGroup
@@ -414,12 +442,6 @@ export function FoodPicker({
       >
         {read === 'failed' && <PickerReadFailed message={FOOD_READ_FAILED} onRetry={retry} />}
 
-        {!searching && (
-          <View style={styles.zone}>
-            <AddFoodCta onPress={onAddNew} />
-          </View>
-        )}
-
         {read === 'reading' && <PickerSilhouette />}
 
         {/* FR-16 — above the rotation shelf, below the pinned search bar. Hidden
@@ -428,9 +450,11 @@ export function FoodPicker({
             matches, and search is the lane for "I know what I'm looking for". */}
         {read === 'answered' && !searching && trialFoods.length > 0 && (
           <View style={styles.zone}>
-            <SectionLabel label="On the trial list" header />
+            {/* P4 — whose list, never a verdict: still ordering only, no mark, no count. */}
+            <SectionLabel label={petName ? `On ${petName}'s trial list` : 'On the trial list'} header />
             <TileGrid
               foods={trialFoods}
+              photoFor={photoFor}
               compact
               onPickFood={onPickFood}
               onOpenDetail={onOpenDetail}
@@ -453,12 +477,32 @@ export function FoodPicker({
                 mix sits among the foods as its own tile (CUL-2090). */}
             <TileGrid
               foods={rotationShown}
+              photoFor={photoFor}
               compact
               onPickFood={onPickFood}
               onPickMix={onPickMix}
               onOpenDetail={onOpenDetail}
               selectedFoodIds={selectedFoodIds}
             />
+          </View>
+        )}
+
+        {/* P6 — the first week: an empty library says what it becomes (Principle 5), and
+            the door follows it. Only once a read answered with nothing (C-12). */}
+        {read === 'answered' && !searching && library.length === 0 && (
+          <EmptyState
+            title={petName ? `${petName}'s foods will live here` : 'Your foods will live here'}
+            body="Snap the bag once. After that, logging it is one tap."
+          />
+        )}
+
+        {/* P2 — the door sits under the shelves: after week one the rotation answers most
+            mornings, so it takes the top of the fold; in week one nothing sits above the
+            door but the empty state. Hidden in search-results mode (the no-matches state
+            carries its own). */}
+        {!searching && (
+          <View style={styles.zone}>
+            <AddFoodCta onPress={onAddNew} />
           </View>
         )}
 
@@ -480,21 +524,19 @@ export function FoodPicker({
                   <AddFoodCta onPress={onAddNew} />
                 </>
               ) : (
-                <ThemedText style={styles.empty}>
-                  {library.length === 0
-                    ? 'No foods yet. Snap one above.'
-                    : 'No matches.'}
-                </ThemedText>
+                // An empty library is said by P6's empty state above; only a scope that
+                // filtered everything out lands here.
+                library.length === 0 ? null : <ThemedText style={styles.empty}>No matches.</ThemedText>
               )
             ) : (
               <View style={styles.groups}>
-                <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
+                <LibraryGroup label="Meals"        foods={groupedLibrary.meals} photoFor={photoFor}
                   mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
                   selectedFoodIds={selectedFoodIds} />
-                <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
+                <LibraryGroup label="Treats"       foods={groupedLibrary.treats} photoFor={photoFor}
                   mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
                   selectedFoodIds={selectedFoodIds} />
-                <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
+                <LibraryGroup label="Unclassified" foods={groupedLibrary.other} photoFor={photoFor}
                   mixableOnly={mixableOnly} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
                   selectedFoodIds={selectedFoodIds}
                   hint={selecting ? undefined : 'Long-press a tile to classify it.'} />
@@ -623,30 +665,11 @@ export function FoodPicker({
   );
 }
 
-// The photo-first "Snap a new food" CTA — rendered at the top of the browse
-// layout and again inside the no-matches search empty state, so it's one block
-// with one a11y contract in both places.
+// The photo-first "Snap a new food" door — rendered in the browse layout and again
+// inside the no-matches search empty state, so it's one block with one a11y contract in
+// both places. The kit's card door row, shared with MedicationPicker (CUL-1908 F5).
 function AddFoodCta({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity
-      style={styles.addCta}
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel="Snap a new food"
-    >
-      {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
-          identical "Add" CTA so the two pickers read as one family of vector
-          glyphs rather than mixed emoji/icon. */}
-      <View style={styles.addCtaIcon}>
-        <Camera size={20} color={colorRoles.action.onLight} strokeWidth={2} />
-      </View>
-      <View style={styles.addCtaText}>
-        <ThemedText style={styles.addCtaTitle}>Snap a new food</ThemedText>
-        <ThemedText style={styles.addCtaHint}>Or choose from your photos</ThemedText>
-      </View>
-    </TouchableOpacity>
-  );
+  return <PickerAddDoor title="Snap a new food" hint="Or choose from your photos" onPress={onPress} />;
 }
 
 // Renders one type section of the library (Meals / Treats / Unclassified). Hidden
@@ -659,8 +682,9 @@ function AddFoodCta({ onPress }: { onPress: () => void }) {
 // here, full-width tap-to-OPEN FoodRows there. The tile is still the right unit on
 // the hot path — it shows ~2× the candidates per screen, carries no chevron (which
 // would lie: a tap logs) and no intake/favorite annotation (which mustn't sit by a
-// one-tap-log control — intake-is-not-preference), and stays text-only (§4.1 retired
-// photo thumbnails from this grid). So FoodTile and FoodRow remain two components
+// one-tap-log control — intake-is-not-preference). §4.1 retired photo thumbnails from
+// this grid; the log form round brought the bag back as a 24pt slot beside the eyebrow
+// (CUL-1908 P3), never a hero, so the name keeps the tile. So FoodTile and FoodRow remain two components
 // for two jobs; do NOT unify them onto the hot path.
 //
 // Brand grouping (B-109) is the shared structure, applied with the picker-only
@@ -671,10 +695,11 @@ function AddFoodCta({ onPress }: { onPress: () => void }) {
 // 10-second-test regression). The Foods tab headers every brand; the picker does
 // not, by design.
 function LibraryGroup({
-  label, foods, onPickFood, onOpenDetail, hint, selectedFoodIds, mixableOnly = false,
+  label, foods, onPickFood, onOpenDetail, hint, selectedFoodIds, mixableOnly = false, photoFor,
 }: {
   label: string;
   foods: PickerFood[];
+  photoFor: (f: FabRecentItem) => string | null;
   mixableOnly?: boolean;
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
@@ -685,8 +710,10 @@ function LibraryGroup({
   const { brandGroups, singles } = splitBrandGroupsForPicker(foods);
   return (
     <View style={styles.group}>
+      {/* P5 — the quiet SectionLabel the trial list and rotation already use: three
+          heading weights on one list was two too many, and the tiles are the content. */}
       <View style={styles.sectionHeader}>
-        <ThemedText style={styles.sectionTitle}>{label}</ThemedText>
+        <SectionLabel label={label} header />
         {hint ? <ThemedText style={styles.groupHint}>{hint}</ThemedText> : null}
       </View>
       <View style={styles.brandGroups}>
@@ -699,13 +726,13 @@ function LibraryGroup({
                 {bg.brand}
               </ThemedText>
             ) : null}
-            <TileGrid foods={bg.foods} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+            <TileGrid foods={bg.foods} photoFor={photoFor} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail}
               selectedFoodIds={selectedFoodIds} mixableOnly={mixableOnly} />
           </View>
         ))}
         {/* Single-variant brands: one flat grid, brand kept in each tile's eyebrow. */}
         {singles.length > 0 ? (
-          <TileGrid foods={singles} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+          <TileGrid foods={singles} photoFor={photoFor} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
             selectedFoodIds={selectedFoodIds} mixableOnly={mixableOnly} />
         ) : null}
       </View>
@@ -718,9 +745,11 @@ function LibraryGroup({
 // odd tile gets a spacer to keep the last row left-aligned.
 function TileGrid({
   foods, hideBrand = false, compact = false, onPickFood, onPickMix, onOpenDetail, selectedFoodIds,
-  mixableOnly = false,
+  mixableOnly = false, photoFor,
 }: {
   foods: FabRecentItem[];
+  // The signed front photo for a tile's slot, or null (P3).
+  photoFor: (f: FabRecentItem) => string | null;
   // The bowl picker: a food the bowl can't take renders inert with its reason.
   mixableOnly?: boolean;
   hideBrand?: boolean;
@@ -731,12 +760,13 @@ function TileGrid({
   onOpenDetail?: (food: PickerFood) => void;
   selectedFoodIds?: readonly string[];
 }) {
+  const columns = usePickerColumns();
   return (
     <View style={styles.grid}>
       {/* Key on the row's first food id (rows are never empty) rather than the
           index, so a search filter that changes the list can't make React reuse a
           row view and miss a re-layout. */}
-      {toFoodRows(foods).map((row) => (
+      {toFoodRows(foods, columns).map((row) => (
         <View key={row[0].id} style={styles.gridRow}>
           {row.map((f) => {
             const tile: BowlTile = mixableOnly && !f.mix ? bowlTile(f, !!onOpenDetail) : { kind: 'pick' };
@@ -751,6 +781,7 @@ function TileGrid({
               hideBrand={hideBrand}
               compact={compact}
               mix={!!f.mix}
+              photoUri={photoFor(f)}
               notHere={notHere}
               ask={setType ? { line: SET_IT_AS_MEAL, hint: 'Opens the food to set its type' } : undefined}
               // `undefined` outside selection mode keeps the tile a log button;
@@ -775,7 +806,7 @@ function TileGrid({
             />
             );
           })}
-          {row.length === 1 && <View style={styles.gridSpacer} />}
+          {columns === 2 && row.length === 1 && <View style={styles.gridSpacer} />}
         </View>
       ))}
     </View>
@@ -809,17 +840,6 @@ const styles = StyleSheet.create({
   zone: {
     gap: theme.space2,
   },
-  search: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    backgroundColor: theme.colorNeutralLight,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    height: 44,
-  },
   empty: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
@@ -828,7 +848,7 @@ const styles = StyleSheet.create({
   alwaysEmpty: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    lineHeight: 19,
+    lineHeight: theme.lineHeightSMLoose,
   },
   alwaysList: {
     gap: theme.space1,
@@ -841,7 +861,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
     paddingVertical: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   freshnessChoices: {
     paddingLeft: theme.space2,
@@ -857,13 +877,13 @@ const styles = StyleSheet.create({
     gap: theme.space3,
   },
   freshnessChoiceBtn: {
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     justifyContent: 'center',
   },
   choiceYes: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   choiceNo: {
     fontSize: theme.textSM,
@@ -874,21 +894,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   alwaysConfirm: {
     paddingVertical: theme.space1,
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
+  // A control speaks the action colour; the teal is a good fact, never a link (F5).
   alwaysConfirmText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
   },
   alwaysConfirmed: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     textAlignVertical: 'center',
     paddingVertical: theme.space1,
   },
@@ -908,7 +930,7 @@ const styles = StyleSheet.create({
   alwaysRowMeta: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    marginTop: 2,
+    marginTop: theme.spaceMicro,
   },
   groups: {
     gap: theme.space3,
@@ -916,18 +938,11 @@ const styles = StyleSheet.create({
   group: {
     gap: theme.space2,
   },
-  // Type section header (Meals / Treats / Unclassified) — harmonized with the
-  // Foods tab's sectionTitle treatment (B-113 Option C): sentence-case textXL, so
-  // the section out-weighs the brand sub-header beneath it. A small all-caps label
-  // here would invert the hierarchy (the bug the Foods tab fixed), so the picker
-  // uses the SAME prominent title the browse tab does.
+  // Type section header (Meals / Treats / Unclassified). B-113 Option C gave it the
+  // Foods tab's textXL title; the log form round ruled the quiet SectionLabel instead
+  // (CUL-1908 P5), matching the trial list and rotation labels on the same list.
   sectionHeader: {
     gap: theme.spaceMicro,
-  },
-  sectionTitle: {
-    fontSize: theme.textXL,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorNeutralDark,
   },
   groupHint: {
     fontSize: theme.textXS,
@@ -956,31 +971,5 @@ const styles = StyleSheet.create({
   },
   gridSpacer: {
     flex: 1,
-  },
-  addCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    backgroundColor: theme.colorAccentLight,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space2,
-    minHeight: 56,
-  },
-  addCtaIcon: {
-    width: 24,
-    alignItems: 'center',
-  },
-  addCtaText: {
-    flex: 1,
-  },
-  addCtaTitle: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  addCtaHint: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
   },
 });

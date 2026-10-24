@@ -24,4 +24,10 @@ describe('SlotRow', () => {
     expect(view.getByText('thumb')).toBeTruthy();
     expect(view.getByLabelText('Barcode photo added. Replace it')).toBeTruthy();
   });
+
+  it('takes a leading glyph before the title', () => {
+    const view = render(<SlotRow title="Attach photo" onPress={() => {}} leading={<Text>glyph</Text>} />);
+    expect(view.getByText('glyph')).toBeTruthy();
+    expect(view.getByLabelText('Attach photo')).toBeTruthy();
+  });
 });

@@ -24,6 +24,8 @@ jest.mock('expo-router', () => ({
     push: (...a: unknown[]) => mockPush(...a),
   },
   useLocalSearchParams: () => ({ ...(mockTypeParam ? { type: mockTypeParam } : {}), ...mockWidgetParams }),
+  // The named card's offset reads the route (CUL-2197's suite renders the card).
+  usePathname: () => '/(tabs)',
   // The food picker's load (CUL-2090's meal-step test): fired once on mount.
   useFocusEffect: (cb: () => void | (() => void)) => {
     const React = jest.requireActual('react');
@@ -47,6 +49,10 @@ jest.mock('expo-image-picker', () => ({
 // env. Stubbed to the shape the screen's own paths touch; nothing under test
 // makes a network call.
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
+// CUL-2197 renders the named card beside the screen; an Undo that skipped its confirm
+// would reach the one reversal, so it is stubbed and its calls are counted.
+const mockReverse = jest.fn().mockResolvedValue(undefined);
+jest.mock('../lib/undoLog', () => ({ reverseLoggedEvent: (...a: unknown[]) => mockReverse(...a) }));
 
 const mockInsertSimpleEvent = jest.fn().mockResolvedValue({
   eventId: 'ev-1', occurredAtIso: '2026-09-05T17:33:00.000Z', now: '2026-09-05T17:33:00.000Z',
@@ -59,6 +65,7 @@ jest.mock('../lib/simpleEvent', () => ({
 // parse/format helpers stay live, because `canConfirmWeight` gates the button on
 // parseWeightLbsToKg and a stubbed parse would test a button that is never
 // actually reachable the way an owner reaches it.
+const mockGetLatestWeighing = jest.fn().mockResolvedValue(null);
 const mockInsertWeightCheck = jest.fn().mockResolvedValue({
   eventId: 'wt-1', occurredAtIso: '2026-09-05T17:33:00.000Z', now: '2026-09-05T17:33:00.000Z',
 });
@@ -66,6 +73,7 @@ jest.mock('../lib/weight', () => ({
   ...jest.requireActual('../lib/weight'),
   insertWeightCheck: (...a: unknown[]) => mockInsertWeightCheck(...a),
   getLatestWeightKg: jest.fn().mockResolvedValue(null),
+  getLatestWeighing: (...a: unknown[]) => mockGetLatestWeighing(...a),
 }));
 
 // The meal step's writes (CUL-2090): the meal writer, the trial heads-up and the rotation
@@ -91,6 +99,7 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import LogScreen from './log';
+import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { usePetStore } from '../store/petStore';
 import { useMomentStore } from '../store/momentStore';
 
@@ -317,7 +326,7 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
     mockTypeParam = 'weight_check';
     const { getByText, getByPlaceholderText } = render(<LogScreen />);
     fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '12.4');
-    const confirm = getByText('Log weight');
+    const confirm = getByText('Log 12.4 lbs');
     fireEvent.press(confirm);
     fireEvent.press(confirm);
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
@@ -329,11 +338,34 @@ describe('/log — the weight confirm double-submit guard (CUL-251)', () => {
     mockInsertWeightCheck.mockRejectedValueOnce(new Error('disk full'));
     const { getByText, getByPlaceholderText } = render(<LogScreen />);
     fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '12.4');
-    const confirm = getByText('Log weight');
+    const confirm = getByText('Log 12.4 lbs');
     fireEvent.press(confirm);
     await waitFor(() => expect(Alert.alert).toHaveBeenCalledWith("Couldn't save that", expect.any(String)));
     fireEvent.press(confirm);
     await waitFor(() => expect(mockInsertWeightCheck).toHaveBeenCalledTimes(2));
+  });
+});
+
+// CUL-1908 F1 / F3 — the weight step on the kit: the commit is PrimaryButton, whose
+// disabled state says why in its label (C-7), and the time edits in TimeEditSheet.
+describe('/log — the weight step on the kit (CUL-1908)', () => {
+  it('a blank weight disables the commit and the label says why', () => {
+    mockTypeParam = 'weight_check';
+    const { getByRole } = render(<LogScreen />);
+    const commit = getByRole('button', { name: 'Enter a weight to log' });
+    expect(commit.props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(commit);
+    expect(mockInsertWeightCheck).not.toHaveBeenCalled();
+  });
+
+  it('Change time opens the one time sheet, asking about the weighing', () => {
+    mockTypeParam = 'weight_check';
+    const { getByText, queryByText } = render(<LogScreen />);
+    expect(queryByText('When was this weight taken?')).toBeNull();
+    fireEvent.press(getByText('Change time'));
+    expect(getByText('When was this weight taken?')).toBeTruthy();
+    fireEvent.press(getByText('Cancel'));
+    expect(queryByText('When was this weight taken?')).toBeNull();
   });
 });
 
@@ -420,5 +452,190 @@ describe('/log — a MIX tile on the rotation shelf (CUL-2090)', () => {
     expect(card.kind).toBe('meal');
     expect(card.foodProductName).toBeNull();
     expect(card.bowl?.foods.map((f) => f.rowName)).toEqual(['Chicken Pâté', 'Rabbit Pâté']);
+  });
+});
+
+// CUL-1908 — the log form round's design pass, as the PM ruled it (2026-10-23).
+describe('/log — the design pass (CUL-1908)', () => {
+  it('P1: a step a door opened leads with a close, and it leaves the form', () => {
+    mockTypeParam = 'weight_check';
+    const { getByLabelText, queryByText } = render(<LogScreen />);
+    fireEvent.press(getByLabelText('Close'));
+    expect(mockBack).toHaveBeenCalledTimes(1);
+    // Never the type grid the owner never saw.
+    expect(queryByText('Log for Biscuit')).toBeNull();
+  });
+
+  it('P1: a step reached FROM the grid still steps back to it', () => {
+    mockTypeParam = undefined;
+    const { getByText, getByLabelText } = render(<LogScreen />);
+    fireEvent.press(getByText('Other'));
+    fireEvent.press(getByLabelText('Back'));
+    expect(mockBack).not.toHaveBeenCalled();
+    expect(getByText('Log for Biscuit')).toBeTruthy();
+  });
+
+  it('P2: the food step says once that a tap logs', () => {
+    mockTypeParam = 'meal';
+    jest.spyOn(require('../lib/db'), 'getLibraryFoods').mockResolvedValue([]);
+    const { getByText } = render(<LogScreen />);
+    expect(getByText('Tap a food to log it now.')).toBeTruthy();
+  });
+
+  it('P9: the prefill says where it came from, and the button says the number it writes', async () => {
+    mockTypeParam = 'weight_check';
+    usePetStore.setState({ activePet: { id: 'p1', name: 'Biscuit', weight_kg: 19.3 } as never });
+    // Built from local components (C-29): the caption is a local date.
+    const taken = new Date(new Date().getFullYear(), 0, 2, 9, 0);
+    mockGetLatestWeighing.mockResolvedValueOnce({ weightKg: 19.3, occurredAt: taken.toISOString() });
+    const { findByText, getByPlaceholderText, getByText } = render(<LogScreen />);
+    const prefill = (getByPlaceholderText('e.g. 12.5').props.value as string);
+    expect(await findByText(new RegExp(`^Last weighed .+: ${prefill} lbs$`))).toBeTruthy();
+    expect(getByText(`Log ${prefill} lbs`)).toBeTruthy();
+    fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '43.1');
+    expect(getByText('Log 43.1 lbs')).toBeTruthy();
+  });
+
+  it('P9: a profile weight that differs from the last reading gets no caption under it', async () => {
+    mockTypeParam = 'weight_check';
+    // Profile edited to 21 kg after a 19.3 kg weighing: the caption would name a number
+    // the field does not hold.
+    usePetStore.setState({ activePet: { id: 'p1', name: 'Biscuit', weight_kg: 21 } as never });
+    mockGetLatestWeighing.mockResolvedValueOnce({ weightKg: 19.3, occurredAt: new Date(2026, 0, 2).toISOString() });
+    const { queryByText } = render(<LogScreen />);
+    await act(async () => {});
+    expect(mockGetLatestWeighing).toHaveBeenCalled();
+    expect(queryByText(/Last weighed/)).toBeNull();
+  });
+
+  it('P9: the button states the parsed number, never the raw keystrokes', () => {
+    mockTypeParam = 'weight_check';
+    const { getByPlaceholderText, getByRole } = render(<LogScreen />);
+    fireEvent.changeText(getByPlaceholderText('e.g. 12.5'), '012.40');
+    expect(getByRole('button', { name: /^Log 12\.4 lbs$/ })).toBeTruthy();
+  });
+
+  it('P9: a pet never weighed gets no caption, as before', async () => {
+    mockTypeParam = 'weight_check';
+    const { queryByText } = render(<LogScreen />);
+    await act(async () => {});
+    expect(queryByText(/Last weighed/)).toBeNull();
+  });
+
+  it('P10: Other leads with the note, names the pet on its commit, and never blocks an empty note', async () => {
+    mockTypeParam = 'other';
+    const tree = render(<LogScreen />);
+    expect(tree.getByText('What did you notice?')).toBeTruthy();
+    const text = JSON.stringify(tree.toJSON());
+    expect(text.indexOf('What did you notice?')).toBeLessThan(text.indexOf('Attach photo'));
+    const commit = tree.getByRole('button', { name: 'Log for Biscuit' });
+    expect(commit.props.accessibilityState?.disabled).toBeFalsy();
+    await act(async () => { fireEvent.press(commit); });
+    expect(mockInsertSimpleEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('P10: a symptom step keeps its order and its commit', () => {
+    mockTypeParam = 'vomit';
+    const tree = render(<LogScreen />);
+    expect(tree.queryByText('What did you notice?')).toBeNull();
+    expect(tree.getByText('Log vomit')).toBeTruthy();
+  });
+});
+
+// CUL-1908 P8 — from the meal card, the band names the meal, its time and its pet.
+describe('/log — the dose step from the meal card (CUL-1908 P8)', () => {
+  it('names the MEAL\'s pet, the meal\'s time and the food before the owner picks', async () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Biscuit' }, { id: 'p2', name: 'Mochi' }] as never,
+      activePet: { id: 'p1', name: 'Biscuit' } as never,
+    });
+    mockTypeParam = 'medication';
+    mockWidgetParams = { pairedEventId: 'meal-9', pairedPetId: 'p2', pairedFoodType: 'meal', pairedFoodName: 'Indoor Cat Dry' };
+    const at = new Date(2026, 9, 23, 7, 42);
+    jest.spyOn(require('../lib/db'), 'getEventOccurredAt').mockResolvedValue(at.toISOString());
+    jest.spyOn(require('../lib/db'), 'getLibraryMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getRecentMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getActiveCourseItemIds').mockResolvedValue([]);
+    const { findByText, getByText } = render(<LogScreen />);
+    expect(getByText('Given with')).toBeTruthy();
+    expect(await findByText(/^Mochi's meal · /)).toBeTruthy();
+    expect(getByText('Indoor Cat Dry')).toBeTruthy();
+    expect(getByText('What did Mochi take?')).toBeTruthy();
+  });
+
+  it('names the day too when the meal was not today (a retroactive add from its record)', async () => {
+    mockTypeParam = 'medication';
+    mockWidgetParams = { pairedEventId: 'meal-8', pairedPetId: 'p1', pairedFoodType: 'treat', comboSource: 'detail' };
+    const earlier = new Date();
+    earlier.setDate(earlier.getDate() - 3);
+    earlier.setHours(7, 42, 0, 0);
+    jest.spyOn(require('../lib/db'), 'getEventOccurredAt').mockResolvedValue(earlier.toISOString());
+    jest.spyOn(require('../lib/db'), 'getLibraryMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getRecentMedications').mockResolvedValue([]);
+    jest.spyOn(require('../lib/db'), 'getActiveCourseItemIds').mockResolvedValue([]);
+    const day = earlier.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const { findByText } = render(<LogScreen />);
+    expect(await findByText(new RegExp(`^Biscuit's treat · ${day}`))).toBeTruthy();
+  });
+});
+
+// CUL-2197 — the full log form's Undo on a record carrying a NOTE. The note is the
+// owner's own sentence and cannot be made again, so the card's Undo confirms and names
+// it (C-21), as the in-sheet beat, the record's Remove and the editor's Remove do. The
+// card is rendered beside the screen so the assertion is the confirm itself, not a flag.
+describe('/log — Undo on a note-only record confirms and names the note (CUL-2197)', () => {
+  function renderWithCard() {
+    return render(<><LogScreen /><NamedCompletionCard /></>);
+  }
+
+  async function logAndUndo(tree: ReturnType<typeof render>, commit: string) {
+    fireEvent.press(tree.getByText(commit));
+    await waitFor(() => expect(useMomentStore.getState().visible).toBe(true));
+    await act(async () => { fireEvent.press(tree.getByLabelText('Undo — remove this log')); });
+  }
+
+  function lastAlert() {
+    const calls = (Alert.alert as unknown as jest.Mock).mock.calls;
+    return calls[calls.length - 1] as [string, string, { text: string }[]];
+  }
+
+  it('a photoless vomit with a note raises the confirm naming the note, and removes nothing yet', async () => {
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByLabelText('Note'), 'Grass in it, twice');
+    await logAndUndo(tree, 'Log vomit');
+    const [title, body, buttons] = lastAlert();
+    expect(title).toBe('Remove this vomit?');
+    expect(body).toBe('The note you wrote goes with it.');
+    expect(buttons.map((b) => b.text)).toEqual(['Keep it', 'Remove']);
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
+  it('an Other, whose note is the whole record, confirms too', async () => {
+    mockTypeParam = 'other';
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByLabelText('What did you notice?'), 'Hid under the bed all morning');
+    await logAndUndo(tree, 'Log for Biscuit');
+    expect(lastAlert()[1]).toBe('The note you wrote goes with it.');
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
+  it('a weight check with a note confirms too (the screen\'s other named card)', async () => {
+    mockTypeParam = 'weight_check';
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByPlaceholderText('e.g. 12.5'), '12.4');
+    fireEvent.changeText(tree.getByLabelText('Note'), 'After the long walk');
+    await logAndUndo(tree, 'Log 12.4 lbs');
+    expect(lastAlert()[1]).toBe('The note you wrote goes with it.');
+    expect(mockReverse).not.toHaveBeenCalled();
+  });
+
+  // The other edge: a blank or whitespace-only note is no note, so Undo stays the one
+  // tap §5.6 makes it, with no confirm over nothing.
+  it('a whitespace-only note is no note: Undo stays one tap', async () => {
+    const tree = renderWithCard();
+    fireEvent.changeText(tree.getByLabelText('Note'), '   ');
+    await logAndUndo(tree, 'Log vomit');
+    expect(Alert.alert).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockReverse).toHaveBeenCalledTimes(1));
   });
 });

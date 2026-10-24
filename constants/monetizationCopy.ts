@@ -22,15 +22,21 @@ export function careFirstLine(petName?: string | null): string {
   return `${subject} is never behind this door — logging, health alerts, trends and the vet report are free, always.`;
 }
 
-// §7.3 extraction cap states. Daily/monthly differ only in when reading resumes.
+// §7.3 extraction cap states. Daily/monthly differ in the window the limit names and
+// when reading resumes; a monthly cap that says "today's limit" sends the owner back
+// tomorrow into the same wall (CUL-2171).
+function capWindow(cap: 'daily' | 'monthly'): string {
+  return cap === 'monthly' ? "this month's" : "today's";
+}
+
 export function foodCapCopy(cap: 'daily' | 'monthly'): string {
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
-  return `You've hit today's limit for label reading. The photo is saved — fill in what you know below, and reading picks back up ${resume}.`;
+  return `You've hit ${capWindow(cap)} limit for label reading. The photo is saved — fill in what you know below, and reading picks back up ${resume}.`;
 }
 
 export function medicationCapCopy(cap: 'daily' | 'monthly'): string {
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
-  return `You've hit today's limit for label reading. The label photo is saved — fill in the details below, and reading picks back up ${resume}.`;
+  return `You've hit ${capWindow(cap)} limit for label reading. The label photo is saved — fill in the details below, and reading picks back up ${resume}.`;
 }
 
 // §7.3 vomit read cap — the sensitive one. No reassurance, no transaction word,

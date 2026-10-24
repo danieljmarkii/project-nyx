@@ -25,7 +25,7 @@ import { getDb } from './db';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingWeightChecks } from './sync';
 import { uuid } from './utils';
-import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
+import { LATEST_WEIGHING_QUERY, LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 import { usePetStore } from '../store/petStore';
 import { kgToLbs, kgToLbsNum, lbsToKg } from './weightUnits';
 
@@ -179,6 +179,16 @@ export async function getLatestWeightKg(petId: string): Promise<number | null> {
   const db = getDb();
   const row = await db.getFirstAsync<{ weight_kg: number }>(LATEST_WEIGHT_KG_QUERY, [petId]);
   return row?.weight_kg ?? null;
+}
+
+// The latest reading with the day it was taken, or null when the pet was never weighed
+// (CUL-1908 P9: the log form names where its prefill came from).
+export async function getLatestWeighing(
+  petId: string,
+): Promise<{ weightKg: number; occurredAt: string } | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ weight_kg: number; occurred_at: string }>(LATEST_WEIGHING_QUERY, [petId]);
+  return row ? { weightKg: row.weight_kg, occurredAt: row.occurred_at } : null;
 }
 
 // ── Edit side (B-197) ─────────────────────────────────────────────────────────

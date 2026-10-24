@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { SegmentedControl, type SegmentOption } from '../ui/SegmentedControl';
+import { TimeEditSheet } from '../ui/TimeEditSheet';
+import { EditBlock, EditRow } from '../ui/EditCard';
 import { formatTime, formatExifAttribution } from '../../lib/utils';
+import { formatRecordWhen } from '../../lib/recordWhen';
 
 // B-010 Direction 2 — explicit "Saw it / Found it" capture for discovery-prone
 // events. Controlled: the parent owns the canonical state and the stored
@@ -14,7 +18,14 @@ import { formatTime, formatExifAttribution } from '../../lib/utils';
 
 export type TimeMode = 'saw' | 'found';
 export type FoundMode = 'before' | 'around' | 'between';
-type OpenPicker = 'point' | 'estimated' | 'earliest' | 'latest' | null;
+// The witnessed point edits in the kit's one time sheet (CUL-1908 F3); the found panel's
+// bounds keep their inline pickers, which the log form round drew unchanged.
+type OpenPicker = 'estimated' | 'earliest' | 'latest' | null;
+
+const MODE_OPTIONS: ReadonlyArray<SegmentOption<TimeMode>> = [
+  { value: 'saw', label: 'Saw it happen' },
+  { value: 'found', label: 'Found it' },
+];
 
 interface Props {
   // null = unclassified: a stored row with no recorded confidence (migration 012
@@ -38,7 +49,27 @@ interface Props {
   latest: Date;
   onEarliestChange: (d: Date) => void;
   onLatestChange: (d: Date) => void;
+  // 'rows' draws the control as the record in edit mode (the event editor, CUL-1909 P1):
+  // the point as a When row that opens the time sheet, the switch under "How you know",
+  // and every bound as a row that opens the sheet titled for the bound it writes (F3).
+  // The log form keeps 'form', the layout its round drew.
+  layout?: 'form' | 'rows';
 }
+
+// Each bound's question names the field it writes (TimeEditSheet's title rule): the
+// discovery bound is never asked as "when did it happen".
+const BOUND_TITLE: Record<Exclude<OpenPicker, null>, string> = {
+  latest: 'When did you find it?',
+  estimated: 'About when did it happen?',
+  earliest: 'The earliest it could have been',
+};
+const BETWEEN_LATEST_TITLE = 'The latest it could have been';
+
+const FOUND_OPTIONS: ReadonlyArray<{ value: FoundMode; label: string }> = [
+  { value: 'before', label: 'Sometime before' },
+  { value: 'around', label: 'Around a time' },
+  { value: 'between', label: 'Between two times' },
+];
 
 function stamp(d: Date): string {
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${formatTime(d)}`;
@@ -75,14 +106,133 @@ function FieldRow({ label, value, onPress }: {
   );
 }
 
+// The three found modes. These rows carry NO hitSlop on purpose (CUL-579): `radioRow` is
+// already minHeight 44, so slop bought no reach and only pushed into the gap between them
+// from both sides, so adjacent radios shared hit area and a tap near the boundary landed
+// by z-order (CUL-612). Here that silently swaps one confidence class for another (an
+// honest window becomes a guessed point) and the vet report prints the difference.
+function FoundRadios({ value, onChange }: { value: FoundMode; onChange: (m: FoundMode) => void }) {
+  return (
+    <>
+      {FOUND_OPTIONS.map((o) => (
+        <TouchableOpacity
+          key={o.value}
+          style={styles.radioRow}
+          onPress={() => onChange(o.value)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === o.value }}
+        >
+          <View style={[styles.radio, value === o.value && styles.radioOn]}>
+            {value === o.value && <View style={styles.radioDot} />}
+          </View>
+          <ThemedText style={styles.radioLab}>{o.label}</ThemedText>
+        </TouchableOpacity>
+      ))}
+    </>
+  );
+}
+
 export function TimeConfidenceField({
   mode, onModeChange,
   point, pointSource, onPointChange,
   foundMode, onFoundModeChange,
   estimatedAt, onEstimatedChange,
   earliest, latest, onEarliestChange, onLatestChange,
+  layout = 'form',
 }: Props) {
   const [open, setOpen] = useState<OpenPicker>(null);
+  const [pointSheet, setPointSheet] = useState(false);
+
+  if (layout === 'rows') {
+    const pointLine = formatRecordWhen(point);
+    const exifLine = pointSource === 'exif' ? formatExifAttribution(point.toISOString()) : null;
+    const boundRow = (which: Exclude<OpenPicker, null>, label: string, value: Date | null) => (
+      <EditRow
+        label={label}
+        value={value ? formatRecordWhen(value) : 'Set time'}
+        onPress={() => setOpen(which)}
+        accessibilityLabel={`${label}, ${value ? formatRecordWhen(value) : 'not set'}. Change time`}
+        testID={`time-${which}`}
+      />
+    );
+    const sheetFor = open === 'earliest'
+      ? { value: earliest ?? latest, title: BOUND_TITLE.earliest, max: latest, onPick: onEarliestChange }
+      : open === 'latest'
+        ? { value: latest, title: foundMode === 'between' ? BETWEEN_LATEST_TITLE : BOUND_TITLE.latest, max: undefined, onPick: onLatestChange }
+        : open === 'estimated'
+          ? { value: estimatedAt, title: BOUND_TITLE.estimated, max: undefined, onPick: onEstimatedChange }
+          : null;
+    return (
+      <>
+        {(mode === 'saw' || mode === null) && (
+          <EditRow
+            first
+            label="When"
+            value={pointLine}
+            detail={exifLine}
+            onPress={() => setPointSheet(true)}
+            accessibilityLabel={`When, ${pointLine}${exifLine ? `, ${exifLine}` : ''}. Change time`}
+            testID="time-when"
+          />
+        )}
+        <EditBlock label="How you know" first={mode === 'found'}>
+          <SegmentedControl options={MODE_OPTIONS} value={mode} onChange={onModeChange} />
+          {mode === null && (
+            <ThemedText style={styles.rowsHint}>Not recorded as seen or found — choose one if you'd like.</ThemedText>
+          )}
+        </EditBlock>
+        {mode === 'found' && (
+          <>
+            <EditBlock label="When did it happen?">
+              <FoundRadios value={foundMode} onChange={onFoundModeChange} />
+            </EditBlock>
+            {foundMode === 'before' && boundRow('latest', 'Found it by', latest)}
+            {foundMode === 'around' && boundRow('estimated', 'Around', estimatedAt)}
+            {foundMode === 'between' && (
+              <>
+                {boundRow('earliest', 'From', earliest)}
+                {boundRow('latest', 'To', latest)}
+              </>
+            )}
+            <EditBlock>
+              <ThemedText style={styles.rowsHint}>
+                {foundMode === 'before'
+                  ? `Recorded as “found by ${formatTime(latest)}” — no guessing.`
+                  : foundMode === 'around'
+                    ? 'A best guess — logged as an estimate, not a witnessed time.'
+                    : 'The full range is kept for your vet.'}
+              </ThemedText>
+            </EditBlock>
+          </>
+        )}
+        {pointSheet && (
+          <TimeEditSheet
+            key={point.getTime()}
+            value={point}
+            title="When did this happen?"
+            onCancel={() => setPointSheet(false)}
+            onSave={(d) => {
+              setPointSheet(false);
+              onPointChange(d);
+            }}
+          />
+        )}
+        {sheetFor && (
+          <TimeEditSheet
+            key={`${open}-${sheetFor.value.getTime()}`}
+            value={sheetFor.value}
+            title={sheetFor.title}
+            maximumDate={sheetFor.max}
+            onCancel={() => setOpen(null)}
+            onSave={(d) => {
+              setOpen(null);
+              sheetFor.onPick(d);
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   const pickerDisplay = Platform.OS === 'ios' ? 'inline' : 'default';
 
@@ -98,7 +248,7 @@ export function TimeConfidenceField({
         // Force light theme + brand accent so the picker stays readable when
         // the device is in OS dark mode against our white surfaces (cf. #28).
         themeVariant="light"
-        accentColor={theme.colorAccent}
+        accentColor={colorRoles.action.onLight}
         onChange={(_e, d) => {
           if (Platform.OS === 'android') setOpen(null);
           if (d) onPick(d);
@@ -109,34 +259,13 @@ export function TimeConfidenceField({
 
   return (
     <View style={styles.container}>
-      {/* The two segments carry NO hitSlop, deliberately (CUL-657). `segItem` is
-          flex: 1 and minHeight 44, so each is already at the floor across half the
-          width — slop bought no reach it did not already have. What it bought was
-          an OVERLAP: the pair sits FLUSH (no gap, inside an overflow-hidden bordered
-          box), so 8pt of inward slop each made them share a 16pt band centred on the
-          divider, where a tap resolves by z-order rather than by intent (CUL-612).
-          Dead centre of a two-option control is exactly where a thumb lands, and
-          this is the top-level witnessed-vs-discovered classifier: the wrong segment
-          records a witnessed event as a discovery window or the reverse (the B-448
-          confidence-leak class), and the vet report prints the difference. Flush
-          siblings get no slop at all — there is no gap to spend, so every point of
-          it reaches into the neighbour. Don't add it back. */}
-      <View style={styles.seg}>
-        <TouchableOpacity
-          style={[styles.segItem, mode === 'saw' && styles.segItemOn]}
-          onPress={() => onModeChange('saw')}
-          activeOpacity={0.7}
-        >
-          <ThemedText style={[styles.segText, mode === 'saw' && styles.segTextOn]}>Saw it happen</ThemedText>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.segItem, mode === 'found' && styles.segItemOn]}
-          onPress={() => onModeChange('found')}
-          activeOpacity={0.7}
-        >
-          <ThemedText style={[styles.segText, mode === 'found' && styles.segTextOn]}>Found it</ThemedText>
-        </TouchableOpacity>
-      </View>
+      {/* The kit's SegmentedControl (CUL-1908 F4), which carries no hitSlop for the
+          reason this control first dropped it (CUL-657): two segments at the 44pt floor
+          a hairline apart, where any slop is an overlap and a tap at the divider would
+          resolve by z-order. On this classifier the wrong segment records a witnessed
+          event as a discovery window or the reverse (B-448), and the vet report prints
+          the difference. */}
+      <SegmentedControl options={MODE_OPTIONS} value={mode} onChange={onModeChange} />
 
       {/* 'saw' shows the witnessed point; unclassified (null) shows the SAME
           neutral point row — the row itself asserts nothing, only the highlighted
@@ -156,11 +285,28 @@ export function TimeConfidenceField({
                 <Text style={styles.exif}>{'  ·  '}{formatExifAttribution(point.toISOString())}</Text>
               )}
             </ThemedText>
-            <TouchableOpacity onPress={() => setOpen(open === 'point' ? null : 'point')} hitSlop={12}>
-              <ThemedText style={styles.change}>Change</ThemedText>
+            <TouchableOpacity
+              onPress={() => setPointSheet(true)}
+              style={styles.changeBtn}
+              accessibilityRole="button"
+            >
+              <ThemedText style={styles.change}>Change time</ThemedText>
             </TouchableOpacity>
           </View>
-          {renderPicker('point', point, onPointChange, new Date())}
+          {pointSheet && (
+            <TimeEditSheet
+              // Keyed on the point: if the caller re-derives it while the sheet is open
+              // (log.tsx's foreground refresh), the draft re-seeds rather than going stale.
+              key={point.getTime()}
+              value={point}
+              title="When did this happen?"
+              onCancel={() => setPointSheet(false)}
+              onSave={(d) => {
+                setPointSheet(false);
+                onPointChange(d);
+              }}
+            />
+          )}
           {mode === null && (
             <ThemedText style={styles.hint}>Not recorded as seen or found — choose one if you'd like.</ThemedText>
           )}
@@ -181,24 +327,7 @@ export function TimeConfidenceField({
               by z-order (CUL-612). Here that silently swaps one confidence class
               for another — an honest window becomes a guessed point — and the
               vet report prints the difference. Don't add it back. */}
-          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('before')}>
-            <View style={[styles.radio, foundMode === 'before' && styles.radioOn]}>
-              {foundMode === 'before' && <View style={styles.radioDot} />}
-            </View>
-            <ThemedText style={styles.radioLab}>Sometime before</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('around')}>
-            <View style={[styles.radio, foundMode === 'around' && styles.radioOn]}>
-              {foundMode === 'around' && <View style={styles.radioDot} />}
-            </View>
-            <ThemedText style={styles.radioLab}>Around a time</ThemedText>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('between')}>
-            <View style={[styles.radio, foundMode === 'between' && styles.radioOn]}>
-              {foundMode === 'between' && <View style={styles.radioDot} />}
-            </View>
-            <ThemedText style={styles.radioLab}>Between two times</ThemedText>
-          </TouchableOpacity>
+          <FoundRadios value={foundMode} onChange={onFoundModeChange} />
 
           {foundMode === 'before' && (
             <>
@@ -252,36 +381,20 @@ const styles = StyleSheet.create({
     gap: theme.space1,
   },
   // Segmented control
-  seg: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: theme.colorBorderStrong,
-    borderRadius: theme.radiusSmall,
-    overflow: 'hidden',
-  },
-  segItem: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segItemOn: {
-    backgroundColor: theme.colorNeutralDark,
-  },
-  segText: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-  },
-  segTextOn: {
-    color: theme.colorSurface,
-  },
-  // Witnessed time row
+  // Wraps at the largest text sizes, so "Change time" drops under the date rather than
+  // running off the screen (the AX5 capture); the row gap is the link's own 44pt box.
   timeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
+    columnGap: theme.space2,
+    minHeight: theme.hitTarget,
+  },
+  // The link owns the row's full height, so it needs no slop to reach the floor.
+  changeBtn: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
   },
   timeLabel: {
     fontSize: theme.textSM,
@@ -293,7 +406,8 @@ const styles = StyleSheet.create({
   },
   change: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
   },
   // Found panel
   panel: {
@@ -313,7 +427,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
+    minHeight: theme.hitTarget,
     backgroundColor: theme.colorSurface,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -332,11 +446,16 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
   },
+  rowsHint: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextTertiary,
+  },
   radioRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    minHeight: 44,
+    minHeight: theme.hitTarget,
   },
   radio: {
     width: 18,
@@ -347,14 +466,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // A chosen option is the action colour, never the teal (a good fact, #1294; F5).
   radioOn: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.action.onLight,
   },
   radioDot: {
     width: 8,
     height: 8,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.action.onLight,
   },
   radioLab: {
     fontSize: theme.textMD,

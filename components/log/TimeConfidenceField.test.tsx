@@ -123,22 +123,22 @@ describe('TimeConfidenceField', () => {
       }
     });
 
-    // Pins the geometry the rule above rests on. The segments are flush by
-    // design (a shared border, not a gap), which is what makes ANY slop here an
-    // overlap rather than a spend of empty space — the CLAUDE.md CUL-612 test is
-    // `gap >= facing(a) + facing(b)`, and this row's gap is zero. If a later
-    // redesign puts real space between them, that is the moment to re-derive
-    // this rule rather than inherit it.
-    it('the segments are flush — there is no gap for slop to spend', () => {
+    // Pins the geometry the rule above rests on. The segments sit on the kit's
+    // SegmentedControl track (CUL-1908 F4), a hairline apart. With no slop on either
+    // side the facing reach is zero, so the CUL-612 test (`gap >= facing(a) +
+    // facing(b)`) holds at any gap; a slop added to either segment would need the gap
+    // re-derived, which is the moment to revisit this rather than inherit it.
+    it('the gap between the segments covers their (zero) facing reach', () => {
       const { getByText } = setup({ mode: 'saw' });
-      const row = commonAncestor(
-        owningTouchable(getByText('Saw it happen')),
-        owningTouchable(getByText('Found it')),
-      );
+      const saw = owningTouchable(getByText('Saw it happen'));
+      const found = owningTouchable(getByText('Found it'));
+      const row = commonAncestor(saw, found);
       expect(row).not.toBeNull();
 
-      expect(flat(row).gap ?? 0).toBe(0);
-      expect(flat(row).columnGap ?? 0).toBe(0);
+      const gap = Math.max(flat(row).gap ?? 0, flat(row).columnGap ?? 0);
+      type Slop = { left?: number; right?: number } | undefined;
+      const reach = ((saw!.props.hitSlop as Slop)?.right ?? 0) + ((found!.props.hitSlop as Slop)?.left ?? 0);
+      expect(gap).toBeGreaterThanOrEqual(reach);
     });
 
     it('each segment selects its own mode', () => {
@@ -151,4 +151,74 @@ describe('TimeConfidenceField', () => {
       expect(found.props.onModeChange).toHaveBeenCalledWith('found');
     });
   });
+
+  // CUL-1908 F3: the witnessed point edits in the kit's one time sheet, which mounts only
+  // while open and hands back the point the owner saved.
+  describe('the witnessed point opens TimeEditSheet', () => {
+    it('Change time opens the sheet, and Save hands the point back', () => {
+      const { getByText, queryByText, props } = setup({ mode: 'saw' });
+      expect(queryByText('When did this happen?')).toBeNull();
+
+      fireEvent.press(getByText('Change time'));
+      expect(getByText('When did this happen?')).toBeTruthy();
+
+      fireEvent.press(getByText('Save'));
+      expect(props.onPointChange).toHaveBeenCalledWith(POINT);
+      expect(queryByText('When did this happen?')).toBeNull();
+    });
+
+    it('Cancel closes it and moves nothing', () => {
+      const { getByText, queryByText, props } = setup({ mode: 'saw' });
+      fireEvent.press(getByText('Change time'));
+      fireEvent.press(getByText('Cancel'));
+      expect(props.onPointChange).not.toHaveBeenCalled();
+      expect(queryByText('When did this happen?')).toBeNull();
+    });
+  });
 });
+
+// CUL-1909 F3 and P1 — the event editor's layout: the record in edit mode. The point is a
+// When row that opens the kit's one time sheet, the switch sits under "How you know", and
+// each bound is a row that opens the sheet titled for the bound it writes.
+describe('TimeConfidenceField — the rows layout', () => {
+  it('a seen record: the When row opens the sheet, and How you know holds the switch', () => {
+    const { getByTestId, getByText, queryByText, props } = setup({ layout: 'rows', mode: 'saw' });
+    expect(getByText('How you know')).toBeTruthy();
+    expect(queryByText('When did this happen?')).toBeNull();
+    fireEvent.press(getByTestId('time-when'));
+    expect(getByText('When did this happen?')).toBeTruthy();
+    expect(props.onPointChange).not.toHaveBeenCalled();
+  });
+
+  it('an unclassified record keeps its honest line', () => {
+    const { getByText } = setup({ layout: 'rows', mode: null });
+    expect(getByText('Not recorded as seen or found — choose one if you\'d like.')).toBeTruthy();
+  });
+
+  it.each([
+    ['before' as const, 'time-latest', 'When did you find it?'],
+    ['around' as const, 'time-estimated', 'About when did it happen?'],
+  ])('%s: the bound row opens the sheet asking for that bound', (foundMode, row, title) => {
+    const { getByTestId, getByText } = setup({ layout: 'rows', foundMode });
+    fireEvent.press(getByTestId(row));
+    expect(getByText(title)).toBeTruthy();
+  });
+
+  it('between: From is capped at To, so the window cannot invert', () => {
+    const EARLIEST = new Date(2026, 6, 24, 9, 0);
+    const { getByTestId, getByText, UNSAFE_getByType } = setup({ layout: 'rows', foundMode: 'between', earliest: EARLIEST });
+    fireEvent.press(getByTestId('time-earliest'));
+    expect(getByText('The earliest it could have been')).toBeTruthy();
+    expect(UNSAFE_getByType('DateTimePicker' as never).props.maximumDate).toEqual(LATEST);
+  });
+
+  it('between: To writes the latest bound, through its own handler', () => {
+    const { getByTestId, getByText, props } = setup({ layout: 'rows', foundMode: 'between', earliest: new Date(2026, 6, 24, 9, 0) });
+    fireEvent.press(getByTestId('time-latest'));
+    expect(getByText('The latest it could have been')).toBeTruthy();
+    fireEvent.press(getByText('Save'));
+    expect(props.onLatestChange).toHaveBeenCalledWith(LATEST);
+    expect(props.onEarliestChange).not.toHaveBeenCalled();
+  });
+});
+

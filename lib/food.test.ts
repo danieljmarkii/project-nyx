@@ -227,6 +227,11 @@ describe('toFoodRows', () => {
     expect(toFoodRows([])).toEqual([]);
   });
 
+  it('puts one food a row at the largest text sizes (columns = 1)', () => {
+    const rows = toFoodRows([food('a', null), food('b', null), food('c', null)], 1);
+    expect(rowIds(rows)).toEqual([['a'], ['b'], ['c']]);
+  });
+
   it('preserves order row-major across the flattened rows', () => {
     const order = ['a', 'b', 'c', 'd', 'e'];
     const rows = toFoodRows(order.map((id) => food(id, null)));

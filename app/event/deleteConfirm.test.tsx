@@ -123,7 +123,7 @@ describe('the Remove confirm names the photo (CUL-825, CUL-645 parity)', () => {
   it('says the photo goes too when the record carries one', async () => {
     mockGetEventAttachment.mockResolvedValue(withPhoto);
     await pressRemove();
-    expect(alertBody()).toContain('The photo you attached will be removed with it.');
+    expect(alertBody()).toContain('The photo you attached goes with it.');
   });
 
   it('still names what is being removed', async () => {
@@ -131,7 +131,7 @@ describe('the Remove confirm names the photo (CUL-825, CUL-645 parity)', () => {
     await pressRemove();
     // The photo sentence is ADDED to the existing one, never a replacement for it:
     // the owner needs both what goes and that the photo goes with it.
-    expect(alertBody()).toContain('will remove the Vomit from history');
+    expect(alertBody()).toContain('’s vomit from ');
   });
 
   // The other direction, and the one a copy change is most likely to break: never
@@ -140,7 +140,7 @@ describe('the Remove confirm names the photo (CUL-825, CUL-645 parity)', () => {
   it('stays silent about a photo on a record with none', async () => {
     mockGetEventAttachment.mockResolvedValue(null);
     await pressRemove();
-    expect(alertBody()).toBe('This will remove the Vomit from history.');
+    expect(alertBody()).toMatch(/^.+’s vomit from .+ leaves the history\.$/);
     expect(alertBody()).not.toContain('photo');
   });
 });
@@ -172,7 +172,7 @@ describe('the confirm survives the attachment-read window (C-12)', () => {
     fireEvent.press(view.getByTestId('event-remove'));
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
-    expect(alertBody()).toContain('The photo you attached will be removed with it.');
+    expect(alertBody()).toContain('The photo you attached goes with it.');
 
     release(null);
   });
@@ -188,7 +188,7 @@ describe('the confirm survives the attachment-read window (C-12)', () => {
     fireEvent.press(view.getByTestId('event-remove'));
 
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
-    expect(alertBody()).toBe('This will remove the Vomit from history.');
+    expect(alertBody()).toMatch(/^.+’s vomit from .+ leaves the history\.$/);
   });
 });
 
@@ -202,9 +202,7 @@ describe('the Remove confirm names an event\'s note (CUL-1125)', () => {
     mockGetEventById.mockResolvedValue({ ...baseRow, notes: 'Grass first, then this' });
     await pressRemove();
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
-    expect(alertBody()).toBe(
-      'This will remove the Vomit from history. The note you wrote will be removed with it.',
-    );
+    expect(alertBody()).toMatch(/’s vomit from .+ leaves the history\. The note you wrote goes with it\.$/);
   });
 
   it('names the photo AND the note, as one sentence, when the record carries both', async () => {
@@ -212,10 +210,7 @@ describe('the Remove confirm names an event\'s note (CUL-1125)', () => {
     mockGetEventById.mockResolvedValue({ ...baseRow, notes: 'Grass first, then this' });
     await pressRemove();
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
-    expect(alertBody()).toBe(
-      'This will remove the Vomit from history. ' +
-        'The photo you attached and the note you wrote will be removed with it.',
-    );
+    expect(alertBody()).toMatch(/’s vomit from .+ leaves the history\. The photo you attached and the note you wrote go with it\.$/);
   });
 
   it('stays silent about a note that is only whitespace', async () => {
@@ -223,7 +218,7 @@ describe('the Remove confirm names an event\'s note (CUL-1125)', () => {
     mockGetEventById.mockResolvedValue({ ...baseRow, notes: '  \n ' });
     await pressRemove();
     await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
-    expect(alertBody()).toBe('This will remove the Vomit from history.');
+    expect(alertBody()).toMatch(/^.+’s vomit from .+ leaves the history\.$/);
   });
 });
 

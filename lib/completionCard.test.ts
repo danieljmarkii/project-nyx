@@ -18,6 +18,7 @@ import {
   type LoggedRecord,
 } from './completionCard';
 import { formatTime, describeOccurredAt } from './utils';
+import { formatRecordDate, formatRecordWhen } from './recordWhen';
 
 // B-514 — the day boundary is LOCAL midnight, and summarizeLoggedRecord's
 // "today/yesterday" phrasing reads it. A UTC literal for a local-day question is
@@ -432,14 +433,17 @@ describe('undoGateCopy', () => {
   it('names the photo', () => {
     expect(undoGateCopy({ hasAttachment: true })).toEqual({
       title: 'Remove this log?',
-      body: 'The photo you attached will be removed with it.',
+      body: 'The photo you attached goes with it.',
     });
   });
 
+  it('names the record’s type in the title when the card carries it (CUL-1909 P5)', () => {
+    const record = { kind: 'event' as const, typeLabel: 'Loose stool', confidence: 'witnessed' as const, earliest: null, latest: null };
+    expect(undoGateCopy({ hasAttachment: true, record })?.title).toBe('Remove this loose stool?');
+  });
+
   it('names the note — the sentence she typed at 2am is not recreatable either', () => {
-    expect(undoGateCopy({ hasNote: true })?.body).toBe(
-      'The note you wrote will be removed with it.',
-    );
+    expect(undoGateCopy({ hasNote: true })?.body).toBe('The note you wrote goes with it.');
   });
 
   it('names BOTH when the record carries both, as one sentence', () => {
@@ -449,7 +453,7 @@ describe('undoGateCopy', () => {
     // the sentence capitalises its own first letter, so it can never read
     // "…and The note…" mid-sentence.
     expect(undoGateCopy({ hasAttachment: true, hasNote: true })?.body).toBe(
-      'The photo you attached and the note you wrote will be removed with it.',
+      'The photo you attached and the note you wrote go with it.',
     );
   });
 
@@ -488,66 +492,95 @@ describe('eventHasNote', () => {
 });
 
 describe('removeConfirmCopy', () => {
-  const meal = { event_type: 'meal', notes: null, look_note: null };
+  // CUL-1909 P5: the confirm names which record goes, by its pet, its type and its time.
+  const AT = '2026-10-21T09:14:00.000Z';
+  const at = new Date(AT);
+  const WHEN = formatRecordWhen(at);
+  const meal = { event_type: 'meal', notes: null, look_note: null, occurred_at: AT };
+  const facts = (hasAttachment: boolean) => ({ hasAttachment, petName: 'Biscuit' });
 
   it('a bare record: the lead alone, never a warning about something that is not there', () => {
-    expect(removeConfirmCopy(meal, { hasAttachment: false })).toEqual({
-      title: 'Remove this log?',
-      body: 'This will remove the Meal from history.',
+    expect(removeConfirmCopy(meal, facts(false))).toEqual({
+      title: 'Remove this meal?',
+      body: `Biscuit’s meal from ${WHEN} leaves the history.`,
     });
   });
 
   it('names an EVENT\'s note, which neither Remove used to', () => {
-    expect(removeConfirmCopy({ ...meal, notes: 'Only ate the topper' }, { hasAttachment: false }).body).toBe(
-      'This will remove the Meal from history. The note you wrote will be removed with it.',
+    expect(removeConfirmCopy({ ...meal, notes: 'Only ate the topper' }, facts(false)).body).toBe(
+      `Biscuit’s meal from ${WHEN} leaves the history. The note you wrote goes with it.`,
     );
   });
 
   it('names the photo', () => {
-    expect(removeConfirmCopy({ ...meal, event_type: 'vomit' }, { hasAttachment: true }).body).toBe(
-      'This will remove the Vomit from history. The photo you attached will be removed with it.',
-    );
+    expect(removeConfirmCopy({ ...meal, event_type: 'vomit' }, facts(true))).toEqual({
+      title: 'Remove this vomit?',
+      body: `Biscuit’s vomit from ${WHEN} leaves the history. The photo you attached goes with it.`,
+    });
   });
 
   it('names BOTH when the record carries both, as one sentence', () => {
-    expect(
-      removeConfirmCopy({ ...meal, event_type: 'vomit', notes: 'Grass first' }, { hasAttachment: true }).body,
-    ).toBe(
-      'This will remove the Vomit from history. ' +
-        'The photo you attached and the note you wrote will be removed with it.',
+    expect(removeConfirmCopy({ ...meal, event_type: 'vomit', notes: 'Grass first' }, facts(true)).body).toBe(
+      `Biscuit’s vomit from ${WHEN} leaves the history. ` +
+        'The photo you attached and the note you wrote go with it.',
+    );
+  });
+
+  it('a guessed or ranged time keeps to its date, never a clock time it does not hold', () => {
+    for (const occurred_at_confidence of ['estimated', 'window']) {
+      expect(removeConfirmCopy({ ...meal, event_type: 'vomit', occurred_at_confidence }, facts(false)).body).toBe(
+        `Biscuit’s vomit from ${formatRecordDate(at)} leaves the history.`,
+      );
+    }
+  });
+
+  it('the record’s pet, resolved from its own pet id when the caller names none (C-9)', () => {
+    const { usePetStore } = jest.requireActual('../store/petStore');
+    usePetStore.setState({ pets: [{ id: 'pet-mochi', name: 'Mochi' }], activePet: { id: 'pet-biscuit', name: 'Biscuit' } });
+    expect(removeConfirmCopy({ ...meal, pet_id: 'pet-mochi' }, { hasAttachment: false }).body)
+      .toBe(`Mochi’s meal from ${WHEN} leaves the history.`);
+    // A blank resolves to "your pet", never to the active one.
+    expect(removeConfirmCopy({ ...meal, pet_id: 'gone' }, { hasAttachment: false }).body)
+      .toBe(`Your pet’s meal from ${WHEN} leaves the history.`);
+    usePetStore.setState({ pets: [], activePet: null });
+  });
+
+  it('a photo the caller could not check is said, hedged, beside the note', () => {
+    expect(removeConfirmCopy({ ...meal, event_type: 'vomit', notes: 'Grass first' }, { hasAttachment: null, petName: 'Biscuit' }).body).toBe(
+      `Biscuit\u2019s vomit from ${WHEN} leaves the history. Any photo on it and the note you wrote go with it.`,
     );
   });
 
   it('a look is "what you noticed", never "the Noticed", and its note is named', () => {
     expect(
-      removeConfirmCopy({ event_type: 'check_in', notes: null, look_note: 'Off her food' }, { hasAttachment: false })
-        .body,
-    ).toBe('This will remove what you noticed from history. The note you wrote will be removed with it.');
+      removeConfirmCopy({ event_type: 'check_in', notes: null, look_note: 'Off her food', occurred_at: AT }, facts(false)),
+    ).toEqual({
+      title: 'Remove what you noticed?',
+      body: `What you noticed about Biscuit on ${WHEN} leaves the history. The note you wrote goes with it.`,
+    });
   });
 
-  it('an unknown type still reads as a sentence', () => {
-    expect(removeConfirmCopy({ event_type: 'retired_type' }, { hasAttachment: false }).body).toBe(
-      'This will remove the event from history.',
+  it('an unknown type, and no time, still read as a sentence', () => {
+    expect(removeConfirmCopy({ event_type: 'retired_type' }, facts(false)).body).toBe(
+      'Biscuit’s event leaves the history.',
     );
   });
 
   it('its second sentence IS the Undo gate\'s body, for every combination', () => {
     // The sharing is structural, not a copy kept in step: change the gate's wording and
     // every Remove follows.
+    const lead = `Biscuit’s meal from ${WHEN} leaves the history.`;
     for (const hasAttachment of [false, true]) {
       for (const notes of [null, 'A note']) {
         const gate = undoGateCopy({ hasAttachment, hasNote: notes !== null });
-        const copy = removeConfirmCopy({ ...meal, notes }, { hasAttachment });
-        expect(copy.body).toBe(
-          gate ? `This will remove the Meal from history. ${gate.body}` : 'This will remove the Meal from history.',
-        );
-        if (gate) expect(copy.title).toBe(gate.title);
+        const copy = removeConfirmCopy({ ...meal, notes }, facts(hasAttachment));
+        expect(copy.body).toBe(gate ? `${lead} ${gate.body}` : lead);
       }
     }
   });
 
   it('never carries an exclamation mark (nyx-voice)', () => {
-    const copy = removeConfirmCopy({ ...meal, notes: 'A note' }, { hasAttachment: true });
+    const copy = removeConfirmCopy({ ...meal, notes: 'A note' }, facts(true));
     expect(`${copy.title} ${copy.body}`).not.toMatch(/!/);
   });
 });

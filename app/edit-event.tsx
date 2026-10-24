@@ -1,17 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
+  View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, ChevronRight } from 'lucide-react-native';
-import { colorRoles, theme } from '../constants/theme';
+import { Camera } from 'lucide-react-native';
+import { theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
-import { SectionLabel } from '../components/ui/SectionLabel';
+import { HeaderAction } from '../components/ui/HeaderAction';
 import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
 import { BowlEditor, type BowlPickerFood, type StagedBowlFood } from '../components/log/BowlEditor';
 import { loadMealBowls, type AppBowl } from '../lib/mealBowls';
@@ -22,7 +20,7 @@ import { forgetFlagsSpentByEvent } from '../lib/trialContaminant';
 import { AMOUNT_UNITS, type AmountUnit } from '../lib/mealComposition';
 import { mixFoodOf } from '../lib/mixCard';
 import { bowlDetailLine } from '../lib/mixDetail';
-import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { type PickerFood, getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { writeOwingFloorCheck } from '../lib/incidentFloorQueue';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../lib/analysis';
@@ -38,7 +36,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { foodFormatTag } from '../lib/food';
 import { useEventStore } from '../store/eventStore';
-import { uuid, formatExifAttribution, formatTime, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
+import { uuid, formatExifAttribution, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
+import { formatRecordWhen } from '../lib/recordWhen';
 import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
 import { usePetStore } from '../store/petStore';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
@@ -55,7 +54,15 @@ import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
 import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
-import { PhotoViewer } from '../components/ui';
+import { PhotoViewer, TextField, NumberField, TimeEditSheet, QuietBand, PrimaryButton, SkeletonRows } from '../components/ui';
+import { EditBlock, EditCard, EditRow } from '../components/ui/EditCard';
+import { FoodPicker } from '../components/log/FoodPicker';
+import { PickerReadFailed } from '../components/log/PickerReadFailed';
+import { useIsOnline } from '../hooks/useIsOnline';
+import { removeConfirmCopy, recordTypeWord } from '../lib/completionCard';
+import { reverseLoggedEvent } from '../lib/undoLog';
+import { destructiveConfirm } from '../lib/haptics';
+import { resolveRecordPetName, ANONYMOUS_PET_NAME } from '../store/petStore';
 
 /** A bowl as the editor stages it, in position order. */
 function stagedFromBowl(bowl: AppBowl): StagedBowlFood[] {
@@ -81,13 +88,6 @@ function isAmountUnit(u: string | null): u is AmountUnit {
   return u !== null && (AMOUNT_UNITS as readonly string[]).includes(u);
 }
 
-interface CachedFood {
-  id: string;
-  brand: string;
-  product_name: string;
-  format: string;
-}
-
 export default function EditEventModal() {
   const { id, type, occurredAt: occurredAtParam, notes: notesParam } =
     useLocalSearchParams<{
@@ -97,7 +97,7 @@ export default function EditEventModal() {
       notes?: string;
     }>();
 
-  const { patchInToday } = useEventStore();
+  const { patchInToday, removeFromToday } = useEventStore();
 
   const eventType = type as EventTypeKey;
   const config = EVENT_TYPES[eventType] ?? { label: 'Event', hasSeverity: false, hasFood: false };
@@ -124,24 +124,60 @@ export default function EditEventModal() {
   // flips to 'manual' the moment the user taps the time row.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
 
+  // Does the STORED row already carry a confidence its leaf says is unwritable? Only
+  // ever true for a row stamped before its leaf's gate existed. Seeded false and set by
+  // the mount read below. The seed is never seen: the form renders skeleton rows, and
+  // Save waits, until that read answers (`reads === 'answered'` waits on it), so the
+  // time card never paints the leaf's answer over a row that contradicts it (C-12).
+  // What this does NOT cover is a sync landing a window while the editor is open; the
+  // plain point stays on screen for that row, as it always has on a meal or a dose.
+  const [storedContradictsLeaf, setStoredContradictsLeaf] = useState(false);
+
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
-  // editable after logging). Shown only for non-meal events; meals are always
-  // witnessed — and so is a weight check (you read the scale), so it uses the
-  // plain point picker too and never the Saw-it/Found-it control (B-197).
-  // Reconstructed from stored fields on mount (reconstructTimeControl).
-  // CUL-869 adds `!isLook`, and it is a second gate rather than a rewrite of this
-  // expression. A look's stored time-confidence is WITNESSED BY CONSTRUCTION (§5.4,
-  // taxonomy D10) — it is a perception at a moment the owner was there for, so there
-  // is nothing to have found and the Saw-it / Found-it control has no honest answer
-  // to offer. `insertLook` is where that value is written, and this screen still
-  // writes none: the branch below hands the save a witnessed form value that
-  // `confidenceUpdateForEdit` then discards, exactly as it does for a meal.
+  // editable after logging). Reconstructed from stored fields on mount
+  // (reconstructTimeControl).
   //
-  // The tempting refactor is to read `config.confidenceModel` instead of naming
-  // three types. It is wrong here: `cough` and `sneeze` carry the same model and DO
-  // get this control today, so that version would silently change two shipped types
-  // under an unrelated PR.
-  const showConfidenceControl = !config.hasFood && !isWeight && !isMedication && !isLook;
+  // CUL-2195 — THE GATE IS THE LEAF CONTRACT, not a hand-listed set of types.
+  // `confidenceModel: 'witnessed'` marks a leaf on which Saw it / Found it has no
+  // honest answer, because the act is witnessed BY CONSTRUCTION: a meal is the bowl
+  // going down; a weight check is reading the scale; a dose is performed, never
+  // discovered (a mis-classified administration time would degrade the §6.4
+  // double-dose check and the Signal confounder pass); a look is a perception at a
+  // moment the owner was present for (daily-look §5.4); a cough is HEARD, never found
+  // later (taxonomy D10). Both capture surfaces already ask it this way (`app/log.tsx`,
+  // `components/log/SimpleEventConfirm.tsx`).
+  //
+  // This replaced `!config.hasFood && !isWeight && !isMedication && !isLook`: the same
+  // predicate spelled as four types and MISSING cough and sneeze, so the editor was the
+  // one door that could stamp a window claim on a leaf that declares it cannot hold
+  // one, and that claim feeds detector ⑦ and the vet report. Walked leaf by leaf the
+  // swap changes exactly those two, and `app/editEvent.leafContract.test.tsx` walks the
+  // whole of EVENT_TYPES so a future leaf cannot land on the wrong side unnoticed. An
+  // UNKNOWN type has no entry, the comparison is false, and the control SHOWS — today's
+  // generic behaviour, per the §8 degradation contract.
+  //
+  // — THE EXCEPTION (the adversarial pass on 6201a97, PM-ruled A 2026-09-14).
+  // Suppressing the control suppresses the ability to MAKE the claim, never the
+  // ability to SEE and correct one the record ALREADY HOLDS. Without
+  // `storedContradictsLeaf`, a windowed cough fell to the plain point picker, which
+  // moves `occurred_at` without touching the bounds (`handlePointChange` deliberately
+  // does not mark the edit confidence-bearing, C-10), so one tap left the point
+  // OUTSIDE its own retained window. Nothing rejects that: migration 012's CHECKs
+  // order the bounds against each other, never against the point. And on a windowed
+  // row no read surface renders `occurred_at` (`describeOccurredAt` renders the
+  // bounds), so the "correction" would show nothing while moving ⑦'s span and onset.
+  // Measured zero such rows in production: reachability is the bar, not population.
+  //
+  // (The wording above avoids the column-name-colon-literal shape on purpose:
+  // `lib/occurredAtConfidence.guard.test.ts` scans raw source, CUL-885.)
+  const leafIsWitnessedByConstruction = EVENT_TYPES[eventType]?.confidenceModel === 'witnessed';
+  const showConfidenceControl = !leafIsWitnessedByConstruction || storedContradictsLeaf;
+  // CUL-887 — the photo half of the leaf contract (§6/§7 hasPhoto). `?? true` is the §8
+  // posture: an unknown future leaf keeps today's generic offer, as the record screen's
+  // empty hero does. What it gates is narrower than the section: see the Photo block.
+  const offersPhoto = EVENT_TYPES[eventType]?.hasPhoto ?? true;
+  // The plain point's question names the act each type records (TimeEditSheet's title rule).
+  const pointQuestion = isMedication ? 'When was this dose given?' : 'When did this happen?';
   // Seeds NULL, not 'saw' (B-527): an unclassified row must render with neither
   // segment selected, so the honest default before the reconstruct resolves is
   // "we don't know yet", never a borrowed witnessed claim. The reconstruct sets
@@ -200,7 +236,8 @@ export default function EditEventModal() {
   // it shows what the meal is currently set to, right beside a "Change" affordance, and
   // brand + product alone cannot say whether that is the wet or the dry of one product.
   const [currentFoodFormat, setCurrentFoodFormat] = useState<string | null>(null);
-  const [showFoodPicker, setShowFoodPicker] = useState(false);
+  // P3: the food step stands in for the form while the owner picks (the log form's own).
+  const [foodStep, setFoodStep] = useState(false);
   // Mixed meals row 5 (spec §7.1, D-M4) — a mixed bowl's foods, staged until Save. Null
   // for a plain meal, which keeps the single food row below exactly as it was.
   const [bowlFoods, setBowlFoods] = useState<StagedBowlFood[] | null>(null);
@@ -209,7 +246,6 @@ export default function EditEventModal() {
   // purged), the bowl is incomplete on this phone, or its read failed. Saving a staged set
   // there would drop a food, and with it an exposure, so the foods are shown and kept.
   const [bowlReadOnly, setBowlReadOnly] = useState<string | null>(null);
-  const [foods, setFoods] = useState<CachedFood[]>([]);
 
   // WSAVA intake (B-014). Held in local state and persisted on Save —
   // unlike the detail screen's optimistic-on-tap, this is a Cancel-able
@@ -270,14 +306,43 @@ export default function EditEventModal() {
   const lookLoadedRef = useRef<{ words: string[]; note: string | null } | null>(null);
 
   const [saving, setSaving] = useState(false);
+  // P8 — a failed save is said in the form, over the values it kept, never in an alert
+  // that hides the form it is about.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const online = useIsOnline();
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
-  // Load existing meal food and photo attachment on mount
+  // CUL-1909 P6 — the record's reads, as one answer. Until every read the form paints
+  // from has answered, the form is skeleton rows and Save waits (C-12: a read that has not
+  // answered is never shown as a value, and a fast Save in that gap wrote a borrowed
+  // "seen" over an honest unspecified time, CUL-433). A failed read says so, with Try
+  // again, and Save stays waiting: there is no form to save. The photo's read is its own
+  // (CUL-2176): it settles the wait either way, and a failure shows as the photo row's
+  // unknown state rather than failing the form.
+  const [reads, setReads] = useState<'loading' | 'answered' | 'failed'>('loading');
+  const [readAttempt, setReadAttempt] = useState(0);
+  // The record's own pet (C-9): whose record the line under the header names, and the
+  // pet the food step lists foods for.
+  const [recordPetId, setRecordPetId] = useState<string | null>(null);
+  // The stored time fields, for the remove confirm's time (a guessed or ranged time keeps
+  // to its date).
+  const storedTimeRef = useRef<{ confidence: string | null } | null>(null);
+
+  // Load the record on mount, and again on Try again.
   useEffect(() => {
     if (!id) return;
+    let live = true;
+    setReads('loading');
+
+    const core: Promise<unknown>[] = [];
+
+    // A core read: the record line, the food step and the remove confirm all name this
+    // pet, so a miss is said with Try again rather than leaving a dead Food row.
+    core.push(getDb().getFirstAsync<{ pet_id: string }>('SELECT pet_id FROM events WHERE id = ?', [id])
+      .then((row) => { if (live) setRecordPetId(row?.pet_id ?? null); }));
 
     if (config.hasFood) {
-      getMealForEvent(id).then(async (meal) => {
+      core.push(getMealForEvent(id).then(async (meal) => {
         if (meal && !meal.food_item_id) {
           // A mix names no food on its row (T2): read its bowl. A failed read leaves the
           // bowl editor out, and Save then writes no food at all, never a single food over
@@ -309,11 +374,11 @@ export default function EditEventModal() {
           loadedIntakeRef.current = loaded;
           setIntakeRating(loaded);
         }
-      }).catch(console.error);
+      }));
     }
 
     if (isMedication) {
-      getDoseForEvent(id).then((d) => {
+      core.push(getDoseForEvent(id).then((d) => {
         if (!d) return;
         setDose({
           genericName: d.drug_generic_name,
@@ -331,17 +396,17 @@ export default function EditEventModal() {
         const veh = asDoseVehicle(d.how_given);
         setHowGiven(veh);
         loadedHowGivenRef.current = veh;
-      }).catch(console.error);
+      }));
     }
 
     if (isWeight) {
-      getWeightKgForEvent(id).then((kg) => {
+      core.push(getWeightKgForEvent(id).then((kg) => {
         if (kg != null) setWeightLbsStr(kgToLbs(kg));
-      }).catch(console.error);
+      }));
     }
 
     if (isLook) {
-      getLookForEvent(id).then((look) => {
+      core.push(getLookForEvent(id).then((look) => {
         // Null is a real state — the parent reached this device ahead of its child.
         // The form then offers no word grid and no note field, because there is no
         // row to write either to; Save still edits the time on the parent.
@@ -351,10 +416,10 @@ export default function EditEventModal() {
         setLookWords(look.words);
         setLookNote(look.notes ?? '');
         lookLoadedRef.current = { words: look.words, note: look.notes };
-      }).catch(console.error);
+      }));
     }
 
-    getEventAttachments(id).then((rows) => {
+    const attachmentsSettled = getEventAttachments(id).then((rows) => {
       // FR-10 (B-054): a hydrated attachment row carries an empty local_uri (no
       // on-device file). It is still the record's photo (CUL-2176): treating it as
       // absent drew "Attach a photo" over it, and Save then deleted it unseen. A
@@ -366,6 +431,7 @@ export default function EditEventModal() {
       const usable = att != null && att.local_uri.length > 0 && localFileExists(att.local_uri);
       setExistingLocalUsable(usable);
       setAttachmentsLoaded(true);
+      setAttachmentsFailed(false);
       if (att && needsSignedUrl(att, usable)) {
         getSignedUrl('nyx-event-attachments', att.storage_path, 60 * 60)
           .then(setExistingRemoteUrl)
@@ -377,13 +443,14 @@ export default function EditEventModal() {
       setAttachmentsFailed(true);
     });
 
-    getEventSource(id).then(setOccurredAtSource).catch(console.error);
+    core.push(getEventSource(id).then(setOccurredAtSource));
 
     // Reconstruct the "Saw it / Found it" control from the stored row. An
     // unclassified (NULL) row seeds NEITHER segment — mode stays null — so it
     // renders as the absence it is, never a borrowed "Saw it happen" (B-527).
     // The pure mapping lives in reconstructTimeControl so it is pinned by a test.
-    getEventTimeFields(id).then((stored) => {
+    core.push(getEventTimeFields(id).then((stored) => {
+      storedTimeRef.current = { confidence: stored.confidence };
       const seed = reconstructTimeControl(stored);
       setTimeMode(seed.mode);
       if (seed.foundMode) setFoundMode(seed.foundMode);
@@ -392,13 +459,20 @@ export default function EditEventModal() {
       }
       if (seed.earliest) setEarliest(new Date(seed.earliest));
       if (seed.latest) setFoundLatest(new Date(seed.latest));
-    }).catch(console.error);
-  }, [id]);
+      // A NULL confidence is not a contradiction — it is the absence of a claim, and
+      // 012's backfill is the PM's to make, not this screen's. Only a row that
+      // positively asserts a non-witnessed confidence re-opens the control.
+      if (stored.confidence && stored.confidence !== 'witnessed') setStoredContradictsLeaf(true);
+    }));
 
-  useEffect(() => {
-    if (!showFoodPicker) return;
-    loadFoods();
-  }, [showFoodPicker]);
+    Promise.all([Promise.all(core), attachmentsSettled])
+      .then(() => { if (live) setReads('answered'); })
+      .catch((e: unknown) => {
+        console.error('[edit-event] the record did not load:', e);
+        if (live) setReads('failed');
+      });
+    return () => { live = false; };
+  }, [id, readAttempt]);
 
   // The bowl editor's "Change" list: meal foods only (R1), the picker's own archive rule.
   async function loadMixableFoods(): Promise<BowlPickerFood[]> {
@@ -412,21 +486,69 @@ export default function EditEventModal() {
     );
   }
 
-  async function loadFoods() {
-    const db = getDb();
-    const rows = await db.getAllAsync<CachedFood>(
-      // B-005: archived foods are not pickable when re-selecting an event's food —
-      // a picker read, so `archived_at IS NULL` filters them (invariant: filter at
-      // picker/library reads only). The event's own already-set food is displayed
-      // separately and is unaffected by this list.
-      `SELECT id, brand, product_name, format
-       FROM food_items_cache
-       WHERE archived_at IS NULL
-       GROUP BY LOWER(brand), LOWER(product_name)
-       ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
-       LIMIT 30`,
+  // P3 — the meal's food is picked on the log form's own food step (FoodPicker: the
+  // tiles, search, the trial list order and its archive rule) and comes back to the form,
+  // staged until Save like every other field here.
+  function handlePickFood(food: PickerFood) {
+    setCurrentFoodId(food.id);
+    setCurrentFoodBrand(food.brand);
+    setCurrentFoodProduct(food.product_name);
+    setCurrentFoodFormat(food.format);
+    setFoodStep(false);
+  }
+
+  // P4 — Remove from the editor's foot: the same confirm as the record screen's
+  // (`removeConfirmCopy`), the same reversal (`reverseLoggedEvent`), one confirm before
+  // (C-21). The photo is asked of the RECORD at the tap (CUL-825), never read off a
+  // state that may not have answered; a failed re-check makes no photo claim. The note
+  // is the stored one, not the draft in the field: the confirm names what the record
+  // holds. A removal closes the editor and the record behind it together.
+  const removeAskingRef = useRef(false);
+  async function handleRemove() {
+    // Never while a save is writing: the two would race the same row and both close the screen.
+    if (!id || saving || removeAskingRef.current) return;
+    removeAskingRef.current = true;
+    // null when neither the load nor the re-check could answer: the confirm then says any
+    // photo goes with it, never nothing (the adversarial pass on this PR).
+    let hasAttachment: boolean | null = shownAttachmentIdsRef.current.size > 0;
+    try {
+      if (!hasAttachment) hasAttachment = (await getEventAttachments(id)).length > 0;
+    } catch (e) {
+      console.warn('[edit-event] attachment re-check before remove failed:', e);
+      if (!attachmentsLoaded) hasAttachment = null;
+    } finally {
+      removeAskingRef.current = false;
+    }
+    const copy = removeConfirmCopy(
+      {
+        event_type: eventType,
+        notes: notesParam ?? null,
+        look_note: lookLoadedRef.current?.note ?? null,
+        pet_id: recordPetId,
+        occurred_at: occurredAtParam ?? null,
+        occurred_at_confidence: storedTimeRef.current?.confidence ?? null,
+      },
+      { hasAttachment },
     );
-    setFoods(rows);
+    Alert.alert(copy.title, copy.body, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          // CUL-604 §5.6 — rigid, on the CONFIRM, never on the row that opens it.
+          destructiveConfirm();
+          try {
+            await reverseLoggedEvent(id);
+            removeFromToday(id);
+            router.dismiss(2);
+          } catch (e) {
+            console.error('[edit-event] remove failed:', e);
+            Alert.alert('Could not remove', 'Try again.');
+          }
+        },
+      },
+    ]);
   }
 
   async function handlePickPhoto() {
@@ -508,7 +630,9 @@ export default function EditEventModal() {
 
   function handleEarliestChange(d: Date | null) {
     confidenceTouched.current = true;
-    setEarliest(d);
+    // The sheet caps the edge at the latest bound; this is the belt to it, so a window
+    // never reaches the chk_occurred_window_order constraint inverted (migration 012).
+    setEarliest(d && d.getTime() > foundLatest.getTime() ? foundLatest : d);
   }
 
   // Clamp earliest <= latest so a windowed event never violates the
@@ -546,7 +670,10 @@ export default function EditEventModal() {
   }
 
   async function handleSave() {
-    if (!id) return;
+    // Save waits on the record's reads (P6): a form painted from defaults has nothing
+    // true to save.
+    if (!id || reads !== 'answered') return;
+    setSaveFailed(false);
 
     // Weight value is mandatory + must be real (B-197) — validate before any write
     // so an invalid entry never half-saves (time/notes without the value).
@@ -576,14 +703,22 @@ export default function EditEventModal() {
 
     setSaving(true);
     try {
-      // Meals/weight/doses don't show the confidence control — the event type
-      // itself carries the claim (you see yourself put the bowl down, read the
-      // scale, give the pill), so there is no affordance to touch and nothing
-      // for this edit to restate. Their branch's 'witnessed' is inert: with no
-      // control there is nothing to mark confidenceTouched, so the save below
-      // never reaches this value. What the row already holds is what it keeps —
-      // including a legacy NULL, which stays the PM's backfill to make (012),
-      // not something an unrelated edit does one row at a time.
+      // A witnessed-by-construction leaf shows no confidence control — the event
+      // type itself carries the claim (you see yourself put the bowl down, read the
+      // scale, give the pill, hear the cough), so there is no affordance to touch
+      // and nothing for this edit to restate. This branch's 'witnessed' is inert:
+      // with no control there is nothing to mark confidenceTouched, so the save
+      // below never reaches this value. What the row already holds is what it keeps
+      // — including a legacy NULL, which stays the PM's backfill to make (012), not
+      // something an unrelated edit does one row at a time.
+      //
+      // Since CUL-2195's exception this ternary is equivalent by construction: the
+      // control is hidden only when the stored confidence is witnessed or NULL,
+      // `reconstructTimeControl` maps those to 'saw' and null, and `buildTimeFields`
+      // returns exactly this literal for every mode but 'found'. Deleting the branch
+      // reds no test, and that is a redundancy, not a coverage gap. It stays as the
+      // belt: if a future change hides the control on a row that DOES hold a window,
+      // this stops the save reading a control the owner could not see.
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
@@ -894,7 +1029,7 @@ export default function EditEventModal() {
       router.back();
     } catch (e) {
       console.error('[edit-event] save failed:', e);
-      Alert.alert('Could not save', 'Something went wrong. Try again.');
+      setSaveFailed(true);
     } finally {
       setSaving(false);
     }
@@ -909,6 +1044,16 @@ export default function EditEventModal() {
     newUri: newAttachmentUri,
   });
   const displayAttachmentUri = photoState.kind === 'attached' ? photoState.thumbUri : null;
+  // The beg goes on a `hasPhoto: false` leaf; the evidence never does (CUL-887). An
+  // unknown read is shown too, since the editor cannot tell attached from absent there.
+  const photoSectionShown =
+    offersPhoto || photoState.kind === 'attached' || photoState.kind === 'unknown';
+  // P2 — whose record this is, off the record's own pet (C-9). A miss says nothing rather
+  // than a guess: correct-but-anonymous beats confidently wrong.
+  const pets = usePetStore((st) => st.pets);
+  const recordPetName = resolveRecordPetName(pets, recordPetId);
+  const recordPetKnown = recordPetName !== ANONYMOUS_PET_NAME;
+  const typeWord = recordTypeWord(eventType);
 
   // CUL-869 — the look's chip options, or null when there are none to draw: an
   // absence row (no words by definition), a child that has not loaded, or a pet with
@@ -948,487 +1093,406 @@ export default function EditEventModal() {
         }))
       : null;
 
+  // P3 — the meal's food step, in place of the form while the owner picks.
+  if (foodStep && recordPetId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Header
+          title={`What did ${recordPetKnown ? recordPetName : 'your pet'} eat?`}
+          leading="back"
+          onLeadingPress={() => setFoodStep(false)}
+        />
+        <FoodPicker
+          petId={recordPetId}
+          petName={recordPetKnown ? recordPetName : undefined}
+          onPickFood={handlePickFood}
+          // Capture in its add only mode, returning here: the new food is then one tap
+          // away on this step. `fromLog` is never passed, since it would log a meal.
+          onAddNew={() => router.push('/food-capture?returnTo=back')}
+          onOpenDetail={(food) => router.push(`/food/${food.id}`)}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  const exifLine = occurredAtSource === 'exif' ? formatExifAttribution(occurredAt.toISOString()) : null;
+  const whenLine = formatRecordWhen(occurredAt);
+
+  const timeCard = (
+    <EditCard testID="edit-card-time">
+      {showConfidenceControl ? (
+        // Non-meal events can be re-classified witnessed/found after logging.
+        <TimeConfidenceField
+          layout="rows"
+          mode={timeMode}
+          onModeChange={handleTimeModeChange}
+          point={occurredAt}
+          pointSource={occurredAtSource}
+          onPointChange={handlePointChange}
+          foundMode={foundMode}
+          onFoundModeChange={handleFoundModeChange}
+          estimatedAt={estimatedAt}
+          onEstimatedChange={handleEstimatedChange}
+          earliest={earliest}
+          latest={foundLatest}
+          onEarliestChange={handleEarliestChange}
+          onLatestChange={handleLatestChange}
+        />
+      ) : (
+        // A witnessed-by-construction act (a meal, a dose, a weigh-in, a look, a cough) keeps the
+        // plain point, on the kit's one time sheet.
+        <EditRow
+          first
+          label="When"
+          value={whenLine}
+          detail={exifLine}
+          onPress={() => setShowTimePicker(true)}
+          accessibilityLabel={`When, ${whenLine}${exifLine ? `, ${exifLine}` : ''}. Change time`}
+          testID="time-when"
+        />
+      )}
+      {showTimePicker && (
+        <TimeEditSheet
+          value={occurredAt}
+          title={pointQuestion}
+          onCancel={() => setShowTimePicker(false)}
+          onSave={(date) => {
+            setShowTimePicker(false);
+            handlePointChange(date);
+          }}
+        />
+      )}
+    </EditCard>
+  );
+
+  /* Photo — the per-leaf affordance (§6/§7 hasPhoto, CUL-675), and the gate suppresses
+     the BEG, NEVER THE EVIDENCE: an existing photo keeps its row on any leaf, and only
+     the offer to add one disappears. That is the contract `resolveEventPhotoDisplay`
+     encodes (`!photoUri && offersPhoto`), and the record screen shows an existing photo
+     as its hero either way, so an editor that hid it would be the surface telling the
+     lie. Never delete an owner's photo to satisfy a flag.
+
+     CUL-887 replaced an `isLook` gate here. Four leaves declare `hasPhoto: false` (meal,
+     cough, sneeze, check_in) and this editor was the one door offering the row on all
+     four; the record screen and both capture surfaces already ask the contract. Measured
+     before the door closed: zero attachments on any of the four in production (the
+     issue's row checks), so nothing is hidden by this today. */
+  const photoCard = photoSectionShown ? (
+    <EditCard testID="edit-card-photo">
+      {photoState.kind === 'unknown' ? (
+        <EditRow first label="Photo" value={EDITOR_PHOTO_UNKNOWN_LABEL} />
+      ) : photoState.kind === 'attached' ? (
+        <EditRow
+          first
+          label="Photo attached"
+          value={offersPhoto ? 'View or replace' : 'View'}
+          valueIsAction
+          leading={displayAttachmentUri ? (
+            <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+          ) : (
+            <View style={[styles.photoThumb, styles.photoThumbPending]}>
+              <Camera size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+            </View>
+          )}
+          onPress={() => setPhotoViewerVisible(true)}
+          accessibilityLabel={offersPhoto ? 'Photo attached. View or replace' : 'Photo attached. View'}
+          testID="edit-photo-attached"
+        />
+      ) : photoState.kind === 'loading' ? null : (
+        <EditRow
+          first
+          label="Photo"
+          value="Add a photo"
+          valueIsAction
+          onPress={handlePickPhoto}
+          accessibilityLabel="Photo. Add a photo"
+          testID="edit-photo-offer"
+        />
+      )}
+      {/* P7 — a vomit or stool's photo owes a read (CUL-1680), said before Save. */}
+      {isReadable && offersPhoto ? (
+        <EditBlock>
+          <ThemedText variant="caption" style={styles.caption}>A new photo gets a new read.</ThemedText>
+        </EditBlock>
+      ) : null}
+      {/* P8 — offline, the edit saves on the phone; only a new photo has to wait. */}
+      {newAttachmentUri && !online ? (
+        <EditBlock>
+          <ThemedText variant="caption" style={styles.caption}>
+            The photo uploads when you’re back online. Everything else saves now.
+          </ThemedText>
+        </EditBlock>
+      ) : null}
+    </EditCard>
+  ) : null;
+
+  /* Notes — the PARENT's field, and never rendered for a look (E-7, T-22). This screen's
+     note box is type-blind and always was; a look's note has to land on `looks.notes`
+     because Ask's recall fetch selects `events.notes` with no type filter, so a note left
+     here would reach a model before D10 is ruled. The gate is the UI half of that rule
+     and the server's events_check_in_notes_null CHECK is the other; `guards/
+     lookNotes.test.ts` asserts this branch so it cannot quietly come back.
+     P9: an Other is its note, so it asks the log form's question. */
+  const noteLabel = eventType === 'other' ? 'What did you notice?' : 'Note';
+  const parentNoteCard = isLook ? null : (
+    <EditCard testID="edit-card-note">
+      <EditBlock first label={noteLabel}>
+        <TextField
+          multiline
+          placeholder="Add a note (optional)"
+          accessibilityLabel={noteLabel}
+          value={notes}
+          onChangeText={setNotes}
+          maxLength={300}
+        />
+      </EditBlock>
+    </EditCard>
+  );
+
+  // The look's note — on the CHILD (`looks.notes`), never on the parent.
+  const lookNoteBlock = isLook && lookLoadedRef.current ? (
+    <EditBlock label="Note" first={lookOutcome === 'nothing_unusual'}>
+      <TextField
+        multiline
+        placeholder={LOOK_NOTE_PLACEHOLDER}
+        value={lookNote}
+        onChangeText={setLookNote}
+        maxLength={LOOK_NOTE_MAX}
+        accessibilityLabel="Note"
+      />
+      <ThemedText style={styles.lookNoteCue}>{LOOK_NOTE_CUE}</ThemedText>
+    </EditBlock>
+  ) : null;
+
+  const intakeBlock = (
+    <EditBlock label="Intake">
+      <IntakeChipRow value={intakeRating} onChange={setIntakeRating} label={null} />
+    </EditBlock>
+  );
+
+  // The type's own facts (P1: the record's order). A meal's food, a mixed bowl, a dose,
+  // a weigh-in, a look's words; null for a type whose record is its time and note.
+  const factCard = config.hasFood ? (
+    <EditCard testID="edit-card-facts">
+      {bowlFoods !== null ? (
+        // Mixed meals row 5 — a mixed bowl's foods, each with Change and Take out,
+        // staged until Save (spec §7.1, D-M4).
+        <EditBlock first label="Foods in this bowl">
+          <BowlEditor
+            foods={bowlFoods}
+            onChange={setBowlFoods}
+            loadChoices={loadMixableFoods}
+            toStaged={(food, replacing) => ({
+              ...replacing,
+              ...mixFoodOf({ id: food.id, brand: food.brand, product_name: food.product_name, format: food.format }),
+            })}
+          />
+        </EditBlock>
+      ) : bowlReadOnly !== null ? (
+        <EditBlock first label="Foods in this bowl">
+          {bowlReadOnly ? <ThemedText variant="bodyStrong" style={styles.value}>{bowlReadOnly}</ThemedText> : null}
+          <ThemedText variant="caption" style={styles.caption}>
+            {bowlReadOnly
+              ? 'One of these foods isn’t on this phone, so the bowl’s foods can’t be changed here. Everything else saves as usual.'
+              : 'This bowl’s foods didn’t load, so they can’t be changed here. Everything else saves as usual.'}
+          </ThemedText>
+        </EditBlock>
+      ) : (
+        <EditRow
+          first
+          label="Food"
+          value={currentFoodProduct ?? 'No food selected'}
+          // BRAND · FORMAT, the meta shape the picker's tiles use, so the meal's food is
+          // named the way the options are (B-568: the wet or the dry of one product).
+          detail={[currentFoodBrand, foodFormatTag(currentFoodFormat)].filter(Boolean).join(' · ') || null}
+          onPress={recordPetId ? () => setFoodStep(true) : undefined}
+          testID="edit-food"
+        />
+      )}
+      {intakeBlock}
+    </EditCard>
+  ) : isMedication && dose ? (
+    // Drug identity is read-only here (a per-dose drug swap is a mislog → Remove +
+    // re-log, not a field edit); the row opens the drug's page, where a name or
+    // strength correction fixes every dose. Adherence + how-given are the dose's fields.
+    <EditCard testID="edit-card-facts">
+      <EditRow
+        first
+        label="Medication"
+        value={dose.genericName ?? config.label}
+        detail={[dose.brandName, dose.strength].filter(Boolean).join(' · ') || null}
+        onPress={dose.medicationItemId ? () => router.push(`/medication/${dose.medicationItemId}`) : undefined}
+        accessibilityLabel={dose.medicationItemId ? `View drug details for ${dose.genericName ?? config.label}` : undefined}
+      />
+      <EditBlock label="Adherence">
+        <AdherenceChipRow value={adherence} onChange={setAdherence} label={null} />
+      </EditBlock>
+      <EditBlock label="How given">
+        <VehicleChipRow value={howGiven} onChange={setHowGiven} label={null} />
+      </EditBlock>
+    </EditCard>
+  ) : isWeight ? (
+    // The value IS the entry (B-197), so it leads, as it does on the record.
+    <EditCard testID="edit-card-facts">
+      <EditBlock first label="Weight">
+        <NumberField
+          value={weightLbsStr}
+          onChangeText={setWeightLbsStr}
+          unit="lbs"
+          placeholder="e.g. 12.5"
+          accessibilityLabel="Weight in pounds"
+        />
+      </EditBlock>
+    </EditCard>
+  ) : isLook && lookOutcome === 'nothing_unusual' ? (
+    // An absence look has no words to edit, and the screen has to SAY so. T-14: seeing
+    // something later is a second observation with its own hour, not a correction of
+    // this row, so there is deliberately no outcome control here.
+    <EditCard testID="edit-card-facts">
+      <EditBlock first label="What you noticed">
+        <ThemedText variant="body" style={styles.value}>Nothing unusual</ThemedText>
+        <ThemedText variant="caption" style={styles.caption}>
+          You marked nothing unusual. Something you see later is its own entry,
+          with its own time, so this one stays as it is.
+        </ThemedText>
+      </EditBlock>
+    </EditCard>
+  ) : isLook && (lookGrid || lookNoteBlock) ? (
+    /* CUL-869 — what she noticed. Editable as the words themselves rather than as a
+       free-text field: the vocabulary is closed by design (§4.1 rule 10), and an "other"
+       box here would be the one place in the feature an owner could mint a key nothing
+       downstream can read. Head words first, then the rest in the vet's family order
+       (§3.1a); the full label (head word, gloss) is what the grid shows, never the head
+       alone (§4.1 rule 12, Sam). */
+    <EditCard testID="edit-card-facts">
+      {lookGrid ? (
+        <EditBlock first label="What you noticed">
+          {lookGrid.map((section) => (
+            <View key={section.label ?? '__head'} style={styles.lookGridSection}>
+              {/* The family's own name, in the owner's words (§3.1a). The first block is
+                  the seven head words and carries no label — it is not a family, it is
+                  what the compact card shows (T-13). */}
+              {section.label ? (
+                <ThemedText style={styles.lookGroupLabel}>{section.label}</ThemedText>
+              ) : null}
+              <MultiChipGroup
+                options={section.options}
+                values={lookWords}
+                onToggle={(key) => setLookWords((prev) => toggleLookWord(prev, key))}
+                accessibilityLabel={section.label ?? 'What you noticed'}
+              />
+            </View>
+          ))}
+        </EditBlock>
+      ) : null}
+      {lookNoteBlock}
+    </EditCard>
+  ) : null;
+
+  // P1 — the record's order, per type, as the round drew it: a weigh-in leads with its
+  // value; Other with its note (P9); every other type with its time.
+  const cards = isWeight
+    ? [factCard, timeCard, photoCard, parentNoteCard]
+    : eventType === 'other'
+      ? [parentNoteCard, photoCard, timeCard]
+      : isLook && lookOutcome === 'nothing_unusual'
+        ? [timeCard, factCard, lookNoteBlock ? <EditCard key="look-note">{lookNoteBlock}</EditCard> : null]
+        : [timeCard, factCard, photoCard, parentNoteCard];
+
+  const ready = reads === 'answered';
+  const removeLabel = isLook ? `Remove ${typeWord}` : `Remove this ${typeWord}`;
+
   return (
     <SafeAreaView style={styles.container}>
       <Header
-        title={`Edit ${config.label}`}
-        left={
-          <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn} hitSlop={8}>
-            <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
-          </TouchableOpacity>
-        }
-        right={
-          <TouchableOpacity
+        title={`Edit ${typeWord}`}
+        titleBelowAtLargeText
+        left={<HeaderAction label="Cancel" tone="quiet" onPress={() => router.back()} />}
+        right={(
+          <HeaderAction
+            label="Save"
             onPress={handleSave}
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-            disabled={saving}
-            hitSlop={8}
-          >
-            <ThemedText style={styles.saveBtnText}>Save</ThemedText>
-          </TouchableOpacity>
-        }
+            working={saving}
+            disabled={!ready}
+            disabledReason={reads === 'failed' ? 'the record didn’t load' : 'loading the record'}
+          />
+        )}
       />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+          {saveFailed ? (
+            <QuietBand testID="edit-save-failed">
+              <ThemedText variant="caption" style={styles.bandText}>Couldn’t save. Your changes are still here.</ThemedText>
+            </QuietBand>
+          ) : null}
 
-          {/* Time */}
-          <SectionLabel label="Time" style={{ marginBottom: 4 }} />
-          {showConfidenceControl ? (
-            // Non-meal events can be re-classified witnessed/found after logging.
-            <TimeConfidenceField
-              mode={timeMode}
-              onModeChange={handleTimeModeChange}
-              point={occurredAt}
-              pointSource={occurredAtSource}
-              onPointChange={handlePointChange}
-              foundMode={foundMode}
-              onFoundModeChange={handleFoundModeChange}
-              estimatedAt={estimatedAt}
-              onEstimatedChange={handleEstimatedChange}
-              earliest={earliest}
-              latest={foundLatest}
-              onEarliestChange={handleEarliestChange}
-              onLatestChange={handleLatestChange}
+          {recordPetKnown ? (
+            <ThemedText variant="caption" style={styles.recordLine}>{`${recordPetName}’s record`}</ThemedText>
+          ) : null}
+
+          {reads === 'failed' ? (
+            <PickerReadFailed
+              message="This record didn’t load, so it can’t be changed yet."
+              onRetry={() => setReadAttempt((n) => n + 1)}
             />
+          ) : !ready ? (
+            <EditCard testID="edit-loading">
+              <SkeletonRows count={3} />
+            </EditCard>
           ) : (
-            // Meals are always witnessed — keep the plain point picker.
             <>
-              <TouchableOpacity
-                style={styles.timeRow}
-                onPress={() => setShowTimePicker(!showTimePicker)}
-                activeOpacity={0.7}
-              >
-                <ThemedText style={styles.timeValue}>
-                  {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
-                  {'  '}
-                  {formatTime(occurredAt)}
-                  {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
-                      nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
-                      native text-style cascade; this EXIF span differs from its parent only in size and
-                      colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
-                  {occurredAtSource === 'exif' && (
-                    <Text style={styles.exifAttribution}>
-                      {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
-                    </Text>
-                  )}
-                </ThemedText>
-                <ThemedText style={styles.changeLabel}>Change</ThemedText>
-              </TouchableOpacity>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={occurredAt}
-                  mode="datetime"
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                  maximumDate={new Date()}
-                  onChange={(_e: unknown, date?: Date) => {
-                    if (Platform.OS === 'android') setShowTimePicker(false);
-                    if (!date) return;
-                    handlePointChange(date);
-                  }}
-                />
-              )}
+              {cards.map((card, i) => (card ? <View key={i}>{card}</View> : null))}
+              <PrimaryButton label={removeLabel} variant="destructive" onPress={handleRemove} disabled={saving} testID="edit-remove" />
             </>
           )}
-
-          {/* Photo — never on a look (§5.2: a look is a perception, and there is
-              nothing to photograph; `check_in` is `hasPhoto: false`). Every capture
-              surface already gates on that flag — app/log.tsx, SimpleEventConfirm,
-              the record screen's hero — and this editor is the one door that did not,
-              so a look could be given a photo here and would then render it as the
-              record's hero, since `resolveEventPhotoDisplay` shows an EXISTING photo
-              regardless of the flag.
-              Gated on `isLook` rather than on `hasPhoto`, deliberately: cough and
-              sneeze are also `hasPhoto: false` and DO offer this row today, so the
-              tidier predicate would change two shipped types under this PR. That
-              wider gap is its own issue (CUL-887). */}
-          {isLook ? null : (
-            <>
-          <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-          {photoState.kind === 'loading' ? null : photoState.kind === 'unknown' ? (
-            <View style={styles.photoRow}>
-              <ThemedText style={styles.photoRowText}>{EDITOR_PHOTO_UNKNOWN_LABEL}</ThemedText>
-            </View>
-          ) : photoState.kind === 'attached' ? (
-            <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
-              {displayAttachmentUri ? (
-                <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
-              ) : (
-                <View style={[styles.photoThumb, styles.photoThumbPending]}>
-                  <Camera size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
-                </View>
-              )}
-              <View style={styles.photoAttachedMeta}>
-                <ThemedText style={styles.photoAttachedText}>Photo attached</ThemedText>
-                <ThemedText style={styles.photoChangeText}>Tap to view</ThemedText>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.7}>
-              <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              <ThemedText style={styles.photoRowText}>Attach a photo</ThemedText>
-            </TouchableOpacity>
-          )}
-            </>
-          )}
-
-          {/* Mixed meals row 5 — a mixed bowl's foods, each with Change and Take out,
-              staged until Save (spec §7.1, D-M4). */}
-          {config.hasFood && bowlFoods !== null ? (
-            <>
-              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <BowlEditor
-                foods={bowlFoods}
-                onChange={setBowlFoods}
-                loadChoices={loadMixableFoods}
-                toStaged={(food, replacing) => ({
-                  ...replacing,
-                  ...mixFoodOf({ id: food.id, brand: food.brand, product_name: food.product_name, format: food.format }),
-                })}
-              />
-            </>
-          ) : null}
-
-          {config.hasFood && bowlReadOnly !== null ? (
-            <>
-              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              {bowlReadOnly ? <ThemedText style={styles.foodProduct}>{bowlReadOnly}</ThemedText> : null}
-              <ThemedText style={styles.foodBrand}>
-                {bowlReadOnly
-                  ? 'One of these foods isn’t on this phone, so the bowl’s foods can’t be changed here. Everything else saves as usual.'
-                  : 'This bowl’s foods didn’t load, so they can’t be changed here. Everything else saves as usual.'}
-              </ThemedText>
-            </>
-          ) : null}
-
-          {/* Food (meal events only) */}
-          {config.hasFood && bowlFoods === null && bowlReadOnly === null ? (
-            <>
-              <SectionLabel label="Food" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <TouchableOpacity
-                style={styles.foodRow}
-                onPress={() => setShowFoodPicker(!showFoodPicker)}
-                activeOpacity={0.7}
-              >
-                <View style={{ flex: 1 }}>
-                  {currentFoodProduct ? (
-                    <>
-                      <ThemedText style={styles.foodProduct}>{currentFoodProduct}</ThemedText>
-                      {/* BRAND · FORMAT — the same meta shape the picker tiles below
-                          use, so the current selection is named the way the options are. */}
-                      {currentFoodBrand || currentFoodFormat ? (
-                        <ThemedText style={styles.foodBrand}>
-                          {[currentFoodBrand, foodFormatTag(currentFoodFormat)]
-                            .filter(Boolean).join(' · ')}
-                        </ThemedText>
-                      ) : null}
-                    </>
-                  ) : (
-                    <ThemedText style={styles.foodPlaceholder}>No food selected</ThemedText>
-                  )}
-                </View>
-                <ThemedText style={styles.changeLabel}>{showFoodPicker ? 'Done' : 'Change'}</ThemedText>
-              </TouchableOpacity>
-
-              {showFoodPicker ? (
-                <View style={styles.foodList}>
-                  {foods.length === 0 ? (
-                    <ThemedText style={styles.foodEmpty}>No foods yet — they'll show up here as you log food.</ThemedText>
-                  ) : null}
-                  {foods.map((item: CachedFood) => {
-                    const isSelected = item.id === currentFoodId;
-                    return (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={[styles.foodItem, isSelected && styles.foodItemSelected]}
-                        onPress={() => {
-                          setCurrentFoodId(item.id);
-                          setCurrentFoodBrand(item.brand);
-                          setCurrentFoodProduct(item.product_name);
-                          setCurrentFoodFormat(item.format);
-                          setShowFoodPicker(false);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <ThemedText style={[styles.foodItemName, isSelected && styles.foodItemNameSelected]}>
-                          {item.product_name}
-                        </ThemedText>
-                        <ThemedText style={[styles.foodItemBrand, isSelected && styles.foodItemBrandSelected]}>
-                          {item.brand}
-                        </ThemedText>
-                        {/* geist-ok: Icon glyph, not copy — stays a raw <Text> so it keeps the
-                            system face. These stand in for vector glyphs (the B-745 GlyphSvg
-                            migration owns them), and Geist's cmap carries no ✓ / ✕ / ＋ at all,
-                            so forcing the body family here buys nothing and hands the render to
-                            OS fallback. CUL-654 reconciles this with PR 4's sweep. */}
-                        {isSelected ? <Text style={styles.foodItemCheck}>✓</Text> : null}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ) : null}
-            </>
-          ) : null}
-
-          {/* Intake (meal events only — includes treats, B-014) */}
-          {config.hasFood ? (
-            <>
-              <SectionLabel label="Intake" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <IntakeChipRow
-                value={intakeRating}
-                onChange={setIntakeRating}
-                label={null}
-              />
-            </>
-          ) : null}
-
-          {/* Medication (dose events only) — parity with the meal Food + Intake
-              blocks. Drug identity is read-only here (a per-dose drug swap is a
-              mislog → Remove + re-log, not a field edit); the row links to the
-              drug-library screen where a name/strength correction fixes every dose.
-              Adherence + how-given are the editable dose fields. */}
-          {isMedication && dose ? (
-            <>
-              <SectionLabel label="Medication" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              {dose.medicationItemId ? (
-                <TouchableOpacity
-                  style={styles.foodRow}
-                  onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
-                  activeOpacity={0.7}
-                  accessibilityRole="link"
-                  accessibilityLabel={`View drug details for ${dose.genericName ?? config.label}`}
-                >
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.foodProduct}>{dose.genericName ?? config.label}</ThemedText>
-                    {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
-                      <ThemedText style={styles.foodBrand}>
-                        {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                  <ChevronRight size={18} color={colorRoles.action.onLight} strokeWidth={2} />
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.foodRow}>
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.foodProduct}>{dose.genericName ?? config.label}</ThemedText>
-                    {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
-                      <ThemedText style={styles.foodBrand}>
-                        {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                </View>
-              )}
-
-              <SectionLabel label="Adherence" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <AdherenceChipRow value={adherence} onChange={setAdherence} label={null} />
-
-              <SectionLabel label="How given" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <VehicleChipRow value={howGiven} onChange={setHowGiven} label={null} />
-            </>
-          ) : null}
-
-          {/* Weight value (weight_check only — the value IS the entry, B-197) */}
-          {isWeight ? (
-            <>
-              <SectionLabel label="Weight" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <View style={styles.weightRow}>
-                <TextInput
-                  style={styles.weightInput}
-                  value={weightLbsStr}
-                  onChangeText={setWeightLbsStr}
-                  placeholder="e.g. 12.5"
-                  placeholderTextColor={theme.colorTextSecondary}
-                  keyboardType="decimal-pad"
-                  returnKeyType="done"
-                />
-                <ThemedText style={styles.weightUnitText}>lbs</ThemedText>
-              </View>
-            </>
-          ) : null}
-
-          {/* CUL-869 — what she noticed. Editable as the words themselves rather than
-              as a free-text field: the vocabulary is closed by design (§4.1 rule 10),
-              and an "other" box here would be the one place in the feature an owner
-              could mint a key nothing downstream can read.
-
-              Head words first, then the rest in the vet's family order (§3.1a). The
-              full label — *head word, gloss* — is what the grid shows and never the
-              head alone: "Lip-licking" without "swallowing a lot, nothing in his
-              mouth" lost the findable half (§4.1 rule 12, Sam).
-
-              An observed-absence row has no words to edit, so its grid is not drawn.
-              Changing *nothing unusual* into an observation is not a correction of
-              this row — it is a different thing the owner saw, and it belongs in a
-              second look with its own hour (T-14). */}
-          {/* An absence look has no words to edit, and the screen has to SAY so.
-              T-14: seeing something later is a second observation with its own hour,
-              not a correction of this row — so there is deliberately no outcome
-              control here. Without this line the editor shows Time, Note and nothing
-              else, which an owner reads as the app having lost her answer. */}
-          {isLook && lookOutcome === 'nothing_unusual' ? (
-            <>
-              <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <ThemedText style={styles.lookAbsenceNote}>
-                You marked nothing unusual. Something you see later is its own entry,
-                with its own time, so this one stays as it is.
-              </ThemedText>
-            </>
-          ) : null}
-
-          {isLook && lookGrid ? (
-            <>
-              <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              {lookGrid.map((section) => (
-                <View key={section.label ?? '__head'} style={styles.lookGridSection}>
-                  {/* The family's own name, in the owner's words (§3.1a). The first
-                      block is the seven head words and carries no label — it is not a
-                      family, it is what the compact card shows (T-13). */}
-                  {section.label ? (
-                    <ThemedText style={styles.lookGroupLabel}>{section.label}</ThemedText>
-                  ) : null}
-                  <MultiChipGroup
-                    options={section.options}
-                    values={lookWords}
-                    onToggle={(key) => setLookWords((prev) => toggleLookWord(prev, key))}
-                    accessibilityLabel={section.label ?? 'What you noticed'}
-                  />
-                </View>
-              ))}
-            </>
-          ) : null}
-
-          {/* The look's note — on the CHILD (`looks.notes`), never on the parent. */}
-          {isLook && lookLoadedRef.current ? (
-            <>
-              <SectionLabel label="Note" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <TextInput
-                style={styles.notesInput}
-                placeholder={LOOK_NOTE_PLACEHOLDER}
-                placeholderTextColor={theme.colorTextSecondary}
-                value={lookNote}
-                onChangeText={setLookNote}
-                multiline
-                maxLength={LOOK_NOTE_MAX}
-                accessibilityLabel="Note"
-              />
-              <ThemedText style={styles.lookNoteCue}>{LOOK_NOTE_CUE}</ThemedText>
-            </>
-          ) : null}
-
-          {/* Notes — the PARENT's field, and never rendered for a look (E-7, T-22).
-              This screen's Notes box is type-blind and always was; a look's note has
-              to land on `looks.notes` because Ask's recall fetch selects
-              `events.notes` with no type filter, so a note left here would reach a
-              model before D10 is ruled. The gate is the UI half of that rule and the
-              server's events_check_in_notes_null CHECK is the other; `guards/
-              lookNotes.test.ts` asserts this branch so it cannot quietly come back. */}
-          {isLook ? null : (
-            <>
-              <SectionLabel label="Notes" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <TextInput
-                style={styles.notesInput}
-                placeholder="Add a note (optional)"
-                placeholderTextColor={theme.colorTextSecondary}
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                maxLength={300}
-              />
-            </>
-          )}
-
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Fullscreen photo viewer */}
+      {/* Fullscreen photo viewer. `onReplace` reopens the picker, the same door as the
+          offer, so it takes the same gate: a `hasPhoto: false` leaf that already carries
+          a photo can still SHOW it, and never becomes a way to attach another. */}
       <PhotoViewer
         visible={photoViewerVisible}
         uris={[displayAttachmentUri ?? null]}
         unavailableLabel={EDITOR_PHOTO_OFFLINE_LABEL}
         onClose={() => setPhotoViewerVisible(false)}
-        onReplace={() => { setPhotoViewerVisible(false); handlePickPhoto(); }}
+        onReplace={offersPhoto ? () => { setPhotoViewerVisible(false); handlePickPhoto(); } : undefined}
       />
     </SafeAreaView>
   );
 }
 
+// The photo's thumbnail on the spacing scale (F7): the 56pt it always was, now named.
+const PHOTO_THUMB = theme.space5 + theme.space1;
+
 const styles = StyleSheet.create({
+  // The record's ground, so the cards read as the record in edit mode (S1 B).
   container: {
     flex: 1,
-    backgroundColor: theme.colorSurface,
-  },
-  cancelBtn: {},
-  cancelBtnText: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  saveBtn: {},
-  saveBtnDisabled: { opacity: theme.opacityDisabled },
-  saveBtnText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
-  },
-  form: {
-    padding: theme.space3,
-    paddingBottom: theme.space6,
-    gap: theme.space1,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
     backgroundColor: theme.colorNeutralLight,
   },
-  timeValue: {
-    fontSize: 15,
+  flex: { flex: 1 },
+  form: {
+    padding: theme.space2,
+    paddingBottom: theme.space6,
+    gap: theme.space2,
+  },
+  recordLine: {
+    color: theme.colorTextSecondary,
+  },
+  bandText: {
     color: theme.colorTextPrimary,
   },
-  changeLabel: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
-    fontWeight: theme.fontWeightMedium,
+  value: {
+    color: theme.colorTextPrimary,
   },
-  exifAttribution: {
-    fontSize: 13,
-    color: theme.colorTextTertiary,
-  },
-  photoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  photoRowText: {
-    fontSize: 15,
+  caption: {
     color: theme.colorTextSecondary,
   },
-  photoAttachedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
-  },
   photoThumb: {
-    width: 56,
-    height: 56,
+    width: PHOTO_THUMB,
+    height: PHOTO_THUMB,
     borderRadius: theme.radiusSmall,
   },
   photoThumbPending: {
@@ -1437,97 +1501,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colorBorder,
   },
-  photoAttachedMeta: {
-    flex: 1,
-    gap: 2,
-  },
-  photoAttachedText: {
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextPrimary,
-  },
-  photoChangeText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-  },
-  foodRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
-    gap: theme.space2,
-  },
-  foodProduct: {
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextPrimary,
-  },
-  foodBrand: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
-  },
-  foodPlaceholder: {
-    fontSize: 15,
-    color: theme.colorTextSecondary,
-  },
-  foodList: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  foodEmpty: {
-    fontSize: 14,
-    color: theme.colorTextSecondary,
-    padding: theme.space2,
-    textAlign: 'center',
-  },
-  foodItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-    backgroundColor: theme.colorSurface,
-  },
-  foodItemSelected: {
-    backgroundColor: theme.colorNeutralDark,
-  },
-  foodItemName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextPrimary,
-  },
-  foodItemNameSelected: {
-    color: theme.colorTextOnDark,
-  },
-  foodItemBrand: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    marginRight: theme.space1,
-  },
-  foodItemBrandSelected: {
-    color: theme.colorTextOnDarkSubtle,
-  },
-  foodItemCheck: {
-    fontSize: 15,
-    color: theme.colorTextOnDark,
-  },
   lookGridSection: {
     marginBottom: theme.space2,
-  },
-  lookAbsenceNote: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightBody,
   },
   // The family's label. The same quiet tracked-caps register `SectionLabel` uses one
   // level up, a step smaller, so the hierarchy reads as "What you noticed → Energy"
@@ -1539,51 +1514,12 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     textTransform: 'uppercase',
     marginTop: theme.space2,
-    marginBottom: 4,
+    marginBottom: theme.space0_5,
   },
   // The note's destination cue, under the field it describes.
   lookNoteCue: {
-    marginTop: theme.space1,
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    lineHeight: theme.textXS * 1.4,
-  },
-  notesInput: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: 15,
-    color: theme.colorTextPrimary,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    minHeight: 80,
-    maxHeight: 160,
-    textAlignVertical: 'top',
-  },
-  weightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  weightInput: {
-    flex: 1,
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: 15,
-    color: theme.colorTextPrimary,
-    paddingVertical: theme.space2,
-  },
-  weightUnitText: {
-    fontSize: 15,
-    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightXS,
   },
 });
