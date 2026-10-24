@@ -1,0 +1,1028 @@
+<title>Tell the Record</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Mock round 1, exploratory: a sentence about Nyx becomes a saved note and a stack of proposals; one tap writes a row, and nothing writes without it. CUL-2162.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Tell the Record. Mock round 1 of the composer (CUL-2162), exploratory:
+     the round a spec is cut from is the converged one, so this page carries
+     no build-ready marker. The PM's rulings of 2026-10-23: the team's
+     recommendation (direction B) is the working answer and the alternatives
+     are drawn beside it; the ten sentences come from Nyx's own record; a
+     motion designer sits as a consultant. House system: the FAB round's page
+     tokens; frames render the app's light tokens (constants/theme.ts, mirrored
+     in docs/mockups/theme.css) at 81% of a 390 x 844 phone (316 x 684).
+     Every duration printed here is a shipped constant or derives from one:
+     FOLD_MOTION (components/motion/foldMotion.ts) rail 160 / box 370 / land
+     +40 over 300 / leave 180 / close 300; durationFast 150 (theme);
+     dotStaggerMs 28 (drawInMotion); TICK_BREATH 1400 / 0.35;
+     SHEET_BEAT_DWELL_MS 1800, REMOVED_DURATION_MS 2400 (momentStore).
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --night: #13112E; --night-2: #251F57; --action: #3F35A0; --action-wash: #ECEAF8;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's light tokens (constants/theme.ts), used inside the frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F5F5F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-ink-4: #A3A3A3; --app-rule: #E7E5E4;
+    --app-meal: #00C2A8; --app-meal-wash: #E0FBF7; --app-sym: #F43F5E; --app-sym-wash: #FFE4E6; --app-sym-ink: #9F1239;
+    --app-med: #5B7A9E; --app-med-wash: #EAF0F7; --app-action: #3F35A0; --app-action-wash: #ECEAF8;
+    --app-accent-ink: #0B7B6C;
+    --veil-night: rgba(19,17,46,0.34); --veil-grey: rgba(10,10,10,0.35);
+    --kbd: #D1D3D9; --kbd-key: #FFFFFF; --kbd-dark: #ADB2BC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); }
+  @media (max-width: 520px) { .wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 10px; }
+  a { color: var(--teal-ink); }
+  .ledger { display: grid; gap: 8px; margin: 26px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 210px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.cur { color: var(--action); background: var(--action-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  ul.plain { padding-left: 1.1em; margin: 0 0 16px; } ul.plain li { margin-bottom: 6px; }
+  table.ledger-t { border-collapse: collapse; width: 100%; font-size: 13.5px; margin-top: 18px; }
+  table.ledger-t th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; padding: 0 10px 8px 0; border-bottom: 1px solid var(--rule); }
+  table.ledger-t td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; color: var(--ink-2); }
+  table.ledger-t td:first-child { color: var(--ink); font-weight: 500; white-space: nowrap; }
+  table.ledger-t code { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .quote { font-family: var(--serif); font-size: 19px; line-height: 1.4; color: var(--ink); margin: 18px 0; padding-left: 16px; border-left: 3px solid var(--teal); }
+  .quote small { display: block; font-family: var(--sans); font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; min-width: 0; }
+  .frame-cap { display: flex; flex-direction: column; gap: 4px; }
+  .frame-cap b { font-size: 14.5px; }
+  .frame-cap span { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .sent { font-family: var(--serif); font-style: italic; font-size: 14.5px; color: var(--ink); }
+  .frame.option { border: 1px dashed var(--rule); border-radius: 18px; padding: 12px; width: 342px; }
+  .frame.option > .frame-cap::before { content: "Still open, drawn for the decision"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .frame.wide { width: 100%; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 6px; }
+  .controls button, .rmrow label { font-family: var(--sans); font-size: 12.5px; font-weight: 500; color: var(--ink); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 999px; padding: 7px 12px; cursor: pointer; min-height: 32px; }
+  .controls button.on { background: var(--action-wash); border-color: transparent; color: var(--action); }
+  .controls button:focus-visible { outline: 3px solid var(--action); outline-offset: 2px; }
+  .rmrow { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  .rmrow label { display: inline-flex; align-items: center; gap: 8px; }
+  .hero { display: grid; grid-template-columns: 316px 1fr; gap: 28px 40px; margin-top: 28px; align-items: start; }
+  .hero > div { min-width: 0; }
+  @media (max-width: 760px) { table.ledger-t { display: block; overflow-x: auto; } }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } }
+  .beatnote { font-size: 14px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 12px; margin-top: 8px; min-height: 60px; }
+  .beatnote b { color: var(--ink); }
+
+  /* ── The phone ───────────────────────────────────────────────────── */
+  .ph { position: relative; width: 316px; max-width: 100%; height: 684px; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); overflow: hidden; color: var(--app-ink); font-size: 12px; line-height: 1.35; }
+  .ph button { font-family: var(--sans); color: inherit; }
+  .ph-home { padding: 40px 12px 0; display: grid; gap: 10px; }
+  .ph-bar { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; border-bottom: 1px solid var(--app-rule); }
+  .ph-bar .pet { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; flex: 1; }
+  .ph-bar .pet small { font-weight: 400; color: var(--app-ink-2); font-size: 11px; }
+  .ph-bar .date { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-bar .ask { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 2px 9px; display: flex; align-items: center; gap: 5px; background: var(--app-card); }
+  .ph-bar .ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); display: inline-block; }
+  .ph-bar .me { width: 24px; height: 24px; border-radius: 50%; background: var(--app-ink); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #8a7a6a, #3a332c 70%); flex-shrink: 0; display: inline-block; }
+  .ph-card { background: var(--app-card); border-radius: 16px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .ph-label { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .ph-row { border-left: 3px solid var(--app-sym); padding-left: 9px; }
+  .ph-row + .ph-row { margin-top: 10px; }
+  .ph-row .h { font-family: var(--serif); font-size: 15.5px; line-height: 1.22; }
+  .ph-row .h.s { font-family: var(--sans); font-size: 12.5px; font-weight: 600; }
+  .ph-row .s { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-trial { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--app-ink-2); padding: 9px 12px; }
+  .ph-trial b { color: var(--app-ink); font-weight: 600; }
+  .ph-trial .dm { margin-left: auto; color: var(--app-ink-3); font-size: 14px; }
+  .look-q { font-family: var(--serif); font-size: 15.5px; margin-bottom: 8px; }
+  .look-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .look-chips span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 9px; font-size: 10.5px; line-height: 1.2; }
+  .look-chips span.more { color: var(--app-ink-2); }
+  .door { display: flex; align-items: center; gap: 10px; min-height: 52px; margin: 10px -12px 0; padding: 8px 12px; border-top: 1px solid var(--app-rule); }
+  .door .t { flex: 1; display: flex; flex-direction: column; }
+  .door .t b { font-size: 12.5px; font-weight: 600; }
+  .door .t span { font-size: 10.5px; color: var(--app-ink-2); }
+  .door .dm { color: var(--app-ink-3); font-size: 16px; }
+  .door .mic { width: 26px; height: 26px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; color: var(--app-ink-2); }
+  .door .mic svg { width: 13px; height: 13px; }
+  .door.box { border: 1px solid var(--app-rule); border-radius: 14px; margin: 10px 0 0; padding: 12px; min-height: 64px; align-items: flex-start; border-top: 1px solid var(--app-rule); }
+  .door.box .t span.phd { color: var(--app-ink-4); font-size: 12.5px; }
+  .count { font-size: 11px; color: var(--app-ink-2); margin: 10px 0 6px; }
+  .count b { color: var(--app-ink); font-weight: 600; }
+  .spine { position: relative; padding-left: 16px; }
+  .spine::before { content: ""; position: absolute; left: 5px; top: 4px; bottom: 4px; width: 2px; background: var(--app-rule); border-radius: 1px; }
+  .node { position: relative; display: flex; justify-content: space-between; font-size: 11.5px; padding: 3px 0; }
+  .node::before { content: ""; position: absolute; left: -15px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--app-ink-3); }
+  .node.sym::before { background: var(--app-sym); }
+  .node.meal::before { background: var(--app-meal); }
+  .node.note::before { background: var(--app-card); border: 2px solid var(--app-ink-3); width: 6px; height: 6px; }
+  .node.prov::before { background: var(--app-card); border: 1.5px dashed var(--app-ink-4); width: 6px; height: 6px; }
+  .node .w { color: var(--app-ink-2); font-size: 10.5px; }
+  .node.prov { color: var(--app-ink-3); }
+  .node.add { color: var(--app-action); font-weight: 500; }
+  .node.add::before { background: var(--app-card); border: 1.5px solid var(--app-action); width: 6px; height: 6px; }
+  .ph-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); padding-bottom: 14px; }
+  .ph-tabs b { color: var(--app-ink); font-weight: 600; }
+  .ph-veil { position: absolute; inset: 0; background: var(--veil-night); opacity: 0; pointer-events: none; transition: opacity 240ms ease; z-index: 3; }
+  .ph.open .ph-veil { opacity: 1; }
+  .ph-disc { position: absolute; right: 19px; bottom: 70px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--night-2); display: grid; place-items: center; box-shadow: 0 6px 18px rgba(19,17,46,0.3); z-index: 2; cursor: pointer; }
+  .ph-disc svg { width: 17px; height: 17px; }
+  .ph.fanopen .ph-disc { z-index: 4; }
+  .ph.fanopen .ph-disc svg { transform: rotate(135deg); }
+  .ph.fanopen .ph-veil { opacity: 1; }
+  .ph-fan { position: absolute; right: 19px; bottom: 124px; display: none; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 4; }
+  .ph.fanopen .ph-fan { display: flex; }
+  .fp { display: flex; align-items: center; gap: 8px; background: var(--app-card); border-radius: 999px; padding: 6px 13px 6px 7px; min-height: 36px; font-size: 12px; font-weight: 500; line-height: 1.25; box-shadow: 0 4px 14px rgba(19,17,46,0.16); }
+  .fp .g { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--app-ground); color: var(--app-ink-2); }
+  .fp .g svg { width: 13px; height: 13px; }
+  .fp .g.sym { background: var(--app-sym-wash); color: var(--app-sym); }
+  .fp .g.meal { background: var(--app-meal-wash); color: var(--app-meal); }
+  .fp.logfor { border-radius: 19px; padding: 7px 12px 7px 8px; min-width: 178px; }
+  .fp.logfor .lf { display: flex; flex-direction: column; flex: 1; }
+  .fp.logfor small { font-size: 10px; color: var(--app-ink-2); font-weight: 400; }
+  .fp.logfor b { font-size: 14px; font-weight: 500; }
+  .fp.new { outline: 2px solid var(--app-action); outline-offset: 2px; }
+
+  /* ── The composer sheet ───────────────────────────────────────────── */
+  .cs { position: absolute; left: 0; right: 0; bottom: 0; top: 64px; z-index: 5; background: var(--app-card); border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgba(19,17,46,0.14); display: flex; flex-direction: column; transform: translateY(104%); transition: transform 370ms cubic-bezier(.32,.72,0,1); }
+  .ph.open .cs { transform: none; }
+  .cs .grab { width: 34px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 8px auto 10px; flex-shrink: 0; }
+  .cs-head { display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; flex-shrink: 0; }
+  .cs-head b { font-size: 15px; font-weight: 600; }
+  .cs-head .x { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; font-size: 15px; color: var(--app-ink-2); }
+  .cs-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 0 14px; overflow: hidden; }
+  .cs-field { border: 1px solid var(--app-rule); border-radius: 14px; padding: 10px 12px; min-height: 73px; font-size: 13px; line-height: 1.45; position: relative; transition: opacity 150ms ease; }
+  .cs-field .phd { color: var(--app-ink-4); }
+  .cs-field .caret { display: inline-block; width: 1.5px; height: 14px; background: var(--app-ink); vertical-align: -2px; margin-left: 1px; animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  .cs-verbs { display: flex; gap: 8px; justify-content: flex-end; opacity: 0; transition: opacity 150ms ease; }
+  .cs-verbs.dock { margin-top: auto; padding-bottom: 8px; }
+  .cs-disclose { font-size: 10.5px; line-height: 1.3; color: var(--app-ink-3); min-height: 21px; }
+  .cs.kbd-down .cs-disclose { display: none; }
+  .cs.kbd-down .cs-verbs.cs-after { display: flex; opacity: 1; }
+  .cs.has-text .cs-verbs { opacity: 1; }
+  .verb { border-radius: 999px; padding: 8px 15px; font-size: 12.5px; font-weight: 600; min-height: 36px; display: inline-flex; align-items: center; gap: 6px; }
+  .verb.save { background: var(--app-ink); color: #fff; }
+  .verb.ask { border: 1px solid var(--app-rule); color: var(--app-ink); }
+  .verb.ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); display: inline-block; }
+  .cs-kbd { margin: 0 -14px 0; background: var(--kbd); height: 272px; padding: 8px 4px 0; display: grid; grid-template-rows: repeat(4, 1fr) 36px; gap: 7px; flex-shrink: 0; }
+  .cs-kbd .r { display: flex; gap: 4px; justify-content: center; }
+  .cs-kbd .r i { display: block; flex: 1; max-width: 28px; height: 34px; background: var(--kbd-key); border-radius: 4px; box-shadow: 0 1px 0 rgba(0,0,0,0.3); }
+  .cs-kbd .r i.d { background: var(--kbd-dark); max-width: 38px; }
+  .cs-kbd .r i.sp { max-width: 140px; }
+  .cs-kbd .r i.mic { background: var(--kbd-dark); max-width: 32px; display: grid; place-items: center; color: #1B1A2E; }
+  .cs-kbd .r i.mic svg { width: 14px; height: 14px; }
+  .cs-kbd .foot { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; color: #1B1A2E; font-size: 10px; }
+  .cs-kbd .foot .mick { display: flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; font-size: 9.5px; }
+  .cs.kbd-down .cs-kbd { display: none; }
+  .cs.kbd-down .cs-field, .cs.kbd-down .cs-verbs { display: none; }
+  .cs-note { position: relative; padding: 2px 0 2px 13px; flex-shrink: 0; }
+  .cs-note::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--app-ink-3); transform-origin: top; }
+  .cs-note .meta { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 2px; }
+  .cs-note .txt { font-size: 13px; line-height: 1.45; }
+  .cs-note .txt mark { background: var(--app-action-wash); color: inherit; border-radius: 3px; padding: 0 1px; }
+  .cs-status { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--app-ink-2); min-height: 22px; flex-shrink: 0; }
+  .cs-status .door { margin: 0; padding: 0; border: 0; min-height: 0; color: var(--app-action); font-weight: 600; gap: 2px; }
+  .tick { display: inline-block; width: 3px; height: 13px; border-radius: 1.5px; background: #D4D4D4; flex-shrink: 0; animation: breath 1400ms ease-in-out infinite; }
+  @keyframes breath { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .cs-stack { display: flex; flex-direction: column; gap: 8px; overflow: auto; min-height: 0; scrollbar-width: none; }
+  .card { position: relative; border-radius: 16px; background: var(--app-card); border: 1px solid var(--app-rule); padding: 8px 10px 8px 14px; flex-shrink: 0; }
+  .card::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--app-ink-3); transform-origin: top; }
+  .card.sym::before { background: var(--app-sym); } .card.meal::before { background: var(--app-meal); } .card.med::before { background: var(--app-med); } .card.look::before { background: var(--app-ink-3); }
+  .card .hd { display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-size: 13.5px; }
+  .card .hd .pet { color: var(--app-ink-2); font-weight: 500; font-size: 12px; }
+  .card .hd .pet.q { color: var(--app-action); }
+  .card .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 4px; font-size: 12px; }
+  .card .row .lbl { color: var(--app-ink-3); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; flex-shrink: 0; }
+  .card .row .val { font-size: 12.5px; text-align: right; }
+  .card .row .val.inf { color: var(--app-ink-2); }
+  .card .row .val .tag { font-size: 9.5px; color: var(--app-ink-3); margin-left: 5px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .card .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+  .card .chips .qlbl { font-size: 11px; color: var(--app-action); font-weight: 600; align-self: center; margin-right: 2px; }
+  .chip { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 9px; font-size: 11px; min-height: 26px; display: inline-flex; align-items: center; background: var(--app-card); }
+  .chip.on { background: var(--app-ink); color: #fff; border-color: var(--app-ink); }
+  .chip.prop { border-style: dashed; border-color: var(--app-ink-2); }
+  .card .pillrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 7px; background: var(--app-subtle); border-radius: 999px; padding: 4px 4px 4px 11px; font-size: 11.5px; }
+  .card .pillrow .logit { background: var(--app-ink); color: #fff; border-radius: 999px; padding: 6px 11px; font-weight: 600; font-size: 11.5px; flex-shrink: 0; }
+  .card .pillrow.blocked .logit { background: var(--app-card); color: var(--app-ink); border: 1px solid var(--app-rule); }
+  .card .just { font-size: 10.5px; color: var(--app-ink-2); margin-top: 5px; text-align: center; }
+  .cs-receipt { font-size: 10.5px; color: var(--app-ink-3); text-align: center; padding: 0 0 4px; flex-shrink: 0; }
+  .cs-bar { margin: auto -14px 0; border-top: 1px solid var(--app-rule); padding: 10px 14px 30px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--app-card); flex-shrink: 0; font-size: 11.5px; color: var(--app-ink-2); }
+  .cs-bar .go { background: var(--app-ink); color: #fff; border-radius: 999px; padding: 9px 14px; font-weight: 600; font-size: 12px; }
+  .cs-bar.blocked .go { background: var(--app-card); color: var(--app-ink); border: 1px solid var(--app-rule); }
+  .crisis { position: relative; border-radius: 16px; border: 1px solid var(--app-rule); padding: 12px 12px 10px 16px; flex-shrink: 0; }
+  .crisis::before { content: ""; position: absolute; left: 6px; top: 12px; bottom: 12px; width: 3px; border-radius: 2px; background: var(--app-sym); transform-origin: top; }
+  .crisis .h { font-family: var(--serif); font-size: 16px; line-height: 1.25; }
+  .crisis .s { font-size: 11.5px; color: var(--app-ink-2); margin-top: 6px; }
+  .crisis .door { margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--app-rule); min-height: 36px; font-weight: 600; font-size: 12.5px; }
+  .crisis .door .dm { margin-left: auto; }
+  .crisis.loud { background: var(--night); color: #fff; border: 0; padding: 18px 16px; }
+  .crisis.loud::before { display: none; }
+  .crisis.loud .h { font-size: 20px; }
+  .crisis.loud .s { color: rgba(255,255,255,0.75); }
+  .crisis.loud .door { border-top-color: rgba(255,255,255,0.18); color: #fff; }
+  .crisis.loud .call { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--rose); color: #fff; border-radius: 999px; padding: 11px; font-weight: 600; font-size: 13px; margin-top: 12px; }
+  .after { font-size: 11.5px; color: var(--app-ink-3); display: flex; align-items: center; gap: 6px; }
+  .beat { margin-top: auto; margin-bottom: 40px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; flex-shrink: 0; padding: 12px; }
+  .beat .hr { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .beat .tk { width: 68px; height: 68px; border-radius: 50%; background: var(--app-card); border: 1px solid var(--app-rule); box-shadow: 0 2px 10px rgba(0,0,0,0.06); display: grid; place-items: center; color: var(--app-ink); }
+  .beat .tk svg { width: 30px; height: 30px; }
+  .beat .tk svg path { stroke-dasharray: 24; stroke-dashoffset: 0; }
+  .beat.arrive .tk svg path { animation: write 160ms ease-out 120ms both; }
+  @keyframes write { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+  .beat .tt { min-width: 0; }
+  .beat b { display: block; font-size: 18px; font-weight: 600; line-height: 1.25; }
+  .beat .tt span { font-size: 11px; color: var(--app-ink-2); }
+  .beat .acts { font-size: 11px; font-weight: 600; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 14px; min-height: 30px; display: inline-flex; align-items: center; }
+  .beat .acts:empty { display: none; }
+  .layer { position: absolute; left: 0; right: 0; bottom: 0; background: var(--app-card); border-top: 1px solid var(--app-rule); border-radius: 18px 18px 0 0; padding: 12px 14px 30px; z-index: 6; box-shadow: 0 -8px 30px rgba(19,17,46,0.14); transform: translateY(104%); transition: transform 370ms cubic-bezier(.32,.72,0,1); }
+  .layer.in { transform: none; }
+  .layer .lh { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+  .layer .lh span { color: var(--app-action); font-size: 12px; }
+  .wheel { display: flex; justify-content: center; gap: 18px; font-size: 15px; padding: 6px 0; }
+  .wheel div { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--app-ink-4); }
+  .wheel div b { color: var(--app-ink); font-weight: 600; font-size: 17px; }
+  .hint { font-size: 11px; color: var(--app-ink-3); text-align: center; margin-top: 6px; }
+
+  .tile { display: flex; align-items: center; gap: 8px; border: 1px solid var(--app-rule); border-radius: 13px; padding: 8px; min-height: 44px; font-size: 12.5px; font-weight: 500; background: var(--app-card); text-align: left; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile.new { outline: 2px solid var(--app-action); outline-offset: 2px; margin: 2px; }
+  .tile .g { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--app-sym-wash); color: var(--app-sym); }
+  .tile .g svg { width: 14px; height: 14px; }
+  .tile .g.quiet { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tile small { font-weight: 400; color: var(--app-ink-2); font-size: 10.5px; }
+  .tile .chips { margin-left: auto; display: flex; gap: 5px; }
+  .tile .chips span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+  .cs .fam { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 8px 0 2px; }
+  .cs .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+  /* §08 Turning the intelligence up */
+  .lit { border-radius: 3px; padding: 0 1px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .lit.sym { background: var(--app-sym-wash); box-shadow: inset 0 -1.5px var(--app-sym); }
+  .lit.meal { background: var(--app-meal-wash); box-shadow: inset 0 -1.5px var(--app-meal); }
+  .lit.time { background: var(--app-subtle); box-shadow: inset 0 -1.5px var(--app-ink-3); }
+  .lit.pet { background: var(--app-action-wash); box-shadow: inset 0 -1.5px var(--app-action); }
+  .lit.pending { background: transparent; box-shadow: none; }
+  .cs-count { font-size: 11px; color: var(--app-ink-2); min-height: 18px; display: flex; gap: 6px; align-items: center; }
+  .cs-count b { color: var(--app-ink); font-weight: 600; }
+  .voice { position: relative; padding: 2px 0 2px 13px; flex-shrink: 0; }
+  .voice::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--app-ink-3); }
+  .voice .say { font-family: var(--serif); font-size: 14px; line-height: 1.3; }
+  .voice .say .cur { display: inline-block; width: 1.5px; height: 13px; background: var(--app-ink); vertical-align: -2px; margin-left: 1px; }
+  .voice .sig { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin-top: 4px; }
+  .card.compact { padding: 6px 6px 6px 12px; }
+  .card.compact .pillrow { margin-top: 0; }
+  .offer { position: relative; border-radius: 16px; border: 1px solid var(--app-rule); padding: 10px 12px 8px 16px; flex-shrink: 0; margin-top: 8px; }
+  .offer::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--app-ink-3); }
+  .offer .h { font-family: var(--serif); font-size: 14.5px; line-height: 1.3; }
+  .offer .s { font-size: 11.5px; color: var(--app-ink-2); margin-top: 4px; }
+  .offer .doors { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; font-weight: 600; }
+  .offer .doors .quiet { color: var(--app-ink-2); font-weight: 500; }
+  .cs-head .agent { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--app-ink-2); margin-left: 8px; }
+  .cs-head .agent i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--app-ink-2); display: grid; place-items: center; }
+  .cs-head .agent i::after { content: ""; width: 2px; height: 7px; border-radius: 1px; background: var(--app-ink-2); }
+  .fly { position: absolute; z-index: 9; pointer-events: none; font-size: 13px; line-height: 1.45; white-space: nowrap; }
+  .stack-hidden .card { opacity: 0; }
+  .rm .lit { transition: none; }
+
+  /* The ask screen (the hand-off) */
+  .askscr { position: absolute; inset: 0; background: var(--app-ground); padding: 40px 14px 0; display: none; flex-direction: column; gap: 12px; z-index: 7; }
+  .ph.askmode .askscr { display: flex; }
+  .askscr .bar { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--app-rule); }
+  .askscr .bar .back { color: var(--app-action); font-weight: 500; font-size: 13px; }
+  .askscr .q { font-size: 14px; line-height: 1.4; padding: 4px 0; }
+  .askscr .q small { display: block; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 3px; }
+  .askscr .ans { position: relative; padding-left: 13px; }
+  .askscr .ans::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--app-med); transform-origin: top; }
+  .askscr .ans p { font-size: 13.5px; line-height: 1.45; margin: 0 0 6px; }
+  .askscr .ans .rc { font-size: 10.5px; color: var(--app-ink-3); }
+  .askscr .fieldrow { margin-top: auto; margin-bottom: 30px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 9px 14px; color: var(--app-ink-4); font-size: 12.5px; background: var(--app-card); }
+
+  /* Arrival physics (motion on). Rail 160, box 370, sentence +40 over 300 from 8pt; stagger 28 per card. */
+  .arrive .card::before, .arrive .crisis::before, .arrive .ans::before, .arrive.cs-note::before { animation: rail 160ms cubic-bezier(.2,.8,.2,1) both; }
+  .arrive .card, .arrive .crisis { animation: box 370ms cubic-bezier(.2,.8,.2,1) both; }
+  .arrive .card > *:not(.rail), .arrive .crisis > *, .arrive.cs-note > .meta, .arrive .ans > * { animation: land 300ms cubic-bezier(.2,.8,.2,1) 40ms both; }
+  .arrive .card:nth-child(2), .arrive .card:nth-child(2)::before, .arrive .card:nth-child(2) > * { animation-delay: 28ms; }
+  .arrive .card:nth-child(2) > * { animation-delay: 68ms; }
+  .arrive .card:nth-child(3), .arrive .card:nth-child(3)::before { animation-delay: 56ms; }
+  .arrive .card:nth-child(3) > * { animation-delay: 96ms; }
+  @keyframes rail { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  @keyframes box { from { opacity: 0; } 70% { opacity: 1; } to { opacity: 1; } }
+  @keyframes land { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .leave { animation: leave 180ms ease-in both; }
+  @keyframes leave { to { opacity: 0; transform: translateY(-6px); } }
+  .fade-in { animation: fadein 150ms linear both; }
+  @keyframes fadein { from { opacity: 0; } }
+  .typing .cs-field .live { white-space: pre-wrap; }
+
+  /* Reduce Motion: whatever enters crossfades in place over 150ms; the tick is still at full opacity; the sheet is instant. */
+  .rm .cs, .rm .layer, .rm .ph-veil { transition: opacity 150ms linear !important; transform: none !important; }
+  .rm .cs { opacity: 0; pointer-events: none; } .rm .ph.open .cs { opacity: 1; pointer-events: auto; }
+  .rm .layer { opacity: 0; } .rm .layer.in { opacity: 1; }
+  .rm .arrive .card, .rm .arrive .crisis, .rm .arrive .card::before, .rm .arrive .crisis::before, .rm .arrive .card > *, .rm .arrive .crisis > *, .rm .arrive.cs-note::before, .rm .arrive.cs-note > .meta, .rm .arrive .ans::before, .rm .arrive .ans > * { animation: fadein 150ms linear both !important; }
+  .rm .tick { animation: none !important; opacity: 1 !important; }
+  .rm .leave { animation: fadeout 150ms linear both !important; }
+  .rm .beat.arrive .tk svg path { animation: none !important; }
+  .rm .cs-field .caret { animation: none; }
+  @keyframes fadeout { to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cs, .layer, .ph-veil { transition: opacity 150ms linear !important; transform: none !important; }
+    .cs { opacity: 0; pointer-events: none; } .ph.open .cs { opacity: 1; pointer-events: auto; }
+    .layer { opacity: 0; } .layer.in { opacity: 1; }
+    .arrive .card, .arrive .crisis, .arrive .card::before, .arrive .crisis::before, .arrive .card > *, .arrive .crisis > *, .arrive.cs-note::before, .arrive.cs-note > .meta, .arrive .ans::before, .arrive .ans > * { animation: fadein 150ms linear both !important; }
+    .tick { animation: none !important; opacity: 1 !important; }
+    .leave { animation: fadeout 150ms linear both !important; }
+    .beat.arrive .tk svg path { animation: none !important; }
+    .cs-field .caret { animation: none; }
+  }
+
+  /* The fold diagram */
+  .fold { display: flex; gap: 36px; flex-wrap: wrap; margin-top: 24px; align-items: flex-start; }
+  .fold .col-f { width: 230px; }
+  .fold .col-f h4 { margin: 0 0 8px; font-size: 13.5px; font-weight: 600; }
+  .fold .stackf { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; }
+  .fold .blk { display: flex; justify-content: space-between; align-items: center; padding: 0 10px; font-size: 11.5px; color: var(--ink-2); background: var(--paper-2); }
+  .fold .blk b { color: var(--ink); font-weight: 500; }
+  .fold .blk.k { background: var(--rule-soft); color: var(--ink-3); }
+  .fold .blk.room { background: var(--teal-wash); color: var(--teal-ink); }
+  .fold .note-f { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+
+  /* Never drawn */
+  .never { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .never span { font-size: 12.5px; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 999px; padding: 4px 10px; text-decoration: line-through; text-decoration-color: var(--rose); text-decoration-thickness: 1.5px; }
+</style>
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Mock round 1 · exploratory</span><span>CUL-2162</span><span>2026-10-23</span><span>docs/culprit-composer-mockups.html</span><span>Nyx's record, as it stands</span></p>
+    <h1>Tell Nyx's record</h1>
+    <p class="standfirst">You type a sentence about Nyx. Her words are saved as you wrote them, before anything else happens. What fits her record is offered back as the cards you already know; one tap writes a row, and nothing writes without it.</p>
+    <div class="ledger">
+      <div><span>What you said</span><span><q>I'll likely go w the team's recommendation. But if there's a better way we should explore that in the mocks.</q> Direction B is the current frame; A and C stand beside it in §02, and the three places the team disagreed are drawn side by side in §04.</span></div>
+      <div><span>The sentences</span><span><q>Stub out the sentences you think I'd type based on her data.</q> Ten, from her record as it stands: the trial that ended last week, the foods since, the course that ended this month, this month's incidents, the dog on the same account. §03.</span></div>
+      <div><span>The consultants</span><span><q>I want the motion designer in on this as well as a consultant.</q> Seated for the critique that follows this page: a motion designer beside Motion &amp; IA, conversational UX, dictation, accessibility, the veterinary behaviourist, Dr. Chen, Trust &amp; Safety, QA. §07.</span></div>
+      <div><span>Republished after the critique</span><span>The twelve lenses read the first publish on 2026-10-23. The demo defects they confirmed are fixed here (the tick's shape, the beat's register, the hidden Ask verb, the time forms, the intake tap as the rating, the fixture errors); the design questions they raised are briefs on the issue and round 2's scope.</span></div>
+      <div><span>Your reaction</span><span><q>This doesn't seem very AI forward like some of the other examples.. what can we do on that front?</q> §08 draws three registers that turn the intelligence up on the same sentence (it understands as you type; it tells you what it read and offers a next step; you watch it work), what each touches in the rules, and the team's recommendation.</span></div>
+      <div><span>How to read it</span><span>Every beat in §01 is a button; press them in order, or jump. The Reduce Motion switch is read as each beat starts. Frames are 81% of a 390 × 844 phone. <span class="pill cur">current</span> is the frame the team recommends; <span class="pill open">still open</span> is drawn for you to rule on.</span></div>
+    </div>
+  </header>
+
+  <section id="moment">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The sentence, and what it becomes</h2></div>
+    <div class="col">
+      <p>Direction B, the team's recommendation. The door is on Home's Today card and in the FAB's fan; both open one sheet, titled by its object, <em>Nyx's record</em>. The field is three lines, growing to six; the mic is the keyboard's own key. On the first character two verbs appear and stay: <b>Save note</b> and <b>Ask</b>. You route, not the model: a question mark never routes.</p>
+      <p>Save writes the note in the same tap. Only then does the tick start, and only while a request is in flight. When the proposals land they land all at once, in the order you wrote them, as the shipped confirm card with a rail. What you typed is black; what was inferred is grey; a question is the row's field drawn as chips, never a dialogue. The owner's tap is the only write.</p>
+    </div>
+    <div class="hero">
+      <div class="frame" id="hero-frame">
+        <div class="ph" id="hero"></div>
+        <div class="frame-cap"><b>Direction B, live <span class="pill cur">current</span></b><span id="hero-cap">Home. The Today card carries the door; the fan carries the Note pill.</span></div>
+      </div>
+      <div>
+        <div class="controls" id="beats" aria-label="The beats"></div>
+        <div class="rmrow"><label><input type="checkbox" id="rm"> Reduce Motion</label><span>read as each beat starts; also follows the system setting</span></div>
+        <div class="beatnote" id="beatnote"><b>Press a beat.</b> Each one plays from the state before it, with its duration and its source constant printed here.</div>
+        <table class="ledger-t">
+          <thead><tr><th>Beat</th><th>What moves</th><th>ms · source</th><th>Haptic</th></tr></thead>
+          <tbody>
+            <tr><td>Door opens</td><td>The sheet rises to its keyboard-up height in one transaction with the keyboard's curve; the veil fades up, or is the fan's, handed.</td><td><code>370</code> FOLD_MOTION.openMs</td><td><code>openMenu</code> on the Today door; from the fan nothing</td></tr>
+            <tr><td>Typed</td><td>The caret and the words; the field's foot grows per line, instantly. Save note · Ask crossfade in once.</td><td>growth none · verbs <code>150</code> durationFast</td><td>none</td></tr>
+            <tr><td>Save</td><td>The field chrome dissolves; the rail draws down the note's left edge; the keyboard leaves; "Saved to Nyx's record" lands.</td><td><code>150</code> · <code>160</code> railLeadMs · <code>+40/300</code> landDelayMs, landMs</td><td><code>commitNote</code>, new: one soft impact; withheld by the crisis gate</td></tr>
+            <tr><td>The wait</td><td>The tick breathes at the rail's foot. One line swaps in place: 0 Saved · 1.5s Reading your note · 5s Still reading, the note is saved.</td><td><code>1400 / 0.35</code> TICK_BREATH · swaps <code>150</code></td><td>none while thinking</td></tr>
+            <tr><td>Proposals arrive</td><td>The tick grows into row 1's rail; one box opens around the stack; sentences land top to bottom, in jot order, never confidence. The stack never grows after.</td><td><code>160 · 370 · +40/300</code> FOLD_MOTION · stagger <code>28</code> dotStaggerMs</td><td><b>none</b>: a proposal is a question</td></tr>
+            <tr><td>A question</td><td>Nothing extra arrives: the question is the row's field, drawn as chips in the value's slot. On answer the group crossfades to one chip.</td><td><code>150</code></td><td><code>selectChip</code></td></tr>
+            <tr><td>Correct a field</td><td>A chip opens its panel as a layer inside the sheet; the phrase that produced the value lights in the note above. Back: that chip alone crossfades.</td><td>layer <code>370 / 180</code> · chip <code>150</code></td><td>the panel's <code>selectChip</code></td></tr>
+            <tr><td>Commit</td><td>The shipped sheet beat: the stack leaves, the disc, the check writes, the sentence; the note's ring lands on Today's spine, joining no count.</td><td>leave <code>180</code> · check <code>160</code> · dwell <code>1800</code> SHEET_BEAT_DWELL_MS</td><td>the beat's, once for N rows; calm if any symptom</td></tr>
+            <tr><td>Undo</td><td>The check unwrites; "Removed · your note is still saved". The stack does not return.</td><td><code>180</code> · <code>2400</code> REMOVED_DURATION_MS</td><td><code>destructiveConfirm</code></td></tr>
+            <tr><td>Failed · offline · off · capped</td><td>The tick leaves, or never starts; one line says what happened and offers the by-hand door. The note is saved in every one.</td><td><code>150</code></td><td>none: a failure is read, not felt</td></tr>
+            <tr><td>Crisis sentence</td><td>The deterministic gate runs at Save, before the haptic and before any request. The deflection arrives where the stack would, by the same arrival, on the rose rail, plain.</td><td><code>160 · 370 · 300</code>, not one millisecond harder</td><td>none; <code>commitNote</code> withheld</td></tr>
+            <tr><td>Ask</td><td>The sheet exits carrying the words; /ask pushes with them; thinking is the tick and the card's skeleton; the answer arrives out of the tick with a rail.</td><td>exit <code>180</code> · route, shipped</td><td>none: the rail is the mark and the arrive gesture ships silent on every verdict; <code>commitNote</code> is the one new verb this surface adds (team default, vetoable)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="directions">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Three directions</h2></div>
+    <div class="col">
+      <p>Three ways in, drawn on the same Home. They differ in where the door is, where the composer lives, and what Home has to carry. B is the only one that absorbs Ask without a second composer and keeps Home a surface of doors, not forms.</p>
+    </div>
+    <div class="frames" id="dir-frames"></div>
+    <div class="col">
+      <h3>Cost, in rows</h3>
+      <table class="ledger-t">
+        <thead><tr><th>Direction</th><th>Door</th><th>Composer</th><th>Proposal</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr><td>A · The Note tile</td><td>a Note pill in the fan; nothing on Home</td><td>a fourth family inside the log sheet</td><td>the stack of confirms</td><td>4 rows; Ask stays unabsorbed; the log sheet gains a second stage machine</td></tr>
+          <tr><td>B · Tell the record</td><td>fan pill + a Today door + the header's Ask pill, one sheet</td><td>its own sheet, a sibling of the log sheet</td><td>the tick-to-rail stack</td><td>about 12 rows after the 1.2.0 cut; one Tier-2 line that a door is not a form</td></tr>
+          <tr><td>C · The day's margin</td><td>"+ Note" at the foot of Today's spine, and on a History day</td><td>grows in place on the day</td><td>provisional hollow nodes on the spine; tap to fill, ignore to drop</td><td>highest: a provisional state in dayNodes, History v2 touched, and Home gains a form</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="sentences">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Ten sentences from her record</h2></div>
+    <div class="col">
+      <p>Each frame is the sheet after Save, with the keyboard down, showing what the parser would offer for that sentence and what it must never do. The sentences are stubs written from Nyx's record; swap in the ones you actually sent this month and they replace these line for line. The eleventh frame is Sam's, because one cat cannot draw the which-cat question in a dictated sentence.</p>
+    </div>
+    <div class="frames" id="sent-frames"></div>
+  </section>
+
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Drawn for the decision</h2></div>
+    <div class="col">
+      <p>Three places the team disagreed and could not rule from words. Each pair is drawn on the same record so the difference is the only thing that moves. The frame marked current is the recommendation; its brief is on the issue.</p>
+      <h3>The door on Home</h3>
+      <p><b>Designer:</b> one line felt small to you in September; the door should be a roomy, field-shaped box. <b>Motion &amp; IA:</b> a box whose tap raises a sheet lies in its first frame, and Home carries no form (C-33); the room is the sheet's three-line field. <b>PM decision needed:</b> does the roomy promise live on Home or in the sheet?</p>
+    </div>
+    <div class="frames" id="door-frames"></div>
+    <div class="col">
+      <h3>Where Ask lands</h3>
+      <p><b>Designer:</b> the Ask verb answers inside the sheet, under the note, so the composer is one surface for telling and asking. <b>Motion &amp; IA:</b> the sheet exits carrying the words and the built /ask answers, so one screen holds Ask's rules (D5, D8) and nothing forks. <b>PM decision needed:</b> one sheet that answers, or a composer that hands off.</p>
+    </div>
+    <div class="frames" id="ask-frames"></div>
+    <div class="col">
+      <h3>The crisis register</h3>
+      <p><b>Dr. Chen:</b> "thrown up three times since noon and won't touch water" at 2am deserves more than a quiet arrival: a buzz, a takeover, the number ready to dial. <b>Motion &amp; IA:</b> plainness is the severity signal; it lands within a frame, above everything, with one door and the save's buzz withheld. Louder teaches that quiet means fine. <b>PM decision needed:</b> the same physics with a withheld haptic, or a distinct register.</p>
+    </div>
+    <div class="frames" id="crisis-frames"></div>
+  </section>
+
+  <section id="fold">
+    <div class="sec-head"><span class="sec-num">05</span><h2>The fold, 390 × 844</h2></div>
+    <div class="col">
+      <p>Insets 47 above and 34 below; the keyboard with QuickType is about 336. What the owner sees with the keyboard up is 461 points of sheet; with it down, 763. The card as drawn is about 147 points and a question card 187 to 302, so three cards fill the room at default type; the compact register brief on the issue decides what gives. The verb row and the commit bar both sit in the thumb's arc, and the commit bar is inert through the rise so a resting thumb cannot write by landing on it.</p>
+    </div>
+    <div class="fold">
+      <div class="col-f">
+        <h4>Keyboard up · 461</h4>
+        <div class="stackf">
+          <div class="blk" style="height:37px"><b>Handle + title</b><span>74, as drawn</span></div>
+          <div class="blk" style="height:45px"><b>Field, 3 lines</b><span>90, to 156 at 6</span></div>
+          <div class="blk" style="height:28px"><b>Save note · Ask</b><span>56, docked</span></div>
+          <div class="blk" style="height:13px"><b>Disclosure line</b><span>26</span></div>
+          <div class="blk room" style="height:107px"><b>Rest</b><span>210, 276 full</span></div>
+          <div class="blk k" style="height:168px"><b>Keyboard</b><span>336</span></div>
+        </div>
+        <p class="note-f">At the largest text (a 68pt line): two field lines, stacked verbs, a wrapped title, 404, still above the fold.</p>
+      </div>
+      <div class="col-f">
+        <h4>Keyboard down · 763</h4>
+        <div class="stackf">
+          <div class="blk" style="height:37px"><b>Title</b><span>74, as drawn</span></div>
+          <div class="blk" style="height:52px"><b>The note, whole to 4 lines</b><span>104, then Show all</span></div>
+          <div class="blk" style="height:13px"><b>Status line</b><span>26</span></div>
+          <div class="blk room" style="height:232px"><b>Stack room</b><span>465 · three cards as drawn (147 each), or five compact rows of 88</span></div>
+          <div class="blk" style="height:47px"><b>Commit bar</b><span>94, docked</span></div>
+        </div>
+        <p class="note-f">At 320pt the chips wrap and three rows scroll; at the largest text a row is about 210 and two scroll. Only the stack scrolls. The crisis card tops at y≈233, in the first glance either way.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="never">
+    <div class="sec-head"><span class="sec-num">06</span><h2>Never drawn</h2></div>
+    <div class="col">
+      <p>The competitor's card is the spec of what not to build: a streak that counts the owner, "3:00 PM" written from "around 3pm", a "3 / 5 ▲" nobody typed, a sparkline through invented numbers, "SLIP FLAGGED" as a verdict from one sentence, "AI STRUCTURED IT" as a machine's pride. The one row every lens kept is the exposure itself, redrawn here as a confirmed treat with an honest time and the shipped off-diet mark as a fact about the food, never a flag about the owner.</p>
+    </div>
+    <div class="never">
+      <span>a streak</span><span>a day counter</span><span>a number she did not type</span><span>a severity</span><span>an arrow</span><span>a chart from a note</span><span>a chat bubble</span><span>an avatar, a sparkle, "AI" as a badge</span><span>streamed text</span><span>a row written without a tap</span><span>a card without "Just the note"</span><span>a question answered in free text</span><span>a new look word</span><span>"picky", "fussy", "preference"</span><span>a reassurance, a mood, a greeting</span><span>a mic glyph of ours</span><span>a toast for a failed parse</span><span>gold on a symptom commit</span><span>a meter or lock on the note path</span><span>a "same as yesterday" button</span><span>a confidence percentage</span><span>a composer that breathes as she types</span><span>a sparkline drawing itself</span><span>a glow on a symptom</span><span>the stack growing after it lands</span><span>a proposal landing on Home after the sheet closed</span><span>a counter clock</span><span>the FAB's glyph changing</span>
+    </div>
+  </section>
+
+  <section id="team">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Who sat, and what the round asks</h2></div>
+    <div class="col">
+      <p>Drawn by the Sr. Product Designer and Motion &amp; IA from their isolated reads, corrected by the repo check (an intake sentence routes to the meal path, never a look chip; a parsed row is never witnessed; an estimated time prints in the record's own form, "around 7:00 AM"). The critique that follows this page seats, as consultants: a <b>motion designer</b> (one physics, every number a shipped constant), <b>conversational UX</b> (the omnibox creeping back, a chat shape in the stack, provenance going decorative), <b>speech and dictation</b> (how a misheard cat lands; the correction interface carries accuracy, not the recogniser), <b>accessibility</b> (VoiceOver order over a stack, the one live region, AX5 on the chips, Reduce Motion on the tick-to-rail), the <b>veterinary behaviourist</b> and <b>Dr. Chen</b> (the look-word mapping, the crisis lexicon, what a proposal may never carry), <b>Trust &amp; Safety</b> (the consent re-ask once the disclosure names typed notes, raw text never logged), and <b>QA</b> (the state set, the golden set's must-refuse classes), beside Jordan, Sam, Data and Engineering.</p>
+      <h3>Rulings this round asks for</h3>
+      <ul class="plain">
+        <li><b>The door on Home</b> (§04, first pair): the 64pt door row, recommended; the field-shaped box; or the fan only.</li>
+        <li><b>Where Ask lands</b> (§04, second pair): the sheet hands off to /ask, recommended; or the sheet answers in place.</li>
+        <li><b>The crisis register</b> (§04, third pair): the same physics with the haptic withheld, recommended; or the distinct takeover.</li>
+        <li><b>Direction</b> (§02): B, recommended; A or C instead.</li>
+        <li><b>The ten sentences</b> (§03): yours in place of ours, any you would never type struck.</li>
+      </ul>
+      <h3>Team defaults drawn in, vetoable</h3>
+      <ul class="plain">
+        <li>Each card keeps the shipped Log it pill; a docked "Log all N" bar appears only from two cards, and when a question is unanswered it names the blocker instead of greying out (C-7).</li>
+        <li>One sentence, one row per fact: "a few times" is one cough row; "hid and licked her lips" is one Noticed row with two words, not two rows.</li>
+        <li>No leaf fits means the note is kept and the line says so; nothing is ever proposed as "Other".</li>
+        <li>A question typed on the Save path yields zero proposals and the line "That reads like a question. Ask it?" with the Ask verb beside it; the owner still routes.</li>
+        <li>Offline and consent-off read the same as a failed parse with a different sentence; the note saves in every state, and nothing is read later.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="forward">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Turning the intelligence up</h2></div>
+    <div class="col">
+      <p>Your reaction to the round: it does not read as AI forward the way ThePawcess's card or the Linear agent do. That is true, and it is by rule rather than by accident. September's vetoes and this page's never-drawn list struck every device those products use to feel intelligent: streamed text, a sparkle, a badge, a persona, a composer that breathes as you type, a reassurance. What was left of the AI's signature was a grey receipt line and a shade of ink, and the cards are the shipped confirm, which is a form. The invariants underneath (your words saved first, your tap the only write, nothing minted, the gate before any model) are the right ones. The expression is under-turned.</p>
+      <p>What makes the best examples feel intelligent is not decoration. They show what they understood (Fantastical lights the date as you type it; the Linear agent names the issue it read), they explain themselves in one sentence, they respond before you ask (a next step from the record), and you can see the structure form. Each of those is a dial we can turn without touching an invariant. Three registers, drawn on the same sentence; each turns one dial harder than the last.</p>
+    </div>
+    <div class="controls" id="beats8"></div>
+    <div class="frames" id="fwd-frames"></div>
+    <div class="col">
+      <h3>The brief: how AI forward</h3>
+      <p><b>Deciding:</b> which of these dials round 2 turns, and how far. <b>Options:</b> <b>R1 + R2 together, recommended</b>: the field understands as you type (on the phone, from her own foods, her pets, the frozen look words, the symptom leaves and a time grammar, so nothing leaves the phone until Save and the cards are already formed when it lands), the app tells you in one sentence what it read before the cards, and after a commit it offers one next step from the record as a door; R3's flight becomes the arrival physics (the words you wrote become the rows) without its streamed text or its persona mark · <b>R1 alone</b>: the fastest and the most private, but silent about what it could not place · <b>R3 whole</b>: the most forward and the closest to the competitor, at the cost of two September vetoes (streamed text, a persona) and a second loop. <b>Consequence:</b> R1 adds an on-device recogniser (a project of its own, about four rows); R2 adds a one-sentence read-back and an offer line that run through the same validator and never-lines as Ask (no effect words, no reassurance, counts only); R3 reopens two vetoes and the DC-6 name ruling. Every option keeps the owner's tap as the only write. The twelve lenses read §08 before round 2 is drawn, and Sam's seat reads R2's sentence first: it is a sentence the app wrote about her words, shown only to her and never stored.</p>
+      <h3>What each one costs against the rules</h3>
+      <table class="ledger-t">
+        <thead><tr><th>Register</th><th>Turns</th><th>Touches</th><th>Keeps</th></tr></thead>
+        <tbody>
+          <tr><td>R1 · understands as you type</td><td>responsiveness; what it understood is visible before Save</td><td>"a composer that breathes as she types" (the lighting is instant and local, not a loop; the brief asks the Motion seat to rule it a breath or not)</td><td>nothing leaves the phone until Save; the model refines only what the lexicon could not place</td></tr>
+          <tr><td>R2 · tells you what it read, offers one next step</td><td>a voice; a reason to trust the cards; value after the commit</td><td>DC-6 (sign the line "Culprit" or leave it unsigned, drawn both ways); Ask's never-lines govern the offer (counts, dates, no cause, no advice)</td><td>one sentence, never a thread; the offer is a door, never a write</td></tr>
+          <tr><td>R3 · you watch it work</td><td>the structure forming; presence</td><td>streamed text and a persona mark (both vetoed in September); a second loop beside the tick</td><td>the flight itself is Principle 9's physics and can be kept alone</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+<script>
+(function () {
+  var SVG = {
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 4v16M4 12h16"/></svg>',
+    plusq: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    vomit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7c2-2.5 6-2.5 8 0 2.4.3 3.6 2.6 2.5 4.6.9 2.2-.6 4.4-2.9 4.4-1.6 2-5.6 2-7.2 0-2.3 0-3.8-2.2-2.9-4.4C4.4 9.6 5.6 7.3 8 7zM12 16v4"/></svg>',
+    meal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6L12 18"/></svg>',
+    stool: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 18h8a3 3 0 0 0 .6-5.9A3 3 0 0 0 13.5 8a2.5 2.5 0 0 0-3-3.5c.4 1.5-.8 2.6-2 3.5a3 3 0 0 0-1.1 4.1A3 3 0 0 0 8 18z"/></svg>',
+    note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3zM13.5 6.5l3 3"/></svg>',
+    dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>'
+  };
+  var reduced = function () { return document.body.classList.contains('rm') || window.matchMedia('(prefers-reduced-motion: reduce)').matches; };
+  var rmBox = document.getElementById('rm');
+  rmBox.addEventListener('change', function () { document.body.classList.toggle('rm', rmBox.checked); });
+
+  // ── Home ────────────────────────────────────────────────────────────
+  // Nyx's Home on Fri Oct 23 as the record stands: the Signal's two findings, the trial
+  // strip after the trial, the Today card (the look header, the door, the day's spine).
+  var CAT_CHIPS = ['Off', 'Sleeping more', 'Hiding', 'Not grooming', 'Lip-licking', 'Outside the box', 'Lively', 'Played'];
+  function doorHTML(kind, pet) {
+    if (kind === 'row') {
+      return '<div class="door" data-k="door"><span class="t"><b>Tell ' + pet + '’s record</b><span>a note, a food, a dose, in your words</span></span><span class="dm">›</span></div>';
+    }
+    if (kind === 'box') {
+      return '<div class="door box" data-k="door"><span class="t"><span class="phd">Anything about ' + pet + ' today?</span><span>Tell her record, or ask it.</span></span><span class="dm">›</span></div>';
+    }
+    return '';
+  }
+  function spineHTML(o) {
+    var rows = o.pet === 'Pixel'
+      ? '<div class="node meal"><span>Sheba Perfect Portions · Wet</span><span class="w">7:40 AM</span></div>'
+      : '<div class="node meal"><span>Royal Canin Selected Protein PR · Dry</span><span class="w">7:10 AM</span></div>';
+    if (o.committed) {
+      rows = '<div class="node sym"><span>Cough</span><span class="w">~7:00 AM</span></div>' + rows +
+              '<div class="node meal"><span>Royal Canin PR, Wet · refused</span><span class="w">~4:00 PM</span></div>' +
+              '<div class="node sym"><span>Vomit</span><span class="w">7:10 AM–4:12 PM</span></div>' +
+              '<div class="node note"><span>Note</span><span class="w">4:12 PM</span></div>';
+    }
+    if (o.margin) {
+      rows += '<div class="node prov"><span>Cough · offered</span><span class="w">~7:00 AM</span></div>' +
+              '<div class="node prov"><span>Vomit · offered</span><span class="w">7:10 AM–4:12 PM</span></div>' +
+              '<div class="node add"><span>+ Note</span></div>';
+    }
+    return '<div class="spine">' + rows + '</div>';
+  }
+  function marginComposer(pet) {
+    return '<div class="cs-field" style="margin-top:8px;min-height:58px"><span class="live">Coughed a few times around 7, threw up right after breakfast</span><span class="caret"></span></div>' +
+           '<div class="cs-verbs" style="opacity:1;margin-top:8px;justify-content:flex-start"><span class="verb ask"><i></i>Ask</span><span class="verb save">Save note</span></div>';
+  }
+  function homeHTML(o) {
+    var pet = o.pet || 'Nyx';
+    var sam = pet === 'Pixel';
+    var count = o.committed ? '<div class="count"><b>4</b> logged · 2 symptoms · 2 meals</div>' : '<div class="count"><b>1</b> logged · 1 meal</div>';
+    var signal = sam
+      ? '<div class="ph-card"><div class="ph-label">Signal</div><div class="ph-row"><div class="h s">Vomiting in 3 of the last 8 weeks</div><div class="s">6 episodes since Sep 2</div></div></div>'
+      : '<div class="ph-card"><div class="ph-label">Signal</div>' +
+        '<div class="ph-row"><div class="h">Vomiting in 3 of the last 8 weeks</div><div class="s">6 episodes since Sep 21 · 2 soon after a meal</div></div>' +
+        '<div class="ph-row"><div class="h s">Coughing in 4 of the last 8 weeks</div><div class="s">11 episodes since Aug 30</div></div>' +
+      '</div>' +
+      '<div class="ph-card ph-trial"><b>Rabbit trial</b> ended Oct 20 · you said better <span class="dm">›</span></div>';
+    return '<div class="ph-home">' +
+      '<div class="ph-bar"><span class="pet"><i class="avatar"></i>' + pet + ' <small>▾</small></span><span class="date">Fri, Oct 23</span><span class="ask"><i></i>Ask</span><span class="me">D</span></div>' +
+      signal +
+      '<div class="ph-card"><div class="ph-label">Today</div>' +
+        '<div class="look-q">How does ' + pet + ' seem today?</div>' +
+        '<div class="look-chips">' + CAT_CHIPS.slice(0, 6).map(function (c) { return '<span>' + c + '</span>'; }).join('') + '<span class="more">More…</span></div>' +
+        doorHTML(o.door, pet) +
+        count +
+        spineHTML(Object.assign({ pet: pet }, o)) +
+        (o.margin ? marginComposer(pet) : '') +
+      '</div>' +
+    '</div>';
+  }
+  function fanHTML(pet) {
+    return '<div class="ph-fan" role="menu" aria-label="Log for ' + pet + '">' +
+      '<div class="fp logfor"><i class="avatar"></i><span class="lf"><small>Logging for</small><b>' + pet + '</b></span></div>' +
+      '<div class="fp new"><span class="g">' + SVG.note + '</span><span>Note</span></div>' +
+      '<div class="fp"><span class="g">' + SVG.plusq + '</span><span>More events</span></div>' +
+      '<div class="fp"><span class="g sym">' + SVG.stool + '</span><span>Stool</span></div>' +
+      '<div class="fp"><span class="g sym">' + SVG.vomit + '</span><span>Vomit</span></div>' +
+      '<div class="fp"><span class="g meal">' + SVG.meal + '</span><span>Royal Canin · Selected Protein PR</span></div>' +
+    '</div>';
+  }
+  function phoneHTML(o) {
+    return homeHTML(o) +
+      '<div class="ph-tabs"><b>Home</b><span>History</span><span>Foods</span><span>' + (o.pet || 'Nyx') + '</span></div>' +
+      '<div class="ph-veil"></div>' +
+      '<button type="button" class="ph-disc" aria-label="Log">' + SVG.plus + '</button>' +
+      fanHTML(o.pet || 'Nyx') +
+      '<div class="cs' + (o.kbdDown ? ' kbd-down' : '') + (o.hasText ? ' has-text' : '') + '">' + (o.sheet || '') + '</div>' +
+      '<div class="askscr">' + (o.ask || '') + '</div>';
+  }
+
+  // ── The sheet ───────────────────────────────────────────────────────
+  function kbdHTML() {
+    var row = function (n, extra) { var s = ''; for (var i = 0; i < n; i++) s += '<i></i>'; return '<div class="r">' + (extra || '') + s + '</div>'; };
+    return '<div class="cs-kbd" aria-hidden="true">' + row(10) + row(9) + '<div class="r"><i class="d"></i>' + '<i></i><i></i><i></i><i></i><i></i><i></i><i></i>' + '<i class="d"></i></div>' +
+      '<div class="r"><i class="d"></i><i class="d"></i><i class="sp"></i><i class="d"></i><i class="mic">' + SVG.mic + '</i></div>' +
+      '<div class="foot"><span>☺</span><span class="mick">' + SVG.mic.replace('width="2"', 'width="2.2"') + ' the OS mic key</span></div></div>';
+  }
+  function headHTML(pet) { return '<div class="grab"></div><div class="cs-head"><b>' + pet + '’s record</b><span class="x">×</span></div>'; }
+  function fieldHTML(text, pet) {
+    return '<div class="cs-field">' + (text ? '<span class="live">' + text + '</span><span class="caret"></span>' : '<span class="phd">Anything about ' + pet + ' today?</span><span class="caret"></span>') + '</div>' +
+      '<div class="cs-disclose">Kept as you write it. Anything that fits ' + pet + '’s record I’ll offer; you decide what goes in.</div>' +
+      '<div class="cs-verbs dock"><span class="verb ask"><i></i>Ask</span><span class="verb save">Save note</span></div>';
+  }
+  function noteHTML(text, time, pet, mark) {
+    var t = text;
+    if (mark) t = t.replace(mark, '<mark>' + mark + '</mark>');
+    return '<div class="cs-note"><div class="meta">Note · ' + time + '</div><div class="txt">' + t + '</div></div>';
+  }
+  function statusHTML(kind, text, door) {
+    var tick = kind === 'live' ? '<span class="tick"></span>' : '';
+    return '<div class="cs-status">' + tick + '<span class="line">' + text + '</span>' + (door ? '<span class="door">' + door + ' ›</span>' : '') + '</div>';
+  }
+  function chipsHTML(c) {
+    var out = '<div class="chips">';
+    if (c.q) out += '<span class="qlbl">' + c.q + '</span>';
+    c.opts.forEach(function (o) {
+      var cls = 'chip' + (c.on === o ? ' on' : '') + ((c.prop || []).indexOf(o) >= 0 ? ' prop' : '');
+      out += '<span class="' + cls + '">' + o + '</span>';
+    });
+    return out + '</div>';
+  }
+  function cardHTML(c) {
+    var h = '<div class="card ' + c.tone + '">' +
+      '<div class="hd">' + c.type + ' <span class="pet' + (c.petQ ? ' q' : '') + '">— ' + (c.petQ ? 'which ' + c.petQ + '?' : c.pet) + '</span></div>';
+    (c.rows || []).forEach(function (r) {
+      h += '<div class="row"><span class="lbl">' + r.lbl + '</span><span class="val' + (r.inf ? ' inf' : '') + '">' + r.val + (r.tag ? '<span class="tag">' + r.tag + '</span>' : '') + '</span></div>';
+    });
+    (c.chips || []).forEach(function (ch) { h += chipsHTML(ch); });
+    h += '<div class="pillrow' + (c.blocked ? ' blocked' : '') + '"><span>' + (c.blocked ? c.blocked : c.pill) + '</span><span class="logit">' + (c.blocked ? 'Answer' : 'Log it') + '</span></div>';
+    h += '<div class="just">Just the note</div></div>';
+    return h;
+  }
+    function barHTML(n, open, blocker) {
+    if (n < 2) return '';
+    var left = open ? (n - open) + ' ready · ' + open + (open === 1 ? ' needs an answer' : ' need an answer') : n + ' ready · one tap writes them all';
+    return '<div class="cs-bar' + (blocker ? ' blocked' : '') + '"><span>' + left + '</span><span class="go">' + (blocker ? blocker : 'Log all ' + n) + '</span></div>';
+  }
+  function stackHTML(cards, arrive) {
+    var blocker = null, open = 0;
+    cards.forEach(function (c) { if (c.blocked) { open++; if (!blocker) blocker = c.blocked.replace(/ to log it$/, ''); } });
+    return '<div class="cs-stack' + (arrive ? ' arrive' : '') + '">' + cards.map(cardHTML).join('') + '</div>' + barHTML(cards.length, open, blocker);
+  }
+  function crisisHTML(loud) {
+    var h = '<div class="crisis' + (loud ? ' loud' : '') + '">' +
+      '<div class="h">Three vomits since noon and not drinking is a call to your vet today.</div>' +
+      '<div class="s">Your note is saved and can wait.</div>';
+    if (loud) h += '<div class="call">Call Riverside Vet · (555) 014-2200</div><div class="door"><span>Nearest emergency clinic</span><span class="dm">›</span></div>';
+    else h += '<div class="door"><span>Call your vet</span><span class="dm">›</span></div>';
+    return h + '</div>';
+  }
+  function beatHTML(removed) {
+    return '<div class="beat arrive"><div class="hr">' + (removed ? '' : '<span class="tk">' + SVG.check + '</span>') + '<span class="tt"><b>' + (removed ? '3 removed from Nyx’s record' : 'Cough · around 7:00 AM, and 2 more') + '</b><span>' + (removed ? 'Your note is still saved' : 'Saved to Nyx’s record') + '</span></span><span class="acts">' + (removed ? '' : 'Undo') + '</span></div></div>';
+  }
+  function layerHTML() {
+    return '<div class="layer in"><div class="lh">Change time<span>Done</span></div><div class="wheel"><div><span>6</span><b>7</b><span>8</span></div><div><span>59</span><b>00</b><span>01</span></div><div><span>&nbsp;</span><b>AM</b><span>PM</span></div></div><div class="hint">From “around 7” in your note · estimated</div></div>';
+  }
+  function askHTML(q, answer, receipt, thinking) {
+    return '<div class="bar"><span class="back">‹ Home</span><span>Ask · Nyx</span></div>' +
+      '<div class="q"><small>You asked</small>' + q + '</div>' +
+      (thinking ? '<div class="cs-status"><span class="tick"></span><span>Reading Nyx’s record</span></div>'
+                : '<div class="ans arrive"><p>' + answer + '</p><div class="rc">' + receipt + '</div></div>') +
+      '<div class="fieldrow">Ask about Nyx…</div>';
+  }
+
+  // ── The hero's sentence and its three cards ─────────────────────────
+  var HERO_TEXT = 'Coughed a few times around 7, threw up right after breakfast, and she wouldn’t touch her wet food at 4.';
+  var HERO_TIME = '4:12 PM';
+  function heroCards(answered) {
+    return [
+      { tone: 'sym', type: 'Cough', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 7:00 AM', tag: 'estimated' }], pill: 'Cough · around 7:00 AM' },
+      { tone: 'sym', type: 'Vomit', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Between 7:10 AM and 4:12 PM', inf: true, tag: 'breakfast to this note' }], pill: 'Vomit · between 7:10 AM and 4:12 PM' },
+      answered
+        ? { tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ opts: ['Royal Canin Selected Protein PR · Wet'], on: 'Royal Canin Selected Protein PR · Wet' }, { q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'], on: 'Refused' }], pill: 'Meal · refused · around 4:00 PM' }
+        : { tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ q: 'Which food?', opts: ['Royal Canin PR · Wet', 'Blue Buffalo purée', 'Not sure'] }, { q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'] }], blocked: 'Answer which food and how much to log it' }
+    ];
+  }
+
+  // ── Beats ───────────────────────────────────────────────────────────
+  var hero = document.getElementById('hero');
+  var heroCap = document.getElementById('hero-cap');
+  var beatnote = document.getElementById('beatnote');
+  var timers = [];
+  function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
+  function clear() { timers.forEach(clearTimeout); timers = []; }
+  function setHero(o) {
+    hero.className = 'ph' + (o.open ? ' open' : '') + (o.fan ? ' fanopen' : '') + (o.ask ? ' askmode' : '');
+    hero.innerHTML = phoneHTML(o);
+  }
+  function sheet(parts) { return headHTML('Nyx') + '<div class="cs-body">' + parts.join('') + '</div>'; }
+  var savedLine = 'Saved to Nyx’s record';
+
+  var BEATS = [
+    { k: 'home', label: 'Home', cap: 'Home. The Today card carries the door; the fan carries the Note pill.', note: '<b>Home.</b> Nothing moves at the 7am open. The door is a 64pt row with the one › and no other glyph, never a field: Home carries no form (C-33).',
+      run: function () { setHero({ door: 'row' }); } },
+    { k: 'fan', label: 'The fan', cap: 'The fan, with a Note pill farthest from the disc: a jot is the least frequent 2am act.', note: '<b>The fan.</b> The Note pill hands its veil to the sheet as More events does. The disc’s glyph does not change.',
+      run: function () { setHero({ door: 'row', fan: true }); } },
+    { k: 'door', label: 'Door opens', cap: 'The sheet rises with the keyboard, in one transaction. Three lines, the placeholder, the OS mic key.', note: '<b>Door opens.</b> 370ms, FOLD_MOTION.openMs, a clamped spring to the keyboard-up height read from the keyboard’s frame: a rise, never a rise then a shove. Haptic: <code>openMenu</code> on the Today door.',
+      run: function () { setHero({ door: 'row', sheet: sheet([fieldHTML('', 'Nyx'), kbdHTML()]) }); requestAnimationFrame(function () { hero.classList.add('open'); }); } },
+    { k: 'typing', label: 'Typed', cap: 'Her words, as typed. Save note and Ask crossfade in once, on the first character, and stay.', note: '<b>Typed.</b> Growth is instant: a keystroke outruns any curve. The verbs take 150ms, once. The field grows to six lines, then scrolls inside; the verbs stay docked above the keyboard.',
+      run: function () {
+        setHero({ door: 'row', open: true, sheet: sheet([fieldHTML('', 'Nyx'), kbdHTML()]) });
+        var live = hero.querySelector('.cs-field');
+        var cs = hero.querySelector('.cs');
+        if (reduced()) { live.innerHTML = '<span class="live">' + HERO_TEXT + '</span><span class="caret"></span>'; cs.classList.add('has-text'); return; }
+        var i = 0; live.innerHTML = '<span class="live"></span><span class="caret"></span>';
+        var span = live.querySelector('.live');
+        var step = function () { i += 3; span.textContent = HERO_TEXT.slice(0, i); if (i === 3) cs.classList.add('has-text'); if (i < HERO_TEXT.length) timers.push(setTimeout(step, 22)); };
+        step();
+      } },
+    { k: 'save', label: 'Save', cap: 'The note is written in the tap. The rail draws, the keyboard leaves, "Saved to Nyx’s record" lands. Then the tick starts.', note: '<b>Save.</b> Chrome 150 · rail 160 (railLeadMs: the line leads, a rail is what a record has) · sentence +40 over 300. Haptic <code>commitNote</code>, new, one soft impact, the calm tone (CUL-1632). The tick starts with the request, in the Save tap’s frame (Tick.tsx: working is the request’s fact); at 1.5s the line swaps to "Reading your note".',
+      run: function () {
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet(['<div class="cs-note arrive"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + HERO_TEXT + '</div></div>', statusHTML('live', savedLine)]) });
+        later(1500, function () { var l = hero.querySelector('.cs-status .line'); if (l) { l.textContent = 'Reading your note'; l.classList.add('fade-in'); } });
+      } },
+    { k: 'reading', label: 'The wait', cap: 'The tick breathes where row 1’s rail will begin. At 5s the line says what the time means.', note: '<b>The wait.</b> TICK_BREATH 1400ms to 0.35, the one loop. The line swaps in place at 0 / 1.5s / 5s: "Still reading · the note is saved, you can close this". A counter is a second loop and a false precision. Closing keeps the note and abandons the parse.',
+      run: function () {
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('live', 'Reading your note')]) });
+        later(5000, function () { var l = hero.querySelector('.cs-status .line'); if (l) { l.textContent = 'Still reading · the note is saved, you can close this'; l.classList.add('fade-in'); } });
+      } },
+    { k: 'proposals', label: 'Proposals arrive', cap: 'Three facts, three cards, in the order she wrote them. Black is hers; grey was inferred; the third card asks one question as chips.', note: '<b>Proposals arrive.</b> The tick grows into row 1’s rail (160); one box opens (370); sentences land top to bottom (+40 over 300), staggered 28ms (dotStaggerMs). Jot order, never confidence. No haptic: a proposal is a question. The commit bar names the blocker instead of greying out (C-7).',
+      run: function () {
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(heroCards(false), true)]) });
+      } },
+    { k: 'question', label: 'A question, answered', cap: 'She taps Royal Canin PR · Wet, then Refused: the intake tap is the rating, as in the meal sheet. The food chips crossfade to one; the card’s pill and the bar unblock.', note: '<b>A question.</b> The question was the row’s field, drawn as chips in the value’s slot; nothing arrived later. 150ms crossfade; a slide would reflow siblings. Haptic <code>selectChip</code>. Not sure would keep the note and write nothing typed.',
+      run: function () {
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(heroCards(true), false)]) });
+        var third = hero.querySelectorAll('.card')[2]; if (third) third.classList.add('fade-in');
+      } },
+    { k: 'correct', label: 'Correct a field', cap: 'A tap on the Cough card’s time opens the time panel as a layer inside the sheet, and the phrase that produced it lights in the note.', note: '<b>Correct a field.</b> The layer rises on the sheet’s own curve (370 / 180), the TimeEditSheet split of panel and wrapper (C-14). Back: that chip alone crossfades, typed ink over inferred grey; rows are fixed-height (C-8). Never a free-text box.',
+      run: function () {
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx', 'around 7'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(heroCards(true), false)]) + layerHTML() });
+      } },
+    { k: 'commit', label: 'Commit', cap: 'Log all 3. The shipped sheet beat, calm because a symptom is in the stack; one buzz for three rows. The sheet closes; the note’s hollow ring lands on Today’s spine.', note: '<b>Commit.</b> The stack leaves (180, 8pt drift); the disc from 0.6; the check writes over 160; the sentence speaks the first record and names the rest (C-17); dwell 1800 (SHEET_BEAT_DWELL_MS). Tone by <code>commitToneOf</code> over the stack: calm if any symptom, never gold. Undo armed. The note joins no count.',
+      run: function () {
+        setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), '<div class="cs-stack leave">' + heroCards(true).map(cardHTML).join('') + '</div>']) });
+        later(180, function () { var st = hero.querySelector('.cs-stack'); if (st) st.outerHTML = beatHTML(false); });
+        later(2200, function () { setHero({ door: 'row', committed: true }); heroCap.textContent = 'Home after the commit: three rows in time order (a window sorts at its latest edge) and the note’s hollow ring, uncounted. The ring is provisional: its node kind and legend follow the note-home brief.'; });
+      } },
+    { k: 'undo', label: 'Undo', cap: 'Undo unwrites the check. "Removed · your note is still saved." The stack does not return.', note: '<b>Undo.</b> 180ms unwrite; the line holds 2400 (REMOVED_DURATION_MS). A reversal snaps, never re-proposes: the owner can read the note and log by hand. Haptic <code>destructiveConfirm</code> (C-21).',
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', savedLine), beatHTML(true)]) }); } },
+    { k: 'failed', label: 'Nothing fits', cap: 'Sentence 4. No leaf fits an ear: the note stays, the tick leaves, one line says so, and the by-hand door is beneath. No toast.', note: '<b>Failed parse.</b> The tick leaves (150); nothing still is ever drawn in its place; the line: "Saved as you wrote it. Nothing in it I could offer for Nyx’s record." Nothing is ever proposed as Other. No haptic: the save buzzed; a failure is read, not felt.',
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML('Shaking her head again and tipping the left ear down, like before the ear infection.', '9:40 PM', 'Nyx'), statusHTML('none', 'Saved as you wrote it. Nothing in it I could offer for Nyx’s record.'), '<div class="after"><span class="door" style="margin:0;padding:0;border:0;min-height:0;color:var(--app-action);font-weight:600">Log something by hand ›</span></div>']) }); } },
+    { k: 'offline', label: 'Offline', cap: 'No connection: the tick never starts. The note is saved, and the line says it will not be read later.', note: '<b>Offline.</b> No tick, no queue: nothing lands where the owner is not looking. "Saved as you wrote it. Reading it needs a connection, and it won’t be read later." The by-hand door dismisses this sheet first.',
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Saved as you wrote it. Reading it needs a connection, and it won’t be read later.', 'Log it by hand')]) }); } },
+    { k: 'consent', label: 'AI reading off', cap: 'Consent declined: the note saves, nothing is sent, the line says where the switch is.', note: '<b>Consent off.</b> The first Save ever shows the consent sheet as a layer; "What’s sent" names typed notes. Declined, the composer is a notebook: "Saved as you wrote it. Reading notes is off in Settings; Nyx’s record is all here." No meter, no lock on the note path.',
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Saved as you wrote it. Reading notes is off in Settings; Nyx’s record is all here.', 'Log it by hand')]) }); } },
+    { k: 'capped', label: 'Capped', cap: 'The cap is reached: the same line with a different sentence. The note saves at the cap.', note: '<b>Capped.</b> The shipped analyze-* pattern: an <code>ai_usage</code> window. "Saved as you wrote it. Reading is used up until Oct 27." The note, every proposal’s tap and by-hand logging are free forever (Pets > $).',
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', 'Saved as you wrote it. Reading is used up until Oct 27.', 'Log it by hand')]) }); } },
+    { k: 'crisis', label: 'Crisis sentence', cap: 'Sentence 9. The deterministic gate fires at Save, before any model. The deflection arrives where the stack would, on the rose rail, plain, with one door.', note: '<b>Crisis.</b> 160 · 370 · 300, not one millisecond harder. No proposals, no wait, no change of height or ground. <code>commitNote</code> withheld; no haptic. Plainness is the severity signal; the three vomit rows wait behind the floor until after the call.',
+      run: function () { setHero({ door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack arrive">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }); } },
+    { k: 'ask', label: 'Ask', cap: 'Sentence 8, routed by the owner’s verb. The sheet exits carrying the words; /ask answers from the record, out of the tick, with a rail.', note: '<b>Ask.</b> The sheet exits (180) to the ask store; /ask pushes with the words; thinking is the tick and the card’s skeleton; the answer arrives with a rail. No haptic at the verb or on arrival: the rail is the mark, and the arrive gesture ships silent on every verdict (team default, vetoable). The Whorl retires for the tick (CUL-1593).',
+      run: function () {
+        setHero({ door: 'row', ask: askHTML('Did I already log her pred this morning?', '', '', true) });
+        later(1400, function () { var a = hero.querySelector('.askscr'); if (a) a.innerHTML = askHTML('Did I already log her pred this morning?', 'No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.', 'From Nyx’s logged rows · Ask', false); });
+      } }
+  ];
+  var beatsEl = document.getElementById('beats');
+  BEATS.forEach(function (b, i) {
+    var btn = document.createElement('button'); btn.type = 'button'; btn.textContent = b.label; btn.dataset.beat = b.k;
+    btn.addEventListener('click', function () {
+      clear();
+      beatsEl.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); }); btn.classList.add('on');
+      heroCap.textContent = b.cap; beatnote.innerHTML = b.note;
+      b.run();
+    });
+    beatsEl.appendChild(btn);
+  });
+  BEATS[0].run();
+
+  // ── Frames ──────────────────────────────────────────────────────────
+  function frame(container, ph, cap, cls) {
+    var f = document.createElement('div'); f.className = 'frame' + (cls ? ' ' + cls : '');
+    var p = document.createElement('div'); p.className = 'ph' + (ph.open ? ' open' : '') + (ph.fan ? ' fanopen' : '') + (ph.ask ? ' askmode' : '');
+    p.innerHTML = phoneHTML(ph);
+    var c = document.createElement('div'); c.className = 'frame-cap'; c.innerHTML = cap;
+    f.appendChild(p); f.appendChild(c); container.appendChild(f);
+  }
+  function sheetFor(pet, parts) { return headHTML(pet) + '<div class="cs-body">' + parts.join('') + '</div>'; }
+
+  // §02 Directions
+  var dirs = document.getElementById('dir-frames');
+  frame(dirs, { door: 'none', fan: true }, '<b>A · The Note tile <span class="pill dir">direction</span></b><span>A Note pill in the fan; nothing on Home. The composer is a fourth family inside the log sheet, and the proposals are its confirm stage. For Jordan at 9:20pm on the sofa. Ask stays where it is.</span>');
+  frame(dirs, { door: 'none', open: true, kbdDown: true, sheet: '<div class="grab"></div><div class="cs-head"><b>Log for Nyx</b><span class="x">×</span></div><div class="cs-body"><div class="tile wide new"><span class="g quiet">' + SVG.note + '</span><span>Note<br><small>in your words</small></span><span class="chips"><span>Tell</span></span></div><div class="fam">Digestion</div><div class="grid"><div class="tile"><span class="g">' + SVG.vomit + '</span>Vomit</div><div class="tile"><span class="g">' + SVG.stool + '</span>Stool</div></div><div class="fam">Respiratory</div><div class="grid"><div class="tile"><span class="g">' + SVG.plusq + '</span>Cough</div><div class="tile"><span class="g">' + SVG.plusq + '</span>Sneeze</div></div><div class="fam">Energy &amp; behaviour · Food &amp; care · Skin &amp; coat · Measurements</div><div class="grid"><div class="tile"><span class="g quiet">' + SVG.dots + '</span>More…</div></div></div>' }, '<b>A · The Note tile, its composer <span class="pill dir">direction</span></b><span>Inside the shipped log sheet, a Note tile above the families; the tap swaps the grid for §01’s composer (not drawn a second time here) and the proposals are the sheet’s confirm stage. One sheet carries two stage machines (C-30), and Ask stays in the header.</span>');
+  frame(dirs, { door: 'row' }, '<b>B · Tell the record <span class="pill cur">current</span></b><span>The composer is the record’s present tense, reachable from where the owner stands: a door on Today, the fan’s Note pill and the header’s Ask pill open one sheet, a sibling of the log sheet. For all three owners; Jordan at 2am still taps chips.</span>');
+  frame(dirs, { door: 'none', margin: true }, '<b>C · The day’s margin <span class="pill dir">direction</span></b><span>"+ Note" at the foot of Today’s spine; the note is written on the day itself and the proposals land as provisional hollow nodes, tap to fill, ignore to drop. For Sam and the 9pm note-taker. Home gains a form, and History v2 a provisional state.</span>');
+
+  // §03 The ten sentences, and Sam's
+  var SENT = [
+    { n: 1, type: 'Vomit', text: 'Threw up again right after breakfast, mostly the dry food. Slow feeder didn’t help this time.', time: '8:02 AM',
+      cards: [{ tone: 'sym', type: 'Vomit', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Between 7:10 AM and 8:02 AM', inf: true, tag: 'breakfast to this note' }], pill: 'Vomit · between 7:10 AM and 8:02 AM' }],
+      offers: 'One vomit, after the breakfast row already in her record; the sentence kept whole as the note.', never: 'A severity; "witnessed"; a count from "again"; the dry food as a cause.' },
+    { n: 2, type: 'Cough', text: 'She coughed a few times this morning around 7, that same dry hacking thing.', time: '7:31 AM',
+      cards: [{ tone: 'sym', type: 'Cough', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 7:00 AM', tag: 'estimated' }], pill: 'Cough · around 7:00 AM' }],
+      offers: 'One cough row, the time from her words in black, estimated.', never: 'Several rows from "a few"; an invented count.' },
+    { n: 3, type: 'Dose', text: 'Gave her the pred in her wet food at 8, pretty sure she ate most of it.', time: '8:14 AM',
+      cards: [{ tone: 'med', type: 'Dose', pet: 'Nyx', rows: [{ lbl: 'When', val: 'Around 8:00 AM', tag: 'estimated' }], chips: [{ q: 'Which course?', opts: ['Prednisolone, ended Oct 11', 'Not sure'] }, { q: 'Taken?', opts: ['Given', 'Partial'] }], blocked: 'Answer which course and whether it was taken to log it' }],
+      offers: 'A dose with two open fields: the course (hers ended Oct 11; a jot never creates one) and given or partial, nothing pre-picked.', never: 'Picking given or partial for her; attaching to an ended course unasked; minting a course.' },
+    { n: 4, type: 'Nothing fits', text: 'Shaking her head again and tipping the left ear down, like before the ear infection.', time: '9:40 PM', none: true,
+      offers: 'No leaf fits an ear. The note is kept; the line says so; the by-hand door is beneath. A "Save for the vet" chip is worth drawing in round 2, not ruled.', never: 'Proposing Other; inventing an ear symptom; a look word not in the cat set.' },
+    { n: 5, type: 'Noticed + a meal', text: 'Hid under the bed most of the afternoon and skipped her 4pm wet food.', time: '5:20 PM',
+      cards: [{ tone: 'look', type: 'Noticed', pet: 'Nyx', rows: [], chips: [{ opts: CAT_CHIPS, prop: ['Hiding'] }], pill: 'Noticed · Hiding' },
+              { tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'Food', val: 'Royal Canin Selected Protein PR · Wet', inf: true }, { lbl: 'When', val: 'Around 4:00 PM', tag: 'estimated' }], chips: [{ q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'] }], blocked: 'Tap how much she ate to log it' }],
+      offers: 'Two cards: the Noticed chip "Hiding", hairline, from the frozen cat set, in its usual place; and a Didn’t-eat card through the intake-first meal path.', never: '"Skipped" as a look word (T-3); "picky"; reordered chips.' },
+    { n: 6, type: 'Meal', text: 'Tried the Blue Buffalo chicken purée tonight, first chicken since the trial ended, she licked the bowl clean.', time: '7:48 PM',
+      cards: [{ tone: 'meal', type: 'Meal', pet: 'Nyx', rows: [{ lbl: 'Food', val: 'Blue Buffalo Tastefuls Purées with Chicken', tag: 'from her foods' }, { lbl: 'When', val: 'Between 5:00 PM and 7:48 PM', inf: true, tag: 'tonight' }], chips: [{ q: 'How much?', opts: ['Refused', 'Picked', 'Some', 'Most', 'All'] }], blocked: 'Tap how much she ate to log it' }],
+      offers: 'A meal of a food already in her library; "All" offered from her words, not set.', never: 'Setting the rating itself; "safe" or "cleared" about the trial; adding chicken to anything.' },
+    { n: 7, type: 'Nothing fits', text: 'No vomiting today, first clean day since Tuesday.', time: '9:05 PM', none: true,
+      offers: 'Nothing proposed. The note is saved and the line says so plainly.', never: 'A vomit (the negation trap); a logged zero; a word about wellness.' },
+    { n: 8, type: 'A question', text: 'Did I already log her pred this morning?', time: '8:09 AM', question: true,
+      offers: 'Zero proposals on the Save path. "That reads like a question. Ask it?" with the Ask verb beside it; the owner still routes.', never: 'A dose; a free-text answer on the Save path.' },
+    { n: 9, type: 'Crisis', text: 'She’s thrown up three times since noon and won’t touch water.', time: '1:58 AM', crisis: true,
+      offers: 'The deterministic gate fires before any model. The deflection, plain, with the call door; the note is saved; the rows wait behind the floor.', never: 'The model first; a quiet proposal; a softer line; a withheld save.' },
+    { n: 10, type: 'Which pet', text: 'Cooper ate the rest of Nyx’s rabbit treats off the counter.', time: '6:31 PM',
+      cards: [{ tone: 'meal', type: 'Treat', petQ: 'pet', rows: [{ lbl: 'Food', val: 'Rayne Rewards S.I.T. · Treat', inf: true }, { lbl: 'When', val: 'Found by 6:31 PM', inf: true, tag: 'approximate' }], chips: [{ q: 'Which pet?', opts: ['Cooper', 'Nyx', 'Not sure'] }], blocked: 'Answer which pet to log it' }],
+      offers: 'The sentence names two pets, so the card asks. Cooper: a treat on Cooper. Not sure: the note holds and nothing typed is written.', never: 'A row on the active pet; a row on both. Stands on CUL-807, unbuilt.' }
+  ];
+  var sents = document.getElementById('sent-frames');
+  SENT.forEach(function (s) {
+    var parts = [noteHTML(s.text, s.time, 'Nyx')];
+    if (s.none) parts.push(statusHTML('none', 'Saved as you wrote it. Nothing in it I could offer for Nyx’s record.'), '<div class="after"><span style="color:var(--app-action);font-weight:600">Log something by hand ›</span></div>');
+    else if (s.question) parts.push(statusHTML('none', 'That reads like a question. Ask it?'), '<div class="cs-verbs cs-after"><span class="verb ask"><i></i>Ask</span></div>');
+    else if (s.crisis) parts.push(statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>');
+    else parts.push(statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML(s.cards, false));
+    frame(sents, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', parts) },
+      '<b>' + s.n + ' · ' + s.type + '</b><span class="sent">“' + s.text + '”</span><span>' + s.offers + '</span><span><b style="font-size:12px;color:var(--rose-ink)">Never</b> ' + s.never + '</span>');
+  });
+  // Sam's frame: Pixel and Juniper
+  frame(sents, { door: 'row', open: true, kbdDown: true, pet: 'Pixel', sheet: sheetFor('Pixel', [noteHTML('One of them was sick on the stairs, pretty sure Pixel.', '9:14 PM', 'Pixel'), statusHTML('none', 'Read from your note by AI · logged only when you tap'), stackHTML([{ tone: 'sym', type: 'Vomit', petQ: 'cat', rows: [{ lbl: 'When', val: 'Found by 9:14 PM', inf: true, tag: 'approximate' }], chips: [{ q: 'Which cat?', opts: ['Pixel', 'Juniper', 'Not sure'] }], blocked: 'Answer which cat to log it' }], false)]) },
+    '<b>Sam · Which cat</b><span class="sent">“One of them was sick on the stairs, pretty sure Pixel.”</span><span>Dictated at 9pm with two cats in the house. "Was sick on the stairs" is a found incident, so the time is a window ending now; "pretty sure" is not sure enough to pre-pick, so the card asks. Not sure saves the note and writes nothing typed.</span><span><b style="font-size:12px;color:var(--rose-ink)">Never</b> The proposal sliding to the active cat; a misheard name landing unseen (the words are on screen before Save).</span>');
+
+  // §04 The decisions
+  var doors = document.getElementById('door-frames');
+  frame(doors, { door: 'row' }, '<b>(a) A door row <span class="pill cur">current</span></b><span>64pt, the one › and no other glyph, two lines: "Tell Nyx’s record · a note, a food, a dose, in your words". Its first frame is true: a tap opens a sheet.</span>', 'option');
+  frame(doors, { door: 'box' }, '<b>(b) A field-shaped box <span class="pill open">still open</span></b><span>The roomy promise on Home: a 79pt box with the placeholder and a second line. Its tap still raises a sheet, so the field is a picture of a field (C-33).</span>', 'option');
+  frame(doors, { door: 'none' }, '<b>(c) The fan only <span class="pill open">still open</span></b><span>Nothing on Home. The Note pill in the fan is the only door; Today stays exactly as shipped.</span>', 'option');
+
+  var asks = document.getElementById('ask-frames');
+  frame(asks, { door: 'row', ask: askHTML('Did I already log her pred this morning?', 'No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.', 'From Nyx’s logged rows · Ask', false) }, '<b>(a) Hand off to /ask <span class="pill cur">current</span></b><span>The sheet exits carrying the words and the built screen answers, out of the tick, with a rail. One screen holds Ask’s rules; the Whorl retires for the tick.</span>', 'option');
+  frame(asks, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('Did I already log her pred this morning?', '8:09 AM', 'Nyx'), statusHTML('none', 'Asked · from Nyx’s logged rows'), '<div class="cs-stack arrive"><div class="askscr" style="position:static;display:block;padding:0;background:none"><div class="ans"><p>No dose is logged for today. The last Prednisolone dose in Nyx’s record is Oct 11, 8:05 AM, given in food.</p><div class="rc">From Nyx’s logged rows · Ask</div></div></div></div>', '<div class="cs-verbs cs-after" style="margin-top:auto;margin-bottom:30px"><span class="verb ask"><i></i>Ask another</span><span class="verb save">Save as a note</span></div>']) }, '<b>(b) The sheet answers <span class="pill open">still open</span></b><span>One surface for telling and asking: the answer lands under the question, in the sheet. A second place Ask’s rules must hold (D5, D8), and a composer that is sometimes a chat.</span>', 'option');
+
+  var crises = document.getElementById('crisis-frames');
+  frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }, '<b>(a) The same physics, plain <span class="pill cur">current</span></b><span>The safety card’s register (S1): it lands where the stack would, above everything, on the rose rail, with one door and the save’s buzz withheld. Louder teaches that quiet means fine.</span>', 'option');
+  frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(true) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }, '<b>(b) A distinct register <span class="pill open">still open</span></b><span>Dr. Chen’s 2am: the night ground, the clinic’s number ready to dial, a second door to the nearest emergency clinic, a warning haptic. Louder, and a second register the app would have to keep honest everywhere else.</span>', 'option');
+
+  // ── §08 Turning the intelligence up ──────────────────────────────────
+  var LIT = [
+    { t: 'Coughed', c: 'sym' }, { t: 'around 7', c: 'time' }, { t: 'threw up', c: 'sym' }, { t: 'right after breakfast', c: 'time' },
+    { t: 'wouldn’t touch', c: 'meal' }, { t: 'her wet food', c: 'meal' }, { t: 'at 4', c: 'time' }
+  ];
+  function litHTML(text, upto) {
+    // Wrap each phrase whose end has been typed (upto = characters typed so far; -1 = all).
+    var out = '', i = 0;
+    LIT.forEach(function (ph) {
+      var k = text.indexOf(ph.t, i); if (k < 0) return;
+      var end = k + ph.t.length;
+      out += text.slice(i, k);
+      if (upto < 0 || end <= upto) out += '<span class="lit ' + ph.c + '">' + ph.t + '</span>'; else out += text.slice(k, Math.min(end, text.length));
+      i = end;
+    });
+    return out + text.slice(i);
+  }
+  function countLine(upto) {
+    var facts = 0, q = 0;
+    [['Coughed', 1, 0], ['threw up', 1, 0], ['her wet food', 1, 1]].forEach(function (x) { var e = HERO_TEXT.indexOf(x[0]) + x[0].length; if (upto < 0 || e <= upto) { facts += x[1]; q += x[2]; } });
+    if (!facts) return '<div class="cs-count"></div>';
+    return '<div class="cs-count"><b>' + facts + '</b> I can log' + (q ? ' · <b>' + q + '</b> question' : '') + '</div>';
+  }
+  function litFieldHTML(upto, pet) {
+    var shown = upto < 0 ? HERO_TEXT : HERO_TEXT.slice(0, upto);
+    return '<div class="cs-field"><span class="live">' + litHTML(shown, upto) + '</span><span class="caret"></span></div>' + countLine(upto) +
+      '<div class="cs-disclose">Understood on your phone as you type. Nothing is sent until you save.</div>' +
+      '<div class="cs-verbs dock' + (upto === 0 ? '' : '') + '"><span class="verb ask"><i></i>Ask</span><span class="verb save">Save note</span></div>';
+  }
+  var VOICE = 'I read three things: a cough around 7, a vomit some time after breakfast, and that she refused her wet food at 4. One question before I log the meal.';
+  function voiceHTML(text, signed, cursor) {
+    return '<div class="voice"><div class="say">' + text + (cursor ? '<span class="cur"></span>' : '') + '</div><div class="sig">' + (signed ? 'Culprit · read by AI · logged only when you tap' : 'Read by AI · logged only when you tap') + '</div></div>';
+  }
+  function compactCards() {
+    return '<div class="card sym compact"><div class="pillrow"><span>Cough · around 7:00 AM</span><span class="logit">Log it</span></div></div>' +
+      '<div class="card sym compact"><div class="pillrow"><span>Vomit · between 7:10 AM and 4:12 PM</span><span class="logit">Log it</span></div></div>' +
+      cardHTML(heroCards(false)[2]);
+  }
+  function offerHTML() {
+    return '<div class="offer"><div class="h">That is her third vomit within an hour of a meal since Sep 21.</div><div class="s">Counted from the rows you logged; it says nothing about why.</div><div class="doors"><span>Put it on the next vet report ›</span><span class="quiet">Not now</span></div></div>';
+  }
+  var fwd = document.getElementById('fwd-frames');
+  // F1 · R1 understands as you type (live)
+  frame(fwd, { door: 'row', open: true, hasText: true, sheet: sheet([litFieldHTML(-1, 'Nyx'), kbdHTML()]) },
+    '<b>R1 · It understands as you type <span class="pill open">drawn for the decision</span></b><span>As she types, the phrases the phone can place light in the record’s inks: symptoms, times, her foods, her pets, the look words. A count under the field says what it could log. Save shows the cards already formed, no wait; the model refines only what the lexicon could not place. Press <em>Type it</em> above to watch.</span>');
+  // F2 · R2 tells you what it read
+  frame(fwd, { door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), voiceHTML(VOICE, false, false), '<div class="cs-stack">' + compactCards() + '</div>' + barHTML(3, 1, 'Answer which food and how much')]) },
+    '<b>R2 · It tells you what it read <span class="pill open">drawn for the decision</span></b><span>One sentence in the app’s voice before the cards, in the serif the Signal speaks in: what it understood and what it still needs. The cards beneath are the compact register from brief 3. Unsigned here; signed “Culprit” in R3, for the DC-6 call.</span>');
+  // F3 · R2 after the commit
+  frame(fwd, { door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', savedLine), beatHTML(false).replace('margin-top: auto', ''), offerHTML()]) },
+    '<b>R2 · After the commit, one next step <span class="pill open">drawn for the decision</span></b><span>Once the rows are written, one offer from the record, as a door: a count across her rows, dated, with no cause and no advice (Ask’s never-lines). It is the moment the app shows it was paying attention. Dr. Chen reads the sentence before round 2.</span>');
+  // F4 · R3 you watch it work (live)
+  frame(fwd, { door: 'row', open: true, kbdDown: true, sheet: '<div class="grab"></div><div class="cs-head"><b>Nyx’s record</b><span class="agent"><i></i>Culprit · reading</span><span class="x">×</span></div><div class="cs-body">' + '<div class="cs-note"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + litHTML(HERO_TEXT, -1) + '</div></div>' + voiceHTML(VOICE, true, false) + '<div class="cs-stack">' + compactCards() + '</div>' + barHTML(3, 1, 'Answer which food and how much') + '</div>' },
+    '<b>R3 · You watch it work <span class="pill open">drawn for the decision</span></b><span>On Save the lit phrases lift out of your sentence and become the rows (the record moving, Principle 9); the read-back writes itself under a named mark. The most forward of the three, and the one that reopens two September vetoes: streamed text and a persona. Press <em>Save and watch</em> above.</span>');
+
+  // The two live beats
+  var b8 = document.getElementById('beats8');
+  function phoneOf(n) { return fwd.querySelectorAll('.ph')[n]; }
+  var t8 = [];
+  function later8(ms, fn) { t8.push(setTimeout(fn, ms)); }
+  function clear8() { t8.forEach(clearTimeout); t8 = []; }
+  function addBeat(label, fn) { var btn = document.createElement('button'); btn.type = 'button'; btn.textContent = label; btn.addEventListener('click', function () { clear8(); b8.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); }); btn.classList.add('on'); fn(); }); b8.appendChild(btn); }
+  addBeat('Type it (R1)', function () {
+    var ph = phoneOf(0); var body = ph.querySelector('.cs-body'); if (!body) return;
+    if (reduced()) { body.innerHTML = litFieldHTML(-1, 'Nyx') + kbdHTML(); return; }
+    var i = 0;
+    var step = function () { i += 3; body.innerHTML = litFieldHTML(Math.min(i, HERO_TEXT.length), 'Nyx') + kbdHTML(); if (i < HERO_TEXT.length) later8(22, step); };
+    body.innerHTML = litFieldHTML(0, 'Nyx') + kbdHTML(); later8(300, step);
+  });
+  addBeat('Save and watch (R3)', function () {
+    var ph = phoneOf(3); var body = ph.querySelector('.cs-body'); if (!body) return;
+    var rm = reduced();
+    body.innerHTML = '<div class="cs-note"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + litHTML(HERO_TEXT, -1) + '</div></div>' + voiceHTML('', true, !rm) + '<div class="cs-stack stack-hidden">' + compactCards() + '</div>' + barHTML(3, 1, 'Answer which food and how much');
+    var say = body.querySelector('.voice .say');
+    var stack = body.querySelector('.cs-stack');
+    var cards = stack.querySelectorAll('.card');
+    if (rm) { say.innerHTML = VOICE; stack.classList.remove('stack-hidden'); stack.classList.add('fade-in'); return; }
+    // the flight: each lit phrase flies to its card
+    var targets = [cards[0], cards[1], cards[2], cards[2], cards[2]];
+    var srcs = body.querySelectorAll('.cs-note .lit');
+    var phRect = ph.getBoundingClientRect();
+    var map = { 0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 2, 6: 2 };
+    srcs.forEach(function (sp, n) {
+      var card = cards[map[n]]; if (!card) return;
+      var a = sp.getBoundingClientRect(), b = card.getBoundingClientRect();
+      var clone = sp.cloneNode(true); clone.classList.add('fly');
+      clone.style.left = (a.left - phRect.left) + 'px'; clone.style.top = (a.top - phRect.top) + 'px';
+      ph.appendChild(clone);
+      var dx = (b.left + 14 - a.left), dy = (b.top + 8 - a.top);
+      clone.animate([{ transform: 'translate(0,0)', opacity: 1 }, { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0.9)', opacity: 0 }], { duration: 370, delay: 40 + n * 28, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      later8(460 + n * 28, function () { if (clone.parentNode) clone.parentNode.removeChild(clone); });
+    });
+    later8(420, function () { stack.classList.remove('stack-hidden'); stack.classList.add('arrive'); });
+    var j = 0; var stream = function () { j += 2; say.innerHTML = VOICE.slice(0, j) + (j < VOICE.length ? '<span class="cur"></span>' : ''); if (j < VOICE.length) later8(18, stream); };
+    later8(200, stream);
+  });
+})();
+</script>
