@@ -296,6 +296,35 @@
   .cs .fam { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 8px 0 2px; }
   .cs .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 
+  /* §08 Turning the intelligence up */
+  .lit { border-radius: 3px; padding: 0 1px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .lit.sym { background: var(--app-sym-wash); box-shadow: inset 0 -1.5px var(--app-sym); }
+  .lit.meal { background: var(--app-meal-wash); box-shadow: inset 0 -1.5px var(--app-meal); }
+  .lit.time { background: var(--app-subtle); box-shadow: inset 0 -1.5px var(--app-ink-3); }
+  .lit.pet { background: var(--app-action-wash); box-shadow: inset 0 -1.5px var(--app-action); }
+  .lit.pending { background: transparent; box-shadow: none; }
+  .cs-count { font-size: 11px; color: var(--app-ink-2); min-height: 18px; display: flex; gap: 6px; align-items: center; }
+  .cs-count b { color: var(--app-ink); font-weight: 600; }
+  .voice { position: relative; padding: 2px 0 2px 13px; flex-shrink: 0; }
+  .voice::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: var(--app-ink-3); }
+  .voice .say { font-family: var(--serif); font-size: 14px; line-height: 1.3; }
+  .voice .say .cur { display: inline-block; width: 1.5px; height: 13px; background: var(--app-ink); vertical-align: -2px; margin-left: 1px; }
+  .voice .sig { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin-top: 4px; }
+  .card.compact { padding: 6px 6px 6px 12px; }
+  .card.compact .pillrow { margin-top: 0; }
+  .offer { position: relative; border-radius: 16px; border: 1px solid var(--app-rule); padding: 10px 12px 8px 16px; flex-shrink: 0; margin-top: 8px; }
+  .offer::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--app-ink-3); }
+  .offer .h { font-family: var(--serif); font-size: 14.5px; line-height: 1.3; }
+  .offer .s { font-size: 11.5px; color: var(--app-ink-2); margin-top: 4px; }
+  .offer .doors { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; font-weight: 600; }
+  .offer .doors .quiet { color: var(--app-ink-2); font-weight: 500; }
+  .cs-head .agent { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--app-ink-2); margin-left: 8px; }
+  .cs-head .agent i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--app-ink-2); display: grid; place-items: center; }
+  .cs-head .agent i::after { content: ""; width: 2px; height: 7px; border-radius: 1px; background: var(--app-ink-2); }
+  .fly { position: absolute; z-index: 9; pointer-events: none; font-size: 13px; line-height: 1.45; white-space: nowrap; }
+  .stack-hidden .card { opacity: 0; }
+  .rm .lit { transition: none; }
+
   /* The ask screen (the hand-off) */
   .askscr { position: absolute; inset: 0; background: var(--app-ground); padding: 40px 14px 0; display: none; flex-direction: column; gap: 12px; z-index: 7; }
   .ph.askmode .askscr { display: flex; }
@@ -373,6 +402,7 @@
       <div><span>The sentences</span><span><q>Stub out the sentences you think I'd type based on her data.</q> Ten, from her record as it stands: the trial that ended last week, the foods since, the course that ended this month, this month's incidents, the dog on the same account. §03.</span></div>
       <div><span>The consultants</span><span><q>I want the motion designer in on this as well as a consultant.</q> Seated for the critique that follows this page: a motion designer beside Motion &amp; IA, conversational UX, dictation, accessibility, the veterinary behaviourist, Dr. Chen, Trust &amp; Safety, QA. §07.</span></div>
       <div><span>Republished after the critique</span><span>The twelve lenses read the first publish on 2026-10-23. The demo defects they confirmed are fixed here (the tick's shape, the beat's register, the hidden Ask verb, the time forms, the intake tap as the rating, the fixture errors); the design questions they raised are briefs on the issue and round 2's scope.</span></div>
+      <div><span>Your reaction</span><span><q>This doesn't seem very AI forward like some of the other examples.. what can we do on that front?</q> §08 draws three registers that turn the intelligence up on the same sentence (it understands as you type; it tells you what it read and offers a next step; you watch it work), what each touches in the rules, and the team's recommendation.</span></div>
       <div><span>How to read it</span><span>Every beat in §01 is a button; press them in order, or jump. The Reduce Motion switch is read as each beat starts. Frames are 81% of a 390 × 844 phone. <span class="pill cur">current</span> is the frame the team recommends; <span class="pill open">still open</span> is drawn for you to rule on.</span></div>
     </div>
   </header>
@@ -522,6 +552,29 @@
         <li>A question typed on the Save path yields zero proposals and the line "That reads like a question. Ask it?" with the Ask verb beside it; the owner still routes.</li>
         <li>Offline and consent-off read the same as a failed parse with a different sentence; the note saves in every state, and nothing is read later.</li>
       </ul>
+    </div>
+  </section>
+
+  <section id="forward">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Turning the intelligence up</h2></div>
+    <div class="col">
+      <p>Your reaction to the round: it does not read as AI forward the way ThePawcess's card or the Linear agent do. That is true, and it is by rule rather than by accident. September's vetoes and this page's never-drawn list struck every device those products use to feel intelligent: streamed text, a sparkle, a badge, a persona, a composer that breathes as you type, a reassurance. What was left of the AI's signature was a grey receipt line and a shade of ink, and the cards are the shipped confirm, which is a form. The invariants underneath (your words saved first, your tap the only write, nothing minted, the gate before any model) are the right ones. The expression is under-turned.</p>
+      <p>What makes the best examples feel intelligent is not decoration. They show what they understood (Fantastical lights the date as you type it; the Linear agent names the issue it read), they explain themselves in one sentence, they respond before you ask (a next step from the record), and you can see the structure form. Each of those is a dial we can turn without touching an invariant. Three registers, drawn on the same sentence; each turns one dial harder than the last.</p>
+    </div>
+    <div class="controls" id="beats8"></div>
+    <div class="frames" id="fwd-frames"></div>
+    <div class="col">
+      <h3>The brief: how AI forward</h3>
+      <p><b>Deciding:</b> which of these dials round 2 turns, and how far. <b>Options:</b> <b>R1 + R2 together, recommended</b>: the field understands as you type (on the phone, from her own foods, her pets, the frozen look words, the symptom leaves and a time grammar, so nothing leaves the phone until Save and the cards are already formed when it lands), the app tells you in one sentence what it read before the cards, and after a commit it offers one next step from the record as a door; R3's flight becomes the arrival physics (the words you wrote become the rows) without its streamed text or its persona mark · <b>R1 alone</b>: the fastest and the most private, but silent about what it could not place · <b>R3 whole</b>: the most forward and the closest to the competitor, at the cost of two September vetoes (streamed text, a persona) and a second loop. <b>Consequence:</b> R1 adds an on-device recogniser (a project of its own, about four rows); R2 adds a one-sentence read-back and an offer line that run through the same validator and never-lines as Ask (no effect words, no reassurance, counts only); R3 reopens two vetoes and the DC-6 name ruling. Every option keeps the owner's tap as the only write. The twelve lenses read §08 before round 2 is drawn, and Sam's seat reads R2's sentence first: it is a sentence the app wrote about her words, shown only to her and never stored.</p>
+      <h3>What each one costs against the rules</h3>
+      <table class="ledger-t">
+        <thead><tr><th>Register</th><th>Turns</th><th>Touches</th><th>Keeps</th></tr></thead>
+        <tbody>
+          <tr><td>R1 · understands as you type</td><td>responsiveness; what it understood is visible before Save</td><td>"a composer that breathes as she types" (the lighting is instant and local, not a loop; the brief asks the Motion seat to rule it a breath or not)</td><td>nothing leaves the phone until Save; the model refines only what the lexicon could not place</td></tr>
+          <tr><td>R2 · tells you what it read, offers one next step</td><td>a voice; a reason to trust the cards; value after the commit</td><td>DC-6 (sign the line "Culprit" or leave it unsigned, drawn both ways); Ask's never-lines govern the offer (counts, dates, no cause, no advice)</td><td>one sentence, never a thread; the offer is a door, never a write</td></tr>
+          <tr><td>R3 · you watch it work</td><td>the structure forming; presence</td><td>streamed text and a persona mark (both vetoed in September); a second loop beside the tick</td><td>the flight itself is Principle 9's physics and can be kept alone</td></tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
@@ -874,5 +927,102 @@
   var crises = document.getElementById('crisis-frames');
   frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(false) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }, '<b>(a) The same physics, plain <span class="pill cur">current</span></b><span>The safety card’s register (S1): it lands where the stack would, above everything, on the rose rail, with one door and the save’s buzz withheld. Louder teaches that quiet means fine.</span>', 'option');
   frame(crises, { door: 'row', open: true, kbdDown: true, sheet: sheetFor('Nyx', [noteHTML('She’s thrown up three times since noon and won’t touch water.', '1:58 AM', 'Nyx'), statusHTML('none', savedLine), '<div class="cs-stack">' + crisisHTML(true) + '</div>', '<div class="after">What you wrote is ready to log, after the call <span style="color:var(--app-action);font-weight:600">›</span></div>']) }, '<b>(b) A distinct register <span class="pill open">still open</span></b><span>Dr. Chen’s 2am: the night ground, the clinic’s number ready to dial, a second door to the nearest emergency clinic, a warning haptic. Louder, and a second register the app would have to keep honest everywhere else.</span>', 'option');
+
+  // ── §08 Turning the intelligence up ──────────────────────────────────
+  var LIT = [
+    { t: 'Coughed', c: 'sym' }, { t: 'around 7', c: 'time' }, { t: 'threw up', c: 'sym' }, { t: 'right after breakfast', c: 'time' },
+    { t: 'wouldn’t touch', c: 'meal' }, { t: 'her wet food', c: 'meal' }, { t: 'at 4', c: 'time' }
+  ];
+  function litHTML(text, upto) {
+    // Wrap each phrase whose end has been typed (upto = characters typed so far; -1 = all).
+    var out = '', i = 0;
+    LIT.forEach(function (ph) {
+      var k = text.indexOf(ph.t, i); if (k < 0) return;
+      var end = k + ph.t.length;
+      out += text.slice(i, k);
+      if (upto < 0 || end <= upto) out += '<span class="lit ' + ph.c + '">' + ph.t + '</span>'; else out += text.slice(k, Math.min(end, text.length));
+      i = end;
+    });
+    return out + text.slice(i);
+  }
+  function countLine(upto) {
+    var facts = 0, q = 0;
+    [['Coughed', 1, 0], ['threw up', 1, 0], ['her wet food', 1, 1]].forEach(function (x) { var e = HERO_TEXT.indexOf(x[0]) + x[0].length; if (upto < 0 || e <= upto) { facts += x[1]; q += x[2]; } });
+    if (!facts) return '<div class="cs-count"></div>';
+    return '<div class="cs-count"><b>' + facts + '</b> I can log' + (q ? ' · <b>' + q + '</b> question' : '') + '</div>';
+  }
+  function litFieldHTML(upto, pet) {
+    var shown = upto < 0 ? HERO_TEXT : HERO_TEXT.slice(0, upto);
+    return '<div class="cs-field"><span class="live">' + litHTML(shown, upto) + '</span><span class="caret"></span></div>' + countLine(upto) +
+      '<div class="cs-disclose">Understood on your phone as you type. Nothing is sent until you save.</div>' +
+      '<div class="cs-verbs dock' + (upto === 0 ? '' : '') + '"><span class="verb ask"><i></i>Ask</span><span class="verb save">Save note</span></div>';
+  }
+  var VOICE = 'I read three things: a cough around 7, a vomit some time after breakfast, and that she refused her wet food at 4. One question before I log the meal.';
+  function voiceHTML(text, signed, cursor) {
+    return '<div class="voice"><div class="say">' + text + (cursor ? '<span class="cur"></span>' : '') + '</div><div class="sig">' + (signed ? 'Culprit · read by AI · logged only when you tap' : 'Read by AI · logged only when you tap') + '</div></div>';
+  }
+  function compactCards() {
+    return '<div class="card sym compact"><div class="pillrow"><span>Cough · around 7:00 AM</span><span class="logit">Log it</span></div></div>' +
+      '<div class="card sym compact"><div class="pillrow"><span>Vomit · between 7:10 AM and 4:12 PM</span><span class="logit">Log it</span></div></div>' +
+      cardHTML(heroCards(false)[2]);
+  }
+  function offerHTML() {
+    return '<div class="offer"><div class="h">That is her third vomit within an hour of a meal since Sep 21.</div><div class="s">Counted from the rows you logged; it says nothing about why.</div><div class="doors"><span>Put it on the next vet report ›</span><span class="quiet">Not now</span></div></div>';
+  }
+  var fwd = document.getElementById('fwd-frames');
+  // F1 · R1 understands as you type (live)
+  frame(fwd, { door: 'row', open: true, hasText: true, sheet: sheet([litFieldHTML(-1, 'Nyx'), kbdHTML()]) },
+    '<b>R1 · It understands as you type <span class="pill open">drawn for the decision</span></b><span>As she types, the phrases the phone can place light in the record’s inks: symptoms, times, her foods, her pets, the look words. A count under the field says what it could log. Save shows the cards already formed, no wait; the model refines only what the lexicon could not place. Press <em>Type it</em> above to watch.</span>');
+  // F2 · R2 tells you what it read
+  frame(fwd, { door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), voiceHTML(VOICE, false, false), '<div class="cs-stack">' + compactCards() + '</div>' + barHTML(3, 1, 'Answer which food and how much')]) },
+    '<b>R2 · It tells you what it read <span class="pill open">drawn for the decision</span></b><span>One sentence in the app’s voice before the cards, in the serif the Signal speaks in: what it understood and what it still needs. The cards beneath are the compact register from brief 3. Unsigned here; signed “Culprit” in R3, for the DC-6 call.</span>');
+  // F3 · R2 after the commit
+  frame(fwd, { door: 'row', open: true, kbdDown: true, sheet: sheet([noteHTML(HERO_TEXT, HERO_TIME, 'Nyx'), statusHTML('none', savedLine), beatHTML(false).replace('margin-top: auto', ''), offerHTML()]) },
+    '<b>R2 · After the commit, one next step <span class="pill open">drawn for the decision</span></b><span>Once the rows are written, one offer from the record, as a door: a count across her rows, dated, with no cause and no advice (Ask’s never-lines). It is the moment the app shows it was paying attention. Dr. Chen reads the sentence before round 2.</span>');
+  // F4 · R3 you watch it work (live)
+  frame(fwd, { door: 'row', open: true, kbdDown: true, sheet: '<div class="grab"></div><div class="cs-head"><b>Nyx’s record</b><span class="agent"><i></i>Culprit · reading</span><span class="x">×</span></div><div class="cs-body">' + '<div class="cs-note"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + litHTML(HERO_TEXT, -1) + '</div></div>' + voiceHTML(VOICE, true, false) + '<div class="cs-stack">' + compactCards() + '</div>' + barHTML(3, 1, 'Answer which food and how much') + '</div>' },
+    '<b>R3 · You watch it work <span class="pill open">drawn for the decision</span></b><span>On Save the lit phrases lift out of your sentence and become the rows (the record moving, Principle 9); the read-back writes itself under a named mark. The most forward of the three, and the one that reopens two September vetoes: streamed text and a persona. Press <em>Save and watch</em> above.</span>');
+
+  // The two live beats
+  var b8 = document.getElementById('beats8');
+  function phoneOf(n) { return fwd.querySelectorAll('.ph')[n]; }
+  var t8 = [];
+  function later8(ms, fn) { t8.push(setTimeout(fn, ms)); }
+  function clear8() { t8.forEach(clearTimeout); t8 = []; }
+  function addBeat(label, fn) { var btn = document.createElement('button'); btn.type = 'button'; btn.textContent = label; btn.addEventListener('click', function () { clear8(); b8.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); }); btn.classList.add('on'); fn(); }); b8.appendChild(btn); }
+  addBeat('Type it (R1)', function () {
+    var ph = phoneOf(0); var body = ph.querySelector('.cs-body'); if (!body) return;
+    if (reduced()) { body.innerHTML = litFieldHTML(-1, 'Nyx') + kbdHTML(); return; }
+    var i = 0;
+    var step = function () { i += 3; body.innerHTML = litFieldHTML(Math.min(i, HERO_TEXT.length), 'Nyx') + kbdHTML(); if (i < HERO_TEXT.length) later8(22, step); };
+    body.innerHTML = litFieldHTML(0, 'Nyx') + kbdHTML(); later8(300, step);
+  });
+  addBeat('Save and watch (R3)', function () {
+    var ph = phoneOf(3); var body = ph.querySelector('.cs-body'); if (!body) return;
+    var rm = reduced();
+    body.innerHTML = '<div class="cs-note"><div class="meta">Note · ' + HERO_TIME + '</div><div class="txt">' + litHTML(HERO_TEXT, -1) + '</div></div>' + voiceHTML('', true, !rm) + '<div class="cs-stack stack-hidden">' + compactCards() + '</div>' + barHTML(3, 1, 'Answer which food and how much');
+    var say = body.querySelector('.voice .say');
+    var stack = body.querySelector('.cs-stack');
+    var cards = stack.querySelectorAll('.card');
+    if (rm) { say.innerHTML = VOICE; stack.classList.remove('stack-hidden'); stack.classList.add('fade-in'); return; }
+    // the flight: each lit phrase flies to its card
+    var targets = [cards[0], cards[1], cards[2], cards[2], cards[2]];
+    var srcs = body.querySelectorAll('.cs-note .lit');
+    var phRect = ph.getBoundingClientRect();
+    var map = { 0: 0, 1: 0, 2: 1, 3: 1, 4: 2, 5: 2, 6: 2 };
+    srcs.forEach(function (sp, n) {
+      var card = cards[map[n]]; if (!card) return;
+      var a = sp.getBoundingClientRect(), b = card.getBoundingClientRect();
+      var clone = sp.cloneNode(true); clone.classList.add('fly');
+      clone.style.left = (a.left - phRect.left) + 'px'; clone.style.top = (a.top - phRect.top) + 'px';
+      ph.appendChild(clone);
+      var dx = (b.left + 14 - a.left), dy = (b.top + 8 - a.top);
+      clone.animate([{ transform: 'translate(0,0)', opacity: 1 }, { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0.9)', opacity: 0 }], { duration: 370, delay: 40 + n * 28, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' });
+      later8(460 + n * 28, function () { if (clone.parentNode) clone.parentNode.removeChild(clone); });
+    });
+    later8(420, function () { stack.classList.remove('stack-hidden'); stack.classList.add('arrive'); });
+    var j = 0; var stream = function () { j += 2; say.innerHTML = VOICE.slice(0, j) + (j < VOICE.length ? '<span class="cur"></span>' : ''); if (j < VOICE.length) later8(18, stream); };
+    later8(200, stream);
+  });
 })();
 </script>
