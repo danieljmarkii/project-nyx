@@ -264,9 +264,10 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
     const moved = new Date('2026-03-15T10:03:00.000Z');
     mockMovedTo.current = moved;
 
-    const { getByText } = await open();
-    fireEvent.press(getByText('Change'));           // opens the picker
+    const { getByText, getAllByText } = await open();
+    fireEvent.press(getByText('Change time'));      // opens the time sheet
     await act(async () => { fireEvent.press(getByText('move-the-point')); });
+    await act(async () => { fireEvent.press(getAllByText('Save')[1]); }); // the sheet's Save
     await act(async () => { fireEvent.press(getByText('Save')); });
 
     const edit = mockUpdateLookForEdit.mock.calls[0][1] as { localDay?: string };
@@ -304,12 +305,13 @@ describe('"Change time" and the day key (C-10, T-19)', () => {
   });
 
   it('a picker OPENED and dismissed without a change re-derives nothing', async () => {
-    // C-10's peek-and-save, exactly: the owner taps Change, looks, and saves. The
+    // C-10's peek-and-save, exactly: the owner taps Change time, looks, and saves. The
     // day key must not move, and the row must not re-queue.
     mockMovedTo.current = new Date('2026-03-15T09:58:00.000Z'); // the SAME instant
-    const { getByText } = await open();
-    fireEvent.press(getByText('Change'));
+    const { getByText, getAllByText } = await open();
+    fireEvent.press(getByText('Change time'));
     await act(async () => { fireEvent.press(getByText('move-the-point')); });
+    await act(async () => { fireEvent.press(getAllByText('Save')[1]); }); // the sheet's Save
     await act(async () => { fireEvent.press(getByText('Save')); });
 
     expect('localDay' in (mockUpdateLookForEdit.mock.calls[0][1] as object)).toBe(false);

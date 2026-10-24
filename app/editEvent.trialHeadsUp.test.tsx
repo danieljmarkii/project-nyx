@@ -132,7 +132,7 @@ describe('Change on the edit screen gives the old food its trial heads-up back (
     mockGetMealForEvent.mockResolvedValue(meal('most'));
     mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
     const { getByText } = await open();
-    fireEvent.press(getByText('Pate'));
+    fireEvent.press(getByText(/^Pate/));
     await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });
@@ -156,7 +156,7 @@ describe('Change on the edit screen gives the old food its trial heads-up back (
     mockGetMealForEvent.mockResolvedValue(meal('most'));
     mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
     const { getByText } = await open();
-    fireEvent.press(getByText('Pate'));
+    fireEvent.press(getByText(/^Pate/));
     await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });
@@ -177,7 +177,7 @@ async function changeToTurkey() {
   mockGetMealForEvent.mockResolvedValue(meal('most'));
   mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
   const { getByText } = await open();
-  fireEvent.press(getByText('Pate'));
+  fireEvent.press(getByText(/^Pate/));
   await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
   fireEvent.press(getByText('Turkey'));
   await act(async () => { fireEvent.press(getByText('Save')); });

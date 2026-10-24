@@ -211,8 +211,9 @@ describe('a photo changed on the edit screen gets its read (CUL-1680)', () => {
     expect(mockSettle).toHaveBeenCalledWith(false);
   });
 
-  it('a meal photo takes no read and keeps the immediate Signal refresh', async () => {
-    const utils = await open('meal');
+  // A meal offers no photo (CUL-887), so the type with a photo and no read is Other.
+  it('an Other photo takes no read and keeps the immediate Signal refresh', async () => {
+    const utils = await open('other');
     await attachAndSave(utils);
     expect(mockClaim).not.toHaveBeenCalled();
     expect(mockVomit).not.toHaveBeenCalled();

@@ -194,7 +194,7 @@ describe('the Signal refresh on an edit (CUL-1219)', () => {
     mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
     const { getByText } = await open();
     // The food row's own "Change" (the time row carries one too): the one beside the food.
-    fireEvent.press(getByText('Pate'));
+    fireEvent.press(getByText(/^Pate/));
     await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });
@@ -207,7 +207,7 @@ describe('the Signal refresh on an edit (CUL-1219)', () => {
     mockGetFirstAsync.mockRejectedValue(new Error('sqlite busy'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const { getByText } = await open();
-    fireEvent.press(getByText('Pate'));
+    fireEvent.press(getByText(/^Pate/));
     await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });

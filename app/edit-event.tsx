@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, ChevronRight } from 'lucide-react-native';
+import { Camera } from 'lucide-react-native';
 import { colorRoles, theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
+import { HeaderAction } from '../components/ui/HeaderAction';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
 import { BowlEditor, type BowlPickerFood, type StagedBowlFood } from '../components/log/BowlEditor';
@@ -55,7 +55,8 @@ import { toggleLookWord } from '../lib/lookSelection';
 import { lookSpeciesOf, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, notHerselfLabel } from '../constants/lookWords';
 import { LOOK_NOTE_MAX, LOOK_NOTE_PLACEHOLDER, LOOK_NOTE_CUE } from '../components/event/LookRecordSection';
 import { resolveTimeModeChange, resolveFoundModeChange, reconstructTimeControl, sourceAfterPointEdit, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
-import { PhotoViewer } from '../components/ui';
+import { PhotoViewer, TextField, NumberField, TimeEditSheet } from '../components/ui';
+import { PickerRow } from '../components/ui/PickerRow';
 
 /** A bowl as the editor stages it, in position order. */
 function stagedFromBowl(bowl: AppBowl): StagedBowlFood[] {
@@ -142,6 +143,12 @@ export default function EditEventModal() {
   // get this control today, so that version would silently change two shipped types
   // under an unrelated PR.
   const showConfidenceControl = !config.hasFood && !isWeight && !isMedication && !isLook;
+  // CUL-887 — the photo half of the leaf contract (§6/§7 hasPhoto). `?? true` is the §8
+  // posture: an unknown future leaf keeps today's generic offer, as the record screen's
+  // empty hero does. What it gates is narrower than the section: see the Photo block.
+  const offersPhoto = EVENT_TYPES[eventType]?.hasPhoto ?? true;
+  // The plain point's question names the act each type records (TimeEditSheet's title rule).
+  const pointQuestion = isMedication ? 'When was this dose given?' : 'When did this happen?';
   // Seeds NULL, not 'saw' (B-527): an unclassified row must render with neither
   // segment selected, so the honest default before the reconstruct resolves is
   // "we don't know yet", never a borrowed witnessed claim. The reconstruct sets
@@ -909,6 +916,13 @@ export default function EditEventModal() {
     newUri: newAttachmentUri,
   });
   const displayAttachmentUri = photoState.kind === 'attached' ? photoState.thumbUri : null;
+  // The beg goes on a `hasPhoto: false` leaf; the evidence never does (CUL-887). An
+  // unknown read is shown too, since the editor cannot tell attached from absent there.
+  const photoSectionShown =
+    offersPhoto || photoState.kind === 'attached' || photoState.kind === 'unknown';
+  const doseLine = dose
+    ? [dose.genericName ?? config.label, dose.brandName, dose.strength].filter(Boolean).join(' · ')
+    : null;
 
   // CUL-869 — the look's chip options, or null when there are none to draw: an
   // absence row (no words by definition), a child that has not loaded, or a pet with
@@ -952,131 +966,122 @@ export default function EditEventModal() {
     <SafeAreaView style={styles.container}>
       <Header
         title={`Edit ${config.label}`}
-        left={
-          <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn} hitSlop={8}>
-            <ThemedText style={styles.cancelBtnText}>Cancel</ThemedText>
-          </TouchableOpacity>
-        }
-        right={
-          <TouchableOpacity
-            onPress={handleSave}
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-            disabled={saving}
-            hitSlop={8}
-          >
-            <ThemedText style={styles.saveBtnText}>Save</ThemedText>
-          </TouchableOpacity>
-        }
+        left={<HeaderAction label="Cancel" tone="quiet" onPress={() => router.back()} />}
+        right={<HeaderAction label="Save" onPress={handleSave} working={saving} />}
       />
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
           {/* Time */}
-          <SectionLabel label="Time" style={{ marginBottom: 4 }} />
-          {showConfidenceControl ? (
-            // Non-meal events can be re-classified witnessed/found after logging.
-            <TimeConfidenceField
-              mode={timeMode}
-              onModeChange={handleTimeModeChange}
-              point={occurredAt}
-              pointSource={occurredAtSource}
-              onPointChange={handlePointChange}
-              foundMode={foundMode}
-              onFoundModeChange={handleFoundModeChange}
-              estimatedAt={estimatedAt}
-              onEstimatedChange={handleEstimatedChange}
-              earliest={earliest}
-              latest={foundLatest}
-              onEarliestChange={handleEarliestChange}
-              onLatestChange={handleLatestChange}
-            />
-          ) : (
-            // Meals are always witnessed — keep the plain point picker.
-            <>
-              <TouchableOpacity
-                style={styles.timeRow}
-                onPress={() => setShowTimePicker(!showTimePicker)}
-                activeOpacity={0.7}
-              >
-                <ThemedText style={styles.timeValue}>
-                  {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
-                  {'  '}
-                  {formatTime(occurredAt)}
-                  {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
-                      nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
-                      native text-style cascade; this EXIF span differs from its parent only in size and
-                      colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
-                  {occurredAtSource === 'exif' && (
-                    <Text style={styles.exifAttribution}>
-                      {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
-                    </Text>
-                  )}
-                </ThemedText>
-                <ThemedText style={styles.changeLabel}>Change</ThemedText>
-              </TouchableOpacity>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={occurredAt}
-                  mode="datetime"
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                  maximumDate={new Date()}
-                  onChange={(_e: unknown, date?: Date) => {
-                    if (Platform.OS === 'android') setShowTimePicker(false);
-                    if (!date) return;
-                    handlePointChange(date);
-                  }}
-                />
-              )}
-            </>
-          )}
-
-          {/* Photo — never on a look (§5.2: a look is a perception, and there is
-              nothing to photograph; `check_in` is `hasPhoto: false`). Every capture
-              surface already gates on that flag — app/log.tsx, SimpleEventConfirm,
-              the record screen's hero — and this editor is the one door that did not,
-              so a look could be given a photo here and would then render it as the
-              record's hero, since `resolveEventPhotoDisplay` shows an EXISTING photo
-              regardless of the flag.
-              Gated on `isLook` rather than on `hasPhoto`, deliberately: cough and
-              sneeze are also `hasPhoto: false` and DO offer this row today, so the
-              tidier predicate would change two shipped types under this PR. That
-              wider gap is its own issue (CUL-887). */}
-          {isLook ? null : (
-            <>
-          <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-          {photoState.kind === 'loading' ? null : photoState.kind === 'unknown' ? (
-            <View style={styles.photoRow}>
-              <ThemedText style={styles.photoRowText}>{EDITOR_PHOTO_UNKNOWN_LABEL}</ThemedText>
-            </View>
-          ) : photoState.kind === 'attached' ? (
-            <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
-              {displayAttachmentUri ? (
-                <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
-              ) : (
-                <View style={[styles.photoThumb, styles.photoThumbPending]}>
-                  <Camera size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+          <View style={styles.section}>
+            <SectionLabel label="Time" />
+            {showConfidenceControl ? (
+              // Non-meal events can be re-classified witnessed/found after logging.
+              <TimeConfidenceField
+                mode={timeMode}
+                onModeChange={handleTimeModeChange}
+                point={occurredAt}
+                pointSource={occurredAtSource}
+                onPointChange={handlePointChange}
+                foundMode={foundMode}
+                onFoundModeChange={handleFoundModeChange}
+                estimatedAt={estimatedAt}
+                onEstimatedChange={handleEstimatedChange}
+                earliest={earliest}
+                latest={foundLatest}
+                onEarliestChange={handleEarliestChange}
+                onLatestChange={handleLatestChange}
+              />
+            ) : (
+              // Meals are always witnessed — keep the plain point, on the kit's one time sheet.
+              <>
+                <View style={styles.timeRow}>
+                  <ThemedText style={styles.timeValue}>
+                    {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                    {'  '}
+                    {formatTime(occurredAt)}
+                    {/* geist-ok: Deliberately a raw <Text>, not a nested ThemedText (CUL-609; the CLAUDE.md
+                        nested-span convention). A nested ThemedText's explicit fontFamily breaks RN's
+                        native text-style cascade; this EXIF span differs from its parent only in size and
+                        colour, so it inherits the parent's resolved Geist regular. See app/log.tsx. */}
+                    {occurredAtSource === 'exif' && (
+                      <Text style={styles.exifAttribution}>
+                        {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
+                      </Text>
+                    )}
+                  </ThemedText>
+                  <TouchableOpacity
+                    onPress={() => setShowTimePicker(true)}
+                    style={styles.changeBtn}
+                    accessibilityRole="button"
+                  >
+                    <ThemedText style={styles.changeLabel}>Change time</ThemedText>
+                  </TouchableOpacity>
                 </View>
+                {showTimePicker && (
+                  <TimeEditSheet
+                    value={occurredAt}
+                    title={pointQuestion}
+                    onCancel={() => setShowTimePicker(false)}
+                    onSave={(date) => {
+                      setShowTimePicker(false);
+                      handlePointChange(date);
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </View>
+
+          {/* Photo — the per-leaf affordance (§6/§7 hasPhoto, CUL-675), and the gate
+              suppresses the BEG, NEVER THE EVIDENCE: an existing photo keeps its row on
+              any leaf, and only the offer to attach one disappears. That is the contract
+              `resolveEventPhotoDisplay` encodes (`!photoUri && offersPhoto`), and the record
+              screen shows an existing photo as its hero either way, so an editor that hid
+              it would be the surface telling the lie. Never delete an owner's photo to
+              satisfy a flag.
+
+              CUL-887 replaced an `isLook` gate here. Four leaves declare `hasPhoto: false`
+              (meal, cough, sneeze, check_in) and this editor was the one door offering the
+              row on all four; the record screen and both capture surfaces already ask the
+              contract. Measured before the door closed: zero attachments on any of the four
+              in production (the issue's row checks), so nothing is hidden by this today. */}
+          {photoSectionShown ? (
+            <View style={styles.section}>
+              <SectionLabel label="Photo" />
+              {photoState.kind === 'loading' ? null : photoState.kind === 'unknown' ? (
+                <View style={styles.photoRow}>
+                  <ThemedText style={styles.photoRowText}>{EDITOR_PHOTO_UNKNOWN_LABEL}</ThemedText>
+                </View>
+              ) : photoState.kind === 'attached' ? (
+                <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8} testID="edit-photo-attached">
+                  {displayAttachmentUri ? (
+                    <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.photoThumb, styles.photoThumbPending]}>
+                      <Camera size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                    </View>
+                  )}
+                  <View style={styles.photoAttachedMeta}>
+                    <ThemedText style={styles.photoAttachedText}>Photo attached</ThemedText>
+                    <ThemedText style={styles.photoChangeText}>Tap to view</ThemedText>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.7} testID="edit-photo-offer">
+                  <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                  <ThemedText style={styles.photoRowText}>Attach a photo</ThemedText>
+                </TouchableOpacity>
               )}
-              <View style={styles.photoAttachedMeta}>
-                <ThemedText style={styles.photoAttachedText}>Photo attached</ThemedText>
-                <ThemedText style={styles.photoChangeText}>Tap to view</ThemedText>
-              </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.7}>
-              <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              <ThemedText style={styles.photoRowText}>Attach a photo</ThemedText>
-            </TouchableOpacity>
-          )}
-            </>
-          )}
+            </View>
+          ) : null}
 
           {/* Mixed meals row 5 — a mixed bowl's foods, each with Change and Take out,
               staged until Save (spec §7.1, D-M4). */}
           {config.hasFood && bowlFoods !== null ? (
-            <>
-              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+            <View style={styles.section}>
+              <SectionLabel label="Foods in this bowl" />
               <BowlEditor
                 foods={bowlFoods}
                 onChange={setBowlFoods}
@@ -1086,49 +1091,35 @@ export default function EditEventModal() {
                   ...mixFoodOf({ id: food.id, brand: food.brand, product_name: food.product_name, format: food.format }),
                 })}
               />
-            </>
+            </View>
           ) : null}
 
           {config.hasFood && bowlReadOnly !== null ? (
-            <>
-              <SectionLabel label="Foods in this bowl" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+            <View style={styles.section}>
+              <SectionLabel label="Foods in this bowl" />
               {bowlReadOnly ? <ThemedText style={styles.foodProduct}>{bowlReadOnly}</ThemedText> : null}
               <ThemedText style={styles.foodBrand}>
                 {bowlReadOnly
                   ? 'One of these foods isn’t on this phone, so the bowl’s foods can’t be changed here. Everything else saves as usual.'
                   : 'This bowl’s foods didn’t load, so they can’t be changed here. Everything else saves as usual.'}
               </ThemedText>
-            </>
+            </View>
           ) : null}
 
           {/* Food (meal events only) */}
           {config.hasFood && bowlFoods === null && bowlReadOnly === null ? (
-            <>
-              <SectionLabel label="Food" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <TouchableOpacity
-                style={styles.foodRow}
+            <View style={styles.section}>
+              <PickerRow
+                label="Food"
+                // BRAND · FORMAT after the product, the same meta shape the picker tiles
+                // below use, so the current selection is named the way the options are.
+                value={currentFoodProduct
+                  ? [currentFoodProduct, currentFoodBrand, foodFormatTag(currentFoodFormat)].filter(Boolean).join(' · ')
+                  : null}
+                placeholder="No food selected"
+                actionLabel={showFoodPicker ? 'Done' : 'Change'}
                 onPress={() => setShowFoodPicker(!showFoodPicker)}
-                activeOpacity={0.7}
-              >
-                <View style={{ flex: 1 }}>
-                  {currentFoodProduct ? (
-                    <>
-                      <ThemedText style={styles.foodProduct}>{currentFoodProduct}</ThemedText>
-                      {/* BRAND · FORMAT — the same meta shape the picker tiles below
-                          use, so the current selection is named the way the options are. */}
-                      {currentFoodBrand || currentFoodFormat ? (
-                        <ThemedText style={styles.foodBrand}>
-                          {[currentFoodBrand, foodFormatTag(currentFoodFormat)]
-                            .filter(Boolean).join(' · ')}
-                        </ThemedText>
-                      ) : null}
-                    </>
-                  ) : (
-                    <ThemedText style={styles.foodPlaceholder}>No food selected</ThemedText>
-                  )}
-                </View>
-                <ThemedText style={styles.changeLabel}>{showFoodPicker ? 'Done' : 'Change'}</ThemedText>
-              </TouchableOpacity>
+              />
 
               {showFoodPicker ? (
                 <View style={styles.foodList}>
@@ -1167,19 +1158,19 @@ export default function EditEventModal() {
                   })}
                 </View>
               ) : null}
-            </>
+            </View>
           ) : null}
 
           {/* Intake (meal events only — includes treats, B-014) */}
           {config.hasFood ? (
-            <>
-              <SectionLabel label="Intake" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+            <View style={styles.section}>
+              <SectionLabel label="Intake" />
               <IntakeChipRow
                 value={intakeRating}
                 onChange={setIntakeRating}
                 label={null}
               />
-            </>
+            </View>
           ) : null}
 
           {/* Medication (dose events only) — parity with the meal Food + Intake
@@ -1189,63 +1180,47 @@ export default function EditEventModal() {
               Adherence + how-given are the editable dose fields. */}
           {isMedication && dose ? (
             <>
-              <SectionLabel label="Medication" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              {dose.medicationItemId ? (
-                <TouchableOpacity
-                  style={styles.foodRow}
-                  onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
-                  activeOpacity={0.7}
-                  accessibilityRole="link"
-                  accessibilityLabel={`View drug details for ${dose.genericName ?? config.label}`}
-                >
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.foodProduct}>{dose.genericName ?? config.label}</ThemedText>
-                    {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
-                      <ThemedText style={styles.foodBrand}>
-                        {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                  <ChevronRight size={18} color={colorRoles.action.onLight} strokeWidth={2} />
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.foodRow}>
-                  <View style={{ flex: 1 }}>
-                    <ThemedText style={styles.foodProduct}>{dose.genericName ?? config.label}</ThemedText>
-                    {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
-                      <ThemedText style={styles.foodBrand}>
-                        {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                </View>
-              )}
+              <View style={styles.section}>
+                {dose.medicationItemId ? (
+                  <PickerRow
+                    label="Medication"
+                    value={doseLine}
+                    placeholder={config.label}
+                    actionLabel="View"
+                    onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
+                  />
+                ) : (
+                  <>
+                    <SectionLabel label="Medication" />
+                    <ThemedText style={styles.foodProduct}>{doseLine}</ThemedText>
+                  </>
+                )}
+              </View>
 
-              <SectionLabel label="Adherence" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <AdherenceChipRow value={adherence} onChange={setAdherence} label={null} />
+              <View style={styles.section}>
+                <SectionLabel label="Adherence" />
+                <AdherenceChipRow value={adherence} onChange={setAdherence} label={null} />
+              </View>
 
-              <SectionLabel label="How given" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <VehicleChipRow value={howGiven} onChange={setHowGiven} label={null} />
+              <View style={styles.section}>
+                <SectionLabel label="How given" />
+                <VehicleChipRow value={howGiven} onChange={setHowGiven} label={null} />
+              </View>
             </>
           ) : null}
 
           {/* Weight value (weight_check only — the value IS the entry, B-197) */}
           {isWeight ? (
-            <>
-              <SectionLabel label="Weight" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <View style={styles.weightRow}>
-                <TextInput
-                  style={styles.weightInput}
-                  value={weightLbsStr}
-                  onChangeText={setWeightLbsStr}
-                  placeholder="e.g. 12.5"
-                  placeholderTextColor={theme.colorTextSecondary}
-                  keyboardType="decimal-pad"
-                  returnKeyType="done"
-                />
-                <ThemedText style={styles.weightUnitText}>lbs</ThemedText>
-              </View>
-            </>
+            <View style={styles.section}>
+              <SectionLabel label="Weight" />
+              <NumberField
+                value={weightLbsStr}
+                onChangeText={setWeightLbsStr}
+                unit="lbs"
+                placeholder="e.g. 12.5"
+                accessibilityLabel="Weight in pounds"
+              />
+            </View>
           ) : null}
 
           {/* CUL-869 — what she noticed. Editable as the words themselves rather than
@@ -1268,18 +1243,18 @@ export default function EditEventModal() {
               control here. Without this line the editor shows Time, Note and nothing
               else, which an owner reads as the app having lost her answer. */}
           {isLook && lookOutcome === 'nothing_unusual' ? (
-            <>
-              <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+            <View style={styles.section}>
+              <SectionLabel label="What you noticed" />
               <ThemedText style={styles.lookAbsenceNote}>
                 You marked nothing unusual. Something you see later is its own entry,
                 with its own time, so this one stays as it is.
               </ThemedText>
-            </>
+            </View>
           ) : null}
 
           {isLook && lookGrid ? (
-            <>
-              <SectionLabel label="What you noticed" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+            <View style={styles.section}>
+              <SectionLabel label="What you noticed" />
               {lookGrid.map((section) => (
                 <View key={section.label ?? '__head'} style={styles.lookGridSection}>
                   {/* The family's own name, in the owner's words (§3.1a). The first
@@ -1296,25 +1271,23 @@ export default function EditEventModal() {
                   />
                 </View>
               ))}
-            </>
+            </View>
           ) : null}
 
           {/* The look's note — on the CHILD (`looks.notes`), never on the parent. */}
           {isLook && lookLoadedRef.current ? (
-            <>
-              <SectionLabel label="Note" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <TextInput
-                style={styles.notesInput}
+            <View style={styles.section}>
+              <SectionLabel label="Note" />
+              <TextField
+                multiline
                 placeholder={LOOK_NOTE_PLACEHOLDER}
-                placeholderTextColor={theme.colorTextSecondary}
                 value={lookNote}
                 onChangeText={setLookNote}
-                multiline
                 maxLength={LOOK_NOTE_MAX}
                 accessibilityLabel="Note"
               />
               <ThemedText style={styles.lookNoteCue}>{LOOK_NOTE_CUE}</ThemedText>
-            </>
+            </View>
           ) : null}
 
           {/* Notes — the PARENT's field, and never rendered for a look (E-7, T-22).
@@ -1325,62 +1298,61 @@ export default function EditEventModal() {
               server's events_check_in_notes_null CHECK is the other; `guards/
               lookNotes.test.ts` asserts this branch so it cannot quietly come back. */}
           {isLook ? null : (
-            <>
-              <SectionLabel label="Notes" style={{ marginTop: theme.space3, marginBottom: 4 }} />
-              <TextInput
-                style={styles.notesInput}
+            <View style={styles.section}>
+              <SectionLabel label="Notes" />
+              <TextField
+                multiline
                 placeholder="Add a note (optional)"
-                placeholderTextColor={theme.colorTextSecondary}
+                accessibilityLabel="Notes"
                 value={notes}
                 onChangeText={setNotes}
-                multiline
                 maxLength={300}
               />
-            </>
+            </View>
           )}
 
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Fullscreen photo viewer */}
+      {/* Fullscreen photo viewer. `onReplace` reopens the picker, the same door as the
+          row above, so it takes the same gate: a `hasPhoto: false` leaf that already
+          carries a photo can still SHOW it, and never becomes a way to attach another. */}
       <PhotoViewer
         visible={photoViewerVisible}
         uris={[displayAttachmentUri ?? null]}
         unavailableLabel={EDITOR_PHOTO_OFFLINE_LABEL}
         onClose={() => setPhotoViewerVisible(false)}
-        onReplace={() => { setPhotoViewerVisible(false); handlePickPhoto(); }}
+        onReplace={offersPhoto ? () => { setPhotoViewerVisible(false); handlePickPhoto(); } : undefined}
       />
     </SafeAreaView>
   );
 }
+
+// The photo's thumbnail on the spacing scale (F7): the 56pt it always was, now named.
+const PHOTO_THUMB = theme.space5 + theme.space1;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
   },
-  cancelBtn: {},
-  cancelBtnText: {
-    fontSize: 16,
-    color: theme.colorTextSecondary,
-  },
-  saveBtn: {},
-  saveBtnDisabled: { opacity: theme.opacityDisabled },
-  saveBtnText: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
-  },
+  flex: { flex: 1 },
+  // The space between sections is the form's gap (F2), so no label carries a margin.
   form: {
     padding: theme.space3,
     paddingBottom: theme.space6,
+    gap: theme.space3,
+  },
+  section: {
     gap: theme.space1,
   },
   timeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: theme.space2,
+    columnGap: theme.space2,
+    minHeight: theme.hitTarget,
     paddingHorizontal: theme.space2,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -1388,23 +1360,28 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorNeutralLight,
   },
   timeValue: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextPrimary,
   },
+  // The link owns the row's full height, so it needs no slop to reach the floor.
+  changeBtn: {
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
+  },
   changeLabel: {
-    fontSize: 14,
-    color: theme.colorAccentInk,
+    fontSize: theme.textSM,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
   },
   exifAttribution: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextTertiary,
   },
   photoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    paddingVertical: theme.space2,
+    minHeight: theme.hitTarget,
     paddingHorizontal: theme.space2,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -1412,7 +1389,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorNeutralLight,
   },
   photoRowText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
   },
   photoAttachedRow: {
@@ -1427,8 +1404,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorNeutralLight,
   },
   photoThumb: {
-    width: 56,
-    height: 56,
+    width: PHOTO_THUMB,
+    height: PHOTO_THUMB,
     borderRadius: theme.radiusSmall,
   },
   photoThumbPending: {
@@ -1439,40 +1416,24 @@ const styles = StyleSheet.create({
   },
   photoAttachedMeta: {
     flex: 1,
-    gap: 2,
+    gap: theme.space0_5,
   },
   photoAttachedText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextPrimary,
   },
   photoChangeText: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
-  foodRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
-    gap: theme.space2,
-  },
   foodProduct: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextPrimary,
   },
   foodBrand: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
-  },
-  foodPlaceholder: {
-    fontSize: 15,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
   foodList: {
@@ -1480,10 +1441,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusSmall,
     overflow: 'hidden',
-    marginTop: 4,
   },
   foodEmpty: {
-    fontSize: 14,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     padding: theme.space2,
     textAlign: 'center',
@@ -1491,7 +1451,7 @@ const styles = StyleSheet.create({
   foodItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    minHeight: theme.hitTarget,
     paddingHorizontal: theme.space2,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
@@ -1502,7 +1462,7 @@ const styles = StyleSheet.create({
   },
   foodItemName: {
     flex: 1,
-    fontSize: 15,
+    fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextPrimary,
   },
@@ -1510,7 +1470,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDark,
   },
   foodItemBrand: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginRight: theme.space1,
   },
@@ -1518,7 +1478,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextOnDarkSubtle,
   },
   foodItemCheck: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextOnDark,
   },
   lookGridSection: {
@@ -1539,51 +1499,12 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     textTransform: 'uppercase',
     marginTop: theme.space2,
-    marginBottom: 4,
+    marginBottom: theme.space0_5,
   },
   // The note's destination cue, under the field it describes.
   lookNoteCue: {
-    marginTop: theme.space1,
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    lineHeight: theme.textXS * 1.4,
-  },
-  notesInput: {
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: 15,
-    color: theme.colorTextPrimary,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    minHeight: 80,
-    maxHeight: 160,
-    textAlignVertical: 'top',
-  },
-  weightRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    backgroundColor: theme.colorNeutralLight,
-  },
-  weightInput: {
-    flex: 1,
-    // A TextInput is outside ThemedText's reach (the wrapper wraps Text), so the
-    // field names its face directly — otherwise a swept screen keeps SF inputs.
-    fontFamily: theme.fontBody,
-    fontSize: 15,
-    color: theme.colorTextPrimary,
-    paddingVertical: theme.space2,
-  },
-  weightUnitText: {
-    fontSize: 15,
-    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightXS,
   },
 });
