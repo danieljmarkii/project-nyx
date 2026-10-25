@@ -10,13 +10,15 @@ jest.mock('../../../lib/signalLead', () => ({
   loadSignalRowScreen: (...a: unknown[]) => mockLoadSignalRowScreen(...a),
 }));
 
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from '../../../lib/utils';
 import { StyleSheet } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, SignalFinding } from '../../../lib/signal';
 import type { SignalCounts } from '../../../lib/signalCounts';
 import { DOOR_A11Y_HINT, ROW_MIN_HEIGHT, SignalRow, weekPairOf } from './SignalRow';
+
+type ReactTestInstance = ReturnType<typeof render>['UNSAFE_root'];
 
 const cached = (finding: SignalFinding, rank = 1): CachedFinding => ({ rank, text: 'The server’s whole sentence. This is a read of your logs, not a diagnosis.', finding });
 
@@ -65,7 +67,7 @@ const correlation: SignalFinding = {
   correlationWindowHours: 12,
 };
 
-const CHART_IDS = ['signal-row-thumb-lane', 'signal-row-thumb-pair', 'weekly-bars'];
+const CHART_IDS = ['signal-row-thumb-timing', 'signal-row-thumb-pair', 'weekly-bars'];
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -86,10 +88,51 @@ describe('S1 — a safety row is words: the headline and the ask, never a chart'
 });
 
 describe('the thumbnail — insight rows, drawn from the finding', () => {
-  it('a timing finding draws its lane', () => {
-    const view = render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
-    expect(view.getByTestId('signal-row-thumb-lane')).toBeTruthy();
+  // CUL-1499: the finding carries counts, not each episode's minutes, so the row draws the
+  // two-count compare and never a lane whose dots and "30m" sit where no number puts them.
+  // The issue's counterexample: 8 vomits at 25–29 min and one at 31 min.
+  const nearMiss = { ...timing, rapidCount: 8, eligibleCount: 9, totalEpisodes: 12 } as SignalFinding;
+  it('a timing finding draws the two counts, never a lane', () => {
+    const view = render(<SignalRow cached={cached(nearMiss)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    const thumb = view.getByTestId('signal-row-thumb-timing');
+    expect(within(thumb).getByText('Within 30 min of eating')).toBeTruthy();
+    expect(within(thumb).getByText('Timed, but later')).toBeTruthy();
+    expect(within(thumb).getByText('8')).toBeTruthy();
+    expect(within(thumb).getByText('1')).toBeTruthy();
+    // No mark placed along an axis: the lane put each dot and its band at a percentage `left`;
+    // the compare's bars grow from the track's start (`left: 0`) and scale by count alone.
+    const positioned = thumb.findAll((n: ReactTestInstance) => typeof n.type === 'string' && typeof StyleSheet.flatten(n.props.style)?.left === 'string');
+    expect(positioned).toHaveLength(0);
     expect(view.queryByTestId('signal-row-ask')).toBeNull();
+  });
+
+  it('a timing row names its denominator and window under the compare, and says every number aloud', () => {
+    const view = render(<SignalRow cached={cached(nearMiss)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    expect(view.getByTestId('signal-row-sub').props.children).toBe('9 timed of 12 episodes · last 60 days');
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe(
+      'Vomiting soon after meals. 8 of 9 timed episodes within 30 min of eating. 9 timed of 12 episodes, last 60 days.',
+    );
+  });
+
+  it('a time-of-day row is the same compare: the band, then the other times of day', () => {
+    const clock = {
+      type: 'timeofday_clustering',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      clusterStartLocalHour: 4,
+      clusterWindowHours: 4,
+      clusterCount: 5,
+      eligibleCount: 8,
+      totalEpisodes: 9,
+      timezone: 'America/Chicago',
+      windowDays: 56,
+    } as SignalFinding;
+    const view = render(<SignalRow cached={cached(clock)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    const thumb = view.getByTestId('signal-row-thumb-timing');
+    expect(within(thumb).getByText('Other times of day')).toBeTruthy();
+    expect(within(thumb).getByText('5')).toBeTruthy();
+    expect(within(thumb).getByText('3')).toBeTruthy();
+    expect(view.getByTestId('signal-row-sub').props.children).toBe('8 timed of 9 episodes · last 56 days');
   });
 
   it('the frequency comparison is the shipped Shape C pair, this week then last, both counts printed — and not printed twice', async () => {

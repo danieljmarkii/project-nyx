@@ -292,8 +292,8 @@ describe('the Signal stack on Home', () => {
     // Every safety ask stays on Home, in words.
     expect(view.getByText('Worth a call to your vet')).toBeTruthy();
     expect(view.getByText('worth a word with your vet')).toBeTruthy();
-    // S1: the timing row draws its lane; the safety rows draw nothing.
-    expect(view.getAllByTestId('signal-row-thumb-lane')).toHaveLength(1);
+    // S1: the timing row draws its counts; the safety rows draw nothing.
+    expect(view.getAllByTestId('signal-row-thumb-timing')).toHaveLength(1);
     const hrefs: string[] = [];
     for (const row of rows) {
       fireEvent.press(row);
@@ -356,10 +356,10 @@ describe('the Signal stack on Home', () => {
     expect(mockLoadSignalLead).not.toHaveBeenCalled();
     const rows = view.getAllByTestId('signal-row');
     expect(rows).toHaveLength(2);
-    // The lead keeps the display face (`isLead`), and its picture is the timing lane.
+    // The lead keeps the display face (`isLead`), and its picture is the timing compare.
     const headlines = view.getAllByTestId('signal-row-headline');
     expect(StyleSheet.flatten(headlines[0].props.style).fontSize).toBeGreaterThan(StyleSheet.flatten(headlines[1].props.style).fontSize);
-    expect(view.getAllByTestId('signal-row-thumb-lane')).toHaveLength(1);
+    expect(view.getAllByTestId('signal-row-thumb-timing')).toHaveLength(1);
     fireEvent.press(rows[0]);
     expect(router.push).toHaveBeenCalledWith('/signal/postprandial_timing%3Avomit?pet=pet-1');
   });
@@ -369,7 +369,7 @@ describe('the Signal stack on Home', () => {
     const view = render(<SignalZone />);
     expect(view.queryByTestId('signal-lead-card')).toBeNull();
     expect(view.queryByTestId('weekly-bars')).toBeNull();
-    expect(view.queryByTestId('signal-row-thumb-lane')).toBeNull();
+    expect(view.queryByTestId('signal-row-thumb-timing')).toBeNull();
     expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
     expect(mockLoadSignalLead).not.toHaveBeenCalled();
     const rows = view.getAllByTestId('signal-row');
@@ -388,6 +388,6 @@ describe('the Signal stack on Home', () => {
     expect(rows).toHaveLength(2);
     fireEvent.press(rows[0]);
     expect(router.push).toHaveBeenCalledWith('/signal/symptom_chronicity%3Avomit?pet=pet-1');
-    expect(view.queryByTestId('signal-row-thumb-lane')).toBeNull();
+    expect(view.queryByTestId('signal-row-thumb-timing')).toBeNull();
   });
 });
