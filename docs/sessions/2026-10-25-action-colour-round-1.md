@@ -1,8 +1,9 @@
 # Action colour, round 1: indigo acts, teal is a good fact, on every screen
 
 **Date:** 2026-10-25
+**One thing:** P7 L1 — Writing for decisions: a brief that carries its recommendation, its why and what it unblocks lets four calls be ruled in one sentence · check: pending
 
-**Issue:** [CUL-1279](https://linear.app/projectnyx/issue/CUL-1279) · DISCOVERY · shipped via #1329 (draft; the mock is the deliverable)
+**Issue:** [CUL-1279](https://linear.app/projectnyx/issue/CUL-1279) · DISCOVERY · shipped via #1329 (the mock, the brand spec edit and this record)
 
 ## What this session found first
 
