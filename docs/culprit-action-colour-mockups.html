@@ -1,0 +1,407 @@
+<title>Action Colour Round</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="build-ready">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* ============================================================
+     Action Colour, ROUND 1 (CUL-1279, G4 C app-wide; PR-01 of the project
+     "Design system · colour fills and links"). Draws History, Foods, the trial
+     screen, the Signal screen, the log sheet and Home in the split the PM ruled
+     2026-10-03: indigo means you can act, teal means a good fact.
+     Layout: the house mock page (paper, serif heads, phone frames in wrapping
+     now/proposed pairs). Page chrome follows the viewer's theme; the PHONE
+     FRAMES never do: every colour, size and radius inside a frame is a
+     var(--token) from mockups/theme.css, generated from constants/theme.ts, and
+     each element names its kit part and token in data-kit.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1; --tag: #3F35A0; --tag-wash: #ECEAF6;
+    --serif: "Newsreader", ui-serif, Charter, Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .roundtag { font-weight: 600; color: var(--tag); background: var(--tag-wash); border-radius: 999px; padding: 4px 11px; letter-spacing: 0.1em; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.1; margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(23px, 3vw, 29px); line-height: 1.15; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  p { margin: 0; }
+  .standfirst { font-size: 17px; color: var(--ink-2); max-width: 66ch; }
+  section { padding-top: 48px; display: flex; flex-direction: column; gap: 18px; }
+  .secno { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--ink-3); text-transform: uppercase; }
+  .box { border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 16px 20px; font-size: 14.5px; color: var(--ink-2); max-width: 84ch; }
+  .box b { color: var(--ink); }
+  .box ul, .box ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 5px; }
+  code { font-family: var(--mono); font-size: 12.5px; }
+  .site { display: flex; flex-direction: column; gap: 10px; }
+  .site > p { color: var(--ink-2); font-size: 14.5px; max-width: 76ch; }
+  .pair { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 8px; width: 262px; max-width: 100%; }
+  figcaption { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
+  figcaption b { color: var(--ink); }
+  figcaption ul { margin: 4px 0 0; padding-left: 16px; display: grid; gap: 3px; }
+  .ftag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; align-self: flex-start; color: var(--ink-2); background: var(--rule-soft); }
+  .ftag.cur { color: var(--tag); background: var(--tag-wash); }
+  .ftag.opt { background: transparent; border: 1px dashed var(--ink-3); }
+  .ratio { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .optbox { border: 1px dashed var(--ink-3); border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .optbox .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+  .react { display: grid; gap: 10px; max-width: 84ch; margin: 0; padding-left: 22px; }
+  .react b { color: var(--ink); }
+  .react li { color: var(--ink-2); font-size: 15px; }
+  .rec { color: var(--tag); font-weight: 600; }
+  .tbl { overflow-x: auto; max-width: 100%; }
+  table { border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ink-2); }
+  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  td b { color: var(--ink); }
+  td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  .wording { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1000px; }
+  .wording .box { max-width: none; }
+  .strike { text-decoration: line-through; text-decoration-color: var(--ink-3); }
+
+  /* Phone frames: tokens only. */
+  .phone { width: 262px; max-width: 100%; border-radius: 30px; border: 1px solid var(--colorBorderStrong); overflow: hidden; background: var(--colorNeutralLight); color: var(--colorTextPrimary); font-family: var(--sans); font-size: var(--textSM); line-height: 1.4; display: flex; flex-direction: column; }
+  .phone.night { background: var(--colorBrandNight); color: var(--colorTextOnNight); }
+  .status { height: 30px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-size: var(--textXS); font-weight: 600; }
+  .scr { padding: 6px var(--space2) 22px; display: flex; flex-direction: column; gap: 12px; min-height: 330px; flex: 1; }
+  .t-title { font-size: var(--textXL); font-weight: 600; }
+  .t-sec { color: var(--colorTextSecondary); font-size: var(--textSM); }
+  .t-ter { color: var(--colorTextTertiary); font-size: var(--textXS); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+  .t-med { font-weight: 500; }
+  .card { background: var(--colorSurface); border-radius: var(--radiusLarge); border: 1px solid var(--colorBorder); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .grow { flex: 1; min-width: 0; }
+  .chip { border-radius: var(--radiusFull); border: 1px solid var(--colorBorder); padding: 6px 12px; font-weight: 500; background: var(--colorSurface); }
+  .radio { width: 18px; height: 18px; border-radius: var(--radiusFull); border: 2px solid var(--colorBorderStrong); display: flex; align-items: center; justify-content: center; flex: none; }
+  .radio i { width: 8px; height: 8px; border-radius: var(--radiusFull); display: block; }
+  .btn { border-radius: var(--radiusFull); min-height: var(--hitTarget); display: flex; align-items: center; justify-content: center; font-size: var(--textMD); font-weight: 500; }
+  .bar { height: 5px; border-radius: var(--radiusFull); overflow: hidden; background: var(--colorChartEmpty); }
+  .bar > i { display: block; height: 100%; border-radius: var(--radiusFull); }
+  .mbar { width: 4px; height: 18px; border-radius: 2px; flex: none; }
+  .dot { width: 8px; height: 8px; border-radius: var(--radiusFull); flex: none; }
+  .tabbar { border-top: 1px solid var(--colorBorder); background: var(--colorSurface); display: flex; justify-content: space-around; padding: 8px 0 12px; font-size: var(--textXS); }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--colorTextTertiary); }
+  .tab.on { color: var(--colorTextPrimary); font-weight: 600; }
+  .tick { width: 14px; height: 3px; border-radius: var(--radiusFull); background: transparent; }
+  .ledger { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .ledger i { aspect-ratio: 1; border-radius: 4px; display: block; background: var(--colorChartEmpty); max-width: 100%; }
+  .field { border-radius: var(--radiusMedium); border: 1px solid var(--colorBorder); background: var(--colorSurface); padding: 9px 12px; color: var(--colorTextTertiary); }
+  .serif { font-family: var(--serif); font-weight: 500; }
+  svg { display: block; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow"><span class="roundtag">Round 1 · reacted</span><span>CUL-1279 · G4 C, app-wide</span><span>Design system · colour fills and links, PR-01</span></div>
+    <h1>Indigo acts, teal is a good fact: every screen</h1>
+    <p class="standfirst">On 2026-10-03 you ruled that indigo means "you can act" and teal means "a good fact". The colour roles and the glyph walk have built most of that. What is left is every link, choice, fill and button that still speaks teal, on History, Foods, the trial screen, the Signal screen, the log sheet and Home. This round draws them all, so they can move in one landing and no screen is the only one in indigo.</p>
+    <div class="box"><b>Ledger · the PM's reaction, 2026-10-25: "go with your recommendations on all four".</b> C1: the primary button is indigo with a white label. C2: two fill leaves, glyph teal on white and teal ink in a track. C3: the night call to action and the Landing link are moonlight. B1: the §04 wording is approved and written to the brand spec (v1.5). The options not taken left the page (they are in commit 7c66f80). The six row build shape follows from C1 and C3. Everything else on the page follows from earlier rulings: G4 C (2026-10-03), R1 to R5 and W1 to W6 (both 2026-10-23).</div>
+  </header>
+
+  <section>
+    <div class="secno">§00 · Where this sits</div>
+    <div class="box">
+      <b>Already built, so this round starts from it:</b>
+      <ul>
+        <li>The action indigo, <code>colorAction #3F35A0</code>, 9.42:1 on white (R1). The value the issue proposed is the value that shipped.</li>
+        <li>The role layer in <code>constants/theme.ts</code> and the hue table in the design principles, v2.1 (R4).</li>
+        <li>The shared parts already speak indigo: <code>TextLink</code>, <code>HeaderAction</code>, <code>PickerRow</code>, <code>SlotRow</code>, <code>EditCard</code>, <code>FilterChip</code>, every Switch and the event chevrons. The filter menu and pet switcher use the selected role (R2).</li>
+        <li>The colour guard (<code>guards/colourRoles.test.ts</code>) lists the 75 places that still name the bright teal, each against the issue that moves it.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <b>The sort, applied to every site below.</b> One question per mark: what does it tell the owner?
+      <ul>
+        <li><b>You can tap, change or choose this</b> → indigo: <code>colorRoles.action</code>, or <code>colorRoles.selected</code> once chosen.</li>
+        <li><b>Something good is on the record</b> (a meal eaten, a dose given, a write landed) → teal: <code>colorRoles.positive</code>.</li>
+        <li><b>Where you are in a sequence</b> (a pager dot, an onboarding step) → neutral ink. It is neither an action nor a fact.</li>
+        <li><b>A door</b> (a row that opens a screen): the label that names where you go, and its chevron, are indigo; a fact written inside it stays teal.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="secno">§01 · Six screens</div>
+    <h2>Now and proposed</h2>
+    <p class="standfirst" style="font-size:15px">Each pair shows main today and the same screen after the builds. Frames paint the app's real tokens and ignore this page's theme. The payload is the PM's dog, Nyx, on day 18 of a 56 day hydrolyzed salmon trial. The proposed frames assume the recommended answer to each call in §02.</p>
+    <div id="screens" style="display:flex;flex-direction:column;gap:40px"></div>
+  </section>
+
+  <section>
+    <div class="secno">§02 · Three calls</div>
+    <h2>Ruled 2026-10-25</h2>
+    <div id="calls" style="display:flex;flex-direction:column;gap:40px"></div>
+  </section>
+
+  <section>
+    <div class="secno">§03 · The state set</div>
+    <h2>Failed, empty and the rest</h2>
+    <div class="box">
+      Most retry links only exist when something fails, so the failed state is where this round changes the most text. Every other state changes nothing new: each move is a colour on a mark that already exists, and none moves a box, so each frame is the same at 320pt and at the largest text size. <b>Two pets:</b> the pet switcher already uses the selected role; the tab bar avatar ring becomes indigo (Home frame). <b>VoiceOver:</b> no label or order changes; every chosen chip already announces itself as selected, so colour never carries the state alone. <b>Offline:</b> the offline line is neutral and has no action; the Retry under it is drawn below. <b>Loading:</b> skeletons are neutral and draw none of these marks.
+    </div>
+    <div id="states" style="display:flex;flex-direction:column;gap:40px"></div>
+  </section>
+
+  <section>
+    <div class="secno">§04 · In-app brand rule 3</div>
+    <h2>The rewrite, approved and written</h2>
+    <p class="standfirst" style="font-size:15px"><code>docs/culprit-in-app-brand-requirements.md</code> §1 rule 3 still says teal is the only interactive accent and indigo is only ever a ground. Two amendments carve out the FAB. Under G4 C the rule is backwards, so it is replaced, not amended again. Approved 2026-10-25 (B1) and written as v1.5 of the spec, with C3 = moonlight.</p>
+    <div class="wording">
+      <div class="box"><b>Now</b><br><span class="strike">3. One interactive accent. Teal colorAccent #00C2A8 remains the sole tappable/live accent on every ground. Indigo is only ever a world/ground color. Red keeps its shipped meanings (symptom / destructive) and is never decorative.</span> (plus the two FAB amendments of 2026-09-26 and 2026-10-06)</div>
+      <div class="box"><b>Proposed</b><br>3. <b>One action colour, chosen by its ground.</b> What the owner can tap, change or choose is indigo, <code>colorAction #3F35A0</code>, on light grounds (9.42:1 on white), and moonlight, <code>colorMoonlight</code>, on the night grounds, where indigo cannot show. Teal means a good fact and is never a control; it stays in the <code>CulpritMark</code> Signal dot, which is the logo, not a control. The brand night indigos (<code>colorBrandNight</code>, <code>colorBrandNightElevated</code>) stay grounds; the FAB is the one control drawn on the ground indigo, its disc <code>colorBrandNightElevated</code> with a white glyph (14.87:1). Red keeps its shipped meanings (symptom, destructive) and is never decorative. A screen reaches each colour through <code>colorRoles</code> by its job and its ground, never by hue (principles v2.1, § Color).</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="secno">§05 · The guard walk</div>
+    <h2>What each check needs</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Check</th><th>Today</th><th>What the builds change</th></tr></thead>
+      <tbody>
+        <tr><td><b>constants/theme.contrast.test.ts</b></td><td>Pins every role on its ground and fails on a role with no pin. Already encodes G4 C: action is indigo on light, moonlight on night.</td><td>Three new role leaves, each pinned: <code>action.fill</code> (white label on it, 9.42:1), <code>positive.fillOnLight</code> (glyph teal on white, 3.27:1), <code>positive.fillOnTrack</code> (teal ink on the chart track, 4.53:1). A failing pin records why the glyph teal cannot sit in a track (2.87:1). Under C3 (a), a pin for the night label on moonlight (15.8:1).</td></tr>
+        <tr><td><b>guards/colourRoles.test.ts</b></td><td>75 raw bright teal sites, each registered. A ratchet: the ceiling only falls.</td><td>Every FILL and CHOICE entry on the screens above goes, and the ceiling falls with it. What stays: the night grounds, the logo, the whorl until it retires, the onboarding preview's trend lines (CUL-2160) and the trial ledger's two cells (held, §06). The night CTA entry goes under C3 (a), and is re-argued as a ruled exception under C3 (b).</td></tr>
+        <tr><td><b>guards/accentOnLight.test.ts</b></td><td>A teal text key needs a marker naming its dark ground. It cannot tell a teal link from a teal fact, and neither can grep.</td><td>Unchanged by these builds. The hole it leaves is the 161 <code>colorAccentInk</code> sites: once the links leave them, every survivor is a fact, so the ink can join the guard's role only list. That is its own row (§06, row 06), so a teal link cannot come back.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="secno">§06 · The builds</div>
+    <h2>Rows, once you rule</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Row</th><th>Issue</th><th>What it moves</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><td class="num">02</td><td>CUL-2178</td><td>Fills and edges on light onto the new fill leaves: History's meal bars, the trial and profile progress, the trial chip and always dots, the look rail, the run rail, the ack dot, checkboxes, the Ask send and vet files add buttons, the Ask dot, the tab bar tick and ring. Pager and onboarding steps to neutral ink.</td><td>01</td></tr>
+        <tr><td class="num">03</td><td>CUL-2161</td><td>Links, choice chips, radios and fields onto action and selected, on every screen above, Home included; the symptom save to solid indigo (R5); the native pickers' accent colour.</td><td>01</td></tr>
+        <tr><td class="num">04</td><td>CUL-2160</td><td>The two trend lines on white (unchanged by this round).</td><td>—</td></tr>
+        <tr><td class="num">05</td><td>CUL-2200</td><td>The button: <code>PrimaryButton</code>'s primary and accent variants onto <code>action.fill</code> on light, and the night CTA per C3. Out of CUL-2178 because it changes every screen's main button.</td><td>01, 02 (same file)</td></tr>
+        <tr><td class="num">06</td><td>CUL-2201</td><td>The ratchet: <code>colorAccentInk</code> becomes role only, reached through <code>colorRoles.positive.textOnLight</code>.</td><td>03</td></tr>
+      </tbody>
+    </table></div>
+    <div class="box"><b>Forecast: 6 rows</b>, against the project's 4. Rows 05 and 06 are what this round found; both follow from C1 and C3. Rows 02, 03 and 05 should land in one TestFlight cut, so no screen shows indigo links beside teal ones.</div>
+  </section>
+
+  <section>
+    <div class="secno">§07 · Not in this round</div>
+    <div class="box">
+      <ul>
+        <li><b>The trial ledger's "meals logged" and "today" cells</b> stay as they are: their contrast floor and shape marks are gate 11 of the medication round (CUL-1902), still open.</li>
+        <li><b>The trend lines</b> (Ask's sparkline, the onboarding preview): the chart standard's call, CUL-2160.</li>
+        <li><b>Teal on states that are neither action nor fact</b>: the Signal card's "New" chip and the accent <code>Badge</code>. Parked as CUL-2202; the hue table has no row for "new".</li>
+        <li><b>The night grounds</b> (the recap, the Landing link, the paywall checks): already pinned and correct; the action colour there is moonlight (R3).</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="secno">§08 · Your reaction</div>
+    <h2>Three calls and one wording, answered</h2>
+    <ol class="react">
+      <li><b>C1 · The primary button.</b> Ruled: indigo with a white label. G4 C names primary buttons, and R5 already made the symptom save indigo.</li>
+      <li><b>C2 · A good fact as a fill.</b> Ruled: two leaves, glyph teal on white and teal ink in a track. Each clears 3:1 where it sits.</li>
+      <li><b>C3 · The night call to action.</b> Ruled: moonlight with a night label, and the Landing's "See how it works" link to moonlight. The logo dot keeps the teal.</li>
+      <li><b>B1 · Brand rule 3.</b> Ruled: approved as written; it is v1.5 of the brand spec.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+  // Every frame element names its kit part and token (CUL-1894). Colours are var(--token) only.
+  const C = {
+    action: 'var(--colorAction)', glyph: 'var(--colorAccentGlyph)', ink: 'var(--colorAccentInk)', bright: 'var(--colorAccent)',
+    selGround: 'var(--colorTextOnNight)', white: 'var(--colorTextOnDark)', black: 'var(--colorNeutralDark)', prim: 'var(--colorTextPrimary)',
+    sec: 'var(--colorTextSecondary)', med: 'var(--colorEventMedication)', moon: 'var(--colorMoonlight)', night: 'var(--colorBrandNight)',
+  };
+  const status = (night) => `<div class="status"><span>9:41</span><span>●●●</span></div>`;
+  const phone = (body, opts = {}) => `<div class="phone${opts.night ? ' night' : ''}" data-kit="Screen · ${opts.night ? 'colorBrandNight' : 'colorNeutralLight'}">${status()}<div class="scr">${body}</div>${opts.tabbar || ''}</div>`;
+  const fig = (tag, body, caption, cls = '') => `<figure><span class="ftag ${cls}">${tag}</span>${body}<figcaption>${caption}</figcaption></figure>`;
+  const link = (text, c, kit) => `<span class="t-med" style="color:${c}" data-kit="${kit}">${text}</span>`;
+  const chev = (c, kit) => `<span style="color:${c};font-weight:600" data-kit="${kit}">›</span>`;
+
+  // ---------- History ----------
+  const history = (p) => phone(`
+    <div class="t-title" data-kit="ThemedText · textXL, colorTextPrimary">History</div>
+    <div class="row" data-kit="WeekStrip">
+      <span style="color:${p ? C.action : C.ink};font-weight:600" data-kit="WeekStrip chevron · ${p ? 'colorRoles.action.onLight' : 'colorAccentInk'}">‹</span>
+      <span class="grow t-sec" style="text-align:center" data-kit="ThemedText · colorTextSecondary">19 to 25 Oct</span>
+      <span style="color:${p ? C.action : C.ink};font-weight:600" data-kit="WeekStrip chevron · ${p ? 'colorRoles.action.onLight' : 'colorAccentInk'}">›</span>
+    </div>
+    <div class="card" style="border-color:${p ? C.action : C.ink}" data-kit="DayCard cardLanded · ${p ? 'colorRoles.selected.edge' : 'colorAccentInk'}">
+      <div class="t-med" style="color:${p ? C.action : C.ink}" data-kit="DayCard dateLanded · ${p ? 'colorRoles.selected.ink' : 'colorAccentInk'}">Sat 24 Oct · 3 meals</div>
+      <div class="row"><i class="mbar" style="background:${p ? C.glyph : C.bright}" data-kit="DayCard bowl bar · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorEventMeal'}"></i><span class="grow">Breakfast · ate most</span><span class="t-sec">7:40</span></div>
+      <div class="row"><i class="mbar" style="background:${C.med}" data-kit="DayCard course bar · colorEventMedication"></i><span class="grow">Apoquel · given</span><span class="t-sec">8:05</span></div>
+      <div class="row"><i class="mbar" style="background:${p ? C.glyph : C.bright}" data-kit="DayCard bowl bar · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorEventMeal'}"></i><span class="grow">Dinner · ate all</span><span class="t-sec">18:10</span></div>
+    </div>
+    <div class="card">
+      <div class="t-med" data-kit="ThemedText · colorTextPrimary">Fri 23 Oct · 2 meals</div>
+      <div class="row"><i class="mbar" style="background:${p ? C.glyph : C.bright}" data-kit="HistoryList bowlBar · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorAccent'}"></i><span class="grow">Breakfast · ate most</span><span class="t-sec">7:52</span></div>
+    </div>
+    <div class="row"><div class="field grow" data-kit="SearchField · colorBorder">Search meals and notes</div>${link('Cancel', p ? C.action : C.ink, 'SearchField cancelLabel · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>`);
+
+  // ---------- Foods ----------
+  const foods = (p) => phone(`
+    <div class="row"><span class="t-title grow" data-kit="ThemedText · textXL">Foods</span>${link('Add a food', C.action, 'HeaderAction commit · colorRoles.action.onLight (W1, built)')}</div>
+    <div class="card" style="flex-direction:row;align-items:center;gap:10px" data-kit="FoodsTrialStrip · Card, colorSurface">
+      <i class="dot" style="background:${p ? C.glyph : C.bright}" data-kit="FoodsTrialStrip dot · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorAccent'}"></i>
+      <div class="grow"><div class="t-med" style="color:${C.ink}" data-kit="FoodsTrialStrip header · ${p ? 'colorRoles.positive.textOnLight' : 'colorAccentInk'}">Diet trial · day 18 of 56</div>
+      <div style="color:${C.ink}" data-kit="FoodsTrialStrip line · ${p ? 'colorRoles.positive.textOnLight' : 'colorAccentInk'}">Hydrolyzed salmon kibble</div></div>
+      ${chev(p ? C.action : C.ink, 'FoodsTrialStrip chevron · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}
+    </div>
+    <div class="t-ter" data-kit="ThemedText · colorTextTertiary">In the library</div>
+    <div class="card">
+      <div class="row"><span class="grow t-med">Hydrolyzed salmon kibble</span>
+        <span class="row" style="gap:5px"><i class="dot" style="background:${p ? C.glyph : C.bright}" data-kit="FoodRow trialChipDot · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorAccent'}"></i><span style="color:${C.ink};font-size:var(--textXS)" data-kit="FoodRow trialChipText · ${p ? 'colorRoles.positive.textOnLight' : 'colorAccentInk'}">On the trial</span></span></div>
+      <div class="row"><span class="grow t-med">Salmon skin chews</span><span class="t-sec">Treat</span></div>
+    </div>
+    <div class="t-ter">Archived</div>
+    <div class="card"><div class="row"><span class="grow t-sec">Chicken and rice</span>${link('Restore', p ? C.action : C.ink, 'ArchivedFoodRow restoreText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div></div>`);
+
+  // ---------- Trial screen ----------
+  const ledgerCells = () => Array.from({ length: 21 }, (_, i) => {
+    const logged = i < 17; const today = i === 17;
+    return `<i style="${logged ? 'background:' + C.bright : ''};${today ? 'border:2px solid ' + C.bright : ''}" data-kit="TrialLedger ${today ? 'today_open' : logged ? 'meals_logged' : 'empty'} · ${logged || today ? 'colorAccent (held: CUL-1902 gate 11)' : 'colorChartEmpty'}"></i>`;
+  }).join('');
+  const trial = (p) => phone(`
+    <div class="t-title" data-kit="ThemedText · textXL">Diet trial</div>
+    <div class="card">
+      <div class="row"><span class="grow t-med">Day 18 of 56</span><span class="t-sec">38 to go</span></div>
+      <div class="bar" data-kit="TrialDoorRow track · colorChartEmpty"><i style="width:32%;background:${p ? C.ink : C.bright}" data-kit="TrialDoorRow fill · ${p ? 'colorRoles.positive.fillOnTrack (new)' : 'colorAccent'}"></i></div>
+    </div>
+    <div class="card"><div class="t-ter">The last three weeks</div><div class="ledger">${ledgerCells()}</div></div>
+    <div class="card" style="flex-direction:row;align-items:center" data-kit="DoorRow strong · Card">
+      <div class="grow"><div class="t-med" style="color:${p ? C.action : C.ink}" data-kit="DoorRow doorHeadStrong · ${p ? 'colorRoles.action.onLight' : 'colorAccentInk'}">What Nyx can eat</div><div class="t-sec">1 food, 0 treats</div></div>
+      ${chev(p ? C.action : C.ink, 'DoorRow chevron · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}
+    </div>
+    <div class="row" style="justify-content:space-between">
+      ${link('Questions for the recheck', p ? C.action : C.ink, 'RecheckQuestions linkText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}
+      ${link('Manage', p ? C.action : C.ink, 'TrialScreen linkActionText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}
+    </div>`);
+
+  // ---------- Signal screen ----------
+  const signal = (p) => phone(`
+    <div class="t-ter">The Signal</div>
+    <div class="serif" style="font-size:var(--textSignal);line-height:var(--lineHeightSignal)" data-kit="ThemedText · fontDisplay, textSignal">Nyx has kept her breakfasts down for 11 days.</div>
+    <div class="row" style="gap:8px" data-kit="SignalScreen ackLine · live region">
+      <i class="dot" style="background:${p ? C.glyph : C.bright}" data-kit="SignalScreen ackDot · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorAccent'}"></i>
+      <span style="color:${C.ink}" data-kit="SignalScreen ackText · ${p ? 'colorRoles.positive.textOnLight' : 'colorAccentInk'}">Noted. Updating Nyx's picture…</span>
+    </div>
+    <div class="card"><div class="t-ter">Behind it</div><div>22 meals logged since 14 Oct; one vomit, on 13 Oct, before the run began.</div></div>
+    <div style="margin-top:auto">${link('See the month in Patterns', p ? C.action : C.ink, 'SignalZoneFoot linkText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>`);
+
+  // ---------- Log sheet: the symptom confirm ----------
+  const confirm = (p) => phone(`
+    <div class="t-title" data-kit="ThemedText · textXL">Vomit</div>
+    <div class="t-ter">How did you find out?</div>
+    <div class="row">
+      <span class="chip" style="border-color:${p ? C.action : C.bright};color:${p ? C.action : C.ink};${p ? 'background:' + C.selGround : ''}" data-kit="SimpleEventConfirm chipActive · ${p ? 'colorRoles.selected (edge, ink, ground)' : 'colorAccent edge, colorAccentInk label'}">Saw it</span>
+      <span class="chip" data-kit="SimpleEventConfirm chip · colorBorder">Found it</span>
+    </div>
+    <div class="t-ter">When</div>
+    <div class="row"><span class="radio" style="border-color:${p ? C.action : C.bright}" data-kit="SimpleEventConfirm radioOn · ${p ? 'colorRoles.selected.edge' : 'colorAccent'}"><i style="background:${p ? C.action : C.bright}" data-kit="radioDot · ${p ? 'colorRoles.selected.ink' : 'colorAccent'}"></i></span><span>Just now</span></div>
+    <div class="row"><span class="radio" data-kit="radio · colorBorderStrong"></span><span>Earlier today</span></div>
+    <div style="margin-top:auto" class="btn" data-kit="SimpleEventConfirm summaryPill · ${p ? 'colorRoles.action.fill (new), labelOnFill' : 'colorAccent edge, colorAccentLight wash, colorAccentInk label'}"
+      ${p ? `style="background:${C.action};color:${C.white}"` : `style="background:var(--colorAccentLight);border:1px solid ${C.bright};color:${C.ink}"`}>Log vomit · just now</div>`);
+
+  // ---------- Log sheet: the meal ----------
+  const tile = (name, sel, p) => `<div class="card" style="flex:1;padding:10px;gap:4px;${sel ? 'border-color:' + (p ? C.action : C.bright) + ';' + (p ? 'background:' + C.selGround : '') : ''}" data-kit="FoodTile${sel ? ' tileSelected · ' + (p ? 'colorRoles.selected' : 'colorAccent edge') : ' · Card'}">
+      <div class="row" style="justify-content:space-between"><span class="t-med">${name}</span>${sel ? `<span style="color:${p ? C.action : C.ink};font-weight:600" data-kit="FoodTile check · ${p ? 'colorRoles.selected.ink' : 'colorAccentInk'}">✓</span>` : ''}</div>
+      <span class="t-sec" style="font-size:var(--textXS)">${sel ? 'Usual bowl' : 'Treat'}</span></div>`;
+  const meal = (p, button) => phone(`
+    <div class="t-title" data-kit="ThemedText · textXL">Meal</div>
+    <div class="row" style="align-items:stretch">${tile('Salmon kibble', true, p)}${tile('Skin chews', false, p)}</div>
+    <div class="row"><span class="grow t-sec">Time</span>${link('7:40', p ? C.action : C.ink, 'TimeEditSheet save · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>
+    <div class="row"><span class="grow t-sec">How much</span>${link('Ate most', p ? C.action : C.ink, 'BowlEditor stepText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>
+    <div style="margin-top:auto">${button}</div>`);
+  const logItBlack = `<div class="btn" style="background:${C.black};color:${C.white}" data-kit="PrimaryButton primary · colorNeutralDark, colorTextOnDark">Log it</div>`;
+  const logItIndigo = `<div class="btn" style="background:${C.action};color:${C.white}" data-kit="PrimaryButton primary · colorRoles.action.fill (new), labelOnFill">Log it</div>`;
+
+  // ---------- Home ----------
+  const tabbar = (p) => `<div class="tabbar" data-kit="NyxTabBar · colorSurface">
+    ${['Home', 'History', 'Foods'].map((t, i) => `<div class="tab${i === 0 ? ' on' : ''}"><span>◇</span><span>${t}</span><i class="tick" style="${i === 0 ? 'background:' + (p ? C.action : C.bright) : ''}" data-kit="NyxTabBar tick${i === 0 ? 'Active · ' + (p ? 'colorRoles.selected.edge' : 'colorAccent') : ''}"></i></div>`).join('')}
+    <div class="tab"><span style="width:18px;height:18px;border-radius:var(--radiusFull);border:2px solid var(--colorBorder);display:block" data-kit="NyxTabBar avatarRing · colorBorder"></span><span>Nyx</span><i class="tick"></i></div></div>`;
+  const home = (p) => phone(`
+    <div class="row"><span class="t-title grow">Nyx</span><span class="row" style="gap:5px"><i class="dot" style="background:${p ? C.action : C.bright}" data-kit="HomeHeader askDot · ${p ? 'colorRoles.action.fill (new)' : 'colorAccent'}"></i><span class="t-med">Ask</span></span></div>
+    <div class="card"><div class="t-ter">The Signal</div><div class="serif" style="font-size:var(--textLG)">Kept her breakfasts down for 11 days.</div>${link('See it in Patterns', p ? C.action : C.ink, 'SignalZone patternsLinkText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>
+    <div class="card"><div class="row" style="gap:8px"><i style="width:3px;height:18px;border-radius:2px;background:${p ? C.glyph : C.bright}" data-kit="LookHeader rail · ${p ? 'colorRoles.positive.fillOnLight (new)' : 'colorAccent'}"></i><span class="grow t-med">Noticed today</span>${link('Change', p ? C.action : C.ink, 'LookHeader control · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div><div class="t-sec">Bright, normal energy.</div></div>
+    <div class="row"><span class="grow t-sec">3 of 7 days logged this week</span>${link('Fill a gap', p ? C.action : C.ink, 'CoverageDoor link · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>`, { tabbar: tabbar(p) });
+
+  const screens = [
+    ['History', history, `<b>Now:</b> chevrons, the landed day, Cancel in teal ink; meal bars in the bright teal (2.26:1 on white).`, `<b>Proposed:</b><ul><li>Chevrons and Cancel: action, 9.42:1.</li><li>The landed day: selected, it is the day you chose.</li><li>Meal bars: glyph teal, 3.27:1. Still teal: a meal is a good fact.</li></ul>`],
+    ['Foods', foods, `<b>Now:</b> the trial strip and its chevron are all teal, so nothing says which part opens.`, `<b>Proposed:</b><ul><li>The strip's text stays teal ink: the trial is a fact.</li><li>Its chevron and Restore: action.</li><li>Dots: glyph teal, 3.27:1 (was 2.26:1).</li></ul>`],
+    ['The trial screen', trial, `<b>Now:</b> the door label, both links and the progress fill are teal.`, `<b>Proposed:</b><ul><li>"What Nyx can eat", its chevron, both links: action.</li><li>The progress fill: teal ink in its track, 4.53:1 (C2).</li><li>The ledger cells: unchanged, held for gate 11.</li></ul>`],
+    ['The Signal screen', signal, `<b>Now:</b> the acknowledgement and the Patterns link are the same teal.`, `<b>Proposed:</b><ul><li>"Noted. Updating Nyx's picture" stays teal: a write landed, the W6 ruling.</li><li>The Patterns link: action.</li></ul>`],
+    ['The log sheet · a symptom', confirm, `<b>Now:</b> a chosen chip, the radio and the save are teal, the good fact colour, on a vomit.`, `<b>Proposed:</b><ul><li>Saw it and the radio: selected, indigo on the lavender wash.</li><li>The save: solid indigo with a white label (R5, ruled).</li></ul>`],
+    ['Home', home, `<b>Now:</b> Home's links stay teal by design until this round lands. The Ask dot and the tab tick are bright teal.`, `<b>Proposed:</b><ul><li>Every link and the Ask dot: action. The tab tick: selected.</li><li>The look rail: glyph teal, the Noticed record is a fact.</li><li>Lands with the other screens, never before them.</li></ul>`],
+  ];
+  document.getElementById('screens').innerHTML = screens.map(([name, f, now, next]) => `<div class="site"><h3>${name}</h3><div class="pair">${fig('Now · main', f(false), now)}${fig('Current proposal', f(true), next, 'cur')}</div></div>`).join('');
+
+  // ---------- §02 calls ----------
+  const progressCard = (fill, kit) => phone(`
+    <div class="t-title">Diet trial</div>
+    <div class="card"><div class="row"><span class="grow t-med">Day 18 of 56</span><span class="t-sec">38 to go</span></div>
+    <div class="bar" data-kit="TrialDoorRow track · colorChartEmpty"><i style="width:32%;background:${fill}" data-kit="${kit}"></i></div></div>
+    <div class="card"><div class="t-med">Sat 24 Oct · 3 meals</div>
+    <div class="row"><i class="mbar" style="background:${fill === C.ink ? C.ink : C.glyph}" data-kit="DayCard bowl bar · ${fill === C.ink ? 'teal ink' : 'positive.fillOnLight'}"></i><span class="grow">Breakfast · ate most</span></div>
+    <div class="row"><i class="mbar" style="background:${fill === C.ink ? C.ink : C.glyph}" data-kit="DayCard bowl bar"></i><span class="grow">Dinner · ate all</span></div></div>`);
+  const landing = (teal) => phone(`
+    <div style="display:flex;justify-content:center;margin-top:36px" data-kit="CulpritMark · colorMoonlight crescent, colorAccent dot (logo)">
+      <svg width="64" height="64" viewBox="0 0 100 100" aria-hidden="true"><defs><mask id="m${teal ? 'a' : 'b'}"><rect width="100" height="100" fill="white"/><circle cx="61" cy="43" r="29" fill="black"/></mask></defs>
+      <circle cx="45" cy="50" r="33" fill="var(--colorMoonlight)" mask="url(#m${teal ? 'a' : 'b'})"/><circle cx="66" cy="53" r="9" fill="var(--colorAccent)"/></svg></div>
+    <div class="serif" style="font-size:var(--text2XL);line-height:1.15;text-align:center;color:var(--colorMoonlight)" data-kit="wordmark · fontDisplay, colorMoonlight">Culprit</div>
+    <div style="text-align:center;color:var(--colorTextOnNightMuted)" data-kit="ThemedText sub · colorTextOnNightMuted">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div>
+    <div style="text-align:center;font-weight:500;color:${teal ? C.bright : C.moon}" data-kit="Landing learnMoreText · ${teal ? 'colorAccent (8.09:1 on night)' : 'colorRoles.action.onNight'}">See how it works ›</div>
+    <div style="margin-top:auto" class="btn" ${teal ? `style="background:${C.bright};color:${C.black}" data-kit="PrimaryButton accent · colorAccent, colorNeutralDark"` : `style="background:${C.moon};color:${C.night}" data-kit="PrimaryButton accent on night · colorRoles.action.onNight, colorBrandNight label"`}>Create account</div>
+    <div style="text-align:center;color:var(--colorTextOnNight)" data-kit="TouchableOpacity loginText · colorTextOnNight">Log in</div>`, { night: true });
+
+  const calls = [
+    { id: 'C1 · The primary button', p: 'Every screen\'s main button is near black today, the one the spec calls the FAB\'s echo. Under G4 C a primary button is an action. R5 already made the symptom save solid indigo, so keeping black leaves two save colours one sheet apart.',
+      a: fig('Ruled · indigo', meal(true, logItIndigo), 'White on indigo, 9.42:1. The save matches the FAB disc family and the symptom save.', 'cur'),
+      c: '<b>Deciding:</b> the colour of every primary button. <b>Consequence:</b> (a) files row 05; (b) leaves <code>PrimaryButton</code> as it is and row 05 covers only the accent variant.' },
+    { id: 'C2 · A good fact as a fill', p: 'A fill that carries state needs 3:1 against what is next to it. The glyph teal clears that on white (3.27:1) but not in the grey track a progress bar sits in (2.87:1). Teal ink clears both.',
+      a: fig('Ruled · two leaves', progressCard(C.ink, 'TrialDoorRow fill · colorRoles.positive.fillOnTrack (new), colorAccentInk'), 'In a track, teal ink (4.53:1). On white, the glyph teal (3.27:1), so History\'s meal bars stay the teal owners know.', 'cur'),
+      c: '<b>Deciding:</b> how many fill leaves the positive role gets. <b>Consequence:</b> (a) two pins in the contrast test; (b) one, and History visibly darkens.' },
+    { id: 'C3 · The night call to action', p: 'The Landing, How it works and the paywall put a teal button on the night ground, and the Landing\'s "See how it works" is a teal link. The hue table says teal is never a control, and R3 says the action on night is moonlight. The teal stays on this screen either way, in the logo\'s dot.',
+      a: fig('Ruled · moonlight', landing(false), 'Night label on moonlight, 15.8:1. The logo dot is the only teal, which makes it read as the brand.', 'cur'),
+      c: '<b>Deciding:</b> whether the first screen a new owner sees follows the hue table. <b>Consequence:</b> (a) edits a screen the brand spec locked in §4, inside row 05; (b) one more registry entry, argued as a ruled exception.' },
+  ];
+  document.getElementById('calls').innerHTML = calls.map(k => `<div class="site"><h3>${k.id}</h3><p>${k.p}</p><div class="pair">${k.a}</div><p>${k.c}</p></div>`).join('');
+
+  // ---------- §03 states ----------
+  const failed = (p) => phone(`
+    <div class="t-title">History</div>
+    <div class="card"><div class="t-med">Sat 24 Oct · 3 meals</div><div class="row"><i class="mbar" style="background:${p ? C.glyph : C.bright}"></i><span class="grow">Breakfast · ate most</span></div></div>
+    <div class="t-sec" style="text-align:center" data-kit="HistoryList moreError · colorTextSecondary">Couldn't load older days.</div>
+    <div style="text-align:center">${link('Try again', p ? C.action : C.ink, 'HistoryList moreRetryText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>
+    <div class="card" style="margin-top:8px"><div class="t-ter">The Signal</div><div class="t-sec" data-kit="SignalScreen error · colorTextSecondary">The Signal didn't load. You're offline.</div>${link('Try again', p ? C.action : C.ink, 'SignalScreen retryText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}</div>`);
+  const empty = (p) => phone(`
+    <div class="t-title">Foods</div>
+    <div style="margin-top:40px;display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center" data-kit="EmptyState">
+      <div class="serif" style="font-size:var(--textLG)">Nyx's foods will live here.</div>
+      <div class="t-sec">Log a meal and it joins the list, so next time it's one tap.</div>
+      ${link('Add Nyx\'s first food', p ? C.action : C.ink, 'EmptyState actionText · ' + (p ? 'colorRoles.action.onLight' : 'colorAccentInk'))}
+    </div>
+    <div style="margin-top:auto;border-radius:var(--radiusLarge);background:var(--colorSurface);border:1px solid var(--colorBorder);padding:10px 14px" class="row" data-kit="Snackbar · colorSurface">
+      <span class="grow">Archived Chicken and rice</span><span class="t-med" style="color:${p ? C.action : C.ink}" data-kit="Snackbar action · ${p ? 'colorRoles.action.onLight' : 'colorAccentInk'}">Undo</span></div>`);
+  document.getElementById('states').innerHTML = `
+    <div class="site"><h3>Failed and offline</h3><div class="pair">${fig('Now · main', failed(false), '<b>Now:</b> every Try again is teal ink.')}${fig('Current proposal', failed(true), '<b>Proposed:</b> action. History, the Signal, Today, the trial ledger and Patterns share one retry colour.', 'cur')}</div></div>
+    <div class="site"><h3>Empty, and the snackbar</h3><div class="pair">${fig('Now · main', empty(false), '<b>Now:</b> the empty state\'s action and Undo are teal ink.')}${fig('Current proposal', empty(true), '<b>Proposed:</b> the empty state\'s action and Undo are indigo, 9.42:1 on the white snackbar (teal ink was 5.17:1).', 'cur')}</div></div>`;
+</script>
