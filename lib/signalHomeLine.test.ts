@@ -29,7 +29,8 @@ import type {
 } from './signal';
 import { signalTitle } from './signalTitle';
 import { hasTitleVerdictWord } from './signalTitle';
-import { askStandalone, signalHomeAsk, signalHomeLabel, signalHomeLine, type SignalHomeLine } from './signalHomeLine';
+import { askStandalone, signalHomeAsk, signalHomeLabel, signalHomeLine, timingRowDenominatorLine, type SignalHomeLine } from './signalHomeLine';
+import { isTimingFinding, timingCompareRows } from './signalCopy';
 
 const PET = 'Nyx';
 const SYMPTOMS: SignalSymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze'];
@@ -532,6 +533,30 @@ describe('the spoken label', () => {
   it('every safety row speaks its ask — never behind a tap, for any reader', () => {
     for (const f of everyFinding().filter((x) => x.priorityClass === 'safety')) {
       expect(signalHomeLabel(line(f))).toContain(askStandalone(line(f).ask as string));
+    }
+  });
+});
+
+// CUL-1499: the timing row draws the two-count compare, never a lane, so the line under it
+// must carry what the compare cannot: every episode (the untimed ones are the gap) and the
+// window the engine counted.
+describe('the timing row: the compare and its denominator line', () => {
+  it('names the timed, the total and the window, each from the field its words name', () => {
+    const post = { ...(timings('vomit')[0] as PostprandialTimingFinding), rapidCount: 8, eligibleCount: 9, totalEpisodes: 12, windowDays: 60 };
+    expect(timingRowDenominatorLine(post)).toBe('9 timed of 12 episodes · last 60 days');
+    const clock = { ...(timings('vomit')[2] as TimeOfDayClusteringFinding), eligibleCount: 1, totalEpisodes: 1, windowDays: 56 };
+    expect(timingRowDenominatorLine(clock)).toBe('1 timed of 1 episode · last 56 days');
+  });
+
+  it('is null for every type the row does not draw a timing compare for', () => {
+    for (const f of everyFinding().filter((x) => !isTimingFinding(x))) expect(timingRowDenominatorLine(f)).toBeNull();
+  });
+
+  it('the compare partitions the timed episodes: its two counts add up to the line’s timed number', () => {
+    for (const f of everyFinding().filter(isTimingFinding)) {
+      const [inside, later] = timingCompareRows(f);
+      expect(inside.count + later.count).toBe(f.eligibleCount);
+      expect(timingRowDenominatorLine(f)).toContain(`${f.eligibleCount} timed of `);
     }
   });
 });

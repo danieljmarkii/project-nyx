@@ -3,8 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { signalRailStyle } from './railTint';
 import type { CachedFinding, ReflectionFinding, SignalFinding } from '../../../lib/signal';
-import { type CompareRow, dotLaneModel, isTimingFinding, symptomWord, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
-import { askStandalone, rowReadsScreen, signalHomeLabel, trialSoFarClause, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
+import { type CompareRow, isTimingFinding, symptomWord, timingCompareRows } from '../../../lib/signalCopy';
+import { askStandalone, rowReadsScreen, signalHomeLabel, timingRowDenominatorLine, trialSoFarClause, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
 import { countedHomePair } from '../../../lib/signalCounts';
 import { foldIdentity } from '../../../lib/signalFold';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
@@ -13,7 +13,7 @@ import { useSyncStore } from '../../../store/syncStore';
 import { useMinuteNow } from '../../../hooks/useIncidentFloorFacts';
 import { signalTrialWindowFor } from '../../../lib/signalTrialAnchor';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
-import { DotLane, StackedCompare } from '../../home/SignalReceipts';
+import { StackedCompare } from '../../home/SignalReceipts';
 import { DoorMark } from '../home/DoorMark';
 import { GUTTER_RAIL } from '../home/HomeCard';
 import { ThemedText } from '../../ui/ThemedText';
@@ -26,8 +26,9 @@ import { ThemedText } from '../../ui/ThemedText';
 //   Worth a call to your vet                             ← the ask, in words, on Home
 //
 //   Vomiting soon after meals                        ›
-//   [ the timing lane, miniature ]                       ← insight rows only (never safety)
-//   9 of 10 timed episodes within 30 min of eating
+//   Within 30 min of eating  ▇▇▇▇▇▇▇▇  9                 ← insight rows only (never safety)
+//   Timed, but later         ▇        1
+//   10 timed of 12 episodes · last 60 days
 //
 // THE ROW IS A DOOR. One `Pressable`, one verb: it opens the finding's own screen, and
 // never expands. The chevron is what makes a lower card LOOK like a door — the PM's device
@@ -47,10 +48,17 @@ import { ThemedText } from '../../ui/ThemedText';
 //
 // THE THUMBNAIL IS DRAWN FROM THE FINDING, not from a second read of the record, so the
 // picture and the line beside it can never disagree (the PM's ruling on CUL-1270, build
-// call i): the timing lane from `dotLaneModel` (the shipped card-face receipt, degrading to
-// its compare above the legibility cap), and for the frequency comparison the shipped
-// Shape C pair from `currentCount` / `priorCount` — absent when the density gate withholds
-// the prior (S2: never a numerator-only visual). Every other type is words only.
+// call i): for a timing finding the two-count compare (`timingCompareRows`), and for the
+// frequency comparison the shipped Shape C pair from `currentCount` / `priorCount` — absent
+// when the density gate withholds the prior (S2: never a numerator-only visual). Every other
+// type is words only.
+//
+// THE TIMING ROW DRAWS NO LANE (CUL-1499, PM 2026-10-25). The finding carries counts, not
+// each episode's minutes, so a lane could only space its dots by index, and its "30m" sat at
+// mid-lane while the band ended at a quarter: a vet read a tighter, earlier cluster than the
+// record holds. Until per-episode minutes ship, every mark on the row is a count, and the
+// line under it names the denominator and the window. The true-minutes lane is the screen's
+// (`TimingLanes`).
 //
 // Touch geometry (C-5): rows are stacked between hairlines, so the row's own box — its
 // padding included — is the whole target and carries NO slop: two adjacent doors abut and
@@ -170,14 +178,18 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   const safety = finding.priorityClass === 'safety';
   // A frequency row whose pair renders prints its counts in the pair, not twice (S10).
   const pair = finding.type === 'reflection' && !quietInsight && !setAside ? rowPairOf(finding, ready) : null;
-  const subCount = pair ? null : line.count;
+  // A timing row's compare prints its two counts, so the line under it carries the
+  // denominator and the window instead (CUL-1499); the spoken label keeps both.
+  const timingLine = safety ? null : timingRowDenominatorLine(finding);
+  const subCount = pair ? null : (timingLine ?? line.count);
+  const spoken = timingLine ? { ...line, count: [line.count, timingLine.replace(' · ', ', ')].filter(Boolean).join('. ') } : line;
   const thumbnail = safety ? null : <Thumbnail finding={finding} pair={pair} />;
 
   return (
     <Pressable
       onPress={() => onOpen(finding)}
       accessibilityRole="button"
-      accessibilityLabel={backLine ? `${backLine} ${signalHomeLabel(line)}` : signalHomeLabel(line)}
+      accessibilityLabel={backLine ? `${backLine} ${signalHomeLabel(spoken)}` : signalHomeLabel(spoken)}
       accessibilityHint={DOOR_A11Y_HINT}
       style={styles.row}
       testID="signal-row"
@@ -295,8 +307,8 @@ function Thumbnail({ finding, pair }: { finding: SignalFinding; pair: CompareRow
   if (finding.priorityClass !== 'insight') return null;
   if (isTimingFinding(finding)) {
     return (
-      <View style={styles.thumb} testID="signal-row-thumb-lane" accessible={false}>
-        {timingReceiptDegrades(finding) ? <StackedCompare rows={timingCompareRows(finding)} /> : <DotLane model={dotLaneModel(finding)} />}
+      <View style={styles.thumb} testID="signal-row-thumb-timing" accessible={false}>
+        <StackedCompare rows={timingCompareRows(finding)} />
       </View>
     );
   }

@@ -284,6 +284,18 @@ export function askStandalone(ask: string): string {
  * The row's spoken label — one sentence per line, the eyebrow's middle dot said as a
  * comma (VoiceOver reads "·" as nothing), and the ask always in it.
  */
+/**
+ * The timing row's denominator and window (CUL-1499): "9 timed of 12 episodes · last 60 days".
+ * The row's picture is the two-count compare, which prints the in-window and later counts, so
+ * this line carries what the compare cannot: how many episodes there were in all (the untimed
+ * ones are the gap between the two numbers) and the window the engine counted. Null for every
+ * other type. The form is the timing story's sample line, with the window named as a span.
+ */
+export function timingRowDenominatorLine(finding: SignalFinding): string | null {
+  if (finding.type !== 'postprandial_timing' && finding.type !== 'timeofday_clustering') return null;
+  return `${finding.eligibleCount} timed of ${plural(finding.totalEpisodes, 'episode', 'episodes')} · last ${finding.windowDays} days`;
+}
+
 export function signalHomeLabel(line: SignalHomeLine): string {
   const parts: string[] = [];
   if (line.eyebrow) parts.push(line.eyebrow.replace(' · ', ', '));
