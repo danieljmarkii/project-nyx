@@ -3,7 +3,7 @@
 **Date:** 2026-10-25
 **One thing:** none: the session's concept (a chart drawn from counts cannot claim positions the payload lacks) is the chart standard itself, already taught.
 
-BUILD session for CUL-1499, shipped via #PR_NUMBER.
+BUILD session for CUL-1499, shipped via #1330.
 
 **What was wrong.** Under Design v2, Home's Signal row drew the timing finding as `DotLane`. The finding carries counts, not each episode's minutes, so the lane spaced its dots by index. Its "30m" label, one of three words in a `space-between` row, sat at mid-lane while the band ended at 30/120 of it. The row also never named its 60-day window or the untimed episodes. The time-of-day lane had the same index spacing, though its band was correctly placed.
 
