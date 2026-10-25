@@ -111,10 +111,10 @@
 
 <div class="wrap">
   <header class="mast">
-    <div class="eyebrow"><span class="roundtag">Round 1 · for your reaction</span><span>CUL-1279 · G4 C, app-wide</span><span>Design system · colour fills and links, PR-01</span></div>
+    <div class="eyebrow"><span class="roundtag">Round 1 · reacted</span><span>CUL-1279 · G4 C, app-wide</span><span>Design system · colour fills and links, PR-01</span></div>
     <h1>Indigo acts, teal is a good fact: every screen</h1>
     <p class="standfirst">On 2026-10-03 you ruled that indigo means "you can act" and teal means "a good fact". The colour roles and the glyph walk have built most of that. What is left is every link, choice, fill and button that still speaks teal, on History, Foods, the trial screen, the Signal screen, the log sheet and Home. This round draws them all, so they can move in one landing and no screen is the only one in indigo.</p>
-    <div class="box"><b>Ledger.</b> Round 1, not yet reacted. Three calls are yours (§02) and one wording (§04). Everything else on the page follows from rulings you have already made: G4 C (2026-10-03), R1 to R5 of the colour roles round and W1 to W6 of the walk (both 2026-10-23).</div>
+    <div class="box"><b>Ledger · the PM's reaction, 2026-10-25: "go with your recommendations on all four".</b> C1: the primary button is indigo with a white label. C2: two fill leaves, glyph teal on white and teal ink in a track. C3: the night call to action and the Landing link are moonlight. B1: the §04 wording is approved and written to the brand spec (v1.5). The options not taken left the page (they are in commit 7c66f80). The six row build shape follows from C1 and C3. Everything else on the page follows from earlier rulings: G4 C (2026-10-03), R1 to R5 and W1 to W6 (both 2026-10-23).</div>
   </header>
 
   <section>
@@ -148,7 +148,7 @@
 
   <section>
     <div class="secno">§02 · Three calls</div>
-    <h2>Yours to rule</h2>
+    <h2>Ruled 2026-10-25</h2>
     <div id="calls" style="display:flex;flex-direction:column;gap:40px"></div>
   </section>
 
@@ -163,11 +163,11 @@
 
   <section>
     <div class="secno">§04 · In-app brand rule 3</div>
-    <h2>The rewrite, for your approval</h2>
-    <p class="standfirst" style="font-size:15px"><code>docs/culprit-in-app-brand-requirements.md</code> §1 rule 3 still says teal is the only interactive accent and indigo is only ever a ground. Two amendments carve out the FAB. Under G4 C the rule is backwards, so it is replaced, not amended again. This is the exact text that would be written (Tier 2, on your word). It assumes C3 (a); the clause that changes under C3 (b) is marked.</p>
+    <h2>The rewrite, approved and written</h2>
+    <p class="standfirst" style="font-size:15px"><code>docs/culprit-in-app-brand-requirements.md</code> §1 rule 3 still says teal is the only interactive accent and indigo is only ever a ground. Two amendments carve out the FAB. Under G4 C the rule is backwards, so it is replaced, not amended again. Approved 2026-10-25 (B1) and written as v1.5 of the spec, with C3 = moonlight.</p>
     <div class="wording">
       <div class="box"><b>Now</b><br><span class="strike">3. One interactive accent. Teal colorAccent #00C2A8 remains the sole tappable/live accent on every ground. Indigo is only ever a world/ground color. Red keeps its shipped meanings (symptom / destructive) and is never decorative.</span> (plus the two FAB amendments of 2026-09-26 and 2026-10-06)</div>
-      <div class="box"><b>Proposed</b><br>3. <b>One action colour, chosen by its ground.</b> What the owner can tap, change or choose is indigo, <code>colorAction #3F35A0</code>, on light grounds (9.42:1 on white), and moonlight, <code>colorMoonlight</code>, on the night grounds, where indigo cannot show. Teal means a good fact and is never a control; it stays in the <code>CulpritMark</code> Signal dot, which is the logo, not a control. <i>[C3 (b) adds: "One exception: the night call to action on the Landing and the paywall keeps its teal fill."]</i> The brand night indigos (<code>colorBrandNight</code>, <code>colorBrandNightElevated</code>) stay grounds; the FAB is the one control drawn on the ground indigo, its disc <code>colorBrandNightElevated</code> with a white glyph (14.87:1). Red keeps its shipped meanings (symptom, destructive) and is never decorative. A screen reaches each colour through <code>colorRoles</code> by its job and its ground, never by hue (principles v2.1, § Color).</div>
+      <div class="box"><b>Proposed</b><br>3. <b>One action colour, chosen by its ground.</b> What the owner can tap, change or choose is indigo, <code>colorAction #3F35A0</code>, on light grounds (9.42:1 on white), and moonlight, <code>colorMoonlight</code>, on the night grounds, where indigo cannot show. Teal means a good fact and is never a control; it stays in the <code>CulpritMark</code> Signal dot, which is the logo, not a control. The brand night indigos (<code>colorBrandNight</code>, <code>colorBrandNightElevated</code>) stay grounds; the FAB is the one control drawn on the ground indigo, its disc <code>colorBrandNightElevated</code> with a white glyph (14.87:1). Red keeps its shipped meanings (symptom, destructive) and is never decorative. A screen reaches each colour through <code>colorRoles</code> by its job and its ground, never by hue (principles v2.1, § Color).</div>
     </div>
   </section>
 
@@ -197,7 +197,7 @@
         <tr><td class="num">06</td><td>CUL-2201</td><td>The ratchet: <code>colorAccentInk</code> becomes role only, reached through <code>colorRoles.positive.textOnLight</code>.</td><td>03</td></tr>
       </tbody>
     </table></div>
-    <div class="box"><b>Forecast: 6 rows</b>, against the project's 4. Rows 05 and 06 are what this round found, so the shape comes back to you here. Rows 02, 03 and 05 should land in one TestFlight cut, so no screen shows indigo links beside teal ones.</div>
+    <div class="box"><b>Forecast: 6 rows</b>, against the project's 4. Rows 05 and 06 are what this round found; both follow from C1 and C3. Rows 02, 03 and 05 should land in one TestFlight cut, so no screen shows indigo links beside teal ones.</div>
   </section>
 
   <section>
@@ -214,12 +214,12 @@
 
   <section>
     <div class="secno">§08 · Your reaction</div>
-    <h2>Three calls and one wording</h2>
+    <h2>Three calls and one wording, answered</h2>
     <ol class="react">
-      <li><b>C1 · The primary button.</b> Indigo with a white label (<span class="rec">recommended</span>: G4 C names primary buttons, and R5 already made the symptom save indigo, so a black "Log it" would be the one save that is not), or keep near black.</li>
-      <li><b>C2 · A good fact as a fill.</b> Two leaves, glyph teal on white and teal ink in a track (<span class="rec">recommended</span>: each clears 3:1 where it sits, and History's meal bars keep the teal owners know), or teal ink everywhere.</li>
-      <li><b>C3 · The night call to action.</b> Moonlight with a night label (<span class="rec">recommended</span>: R3 already says night actions are moonlight, and the logo dot keeps the teal on the Landing), or keep the teal fill as a named exception.</li>
-      <li><b>B1 · Brand rule 3.</b> Approve the §04 wording as written, or name the change. Nothing is written to the brand spec until you do.</li>
+      <li><b>C1 · The primary button.</b> Ruled: indigo with a white label. G4 C names primary buttons, and R5 already made the symptom save indigo.</li>
+      <li><b>C2 · A good fact as a fill.</b> Ruled: two leaves, glyph teal on white and teal ink in a track. Each clears 3:1 where it sits.</li>
+      <li><b>C3 · The night call to action.</b> Ruled: moonlight with a night label, and the Landing's "See how it works" link to moonlight. The logo dot keeps the teal.</li>
+      <li><b>B1 · Brand rule 3.</b> Ruled: approved as written; it is v1.5 of the brand spec.</li>
     </ol>
   </section>
 </div>
@@ -374,19 +374,16 @@
 
   const calls = [
     { id: 'C1 · The primary button', p: 'Every screen\'s main button is near black today, the one the spec calls the FAB\'s echo. Under G4 C a primary button is an action. R5 already made the symptom save solid indigo, so keeping black leaves two save colours one sheet apart.',
-      a: fig('Current proposal · indigo', meal(true, logItIndigo), '<b>Recommended.</b> White on indigo, 9.42:1. The save matches the FAB disc family and the symptom save.', 'cur'),
-      b: `<div class="optbox"><span class="lbl">Option, drawn for the decision</span>${fig('Keep near black', meal(true, logItBlack), 'White on near black, 19.8:1. The chips above it are indigo; the button is not.', 'opt')}</div>`,
+      a: fig('Ruled · indigo', meal(true, logItIndigo), 'White on indigo, 9.42:1. The save matches the FAB disc family and the symptom save.', 'cur'),
       c: '<b>Deciding:</b> the colour of every primary button. <b>Consequence:</b> (a) files row 05; (b) leaves <code>PrimaryButton</code> as it is and row 05 covers only the accent variant.' },
     { id: 'C2 · A good fact as a fill', p: 'A fill that carries state needs 3:1 against what is next to it. The glyph teal clears that on white (3.27:1) but not in the grey track a progress bar sits in (2.87:1). Teal ink clears both.',
-      a: fig('Current proposal · two leaves', progressCard(C.ink, 'TrialDoorRow fill · colorRoles.positive.fillOnTrack (new), colorAccentInk'), '<b>Recommended.</b> In a track, teal ink (4.53:1). On white, the glyph teal (3.27:1), so History\'s meal bars stay the teal owners know.', 'cur'),
-      b: `<div class="optbox"><span class="lbl">Option, drawn for the decision</span>${fig('Teal ink everywhere', (() => { const s = progressCard(C.ink, 'TrialDoorRow fill · colorAccentInk'); return s; })(), 'One leaf, simpler. Every meal bar in History and on the day spine goes to the darker ink, undoing W3, which ruled the glyph teal for the spine\'s meal dot.', 'opt')}</div>`,
+      a: fig('Ruled · two leaves', progressCard(C.ink, 'TrialDoorRow fill · colorRoles.positive.fillOnTrack (new), colorAccentInk'), 'In a track, teal ink (4.53:1). On white, the glyph teal (3.27:1), so History\'s meal bars stay the teal owners know.', 'cur'),
       c: '<b>Deciding:</b> how many fill leaves the positive role gets. <b>Consequence:</b> (a) two pins in the contrast test; (b) one, and History visibly darkens.' },
     { id: 'C3 · The night call to action', p: 'The Landing, How it works and the paywall put a teal button on the night ground, and the Landing\'s "See how it works" is a teal link. The hue table says teal is never a control, and R3 says the action on night is moonlight. The teal stays on this screen either way, in the logo\'s dot.',
-      a: fig('Current proposal · moonlight', landing(false), '<b>Recommended.</b> Night label on moonlight, 15.8:1. The logo dot is the only teal, which makes it read as the brand.', 'cur'),
-      b: `<div class="optbox"><span class="lbl">Option, drawn for the decision</span>${fig('Keep teal', landing(true), 'Near black on teal, 8.75:1. Brand rule 3 names it as the one exception (§04).', 'opt')}</div>`,
+      a: fig('Ruled · moonlight', landing(false), 'Night label on moonlight, 15.8:1. The logo dot is the only teal, which makes it read as the brand.', 'cur'),
       c: '<b>Deciding:</b> whether the first screen a new owner sees follows the hue table. <b>Consequence:</b> (a) edits a screen the brand spec locked in §4, inside row 05; (b) one more registry entry, argued as a ruled exception.' },
   ];
-  document.getElementById('calls').innerHTML = calls.map(k => `<div class="site"><h3>${k.id}</h3><p>${k.p}</p><div class="pair">${k.a}${k.b}</div><p>${k.c}</p></div>`).join('');
+  document.getElementById('calls').innerHTML = calls.map(k => `<div class="site"><h3>${k.id}</h3><p>${k.p}</p><div class="pair">${k.a}</div><p>${k.c}</p></div>`).join('');
 
   // ---------- §03 states ----------
   const failed = (p) => phone(`

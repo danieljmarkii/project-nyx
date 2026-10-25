@@ -28,3 +28,12 @@ Most of what the issue asked for had already been built by the design system pro
 ## Corrections made before publishing
 
 Two claims in the first draft did not survive a check: the snackbar sits on white (it moved to daylight in CUL-1691), not on a dark ground; and "teal ink reads close to the medication slate" was not measurable, so it was replaced with what option C2 (b) actually undoes (W3).
+
+## The PM's reaction, same session
+
+"Go with your recommendations on all four": C1 the primary button is indigo; C2 two fill leaves (glyph teal on white, teal ink in a track); C3 the night call to action and the Landing link are moonlight; B1 brand rule 3 approved as written. Written the same session:
+
+- `docs/culprit-in-app-brand-requirements.md` v1.5: §1 rule 3 replaced, its two FAB amendments folded in.
+- The mock republished as the reacted round (ledger, options not taken removed; they are in commit 7c66f80).
+- CUL-2200 to Todo with the code comments that still quote the old rule added to its scope; CUL-2178 and CUL-2161 scoped site by site in comments; the project page's rulings updated. CUL-1279 off `Waiting on PM`.
+- The six row shape follows from C1 and C3 and was not ruled separately.
