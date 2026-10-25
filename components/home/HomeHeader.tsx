@@ -3,7 +3,7 @@ import { StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { ThemedText } from '../ui/ThemedText';
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
     width: ASK_DOT_SIZE,
     height: ASK_DOT_SIZE,
     borderRadius: ASK_DOT_SIZE / 2,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.action.fill,
   },
   askLabel: {
     fontWeight: theme.weightSemibold,

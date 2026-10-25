@@ -42,7 +42,7 @@
 import { Fragment } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { describeDayEvent } from '../../lib/dayEvents';
 import {
   dayHeaderOf,
@@ -185,7 +185,7 @@ function ItemMark({ item }: { item: DateOnlyItem }) {
       style={[
         styles.mark,
         styles.markBar,
-        { backgroundColor: item.kind === 'bowl' ? theme.colorEventMeal : theme.colorEventMedication },
+        { backgroundColor: item.kind === 'bowl' ? colorRoles.positive.fillOnLight : theme.colorEventMedication },
       ]}
     />
   );

@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, theme, shadows } from '../../constants/theme';
 import { EventIcon } from '../event/EventIcon';
 import type { EventTypeKey } from '../../constants/eventTypes';
 import { ThemedText } from '../ui/ThemedText';
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
   },
   qtileHot: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.positive.fillOnLight,
     backgroundColor: theme.colorAccentLight,
   },
   qIcon: {
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     width: theme.space2,
     height: theme.space2,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
     alignItems: 'center',
     justifyContent: 'center',
   },

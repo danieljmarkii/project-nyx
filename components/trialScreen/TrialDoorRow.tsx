@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import type { TrialDoorRowModel } from '../../lib/trialDoorRow';
 
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   fill: {
     height: 5,
     borderRadius: 3,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnTrack,
   },
   subline: {
     fontSize: theme.textXS,

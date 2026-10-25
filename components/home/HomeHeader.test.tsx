@@ -3,7 +3,7 @@ import { render, fireEvent, act } from '@testing-library/react-native';
 import { HomeHeader, HOME_HEADER_CONTENT_HEIGHT } from './HomeHeader';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import {
   ASK_BORDER,
   ASK_DOT_GAP,
@@ -328,7 +328,7 @@ describe('the right cluster is unchanged (B-228 D5 placement)', () => {
 
     const dot = collect(toJSON(), 'View')
       .map((n) => Object.assign({}, ...[n.props.style].flat(2).filter(Boolean)))
-      .find((st) => st.backgroundColor === theme.colorAccent);
+      .find((st) => st.backgroundColor === colorRoles.action.fill);
     expect(dot.width).toBe(ASK_DOT_SIZE);
     expect(dot.height).toBe(ASK_DOT_SIZE);
 

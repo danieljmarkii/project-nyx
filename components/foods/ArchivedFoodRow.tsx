@@ -1,5 +1,5 @@
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FORMAT_LABEL } from '../../lib/food';
 import { ThemedText } from '../ui/ThemedText';
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   trialChipText: {
     flexShrink: 1,

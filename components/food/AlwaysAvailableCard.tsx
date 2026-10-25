@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   sharedHintText: {
     flex: 1,

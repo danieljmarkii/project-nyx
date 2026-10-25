@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { ArrowUp, ArrowLeft, Plus } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { usePetStore } from '../store/petStore';
 import { useIsOnline } from '../hooks/useIsOnline';
 import { useAskStore } from '../store/askStore';
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.action.fill,
     alignItems: 'center',
     justifyContent: 'center',
   },

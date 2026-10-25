@@ -918,7 +918,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   alwaysRowText: {
     flex: 1,

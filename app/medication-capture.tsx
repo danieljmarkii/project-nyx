@@ -28,7 +28,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Check, Camera, Images } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { ThemedText, fontFamilyForWeight } from '../components/ui/ThemedText';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
@@ -958,8 +958,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxChecked: {
-    backgroundColor: theme.colorAccent,
-    borderColor: theme.colorAccent,
+    backgroundColor: colorRoles.selected.ink,
+    borderColor: colorRoles.selected.edge,
   },
   confirmCheckText: {
     fontSize: theme.textMD,

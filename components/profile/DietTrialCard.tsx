@@ -21,7 +21,7 @@ import {
   Pressable, StyleSheet, TouchableOpacity, View,
   type LayoutChangeEvent, type ViewStyle,
 } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   progressFill: {
     height: 5,
     borderRadius: 3,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnTrack,
   },
   line: {
     fontSize: theme.textSM,

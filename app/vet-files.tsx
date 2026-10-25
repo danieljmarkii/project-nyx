@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { Header, ScopeMenu } from '../components/ui';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { VetDocumentRow } from '../components/vetfiles/VetDocumentRow';
@@ -665,7 +665,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.action.fill,
     alignItems: 'center',
     justifyContent: 'center',
   },

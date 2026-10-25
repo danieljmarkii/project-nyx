@@ -24,7 +24,7 @@
 // absence of this card is never evidence that a food is on-diet (`clinical-
 // guardrails`; D10's presence-only rule).
 import { View, StyleSheet } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
@@ -48,7 +48,7 @@ export function TrialContaminantNote({ title, body }: Props) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colorAccentLight,
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.positive.fillOnLight,
     borderLeftWidth: 3,
     borderRadius: theme.radiusMedium,
     paddingHorizontal: theme.space2,

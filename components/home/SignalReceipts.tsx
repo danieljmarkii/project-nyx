@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   bandDashedEnd: {
     borderRightWidth: 1,
     borderStyle: 'dashed',
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.positive.fillOnLight,
   },
   dot: {
     position: 'absolute',

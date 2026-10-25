@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -312,8 +312,8 @@ const styles = StyleSheet.create({
     marginTop: theme.spaceMicro,
   },
   checkboxChecked: {
-    backgroundColor: theme.colorAccent,
-    borderColor: theme.colorAccent,
+    backgroundColor: colorRoles.selected.ink,
+    borderColor: colorRoles.selected.edge,
   },
   optionText: {
     flex: 1,

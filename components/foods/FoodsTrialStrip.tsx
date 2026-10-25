@@ -16,7 +16,7 @@
 // accent is not a status colour: nothing on this strip is a verdict, a score or a
 // warning (R1/§6.9), and there is no state in which it turns another colour.
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { FoodsTrialStripModel } from '../../lib/trialLibraryChrome';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   text: {
     flex: 1,

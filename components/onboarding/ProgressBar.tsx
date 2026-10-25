@@ -1,5 +1,5 @@
 import { View, StyleSheet, StyleProp, ViewStyle } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 interface Props {
   // 1-based index of the step the owner is on. Segments 1..current read as
@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusFull,
   },
   segmentFilled: {
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.text.primaryOnLight,
   },
   segmentEmpty: {
     backgroundColor: theme.colorBorder,
