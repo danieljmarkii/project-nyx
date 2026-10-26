@@ -545,7 +545,7 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
 
   // The button (CUL-2200): C1's indigo fill and C3's moonlight one, at the ratios the round
   // measured, and the shortcut that fails: the indigo fill carried onto the night.
-  it('records the button pairs, and the indigo fill sinking on the night', () => {
+  it('records the button pairs, and the indigo fill sinking on the paywall dark ground', () => {
     expect(contrastRatio(colorRoles.action.labelOnNightFill, colorRoles.action.onNight)).toBeCloseTo(15.8, 1);
     expect(contrastRatio(colorRoles.action.onNight, theme.colorBrandNight)).toBeCloseTo(15.8, 1);
     expect(contrastRatio(colorRoles.action.fill, theme.colorSurfaceDark)).toBeLessThan(NON_TEXT);
