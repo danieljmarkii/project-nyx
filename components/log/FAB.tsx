@@ -1749,8 +1749,9 @@ const styles = StyleSheet.create({
     width: FAB_DISC,
     height: FAB_DISC,
     borderRadius: FAB_DISC / 2,
-    // CUL-322, D3 = C (PM-ruled 2026-09-26): the brand night disc, the one exception
-    // in-app brand rule 3 names. It replaces CUL-1063's colorAccentInk disc, which
+    // CUL-322, D3 = C (PM-ruled 2026-09-26): the brand night disc, once the one exception
+    // in-app brand rule 3 named; its 2026-10-25 rewrite makes indigo the action, so the
+    // disc is now the rule, not an exception. It replaces CUL-1063's colorAccentInk disc, which
     // cleared contrast and read drab on device. Its glyph was the bright teal until
     // CUL-1626 (PM, 2026-10-06) took it white: under CUL-1279's G4 = C (2026-10-03)
     // indigo is the action and teal is a good fact, so a teal mark on the app's primary

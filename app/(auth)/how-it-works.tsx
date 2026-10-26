@@ -116,7 +116,6 @@ export default function HowItWorksScreen() {
         <PrimaryButton
           label="Create account"
           onPress={() => router.push('/(auth)/signup')}
-          variant="accent"
           testID="how-it-works-create-account"
         />
         <TouchableOpacity

@@ -51,7 +51,7 @@ describe('NightHeroGround', () => {
     expect(rects[0].props.fill?.payload).toBe(argbPayload(theme.colorBrandNight));
   });
 
-  it('renders the four whorl ridges in night-elevated indigo, never teal (§1.3)', () => {
+  it('renders the four whorl ridges in night-elevated indigo, never teal', () => {
     const tree = render(<NightHeroGround />).toJSON();
     const paths = findByType(tree, 'RNSVGPath');
     expect(paths).toHaveLength(4);

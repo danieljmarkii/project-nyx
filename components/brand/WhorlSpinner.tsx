@@ -23,9 +23,10 @@ import { useAppActive } from '../../hooks/useAppActive';
 //
 // Motion budget (§1.5): native-driver transforms only, PAUSED on app blur
 // (useAppActive), and fully DISABLED under reduced-motion — where it renders a designed
-// static frame (arcs at rest at their offsets + a soft glow behind the still dot). Teal
-// is the only interactive/live colour on every ground (§1.3); the day lavender ridge
-// (colorWhorlRidgeDay) is a world colour, never interactive.
+// static frame (arcs at rest at their offsets + a soft glow behind the still dot). The
+// spinner is a brand mark, not a control (§1 rule 3 gives the action to indigo and
+// moonlight); the day lavender ridge (colorWhorlRidgeDay) is a world colour, never
+// interactive.
 
 const VIEW_BOX = 100;
 const C = 50; // centre
@@ -60,8 +61,8 @@ export interface WhorlSpinnerProps {
   /** A single colour for every ridge + the dot — for a spinner sitting on a COLOURED
    *  ground where neither day nor night reads (a teal / destructive / dark button, where
    *  the shipped ActivityIndicator was `color="#fff"`). Not a "ground"; overrides it.
-   *  Off a coloured button this is the button's foreground, so it introduces no second
-   *  accent on any neutral surface (§1.3). */
+   *  Off a coloured button this is the button's foreground, so it adds no colour of its
+   *  own to any neutral surface. */
   tint?: string;
   /** When set, the spinner announces itself (e.g. a standalone full-screen wait).
    *  Omit for a decorative inline spinner whose sibling copy already carries the state. */

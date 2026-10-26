@@ -82,6 +82,7 @@ const NOT_GUARDED_YET: Record<string, string> = {
   colorAccentLight: 'the teal wash, a ground, not a mark',
   colorMoonlight: 'the night ground action and the whorl ridge; night only by construction',
   colorTextOnDark: 'a neutral, the label on any solid fill',
+  colorBrandNight: 'the night ground itself, and the label on the night action fill (CUL-2200)',
   colorTextOnNight: 'a neutral, the night text (and the selected wash)',
   colorTextOnNightMuted: 'a neutral',
   colorTextPrimary: 'a neutral',
@@ -102,20 +103,17 @@ const NOT_GUARDED_YET: Record<string, string> = {
   colorDestructiveInk: 'the destructive text on its wash',
 };
 
-const NIGHT_LANDING = 'night ground: the Landing\'s colorBrandNight, 8.09:1';
 const NIGHT_RECAP = 'night ground: colorBrandNightElevated, 6.57:1 (pinned in theme.contrast.test.ts)';
 const PAYWALL = 'dark ground: the paywall\'s colorSurfaceDark, 8.26:1 (pinned in theme.contrast.test.ts)';
 const LOGO = 'brand mark: the Culprit logo, outside WCAG 1.4.11\'s 3:1 (logos are exempt)';
 const WHORL = 'brand mark: the whorl, retiring with WhorlSpinner (CUL-1593)';
 const LEDGER = 'CUL-1902: a trial ledger cell, left as is until gate 11 rules the ledger (CUL-2178 scoping)';
-const BUTTON = 'CUL-2200: the accent button, moving to colorRoles.action.fill';
 
 /**
  * Every surviving raw site, one entry per site in file order: its style key, then its
  * ground or the issue that owns it. Ratchets down only (REGISTRY_CEILING).
  */
 export const REGISTRY: Record<string, readonly string[]> = {
-  'app/(auth)/index.tsx': [`learnMoreText · ${NIGHT_LANDING}`],
   'app/day-summary.tsx': [
     `RecapStrip tint · ${NIGHT_RECAP}`,
     `emptyCta · night ground: colorBrandNight, 8.09:1`,
@@ -132,7 +130,6 @@ export const REGISTRY: Record<string, readonly string[]> = {
     'NODE_TINT_NIGHT.meal · tint map: exported with NODE_TINT_NIGHT_GROUND and pinned in theme.contrast.test.ts',
   ],
   'components/trialScreen/TrialLedger.tsx': [`meals_logged · ${LEDGER}`, `today_open · ${LEDGER}`],
-  'components/ui/PrimaryButton.tsx': [`btnAccent · ${BUTTON} (on night at the Landing and the paywall; on light elsewhere)`],
 };
 
 /**
@@ -141,10 +138,11 @@ export const REGISTRY: Record<string, readonly string[]> = {
  * TimeConfidenceField's picker and radios onto colorRoles.action; 44 after CUL-2178 moved
  * 31 fills and edges onto the fill leaves; 40 after CUL-2160 moved the two trend lines onto
  * the chart standard's line colour; 20 after CUL-2161 moved the 20 choices, radios, fields
- * and the symptom save onto colorRoles.selected / action. A RATCHET: lower it whenever an
+ * and the symptom save onto colorRoles.selected / action; 18 after CUL-2200 moved the
+ * button and the Landing's link onto colorRoles.action. A RATCHET: lower it whenever an
  * entry goes, and never raise it.
  */
-const REGISTRY_CEILING = 20;
+const REGISTRY_CEILING = 18;
 
 /** A justified entry names its key, then a ground or the issue that owns its move. */
 const JUSTIFIED = /^\S.* · (?:(?:night|dark) ground: \S|brand mark: \S|tint map: \S|CUL-\d+: \S)/;

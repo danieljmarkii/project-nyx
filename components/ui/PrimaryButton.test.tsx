@@ -1,7 +1,7 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { PrimaryButton } from './PrimaryButton';
-import { theme } from '../../constants/theme';
+import { theme, colorRoles } from '../../constants/theme';
 
 describe('PrimaryButton', () => {
   it('renders its label and fires onPress when tapped', () => {
@@ -64,23 +64,37 @@ describe('PrimaryButton', () => {
     expect(getByTestId('btn-spinner').props.color).toBe(theme.colorTextOnDark);
   });
 
-  // The accent variant (B-251 PR 5 Landing hero) fills teal with a near-black
-  // label — white would fail contrast on the bright accent.
-  it('paints the accent variant teal with a near-black label', () => {
+  // CUL-2200 (C1 of CUL-1279's round): the main button is the action, so indigo with a
+  // white label, not the near black it was.
+  it('paints the primary variant the action fill with its white label', () => {
     const { getByTestId, getByText } = render(
-      <PrimaryButton label="Create account" onPress={() => {}} variant="accent" testID="btn" />,
+      <PrimaryButton label="Log it" onPress={() => {}} testID="btn" />,
+    );
+    const btnBg = StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor;
+    const labelColor = StyleSheet.flatten(getByText('Log it').props.style).color;
+    expect(btnBg).toBe(colorRoles.action.fill);
+    expect(btnBg).toBe(theme.colorAction);
+    expect(labelColor).toBe(colorRoles.action.labelOnFill);
+  });
+
+  // C3: on a night ground indigo sinks, so the night variant fills moonlight with the
+  // night as its label.
+  it('paints the night variant moonlight with a night label', () => {
+    const { getByTestId, getByText } = render(
+      <PrimaryButton label="Create account" onPress={() => {}} variant="night" testID="btn" />,
     );
     const btnBg = StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor;
     const labelColor = StyleSheet.flatten(getByText('Create account').props.style).color;
-    expect(btnBg).toBe(theme.colorAccent);
-    expect(labelColor).toBe(theme.colorNeutralDark);
+    expect(btnBg).toBe(colorRoles.action.onNight);
+    expect(btnBg).toBe(theme.colorMoonlight);
+    expect(labelColor).toBe(colorRoles.action.labelOnNightFill);
   });
 
-  it('tints the accent spinner near-black to read on the teal fill', () => {
+  it('tints the night spinner with the night label colour', () => {
     const { getByTestId } = render(
-      <PrimaryButton label="Create account" onPress={() => {}} variant="accent" loading testID="btn" />,
+      <PrimaryButton label="Create account" onPress={() => {}} variant="night" loading testID="btn" />,
     );
-    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorNeutralDark);
+    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorBrandNight);
   });
 
   // CUL-1900: the filled red commit (DeleteAccountSheet's hand rolled button) is a

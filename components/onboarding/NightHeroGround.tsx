@@ -11,7 +11,7 @@ import { theme } from '../../constants/theme';
 // home — the Whorl motif's four concentric crescent ridges at hero scale, drawn
 // in colorBrandNightElevated at watermark opacity. It replaces the Signal-dot
 // ping as the hero's richness; the ridges are indigo, NEVER teal — teal stays
-// the mark's dot alone (§1.3; the same rule that removed the teal radial after
+// the mark's dot alone (the same rule that removed the teal radial after
 // on-device QA 2026-07-12, when it read as an off-brand glow blob).
 //
 // Static by intent — and now fully: the ring-train ping is retired from this
@@ -112,7 +112,7 @@ export function NightHeroGround() {
 
         {/* The whorl ground — behind the stars so the field reads as depth over
             the texture, and behind the moon (a separate layer above this SVG).
-            Indigo only; the ridges never speak teal (§1.3). */}
+            Indigo only; the ridges never speak teal. */}
         <G transform={`translate(${whorlTx} ${whorlTy}) scale(${whorlScale})`}>
           {WHORL_ARCS.map((a, i) => (
             <Path

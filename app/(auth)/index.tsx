@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { theme, colorRoles } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { CulpritMark } from '../../components/brand/CulpritMark';
@@ -132,9 +132,9 @@ export default function LandingScreen() {
             <PrimaryButton
               label="Create account"
               onPress={() => router.push('/(auth)/signup')}
-              // Teal acquisition-hero fill (PM-ratified over near-black) — the accent
-              // the rest of the hero already speaks (the Signal dot).
-              variant="accent"
+              // The action on the night ground: moonlight, since indigo cannot show
+              // on the indigo night (CUL-2200, C3).
+              variant="night"
               testID="landing-create-account"
             />
             <TouchableOpacity
@@ -198,9 +198,8 @@ const styles = StyleSheet.create({
   learnMoreText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    // accent-on-dark-ok: colorBrandNight (the Landing's ground, :162) — 8.09:1.
-    // Teal is correct on the night ground; colorAccentInk would be 3.54:1 (CUL-744).
-    color: theme.colorAccent,
+    // A link is an action, and on the night the action is moonlight (CUL-2200, C3).
+    color: colorRoles.action.onNight,
   },
   cta: {
     gap: theme.space1,

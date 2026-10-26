@@ -165,9 +165,9 @@ export default function PaywallScreen() {
         <PrimaryButton
           label="Start 7-day free trial"
           onPress={handleTrial}
-          // Teal accent — the near-black 'primary' fill would vanish on the dark
-          // surface; accent is both visible and the premium-action colour.
-          variant="accent"
+          // The dark ground takes the night action fill: indigo would sink into it
+          // (CUL-2200, C3).
+          variant="night"
           testID="paywall-start-trial"
         />
         {/* Principle 7 — the explicit, load-bearing free-tier line. */}

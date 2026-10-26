@@ -204,7 +204,7 @@ describe('CulpritMark — the pulse contract', () => {
     // No stroked ping ring under reduced motion.
     expect(circles.filter((c) => c.props.stroke != null).length).toBe(0);
     // The soft glow halo was REMOVED after on-device QA (B-325) — no low-opacity accent
-    // circle behind the dot; teal is the interactive accent, not a decorative haze (§1.3).
+    // circle behind the dot; the teal is the logo's dot, not a decorative haze.
     const glow = circles.filter(
       (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3,
     );
