@@ -49,6 +49,11 @@ jest.mock('../hooks/useAppConfig', () => ({
   }),
 }));
 
+// The first test to render a capture screen pays its import and first render cost, which
+// under a full CI run passed jest's 5s default (CUL-2216); its own waitFor already allows
+// 5s, so the test needs room above that. No assertion changes.
+jest.setTimeout(20000);
+
 const needsMock = consentDoorState as jest.Mock;
 const saveMock = saveAiConsent as jest.Mock;
 
