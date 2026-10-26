@@ -251,8 +251,8 @@ export function CulpritMark({
           {/* Reduced-motion / paused / non-animating static frame: just the resting dot
               — a crisp teal tittle, NO soft glow halo behind it. The halo (a low-opacity
               accent circle) was removed after on-device QA (2026-07-12): at the header's
-              16px it read as a "weird glow behind the logo," off-brand — teal is the
-              interactive accent, not a decorative haze (§1.3). The live cue is the dynamic
+              16px it read as a "weird glow behind the logo," off-brand — the teal is the
+              logo's dot, not a decorative haze. The live cue is the dynamic
               pulse (below) where it animates; the static frame stays a clean dot. */}
           {!animate && (
             <Circle cx={DOT_CX} cy={DOT_CY} r={dotR} fill={theme.colorAccent} />

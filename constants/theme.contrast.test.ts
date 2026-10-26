@@ -119,7 +119,8 @@ describe('the FAB pair — an indigo disc and its white plus (CUL-322 D3 = C; CU
   // CUL-1063 shipped the disc as colorAccentInk, the one teal that cleared 3:1 with
   // a white plus, and the PM read it on device as drab. D3 = C inverted the pair: the
   // brand night became the disc and the BRIGHT teal the glyph (in-app brand spec §1
-  // rule 3 names the FAB as its one exception). CUL-1626 (PM, 2026-10-06) kept the
+  // rule 3 then named the FAB as its one exception; its 2026-10-25 rewrite makes indigo
+  // the action everywhere on light, so the FAB is no longer an exception). CUL-1626 (PM, 2026-10-06) kept the
   // disc and took the glyph white: CUL-1279's G4 = C keeps teal for a good fact, never
   // the primary action. Teal on the disc still passes contrast, so no row here can
   // stop it coming back; FAB.test.tsx pins the colour the bars render instead.
@@ -423,6 +424,10 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     ['action.labelOnFill', 'action.onLight', TEXT],
     ['action.fill', 'colorSurface', NON_TEXT],
     ['action.labelOnFill', 'action.fill', TEXT],
+    // The night button (CUL-2200, C3): the label on the moonlight fill, and the fill on
+    // each dark ground it is drawn on (the Landing's night, the paywall's near black).
+    ['action.labelOnNightFill', 'action.onNight', TEXT],
+    ['action.onNight', 'colorSurfaceDark', NON_TEXT],
     ['positive.glyphOnLight', 'colorSurface', NON_TEXT],
     ['positive.textOnLight', 'colorSurface', TEXT],
     ['positive.textOnLight', 'positive.wash', TEXT],
@@ -536,6 +541,14 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     expect(contrastRatio(theme.colorAccentGlyph, theme.colorChartEmpty)).toBeLessThan(NON_TEXT);
     expect(colorRoles.action.fill).toBe(theme.colorAction);
     expect(contrastRatio(colorRoles.action.labelOnFill, colorRoles.action.fill)).toBeCloseTo(9.42, 2);
+  });
+
+  // The button (CUL-2200): C1's indigo fill and C3's moonlight one, at the ratios the round
+  // measured, and the shortcut that fails: the indigo fill carried onto the night.
+  it('records the button pairs, and the indigo fill sinking on the night', () => {
+    expect(contrastRatio(colorRoles.action.labelOnNightFill, colorRoles.action.onNight)).toBeCloseTo(15.8, 1);
+    expect(contrastRatio(colorRoles.action.onNight, theme.colorBrandNight)).toBeCloseTo(15.8, 1);
+    expect(contrastRatio(colorRoles.action.fill, theme.colorSurfaceDark)).toBeLessThan(NON_TEXT);
   });
 
   it('the brand teal fails as a glyph on white, and the action indigo fails on the night', () => {

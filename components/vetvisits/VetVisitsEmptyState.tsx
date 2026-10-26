@@ -33,7 +33,7 @@ export function VetVisitsEmptyState({ petName, onBook, onLogPast }: Props) {
       </ThemedText>
 
       <View style={styles.actions}>
-        <PrimaryButton label="Add the next visit" onPress={onBook} variant="accent" />
+        <PrimaryButton label="Add the next visit" onPress={onBook} />
         <PrimaryButton
           label="Log a visit that already happened"
           onPress={onLogPast}

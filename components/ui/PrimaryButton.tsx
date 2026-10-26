@@ -1,13 +1,13 @@
 import { ComponentType } from 'react';
 import { TouchableOpacity, ViewStyle, StyleSheet, ActivityIndicator } from 'react-native';
-import { theme } from '../../constants/theme';
+import { theme, colorRoles } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
-// 'accent' is the teal marketing/acquisition-hero fill (B-251 PR 5 Landing CTA,
-// PM-ratified over near-black). Distinct from 'primary' (near-black, every in-app
-// submit) so the hero action on an acquisition surface can carry the interactive
-// accent the rest of that screen speaks. Label rides near-black for contrast on
-// the bright teal (white would fail on #00C2A8).
+// 'primary' is the action colour (CUL-2200, C1 of CUL-1279's round): indigo with a white
+// label, because a save is something the owner can do and indigo is the action. 'night' is
+// the same job on a night ground (C3): indigo cannot show on the indigo night, so the fill
+// is moonlight with a night label. The variant names the ground, so a light screen never
+// reaches for the night fill. The old teal 'accent' folded into these two.
 //
 // Two destructive weights (CUL-1900): 'destructive' is the quiet red label for a
 // secondary "remove" beside a primary action; 'destructiveFilled' is the filled red
@@ -18,7 +18,7 @@ import { ThemedText } from './ThemedText';
 // 'plain' (CUL-1911, the profile round's P10; the capture round drew it too) is a quiet
 // text row on the 44pt floor, no fill and no edge: a rare lifecycle action that should
 // recede (Add a pet, Archive at the foot of the Pet tab) or a sheet's way out.
-type Variant = 'primary' | 'secondary' | 'destructive' | 'destructiveFilled' | 'accent' | 'plain';
+type Variant = 'primary' | 'secondary' | 'destructive' | 'destructiveFilled' | 'night' | 'plain';
 
 // The icon slot (CUL-1910): a glyph ahead of the label, tinted by the button so it can
 // never drift from the label's colour on any variant or in the disabled state. Takes a
@@ -44,21 +44,20 @@ interface Props {
 // on the same surface the resting label did.
 // The resting label colour per variant; the icon slot reads it too.
 const LABEL_COLOR: Record<Variant, string> = {
-  primary: theme.colorTextOnDark,
+  primary: colorRoles.action.labelOnFill,
   secondary: theme.colorTextSecondary,
   destructive: theme.colorDestructive,
   destructiveFilled: theme.colorTextOnDark,
-  accent: theme.colorNeutralDark,
+  night: colorRoles.action.labelOnNightFill,
   plain: theme.colorTextSecondary,
 };
 
 const SPINNER_COLOR: Record<Variant, string> = {
-  primary: theme.colorTextOnDark,
+  primary: colorRoles.action.labelOnFill,
   secondary: theme.colorTextSecondary,
   destructive: theme.colorDestructive,
   destructiveFilled: theme.colorTextOnDark,
-  // Matches the accent variant's near-black label on the teal fill.
-  accent: theme.colorNeutralDark,
+  night: colorRoles.action.labelOnNightFill,
   plain: theme.colorTextSecondary,
 };
 
@@ -84,7 +83,7 @@ export function PrimaryButton({
         variant === 'secondary' && styles.btnSecondary,
         variant === 'destructive' && styles.btnDestructive,
         variant === 'destructiveFilled' && styles.btnDestructiveFilled,
-        variant === 'accent' && styles.btnAccent,
+        variant === 'night' && styles.btnNight,
         variant === 'plain' && styles.btnPlain,
         disabled && (variant === 'plain' ? styles.btnPlainDisabled : styles.btnDisabled),
         style,
@@ -118,7 +117,7 @@ export function PrimaryButton({
               styles.label,
               variant === 'secondary' && styles.labelSecondary,
               variant === 'destructive' && styles.labelDestructive,
-              variant === 'accent' && styles.labelAccent,
+              variant === 'night' && styles.labelNight,
               variant === 'plain' && styles.labelPlain,
               disabled && styles.labelDisabled,
             ]}
@@ -133,7 +132,7 @@ export function PrimaryButton({
 
 const styles = StyleSheet.create({
   btn: {
-    backgroundColor: theme.colorNeutralDark,
+    backgroundColor: colorRoles.action.fill,
     borderRadius: theme.radiusMedium,
     paddingVertical: theme.space2,
     alignItems: 'center',
@@ -154,8 +153,8 @@ const styles = StyleSheet.create({
   btnDestructiveFilled: {
     backgroundColor: theme.colorDestructive,
   },
-  btnAccent: {
-    backgroundColor: theme.colorAccent,
+  btnNight: {
+    backgroundColor: colorRoles.action.onNight,
   },
   btnDisabled: {
     backgroundColor: theme.colorBorder,
@@ -172,7 +171,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorTextOnDark,
+    color: colorRoles.action.labelOnFill,
     letterSpacing: theme.trackingNormal,
     // A long label wraps (e.g. the onboarding acknowledgment); the block is
     // centred by the button, but the lines inside it need centring too.
@@ -184,8 +183,8 @@ const styles = StyleSheet.create({
   labelDestructive: {
     color: theme.colorDestructive,
   },
-  labelAccent: {
-    color: theme.colorNeutralDark,
+  labelNight: {
+    color: colorRoles.action.labelOnNightFill,
   },
   labelPlain: {
     color: theme.colorTextSecondary,

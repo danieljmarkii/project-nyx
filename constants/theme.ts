@@ -160,17 +160,14 @@ export const theme = {
   // Brand "night" — the Culprit world/ground colour (B-275 palette half; Moon &
   // Signal icon field). This is a WORLD colour, not an accent: it is only ever a
   // ground/backdrop (icon field, marketing heroes, dark brand surfaces) — never a
-  // tappable/interactive fill. Teal (colorAccent #00C2A8) stays the SOLE
-  // interactive accent (buttons, trend line, live state), so the "one accent,
-  // never decorative" rule above survives.
+  // tappable/interactive fill. The action colour is a separate token (colorAction,
+  // reached through colorRoles.action): in-app brand spec §1 rule 3, rewritten for
+  // CUL-1279's G4 = C (2026-10-25), makes indigo the action on light grounds,
+  // moonlight the action on night, and teal a good fact, never a control.
   //
-  // ONE EXCEPTION (CUL-322, D3 = C, PM-ruled 2026-09-26; in-app brand spec §1 rule
-  // 3): the FAB's disc is colorBrandNightElevated. Its glyph was the teal plus until
-  // CUL-1626 (PM, 2026-10-06) took it white (colorTextOnDark), the first piece of
-  // CUL-1279's G4 = C split: indigo is the action, teal is a good fact (ruled
-  // 2026-10-03; its app-wide round, which rewrites rule 3, is still to run). Until
-  // then no other control is indigo, which keeps the exception from becoming a
-  // second accent.
+  // The FAB's disc (CUL-322, D3 = C, PM-ruled 2026-09-26) is colorBrandNightElevated,
+  // a darker indigo than colorAction, with a white plus since CUL-1626 (2026-10-06);
+  // the rewritten rule 3 folds it in as an action rather than an exception.
   //
   // Two dark tokens, two distinct roles (the colorSurfaceDark reconciliation —
   // resolved: KEEP BOTH): colorBrandNight is the indigo *brand* night (Culprit's
@@ -187,11 +184,11 @@ export const theme = {
   // the Signal card's night variant — spec §1.2 the register rule). No component
   // repoints in this PR — capture & records stay the shipped light system.
   //
-  // THE ACCENT RULE (spec §1.3; its one exception, the FAB, is noted above): teal `colorAccent #00C2A8` remains the
-  // SOLE tappable/live/interactive accent on every ground. Every token below is a
-  // world/ground colour — text, safety rail, hairline, gradient stop, or starfield
-  // — never an interactive fill, so the design-system "one accent, never decorative"
-  // rule holds by construction. Red keeps its shipped meanings (symptom /
+  // THE ACTION RULE (spec §1 rule 3, rewritten 2026-10-25 for CUL-1279's G4 = C): on a
+  // night ground the action is colorMoonlight (colorRoles.action.onNight), since indigo
+  // cannot show on the indigo night; teal is a good fact, never a control. Every other
+  // token below is a world/ground colour — text, safety rail, hairline, gradient stop,
+  // or starfield — never an interactive fill. Red keeps its shipped meanings (symptom /
   // destructive); colorEventSymptomOnNight is the night-ground sibling of the
   // shipped colorDestructiveOnDark, never decorative.
   //
@@ -216,9 +213,8 @@ export const theme = {
   colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)
   colorMoonlight: '#F2EEE4',                  // crescent fill + display headlines on night (15.8:1)
   // Lightened decorative teal for small-caps labels/eyebrows on night grounds (the
-  // recap's "Evening summary" eyebrow, DR-4). NOT the interactive accent: colorAccent
-  // stays reserved for tappable/live elements (the accent rule above), so a decorative
-  // teal label uses this "world colour" instead — lightened from #00C2A8 the same way
+  // recap's "Evening summary" eyebrow, DR-4). NOT the bright teal: colorAccent stays
+  // off decorative labels, so a decorative teal label uses this "world colour" instead — lightened from #00C2A8 the same way
   // colorEventMedicationOnNight is lightened from its day tint, so it reads luminous on
   // the dark indigo. On colorBrandNight #13112E: 10.42:1 (AAA).
   colorMoonlitTeal: '#4FD8C4',
@@ -238,9 +234,9 @@ export const theme = {
   // WhorlSpinner (B-284 PR N3, §5) — the day-ground ridge lavender. The spinner's
   // DAY palette is "teal + indigo-lavender": teal (colorAccent) alternates with this
   // soft lavender on light content surfaces. Same value as colorTextOnNightMuted (a
-  // WORLD lavender), named separately for its role. Never interactive, so the
-  // one-accent rule (§1.3) holds — teal stays the sole tappable/live accent; the
-  // night-ground palette reuses colorAccent + colorMoonlight and needs no token.
+  // WORLD lavender), named separately for its role. Never interactive (§1 rule 3: indigo
+  // and moonlight act, teal states a good fact); the night-ground palette reuses
+  // colorAccent + colorMoonlight and needs no token.
   colorWhorlRidgeDay: '#A6A2CE',
 
   // Borders
@@ -420,6 +416,9 @@ export const colorRoles = {
     // invites a tap (CUL-2178, C2 of CUL-1279's round). The same indigo as onLight,
     // named for its job so a fill site never borrows the text leaf.
     fill: theme.colorAction,
+    // The label on the moonlight action fill, a button on a night ground (CUL-2200, C3):
+    // the night itself, so the button reads as a cut-out of the ground it sits on.
+    labelOnNightFill: theme.colorBrandNight,
   },
   // A good fact: a meal eaten, a dose given, a clean day.
   positive: {
