@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Sparkline } from '../dashboard/Sparkline';
 import type { AskComponentDescriptor } from '../../lib/ask';
 
@@ -18,10 +18,11 @@ import type { AskComponentDescriptor } from '../../lib/ask';
 export function AskAnswerComponent({ descriptor }: { descriptor: AskComponentDescriptor }) {
   switch (descriptor.kind) {
     case 'spark':
-      // The weight/trend line — accent, shape-only (no axes), same as the Trend card.
+      // The weight/trend line, shape-only (no axes). On the white answer card it takes the
+      // chart standard's line colour for a light ground (§2): the bright teal is 2.26:1.
       return descriptor.data.length >= 2 ? (
         <View style={styles.sparkWrap}>
-          <Sparkline data={descriptor.data} color={theme.colorAccent} width={260} height={72} />
+          <Sparkline data={descriptor.data} color={colorRoles.positive.glyphOnLight} width={260} height={72} />
         </View>
       ) : null;
 
