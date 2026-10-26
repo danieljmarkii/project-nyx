@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { RECHECK_EYEBROW, type RecheckAnswer, type TrialRecheck } from '../../lib/trialRecheck';
 
@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   heading: {
     fontSize: theme.textSM,

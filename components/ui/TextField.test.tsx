@@ -1,7 +1,7 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { TextField } from './TextField';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 
 // Foreground state is what re-masks a revealed password, so drive it explicitly
@@ -51,7 +51,7 @@ describe('TextField', () => {
 
   // The field's border is the visual state: neutral at rest, the interactive
   // accent on focus (the focus ring).
-  it('draws the accent focus ring on focus and drops it on blur', () => {
+  it('draws the selected focus edge on focus and drops it on blur', () => {
     const { getByTestId } = render(
       <TextField label="Email" value="" onChangeText={() => {}} testID="email" />,
     );
@@ -59,7 +59,7 @@ describe('TextField', () => {
     expect(fieldBorderColor(field)).toBe(theme.colorBorder);
 
     fireEvent(getByTestId('email'), 'focus');
-    expect(fieldBorderColor(getByTestId('email-field'))).toBe(theme.colorAccent);
+    expect(fieldBorderColor(getByTestId('email-field'))).toBe(colorRoles.selected.edge);
 
     fireEvent(getByTestId('email'), 'blur');
     expect(fieldBorderColor(getByTestId('email-field'))).toBe(theme.colorBorder);

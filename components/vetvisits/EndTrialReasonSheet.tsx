@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Divider } from '../ui/Divider';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorderStrong,
   },
   radioOn: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
     borderWidth: 6,
   },
   reasonLabel: {

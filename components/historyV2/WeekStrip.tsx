@@ -59,7 +59,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { claimsFromOf, dayFactsOn, shiftDay, type DayFacts, type HistoryCourse, type HistoryFacts } from '../../lib/historyDays';
 import type { ResolvedWindow } from '../../lib/historyWindows';
 import {
@@ -434,7 +434,7 @@ function StripArrow({
       testID={`week-strip-${side}`}
     >
       <View style={styles.arrowDisc}>
-        <Icon size={16} color={enabled ? theme.colorAccentInk : theme.colorTickIdle} strokeWidth={2.25} />
+        <Icon size={16} color={enabled ? colorRoles.action.onLight : theme.colorTickIdle} strokeWidth={2.25} />
       </View>
     </Pressable>
   );

@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { theme } from '../../../constants/theme';
+import { colorRoles, theme } from '../../../constants/theme';
 import { ThemedText } from '../../ui/ThemedText';
 
 // SignalZoneFoot — the Signal zone's last line under Design v2 (CUL-1270 · D1 = B; the
@@ -142,6 +142,6 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

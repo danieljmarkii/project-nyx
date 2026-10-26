@@ -56,7 +56,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Pressable, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { DoorMark } from '../surfaces/home/DoorMark';
 import { NODE_DOT_RING, NODE_DOT_SIZE, NODE_TINT_DAY, nodeDotColors } from '../recap/nodeTints';
@@ -267,6 +267,6 @@ const styles = StyleSheet.create({
   undo: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, Platform, Modal, Pressable, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
 // The "Change time" bottom sheet, extracted (CUL-606) and now the ONLY one: the
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   save: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   saveDisabled: {
     opacity: theme.opacityDisabled,

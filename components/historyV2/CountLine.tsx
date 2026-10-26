@@ -17,7 +17,7 @@
 // (`spokenLine`, HV-10's focus pass).
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { countLineDoorHref } from '../../lib/historyScreen';
 import { spokenLine } from '../../lib/spokenLine';
 import type { CountLine as CountLineModel, CountLineDoor, CountLineText, HistoryFilter } from '../../lib/historyDays';
@@ -159,6 +159,6 @@ const styles = StyleSheet.create({
   doorText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

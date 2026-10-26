@@ -1,6 +1,6 @@
 import { View, StyleSheet, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
 import { Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { FORMAT_LABEL } from '../../lib/food';
 import { ONE_COLUMN_FONT_SCALE } from './pickerColumns';
@@ -191,7 +191,7 @@ export function FoodTile({
           + checked state above. */}
       {selected ? (
         <View style={styles.check}>
-          <Check size={14} color={theme.colorAccentInk} strokeWidth={3} />
+          <Check size={14} color={colorRoles.selected.ink} strokeWidth={3} />
         </View>
       ) : null}
     </TouchableOpacity>
@@ -212,11 +212,11 @@ const styles = StyleSheet.create({
   // B-346 rotation shelf — a shorter tile (min-height stays above the 44pt tap
   // floor) with tighter vertical padding. Longhand paddingVertical wins over the
   // base `padding` shorthand in RN's style merge, so horizontal padding is kept.
-  // Selection state (B-417 PR 3). Border colour + tint only — the border WIDTH
+  // Selection state (B-417 PR 3). The selected role's edge + ground only (CUL-2161) — the border WIDTH
   // stays 1 so selecting a tile never reflows the 2-up grid around it.
   tileSelected: {
-    borderColor: theme.colorAccent,
-    backgroundColor: theme.colorAccentLight,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ground,
   },
   check: {
     position: 'absolute',
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   },
   askLine: {
     fontSize: theme.textXS,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   notHere: {
     fontSize: theme.textXS,

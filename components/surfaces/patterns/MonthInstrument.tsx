@@ -1121,10 +1121,10 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
-  // The day → History door: the shipped sheet's link (accent ink, a chevron, so it reads
+  // The day → History door: the shipped sheet's link (the action colour, a chevron, so it reads
   // as navigation). 44pt from its own height, so it takes no hitSlop (C-5), and the next
   // week row's marks keep their gap.
   historyLink: {
@@ -1136,7 +1136,7 @@ const styles = StyleSheet.create({
   },
   historyLinkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
 });

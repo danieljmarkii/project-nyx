@@ -7,7 +7,7 @@ jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { DayCardBody, DayCardHeader, TODAY_NOTHING_YET } from './DayCard';
 import { RAIL_W, SPINE_THREAD } from '../recap/DaySpine';
 import { emptyDayFacts, type DateOnlyItem, type DayFacts } from '../../lib/historyDays';
@@ -108,14 +108,14 @@ describe('DayCardHeader', () => {
     expect(screen.queryByTestId(`history-day-counts-${TODAY}`)).toBeNull();
   });
 
-  it('landed: the 2pt teal-ink outline and the date in the same ink (§3.1)', () => {
+  it('landed: the 2pt selected outline and the date in the selected ink (§3.1, CUL-2161)', () => {
     render(
       <DayCardHeader day="2026-09-17" today={TODAY} facts={facts({ total: 1 })} filter={{ kind: 'all' }} search={false} landed />,
     );
     const card = StyleSheet.flatten(screen.getByTestId('history-day-header-2026-09-17').props.style);
-    expect(card.borderColor).toBe(theme.colorAccentInk);
+    expect(card.borderColor).toBe(colorRoles.selected.edge);
     expect(card.borderWidth).toBe(2);
-    expect(StyleSheet.flatten(screen.getByText('Thu, Sep 17').props.style).color).toBe(theme.colorAccentInk);
+    expect(StyleSheet.flatten(screen.getByText('Thu, Sep 17').props.style).color).toBe(colorRoles.selected.ink);
   });
 });
 

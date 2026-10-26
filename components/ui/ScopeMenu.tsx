@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
   noticeActionLabel: {
     fontSize: theme.textSM,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   optionScroll: {
     flexGrow: 0,

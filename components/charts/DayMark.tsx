@@ -372,9 +372,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: theme.colorTextPrimary,
   },
+  // A chosen day (the landed day, the open day): the selected role (CUL-2161).
   boxSelected: {
     borderWidth: 2,
-    borderColor: theme.colorAccentInk,
+    borderColor: colorRoles.selected.edge,
   },
   // A neighbouring month's day: no edge, so the month's own squares carry the grid.
   boxDim: {

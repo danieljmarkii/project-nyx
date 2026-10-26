@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
-import { theme, shadows } from '../../../constants/theme';
+import { colorRoles, shadows, theme } from '../../../constants/theme';
 import { weightBand } from '../../../lib/chartModels';
 import { weightDeltaLine } from '../../../lib/chartCopy';
 import { formatWeightDate, kgToLbsNum, type WeightReading } from '../../../lib/weight';
@@ -187,6 +187,6 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

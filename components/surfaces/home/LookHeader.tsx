@@ -832,7 +832,7 @@ const styles = StyleSheet.create({
   moreText: {
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // 44pt boxes with no slop (C-5, BRK-17): the stacked doors meet edge to edge and share
   // nothing. `doorAfterChips` clears the chip row's reach above the first of them.
@@ -843,7 +843,7 @@ const styles = StyleSheet.create({
   line: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', marginTop: LINE_CLEARANCE },
   // The chips re-opened under the entries clear the last entry's control (C-5).
   chipsAfterEntries: { marginTop: LINE_CLEARANCE + HEADER_CHIP_REACH },
-  doorText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
+  doorText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: colorRoles.action.onLight },
   emergencyText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorEventSymptomInk },
   section: { marginTop: theme.space1 },
   sectionLabel: {
@@ -867,5 +867,5 @@ const styles = StyleSheet.create({
   answeredQuiet: { color: theme.colorTextTertiary },
   answeredHead: { fontWeight: theme.weightSemibold, color: theme.colorTextPrimary },
   undoBox: { minHeight: 44, justifyContent: 'center' },
-  control: { fontSize: theme.textXS, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
+  control: { fontSize: theme.textXS, fontWeight: theme.weightMedium, color: colorRoles.action.onLight },
 });

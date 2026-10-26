@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Header, PrimaryButton, SectionLabel } from '../../components/ui';
 import { ChipGroup, ChipGroupOption } from '../../components/ui/ChipGroup';
 import { buildFeedbackSubject, buildSupportMailto, formatJsBundle } from '../../lib/support';
@@ -230,10 +230,10 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightBody,
   },
-  // The calm accent focus ring the house TextField uses — reused here so the
+  // The selected-edge focus ring the house TextField uses — reused here so the
   // multiline composer reads as the same family of input.
   noteInputFocused: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
   },
   sendBlock: {
     gap: theme.space1,

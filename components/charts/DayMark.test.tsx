@@ -7,7 +7,7 @@
 import { configure, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { DAY_MARK_DASH, DayMark, DayMarkFace, DayMarkLine } from './DayMark';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { contrastRatio } from '../../constants/theme.contrast.test';
 
 // The charts' internals are hidden from assistive tech behind ONE spoken label (the
@@ -251,7 +251,7 @@ describe('DayMarkFace: the drawing History’s week strip shares with the month'
     const today = render(<DayMarkFace {...faceBase} box="white" line="none" today />);
     expect(flat(today.getByTestId('daymark').props.style)).toMatchObject({ borderWidth: 1.5, borderColor: theme.colorTextPrimary });
     const landed = render(<DayMarkFace {...faceBase} box="white" line="solid" selected />);
-    expect(flat(landed.getByTestId('daymark').props.style)).toMatchObject({ borderWidth: 2, borderColor: theme.colorAccentInk });
+    expect(flat(landed.getByTestId('daymark').props.style)).toMatchObject({ borderWidth: 2, borderColor: colorRoles.selected.edge });
   });
 });
 

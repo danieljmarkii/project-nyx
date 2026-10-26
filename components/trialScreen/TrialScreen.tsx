@@ -22,7 +22,7 @@ import type { TrialRouteOpen } from '../../lib/trialRoute';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { useTrialAllowedSet } from '../../hooks/useTrialAllowedSet';
 import { useTrialFacts } from '../../hooks/useTrialFacts';
@@ -724,7 +724,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   doorHeadStrong: {
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   doorSub: {
     fontSize: theme.textXS,
@@ -741,7 +741,7 @@ const styles = StyleSheet.create({
   linkActionText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   stateLine: {
     fontSize: theme.textMD,

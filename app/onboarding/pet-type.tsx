@@ -165,8 +165,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioSelected: {
-    backgroundColor: theme.colorAccent,
-    borderColor: theme.colorAccent,
+    backgroundColor: colorRoles.selected.ink,
+    borderColor: colorRoles.selected.edge,
   },
   grow: {
     flex: 1,

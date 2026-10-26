@@ -48,7 +48,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, shadows, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { Skeleton } from '../ui/Skeleton';
 import { FoodPicker } from './FoodPicker';
@@ -534,8 +534,8 @@ const styles = StyleSheet.create({
   changeFoodText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    // The ink, never the bright accent: this sits on a light surface (C-1).
-    color: theme.colorAccentInk,
+    // A link on a light surface: the action role, never the teal (CUL-2161).
+    color: colorRoles.action.onLight,
   },
   question: {
     fontSize: theme.textMD,

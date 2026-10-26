@@ -925,7 +925,7 @@ describe('the landed day (§3.1, C-22)', () => {
     });
     await settle();
     const header = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
-    expect(StyleSheet.flatten(header.props.style).borderColor).toBe('#0B7B6C');
+    expect(StyleSheet.flatten(header.props.style).borderColor).toBe('#3F35A0');
     // Consumed once: the request is gone from the store.
     expect(useHistoryScopeStore.getState().pendingLanding).toBeNull();
     // The owner's scroll clears it.
@@ -933,7 +933,7 @@ describe('the landed day (§3.1, C-22)', () => {
     await settle();
     expect(useHistoryScopeStore.getState().landedDay).toBeNull();
     const after = screen.getByTestId(`history-day-header-${dayAgo(2)}`);
-    expect(StyleSheet.flatten(after.props.style).borderColor).not.toBe('#0B7B6C');
+    expect(StyleSheet.flatten(after.props.style).borderColor).not.toBe('#3F35A0');
     await waitOut(LANDING_TAIL_MS);
   });
 
@@ -978,7 +978,7 @@ describe('the landed day (§3.1, C-22)', () => {
     });
     await settle();
     const gap = screen.getByTestId(`history-gap-${dayAgo(3)}`);
-    expect(StyleSheet.flatten(gap.props.style).borderColor).toBe('#0B7B6C');
+    expect(StyleSheet.flatten(gap.props.style).borderColor).toBe('#3F35A0');
     await waitOut(LANDING_TAIL_MS);
   });
 });
@@ -1438,7 +1438,7 @@ describe('landing on a day (§4 "Land on a day"; AC 32, AC 33)', () => {
     });
     await settle();
     expect(aim).toHaveBeenLastCalledWith(expect.objectContaining({ animated: false }));
-    expect(StyleSheet.flatten(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.style).borderColor).toBe('#0B7B6C');
+    expect(StyleSheet.flatten(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.style).borderColor).toBe('#3F35A0');
     expect(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.accessibilityState).toEqual({ selected: true });
     // The landed day draws once more; no other day does.
     expect(drewDays('land')).toEqual([dayAgo(2)]);
@@ -1458,7 +1458,7 @@ describe('landing on a day (§4 "Land on a day"; AC 32, AC 33)', () => {
     });
     await settle();
     expect(aim).toHaveBeenLastCalledWith(expect.objectContaining({ animated: false }));
-    expect(StyleSheet.flatten(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.style).borderColor).toBe('#0B7B6C');
+    expect(StyleSheet.flatten(screen.getByTestId(`history-day-header-${dayAgo(2)}`).props.style).borderColor).toBe('#3F35A0');
     expect(drewDays('land')).toEqual([]);
     expect(rowOpacity(dayAgo(2), 'v2')).toBe(1);
     expect(lastFocusedId()).toBe(`history-day-header-${dayAgo(2)}`);

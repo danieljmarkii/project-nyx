@@ -22,7 +22,7 @@ import { act, configure, fireEvent, render, within } from '@testing-library/reac
 import { AccessibilityInfo, FlatList, StyleSheet } from 'react-native';
 import { WeekStrip } from './WeekStrip';
 import { Skeleton } from '../ui/Skeleton';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { emptyDayFacts, type DayFacts, type HistoryCourse, type HistoryFacts } from '../../lib/historyDays';
 import { resolveWindow, type HistoryWindowKey, type ResolvedWindow } from '../../lib/historyWindows';
 import { stripWeeksOf } from '../../lib/stripMarks';
@@ -344,7 +344,7 @@ describe('a tap lands on its day (§3.1, §3.4)', () => {
     expect(s.stripWeek).toBe('2026-09-20');
     const landed = within(api.getByTestId('week-strip-page-2026-09-20')).getAllByTestId('daymark')[1];
     expect(landed.props.accessibilityLabel).toBe('Monday, September 21, 2 vomits logged, 6 logged in all, a meal not finished, selected');
-    expect(flat(landed.props.style)).toMatchObject({ borderWidth: 2, borderColor: theme.colorAccentInk });
+    expect(flat(landed.props.style)).toMatchObject({ borderWidth: 2, borderColor: colorRoles.selected.edge });
   });
 
   it('a grey day lands too (on its gap line); each door says what a tap does', () => {

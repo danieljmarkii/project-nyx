@@ -659,10 +659,10 @@ export function SpineCompactRow({
         transform: [{ rotate: motion.values.chevron.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }],
       }}
     >
-      <ChevronDown size={15} color={theme.colorAccentInk} strokeWidth={2} />
+      <ChevronDown size={15} color={colorRoles.action.onLight} strokeWidth={2} />
     </Animated.View>
   ) : (
-    <Chevron size={15} color={theme.colorAccentInk} strokeWidth={2} />
+    <Chevron size={15} color={colorRoles.action.onLight} strokeWidth={2} />
   );
   return (
     <View>

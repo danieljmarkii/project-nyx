@@ -100,6 +100,6 @@ const styles = StyleSheet.create({
   },
   chevron: {
     fontSize: theme.textLG,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

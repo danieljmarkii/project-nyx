@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, shadows, theme } from '../../constants/theme';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { COMPLETION_MOTION, EASE } from '../motion/completionMotion';
@@ -154,8 +154,8 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textMD,
-    // The ink, on the white ground: 5.17:1 (the bright colorAccent would be 2.26:1).
-    color: theme.colorAccentInk,
+    // The action on the white ground: 9.42:1 (the teal ink was 5.17:1; CUL-2161).
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
 });
