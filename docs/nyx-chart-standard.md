@@ -1,6 +1,6 @@
 # Nyx chart standard
 
-🌱 **Living.** **Version:** 1.1 · **Last Updated:** 2026-10-25 · **Issue:** CUL-1899
+🌱 **Living.** **Version:** 1.2 · **Last Updated:** 2026-10-26 · **Issue:** CUL-1899
 
 Every chart Nyx ships, in the app or in the vet report, is evidence a reader can check without a legend (Principle 8). This page is the table a chart joins **before it ships**, and the table every shipped chart is held to. It replaces the Design v2 round 4 §05 table (`docs/culprit-design-v4-mockups.html`, frozen 2026-09-19), which stopped being edited before `WeekStrip` shipped.
 
@@ -23,6 +23,7 @@ Every chart Nyx ships, in the app or in the vet report, is evidence a reader can
 - A **count** is bars. A **continuous** measure is dots by date (weight) or, where ruled, an area. A **rate** draws the counted thing, never only the ratio. **Timing** is the lane.
 - **Never:** a line through counts, a smoothed curve, a dual axis, a legend the chart needs to be read, a sparkline with no ground, a fill on an axis that does not start at zero.
 - **Never colour alone.** Chart text wears ink, never the series hue; a shape, a label or a gap carries every distinction (principles § Color). Lightness, not hue, tells filled from hollow.
+- **The line on a light ground.** A trend line, its endpoint dot and any glyph beside it draw `colorRoles.positive.glyphOnLight` (`#0FA08B`): 3.27:1 on white, over the 3:1 a line needs, and 3.01:1 on the teal wash. The bright teal (`colorAccent`) is 2.26:1 on white and never draws a line there; `guards/colourRoles.test.ts` fails on a raw teal site. ([CUL-2160](https://linear.app/projectnyx/issue/CUL-2160), ruled (a) 2026-10-26.)
 - **The ~20pt floor.** A mark that carries a fact the reader must pick out gets about 20pt on a phone. A coverage tick is the disclosed exception: it carries no fact alone (the count is in words beside it), recorded in `components/charts/CoverageTick.tsx`.
 - **The reference:** the shipped timing lane (`TimingLanes`). It does all five at once.
 
@@ -86,5 +87,6 @@ The rows above marked **no** or **exception** that had no issue are filed as one
 
 | Version | Date | Change |
 |---|---|---|
+| 1.2 | 2026-10-26 | CUL-2160: §2 names the line colour for a light ground (the glyph teal, 3.27:1 on white); Ask's sparkline and the onboarding preview line move onto it. |
 | 1.1 | 2026-10-25 | CUL-1499: Home's timing row draws the stacked compare and a denominator line naming the window; the dot lane leaves Home and its row is marked retired. |
 | 1.0 | 2026-10-23 | Moved out of round 4 §05 into a living doc (CUL-1899, D5 (a)). Every shipped chart audited against the code; the week strip, the timing distribution, the dot lane, the stacked compare, the sparkline and the two report charts join the table. |

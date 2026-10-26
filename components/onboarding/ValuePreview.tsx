@@ -86,8 +86,8 @@ export function ValuePreview({ variant }: { variant: ValuePreviewVariant }) {
 
 // ── Signal ────────────────────────────────────────────────────────────────────
 // The differentiator: a computed insight in the Newsreader display face (the same
-// face InsightCard's lead headline wears), over a calm declining trend line in the
-// single product accent. "Tap to see why" echoes the real card's expand affordance.
+// face InsightCard's lead headline wears), over a calm declining trend line in the chart
+// standard's line colour for a light ground (§2). "Tap to see why" echoes the real card's expand affordance.
 function SignalMock() {
   return (
     <>
@@ -96,13 +96,13 @@ function SignalMock() {
       <Svg width="100%" height={40} viewBox="0 0 220 40" style={styles.spark}>
         <Path
           d="M4 8 L44 14 L84 12 L124 24 L164 30 L212 34"
-          stroke={theme.colorAccent}
+          stroke={colorRoles.positive.glyphOnLight}
           strokeWidth={2.4}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
         />
-        <Circle cx={212} cy={34} r={3.4} fill={theme.colorAccent} />
+        <Circle cx={212} cy={34} r={3.4} fill={colorRoles.positive.glyphOnLight} />
       </Svg>
       {/* Depicts the real card's expand affordance without commanding a tap — the
           mock is non-interactive, so an imperative "Tap…" would dead-end (pm-review). */}
@@ -126,7 +126,7 @@ function LogMock() {
                   <EventIcon
                     type={t.key}
                     size={16}
-                    color={t.symptom ? theme.colorEventSymptom : theme.colorAccent}
+                    color={t.symptom ? theme.colorEventSymptom : colorRoles.positive.glyphOnLight}
                   />
                 </View>
                 <ThemedText style={styles.qLabel}>{t.label}</ThemedText>
