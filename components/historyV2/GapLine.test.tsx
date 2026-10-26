@@ -1,7 +1,7 @@
 // The lines between day cards (CUL-1164 / HV-7; spec §3.5, §3.12).
 import { StyleSheet } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { GapLine, ItemsLine, RecordStartLine } from './GapLine';
 import type { DateOnlyItem } from '../../lib/historyDays';
 
@@ -15,12 +15,12 @@ describe('GapLine', () => {
     expect(outlineOf('g1').borderColor).toBe('transparent');
   });
 
-  it('landed: the teal-ink outline, the same width as a card\'s, so nothing moves', () => {
+  it('landed: the selected outline, the same width as a card\'s, so nothing moves', () => {
     const view = render(<GapLine text="nothing logged · Sep 13 – 16" boxed landed={false} testID="g2" />);
     const before = outlineOf('g2');
     view.rerender(<GapLine text="nothing logged · Sep 13 – 16" boxed landed testID="g2" />);
     const after = outlineOf('g2');
-    expect(after.borderColor).toBe(theme.colorAccentInk);
+    expect(after.borderColor).toBe(colorRoles.selected.edge);
     expect(after.borderWidth).toBe(before.borderWidth);
   });
 });

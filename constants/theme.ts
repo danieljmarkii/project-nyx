@@ -403,8 +403,9 @@ export const theme = {
 // a JOB and the GROUND it sits on, and resolves to a theme token above: the only new
 // value is colorAction. A call site asks for `colorRoles.positive.glyphOnLight`, not for
 // the teal, so whether a mark is readable where it sits is decided once, here, and
-// pinned in theme.contrast.test.ts, which fails on any role without a pin. Nothing reads
-// these yet: CUL-1666's walk is the migration, and a guard follows it.
+// pinned in theme.contrast.test.ts, which fails on any role without a pin. The walks
+// (CUL-1666, CUL-2178, CUL-2161) moved the sites onto them, and guards/colourRoles.test.ts
+// keeps the raw teal from coming back.
 //
 // The hue table these encode is the principles' Color section (v2.1). Concern (the rose)
 // is the safety register: a concern role may keep or raise its contrast, never lower it,

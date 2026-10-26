@@ -13,7 +13,7 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { Animated, StyleSheet } from 'react-native';
 import { Snackbar } from './Snackbar';
 import { useSnackbarStore } from '../../store/snackbarStore';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { COMPLETION_MOTION, EASE } from '../motion/completionMotion';
 import { useReducedMotionStore } from '../../store/reducedMotionStore';
 import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
@@ -60,7 +60,7 @@ describe('Snackbar — the daylight ground (CUL-1691)', () => {
     const view = render(<Snackbar />);
     seed(jest.fn());
     expect(color(view.getByText('Removed from your library') as never)).toBe(theme.colorTextPrimary);
-    expect(color(view.getByText('Undo') as never)).toBe(theme.colorAccentInk);
+    expect(color(view.getByText('Undo') as never)).toBe(colorRoles.action.onLight);
   });
 
   it('shows a message with no action as a message alone', () => {
