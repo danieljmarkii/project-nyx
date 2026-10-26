@@ -9,7 +9,7 @@ Shipped via #1334. Dispatched row, `Teach: yes`. The PR body is the record of wh
 ## Teach
 
 ### One thing — reading a big diff: find the rule, then read one repetition (D1, L1)
-A diff lists every line a change removed (marked `-`) and every line it added (marked `+`). Today's touched 51 files, which looks like a lot to review. It is not: almost every file holds the same pair, one line out and one line in, swapping a colour's name. The work of reviewing is to find the one or two files that say what the rule is, read those carefully, then check that one repetition really follows the rule. The rest are the same sentence said again, plus the tests that check it.
+A diff lists every line a change removed (marked `-`) and every line it added (marked `+`). Today's change touched 51 files, which looks like a lot to review. It is not: almost every file holds the same pair, one line out and one line in, swapping a colour's name. The work of reviewing is to find the one or two files that say what the rule is, read those carefully, then check that one repetition really follows the rule. The rest are the same sentence said again, plus the tests that check it.
 
 **Like:** a landlord changes the lock on every flat in a building. You check the master key once, then try one door. You do not need to try all forty doors to know the master key is right.
 
