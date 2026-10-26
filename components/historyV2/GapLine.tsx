@@ -19,7 +19,7 @@
 // (HV-10: `focusRef`), and it says it is the landed one (`selected`), not only by colour.
 // Each line's spoken sentence says the drawn " · " as a pause (`spokenLine`).
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { DateOnlyItem } from '../../lib/historyDays';
 import { spokenLine } from '../../lib/spokenLine';
 import { ThemedText } from '../ui/ThemedText';
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     borderRadius: MARK_BAR_HEIGHT,
   },
   barCourse: { backgroundColor: theme.colorEventMedication },
-  barBowl: { backgroundColor: theme.colorEventMeal },
+  barBowl: { backgroundColor: colorRoles.positive.fillOnLight },
   text: {
     flex: 1,
     fontSize: theme.textSM,

@@ -37,7 +37,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
-import { theme } from '../../../constants/theme';
+import { colorRoles, theme } from '../../../constants/theme';
 import {
   LOOK_HEAD_WORDS,
   LOOK_OPENING_CHIP_KEY,
@@ -859,9 +859,9 @@ const styles = StyleSheet.create({
     marginTop: theme.space0_5 + theme.spaceMicro,
     minHeight: 44 - HEADER_CHIP_REACH * 2,
   },
-  // The accent as a GLYPH (a 3pt bar, never text) — C-1's rule is about text on a light
-  // ground, and a bar is what the guard's `color:` scan does not touch.
-  rail: { width: 3, height: 18, borderRadius: 2, backgroundColor: theme.colorAccent },
+  // A good fact as a FILL (a 3pt bar, never text): positive.fillOnLight, 3.27:1 on white
+  // (CUL-2178).
+  rail: { width: 3, height: 18, borderRadius: 2, backgroundColor: colorRoles.positive.fillOnLight },
   answeredBody: { flex: 1, minWidth: 0 },
   answeredText: { fontSize: theme.textSM, color: theme.colorTextSecondary },
   answeredQuiet: { color: theme.colorTextTertiary },

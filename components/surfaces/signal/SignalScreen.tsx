@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type Text } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { theme } from '../../../constants/theme';
+import { colorRoles, theme } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useLiveRegionAnnouncement } from '../../../hooks/useLiveRegionAnnouncement';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     width: theme.space1,
     height: theme.space1,
     borderRadius: theme.space1,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   ackText: {
     fontSize: theme.textXS,

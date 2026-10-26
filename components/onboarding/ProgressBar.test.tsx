@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { ProgressBar } from './ProgressBar';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 
 function bgColor(node: { props: { style: unknown } }): string | undefined {
   const flat = (StyleSheet.flatten(node.props.style as never) ?? {}) as Record<string, unknown>;
@@ -16,9 +16,9 @@ describe('ProgressBar', () => {
 
   it('fills segments up to the current step and leaves the rest empty', () => {
     const { getByTestId } = render(<ProgressBar current={2} total={5} />);
-    // Steps 1–2 reached → segments 0,1 accent-filled; 2,3,4 border-empty.
-    expect(bgColor(getByTestId('progress-segment-0'))).toBe(theme.colorAccent);
-    expect(bgColor(getByTestId('progress-segment-1'))).toBe(theme.colorAccent);
+    // Steps 1–2 reached → segments 0,1 filled in the neutral ink; 2,3,4 border-empty.
+    expect(bgColor(getByTestId('progress-segment-0'))).toBe(colorRoles.text.primaryOnLight);
+    expect(bgColor(getByTestId('progress-segment-1'))).toBe(colorRoles.text.primaryOnLight);
     expect(bgColor(getByTestId('progress-segment-2'))).toBe(theme.colorBorder);
     expect(bgColor(getByTestId('progress-segment-3'))).toBe(theme.colorBorder);
     expect(bgColor(getByTestId('progress-segment-4'))).toBe(theme.colorBorder);
@@ -34,7 +34,7 @@ describe('ProgressBar', () => {
   it('clamps an over-range current so it never over-fills', () => {
     const { getAllByTestId, getByLabelText } = render(<ProgressBar current={9} total={5} />);
     const filled = getAllByTestId(/^progress-segment-/).filter(
-      (n) => bgColor(n) === theme.colorAccent,
+      (n) => bgColor(n) === colorRoles.text.primaryOnLight,
     );
     expect(filled).toHaveLength(5);
     expect(getByLabelText('Step 5 of 5')).toBeTruthy();

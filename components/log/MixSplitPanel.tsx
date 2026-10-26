@@ -15,7 +15,7 @@
 
 import { useMemo, useState } from 'react';
 import { Animated, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   // Two fills, never text (C-1): the meal colour and its light tint, so the two foods
   // read apart without a legend; the names beneath say which is which.
   segmentFirst: {
-    backgroundColor: theme.colorEventMeal,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   segmentSecond: {
     backgroundColor: theme.colorEventMealLight,

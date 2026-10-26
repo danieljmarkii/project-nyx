@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { ValuePreview, ValuePreviewVariant } from '../../components/onboarding/ValuePreview';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -173,10 +173,11 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusFull,
     backgroundColor: theme.colorBorderStrong,
   },
-  // The active dot elongates into a pill in the accent — the "you are here" cue.
+  // The active dot elongates into a pill in the neutral ink: position, not a good fact
+  // (CUL-2178), so it takes neither teal nor the action indigo.
   dotActive: {
     width: theme.space3,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.text.primaryOnLight,
   },
   cta: {
     gap: theme.space1,

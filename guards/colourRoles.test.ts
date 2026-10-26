@@ -28,10 +28,10 @@
 // order, each naming its style key and its ground: a night or dark ground where the
 // teal reads (with its ratio), the brand mark (a logo, outside WCAG 1.4.11), a tint map
 // exported with its ground and pinned in theme.contrast.test.ts, or the issue that owns
-// moving it (CUL-2161 choices and fields, CUL-2160 trend lines, CUL-2178 fills and edges
-// on light grounds, for which the roles have no leaf yet). Per file, the entry count
-// must EQUAL the site count, so a new site reds and a removed site whose entry stays
-// reds too.
+// moving it (CUL-2161 choices and fields, CUL-2160 trend lines, CUL-2200 the accent
+// button, CUL-1902 the trial ledger's cells; CUL-2178 moved the other fills and edges).
+// Per file, the entry count must EQUAL the site count, so a new site reds and a removed
+// site whose entry stays reds too.
 //
 // A RATCHET, both directions (the styleLiteralBudget shape, CUL-2138). The registry's
 // total is pinned in REGISTRY_CEILING: never raise it to go green. When a site moves
@@ -109,46 +109,28 @@ const LOGO = 'brand mark: the Culprit logo, outside WCAG 1.4.11\'s 3:1 (logos ar
 const WHORL = 'brand mark: the whorl, retiring with WhorlSpinner (CUL-1593)';
 const CHOICE = 'CUL-2161: a choice, radio or field, moving to colorRoles.selected / action';
 const TREND = 'CUL-2160: a trend line on white, waiting on the chart standard\'s line colour';
-const FILL = 'CUL-2178: a teal fill or edge on a light ground, no role leaf yet';
+const LEDGER = 'CUL-1902: a trial ledger cell, left as is until gate 11 rules the ledger (CUL-2178 scoping)';
+const BUTTON = 'CUL-2200: the accent button, moving to colorRoles.action.fill';
 
 /**
  * Every surviving raw site, one entry per site in file order: its style key, then its
  * ground or the issue that owns it. Ratchets down only (REGISTRY_CEILING).
  */
 export const REGISTRY: Record<string, readonly string[]> = {
-  'app/(auth)/how-it-works.tsx': [`dotActive · ${FILL}`],
   'app/(auth)/index.tsx': [`learnMoreText · ${NIGHT_LANDING}`],
-  'app/(tabs)/profile.tsx': [`progressBar · ${FILL}`],
-  'app/ask.tsx': [`send · ${FILL}`],
   'app/day-summary.tsx': [
     `RecapStrip tint · ${NIGHT_RECAP}`,
     `emptyCta · night ground: colorBrandNight, 8.09:1`,
     `retry · night ground: colorBrandNight, 8.09:1`,
   ],
-  'app/medication-capture.tsx': [`checkboxChecked fill · ${FILL}`, `checkboxChecked edge · ${FILL}`],
   'app/onboarding/paywall.tsx': [`feature check · ${PAYWALL}`, `priceTileFeatured edge · ${PAYWALL}`, `badge · ${PAYWALL}`],
   'app/onboarding/pet-type.tsx': [`radioSelected fill · ${CHOICE}`, `radioSelected edge · ${CHOICE}`],
   'app/settings/feedback.tsx': [`noteInputFocused · ${CHOICE}`],
-  'app/settings/password.tsx': [`checkboxChecked fill · ${FILL}`, `checkboxChecked edge · ${FILL}`],
-  'app/vet-files.tsx': [`addBtn · ${FILL}`],
   'components/ask/AskAnswerComponent.tsx': [`Sparkline color · ${TREND}`],
   'components/ask/AskChip.tsx': [`accent edge · ${CHOICE}`],
   'components/brand/CulpritMark.tsx': [`dot · ${LOGO}`, `crescent stroke · ${LOGO}`, `boxed dot · ${LOGO}`],
   'components/brand/WhorlSpinner.tsx': [`night ridge · ${WHORL}`, `day ridge · ${WHORL}`, `dot fallback · ${WHORL}`],
-  'components/dayRow/SpineNodeRow.tsx': [`runRail · ${FILL}`],
-  'components/food/AlwaysAvailableCard.tsx': [`sharedDot · ${FILL}`],
-  'components/food/TrialContaminantNote.tsx': [`card edge · ${FILL}`],
-  'components/foods/ArchivedFoodRow.tsx': [`trialChipDot · ${FILL}`],
-  'components/foods/FoodRow.tsx': [`trialChipDot · ${FILL}`],
-  'components/foods/FoodsTrialStrip.tsx': [`dot · ${FILL}`],
-  'components/historyV2/DayCard.tsx': [`bowl bar · ${FILL}`],
-  'components/historyV2/GapLine.tsx': [`barBowl · ${FILL}`],
-  'components/historyV2/HistoryList.tsx': [`bowlBar · ${FILL}`],
-  'components/home/HomeHeader.tsx': [`askDot · ${FILL}`],
-  'components/home/SignalReceipts.tsx': [`bandDashedEnd · ${FILL}`],
-  'components/log/FoodPicker.tsx': [`alwaysDot · ${FILL}`],
   'components/log/FoodTile.tsx': [`tileSelected · ${CHOICE}`],
-  'components/log/MixSplitPanel.tsx': [`segmentFirst · ${FILL}`],
   'components/log/SimpleEventConfirm.tsx': [
     `picker accentColor · ${CHOICE}`,
     `picker accentColor · ${CHOICE}`,
@@ -159,19 +141,14 @@ export const REGISTRY: Record<string, readonly string[]> = {
     `radioDot · ${CHOICE}`,
     `summaryPill · ${CHOICE}`,
   ],
-  'components/nav/NyxTabBar.tsx': [`avatarRingActive · ${FILL}`, `tickActive · ${FILL}`],
   'components/notifications/NotificationPrimer.tsx': [
     'heroLabel · night ground: the primer\'s night miniature, a decorative eyebrow, not positive.onNight\'s good fact',
   ],
-  'components/onboarding/ProgressBar.tsx': [`segmentFilled · ${FILL}`],
   'components/onboarding/ValuePreview.tsx': [
     `report line · ${TREND}`,
     `report endpoint · ${TREND}`,
     `report glyph · ${TREND}`,
-    `qtileHot · ${FILL}`,
-    `toastCheck · ${FILL}`,
   ],
-  'components/profile/DietTrialCard.tsx': [`progressFill · ${FILL}`],
   'components/profile/StartTrialModal.tsx': [`radioOn · ${CHOICE}`],
   'components/profile/TrialCompletionSheet.tsx': [`radioOn edge · ${CHOICE}`, `radioOn fill · ${CHOICE}`],
   'components/profile/TrialProteinPicker.tsx': [`optionRowOn · ${CHOICE}`, `radioOn · ${CHOICE}`],
@@ -179,23 +156,20 @@ export const REGISTRY: Record<string, readonly string[]> = {
   'components/recap/nodeTints.ts': [
     'NODE_TINT_NIGHT.meal · tint map: exported with NODE_TINT_NIGHT_GROUND and pinned in theme.contrast.test.ts',
   ],
-  'components/surfaces/home/LookHeader.tsx': [`rail · ${FILL}`],
-  'components/surfaces/signal/SignalScreen.tsx': [`ackDot · ${FILL}`],
-  'components/trialScreen/TrialDoorRow.tsx': [`fill · ${FILL}`],
-  'components/trialScreen/TrialLedger.tsx': [`meals_logged · ${FILL}`, `today_open · ${FILL}`],
-  'components/ui/PrimaryButton.tsx': [`btnAccent · ${FILL} (on night at the Landing and the paywall; on light elsewhere)`],
+  'components/trialScreen/TrialLedger.tsx': [`meals_logged · ${LEDGER}`, `today_open · ${LEDGER}`],
+  'components/ui/PrimaryButton.tsx': [`btnAccent · ${BUTTON} (on night at the Landing and the paywall; on light elsewhere)`],
   'components/ui/TextField.tsx': [`focus edge · ${CHOICE}`],
-  'components/vetfiles/DocumentHero.tsx': [`dotOn · ${FILL}`],
   'components/vetvisits/EndTrialReasonSheet.tsx': [`radioOn · ${CHOICE}`],
 };
 
 /**
  * The registry's total, measured 2026-10-23 on c4b75d5 after this PR moved the ten
  * colorAccentGlyph sites onto colorRoles.positive.glyphOnLight; 75 after CUL-1908 moved
- * TimeConfidenceField's picker and radios onto colorRoles.action. A RATCHET: lower it
- * whenever an entry goes, and never raise it.
+ * TimeConfidenceField's picker and radios onto colorRoles.action; 44 after CUL-2178 moved
+ * 31 fills and edges onto the fill leaves. A RATCHET: lower it whenever an entry goes,
+ * and never raise it.
  */
-const REGISTRY_CEILING = 75;
+const REGISTRY_CEILING = 44;
 
 /** A justified entry names its key, then a ground or the issue that owns its move. */
 const JUSTIFIED = /^\S.* · (?:(?:night|dark) ground: \S|brand mark: \S|tint map: \S|CUL-\d+: \S)/;

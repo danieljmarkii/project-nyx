@@ -1,7 +1,7 @@
 import { render, fireEvent, act } from '@testing-library/react-native';
 import { NyxTabBar, PET_ROUTE_NAME, type TabBarProps } from './NyxTabBar';
 import { usePetStore } from '../../store/petStore';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { Pet } from '../../store/petStore';
 
 // The tab bar (CUL-599 / spec §1 DP-1). The ladder's arithmetic is pinned in
@@ -309,9 +309,9 @@ describe('the active state draws without moving anything', () => {
       .map((n) => (Array.isArray(n.props?.style) ? Object.assign({}, ...n.props.style.filter(Boolean)) : n.props?.style))
       .filter((s) => s && s.borderWidth === 2 && s.borderRadius === theme.radiusFull);
 
-  it('rings the avatar in accent when the pet tab is focused', () => {
+  it('rings the avatar in the selected edge when the pet tab is focused', () => {
     const focused = render(<NyxTabBar {...makeProps(3)} />).toJSON();
-    expect(ringStyles(focused).map((s) => s.borderColor)).toEqual([theme.colorAccent]);
+    expect(ringStyles(focused).map((s) => s.borderColor)).toEqual([colorRoles.selected.edge]);
   });
 
   it('keeps the ring box laid out (transparent) when it is not', () => {
@@ -330,7 +330,7 @@ describe('the active state draws without moving anything', () => {
       .map((n) => (Array.isArray(n.props?.style) ? Object.assign({}, ...n.props.style.filter(Boolean)) : n.props?.style))
       .filter((s) => s && s.width === 4 && s.height === 4);
     expect(ticks.length).toBe(4);
-    expect(ticks.filter((s) => s.backgroundColor === theme.colorAccent).length).toBe(1);
+    expect(ticks.filter((s) => s.backgroundColor === colorRoles.selected.ink).length).toBe(1);
     expect(ticks.filter((s) => s.backgroundColor === 'transparent').length).toBe(3);
   });
 

@@ -1040,7 +1040,7 @@ const styles = StyleSheet.create({
     bottom: theme.space2,
     width: RUN_RAIL_W,
     borderRadius: RUN_RAIL_W / 2,
-    backgroundColor: theme.colorEventMeal,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   // The stack's back bead (CUL-1736): its frame is the bead's own, handed in by the frame.
   stackBead: { position: 'absolute' },

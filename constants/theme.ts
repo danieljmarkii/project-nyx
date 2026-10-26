@@ -415,11 +415,20 @@ export const colorRoles = {
     onLight: theme.colorAction,
     onNight: theme.colorMoonlight,        // R3: indigo cannot show on the indigo night
     labelOnFill: theme.colorTextOnDark,   // the label on a solid action fill
+    // A solid action on a light ground: a round send or add button, the dot that
+    // invites a tap (CUL-2178, C2 of CUL-1279's round). The same indigo as onLight,
+    // named for its job so a fill site never borrows the text leaf.
+    fill: theme.colorAction,
   },
   // A good fact: a meal eaten, a dose given, a clean day.
   positive: {
     glyphOnLight: theme.colorAccentGlyph,
     textOnLight: theme.colorAccentInk,
+    // A good fact drawn as a solid fill on white: a bar, a dot, a rail (CUL-2178).
+    fillOnLight: theme.colorAccentGlyph,
+    // A good fact filling a grey track (colorChartEmpty), as a progress bar does. The
+    // glyph teal is 2.87:1 there, under 3:1, so the track takes the ink (4.53:1).
+    fillOnTrack: theme.colorAccentInk,
     wash: theme.colorAccentLight,
     onNight: theme.colorMoonlitTeal,
   },

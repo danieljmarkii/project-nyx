@@ -24,7 +24,7 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
 import {
   RUN_CLOSE_BUDGET_MS,
@@ -904,7 +904,7 @@ describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
     expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
     expect(t.queryByTestId('spine-run-lead-compact:m0')).toBeNull();
     expect(t.queryByTestId('spine-run-chevron-compact:m0')).toBeNull();
-    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).backgroundColor).toBe(theme.colorEventMeal);
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).backgroundColor).toBe(colorRoles.positive.fillOnLight);
     advance(1_000);
     expect(configureNext).toHaveBeenCalledTimes(1);
   });

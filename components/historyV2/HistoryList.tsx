@@ -82,7 +82,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { usePhotoReadingOff } from '../../hooks/usePhotoReadingOff';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../lib/analysis';
 import { focusAccessibility } from '../../lib/a11yFocus';
@@ -1178,7 +1178,7 @@ const styles = StyleSheet.create({
     width: BOWL_BAR_WIDTH,
     height: BOWL_BAR_HEIGHT,
     borderRadius: BOWL_BAR_WIDTH,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   bowlText: {
     flex: 1,

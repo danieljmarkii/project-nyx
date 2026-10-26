@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { ImageOff } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { FORMAT_LABEL } from '../../lib/food';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnLight,
   },
   // Uppercase + tracked, matching the eyebrow treatment this row already uses for
   // the BRAND · FORMAT meta line directly below — which is the point: an eyebrow

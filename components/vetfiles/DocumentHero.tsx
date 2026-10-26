@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { FileText } from 'lucide-react-native';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorBorderStrong,
   },
   dotOn: {
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.text.primaryOnLight,
   },
   openPill: {
     backgroundColor: theme.colorAccentLight,

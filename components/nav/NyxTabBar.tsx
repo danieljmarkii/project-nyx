@@ -1,5 +1,5 @@
 import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
 import { usePetStore } from '../../store/petStore';
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarRingActive: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
   },
   tabLabel: {
     fontWeight: theme.weightMedium,
@@ -259,6 +259,6 @@ const styles = StyleSheet.create({
     marginTop: LABEL_TICK_GAP,
   },
   tickActive: {
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.selected.ink,
   },
 });

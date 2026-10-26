@@ -421,10 +421,14 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     ['action.onNight', 'colorBrandNight', TEXT],
     ['action.onNight', 'colorBrandNightElevated', TEXT],
     ['action.labelOnFill', 'action.onLight', TEXT],
+    ['action.fill', 'colorSurface', NON_TEXT],
+    ['action.labelOnFill', 'action.fill', TEXT],
     ['positive.glyphOnLight', 'colorSurface', NON_TEXT],
     ['positive.textOnLight', 'colorSurface', TEXT],
     ['positive.textOnLight', 'positive.wash', TEXT],
     ['positive.glyphOnLight', 'positive.wash', NON_TEXT],
+    ['positive.fillOnLight', 'colorSurface', NON_TEXT],
+    ['positive.fillOnTrack', 'colorChartEmpty', NON_TEXT],
     ['positive.onNight', 'colorBrandNight', TEXT],
     ['positive.onNight', 'colorBrandNightElevated', TEXT],
     ['selected.ink', 'selected.ground', TEXT],
@@ -522,6 +526,18 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
   // The failing halves, each the shortcut a later edit would reach for. Without these
   // rows "point positive.glyphOnLight back at the brand teal" or "let action.onNight be
   // the indigo too" reads as a tidy one-token diff.
+  // The fill leaves (CUL-2178, C2 of CUL-1279): the ratios the round measured, and the
+  // shortcut that fails. The glyph teal reads on white but not in the grey track, so a
+  // progress fill pointed back at fillOnLight reds here.
+  it('records the fill leaves, and the glyph teal failing in a track', () => {
+    expect(contrastRatio(colorRoles.positive.fillOnLight, theme.colorSurface)).toBeCloseTo(3.27, 2);
+    expect(contrastRatio(colorRoles.positive.fillOnTrack, theme.colorChartEmpty)).toBeCloseTo(4.53, 2);
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorChartEmpty)).toBeCloseTo(2.87, 2);
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorChartEmpty)).toBeLessThan(NON_TEXT);
+    expect(colorRoles.action.fill).toBe(theme.colorAction);
+    expect(contrastRatio(colorRoles.action.labelOnFill, colorRoles.action.fill)).toBeCloseTo(9.42, 2);
+  });
+
   it('the brand teal fails as a glyph on white, and the action indigo fails on the night', () => {
     expect(contrastRatio(theme.colorAccent, theme.colorSurface)).toBeLessThan(NON_TEXT);
     expect(contrastRatio(theme.colorAction, theme.colorBrandNight)).toBeLessThan(NON_TEXT);

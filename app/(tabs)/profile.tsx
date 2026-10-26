@@ -1923,7 +1923,7 @@ const styles = StyleSheet.create({
   progressBar: {
     height: theme.space0_75,
     borderRadius: theme.radiusXS,
-    backgroundColor: theme.colorAccent,
+    backgroundColor: colorRoles.positive.fillOnTrack,
   },
   // Medication ADHERENCE line. Distinct from the diet trial in every way that
   // matters: a dose either was or wasn't given, so a ratio is honest here — which
