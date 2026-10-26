@@ -19,7 +19,7 @@
 
 import { useRef, useState } from 'react';
 import { Animated, LayoutAnimation, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
   takeOut: {
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   },
   stepText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
   stepValue: {

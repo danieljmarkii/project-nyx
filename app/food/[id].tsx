@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
@@ -1103,7 +1103,7 @@ const styles = StyleSheet.create({
   },
   secondaryActionText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   removeAction: {
     alignItems: 'center',

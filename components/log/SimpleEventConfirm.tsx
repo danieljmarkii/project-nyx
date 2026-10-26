@@ -6,7 +6,7 @@ import type { Insets } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { ChevronLeft, Clock, Camera, Pencil } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EventIcon } from '../event/EventIcon';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -542,7 +542,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
             display={pickerDisplay}
             maximumDate={new Date()}
             themeVariant="light"
-            accentColor={theme.colorAccent}
+            accentColor={colorRoles.action.onLight}
             onChange={(_e, d) => {
               if (Platform.OS === 'android') setOpenPicker(null);
               handlePointChange(d);
@@ -590,7 +590,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
                 {openPicker === 'latest' && (
                   <DateTimePicker
                     value={foundLatest} mode="datetime" display={pickerDisplay} maximumDate={new Date()}
-                    themeVariant="light" accentColor={theme.colorAccent}
+                    themeVariant="light" accentColor={colorRoles.action.onLight}
                     onChange={(_e, d) => { if (Platform.OS === 'android') setOpenPicker(null); if (d) handleLatestChange(d); }}
                   />
                 )}
@@ -611,7 +611,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
                 {openPicker === 'earliest' && (
                   <DateTimePicker
                     value={earliest ?? foundLatest} mode="datetime" display={pickerDisplay} maximumDate={foundLatest}
-                    themeVariant="light" accentColor={theme.colorAccent}
+                    themeVariant="light" accentColor={colorRoles.action.onLight}
                     onChange={(_e, d) => { if (Platform.OS === 'android') setOpenPicker(null); if (d) setEarliest(d); }}
                   />
                 )}
@@ -627,7 +627,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
                 {openPicker === 'latest' && (
                   <DateTimePicker
                     value={foundLatest} mode="datetime" display={pickerDisplay} maximumDate={new Date()}
-                    themeVariant="light" accentColor={theme.colorAccent}
+                    themeVariant="light" accentColor={colorRoles.action.onLight}
                     onChange={(_e, d) => { if (Platform.OS === 'android') setOpenPicker(null); if (d) handleLatestChange(d); }}
                   />
                 )}
@@ -979,8 +979,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chipActive: {
-    borderColor: theme.colorAccent,
-    backgroundColor: theme.colorAccentLight,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ground,
   },
   chipLabel: {
     fontSize: theme.textSM,
@@ -988,7 +988,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   chipLabelActive: {
-    color: theme.colorAccentInk,
+    color: colorRoles.selected.ink,
   },
 
   // ── Window editor ──
@@ -1012,8 +1012,8 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: theme.colorBorderStrong,
     alignItems: 'center', justifyContent: 'center',
   },
-  radioOn: { borderColor: theme.colorAccent },
-  radioDot: { width: 8, height: 8, borderRadius: theme.radiusFull, backgroundColor: theme.colorAccent },
+  radioOn: { borderColor: colorRoles.selected.edge },
+  radioDot: { width: 8, height: 8, borderRadius: theme.radiusFull, backgroundColor: colorRoles.selected.ink },
   radioLabel: { fontSize: theme.textMD, color: theme.colorTextPrimary },
   field: {
     flexDirection: 'row',
@@ -1046,14 +1046,16 @@ const styles = StyleSheet.create({
   },
 
   // ── Summary pill (the save) ──
+  // Solid action indigo with a white label (R5 of CUL-1279's round, CUL-2161): a
+  // symptom save is an action, never the teal of a good fact.
   summaryPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: theme.space1,
-    backgroundColor: theme.colorAccentLight,
+    backgroundColor: colorRoles.action.fill,
     borderWidth: 1,
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.action.fill,
     borderRadius: theme.radiusMedium,
     paddingLeft: theme.space2,
     paddingRight: theme.space0_5,
@@ -1065,7 +1067,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.labelOnFill,
   },
   logItPill: {
     backgroundColor: theme.colorNeutralDark,

@@ -43,7 +43,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
-import { theme } from '../../../constants/theme';
+import { colorRoles, theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
 import { lookCardLive, todayMealNudge, todayNudgeKind } from '../../../lib/lookCard';
 import { isLookRow } from '../../../lib/lookDisplay';
@@ -392,5 +392,5 @@ const styles = StyleSheet.create({
   failedText: { fontSize: theme.textMD, color: theme.colorTextSecondary, lineHeight: theme.lineHeightBody },
   // 28 + 2 × the 8pt slop = the 44pt floor (C-5), spelled out as the chips do.
   retry: { alignSelf: 'flex-start', paddingVertical: theme.space1, minHeight: 44 - 16, justifyContent: 'center' },
-  retryText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
+  retryText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: colorRoles.action.onLight },
 });

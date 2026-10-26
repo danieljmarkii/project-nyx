@@ -28,8 +28,8 @@
 // order, each naming its style key and its ground: a night or dark ground where the
 // teal reads (with its ratio), the brand mark (a logo, outside WCAG 1.4.11), a tint map
 // exported with its ground and pinned in theme.contrast.test.ts, or the issue that owns
-// moving it (CUL-2161 choices and fields, CUL-2160 trend lines, CUL-2200 the accent
-// button, CUL-1902 the trial ledger's cells; CUL-2178 moved the other fills and edges).
+// moving it (CUL-2160 trend lines, CUL-2200 the accent button, CUL-1902 the trial
+// ledger's cells; CUL-2178 moved the other fills and edges, CUL-2161 the choices and fields).
 // Per file, the entry count must EQUAL the site count, so a new site reds and a removed
 // site whose entry stays reds too.
 //
@@ -107,7 +107,6 @@ const NIGHT_RECAP = 'night ground: colorBrandNightElevated, 6.57:1 (pinned in th
 const PAYWALL = 'dark ground: the paywall\'s colorSurfaceDark, 8.26:1 (pinned in theme.contrast.test.ts)';
 const LOGO = 'brand mark: the Culprit logo, outside WCAG 1.4.11\'s 3:1 (logos are exempt)';
 const WHORL = 'brand mark: the whorl, retiring with WhorlSpinner (CUL-1593)';
-const CHOICE = 'CUL-2161: a choice, radio or field, moving to colorRoles.selected / action';
 const TREND = 'CUL-2160: a trend line on white, waiting on the chart standard\'s line colour';
 const LEDGER = 'CUL-1902: a trial ledger cell, left as is until gate 11 rules the ledger (CUL-2178 scoping)';
 const BUTTON = 'CUL-2200: the accent button, moving to colorRoles.action.fill';
@@ -124,23 +123,9 @@ export const REGISTRY: Record<string, readonly string[]> = {
     `retry · night ground: colorBrandNight, 8.09:1`,
   ],
   'app/onboarding/paywall.tsx': [`feature check · ${PAYWALL}`, `priceTileFeatured edge · ${PAYWALL}`, `badge · ${PAYWALL}`],
-  'app/onboarding/pet-type.tsx': [`radioSelected fill · ${CHOICE}`, `radioSelected edge · ${CHOICE}`],
-  'app/settings/feedback.tsx': [`noteInputFocused · ${CHOICE}`],
   'components/ask/AskAnswerComponent.tsx': [`Sparkline color · ${TREND}`],
-  'components/ask/AskChip.tsx': [`accent edge · ${CHOICE}`],
   'components/brand/CulpritMark.tsx': [`dot · ${LOGO}`, `crescent stroke · ${LOGO}`, `boxed dot · ${LOGO}`],
   'components/brand/WhorlSpinner.tsx': [`night ridge · ${WHORL}`, `day ridge · ${WHORL}`, `dot fallback · ${WHORL}`],
-  'components/log/FoodTile.tsx': [`tileSelected · ${CHOICE}`],
-  'components/log/SimpleEventConfirm.tsx': [
-    `picker accentColor · ${CHOICE}`,
-    `picker accentColor · ${CHOICE}`,
-    `picker accentColor · ${CHOICE}`,
-    `picker accentColor · ${CHOICE}`,
-    `chipActive · ${CHOICE}`,
-    `radioOn · ${CHOICE}`,
-    `radioDot · ${CHOICE}`,
-    `summaryPill · ${CHOICE}`,
-  ],
   'components/notifications/NotificationPrimer.tsx': [
     'heroLabel · night ground: the primer\'s night miniature, a decorative eyebrow, not positive.onNight\'s good fact',
   ],
@@ -149,27 +134,23 @@ export const REGISTRY: Record<string, readonly string[]> = {
     `report endpoint · ${TREND}`,
     `report glyph · ${TREND}`,
   ],
-  'components/profile/StartTrialModal.tsx': [`radioOn · ${CHOICE}`],
-  'components/profile/TrialCompletionSheet.tsx': [`radioOn edge · ${CHOICE}`, `radioOn fill · ${CHOICE}`],
-  'components/profile/TrialProteinPicker.tsx': [`optionRowOn · ${CHOICE}`, `radioOn · ${CHOICE}`],
   'components/recap/DailyRecapOffer.tsx': [`OFFER_BORDER · ${NIGHT_RECAP}`, `turnOn · ${NIGHT_RECAP}`],
   'components/recap/nodeTints.ts': [
     'NODE_TINT_NIGHT.meal · tint map: exported with NODE_TINT_NIGHT_GROUND and pinned in theme.contrast.test.ts',
   ],
   'components/trialScreen/TrialLedger.tsx': [`meals_logged · ${LEDGER}`, `today_open · ${LEDGER}`],
   'components/ui/PrimaryButton.tsx': [`btnAccent · ${BUTTON} (on night at the Landing and the paywall; on light elsewhere)`],
-  'components/ui/TextField.tsx': [`focus edge · ${CHOICE}`],
-  'components/vetvisits/EndTrialReasonSheet.tsx': [`radioOn · ${CHOICE}`],
 };
 
 /**
  * The registry's total, measured 2026-10-23 on c4b75d5 after this PR moved the ten
  * colorAccentGlyph sites onto colorRoles.positive.glyphOnLight; 75 after CUL-1908 moved
  * TimeConfidenceField's picker and radios onto colorRoles.action; 44 after CUL-2178 moved
- * 31 fills and edges onto the fill leaves. A RATCHET: lower it whenever an entry goes,
+ * 31 fills and edges onto the fill leaves; 24 after CUL-2161 moved the 20 choices, radios,
+ * fields and the symptom save onto colorRoles.selected / action. A RATCHET: lower it whenever an entry goes,
  * and never raise it.
  */
-const REGISTRY_CEILING = 44;
+const REGISTRY_CEILING = 24;
 
 /** A justified entry names its key, then a ground or the issue that owns its move. */
 const JUSTIFIED = /^\S.* · (?:(?:night|dark) ground: \S|brand mark: \S|tint map: \S|CUL-\d+: \S)/;

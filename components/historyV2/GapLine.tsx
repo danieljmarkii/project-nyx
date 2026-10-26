@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     borderWidth: LANDED_OUTLINE_WIDTH,
     borderColor: 'transparent',
   },
-  outlineLanded: { borderColor: theme.colorAccentInk },
+  outlineLanded: { borderColor: colorRoles.selected.edge },
   // A line that holds a visit is a door: the 44pt floor (C-5).
   door: { minHeight: 44, justifyContent: 'center' },
   line: {

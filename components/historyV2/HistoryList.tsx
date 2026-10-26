@@ -1215,6 +1215,6 @@ const styles = StyleSheet.create({
   moreRetryText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

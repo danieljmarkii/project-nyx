@@ -8,7 +8,7 @@ import {
   Text, UIManager,
   View,
 } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
 import { ThemedText } from '../ui/ThemedText';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -1194,7 +1194,7 @@ const styles = StyleSheet.create({
   expandHint: {
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // The fold verb — grey, so the doorway to the evidence stays the brighter of the two.
   foldControl: {

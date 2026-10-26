@@ -1,5 +1,5 @@
 import { View, StyleSheet, StyleProp, ViewStyle, TouchableOpacity } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
 export interface EmptyStateAction {
@@ -98,6 +98,6 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

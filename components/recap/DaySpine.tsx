@@ -27,7 +27,7 @@ import { memo, useCallback, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronRight, Plus } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import type { DaySummaryRow } from '../../lib/daySummary';
 import type { EventTintCategory } from '../../lib/dayEvents';
 import {
@@ -103,7 +103,7 @@ const GROUND = {
     time: theme.colorTextTertiary,
     title: theme.colorTextPrimary,
     detail: theme.colorTextSecondary,
-    chevron: theme.colorAccentInk,
+    chevron: colorRoles.action.onLight,
     pressed: theme.colorSurfaceSubtle,
   },
 } as const;

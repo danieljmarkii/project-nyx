@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     paddingTop: theme.space1,
     paddingBottom: theme.space2,
   },
-  cardLanded: { borderColor: theme.colorAccentInk },
+  cardLanded: { borderColor: colorRoles.selected.edge },
 
   // ── The header ──
   headerRow: {
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     flexShrink: 0,
   },
-  dateLanded: { color: theme.colorAccentInk },
+  dateLanded: { color: colorRoles.selected.ink },
   todayTag: {
     fontSize: theme.textSM,
     fontWeight: theme.weightRegular,

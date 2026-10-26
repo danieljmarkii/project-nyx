@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router, useNavigation } from 'expo-router';
-import { theme } from '../../../constants/theme';
+import { colorRoles, theme } from '../../../constants/theme';
 import { monthCoverage, monthCoverageLine } from '../../../lib/monthCoverage';
 import { readMonthRows, readRecordStart } from '../../../lib/spineReads';
 import { useEventStore } from '../../../store/eventStore';
@@ -111,5 +111,5 @@ const styles = StyleSheet.create({
     rowGap: theme.spaceMicro,
   },
   text: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorTextPrimary },
-  link: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorAccentInk },
+  link: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: colorRoles.action.onLight },
 });

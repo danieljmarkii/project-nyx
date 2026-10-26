@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
   restoreText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // B-630 — FoodRow's trialChip styles, mirrored (same pill, same dot, same
   // uppercase tracked text) so the mark reads identically on both surfaces.

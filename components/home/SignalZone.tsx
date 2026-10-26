@@ -1266,7 +1266,7 @@ const styles = StyleSheet.create({
   patternsLinkText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // SR-3 receded chrome (§5.2) — the doorway drops to the SAME tertiary tier as the
   // label. The mock dims it to a lighter teal, but a lighter teal on white fails AA
@@ -1279,8 +1279,8 @@ const styles = StyleSheet.create({
   // CUL-744 note: this comment used to rank the dimmed teal as "worse than the shipped
   // accent footer", which was true and conceded too much — the footer it was measured
   // against was BRIGHT teal at 2.26:1, i.e. also failing, just less. The base state is
-  // now colorAccentInk (5.17:1), so the comparison is gone and only the reason the
-  // RECEDED state is grey survives. Both states clear AA now; they always should have.
+  // now the action indigo (9.42:1, CUL-2161), so the comparison is gone and only the reason
+  // the RECEDED state is grey survives. Both states clear AA now; they always should have.
   patternsLinkTextReceded: {
     color: theme.colorTextTertiary,
   },
@@ -1388,7 +1388,7 @@ const styles = StyleSheet.create({
   gapRetryText: {
     fontSize: theme.textSM,
     lineHeight: theme.lineHeightSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // B-734 — the flag-on loading frame's content-shaped placeholder rhythm.
   skeleton: {

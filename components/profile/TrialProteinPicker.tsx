@@ -21,7 +21,7 @@
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { canonicalizeProtein } from '../../lib/protein';
 import {
   buildDerivedProteinOptions,
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorNeutralLight,
   },
   optionRowOn: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
   },
   radio: {
     width: 20,
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   radioOn: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
     borderWidth: 6,
   },
   optionText: {

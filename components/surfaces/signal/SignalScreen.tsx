@@ -626,7 +626,7 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   scroll: {
     padding: theme.space2,

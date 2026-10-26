@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { ThemedText } from './ThemedText';
 import { FieldLabel } from './FieldLabel';
@@ -127,12 +127,12 @@ export function TextField({
       AccessibilityInfo.announceForAccessibility(error);
     }
   }, [error]);
-  // Error is the loudest state and wins the border; focus is the calm accent
-  // ring; resting is the neutral hairline.
+  // Error is the loudest state and wins the border; focus is the selected
+  // edge (indigo, CUL-2161); resting is the neutral hairline.
   const borderColor = hasError
     ? theme.colorDestructive
     : focused
-      ? theme.colorAccent
+      ? colorRoles.selected.edge
       : theme.colorBorder;
 
   return (

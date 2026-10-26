@@ -31,7 +31,7 @@ import {
   StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Divider } from '../ui/Divider';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
@@ -646,7 +646,7 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 56 },
   cancelText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     width: 56,
   },
   body: { padding: theme.space3, paddingBottom: theme.space5 },
@@ -707,8 +707,8 @@ const styles = StyleSheet.create({
     marginRight: theme.space2,
   },
   radioOn: {
-    borderColor: theme.colorAccent,
-    backgroundColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ink,
   },
   optionLabel: {
     fontSize: theme.textMD,

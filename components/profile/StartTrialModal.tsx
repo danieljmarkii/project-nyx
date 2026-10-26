@@ -35,7 +35,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Divider } from '../ui/Divider';
 import { ChipGroup } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
@@ -930,7 +930,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   loader: {
     alignSelf: 'center',
@@ -1058,11 +1058,11 @@ const styles = StyleSheet.create({
   },
   addRowPlus: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   addRowText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   disclosure: {
     flexDirection: 'row',
@@ -1108,7 +1108,7 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
   consent: {
@@ -1155,7 +1155,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorderStrong,
   },
   radioOn: {
-    borderColor: theme.colorAccent,
+    borderColor: colorRoles.selected.edge,
     borderWidth: 6,
   },
   reasonLabel: {

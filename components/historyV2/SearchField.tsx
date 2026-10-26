@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { Search } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SEARCH_CANCEL_LABEL, searchLabelOf, searchPlaceholderOf } from '../../lib/historyControls';
 import { SEARCH_READS_NOTES } from '../../lib/historyQueries';
@@ -127,6 +127,6 @@ const styles = StyleSheet.create({
   cancelLabel: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });
