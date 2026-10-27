@@ -7,9 +7,12 @@ import {
   FLOOR_MERGE_MINUTES,
   FLOOR_PAIR_HOURS,
   FLOOR_SPAN_HOURS,
+  FLOOR_PERSISTENCE_DAYS,
   FLOOR_YOUNG_MONTHS,
   ageInMonths,
+  calendars,
   incidentFloor,
+  persistsThrough,
   vomitOnsets,
   type FloorInput,
   type FloorVomit,
@@ -146,28 +149,77 @@ describe('incidentFloor: dogs and young animals', () => {
   });
 });
 
-describe('incidentFloor: T8, vomiting three days running', () => {
-  it('fires wherever the anchor sits among the three spans', () => {
-    const days = [v(-50 * H), v(-25 * H), v(0)];
-    for (const anchor of days) expect(run({ anchor, vomits: days }).rows).toContain('T8');
+describe('incidentFloor: T8, vomiting on three calendar days running (CUL-2223)', () => {
+  const CHI = 'America/Chicago';
+  const chi = (local: string) => ({ at: new Date(`${local}-05:00`).toISOString(), confidence: 'witnessed' }); // CDT
+
+  it('Nyx: twice one morning, once the next, is two days, never three (the production read)', () => {
+    // The logs behind the false "three days in a row": Oct 26 11:10Z and 11:26Z, Oct 27 12:44Z.
+    // A sliding 24-hour span split the two Oct 26 vomits, sixteen minutes apart.
+    const vomits = [
+      { at: '2026-10-26T11:10:26.000Z', confidence: 'witnessed' },
+      { at: '2026-10-26T11:26:49.000Z', confidence: 'witnessed' },
+      { at: '2026-10-27T12:44:47.000Z', confidence: 'witnessed' },
+    ];
+    for (const timeZone of [CHI, 'UTC', 'Asia/Tokyo', null]) {
+      for (const anchor of vomits) expect(run({ anchor, vomits, timeZone }).rows).not.toContain('T8');
+    }
   });
 
-  it('three calendar evenings, 23:00, 22:00, 23:30: the run need not start at a log (adversarial D1)', () => {
-    // Mon 23:00, Tue 22:00, Wed 23:30: gaps of 23 h and 25.5 h.
-    const mon = v(-(23 + 25.5) * H);
-    const tue = v(-25.5 * H);
-    const wed = v(0);
-    for (const anchor of [mon, tue, wed]) expect(run({ anchor, vomits: [mon, tue, wed] }).rows).toContain('T8');
+  it('three logs inside 26 hours never make three days, in any zone or none', () => {
+    for (let gap = 1; gap <= 26; gap++) {
+      const vomits = [v(-gap * H), v(-(gap / 2) * H), v(0)];
+      for (const timeZone of [CHI, 'UTC', 'Pacific/Kiritimati', 'Etc/GMT+12', null]) {
+        for (const anchor of vomits) {
+          const days = calendars(timeZone)[0];
+          const spread = days(Date.parse(vomits[2].at)) - days(Date.parse(vomits[0].at));
+          if (spread < 2) expect(run({ anchor, vomits, timeZone }).rows).not.toContain('T8');
+        }
+      }
+    }
+  });
+
+  it('a vomit on each of three local days fires wherever the anchor sits', () => {
+    const days = [chi('2026-10-25T06:10:00'), chi('2026-10-26T21:00:00'), chi('2026-10-27T07:44:00')];
+    for (const anchor of days) expect(run({ anchor, vomits: days, timeZone: CHI }).rows).toContain('T8');
+  });
+
+  it('three local evenings, 23:00, 22:00, 23:30, fire (adversarial D1, kept)', () => {
+    const days = [chi('2026-10-25T23:00:00'), chi('2026-10-26T22:00:00'), chi('2026-10-27T23:30:00')];
+    for (const anchor of days) expect(run({ anchor, vomits: days, timeZone: CHI }).rows).toContain('T8');
+  });
+
+  it('days are the owner\'s: 23:30, 00:30, 00:30 is three days in Chicago and two in UTC+14', () => {
+    const three = [chi('2026-10-25T23:30:00'), chi('2026-10-26T00:30:00'), chi('2026-10-27T00:30:00')];
+    expect(run({ anchor: three[2], vomits: three, timeZone: CHI }).rows).toContain('T8');
+    expect(run({ anchor: three[2], vomits: three, timeZone: 'Pacific/Kiritimati' }).rows).not.toContain('T8');
+  });
+
+  it('with no zone, a run fires only when it holds in every zone', () => {
+    const noon = [v(-48 * H), v(-24 * H), v(0)];
+    for (const timeZone of [null, undefined, 'Not/AZone']) {
+      for (const anchor of noon) expect(run({ anchor, vomits: noon, timeZone }).rows).toContain('T8');
+    }
+    const evenings = [chi('2026-10-25T23:00:00'), chi('2026-10-26T22:00:00'), chi('2026-10-27T23:30:00')];
+    expect(run({ anchor: evenings[2], vomits: evenings, timeZone: null }).rows).not.toContain('T8');
   });
 
   it('a gap day breaks the run', () => {
-    const days = [v(-3 * 24 * H + H), v(-24 * H + H), v(0)];
-    for (const anchor of days) expect(run({ anchor, vomits: days }).rows).not.toContain('T8');
+    const days = [chi('2026-10-24T12:00:00'), chi('2026-10-26T12:00:00'), chi('2026-10-27T12:00:00')];
+    for (const anchor of days) expect(run({ anchor, vomits: days, timeZone: CHI }).rows).not.toContain('T8');
   });
 
   it('the anchor must sit inside the run: a vomit a day after it does not borrow it', () => {
-    const days = [v(-2 * 24 * H), v(-24 * H), v(-1)];
-    expect(run({ anchor: v(3 * 24 * H), vomits: [...days, v(3 * 24 * H)] }).rows).not.toContain('T8');
+    const days = [chi('2026-10-24T12:00:00'), chi('2026-10-25T12:00:00'), chi('2026-10-26T12:00:00')];
+    const later = chi('2026-10-28T12:00:00');
+    expect(run({ anchor: later, vomits: [...days, later], timeZone: CHI }).rows).not.toContain('T8');
+  });
+
+  it('persistsThrough needs FLOOR_PERSISTENCE_DAYS consecutive days holding the anchor', () => {
+    const run3 = Array.from({ length: FLOOR_PERSISTENCE_DAYS }, (_, k) => 100 + k);
+    for (const d of run3) expect(persistsThrough(run3, d)).toBe(true);
+    expect(persistsThrough(run3.slice(1), run3[1])).toBe(false);
+    expect(persistsThrough(run3, 100 + FLOOR_PERSISTENCE_DAYS)).toBe(false);
   });
 });
 

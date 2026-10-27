@@ -32,6 +32,8 @@ interface Ev {
 interface World {
   species: 'cat' | 'dog' | 'other'
   birthDate: string | null
+  // `user_profiles.timezone`, where T8's days begin (CUL-2223). Absent reads as UTC.
+  timeZone?: string | null
   events: Ev[]
   keys: string[] // engine keys on for the owner
   rows: Map<string, Row> // event_ai_analysis by event_id
@@ -95,6 +97,7 @@ class FakeQuery {
       return { data: rows, error: null }
     }
     if (this.table === 'pets') return { data: { date_of_birth: w.birthDate }, error: null }
+    if (this.table === 'user_profiles') return { data: { timezone: w.timeZone === undefined ? 'UTC' : w.timeZone }, error: null }
     if (this.table === 'event_attachments') {
       const e = w.events.find((x) => x.id === this.filters.event_id)
       return { data: e?.photo ? [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: `pet-1/${e.id}/a.jpg`, created_at: '2020-06-01T00:00:00+00:00' }] : [], error: null }
@@ -404,6 +407,41 @@ Deno.test('floor · every floor sentence never reassures, never exclaims, never 
       assertStrictEquals(t.includes('Mochi'), true, t)
     }
   }
+})
+
+// CUL-2223: the production read that said "three days in a row" over two. Nyx (a cat, owner in
+// Chicago) vomited at 06:10 and 06:26 one morning and 07:44 the next. A sliding 24-hour span
+// split the first two; calendar days in the owner's zone do not.
+Deno.test('floor · CUL-2223: twice one morning and once the next is never "three days in a row"', async () => {
+  const events: Ev[] = [
+    { id: 'n1', event_type: 'vomit', occurred_at: '2026-10-26T11:10:26+00:00', occurred_at_confidence: 'witnessed' },
+    { id: 'n2', event_type: 'vomit', occurred_at: '2026-10-26T11:26:49+00:00', occurred_at_confidence: 'witnessed' },
+    { id: 'n3', event_type: 'vomit', occurred_at: '2026-10-27T12:44:47+00:00', occurred_at_confidence: 'witnessed' },
+  ]
+  for (const timeZone of ['America/Chicago', 'UTC', null]) {
+    const w = world({ events, timeZone })
+    for (const id of ['n1', 'n2', 'n3']) {
+      await call(w, { event_id: id, mode: 'floor' })
+      const text = String(w.rows.get(id)?.read_text ?? '')
+      assertStrictEquals(/days in a row/.test(text), false, `${timeZone} ${id}: ${text}`)
+    }
+  }
+})
+
+Deno.test('floor · CUL-2223: a vomit on each of three of the owner\'s days is call today, said as three days', async () => {
+  const events: Ev[] = [
+    { id: 'd1', event_type: 'vomit', occurred_at: '2026-10-25T04:30:00+00:00', occurred_at_confidence: 'witnessed' }, // Oct 24, 23:30 CDT
+    { id: 'd2', event_type: 'vomit', occurred_at: '2026-10-25T06:00:00+00:00', occurred_at_confidence: 'witnessed' }, // Oct 25, 01:00 CDT
+    { id: 'd3', event_type: 'vomit', occurred_at: '2026-10-26T12:00:00+00:00', occurred_at_confidence: 'witnessed' }, // Oct 26, 07:00 CDT
+  ]
+  const w = world({ events, timeZone: 'America/Chicago' })
+  await call(w, { event_id: 'd3', mode: 'floor' })
+  assertStrictEquals(w.rows.get('d3')!.tier, 'call_today')
+  assertStrictEquals(w.rows.get('d3')!.read_text, floorSentence('Nyx', { tier: 'call_today', rows: ['T8'], counts: { burst: 0, span: 0, pair: 0 }, ageUnknown: false }, 'T8'))
+  // The same three logs are two days in UTC, so a UTC owner gets no such sentence.
+  const utc = world({ events, timeZone: 'UTC' })
+  await call(utc, { event_id: 'd3', mode: 'floor' })
+  assertStrictEquals(/days in a row/.test(String(utc.rows.get('d3')?.read_text ?? '')), false)
 })
 
 const CLEAN: VomitAnalysis = {

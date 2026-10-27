@@ -22,6 +22,9 @@ import {
   type WatchForInput,
 } from './incidentFloorWords';
 
+// The clauses count this device's days, and so does the floor it hands them to (CUL-2223).
+const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 const MIN = 60_000;
 const HOUR = 3_600_000;
 const local = (d: number, h: number, m = 0) => new Date(2026, 5, d, h, m).getTime();
@@ -74,7 +77,7 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
       if (c - b <= 30 * MIN) continue;
       const pick = () => confidences[Math.floor(r() * confidences.length)];
       const vomits = [...base.vomits, { at: iso(b), confidence: pick() }, { at: iso(c), confidence: pick() }];
-      const floor = incidentFloor({ anchor, vomits, lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
+      const floor = incidentFloor({ anchor, vomits, lethargyAt: [], species: 'cat', birthDate: '2020-01-01', timeZone: ZONE });
       expect(floor.tier).toBe('call_now');
     }
   });
@@ -92,7 +95,7 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
     expect(clause?.text).toBe('Mochi is low on energy by 9 PM tomorrow');
     for (const t of [a + MIN, a + 12 * HOUR, clause?.byMs ?? NaN]) {
       const anchor = { at: iso(a), confidence: 'witnessed' };
-      const floor = incidentFloor({ anchor, vomits: [anchor], lethargyAt: [iso(t)], species: 'cat', birthDate: '2020-01-01' });
+      const floor = incidentFloor({ anchor, vomits: [anchor], lethargyAt: [iso(t)], species: 'cat', birthDate: '2020-01-01', timeZone: ZONE });
       expect(floor.tier).toBe('call_now');
     }
   });
@@ -108,7 +111,7 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
     expect(clause?.text).toBe('Mochi vomits again by 9 PM tomorrow');
     for (const [t, confidence] of [[a + 31 * MIN, 'window'], [clause?.byMs ?? NaN, 'estimated'], [clause?.byMs ?? NaN, 'window']] as const) {
       const anchor = { at: iso(a), confidence: 'witnessed' };
-      const floor = incidentFloor({ anchor, vomits: [anchor, { at: iso(t), confidence }], lethargyAt: [], species, birthDate });
+      const floor = incidentFloor({ anchor, vomits: [anchor, { at: iso(t), confidence }], lethargyAt: [], species, birthDate, timeZone: ZONE });
       expect(rankOf(floor.tier)).toBeGreaterThanOrEqual(RANK.call_today);
       expect(floor.rows).toContain(row);
     }
@@ -152,10 +155,12 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
       expect(days).not.toBeNull();
       const added = (days ?? []).map((k) => {
         let t = at(k);
-        if (k === viewDay && t < nowMs) t = nowMs + MIN; // "today" means later today
+        // "today" means later today; now runs to 23:59, so a minute on would be tomorrow
+        // (the 24-hour floor counted that midnight log as the named day; days do not, CUL-2223).
+        if (k === viewDay && t < nowMs) t = nowMs + MIN / 2;
         return { at: iso(t), confidence: null };
       });
-      const floor = incidentFloor({ anchor, vomits: [...base.vomits, ...added], lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
+      const floor = incidentFloor({ anchor, vomits: [...base.vomits, ...added], lethargyAt: [], species: 'cat', birthDate: '2020-01-01', timeZone: ZONE });
       if (!floor.rows.includes('T8')) {
         throw new Error(`T8 missed: ${JSON.stringify({ vomits: [...base.vomits, ...added].map((v) => new Date(v.at).toString()), now: new Date(nowMs).toString(), text: clause.text })}`);
       }
@@ -175,7 +180,7 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
       const anchor: FloorVomit = { at: iso(a), confidence: 'witnessed' };
       const clause = watchForClauses({ petName: 'Mochi', species: 'cat', birthDate: '2020-01-01', anchor, vomits: [anchor], nowMs: a + 5 * MIN }).find((c) => c.row === 'T8');
       const vomits = [anchor, { at: iso(new Date(2026, 0, 1 + k, 23, 55).getTime()), confidence: null }, { at: iso(new Date(2026, 0, 2 + k, 12, 0).getTime()), confidence: null }];
-      const floor = incidentFloor({ anchor, vomits, lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
+      const floor = incidentFloor({ anchor, vomits, lethargyAt: [], species: 'cat', birthDate: '2020-01-01', timeZone: ZONE });
       if (clause) expect(floor.rows).toContain('T8');
     }
   });
@@ -186,7 +191,7 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
     const anchor = { at: iso(a), confidence: 'witnessed' };
     const clause = watchForClauses(input({ anchorMs: a, vomits: [yesterday, anchor] })).find((c) => c.row === 'T8');
     expect(clause?.text).toBe('Mochi vomits again tomorrow');
-    const floor = incidentFloor({ anchor, vomits: [yesterday, anchor, { at: iso(local(11, 21)), confidence: null }], lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
+    const floor = incidentFloor({ anchor, vomits: [yesterday, anchor, { at: iso(local(11, 21)), confidence: null }], lethargyAt: [], species: 'cat', birthDate: '2020-01-01', timeZone: ZONE });
     expect(floor.rows).toContain('T8');
   });
 

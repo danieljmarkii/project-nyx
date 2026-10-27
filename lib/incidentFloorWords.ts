@@ -245,11 +245,10 @@ export function watchForClauses(input: WatchForInput): WatchClause[] {
  * T8 in calendar days, counting what is already logged (adversarial pass on this PR, B5):
  * the three-day runs holding the vomit's day are D-2..D, D-1..D+1 and D..D+2; the clause
  * names the days a run still lacks, choosing the run that lacks fewest, and only when every
- * lacking day is today or later. A vomit on each of three consecutive local days always
- * meets the floor's three 24-hour spans (each pair of days is more than 24 h and less than
- * 72 h apart at minute precision), EXCEPT across a DST change, where a local day is 23 or
- * 25 hours: then the clause is dropped rather than promising a call the floor would not
- * make (B4; the shipped repeat rule may still fire, the clause never claims it).
+ * lacking day is today or later. The floor counts the same calendar days (CUL-2223), in the
+ * zone the profile carries, which the app stamps from this phone's. Across a DST change the
+ * clause is still dropped (B4): a 25-hour local day can put a run's first log past the
+ * floor's read reach, and the clause never promises a call the floor might not make.
  */
 function persistenceClause(input: WatchForInput, p: string): WatchClause | null {
   const a = Date.parse(input.anchor.at);

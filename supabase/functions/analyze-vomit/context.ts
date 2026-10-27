@@ -611,6 +611,8 @@ export interface FloorRows {
   vomits: { id: string; occurred_at: string; occurred_at_confidence: string | null }[]
   lethargy: { occurred_at: string }[]
   birthDate: string | null
+  /** `user_profiles.timezone`: where T8's calendar days begin. Null reads every zone. */
+  timeZone: string | null
 }
 
 // The floor over the rows the reads returned. The anchor's confidence is its own row's; a read
@@ -625,5 +627,6 @@ export function buildFloor(rows: FloorRows, thisEventId: string, thisEventOccurr
     lethargyAt: rows.lethargy.map((r) => r.occurred_at),
     species,
     birthDate: rows.birthDate,
+    timeZone: rows.timeZone,
   })
 }

@@ -884,9 +884,9 @@ async function assembleContext(
 // pet's rows stay far below PostgREST's max-rows (C-42 names report pulls, which this is not).
 async function readFloorRows(userClient: SupabaseClient, petId: string, thisEventOccurredAt: string): Promise<FloorRows> {
   const vomitMs = Date.parse(thisEventOccurredAt)
-  if (!Number.isFinite(vomitMs)) return { vomits: [], lethargy: [], birthDate: null }
+  if (!Number.isFinite(vomitMs)) return { vomits: [], lethargy: [], birthDate: null, timeZone: null }
   const w = floorReadWindows(vomitMs)
-  const [vomitsRes, lethargyRes, petRes] = await Promise.all([
+  const [vomitsRes, lethargyRes, petRes, profileRes] = await Promise.all([
     userClient
       .from('events')
       .select('id, occurred_at, occurred_at_confidence')
@@ -904,14 +904,20 @@ async function readFloorRows(userClient: SupabaseClient, petId: string, thisEven
       .gte('occurred_at', w.lethargyFromIso)
       .lte('occurred_at', w.lethargyToIso),
     userClient.from('pets').select('date_of_birth').eq('id', petId).maybeSingle(),
+    // The caller's own profile (RLS), the pet's owner: T8 counts days in their zone. A failed
+    // read does not throw, because no zone only makes T8 stricter (it must hold in every
+    // zone) and never touches another row.
+    userClient.from('user_profiles').select('timezone').maybeSingle(),
   ])
   for (const r of [vomitsRes, lethargyRes, petRes]) {
     if (r.error) throw new Error(`Floor read failed: ${r.error.message}`)
   }
+  if (profileRes.error) console.warn('analyze-vomit: user_profiles read failed, T8 reads every zone:', profileRes.error.message)
   return {
     vomits: (vomitsRes.data ?? []) as FloorRows['vomits'],
     lethargy: (lethargyRes.data ?? []) as FloorRows['lethargy'],
     birthDate: ((petRes.data as { date_of_birth?: string | null } | null)?.date_of_birth) ?? null,
+    timeZone: ((profileRes.data as { timezone?: string | null } | null)?.timezone) ?? null,
   }
 }
 

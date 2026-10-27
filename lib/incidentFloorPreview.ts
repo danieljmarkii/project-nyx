@@ -73,6 +73,16 @@ function ms(iso: string): number {
   return Date.parse(iso);
 }
 
+/** The phone's zone, where T8's calendar days begin here. The server counts in
+ *  `user_profiles.timezone`, which the app stamps from this same zone (lib/profile.ts). */
+function deviceZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Every vomit the trigger re-checks, with the call the floor gives it. A vomit the floor
  *  gives no call is absent: the preview has nothing to say about it. Pure. */
 export function boutReads(input: BoutInput): BoutRead[] {
@@ -92,6 +102,7 @@ export function boutReads(input: BoutInput): BoutRead[] {
       lethargyAt: lethargy.map((l) => l.at),
       species: input.species,
       birthDate: input.birthDate,
+      timeZone: deviceZone(),
     });
     if (!result.tier) continue;
     out.push({
@@ -260,5 +271,6 @@ export function previewForRead(input: {
       .map((l) => l.at),
     species: input.species,
     birthDate: input.birthDate,
+    timeZone: deviceZone(),
   }).tier;
 }
