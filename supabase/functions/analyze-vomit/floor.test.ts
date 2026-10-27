@@ -398,9 +398,10 @@ const REASSURE_VOCAB =
   /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i
 Deno.test('floor · every floor sentence never reassures, never exclaims, never names how soon', () => {
   const base = { tier: 'call_now' as const, rows: [], counts: { burst: 3, span: 3, pair: 2 }, ageUnknown: false }
+  const runs = [undefined, { logs: 3, days: 2, consecutive: false }, { logs: 4, days: 3, consecutive: true }]
   for (const row of ['T1', 'T2', 'T3', 'T6', 'T7', 'T8'] as const) {
-    for (const ageUnknown of [false, true]) {
-      const t = floorSentence('Mochi', { ...base, ageUnknown }, row)
+    for (const [ageUnknown, persistence] of [false, true].flatMap((u) => runs.map((p) => [u, p] as const))) {
+      const t = floorSentence('Mochi', { ...base, ageUnknown, ...(persistence ? { persistence } : {}) }, row)
       assertStrictEquals(REASSURE_VOCAB.test(t), false, t)
       assertStrictEquals(t.includes('!'), false, t)
       assertStrictEquals(/\b(now|today|tonight|tomorrow|episode)/i.test(t), false, t)
@@ -410,38 +411,39 @@ Deno.test('floor · every floor sentence never reassures, never exclaims, never 
 })
 
 // CUL-2223: the production read that said "three days in a row" over two. Nyx (a cat, owner in
-// Chicago) vomited at 06:10 and 06:26 one morning and 07:44 the next. A sliding 24-hour span
-// split the first two; calendar days in the owner's zone do not.
-Deno.test('floor · CUL-2223: twice one morning and once the next is never "three days in a row"', async () => {
-  const events: Ev[] = [
-    { id: 'n1', event_type: 'vomit', occurred_at: '2026-10-26T11:10:26+00:00', occurred_at_confidence: 'witnessed' },
-    { id: 'n2', event_type: 'vomit', occurred_at: '2026-10-26T11:26:49+00:00', occurred_at_confidence: 'witnessed' },
-    { id: 'n3', event_type: 'vomit', occurred_at: '2026-10-27T12:44:47+00:00', occurred_at_confidence: 'witnessed' },
-  ]
-  for (const timeZone of ['America/Chicago', 'UTC', null]) {
-    const w = world({ events, timeZone })
-    for (const id of ['n1', 'n2', 'n3']) {
-      await call(w, { event_id: id, mode: 'floor' })
-      const text = String(w.rows.get(id)?.read_text ?? '')
-      assertStrictEquals(/days in a row/.test(text), false, `${timeZone} ${id}: ${text}`)
-    }
+// Chicago) vomited at 06:10 and 06:26 one morning and 07:44 the next. The call stands (the
+// 24-hour spans are unchanged); the words now say what the owner's calendar holds.
+const NYX_EVENTS: Ev[] = [
+  { id: 'n1', event_type: 'vomit', occurred_at: '2026-10-26T11:10:26+00:00', occurred_at_confidence: 'witnessed' },
+  { id: 'n2', event_type: 'vomit', occurred_at: '2026-10-26T11:26:49+00:00', occurred_at_confidence: 'witnessed' },
+  { id: 'n3', event_type: 'vomit', occurred_at: '2026-10-27T12:44:47+00:00', occurred_at_confidence: 'witnessed' },
+]
+
+Deno.test('floor · CUL-2223: twice one morning and once the next is call today, said as two days', async () => {
+  for (const timeZone of ['America/Chicago', 'UTC']) {
+    const w = world({ events: NYX_EVENTS, timeZone })
+    await call(w, { event_id: 'n3', mode: 'floor' })
+    const row = w.rows.get('n3')!
+    assertStrictEquals(row.tier, 'call_today')
+    assertStrictEquals(row.read_text, 'Nyx has thrown up 3 times, on 2 separate days. Vomiting that keeps coming back day after day needs a call to your vet.')
   }
 })
 
-Deno.test('floor · CUL-2223: a vomit on each of three of the owner\'s days is call today, said as three days', async () => {
+Deno.test('floor · CUL-2223: a vomit on each of three of the owner\'s days is said as three in a row', async () => {
   const events: Ev[] = [
     { id: 'd1', event_type: 'vomit', occurred_at: '2026-10-25T04:30:00+00:00', occurred_at_confidence: 'witnessed' }, // Oct 24, 23:30 CDT
     { id: 'd2', event_type: 'vomit', occurred_at: '2026-10-25T06:00:00+00:00', occurred_at_confidence: 'witnessed' }, // Oct 25, 01:00 CDT
     { id: 'd3', event_type: 'vomit', occurred_at: '2026-10-26T12:00:00+00:00', occurred_at_confidence: 'witnessed' }, // Oct 26, 07:00 CDT
   ]
-  const w = world({ events, timeZone: 'America/Chicago' })
-  await call(w, { event_id: 'd3', mode: 'floor' })
-  assertStrictEquals(w.rows.get('d3')!.tier, 'call_today')
-  assertStrictEquals(w.rows.get('d3')!.read_text, floorSentence('Nyx', { tier: 'call_today', rows: ['T8'], counts: { burst: 0, span: 0, pair: 0 }, ageUnknown: false }, 'T8'))
-  // The same three logs are two days in UTC, so a UTC owner gets no such sentence.
-  const utc = world({ events, timeZone: 'UTC' })
-  await call(utc, { event_id: 'd3', mode: 'floor' })
-  assertStrictEquals(/days in a row/.test(String(utc.rows.get('d3')?.read_text ?? '')), false)
+  const chicago = world({ events, timeZone: 'America/Chicago' })
+  await call(chicago, { event_id: 'd3', mode: 'floor' })
+  assertStrictEquals(chicago.rows.get('d3')!.tier, 'call_today')
+  assertStrictEquals(chicago.rows.get('d3')!.read_text, 'Nyx has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.')
+  // The same logs are two Tokyo days: the same call, never "in a row".
+  const tokyo = world({ events, timeZone: 'Asia/Tokyo' })
+  await call(tokyo, { event_id: 'd3', mode: 'floor' })
+  assertStrictEquals(tokyo.rows.get('d3')!.tier, 'call_today')
+  assertStrictEquals(/in a row/.test(String(tokyo.rows.get('d3')!.read_text)), false)
 })
 
 const CLEAN: VomitAnalysis = {

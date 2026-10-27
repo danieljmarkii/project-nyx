@@ -620,8 +620,15 @@ export function floorSentence(petName: string, floor: FloorResult, row: FloorRes
       return `${p} has thrown up at ${floor.counts.span} separate times within about 4 hours. Vomiting that keeps coming back like that needs a call to your vet.`
     case 'T3':
       return `${p} has been vomiting and was also logged as low on energy. Together, those need a call to your vet.`
-    case 'T8':
-      return `${p} has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.`
+    case 'T8': {
+      // The call hears 24-hour spans; the words name calendar days only when the owner's
+      // calendar holds three in a row (CUL-2223: two vomits one morning and one the next were
+      // read as "three days in a row"). A floor without the run's facts names no days at all.
+      const run = floor.persistence
+      if (run?.consecutive) return `${p} has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.`
+      if (run) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day needs a call to your vet.`
+      return `${p} has kept vomiting for more than a day. Vomiting that keeps coming back like that needs a call to your vet.`
+    }
     case 'T6':
       return `${p} has thrown up twice within a day. In a dog, that needs a call to your vet.`
     case 'T7':
@@ -904,15 +911,12 @@ async function readFloorRows(userClient: SupabaseClient, petId: string, thisEven
       .gte('occurred_at', w.lethargyFromIso)
       .lte('occurred_at', w.lethargyToIso),
     userClient.from('pets').select('date_of_birth').eq('id', petId).maybeSingle(),
-    // The caller's own profile (RLS), the pet's owner: T8 counts days in their zone. A failed
-    // read does not throw, because no zone only makes T8 stricter (it must hold in every
-    // zone) and never touches another row.
+    // The caller's own profile (RLS), the pet's owner: T8's words count days in their zone.
     userClient.from('user_profiles').select('timezone').maybeSingle(),
   ])
-  for (const r of [vomitsRes, lethargyRes, petRes]) {
+  for (const r of [vomitsRes, lethargyRes, petRes, profileRes]) {
     if (r.error) throw new Error(`Floor read failed: ${r.error.message}`)
   }
-  if (profileRes.error) console.warn('analyze-vomit: user_profiles read failed, T8 reads every zone:', profileRes.error.message)
   return {
     vomits: (vomitsRes.data ?? []) as FloorRows['vomits'],
     lethargy: (lethargyRes.data ?? []) as FloorRows['lethargy'],

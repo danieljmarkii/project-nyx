@@ -20,7 +20,9 @@
 //   T3  lethargy logged within 24 h either side of this vomit                 → call now
 //   T6  a dog, two vomits inside one 24-hour span that holds this one         → call today
 //   T7  under six months old, or no birthday on file, the same two in 24 h    → call today
-//   T8  a vomit on each of three consecutive calendar days, this one's among them → call today
+//   T8  a vomit in each of three back-to-back 24-hour spans holding this one  → call today
+//       (the TIER hears spans; the WORDS name calendar days only when the owner's calendar
+//       holds three in a row, see `FloorPersistence`)
 // Species "other" gets every count rung and T3 (T26); only T6 is species-keyed.
 //
 // HELD, deliberately absent: T11 (a dog retching with nothing produced) until there is a way
@@ -52,11 +54,8 @@ export const FLOOR_PAIR_COUNT = 2;
 export const FLOOR_YOUNG_MONTHS = 6; // T7's age cut
 export const FLOOR_PERSISTENCE_DAYS = 3; // T8
 
-/** How far either side of the vomit the rule reads: T8's run can reach two calendar days
- *  either side of the vomit's own. A caller reading less makes the rule see less. Mirrored
- *  into the may-wait SQL (guards/mayWaitRecordChange.test.ts), so it moves only with a
- *  migration. Residual: a local day that is 25 hours long (a fall-back night) can put a run's
- *  first log up to an hour past this reach; T8 then stays silent, never louder. */
+/** How far either side of the vomit the rule reads: T8 needs three 24-hour spans on either
+ *  side of the one that holds the vomit. A caller reading less makes the rule see less. */
 export const FLOOR_READ_HOURS = FLOOR_PERSISTENCE_DAYS * 24;
 
 export type FloorTier = 'call_now' | 'call_today';
@@ -79,10 +78,25 @@ export interface FloorInput {
   species: string;
   /** `pets.date_of_birth` (YYYY-MM-DD) or null when none is on file. */
   birthDate: string | null;
-  /** The owner's IANA zone, which decides where T8's calendar days begin: the server passes
-   *  `user_profiles.timezone`, the phone its own. Absent, null or unresolvable, T8 fires only
-   *  on a run that holds in every zone a pet can live in (UTC-12 … UTC+14). */
+  /** The owner's IANA zone (`user_profiles.timezone`), for T8's words only: whether the run
+   *  is three calendar days in a row, and over how many days it fell. Absent or unresolvable,
+   *  the runtime's own calendar is used (the phone's; UTC on the server, whose only zone-less
+   *  callers read call now). It never decides whether T8 fires. */
   timeZone?: string | null;
+}
+
+/** What T8's run holds, for the sentence that states it (CUL-2223). The tier comes from the
+ *  24-hour spans, which three vomits across about 25 hours on two days can meet (Nyx: 06:10 and
+ *  06:26 one morning, 07:44 the next). Saying "three days in a row" over that was false; the
+ *  call was not. So the spans keep the call exactly as loud, and the words say only what the
+ *  owner's calendar holds. */
+export interface FloorPersistence {
+  /** Vomits logged inside the run's three spans. */
+  logs: number;
+  /** Distinct calendar days, in the owner's zone, those vomits fell on. */
+  days: number;
+  /** A vomit on each of three consecutive calendar days, this one's among them. */
+  consecutive: boolean;
 }
 
 export interface FloorResult {
@@ -94,6 +108,8 @@ export interface FloorResult {
   counts: { burst: number; span: number; pair: number };
   /** True when T7 fired only because no birthday is on file (the read says so, §8.11). */
   ageUnknown: boolean;
+  /** Set exactly when T8 fires: what its sentence may claim. */
+  persistence?: FloorPersistence;
 }
 
 export const FLOOR_ROW_TIER: Readonly<Record<FloorRow, FloorTier>> = {
@@ -164,25 +180,25 @@ export function ageInMonths(birthDate: string | null, atMs: number): number | nu
 
 const DAY_MS = 24 * HOUR;
 
-/** Day-index functions for T8: the owner's zone when it resolves, else every whole-hour
- *  offset a pet can live at. Intl is the platform's, not an import, so the rule stays
- *  import-free (§8.1). */
-export function calendars(timeZone: string | null | undefined): ((t: number) => number)[] {
+/** The calendar-day index of `t` in `timeZone`, or in the runtime's own zone when that is
+ *  absent or unresolvable. Intl is the platform's, not an import (§8.1). */
+export function calendarDayOf(timeZone: string | null | undefined): (t: number) => number {
   if (timeZone) {
     try {
       const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
-      return [
-        (t) => {
-          const parts = fmt.formatToParts(new Date(t));
-          const n = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-          return Math.floor(Date.UTC(n('year'), n('month') - 1, n('day')) / DAY_MS);
-        },
-      ];
+      return (t) => {
+        const parts = fmt.formatToParts(new Date(t));
+        const n = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+        return Math.floor(Date.UTC(n('year'), n('month') - 1, n('day')) / DAY_MS);
+      };
     } catch {
-      // An unresolvable zone is no zone: fall through to every offset.
+      // An unresolvable zone is no zone.
     }
   }
-  return Array.from({ length: 27 }, (_, i) => (t: number) => Math.floor((t + (i - 12) * HOUR) / DAY_MS));
+  return (t) => {
+    const d = new Date(t);
+    return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS);
+  };
 }
 
 /** Whether `days` holds FLOOR_PERSISTENCE_DAYS consecutive days, `anchorDay` among them. */
@@ -237,14 +253,34 @@ export function incidentFloor(input: FloorInput): FloorResult {
     if (age === null || age < FLOOR_YOUNG_MONTHS) rows.add('T7');
   }
 
-  // T8: a vomit on each of three consecutive calendar days, the anchor's day among them. Days,
-  // not sliding 24-hour spans: a span may start anywhere, so it can split two vomits sixteen
-  // minutes apart, and three vomits across 25 hours on two days read as "three days in a row"
-  // (CUL-2223, Nyx: 06:10 and 06:26 one morning, 07:44 the next). The sentence names days, so
-  // the rule counts days. With no zone the day boundary is unknown, and the run must hold in
-  // every offset (the burden detector's quietest reading, generate-signal/detection.ts): the
-  // claim is made only where it is true wherever the owner is.
-  if (calendars(input.timeZone).every((dayOf) => persistsThrough(all.map(dayOf), dayOf(a)))) rows.add('T8');
+  // T8: three back-to-back 24-hour spans, each holding a log, the anchor inside the three.
+  // The server knows no zone, so the spans are not calendar days: a run may start at any
+  // moment. Sliding a run later only loses a log when one crosses a span boundary, so some
+  // optimal run has a log exactly on a boundary: its start is a log's time less 0, 1 or 2
+  // days. Trying only the logs' own times missed a cat vomiting at 23:00, 22:00 and 23:30 on
+  // three evenings (the adversarial pass on this PR).
+  const DAY = 24 * HOUR;
+  const RUN = FLOOR_PERSISTENCE_DAYS * DAY;
+  let persistence: FloorPersistence | undefined;
+  const starts = all.flatMap((t) => Array.from({ length: FLOOR_PERSISTENCE_DAYS }, (_, k) => t - k * DAY));
+  for (const s of starts) {
+    if (s > a || a >= s + RUN) continue;
+    let run = true;
+    for (let k = 0; k < FLOOR_PERSISTENCE_DAYS; k++) {
+      if (!all.some((t) => t >= s + k * DAY && t < s + (k + 1) * DAY)) run = false;
+    }
+    if (run) {
+      rows.add('T8');
+      const dayOf = calendarDayOf(input.timeZone);
+      const inRun = all.filter((t) => t >= s && t < s + RUN);
+      persistence = {
+        logs: inRun.length,
+        days: new Set(inRun.map(dayOf)).size,
+        consecutive: persistsThrough(all.map(dayOf), dayOf(a)),
+      };
+      break;
+    }
+  }
 
   const ordered = ROW_ORDER.filter((r) => rows.has(r));
   const tier: FloorTier | null = ordered.some((r) => FLOOR_ROW_TIER[r] === 'call_now')
@@ -252,5 +288,11 @@ export function incidentFloor(input: FloorInput): FloorResult {
     : ordered.length > 0
       ? 'call_today'
       : null;
-  return { tier, rows: ordered, counts, ageUnknown: rows.has('T7') && age === null };
+  return {
+    tier,
+    rows: ordered,
+    counts,
+    ageUnknown: rows.has('T7') && age === null,
+    ...(persistence ? { persistence } : {}),
+  };
 }
