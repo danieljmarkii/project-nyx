@@ -79,6 +79,9 @@
   --colorAuroraIndigo: #191449;
   --colorAuroraTeal: rgba(0,194,168,0.10);
   --colorStar: rgba(255,255,255,0.45);
+  --colorWatermarkOnNight: #C4BEFF;
+  --colorMaskKeep: #FFFFFF;
+  --colorMaskCut: #000000;
   --colorCulpritCrescentOnLight: #211E4E;
   --colorWhorlRidgeDay: #A6A2CE;
   --colorBorder: #EAEAEA;

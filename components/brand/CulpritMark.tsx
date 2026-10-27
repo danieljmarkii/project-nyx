@@ -45,6 +45,15 @@ const RING_STROKE = 2;
 // that at every size with margin; the ping's 2.1× growth then rides the View transform.
 const PULSE_BOX_FACTOR = 0.5;
 
+/** The mark's geometry, for anything that must draw the same mark another way (the
+ *  NightWatermark outline). Read from here, never restated, so the two cannot drift. */
+export const MARK_GEOMETRY = {
+  viewBox: VIEW_BOX,
+  moon: { cx: MOON_CX, cy: MOON_CY, r: MOON_R },
+  carve: { cx: CARVE_CX, cy: CARVE_CY, r: CARVE_R },
+  dot: { cx: DOT_CX, cy: DOT_CY, r: DOT_R },
+} as const;
+
 // The pulse choreography (PM-ratified round 2, 2026-07-24): the ORIGINAL radar
 // format — throbbing dot + bright expanding ping — multiplied into a THREE-RING
 // train. Each ring lives one full period at the original values; a new ring is

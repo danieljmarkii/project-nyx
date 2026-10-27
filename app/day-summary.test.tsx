@@ -144,6 +144,73 @@ describe('DaySummaryScreen — four-state wiring', () => {
   });
 });
 
+// ── CUL-2224 — the moon is the empty day's alone ─────────────────────────────────
+// The watermark draws only in the whole-screen zero-log state. A day with content
+// carries none: on a symptom day the top of the recap is a safety surface, and
+// decoration never sits under safety content (brand spec §7.5). Each other state is
+// pinned, so the mark cannot drift into one by a refactor of the branches.
+describe('the empty day’s moon', () => {
+  const at = Date.parse('2026-08-15T21:00:00Z');
+  // The mark is hidden from assistive tech, and RNTL skips hidden elements by default,
+  // so every query opts in. Without it each "never draws" below is green over nothing.
+  const HIDDEN = { includeHiddenElements: true } as const;
+
+  it('draws on the whole-screen zero-log day, behind a door that still works', () => {
+    mockState.mockReturnValue({
+      status: 'ready',
+      anchorMs: at,
+      model: model({ isEmpty: true, petCount: 1, sections: [section({ petId: 'p1', petName: 'Biscuit' })] }),
+    });
+    const { getByTestId, getByText } = render(<DaySummaryScreen />);
+    const mark = getByTestId('night-watermark', HIDDEN);
+    expect(mark.props.pointerEvents).toBe('none');
+    expect(mark.props.importantForAccessibility).toBe('no-hide-descendants');
+    fireEvent.press(getByText('Log an event'));
+    expect(useUiStore.getState().logSheet).not.toBeNull();
+  });
+
+  it('never draws on a day with content, single pet', () => {
+    mockState.mockReturnValue({
+      status: 'ready',
+      anchorMs: at,
+      model: model({
+        petCount: 1,
+        sections: [section({ petId: 'p1', petName: 'Biscuit', isZeroLog: false, rows: [spineRow('e1', 'Vomit', 'symptom')] as never })],
+        lead: 'One vomit today, at 2:40 pm.',
+      }),
+    });
+    const { queryByTestId, getByText } = render(<DaySummaryScreen />);
+    expect(getByText('One vomit today, at 2:40 pm.')).toBeTruthy();
+    expect(queryByTestId('night-watermark', HIDDEN)).toBeNull();
+  });
+
+  it('never draws on a two-pet day, even beside a pet with nothing logged', () => {
+    mockState.mockReturnValue({
+      status: 'ready',
+      anchorMs: at,
+      model: model({
+        petCount: 2,
+        sections: [
+          section({ petId: 'p1', petName: 'Biscuit', isZeroLog: false, rows: [spineRow('e1', 'Breakfast')] as never }),
+          section({ petId: 'p2', petName: 'Mochi', isZeroLog: true, rows: [] }),
+        ],
+      }),
+    });
+    const { queryByTestId, getByText } = render(<DaySummaryScreen />);
+    expect(getByText('Nothing in Mochi’s record today.')).toBeTruthy();
+    expect(queryByTestId('night-watermark', HIDDEN)).toBeNull();
+  });
+
+  it('never draws while loading or on a failed read', () => {
+    mockState.mockReturnValue({ status: 'loading', model: null });
+    expect(render(<DaySummaryScreen />).queryByTestId('night-watermark', HIDDEN)).toBeNull();
+    mockState.mockReturnValue({ status: 'error', model: null });
+    const failed = render(<DaySummaryScreen />);
+    expect(failed.getByText('Couldn’t load today’s record')).toBeTruthy();
+    expect(failed.queryByTestId('night-watermark', HIDDEN)).toBeNull();
+  });
+});
+
 // ── CUL-170 — the strips are doors, and they land ON their card ────────────────
 // Both strips pushed the bare `/(tabs)/profile`, which arrives above the photo, the
 // conditions and every other card, so the tap ended in a scroll hunt for the thing
