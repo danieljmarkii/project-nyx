@@ -34,6 +34,8 @@ interface World {
   birthDate: string | null
   // `user_profiles.timezone`, where T8's days begin (CUL-2223). Absent reads as UTC.
   timeZone?: string | null
+  // When true, the user_profiles read errors (CUL-2223: it must not drop any call).
+  profileFails?: boolean
   events: Ev[]
   keys: string[] // engine keys on for the owner
   rows: Map<string, Row> // event_ai_analysis by event_id
@@ -97,7 +99,10 @@ class FakeQuery {
       return { data: rows, error: null }
     }
     if (this.table === 'pets') return { data: { date_of_birth: w.birthDate }, error: null }
-    if (this.table === 'user_profiles') return { data: { timezone: w.timeZone === undefined ? 'UTC' : w.timeZone }, error: null }
+    if (this.table === 'user_profiles') {
+      if (w.profileFails) return { data: null, error: { message: 'profile read refused' } } as unknown as { data: unknown; error: null }
+      return { data: { timezone: w.timeZone === undefined ? 'UTC' : w.timeZone }, error: null }
+    }
     if (this.table === 'event_attachments') {
       const e = w.events.find((x) => x.id === this.filters.event_id)
       return { data: e?.photo ? [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: `pet-1/${e.id}/a.jpg`, created_at: '2020-06-01T00:00:00+00:00' }] : [], error: null }
@@ -398,7 +403,7 @@ const REASSURE_VOCAB =
   /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i
 Deno.test('floor · every floor sentence never reassures, never exclaims, never names how soon', () => {
   const base = { tier: 'call_now' as const, rows: [], counts: { burst: 3, span: 3, pair: 2 }, ageUnknown: false }
-  const runs = [undefined, { logs: 3, days: 2, consecutive: false }, { logs: 4, days: 3, consecutive: true }]
+  const runs = [undefined, { logs: 3, days: 2, consecutive: false }, { logs: 3, days: null, consecutive: false }, { logs: 4, days: 3, consecutive: true }]
   for (const row of ['T1', 'T2', 'T3', 'T6', 'T7', 'T8'] as const) {
     for (const [ageUnknown, persistence] of [false, true].flatMap((u) => runs.map((p) => [u, p] as const))) {
       const t = floorSentence('Mochi', { ...base, ageUnknown, ...(persistence ? { persistence } : {}) }, row)
@@ -444,6 +449,22 @@ Deno.test('floor · CUL-2223: a vomit on each of three of the owner\'s days is s
   await call(tokyo, { event_id: 'd3', mode: 'floor' })
   assertStrictEquals(tokyo.rows.get('d3')!.tier, 'call_today')
   assertStrictEquals(/in a row/.test(String(tokyo.rows.get('d3')!.read_text)), false)
+})
+
+Deno.test('floor · CUL-2223: a failed profile read keeps every call and names no days', async () => {
+  const quiet = { warn: console.warn }
+  console.warn = () => {}
+  try {
+    const triple = world({ events: photolessTriple(), profileFails: true })
+    await call(triple, { event_id: 'v3', mode: 'floor' })
+    assertStrictEquals(triple.rows.get('v3')!.tier, 'call_now')
+    const nyx = world({ events: NYX_EVENTS, profileFails: true })
+    await call(nyx, { event_id: 'n3', mode: 'floor' })
+    assertStrictEquals(nyx.rows.get('n3')!.tier, 'call_today')
+    assertStrictEquals(/days? in a row|separate days/.test(String(nyx.rows.get('n3')!.read_text)), false)
+  } finally {
+    Object.assign(console, quiet)
+  }
 })
 
 const CLEAN: VomitAnalysis = {

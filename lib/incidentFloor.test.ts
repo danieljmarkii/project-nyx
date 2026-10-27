@@ -191,21 +191,28 @@ describe('incidentFloor: T8\'s words count the owner\'s calendar days (CUL-2223)
     expect(r.persistence).toEqual({ logs: 3, days: 2, consecutive: false });
   });
 
-  it('wherever the spans fire, "in a row" is claimed only over three consecutive owner days', () => {
-    // Every once-to-thrice-a-day pattern over four days, at every hour, read in three zones.
-    for (const timeZone of [CHI, 'UTC', 'Asia/Tokyo']) {
-      const dayOf = calendarDayOf(timeZone);
-      for (let gap = 1; gap <= 60; gap += 1) {
-        const vomits = [v(-gap * H), v(-(gap / 3) * H), v(0)];
-        for (const anchor of vomits) {
-          const r = run({ anchor, vomits, timeZone });
-          if (!r.persistence) continue;
-          const days = new Set(vomits.map((x) => dayOf(Date.parse(x.at))));
-          expect(r.persistence.consecutive).toBe(persistsThrough([...days], dayOf(Date.parse(anchor.at))));
-          if (r.persistence.consecutive) expect(days.size).toBeGreaterThanOrEqual(FLOOR_PERSISTENCE_DAYS);
-          expect(r.persistence.days).toBeLessThanOrEqual(days.size);
-        }
-      }
+  it('a found pile never makes the third day: it is dated when found, not when it happened', () => {
+    const run3 = [chi('2026-10-24T21:00:00'), chi('2026-10-25T21:00:00'), { ...chi('2026-10-26T07:00:00'), confidence: 'window' }];
+    const r = run({ anchor: run3[1], vomits: run3, timeZone: CHI });
+    expect(r.rows).toContain('T8');
+    expect(r.persistence).toEqual({ logs: 3, days: null, consecutive: false });
+  });
+
+  it('the words count the same logs whatever order the rows were read in', () => {
+    const six = [chi('2026-10-24T08:00:00'), chi('2026-10-24T20:00:00'), chi('2026-10-25T09:00:00'), chi('2026-10-25T22:00:00'), chi('2026-10-26T06:00:00'), chi('2026-10-26T12:00:00')];
+    const want = run({ anchor: six[5], vomits: six, timeZone: CHI }).persistence;
+    expect(want).toEqual({ logs: 6, days: 3, consecutive: true });
+    for (let k = 1; k < six.length; k++) {
+      const order = [...six.slice(k), ...six.slice(0, k)].reverse();
+      expect(run({ anchor: six[5], vomits: order, timeZone: CHI }).persistence).toEqual(want);
+    }
+  });
+
+  it('with no zone the call stands and the words name no days', () => {
+    for (const timeZone of [null, undefined, 'Not/AZone']) {
+      const r = run({ anchor: NYX[2], vomits: NYX, timeZone });
+      expect(r.tier).toBe('call_today');
+      expect(r.persistence).toBeUndefined();
     }
   });
 

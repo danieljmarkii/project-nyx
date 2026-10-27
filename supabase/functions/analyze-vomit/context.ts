@@ -611,7 +611,7 @@ export interface FloorRows {
   vomits: { id: string; occurred_at: string; occurred_at_confidence: string | null }[]
   lethargy: { occurred_at: string }[]
   birthDate: string | null
-  /** `user_profiles.timezone`: where T8's calendar days begin. Null reads every zone. */
+  /** `user_profiles.timezone`, for T8's words only; null (a failed read) names no days. */
   timeZone: string | null
 }
 

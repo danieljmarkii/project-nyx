@@ -626,7 +626,8 @@ export function floorSentence(petName: string, floor: FloorResult, row: FloorRes
       // read as "three days in a row"). A floor without the run's facts names no days at all.
       const run = floor.persistence
       if (run?.consecutive) return `${p} has vomited on three days in a row. Vomiting that keeps up day after day needs a call to your vet.`
-      if (run) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day needs a call to your vet.`
+      if (run?.days) return `${p} has thrown up ${run.logs} times, on ${run.days} separate days. Vomiting that keeps coming back day after day needs a call to your vet.`
+      if (run) return `${p} has thrown up ${run.logs} times across more than a day. Vomiting that keeps coming back like that needs a call to your vet.`
       return `${p} has kept vomiting for more than a day. Vomiting that keeps coming back like that needs a call to your vet.`
     }
     case 'T6':
@@ -914,9 +915,13 @@ async function readFloorRows(userClient: SupabaseClient, petId: string, thisEven
     // The caller's own profile (RLS), the pet's owner: T8's words count days in their zone.
     userClient.from('user_profiles').select('timezone').maybeSingle(),
   ])
-  for (const r of [vomitsRes, lethargyRes, petRes, profileRes]) {
+  for (const r of [vomitsRes, lethargyRes, petRes]) {
     if (r.error) throw new Error(`Floor read failed: ${r.error.message}`)
   }
+  // The zone decides only T8's words, never a call, so a failed read must not throw: a throw
+  // here lands in the pipeline's catch before any flag is kept and drops every one of them
+  // (adversarial pass 2). Without a zone T8's sentence names no days.
+  if (profileRes.error) console.warn('analyze-vomit: user_profiles read failed, T8 names no days:', profileRes.error.message)
   return {
     vomits: (vomitsRes.data ?? []) as FloorRows['vomits'],
     lethargy: (lethargyRes.data ?? []) as FloorRows['lethargy'],
