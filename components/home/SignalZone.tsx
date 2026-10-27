@@ -1300,7 +1300,7 @@ const styles = StyleSheet.create({
   },
   ackText: {
     fontSize: theme.textXS,
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
     lineHeight: theme.lineHeightXS,
   },
   // CUL-786 — the stand-down line. The compact-row rhythm, on the card's one text edge like

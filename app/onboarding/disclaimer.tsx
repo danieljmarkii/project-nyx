@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useAuthStore } from '../../store/authStore';
 import { recordDisclaimerAcceptance } from '../../lib/legal';
 import { DISCLAIMER_URL } from '../../constants/links';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { ThemedText } from '../../components/ui/ThemedText';
 
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   fullLinkText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     textDecorationLine: 'underline',
   },
 });

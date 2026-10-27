@@ -13,7 +13,7 @@ import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { usePetStore } from '../../store/petStore';
 import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { BreedPicker } from '../../components/pet/BreedPicker';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   },
   listLinkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
   cta: {

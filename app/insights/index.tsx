@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, router } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import {
   getSymptomCounts,
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
   bottomPad: {

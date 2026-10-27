@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
   close: {
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     width: 52,
   },
   barSpacer: {

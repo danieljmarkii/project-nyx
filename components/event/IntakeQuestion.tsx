@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { useEn5 } from '../../hooks/useEn5';
 import { usePetStore } from '../../store/petStore';
@@ -268,9 +268,11 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     backgroundColor: theme.colorSurface,
   },
+  // A chosen answer is a choice, so the selected role (R2), not the teal of a good fact:
+  // the answer can be that the pet refused (CUL-2201).
   answerChecked: {
-    borderColor: theme.colorAccentInk,
-    backgroundColor: theme.colorAccentLight,
+    borderColor: colorRoles.selected.edge,
+    backgroundColor: colorRoles.selected.ground,
   },
   answerPressed: {
     backgroundColor: theme.colorSurfaceSubtle,
@@ -281,7 +283,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   answerTextChecked: {
-    color: theme.colorAccentInkSelected,
+    color: colorRoles.selected.ink,
   },
   saidRow: {
     flexDirection: 'row',
@@ -301,7 +303,7 @@ const styles = StyleSheet.create({
   changeText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   net: {
     fontSize: theme.textSM,

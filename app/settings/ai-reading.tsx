@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   link: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   body: {
     fontSize: theme.textSM,

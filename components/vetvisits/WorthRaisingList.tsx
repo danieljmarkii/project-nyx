@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import type { WorthRaising } from '../../lib/getReady';
@@ -278,12 +278,12 @@ const styles = StyleSheet.create({
   addGlyph: {
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     minWidth: 14,
   },
   addText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { MoreHorizontal } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Header, PhotoViewer, PrimaryButton } from '../../components/ui';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { DocumentHero } from '../../components/vetfiles/DocumentHero';
@@ -851,7 +851,7 @@ const styles = StyleSheet.create({
   goneLink: {
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     marginTop: theme.space1,
   },
 });

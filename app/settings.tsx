@@ -3,7 +3,7 @@ import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
-import { theme } from '../constants/theme';
+import { colorRoles, theme } from '../constants/theme';
 import { Card, Header, ThemedText } from '../components/ui';
 import { OwnerAvatar } from '../components/settings/OwnerAvatar';
 import { SettingsRow } from '../components/settings/SettingsRow';
@@ -489,7 +489,7 @@ const styles = StyleSheet.create({
   betaCount: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   rowValue: {
     fontFamily: theme.fontBody,

@@ -3,7 +3,7 @@ import {
   Alert, StyleSheet, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { ThemedText } from '../ui/ThemedText';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { useAuthStore } from '../../store/authStore';
 import { fetchDisplayName, updateDisplayName } from '../../lib/profile';
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontFamily: theme.fontBodyMedium,
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   // Tertiary grey so this caption shares one register with the Account card's
   // other caption (the email-change note) — the two "Your name" / email hints

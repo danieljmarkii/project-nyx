@@ -1434,7 +1434,7 @@ const styles = StyleSheet.create({
   },
   comboLinkText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
   },
@@ -1458,7 +1458,7 @@ const styles = StyleSheet.create({
   },
   addMedText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
   },
   notes: {

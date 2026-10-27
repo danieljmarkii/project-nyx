@@ -1,5 +1,5 @@
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { TAP_TARGET_FLOOR, verticalSlopTo } from '../../lib/tapTarget';
 
@@ -138,7 +138,7 @@ export function AdherenceChipRow({
 // theme.contrast.test.ts). Shared on purpose, never behind a card-only prop: the dose
 // record and edit-event repaint with the card.
 export function adherenceActiveFill(concern: boolean): string {
-  return concern ? theme.colorEventSymptomInk : theme.colorAccentInk;
+  return concern ? theme.colorEventSymptomInk : colorRoles.positive.fillUnderLabel;
 }
 
 function Chip({

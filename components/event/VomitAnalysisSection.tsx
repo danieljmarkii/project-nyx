@@ -16,7 +16,7 @@
 // reassuring value, so this component never renders an "all clear".
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { textStyles, theme } from '../../constants/theme';
+import { colorRoles, textStyles, theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import {
   writeAnalysisDismissal,
@@ -1248,7 +1248,7 @@ const styles = StyleSheet.create({
   },
   frameLinkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
   },
   besideCallAsk: {
@@ -1256,7 +1256,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
     marginTop: theme.space0_75,
   },

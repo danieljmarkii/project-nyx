@@ -33,7 +33,7 @@
 
 import { useState } from 'react';
 import { View, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { SectionLabel } from '../ui/SectionLabel';
 import { updateLookNote } from '../../lib/looks';
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   },
   noteActionText: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
   },
   noteRemoveText: {

@@ -1,7 +1,7 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check } from 'lucide-react-native';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, shadows, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { VetDocumentThumb } from './VetDocumentThumb';
 import type { SavedMomentCopy, AlsoAddTarget } from '../../lib/vetDocumentCapture';
@@ -46,7 +46,7 @@ export function DocumentSavedMoment({
     <View style={styles.container}>
       <View style={[styles.body, { paddingBottom: insets.bottom + theme.space2 }]}>
         <View style={styles.check}>
-          <Check size={24} color={theme.colorAccentInk} strokeWidth={2.4} />
+          <Check size={24} color={colorRoles.positive.textOnLight} strokeWidth={2.4} />
         </View>
 
         <View style={styles.headings}>
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   quietActionText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     textAlign: 'center',
   },
   quietActionDone: {

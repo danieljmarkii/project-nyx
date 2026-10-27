@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { getLibraryMedications, PickerMedication } from '../../lib/db';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: 16,
     fontWeight: theme.fontWeightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   saveTextDisabled: {
     opacity: theme.opacityDisabled,
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
   },
   changeLabel: {
     fontSize: 14,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
   },
   durationUnitChips: {

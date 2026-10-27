@@ -1,6 +1,6 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import type { PlanTag, VisitListRow } from '../../lib/vetVisits';
 
@@ -165,6 +165,6 @@ const styles = StyleSheet.create({
     color: theme.colorEventMedicationInk,
   },
   tagTextDiet: {
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
 });

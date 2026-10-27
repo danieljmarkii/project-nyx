@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   editLabel: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   container: {
     flex: 1,
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   missing: {
     fontSize: theme.textSM,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { WhatsSentPanel, type ConsentChoice } from './AiConsentSheet';
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
   link: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   without: {
     fontSize: theme.textSM,
