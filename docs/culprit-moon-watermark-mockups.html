@@ -15,9 +15,11 @@
     --muted: #A6A2CE;          /* colorTextOnNightMuted */
     --faint: #706BA6;          /* colorTextOnNightFaint */
     --hair: rgba(196,190,255,0.16); /* colorBorderOnNight */
+    --sil: rgba(196,190,255,0.09);  /* silhouette blocks on night */
     --teal: #00C2A8;           /* colorAccent, the mark's dot only */
     --rose: #FB7185;           /* colorEventSymptomOnNight */
     --rec: #4FD8C4;            /* the recommendation chip */
+    --amber: #E4B25C;          /* the outside-the-rule chip */
     --display: "Newsreader", ui-serif, Georgia, serif;
     --body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -31,14 +33,23 @@
     padding-block: 40px 72px;
   }
   .wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
-  h1, h2 { font-family: var(--display); font-weight: 400; letter-spacing: -0.01em; text-wrap: balance; margin: 0; color: var(--moon); }
+  h1, h2, h3 { font-family: var(--display); font-weight: 400; letter-spacing: -0.01em; text-wrap: balance; margin: 0; color: var(--moon); }
   h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; }
   h2 { font-size: 26px; }
+  h3 { font-size: 20px; }
   p { margin: 0; max-width: 66ch; color: var(--muted); }
   .eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
   .intro { display: flex; flex-direction: column; gap: 14px; }
   .round { display: flex; flex-direction: column; gap: 22px; }
   .round-head { display: flex; flex-direction: column; gap: 8px; }
+  .sub-head { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+
+  .ledger { border: 1px solid var(--hair); border-radius: 14px; padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; max-width: 860px; }
+  .ledger div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; font-size: 13.5px; }
+  .ledger div > * { min-width: 0; }
+  .ledger q { color: var(--text); quotes: "“" "”"; }
+  .ledger span { color: var(--muted); }
+  @media (max-width: 560px) { .ledger div { grid-template-columns: 1fr; gap: 2px; } }
 
   .frames { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
   figure { margin: 0; display: flex; flex-direction: column; gap: 12px; width: 280px; max-width: 100%; }
@@ -47,8 +58,10 @@
   figcaption span { color: var(--muted); font-size: 13px; line-height: 1.45; }
   .chip { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--hair); color: var(--faint); font-weight: 600; }
   .chip.rec { color: var(--rec); border-color: rgba(79,216,196,0.4); }
+  .chip.out { color: var(--amber); border-color: rgba(228,178,92,0.4); }
+  .chip.cur { color: var(--text); border-color: rgba(236,234,246,0.35); }
 
-  /* The phone. 280 × 590 stands in for a 390 × 844 pt iPhone. */
+  /* The phone. 280 × 590 stands in for a 390 × 844 pt iPhone (0.718 px per pt). */
   .phone {
     position: relative; width: 280px; max-width: 100%; aspect-ratio: 280 / 590;
     border-radius: 34px; overflow: hidden; background: var(--night);
@@ -68,9 +81,10 @@
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chips span { font-size: 10.5px; padding: 3px 9px; border-radius: 999px; background: rgba(37,31,87,0.75); border: 1px solid var(--hair); color: var(--text); }
   .chips .sym { color: var(--rose); }
-  .spine { display: flex; flex-direction: column; border-left: 1px solid var(--hair); margin-left: 4px; padding-left: 12px; gap: 9px; }
+  .spine { position: relative; display: flex; flex-direction: column; margin-left: 4px; padding-left: 12px; gap: 9px; }
+  .thread { position: absolute; left: 0; top: 5px; bottom: 5px; width: 1px; background: var(--hair); transform-origin: top; }
   .row { display: grid; grid-template-columns: 50px 1fr auto; gap: 6px; font-size: 12px; align-items: baseline; position: relative; }
-  .row::before { content: ""; position: absolute; left: -16px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .row::before { content: ""; position: absolute; left: -15.5px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
   .row.sym::before { background: var(--rose); }
   .row time { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11px; }
   .row em { font-style: normal; color: var(--faint); }
@@ -84,21 +98,30 @@
   .empty .c { font-size: 13px; font-weight: 500; color: var(--teal); margin-top: 4px; }
   .sample { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); z-index: 3; }
 
-  /* Splash + Landing */
-  .mark { position: absolute; z-index: 2; }
-  .mark svg { display: block; width: 100%; height: 100%; }
-  .landing-copy { position: absolute; left: 0; right: 0; top: 54%; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 26px; text-align: center; z-index: 2; }
-  .landing-copy .w { font-family: var(--display); font-size: 30px; color: var(--moon); letter-spacing: -0.01em; }
-  .landing-copy .s { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
-  .cta { position: absolute; left: 22px; right: 22px; bottom: 36px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
-  .cta span { height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; }
-  .cta .p { background: var(--moon); color: var(--night); }
-  .cta .s2 { border: 1px solid var(--hair); color: var(--text); }
+  /* The recap's silhouette: the shape of the screen to come, on the night ground. */
+  .sil { position: absolute; top: 80px; left: 0; right: 0; bottom: 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; z-index: 2; opacity: 0; pointer-events: none; }
+  .sil i { display: block; background: var(--sil); border-radius: 5px; height: 10px; }
+  .sil .l1 { height: 16px; width: 92%; } .sil .l2 { height: 16px; width: 64%; }
+  .sil .cs { display: flex; gap: 6px; } .sil .cs i { width: 52px; height: 18px; border-radius: 999px; }
+  .sil .rs { display: flex; flex-direction: column; gap: 13px; margin-left: 16px; }
+  .sil .st { height: 44px; border-radius: 12px; }
 
-  .film { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
-  .film figure { width: 180px; }
-  .film .phone { width: 180px; border-radius: 24px; }
-  .film .arrow { align-self: center; color: var(--faint); font-size: 18px; }
+  /* Splash + Landing */
+  .layer { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+  .layer svg { display: block; width: 100%; height: 100%; }
+  .mark { position: absolute; z-index: 2; transform-origin: 0 0; }
+  .mark svg { display: block; width: 100%; height: 100%; }
+  .wordmark { position: absolute; left: 0; right: 0; top: 349px; text-align: center; font-family: var(--display); font-size: 30px; line-height: 1; color: var(--moon); letter-spacing: -0.01em; z-index: 2; }
+  .imgbox { position: absolute; border: 1px dashed rgba(196,190,255,0.22); border-radius: 4px; z-index: 1; pointer-events: none; }
+  .clock { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; font-family: var(--mono); font-size: 10px; color: var(--faint); z-index: 3; }
+
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button.play {
+    font: 600 13px/1 var(--body); color: var(--night); background: var(--moon); border: 0; border-radius: 999px;
+    padding: 9px 16px; cursor: pointer;
+  }
+  button.play:focus-visible { outline: 2px solid var(--rec); outline-offset: 3px; }
+  .controls small { color: var(--faint); font-size: 12px; }
 
   /* Briefs */
   .brief { border-top: 1px solid var(--hair); padding-top: 18px; display: grid; grid-template-columns: 120px 1fr; gap: 10px 20px; max-width: 860px; }
@@ -112,17 +135,22 @@
 
   .anatomy { display: flex; flex-wrap: wrap; gap: 28px; align-items: center; }
   .anatomy .tile { width: 220px; height: 220px; border-radius: 20px; background: var(--night); position: relative; overflow: hidden; box-shadow: 0 0 0 1px var(--hair); flex-shrink: 0; }
-  .anatomy ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); max-width: 56ch; min-width: 0; flex: 1 1 280px; }
-  .anatomy li strong { color: var(--text); font-weight: 600; }
+  .anatomy ul, .notes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); max-width: 66ch; min-width: 0; flex: 1 1 280px; }
+  .anatomy li strong, .notes li strong { color: var(--text); font-weight: 600; }
   code { font-family: var(--mono); font-size: 0.88em; color: var(--text); }
 </style>
 
 <div class="wrap">
 
   <header class="intro">
-    <div class="eyebrow">Mock round 1 · night surfaces · 2026-10-27</div>
+    <div class="eyebrow">Mock round 2 · night surfaces · 2026-10-27</div>
     <h1>The moon, drawn in the dark</h1>
-    <p>Linear puts a hairline outline of its mark in the empty space of a new chat, faded toward the bottom, barely above the ground. It is identity without decoration: no motion, no colour, nothing to read. These frames borrow that move for the two places the Culprit mark already lives at night: the Daily Recap the 9pm notification opens, and the launch screen.</p>
+    <p>Linear puts a hairline outline of its mark in the empty space of a new chat, faded toward the bottom, barely above the ground. These frames borrow that move for the Daily Recap the 9pm notification opens and for the launch screen. Round 2 keeps round 1's stills and adds a motion pass built from the gestures the app already ships.</p>
+    <div class="ledger" aria-label="What round 1's reaction changed">
+      <div><q>What we have looks good.</q><span>The recap stills stand unchanged (B recommended). The splash still S1 stands as an option.</span></div>
+      <div><q>Can we push the envelope on motion?</q><span>New §03: five motion frames you can replay, three inside Principle 9 and two outside it, each labelled.</span></div>
+      <div><q>(found while drawing round 2)</q><span>Round 1's S2 filmstrip drew the Landing with the moon outline. The shipped Landing carries the whorl ridges, so S2 is retired and replaced by M4 and M5, which draw the real Landing. That also changes the splash recommendation to M4.</span></div>
+    </div>
   </header>
 
   <section class="round">
@@ -136,7 +164,7 @@
         <li><strong>The real geometry.</strong> The crescent's outer arc and its carve arc, plus a ring where the Signal dot sits, all from <code>CulpritMark</code>'s viewBox. The carve rule holds: it is an outline, so the ground passes through.</li>
         <li><strong>One hairline.</strong> 1pt stroke in the night border tint, about 22% at the top and gone by three quarters down, the way Linear's fades into the input.</li>
         <li><strong>No teal.</strong> The dot is a ring, not a fill. Teal stays the mark's own dot; a teal haze was already rejected on device (2026-07-12).</li>
-        <li><strong>Still.</strong> No loop, no fade in, no parallax. Principle 9 stays whole, and Reduce Motion has nothing to switch off.</li>
+        <li><strong>Still at rest.</strong> The stills carry no motion. Every motion idea is in §03, labelled by whether Principle 9 allows it.</li>
         <li><strong>Silent to VoiceOver.</strong> Decorative, hidden from assistive tech, under every touch target.</li>
       </ul>
     </div>
@@ -150,7 +178,7 @@
     </div>
     <div class="frames">
       <figure>
-        <div class="phone" data-recap="empty">
+        <div class="phone">
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
           <div class="empty">
@@ -173,31 +201,16 @@
             <div class="c">Log an event</div>
           </div>
         </div>
-        <figcaption><b>B · Empty day <span class="chip rec">recommended</span></b><span>Linear's composition almost exactly: the moon in the space above, the copy under its fade.</span></figcaption>
+        <figcaption><b>B · Empty day <span class="chip cur">current</span> <span class="chip rec">recommended</span></b><span>Linear's composition almost exactly: the moon in the space above, the copy under its fade.</span></figcaption>
       </figure>
 
       <figure>
-        <div class="phone">
+        <div class="phone" data-day>
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
           <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
-          <div class="scroll">
-            <div class="date">Monday, October 26</div>
-            <div class="lead">One vomit today, at 2:40 pm. Day 18 of Biscuit’s diet trial.</div>
-            <div class="chips"><span>3 meals</span><span class="sym">1 vomit</span><span>1 dose</span></div>
-            <div class="spine">
-              <div class="row"><time>7:15 am</time><span>Breakfast</span><em>›</em></div>
-              <div class="row"><time>8:00 am</time><span>Cerenia, dose 3 of 5</span><em>›</em></div>
-              <div class="row"><time>12:30 pm</time><span>Lunch</span><em>›</em></div>
-              <div class="row sym"><time>2:40 pm</time><span>Vomit</span><em>›</em></div>
-              <div class="row"><time>6:10 pm</time><span>Dinner</span><em>›</em></div>
-            </div>
-            <div class="strip"><b>Diet trial · day 18 of 56</b><span>Hydrolyzed salmon only</span></div>
-            <div class="forward">Tomorrow is day 19.</div>
-          </div>
-          <div class="sample">Sample day</div>
         </div>
-        <figcaption><b>B · Full day <span class="chip rec">recommended</span></b><span>Same moon, sitting behind the date and lead. It has faded out before the spine, so no row sits on a line.</span></figcaption>
+        <figcaption><b>B · Full day <span class="chip cur">current</span> <span class="chip rec">recommended</span></b><span>Same moon, sitting behind the date and lead. It has faded out before the spine, so no row sits on a line.</span></figcaption>
       </figure>
     </div>
 
@@ -221,68 +234,139 @@
     <div class="round-head">
       <div class="eyebrow">02 · The launch screen</div>
       <h2>The dark blue screen while the app loads</h2>
-      <p>This is the native splash: a picture iOS shows before any of our code runs. It can only be a centred image on a solid colour, so whatever goes here is baked into the image itself.</p>
+      <p>This is the native splash: a picture iOS shows before any of our code runs. It can only be a centred image on a solid colour, so whatever goes here is baked into the image itself. The dashed box is the image's edge.</p>
     </div>
     <div class="frames">
       <figure>
-        <div class="phone" data-splash="today">
-          <div class="mark" style="left:88px; top:243px; width:104px; height:104px" data-mark></div>
+        <div class="phone">
+          <div class="imgbox" style="left:68.2px; top:223.2px; width:143.6px; height:143.6px"></div>
+          <div class="mark" style="left:94.4px; top:237.6px; width:114.7px; height:114.7px" data-mark></div>
         </div>
-        <figcaption><b>Today <span class="chip">shipped</span></b><span>The filled mark alone on the night colour.</span></figcaption>
+        <figcaption><b>Today <span class="chip">shipped</span></b><span>The filled mark alone on the night colour, in a 200pt image.</span></figcaption>
       </figure>
 
       <figure>
         <div class="phone">
-          <div class="ghost" data-ghost="splash" style="left:-8.4px; top:165.6px; width:250px; height:250px"></div>
-          <div class="mark" style="left:88px; top:243px; width:104px; height:104px" data-mark></div>
+          <div class="ghost" data-ghost="splash" style="left:-11.4px; top:152.7px; width:275px; height:275px"></div>
+          <div class="mark" style="left:94.4px; top:237.6px; width:114.7px; height:114.7px" data-mark></div>
         </div>
-        <figcaption><b>S1 · Echo <span class="chip rec">recommended</span></b><span>A large outline of the mark, scaled out from the Signal dot, so both share one centre. Static, inside one square image.</span></figcaption>
+        <figcaption><b>S1 · Echo <span class="chip">option</span></b><span>Round 1's frame: a large outline scaled out from the Signal dot. It still reads well, but the Landing that follows it carries a different watermark, the whorl ridges. See M4.</span></figcaption>
       </figure>
+
+      <figure>
+        <div class="phone" data-landing="registered-still"></div>
+        <figcaption><b>M4 · Registered <span class="chip cur">current</span> <span class="chip rec">recommended</span></b><span>The splash drawn as the Landing's own first frame: the moon at its size and spot, the wordmark, the whorl ridges. Played in §03.</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="round">
+    <div class="round-head">
+      <div class="eyebrow">03 · Motion</div>
+      <h2>Pushing the envelope, inside and outside the rule</h2>
+      <p>Principle 9 (2026-10-05): motion is the record moving, chrome never moves on its own, and the one loop is the tick while a request is in flight. Its test is to cover the words: can you tell from the motion alone that the record changed? Three ideas pass using gestures the app already ships; two would need you to bend the rule. Every frame rests on its final state; press Play to watch it. Timings are the shipped ones: the thread's 370ms, a row's 300ms landing, the settle curve <code>cubic-bezier(.2,.8,.2,1)</code>.</p>
     </div>
 
-    <div class="round-head" style="margin-top:12px">
-      <div class="eyebrow">S2 · Handoff, as a filmstrip</div>
-      <p>The alternative: keep today's splash, then when our code takes over, fade the outline in once and let the moon settle into the Landing hero. It only plays for logged-out owners; a signed-in owner goes to Home.</p>
+    <div class="sub-head">
+      <div class="eyebrow">On the recap</div>
+      <h3>The day draws itself in</h3>
     </div>
-    <div class="film">
+    <div class="frames">
       <figure>
-        <div class="phone"><div class="mark" style="left:56px; top:156px; width:68px; height:68px" data-mark></div></div>
-        <figcaption><b>0 ms</b><span>Native splash, unchanged.</span></figcaption>
-      </figure>
-      <div class="arrow">→</div>
-      <figure>
-        <div class="phone">
-          <div class="ghost" data-ghost="splash-half" style="left:-6.7px; top:105.1px; width:163px; height:163px"></div>
-          <div class="mark" style="left:56px; top:156px; width:68px; height:68px" data-mark></div>
+        <div class="phone" data-day data-m="m1">
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+          <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
         </div>
-        <figcaption><b>~300 ms</b><span>The outline fades in around it.</span></figcaption>
+        <figcaption><b>M1 · The day draws in <span class="chip rec">inside the rule · recommended</span></b><span>History's first paint, brought to the recap: the thread draws down the day, each row lands as the line passes it, the lead and chips land a beat later. The moon and the date hold still. Today the recap's rows simply appear.</span></figcaption>
       </figure>
-      <div class="arrow">→</div>
+
       <figure>
-        <div class="phone" data-landing>
-          <div class="ghost" data-ghost="splash" style="left:-8.4px; top:36.3px; width:168px; height:168px"></div>
-          <div class="mark" style="left:51px; top:84px; width:78px; height:78px" data-mark></div>
-          <div class="landing-copy" style="top:50%"><div class="w" style="font-size:22px">Culprit</div><div class="s" style="font-size:9px">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div></div>
-          <div class="cta" style="left:14px; right:14px; bottom:20px; gap:6px"><span class="p" style="height:26px; font-size:9.5px; border-radius:8px">Create account</span><span class="s2" style="height:26px; font-size:9.5px; border-radius:8px">Log in</span></div>
+        <div class="phone" data-day data-m="m2">
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+          <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
+          <div class="sil" aria-hidden="true">
+            <i style="width:34%; height:8px"></i>
+            <i class="l1"></i><i class="l2"></i>
+            <div class="cs"><i></i><i></i><i></i></div>
+            <div class="rs"><i style="width:70%"></i><i style="width:84%"></i><i style="width:62%"></i><i style="width:56%"></i><i style="width:66%"></i></div>
+            <i class="st"></i>
+          </div>
         </div>
-        <figcaption><b>~900 ms</b><span>The Landing hero, the outline now its ground.</span></figcaption>
+        <figcaption><b>M2 · The wait is the recap's shape <span class="chip rec">inside the rule · recommended</span></b><span>While the day loads, the screen shows its own silhouette under the moon, then the draw fills it. This retires one of the WhorlSpinner screens CUL-1593 is sweeping. The moon is the one thing in both frames, so it is the still point the record moves around.</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone" data-day data-m="m3">
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+          <div class="ghost" data-ghost="recap-trace" style="left:-28px; top:-20px; width:336px; height:336px"></div>
+        </div>
+        <figcaption><b>M3 · The moon traces itself <span class="chip out">outside the rule</span></b><span>On the notification tap only, the outline draws itself once: the dot's ring first, then the crescent, over 900ms, alongside M1. Lovely once. Covering the words, it says nothing about Biscuit's day, so Principle 9 calls it chrome.</span></figcaption>
       </figure>
     </div>
+    <div class="controls"><button class="play" type="button" data-play="recap">Play the recap frames</button><small>Plays M1, M2 and M3 together.</small></div>
 
     <dl class="brief">
       <dt>Deciding</dt>
-      <dd>Whether the launch screen gains the outline, and whether it moves.</dd>
+      <dd>What moves when the recap opens.</dd>
       <dt>Options</dt>
       <dd><ol>
-        <li><strong>A · No change.</strong></li>
-        <li><strong>S1 · Echo, baked into the splash image.</strong> <span class="r">Recommended:</span> every owner sees it on every cold start, it costs no code, and nothing moves.</li>
-        <li><strong>S2 · Handoff.</strong> A one-shot fade into the Landing. Prettier the first time, but it is motion in chrome (Principle 9), and only signed-out owners ever see it.</li>
+        <li><strong>Still.</strong> Round 1 as drawn; the rows appear.</li>
+        <li><strong>M1 + M2.</strong> <span class="r">Recommended:</span> both are gestures already shipped elsewhere (History's first paint, the silhouette waits), so the 9pm read gets a real arrival without a new rule.</li>
+        <li><strong>M1 + M2 + M3.</strong> A better-than-the-rule call: Principle 9 (2026-10-05) protects against chrome that moves for its own sake. M3 is exactly that, played once a night. The team's call is no: the draw already gives the screen its beat, and two things moving at once splits the eye.</li>
       </ol></dd>
       <dt>Consequence</dt>
-      <dd>S1 is a new splash image and an <code>app.json</code> edit, so it ships in the next native build, not over the air. Android keeps today's plain mark, since its splash API crops to a small circle.</dd>
+      <dd>M1 + M2 put the recap's spine on <code>ThreadDraw</code> (the same component History uses, so the two cannot drift) and add a recap silhouette. Reduce Motion gets a crossfade. No copy or record change.</dd>
       <dt>Forecast</dt>
-      <dd>1 row, plus a device check on the TestFlight cut: the outline's opacity is tuned on a real screen, where 4% contrast either reads or vanishes.</dd>
+      <dd>1 row, beside the watermark row. M3 would add a third row and a Principle 9 amendment.</dd>
     </dl>
+
+    <div class="sub-head">
+      <div class="eyebrow">On the launch screen</div>
+      <h3>From the splash to the Landing</h3>
+      <p>Every cold start passes through the Landing for a beat, signed in or not: it is the first screen our code draws, and a signed-in owner is moved on to Home from there. On paper, today's handoff makes the moon hop about 17pt left and 19pt up and grow about 7%, while the ridges, stars and wordmark appear around it in one cut. That hop is the only motion on this screen today, and nobody designed it.</p>
+    </div>
+    <div class="frames">
+      <figure>
+        <div class="phone" data-landing="today"></div>
+        <figcaption><b>Today's handoff <span class="chip">shipped</span></b><span>The native splash, then a hard cut to the Landing. Press Play and watch the moon.</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone" data-landing="registered"></div>
+        <figcaption><b>M4 · Registered cut <span class="chip rec">inside the rule · recommended</span></b><span>The splash image becomes the Landing's first frame, so the cut changes nothing the eye is on. Only the faint aurora arrives, because it reaches past the image's edge. The best motion here is deleting the hop.</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone" data-landing="settle"></div>
+        <figcaption><b>M5 · The moon settles <span class="chip out">outside the rule</span></b><span>Keep today's splash, then glide the moon from its splash spot to its Landing spot on the settle curve while the ground fades in around it. The most cinematic option. It is chrome moving, it adds 370ms before a signed-in owner reaches Home, and it plays on every launch.</span></figcaption>
+      </figure>
+    </div>
+    <div class="controls"><button class="play" type="button" data-play="launch">Play the handoffs</button><small>Native splash for 700ms, then our code takes over.</small></div>
+
+    <dl class="brief">
+      <dt>Deciding</dt>
+      <dd>What the launch screen shows, and how it hands over to the Landing.</dd>
+      <dt>Options</dt>
+      <dd><ol>
+        <li><strong>A · No change.</strong> Keep the hop.</li>
+        <li><strong>S1 · Echo.</strong> The round 1 outline, then a cut to the Landing's different watermark (the ridges).</li>
+        <li><strong>M4 · Registered.</strong> <span class="r">Recommended:</span> it removes the one unplanned motion, needs no code, and keeps one watermark per screen, the ridges you ratified for the Landing on 2026-07-26.</li>
+        <li><strong>M5 · Settle.</strong> A better-than-the-rule call: the rule protects against chrome that moves on its own, and this would move on every launch. The team's call is no.</li>
+      </ol></dd>
+      <dt>Consequence</dt>
+      <dd>M4 is a taller splash image and an <code>app.json</code> edit, so it ships with the next native build, not over the air. Android keeps its plain icon. Whether a taller image registers to the point is an on-device check on the TestFlight cut.</dd>
+      <dt>Forecast</dt>
+      <dd>1 row plus that device check. In total: 3 rows if you take B, M1 + M2 and M4.</dd>
+    </dl>
+
+    <ul class="notes">
+      <li><strong>Reduce Motion.</strong> M1 and M2 become a crossfade (content entering in place, the three-way rule). M4 has nothing to switch off. M3 and M5 would render still.</li>
+      <li><strong>No haptics.</strong> The recap's rows can include a worth-a-call vomit, and safety is silent.</li>
+      <li><strong>Verified on a phone, never in a test.</strong> Principle 9 says so, and these timings are the browser's, not the device's.</li>
+    </ul>
   </section>
 
 </div>
@@ -292,8 +376,31 @@
   const MOON = { cx: 45, cy: 50, r: 33 };
   const CARVE = { cx: 61, cy: 43, r: 29 };
   const DOT = { cx: 66, cy: 53, r: 9 };
+  // The Landing's whorl ridges and stars, verbatim (components/onboarding/NightHeroGround.tsx).
+  const WHORL_ARCS = [
+    { d: 'M138 44 A70 70 0 1 0 138 156', w: 2.6, o: 0.75 },
+    { d: 'M132 60 A54 54 0 1 0 132 140', w: 2.2, o: 0.6 },
+    { d: 'M126 76 A38 38 0 1 0 126 124', w: 2.0, o: 0.48 },
+    { d: 'M120 92 A22 22 0 1 0 120 108', w: 1.8, o: 0.38 },
+  ];
+  const STARS = [
+    [0.22, 0.15, 0.85, 1], [0.75, 0.21, 0.8, 0.95], [0.12, 0.3, 0.6, 0.7], [0.45, 0.11, 0.55, 0.62],
+    [0.86, 0.37, 0.7, 0.82], [0.6, 0.52, 0.5, 0.6], [0.31, 0.6, 0.6, 0.74], [0.83, 0.66, 0.5, 0.63],
+    [0.16, 0.74, 0.7, 0.86], [0.53, 0.83, 0.5, 0.62], [0.7, 0.88, 0.6, 0.68], [0.38, 0.44, 0.5, 0.6],
+  ];
+  // The shipped motion constants (components/motion/foldMotion.ts, threadMotion.ts).
+  const EASE = 'cubic-bezier(.2,.8,.2,1)';
+  const OPEN_MS = 370, LAND_MS = 300, BEAT_MS = 120, DRIFT = 4;
+  const W = 280, H = 590;
+  // Landing lockup in frame px (0.718 px per pt): the moon at 44% width, the wordmark under it.
+  const LAND = { left: 78.5, top: 220, size: 123 };
+  // Where the shipped splash image puts the mark (200pt image, the art's optical centring).
+  const SPLASH = { left: 94.4, top: 237.6, size: 114.7 };
+  const SPLASH_T = `translate(${SPLASH.left - LAND.left}px, ${SPLASH.top - LAND.top}px) scale(${SPLASH.size / LAND.size})`;
+
   const NS = 'http://www.w3.org/2000/svg';
   let uid = 0;
+  const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function el(name, attrs, parent) {
     const n = document.createElementNS(NS, name);
@@ -301,10 +408,17 @@
     if (parent) parent.appendChild(n);
     return n;
   }
+  function div(cls, parent, html) {
+    const n = document.createElement('div');
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
 
   // The watermark: the crescent's outline (moon arc outside the carve + carve arc inside the moon)
-  // and a ring at the dot, one hairline, fading top to bottom. Peak opacity varies by placement.
-  function ghost(host, peak) {
+  // and a ring at the dot, one hairline, fading top to bottom.
+  function ghost(host, peak, traceable) {
     const id = 'g' + (uid++);
     const svg = el('svg', { viewBox: '0 0 100 100', 'aria-hidden': 'true' });
     const defs = el('defs', {}, svg);
@@ -320,11 +434,12 @@
     const inside = el('mask', { id: id + 'i' }, defs);
     el('circle', { cx: MOON.cx, cy: MOON.cy, r: MOON.r, fill: '#fff' }, inside);
 
-    const line = { fill: 'none', stroke: `url(#${id}s)`, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' };
-    el('circle', { cx: MOON.cx, cy: MOON.cy, r: MOON.r, fill: `url(#${id}f)`, mask: `url(#${id}o)` }, svg);
-    el('circle', Object.assign({ cx: MOON.cx, cy: MOON.cy, r: MOON.r, mask: `url(#${id}o)` }, line), svg);
-    el('circle', Object.assign({ cx: CARVE.cx, cy: CARVE.cy, r: CARVE.r, mask: `url(#${id}i)` }, line), svg);
-    el('circle', Object.assign({ cx: DOT.cx, cy: DOT.cy, r: DOT.r }, line), svg);
+    const line = { fill: 'none', stroke: `url(#${id}s)`, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke', pathLength: 1 };
+    el('circle', { cx: MOON.cx, cy: MOON.cy, r: MOON.r, fill: `url(#${id}f)`, mask: `url(#${id}o)`, 'data-fill': '' }, svg);
+    el('circle', Object.assign({ cx: MOON.cx, cy: MOON.cy, r: MOON.r, mask: `url(#${id}o)`, 'data-arc': '1' }, line), svg);
+    el('circle', Object.assign({ cx: CARVE.cx, cy: CARVE.cy, r: CARVE.r, mask: `url(#${id}i)`, 'data-arc': '1' }, line), svg);
+    el('circle', Object.assign({ cx: DOT.cx, cy: DOT.cy, r: DOT.r, 'data-arc': '0' }, line), svg);
+    if (traceable) svg.querySelectorAll('[data-arc]').forEach((c) => c.setAttribute('stroke-dasharray', '1 1'));
     host.appendChild(svg);
   }
 
@@ -340,7 +455,139 @@
     host.appendChild(svg);
   }
 
-  const PEAK = { anatomy: 0.5, recap: 0.24, splash: 0.26, 'splash-half': 0.13 };
-  document.querySelectorAll('[data-ghost]').forEach((h) => ghost(h, PEAK[h.dataset.ghost] ?? 0.24));
+  // The recap's sample day (single pet), shared by every full-day frame.
+  const DAY = `
+    <div class="date">Monday, October 26</div>
+    <div class="lead" data-word>One vomit today, at 2:40 pm. Day 18 of Biscuit’s diet trial.</div>
+    <div class="chips" data-word><span>3 meals</span><span class="sym">1 vomit</span><span>1 dose</span></div>
+    <div class="spine"><div class="thread"></div>
+      <div class="row"><time>7:15 am</time><span>Breakfast</span><em>›</em></div>
+      <div class="row"><time>8:00 am</time><span>Cerenia, dose 3 of 5</span><em>›</em></div>
+      <div class="row"><time>12:30 pm</time><span>Lunch</span><em>›</em></div>
+      <div class="row sym"><time>2:40 pm</time><span>Vomit</span><em>›</em></div>
+      <div class="row"><time>6:10 pm</time><span>Dinner</span><em>›</em></div>
+    </div>
+    <div class="strip" data-tail><b>Diet trial · day 18 of 56</b><span>Hydrolyzed salmon only</span></div>
+    <div class="forward" data-tail>Tomorrow is day 19.</div>`;
+
+  // The Landing's ground (NightHeroGround): aurora, ridges, stars, each its own group so a
+  // frame can show or fade them separately.
+  function landingGround(host) {
+    const layer = div('layer', host);
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' }, layer);
+    const id = 'l' + (uid++);
+    const defs = el('defs', {}, svg);
+    [['v', '#221C56', 0.62], ['n', '#191449', 0.66]].forEach(([k, c, s]) => {
+      const g = el('radialGradient', { id: id + k, cx: 0.5, cy: 0.5, r: 0.5 }, defs);
+      el('stop', { offset: 0, 'stop-color': c, 'stop-opacity': 1 }, g);
+      el('stop', { offset: s, 'stop-color': c, 'stop-opacity': 0 }, g);
+    });
+    const aurora = el('g', { 'data-part': 'aurora' }, svg);
+    el('ellipse', { cx: W * 0.5, cy: H * 0.24, rx: W * 0.72, ry: H * 0.4, fill: `url(#${id}v)` }, aurora);
+    el('ellipse', { cx: W * 0.5, cy: H * 1.0, rx: W * 0.8, ry: H * 0.55, fill: `url(#${id}n)` }, aurora);
+    const s = W * 2.6 / 300;
+    const ridges = el('g', { 'data-part': 'ridges', transform: `translate(${W * 0.65 - 100 * s} ${H * 0.51 - 100 * s}) scale(${s})` }, svg);
+    WHORL_ARCS.forEach((a) => el('path', { d: a.d, fill: 'none', stroke: '#251F57', 'stroke-width': a.w, 'stroke-opacity': a.o, 'stroke-linecap': 'round' }, ridges));
+    const stars = el('g', { 'data-part': 'stars' }, svg);
+    STARS.forEach(([x, y, r, o]) => el('circle', { cx: x * W, cy: y * H, r: r * 1.1, fill: '#fff', opacity: 0.45 * o }, stars));
+    return svg;
+  }
+
+  function landing(host) {
+    const ground = landingGround(host);
+    const m = div('mark', host);
+    Object.assign(m.style, { left: LAND.left + 'px', top: LAND.top + 'px', width: LAND.size + 'px', height: LAND.size + 'px' });
+    mark(m);
+    const word = div('wordmark', host, 'Culprit');
+    const clock = div('clock', host, 'Landing');
+    return { ground, m, word, clock, part: (p) => ground.querySelector(`[data-part="${p}"]`) };
+  }
+
+  const PEAK = { anatomy: 0.5, recap: 0.24, 'recap-trace': 0.24, splash: 0.26 };
+  document.querySelectorAll('[data-day]').forEach((p) => div('scroll', p, DAY));
+  document.querySelectorAll('[data-day]').forEach((p) => { const s = document.createElement('div'); s.className = 'sample'; s.textContent = 'Sample day'; p.appendChild(s); });
+  document.querySelectorAll('[data-ghost]').forEach((h) => ghost(h, PEAK[h.dataset.ghost] ?? 0.24, h.dataset.ghost === 'recap-trace'));
   document.querySelectorAll('[data-mark]').forEach(mark);
+
+  const LANDINGS = {};
+  document.querySelectorAll('[data-landing]').forEach((p) => { LANDINGS[p.dataset.landing] = landing(p); });
+  // The registered splash still: the image box shows what the native splash can carry.
+  (function () {
+    const p = document.querySelector('[data-landing="registered-still"]');
+    const box = div('imgbox', p);
+    Object.assign(box.style, { left: '0px', top: '134px', width: '280px', height: '350px' });
+    LANDINGS['registered-still'].part('aurora').style.opacity = 0;
+    LANDINGS['registered-still'].clock.textContent = 'native splash';
+  })();
+
+  // M1, the thread draw: the line grows down, each row lands as the line passes it, the
+  // words (lead + chips) land a beat after the line. Fill backwards so each piece holds its
+  // from-state until its delay runs out, and rests on the final frame.
+  function drawDay(phone, delay) {
+    const scroll = phone.querySelector('.scroll');
+    if (reduced()) { scroll.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, delay, fill: 'backwards' }); return; }
+    const thread = scroll.querySelector('.thread');
+    const rows = [...scroll.querySelectorAll('.row')];
+    thread.animate([{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], { duration: OPEN_MS, delay, easing: EASE, fill: 'backwards' });
+    rows.forEach((r, i) => {
+      const at = delay + OPEN_MS * (i / (rows.length - 1));
+      r.animate([{ opacity: 0, transform: `translateY(-${DRIFT}px)` }, { opacity: 1, transform: 'none' }], { duration: LAND_MS, delay: at, easing: EASE, fill: 'backwards' });
+    });
+    scroll.querySelectorAll('[data-tail]').forEach((t) => t.animate([{ opacity: 0, transform: `translateY(-${DRIFT}px)` }, { opacity: 1, transform: 'none' }], { duration: LAND_MS, delay: delay + OPEN_MS, easing: EASE, fill: 'backwards' }));
+    scroll.querySelectorAll('[data-word]').forEach((t) => t.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAND_MS, delay: delay + OPEN_MS + BEAT_MS, easing: EASE, fill: 'backwards' }));
+  }
+
+  function playRecap() {
+    drawDay(document.querySelector('[data-m="m1"]'), 0);
+
+    const m2 = document.querySelector('[data-m="m2"]');
+    const sil = m2.querySelector('.sil');
+    const WAIT = 1100;
+    sil.animate([{ opacity: 1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: WAIT + 200 });
+    m2.querySelector('.scroll').animate([{ opacity: 0 }, { opacity: 0 }], { duration: WAIT });
+    drawDay(m2, WAIT);
+
+    const m3 = document.querySelector('[data-m="m3"]');
+    drawDay(m3, 0);
+    if (!reduced()) {
+      m3.querySelectorAll('[data-arc]').forEach((c) => {
+        const ring = c.dataset.arc === '0';
+        c.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: ring ? 300 : 700, delay: ring ? 0 : 200, easing: EASE, fill: 'backwards' });
+      });
+      m3.querySelector('[data-fill]').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, delay: 500, fill: 'backwards' });
+    }
+  }
+
+  // The handoffs. Each frame shows the native splash for 700ms, then our code's first frame.
+  const SPLASH_MS = 700;
+  function hold(node, from, ms) { node.animate([from, from], { duration: ms }); }
+  function clockAt(c, label, ms) { c.textContent = 'native splash'; setTimeout(() => { c.textContent = label; }, ms); }
+
+  function playLaunch() {
+    // Today: a hard cut. Ground + wordmark absent, moon at the splash spot, then everything at once.
+    const t = LANDINGS.today;
+    hold(t.ground, { opacity: 0 }, SPLASH_MS);
+    hold(t.word, { opacity: 0 }, SPLASH_MS);
+    hold(t.m, { transform: SPLASH_T }, SPLASH_MS);
+    clockAt(t.clock, 'Landing · the hop', SPLASH_MS);
+
+    // M4: the splash already is the Landing's frame; only the aurora arrives at the cut.
+    const r = LANDINGS.registered;
+    hold(r.part('aurora'), { opacity: 0 }, SPLASH_MS);
+    clockAt(r.clock, 'Landing · nothing moved', SPLASH_MS);
+
+    // M5: today's splash, then the moon glides home on the settle curve as the ground fades in.
+    const s = LANDINGS.settle;
+    clockAt(s.clock, 'Landing · settled', SPLASH_MS);
+    if (reduced()) {
+      hold(s.ground, { opacity: 0 }, SPLASH_MS); hold(s.word, { opacity: 0 }, SPLASH_MS); hold(s.m, { transform: SPLASH_T }, SPLASH_MS);
+      return;
+    }
+    s.m.animate([{ transform: SPLASH_T }, { transform: 'none' }], { duration: OPEN_MS, delay: SPLASH_MS, easing: EASE, fill: 'backwards' });
+    s.ground.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAND_MS, delay: SPLASH_MS, easing: EASE, fill: 'backwards' });
+    s.word.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAND_MS, delay: SPLASH_MS + OPEN_MS + BEAT_MS, easing: EASE, fill: 'backwards' });
+  }
+
+  document.querySelector('[data-play="recap"]').addEventListener('click', playRecap);
+  document.querySelector('[data-play="launch"]').addEventListener('click', playLaunch);
 </script>
