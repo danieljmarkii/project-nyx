@@ -60,6 +60,17 @@
   .chip.rec { color: var(--rec); border-color: rgba(79,216,196,0.4); }
   .chip.out { color: var(--amber); border-color: rgba(228,178,92,0.4); }
   .chip.cur { color: var(--text); border-color: rgba(236,234,246,0.35); }
+  .chip.ok { color: var(--rec); border-color: rgba(79,216,196,0.4); background: rgba(79,216,196,0.08); }
+  .verdict { border: 1px solid var(--hair); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; max-width: 860px; }
+  .verdict p { color: var(--text); }
+  .verdict ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); max-width: 70ch; }
+  .verdict li strong { color: var(--text); font-weight: 600; }
+  .band { position: absolute; top: 0; left: 0; right: 0; height: 80px; overflow: hidden; z-index: 1; pointer-events: none; }
+  details.retired { border-top: 1px solid var(--hair); padding-top: 14px; }
+  details.retired summary { cursor: pointer; color: var(--muted); font-size: 13.5px; margin-bottom: 18px; }
+  details.retired summary:focus-visible { outline: 2px solid var(--rec); outline-offset: 3px; }
+  .footmoon { position: relative; height: 230px; margin: -28px -16px 0; pointer-events: none; }
+  .footmoon .ghost { left: 22px; top: 0; width: 236px; height: 236px; }
 
   /* The phone. 280 × 590 stands in for a 390 × 844 pt iPhone (0.718 px per pt). */
   .phone {
@@ -143,13 +154,14 @@
 <div class="wrap">
 
   <header class="intro">
-    <div class="eyebrow">Mock round 2 · night surfaces · 2026-10-27</div>
+    <div class="eyebrow">Mock round 3 · night surfaces · 2026-10-27</div>
     <h1>The moon, drawn in the dark</h1>
-    <p>Linear puts a hairline outline of its mark in the empty space of a new chat, faded toward the bottom, barely above the ground. These frames borrow that move for the Daily Recap the 9pm notification opens and for the launch screen. Round 2 keeps round 1's stills and adds a motion pass built from the gestures the app already ships.</p>
-    <div class="ledger" aria-label="What round 1's reaction changed">
-      <div><q>What we have looks good.</q><span>The recap stills stand unchanged (B recommended). The splash still S1 stands as an option.</span></div>
-      <div><q>Can we push the envelope on motion?</q><span>New §03: five motion frames you can replay, three inside Principle 9 and two outside it, each labelled.</span></div>
-      <div><q>(found while drawing round 2)</q><span>Round 1's S2 filmstrip drew the Landing with the moon outline. The shipped Landing carries the whorl ridges, so S2 is retired and replaced by M4 and M5, which draw the real Landing. That also changes the splash recommendation to M4.</span></div>
+    <p>Linear puts a hairline outline of its mark in the empty space of a new chat, faded toward the bottom, barely above the ground. These frames borrow that move for the Daily Recap the 9pm notification opens and for the launch screen. Round 3 settles the empty day, puts the full day to you with the designer's read, and gives every moving screen its own Play button.</p>
+    <div class="ledger" aria-label="What round 2's reaction changed">
+      <div><q>Love the B empty state on the daily summary.</q><span>Ruled. The empty day carries the moon as drawn.</span></div>
+      <div><q>The B full day, not sure. Let's consult the designer.</q><span>The designer read three placements cold and picks none: no mark on the full day. That and a fixed corner option are drawn for your call. The empty day's moon moved up 24pt on the same read.</span></div>
+      <div><q>I need to be able to play the motion, below each screen.</q><span>Every moving screen in §03 has its own Play button under it. The shared buttons are gone.</span></div>
+      <div><q>(rounds 1 and 2)</q><span>Still standing: recap motion M1 + M2 recommended, splash M4 recommended. Round 1's S2 filmstrip left the page in round 2 (commit 1a984a3).</span></div>
     </div>
   </header>
 
@@ -174,7 +186,7 @@
     <div class="round-head">
       <div class="eyebrow">01 · The Daily Recap</div>
       <h2>Where the 9pm notification lands</h2>
-      <p>Same placement in every state: top of the screen, centred, a touch wider than the phone, scrolling away with the page. The lead and chips sit over its faded lower half.</p>
+      <p>The empty day carries the moon in the space above its copy, which you ruled in round 2. Whether a full day carries it too is the decision below.</p>
     </div>
     <div class="frames">
       <figure>
@@ -194,40 +206,86 @@
         <div class="phone">
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
-          <div class="ghost" data-ghost="recap" style="left:-28px; top:96px; width:336px; height:336px"></div>
+          <div class="ghost" data-ghost="recap" style="left:-28px; top:72px; width:336px; height:336px"></div>
           <div class="empty" style="justify-content:flex-end; padding-bottom:150px">
             <div class="t">Nothing in Biscuit’s record today</div>
             <div class="b">If something happened, it takes about ten seconds to add.</div>
             <div class="c">Log an event</div>
           </div>
         </div>
-        <figcaption><b>B · Empty day <span class="chip cur">current</span> <span class="chip rec">recommended</span></b><span>Linear's composition almost exactly: the moon in the space above, the copy under its fade.</span></figcaption>
+        <figcaption><b>B · Empty day <span class="chip ok">ruled ✓</span></b><span>Linear's composition almost exactly: the moon in the space above, the copy under its fade. You approved this frame in round 2. Tuned since: the moon sits 24pt higher, so its fade ends above the title, per the designer.</span></figcaption>
+      </figure>
+    </div>
+
+    <div class="verdict" id="designer-verdict">
+      <div class="eyebrow">Sr. Product Designer · cold read of three full-day placements</div>
+      <p>"Put no watermark on the full day. Linear shows its mark on an empty chat and removes it once there is content. We should borrow it the same way. On a full day the record is the picture (Principle 8), and on any symptom day the top of this screen is a safety surface."</p>
+      <ul>
+        <li><strong>F1, behind the lead:</strong> its arc runs behind "One vomit today" and the chips. That is decoration under safety content, which the clinical veto rules out (brand spec §7.5), and it reads as a moon cradling a vomit.</li>
+        <li><strong>F2, up in the corner:</strong> the only one clear of safety content, but the edge cuts the ring and it crosses the header line, so it reads as a fragment. It's fixable, and the fixed version is drawn below.</li>
+        <li><strong>F3, at the foot of the day:</strong> a calm moon as the full stop after a vomit day is a reassurance beat. Nobody reaches it on a long day, and it collides with the recap's turn-on offer at the foot.</li>
+        <li><strong>Also on the empty day:</strong> the fade ran into the title, so the moon is now 24pt higher. No other change.</li>
+      </ul>
+    </div>
+
+    <div class="sub-head">
+      <div class="eyebrow">The full day · your call</div>
+      <h3>Does the full day carry the moon at all?</h3>
+      <p>Two frames, the designer's pick first. F1 and F3 are out on the designer's read (above). Their frames are under the fold below.</p>
+    </div>
+    <div class="frames">
+      <figure>
+        <div class="phone" data-day>
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+        </div>
+        <figcaption><b>N · No mark <span class="chip cur">current</span> <span class="chip rec">recommended</span></b><span>The moon belongs to the empty day. Once the day has content, the record is the whole picture, the way Linear's mark leaves once a chat starts.</span></figcaption>
       </figure>
 
       <figure>
         <div class="phone" data-day>
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
-          <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
+          <div class="band"><div class="ghost" data-ghost="recap-band" style="left:196px; top:24px; width:60px; height:60px"></div></div>
         </div>
-        <figcaption><b>B · Full day <span class="chip cur">current</span> <span class="chip rec">recommended</span></b><span>Same moon, sitting behind the date and lead. It has faded out before the spine, so no row sits on a line.</span></figcaption>
+        <figcaption><b>F2′ · Corner, fixed <span class="chip">option</span></b><span>The designer's fixes: small, in the header band under the status icons, wholly above the header line, the ring whole. It stays out of the record entirely.</span></figcaption>
       </figure>
     </div>
 
     <dl class="brief">
       <dt>Deciding</dt>
-      <dd>Whether the Daily Recap carries the moon watermark, and in which states.</dd>
+      <dd>Whether the full day carries the moon, now that the empty day does.</dd>
       <dt>Options</dt>
       <dd><ol>
-        <li><strong>A · No change.</strong></li>
-        <li><strong>B · Every state, one placement.</strong> <span class="r">Recommended:</span> it reads as the screen's identity, never as a comment on the day.</li>
-        <li><strong>C · Empty day only.</strong> Prettiest single frame, but a calm moon beside "Nothing in the record" can read as an all clear, the one thing that copy is written to avoid.</li>
+        <li><strong>N · No mark.</strong> <span class="r">Recommended by the designer:</span> safety content never sits under decoration, and the moon keeps one meaning: this is the night screen, waiting for the day.</li>
+        <li><strong>F2′ · Corner, fixed.</strong> Keeps the brand on every recap, but it lives in the chrome, and it's the third mark-shaped thing near the top of the screen.</li>
       </ol></dd>
       <dt>Consequence</dt>
-      <dd>B adds one still, decorative layer to <code>/day-summary</code>; no copy, data or record change. The register rule (§1.2) already makes this a night surface.</dd>
+      <dd>N sharpens round 1's option C. C was rejected because a moon on the empty day alone could read as an all clear. You have since ruled the empty-day moon, and the designer judges a moon over a symptom day the bigger risk. N also makes the watermark row smaller, because the full day needs no placement work.</dd>
       <dt>Forecast</dt>
-      <dd>1 row: a <code>NightWatermark</code> component that reads <code>CulpritMark</code>'s geometry, plus the recap placement.</dd>
+      <dd>Unchanged: 1 row for the watermark.</dd>
     </dl>
+
+    <details class="retired">
+      <summary>The two placements the designer ruled out (F1, F3)</summary>
+      <div class="frames">
+        <figure>
+          <div class="phone" data-day>
+            <div class="status"><span>9:02</span><span>●●●</span></div>
+            <div class="nav"><i>‹</i>Today</div>
+            <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
+          </div>
+          <figcaption><b>F1 · Behind the lead <span class="chip">retired</span></b><span>Round 2's frame.</span></figcaption>
+        </figure>
+        <figure>
+          <div class="phone" data-day data-foot>
+            <div class="status"><span>9:02</span><span>●●●</span></div>
+            <div class="nav"><i>‹</i>Today</div>
+          </div>
+          <figcaption><b>F3 · At the foot of the day <span class="chip">retired</span></b><span>Under the last line, inside the scroll.</span></figcaption>
+        </figure>
+      </div>
+    </details>
   </section>
 
   <section class="round">
@@ -264,7 +322,7 @@
     <div class="round-head">
       <div class="eyebrow">03 · Motion</div>
       <h2>Pushing the envelope, inside and outside the rule</h2>
-      <p>Principle 9 (2026-10-05): motion is the record moving, chrome never moves on its own, and the one loop is the tick while a request is in flight. Its test is to cover the words: can you tell from the motion alone that the record changed? Three ideas pass using gestures the app already ships; two would need you to bend the rule. Every frame rests on its final state; press Play to watch it. Timings are the shipped ones: the thread's 370ms, a row's 300ms landing, the settle curve <code>cubic-bezier(.2,.8,.2,1)</code>.</p>
+      <p>Principle 9 (2026-10-05): motion is the record moving, chrome never moves on its own, and the one loop is the tick while a request is in flight. Its test is to cover the words: can you tell from the motion alone that the record changed? Three ideas pass using gestures the app already ships; two would need you to bend the rule. Every frame rests on its final state; press the Play under a screen to watch it. Timings are the shipped ones: the thread's 370ms, a row's 300ms landing, the settle curve <code>cubic-bezier(.2,.8,.2,1)</code>.</p>
     </div>
 
     <div class="sub-head">
@@ -276,16 +334,15 @@
         <div class="phone" data-day data-m="m1">
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
-          <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
         </div>
-        <figcaption><b>M1 · The day draws in <span class="chip rec">inside the rule · recommended</span></b><span>History's first paint, brought to the recap: the thread draws down the day, each row lands as the line passes it, the lead and chips land a beat later. The moon and the date hold still. Today the recap's rows simply appear.</span></figcaption>
+        <div class="controls"><button class="play" type="button" data-play="m1">▶ Play M1</button></div>
+        <figcaption><b>M1 · The day draws in <span class="chip rec">inside the rule · recommended</span></b><span>History's first paint, brought to the recap: the thread draws down the day, each row lands as the line passes it, the lead and chips land a beat later. The date holds still. Today the recap's rows simply appear.</span></figcaption>
       </figure>
 
       <figure>
         <div class="phone" data-day data-m="m2">
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
-          <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
           <div class="sil" aria-hidden="true">
             <i style="width:34%; height:8px"></i>
             <i class="l1"></i><i class="l2"></i>
@@ -294,19 +351,25 @@
             <i class="st"></i>
           </div>
         </div>
-        <figcaption><b>M2 · The wait is the recap's shape <span class="chip rec">inside the rule · recommended</span></b><span>While the day loads, the screen shows its own silhouette under the moon, then the draw fills it. This retires one of the WhorlSpinner screens CUL-1593 is sweeping. The moon is the one thing in both frames, so it is the still point the record moves around.</span></figcaption>
+        <div class="controls"><button class="play" type="button" data-play="m2">▶ Play M2</button></div>
+        <figcaption><b>M2 · The wait is the recap's shape <span class="chip rec">inside the rule · recommended</span></b><span>While the day loads, the screen shows its own silhouette, then the draw fills it. This retires one of the WhorlSpinner screens CUL-1593 is sweeping. The date never moves; the record moves in under it.</span></figcaption>
       </figure>
 
       <figure>
-        <div class="phone" data-day data-m="m3">
+        <div class="phone" data-m="m3">
           <div class="status"><span>9:02</span><span>●●●</span></div>
           <div class="nav"><i>‹</i>Today</div>
-          <div class="ghost" data-ghost="recap-trace" style="left:-28px; top:-20px; width:336px; height:336px"></div>
+          <div class="ghost" data-ghost="recap-trace" style="left:-28px; top:72px; width:336px; height:336px"></div>
+          <div class="empty" style="justify-content:flex-end; padding-bottom:150px">
+            <div class="t">Nothing in Biscuit’s record today</div>
+            <div class="b">If something happened, it takes about ten seconds to add.</div>
+            <div class="c">Log an event</div>
+          </div>
         </div>
-        <figcaption><b>M3 · The moon traces itself <span class="chip out">outside the rule</span></b><span>On the notification tap only, the outline draws itself once: the dot's ring first, then the crescent, over 900ms, alongside M1. Lovely once. Covering the words, it says nothing about Biscuit's day, so Principle 9 calls it chrome.</span></figcaption>
+        <div class="controls"><button class="play" type="button" data-play="m3">▶ Play M3</button></div>
+        <figcaption><b>M3 · The moon traces itself <span class="chip out">outside the rule</span></b><span>On an empty day opened from the notification, the outline draws itself once: the dot's ring first, then the crescent, over 900ms. Lovely once. Covering the words, it says nothing about Biscuit's day, so Principle 9 calls it chrome.</span></figcaption>
       </figure>
     </div>
-    <div class="controls"><button class="play" type="button" data-play="recap">Play the recap frames</button><small>Plays M1, M2 and M3 together.</small></div>
 
     <dl class="brief">
       <dt>Deciding</dt>
@@ -315,7 +378,7 @@
       <dd><ol>
         <li><strong>Still.</strong> Round 1 as drawn; the rows appear.</li>
         <li><strong>M1 + M2.</strong> <span class="r">Recommended:</span> both are gestures already shipped elsewhere (History's first paint, the silhouette waits), so the 9pm read gets a real arrival without a new rule.</li>
-        <li><strong>M1 + M2 + M3.</strong> A better-than-the-rule call: Principle 9 (2026-10-05) protects against chrome that moves for its own sake. M3 is exactly that, played once a night. The team's call is no: the draw already gives the screen its beat, and two things moving at once splits the eye.</li>
+        <li><strong>M1 + M2 + M3.</strong> A better-than-the-rule call: Principle 9 (2026-10-05) protects against chrome that moves for its own sake, and M3 is exactly that, on empty nights. The team's call is no: an empty day should stay the quietest screen in the app.</li>
       </ol></dd>
       <dt>Consequence</dt>
       <dd>M1 + M2 put the recap's spine on <code>ThreadDraw</code> (the same component History uses, so the two cannot drift) and add a recap silhouette. Reduce Motion gets a crossfade. No copy or record change.</dd>
@@ -331,20 +394,22 @@
     <div class="frames">
       <figure>
         <div class="phone" data-landing="today"></div>
-        <figcaption><b>Today's handoff <span class="chip">shipped</span></b><span>The native splash, then a hard cut to the Landing. Press Play and watch the moon.</span></figcaption>
+        <div class="controls"><button class="play" type="button" data-play="today">▶ Play today</button></div>
+        <figcaption><b>Today's handoff <span class="chip">shipped</span></b><span>The native splash for 700ms, then a hard cut to the Landing. Play it and watch the moon.</span></figcaption>
       </figure>
 
       <figure>
         <div class="phone" data-landing="registered"></div>
+        <div class="controls"><button class="play" type="button" data-play="registered">▶ Play M4</button></div>
         <figcaption><b>M4 · Registered cut <span class="chip rec">inside the rule · recommended</span></b><span>The splash image becomes the Landing's first frame, so the cut changes nothing the eye is on. Only the faint aurora arrives, because it reaches past the image's edge. The best motion here is deleting the hop.</span></figcaption>
       </figure>
 
       <figure>
         <div class="phone" data-landing="settle"></div>
+        <div class="controls"><button class="play" type="button" data-play="settle">▶ Play M5</button></div>
         <figcaption><b>M5 · The moon settles <span class="chip out">outside the rule</span></b><span>Keep today's splash, then glide the moon from its splash spot to its Landing spot on the settle curve while the ground fades in around it. The most cinematic option. It is chrome moving, it adds 370ms before a signed-in owner reaches Home, and it plays on every launch.</span></figcaption>
       </figure>
     </div>
-    <div class="controls"><button class="play" type="button" data-play="launch">Play the handoffs</button><small>Native splash for 700ms, then our code takes over.</small></div>
 
     <dl class="brief">
       <dt>Deciding</dt>
@@ -503,9 +568,14 @@
     return { ground, m, word, clock, part: (p) => ground.querySelector(`[data-part="${p}"]`) };
   }
 
-  const PEAK = { anatomy: 0.5, recap: 0.24, 'recap-trace': 0.24, splash: 0.26 };
+  const PEAK = { anatomy: 0.5, recap: 0.24, 'recap-band': 0.24, 'recap-trace': 0.24, splash: 0.26 };
   document.querySelectorAll('[data-day]').forEach((p) => div('scroll', p, DAY));
   document.querySelectorAll('[data-day]').forEach((p) => { const s = document.createElement('div'); s.className = 'sample'; s.textContent = 'Sample day'; p.appendChild(s); });
+  document.querySelectorAll('[data-foot] .scroll').forEach((sc) => {
+    const f = div('footmoon', sc);
+    const g = div('ghost', f);
+    g.dataset.ghost = 'recap';
+  });
   document.querySelectorAll('[data-ghost]').forEach((h) => ghost(h, PEAK[h.dataset.ghost] ?? 0.24, h.dataset.ghost === 'recap-trace'));
   document.querySelectorAll('[data-mark]').forEach(mark);
 
@@ -537,48 +607,70 @@
     scroll.querySelectorAll('[data-word]').forEach((t) => t.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAND_MS, delay: delay + OPEN_MS + BEAT_MS, easing: EASE, fill: 'backwards' }));
   }
 
-  function playRecap() {
-    drawDay(document.querySelector('[data-m="m1"]'), 0);
+  // Each screen plays on its own. A replay first cancels whatever that screen is mid-way through.
+  function reset(phone) { phone.getAnimations({ subtree: true }).forEach((x) => x.cancel()); }
 
-    const m2 = document.querySelector('[data-m="m2"]');
-    const sil = m2.querySelector('.sil');
+  function playM1() {
+    const p = document.querySelector('[data-m="m1"]');
+    reset(p);
+    drawDay(p, 0);
+  }
+
+  function playM2() {
+    const p = document.querySelector('[data-m="m2"]');
+    reset(p);
     const WAIT = 1100;
-    sil.animate([{ opacity: 1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: WAIT + 200 });
-    m2.querySelector('.scroll').animate([{ opacity: 0 }, { opacity: 0 }], { duration: WAIT });
-    drawDay(m2, WAIT);
+    p.querySelector('.sil').animate([{ opacity: 1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: WAIT + 200 });
+    p.querySelector('.scroll').animate([{ opacity: 0 }, { opacity: 0 }], { duration: WAIT });
+    drawDay(p, WAIT);
+  }
 
-    const m3 = document.querySelector('[data-m="m3"]');
-    drawDay(m3, 0);
-    if (!reduced()) {
-      m3.querySelectorAll('[data-arc]').forEach((c) => {
-        const ring = c.dataset.arc === '0';
-        c.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: ring ? 300 : 700, delay: ring ? 0 : 200, easing: EASE, fill: 'backwards' });
-      });
-      m3.querySelector('[data-fill]').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, delay: 500, fill: 'backwards' });
-    }
+  function playM3() {
+    const p = document.querySelector('[data-m="m3"]');
+    reset(p);
+    p.querySelector('.empty').animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAND_MS, delay: reduced() ? 0 : 600, easing: EASE, fill: 'backwards' });
+    if (reduced()) return;
+    p.querySelectorAll('[data-arc]').forEach((c) => {
+      const ring = c.dataset.arc === '0';
+      c.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: ring ? 300 : 700, delay: ring ? 0 : 200, easing: EASE, fill: 'backwards' });
+    });
+    p.querySelector('[data-fill]').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 400, delay: 500, fill: 'backwards' });
   }
 
   // The handoffs. Each frame shows the native splash for 700ms, then our code's first frame.
   const SPLASH_MS = 700;
+  const timers = {};
   function hold(node, from, ms) { node.animate([from, from], { duration: ms }); }
-  function clockAt(c, label, ms) { c.textContent = 'native splash'; setTimeout(() => { c.textContent = label; }, ms); }
+  function clockAt(key, c, label, ms) {
+    clearTimeout(timers[key]);
+    c.textContent = 'native splash';
+    timers[key] = setTimeout(() => { c.textContent = label; }, ms);
+  }
+  function phoneOf(key) { return document.querySelector(`[data-landing="${key}"]`); }
 
-  function playLaunch() {
-    // Today: a hard cut. Ground + wordmark absent, moon at the splash spot, then everything at once.
+  // Today: a hard cut. Ground + wordmark absent, moon at the splash spot, then everything at once.
+  function playToday() {
     const t = LANDINGS.today;
+    reset(phoneOf('today'));
     hold(t.ground, { opacity: 0 }, SPLASH_MS);
     hold(t.word, { opacity: 0 }, SPLASH_MS);
     hold(t.m, { transform: SPLASH_T }, SPLASH_MS);
-    clockAt(t.clock, 'Landing · the hop', SPLASH_MS);
+    clockAt('today', t.clock, 'Landing · the hop', SPLASH_MS);
+  }
 
-    // M4: the splash already is the Landing's frame; only the aurora arrives at the cut.
+  // M4: the splash already is the Landing's frame; only the aurora arrives at the cut.
+  function playM4() {
     const r = LANDINGS.registered;
+    reset(phoneOf('registered'));
     hold(r.part('aurora'), { opacity: 0 }, SPLASH_MS);
-    clockAt(r.clock, 'Landing · nothing moved', SPLASH_MS);
+    clockAt('registered', r.clock, 'Landing · nothing moved', SPLASH_MS);
+  }
 
-    // M5: today's splash, then the moon glides home on the settle curve as the ground fades in.
+  // M5: today's splash, then the moon glides home on the settle curve as the ground fades in.
+  function playM5() {
     const s = LANDINGS.settle;
-    clockAt(s.clock, 'Landing · settled', SPLASH_MS);
+    reset(phoneOf('settle'));
+    clockAt('settle', s.clock, 'Landing · settled', SPLASH_MS);
     if (reduced()) {
       hold(s.ground, { opacity: 0 }, SPLASH_MS); hold(s.word, { opacity: 0 }, SPLASH_MS); hold(s.m, { transform: SPLASH_T }, SPLASH_MS);
       return;
@@ -588,6 +680,6 @@
     s.word.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LAND_MS, delay: SPLASH_MS + OPEN_MS + BEAT_MS, easing: EASE, fill: 'backwards' });
   }
 
-  document.querySelector('[data-play="recap"]').addEventListener('click', playRecap);
-  document.querySelector('[data-play="launch"]').addEventListener('click', playLaunch);
+  const PLAYS = { m1: playM1, m2: playM2, m3: playM3, today: playToday, registered: playM4, settle: playM5 };
+  document.querySelectorAll('[data-play]').forEach((btn) => btn.addEventListener('click', () => PLAYS[btn.dataset.play]()));
 </script>
