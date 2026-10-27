@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   vDown: {
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
     // Spells its own family rather than a weight. This span sits INSIDE a ThemedText,
     // whose explicit family the native cascade hands down — under which a bare
     // `fontWeight` is inert, so the emphasis this arrow is drawn for would silently

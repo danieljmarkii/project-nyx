@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../ui/ChipGroup';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   secondaryLabel: {
     fontSize: theme.textSM,

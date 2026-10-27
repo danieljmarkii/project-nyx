@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, shadows, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 export interface MetaRow {
@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
   },
   valueLink: {
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   placeholder: {
     flex: 1,

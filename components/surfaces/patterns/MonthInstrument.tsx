@@ -949,7 +949,7 @@ const styles = StyleSheet.create({
   rail: {
     width: 3,
     borderRadius: 1.5,
-    backgroundColor: theme.colorAccentInk,
+    backgroundColor: colorRoles.positive.fillOnTrack,
     marginVertical: theme.space1,
     marginLeft: theme.space1,
   },

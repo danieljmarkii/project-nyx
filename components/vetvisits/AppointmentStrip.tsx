@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { HomeCard } from '../surfaces/home/HomeCard';
 import { ThemedText } from '../ui/ThemedText';
 import { AppointmentBlock } from './AppointmentBlock';
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   doorLabelPrimary: {
     // The interactive ink, not the glyph tint: this is TEXT on a light ground, so it
     // takes the `*Ink` sibling that clears 4.5:1 (CUL-578 / CUL-744).
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightSemibold,
   },
 });

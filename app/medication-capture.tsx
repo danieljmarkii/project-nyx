@@ -860,7 +860,7 @@ const styles = StyleSheet.create({
   },
   linkBtnText: {
     fontSize: theme.textMD,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 
   loadingContainer: {

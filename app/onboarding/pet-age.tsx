@@ -14,7 +14,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../../lib/supabase';
 import { usePetStore } from '../../store/petStore';
 import { ageToDob, birthdayToDob } from '../../lib/age';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { useAppConfig } from '../../hooks/useAppConfig';
 import { ChipGroup, type ChipGroupOption } from '../../components/ui/ChipGroup';
 import { TextField } from '../../components/ui/TextField';
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   changeLabel: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   grow: {
     flex: 1,

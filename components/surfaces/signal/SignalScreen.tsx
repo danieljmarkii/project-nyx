@@ -694,7 +694,7 @@ const styles = StyleSheet.create({
   ackText: {
     fontSize: theme.textXS,
     lineHeight: theme.lineHeightXS,
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   contextRow: {
     flexDirection: 'row',

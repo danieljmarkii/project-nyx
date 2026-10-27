@@ -1,6 +1,6 @@
 import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { Camera, Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 import type { AppointmentQuestion } from '../../lib/vetVisits';
@@ -172,7 +172,7 @@ export function AtTheVetBody({
           }
           accessibilityState={{ disabled: capturing }}
         >
-          <Camera size={18} color={theme.colorAccentInk} strokeWidth={2} />
+          <Camera size={18} color={colorRoles.action.onLight} strokeWidth={2} />
           <View style={styles.paperworkMain}>
             <ThemedText style={styles.paperworkTitle}>Photograph the paperwork</ThemedText>
             <ThemedText style={styles.paperworkSub}>
@@ -254,8 +254,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tickOn: {
-    backgroundColor: theme.colorAccentInk,
-    borderColor: theme.colorAccentInk,
+    backgroundColor: colorRoles.selected.ink,
+    borderColor: colorRoles.selected.edge,
   },
   questionText: {
     flex: 1,

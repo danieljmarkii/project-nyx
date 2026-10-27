@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { CalendarPlus, FileText, Pill, Stethoscope, Utensils } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
 import { TextField } from '../ui/TextField';
@@ -269,7 +269,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
 
         {trial ? (
           <PlanChipRow
-            glyph={<Utensils size={16} color={theme.colorAccentInk} strokeWidth={2} />}
+            glyph={<Utensils size={16} color={colorRoles.positive.textOnLight} strokeWidth={2} />}
             title={trial.label}
             subtitle={trial.dayLine ?? undefined}
             options={TRIAL_OPTIONS}

@@ -19,7 +19,10 @@
 // by value, as guards/accentOnLight.test.ts does, so a new alias is caught by value), and
 // the tokens that exist only as role values and are never to be named at a call site:
 // `colorAction` (indigo, "reached through colorRoles.action, never by name"),
-// `colorAccentGlyph` (positive.glyphOnLight) and `colorMoonlitTeal` (positive.onNight).
+// `colorAccentGlyph` (positive.glyphOnLight), `colorMoonlitTeal` (positive.onNight) and
+// `colorAccentInk` (positive.textOnLight and the two ink fills; CUL-2201 walked its sites:
+// an action took action.onLight, a choice selected, a fact positive, so a teal link
+// written tomorrow reds instead of passing review).
 // The other tokens the roles resolve are listed in NOT_GUARDED_YET with the reason, and
 // the split is pinned against the source of `colorRoles`: a role leaf added later turns
 // a test red until someone decides which list it joins.
@@ -42,8 +45,8 @@
 // this guard's; a site's entry is matched by count per file, so swapping one registered
 // site for a new one in the same file with nothing else changed is invisible (the entry
 // text then lies, and review is the check); it does not read lib/, store/, constants/ or
-// widgets/. The inks, washes and the symptom, medication, destructive and attention hues
-// are not guarded yet (NOT_GUARDED_YET says why).
+// widgets/. The other inks, the washes and the symptom, medication, destructive and
+// attention hues are not guarded yet (NOT_GUARDED_YET says why).
 //
 // THE OVERLAP WITH accentOnLight.test.ts, LEFT ON PURPOSE. That guard asks a different
 // question of a subset: a `color:` text key in the teal must carry a per site marker
@@ -69,7 +72,7 @@ const ACCENT_NAMES: readonly string[] = Object.entries(theme)
   .sort();
 
 /** Tokens that exist only to be reached through a role. */
-const ROLE_ONLY = ['colorAccentGlyph', 'colorAction', 'colorMoonlitTeal'] as const;
+const ROLE_ONLY = ['colorAccentGlyph', 'colorAccentInk', 'colorAction', 'colorMoonlitTeal'] as const;
 
 export const GUARDED: readonly string[] = [...ACCENT_NAMES, ...ROLE_ONLY].sort();
 
@@ -78,7 +81,6 @@ export const GUARDED: readonly string[] = [...ACCENT_NAMES, ...ROLE_ONLY].sort()
  * the guard to any of them is its own walk with its own registry, not a line here.
  */
 const NOT_GUARDED_YET: Record<string, string> = {
-  colorAccentInk: 'the teal text ink, the correct half on light (161 sites); accentOnLight steers onto it',
   colorAccentLight: 'the teal wash, a ground, not a mark',
   colorMoonlight: 'the night ground action and the whorl ridge; night only by construction',
   colorTextOnDark: 'a neutral, the label on any solid fill',
@@ -108,28 +110,45 @@ const PAYWALL = 'dark ground: the paywall\'s colorSurfaceDark, 8.26:1 (pinned in
 const LOGO = 'brand mark: the Culprit logo, outside WCAG 1.4.11\'s 3:1 (logos are exempt)';
 const WHORL = 'brand mark: the whorl, retiring with WhorlSpinner (CUL-1593)';
 const LEDGER = 'CUL-1902: a trial ledger cell, left as is until gate 11 rules the ledger (CUL-2178 scoping)';
+const DECOR = 'CUL-2219: the teal tinted pair as decoration, neither a fact nor an action';
+const PILL = 'CUL-2220: an action label on the teal wash pill, waiting on an action ground';
 
 /**
  * Every surviving raw site, one entry per site in file order: its style key, then its
  * ground or the issue that owns it. Ratchets down only (REGISTRY_CEILING).
  */
 export const REGISTRY: Record<string, readonly string[]> = {
+  'app/(tabs)/profile.tsx': [`coursePromptButtonText · ${PILL}`],
+  'app/settings/ai-reading.tsx': [`benefitIcon ScanText · ${DECOR}`, `benefitIcon ScanEye · ${DECOR}`, `benefitIcon MessageCircle · ${DECOR}`],
+  'app/settings/beta.tsx': [`iconTile Icon · ${DECOR}`, `hint Info · ${DECOR}`, `hintText · ${DECOR}`],
   'app/day-summary.tsx': [
     `RecapStrip tint · ${NIGHT_RECAP}`,
     `emptyCta · night ground: colorBrandNight, 8.09:1`,
     `retry · night ground: colorBrandNight, 8.09:1`,
   ],
   'app/onboarding/paywall.tsx': [`feature check · ${PAYWALL}`, `priceTileFeatured edge · ${PAYWALL}`, `badge · ${PAYWALL}`],
+  'components/consent/AiConsentSheet.tsx': [
+    `art MessageCircle · ${DECOR}`,
+    `art ScanText · ${DECOR}`,
+    `benefitIcon ScanText · ${DECOR}`,
+    `benefitIcon ScanEye · ${DECOR}`,
+  ],
   'components/brand/CulpritMark.tsx': [`dot · ${LOGO}`, `crescent stroke · ${LOGO}`, `boxed dot · ${LOGO}`],
   'components/brand/WhorlSpinner.tsx': [`night ridge · ${WHORL}`, `day ridge · ${WHORL}`, `dot fallback · ${WHORL}`],
+  'components/home/InsightCard.tsx': [`newChipText · ${DECOR}`],
   'components/notifications/NotificationPrimer.tsx': [
     'heroLabel · night ground: the primer\'s night miniature, a decorative eyebrow, not positive.onNight\'s good fact',
   ],
+  'components/onboarding/ValuePreview.tsx': [`label · ${DECOR}`],
   'components/recap/DailyRecapOffer.tsx': [`OFFER_BORDER · ${NIGHT_RECAP}`, `turnOn · ${NIGHT_RECAP}`],
   'components/recap/nodeTints.ts': [
     'NODE_TINT_NIGHT.meal · tint map: exported with NODE_TINT_NIGHT_GROUND and pinned in theme.contrast.test.ts',
   ],
   'components/trialScreen/TrialLedger.tsx': [`meals_logged · ${LEDGER}`, `today_open · ${LEDGER}`],
+  'components/vetfiles/AddDocumentSheet.tsx': [`icon · ${DECOR}`],
+  'components/vetfiles/DocumentHero.tsx': [`openText · ${PILL}`],
+  'components/vetfiles/RecentlyDeletedSheet.tsx': [`restoreText · ${PILL}`],
+  'components/vetfiles/VetDocumentRow.tsx': [`namePillText · ${PILL}`],
 };
 
 /**
@@ -139,10 +158,12 @@ export const REGISTRY: Record<string, readonly string[]> = {
  * 31 fills and edges onto the fill leaves; 40 after CUL-2160 moved the two trend lines onto
  * the chart standard's line colour; 20 after CUL-2161 moved the 20 choices, radios, fields
  * and the symptom save onto colorRoles.selected / action; 18 after CUL-2200 moved the
- * button and the Landing's link onto colorRoles.action. A RATCHET: lower it whenever an
- * entry goes, and never raise it.
+ * button and the Landing's link onto colorRoles.action; 35 after CUL-2201 guarded
+ * colorAccentInk, which widened the scan (not a raise to go green): its 78 other sites
+ * moved onto action, selected and positive, and these 17 wait on CUL-2219 and CUL-2220.
+ * A RATCHET: lower it whenever an entry goes, and never raise it.
  */
-const REGISTRY_CEILING = 18;
+const REGISTRY_CEILING = 35;
 
 /** A justified entry names its key, then a ground or the issue that owns its move. */
 const JUSTIFIED = /^\S.* · (?:(?:night|dark) ground: \S|brand mark: \S|tint map: \S|CUL-\d+: \S)/;
@@ -246,6 +267,7 @@ describe('CUL-2175: a raw hue reaches a screen only through a role', () => {
     expect(GUARDED).toEqual([
       'colorAccent',
       'colorAccentGlyph',
+      'colorAccentInk',
       'colorAction',
       'colorEventMeal',
       'colorMomentConfirm',
@@ -308,16 +330,16 @@ describe('the colour guard, proven by mutation', () => {
   });
 
   const LIGHT_CARD =
-    "import { theme } from '../constants/theme';\n" +
+    "import { colorRoles, theme } from '../constants/theme';\n" +
     'const s = StyleSheet.create({\n' +
     '  card: { backgroundColor: theme.colorSurface },\n' +
-    '  check: { color: theme.colorAccentInk },\n' +
+    '  check: { color: colorRoles.positive.textOnLight },\n' +
     '});\n';
 
   it('a raw theme.colorAccent added to a light ground component reds it', () => {
     writeFixture(root, 'components/Card.tsx', LIGHT_CARD);
     expect(registryProblems(findRawHueSites(root), {})).toEqual([]);
-    writeFixture(root, 'components/Card.tsx', LIGHT_CARD.replace('theme.colorAccentInk', 'theme.colorAccent'));
+    writeFixture(root, 'components/Card.tsx', LIGHT_CARD.replace('colorRoles.positive.textOnLight', 'theme.colorAccent'));
     const problems = registryProblems(findRawHueSites(root), {});
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/^components\/Card\.tsx: 1 raw hue site\(s\), 0 registered\. .*:4 colorAccent/);
@@ -367,13 +389,18 @@ describe('the colour guard, proven by mutation', () => {
     expect(findRawHueSites(root).map((s) => s.file)).toEqual(['hooks/useTint.ts']);
   });
 
-  it('leaves the inks, washes and longer names alone', () => {
+  it('leaves the washes, the other inks and longer names alone', () => {
     writeFixture(
       root,
       'components/Safe.tsx',
-      'const s = { a: theme.colorAccentInk, b: theme.colorAccentLight, c: theme.colorEventMealLight, d: theme.colorAccentSoft };\n',
+      'const s = { a: theme.colorAccentInkSelected, b: theme.colorAccentLight, c: theme.colorEventMealLight, d: theme.colorEventSymptomInk };\n',
     );
     expect(findRawHueSites(root)).toEqual([]);
+  });
+
+  it('a teal ink link reds it (CUL-2201: the ink is role only)', () => {
+    writeFixture(root, 'components/Link.tsx', 'const s = { linkText: { color: theme.colorAccentInk } };\n');
+    expect(findRawHueSites(root).map((s) => [s.line, s.name])).toEqual([[1, 'colorAccentInk']]);
   });
 
   it('reads code, not prose: a comment naming the teal is not a site', () => {

@@ -1,5 +1,5 @@
 import { View, StyleSheet } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
 type Variant = 'symptom' | 'accent' | 'muted';
@@ -50,7 +50,7 @@ const styles = StyleSheet.create({
     color: theme.colorEventSymptomInk,
   },
   accentText: {
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   mutedText: {
     color: theme.colorTextSecondary,

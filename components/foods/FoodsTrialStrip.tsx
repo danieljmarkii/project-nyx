@@ -92,11 +92,11 @@ const styles = StyleSheet.create({
   header: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   line: {
     fontSize: theme.textXS,
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   chevron: {
     fontSize: theme.textLG,

@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import { Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
 import type { VisitSaveSummary } from '../../lib/vetVisitPlan';
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: theme.colorAccentInk,
+    backgroundColor: colorRoles.positive.fillUnderLabel,
     alignItems: 'center',
     justifyContent: 'center',
   },

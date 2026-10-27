@@ -434,6 +434,8 @@ describe('colour roles: every role is pinned on its ground (CUL-2145)', () => {
     ['positive.glyphOnLight', 'positive.wash', NON_TEXT],
     ['positive.fillOnLight', 'colorSurface', NON_TEXT],
     ['positive.fillOnTrack', 'colorChartEmpty', NON_TEXT],
+    ['action.labelOnFill', 'positive.fillUnderLabel', TEXT],
+    ['positive.fillUnderLabel', 'colorSurface', NON_TEXT],
     ['positive.onNight', 'colorBrandNight', TEXT],
     ['positive.onNight', 'colorBrandNightElevated', TEXT],
     ['selected.ink', 'selected.ground', TEXT],

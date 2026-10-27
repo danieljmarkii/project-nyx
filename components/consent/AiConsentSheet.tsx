@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageCircle, ScanEye, ScanText } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { PRIVACY_POLICY_URL } from '../../constants/links';
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   link: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   without: {
     fontSize: theme.textSM,

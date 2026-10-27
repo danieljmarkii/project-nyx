@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   submit: {
     marginTop: theme.space2,
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   // link it is (the whole row was flat grey before) — matching signup's accented
   // Terms/Privacy treatment and the Landing's accent language.
   signupTextAccent: {
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.weightMedium,
   },
 });

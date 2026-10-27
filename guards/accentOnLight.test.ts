@@ -220,7 +220,7 @@ describe('CUL-744 — the brand accent is never the colour of text on a light gr
           (s) =>
             `${s.file}:${s.line} colours TEXT with the bright accent (${ACCENT_NAMES.join(' / ')} are one ` +
             `hex). On a light ground that is ` +
-            `2.08–2.26:1, under the 4.5:1 AA floor — use theme.colorAccentInk (4.74–5.17:1). ` +
+            `2.08–2.26:1, under the 4.5:1 AA floor — use colorRoles.positive.textOnLight for a fact or colorRoles.action.onLight for an action (4.74–9.42:1). ` +
             `If this genuinely sits on a DARK ground, add an inline ` +
             `"// accent-on-dark-ok: <ground>, <ratio>" within ${MARKER_WINDOW} lines above it.`,
         ),

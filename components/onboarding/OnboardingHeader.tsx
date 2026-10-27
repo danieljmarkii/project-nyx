@@ -1,7 +1,7 @@
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ProgressBar } from './ProgressBar';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     // semibold weight, so the optional tail stays fast to move through.
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   skipTextDisabled: {
     // Muted while a Continue save is in flight (see skipDisabled).

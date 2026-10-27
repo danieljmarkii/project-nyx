@@ -551,7 +551,7 @@ const styles = StyleSheet.create({
     // The mock's teal ink. On a light surface that is the INK sibling, never the bright
     // accent (C-1) — and it is what makes these read as the sheet speaking rather than
     // as metadata.
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   // Quiet and centered — never louder than the arms, which are the answer this sheet
   // is asking for. A 44pt target (the 3am floor).

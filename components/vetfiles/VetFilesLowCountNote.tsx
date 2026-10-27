@@ -1,5 +1,5 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 
 interface Props {
@@ -55,6 +55,6 @@ const styles = StyleSheet.create({
   add: {
     fontSize: theme.textSM,
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
 });

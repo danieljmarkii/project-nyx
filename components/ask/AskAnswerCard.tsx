@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { AskAnswerComponent } from './AskAnswerComponent';
 import { AskChip } from './AskChip';
 import {
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
   provGo: {
     fontFamily: theme.fontBodySemibold,
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
   },
   followups: {
     flexDirection: 'row',

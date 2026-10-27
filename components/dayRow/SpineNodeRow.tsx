@@ -977,10 +977,10 @@ const styles = StyleSheet.create({
   chipMid: { backgroundColor: theme.colorSurfaceSubtle },
   chipAttn: { backgroundColor: theme.colorEventSymptomLight },
   // Text on a light ground takes the INK, never the glyph tint (C-1).
-  chipInkOk: { color: theme.colorAccentInk },
+  chipInkOk: { color: colorRoles.positive.textOnLight },
   chipInkMid: { color: theme.colorTextSecondary },
   chipInkAttn: { color: theme.colorEventSymptomInk },
-  phraseOk: { color: theme.colorAccentInk },
+  phraseOk: { color: colorRoles.positive.textOnLight },
   phraseMid: { color: theme.colorTextSecondary },
   phraseAttn: { color: theme.colorEventSymptomInk },
 

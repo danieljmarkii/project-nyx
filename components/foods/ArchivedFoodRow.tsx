@@ -141,6 +141,6 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightSemibold,
     letterSpacing: theme.trackingWidest,
     textTransform: 'uppercase',
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
 });

@@ -41,7 +41,7 @@
 //     never.
 import { ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { textStyles, theme } from '../../constants/theme';
+import { colorRoles, textStyles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { observationStripLine } from './observationStrip';
 import { RAIL_WIDTH } from './IncidentReadCard';
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   },
   editLink: {
     fontSize: theme.textSM,
-    color: theme.colorAccentInk,
+    color: colorRoles.action.onLight,
     fontWeight: theme.fontWeightMedium,
   },
   rows: {

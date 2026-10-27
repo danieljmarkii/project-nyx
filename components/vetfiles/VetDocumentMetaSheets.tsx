@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { TextField } from '../ui/TextField';
@@ -313,7 +313,7 @@ export function DocumentVisitSheet({
             >
               {visit.label}
             </ThemedText>
-            {visit.id === current && <Check size={17} color={theme.colorAccentInk} strokeWidth={2.5} />}
+            {visit.id === current && <Check size={17} color={colorRoles.selected.ink} strokeWidth={2.5} />}
           </TouchableOpacity>
         ))}
 
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
   },
   visitLabelOn: {
     fontWeight: theme.weightSemibold,
-    color: theme.colorAccentInk,
+    color: colorRoles.selected.ink,
   },
   visitClear: {
     flex: 1,

@@ -429,6 +429,10 @@ export const colorRoles = {
     // A good fact filling a grey track (colorChartEmpty), as a progress bar does. The
     // glyph teal is 2.87:1 there, under 3:1, so the track takes the ink (4.53:1).
     fillOnTrack: theme.colorAccentInk,
+    // A good fact as a solid fill under a white label or mark: the Given adherence chip,
+    // a saved visit's check disc (CUL-2201). The ink, since white on the glyph teal is
+    // under 4.5:1; the label is action.labelOnFill's white.
+    fillUnderLabel: theme.colorAccentInk,
     wash: theme.colorAccentLight,
     onNight: theme.colorMoonlitTeal,
   },

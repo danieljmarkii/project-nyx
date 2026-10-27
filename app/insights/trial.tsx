@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect } from 'expo-router';
-import { theme, shadows } from '../../constants/theme';
+import { colorRoles, shadows, theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { usePetStore } from '../../store/petStore';
 import { timingBandMedianLabel } from '../../lib/patternsTiming';
@@ -199,5 +199,5 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  retryText: { fontSize: theme.textMD, color: theme.colorAccentInk, fontWeight: theme.weightMedium },
+  retryText: { fontSize: theme.textMD, color: colorRoles.action.onLight, fontWeight: theme.weightMedium },
 });

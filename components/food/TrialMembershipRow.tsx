@@ -25,7 +25,7 @@
 // forbids. So this block sits at the top of the screen with the food's identity,
 // and the note stays down in its protein context where it already lives.
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
   fact: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: theme.colorAccentInk,
+    color: colorRoles.positive.textOnLight,
   },
   // Mock D's ghost button, and the shape is load-bearing rather than decorative.
   // This block sits at the head of a column of labelled TEXT INPUTS above a
