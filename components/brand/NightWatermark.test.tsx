@@ -72,6 +72,28 @@ describe('NightWatermark', () => {
     outlines.forEach((c) => expect(c.props.fill?.payload).toBeUndefined());
   });
 
+  it('cuts the moon by the carve and the carve by the moon, not the other way round', () => {
+    // Swapping the two masks would leave a full circle and lose the inner arc, and every
+    // count above would stay the same.
+    const tree = render(<NightWatermark size={SIZE} />).toJSON();
+    const { moon, carve } = MARK_GEOMETRY;
+    const masks = findByType(tree, 'RNSVGMask');
+    const maskHolding = (r: number) =>
+      masks.find((m) => findByType(m, 'RNSVGCircle').some((c) => Number(c.props.r) === r))?.props.name;
+    const cutsByCarve = maskHolding(carve.r);
+    const keepsInMoon = maskHolding(moon.r);
+    expect(cutsByCarve).toBeTruthy();
+    expect(keepsInMoon).toBeTruthy();
+    expect(cutsByCarve).not.toBe(keepsInMoon);
+
+    const drawn = findByType(tree, 'RNSVGCircle').filter((c) => !masks.some((m) => findByType(m, 'RNSVGCircle').includes(c)));
+    const moonCircles = drawn.filter((c) => Number(c.props.r) === moon.r);
+    const carveArc = drawn.find((c) => Number(c.props.r) === carve.r);
+    expect(moonCircles).toHaveLength(2);
+    moonCircles.forEach((c) => expect(c.props.mask).toBe(cutsByCarve));
+    expect(carveArc.props.mask).toBe(keepsInMoon);
+  });
+
   it('reads CulpritMark’s geometry rather than restating it', () => {
     const tree = render(<NightWatermark size={SIZE} />).toJSON();
     const drawn = findByType(tree, 'RNSVGCircle').filter((c) => c.props.stroke != null);
@@ -87,6 +109,10 @@ describe('NightWatermark', () => {
   it('holds a 1pt hairline at any size', () => {
     [234, SIZE].forEach((size) => {
       const tree = render(<NightWatermark size={size} />).toJSON();
+      // The 1pt sum only holds if the canvas really is `size` wide over the mark's viewBox.
+      const [svg] = findByType(tree, 'RNSVGSvgView');
+      expect(Number(svg.props.vbWidth)).toBe(MARK_GEOMETRY.viewBox);
+      expect(Number(svg.props.width)).toBe(size);
       const [arc] = findByType(tree, 'RNSVGCircle').filter((c) => c.props.stroke != null);
       expect(Number(arc.props.strokeWidth) * (size / MARK_GEOMETRY.viewBox)).toBeCloseTo(1);
     });

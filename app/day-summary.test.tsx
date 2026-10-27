@@ -169,6 +169,20 @@ describe('the empty day’s moon', () => {
     expect(useUiStore.getState().logSheet).not.toBeNull();
   });
 
+  it('draws on a two-pet day where neither pet has anything logged', () => {
+    mockState.mockReturnValue({
+      status: 'ready',
+      anchorMs: at,
+      model: model({
+        isEmpty: true,
+        petCount: 2,
+        sections: [section({ petId: 'p1', petName: 'Biscuit' }), section({ petId: 'p2', petName: 'Mochi' })],
+      }),
+    });
+    const { getByTestId } = render(<DaySummaryScreen />);
+    expect(getByTestId('night-watermark', HIDDEN)).toBeTruthy();
+  });
+
   it('never draws on a day with content, single pet', () => {
     mockState.mockReturnValue({
       status: 'ready',

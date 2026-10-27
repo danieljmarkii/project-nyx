@@ -256,8 +256,8 @@ function PetSpineSection({ section }: { section: DaySummarySection }) {
 // day the top of this screen is a safety surface (brand spec §7.5).
 const WATERMARK_WIDTH_FRACTION = 1.2;
 // Where the copy's foot sits, as a fraction of the window from the bottom (the ruled
-// frame's). It is pinned at the foot so larger text grows up into the fade, never off
-// the screen.
+// frame's). Larger text grows up into the fade; past the room there is, the state
+// scrolls.
 const EMPTY_COPY_BOTTOM_FRACTION = 0.25;
 
 /** The night zero-log state (mock §2, frame 3). Serif title in moonlight, muted body,
@@ -267,14 +267,21 @@ function NightEmpty({ title, onLog }: { title: string; onLog: () => void }) {
   const { width, height } = useWindowDimensions();
   const markSize = width * WATERMARK_WIDTH_FRACTION;
   return (
-    <View style={[styles.empty, { paddingBottom: height * EMPTY_COPY_BOTTOM_FRACTION }]}>
+    // A scroll, so the largest text sizes scroll rather than climb over the header; at
+    // ordinary sizes it never moves (no bounce on content that fits).
+    <ScrollView
+      style={styles.emptyScroll}
+      contentContainerStyle={[styles.empty, { paddingBottom: height * EMPTY_COPY_BOTTOM_FRACTION }]}
+      alwaysBounceVertical={false}
+      showsVerticalScrollIndicator={false}
+    >
       <NightWatermark size={markSize} style={[styles.watermark, { left: (width - markSize) / 2 }]} />
       <Text style={styles.emptyTitle}>{title}</Text>
       <ThemedText style={styles.emptyBody}>{DAY_SUMMARY_ZERO_LOG.body}</ThemedText>
       <Pressable onPress={onLog} accessibilityRole="button" hitSlop={8} style={styles.emptyCtaWrap}>
         <ThemedText style={styles.emptyCta}>{DAY_SUMMARY_ZERO_LOG.cta}</ThemedText>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -332,8 +339,9 @@ const styles = StyleSheet.create({
   },
 
   // Zero-log: the copy sits at the foot, under the moon's fade (CUL-2224).
+  emptyScroll: { flex: 1 },
   empty: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingHorizontal: theme.space4,
