@@ -1,0 +1,346 @@
+<title>Moon Watermark Mocks</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* Layout: one column of rounds; each round is a row of phone frames (current → proposals),
+     with a decision brief under it. Single dark look by choice: every surface here is a night ground. */
+  :root {
+    color-scheme: dark;
+    --night: #13112E;          /* colorBrandNight */
+    --night-2: #251F57;        /* colorBrandNightElevated */
+    --page: #0D0B22;           /* the document ground, a shade under the night so frames lift */
+    --moon: #F2EEE4;           /* colorMoonlight */
+    --text: #ECEAF6;           /* colorTextOnNight */
+    --muted: #A6A2CE;          /* colorTextOnNightMuted */
+    --faint: #706BA6;          /* colorTextOnNightFaint */
+    --hair: rgba(196,190,255,0.16); /* colorBorderOnNight */
+    --teal: #00C2A8;           /* colorAccent, the mark's dot only */
+    --rose: #FB7185;           /* colorEventSymptomOnNight */
+    --rec: #4FD8C4;            /* the recommendation chip */
+    --display: "Newsreader", ui-serif, Georgia, serif;
+    --body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page); color: var(--text); font-family: var(--body);
+    font-size: 15px; line-height: 1.55;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 72px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+  h1, h2 { font-family: var(--display); font-weight: 400; letter-spacing: -0.01em; text-wrap: balance; margin: 0; color: var(--moon); }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; }
+  h2 { font-size: 26px; }
+  p { margin: 0; max-width: 66ch; color: var(--muted); }
+  .eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+  .intro { display: flex; flex-direction: column; gap: 14px; }
+  .round { display: flex; flex-direction: column; gap: 22px; }
+  .round-head { display: flex; flex-direction: column; gap: 8px; }
+
+  .frames { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 12px; width: 280px; max-width: 100%; }
+  figcaption { display: flex; flex-direction: column; gap: 4px; }
+  figcaption b { font-weight: 600; color: var(--text); font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  figcaption span { color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .chip { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--hair); color: var(--faint); font-weight: 600; }
+  .chip.rec { color: var(--rec); border-color: rgba(79,216,196,0.4); }
+
+  /* The phone. 280 × 590 stands in for a 390 × 844 pt iPhone. */
+  .phone {
+    position: relative; width: 280px; max-width: 100%; aspect-ratio: 280 / 590;
+    border-radius: 34px; overflow: hidden; background: var(--night);
+    box-shadow: 0 0 0 1px var(--hair), 0 24px 60px rgba(0,0,0,0.45);
+    isolation: isolate;
+  }
+  .status { position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; justify-content: space-between; align-items: center; padding: 0 24px; font-size: 11px; font-weight: 600; color: var(--text); z-index: 3; }
+  .nav { position: absolute; top: 40px; left: 0; right: 0; height: 40px; display: flex; align-items: center; padding: 0 14px; gap: 6px; font-size: 15px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--hair); z-index: 3; }
+  .nav i { font-style: normal; color: var(--moon); font-size: 20px; line-height: 1; margin-top: -2px; }
+  .ghost { position: absolute; pointer-events: none; z-index: 0; }
+  .ghost svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+  /* Recap content */
+  .scroll { position: absolute; top: 80px; left: 0; right: 0; bottom: 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; z-index: 2; }
+  .date { font-size: 10px; font-weight: 600; color: var(--muted); }
+  .lead { font-family: var(--display); font-size: 17px; line-height: 1.35; color: var(--moon); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips span { font-size: 10.5px; padding: 3px 9px; border-radius: 999px; background: rgba(37,31,87,0.75); border: 1px solid var(--hair); color: var(--text); }
+  .chips .sym { color: var(--rose); }
+  .spine { display: flex; flex-direction: column; border-left: 1px solid var(--hair); margin-left: 4px; padding-left: 12px; gap: 9px; }
+  .row { display: grid; grid-template-columns: 50px 1fr auto; gap: 6px; font-size: 12px; align-items: baseline; position: relative; }
+  .row::before { content: ""; position: absolute; left: -16px; top: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .row.sym::before { background: var(--rose); }
+  .row time { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 11px; }
+  .row em { font-style: normal; color: var(--faint); }
+  .strip { background: rgba(37,31,87,0.85); border: 1px solid var(--hair); border-radius: 12px; padding: 9px 11px; display: flex; flex-direction: column; gap: 1px; }
+  .strip b { font-size: 12px; font-weight: 600; }
+  .strip span { font-size: 11px; color: var(--muted); }
+  .forward { font-size: 11.5px; color: var(--muted); }
+  .empty { position: absolute; inset: 80px 0 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 28px; text-align: center; z-index: 2; }
+  .empty .t { font-family: var(--display); font-size: 17px; color: var(--moon); }
+  .empty .b { font-size: 12px; color: var(--muted); line-height: 1.45; }
+  .empty .c { font-size: 13px; font-weight: 500; color: var(--teal); margin-top: 4px; }
+  .sample { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); z-index: 3; }
+
+  /* Splash + Landing */
+  .mark { position: absolute; z-index: 2; }
+  .mark svg { display: block; width: 100%; height: 100%; }
+  .landing-copy { position: absolute; left: 0; right: 0; top: 54%; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 26px; text-align: center; z-index: 2; }
+  .landing-copy .w { font-family: var(--display); font-size: 30px; color: var(--moon); letter-spacing: -0.01em; }
+  .landing-copy .s { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .cta { position: absolute; left: 22px; right: 22px; bottom: 36px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
+  .cta span { height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; }
+  .cta .p { background: var(--moon); color: var(--night); }
+  .cta .s2 { border: 1px solid var(--hair); color: var(--text); }
+
+  .film { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  .film figure { width: 180px; }
+  .film .phone { width: 180px; border-radius: 24px; }
+  .film .arrow { align-self: center; color: var(--faint); font-size: 18px; }
+
+  /* Briefs */
+  .brief { border-top: 1px solid var(--hair); padding-top: 18px; display: grid; grid-template-columns: 120px 1fr; gap: 10px 20px; max-width: 860px; }
+  .brief dt { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); font-weight: 600; padding-top: 2px; }
+  .brief dd { margin: 0; color: var(--text); font-size: 14px; min-width: 0; }
+  .brief ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+  .brief li { color: var(--muted); }
+  .brief li strong { color: var(--text); font-weight: 600; }
+  .brief .r { color: var(--rec); font-weight: 600; }
+  @media (max-width: 560px) { .brief { grid-template-columns: 1fr; gap: 4px; } .brief dd { margin-bottom: 10px; } }
+
+  .anatomy { display: flex; flex-wrap: wrap; gap: 28px; align-items: center; }
+  .anatomy .tile { width: 220px; height: 220px; border-radius: 20px; background: var(--night); position: relative; overflow: hidden; box-shadow: 0 0 0 1px var(--hair); flex-shrink: 0; }
+  .anatomy ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); max-width: 56ch; min-width: 0; flex: 1 1 280px; }
+  .anatomy li strong { color: var(--text); font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.88em; color: var(--text); }
+</style>
+
+<div class="wrap">
+
+  <header class="intro">
+    <div class="eyebrow">Mock round 1 · night surfaces · 2026-10-27</div>
+    <h1>The moon, drawn in the dark</h1>
+    <p>Linear puts a hairline outline of its mark in the empty space of a new chat, faded toward the bottom, barely above the ground. It is identity without decoration: no motion, no colour, nothing to read. These frames borrow that move for the two places the Culprit mark already lives at night: the Daily Recap the 9pm notification opens, and the launch screen.</p>
+  </header>
+
+  <section class="round">
+    <div class="round-head">
+      <div class="eyebrow">The watermark</div>
+      <h2>What gets drawn</h2>
+    </div>
+    <div class="anatomy">
+      <div class="tile"><div class="ghost" data-ghost="anatomy" style="left:20px; top:20px; width:180px; height:180px"></div></div>
+      <ul>
+        <li><strong>The real geometry.</strong> The crescent's outer arc and its carve arc, plus a ring where the Signal dot sits, all from <code>CulpritMark</code>'s viewBox. The carve rule holds: it is an outline, so the ground passes through.</li>
+        <li><strong>One hairline.</strong> 1pt stroke in the night border tint, about 22% at the top and gone by three quarters down, the way Linear's fades into the input.</li>
+        <li><strong>No teal.</strong> The dot is a ring, not a fill. Teal stays the mark's own dot; a teal haze was already rejected on device (2026-07-12).</li>
+        <li><strong>Still.</strong> No loop, no fade in, no parallax. Principle 9 stays whole, and Reduce Motion has nothing to switch off.</li>
+        <li><strong>Silent to VoiceOver.</strong> Decorative, hidden from assistive tech, under every touch target.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="round">
+    <div class="round-head">
+      <div class="eyebrow">01 · The Daily Recap</div>
+      <h2>Where the 9pm notification lands</h2>
+      <p>Same placement in every state: top of the screen, centred, a touch wider than the phone, scrolling away with the page. The lead and chips sit over its faded lower half.</p>
+    </div>
+    <div class="frames">
+      <figure>
+        <div class="phone" data-recap="empty">
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+          <div class="empty">
+            <div class="t">Nothing in Biscuit’s record today</div>
+            <div class="b">If something happened, it takes about ten seconds to add.</div>
+            <div class="c">Log an event</div>
+          </div>
+        </div>
+        <figcaption><b>Today <span class="chip">shipped</span></b><span>The zero-log state as it ships: copy alone on the ground.</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+          <div class="ghost" data-ghost="recap" style="left:-28px; top:96px; width:336px; height:336px"></div>
+          <div class="empty" style="justify-content:flex-end; padding-bottom:150px">
+            <div class="t">Nothing in Biscuit’s record today</div>
+            <div class="b">If something happened, it takes about ten seconds to add.</div>
+            <div class="c">Log an event</div>
+          </div>
+        </div>
+        <figcaption><b>B · Empty day <span class="chip rec">recommended</span></b><span>Linear's composition almost exactly: the moon in the space above, the copy under its fade.</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="status"><span>9:02</span><span>●●●</span></div>
+          <div class="nav"><i>‹</i>Today</div>
+          <div class="ghost" data-ghost="recap" style="left:-28px; top:-20px; width:336px; height:336px"></div>
+          <div class="scroll">
+            <div class="date">Monday, October 26</div>
+            <div class="lead">One vomit today, at 2:40 pm. Day 18 of Biscuit’s diet trial.</div>
+            <div class="chips"><span>3 meals</span><span class="sym">1 vomit</span><span>1 dose</span></div>
+            <div class="spine">
+              <div class="row"><time>7:15 am</time><span>Breakfast</span><em>›</em></div>
+              <div class="row"><time>8:00 am</time><span>Cerenia, dose 3 of 5</span><em>›</em></div>
+              <div class="row"><time>12:30 pm</time><span>Lunch</span><em>›</em></div>
+              <div class="row sym"><time>2:40 pm</time><span>Vomit</span><em>›</em></div>
+              <div class="row"><time>6:10 pm</time><span>Dinner</span><em>›</em></div>
+            </div>
+            <div class="strip"><b>Diet trial · day 18 of 56</b><span>Hydrolyzed salmon only</span></div>
+            <div class="forward">Tomorrow is day 19.</div>
+          </div>
+          <div class="sample">Sample day</div>
+        </div>
+        <figcaption><b>B · Full day <span class="chip rec">recommended</span></b><span>Same moon, sitting behind the date and lead. It has faded out before the spine, so no row sits on a line.</span></figcaption>
+      </figure>
+    </div>
+
+    <dl class="brief">
+      <dt>Deciding</dt>
+      <dd>Whether the Daily Recap carries the moon watermark, and in which states.</dd>
+      <dt>Options</dt>
+      <dd><ol>
+        <li><strong>A · No change.</strong></li>
+        <li><strong>B · Every state, one placement.</strong> <span class="r">Recommended:</span> it reads as the screen's identity, never as a comment on the day.</li>
+        <li><strong>C · Empty day only.</strong> Prettiest single frame, but a calm moon beside "Nothing in the record" can read as an all clear, the one thing that copy is written to avoid.</li>
+      </ol></dd>
+      <dt>Consequence</dt>
+      <dd>B adds one still, decorative layer to <code>/day-summary</code>; no copy, data or record change. The register rule (§1.2) already makes this a night surface.</dd>
+      <dt>Forecast</dt>
+      <dd>1 row: a <code>NightWatermark</code> component that reads <code>CulpritMark</code>'s geometry, plus the recap placement.</dd>
+    </dl>
+  </section>
+
+  <section class="round">
+    <div class="round-head">
+      <div class="eyebrow">02 · The launch screen</div>
+      <h2>The dark blue screen while the app loads</h2>
+      <p>This is the native splash: a picture iOS shows before any of our code runs. It can only be a centred image on a solid colour, so whatever goes here is baked into the image itself.</p>
+    </div>
+    <div class="frames">
+      <figure>
+        <div class="phone" data-splash="today">
+          <div class="mark" style="left:88px; top:243px; width:104px; height:104px" data-mark></div>
+        </div>
+        <figcaption><b>Today <span class="chip">shipped</span></b><span>The filled mark alone on the night colour.</span></figcaption>
+      </figure>
+
+      <figure>
+        <div class="phone">
+          <div class="ghost" data-ghost="splash" style="left:-8.4px; top:165.6px; width:250px; height:250px"></div>
+          <div class="mark" style="left:88px; top:243px; width:104px; height:104px" data-mark></div>
+        </div>
+        <figcaption><b>S1 · Echo <span class="chip rec">recommended</span></b><span>A large outline of the mark, scaled out from the Signal dot, so both share one centre. Static, inside one square image.</span></figcaption>
+      </figure>
+    </div>
+
+    <div class="round-head" style="margin-top:12px">
+      <div class="eyebrow">S2 · Handoff, as a filmstrip</div>
+      <p>The alternative: keep today's splash, then when our code takes over, fade the outline in once and let the moon settle into the Landing hero. It only plays for logged-out owners; a signed-in owner goes to Home.</p>
+    </div>
+    <div class="film">
+      <figure>
+        <div class="phone"><div class="mark" style="left:56px; top:156px; width:68px; height:68px" data-mark></div></div>
+        <figcaption><b>0 ms</b><span>Native splash, unchanged.</span></figcaption>
+      </figure>
+      <div class="arrow">→</div>
+      <figure>
+        <div class="phone">
+          <div class="ghost" data-ghost="splash-half" style="left:-6.7px; top:105.1px; width:163px; height:163px"></div>
+          <div class="mark" style="left:56px; top:156px; width:68px; height:68px" data-mark></div>
+        </div>
+        <figcaption><b>~300 ms</b><span>The outline fades in around it.</span></figcaption>
+      </figure>
+      <div class="arrow">→</div>
+      <figure>
+        <div class="phone" data-landing>
+          <div class="ghost" data-ghost="splash" style="left:-8.4px; top:36.3px; width:168px; height:168px"></div>
+          <div class="mark" style="left:51px; top:84px; width:78px; height:78px" data-mark></div>
+          <div class="landing-copy" style="top:50%"><div class="w" style="font-size:22px">Culprit</div><div class="s" style="font-size:9px">Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.</div></div>
+          <div class="cta" style="left:14px; right:14px; bottom:20px; gap:6px"><span class="p" style="height:26px; font-size:9.5px; border-radius:8px">Create account</span><span class="s2" style="height:26px; font-size:9.5px; border-radius:8px">Log in</span></div>
+        </div>
+        <figcaption><b>~900 ms</b><span>The Landing hero, the outline now its ground.</span></figcaption>
+      </figure>
+    </div>
+
+    <dl class="brief">
+      <dt>Deciding</dt>
+      <dd>Whether the launch screen gains the outline, and whether it moves.</dd>
+      <dt>Options</dt>
+      <dd><ol>
+        <li><strong>A · No change.</strong></li>
+        <li><strong>S1 · Echo, baked into the splash image.</strong> <span class="r">Recommended:</span> every owner sees it on every cold start, it costs no code, and nothing moves.</li>
+        <li><strong>S2 · Handoff.</strong> A one-shot fade into the Landing. Prettier the first time, but it is motion in chrome (Principle 9), and only signed-out owners ever see it.</li>
+      </ol></dd>
+      <dt>Consequence</dt>
+      <dd>S1 is a new splash image and an <code>app.json</code> edit, so it ships in the next native build, not over the air. Android keeps today's plain mark, since its splash API crops to a small circle.</dd>
+      <dt>Forecast</dt>
+      <dd>1 row, plus a device check on the TestFlight cut: the outline's opacity is tuned on a real screen, where 4% contrast either reads or vanishes.</dd>
+    </dl>
+  </section>
+
+</div>
+
+<script>
+  // The CulpritMark geometry, verbatim (components/brand/CulpritMark.tsx, a 100×100 design space).
+  const MOON = { cx: 45, cy: 50, r: 33 };
+  const CARVE = { cx: 61, cy: 43, r: 29 };
+  const DOT = { cx: 66, cy: 53, r: 9 };
+  const NS = 'http://www.w3.org/2000/svg';
+  let uid = 0;
+
+  function el(name, attrs, parent) {
+    const n = document.createElementNS(NS, name);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+
+  // The watermark: the crescent's outline (moon arc outside the carve + carve arc inside the moon)
+  // and a ring at the dot, one hairline, fading top to bottom. Peak opacity varies by placement.
+  function ghost(host, peak) {
+    const id = 'g' + (uid++);
+    const svg = el('svg', { viewBox: '0 0 100 100', 'aria-hidden': 'true' });
+    const defs = el('defs', {}, svg);
+    const grad = el('linearGradient', { id: id + 's', gradientUnits: 'userSpaceOnUse', x1: 0, y1: 16, x2: 0, y2: 78 }, defs);
+    el('stop', { offset: 0, 'stop-color': '#C4BEFF', 'stop-opacity': peak }, grad);
+    el('stop', { offset: 1, 'stop-color': '#C4BEFF', 'stop-opacity': 0 }, grad);
+    const fill = el('linearGradient', { id: id + 'f', gradientUnits: 'userSpaceOnUse', x1: 0, y1: 16, x2: 0, y2: 70 }, defs);
+    el('stop', { offset: 0, 'stop-color': '#251F57', 'stop-opacity': 0.55 }, fill);
+    el('stop', { offset: 1, 'stop-color': '#251F57', 'stop-opacity': 0 }, fill);
+    const outside = el('mask', { id: id + 'o' }, defs);
+    el('rect', { x: -10, y: -10, width: 120, height: 120, fill: '#fff' }, outside);
+    el('circle', { cx: CARVE.cx, cy: CARVE.cy, r: CARVE.r, fill: '#000' }, outside);
+    const inside = el('mask', { id: id + 'i' }, defs);
+    el('circle', { cx: MOON.cx, cy: MOON.cy, r: MOON.r, fill: '#fff' }, inside);
+
+    const line = { fill: 'none', stroke: `url(#${id}s)`, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' };
+    el('circle', { cx: MOON.cx, cy: MOON.cy, r: MOON.r, fill: `url(#${id}f)`, mask: `url(#${id}o)` }, svg);
+    el('circle', Object.assign({ cx: MOON.cx, cy: MOON.cy, r: MOON.r, mask: `url(#${id}o)` }, line), svg);
+    el('circle', Object.assign({ cx: CARVE.cx, cy: CARVE.cy, r: CARVE.r, mask: `url(#${id}i)` }, line), svg);
+    el('circle', Object.assign({ cx: DOT.cx, cy: DOT.cy, r: DOT.r }, line), svg);
+    host.appendChild(svg);
+  }
+
+  // The filled mark (carve as a true mask, teal dot), as CulpritMark renders on night.
+  function mark(host) {
+    const id = 'm' + (uid++);
+    const svg = el('svg', { viewBox: '0 0 100 100', role: 'img', 'aria-label': 'Culprit' });
+    const m = el('mask', { id }, el('defs', {}, svg));
+    el('rect', { x: 0, y: 0, width: 100, height: 100, fill: '#fff' }, m);
+    el('circle', { cx: CARVE.cx, cy: CARVE.cy, r: CARVE.r, fill: '#000' }, m);
+    el('circle', { cx: MOON.cx, cy: MOON.cy, r: MOON.r, fill: '#F2EEE4', mask: `url(#${id})` }, svg);
+    el('circle', { cx: DOT.cx, cy: DOT.cy, r: DOT.r, fill: '#00C2A8' }, svg);
+    host.appendChild(svg);
+  }
+
+  const PEAK = { anatomy: 0.5, recap: 0.24, splash: 0.26, 'splash-half': 0.13 };
+  document.querySelectorAll('[data-ghost]').forEach((h) => ghost(h, PEAK[h.dataset.ghost] ?? 0.24));
+  document.querySelectorAll('[data-mark]').forEach(mark);
+</script>
