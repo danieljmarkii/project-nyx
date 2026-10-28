@@ -62,6 +62,7 @@ jest.mock('../../../lib/measureNode', () => ({
 
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
+import { columnFor } from '../../../hooks/useLayoutClass';
 import { SignalScreen, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
 import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
 import { isCalmDisplay, NO_READ_WORDS } from '../../../lib/incidentTierWords';
@@ -562,8 +563,9 @@ describe('the route, app/signal/[id]', () => {
 });
 
 describe('the flight’s landing (D2-6 · CUL-1069)', () => {
-  // The test window (jest-expo's 750pt) — the hero's ratio is derived from it, as the screen does.
-  const WINDOW = Dimensions.get('window').width;
+  // The test window is jest-expo's 750pt, a regular width, so the screen sizes from the
+  // column inside it (CUL-2237); the hero's ratio is derived from that, as the screen does.
+  const WINDOW = columnFor(Dimensions.get('window').width).width;
   // The page's 24 and the HomeCard's 16 a side; the rail hangs in the gutter (CUL-1525).
   const INNER = WINDOW - 2 * 24 - 2 * 16;
   const OUTER = WINDOW - 2 * 16;
