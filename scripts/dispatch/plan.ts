@@ -573,8 +573,10 @@ export function planDispatch(input: PlanInput): Plan {
       const c = claimByIssue.get(i);
       if (c && state.kind !== 'open') v.reasons.push(`a live claim on ${i} (${c.branch}, ${c.at})`);
       const f = input.issues[i];
+      // A blocker After already names is the same gate written twice (CUL-1621 asks for
+      // both); counting it again makes ruling it "free 0" rows (CUL-2249).
       for (const b of f?.blockedBy ?? [])
-        if (b.open) {
+        if (b.open && !v.holds.some((h) => h.key === b.id)) {
           v.reasons.push(`its issue waits: ${i} is blocked by ${b.id}`);
           if (b.waitingOnPm) v.holds.push({ key: b.id, kind: 'waits', text: `${b.id} (blocks ${i})` });
         }

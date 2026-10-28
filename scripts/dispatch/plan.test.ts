@@ -164,4 +164,28 @@ describe('found by review (each red before its fix)', () => {
     expect(v.reasons).toEqual(['after PR-04 in "PR-04 → PR-05, strictly in order" (strictly in order)']);
     expect(v.rank).toBe(1);
   });
+
+  // CUL-2249: Every iPhone's first run said its one gate "frees 0". A gate is written in
+  // After and, since CUL-1621, as a blocks relation too; the relation is the same hold.
+  it('a blocker that After already names is one hold, so ruling it frees the row', () => {
+    for (const waitingOnPm of [false, true]) {
+      const p = planDispatch(base({
+        project: page('| 01 | CUL-1 | a | CUL-559 | A |\n| 02 | CUL-2 | b | CUL-559 | B |'),
+        issues: {
+          'CUL-1': { id: 'CUL-1', state: 'Todo', blockedBy: [{ id: 'CUL-559', open: true, waitingOnPm }] },
+          'CUL-2': { id: 'CUL-2', state: 'Todo', blockedBy: [{ id: 'CUL-559', open: true, waitingOnPm }] },
+          'CUL-559': { id: 'CUL-559', state: 'Todo' },
+        },
+      }));
+      expect(p.verdicts.find((x) => x.row === '01')!.reasons).toEqual(['a PM action: "CUL-559"']);
+      expect(p.pmHolds.map((h) => [h.key, h.freesOutright, h.rowsHeld])).toEqual([['CUL-559', ['01', '02'], ['01', '02']]]);
+    }
+  });
+
+  it('a blocker After does not name still holds the row', () => {
+    const p = planDispatch(base({
+      issues: { 'CUL-1': { id: 'CUL-1', state: 'Todo', blockedBy: [{ id: 'CUL-7', open: true }] } },
+    }));
+    expect(p.verdicts.find((x) => x.row === '01')!.reasons).toEqual(['its issue waits: CUL-1 is blocked by CUL-7']);
+  });
 });
