@@ -194,7 +194,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
       style={styles.row}
       testID="signal-row"
     >
-      <View style={[styles.rail, signalRailStyle(finding.priorityClass)]} />
+      <View style={[styles.rail, signalRailStyle(finding.priorityClass)]} testID="signal-row-rail" />
       <View style={styles.body}>
         {backLine ? (
           <ThemedText style={styles.backLine} testID="signal-row-back">
@@ -242,7 +242,7 @@ function WatchedRow({ care, onOpen, isLead }: { care: CareStateView; onOpen: () 
       style={styles.row}
       testID="signal-row"
     >
-      <View style={[styles.rail, styles.railWatched]} />
+      <View style={[styles.rail, styles.railWatched]} testID="signal-row-rail" />
       <View style={styles.body}>
         <ThemedText style={styles.careTag} testID="signal-row-care-tag">
           {CARE_WATCHED_TAG}

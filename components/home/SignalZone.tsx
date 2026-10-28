@@ -884,15 +884,16 @@ export function SignalZone({
               />
             }
           />
-          {gapSentence !== null ? (
+          {gapSentence !== null || gapUnread ? (
             <>
               <Divider />
-              <GapWarning text={gapSentence} enterKey={0} />
-            </>
-          ) : gapUnread ? (
-            <>
-              <Divider />
-              <GapReadFailed petName={petName} onRetry={retryGapRead} />
+              <View style={styles.gapUnderStack} testID="signal-gap-under-stack">
+                {gapSentence !== null ? (
+                  <GapWarning text={gapSentence} enterKey={0} />
+                ) : (
+                  <GapReadFailed petName={petName} onRetry={retryGapRead} />
+                )}
+              </View>
             </>
           ) : null}
         </>
@@ -1166,9 +1167,9 @@ function GapWarning({ text, enterKey, outgoing = null }: { text: string; enterKe
   return (
     <View style={styles.quietRow}>
       {phase === 'idle' ? (
-        <View style={[styles.quietRail, styles.gapRail]} />
+        <View style={[styles.quietRail, styles.gapRail]} testID="signal-gap-rail" />
       ) : (
-        <View style={[styles.quietRail, styles.quietRailNeutral]}>
+        <View style={[styles.quietRail, styles.quietRailNeutral]} testID="signal-gap-rail">
           <Animated.View style={[StyleSheet.absoluteFill, styles.gapRail, { opacity: railInk }]} />
         </View>
       )}
@@ -1378,6 +1379,12 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody + 2,
     letterSpacing: theme.trackingTight,
     color: theme.colorTextPrimary,
+  },
+  // CUL-2230: under the live stack the warning (or its unanswered read) is one more row
+  // between hairlines, so it keeps `SignalRow`'s rhythm: its text and its rail sit a `space1`
+  // clear of each line. Taking the whole card it needs none; the card's inset is its room.
+  gapUnderStack: {
+    paddingVertical: theme.space1,
   },
   // CUL-1943 — the unanswered gap read's retry, the quiet sub's size in the accent ink.
   gapRetry: {

@@ -138,6 +138,14 @@ function headlines(view: ReturnType<typeof render>): unknown[] {
 function leadCardFinding(): unknown {
   return mockLoadSignalLead.mock.calls.at(-1)?.[1];
 }
+/** A box's padding on one vertical edge, as Yoga resolves it: the edge wins over the axis,
+ *  the axis over `padding`. */
+function paddingAt(
+  style: { padding?: unknown; paddingVertical?: unknown; paddingTop?: unknown; paddingBottom?: unknown },
+  edge: 'Top' | 'Bottom',
+): number {
+  return Number(style[`padding${edge}`] ?? style.paddingVertical ?? style.padding ?? 0);
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -340,6 +348,8 @@ describe('SignalZone — the gap warning takes the card', () => {
       expect(view.queryByTestId('signal-quiet-line')).toBeNull();
       expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
       expect(view.getByTestId('signal-zone-report')).toBeTruthy();
+      // Taking the card it takes no row slot (CUL-2230): the card's inset is its room.
+      expect(view.queryByTestId('signal-gap-under-stack')).toBeNull();
     });
   }
 
@@ -358,6 +368,38 @@ describe('SignalZone — the gap warning takes the card', () => {
     const view = render(<SignalZone />);
     expect(view.getByText(GAP)).toBeTruthy();
     expect(view.getByTestId('signal-zone-patterns')).toBeTruthy();
+  });
+
+  // CUL-2230: under the stack the warning is one more row between hairlines. It sat flush
+  // against the line above it (no padding) with its rail touching that line, while every row
+  // sits a space1 clear of each line. Pinned off the rendered styles of both, never a token.
+  it('in live it keeps the row rhythm: its text and rail sit as far off each hairline as a row’s', () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    const row = StyleSheet.flatten(view.getByTestId('signal-row').props.style);
+    const rowRail = StyleSheet.flatten(view.getByTestId('signal-row-rail').props.style);
+    const slot = view.getByTestId('signal-gap-under-stack');
+    const slotStyle = StyleSheet.flatten(slot.props.style);
+    const gapRail = StyleSheet.flatten(within(slot).getByTestId('signal-gap-rail').props.style);
+    expect(within(slot).getByText(GAP)).toBeTruthy();
+    for (const [edge, side] of [
+      ['Top', 'top'],
+      ['Bottom', 'bottom'],
+    ] as const) {
+      // Non-vacuity: a row does sit off its hairlines, so neither equality is 0 === 0.
+      expect(paddingAt(row, edge)).toBeGreaterThan(0);
+      expect(paddingAt(slotStyle, edge)).toBe(paddingAt(row, edge));
+      expect(paddingAt(slotStyle, edge) + Number(gapRail[side])).toBe(Number(rowRail[side]));
+    }
+  });
+
+  it('in live a gap read that did not answer takes the same row slot', async () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    await settle();
+    expect(within(view.getByTestId('signal-gap-under-stack')).getByTestId('signal-gap-read-failed')).toBeTruthy();
   });
 
   it('CUL-1941: a lone server gap_shortening no longer blanks the card — the warning takes it', async () => {
