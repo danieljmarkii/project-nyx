@@ -17,7 +17,7 @@
 // record fact, never an all-clear over the pet. A failed read renders an error +
 // retry, NEVER a false "nothing logged".
 import { useCallback } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -25,6 +25,7 @@ import { UtensilsCrossed, Pill } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Header } from '../components/ui';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
+import { NightWatermark } from '../components/brand/NightWatermark';
 import { DaySpine } from '../components/recap/DaySpine';
 import { CountChips } from '../components/recap/CountChips';
 import { RecapStrip } from '../components/recap/RecapStrip';
@@ -249,17 +250,38 @@ function PetSpineSection({ section }: { section: DaySummarySection }) {
   );
 }
 
+// The empty day's moon (CUL-2224, watermark mock round 4): a hairline Culprit mark in the
+// space above the copy, a little wider than the screen, with the copy sitting under its
+// fade. Only this state carries it: a day with content shows none, because on a symptom
+// day the top of this screen is a safety surface (brand spec §7.5).
+const WATERMARK_WIDTH_FRACTION = 1.2;
+// Where the copy's foot sits, as a fraction of the window from the bottom (the ruled
+// frame's). Larger text grows up into the fade; past the room there is, the state
+// scrolls.
+const EMPTY_COPY_BOTTOM_FRACTION = 0.25;
+
 /** The night zero-log state (mock §2, frame 3). Serif title in moonlight, muted body,
- *  a low-emphasis accent link (never a filled button) as the screen's only door. */
+ *  a low-emphasis accent link (never a filled button) as the screen's only door, under
+ *  the empty day's moon. */
 function NightEmpty({ title, onLog }: { title: string; onLog: () => void }) {
+  const { width, height } = useWindowDimensions();
+  const markSize = width * WATERMARK_WIDTH_FRACTION;
   return (
-    <View style={styles.empty}>
+    // A scroll, so the largest text sizes scroll rather than climb over the header; at
+    // ordinary sizes it never moves (no bounce on content that fits).
+    <ScrollView
+      style={styles.emptyScroll}
+      contentContainerStyle={[styles.empty, { paddingBottom: height * EMPTY_COPY_BOTTOM_FRACTION }]}
+      alwaysBounceVertical={false}
+      showsVerticalScrollIndicator={false}
+    >
+      <NightWatermark size={markSize} style={[styles.watermark, { left: (width - markSize) / 2 }]} />
       <Text style={styles.emptyTitle}>{title}</Text>
       <ThemedText style={styles.emptyBody}>{DAY_SUMMARY_ZERO_LOG.body}</ThemedText>
       <Pressable onPress={onLog} accessibilityRole="button" hitSlop={8} style={styles.emptyCtaWrap}>
         <ThemedText style={styles.emptyCta}>{DAY_SUMMARY_ZERO_LOG.cta}</ThemedText>
       </Pressable>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -316,14 +338,17 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
   },
 
-  // Zero-log (align="fill" — vertically centred, the mock's `.night-empty`).
+  // Zero-log: the copy sits at the foot, under the moon's fade (CUL-2224).
+  emptyScroll: { flex: 1 },
   empty: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     paddingHorizontal: theme.space4,
     gap: theme.space0_5 + theme.spaceMicro, // 6
   },
+  // Behind the copy, from the header line down; the screen's edges crop its sides.
+  watermark: { position: 'absolute', top: 0 },
   emptyTitle: {
     fontFamily: theme.fontDisplay,
     fontSize: theme.textLG,

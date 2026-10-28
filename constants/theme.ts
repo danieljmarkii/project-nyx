@@ -223,6 +223,13 @@ export const theme = {
   colorAuroraIndigo: '#191449',               // hero radial glow stop 2
   colorAuroraTeal: 'rgba(0,194,168,0.10)',    // restrained teal radial near the Signal dot
   colorStar: 'rgba(255,255,255,0.45)',        // starfield dot base (per-dot opacity varies 0.28–0.55)
+  // The night watermark (CUL-2224): the lavender of colorBorderOnNight at full strength,
+  // because NightWatermark's own gradient sets how faint it is. Decorative, never text.
+  colorWatermarkOnNight: '#C4BEFF',
+  // SVG mask luminance: white keeps what the mask covers, black cuts it away. Not
+  // colours anyone sees, so they sit apart from the palette.
+  colorMaskKeep: '#FFFFFF',
+  colorMaskCut: '#000000',
 
   // CulpritMark (B-284 PR N2, §3) — the crescent's LIGHT-ground fill. Additive:
   // the N1 block above covers night-ground tokens only; this is the one light-side
