@@ -28,7 +28,7 @@
 | Rabbit, September, no steroid | 2.10 |
 | Rabbit, on prednisolone (9/21 to 10/11) | 1.33 |
 | Rabbit, after prednisolone stopped | 2.11 |
-| **Chicken rechallenge (from 10/18)** | **3.54** (was 2.36 on 10-27) |
+| **Chicken rechallenge (from 10/18)** | **3.54** |
 | &nbsp;&nbsp;&nbsp;Chicken, first week (10/18 to 10/25) | 0.95 |
 | &nbsp;&nbsp;&nbsp;Chicken, 10/26 to 10/28 | 11.1 |
 
