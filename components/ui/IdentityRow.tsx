@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 
 // The text column's narrowest comfortable width beside the photo. Under it (an SE at
@@ -31,7 +32,8 @@ interface Props {
  * page rather than a settings card, and lets the first record fact onto the first screen.
  */
 export function IdentityRow({ leading, leadingSize, gutter, children }: Props) {
-  const { width, fontScale } = useWindowDimensions();
+  const width = useColumnWidth();
+  const { fontScale } = useWindowDimensions();
   const stacked = identityRowStacks(width, fontScale, leadingSize, gutter);
   return (
     <View style={[styles.row, stacked && styles.stacked]} testID="identity-row">

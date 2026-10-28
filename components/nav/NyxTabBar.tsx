@@ -1,4 +1,5 @@
-import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { bleedFor, useColumn } from '../../hooks/useLayoutClass';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
@@ -117,15 +118,16 @@ export function NyxTabBar({ state, descriptors, navigation }: TabBarProps) {
   const petName = usePetStore((s) => s.activePet?.name ?? null);
   const petPhotoPath = usePetStore((s) => s.activePet?.photo_path ?? null);
 
-  // The ladder is a function of the tab's width, and the tab's width is the window
+  // The ladder is a function of the tab's width, and the tab's width is the column
   // split between the routes — so it re-resolves on rotation and on a foldable,
-  // rather than baking in the width the app happened to launch at.
-  const { width } = useWindowDimensions();
+  // rather than baking in the width the app happened to launch at. The bar's surface
+  // still reaches the window edge (CUL-2237).
+  const { width, gutter } = useColumn();
   const labelBudget = tabLabelBudget(width, state.routes.length);
   const petLabel = resolvePetTabLabel(petName, labelBudget);
 
   return (
-    <View style={styles.tabBar}>
+    <View style={[styles.tabBar, bleedFor(gutter)]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const isFocused = state.index === index;

@@ -4,6 +4,7 @@ import {
   Pressable, Alert, ScrollView, useWindowDimensions, AccessibilityInfo,
   type PressableProps, type StyleProp, type ViewStyle,
 } from 'react-native';
+import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
@@ -566,7 +567,9 @@ export function FAB() {
   // CUL-1636 — the fan's height budget reads the window and the text multiplier. The
   // insets context, not the hook: the hook throws without a provider, and the FAB has
   // no reason to own one (on device expo-router's root always provides it).
+  // The fan's width is the column's (CUL-2237); its height stays the window's.
   const frame = useWindowDimensions();
+  const columnWidth = useColumnWidth();
   const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
   const fanScroll = useRef<ScrollView>(null);
   const fanSnapped = useRef(false);
@@ -1275,7 +1278,7 @@ export function FAB() {
     }]),
   );
   const fanPlan = planFan({
-    windowWidth: frame.width,
+    windowWidth: columnWidth,
     windowHeight: frame.height,
     fontScale: frame.fontScale,
     safeTop,

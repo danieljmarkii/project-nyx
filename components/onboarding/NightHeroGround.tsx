@@ -1,4 +1,5 @@
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { useColumn, useWindowFrame } from '../../hooks/useLayoutClass';
 import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 
@@ -68,17 +69,20 @@ const VIOLET_ID = 'landingAuroraViolet';
 const INDIGO_ID = 'landingAuroraIndigo';
 
 export function NightHeroGround() {
-  const { width, height } = useWindowDimensions();
+  // The ground spans the window; the whorl is placed in the column (CUL-2237), so on the
+  // unfolded Duo it stays beside the moon instead of drifting right. One number on a phone.
+  const { width, height } = useWindowFrame();
+  const column = useColumn();
   // Whorl group transform: motif units → px, centred on the placement fractions.
-  const whorlScale = width * WHORL_SCALE_PER_WIDTH;
-  const whorlTx = width * WHORL_CX_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
+  const whorlScale = column.width * WHORL_SCALE_PER_WIDTH;
+  const whorlTx = column.gutter + column.width * WHORL_CX_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
   const whorlTy = height * WHORL_CY_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
   return (
     // Decorative only — non-interactive (CTAs beneath stay tappable) and hidden
     // from screen readers (the hero's "Culprit" group carries the meaning), per
     // the OnboardingHeader precedent for full-bleed decorative art.
     <View
-      style={styles.fill}
+      style={[styles.fill, column.gutter > 0 && { left: -column.gutter, right: -column.gutter }]}
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"

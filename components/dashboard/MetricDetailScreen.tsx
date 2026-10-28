@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
+import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
 import { deltaToneColor } from './cardTokens';
@@ -37,7 +38,7 @@ const WINDOW_UI_LABEL: Record<AnalyticsWindow, string> = {
 };
 
 // A sparkline-style band sized for glance legibility, deliberately off the 8pt grid;
-// width is derived per-render from the live window (useWindowDimensions) so it survives
+// width is derived per-render from the live column (useColumnWidth) so it survives
 // rotation rather than being frozen at module load.
 const CHART_HEIGHT = 120;
 
@@ -59,7 +60,7 @@ export function MetricDetailScreen({
   calibrationUnit = 'sample',
 }: Props) {
   const [active, setActive] = useState<AnalyticsWindow>(initialWindow);
-  const { width } = useWindowDimensions();
+  const width = useColumnWidth();
   const chartWidth = width - theme.space3 * 4;
   const data = windows[active];
   const state = data.state ?? { kind: 'populated' };

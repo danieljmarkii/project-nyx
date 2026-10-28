@@ -50,6 +50,7 @@ import { MedicationCompletionCard } from '../components/ui/MedicationCompletionC
 import { NamedCompletionCard } from '../components/ui/NamedCompletionCard';
 import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
+import { LayoutColumn } from '../components/ui/LayoutColumn';
 import { FlightHost } from '../components/motion/FlightHost';
 import { startReducedMotionRead, useReducedMotionStore } from '../store/reducedMotionStore';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -442,49 +443,56 @@ function RootLayoutTree() {
   return (
     <>
       <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="onboarding" />
-        <Stack.Screen name="log" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="food-capture" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="medication-capture" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="food/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="medication/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="mix" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="event/[id]" options={recordRouteOptions(reducedMotion)} />
-        <Stack.Screen name="weight-history" />
-        <Stack.Screen name="vet-document/[id]" />
-        <Stack.Screen name="day-summary" />
-        <Stack.Screen name="ask" />
-        <Stack.Screen name="report" />
-        <Stack.Screen name="rundown" />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="settings/notifications" />
-        <Stack.Screen name="settings/ai-reading" />
-        <Stack.Screen name="settings/beta" />
-        <Stack.Screen name="settings/feedback" />
-        <Stack.Screen name="settings/password" />
-      </Stack>
-      {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
-          completion cards, rather than inside the card that opens it: the sheet writes a
-          meal, and a meal write reachable from Home's import closure is a third Home
-          write class (`guards/homeWrites.test.ts`, §3.2). The card publishes a request
-          through `store/uiStore.ts` and this host owns the surface — the same separation
-          the FAB and every other meal path already have. */}
-      <IntakeDoorHost />
-      {/* The log sheet (CUL-503 / CUL-504). Every "start a log" door opens this one
-          sheet through `store/uiStore.ts`: the FAB, the Home nudge, Ask's empty record
-          and the day summary. It lives HERE, not in the tabs layout beside the FAB,
-          because Ask and the day summary are stack screens pushed over the tabs and a
-          sheet has to present from above them. */}
-      <LogSheetHost />
-      <MealCompletionCard />
-      <MedicationCompletionCard />
-      <NamedCompletionCard />
+      {/* Every route, sheet host and completion surface sits in the content column
+          (CUL-2237): the window at compact, a centred column on the unfolded Duo. The
+          flight and the cold-start cover stay outside it, over the whole window: the
+          flight is placed in window coordinates, and the cover hides the window. */}
+      <LayoutColumn>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="onboarding" />
+          <Stack.Screen name="log" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="food-capture" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="medication-capture" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="food/[id]" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="medication/[id]" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="archived-pets" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="mix" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="event/[id]" options={recordRouteOptions(reducedMotion)} />
+          <Stack.Screen name="weight-history" />
+          <Stack.Screen name="vet-document/[id]" />
+          <Stack.Screen name="day-summary" />
+          <Stack.Screen name="ask" />
+          <Stack.Screen name="report" />
+          <Stack.Screen name="rundown" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="settings/notifications" />
+          <Stack.Screen name="settings/ai-reading" />
+          <Stack.Screen name="settings/beta" />
+          <Stack.Screen name="settings/feedback" />
+          <Stack.Screen name="settings/password" />
+        </Stack>
+        {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
+            completion cards, rather than inside the card that opens it: the sheet writes a
+            meal, and a meal write reachable from Home's import closure is a third Home
+            write class (`guards/homeWrites.test.ts`, §3.2). The card publishes a request
+            through `store/uiStore.ts` and this host owns the surface — the same separation
+            the FAB and every other meal path already have. */}
+        <IntakeDoorHost />
+        {/* The log sheet (CUL-503 / CUL-504). Every "start a log" door opens this one
+            sheet through `store/uiStore.ts`: the FAB, the Home nudge, Ask's empty record
+            and the day summary. It lives HERE, not in the tabs layout beside the FAB,
+            because Ask and the day summary are stack screens pushed over the tabs and a
+            sheet has to present from above them. */}
+        <LogSheetHost />
+        <MealCompletionCard />
+        <MedicationCompletionCard />
+        <NamedCompletionCard />
+        <Snackbar />
+      </LayoutColumn>
       {/* The flight's clone (D2-6 / CUL-1069): the clone lives HERE, above the whole
           stack, because a push would unmount anything inside a screen — the Signal's chart
           lifts off Home and lands on its screen across the transition. After the completion
@@ -492,7 +500,6 @@ function RootLayoutTree() {
           INTO the meal card's check. Renders nothing when no flight is up; hidden from
           touch and from assistive tech. */}
       <FlightHost />
-      <Snackbar />
       <ColdStartOverlay />
     </>
   );

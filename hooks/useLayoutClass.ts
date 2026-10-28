@@ -1,0 +1,71 @@
+import { useWindowDimensions, type ViewStyle } from 'react-native';
+import { theme } from '../constants/theme';
+
+// The one place a screen learns how much room it has (CUL-2237). From the iOS 27 SDK the
+// app resizes live on fold and unfold, so every answer here comes from the live window
+// and is re-read on each render, never cached at mount or module load.
+//
+// A component sizes itself from `useColumnWidth()`, not the window: at compact the two
+// are the same number, at regular the column is what its content actually sits in (the
+// root layout centres it). `guards/windowWidth.test.ts` keeps width reads in this file.
+
+export type WidthClass = 'compact' | 'regular';
+
+export interface LayoutClass {
+  width: WidthClass;
+  /** Below `layoutShortMaxHeight`: the SE, the folded Duo, the unfolded Duo on its side. */
+  short: boolean;
+}
+
+export interface ColumnGeometry {
+  /** The width screen content sits in. */
+  width: number;
+  /** Each side's gap between the column and the window edge: 0 at compact. */
+  gutter: number;
+}
+
+export function layoutClassFor(windowWidth: number, windowHeight: number): LayoutClass {
+  return {
+    width: windowWidth >= theme.layoutRegularMinWidth ? 'regular' : 'compact',
+    short: windowHeight < theme.layoutShortMaxHeight,
+  };
+}
+
+export function columnFor(windowWidth: number): ColumnGeometry {
+  // Compact is the window, by construction, so no phone moves a point.
+  if (windowWidth < theme.layoutRegularMinWidth) return { width: windowWidth, gutter: 0 };
+  const width = Math.min(windowWidth, theme.layoutColumnMaxWidth);
+  return { width, gutter: (windowWidth - width) / 2 };
+}
+
+/**
+ * Chrome whose background reaches the window edge while its content stays in the column:
+ * out by the gutter, back in by the gutter plus the chrome's own side padding. Null at
+ * compact, so a phone's style is exactly what it was.
+ */
+export function bleedFor(gutter: number, paddingX = 0): ViewStyle | null {
+  return gutter > 0 ? { marginHorizontal: -gutter, paddingHorizontal: paddingX + gutter } : null;
+}
+
+export function useLayoutClass(): LayoutClass {
+  const { width, height } = useWindowDimensions();
+  return layoutClassFor(width, height);
+}
+
+export function useColumn(): ColumnGeometry {
+  return columnFor(useWindowDimensions().width);
+}
+
+export function useColumnWidth(): number {
+  return useColumn().width;
+}
+
+/**
+ * The full window, for the few things that must span it whatever the column: a ground
+ * drawn behind the column, and geometry measured in window coordinates (the flight).
+ * Sizing CONTENT from this is the bug the column exists to prevent.
+ */
+export function useWindowFrame(): { width: number; height: number } {
+  const { width, height } = useWindowDimensions();
+  return { width, height };
+}

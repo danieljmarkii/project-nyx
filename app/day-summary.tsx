@@ -18,6 +18,7 @@
 // retry, NEVER a false "nothing logged".
 import { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useColumnWidth } from '../hooks/useLayoutClass';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -264,7 +265,9 @@ const EMPTY_COPY_BOTTOM_FRACTION = 0.25;
  *  a low-emphasis accent link (never a filled button) as the screen's only door, under
  *  the empty day's moon. */
 function NightEmpty({ title, onLog }: { title: string; onLog: () => void }) {
-  const { width, height } = useWindowDimensions();
+  // The mark is sized and centred in the column (CUL-2237); its lift is the window's.
+  const width = useColumnWidth();
+  const { height } = useWindowDimensions();
   const markSize = width * WATERMARK_WIDTH_FRACTION;
   return (
     // A scroll, so the largest text sizes scroll rather than climb over the header; at

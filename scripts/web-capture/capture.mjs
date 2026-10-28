@@ -174,13 +174,18 @@ const SHOTS = [
   { name: 'history-strip-tap-pepper', pet: 'pepper', go: [tab('History'), (page) => page.getByText('11', { exact: true }).first().click({ timeout: 8000 })] },
 ];
 
-// Each size the spike photographs. Text multipliers are RN's own iOS table
+// Each size the run photographs, as `W[xH][@text]` (CUL-2237): a width alone keeps the
+// 844pt height every capture used before. Text multipliers are RN's own iOS table
 // (React/CoreModules/RCTAccessibilityManager.mm): xxxLarge is the largest size in
 // Settings > Display > Text Size, AX5 the largest with Larger Accessibility Sizes on.
-const SIZES = (process.env.CAPTURE_SIZES ?? '320@1,390@1,390@3.571,320@3.571').split(',').map((s) => {
-  const [w, f] = s.split('@');
+// The defaults add the SE (375x667), the folded Duo (466x678) and the unfolded Duo both
+// ways (626x890, 890x626); Duo points are pixels / 3, since Apple has not published them.
+const SIZES = (process.env.CAPTURE_SIZES ?? '320@1,375x667@1,390@1,466x678@1,626x890@1,890x626@1,390@3.571,320@3.571').split(',').map((s) => {
+  const [dims, f] = s.split('@');
+  const [w, h] = dims.split('x');
   const scale = Number(f ?? 1);
-  return { width: Number(w), scale, label: scale === 1 ? `${w}` : `${w}-text${scale === 3.571 ? 'AX5' : scale === 1.353 ? 'xxxL' : scale}` };
+  const text = scale === 1 ? '' : `-text${scale === 3.571 ? 'AX5' : scale === 1.353 ? 'xxxL' : scale}`;
+  return { width: Number(w), height: Number(h ?? 844), scale, label: `${dims}${text}` };
 });
 
 async function captureSize(browser, size, server, shots) {
@@ -189,7 +194,7 @@ async function captureSize(browser, size, server, shots) {
   const notes = [];
   const log = (m) => notes.push(m);
   const context = await browser.newContext({
-    viewport: { width: size.width, height: 844 },
+    viewport: { width: size.width, height: size.height },
     deviceScaleFactor: 2,
     timezoneId: 'UTC',
     locale: 'en-US',
