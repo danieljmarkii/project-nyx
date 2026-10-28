@@ -18,7 +18,7 @@
 // landing changes a colour and never moves the words. It is where VoiceOver lands too
 // (HV-10: `focusRef`), and it says it is the landed one (`selected`), not only by colour.
 // Each line's spoken sentence says the drawn " · " as a pause (`spokenLine`).
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { type ViewInstance, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import type { DateOnlyItem } from '../../lib/historyDays';
 import { spokenLine } from '../../lib/spokenLine';
@@ -47,7 +47,7 @@ export function GapLine({
   boxed: boolean;
   landed: boolean;
   /** The line's accessible node, for the list to move VoiceOver onto (§4). */
-  focusRef?: (node: View | null) => void;
+  focusRef?: (node: ViewInstance | null) => void;
   testID?: string;
 }) {
   return (
@@ -89,7 +89,7 @@ export function ItemsLine({
   landed: boolean;
   onOpenVisit: (visitId: string) => void;
   /** The line's accessible node, for the list to move VoiceOver onto (§4). */
-  focusRef?: (node: View | null) => void;
+  focusRef?: (node: ViewInstance | null) => void;
   testID?: string;
 }) {
   const visit = items.find((i): i is Extract<DateOnlyItem, { kind: 'visit' }> => i.kind === 'visit');

@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { usePet } from '../../hooks/usePet';
 import { FAB, HiddenUnderFabMenu } from '../../components/log/FAB';
 import { SyncBanner } from '../../components/ui';
-import { NyxTabBar, type TabBarProps } from '../../components/nav/NyxTabBar';
+import { NyxTabBar } from '../../components/nav/NyxTabBar';
 import { useAuthStore } from '../../store/authStore';
 import { useAiConsentPreload } from '../../hooks/useAiConsentPreload';
 import { useColumn } from '../../hooks/useLayoutClass';
@@ -45,7 +45,7 @@ export default function TabsLayout() {
             // owned a hand-rolled bar in the first place. CUL-599 moved the bar itself
             // out to its own component so the Pet tab's fallback ladder can be tested;
             // the layout is back to being a router.
-            tabBar={(props) => <NyxTabBar {...(props as unknown as TabBarProps)} />}
+            tabBar={(props) => <NyxTabBar {...props} />}
             screenOptions={gutter > 0 ? { headerShown: false, sceneStyle: [styles.scene, { paddingHorizontal: gutter }] } : { headerShown: false }}
           >
             <Tabs.Screen name="index" options={{ title: 'Home' }} />

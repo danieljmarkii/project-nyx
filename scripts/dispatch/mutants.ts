@@ -26,6 +26,8 @@ const MUTANTS: Mutant[] = [
   { check: 'a first dispatch has one slot', file: 'plan.ts', from: 'firstDispatch ? Math.min(1, rawSlots) : rawSlots', to: 'rawSlots' },
   { check: 'two sub-issues of one parent are two in flight', file: 'plan.ts', from: '      issues: named,', to: "      issues: [...named, ...named.map((i) => input.issues[i]?.parentId ?? '')].filter(Boolean)," },
   { check: 'a combined row obeys rules naming its parts', file: 'plan.ts', from: 'const mine = partsOf(row.id).filter', to: 'const mine = [row.id].filter' },
+  { check: 'a blocker After names is one hold (CUL-2249)', file: 'plan.ts', from: 'if (b.open && !v.holds.some((h) => h.key === b.id)) {', to: 'if (b.open) {' },
+  { check: 'a blocker After does not name still holds', file: 'plan.ts', from: 'if (b.open && !v.holds.some((h) => h.key === b.id)) {', to: 'if (false) {' },
   // The 084 clash.
   { check: 'the lower PR (or main) keeps a clashing number', file: 'plan.ts', from: '({ number, keeps: h[0], renumbers: h.slice(1) })', to: '({ number, keeps: h[h.length - 1], renumbers: h.slice(0, -1) })' },
   { check: 'a clashing row is held', file: 'plan.ts', from: "if (r.startsWith(`#${state.pr} `) || r === `#${state.pr}`) v.reasons.push", to: 'if (false) v.reasons.push' },

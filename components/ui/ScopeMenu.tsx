@@ -1,5 +1,5 @@
 import { ComponentType, Fragment, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
+import { type ScrollViewInstance, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
@@ -105,7 +105,7 @@ export function ScopeMenu({
 }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   // One jump to the selected row per opening: a later layout (a count arriving and
   // resizing a row) must never pull the list back from where the owner scrolled.
   const landedOnSelected = useRef(false);

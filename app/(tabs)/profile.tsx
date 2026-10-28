@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import {
-  Alert, ScrollView, StyleSheet,
-  Text, TouchableOpacity, View,
+  type ScrollViewInstance,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
   type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -340,7 +345,7 @@ export default function ProfileScreen() {
     focus?: string; med?: string; ts?: string; pet?: string; src?: string; open?: string;
   }>();
   useWidgetPetLink(params.pet, params.ts);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const focusReducedMotion = useReducedMotion();
 
   // Measured tops. The med rows hold their offset WITHIN the medications card (RN

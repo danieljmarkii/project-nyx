@@ -1,5 +1,5 @@
 # Project Nyx — Technical Specification
-**Version:** 1.1 | **Status:** 🌱 Living Document | **Last Updated:** 2026-08-02
+**Version:** 1.2 | **Status:** 🌱 Living Document | **Last Updated:** 2026-10-28
 
 > _Header version lives here, not in the filename (`…-v1_0.md` is legacy — renaming breaks references). Bump the version + `Last Updated` on any material edit; see CLAUDE.md § Documentation Update Protocol (living vs. frozen)._
 
@@ -296,7 +296,7 @@ Three of the five below are now **decided** (marked Resolved, with a pointer to 
 | Which PDF rendering library for the Edge Function? | Vet report | **Resolved 2026-07-02 — HTML-first.** Canonical server-rendered HTML shown in-app via a WebView; handed to the vet as a PDF via the native share sheet. "Which library" is demoted to the B-144 render-path spike; the generation *location* (on-device `expo-print` vs server-side headless) is `docs/nyx-vet-report-requirements.md` §14 S7. |
 | GDPR deletion cascade: what happens to event data when a user deletes their account? | Auth / data retention | **Resolved 2026-06-19 — hard-delete (B-039).** `auth.admin.deleteUser` fires the `ON DELETE CASCADE` graph + an Edge-Function Storage purge; per-account `food_items` + food photos now purge with the account too (B-354). Spec: `docs/nyx-account-deletion-requirements.md`. |
 | AI Signal generation: which model and prompt structure? | Home screen Zone 1 | **Resolved 2026-05-31 — Haiku 4.5, architecture B.** A single forced `phrase_insight` tool phrases an already-true structured finding into one sentence (detection stays deterministic in `detection.ts`); templated fallback; findings cached in `ai_signals` (24h TTL); the home reads cache only. See `docs/decisions-archive.md`. |
-| Minimum Expo SDK version? | Scaffold | **Open** — the app currently runs **Expo SDK 57** (`expo ^57.0.8`, React Native 0.86, React 19). Pin/record the supported floor here once confirmed. |
+| Minimum Expo SDK version? | Scaffold | **Resolved (2026-10-28, PM, CUL-2236):** **Expo SDK 58** (`expo ^58.0.21`, React Native 0.88, React 19.3), iOS built on EAS's `macos-tahoe-26.6-xcode-27.1` image (the iOS 27 SDK, so the iPhone Duo's unfolded screen sizes the app). |
 | Push notification provider? | Nudge (post-MVP) | **Open** — Expo Notifications on the client; backend delivery provider undecided. Also gated on the Principle-4 nudge-cap Open Question (B-288). |
 
 ---

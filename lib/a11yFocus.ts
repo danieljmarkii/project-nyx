@@ -8,11 +8,10 @@
 // tag is a no-op, and a screen never fails to render because assistive focus could not
 // be placed.
 
-import { AccessibilityInfo, findNodeHandle } from 'react-native';
-import type { Component } from 'react';
+import { AccessibilityInfo, findNodeHandle, type HostInstance } from 'react-native';
 
 /** Ask the platform to focus `node` for assistive tech. True when a native tag existed. */
-export function focusAccessibility(node: Component | null | undefined): boolean {
+export function focusAccessibility(node: HostInstance | null | undefined): boolean {
   if (!node) return false;
   const tag = findNodeHandle(node);
   if (tag == null) return false;

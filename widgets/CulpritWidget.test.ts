@@ -49,7 +49,7 @@ function render(props: CulpritWidgetProps, environment: object): Node {
 
 function childrenOf(node: Node): Node[] {
   const raw = node?.props?.children;
-  if (raw === undefined || raw === null) return [];
+  if (raw === undefined || raw === null || typeof raw === 'string') return [];
   return (Array.isArray(raw) ? raw : [raw]) as Node[];
 }
 
@@ -60,6 +60,8 @@ function texts(node: Node, out: string[] = []): string[] {
   for (const key of ['text', 'label'] as const) {
     if (typeof props[key] === 'string') out.push(props[key] as string);
   }
+  // SDK 58's stub keeps a Text's string as its child (the native side reads it there).
+  if (typeof props.children === 'string') out.push(props.children);
   if (typeof props.systemName === 'string') out.push('sf:' + props.systemName);
   if (typeof props.destination === 'string') out.push('link:' + props.destination);
   for (const child of childrenOf(node)) texts(child, out);
@@ -416,7 +418,7 @@ describe('AC 9 — structural geometry (fixed shares, ellipsized lines)', () => 
     const root = render(props(), ENV);
     const kids = childrenOf(root);
     expect(kids).toHaveLength(3); // header, grid, band
-    const gridRows = childrenOf(kids[1]).filter((n) => typeName(n) === 'HStackView');
+    const gridRows = childrenOf(kids[1]).filter((n) => typeName(n) === 'HStack');
     expect(gridRows).toHaveLength(2); // 2×2 grid — two rows
     for (const row of gridRows) {
       expect(childrenOf(row)).toHaveLength(2); // two cells each
@@ -426,12 +428,12 @@ describe('AC 9 — structural geometry (fixed shares, ellipsized lines)', () => 
   it('the ground band is a fixed 34pt region with a hairline Divider', () => {
     const root = render(props(), ENV);
     const band = childrenOf(root)[2];
-    expect(hasModifier('frame', band, (m) => m.height === 34)).toBe(true);
-    expect(nodesOfType(band, 'DividerView').length).toBe(1);
+    expect(hasModifier('frame', band, (m) => m.minHeight === 34 && m.maxHeight === 34)).toBe(true);
+    expect(nodesOfType(band, 'Divider').length).toBe(1);
   });
 
   it('the header is a fixed 16pt region', () => {
-    expect(hasModifier('frame', render(props(), ENV), (m) => m.height === 16)).toBe(true);
+    expect(hasModifier('frame', render(props(), ENV), (m) => m.minHeight === 16 && m.maxHeight === 16)).toBe(true);
   });
 
   it('every fact-tile text line clips with a line limit (nothing wraps)', () => {
@@ -442,7 +444,7 @@ describe('AC 9 — structural geometry (fixed shares, ellipsized lines)', () => 
 
   it('the whole widget is a VStack shell with the container background', () => {
     const root = render(props(), ENV);
-    expect(typeName(root)).toBe('VStackView');
+    expect(typeName(root)).toBe('VStack');
     expect(hasModifier('containerBackground', root)).toBe(true);
   });
 });

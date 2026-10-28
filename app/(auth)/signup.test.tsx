@@ -51,7 +51,7 @@ describe('SignupScreen — brand mark', () => {
 
 describe('SignupScreen — legal links (B-229/B-230)', () => {
   it('opens the hosted Terms and Privacy Policy from the acceptance line — no more stubs', async () => {
-    const openSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const openSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     const utils = render(<SignupScreen />);
 
     fireEvent.press(utils.getByText('Terms'));

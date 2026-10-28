@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { syncUserTimezone } from '../lib/profile';
 
@@ -23,7 +23,7 @@ import { syncUserTimezone } from '../lib/profile';
 // write + idempotency logic lives in (and is unit-tested via) lib/profile.ts.
 export function useSyncTimezone() {
   const userId = useAuthStore((s) => s.user?.id);
-  const appState = useRef<AppStateStatus>(AppState.currentState);
+  const appState = useRef<string>(AppState.currentState ?? 'unknown');
 
   useEffect(() => {
     if (!userId) return;

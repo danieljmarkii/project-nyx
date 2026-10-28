@@ -40,7 +40,7 @@
 //     re-press the list focuses it (`focusRef`). A landed day says so (`selected`), not only
 //     by its outline, and the header's one sentence says its " · " as a pause.
 import { Fragment } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { type ViewInstance, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
 import { describeDayEvent } from '../../lib/dayEvents';
@@ -116,7 +116,7 @@ export function DayCardHeader({
   /** Off for today's open card, whose body says *Nothing logged yet today.* already. */
   withCounts?: boolean;
   /** The header's accessible node, for the list to move VoiceOver onto (§4). */
-  focusRef?: (node: View | null) => void;
+  focusRef?: (node: ViewInstance | null) => void;
 }) {
   const isToday = day === today;
   const parts = withCounts ? dayHeaderOf(facts, filter, { search, isToday, hasItems }) : [];

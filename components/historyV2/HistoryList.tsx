@@ -66,8 +66,9 @@
 //     mount fulfils when the list has not drawn it yet. The owner's own scroll cancels it.
 //   • Reduce Motion is read at the moment of each move (`reducedMotionNow()`), and is known
 //     before the first frame (CUL-1123), so nothing starts and then snaps.
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentProps, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  type ViewInstance,
   AppState,
   Dimensions,
   LayoutAnimation,
@@ -76,10 +77,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
-  type CellRendererProps,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type SectionListProps,
 } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
@@ -305,8 +306,8 @@ export function HistoryList() {
   // Every node VoiceOver can be sent to, by section, with the days it holds: a day card's
   // header, or the line holding a gap or a day's items. A request waits here until a node
   // holding its day is mounted (a jump far down draws the day a frame after it).
-  const focusTargets = useRef(new Map<string, { from: string; to: string; node: View }>());
-  const focusRefs = useRef(new Map<string, (node: View | null) => void>());
+  const focusTargets = useRef(new Map<string, { from: string; to: string; node: ViewInstance }>());
+  const focusRefs = useRef(new Map<string, (node: ViewInstance | null) => void>());
   const pendingFocus = useRef<string | null>(null);
   const tryFocus = useCallback(() => {
     const day = pendingFocus.current;
@@ -331,7 +332,7 @@ export function HistoryList() {
     (key: string, from: string, to: string) => {
       let ref = focusRefs.current.get(key);
       if (!ref) {
-        ref = (node: View | null) => {
+        ref = (node: ViewInstance | null) => {
           if (node === null) {
             focusTargets.current.delete(key);
             return;
@@ -1039,9 +1040,9 @@ export function HistoryList() {
             // A week of days on the first paint (a day is three cells: its header, its body, its
             // footer): the strip shows this week, so a landing from it never waits on a measure.
             initialNumToRender={INITIAL_CELLS}
-            ListHeaderComponent={header}
-            ListEmptyComponent={empty}
-            ListFooterComponent={footer}
+            ListHeaderComponent={header ?? undefined}
+            ListEmptyComponent={empty ?? undefined}
+            ListFooterComponent={footer ?? undefined}
             onEndReached={() => {
               if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
             }}
@@ -1097,6 +1098,11 @@ function PreRecordLines({
   );
 }
 
+// RN 0.88 stopped re-exporting the cell renderer's props, so read them off the prop that takes it.
+type CellRendererProps = ComponentProps<
+  NonNullable<SectionListProps<HistorySection, ListSection>['CellRendererComponent']>
+>;
+
 /** Told on every cell's layout, so a waiting landing re-aims (CUL-1282). */
 const CellLaidOut = createContext<() => void>(() => {});
 
@@ -1105,7 +1111,7 @@ const CellLaidOut = createContext<() => void>(() => {});
  * records the cell's offset), which then tells a waiting landing the list measured
  * something. The list's handler runs first, so the re-aim reads the new measure.
  */
-function HistoryCell({ style, onLayout, onFocusCapture, children }: CellRendererProps<HistorySection>) {
+function HistoryCell({ style, onLayout, onFocusCapture, children }: CellRendererProps) {
   const laidOut = useContext(CellLaidOut);
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {

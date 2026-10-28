@@ -163,7 +163,7 @@ describe('Snackbar — the card\'s entry and exit (CUL-1691 PR 4)', () => {
     // A native-driver value never moves under jest, so the exit's two timings jump to
     // their end frame: the drift is left at exitDriftPt, as a finished exit leaves it.
     const jump = (value: Animated.Value, cfg: { toValue: number }) =>
-      ({ start: (cb?: Animated.EndCallback) => { value.setValue(cfg.toValue); cb?.({ finished: true }); }, stop() {}, reset() {} }) as never;
+      ({ start: (cb?: Parameters<Animated.CompositeAnimation['start']>[0]) => { value.setValue(cfg.toValue); cb?.({ finished: true }); }, stop() {}, reset() {} }) as never;
     timing.mockImplementationOnce(jump).mockImplementationOnce(jump);
     act(() => useSnackbarStore.getState().hide());
     expect(translateYOf(view)).toBe(M.riseFromPt + M.exitDriftPt);

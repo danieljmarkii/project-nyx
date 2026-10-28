@@ -19,7 +19,7 @@
 // where `StartTrialModal` must stay mounted (B-535; `lib/profileFocus`).
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { TrialRouteOpen } from '../../lib/trialRoute';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { type ViewInstance, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
@@ -146,7 +146,7 @@ export function TrialScreen({ petId, openOnArrive }: { petId: string; openOnArri
 
   // VoiceOver lands on the title when the model arrives (§6). The title element carries
   // the sub-line, so on a safety face the safety block is the next thing read.
-  const titleRef = useRef<View>(null);
+  const titleRef = useRef<ViewInstance>(null);
   const arrived = model.kind === 'trial';
   useEffect(() => {
     if (arrived) focusAccessibility(titleRef.current);
@@ -233,7 +233,7 @@ interface TrialBodyProps {
   petId: string;
   /** §3.7 (TS-9) — null wherever Home would draw no trial card, or Design v2 is off. */
   signalDoor: TrialSignalDoor | null;
-  titleRef: React.RefObject<View | null>;
+  titleRef: React.RefObject<ViewInstance | null>;
   handlers: Partial<Record<TrialCardActionId, () => void>>;
   busyAction: TrialCardActionId | null;
   onManage: () => void;

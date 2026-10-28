@@ -13,7 +13,7 @@
 // hands its text to a store that has moved on, which refuses it; the timer is cleared on
 // unmount as well.
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { type TextInputInstance, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { Search } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
@@ -36,7 +36,7 @@ interface Props {
 
 export function SearchField({ petId, petName, focusTick }: Props) {
   const [text, setText] = useState(() => useHistoryScopeStore.getState().searchText);
-  const input = useRef<TextInput>(null);
+  const input = useRef<TextInputInstance>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cancelPending = () => {

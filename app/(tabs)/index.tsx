@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Dimensions, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { type ViewInstance, type ScrollViewInstance, AppState, Dimensions, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
@@ -53,7 +53,7 @@ export default function HomeScreen() {
   // affordance replaces it rather than the behaviour being lost. The Signal zone is
   // the FIRST thing in the scroll body (right under the banner), so "scroll to the
   // Signal" is just scrolling to top — no measured y-offset/onLayout tracking needed.
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [refreshing, setRefreshing] = useState(false);
   // The Noticed grid's pinned exits (CUL-871, T-21) need three numbers Home is the only
   // one that has: where the look header sits in the scroll content, how far the feed is
@@ -79,7 +79,7 @@ export default function HomeScreen() {
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   // A run that opens out of sight moves the feed just far enough to show its first meal
   // (CUL-1735, D3). The body View is the scroll's frame, so it is the viewport measured.
-  const bodyRef = useRef<View>(null);
+  const bodyRef = useRef<ViewInstance>(null);
   const runReveal = useRunRevealHost({
     measureViewport: (done) => bodyRef.current?.measureInWindow((_x, y, _w, h) => done(y, y + h)),
     scrollBy: (dy) => scrollRef.current?.scrollTo({ y: scrollYRef.current + dy, animated: !reducedMotionNow() }),

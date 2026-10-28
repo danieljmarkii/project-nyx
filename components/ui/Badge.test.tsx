@@ -9,7 +9,7 @@
 // style block itself would still look correct in a diff.
 
 import { render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { Badge } from './Badge';
 import { theme } from '../../constants/theme';
 
@@ -23,7 +23,7 @@ function renderedPair(variant: 'accent' | 'symptom' | 'muted') {
   return {
     color: (StyleSheet.flatten(label.props.style) as Flat)?.color,
     // The Badge's root is the tinted View; its fill is what the label must clear.
-    backgroundColor: (StyleSheet.flatten((pill as { props: { style?: unknown } }).props.style) as Flat)
+    backgroundColor: (StyleSheet.flatten((pill as { props: { style?: unknown } }).props.style as StyleProp<ViewStyle>) as Flat)
       ?.backgroundColor,
   };
 }

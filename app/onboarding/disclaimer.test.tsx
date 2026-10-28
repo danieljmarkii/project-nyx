@@ -82,7 +82,7 @@ describe('DisclaimerScreen', () => {
   });
 
   it('opens the hosted full disclaimer from the link', async () => {
-    const openSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const openSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     const { getByTestId } = render(<DisclaimerScreen />);
     fireEvent.press(getByTestId('disclaimer-full-link'));
     await waitFor(() => expect(openSpy).toHaveBeenCalledWith(DISCLAIMER_URL));

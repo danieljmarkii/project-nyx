@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import {
+  type ScrollViewInstance,
   View,
   ScrollView,
   TouchableOpacity,
@@ -39,7 +40,7 @@ export default function HowItWorksScreen() {
   // cleanly and each page can vertically centre its preview.
   const [stage, setStage] = useState({ width: 0, height: 0 });
   const [index, setIndex] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   function onStageLayout(e: LayoutChangeEvent) {
     const { width, height } = e.nativeEvent.layout;
