@@ -40,13 +40,18 @@ jest.mock('expo-network', () => ({
   Object.defineProperty(proto, 'toJSON', {
     configurable: true,
     value() {
-      const type = typeof this.type === 'string' ? this.type : this.type?.displayName ?? this.type?.name ?? 'Unknown';
-      const props = {};
-      for (const [k, v] of Object.entries(this.props ?? {})) {
-        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') props[k] = v;
+      // An unmounted instance throws on `props`: print that, never the throw.
+      try {
+        const type = typeof this.type === 'string' ? this.type : this.type?.displayName ?? this.type?.name ?? 'Unknown';
+        const props = {};
+        for (const [k, v] of Object.entries(this.props ?? {})) {
+          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') props[k] = v;
+        }
+        if (typeof this.props?.children === 'string') props.children = this.props.children;
+        return { type, props };
+      } catch {
+        return { type: '[unmounted]' };
       }
-      if (typeof this.props?.children === 'string') props.children = this.props.children;
-      return { type, props };
     },
   });
 }
