@@ -33,6 +33,7 @@
 // about: there is no longer a flex:1 image anywhere to collapse.
 import { useEffect, useRef, useState } from 'react';
 import {
+  type ScrollViewInstance,
   View,
   Image,
   StyleSheet,
@@ -106,7 +107,7 @@ export function PhotoViewer({
   visible, uris, initialIndex = 0, onClose, onReplace, onRemove, onPageChange,
   unavailableLabel = 'Photo unavailable', caption, mediaCaption,
 }: Props) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const [page, setPage] = useState(initialIndex);
   // The measured media area. null until the first layout pass — the gallery
   // waits for it, which costs one frame of black on an already-black backdrop.

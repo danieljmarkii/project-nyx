@@ -5,7 +5,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 import { render, fireEvent } from '@testing-library/react-native';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 import { Pill } from 'lucide-react-native';
 import { ScopeMenu, ScopeMenuOption } from './ScopeMenu';
 import { colorRoles, theme } from '../../constants/theme';
@@ -90,7 +90,7 @@ describe('ScopeMenu', () => {
 // here even though the StyleSheet would still read correctly in a diff.
 describe('ScopeMenu — both accent labels are legible on their own grounds (CUL-744)', () => {
   const flat = (node: { props: { style?: unknown } }) =>
-    StyleSheet.flatten(node.props.style) as { color?: string; backgroundColor?: string };
+    StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) as { color?: string; backgroundColor?: string };
 
   it('renders the FILTERED pill label in the selected ink on the selected ground', () => {
     // Non-default value ⇒ the pill takes its tinted active state (the ScopeMenu tint rule).
@@ -166,7 +166,7 @@ describe('ScopeMenu — History v2 rows and pill (HV-9)', () => {
     fireEvent.press(getByLabelText('Event type: All types'));
     const nested = getByLabelText('Cetirizine HCl, Jul 1 – Sep 5, 4 not given in full, 16 logged');
     const plain = getByLabelText('Medication');
-    const rowStyle = (n: { props: { style?: unknown } }) => StyleSheet.flatten(n.props.style) as { paddingLeft?: number };
+    const rowStyle = (n: { props: { style?: unknown } }) => StyleSheet.flatten(n.props.style as StyleProp<ViewStyle>) as { paddingLeft?: number };
     expect(rowStyle(nested).paddingLeft).toBe(theme.space2);
     expect(rowStyle(plain).paddingLeft).toBeUndefined();
     const [nestedLabel] = nested.findAllByType(Text);

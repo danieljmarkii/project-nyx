@@ -8,6 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.1"
+      },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://aigchluqluzuhtbfllgh.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpZ2NobHVxbHV6dWh0YmZsbGdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NTcwNDcsImV4cCI6MjA5NDQzMzA0N30.FWerawEGnFuaDeBIuzVHF6LuGIJMu2Yw6RbEzVf8yTo"
@@ -16,6 +19,9 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.1"
+      },
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
@@ -27,6 +33,9 @@
     },
     "production": {
       "channel": "production",
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.1"
+      },
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://aigchluqluzuhtbfllgh.supabase.co",

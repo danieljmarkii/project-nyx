@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type Text } from 'react-native';
+import { type ViewInstance, type TextInstance, Animated, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type Text } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { colorRoles, theme } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
@@ -194,7 +194,7 @@ export function SignalScreen({ petId, identity }: Props) {
 
   // VoiceOver focus lands on the title once it exists (§06: a route gives focus for free —
   // this is the one line that says where).
-  const titleRef = useRef<View>(null);
+  const titleRef = useRef<ViewInstance>(null);
   useEffect(() => {
     if (!arrived) return;
     focusAccessibility(titleRef.current);
@@ -202,7 +202,7 @@ export function SignalScreen({ petId, identity }: Props) {
 
   // An episode left (a removal from its record): focus the gallery header, or the title if
   // the gallery went with it — never left on a tile that no longer exists.
-  const galleryHeaderRef = useRef<Text>(null);
+  const galleryHeaderRef = useRef<TextInstance>(null);
   const episodeTotal = model?.episodes?.total ?? null;
   const lastTotal = useRef<number | null>(null);
   useEffect(() => {
@@ -284,7 +284,7 @@ function FlightSkeleton({ flight, windowWidth }: { flight: FlightRecord; windowW
   const inner = leadChartWidth(windowWidth);
   const outer = windowWidth - 2 * theme.space2;
   const scale = inner > 0 ? outer / inner : 1;
-  const slotRef = useRef<View>(null);
+  const slotRef = useRef<ViewInstance>(null);
   // A measurement that answers after the skeleton has gone (a fast read) must not land a
   // stale slot over the hero's own rect — the same guard the card's retarget carries.
   const gone = useRef(false);
@@ -342,7 +342,7 @@ function Hero({
   const outer = windowWidth - 2 * theme.space2;
   const scale = inner > 0 ? outer / inner : 1;
   const [innerHeight, setInnerHeight] = useState<number | null>(null);
-  const wrapRef = useRef<View>(null);
+  const wrapRef = useRef<ViewInstance>(null);
   const onInnerLayout = (e: LayoutChangeEvent) => setInnerHeight(e.nativeEvent.layout.height);
   useEffect(() => {
     if (innerHeight == null) return;
@@ -409,9 +409,9 @@ function Body({
   asOfLine: string | null;
   /** Home's "updating" line, while the pet's regen runs. */
   updatingLine: string | null;
-  galleryHeaderRef: React.RefObject<Text | null>;
+  galleryHeaderRef: React.RefObject<TextInstance | null>;
   landStyle: ReturnType<typeof useSignalOpen>;
-  titleRef: React.RefObject<View | null>;
+  titleRef: React.RefObject<ViewInstance | null>;
   flight: FlightRecord | null;
   flew: boolean;
   windowWidth: number;

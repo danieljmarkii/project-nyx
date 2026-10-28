@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, Alert, LayoutAnimation } from 'react-native';
+import { type ViewInstance, View, StyleSheet, TouchableOpacity, Animated, Alert, LayoutAnimation } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
@@ -292,7 +292,7 @@ export function MealCompletionCard() {
   arrivingRef.current = arriving;
   const shownIdRef = useRef<string | null>(null);
   shownIdRef.current = isMeal && payload ? payload.eventId : null;
-  const badgeSlot = useRef<View>(null);
+  const badgeSlot = useRef<ViewInstance>(null);
 
   // CUL-1691 §2 — the motion: one hook, one tone predicate. The tone is read from the
   // store when a beat is due (`celebrateNow`), never from this render's closure.

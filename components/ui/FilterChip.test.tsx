@@ -1,5 +1,5 @@
 import { render, fireEvent } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { FilterChip } from './FilterChip';
 import { colorRoles, theme } from '../../constants/theme';
 
@@ -88,7 +88,7 @@ describe('FilterChip', () => {
 // was deleted with the dark completion card, CUL-1691 PR 1.)
 describe('FilterChip — the active label is legible on its own fill (CUL-744)', () => {
   const flat = (node: { props: { style?: unknown } }) =>
-    StyleSheet.flatten(node.props.style) as { color?: string; backgroundColor?: string };
+    StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) as { color?: string; backgroundColor?: string };
 
   /** The active chip's label colour, paired with the fill it has to clear. */
   function activePair(variant: 'default' | 'filled') {
@@ -129,12 +129,12 @@ describe('FilterChip — the touch target (CUL-658)', () => {
   it('renders the same vertical-only slop the literal gave, on a pinned 32pt box', () => {
     const node = host();
     expect(node.props.hitSlop).toEqual({ top: 6, bottom: 6 });
-    expect((StyleSheet.flatten(node.props.style) as { minHeight?: number }).minHeight).toBe(32);
+    expect((StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) as { minHeight?: number }).minHeight).toBe(32);
   });
 
   it('the pinned box plus the slop reaches the 44pt floor', () => {
     const node = host();
-    const { minHeight } = StyleSheet.flatten(node.props.style) as { minHeight: number };
+    const { minHeight } = StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) as { minHeight: number };
     const slop = node.props.hitSlop as { top: number; bottom: number };
     expect(minHeight + slop.top + slop.bottom).toBeGreaterThanOrEqual(theme.hitTarget);
   });

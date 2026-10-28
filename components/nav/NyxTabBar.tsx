@@ -45,12 +45,15 @@ export interface TabBarProps {
       options: { title?: string; tabBarAccessibilityLabel?: string };
     }
   >;
-  navigation: {
-    emit: (event: { type: string; target: string; canPreventDefault: boolean }) => {
+  // expo-router 58 hands a bar the tab view's emitter and a by-key navigate, not the
+  // navigator prop (CUL-2236): the layout passes its props through uncast, so tsc
+  // holds this shape to the router's.
+  emitter: {
+    emit: (event: { type: 'tabPress'; target: string; canPreventDefault: true }) => {
       defaultPrevented: boolean;
     };
-    navigate: (name: string) => void;
   };
+  navigateToTab: (routeKey: string) => void;
 }
 
 /**
@@ -111,7 +114,7 @@ const TAB_BOTTOM_PAD = Platform.OS === 'ios' ? theme.space3 : theme.space1;
  */
 export const TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD + TAB_BOTTOM_PAD;
 
-export function NyxTabBar({ state, descriptors, navigation }: TabBarProps) {
+export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBarProps) {
   // Subscribed, not read once: switching pets must re-title the tab, and the
   // selector keeps that to the two fields the bar actually draws.
   const petName = usePetStore((s) => s.activePet?.name ?? null);
@@ -151,13 +154,13 @@ export function NyxTabBar({ state, descriptors, navigation }: TabBarProps) {
             key={route.key}
             style={styles.tab}
             onPress={() => {
-              const event = navigation.emit({
+              const event = emitter.emit({
                 type: 'tabPress',
                 target: route.key,
                 canPreventDefault: true,
               });
               if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
+                navigateToTab(route.key);
               }
             }}
             activeOpacity={0.7}

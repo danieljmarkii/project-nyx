@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  type ScrollViewInstance,
   View,
   Text,
   StyleSheet,
@@ -118,7 +119,7 @@ export default function AskScreen() {
     askConsent().then(settleConsent).catch((e) => console.warn('[Ask] consent door failed:', e));
   }, [askConsent, settleConsent]);
   const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [], hasLooks: false });
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   // On focus: re-scope the conversation to the active pet (resets on a pet switch or an
   // idle timeout, D8).

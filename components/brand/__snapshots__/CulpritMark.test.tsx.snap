@@ -1,4 +1,4 @@
-// Jest Snapshot v1, https://goo.gl/fbAQLP
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
 exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carve geometry regression guard): light ground 1`] = `
 <View

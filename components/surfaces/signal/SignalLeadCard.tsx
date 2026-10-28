@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { type ViewInstance, Pressable, StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { signalRailStyle } from './railTint';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
@@ -105,7 +105,7 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   const reducedMotion = useReducedMotion();
   const flightState = useFlightState();
   const flightLive = flightActiveFor(flightState, identity);
-  const chartRef = useRef<View>(null);
+  const chartRef = useRef<ViewInstance>(null);
   const drawFact = useColdStartDrawFact();
 
   // On the way back the chart may not be where it was (a re-ranked Home, a scroll): tell

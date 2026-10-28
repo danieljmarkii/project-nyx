@@ -95,17 +95,16 @@ function makePet(overrides: Partial<Pet> = {}): Pet {
 }
 
 function makeProps(focusedIndex = 0): TabBarProps & {
-  navigation: { emit: jest.Mock; navigate: jest.Mock };
+  emitter: { emit: jest.Mock };
+  navigateToTab: jest.Mock;
 } {
   return {
     state: { routes: ROUTES, index: focusedIndex },
     descriptors: Object.fromEntries(
       ROUTES.map((r) => [r.key, { options: { title: TITLES[r.name] } }]),
     ),
-    navigation: {
-      emit: jest.fn(() => ({ defaultPrevented: false })),
-      navigate: jest.fn(),
-    },
+    emitter: { emit: jest.fn(() => ({ defaultPrevented: false })) },
+    navigateToTab: jest.fn(),
   };
 }
 
@@ -393,29 +392,29 @@ describe('navigation', () => {
     const props = makeProps(0);
     const { getByLabelText } = render(<NyxTabBar {...props} />);
     fireEvent.press(getByLabelText('History'));
-    expect(props.navigation.navigate).toHaveBeenCalledWith('history');
+    expect(props.navigateToTab).toHaveBeenCalledWith('history-1');
   });
 
   it('does not re-navigate to the tab already focused', () => {
     const props = makeProps(0);
     const { getByLabelText } = render(<NyxTabBar {...props} />);
     fireEvent.press(getByLabelText('Home'));
-    expect(props.navigation.emit).toHaveBeenCalled();
-    expect(props.navigation.navigate).not.toHaveBeenCalled();
+    expect(props.emitter.emit).toHaveBeenCalledWith({ type: 'tabPress', target: 'index-1', canPreventDefault: true });
+    expect(props.navigateToTab).not.toHaveBeenCalled();
   });
 
   it('honours a prevented tabPress', () => {
     const props = makeProps(0);
-    props.navigation.emit.mockReturnValue({ defaultPrevented: true });
+    props.emitter.emit.mockReturnValue({ defaultPrevented: true });
     const { getByLabelText } = render(<NyxTabBar {...props} />);
     fireEvent.press(getByLabelText('Foods'));
-    expect(props.navigation.navigate).not.toHaveBeenCalled();
+    expect(props.navigateToTab).not.toHaveBeenCalled();
   });
 
   it('reaches the pet tab through the pet’s own name', () => {
     const props = makeProps(0);
     const { getByLabelText } = render(<NyxTabBar {...props} />);
     fireEvent.press(getByLabelText('Biscuit — pet profile'));
-    expect(props.navigation.navigate).toHaveBeenCalledWith(PET_ROUTE_NAME);
+    expect(props.navigateToTab).toHaveBeenCalledWith('profile-1');
   });
 });

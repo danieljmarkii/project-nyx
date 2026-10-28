@@ -55,7 +55,7 @@ jest.mock('../../lib/haptics', () => ({
 }));
 
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { Animated, LayoutAnimation, StyleSheet } from 'react-native';
+import { Animated, LayoutAnimation, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { NamedCompletionCard } from './NamedCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
@@ -240,7 +240,7 @@ describe('NamedCompletionCard — where it sits (CUL-802)', () => {
    *  inset gutter (which only the card wrapper has) is what tells them apart. */
   function wrapperStyle(view: ReturnType<typeof render>) {
     const nodes = view.UNSAFE_root.findAll((n: StyledNode) => {
-      const st = StyleSheet.flatten(n.props?.style) as
+      const st = StyleSheet.flatten(n.props?.style as StyleProp<ViewStyle>) as
         { position?: string; bottom?: number; left?: number } | undefined;
       return st?.position === 'absolute'
         && typeof st?.bottom === 'number'
@@ -250,7 +250,7 @@ describe('NamedCompletionCard — where it sits (CUL-802)', () => {
     // (the file's existing scrim predicate takes [0] for the same reason); assert
     // they agree so this never silently reads a different node's geometry.
     const bottoms = nodes.map(
-      (n: StyledNode) => (StyleSheet.flatten(n.props.style) as { bottom: number }).bottom,
+      (n: StyledNode) => (StyleSheet.flatten(n.props.style as StyleProp<ViewStyle>) as { bottom: number }).bottom,
     );
     expect(new Set(bottoms).size).toBe(1);
     return StyleSheet.flatten(nodes[0].props.style) as { bottom: number };
@@ -361,7 +361,7 @@ describe('NamedCompletionCard — the ground', () => {
     const view = render(<NamedCompletionCard />);
     seed();
     const scrims = view.UNSAFE_root.findAll((n: StyledNode) => {
-      const s = StyleSheet.flatten(n.props?.style) as { backgroundColor?: string } | undefined;
+      const s = StyleSheet.flatten(n.props?.style as StyleProp<ViewStyle>) as { backgroundColor?: string } | undefined;
       return s?.backgroundColor === theme.colorScrim;
     });
     expect(scrims.length).toBeGreaterThan(0);
@@ -379,7 +379,7 @@ describe('NamedCompletionCard — the ground', () => {
     const view = render(<NamedCompletionCard />);
     seed();
     const flat = (n: StyledNode) =>
-      StyleSheet.flatten(n.props?.style) as
+      StyleSheet.flatten(n.props?.style as StyleProp<ViewStyle>) as
         | { backgroundColor?: string; shadowColor?: string; position?: string; top?: number; bottom?: number }
         | undefined;
     const grounds = shadowedGrounds(view.UNSAFE_root);

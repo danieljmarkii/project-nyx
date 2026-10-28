@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState } from 'react-native';
 import * as Network from 'expo-network';
 import { syncNow } from '../lib/sync';
 import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
@@ -15,7 +15,7 @@ import { useSyncStore } from '../store/syncStore';
 export function useSync() {
   const { session } = useAuthStore();
   const { setPendingStatus, setColdStartHydrating, bumpHydrationTick } = useSyncStore();
-  const appState = useRef<AppStateStatus>(AppState.currentState);
+  const appState = useRef<string>(AppState.currentState ?? 'unknown');
   // Tracks whether we were last known to be online so we can detect transitions.
   const wasOnline = useRef<boolean>(true);
   // CUL-1214 — the account whose first sync this launch already ran. The effect re-runs

@@ -33,7 +33,7 @@ describe('FlightHost', () => {
     expect(host.props.pointerEvents).toBe('none');
     expect(host.props.accessibilityElementsHidden).toBe(true);
     expect(host.props.importantForAccessibility).toBe('no-hide-descendants');
-    expect(StyleSheet.flatten(host.props.style)).toMatchObject(StyleSheet.flatten(StyleSheet.absoluteFill));
+    expect(StyleSheet.flatten(host.props.style)).toMatchObject(StyleSheet.absoluteFill);
     const clone = view.getByTestId('flight-clone', { includeHiddenElements: true });
     const style = StyleSheet.flatten(clone.props.style);
     expect(style.width).toBe(SOURCE.width);

@@ -1,8 +1,19 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useContext, type ReactNode, type Ref } from 'react';
 import {
-  StyleSheet, View, Animated, BackHandler,
-  Pressable, Alert, ScrollView, useWindowDimensions, AccessibilityInfo,
-  type PressableProps, type StyleProp, type ViewStyle,
+  type ViewInstance,
+  type ScrollViewInstance,
+  StyleSheet,
+  View,
+  Animated,
+  BackHandler,
+  Pressable,
+  Alert,
+  ScrollView,
+  useWindowDimensions,
+  AccessibilityInfo,
+  type PressableProps,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -192,7 +203,7 @@ function StoolSplitPill({
   onNormal: () => void;
   onLoose: () => void;
   /** CUL-1278: each segment is its own slide target, measured apart. */
-  segRef?: (key: SlideKey, node: View | null) => void;
+  segRef?: (key: SlideKey, node: ViewInstance | null) => void;
   /** CUL-1278: the segment a slide is resting over takes its pressed fill. */
   slideOver?: string | null;
 }) {
@@ -269,7 +280,7 @@ function FanPill({
   style: StyleProp<ViewStyle>;
   held?: boolean;
   reducedMotion: boolean;
-  ref?: Ref<View>;
+  ref?: Ref<ViewInstance>;
   children: ReactNode;
 }) {
   const [touching, setTouching] = useState(false);
@@ -404,7 +415,7 @@ export function FAB() {
   // are what the flight measures, at the tap, so the rect is ready when the write lands.
   const [chosen, setChosen] = useState<{ key: string; flown: boolean } | null>(null);
   const chosenExit = useRef(new Animated.Value(1)).current;
-  const foodGlyphs = useRef(new Map<string, View>()).current;
+  const foodGlyphs = useRef(new Map<string, ViewInstance>()).current;
   const flightFrom = useRef<{ foodId: string; rect: WindowRect | null } | null>(null);
   // True once the open's springs have come to rest. A tap that beats them measures a pill
   // still on its way out of the disc, whose clone would start off its glyph and jump, so
@@ -470,10 +481,10 @@ export function FAB() {
   // within the disc. The disc's content takes no touch, so the press's target is always
   // the Pressable's host, which sits exactly on the measured wrapper.
   const pressOrigin = useRef<Point | null>(null);
-  const discNode = useRef<View | null>(null);
+  const discNode = useRef<ViewInstance | null>(null);
   const fanScrolls = useRef(false);
   const slideTargets = useRef<SlideTarget[]>([]);
-  const slideNodes = useRef(new Map<SlideKey, View>()).current;
+  const slideNodes = useRef(new Map<SlideKey, ViewInstance>()).current;
   const slideActions = useRef(new Map<SlideKey, { kind: SlideKind; run: () => void }>());
   const rowsSig = useRef('');
   const remeasure = useRef(false);
@@ -568,7 +579,7 @@ export function FAB() {
   // no reason to own one (on device expo-router's root always provides it).
   const frame = useWindowDimensions();
   const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
-  const fanScroll = useRef<ScrollView>(null);
+  const fanScroll = useRef<ScrollViewInstance>(null);
   const fanSnapped = useRef(false);
 
   // CUL-724 — VoiceOver focus moves INTO the fan when it opens. The modal layer keeps
@@ -592,7 +603,7 @@ export function FAB() {
   // The lead's LIVE node. The timer reads it when it fires rather than closing over the
   // node it was armed with: a same-key remount inside the beat (the scroll branch flipping)
   // would otherwise hand the platform an unmounted node, and focus would silently stay put.
-  const leadNode = useRef<View | null>(null);
+  const leadNode = useRef<ViewInstance | null>(null);
   const armFanFocus = useCallback(() => {
     // The open is announced on both platforms: there is no live region here, so nothing
     // else speaks it on Android (C-44), and the call is a no-op without a screen reader.
@@ -605,7 +616,7 @@ export function FAB() {
       focusAccessibility(leadNode.current);
     }, FAN_FOCUS_DELAY_MS);
   }, []);
-  const fanLeadRef = useCallback((node: View | null) => {
+  const fanLeadRef = useCallback((node: ViewInstance | null) => {
     leadNode.current = node;
     if (!node) return;
     const key = fanLeadKey.current;
@@ -1253,7 +1264,7 @@ export function FAB() {
   slideActions.current = actions;
   const slideTarget = (key: SlideKey, kind: SlideKind, run: () => void) => {
     actions.set(key, { kind, run });
-    return (node: View | null) => {
+    return (node: ViewInstance | null) => {
       if (node) slideNodes.set(key, node);
       else slideNodes.delete(key);
     };
@@ -1384,7 +1395,7 @@ export function FAB() {
       node: (
         <FanPill
           // The fan's top row when there is no pet chip above it (CUL-724).
-          ref={(node: View | null) => { moreTarget(node); if (moreLeads) fanLeadRef(node); }}
+          ref={(node: ViewInstance | null) => { moreTarget(node); if (moreLeads) fanLeadRef(node); }}
           testID="fab-pill-more"
           style={pillWidth}
           held={slideOver === 'more'}
@@ -1418,7 +1429,7 @@ export function FAB() {
     const segTargets = {
       'stool-normal': slideTarget('stool-normal', 'confirm', openNormal),
       'stool-loose': slideTarget('stool-loose', 'confirm', openLoose),
-    } as Record<SlideKey, (node: View | null) => void>;
+    } as Record<SlideKey, (node: ViewInstance | null) => void>;
     rows.push({
       key: 'diarrhea',
       node: (
