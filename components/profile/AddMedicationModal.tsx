@@ -413,6 +413,8 @@ export function AddMedicationModal({
                 value={startedAt}
                 mode="date"
                 display="spinner"
+                themeVariant="light"
+                accentColor={colorRoles.action.onLight}
                 maximumDate={new Date()}
                 onChange={(_e: unknown, date?: Date) => {
                   if (Platform.OS === 'android') setShowDatePicker(false);

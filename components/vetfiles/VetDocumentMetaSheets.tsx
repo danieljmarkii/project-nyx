@@ -239,6 +239,8 @@ export function DocumentDateSheet({ visible, initialDate, onCancel, onSave }: Da
         value={value}
         mode="date"
         display={Platform.OS === 'ios' ? 'inline' : 'default'}
+        themeVariant="light"
+        accentColor={colorRoles.action.onLight}
         maximumDate={new Date()}
         onChange={(_e, date) => {
           if (!date) return;

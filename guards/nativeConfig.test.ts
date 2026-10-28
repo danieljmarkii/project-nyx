@@ -16,7 +16,12 @@ const ROOT = join(__dirname, '..');
 type PluginEntry = string | [string, Record<string, unknown>];
 interface AppJson {
   expo: {
-    ios: { privacyManifests?: { NSPrivacyAccessedAPITypes?: AccessedApiType[] }; infoPlist?: Record<string, unknown> };
+    userInterfaceStyle?: string;
+    ios: {
+      privacyManifests?: { NSPrivacyAccessedAPITypes?: AccessedApiType[] };
+      infoPlist?: Record<string, unknown>;
+      userInterfaceStyle?: string;
+    };
     plugins: PluginEntry[];
   };
 }
@@ -84,6 +89,18 @@ describe('app.json', () => {
     expect(app.expo.ios.infoPlist?.NSPhotoLibraryAddUsageDescription).toBe(
       'Culprit saves a vet document to your photo library only when you choose Save Image.',
     );
+  });
+
+  // The app has no dark mode. On "automatic" (the scaffold's default) iOS handed every
+  // native control the phone's appearance, and after dark the date pickers drew white
+  // labels on our white sheets (CUL-2228). "light" keeps the night looking like the day
+  // (CUL-2229). The ios key wins over the top level, and expo-splash-screen writes
+  // Automatic over both whenever a dark splash is configured, at its root or under ios.
+  it('tells iOS the app is light only, and nothing writes Automatic back', () => {
+    expect(app.expo.ios.userInterfaceStyle ?? app.expo.userInterfaceStyle).toBe('light');
+    const splash = pluginOptions('expo-splash-screen') ?? {};
+    expect(splash.dark).toBeUndefined();
+    expect((splash.ios as Record<string, unknown> | undefined)?.dark).toBeUndefined();
   });
 
   it('declares no Live Activities key by hand', () => {

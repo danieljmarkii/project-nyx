@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
 import { TextField } from '../ui/TextField';
@@ -77,6 +77,8 @@ export function VisitEditBody({
           value={fields.visitedAt}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          themeVariant="light"
+          accentColor={colorRoles.action.onLight}
           // A visit that happened cannot be in the future — the same bound the
           // after-visit screen carries, for the same reason.
           maximumDate={new Date()}
