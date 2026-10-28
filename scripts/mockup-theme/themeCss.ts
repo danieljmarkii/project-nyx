@@ -24,7 +24,7 @@ const FAMILIES: { prefix: RegExp; unit: (v: Token) => string }[] = [
   { prefix: /^color/, unit: (v) => String(v) },
   { prefix: /^font(Body|Display)/, unit: (v) => `'${v}'` },
   { prefix: /^(fontWeight|weight)/, unit: (v) => String(v) },
-  { prefix: /^(text|lineHeight|space|radius|tracking|hitTarget|railWidth)/, unit: (v) => `${v}px` },
+  { prefix: /^(text|lineHeight|space|radius|tracking|hitTarget|railWidth|layout)/, unit: (v) => `${v}px` },
   { prefix: /^duration/, unit: (v) => `${v}ms` },
   { prefix: /^(opacity|easing)/, unit: (v) => String(v) },
 ];
