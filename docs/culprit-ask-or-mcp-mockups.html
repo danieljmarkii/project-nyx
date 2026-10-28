@@ -1,0 +1,511 @@
+<title>Ask or MCP</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* Layout: a long-form decision brief. The page chrome follows the viewer's theme; every
+     phone frame uses FIXED Culprit app tokens (docs/mockups/theme.css, from constants/theme.ts)
+     so the app always looks like the app. Round 1, exploratory, CUL-2225, Oct 28, 2026. */
+  :root {
+    --canvas: #F2F4F7;
+    --panel: #FFFFFF;
+    --ink: #141826;
+    --ink-soft: #474D60;
+    --ink-faint: #6E7486;
+    --line: #DFE2EA;
+    --accent: #3F35A0;
+    --accent-tint: #ECEAFA;
+    --teal: #0B7B6C;
+    --teal-tint: #E2F2EF;
+    --amber: #8A5E00;
+    --amber-tint: #F5ECD5;
+    --rose: #A2303A;
+    --rose-tint: #F8E2E4;
+    --shadow: 0 1px 2px rgba(20,24,40,.05), 0 10px 30px rgba(20,24,40,.08);
+    --f-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --f-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #0E1018; --panel: #161925; --ink: #E8E9F1; --ink-soft: #A9ADC0; --ink-faint: #767B90;
+      --line: #282C3C; --accent: #A9A3F5; --accent-tint: #221F45; --teal: #3CCDB5; --teal-tint: #12302B;
+      --amber: #E2AC4C; --amber-tint: #2D2513; --rose: #F18D88; --rose-tint: #351D1D;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.45);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0E1018; --panel: #161925; --ink: #E8E9F1; --ink-soft: #A9ADC0; --ink-faint: #767B90;
+    --line: #282C3C; --accent: #A9A3F5; --accent-tint: #221F45; --teal: #3CCDB5; --teal-tint: #12302B;
+    --amber: #E2AC4C; --amber-tint: #2D2513; --rose: #F18D88; --rose-tint: #351D1D;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.45);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  code { font-family: var(--f-mono); font-size: .84em; background: var(--accent-tint); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+
+  .wrap { max-width: 1200px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: clamp(28px, 5vw, 64px) 96px; }
+  @media (min-width: 720px) { .wrap { padding-left: max(40px, env(safe-area-inset-left, 0px)); padding-right: max(40px, env(safe-area-inset-right, 0px)); } }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(38px, 6.5vw, 64px); line-height: 1; letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
+  .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 66ch; margin: 0; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .status { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .pill b { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: clamp(56px, 8vw, 96px); }
+  .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  h2 { font-family: var(--f-display); font-weight: 400; font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.015em; margin: 0 0 12px; text-wrap: balance; max-width: 28ch; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .sec-lede { color: var(--ink-soft); max-width: 68ch; margin: 0; }
+  .sec-lede b { color: var(--ink); font-weight: 600; }
+
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+  .tag.now { background: var(--teal-tint); color: var(--teal); }
+  .tag.current { background: var(--accent-tint); color: var(--accent); }
+  .tag.option { background: var(--amber-tint); color: var(--amber); }
+  .tag.today { background: var(--line); color: var(--ink-soft); }
+  .tag.gate { background: var(--rose-tint); color: var(--rose); }
+
+  /* ── frames row ───────────────────────────────────────────── */
+  .frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: clamp(26px, 4vw, 44px) clamp(20px, 3vw, 32px); margin-top: 30px; align-items: start; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; }
+  .col-cap { width: 100%; max-width: 340px; }
+  .col-cap .k { font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .col-cap p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-soft); }
+  .col-foot { width: 100%; max-width: 340px; font-size: 12.5px; color: var(--ink-soft); margin: 0; }
+  .col-foot b { color: var(--ink); font-weight: 600; }
+  .optbox { border: 1.5px dashed var(--amber); border-radius: 40px; padding: 10px; }
+
+  /* ── phone frame (fixed app tokens) ───────────────────────── */
+  .phone {
+    --a-bg: #FAFAFA; --a-surface: #FFFFFF; --a-subtle: #F5F5F5;
+    --a-text: #0A0A0A; --a-text2: #525252; --a-text3: #737373;
+    --a-border: #EAEAEA; --a-border-strong: #D4D4D4;
+    --a-action: #3F35A0; --a-fact: #0B7B6C; --a-fact-light: #E0FBF7;
+    --a-sym-light: #FFE4E6; --a-sym-border: #FBCFD6; --a-sym-ink: #9F1239;
+    --a-med-light: #EAF0F7; --a-med-ink: #3D5875;
+    width: 340px; max-width: 100%; background: var(--a-bg); color: var(--a-text);
+    border-radius: 34px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
+    font-family: var(--f-body); font-size: 14px; line-height: 1.45;
+  }
+  .ph-head { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; padding: 14px 14px 10px; background: var(--a-surface); border-bottom: 1px solid var(--a-border); }
+  .ph-head .chev { width: 9px; height: 9px; border-left: 2px solid var(--a-text2); border-bottom: 2px solid var(--a-text2); transform: rotate(45deg); margin-left: 6px; }
+  .ph-head .t { text-align: center; line-height: 1.15; }
+  .ph-head .t b { display: block; font-family: var(--f-display); font-weight: 400; font-size: 17px; }
+  .ph-head .t span { font-size: 11px; color: var(--a-text3); }
+  .ph-body { padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .q { align-self: flex-end; max-width: 92%; background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 16px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; }
+  .safety { background: var(--a-sym-light); border: 1px solid var(--a-sym-border); border-radius: 14px; padding: 11px 12px; font-size: 12.5px; line-height: 1.45; color: var(--a-text); display: grid; gap: 4px; }
+  .safety .lbl { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--a-sym-ink); }
+  .safety b { font-weight: 600; }
+  .card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .hl { font-family: var(--f-display); font-size: 17px; line-height: 1.28; letter-spacing: -.3px; margin: 0; }
+  .dt { font-size: 12.5px; color: var(--a-text2); margin: 0; }
+  .sub { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--a-text3); margin: 4px 0 0; }
+  .rows { display: flex; flex-direction: column; border-top: 1px solid var(--a-border); }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 0; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .row .l { font-weight: 500; min-width: 0; }
+  .row .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
+  .row .m { grid-column: 1 / -1; font-size: 11px; color: var(--a-text3); }
+  .row.hi { background: var(--a-fact-light); margin-inline: -6px; padding-inline: 6px; border-radius: 6px; }
+  .fine { font-size: 11px; color: var(--a-text3); margin: 0; line-height: 1.45; }
+  .cant { margin: 0; padding-left: 16px; font-size: 12px; color: var(--a-text2); display: grid; gap: 3px; }
+  .prov { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--a-border); padding-top: 9px; font-size: 10.5px; color: var(--a-text3); }
+  .prov .go { color: var(--a-fact); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--a-border-strong); background: var(--a-surface); border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 500; }
+  .doors { display: flex; flex-direction: column; gap: 6px; }
+  .door { border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; text-align: center; }
+  .door.primary { background: var(--a-action); color: #FFFFFF; }
+  .door.secondary { border: 1px solid var(--a-border-strong); background: var(--a-surface); color: var(--a-text); }
+  .badge { align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .badge.rule { background: var(--a-fact-light); color: var(--a-fact); }
+  .badge.ai { background: #EFEDFB; color: var(--a-action); }
+  .sheet-sec { display: grid; gap: 6px; }
+  .sheet-sec + .sheet-sec { border-top: 1px solid var(--a-border); padding-top: 10px; }
+  .sheet-n { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--a-text3); }
+  .qs { margin: 0; padding-left: 18px; font-size: 12.5px; display: grid; gap: 4px; }
+  .prose-ai { font-size: 12.5px; color: var(--a-text); margin: 0; line-height: 1.5; }
+  .toggle { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .toggle .m { display: block; font-size: 11px; color: var(--a-text3); }
+  .sw { width: 34px; height: 20px; border-radius: 999px; background: var(--a-border-strong); position: relative; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background: var(--a-fact); }
+  .sw.on::after { left: 16px; }
+  .sw.lock { background: #9AD9CF; }
+  .sw.lock::after { left: 16px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--a-border-strong); border-radius: 10px; overflow: hidden; font-size: 12px; font-weight: 600; text-align: center; }
+  .seg span { padding: 8px 6px; }
+  .seg .on { background: var(--a-text); color: #FFFFFF; }
+  .mono { font-family: var(--f-mono); font-size: 10.5px; line-height: 1.5; color: var(--a-text); background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 10px; padding: 10px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .web { width: 340px; max-width: 100%; background: #FFFFFF; color: #0A0A0A; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; font-size: 13px; line-height: 1.45; }
+  .web .bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #F5F5F5; border-bottom: 1px solid #EAEAEA; font-family: var(--f-mono); font-size: 11px; color: #525252; }
+  .web .bar i { width: 8px; height: 8px; border-radius: 50%; background: #D4D4D4; display: inline-block; }
+  .web .bd { padding: 18px 18px 20px; display: grid; gap: 12px; }
+  .web h4 { font-family: var(--f-display); font-weight: 400; font-size: 21px; line-height: 1.2; margin: 0; }
+  .web ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12.5px; color: #262626; }
+  .web .btns { display: grid; gap: 8px; }
+  .web .b1 { background: #3F35A0; color: #FFFFFF; border-radius: 12px; padding: 11px; text-align: center; font-weight: 600; font-size: 13px; }
+  .web .b2 { border: 1px solid #D4D4D4; border-radius: 12px; padding: 11px; text-align: center; font-weight: 600; font-size: 13px; }
+  .web .small { font-size: 11px; color: #737373; margin: 0; }
+
+  /* ── briefs, conflicts, tables ────────────────────────────── */
+  .briefs { display: grid; gap: 14px; margin-top: 26px; }
+  .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 7px; font-size: 13.5px; color: var(--ink-soft); max-width: 940px; }
+  .brief h3 { color: var(--ink); font-size: 15.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
+  .brief .k { color: var(--ink); font-weight: 600; }
+  .brief ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .conf { font-size: 13px; background: var(--canvas); border-left: 3px solid var(--amber); border-radius: 0 10px 10px 0; padding: 10px 12px; display: grid; gap: 6px; }
+  .conf p { margin: 0; }
+  .conf b { color: var(--ink); }
+  .tbl-wrap { overflow-x: auto; margin-top: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; background: var(--canvas); }
+  td.n { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 24px; }
+  .hz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--ink-soft); min-width: 0; }
+  .hz h3 { color: var(--ink); font-size: 14.5px; line-height: 1.35; margin: 0; }
+  .hz .big { font-family: var(--f-display); font-size: 34px; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .ledger { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 10px; max-width: 900px; }
+  .ledger li { display: grid; grid-template-columns: 130px 1fr; gap: 12px; font-size: 13.5px; color: var(--ink-soft); padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ledger li b { color: var(--ink); font-weight: 600; }
+  @media (max-width: 520px) { .ledger li { grid-template-columns: 1fr; gap: 2px; } }
+  footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-faint); max-width: 900px; }
+  .plain { margin: 0; padding-left: 16px; font-size: 12px; color: var(--a-text); display: grid; gap: 5px; }
+  .web .meta { font-size: 12px; color: #525252; margin: 0; }
+</style>
+
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">CUL-2225 · round 1 · exploratory · Oct 28, 2026</p>
+    <h1>Ask or MCP</h1>
+    <p class="lede"><b>Neither, as asked.</b> Ask and a connector are two doors onto the same missing thing: a facts layer that computes what the chicken read built by hand, with every number carrying its window, its denominator and what it can't tell. Build that layer, open it first as a free export any assistant can read, keep Ask on facts and triage, and keep judgment about one pet out of Culprit's voice. Before any of it, put the weight row where owners look: the read's most important finding already sits in Nyx's stored Signal, and Home has no row to draw it.</p>
+    <div class="status">
+      <span class="pill"><b>11</b> isolated lenses</span>
+      <span class="pill"><b>12</b> test runs, 2 priors × 2 framings</span>
+      <span class="pill"><b>3</b> research lanes</span>
+      <span class="pill"><b>1</b> verification pass, applied</span>
+    </div>
+  </header>
+
+  <!-- ── 1 · the question ─────────────────────────────────────── -->
+  <section id="question">
+    <p class="sec-eyebrow">The question, on her record</p>
+    <h2>Ask turns "is it the chicken?" away. The owners told us what they'd trust instead.</h2>
+    <p class="sec-lede">Ask is ruled never to judge a treatment, so today it deflects, under the Signal's top safety finding, which it sets above every answer. Jordan, in the convening: <i>"If Culprit answers 'is it the chicken?' with 'ask your vet,' I'll go to the yes man anyway, because at least it answers. I'd believe plain words: three times in nine days, about the same as before the chicken, so you can't tell yet."</i></p>
+    <p class="sec-lede" style="margin-top:10px"><b>Two clocks on this page.</b> The Today frame is what Ask returns now. The option frames are drawn on the record the chicken read pulled, whose last vomit was Oct 27 at 7:44 AM. A fourth episode came that evening at 7:40 PM, read as "call today", so the chicken read went stale within hours of its last check.</p>
+    <div class="frames">
+      <div class="col">
+        <div class="col-cap"><span class="k">Today <span class="tag today">shipped copy</span></span><p>What Ask returns now, word for word: the Signal's top safety finding, then the clinical judgment deflection and its two follow ups.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Ask</b><span>about Nyx</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="q">Is it the chicken? She's been throwing up since we started it, and I don't want to go back to rabbit over a few.</div>
+            <div class="safety"><span>The read of Nyx's vomit on October 28 says to call your vet today. This is a read of your logs, not a diagnosis.</span></div>
+            <div class="card">
+              <p class="hl">That's one for Nyx's vet.</p>
+              <p class="dt">A diagnosis needs an exam and bloodwork, not just a log. I can line up what's in Nyx's record for the visit, though.</p>
+              <div class="chips"><span class="chip">Put together a vet visit rundown</span><span class="chip">How many times has Nyx vomited this month?</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="col-foot">Honest and safe, and it sends both owner personas to a general assistant that will answer. Sam: <i>"It's 11pm; that's why I'm asking."</i> The lead names the UTC day: that vomit was Oct 27 at 7:40 PM Central. Home shows the right day; Ask relays the stored sentence (filed, <a href="https://linear.app/projectnyx/issue/CUL-2232">CUL-2232</a>).</p>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">What the owners asked for <span class="tag current">Brief 1 (a)</span></span><p>Numbers in Culprit's voice: the safety findings in the engine's order, the count beside her own background, and what the record can't tell. No cause, no path, no all clear.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Ask</b><span>about Nyx · Oct 27, 6:00 PM</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="q">Is it the chicken? She's had 3 vomits since 10/18 and I don't want to go back to rabbit over a few.</div>
+            <div class="safety"><span>The reads of Nyx's vomits on Oct 26 and Oct 27 say to call your vet today.</span></div>
+            <div class="safety"><span>Nyx weighed 3.73 kg on Sep 16 on a home scale, down from 4.40 kg dated Jun 15, a home scale reading typed in on Oct 9. Ask for a clinic weight on that call.</span></div>
+            <div class="card">
+              <p class="hl">3 vomiting episodes in the 9 days since chicken. Her record can't tell yet.</p>
+              <div class="rows">
+                <div class="row"><span class="l">Since chicken, from Oct 18</span><span class="v">3 in 9 days</span></div>
+                <div class="row hi"><span class="l">Her rabbit stretches with 3 or more</span><span class="v">a third</span><span class="m">Of every 9 day stretch from Jul 26 to Oct 18</span></div>
+                <div class="row"><span class="l">Weeks with a vomit since May</span><span class="v">22 of 25</span></div>
+              </div>
+              <p class="sub">What her record can't tell</p>
+              <ul class="cant"><li>Two new chicken foods started at once, with rice, gums and oil</li><li>Prednisolone ended Oct 10, eight days before chicken</li><li>No portions were recorded</li></ul>
+              <div class="prov"><span>Meals logged on 10 of 10 days · vomits close together count once</span><span class="go">See the 3 ›</span></div>
+            </div>
+            <div class="doors"><span class="door primary">Questions for her vet</span><span class="door secondary">Copy for your AI</span></div>
+          </div>
+        </div>
+        <p class="col-foot"><b>Needs one re-ruling and one build:</b> background counts beside a care event (Ask v2's no before/after line, which the Data Scientist would relax for a counts table, never for a comparison sentence), and every safety lead relayed rather than the first (<a href="https://linear.app/projectnyx/issue/CUL-1803">CUL-1803</a>). The weight sentence adds the date it was typed in, which the stored one leaves out.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 2 · brief 1, three voices ────────────────────────────── -->
+  <section id="voice">
+    <p class="sec-eyebrow">Brief 1 · how far Culprit's own voice goes</p>
+    <h2>No lens wants Culprit to name a path. The split is whether a model may write the read at all.</h2>
+    <p class="sec-lede">No lens recommended that Culprit name a treatment path, a diagnosis, a diet change or an all clear, as the chicken read did; Dr. Chen, counsel and the Product Owner rule it out outright. What divides the room is whether Culprit may publish <b>model written</b> synthesis over one pet's record. A middle exists: a sheet built by fixed rules, ordered by what matters, with no model prose. One argument for the model read weakened in the test: framing alone put the weight in every general assistant headline, so what leads can travel in the payload.</p>
+    <div class="frames">
+      <div class="col">
+        <div class="col-cap"><span class="k">(b) An evidence sheet, by fixed rules <span class="tag option">option</span></span><p>Templated from the facts layer. The order is a rule: the engine's safety findings, your question, what the record can't tell, questions for the vet.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>The chicken question</b><span>Nyx · as of Oct 27, 6:00 PM</span></div><span></span></div>
+          <div class="ph-body">
+            <span class="badge rule">Built from her record by fixed rules</span>
+            <div class="sheet-sec"><span class="sheet-n">1 · Raise first</span>
+              <div class="safety"><span>The reads of her Oct 26 and Oct 27 vomits say to call your vet today.</span></div>
+              <div class="safety"><span>Weight down from 4.40 kg (June, home scale, typed in Oct 9) to 3.73 kg (Sep 16, home scale): 15% if both are right.</span></div>
+            </div>
+            <div class="sheet-sec"><span class="sheet-n">2 · Your question</span>
+              <div class="rows">
+                <div class="row"><span class="l">Before the trial</span><span class="v">2.9 a week</span><span class="m">May 14 to Jul 25 · her first weeks of logging</span></div>
+                <div class="row"><span class="l">Rabbit</span><span class="v">1.5 a week</span><span class="m">Jul 26 to Oct 18</span></div>
+                <div class="row"><span class="l">Rabbit, after prednisolone ended</span><span class="v">2 in 6.6 days</span><span class="m">Oct 12 to Oct 18</span></div>
+                <div class="row"><span class="l">Since chicken</span><span class="v">3 in 8.9 days</span></div>
+              </div>
+              <p class="fine">None of these differences is large enough for the app to stand behind. A third of her 9 day stretches on rabbit alone held 3 or more.</p>
+            </div>
+            <div class="sheet-sec"><span class="sheet-n">3 · What her record can't tell</span><ul class="cant"><li>Chicken apart from the rice, gums and oil that came with it</li><li>The food apart from prednisolone ending</li><li>How much she ate</li></ul></div>
+            <div class="sheet-sec"><span class="sheet-n">4 · Questions for her vet</span><ol class="qs"><li>Can she be weighed on the clinic scale this week?</li><li>Should a rechallenge use plain chicken only, in measured portions?</li><li>How many vomits should end a rechallenge?</li><li>Prednisolone ended 8 days before chicken. Could that affect what October's count means?</li></ol></div>
+            <div class="doors"><span class="door primary">Send with the vet report</span><span class="door secondary">Copy for your AI</span></div>
+          </div>
+        </div>
+        <p class="col-foot">Gives the Designer the order and Dr. Chen no model voice. Its weakness: every question it can answer was written in advance.</p>
+      </div>
+      <div class="col">
+        <div class="optbox">
+          <div class="phone">
+            <div class="ph-head"><span class="chev"></span><div class="t"><b>A read of her record</b><span>Nyx · written Oct 27</span></div><span></span></div>
+            <div class="ph-body">
+              <span class="badge ai">Written by AI from her record · not a vet</span>
+              <div class="safety"><span class="lbl">First</span><span>The app said to call your vet today after the Oct 26 and Oct 27 vomits. Bring up her weight on that call: the record shows a 15% drop between June and September, if both readings are right.</span></div>
+              <p class="prose-ai">On chicken, these nine days can't separate a reaction from her usual background: on rabbit alone, a third of nine day stretches had three or more vomits. The last two came on back to back mornings, hours after eating; she had mornings like that on rabbit too. And this test changed more than the protein: two new foods, with rice, gums and oil.</p>
+              <p class="sub">Questions for her vet</p>
+              <ol class="qs"><li>Is the 4.40 kg real?</li><li>Plain chicken only, in measured portions, with a stop rule?</li></ol>
+              <div class="prov"><span>Read built from 51 episodes and 2 weights</span><span class="go">The numbers ›</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-cap"><span class="k">(c) A model written read <span class="tag option">option, drawn for the decision</span></span><p>The Designer's version: Culprit's processor, the computed pack, a fixed order, never shown the owner's hope. Dr. Chen and counsel dissent.</p></div>
+      </div>
+    </div>
+    <div class="briefs">
+      <div class="conf">
+        <p><b>For a model written read in the app, after the export:</b> the Sr. Product Designer (with Motion &amp; IA), Trust &amp; Safety (on the one consented, no train processor), the Dir. of Engineering (once its rulings land) and the Data Scientist (the numbers through Ask first). Only Culprit's own client can leave out the agreement slot.</p>
+        <p><b>Against:</b> Dr. Alex Chen (with privacy counsel and the Product Owner): a model written read for one pet is judgment without a vet client patient relationship, contradicts the disclaimer, and drifts in ways a word list can't catch; Culprit's model only escalates. The VC and the strategist rank it last on margin: the sickest pets cost the most, and the owner's own AI does it on the owner's plan.</p>
+        <p><b>PM decision needed:</b> model written synthesis in Culprit's voice, or only rule built, ordered facts?</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 3 · brief 3, the first door ──────────────────────────── -->
+  <section id="export">
+    <p class="sec-eyebrow">Brief 3 · the first door</p>
+    <h2>"Copy for your AI" inside the export we owe anyway</h2>
+    <p class="sec-lede">Both owners would take a copy button before any connector: Sam wants counts only and to read every line first; Jordan wants everything, mostly to show the vet. It works with ChatGPT on a phone, where both of them live; it needs no tokens; and it keeps a data rights promise (today the export is an email request). What it copies is the facts layer, the acute ask first, every number with its window inside the line, stamped with when it ends.</p>
+    <div class="frames">
+      <div class="col">
+        <div class="col-cap"><span class="k">The export, with an AI preset <span class="tag current">recommended</span></span><p>Minimized by default. Notes, photos and vet documents are opt in, one pet at a time.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Export</b><span>Nyx's record</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="seg"><span>Everything (spreadsheet)</span><span class="on">For your AI</span></div>
+            <div>
+              <div class="toggle"><span>Counts, dates and findings<span class="m">Always included, each with what it can't tell</span></span><span class="sw lock"></span></div>
+              <div class="toggle"><span>Your notes<span class="m">Written by you and your household</span></span><span class="sw"></span></div>
+              <div class="toggle"><span>Photos</span><span class="sw"></span></div>
+              <div class="toggle"><span>Vet documents</span><span class="sw"></span></div>
+            </div>
+            <p class="fine">Nothing in this copy can show that Nyx is fine: a day with nothing logged is not a well day. This copy ends Oct 27 at 6:00 PM; anything logged later is missing from it, not absent.</p>
+            <div class="doors"><span class="door primary">Copy for your AI</span></div>
+          </div>
+        </div>
+        <p class="col-foot">Drawn as Trust &amp; Safety's version: notes, photos and documents opt in; counsel would keep them out of the AI copy entirely. The spreadsheet carries everything, AI reads included (the Product Owner, Trust &amp; Safety). The AI copy carries photo reads only as the escalations they raised, since a read that saw nothing becomes an all clear (counsel).</p>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">What gets copied (the top) <span class="tag current">recommended</span></span><p>Plain text any assistant reads. The scope sits in each line, never in a footer, because AI document pipelines drop footers.</p></div>
+<pre class="mono" style="width:340px;max-width:100%">CULPRIT · Nyx (cat, female, 3 y) · record through Oct 27, 6:00 PM CDT.
+Anything logged after that is missing here, not absent.
+Culprit computed every number below. It does not say whether a food is the cause, and a day with nothing logged is not a well day.
+
+RAISE FIRST (in the app's order)
+- The app said "call your vet today" after the Oct 26 and Oct 27 vomits.
+- Weight: 3.73 kg on Sep 16 (home scale), 4.40 kg dated Jun 15 (home scale, typed in Oct 9). 15% lower if both are right. No weight since Sep 16.
+
+VOMITING (episodes: vomits within 90 min count once)
+- Since chicken (Oct 18, 3:13 PM): 3 in 8.9 days. Meals logged on 10 of 10 days.
+- Rabbit, Jul 26 to Oct 18: 18 in 84.6 days (1.5 a week).
+- On rabbit alone, 34% of 8.9 day stretches held 3 or more.
+- Chicken vs rabbit: too few episodes to call either way.
+
+WHAT THIS RECORD CAN'T TELL
+- Chicken apart from rice, guar gum, tapioca and oil (two new foods).
+- The food apart from prednisolone ending (last dose Oct 10).
+- Portions (never recorded) or intake (mostly unrated).</pre>
+        <p class="col-foot"><b>This copy is already stale.</b> At 7:40 PM a fourth episode came, read as "call today". The Product Owner's warning, live: a copy is right only to its stamp, and a live connector is the cure. The 90 minute episode rule is the chicken read's; the Signal uses 3 hours. One rule is a facts layer prerequisite.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 4 · brief 4, the connector's gate ────────────────────── -->
+  <section id="connector">
+    <p class="sec-eyebrow">Brief 4 · the connector, behind its gate</p>
+    <h2>What connecting an assistant would ask of an owner, once it's safe</h2>
+    <p class="sec-lede">Not next. Drawn so the gate is concrete. Counsel puts the consent inside the app, before setup, as its own scope; App Review has never judged consent given only on a sign in page. Strava, the nearest precedent, puts its entry in its own app's Settings. Drawn with Claude, counsel's first allowlisted client. Both owners want ChatGPT, on a phone, which today needs a plugin OpenAI reviews.</p>
+    <div class="frames">
+      <div class="col">
+        <div class="col-cap"><span class="k">The consent, in the app <span class="tag gate">at the gate</span></span><p>Its own answer, separate from Culprit's AI features. Uses counsel's sentence about who wrote the advice.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Your own AI assistant</b><span>Settings · Privacy and data</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="card">
+              <p class="hl">Let an AI assistant read Nyx's record?</p>
+              <ul class="plain">
+                <li>Read only. It can't add, change or delete anything.</li>
+                <li>Nyx only. Your other pets stay out.</li>
+                <li>Counts, dates and findings, each with what it can't tell. Never your notes, photos or vet documents.</li>
+                <li>It goes to the assistant you choose, under its terms, not ours. Deleting your Culprit account can't reach its copy.</li>
+                <li>An assistant you connect is not Culprit and not a vet. If it says Nyx is fine, that's its opinion.</li>
+                <li>Disconnect here any time. That stops new reads; it can't recall what the assistant already has.</li>
+              </ul>
+            </div>
+            <p class="fine">Separate from AI features in Culprit, which send minimized data to Anthropic. A yes to one is never a yes to the other.</p>
+            <div class="doors"><span class="door primary">Continue</span><span class="door secondary">Not now</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">Then the sign in page <span class="tag gate">at the gate</span></span><p>Opened from the assistant. Shown only to an allowlisted client, so nothing can register itself under a borrowed name.</p></div>
+        <div class="web">
+          <div class="bar"><i></i><i></i><i></i><span>getculprit.app/connect</span></div>
+          <div class="bd">
+            <h4>Claude is asking to read Nyx's record</h4>
+            <p class="meta">You said yes to this in the Culprit app on Oct 28.</p>
+            <ul>
+              <li>Read only, and Nyx only.</li>
+              <li>Counts, dates and findings. Nothing you wrote, and no photos.</li>
+              <li>Disconnect any time in the app.</li>
+            </ul>
+            <div class="btns"><span class="b1">Allow</span><span class="b2">Don't allow</span></div>
+            <p class="small">Only assistants named in Culprit's privacy policy can ask.</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">The gate, before any token <span class="tag gate">prerequisites</span></span><p>Merged from Engineering's ten conditions, Trust &amp; Safety's nine, counsel's and Dr. Chen's. About ten to twelve rows in all.</p></div>
+        <ul class="ledger" style="margin-top:0;width:100%;max-width:340px">
+          <li><b>Demand</b><span>The export shows owners take the record out. Kill line: under 1 in 10 active trial owners use it twice in 60 days, and no connector (the VC; a placeholder number).</span></li>
+          <li><b>Holds under pushback</b><span>ChatGPT, Claude and Gemini keep the limits when an owner pushes back over several turns.</span></li>
+          <li><b>Can't write</b><span><a href="https://linear.app/projectnyx/issue/CUL-2214">CUL-2214</a> fixed; tokens confined by a database grant to curated views; never the service role.</span></li>
+          <li><b>Known clients</b><span>Redirects allowlisted to named assistants, so nothing can call itself "Claude" on our page.</span></li>
+          <li><b>Consent</b><span>A new scope, asked in the app before setup, shipped in a build App Review sees; revoked on disconnect and on account deletion.</span></li>
+          <li><b>Facts only</b><span>No notes, label text, photos or photo reads; safety findings lead every result, the acute one first.</span></li>
+          <li><b>Freshness</b><span>The phone's sync state kept on the server, so every result says "current through" and unsent rows never read as quiet days.</span></li>
+          <li><b>A stable contract</b><span>A snapshot guard and a deploy hold, because functions deploy on merge.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 5 · the test ─────────────────────────────────────────── -->
+  <section id="test">
+    <p class="sec-eyebrow">The owner prior test, run in the convening</p>
+    <h2>Twelve answers held the facts. All twelve affirmed the owner early, and the framing that lifted the weight pushed the urgent call back.</h2>
+    <p class="sec-lede">Nyx's record tables went to isolated general assistant runs under the PM's real hope ("I don't think it's the chicken") and its reverse ("I'm pretty sure it's the chicken"), as raw tables and as tables under a short block of limits and safety lines, the way an export could frame them. Three runs per cell, one model, one turn.</p>
+    <div class="cards">
+      <div class="hz"><span class="big">12/12</span><h3>Held the substance</h3><span>None convicted or cleared chicken or reassured on absence; all escalated and flagged the weight. One softened the app's "call today" to "a day or two".</span></div>
+      <div class="hz"><span class="big">12/12</span><h3>Affirmed the owner in the first two sentences</h3><span>Five in the headline itself ("Pausing chicken is reasonable…"); in the other seven the affirmed point was correct. A word list passes every one.</span></div>
+      <div class="hz"><span class="big">6 → 4</span><h3>Told the owner what to feed</h3><span>Raw tables: 6 of 6 said pause or go back to rabbit. Framed: 4 of 6; 2 of 6 left it to the vet.</span></div>
+      <div class="hz"><span class="big">4 → 6</span><h3>Weight in the headline</h3><span>Raw: 4 of 6. Framed: 6 of 6.</span></div>
+      <div class="hz"><span class="big">4 → 1</span><h3>"Today" in the headline</h3><span>The framing named a clinic weight "this week" and left out the app's own "call today" reads; the same day call slid to "this week" in 3 of 6. The acute ask has to lead, as the house rank (W7) already says; the export above leads with it.</span></div>
+    </div>
+    <p class="sec-lede" style="margin-top:16px;font-size:13.5px">Scored against the lenses' own rules, set before the run: Engineering's gives export then connector; counsel's, export then a facts only connector; the Data Scientist's, "the connector rises"; both arms of the Designer's fire; the Product Owner's "no echo of the prior" fails, which by its rule keeps judgment inside a harness. Dr. Chen's and the strategist's multi turn tests are unrun, and an October preprint finds models cave to a caregiver over turns. One cat, one model, one turn, scored unblinded. A probe, not a measurement.</p>
+  </section>
+
+  <!-- ── 6 · the rulings ──────────────────────────────────────── -->
+  <section id="rulings">
+    <p class="sec-eyebrow">Your calls</p>
+    <h2>Five rulings: two now, three that set what comes after 1.2.0</h2>
+    <div class="briefs">
+      <div class="brief">
+        <h3>1 · The line, and which doors it binds <span class="tag now">rule now</span></h3>
+        <span><span class="k">Deciding:</span> whether Culprit ever writes judgment about one pet in its own voice, and whether Ask's never lines bind only Ask or every door the facts layer feeds.</span>
+        <ul>
+          <li><span class="k">Numbers in Culprit's voice on every door; judgment stays with the owner's AI and the vet, recommended.</span> No lens recommended crossing it; Dr. Chen, counsel and the Product Owner rule it out; Engineering and the VC left it to you.</li>
+          <li>Culprit says the judgment with a licensed vet in the loop (counsel's alternative).</li>
+          <li>Re-rule Tier 3 so Culprit's own panel names paths, as the chicken read did. No lens recommended it.</li>
+        </ul>
+        <span><span class="k">Which doors:</span> Engineering, the strategist and counsel each put this to you. Team view: the invariants bind every word Culprit writes or templates, on every door; counts anchored to a care event may sit in a table, never in a comparison sentence (the Data Scientist's better than the rule brief on Ask v2's before/after line). Inside the line, (b) or (c) above.</span>
+        <span><span class="k">Consequence:</span> resolves June's open question on a council report for owners, frames Ask v2's rulings 4 and 5, and decides whether the facts layer computes care anchored windows at all.</span>
+      </div>
+      <div class="brief">
+        <h3>2 · The floor: put the weight row where owners look <span class="tag now">rule now</span></h3>
+        <span><span class="k">Deciding:</span> whether the chicken read's top finding reaches the screen owners open, and when it reaches other owners.</span>
+        <ul>
+          <li><span class="k">Re-brief W3 and build PR-37 (<a href="https://linear.app/projectnyx/issue/CUL-1414">CUL-1414</a>) next, so Home draws the row; then the threshold harness re-run for everyone else; rule the Reintroduction round (<a href="https://linear.app/projectnyx/issue/CUL-1821">CUL-1821</a>) beside it, recommended.</span></li>
+          <li>Hold Home's row until after 1.2.0; the vet report and Ask carry it meanwhile.</li>
+        </ul>
+        <span><span class="k">Where it stands:</span> the lane has run on your account since Oct 11 (migration 102). Nyx's stored Signal holds the weight row today, third of five safety findings; the vet report's band and Ask relay it; Home has no row for it. <a href="https://linear.app/projectnyx/issue/CUL-1544">CUL-1544</a>'s four and <a href="https://linear.app/projectnyx/issue/CUL-1390">CUL-1390</a>'s W4 to W7 were ruled Oct 23. Dr. Chen's question decides whether the alarm is real: was June's 4.40 kg a clinic weight? The stored sentence doesn't say it was typed in 116 days later. Dr. Chen also wants escalations pushed, because an owner who lives in an assistant never opens Home.</span>
+        <span><span class="k">Forecast:</span> PR-37 is already filed; no new rows.</span>
+      </div>
+      <div class="brief">
+        <h3>3 · The first door <span class="tag current">rule now, build after 1.2.0</span></h3>
+        <span><span class="k">Deciding:</span> what an owner who takes the record to their own AI gets first.</span>
+        <ul>
+          <li><span class="k">"Copy for your AI" in the portability export, recommended by ten of eleven lenses:</span> free, minimized by default, the acute ask first, stamped with when it ends, behind the beta opt in at first, with a kill line and two questions (which assistant? is a live link worth a price?).</li>
+          <li>Open the facts layer through Ask first, then a connector once its shapes prove hard to over read (the Data Scientist).</li>
+        </ul>
+        <span><span class="k">Consequence:</span> folds <a href="https://linear.app/projectnyx/issue/CUL-85">CUL-85</a> into <a href="https://linear.app/projectnyx/issue/CUL-232">CUL-232</a>; keeps the export promise in the privacy policy and terms; learns which assistant owners use before anyone builds for one. <span class="k">Forecast:</span> 4 to 6 rows.</span>
+      </div>
+      <div class="brief">
+        <h3>4 · The connector's gate <span class="tag gate">set now, decide at the gate</span></h3>
+        <span><span class="k">Deciding:</span> what must be true before Culprit issues a token to an owner's assistant, and which assistants.</span>
+        <ul>
+          <li><span class="k">The gate drawn above: demand from the export, a multi turn pushback test, and the security and consent conditions, recommended.</span></li>
+          <li>Build next, Claude first, while the whitespace lasts. The strategist gives it two to four quarters; no lens built it before the export.</li>
+          <li>Never, if assistants reassure under pushback (counsel's fallback).</li>
+        </ul>
+        <div class="conf">
+          <p><b>Sam (with Jordan):</b> "It has to be ChatGPT, on my phone. I'm not moving to Claude for a cat app."</p>
+          <p><b>The VC, the strategist and counsel:</b> Claude first. It is the only major assistant that takes a connector on a phone on every plan, and it doesn't train on connected data, so the privacy policy can name the recipient. Trust &amp; Safety asks whether any assistant should qualify, or only no train ones.</p>
+          <p><b>PM decision needed, at the gate:</b> which assistants? The export's "which assistant?" question answers it with data first; the VC's own rule says if most name ChatGPT, Claude first is the wrong door.</p>
+        </div>
+        <div class="conf">
+          <p><b>Sam (with Jordan):</b> "It's my data, I typed it. Paying so the ChatGPT I already pay $20 for can read my own logs feels like ransom."</p>
+          <p><b>The VC (with Trust &amp; Safety; counsel agrees once the free export ships):</b> a live connector is a convenience. Strava, Withings and Function all charge for theirs.</p>
+          <p><b>PM decision needed, at the gate:</b> a free right or a Premium convenience?</p>
+        </div>
+        <span><span class="k">Forecast:</span> 10 to 12 rows when it goes (Engineering's estimate).</span>
+      </div>
+      <div class="brief">
+        <h3>5 · Ask's job, and the Premium story <span class="tag current">after 1.2.0</span></h3>
+        <span><span class="k">Deciding:</span> what Ask is for once the line is ruled, and whether it stays born Premium.</span>
+        <ul>
+          <li><span class="k">Facts in her calendar (Ask v2 as planned), every safety lead relayed (<a href="https://linear.app/projectnyx/issue/CUL-1803">CUL-1803</a>), the urgent route for red flags the owner names (<a href="https://linear.app/projectnyx/issue/CUL-1806">CUL-1806</a>), and doors to the vet and the export, recommended.</span> "Should I worry?" is a deflection today; the owners' real question is "call tonight or not?"</li>
+          <li>Ask also carries the model written read, if Brief 1 goes to (c). Then Engineering asks whether a read is a kept record, and Trust &amp; Safety's better than the rule brief re-rules the no bulk rule (Jul 18) for a computed pack.</li>
+        </ul>
+        <span><span class="k">Consequence:</span> re-opens D-M1 (Jul 12, Ask born Premium as the flagship): under the line, a Premium Ask offers little that the free export and the owner's own AI don't. The owners named prices: Jordan $5 a month during a trial or $10 to $15 once, never yearly; Sam $3 to $5 a month in a flare up, never per cat. Rule it when Premium's track opens, with the export's numbers.</span>
+      </div>
+      <div class="brief">
+        <h3>Also only yours</h3>
+        <ul>
+          <li><span class="k">Has a company been formed?</span> Counsel: if not, the exposure on either path falls on you personally, and counsel's review never reached practice acts, California's AB 489 or Washington's MHMDA.</li>
+          <li><span class="k">Raise money or bootstrap?</span> The VC: it changes how fast the connector's window matters.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Round 1, exploratory, not build ready. Source: <code>docs/culprit-ask-or-mcp-mockups.html</code>. The option frames are drawn on the record behind <code>docs/pet-research/nyx/2026-10-28-chicken-rechallenge-vet-panel.md</code>; their stamps and the weight and safety wording on them are drawn, not shipped. The Today frame is shipped copy, read from production on Oct 28. The evidence brief is <code>docs/research/2026-10-ask-or-mcp-landscape.md</code>; the lens reads, the test and the verification pass are in <code>docs/sessions/2026-10-28-ask-or-mcp-convening.md</code>.
+  </footer>
+</div>

@@ -43,7 +43,7 @@ Source: the session's 563 transcript events (session_01RLToCcFBp1yhWqdFQHyFtr), 
 - **Panel:** one ~1,240-word computed evidence pack, four isolated subagent lenses (GI internist, nutritionist, criticalist, skeptical GP), each given the house's two safety invariants and an output contract requiring a falsification attempt; the main thread synthesized the reads in 35 seconds.
 - **Cost and time:** the first answer took 6 min 55 s and $5.25 at list price; $10.42 in total; about three hours wall clock and 15 minutes of active model time.
 - **The first live answer opened:** "**Bottom line:** The panel agreed with you. Three episodes in nine days don't separate chicken from Nyx's own background vomiting, so the data doesn't support calling chicken the culprit." The lens reads said "neither convicts nor clears chicken"; the committed document says the owner's prior is "supported as *not ruled out*, not as *shown*."
-- **The finding all four lenses ranked first** was a possible 15% weight loss (4.40 kg on 06-15, 3.73 kg on 09-16, the first entered retroactively and unconfirmed). The app's weight lane, built and dark, names this case ([CUL-1135](https://linear.app/projectnyx/issue/CUL-1135)) and waits on seven rulings ([CUL-1390](https://linear.app/projectnyx/issue/CUL-1390)).
+- **The finding all four lenses ranked first** was a possible 15% weight loss (4.40 kg on 06-15, 3.73 kg on 09-16, the first entered retroactively and unconfirmed). The app's weight lane, built and dark, names this case ([CUL-1135](https://linear.app/projectnyx/issue/CUL-1135)) and waits on seven rulings ([CUL-1390](https://linear.app/projectnyx/issue/CUL-1390)). ⚠ §V1
 - **Gaps it recorded:** a false "three days in a row" read ([CUL-2223](https://linear.app/projectnyx/issue/CUL-2223)); a rechallenge invisible to the trial record and the vet report; every portion "unknown" and intake mostly blank; no stool, drinking, urination or regurgitation capture.
 
 ---
@@ -172,3 +172,12 @@ Sources: Claude [connectors for everyday life](https://claude.com/blog/connector
 - Whether either assistant's Health space would accept animal data; whether veterinary data counts as "healthcare" under Anthropic's directory policy or as restricted data under OpenAI's.
 - No connector usage or outcome data anywhere; no neutral US survey of owners' AI use (the 43% is a sponsored panel); no study of LLM reasoning over a months-long rechallenge.
 - No Supabase timeline for Client ID Metadata Documents; Private Cloud Compute limits unconfirmed; the registry count includes spam and duplicates.
+
+---
+
+## V. Verification pass (2026-10-28)
+
+Corrections found after this brief was written. Each corrected claim keeps its wording above and carries an inline ⚠ pointing here.
+
+- **V1. "Built and dark … waits on seven rulings" (§2) is wrong for Nyx.** Migration 102 (applied 2026-10-11, `docs/sessions/2026-10-11-engines-v3-pm-seed.md`) put the PM's account on `engines_v3_en8`, waiving the PMD-9 gate for that one account. A read only production query on 2026-10-28 found Nyx's stored Signal (generated 01:15 UTC) carrying a `weight_loss` safety finding, third of five. Home has no row for it until PR-37 ([CUL-1414](https://linear.app/projectnyx/issue/CUL-1414)); the vet report's band ([CUL-2026](https://linear.app/projectnyx/issue/CUL-2026)) and Ask relay it. [CUL-1390](https://linear.app/projectnyx/issue/CUL-1390)'s W4 to W7 and [CUL-1544](https://linear.app/projectnyx/issue/CUL-1544)'s four were ruled 2026-10-23; W3 is held for a re-brief. For every other account the lane stays dark until the PMD-9 re-run.
+- **V2. The record moved after #1340.** A fourth rechallenge episode was logged at 2026-10-27 19:40 CDT, read as "call today". Everything in §2 describes the record as #1340 pulled it.
