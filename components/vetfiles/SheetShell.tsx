@@ -2,6 +2,7 @@ import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   visible: boolean;
@@ -19,6 +20,7 @@ interface Props {
 // caller — a third hand-rolled copy is where the scrim opacity and the grabber
 // width start drifting apart between sheets of the same feature.
 export function SheetShell({ visible, onClose, title, subtitle, children }: Props) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -27,7 +29,7 @@ export function SheetShell({ visible, onClose, title, subtitle, children }: Prop
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}>
           <View style={styles.grabber} />
           <ThemedText style={styles.title}>{title}</ThemedText>
           {subtitle ? <ThemedText style={styles.subtitle}>{subtitle}</ThemedText> : null}

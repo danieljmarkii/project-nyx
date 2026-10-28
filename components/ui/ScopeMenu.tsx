@@ -5,6 +5,7 @@ import { Check, ChevronDown } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { SectionLabel } from './SectionLabel';
 import { ThemedText } from './ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // Any identity glyph the sheet can render before a label — a Lucide icon OR a
 // custom family glyph (B-745). Both take the icon kit's size/color/strokeWidth, so
@@ -103,6 +104,7 @@ export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
   pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption, notice,
 }: Props) {
+  const sheetCap = useSheetCap();
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollViewInstance>(null);
@@ -173,7 +175,7 @@ export function ScopeMenu({
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.backdrop}>
           <Pressable style={styles.scrim} onPress={() => setOpen(false)} accessibilityLabel="Close" />
-          <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}>
             <View style={styles.grabber} />
             <SectionLabel label={sheetLabel} header style={styles.sheetLabel} />
             {notice ? (

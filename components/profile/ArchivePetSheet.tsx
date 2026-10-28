@@ -7,6 +7,7 @@ import { theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { usePetStore, Pet } from '../../store/petStore';
 import { archiveBlockedCopy, archiveConfirmBody } from '../../lib/utils';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface ArchivePetSheetProps {
   visible: boolean;
@@ -22,6 +23,7 @@ interface ArchivePetSheetProps {
 // cancel. Archive is `pets.is_active = false` only: nothing cascades, history
 // stays hydrated, and "Archived pets" is the way back.
 export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps) {
+  const sheetCap = useSheetCap(theme.space2);
   const insets = useSafeAreaInsets();
   const [archiving, setArchiving] = useState(false);
 
@@ -66,7 +68,7 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <Pressable style={styles.scrim} onPress={archiving ? undefined : onClose} />
-        <View style={[styles.card, { marginBottom: insets.bottom + theme.space2 }]}>
+        <View style={[styles.card, { marginBottom: insets.bottom + theme.space2 }, sheetCap]}>
           <ThemedText style={styles.title}>Archive {pet.name}?</ThemedText>
           <ThemedText style={styles.body}>{archiveConfirmBody(pet)}</ThemedText>
           {/* `primary`, not `destructiveFilled` (round P7): archiving is reversible and

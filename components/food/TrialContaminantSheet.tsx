@@ -26,6 +26,7 @@
 import { Modal, View, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   visible: boolean;
@@ -43,6 +44,7 @@ interface Props {
 export function TrialContaminantSheet({
   visible, title, body, trialLine, onAddAnyway, onNotNow,
 }: Props) {
+  const sheetCap = useSheetCap();
   return (
     <Modal
       visible={visible}
@@ -54,7 +56,7 @@ export function TrialContaminantSheet({
       <Pressable style={styles.backdrop} onPress={onNotNow} />
       {/* Empty-onPress wrapper so taps on the sheet's own whitespace don't fall
           through to the absolute-positioned backdrop and dismiss it mid-read. */}
-      <Pressable style={styles.sheet} onPress={() => {}}>
+      <Pressable style={[styles.sheet, sheetCap]} onPress={() => {}}>
         <View style={styles.grabber} />
         <ThemedText style={styles.title}>{title}</ThemedText>
         <ThemedText style={styles.body}>{body}</ThemedText>

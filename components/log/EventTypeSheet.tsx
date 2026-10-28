@@ -28,6 +28,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 import { useAuthStore } from '../../store/authStore';
 import { cachedAiConsent, loadAiConsent } from '../../store/aiConsentStore';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -140,6 +141,7 @@ function TitleRowContent({ name, photoPath }: { name: string; photoPath: string 
 export function EventTypeSheet({
   visible, onClose, initialType = null, veil = 'own', onVeilTaken, onExited,
 }: Props) {
+  const sheetCap = useSheetCap();
   const { pets, activePet } = usePetStore();
   const insets = useSafeAreaInsets();
   // The sheet's height cap, in POINTS (CUL-755) — see the avoider below for why it is
@@ -475,7 +477,7 @@ export function EventTypeSheet({
             move with the keyboard anyway; the switcher is reachable only from the
             grid, which has no fields. */}
         <KeyboardAvoidingView
-          style={styles.avoider}
+          style={[styles.avoider, sheetCap]}
           // iOS only, like every other note-bearing screen here — and on Android that
           // is a pass-through rather than a gap: RN's Modal sets SOFT_INPUT_ADJUST_RESIZE
           // on the dialog's OWN window (ReactModalHostView.kt), independent of the

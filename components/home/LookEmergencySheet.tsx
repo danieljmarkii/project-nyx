@@ -30,6 +30,7 @@ import {
   type EmergencyRead,
 } from '../../lib/lookEmergency';
 import { useFloorOn } from '../../hooks/useFloorOn';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   visible: boolean;
@@ -46,6 +47,7 @@ interface Props {
 }
 
 export function LookEmergencySheet({ visible, species, petName, read, onClose }: Props) {
+  const sheetCap = useSheetCap();
   const waiting = read.status === 'loading';
   // Engines v3 PR-28b — "Subdued and vomiting" is call now only where the vomit read says so.
   const floorOn = useFloorOn();
@@ -53,7 +55,7 @@ export function LookEmergencySheet({ visible, species, petName, read, onClose }:
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
-      <View style={styles.sheet} accessibilityViewIsModal>
+      <View style={[styles.sheet, sheetCap]} accessibilityViewIsModal>
         <View style={styles.grabber} />
         <ThemedText style={styles.title}>{EMERGENCY_SHEET_TITLE}</ThemedText>
         <ThemedText style={styles.subject}>For {petName}</ThemedText>

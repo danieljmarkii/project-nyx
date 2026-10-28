@@ -47,6 +47,23 @@ export function bleedFor(gutter: number, paddingX = 0): ViewStyle | null {
   return gutter > 0 ? { marginHorizontal: -gutter, paddingHorizontal: paddingX + gutter } : null;
 }
 
+/**
+ * A sheet's panel, held to the column (CUL-2243). A `<Modal>` presents in its own window,
+ * outside the root column, so at regular a bottom sheet would span the whole canvas. Its
+ * panel steps in from each side by the gutter, so it sits centred over the column's width
+ * whatever its shape: a stretched flex child narrows to the column, and an absolute panel
+ * (`left`/`right` insets) moves in by the same amount, since a margin adds to its offsets.
+ * `marginX` is the panel's own side margin, kept inside the column. Null at compact, so a
+ * phone's sheet is exactly what it was; width only, the panel's height is its own.
+ */
+export function sheetCapFor(gutter: number, marginX = 0): ViewStyle | null {
+  return gutter > 0 ? { marginHorizontal: marginX + gutter } : null;
+}
+
+export function useSheetCap(marginX = 0): ViewStyle | null {
+  return sheetCapFor(useColumn().gutter, marginX);
+}
+
 export function useLayoutClass(): LayoutClass {
   const { width, height } = useWindowDimensions();
   return layoutClassFor(width, height);

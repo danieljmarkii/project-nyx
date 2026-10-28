@@ -27,6 +27,7 @@ import {
   EXPOSURE_REASON_TITLE,
   type TrialExposureRow,
 } from '../../lib/trialExposuresScreen';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   row: TrialExposureRow;
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export function ExposureReasonSheet({ row, onClose }: Props) {
+  const sheetCap = useSheetCap();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
@@ -43,7 +45,7 @@ export function ExposureReasonSheet({ row, onClose }: Props) {
         accessibilityLabel="Close"
       />
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
-        <View style={styles.sheet} testID="exposure-reason-sheet">
+        <View style={[styles.sheet, sheetCap]} testID="exposure-reason-sheet">
           <View style={styles.grabber} />
           <ThemedText style={styles.title}>{EXPOSURE_REASON_TITLE}</ThemedText>
           {/* The row's own identity, so the sheet can never be read against the

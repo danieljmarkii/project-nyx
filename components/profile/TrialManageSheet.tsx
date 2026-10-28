@@ -46,6 +46,7 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { TrialWindowPanel } from './TrialWindowPanel';
 import type { TrialWindowSheetTrial } from './TrialWindowPanel';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 /** Which body is on the stage. `door` is always where it opens. */
 type Step = 'door' | 'window';
@@ -100,6 +101,7 @@ export function TrialManageSheet({
   visible, trial, petName, busy = false, writeError = null,
   onClose, onDismissed, onReplaceTrial, onSelectionChanged, onSave,
 }: Props) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('door');
 
@@ -129,7 +131,7 @@ export function TrialManageSheet({
         {/* The layer declares itself modal so a screen reader cannot wander back
             into the profile behind it (C-14). */}
         <View
-          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}
           accessibilityViewIsModal
         >
           <View style={styles.grabber} />

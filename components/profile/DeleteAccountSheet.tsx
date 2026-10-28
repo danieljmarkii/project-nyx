@@ -19,6 +19,7 @@ import {
   deleteAccountConfirmBody,
   requestAccountDeletion,
 } from '../../lib/account';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface DeleteAccountSheetProps {
   visible: boolean;
@@ -28,6 +29,8 @@ interface DeleteAccountSheetProps {
 }
 
 const OFFLINE_MSG = "You'll need a connection to delete your account.";
+// The card's side inset, which the unfolded Duo's column keeps (CUL-2243).
+const CARD_MARGIN_X = 14;
 const FAILED_MSG = "We couldn't finish deleting your account. Check your connection and try again.";
 
 // Destructive type-to-confirm account deletion (B-039 FR-9…FR-12) with re-auth
@@ -41,6 +44,7 @@ const FAILED_MSG = "We couldn't finish deleting your account. Check your connect
 // wipe (clearLocalData + active-pet clear + petStore.reset) and routes to auth,
 // where a brief confirmation shows.
 export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccountSheetProps) {
+  const sheetCap = useSheetCap(CARD_MARGIN_X);
   const insets = useSafeAreaInsets();
   const online = useIsOnline();
   const [typed, setTyped] = useState('');
@@ -144,7 +148,7 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <Pressable style={styles.scrim} onPress={handleClose} />
-        <View style={[styles.card, { marginBottom: insets.bottom + 18 }]}>
+        <View style={[styles.card, { marginBottom: insets.bottom + 18 }, sheetCap]}>
           <ThemedText style={styles.title}>Delete your account?</ThemedText>
           <ThemedText style={styles.body}>{deleteAccountConfirmBody(petNames)}</ThemedText>
 
@@ -230,7 +234,7 @@ const styles = StyleSheet.create({
     // 14 / +18 below mirror ArchivePetSheet so the two floating confirm sheets
     // share identical insets (off-grid by intent; tokenizing the archetype across
     // both sheets is a separate cleanup).
-    marginHorizontal: 14,
+    marginHorizontal: CARD_MARGIN_X,
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusLarge,
     paddingTop: theme.space3,

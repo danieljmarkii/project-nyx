@@ -80,6 +80,7 @@ import { useEventStore } from '../../store/eventStore';
 import { useMomentStore } from '../../store/momentStore';
 import type { PickerFood } from '../../lib/db';
 import { TAP_TARGET_FLOOR, verticalSlopTo } from '../../lib/tapTarget';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 /** Brand + product, the app's one spelling of a food's name (`foodLabel` in
  *  `lib/dietTrialSetup.ts` and `lib/feedingArrangements.ts` are the same two words);
@@ -142,6 +143,7 @@ export function IntakeFirstMealPanel({
   onClose,
   onNavigateAway,
 }: PanelProps) {
+  const sheetCap = useSheetCap();
   const [step, setStep] = useState<Step>({ kind: 'loading' });
   // PRESENTATION ONLY — the chips stand down while a write is in flight. It is NOT the
   // re-entrancy guard, and the first cut treating it as one is the defect below.
@@ -336,7 +338,7 @@ export function IntakeFirstMealPanel({
         accessibilityLabel={INTAKE_SHEET_BACK}
       />
       <View
-        style={[styles.sheet, step.kind === 'food' && styles.sheetTall]}
+        style={[styles.sheet, step.kind === 'food' && styles.sheetTall, sheetCap]}
         accessibilityViewIsModal
       >
         <View style={styles.grabber} />

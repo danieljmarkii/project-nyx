@@ -3,6 +3,7 @@ import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { AdherenceChipRow, DoseAdherence } from './AdherenceChipRow';
 import { comboConfirmHeadsUp, doseAdherencePrompt } from '../../lib/medications';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // B-325 — the retroactive combo-confirm sheet. Shown when an owner adds a med to an
 // ALREADY-logged meal/treat the pet DID NOT FINISH (vehicle refused/picked). This is the
@@ -31,6 +32,7 @@ interface Props {
 }
 
 export function ComboDoseConfirmSheet({ visible, petName, foodName, onAnswer, onNotSure }: Props) {
+  const sheetCap = useSheetCap();
   return (
     <Modal
       visible={visible}
@@ -42,7 +44,7 @@ export function ComboDoseConfirmSheet({ visible, petName, foodName, onAnswer, on
       {/* Tapping the backdrop is "Not sure yet" — a dismiss must never silently coerce a
           "given"; it leaves the dose unconfirmed, exactly like the explicit button. */}
       <Pressable style={styles.backdrop} onPress={onNotSure} />
-      <Pressable style={styles.sheet} onPress={() => {}}>
+      <Pressable style={[styles.sheet, sheetCap]} onPress={() => {}}>
         <View style={styles.grabber} />
         {/* Heads-up: the fact, naming the specific not-finished food. Never softens the
             refusal, never reassures (clinical-guardrails). */}
