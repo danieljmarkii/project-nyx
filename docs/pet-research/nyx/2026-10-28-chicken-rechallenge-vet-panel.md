@@ -1,102 +1,128 @@
 # Nyx's chicken rechallenge: a vet panel read of the record
 
-**Date:** 2026-10-28 (data pulled 2026-10-27, rechecked 2026-10-28: no new vomits since 10-27 07:44)
+**Date:** 2026-10-28, refreshed 12:30 CT with two new vomits (10-27 19:40, 10-28 11:43). The first version of this file (data to 10-27) shipped in PR #1340; git history keeps it.
 **Prepared for:** the PM, as Nyx's owner
-**Lenses (independent, isolated reads):** GI Internist (DACVIM, feline focus) · Veterinary Nutritionist (DACVN) · Emergency/Criticalist (DACVECC) · Skeptical GP. Chaired and reconciled by the GP lens (Dr. Alex Chen). Method: `docs/vet-specialist-panel.md` §4.2.
+**Lenses (independent, isolated reads, reconvened on the refreshed data):** GI Internist (DACVIM, feline focus) · Veterinary Nutritionist (DACVN) · Emergency/Criticalist (DACVECC) · Skeptical GP. Chaired and reconciled by the GP lens (Dr. Alex Chen). Method: `docs/vet-specialist-panel.md` §4.2.
 **Companion:** [`2026-10-28-chicken-rechallenge-vet-summary.md`](./2026-10-28-chicken-rechallenge-vet-summary.md), a one page version to bring to Nyx's vet.
 
-> **Data note.** Same boundary as [the June panel deep dive](../../research/2026-06-vet-council-nyx-deep-dive.md): this analyses the PM's own cat ("Nyx", `pets.id = bf7b196e-6db1-4a34-af34-f1759d380042`) in the PM's own database, at the PM's explicit request, captured into the PM's private repo. It is identifiable pet health narrative. It is evidence for a conversation with Nyx's vet, not a diagnosis and not a treatment decision; no lens examined the cat.
+> **Data note.** Same boundary as [the June panel deep dive](../../research/2026-06-vet-council-nyx-deep-dive.md): this analyses the PM's own cat ("Nyx", `pets.id = bf7b196e-6db1-4a34-af34-f1759d380042`) in the PM's own database, at the PM's explicit request. It is identifiable pet health narrative. It is evidence for a conversation with Nyx's vet, not a diagnosis and not a treatment decision; no lens examined the cat.
 
 ---
 
 ## 0. Bottom line
 
-1. **The rechallenge so far neither convicts nor clears chicken.** Three vomiting episodes in 8.9 days sits inside Nyx's own rabbit only background. A third of all nine day stretches on rabbit had three or more episodes.
-2. **The rechallenge as run cannot isolate chicken.** It added two new products at once, with rice, guar gum, tapioca and vegetable oil, a new lickable format and about three extra feedings a day.
-3. **Prednisolone ended 10-10, eight days before chicken started.** Steroid withdrawal is a competing explanation for any October rise.
-4. **The question that outranks chicken is her weight:** 4.40 kg on 06-15, 3.73 kg on 09-16, a 15% drop if both numbers are real. All four lenses put this first, independently.
-5. **Mood evidence carries little weight either way.** "Played" on 10-20, 10-21 and 10-23 is real and welcome, but cats hide illness and no look was logged 10-24 to 10-27.
+**All four lenses, independently: call Nyx's vet today, and have her examined within 24 to 48 hours.**
+
+1. **Something changed on 10-26.** Four vomiting episodes in 53.5 hours, on three days in a row, each 1 to 5 hours after eating with food in it. Nothing like it appears anywhere in her record: on rabbit she never had more than 2 in any 60 hour stretch, and even before the trial the most was 3.
+2. **The stop signs the panel set yesterday have been met.** Vomiting on a third day in a row, two episodes within 24 hours (10-27), and 5 episodes by day 10 against a day 14 line of 6.
+3. **Today's vomit may have blood in it** (the photo read says "unsure").
+4. **It still does not convict chicken.** Vomiting rose as the chicken purée was cut back, not as it was given most. Rice, guar gum, tapioca, vegetable oil and more meals came in at the same time. Prednisolone, which may have been holding down inflammation, ended 16 days before the cluster.
+5. **The weight question is still open and still matters most:** 4.40 kg on 06-15, 3.73 kg on 09-16. If both numbers are real, the loss predates chicken and needs a workup whatever the diet answer is.
+
+### The table
+
+| Period | Vomiting episodes per week |
+|---|---|
+| Before the trial (mixed diet, mostly chicken) | 2.88 |
+| Rabbit, August | 1.14 |
+| Rabbit, September, no steroid | 2.10 |
+| Rabbit, on prednisolone (9/21 to 10/11) | 1.33 |
+| Rabbit, after prednisolone stopped | 2.11 |
+| **Chicken rechallenge (from 10/18)** | **3.54** (was 2.36 on 10-27) |
+| &nbsp;&nbsp;&nbsp;Chicken, first week (10/18 to 10/25) | 0.95 |
+| &nbsp;&nbsp;&nbsp;Chicken, 10/26 to 10/28 | 11.1 |
 
 ---
 
-## 1. Trigger
+## 1. What changed since the 10-27 read
 
-The PM asked to convene the vet panel over Nyx's backend data. Nyx finished a ~12 week rabbit elimination trial and chicken went back in on 10-18 at roughly 1/3 chicken, 2/3 rabbit. Since then there have been three vomiting incidents. The question: keep her on the chicken reintroduction, or go back to rabbit and call chicken the culprit? The PM's prior: vomiting dropped on rabbit but never reached zero, so three vomits may be baseline. The PM also noted no visible change in mood, if anything happier with chicken, and was unsure whether mixed meals had been backfilled for the early reintroduction days.
+| | 10-27 read | 10-28 refresh |
+|---|---|---|
+| Rechallenge episodes | 3 in 8.9 days | **5 in 9.9 days** |
+| Rechallenge rate | 2.36 a week | **3.54 a week** (95% CI ~1.15 to 8.26) |
+| Share of rabbit phase windows this busy | 34% had 3 or more | **2.5% had 5 or more** |
+| Tightest cluster | 2 episodes in ~25 h | **4 episodes in 53.5 h** (no precedent) |
+| Consecutive days | 2 | **3** (10-26, 10-27, 10-28) |
+| Blood seen | none | **"unsure" on 10-28** |
+| Panel verdict | neither convicts nor clears chicken; baseline noise not ruled out | **a real change; cause unresolved; vet today** |
+
+The PM's earlier prior (three vomits may be baseline) was a fair read of the 10-27 data and the panel agreed it could not be ruled out. Two more episodes in 28 hours moved the record past anything in her rabbit phase.
+
+## 2. Trigger
+
+The PM asked the vet panel to read Nyx's backend data. Nyx finished a ~12 week rabbit elimination trial and chicken went back in on 10-18 at roughly 1/3 chicken, 2/3 rabbit. The question: stay on the chicken reintroduction, or go back to rabbit and call chicken the culprit? On 10-28 the PM logged two more vomits and asked for the analysis to be rerun and these files overwritten.
 
 Culprit itself never recommends continuing or stopping a diet trial. This document follows the same line: it lays out evidence, differentials and paths, and the decision belongs to the owner and Nyx's vet.
 
-## 2. What was pulled
+## 3. What was pulled
 
-From the production database (Supabase project `aigchluqluzuhtbfllgh`), for Nyx only, live rows only (`deleted_at is null`), times converted to the account timezone **America/Chicago**:
+From the production database (Supabase project `aigchluqluzuhtbfllgh`), for Nyx only, live rows only (`deleted_at is null`), times in the account timezone **America/Chicago**:
 
 | Source | What |
 |---|---|
-| `events` + `meals` + `food_items` + `meal_components` | Every meal 10-10 to 10-27 with product, protein and mixed bowl shares; full ingredient lists of both chicken products |
-| `events` + `event_ai_analysis` | All 55 live vomit logs since 05-14, with the photo read, tier and contextual flags |
+| `events` + `meals` + `food_items` + `meal_components` | Every meal 10-10 to 10-28 with product, protein and mixed bowl shares; ingredient lists of both chicken products |
+| `events` + `event_ai_analysis` | All 57 live vomit logs since 05-14, with the photo read, tier and contextual flags |
 | `diet_trials` + `diet_trial_foods` | The rabbit trial record and its allowed set |
 | `medications` + `medication_administrations` | Prednisolone, Motozol, cetirizine dose logs |
-| `looks` | All 14 Noticed entries |
-| `weight_checks` | Both weights on file |
-| `intake_checks` | The two intake answers on the 10-26 vomit |
+| `looks` | All 15 Noticed entries |
+| `weight_checks`, `pets.weight_kg` | Both weights on file (nothing new since 09-16) |
+| `intake_checks` | The intake answers on the 10-26 and 10-28 vomits |
 | `events` (cough, sneeze, itch, other) | Non GI signs since 09-01 |
 
-**Mixed meals: no backfill needed.** Before mixed bowls shipped, the owner logged rabbit and chicken back to back (for example 10-19 07:20:48 RC wet, 07:21:05 Applaws). From 10-22 the six mixed bowls are logged as 2/3 RC rabbit wet + 1/3 Applaws. Both shapes read correctly for this analysis.
+**Mixed meals: no backfill needed.** Before mixed bowls shipped, rabbit and chicken were logged back to back; from 10-22 the mixed bowls are logged as 2/3 RC rabbit wet + 1/3 Applaws. Both shapes read correctly.
 
-**Episode definition.** Vomit logs within 90 minutes of each other count as one episode. This merges the two 10-26 logs (16 min apart) and two 09-25 logs (62 min apart).
+**Episode definition.** Vomit logs within 90 minutes of each other count as one episode (merges the two 10-26 logs 16 min apart, and two 09-25 logs 62 min apart).
 
-## 3. The record
+## 4. The record
 
-### 3.1 Patient
+### 4.1 Patient
 
 - Cat, female, American Shorthair, born 2023-09-01 (3 years 1 month).
-- Weight on file: **4.40 kg dated 06-15** (home scale, entered retroactively on 10-09, `source_basis = entry`) and **3.73 kg on 09-16** (home scale). No weight since 09-16. **Unverified; see §8.**
+- Weight on file: **4.40 kg dated 06-15** (home scale, entered retroactively on 10-09) and **3.73 kg on 09-16** (home scale). No weight since. **Unverified; see §9.**
 
-### 3.2 Diet timeline
+### 4.2 Diet timeline
 
 - **Before the trial (05-14 to 07-25, 73 days).** Rotating commercial wet foods and treats, mostly chicken based (Fancy Feast, Hill's, Instinct, Tiki Cat, Sheba, Temptations, Friskies Party Mix, Delectables lickables), plus some beef, duck, turkey and fish.
-- **Rabbit elimination (07-26 to 10-18).** Royal Canin Selected Protein PR dry (peas, rabbit meal, pea protein, coconut oil, hydrolyzed soy protein, fish oil, ...) and wet; Instinct LID Rabbit wet; cooked rabbit; Rayne Rabbit Rewards treats; Vital Essentials freeze dried rabbit. A slow feeder came in around 09-21, used for dry food only. The trial is recorded as **completed 10-20, outcome "improved"**. Owner note: *"mostly down to scarf and barfs now."*
+- **Rabbit elimination (07-26 to 10-18).** Royal Canin Selected Protein PR dry (peas, rabbit meal, pea protein, coconut oil, hydrolyzed soy protein, fish oil, ...) and wet; Instinct LID Rabbit wet; cooked rabbit; Rayne Rabbit Rewards; Vital Essentials freeze dried rabbit. Slow feeder from ~09-21, dry food only. Recorded **completed 10-20, outcome "improved"**; owner note *"mostly down to scarf and barfs now."*
 - **Chicken rechallenge (from 10-18 ~15:13).** Two chicken products, both new to her:
 
-| Product | Ingredients | Feedings 10-18 to 10-27 |
+| Product | Ingredients | How it was fed |
 |---|---|---|
-| Blue Buffalo Tastefuls Purées with Chicken (lickable) | Chicken broth, chicken, **tapioca starch, vegetable oil, guar gum** | 25 (~3 a day) |
-| Applaws Chicken Breast in broth | Chicken breast, chicken broth, **rice** | 8 alone + 6 mixed bowls at 1/3 |
-| Royal Canin Selected Protein PR (rabbit) | as above | 26 |
-| Rayne Rabbit Rewards (treat) | rabbit | 7 |
+| Blue Buffalo Tastefuls Purées with Chicken (lickable) | Chicken broth, chicken, **tapioca starch, vegetable oil, guar gum** | Purées per day 10-18 to 10-25: 2, 3, 2, 3, 5, 2, 3, 3. Then **1, 1, 0** on 10-26, 10-27, 10-28. |
+| Applaws Chicken Breast in broth | Chicken breast, chicken broth, **rice** | From **10-19**: alone at first (about 2 a day), then in mixed bowls of 2/3 RC rabbit wet + 1/3 Applaws from 10-22. Roughly 1 to 2 servings a day throughout. |
+| Royal Canin Selected Protein PR (rabbit), Rayne rabbit treats | rabbit | Throughout |
 
-Portions are not recorded (`quantity = unknown` on every log). The owner estimates about 1/3 chicken, 2/3 rabbit by volume. By logged feedings, about half contain chicken.
+- Logged meals per day: 10-10 to 10-17: 4, 6, 6, 5, 4, 3, 3, 1 · 10-18 to 10-25: 10, 8, 7, 10, 8, 7, 7, 11 · 10-26: 6 · 10-27: 4 · 10-28 (to noon): 1. Portions are never recorded and intake is almost never rated, so fewer logs is not by itself evidence she ate less; logging density also varied before chicken (one log on 10-17).
+- **Trial record.** The schema supports `phase = reintroduction`, but Nyx's trial was closed as `elimination` on 10-20 and chicken never joined `diet_trial_foods`, so the app's trial aware surfaces don't know a rechallenge is running.
 
-**Trial record.** The schema supports `phase = reintroduction`, but Nyx's trial stayed `elimination` and was closed on 10-20, and chicken was never added to its food set. The app's trial aware surfaces therefore do not know a rechallenge is running.
-
-### 3.3 Medications and other signs
+### 4.3 Medications and other signs
 
 | Item | Dates | Notes |
 |---|---|---|
-| **Prednisolone 5 mg PO** (for cough, Dr. Miller) | 09-21 to ~10-10 | Daily for ~10 days, many doses logged "partial" (given in food), then every 48 h. Last dose logged **10-10**. |
+| **Prednisolone 5 mg PO** (for cough, Dr. Miller) | 09-21 to ~10-10 | Daily ~10 days (many doses logged "partial", given in food), then every 48 h. Last dose logged **10-10**: 8 days before chicken, 16 days before the cluster. |
 | Cetirizine | 10-03, 10-11, 10-12, 10-20, 10-24 | Intermittent |
 | Motozol (otic) | 07-16 to 08-09; 09-21 to 09-27 | Ear infection |
 | Cough | 33 logs since 07-01 | Most recent 10-21 |
 | Sneeze | 15 logs | Most recent 10-24 |
 | Itch / ear | Through 09-13 | Nothing since |
-| Stool | None live | 8 diarrhea logs in May and June, all later deleted; no stool record exists |
+| Stool | None live | 8 diarrhea logs in May and June, later deleted; no stool record exists |
 
-### 3.4 Vomiting rate by period
+### 4.4 Vomiting rate by period
 
 | Period | Days | Episodes | Per week |
 |---|---|---|---|
-| Before the trial, mixed chicken heavy diet | 73.0 | 30 | **2.88** |
-| Rabbit, weeks 1 to 5 (07-26 to 08-31) | 37.0 | 6 | 1.14 |
-| Rabbit, 09-01 to 09-20, no steroid | 20.0 | 6 | 2.10 |
-| Rabbit, on prednisolone, 09-21 to 10-11 | 21.0 | 4 | 1.33 |
-| Rabbit, off steroid, 10-12 to 10-18 (pre chicken) | 6.6 | 2 | 2.11 |
-| **Chicken rechallenge, 10-18 15:13 to 10-27** | **8.9** | **3** | **2.36** (95% CI ~0.49 to 6.89) |
-| All rabbit elimination, 07-26 to 10-18 | 84.6 | 18 | 1.49 |
-| Rabbit, no steroid (07-26 to 09-20) | 57.0 | 12 | 1.47 |
-| Last 30 days before chicken | 30.0 | 6 | 1.40 |
+| Before the trial (mixed diet, mostly chicken) | 73.0 | 30 | **2.88** |
+| Rabbit, August (07-26 to 08-31) | 37.0 | 6 | 1.14 |
+| Rabbit, September, no steroid (09-01 to 09-20) | 20.0 | 6 | 2.10 |
+| Rabbit, on prednisolone (09-21 to 10-11) | 21.0 | 4 | 1.33 |
+| Rabbit, after prednisolone stopped (10-12 to 10-18) | 6.6 | 2 | 2.11 |
+| **Chicken rechallenge, all (10-18 15:13 to 10-28 12:30)** | **9.9** | **5** | **3.54** (95% CI ~1.15 to 8.26) |
+| Chicken, first week (10-18 to 10-25) | 7.4 | 1 | 0.95 |
+| Chicken, 10-26 to 10-28 | 2.5 | 4 | 11.1 |
+| All rabbit (07-26 to 10-18) | 84.6 | 18 | 1.49 |
+| Last 30 days on rabbit | 30.0 | 6 | 1.40 |
 
-Meals were logged on essentially every day of every period (71 of 73, 37/37, 19/20, 21/21, 7/7, 10/10), so logging gaps do not drive these rates.
-
-### 3.5 Episodes per calendar week (Monday start)
+### 4.5 Episodes per calendar week (Monday start)
 
 | Week of | Episodes | | Week of | Episodes |
 |---|---|---|---|---|
@@ -109,50 +135,48 @@ Meals were logged on essentially every day of every period (71 of 73, 37/37, 19/
 | Jun 22 | 3 | | Sep 28 | 0 |
 | Jun 29 | 3 | | Oct 5 | 1 |
 | Jul 6 | 2 | | Oct 12 | 3 (third is 10-18, 26 min after first chicken) |
-| Jul 13 | 2 | | **Oct 19** | **0 (first full chicken week)** |
-| Jul 20 | 2 | | Oct 26 | 2 (through 10-28) |
+| Jul 13 | 2 | | Oct 19 | 0 (first full chicken week) |
+| Jul 20 | 2 | | **Oct 26** | **4 by Wednesday noon** |
 | **Jul 27 (rabbit starts)** | 2 | | | |
 | Aug 3 | 2 | | | |
 | Aug 10 | 0 | | | |
 
-Note the Skeptical GP's point in §5.4: the decline began **before** rabbit (late June and July ran 3, 3, 3, 2, 2, 2). The 2.88 pretrial average is pulled up by May, which was also the owner's first weeks learning the app.
+The decline began before rabbit (late June and July ran 3, 3, 3, 2, 2, 2); the 2.88 pretrial average is pulled up by May, which was also the owner's first weeks with the app.
 
-### 3.6 How unusual is three episodes in nine days?
+### 4.6 How unusual is the current picture?
 
-Computed over the rabbit phase (07-26 to 10-18), sliding an 8.9 day window hour by hour:
-
-- **34% of rabbit only windows held 3 or more episodes.** The busiest held **5** (09-17 to 09-26).
-- Poisson probability of 3+ episodes in 8.9 days:
-
-| If her true rate is still... | Expected | P(3+) |
-|---|---|---|
-| Last 30 days on rabbit (1.40/wk) | 1.78 | 0.26 |
-| All rabbit (1.49/wk) | 1.90 | 0.30 |
-| September rabbit, no steroid (2.10/wk) | 2.67 | 0.50 |
-| Pretrial (2.88/wk) | 3.66 | 0.71 |
-
-- Power going forward, with an alarm threshold set for ~8% false alarms against the rabbit rate (1.49/wk):
-
-| Horizon | Alarm at | False alarm | Detects a return to the pretrial rate |
+| Measure | Rabbit phase | Before the trial | Now |
 |---|---|---|---|
-| 14 days | 6+ episodes | 0.08 | 0.52 |
-| 21 days | 8+ | 0.08 | 0.63 |
-| 28 days | 10+ | 0.08 | 0.71 |
+| Most episodes in any 60 hour window | 2 | 3 | **4** (in 53.5 h) |
+| Longest run of consecutive vomiting days | 2 | 4 | **3** |
+| Share of 9.9 day windows with 5+ episodes | 2.5% (max 5) | 25% (max 6) | **5** |
 
-These assume vomits arrive at random. They cluster, so the real uncertainty is wider than shown.
+Poisson probability of what has happened, if her true rate were still...
 
-### 3.7 The three rechallenge episodes
+| Rate | 5+ in 9.9 days | 4+ in 2.25 days |
+|---|---|---|
+| Last 30 days on rabbit (1.40/wk) | 0.05 | |
+| All rabbit (1.49/wk) | 0.06 | 0.0015 |
+| September rabbit, no steroid (2.10/wk) | 0.18 | |
+| Pretrial (2.88/wk) | 0.38 | 0.015 |
 
-| # | When (CT) | What she ate before | What came up | App read |
-|---|---|---|---|---|
-| 1 | **10-18 15:39** | RC rabbit kibble **2 min** before and 19 min before; first ever chicken purée 27 min before | Foamy, white, partly digested food | "Logged" tier, monitor |
-| 2 | **10-26 06:10 and 06:26** (two logs, one episode) | RC rabbit kibble 3.4 h before; chicken purée 4.5 h before | Second log: brown, chunky, undigested food; no bile, no blood seen | **Call today**, repeated vomiting |
-| 3 | **10-27 07:44** | Rabbit treat 66 min before; chicken purée 2.1 h before | Tan, chunky, partly digested food with liquid; no bile, no blood seen | **Call today**; text says "three days in a row" (a bug, §9) |
+Vomiting clusters, so true probabilities are higher than Poisson says. Read these as orders of magnitude, and note the 60 hour window was chosen after the cluster was seen.
 
-- Days 2 to 7 of the rechallenge (10-19 to 10-25) had **no vomiting**.
-- Intake check on episode 2: the owner answered that she had been fed since the previous morning. Intake amounts are otherwise unrated.
+### 4.7 The rechallenge episodes
 
-### 3.8 Rabbit phase vomiting, for comparison (09-01 onward)
+| # | Day | When (CT) | What she ate before | What came up | App read |
+|---|---|---|---|---|---|
+| 1 | 1 | 10-18 15:39 | RC rabbit kibble **2 min** before; first chicken purée 27 min before | Foamy, white, partly digested food | Logged, monitor |
+| | 2 to 7 | 10-19 to 10-25 | | **No vomiting** | |
+| 2 | 8 | 10-26 06:10 and 06:26 (two logs, one episode) | RC rabbit kibble 3.4 h before; chicken purée 4.5 h before | Brown, chunky, undigested food; no bile, no blood seen | Call today |
+| 3 | 9 | 10-27 07:44 | Rabbit treat 66 min before; chicken purée 2.1 h before | Tan, chunky, partly digested food with liquid; no bile, no blood seen | Call today |
+| 4 | 9 | **10-27 19:40** | Mixed bowl (2/3 rabbit, 1/3 Applaws) 3.7 h before | Tan, chunky, partly digested food; no bile, no blood seen | Call today |
+| 5 | 10 | **10-28 11:43** | Mixed bowl 4.7 h before | Brown, soft formed, partly digested food; no bile; **blood "unsure"** | Call today: three days in a row |
+
+- **Pattern shift:** episode 1 has scarf and barf timing; episodes 2 to 5 all came 1 to 5 hours after eating with food in them. The rabbit phase had some delayed vomits too (09-04, 09-07, 09-22), so the shift is partial, not total.
+- Intake checks after episodes 2 and 5: the owner answered that she had been fed since the previous morning/afternoon. Amounts eaten are unrated.
+
+### 4.8 Rabbit phase vomiting, for comparison (09-01 onward)
 
 | When (CT) | Minutes after last meal | Character | Note |
 |---|---|---|---|
@@ -165,16 +189,14 @@ These assume vomits arrive at random. They cluster, so the real uncertainty is w
 | 09-21 16:40 | 5 | Tan, food | "Scarf and barf"; slow feeder starts |
 | 09-22 01:30 | 209 | Mixed, bile, food | Suspected foreign material |
 | 09-25 19:08 | 19 | Yellow, watery, bile | On prednisolone |
-| 09-25 20:10 | 81 | Yellow, foamy, bile | Same episode as above; "hunched" look that evening |
+| 09-25 20:10 | 81 | Yellow, foamy, bile | Same episode; "hunched" look that evening |
 | 10-09 14:53 | 0 | Tan, food | "Happened right after eating" |
 | 10-14 17:44 | 0 | Tan, food | |
 | 10-16 07:33 | 2 | Tan, food, hair | |
 
-Pattern: most rabbit phase vomits are tan and chunky with partly digested food; bile in a minority; hair now and then. **Many came 0 to 5 minutes after eating**, the eating too fast shape. Others came hours after a meal or early in the morning, which is what episodes 2 and 3 look like.
+The app's "reduced intake" flag on 09-04, 09-22, 09-25 and 10-09 fires on blank intake ratings, not on observed refusal; it is weak evidence either way.
 
-The app's "reduced intake" flag fired on 09-04, 09-22, 09-25 and 10-09. It fires because intake ratings are mostly blank, not because she was seen refusing food. It is weak evidence either way.
-
-### 3.9 Noticed (owner observed behaviour)
+### 4.9 Noticed (owner observed behaviour)
 
 | Day | Look |
 |---|---|
@@ -184,203 +206,174 @@ The app's "reduced intake" flag fired on 09-04, 09-22, 09-25 and 10-09. It fires
 | 10-03, 10-06 | Nothing unusual |
 | 10-08 | Played |
 | 10-11, 10-13 | Nothing unusual |
-| **10-20, 10-21, 10-23** | **Played** (on chicken) |
-| 10-24 to 10-27 | **Nothing logged** |
+| 10-20, 10-21, 10-23 | Played (on chicken) |
+| **10-27** | **Nothing unusual** (evening, after two vomits that day) |
 
 ---
 
-## 4. Method
+## 5. Method
 
-Per `docs/vet-specialist-panel.md` §4.2: each lens ran as an isolated subagent with a fresh context, read only the same computed and data minimized evidence pack (the tables above, no raw logs, photos or free text beyond short owner notes), and returned the §5 output contract. No lens saw another's read. The model was held constant across lenses so specialty was the only variable. Every lens inherited the two safety invariants verbatim: **n=1 / absence never reassures**, and **intake is not preference**. The chair (Dr. Chen, GP) reconciled the reads in §6.
-
-Rotation (§6 of the panel doc): GI Internist (the chronic vomiting question), Nutritionist (rechallenge design), Criticalist (where the safety line sits, the weight), Skeptical GP (the PM's "it's baseline" hypothesis and its opposite). The Behaviorist was not convened; the Skeptical GP covered the mood evidence.
+Per `docs/vet-specialist-panel.md` §4.2: each lens ran as an isolated subagent with a fresh context, read only the same computed and data minimized evidence pack, and returned the §5 output contract. No lens saw another's read or its own 10-27 read; they were reconvened fresh on the refreshed pack rather than shown yesterday's conclusions. The model was held constant across lenses. Every lens inherited the two safety invariants verbatim: **n=1 / absence never reassures**, and **intake is not preference**. The chair (Dr. Chen, GP) reconciled the reads in §7 and checked their factual claims against the record (§7.3).
 
 ---
 
-## 5. The panel reads
+## 6. The panel reads (10-28 refresh)
 
-### 5.1 GI Internist (DACVIM, feline focus)
+### 6.1 GI Internist (DACVIM, feline focus)
 
-**Gestalt.** Three episodes in 8.9 days fit inside her rabbit phase background, so the challenge so far neither convicts nor clears chicken. The bigger finding is that she never reached normal on rabbit, and her logged weight may have dropped 15%; together that calls for a workup whatever happens with chicken.
+**Gestalt.** The cluster since 10-26 has no precedent in this record. It is 4 episodes in 53.5 h on 3 consecutive days, the vomit now comes 1 to 5 h after meals with food in it, blood is possible, and a 15% weight loss may be real. It is associated with the rechallenge period, but the data cannot say chicken is the cause. Whatever the diet question turns out to be, she should be seen. The vet's findings should come before the diet verdict.
 
-**Ranked differentials for the rechallenge vomiting**
-1. *Background vomiting from a partly controlled chronic enteropathy, plus eating too fast.* For: 2.36/wk against 2.10/wk on rabbit in September with no steroid; episode 1 came 2 min after kibble; days 2 to 7 were clean. Against: episodes 2 and 3 came on back to back mornings, hours after meals, not the scarf and barf shape.
-2. *Chicken adverse food reaction recurring.* For: the chicken heavy pretrial rate was about double the elimination rate; onset around day 8 to 9 on consecutive days is a plausible rechallenge pattern. Against: the 95% CI is 0.5 to 6.9, and 34% of rabbit only windows held 3+.
-3. *Steroid withdrawal unmasking a steroid responsive enteropathy (IBD; small cell lymphoma less likely at 3 years, not excluded).* For: 1.33/wk on prednisolone, 2.11/wk off it, before any chicken; the possible weight loss. Against: tiny samples; the steroid was dosed for cough, not the gut.
-4. *Other new variables:* rice, guar gum, tapioca; a purée about 3 times a day; more meals and probably more total volume.
-5. *Outside the gut:* cough plus vomiting in a cat raises heartworm, lungworm and asthma. Owners also confuse retching with coughing.
+**Ranked differentials**
+1. *Adverse food reaction to a new item.* For: the chicken heavy pretrial rate was highest; it fell on rabbit; a day 8 onset fits a delayed immune mediated reaction. Against: the first chicken week was the cleanest week (0.95/wk); vomiting rose as the purée dropped to once a day, so the dose response runs backwards; chicken, rice, guar gum, tapioca and the new products can't be told apart.
+2. *Chronic enteropathy (IBD, steroid responsive) flaring after prednisolone stopped.* For: vomiting never reached zero on rabbit; September off steroid ran 2.10/wk; the cluster began 16 days after the last dose; delayed postprandial vomiting fits gastric or proximal intestinal inflammation or slowed emptying; the weight loss fits if real. Against: the first 8 days off steroid, and then the first chicken week, were quiet.
+3. *Acute new process (partial obstruction from a hairball or foreign material, gastritis, pancreatitis).* For: an unprecedented cluster; suspected foreign material on 09-22; undigested food coming up hours after meals; blood "unsure". Against: she is eating, playing and behaving normally. Normal behaviour does not rule this out.
+4. *Small cell lymphoma.* Less likely at 3 years old; if the weight loss is confirmed, it stays on the list until imaging or tissue says otherwise.
+5. *Mechanical / scarf and barf.* Least likely now; the pattern has moved away from vomiting minutes after eating.
 
-**Shows vs cannot rule out.** Shows: vomiting fell on rabbit but never stopped; the challenge rate has not clearly risen; no blood seen; behaviour looks normal. Cannot rule out: a slow chicken reaction, an underlying infiltrative disease, true weight loss, reduced intake. A quiet week is not wellness.
+**Shows vs cannot rule out.** Shows: an association between the rechallenge period and a cluster that exceeds every rabbit phase window and the pretrial maximum; a change in character. Cannot rule out: chicken being innocent, rice or the purée base, a steroid withdrawal flare, an obstruction, inflammation predating the trial, or weight loss.
 
-**Falsification.** Leading hypothesis: background, not chicken. Counterexample tried: a chicken trigger should show a delay, then clustering on consecutive days with vomiting well after meals; episodes 2 and 3 match that. It held only weakly, because the rabbit only window 09-17 to 09-26 held 5 episodes with similar clustering, so clustering does not separate the two. The hypothesis survives for "chicken specifically" and fails as "nothing to work up": benign mechanical vomiting does not explain a 15% weight drop if the weight is real.
+**Falsification.** Leading hypothesis: a reaction to the new diet. Counterexample: if chicken were the trigger, the week with the most chicken (~3 purées a day) should have vomited most; it vomited least. "Chicken specifically" did not hold. "Something introduced in the rechallenge" survived only partly; steroid withdrawal explains the same timeline as well. An honest verdict is not possible from this data.
 
-**Blind spots.** No portions; chicken never fed alone and mixed with rabbit from 10-22; weight backfilled, home scale, none since 09-16; no bloodwork, cobalamin, fecal, imaging or heartworm status visible; steroid overlaps the trial; vomit times estimated for finds; early logging was a learning period.
+**Blind spots.** No stool record (the biggest gap for an enteropathy workup); weight unverified and none since 09-16; no portions or intake; no bloodwork, B12 or imaging; vomiting not confirmed against regurgitation; the cough and steroid history may point to asthma; no water intake.
 
-**Paths.**
-- *Continue:* reasonable only with a stopping rule agreed in advance. Stop at blood, a full day of inappetence, lethargy, 2+ episodes in 24 h, or a confirmed weight drop; otherwise review at day 14 (11-01) against 6+ episodes. It catches a real relapse only about half the time.
-- *Return to rabbit:* a cleaner baseline, but convicts chicken on weak evidence, and reruns a trial that was never fully clean.
-- *Third path (preferred to discuss):* confirm weight on the vet's scale and start the workup now; then, from a stable rabbit baseline, rechallenge with one single ingredient chicken (no rice, no purée additives), fed alone in measured portions for 14 days.
-- *Start measuring:* weekly body weight, same scale, same time of day; tag each vomit as within 10 minutes of eating or later.
+**Paths.** *Continue:* produces information but puts a possibly unwell cat at risk until acute causes are ruled out; not "wait and see." *Return to rabbit:* works as a dechallenge; if vomiting stops within days, that supports a diet link, but does not convict chicken or rule out other causes. *Third path:* stop the challenge now and get her examined; once stable for 2+ weeks, rechallenge one ingredient at a time (plain chicken only, no rice, no purée base). *Urgency:* call today; exam within 24 to 48 h; sooner if she refuses food, vomits repeatedly in a day, seems lethargic, shows visible blood, or vomits bile with nothing else. *Start measuring:* a verified weight today, then weekly; rated intake per meal second.
 
-**For the vet this week.** Clinic scale weight and whether 4.40 kg is real; minimum workup for chronic vomiting with possible weight loss (CBC, chemistry, urinalysis, cobalamin/folate, fPLI, fecal, abdominal ultrasound for wall layering and lymph nodes); heartworm antigen/antibody and thoracic imaging given the cough; whether stopping prednisolone could explain the October rise; agree the stopping rule and review date before continuing chicken.
+**For the vet, today.** The cluster timeline and the 10-10 prednisolone stop; the possible 4.40 to 3.73 kg loss; minimum workup: exam with abdominal palpation, clinic weight and muscle condition score, CBC, chemistry, urinalysis, fPLI, cobalamin and folate, FeLV/FIV, fecal, radiographs if obstruction is suspected; abdominal ultrasound if weight loss is confirmed or vomiting persists after going back to rabbit; biopsy only if both persist. Ask whether the rechallenge can be read at all while a steroid withdrawal flare is possible.
 
-### 5.2 Veterinary Nutritionist (DACVN)
+### 6.2 Veterinary Nutritionist (DACVN)
 
-**Gestalt.** This challenge does not test chicken on its own: two new products, a new feeding format, new carriers and about three extra feedings a day went in at once. Its rate (2.36/wk) matches the off steroid elimination rate (2.10 to 2.11/wk), and the weight record is the most urgent nutritional signal, unresolved.
+**Gestalt.** This was not a clean chicken challenge: it added chicken, rice, tapioca, guar gum, an unnamed vegetable oil, a new lickable format and roughly twice as many meals at once. The rise after day 8 is a real red flag, made more urgent by a possible 15% weight loss, but it does not show chicken is the culprit.
 
 **Ranked explanations (diet design view)**
-1. *Background vomiting the rabbit diet never resolved* (fast eating, hair, a possible underlying gut problem). For: rate matches off steroid rabbit periods; episode 1 looks like scarf and barf; days 2 to 7 quiet. Against: two episodes on back to back mornings, hours after a meal.
-2. *A real reaction to chicken appearing on days 8 to 9.* For: delayed reactions often show 1 to 2 weeks into a challenge; the chicken heavy pretrial rate was higher. Against: only 3 episodes; the pretrial diet also had beef, fish and many brands mixed in, so chicken can't be singled out.
-3. *Something other than chicken, or a change in how she is fed.* For: guar gum (a fermentable fibre), vegetable oil (extra fat), tapioca and rice are all new; mixed bowls began 10-22, four days before episodes 2 and 3; total volume is up. Against: none is a classic culprit.
-4. *Steroid withdrawal unmasking an underlying condition,* which fits 2 to 3 weeks after 10-10 with or without chicken.
+1. *Reaction to the challenge package (chicken or its carriers).* For: 4 episodes in 53.5 h with no rabbit precedent; the chicken heavy pretrial rate was 2.88; vomiting fell on rabbit. Against: zero episodes on days 2 to 7 when purée exposure was highest; wide CI.
+2. *A non chicken ingredient, or the change in volume and format.* For: rice is new; episodes 4 and 5 each followed a mixed bowl; logged meals jumped to 7 to 11 a day. Against: episodes 2 and 3 followed purée or rabbit, not Applaws.
+3. *An underlying enteropathy unmasked after prednisolone stopped.* For: weight loss, ongoing cough, and a rabbit phase rate that rose again off steroid. Against: the on steroid rate (1.33) was barely lower; the cluster began 16 days after the last dose.
+4. *Background clustering (hair, eating behaviour).* For: pretrial had 3 to 4 day runs. Against: none of these is scarf and barf.
 
-**Shows vs cannot rule out.** Shows: the challenge rate is indistinguishable from the off steroid baseline; the episodes look like her elimination phase vomits. Cannot rule out: a slowly building chicken reaction, a reaction to the carriers, or ongoing weight loss. Eight quiet days are not tolerance.
+**Shows vs cannot rule out.** Shows: vomiting during the challenge is more frequent, more clustered and different in pattern, in time order after the diet changed. Cannot rule out: chicken vs a carrier, a non diet disease, or chance clustering. "Happier" is about palatability, not wellness.
 
-**Falsification.** Lead: background vomiting. Counterexample tried: if it were background, the two morning episodes should look unlike anything during elimination. It held: elimination also had early morning, tan, chunky vomits; rabbit weeks also had clusters of 3 (Sep 7, Sep 21) and the busiest window had 5. It held weakly and does not clear chicken; no difference from baseline is not the same as safe.
+**Falsification.** If chicken were the trigger, days 2 to 7 at ~3 purées a day should have produced vomiting; they produced none (partly answered by delayed reactions). Purée dropped to 1 a day on 10-26 yet vomiting rose: the dose response runs the wrong way for the purée. The hypothesis survives only as "something in the challenge," not "chicken."
 
-**Blind spots.** No portions, so neither dose nor calories is known; no weight for 6 weeks; the elimination diet was not single protein either (peas, pea protein, hydrolysed soy, fish oil); Applaws and lickable purées are usually complementary, not complete and balanced (check the labels); cough or retching may be logged as vomiting; skin and ears are not being tracked during the challenge; intake is unrated, and "happier since chicken" may mean she was under eating the rabbit diet, which is an intake signal, not a preference.
+**Blind spots.** No portions, grams or calories; no current weight; no stool record; source of the "vegetable oil" unknown; neither chicken product is likely complete and balanced (both look like toppers), so if they displace rabbit wet, calories may fall; the rabbit base itself rotated across several products and treats.
 
-**Paths.**
-- *Continue as is:* cheap, but uninterpretable whatever happens.
-- *Return to rabbit and call chicken the culprit:* convicts chicken on evidence that does not separate it from the carriers or the background.
-- *Redesigned challenge (preferred to discuss):*
-  - 2 weeks back on one fixed rabbit base to reestablish baseline.
-  - Then plain boiled chicken breast or a 100% chicken freeze dried product: no broth, rice, gums or oil.
-  - A fixed, weighed dose of about 10 to 15% of daily food, mixed into the usual wet food at the same meals, so the format does not change.
-  - No other new products; hold cetirizine steady or log it; slow feeder for all meals.
-  - Run 21 to 28 days with the stop threshold agreed in advance (8+ episodes by day 21, 10+ by day 28).
-  - Watch ears and skin too; a return there would be informative.
-- *Start measuring:* grams eaten per day on a kitchen scale (offered minus leftover). Rough need is about 190 to 225 kcal/day at 3.73 kg, more if 4.4 kg is her real weight.
+**Paths.** *Continue as is:* more data but muddy; with a red flag present, not without the vet's word. *Return to rabbit:* a reasonable step back; improvement within ~2 weeks would support a diet link, not prove it. *Redesigned challenge, later:* only once baseline is stable and weight confirmed; one fixed rabbit product, no rotating treats; add only plain cooked chicken breast (no broth, rice or gums) weighed at a fixed 10 to 20% of daily calories; same meal count and format; 14 days; stop rule in advance (2 episodes in 48 h, blood, refusal or lethargy means stop and call the vet); if negative, test rice or the commercial products separately. *Start measuring:* weekly weight on the same gram scale; grams offered and left over next.
 
-**For the vet this week.** A clinic scale weight (if the loss is real: bloodwork, fecal, B12/folate before blaming any food); bring the labels and ask whether the challenge foods are complete and balanced and whether a single ingredient rechallenge is better; ask whether stopping prednisolone explains the timing and whether the cough could be logged as vomiting; agree the call now signs. A cat that is losing weight should not go 24 hours without food.
+**For the vet, today.** Three days in a row, possible blood and a possible 15% weight loss each warrant a call on their own. Ask: a clinic weight; pause the challenge or not; whether a workup is warranted for an enteropathy prednisolone may have masked; whether the challenge was valid as designed and the products complete and balanced; how to design a stop rule challenge.
 
-### 5.3 Emergency / Criticalist (DACVECC)
+### 6.3 Emergency / Criticalist (DACVECC)
 
-**Gestalt.** The chicken question matters less than what sits beside it: a 3 year old cat with a possible 15% weight loss, vomiting for more than 5 months that never stopped on a novel protein diet, a persistent cough and an unexplained steroid course. Nothing reads "go now" today, but the weight needs verifying on a clinic scale this week.
+**Gestalt.** The record shows a change, not just more vomiting: four food containing vomits in 53.5 hours, 1 to 5 hours after meals, on three days in a row, on top of an unverified 15% weight drop that predates chicken, with possible blood today. **Urgency: call today, with an exam and clinic weight within 24 to 48 hours.** Not "go now" unless a trigger below appears.
 
-**Red flags present**
-- 4.40 kg (06-15) to 3.73 kg (09-16), 15%, with no weight in 6 weeks. Steroids usually add weight, so further loss after prednisolone would be more worrying.
-- Vomiting continued on rabbit at 1.49/wk; more than weekly is abnormal in a cat on any diet.
-- 33 cough logs, most recent 10-21. Vomits 0 to 5 minutes after eating may be regurgitation, and regurgitation plus a cough carries aspiration risk.
-- Episodes 2 and 3 on back to back mornings, 2 to 4.5 h after food, bringing up undigested food: a different pattern from scarf and barf that fits delayed gastric emptying.
-- "Hunched" on 09-25.
+**Red flags present.** The weight drop (if real, predating both chicken and prednisolone); blood "unsure" on 10-28; the pattern shift from scarf and barf to delayed, food containing vomits; a 60 hour cluster never seen on rabbit and 3 consecutive days; prednisolone ended 10-10 after inconsistent dosing, with 33 cough logs.
 
-**Absent but not reassuring**
-- No blood or bile seen; says nothing about how deep the problem goes.
-- Played on 10-20, 10-21, 10-23 and nothing logged since 10-24: a gap, not reassurance.
-- Reduced intake flags are artefacts of blank ratings, but that does not mean intake was normal; it was never rated.
+**Absent but not reassuring.** "Nothing unusual" on 10-27 and "happier" overall (cats mask illness; one evening's impression); no bile or blood "seen" on episodes 2 to 4 (a photo read); "fed since yesterday" (amounts unrated).
 
-**Shows vs cannot rule out.** Shows: vomiting fell on rabbit but never stopped; the chicken phase rate is not separable from baseline. Cannot rule out: chronic enteropathy or small cell lymphoma; heartworm associated respiratory disease or lungworm (cough plus vomiting); an oesophageal problem; a trichobezoar or foreign body (one suspected item on 09-22); diabetes, which steroids can tip a cat into; FeLV or FIV. The prednisolone may also have masked inflammatory disease and muddied the trial.
+**Shows vs cannot rule out.** Shows: the rate rose in association with the chicken phase, but only from day 8. Cannot rule out: hepatic lipidosis risk if intake is quietly falling; partial obstruction or foreign body; IBD or small cell lymphoma; pancreatitis; steroid associated GI ulceration or diabetes; heartworm associated respiratory disease (cough and vomiting together); FeLV/FIV; a reaction to volume and texture rather than chicken.
 
-**Falsification.** Leading concern: the weight loss is real and points beyond food. Counterexample tried: the 4.40 is a backfilled entry error and she has always been ~3.7 kg. That removes the urgency but not the concern: vomiting that persisted on a novel protein diet, plus an unexplained cough, still justifies a workup. The concern holds in direction; the timeline depends on verifying the weight.
+**Falsification.** Leading concern: a separate, progressing process hidden by the chicken question. Counterexample: the pretrial chicken diet produced 3 to 4 day runs and 25% of pretrial windows had 5+ episodes, so on rate alone this fits a return to chicken baseline. The concern holds on what chicken does not cover: the weight drop predates chicken, and the vomits are now delayed and contain food.
 
-**Blind spots.** Portions and intake never rated; no stool record; no drinking or urination record; no resting breathing rate; estimated times on found vomits; pretrial rate inflated by onboarding and deleted logs; the challenge mixes two variables.
+**Blind spots.** No stool record; no portions or intake; no weight in 6 weeks and the baseline unverified; no water, urination or gum colour; photo only blood read; cough, retching and hairball may be confused; logging attention rose when chicken started.
 
-**Escalation triggers during any continued challenge**
-- *Go now:* more than 3 vomits in 24 h, or retching with nothing coming up; blood or coffee ground material; open mouth breathing or a sleeping breathing rate over 40/min; collapse, hiding or marked lethargy; painful belly or hunched posture with vomiting; yellow gums.
-- *Call today:* eating less, or nothing for 24 h (fatty liver risk in a cat losing weight); vomiting on a third day in a row; hair or foreign material in vomit; new diarrhoea; drinking or urinating more; cough getting more frequent; any weight under 3.7 kg.
+**Escalation triggers**
+- *Go now:* clear red blood or coffee ground material in vomit, or black tarry stool; can't keep water down, or unproductive retching; nothing eaten for 24 hours; 3 or more vomits in 24 hours; hiding, lethargy, hunched posture or a painful belly; open mouth or laboured breathing; pale or yellow gums; string visible under the tongue or at the anus.
+- *Call today (already met):* any further vomit; any meal clearly refused or left; a home weight below 3.73 kg.
 
-**For the vet, within the next few days, without waiting for the challenge to finish.** Clinic scale weight and whether 4.40 was real; a video of an after meal episode (vomiting vs regurgitation); the cough was never diagnosed before the steroid (chest X-rays, heartworm antigen and antibody, a fecal Baermann for lungworm); baseline workup (CBC, chemistry, urinalysis, FeLV/FIV, B12 and folate); abdominal ultrasound if the weight loss is confirmed; whether to rechallenge with chicken alone, without rice. *"The chicken verdict can wait. The weight cannot."*
+**For the vet, today by phone.** The 10-28 photo and the weight history, so the 4.40 can be confirmed or struck; the full prednisolone course and cough log; that vomiting is now delayed and contains food; whether an exam with clinic weight and baseline tests (bloodwork, retrovirus and heartworm testing, fecal, possibly imaging) should come before the chicken question. Whether to pause the rechallenge is the vet's call; pausing without a plan will confound the answer.
 
-### 5.4 Skeptical GP
+### 6.4 Skeptical GP
 
-**Gestalt.** Three episodes in nine days can't separate "baseline noise" from "chicken reaction", and the trial's improvement that both readings lean on is partly an artifact of the record. The item that needs action now is the possible 15% weight loss.
+**Gestalt.** Something changed on 10-26; four episodes in 53.5 hours across three consecutive days is a cluster this record has not shown before. The data cannot tell chicken apart from the other things that changed around the same time, and the cluster is a reason to call the vet today whatever is causing it.
 
-**The two cases**
-- *For baseline noise:* episode 1 (2 min after kibble, 27 min after the first chicken) looks like scarf and barf and came too fast to be an immune reaction; without it, the challenge rate is ~1.6/wk, matching the elimination rate of 1.49; September on rabbit with no steroid ran 2.10/wk; 34% of rabbit windows held 3+; the first full chicken week had zero.
-- *For a chicken reaction:* episodes 2 and 3 fell on consecutive mornings on days 8 and 9, hours after eating, with chunky food. That fits a delayed food reaction, not eating too fast. The week of Oct 26 already has 2 episodes in 2 days.
-- *Weighting:* about even, leaning noise for now. Neither reading is earned.
+**Three cases**
+- *Baseline noise:* the whole chicken phase rate (3.54, CI 1.15 to 8.26) overlaps September's no steroid rabbit rate (P(5+) = 0.18); the first chicken week had 1 episode, below any rabbit period; 25% of pretrial windows reached 5+; the 60 h window and day 8 split were picked after the cluster was seen.
+- *Chicken reaction:* no 60 h rabbit window had more than 2; episodes 2 to 5 came 1 to 5 h after meals with food in them; relapse days after reintroduction fits food responsive disease; the chicken phase rate looks like the pretrial chicken heavy rate.
+- *Third explanation:* prednisolone ended 10-10 and may have been holding down steroid responsive inflammation (the cough suggests airway, possibly gut too), with a rebound 2 to 3 weeks later plausible; also new at the same time: rice, tapioca, guar gum, vegetable oil, more wet food and more meals; or an unrelated acute gastritis or hairball, with an unverified weight loss behind it all.
+- *Weighting:* the chicken phase (chicken or its new carriers) about 40%, a third explanation about 40%, noise about 20%. Against the purée in particular: it dropped to 1 a day just as vomiting rose.
 
-**Shows vs cannot rule out.** Shows: vomiting fell from May and June levels, never reached zero, and drifted back up in September before any chicken. Cannot rule out: real weight loss; a delayed reaction to chicken *or* to the rice, guar gum or vegetable oil (two new products went in at once, so the challenge tests "these products"); steroid masking in weeks 9 to 11; a primary GI or other disease underneath.
+**Shows vs cannot rule out.** Shows: a new tight cluster, a timing shift, possible blood, intake still unrated. Cannot rule out: steroid rebound, a non chicken ingredient, acute illness, real weight loss, or that the August improvement was partly a logging artifact. Behaviour logs are low sensitivity; they can raise a flag (the 09-25 hunch) but cannot reassure; "happier since chicken" likely reflects liking the food, and liking a food is not tolerating it.
 
-**Falsification.** Leading read: the trial's improvement is mostly artifact. Test: if the trial caused the drop, the weeks just before it should look like May. They don't; Jun 22 to Jul 20 ran 3, 3, 3, 2, 2, so the decline started before rabbit, and the 2.88 average is driven by the onboarding weeks. The read held. Second attempt: argue delayed vomits are new under chicken. That did not hold; the rabbit phase also had vomits hours after meals and early in the morning.
+**Falsification.** Reading: a real change, cause unresolved. Check 1: was the hours after a meal pattern new? Rabbit had some (09-04, 09-07, 09-22), so the shift is partial. Check 2: is the cluster unusual against pretrial? Three day runs happened then, but never 4 episodes in 60 h. The reading held, with its weaker half named.
 
-**Blind spots, including in the evidence pack.** Period boundaries were cut after the fact at steroid and slow feeder dates, which makes patterns easy to find; the probabilities assume random arrival and vomiting clusters; the 90 minute rule and estimated times shift counts; left out of the pack: stool, portions, intake, hairballs, and whether some "vomit" is regurgitation or cough related retching; 33 cough logs and an intermittent antihistamine are unexplained confounders; the slow feeder is dry only, and the purée may be eaten fast.
+**Blind spots, including in the pack.** Pretrial overlaps the owner's most watchful first weeks (the 47 deleted logs all predate 09-01); period boundaries were cut at medication dates after the fact; no pretrial vomit character in the pack, so the pattern shift has no pretrial comparison; meal logging density rose in the chicken phase, and a more watchful owner logs more vomits; clustering makes Poisson overconfident; no hairball, grooming, stool, water or litter record; the 90 minute rule is untested. The August improvement (1.14/wk) came before both the slow feeder and the steroid, so neither explains it.
 
-**What would settle it.** An A/B/A design: a single ingredient chicken (no rice, no new additives) for 3 to 4 weeks, rabbit for 3 to 4 weeks, then chicken again. Count only delayed vomits (more than 30 minutes after eating) as the outcome. Even at 28 days, counts alone catch a real return to the old rate only ~71% of the time, so counts will stay ambiguous. *Start measuring:* weekly weight, same scale, same time of day, with a vet scale check; it is the red flag and the least biased endpoint.
+**What would settle it.** A clean dechallenge and rechallenge, only after the vet has ruled out acute disease: rabbit only until 2 to 4 weeks are back at the rabbit phase rate, then plain chicken (no rice or gums), watched 14 days. Two matching cycles would be convincing. Horizon: about 6 to 10 weeks. *Start measuring:* weekly weight, same scale, same conditions; fraction of each portion eaten next.
 
-**For the vet.** Is the 15% weight loss real? Does vomiting most weeks for 5+ months, with possible weight loss, in a 3 year old cat warrant a workup? Is the cough related, and could some logged vomits be coughing or hacking? How should the challenge be run so it can answer the question (single protein, a set horizon, a stopping rule agreed in advance)? What a 15 minute visit can do with this record: weigh her, hear a three line summary (rate by period, delayed vs fast vomits, weight trend), and decide on a workup. It cannot adjudicate 3 episodes.
-
-**On the mood evidence.** "Played" on three days carries almost nothing. Cats hide illness, and the looks stopped on 10-24, exactly when vomiting resumed. A quiet or happy week is not wellness, and no change in mood cannot outweigh weight loss.
+**For the vet.** Three days in a row and possible blood: same day assessment? Is 4.40 kg real? Could stopping prednisolone have unmasked airway or gut inflammation? Bloodwork, abdominal exam, foreign body or hairball? Should chicken, or all new ingredients, stop now, and how should a cleaner rechallenge be designed?
 
 ---
 
-## 6. Chair's reconciliation (Dr. Alex Chen, GP)
+## 7. Chair's reconciliation (Dr. Alex Chen, GP)
 
-### 6.1 Where all four agreed
+### 7.1 Where all four agreed
 
-1. **The chicken question is not answerable on this record.** Every lens independently landed on "neither convicts nor clears." The owner's prior (three vomits may be baseline) is supported as *not ruled out*, not as *shown*.
-2. **The current rechallenge confounds chicken with rice, guar gum, tapioca, vegetable oil, a lickable format and higher feeding frequency.** Three of four lenses named this unprompted.
-3. **Prednisolone withdrawal (last dose 10-10) is a live competing explanation** for any October rise, with or without chicken.
-4. **The weight record outranks the chicken question.** All four put it first or second. If 4.40 kg was real, this is a 3 year old cat with months of more than weekly vomiting and a 15% loss, which warrants a workup on its own.
-5. **Mood carries little weight.** It is welcome, and it cannot carry a clinical conclusion either way.
-6. **Episodes 2 and 3 deserve respect.** Back to back mornings, hours after food, is not the scarf and barf pattern, even though the rabbit phase had the same shape on other days.
+1. **Call the vet today; exam and clinic weight within 24 to 48 hours.** Unanimous, unprompted. No lens called it "go now" yet; all listed the triggers that would make it one (§8).
+2. **The cluster since 10-26 is a real change**, not her background. Four in 53.5 hours exceeds every rabbit phase window and the pretrial maximum.
+3. **It does not convict chicken.** Three lenses ran the same falsification independently and it failed the same way: the heaviest chicken week was her quietest, and vomiting rose as the purée was cut back.
+4. **The competing explanations are live:** the non chicken ingredients and the change in meal count and format; a steroid withdrawal flare of an underlying enteropathy; an acute process (hairball, foreign material, gastritis, pancreatitis).
+5. **The weight still outranks the diet question.** If 4.40 kg was real, the loss predates chicken.
+6. **Mood cannot carry weight.** "Nothing unusual" on 10-27 and "happier with chicken" are welcome and cannot reassure.
 
-### 6.2 Where they leaned differently
+### 7.2 How the panel moved since 10-27
 
-No true persona conflict. The lenses differ in what to do *while* the vet is consulted:
+| | 10-27 | 10-28 |
+|---|---|---|
+| Is the rechallenge vomiting her background? | Can't tell; leaning noise | **No: a cluster with no precedent** |
+| Is chicken the culprit? | Can't tell | **Still can't tell** |
+| Urgency | Verify weight and talk to the vet this week | **Call today; exam within 24 to 48 h** |
+| Continue the current rechallenge? | Possible with a pre agreed stop rule | **The stop rules set on 10-27 have been met; whether to pause is the vet's call, today** |
 
-| Lens | Lean |
-|---|---|
-| GI Internist | Continue only with a pre agreed stopping rule, or (preferred) reset and rechallenge cleanly; start the workup now |
-| Nutritionist | Current challenge is uninterpretable; reset 2 weeks, then a clean single ingredient challenge |
-| Criticalist | The chicken verdict can wait; verify weight and start the workup within days |
-| Skeptical GP | Leans noise for now; A/B/A design is the only thing that settles it |
+### 7.3 Chair's corrections to the lens reads
 
-### 6.3 The paths, for the owner and Nyx's vet to decide
+- **Rice did not start on 10-22.** Two lenses read the mixed bowls as rice's start. Applaws (chicken with rice) was fed alone from 10-19, about 2 a day, then in mixed bowls from 10-22, so rice exposure was roughly steady across the whole rechallenge, including the quiet first week. That weakens "rice restarted the clock on 10-22." It does not clear rice: it remains untested apart from chicken.
+- Every other factual claim in the four reads was checked against the record and holds.
+
+### 7.4 The paths, for the owner and Nyx's vet to decide today
 
 | Path | What it buys | What it costs |
 |---|---|---|
-| **A. Continue the current rechallenge to day 14 (11-01)** with a stop rule agreed with the vet in advance | No change today; more data | Even at day 14, a real relapse is caught only ~half the time, and the result still can't separate chicken from rice, gums or format |
-| **B. Return to rabbit and call chicken the allergen** | Simplest diet going forward | None of the four lenses thinks the data earns that verdict; forecloses chicken on weak evidence |
-| **C. Reset, then rechallenge cleanly** (2 weeks on one fixed rabbit base; then plain chicken breast only, weighed at ~10 to 15% of daily food, mixed into her usual food, 3 to 4 weeks, stop rule agreed in advance) | The only version that can actually answer "is it chicken?" | Slower; another month or more |
+| **A. Pause the rechallenge and go back to rabbit only, after talking to the vet** | A dechallenge: if vomiting settles within days, that supports a link to something in the rechallenge | Does not convict chicken (or clear rice, the purée base or steroid withdrawal); a vet exam is still needed |
+| **B. Continue the current rechallenge** | More data | Every lens advised against continuing without the vet's word now that red flags are present; the result still can't isolate chicken |
+| **C. Examine first, then a clean single ingredient rechallenge later** | The only version that can answer "is it chicken?" (stable rabbit baseline, then plain chicken breast only, weighed, same meals and format, 14 days, stop rule agreed in advance) | Slower: 6 to 10 weeks to a convincing answer |
 
-Path C is **not** calling chicken the culprit. It is the version of the test that can answer the question the owner is asking. GI Internist, Nutritionist and Skeptical GP leaned toward it; the Criticalist was indifferent to the chicken path and focused on the workup.
+A and C are not alternatives: A is what the dechallenge half of C looks like. **Going back to rabbit is not the same as calling chicken the allergen.** The data can support the first without the second.
 
-Whatever path: **verify the weight and talk to the vet this week.**
+### 7.5 Chair's falsification line
 
-### 6.4 Chair's falsification line
-
-*Tried: the "baseline noise" read against the two delayed morning episodes on days 8 and 9.* It held, weakly: the rabbit phase produced the same delayed, early morning shape (09-04, 09-07, 09-22), and a 5 episode cluster in 9 days (09-17 to 09-26) with no chicken at all. *Tried: the "nothing to work up" read against the weight record.* It failed: if 4.40 kg is real, no dietary explanation covers a 15% loss, and if it isn't, more than weekly vomiting on a novel protein diet for 3 months still meets the workup bar.
+*Tried: "this is just the pretrial chicken baseline returning".* It fits the rate: 25% of pretrial windows held 5+. It fails the shape: even pretrial never produced 4 episodes in 60 hours, and the weight drop predates chicken. *Tried: "chicken did it".* It fails the dose: the heaviest chicken week was the quietest, and vomiting rose as the purée fell. *What survives:* a real change, temporally associated with the rechallenge and with steroid withdrawal, cause unresolved, warranting an exam now.
 
 ---
 
-## 7. Escalation triggers (consolidated)
+## 8. Escalation triggers (consolidated)
 
-**Go in now**
-- More than 3 vomits in 24 hours, or repeated retching with nothing coming up
-- Blood, or dark "coffee ground" material, in vomit
-- Open mouth breathing, or a sleeping breathing rate over 40 a minute
-- Collapse, hiding, or marked lethargy
-- A painful belly, or a hunched posture together with vomiting
-- Yellow gums
+**Go in now (emergency)**
+- Clear red blood or coffee ground material in vomit, or black tarry stool
+- Can't keep water down, or retching with nothing coming up
+- Nothing eaten for 24 hours
+- 3 or more vomits in 24 hours
+- Hiding, lethargy, a hunched posture or a painful belly
+- Open mouth or laboured breathing
+- Pale or yellow gums
+- String visible under the tongue or at the anus
 
-**Call the vet the same day**
-- Eating less, or nothing for 24 hours
-- Vomiting on a third day in a row
-- Hair or foreign material in a vomit
-- New diarrhoea
-- Drinking or urinating more than usual
-- The cough getting more frequent
-- Any weight under 3.7 kg
+**Call the vet today: already met.** Vomiting on a third day in a row, possible blood, and a cluster of 4 in 53.5 hours.
 
-## 8. Open questions for the owner
+## 9. Open questions for the owner
 
-1. **Was 4.40 kg on 06-15 a real weigh-in, or an entry error when it was backfilled on 10-09?** This changes the urgency more than anything else here.
-2. Was the 10-27 07:44 vomit right after eating, or found later? (It is logged as witnessed, 66 min after a rabbit treat.)
-3. Is the cough still being followed with the vet, and has anyone looked at it since the prednisolone ended?
+1. **Was 4.40 kg on 06-15 a real weigh in, or an entry error when it was backfilled on 10-09?** A home weight today, on the same scale, would help either way.
+2. Has she refused or left any meal since 10-26? The record cannot tell; intake is unrated.
+3. Has anyone looked at the cough since the prednisolone ended?
 
-## 9. Product findings from this pass
+## 10. Product findings from this pass
 
-- **The "three days in a row" read is wrong for this record.** The 10-27 read says *"Nyx has vomited on three days in a row"*; she vomited on two calendar days. Cause: the T8 rule in `lib/incidentFloor.ts` tests three back to back 24 hour spans, and the two 10-26 logs 16 minutes apart straddle a span boundary, so one episode fills two spans. The tier (call today) errs loud, but the sentence states a false fact. Already tracked as [CUL-2223](https://linear.app/projectnyx/issue/CUL-2223) (In Progress); no duplicate filed.
-- **The rechallenge is invisible to the trial record.** The schema has `phase = reintroduction`, but Nyx's trial was closed as `elimination` on 10-20 and chicken never joined `diet_trial_foods`, so trial aware surfaces and the vet report don't know a challenge is running. That was a logging choice, not a missing feature; it is noted because the vet report would currently not show it.
-- **Portions and intake are the biggest data gap.** Every meal has `quantity = unknown` and intake ratings are almost all blank. Every lens named this as a blind spot, and it is why "1/3 chicken" can't be checked against the record.
+- **The "three days in a row" bug is fixed.** On 10-27 the read for that morning's vomit said "three days in a row" across two days. [CUL-2223](https://linear.app/projectnyx/issue/CUL-2223) shipped (Done 10-28), and the same read now says *"thrown up 3 times, on 2 separate days."* Today's "three days in a row" is accurate.
+- **The rechallenge is invisible to the trial record.** Nyx's trial was closed as `elimination` and chicken never joined `diet_trial_foods`, so trial aware surfaces and the vet report don't show a challenge is running. A logging choice, not a missing feature; noted because the vet report would currently omit it.
+- **Portions and intake are the record's biggest gap.** Every lens named it; it is why "1/3 chicken" can't be checked and why "fed since yesterday" can't establish intake.
 
 ---
 
 ## Appendix A. Reproducing the numbers
 
-Episode clustering and period rates (Postgres):
+Episode clustering (Postgres):
 
 ```sql
 with v as (
@@ -396,9 +389,9 @@ with v as (
 select occurred_at from ep where new_ep = 1 order by occurred_at;
 ```
 
-Period boundaries used (UTC): pretrial `[2026-05-14 05:00, 2026-07-26 05:00)`; rabbit weeks 1 to 5 `[07-26 05:00, 09-01 05:00)`; rabbit pre steroid `[09-01 05:00, 09-21 05:00)`; on prednisolone `[09-21 05:00, 10-12 05:00)`; off steroid pre chicken `[10-12 05:00, 10-18 20:13)`; chicken `[10-18 20:13, 10-27 18:00)`.
+Period boundaries (UTC): pretrial `[2026-05-14 05:00, 07-26 05:00)`; rabbit August `[07-26 05:00, 09-01 05:00)`; rabbit September `[09-01 05:00, 09-21 05:00)`; on prednisolone `[09-21 05:00, 10-12 05:00)`; off steroid pre chicken `[10-12 05:00, 10-18 20:13)`; chicken `[10-18 20:13, 10-28 17:30)`, split at `10-26 05:00`.
 
-Rolling window and Poisson figures: a sliding 8.91 day window stepped hourly across `[2026-07-26 05:00, 2026-10-18 20:13)` UTC over the clustered episode list; P(X ≥ k) under Poisson(rate × days / 7); alarm thresholds chosen as the smallest k with false alarm ≤ 0.10 against 1.49/wk.
+Windows: sliding windows stepped hourly over the clustered episodes, within the rabbit phase `[07-26 05:00, 10-18 20:13)` and the pretrial `[05-14 05:00, 07-26 05:00)`. Consecutive day runs use Central calendar dates. Poisson P(X ≥ k) under Poisson(rate × days / 7).
 
-Episode list (UTC, clustered):
-2026-05-14T11:27, 05-15T12:11, 05-18T08:09, 05-18T21:02, 05-19T09:18, 05-20T23:58, 05-25T05:18, 05-25T10:31, 05-30T09:00, 05-30T12:21, 06-05T15:41, 06-08T08:15, 06-09T16:00, 06-10T11:40, 06-11T18:01, 06-15T10:00, 06-21T01:38, 06-21T22:06, 06-24T08:39, 06-25T13:00, 06-27T18:13, 06-29T14:28, 07-05T03:43, 07-05T12:11, 07-09T17:21, 07-10T22:45, 07-15T01:02, 07-18T10:54, 07-23T17:01, 07-25T18:36, 07-27T15:56, 08-02T07:04, 08-05T10:18, 08-09T00:54, 08-19T22:40, 08-24T07:02, 09-04T12:02, 09-07T11:00, 09-07T21:00, 09-12T17:18, 09-17T15:58, 09-17T22:11, 09-21T21:40, 09-22T06:30, 09-26T00:08, 10-09T19:53, 10-14T22:44, 10-16T12:33, 10-18T20:39, 10-26T11:10, 10-27T12:44.
+Episode list (UTC, clustered, 53 episodes):
+2026-05-14T11:27, 05-15T12:11, 05-18T08:09, 05-18T21:02, 05-19T09:18, 05-20T23:58, 05-25T05:18, 05-25T10:31, 05-30T09:00, 05-30T12:21, 06-05T15:41, 06-08T08:15, 06-09T16:00, 06-10T11:40, 06-11T18:01, 06-15T10:00, 06-21T01:38, 06-21T22:06, 06-24T08:39, 06-25T13:00, 06-27T18:13, 06-29T14:28, 07-05T03:43, 07-05T12:11, 07-09T17:21, 07-10T22:45, 07-15T01:02, 07-18T10:54, 07-23T17:01, 07-25T18:36, 07-27T15:56, 08-02T07:04, 08-05T10:18, 08-09T00:54, 08-19T22:40, 08-24T07:02, 09-04T12:02, 09-07T11:00, 09-07T21:00, 09-12T17:18, 09-17T15:58, 09-17T22:11, 09-21T21:40, 09-22T06:30, 09-26T00:08, 10-09T19:53, 10-14T22:44, 10-16T12:33, 10-18T20:39, 10-26T11:10, 10-27T12:44, 10-28T00:40, 10-28T16:43.
