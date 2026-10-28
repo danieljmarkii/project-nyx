@@ -6,9 +6,13 @@ Shipped via #1344. Finishes CUL-2249.
 
 ## The dispatch run
 
-`/dispatch Every iPhone, the Duo included` (P-CUL-33), its first run. Nothing launched: all eleven rows sit behind CUL-559, the 1.2.0 production build (ruling R5), which is itself held by 25 open issues in App Store 1.2.0. PR-01 and PR-02 start the moment it closes; everything else follows from those two.
+`/dispatch Every iPhone, the Duo included` (P-CUL-33), its first run. The first pass launched nothing: all eleven rows sat behind CUL-559, the 1.2.0 production build (ruling R5), which is itself held by 25 open issues in App Store 1.2.0.
 
-Written: the Board and the project summary (nothing running, nothing ready), and the ruling index CUL-2248 (`Waiting on PM`, one hold). Not written: no `**/dispatch run**` status update, no check-in and no weekday progress trigger, since nothing is in flight or ready (step 9.8, round over). The team-wide harm read was not run in full: about 30 open `Live harm` issues, nearly all owned by other projects' dispatchers, none offered from here.
+**R5 re-ruled (PM, 2026-10-28):** "let's not block this project on that task": the family dogfoods on more phones, and the PM's wife uses the Duo, front screen and open. CUL-559 left both After cells and both `blocks` relations; R5's row on the page keeps the old wording beside the new; PR-01's merge note now says what merging before the cut does (the App Store build ships on SDK 58 as 1.3.0, and CUL-1857's move to 1.2.1 has to follow). The index CUL-2248 closed with nothing held.
+
+**Launched:** PR-02 (CUL-2237, routine, the teach row) at 17:05Z, picked on the PM's answer; PR-01 (CUL-2236, plan-gated as a Tier-2 doc edit, merge-gated) at 17:09Z on the PM's "launch PR-01 now too", which lifted the first dispatch's one slot. Armed: one check-in and the weekday 07:45 CT progress update (no Gmail connector here, so it posts and prints only).
+
+The team-wide harm read was not run in full: about 30 open `Live harm` issues, nearly all owned by other projects' dispatchers, none offered from here. One planner gap noticed, not filed: the Board has no notion of a queued row, so a row the PM queued reads "Needs you: a pick".
 
 ## The bug (CUL-2249)
 
