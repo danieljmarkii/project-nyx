@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-28
 
-Shipped via #<n>. Finishes CUL-2249.
+Shipped via #1344. Finishes CUL-2249.
 
 ## The dispatch run
 
