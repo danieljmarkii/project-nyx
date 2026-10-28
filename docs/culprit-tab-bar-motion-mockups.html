@@ -1,0 +1,468 @@
+<title>Tab Bar Motion</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="exploratory">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* ============================================================
+     Tab bar motion, ROUND 1 (CUL-2251, exploratory). The PM saw LinkedIn's
+     tab icons move on tap and asked to bend the "no motion" line of the tab
+     bar spec (§1, CUL-599) and Principle 9 for a gesture that plays once on a
+     tap. Four live bars at phone scale, one per option, plus a magnified
+     study of each gesture.
+     Layout: the house mock page (paper, serif heads, phone frames in a
+     wrapping grid). Page chrome follows the viewer's theme; the PHONE FRAMES
+     never do: every colour inside a frame is a var(--token) from
+     mockups/theme.css, generated from constants/theme.ts. Glyph paths are
+     verbatim from components/nav/navGlyphs.tsx; bar geometry from
+     components/nav/NyxTabBar.tsx (26pt slot, 22pt glyph, 4pt dot).
+     The one settle is the fold's spring (damping 0.7, about 4.6% overshoot,
+     components/motion/foldMotion.ts UNFOLD_LAYOUT), simulated in JS.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1; --tag: #3F35A0; --tag-wash: #ECEAF6;
+    --rec: #08685B; --rec-wash: #E3F2EF; --foil: #9A3412; --foil-wash: #FBEDE4;
+    --serif: "Newsreader", ui-serif, Charter, Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+      --rec: #7FD8C6; --rec-wash: rgba(127,216,198,0.14); --foil: #F4A77E; --foil-wash: rgba(244,167,126,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+    --rec: #7FD8C6; --rec-wash: rgba(127,216,198,0.14); --foil: #F4A77E; --foil-wash: rgba(244,167,126,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 56px; }
+
+  /* ---------- page type ---------- */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(36px, 6vw, 56px); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  h1 em { font-style: italic; }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; line-height: 1.15; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  p { margin: 0; max-width: 68ch; }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 64ch; }
+  .muted { color: var(--ink-2); }
+  .small { font-size: 14px; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--tag-wash); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+  section { display: flex; flex-direction: column; gap: 20px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+
+  /* ---------- what bends ---------- */
+  .bends { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .bend { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .bend ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+  .bend blockquote { margin: 0; font-family: var(--serif); font-size: 19px; line-height: 1.35; font-style: italic; }
+  .bend .src { font-size: 13px; color: var(--ink-3); }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn { font: inherit; font-size: 14px; font-weight: 500; border-radius: 999px; padding: 9px 16px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); cursor: pointer; display: inline-flex; gap: 8px; align-items: center; min-height: 40px; }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn:focus-visible, .tab:focus-visible { outline: 2px solid var(--tag); outline-offset: 2px; }
+  .btn.primary { background: var(--tag); color: var(--paper-2); border-color: var(--tag); }
+  .btn[aria-pressed="true"] { background: var(--tag-wash); border-color: var(--tag); color: var(--ink); }
+  .btn .sw { width: 28px; height: 16px; border-radius: 999px; background: var(--rule); position: relative; flex: none; }
+  .btn .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--paper-2); transition: transform 0.15s; }
+  .btn[aria-pressed="true"] .sw { background: var(--tag); }
+  .btn[aria-pressed="true"] .sw::after { transform: translateX(12px); }
+  .note { font-size: 13px; color: var(--ink-2); }
+
+  /* ---------- option cards ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; }
+  .opt { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .opt.is-rec { border-color: var(--rec); box-shadow: inset 0 0 0 1px var(--rec); }
+  .opt-head { display: flex; flex-direction: column; gap: 6px; }
+  .tagrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--tag-wash); color: var(--tag); }
+  .tag.rec { background: var(--rec-wash); color: var(--rec); }
+  .tag.foil { background: var(--foil-wash); color: var(--foil); }
+  .tag.now { background: var(--rule-soft); color: var(--ink-2); }
+  .opt-title { font-family: var(--serif); font-size: 24px; line-height: 1.2; }
+  .opt p { font-size: 15px; color: var(--ink-2); }
+
+  /* ---------- the phone frame (tokens only) ---------- */
+  .phone { width: 100%; max-width: 390px; margin: 0 auto; border-radius: 28px 28px 34px 34px; overflow: hidden; background: var(--colorNeutralLight); border: 1px solid var(--rule); font-family: var(--sans); position: relative; }
+  .screen { height: 136px; padding: 18px 20px 0; display: flex; flex-direction: column; gap: 12px; background: var(--colorNeutralLight); }
+  .screen-title { font-size: 17px; font-weight: 600; line-height: 24px; color: var(--colorTextPrimary); }
+  .sk { height: 44px; border-radius: 12px; background: var(--colorSurface); border: 1px solid var(--colorBorder); }
+  .sk.short { width: 62%; height: 14px; border: 0; background: var(--colorSurfaceSubtle); border-radius: 6px; }
+
+  .bar { position: relative; display: flex; background: var(--colorSurface); border-top: 1px solid var(--colorBorder); padding-top: 8px; padding-bottom: 24px; }
+  .tab { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 0 6px; background: none; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; color: var(--colorTextTertiary); font: inherit; }
+  .tab:active .icon, .tab:active .lbl { opacity: 0.7; } /* activeOpacity 0.7, as shipped */
+  .tab.on { color: var(--colorNeutralDark); }
+  .icon { height: 26px; width: 26px; display: flex; align-items: center; justify-content: center; }
+  .icon svg.g { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+  .icon svg.g * { transform-box: view-box; }
+  .g-house { transform-origin: 12px 20px; }
+  .g-min, .g-hour { transform-origin: 12px 12px; }
+  .g-mat { transform-origin: 12px 17.5px; }
+  .lbl { margin-top: 3px; font-size: 11px; line-height: 14px; letter-spacing: 0.4px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .tab.on .lbl { font-weight: 600; }
+  .tick { margin-top: 2px; width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .tab.on .tick { background: var(--colorAction); }
+  .travel .tab .tick { background: transparent !important; } /* the bar draws one dot that moves */
+  .rail { position: absolute; left: 0; bottom: 24px; width: 25%; height: 4px; pointer-events: none; display: none; }
+  .travel .rail { display: block; }
+  .rail i { position: absolute; left: 50%; margin-left: -2px; width: 4px; height: 4px; border-radius: 50%; background: var(--colorAction); }
+  .pet { position: relative; width: 26px; height: 26px; }
+  .disc { position: absolute; inset: 2px; border-radius: 50%; background: var(--colorAccentLight); color: var(--colorTextPrimary); font-weight: 600; font-size: 9px; display: flex; align-items: center; justify-content: center; }
+  .ring { position: absolute; inset: 0; width: 26px; height: 26px; transform: rotate(-90deg); overflow: visible; }
+  .ring circle { fill: none; stroke: var(--colorAction); stroke-width: 2; stroke-dasharray: 75.4; stroke-dashoffset: 75.4; }
+  .tab.on .ring circle { stroke-dashoffset: 0; }
+  .homebar { position: absolute; left: 50%; bottom: 8px; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: var(--colorNeutralDark); }
+
+  /* ---------- gesture study ---------- */
+  .study { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 16px; }
+  .gcard { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .stage { height: 140px; border-radius: 10px; background: var(--colorSurface); border: 1px solid var(--colorBorder); display: flex; align-items: center; justify-content: center; position: relative; color: var(--colorNeutralDark); overflow: hidden; }
+  .stage > .icon { transform: scale(3.6); }
+  .gcard.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 390px) 1fr; gap: 14px 28px; align-items: start; }
+  .gcard.wide .stage { grid-row: span 3; height: 120px; }
+  @media (max-width: 720px) { .gcard.wide { display: flex; } }
+  .stage .bar { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); border-top: 0; background: transparent; }
+  .gcard dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; }
+  .gcard dt { color: var(--ink-3); font-weight: 500; }
+  .gcard dd { margin: 0; min-width: 0; }
+  .gcard .btn { align-self: flex-start; }
+
+  /* ---------- decision brief ---------- */
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-left: 0; border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .brief .row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; font-size: 15px; }
+  .brief .row > b { font-weight: 600; }
+  .brief ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  .brief .pick { color: var(--rec); font-weight: 600; }
+  @media (max-width: 560px) { .brief .row { grid-template-columns: 1fr; gap: 2px; } }
+
+  .foot { border-top: 1px solid var(--rule); padding-top: 20px; font-size: 13px; color: var(--ink-3); display: flex; flex-direction: column; gap: 6px; }
+
+  @media (prefers-reduced-motion: reduce) { .btn .sw::after { transition: none; } }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Tab bar motion · Round 1 · exploratory · CUL-2251 · 2026-10-28</div>
+    <h1>A tab that <em>answers</em> the tap</h1>
+    <p class="lede">Four live tab bars at phone size, one per option. Tap the tabs, or play the tour to run all four together. Slow motion stretches every gesture four times so you can study it; Reduce Motion shows what an owner with that setting gets.</p>
+  </header>
+
+  <section aria-labelledby="bends-h">
+    <div class="sec-head">
+      <h2 id="bends-h">What bends, and what still holds</h2>
+    </div>
+    <div class="bends">
+      <div class="bend">
+        <h3>The rules this round bends</h3>
+        <blockquote>No badge, no motion.</blockquote>
+        <div class="src">Tab bar spec §1, ruled 2026-08-22 (CUL-599)</div>
+        <blockquote>Motion happens when the record changes state and nowhere else.</blockquote>
+        <div class="src">Principle 9, design principles v2.0, 2026-10-05</div>
+      </div>
+      <div class="bend">
+        <h3>What they protect</h3>
+        <ul>
+          <li>Calm chrome. The bar never asks for attention.</li>
+          <li>Nothing loops. The tick stays the app's only loop.</li>
+          <li>Motion that means something, never motion that could be any app's.</li>
+        </ul>
+      </div>
+      <div class="bend">
+        <h3>What every option here keeps</h3>
+        <ul>
+          <li>Plays once, only on your tap. Never on its own, never on a second tap of the tab you are already on.</li>
+          <li>Done in half a second. The screen swaps instantly, as today.</li>
+          <li>Still under Reduce Motion: the new tab is simply on.</li>
+          <li>Silent. A tab switch carries no news, so no haptic.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="opts-h">
+    <div class="sec-head">
+      <h2 id="opts-h">The four bars</h2>
+      <p class="muted">Each bar is drawn at the app's real size: a 26pt icon slot, a 22pt glyph, a 4pt dot. Biscuit has no photo here, so the Pet tab shows the initial, as the app does while a photo loads.</p>
+    </div>
+
+    <div class="controls" role="group" aria-label="Playback">
+      <button class="btn primary" id="tour" type="button">Play the tour</button>
+      <button class="btn" id="slow" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>Slow motion ×4</button>
+      <button class="btn" id="reduce" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>Reduce Motion</button>
+    </div>
+    <p class="note" id="rm-note" hidden>Your device asks for reduced motion, so the bars start still. Switch Reduce Motion off to see the gestures.</p>
+
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section aria-labelledby="study-h">
+    <div class="sec-head">
+      <h2 id="study-h">Option 3, one gesture at a time</h2>
+      <p class="muted">Magnified so you can see each move. Every gesture lands with the same settle the Signal's fold uses: one overshoot of about 5%, never a second bounce.</p>
+    </div>
+    <div class="study" id="study"></div>
+  </section>
+
+  <section aria-labelledby="brief-h">
+    <div class="sec-head">
+      <h2 id="brief-h">R-1 · Which bar do we build?</h2>
+    </div>
+    <div class="brief">
+      <div class="row"><b>Deciding</b><span>Whether the tab bar answers a tap with motion, which amends the tab bar spec's "no motion" line and gives Principle 9 a carve-out for one-time tap feedback.</span></div>
+      <div class="row"><b>Options</b>
+        <ol>
+          <li>Still, as today.</li>
+          <li>The dot travels to the new tab with one settle.</li>
+          <li><span class="pick">Recommended.</span> The dot travels, and each glyph makes its own gesture. The dot does most of the work; the clock running back and the ring drawing in are the two moves only this app would make.</li>
+          <li>A generic bounce. Drawn as the foil: this is the motion that could be any app's.</li>
+        </ol>
+      </div>
+      <div class="row"><b>Dissent</b><span>Motion &amp; IA would take option 2: the dot alone already answers the tap, and four gestures are four things to tune on a real phone. The Designer holds out for option 3 because the glyph gestures are where the delight lives.</span></div>
+      <div class="row"><b>Consequence</b><span>Options 2 to 4 are a Tier 2 edit to the design principles and the tab bar spec, then the build. Option 1 closes CUL-2251.</span></div>
+      <div class="row"><b>Forecast</b><span>1 row for option 2. 2 rows for option 3 (the dot, then the glyphs).</span></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Glyph paths verbatim from <code>components/nav/navGlyphs.tsx</code>. Bar geometry from <code>components/nav/NyxTabBar.tsx</code>. Frame colours from <code>docs/mockups/theme.css</code>.</span>
+    <span>Exploratory round: not build-ready. A build-ready round follows the ruling.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const TABS = [
+    { key: 'home', label: 'Home', screen: 'Today' },
+    { key: 'history', label: 'History', screen: 'History' },
+    { key: 'foods', label: 'Foods', screen: 'Foods' },
+    { key: 'pet', label: 'Biscuit', screen: 'Biscuit' },
+  ];
+  const OPTIONS = [
+    { id: 'still', n: 1, tag: ['now', 'Now'], title: 'Still', body: 'What ships today. The new tab turns ink and the dot appears under it. Nothing moves.' },
+    { id: 'dot', n: 2, tag: null, title: 'The dot travels', body: 'One dot for the whole bar. It slides from the tab you left to the tab you chose and lands with one settle.' },
+    { id: 'gesture', n: 3, tag: ['rec', 'Recommended'], title: 'The dot travels, and each glyph answers', body: 'The house settles, the clock runs back an hour, the bowl is set down on its mat, and the ring draws around Biscuit.' },
+    { id: 'bounce', n: 4, tag: ['foil', 'The foil'], title: 'A generic bounce', body: 'The icon swells and springs back. Pleasant, and it could be any app. Drawn so the other three can be judged against it.' },
+  ];
+
+  // ---- glyph markup (paths verbatim from components/nav/navGlyphs.tsx) ----
+  const GLYPH = {
+    home: '<svg class="g" viewBox="0 0 24 24" aria-hidden="true"><path class="g-house" d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg>',
+    history: '<svg class="g" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path class="g-min" d="M12 8v4"/><path class="g-hour" d="M12 12l2.5 2"/></svg>',
+    foods: '<svg class="g" viewBox="0 0 24 24" aria-hidden="true"><path class="g-bowl" d="M4 7.5h16a8 8 0 0 1-16 0Z"/><path class="g-mat" d="M8.5 17.5h7"/></svg>',
+    pet: '<div class="pet" aria-hidden="true"><div class="disc">B</div><svg class="ring" viewBox="0 0 26 26"><circle cx="13" cy="13" r="12"/></svg></div>',
+  };
+
+  // ---- playback state ----
+  let slow = 1;
+  let reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+  const slowBtn = document.getElementById('slow');
+  const reduceBtn = document.getElementById('reduce');
+  reduceBtn.setAttribute('aria-pressed', String(reduce));
+  document.getElementById('rm-note').hidden = !reduce;
+
+  // ---- the one settle: an underdamped spring, damping ratio 0.7 (foldMotion's UNFOLD_LAYOUT) ----
+  function spring(t, w) {
+    const z = 0.7, wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t));
+  }
+  function springFrames(map, w, seconds) {
+    const n = 48, out = [];
+    for (let i = 0; i <= n; i++) out.push({ transform: map(i === n ? 1 : spring((i / n) * seconds, w)) });
+    return { frames: out, ms: seconds * 1000 };
+  }
+  function play(el, frames, ms, opts) {
+    if (!el || reduce) return;
+    el.getAnimations().forEach((a) => a.cancel());
+    el.animate(frames, Object.assign({ duration: ms * slow, easing: 'linear' }, opts || {}));
+  }
+
+  // ---- the gestures ----
+  const GESTURES = {
+    home(icon) {
+      play(icon.querySelector('.g-house'), [
+        { transform: 'scale(1, 1)', easing: 'ease-out' },
+        { offset: 0.22, transform: 'scale(1.06, 0.88)', easing: 'ease-in-out' },
+        { offset: 0.52, transform: 'scale(0.985, 1.035)', easing: 'ease-in-out' },
+        { offset: 0.78, transform: 'scale(1.004, 0.996)', easing: 'ease-out' },
+        { transform: 'scale(1, 1)' },
+      ], 440);
+    },
+    history(icon) {
+      const s = springFrames((v) => `rotate(${-360 * v}deg)`, 14, 0.62);
+      play(icon.querySelector('.g-min'), s.frames, s.ms);
+    },
+    foods(icon) {
+      play(icon.querySelector('.g-bowl'), [
+        { transform: 'translateY(0)', easing: 'cubic-bezier(.2,.8,.3,1)' },
+        { offset: 0.3, transform: 'translateY(-3px)', easing: 'cubic-bezier(.5,0,.9,.5)' },
+        { offset: 0.6, transform: 'translateY(0.5px)', easing: 'ease-out' },
+        { offset: 0.8, transform: 'translateY(-0.2px)', easing: 'ease-in-out' },
+        { transform: 'translateY(0)' },
+      ], 460);
+      play(icon.querySelector('.g-mat'), [
+        { transform: 'scaleX(1)' },
+        { offset: 0.56, transform: 'scaleX(1)', easing: 'ease-out' },
+        { offset: 0.68, transform: 'scaleX(1.3)', easing: 'ease-in-out' },
+        { transform: 'scaleX(1)' },
+      ], 460);
+    },
+    pet(icon) {
+      play(icon.querySelector('.ring circle'), [{ strokeDashoffset: 75.4 }, { strokeDashoffset: 0 }], 380, { easing: 'cubic-bezier(.2,.7,.2,1)' });
+      const s = springFrames((v) => `scale(${0.88 + 0.12 * v})`, 18, 0.46);
+      play(icon.querySelector('.disc'), s.frames, s.ms);
+    },
+  };
+  function bounce(icon) {
+    play(icon, [
+      { transform: 'scale(1)', easing: 'ease-out' },
+      { offset: 0.35, transform: 'scale(1.25)', easing: 'ease-in-out' },
+      { offset: 0.65, transform: 'scale(0.92)', easing: 'ease-in-out' },
+      { offset: 0.85, transform: 'scale(1.04)', easing: 'ease-out' },
+      { transform: 'scale(1)' },
+    ], 420);
+  }
+
+  // ---- the dot that travels ----
+  function railX(rail) {
+    const m = new DOMMatrixReadOnly(getComputedStyle(rail).transform === 'none' ? undefined : getComputedStyle(rail).transform);
+    const w = rail.getBoundingClientRect().width || 1;
+    return m.m41 / w;
+  }
+  function moveRail(rail, to) {
+    const from = railX(rail);
+    rail.getAnimations().forEach((a) => a.cancel());
+    rail.style.transform = `translateX(${to * 100}%)`;
+    if (reduce || Math.abs(from - to) < 0.001) return;
+    const s = springFrames((v) => `translateX(${(from + (to - from) * v) * 100}%)`, 18, 0.46);
+    rail.animate(s.frames, { duration: s.ms * slow, easing: 'linear' });
+  }
+
+  // ---- build a bar ----
+  function barMarkup(withRail) {
+    return `<div class="bar" role="tablist">${TABS.map((t, i) => `
+      <button class="tab" type="button" role="tab" data-i="${i}" aria-label="${t.key === 'pet' ? 'Biscuit, pet profile' : t.label}">
+        <span class="icon">${GLYPH[t.key]}</span>
+        <span class="lbl">${t.label}</span>
+        <span class="tick"></span>
+      </button>`).join('')}${withRail ? '<span class="rail" aria-hidden="true"><i></i></span>' : ''}</div>`;
+  }
+
+  function makeBar(root, mode, onSelect) {
+    const tabs = [...root.querySelectorAll('.tab')];
+    const rail = root.querySelector('.rail');
+    let current = 0;
+    function render(i) {
+      tabs.forEach((t, k) => { t.classList.toggle('on', k === i); t.setAttribute('aria-selected', String(k === i)); });
+    }
+    function select(i) {
+      if (i === current) return; // a second tap on the active tab plays nothing
+      current = i;
+      render(i);
+      if (rail) moveRail(rail, i);
+      const icon = tabs[i].querySelector('.icon');
+      if (mode === 'gesture') GESTURES[TABS[i].key](icon);
+      if (mode === 'bounce') bounce(icon);
+      if (onSelect) onSelect(i);
+    }
+    tabs.forEach((t, i) => t.addEventListener('click', () => select(i)));
+    render(0);
+    if (rail) rail.style.transform = 'translateX(0%)';
+    return { select, get current() { return current; } };
+  }
+
+  // ---- the four option cards ----
+  const grid = document.getElementById('grid');
+  const bars = OPTIONS.map((o) => {
+    const card = document.createElement('article');
+    card.className = 'opt' + (o.id === 'gesture' ? ' is-rec' : '');
+    const travel = o.id === 'dot' || o.id === 'gesture';
+    card.innerHTML = `
+      <div class="opt-head">
+        <div class="tagrow"><span class="tag">Option ${o.n}</span>${o.tag ? `<span class="tag ${o.tag[0]}">${o.tag[1]}</span>` : ''}</div>
+        <div class="opt-title">${o.title}</div>
+        <p>${o.body}</p>
+      </div>
+      <div class="phone ${travel ? 'travel' : ''}">
+        <div class="screen"><div class="screen-title">${TABS[0].screen}</div><div class="sk short"></div><div class="sk"></div></div>
+        ${barMarkup(travel)}
+        <span class="homebar" aria-hidden="true"></span>
+      </div>`;
+    grid.appendChild(card);
+    const title = card.querySelector('.screen-title');
+    return makeBar(card.querySelector('.phone'), o.id, (i) => { title.textContent = TABS[i].screen; });
+  });
+
+  // ---- the study row ----
+  const STUDY = [
+    { key: 'dot', name: 'The dot', moves: 'One dot slides from the tab you left to the one you chose.', time: '460ms', curve: 'The fold\'s spring, one overshoot', why: 'The record\'s thread moving to where you are now. Carries most of the effect on its own.' },
+    { key: 'home', name: 'Home · the house settles', moves: 'The house squashes onto its ground and rises back.', time: '440ms', curve: 'Squash, then one settle', why: 'Coming home: the house sits down.' },
+    { key: 'history', name: 'History · the clock runs back', moves: 'The minute hand sweeps one turn anticlockwise.', time: '620ms', curve: 'The fold\'s spring, about 16° past', why: 'History reads the record backwards in time, so the clock turns back an hour.' },
+    { key: 'foods', name: 'Foods · the bowl is set down', moves: 'The bowl lifts 3pt and lands on its mat; the mat spreads as it lands.', time: '460ms', curve: 'Lift, land, one settle', why: 'Setting a bowl down is the meal\'s own gesture.' },
+    { key: 'pet', name: 'Biscuit · the ring draws in', moves: 'The ring draws round the avatar from twelve o\'clock as the avatar nods up.', time: '380ms', curve: 'Draw in, ease out', why: 'Draw in is already a house gesture: a chart draws itself the first time it is seen.' },
+  ];
+  const study = document.getElementById('study');
+  STUDY.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = s.key === 'dot' ? 'gcard wide' : 'gcard';
+    const stage = s.key === 'dot'
+      ? `<div class="stage travel">${barMarkup(true)}</div>`
+      : `<div class="stage"><span class="icon">${GLYPH[s.key]}</span></div>`;
+    card.innerHTML = `${stage}
+      <h3>${s.name}</h3>
+      <dl><dt>Moves</dt><dd>${s.moves}</dd><dt>Time</dt><dd>${s.time}</dd><dt>Curve</dt><dd>${s.curve}</dd><dt>Why ours</dt><dd>${s.why}</dd></dl>
+      <button class="btn" type="button">Replay</button>`;
+    study.appendChild(card);
+    const btn = card.querySelector('.btn');
+    if (s.key === 'dot') {
+      const bar = makeBar(card.querySelector('.stage'), 'dot');
+      btn.addEventListener('click', () => bar.select((bar.current + 1) % TABS.length));
+    } else {
+      const icon = card.querySelector('.stage .icon');
+      if (s.key === 'pet') icon.querySelector('.ring circle').style.strokeDashoffset = '0';
+      btn.addEventListener('click', () => GESTURES[s.key](icon));
+    }
+  });
+
+  // ---- controls ----
+  slowBtn.addEventListener('click', () => {
+    slow = slow === 1 ? 4 : 1;
+    slowBtn.setAttribute('aria-pressed', String(slow === 4));
+  });
+  reduceBtn.addEventListener('click', () => {
+    reduce = !reduce;
+    reduceBtn.setAttribute('aria-pressed', String(reduce));
+    if (reduce) document.querySelectorAll('.tab .icon, .tab .icon *, .rail, .stage .icon *').forEach((el) => el.getAnimations && el.getAnimations().forEach((a) => a.finish()));
+  });
+
+  let tourTimer = null;
+  const tourBtn = document.getElementById('tour');
+  tourBtn.addEventListener('click', () => {
+    if (tourTimer) { clearTimeout(tourTimer); tourTimer = null; tourBtn.textContent = 'Play the tour'; return; }
+    const seq = [1, 2, 3, 0];
+    let k = 0;
+    tourBtn.textContent = 'Stop the tour';
+    const step = () => {
+      bars.forEach((b) => b.select(seq[k]));
+      k++;
+      if (k < seq.length) tourTimer = setTimeout(step, 1100 * slow);
+      else { tourTimer = null; tourBtn.textContent = 'Play the tour'; }
+    };
+    bars.forEach((b) => b.select(0));
+    tourTimer = setTimeout(step, 250);
+  });
+})();
+</script>
