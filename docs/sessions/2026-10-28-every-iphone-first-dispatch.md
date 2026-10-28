@@ -12,7 +12,7 @@ Shipped via #1344. Finishes CUL-2249.
 
 **Launched:** PR-02 (CUL-2237, routine, the teach row) at 17:05Z, picked on the PM's answer; PR-01 (CUL-2236, plan-gated as a Tier-2 doc edit, merge-gated) at 17:09Z on the PM's "launch PR-01 now too", which lifted the first dispatch's one slot. Armed: one check-in and the weekday 07:45 CT progress update (no Gmail connector here, so it posts and prints only).
 
-The team-wide harm read was not run in full: about 30 open `Live harm` issues, nearly all owned by other projects' dispatchers, none offered from here. One planner gap noticed, not filed: the Board has no notion of a queued row, so a row the PM queued reads "Needs you: a pick".
+The team-wide harm read was not run in full: about 30 open `Live harm` issues, nearly all owned by other projects' dispatchers, none offered from here. One planner gap filed as CUL-2250: the Board has no notion of a queued row, so a row the PM queued reads "Needs you: a pick".
 
 ## The bug (CUL-2249)
 
