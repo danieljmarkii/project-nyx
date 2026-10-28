@@ -74,9 +74,10 @@ export function TimeEditSheet({ value, title, maximumDate, saving = false, onCan
           mode="datetime"
           display={Platform.OS === 'ios' ? 'inline' : 'default'}
           maximumDate={maximum}
-          // The app has no dark mode but the phone does: unpinned, the picker draws its
-          // night labels on this white sheet, and the month, the days and the time vanish
-          // after dark (CUL-2228). guards/datePickerTheme.test.ts holds every picker to it.
+          // The phone's dark mode must never reach this white sheet: unpinned, the picker
+          // followed it, and the month, the days and the time vanished after dark (CUL-2228).
+          // app.json says light too, but only from the next native build; this pin is what
+          // fixes the builds already out. guards/datePickerTheme.test.ts holds every picker to it.
           themeVariant="light"
           accentColor={colorRoles.action.onLight}
           onChange={(_e, date) => {

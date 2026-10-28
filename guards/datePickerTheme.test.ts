@@ -1,14 +1,16 @@
 // Every native date picker is pinned to the light ground it sits on (CUL-2228).
 //
-// The app has no dark mode, but app.json's `userInterfaceStyle` is "automatic" (the
-// scaffold's default, never a ruling), so iOS hands UIDatePicker the phone's appearance.
-// After dark it draws its night labels on our white sheets: the month, every pickable day
-// and the time vanish, and only the tinted selection and the grey disabled days survive.
-// `themeVariant="light"` pins the picker to its ground. `accentColor` puts its selection
-// on the action colour (CUL-2161), whose sweep re-pointed the accents that existed and
-// could not see the sites that had none, which is how TimeEditSheet, the one Change time
-// sheet, kept the night labels while the log sheet's pickers had carried the fix since
-// B-010. A picker on a night ground would pin "dark" and change this guard on purpose.
+// The app has no dark mode, but app.json's `userInterfaceStyle` was "automatic" (the
+// scaffold's default, never a ruling), so iOS handed UIDatePicker the phone's appearance.
+// After dark it drew its night labels on our white sheets: the month, every pickable day
+// and the time vanished, and only the tinted selection and the grey disabled days survived.
+// app.json says "light" now (CUL-2229, guards/nativeConfig.test.ts), but only a native
+// build carries that; `themeVariant="light"` is what reaches the builds already installed,
+// and it holds if the plist ever reverts. `accentColor` puts the selection on the action
+// colour (CUL-2161), whose sweep re-pointed the accents that existed and could not see the
+// sites that had none, which is how TimeEditSheet, the one Change time sheet, kept the
+// night labels while the log sheet's pickers had carried the fix since B-010. A picker on
+// a night ground would pin "dark" and change this guard on purpose.
 //
 // BLIND SPOT, stated so it does not read as coverage (C-38): the scan reads JSX tags bound
 // to the package's default import. A re-export, a wrapper component or a createElement
