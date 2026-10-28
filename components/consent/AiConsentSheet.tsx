@@ -21,6 +21,7 @@ import {
   type ConsentBenefit,
   type ConsentDoor,
 } from '../../constants/aiConsentCopy';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // The AI permission sheet (CUL-1834; mock round 4, frames A, B and C). One
 // component for every in-context door: the headline and picture fit the door, and
@@ -175,6 +176,7 @@ interface SheetProps extends PanelProps {
 }
 
 export function AiConsentSheet({ visible, onDismissed, ...panel }: SheetProps) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   return (
     <Modal
@@ -187,7 +189,7 @@ export function AiConsentSheet({ visible, onDismissed, ...panel }: SheetProps) {
     >
       <View style={styles.backdrop}>
         <View
-          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}
           accessibilityViewIsModal
         >
           <View style={styles.grab} />

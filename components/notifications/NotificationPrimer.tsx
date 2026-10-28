@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, shadows } from '../../constants/theme';
 import { NODE_TINT_NIGHT } from '../recap/nodeTints';
 import { PrimaryButton } from '../ui';
+import { LayoutColumn } from '../ui/LayoutColumn';
 import {
   NOTIFICATION_CATEGORIES,
   type NotificationCategory,
@@ -87,80 +88,84 @@ export function NotificationPrimer({
       // Android hardware back = decline; spends nothing, same as "Not now" (§5).
       onRequestClose={onDismiss}
     >
-      <View style={styles.screen}>
-        {/* A ScrollView, not a plain View: the CTAs are pinned to the bottom by the
-            flex spacer at normal sizes (contentContainerStyle grows to fill), but at
-            the largest Dynamic Type — or a future category with longer copy — the
-            content scrolls instead of pushing "Not now" past the bottom edge. A
-            consent screen must never make declining unreachable. */}
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[
-            styles.content,
-            {
-              paddingTop: insets.top + theme.space3,
-              paddingBottom: insets.bottom + theme.space2,
-            },
-          ]}
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          {/* Hero: the night miniature. A generic warm day — never the owner's
-              data — so the primer renders before a single log exists. */}
-          <View style={styles.hero}>
-            <Text style={styles.heroLabel}>{primer.heroLabel}</Text>
-            <Text style={styles.heroLead}>{primer.heroLead(petName ?? null)}</Text>
-
-            <View style={styles.spine}>
-              {nodes.map((node, i) => {
-                const isFirst = i === 0;
-                const isLast = i === nodes.length - 1;
-                return (
-                  <View key={`${node.title}-${i}`} style={styles.spineRow}>
-                    {/* The connecting thread: two half-height segments per node
-                        (omitted at the ends), so the line runs dot-centre to
-                        dot-centre and the card-bordered dots punch through it. */}
-                    <View style={styles.nodeCol}>
-                      {!isFirst && <View style={styles.segTop} />}
-                      {!isLast && <View style={styles.segBottom} />}
-                      <View
-                        style={[styles.dot, { backgroundColor: NODE_DOT_COLOR[node.kind] }]}
-                      />
-                    </View>
-                    <Text style={styles.nodeTitle} numberOfLines={1}>
-                      {node.title}
-                      {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
-                          raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
-                          own family and breaks RN's native text cascade, shipping a face change mid-sentence
-                          (CUL-607). */}
-                      {node.detail ? (
-                        <Text style={styles.nodeDetail}> · {node.detail}</Text>
-                      ) : null}
-                    </Text>
-                    <Text style={styles.nodeTime}>{node.time}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-
-          <Text style={styles.headline}>{primer.headline}</Text>
-          <Text style={styles.body}>{primer.body}</Text>
-
-          <View style={styles.spacer} />
-
-          <PrimaryButton label="Turn on" onPress={onConfirm} loading={requesting} />
-          <TouchableOpacity
-            onPress={onDismiss}
-            disabled={requesting}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            style={styles.notNowWrap}
+      {/* A full-screen modal presents outside the root column, so it brings its own
+          (CUL-2243): at compact the column is the window and changes nothing. */}
+      <LayoutColumn>
+        <View style={styles.screen}>
+          {/* A ScrollView, not a plain View: the CTAs are pinned to the bottom by the
+              flex spacer at normal sizes (contentContainerStyle grows to fill), but at
+              the largest Dynamic Type — or a future category with longer copy — the
+              content scrolls instead of pushing "Not now" past the bottom edge. A
+              consent screen must never make declining unreachable. */}
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.content,
+              {
+                paddingTop: insets.top + theme.space3,
+                paddingBottom: insets.bottom + theme.space2,
+              },
+            ]}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <Text style={styles.notNow}>Not now</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
+            {/* Hero: the night miniature. A generic warm day — never the owner's
+                data — so the primer renders before a single log exists. */}
+            <View style={styles.hero}>
+              <Text style={styles.heroLabel}>{primer.heroLabel}</Text>
+              <Text style={styles.heroLead}>{primer.heroLead(petName ?? null)}</Text>
+
+              <View style={styles.spine}>
+                {nodes.map((node, i) => {
+                  const isFirst = i === 0;
+                  const isLast = i === nodes.length - 1;
+                  return (
+                    <View key={`${node.title}-${i}`} style={styles.spineRow}>
+                      {/* The connecting thread: two half-height segments per node
+                          (omitted at the ends), so the line runs dot-centre to
+                          dot-centre and the card-bordered dots punch through it. */}
+                      <View style={styles.nodeCol}>
+                        {!isFirst && <View style={styles.segTop} />}
+                        {!isLast && <View style={styles.segBottom} />}
+                        <View
+                          style={[styles.dot, { backgroundColor: NODE_DOT_COLOR[node.kind] }]}
+                        />
+                      </View>
+                      <Text style={styles.nodeTitle} numberOfLines={1}>
+                        {node.title}
+                        {/* geist-ok: nested span — differs from its parent only in colour, so it must stay a
+                            raw <Text> and inherit the parent's resolved Geist face. A ThemedText here injects its
+                            own family and breaks RN's native text cascade, shipping a face change mid-sentence
+                            (CUL-607). */}
+                        {node.detail ? (
+                          <Text style={styles.nodeDetail}> · {node.detail}</Text>
+                        ) : null}
+                      </Text>
+                      <Text style={styles.nodeTime}>{node.time}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            <Text style={styles.headline}>{primer.headline}</Text>
+            <Text style={styles.body}>{primer.body}</Text>
+
+            <View style={styles.spacer} />
+
+            <PrimaryButton label="Turn on" onPress={onConfirm} loading={requesting} />
+            <TouchableOpacity
+              onPress={onDismiss}
+              disabled={requesting}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              style={styles.notNowWrap}
+            >
+              <Text style={styles.notNow}>Not now</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </LayoutColumn>
     </Modal>
   );
 }

@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   /** `TRIAL_PROTEIN_CORRECTION_NOTE` — the §8 whole-trial disclosure. */
@@ -39,6 +40,7 @@ export function TrialProteinCorrectionSheet({
   onConfirm,
   onCancel,
 }: Props) {
+  const sheetCap = useSheetCap();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={saving ? undefined : onCancel}>
       <Pressable
@@ -48,7 +50,7 @@ export function TrialProteinCorrectionSheet({
         accessibilityLabel="Close"
       />
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
-        <View style={styles.sheet} testID="trial-protein-correction">
+        <View style={[styles.sheet, sheetCap]} testID="trial-protein-correction">
           <View style={styles.grabber} />
           <ThemedText style={styles.note}>{note}</ThemedText>
 

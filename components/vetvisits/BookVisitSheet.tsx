@@ -24,6 +24,7 @@ import {
   localDateKey,
   type VisitPrefill,
 } from '../../lib/vetVisits';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 /** Which arm of the sheet is open — the one question "Add" asks first. */
 export type VisitMode = 'booked' | 'happened';
@@ -83,6 +84,7 @@ export function BookVisitSheet({
   onClose,
   onSubmit,
 }: Props) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<VisitMode>(initialMode);
   const [day, setDay] = useState<Date>(() => new Date());
@@ -212,7 +214,7 @@ export function BookVisitSheet({
       >
         <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
         <View
-          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}
           accessibilityViewIsModal
         >
           <View style={styles.grabber} />

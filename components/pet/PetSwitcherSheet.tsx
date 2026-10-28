@@ -15,6 +15,7 @@ import { useAuthStore } from '../../store/authStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { petIdentityLine } from '../../lib/utils';
 import { PetAvatar } from './PetAvatar';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface PetSwitcherSheetProps {
   visible: boolean;
@@ -88,6 +89,7 @@ const RISE = theme.space3;
 export function PetSwitcherPanel({
   visible, onClose, onNavigateAway, captureSurface = false, animated = false, style,
 }: PetSwitcherPanelProps) {
+  const sheetCap = useSheetCap();
   const { pets, activePet, selectPet } = usePetStore();
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
@@ -190,6 +192,7 @@ export function PetSwitcherPanel({
         style={[
           styles.sheet,
           { paddingBottom: insets.bottom + theme.space2 },
+          sheetCap,
           { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [RISE, 0] }) }] },
         ]}
       >

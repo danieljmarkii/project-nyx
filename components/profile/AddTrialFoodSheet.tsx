@@ -24,6 +24,7 @@ import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
 import type { AddTrialFoodSheetModel } from '../../lib/trialFoodsScreen';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   model: AddTrialFoodSheetModel;
@@ -47,6 +48,7 @@ export function AddTrialFoodSheet({
   onConfirm,
   onCancel,
 }: Props) {
+  const sheetCap = useSheetCap();
   return (
     <Modal
       visible
@@ -64,7 +66,7 @@ export function AddTrialFoodSheet({
         accessibilityLabel="Close"
       />
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
-        <View style={styles.sheet} testID="add-trial-food-sheet">
+        <View style={[styles.sheet, sheetCap]} testID="add-trial-food-sheet">
           <View style={styles.grabber} />
           <ThemedText style={styles.title}>{model.title}</ThemedText>
 

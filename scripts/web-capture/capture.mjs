@@ -148,6 +148,7 @@ const firstVomit = (petId) =>
 // no owner can reach.
 const tab = (name) => (page) => page.getByText(name, { exact: true }).last().click({ timeout: 8000 });
 const link = (text) => (page) => page.getByText(text).first().click({ timeout: 8000 });
+const label = (text) => (page) => page.getByLabel(text).first().click({ timeout: 8000 });
 const push = (path) => (page) =>
   page.evaluate((p) => {
     window.history.pushState({}, '', p);
@@ -172,6 +173,11 @@ const SHOTS = [
   // CUL-1282's path: a tap on an earlier day in History's week strip must bring the
   // list to that day (Sunday the 11th, three cards down, past the 21-row long day).
   { name: 'history-strip-tap-pepper', pet: 'pepper', go: [tab('History'), (page) => page.getByText('11', { exact: true }).first().click({ timeout: 8000 })] },
+  // CUL-2243: a Modal presents outside the column, so two sheets are photographed open: the
+  // pet switcher and a ScopeMenu (History's date range, the pill every text size can reach).
+  // The log sheet is not: the FAB's fan does not open on the web build.
+  { name: 'pet-switcher-juniper', pet: 'juniper', go: [label(/^Switch pet/)] },
+  { name: 'scope-menu-pepper', pet: 'pepper', go: [tab('History'), label(/^Date range/)] },
 ];
 
 // Each size the run photographs, as `W[xH][@text]` (CUL-2237): a width alone keeps the

@@ -3,6 +3,7 @@ import { StyleSheet, Platform, Modal, Pressable, TouchableOpacity, View } from '
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // The "Change time" bottom sheet, extracted (CUL-606) and now the ONLY one: the
 // meal and dose cards' inline copies were deleted in favour of this (CUL-621), so
@@ -56,6 +57,7 @@ interface Props {
 }
 
 export function TimeEditSheet({ value, title, maximumDate, saving = false, onCancel, onSave }: Props) {
+  const sheetCap = useSheetCap();
   // Local draft, separate from the caller's authoritative time, so the picker can
   // be opened, scrubbed and cancelled without mutating anything.
   const [draft, setDraft] = useState<Date>(value);
@@ -67,7 +69,7 @@ export function TimeEditSheet({ value, title, maximumDate, saving = false, onCan
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCancel} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onCancel} />
-      <Pressable style={styles.sheet} onPress={() => {}}>
+      <Pressable style={[styles.sheet, sheetCap]} onPress={() => {}}>
         <ThemedText style={styles.sheetTitle}>{title}</ThemedText>
         <DateTimePicker
           value={draft}

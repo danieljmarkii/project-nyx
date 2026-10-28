@@ -6,6 +6,7 @@ import { PrimaryButton } from '../ui/PrimaryButton';
 import { TextField } from '../ui/TextField';
 import { ThemedText } from '../ui/ThemedText';
 import { QUESTION_LIST_MAX, QUESTION_MAX_LENGTH } from '../../lib/vetVisits';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // The one-line question sheet (CUL-903 VV-5; mock B1's "+ Add a question").
 //
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export function AddQuestionSheet({ visible, petName, existingCount, onClose, onSubmit }: Props) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
@@ -75,7 +77,7 @@ export function AddQuestionSheet({ visible, petName, existingCount, onClose, onS
       >
         <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
         <View
-          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}
+          style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]}
           accessibilityViewIsModal
         >
           <View style={styles.grabber} />

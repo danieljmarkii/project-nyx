@@ -1,5 +1,5 @@
 import { theme } from '../constants/theme';
-import { bleedFor, columnFor, layoutClassFor } from './useLayoutClass';
+import { bleedFor, columnFor, layoutClassFor, sheetCapFor } from './useLayoutClass';
 
 // The sizes the captures photograph (CUL-2237): every iPhone width, the SE's height, the
 // folded Duo and the unfolded Duo both ways. Duo points are pixels ÷ 3 (unpublished).
@@ -48,5 +48,20 @@ describe('bleedFor', () => {
 
   it('reaches the window edge and keeps the content in the column', () => {
     expect(bleedFor(33, 16)).toEqual({ marginHorizontal: -33, paddingHorizontal: 49 });
+  });
+});
+
+describe('sheetCapFor', () => {
+  it('is nothing at compact, so a phone sheet keeps its style', () => {
+    expect(sheetCapFor(0)).toBeNull();
+    expect(sheetCapFor(0, 14)).toBeNull();
+  });
+
+  it('steps the panel in by the gutter, keeping its own margin inside the column', () => {
+    // 890pt unfolded: a 560pt column with a 165pt gutter each side.
+    const { width, gutter } = columnFor(890);
+    expect(sheetCapFor(gutter)).toEqual({ marginHorizontal: 165 });
+    expect(890 - 2 * (sheetCapFor(gutter)!.marginHorizontal as number)).toBe(width);
+    expect(sheetCapFor(gutter, 14)).toEqual({ marginHorizontal: 179 });
   });
 });

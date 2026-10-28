@@ -27,6 +27,7 @@ import {
   recordVetLine,
   type RecordKind,
 } from '../../constants/aiConsentCopy';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // The AI consent where a vomit or stool photo's read would sit (CUL-1835; mock round 4
 // §3). Every frame here is a STATUS, never a verdict: none of them uses the read's card,
@@ -151,11 +152,12 @@ export function RecordAskCard({
 }
 
 function WhatsSentSheet({ petName, onDone }: { petName: string | null; onDone: () => void }) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onDone}>
       <View style={styles.backdrop}>
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]} accessibilityViewIsModal>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }, sheetCap]} accessibilityViewIsModal>
           <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
             <WhatsSentPanel petName={petName} onDone={onDone} />
           </ScrollView>

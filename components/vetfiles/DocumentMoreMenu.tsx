@@ -3,6 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import type { AlsoAddTarget } from '../../lib/vetDocumentCapture';
 import { ThemedText } from '../ui/ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 interface Props {
   visible: boolean;
@@ -60,6 +61,7 @@ interface Props {
 export function DocumentMoreMenu({
   visible, onClose, onRename, onDelete, onAddPage, alsoAdd = [], onAlsoAdd, busy,
 }: Props) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
 
   // Built top-to-bottom so the divider rule is a plain index test and the ordering
@@ -145,7 +147,7 @@ export function DocumentMoreMenu({
         {/* Anchored under the header's ⋯, mirroring the mock's popover position.
             insets.top keeps it under the trigger on a notched device rather than
             at a hardcoded offset that lands over the status bar on some phones. */}
-        <View style={[styles.menu, { top: insets.top + 44 }]}>
+        <View style={[styles.menu, { top: insets.top + 44 }, sheetCap]}>
           {rows.map((row, i) => (
             <View key={row.key}>
               {i > 0 ? <View style={styles.divider} /> : null}

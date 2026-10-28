@@ -2,6 +2,7 @@ import { Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { useSheetCap } from '../../hooks/useLayoutClass';
 
 // Get ready's title block and its ⋯ menu (CUL-903 VV-5; mock B1).
 //
@@ -72,11 +73,12 @@ interface MenuProps {
  * may have opened by accident.
  */
 export function GetReadyMoreMenu({ petName, visible, onClose, onCopyAsText, onChangeAppointment }: MenuProps) {
+  const sheetCap = useSheetCap();
   const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close menu">
-        <View style={[styles.menu, { top: insets.top + 48 }]} accessibilityViewIsModal>
+        <View style={[styles.menu, { top: insets.top + 48 }, sheetCap]} accessibilityViewIsModal>
           <TouchableOpacity
             style={styles.item}
             onPress={onCopyAsText}
