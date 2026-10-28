@@ -21,6 +21,8 @@
 //   T6  a dog, two vomits inside one 24-hour span that holds this one         → call today
 //   T7  under six months old, or no birthday on file, the same two in 24 h    → call today
 //   T8  a vomit in each of three back-to-back 24-hour spans holding this one  → call today
+//       (the TIER hears spans; the WORDS name calendar days only when the owner's calendar
+//       holds three in a row, see `FloorPersistence`)
 // Species "other" gets every count rung and T3 (T26); only T6 is species-keyed.
 //
 // HELD, deliberately absent: T11 (a dog retching with nothing produced) until there is a way
@@ -76,6 +78,27 @@ export interface FloorInput {
   species: string;
   /** `pets.date_of_birth` (YYYY-MM-DD) or null when none is on file. */
   birthDate: string | null;
+  /** The owner's IANA zone (`user_profiles.timezone`), for T8's words only. Absent or
+   *  unresolvable, T8 carries no `persistence` and its sentence names no days. It never
+   *  decides whether T8 fires. */
+  timeZone?: string | null;
+}
+
+/** What T8's run holds, for the sentence that states it (CUL-2223). The tier comes from the
+ *  24-hour spans, which three vomits across about 25 hours on two days can meet (Nyx: 06:10 and
+ *  06:26 one morning, 07:44 the next). Saying "three days in a row" over that was false; the
+ *  call was not. So the spans keep the call exactly as loud, and the words say only what the
+ *  owner's calendar holds. */
+export interface FloorPersistence {
+  /** Vomits logged inside every qualifying run of spans that holds this one, in time order
+   *  (each log once). "Times thrown up" counts logs, as T1's sentence does. */
+  logs: number;
+  /** Distinct calendar days, in the owner's zone, those logs fell on; null when a found pile
+   *  is among them (dated when found, so its day is unsure) or the logs fall on one day. */
+  days: number | null;
+  /** A vomit with a known time (no found pile) on each of three consecutive calendar days,
+   *  this one's among them. The only fact that licenses "three days in a row". */
+  consecutive: boolean;
 }
 
 export interface FloorResult {
@@ -87,6 +110,8 @@ export interface FloorResult {
   counts: { burst: number; span: number; pair: number };
   /** True when T7 fired only because no birthday is on file (the read says so, §8.11). */
   ageUnknown: boolean;
+  /** Set exactly when T8 fires: what its sentence may claim. */
+  persistence?: FloorPersistence;
 }
 
 export const FLOOR_ROW_TIER: Readonly<Record<FloorRow, FloorTier>> = {
@@ -155,6 +180,35 @@ export function ageInMonths(birthDate: string | null, atMs: number): number | nu
   return months;
 }
 
+const DAY_MS = 24 * HOUR;
+
+/** The calendar-day index of an instant in `timeZone`, or null when the zone does not
+ *  resolve. Intl is the platform's, not an import (§8.1). */
+export function calendarDayOf(timeZone: string | null | undefined): ((t: number) => number) | null {
+  if (!timeZone) return null;
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' });
+    return (t) => {
+      const parts = fmt.formatToParts(new Date(t));
+      const n = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+      return Math.floor(Date.UTC(n('year'), n('month') - 1, n('day')) / DAY_MS);
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `days` holds FLOOR_PERSISTENCE_DAYS consecutive days, `anchorDay` among them. */
+export function persistsThrough(days: readonly number[], anchorDay: number): boolean {
+  const logged = new Set(days);
+  for (let start = anchorDay - FLOOR_PERSISTENCE_DAYS + 1; start <= anchorDay; start++) {
+    let run = true;
+    for (let k = 0; k < FLOOR_PERSISTENCE_DAYS; k++) if (!logged.has(start + k)) run = false;
+    if (run) return true;
+  }
+  return false;
+}
+
 export function incidentFloor(input: FloorInput): FloorResult {
   const none: FloorResult = { tier: null, rows: [], counts: { burst: 0, span: 0, pair: 0 }, ageUnknown: false };
   const a = ms(input.anchor.at);
@@ -204,6 +258,9 @@ export function incidentFloor(input: FloorInput): FloorResult {
   // three evenings (the adversarial pass on this PR).
   const DAY = 24 * HOUR;
   const RUN = FLOOR_PERSISTENCE_DAYS * DAY;
+  // Every qualifying run holding the anchor, so the words count the same logs whatever order
+  // the rows were read in (adversarial pass 2).
+  const inRuns = new Set<number>();
   const starts = all.flatMap((t) => Array.from({ length: FLOOR_PERSISTENCE_DAYS }, (_, k) => t - k * DAY));
   for (const s of starts) {
     if (s > a || a >= s + RUN) continue;
@@ -211,9 +268,21 @@ export function incidentFloor(input: FloorInput): FloorResult {
     for (let k = 0; k < FLOOR_PERSISTENCE_DAYS; k++) {
       if (!all.some((t) => t >= s + k * DAY && t < s + (k + 1) * DAY)) run = false;
     }
-    if (run) {
-      rows.add('T8');
-      break;
+    if (run) all.forEach((t, i) => { if (t >= s && t < s + RUN) inRuns.add(i); });
+  }
+  let persistence: FloorPersistence | undefined;
+  if (inRuns.size > 0) {
+    rows.add('T8');
+    const dayOf = calendarDayOf(input.timeZone);
+    if (dayOf) {
+      const run = [...inRuns].map((i) => vomits[i]);
+      const known = vomits.filter((v) => !isFound(v)).map((v) => dayOf(ms(v.at)));
+      const days = new Set(run.map((v) => dayOf(ms(v.at)))).size;
+      persistence = {
+        logs: run.length,
+        days: run.some(isFound) || days < 2 ? null : days,
+        consecutive: !isFound(input.anchor) && persistsThrough(known, dayOf(a)),
+      };
     }
   }
 
@@ -223,5 +292,11 @@ export function incidentFloor(input: FloorInput): FloorResult {
     : ordered.length > 0
       ? 'call_today'
       : null;
-  return { tier, rows: ordered, counts, ageUnknown: rows.has('T7') && age === null };
+  return {
+    tier,
+    rows: ordered,
+    counts,
+    ageUnknown: rows.has('T7') && age === null,
+    ...(persistence ? { persistence } : {}),
+  };
 }

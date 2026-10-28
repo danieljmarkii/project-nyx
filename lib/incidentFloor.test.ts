@@ -8,8 +8,11 @@ import {
   FLOOR_PAIR_HOURS,
   FLOOR_SPAN_HOURS,
   FLOOR_YOUNG_MONTHS,
+  FLOOR_PERSISTENCE_DAYS,
   ageInMonths,
+  calendarDayOf,
   incidentFloor,
+  persistsThrough,
   vomitOnsets,
   type FloorInput,
   type FloorVomit,
@@ -168,6 +171,76 @@ describe('incidentFloor: T8, vomiting three days running', () => {
   it('the anchor must sit inside the run: a vomit a day after it does not borrow it', () => {
     const days = [v(-2 * 24 * H), v(-24 * H), v(-1)];
     expect(run({ anchor: v(3 * 24 * H), vomits: [...days, v(3 * 24 * H)] }).rows).not.toContain('T8');
+  });
+});
+
+describe('incidentFloor: T8\'s words count the owner\'s calendar days (CUL-2223)', () => {
+  const CHI = 'America/Chicago';
+  const chi = (local: string): FloorVomit => ({ at: new Date(`${local}-05:00`).toISOString(), confidence: 'witnessed' }); // CDT
+  // Nyx's logs behind the false "three days in a row": 06:10 and 06:26 one morning, 07:44 the next.
+  const NYX: FloorVomit[] = [
+    { at: '2026-10-26T11:10:26.000Z', confidence: 'witnessed' },
+    { at: '2026-10-26T11:26:49.000Z', confidence: 'witnessed' },
+    { at: '2026-10-27T12:44:47.000Z', confidence: 'witnessed' },
+  ];
+
+  it('Nyx: the call stands, and the run is two days, never three in a row', () => {
+    const r = run({ anchor: NYX[2], vomits: NYX, timeZone: CHI });
+    expect(r.rows).toContain('T8');
+    expect(r.tier).toBe('call_today');
+    expect(r.persistence).toEqual({ logs: 3, days: 2, consecutive: false });
+  });
+
+  it('a found pile never makes the third day: it is dated when found, not when it happened', () => {
+    const run3 = [chi('2026-10-24T21:00:00'), chi('2026-10-25T21:00:00'), { ...chi('2026-10-26T07:00:00'), confidence: 'window' }];
+    const r = run({ anchor: run3[1], vomits: run3, timeZone: CHI });
+    expect(r.rows).toContain('T8');
+    expect(r.persistence).toEqual({ logs: 3, days: null, consecutive: false });
+  });
+
+  it('the words count the same logs whatever order the rows were read in', () => {
+    const six = [chi('2026-10-24T08:00:00'), chi('2026-10-24T20:00:00'), chi('2026-10-25T09:00:00'), chi('2026-10-25T22:00:00'), chi('2026-10-26T06:00:00'), chi('2026-10-26T12:00:00')];
+    const want = run({ anchor: six[5], vomits: six, timeZone: CHI }).persistence;
+    expect(want).toEqual({ logs: 6, days: 3, consecutive: true });
+    for (let k = 1; k < six.length; k++) {
+      const order = [...six.slice(k), ...six.slice(0, k)].reverse();
+      expect(run({ anchor: six[5], vomits: order, timeZone: CHI }).persistence).toEqual(want);
+    }
+  });
+
+  it('with no zone the call stands and the words name no days', () => {
+    for (const timeZone of [null, undefined, 'Not/AZone']) {
+      const r = run({ anchor: NYX[2], vomits: NYX, timeZone });
+      expect(r.tier).toBe('call_today');
+      expect(r.persistence).toBeUndefined();
+    }
+  });
+
+  it('a vomit on each of three Chicago days is three in a row; the same logs are two days in Tokyo', () => {
+    const three = [chi('2026-10-24T23:30:00'), chi('2026-10-25T01:00:00'), chi('2026-10-26T07:00:00')];
+    expect(run({ anchor: three[2], vomits: three, timeZone: CHI }).persistence?.consecutive).toBe(true);
+    const tokyo = run({ anchor: three[2], vomits: three, timeZone: 'Asia/Tokyo' });
+    expect(tokyo.rows).toContain('T8');
+    expect(tokyo.persistence?.consecutive).toBe(false);
+  });
+
+  it('the zone never moves the call: T8 fires on the same records in every zone, or none', () => {
+    for (const timeZone of [CHI, 'UTC', 'Pacific/Kiritimati', 'Etc/GMT+12', null, undefined, 'Not/AZone']) {
+      expect(run({ anchor: NYX[2], vomits: NYX, timeZone }).tier).toBe('call_today');
+      const evenings = [chi('2026-10-25T23:00:00'), chi('2026-10-26T22:00:00'), chi('2026-10-27T23:30:00')];
+      expect(run({ anchor: evenings[2], vomits: evenings, timeZone }).rows).toContain('T8');
+    }
+  });
+
+  it('a record without T8 carries no persistence', () => {
+    expect(run({ anchor: v(0) }).persistence).toBeUndefined();
+  });
+
+  it('persistsThrough needs FLOOR_PERSISTENCE_DAYS consecutive days holding the anchor', () => {
+    const run3 = Array.from({ length: FLOOR_PERSISTENCE_DAYS }, (_, k) => 100 + k);
+    for (const d of run3) expect(persistsThrough(run3, d)).toBe(true);
+    expect(persistsThrough(run3.slice(1), run3[1])).toBe(false);
+    expect(persistsThrough(run3, 100 + FLOOR_PERSISTENCE_DAYS)).toBe(false);
   });
 });
 
