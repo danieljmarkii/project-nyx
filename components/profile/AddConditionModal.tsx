@@ -14,7 +14,7 @@ import { TextLink } from '../ui/TextLink';
 import { ThemedText } from '../ui/ThemedText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { dayKeyToLocalDate, toLocalDayKey } from '../../lib/utils';
 import { useIsOnline } from '../../hooks/useIsOnline';
@@ -248,6 +248,8 @@ export function AddConditionModal({
                   value={diagnosedAt ?? new Date()}
                   mode="date"
                   display="spinner"
+                  themeVariant="light"
+                  accentColor={colorRoles.action.onLight}
                   maximumDate={new Date()}
                   onChange={(_e: unknown, date?: Date) => {
                     if (Platform.OS === 'android') setShowDatePicker(false);

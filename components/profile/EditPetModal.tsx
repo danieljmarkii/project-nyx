@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
 import { ChipGroup } from '../ui/ChipGroup';
 import { FieldLabel } from '../ui/FieldLabel';
@@ -339,6 +339,8 @@ export function EditPetModal({ visible, onClose }: Props) {
                   value={dob ?? new Date(2020, 0, 1)}
                   mode="date"
                   display="spinner"
+                  themeVariant="light"
+                  accentColor={colorRoles.action.onLight}
                   maximumDate={new Date()}
                   onChange={(_e: unknown, date?: Date) => {
                     if (Platform.OS === 'android') setShowDatePicker(false);

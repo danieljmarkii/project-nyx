@@ -385,6 +385,8 @@ export default function ReportScreen() {
               value={customStart}
               mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant="light"
+              accentColor={colorRoles.action.onLight}
               maximumDate={customEnd}
               onChange={(_e, date) => {
                 if (Platform.OS === 'android') setShowStartPicker(false);
@@ -397,6 +399,8 @@ export default function ReportScreen() {
               value={customEnd}
               mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant="light"
+              accentColor={colorRoles.action.onLight}
               minimumDate={customStart}
               maximumDate={new Date()}
               onChange={(_e, date) => {

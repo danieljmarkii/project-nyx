@@ -258,6 +258,8 @@ export function BookVisitSheet({
                 value={day}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                themeVariant="light"
+                accentColor={colorRoles.action.onLight}
                 // A booking is in the future, a logged visit is in the past. The
                 // bound is the honest one for each arm rather than one shared
                 // compromise that lets an owner book last Tuesday.
@@ -306,6 +308,8 @@ export function BookVisitSheet({
                     value={time ?? defaultTimeOfDay(day)}
                     mode="time"
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    themeVariant="light"
+                    accentColor={colorRoles.action.onLight}
                     onChange={(_, picked) => {
                       if (Platform.OS !== 'ios') setShowTimePicker(false);
                       if (picked) setTime(picked);

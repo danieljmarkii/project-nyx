@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme } from '../../constants/theme';
+import { colorRoles, theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
 import { TextField } from '../ui/TextField';
@@ -122,6 +122,8 @@ export function AppointmentEditBody({
           value={fields.day}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          themeVariant="light"
+          accentColor={colorRoles.action.onLight}
           // NOT `startOfDay(new Date())`, which is what the booking sheet uses and
           // what the first draft of this screen copied. A booking whose day has
           // already passed is exactly the row most likely to be edited — it sits in
@@ -180,6 +182,8 @@ export function AppointmentEditBody({
           value={fields.time ?? defaultTimeOfDay(fields.day)}
           mode="time"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          themeVariant="light"
+          accentColor={colorRoles.action.onLight}
           onChange={(_, picked) => {
             if (Platform.OS !== 'ios') setShowTimePicker(false);
             if (picked) onChangeField('time', picked);

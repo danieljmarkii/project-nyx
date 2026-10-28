@@ -158,6 +158,8 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
           value={fields.visitedAt}
           mode="date"
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          themeVariant="light"
+          accentColor={colorRoles.action.onLight}
           // A visit that happened cannot be in the future. Without this bound a
           // mis-spun picker writes a future `visited_at`, which the report skips
           // entirely and every other reader of the table trusts. The rundown's old
@@ -320,6 +322,8 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
             value={defaultRecheckDate()}
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            themeVariant="light"
+            accentColor={colorRoles.action.onLight}
             minimumDate={new Date()}
             onChange={(_, picked) => {
               if (Platform.OS !== 'ios') setShowNextPicker(false);
