@@ -12,12 +12,14 @@
 //
 // WHAT IT READS. Every `.tsx` under app/ and components/ (tests aside), parsed: each JSX
 // element named `Modal`, its `transparent` and `presentationStyle` attributes, and whether
-// the FILE calls `useSheetCap(` or renders `<LayoutColumn`. File-level on purpose: a panel
+// the FILE puts `useSheetCap()` (or the name it is bound to) in a `style=` or renders
+// `<LayoutColumn`. File-level on purpose: a panel
 // split from its Modal wrapper in the same file (`PetSwitcherPanel`) takes the cap in the
 // panel. A Modal whose panel lives in ANOTHER file is not seen through; none does today.
 //
-// BLIND SPOT, stated: the guard sees that the cap is called, not that it reaches the panel
-// rather than some other View. The captures at 626 and 890 are what show the panel.
+// BLIND SPOTS, stated: the guard sees that the cap reaches A style, not that it is the
+// panel's rather than some other View's; and it sees a JSX element named `Modal`, not an
+// aliased import (none today). The captures at 626 and 890 are what show the panel.
 //
 // THE REGISTRY is an exemption (C-32): full-screen media that should span the window,
 // each with its reason. It ratchets: an entry that no longer renders a bare full-screen
@@ -72,10 +74,26 @@ export function modalUse(src: string, fileName = 'file.tsx'): ModalUse {
         out.shapes.push(shape);
       }
     }
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useSheetCap') out.callsCap = true;
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === 'useSheetCap'
+    ) capNames.add(node.name.text);
+    if (ts.isJsxAttribute(node) && node.name.getText(sf) === 'style' && node.initializer) styleAttrs.push(node.initializer);
     ts.forEachChild(node, visit);
   };
+  const capNames = new Set<string>();
+  const styleAttrs: ts.Node[] = [];
   visit(sf);
+  // The cap counts only once it reaches a style: a call whose result goes nowhere holds nothing.
+  const reachesStyle = (n: ts.Node): boolean =>
+    (ts.isIdentifier(n) && capNames.has(n.text)) ||
+    (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'useSheetCap') ||
+    (ts.forEachChild(n, (c) => (reachesStyle(c) ? true : undefined)) ?? false);
+  out.callsCap = styleAttrs.some(reachesStyle);
   return out;
 }
 
@@ -95,13 +113,15 @@ describe('the detector', () => {
     ['transparent={true}', '<Modal transparent={true} />', 'a transparent Modal with no useSheetCap()'],
     ['a bare full-screen Modal', '<Modal visible animationType="slide"><View /></Modal>', 'a full-screen Modal with no LayoutColumn'],
     ['transparent={false}', '<Modal transparent={false}><View /></Modal>', 'a full-screen Modal with no LayoutColumn'],
-    ['a capped sheet beside a bare full-screen one', 'const c = useSheetCap();\n<><Modal transparent /><Modal /></>', 'a full-screen Modal with no LayoutColumn'],
+    ['a capped sheet beside a bare full-screen one', 'const c = useSheetCap();\n<><Modal transparent><View style={c} /></Modal><Modal /></>', 'a full-screen Modal with no LayoutColumn'],
+    ['a cap called and never used', 'const c = useSheetCap();\n<Modal transparent><View style={styles.sheet} /></Modal>', 'a transparent Modal with no useSheetCap()'],
   ])('reds %s', (_label, src, why) => {
     expect(missingHold(modalUse(src))).toBe(why);
   });
 
   it.each([
     ['a capped sheet', 'const c = useSheetCap();\n<Modal transparent><View style={[styles.sheet, c]} /></Modal>'],
+    ['a cap called inline', '<Modal transparent><View style={[styles.sheet, useSheetCap()]} /></Modal>'],
     ['a page sheet', '<Modal visible presentationStyle="pageSheet"><View /></Modal>'],
     ['a full-screen Modal in the column', '<Modal visible><LayoutColumn><View /></LayoutColumn></Modal>'],
     ['a Modal named only in a comment', '// a <Modal transparent> would span the window\nconst x = 1;'],
