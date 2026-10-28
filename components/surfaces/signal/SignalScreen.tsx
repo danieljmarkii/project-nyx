@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type ViewInstance, type TextInstance, Animated, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type Text } from 'react-native';
+import { type ViewInstance, type TextInstance, Animated, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent, type Text } from 'react-native';
+import { useColumnWidth } from '../../../hooks/useLayoutClass';
 import { router, useFocusEffect } from 'expo-router';
 import { colorRoles, theme } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
@@ -120,7 +121,8 @@ interface Props {
 export function SignalScreen({ petId, identity }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
-  const { width: windowWidth } = useWindowDimensions();
+  // The column, not the window (CUL-2237): the same number on every phone.
+  const windowWidth = useColumnWidth();
   const [load, setLoad] = useState<{ status: 'loading' } | { status: 'failed' } | SignalScreenLoad>({ status: 'loading' });
   const loadId = useRef(0);
 

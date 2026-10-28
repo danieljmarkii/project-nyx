@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
@@ -10,6 +10,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
 import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
+import { bleedFor, useColumn } from '../../hooks/useLayoutClass';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useTodayKey } from '../../hooks/useTodayKey';
 import { HeaderDate } from '../surfaces/home/HeaderDate';
@@ -99,7 +100,8 @@ export function HomeHeader() {
   const askEnabled = useAllowlistFlag('ask_enabled');
   // The name's rung is a function of the ROW's width, so it re-resolves on rotation
   // and on a foldable rather than baking in the width the app happened to launch at.
-  const { width } = useWindowDimensions();
+  // The row sits in the column; the white surface still reaches the window edge.
+  const { width, gutter } = useColumn();
   // Design v2 dates the day (CUL-1221).
   const todayKey = useTodayKey();
   const dateLabel = headerDateLabel(todayKey);
@@ -117,7 +119,7 @@ export function HomeHeader() {
   const name = resolveHeaderName(activePet.name, headerNameBudget({ windowWidth: width, multiPet, askEnabled, dateLabel }));
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + HEADER_PADDING_Y }]}>
+    <View style={[styles.container, bleedFor(gutter, HEADER_PADDING_X), { paddingTop: insets.top + HEADER_PADDING_Y }]}>
       <View style={styles.row}>
         <TouchableOpacity
           style={styles.identityCluster}

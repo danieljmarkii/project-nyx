@@ -18,8 +18,8 @@ node scripts/web-capture/sheet.mjs /tmp/shots /tmp/sheet.png   # one contact she
 full captures from its check's summary. Reported, never gating: red means the harness or
 a shot broke (a screen it could not reach, a Signal lead that moved), and it holds no merge.
 
-Knobs (env): `CAPTURE_SIZES` (`320@1,390@1,390@3.571,320@3.571`; width@text multiplier,
-from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_ONLY`
+Knobs (env): `CAPTURE_SIZES` (`320@1,375x667@1,390@1,466x678@1,626x890@1,890x626@1,390@3.571,320@3.571`;
+`W[xH]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_ONLY`
 (shot names), `CAPTURE_NOW` (the frozen clock), `CAPTURE_SETTLE_MS`, `CAPTURE_FLAGS` and
 `CAPTURE_STORAGE` (app_config rows and device-local state, for building an older commit),
 `CAPTURE_DEBUG` (log every request), `CAPTURE_SIGNALS` (signals.deno.ts's output; capture

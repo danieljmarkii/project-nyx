@@ -370,6 +370,15 @@ export const theme = {
   space5: 48,
   space6: 64,
 
+  // ── Layout classes (CUL-2237) ─────────────────────────────────────────────
+  // Width BANDS, never device names: Apple has not published the Duo's point sizes, and a
+  // split view can hand the app any width. Compact is every iPhone and the folded Duo,
+  // regular the unfolded Duo. The column caps screen content at regular, so the phone
+  // layout reads as a phone layout on the wide canvas; at compact it is the window.
+  layoutRegularMinWidth: 600,
+  layoutShortMaxHeight: 700,
+  layoutColumnMaxWidth: 560,
+
   // ── Hit target ────────────────────────────────────────────────────────────
   // The 44pt minimum touch target (Apple HIG; CUL-658, CUL-1897 D3). `minHeight: 44`
   // was hand typed ~180 times. A box's floor, not a spacing step: never add it to a gap.

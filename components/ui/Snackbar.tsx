@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { colorRoles, shadows, theme } from '../../constants/theme';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useColumn } from '../../hooks/useLayoutClass';
 import { COMPLETION_MOTION, EASE } from '../motion/completionMotion';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
@@ -34,6 +35,9 @@ import { ThemedText } from './ThemedText';
 export function Snackbar() {
   const { visible, payload, runAction } = useSnackbarStore();
   const reduced = useReducedMotion();
+  // Outside the column, over the flight (app/_layout.tsx), so it insets by the gutter itself:
+  // nothing at compact, the column's edges on the unfolded Duo (CUL-2237).
+  const { gutter } = useColumn();
 
   // The rise and the drift are two values summed, as on the card: an exit that starts
   // mid-rise stops the rise where it stands and drifts from there, never snapping.
@@ -96,7 +100,7 @@ export function Snackbar() {
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
+      style={[styles.wrapper, gutter > 0 && { left: theme.space2 + gutter, right: theme.space2 + gutter }, { opacity, transform: [{ translateY }] }]}
     >
       <View style={styles.card}>
         <ThemedText style={styles.message} numberOfLines={2}>

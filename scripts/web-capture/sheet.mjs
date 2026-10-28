@@ -18,7 +18,8 @@ const [dir, out, summary] = process.argv.slice(2).map((p) => (p ? resolve(p) : p
 if (!dir || !out) throw new Error('usage: sheet.mjs <shots-dir> <out.png> [summary.md]');
 
 // The size labels capture.mjs writes, in the order a reader compares them.
-const SIZE_ORDER = ['320', '390', '320-textxxxL', '390-textxxxL', '320-textAX5', '390-textAX5'];
+// Phones narrow to wide, then the Duo folded and unfolded, then the large text sizes.
+const SIZE_ORDER = ['320', '375x667', '390', '466x678', '626x890', '890x626', '320-textxxxL', '390-textxxxL', '320-textAX5', '390-textAX5'];
 const files = (await readdir(dir)).filter((f) => f.endsWith('.png')).sort();
 if (files.length === 0) {
   console.error(`no captures in ${dir}`);
@@ -39,8 +40,11 @@ const cols = [...sizes].sort((a, b) => (SIZE_ORDER.indexOf(a) + 1 || 99) - (SIZE
 
 const cell = async (c) => {
   if (!c) return '<td class="none">not captured</td>';
-  const b64 = (await readFile(join(dir, c.f))).toString('base64');
-  return `<td${c.unreached ? ' class="unreached"' : ''}><img src="data:image/png;base64,${b64}">${c.unreached ? '<div>UNREACHED</div>' : ''}</td>`;
+  const png = await readFile(join(dir, c.f));
+  // One point scale across the sheet (CUL-2237): the PNG's width is 2x its points, drawn
+  // at a quarter, so a 390 phone is 195px as before and the Duo is as wide as it is.
+  const b64 = png.toString('base64');
+  return `<td${c.unreached ? ' class="unreached"' : ''}><img style="width:${png.readUInt32BE(16) / 4}px" src="data:image/png;base64,${b64}">${c.unreached ? '<div>UNREACHED</div>' : ''}</td>`;
 };
 let rows = '';
 for (const [shot, bySize] of grid) {
@@ -53,7 +57,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>
   table { border-collapse: collapse; }
   th, td { border: 1px solid #ddd; padding: 6px; vertical-align: top; }
   th.shot { writing-mode: vertical-rl; transform: rotate(180deg); }
-  img { width: 195px; display: block; }
+  img { display: block; }
   td.unreached { background: #fde8e8; } td.unreached div { color: #a00; font-weight: 600; }
   td.none { color: #888; }
 </style><table><tr><th></th>${cols.map((c) => `<th>${c}</th>`).join('')}</tr>${rows}</table>`;

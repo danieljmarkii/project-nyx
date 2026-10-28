@@ -1,6 +1,6 @@
 # Layout captures (CUL-2150): every PR that changes a screen gets photographs of Home (with
-# its Signal lead), History, the incident screen and Patterns at 320pt, 390pt and the largest
-# text size (AX5), taken through Expo web by scripts/web-capture (the CUL-1895 spike).
+# its Signal lead), History, the incident screen and Patterns at 320pt, the SE, 390pt, the Duo
+# folded and unfolded both ways (CUL-2237) and the largest text size (AX5), taken through Expo web by scripts/web-capture (the CUL-1895 spike).
 #
 # REPORTS, NEVER BLOCKS, on the engine scorecard's terms: its own workflow so it can never join
 # the `main` ruleset's required checks by accident (those are named in ci.yml), and its path
@@ -45,7 +45,8 @@ jobs:
   capture:
     name: Layout captures (reported, not gating)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Eight sizes since CUL-2237 (four before): about twice the capture time.
+    timeout-minutes: 50
     steps:
       # Everything this job writes lives outside the checkout: Metro crawls the project root,
       # and a Deno cache or a second node_modules under it would be walked by the build.

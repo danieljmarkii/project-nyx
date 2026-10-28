@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Image, StyleSheet, ScrollView,
-  Dimensions, TouchableOpacity, Text,
+  TouchableOpacity, Text,
   NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { Camera } from 'lucide-react-native';
@@ -10,6 +10,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { getSignedUrl } from '../../lib/storage';
 import { PhotoViewer } from '../ui';
 import { ThemedText } from '../ui/ThemedText';
+import { useColumnWidth } from '../../hooks/useLayoutClass';
 
 interface Props {
   // Storage paths into the nyx-food-photos bucket. Bucket is private so we
@@ -28,6 +29,9 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   // Tap a photo to expand it fullscreen for in-hand product comparison (B-022).
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+  // A slide is the column's live width, not a one-shot `Dimensions.get` at render
+  // (CUL-2237): a fold re-renders, and the paging stays one slide per page.
+  const screenWidth = useColumnWidth();
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +114,6 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
     );
   }
 
-  const screenWidth = Dimensions.get('window').width;
   const totalPages = urls.length + (onAddPhoto ? 1 : 0);
 
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { theme, colorRoles } from '../../constants/theme';
@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/authStore';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { CulpritMark } from '../../components/brand/CulpritMark';
 import { NightHeroGround } from '../../components/onboarding/NightHeroGround';
+import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { ThemedText } from '../../components/ui/ThemedText';
 
 // The Culprit Landing hero (B-284 PR N2b, spec §4; hero recomposed 2026-07-26) —
@@ -55,8 +56,8 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // mask cutout, so the ground + stars show through the crescent) and renders its
 // static frame (crisp resting dot, no ring, no scale) when the pulse is off.
 export default function LandingScreen() {
-  const { width } = useWindowDimensions();
-  // ~44% of screen width (spec §4). The moon is the screen's focal graphic.
+  const width = useColumnWidth();
+  // ~44% of the column's width (spec §4; the screen's width on every phone). The moon is the screen's focal graphic.
   const moonSize = Math.round(width * 0.44);
 
   const session = useAuthStore((s) => s.session);
