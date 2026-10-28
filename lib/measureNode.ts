@@ -9,7 +9,7 @@
 // within `graceMs` resolves null the same way, once: whichever answer comes first is the
 // answer, and a late frame is dropped.
 
-import type { Component } from 'react';
+import type { HostInstance } from 'react-native';
 
 /** Three frames: a measurement that has not answered by then is not coming. */
 export const MEASURE_GRACE_MS = 50;
@@ -26,7 +26,7 @@ type Measurable = { measureInWindow?: (cb: (x: number, y: number, width: number,
 /** Ask the platform for `node`'s window frame. `null` when there is no node, no API, or
  *  no answer inside `graceMs`. `cb` is called exactly once. */
 export function measureNodeInWindow(
-  node: Component | null | undefined,
+  node: HostInstance | null | undefined,
   cb: (rect: WindowRect | null) => void,
   graceMs: number = MEASURE_GRACE_MS,
 ): void {
@@ -57,7 +57,7 @@ type PageMeasurable = {
  *  `measureNodeInWindow`: `null` for no node, no API or no answer inside `graceMs`, and
  *  `cb` called exactly once. */
 export function measureNodeOnPage(
-  node: Component | null | undefined,
+  node: HostInstance | null | undefined,
   cb: (rect: WindowRect | null) => void,
   graceMs: number = MEASURE_GRACE_MS,
 ): void {

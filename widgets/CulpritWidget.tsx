@@ -186,7 +186,7 @@ export function CulpritWidgetLayout(
   function header(title: string, trailing: string) {
     return (
       <Link key="header" destination={petLink('')}>
-        <HStack spacing={6} modifiers={[frame({ maxWidth: Infinity, height: 16 })]}>
+        <HStack spacing={6} modifiers={[frame({ maxWidth: Infinity, minHeight: 16, maxHeight: 16 })]}>
           {[
             mark(),
             <Text
@@ -566,7 +566,7 @@ export function CulpritWidgetLayout(
     }
 
     return (
-      <VStack key="band" spacing={6} modifiers={[frame({ maxWidth: Infinity, height: 34 })]}>
+      <VStack key="band" spacing={6} modifiers={[frame({ maxWidth: Infinity, minHeight: 34, maxHeight: 34 })]}>
         {[
           <Divider key="rule" />,
           <HStack key="row" spacing={8} modifiers={[frame({ maxWidth: Infinity })]}>

@@ -1496,7 +1496,7 @@ describe('MealCompletionCard — nothing acts on a card that has gone (CUL-1712 
     timing.mockImplementation((value, config) => {
       const anim = (realTiming ?? jest.requireActual('react-native').Animated.timing)(value, config);
       if (config.duration !== COMPLETION_MOTION.unwriteMs || config.toValue !== 1) return anim;
-      return { ...anim, start: (cb?: Animated.EndCallback) => { pending.push(() => cb?.({ finished: true })); } };
+      return { ...anim, start: (cb?: Parameters<Animated.CompositeAnimation['start']>[0]) => { pending.push(() => cb?.({ finished: true })); } };
     });
     try {
       const view = render(<MealCompletionCard />);

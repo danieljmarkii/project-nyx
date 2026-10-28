@@ -59,7 +59,7 @@
 // rose's arrival is announced politely, never assertively: a verdict is not an alert.
 
 import { useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
-import { Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
+import { type ViewInstance, Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -586,7 +586,7 @@ export function SpineCompactRow({
   // will rest, and the list moves just far enough to show it. The run measures; the list
   // owns the scroll. No host (the Patterns month, a test): nobody is asked.
   const requestReveal = useContext(RunRevealContext);
-  const headerRef = useRef<View>(null);
+  const headerRef = useRef<ViewInstance>(null);
   /** The first meal's foot below the box's top, once the meals have laid out. */
   const firstMealFoot = useRef<number | null>(null);
   const cancelReveal = useRef<(() => void) | null>(null);

@@ -76,7 +76,7 @@ import { RECORD_TRY_AGAIN, RECORD_UNREAD_HEADING } from '../constants/aiConsentC
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ComponentType } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { act, render } from '@testing-library/react-native';
 
 import { theme } from '../constants/theme';
@@ -171,7 +171,7 @@ function rowFor(section: SectionCase, over: Record<string, unknown>): Record<str
 }
 
 function cardStyle(node: { props: { style: unknown } }): { backgroundColor?: unknown } {
-  return StyleSheet.flatten(node.props.style) ?? {};
+  return StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) ?? {};
 }
 
 describe.each(SECTIONS)('$file — a verdict this build does not know', (section) => {

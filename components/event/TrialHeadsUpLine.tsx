@@ -16,7 +16,7 @@
 // waiting heads-up: `take` hands it to this screen and forgets it, and the ledger write is
 // idempotent, so a food never speaks twice.
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, AppState, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { type ViewInstance, AccessibilityInfo, AppState, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { router, useIsFocused } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
@@ -46,7 +46,7 @@ interface Props {
   /** Brings the line into the screen's view and answers whether it is now wholly on
    *  screen (adversarial pass 1: rendered is not seen, and below the fold on a photo meal
    *  it is not). The ledger is spent only on `true`. */
-  reveal: (node: View) => Promise<boolean>;
+  reveal: (node: ViewInstance) => Promise<boolean>;
   /** False while the screen's layout above the line can still move it, or something covers
    *  the screen (a photo still loading in over it, the photo viewer up; adversarial pass 2):
    *  the line waits to be revealed until it is true. */
@@ -54,7 +54,7 @@ interface Props {
 }
 
 export function TrialHeadsUpLine({ eventId, petId, petName, mealFoodIds, reveal, revealReady }: Props) {
-  const panelRef = useRef<View>(null);
+  const panelRef = useRef<ViewInstance>(null);
   // The heads-up this line has spent, so a refocus or a late pet name never reveals,
   // announces or spends it again. The name is read through a ref for the same reason.
   const spentRef = useRef<MealScreenFlag | null>(null);

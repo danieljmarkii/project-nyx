@@ -1,6 +1,6 @@
 import { createRef } from 'react';
 import { render } from '@testing-library/react-native';
-import { StyleSheet, Text } from 'react-native';
+import { type TextInstance, StyleSheet, Text } from 'react-native';
 import { ThemedText, resolveThemedTextStyle, fontFamilyForWeight } from './ThemedText';
 import { theme, textStyles } from '../../constants/theme';
 
@@ -42,30 +42,30 @@ describe('resolveThemedTextStyle', () => {
     const resolved = StyleSheet.flatten(
       resolveThemedTextStyle({ fontWeight: theme.weightSemibold, fontSize: theme.textMD })
     );
-    expect(resolved.fontFamily).toBe(theme.fontBodySemibold);
-    expect(resolved.fontWeight).toBeUndefined();
-    expect(resolved.fontSize).toBe(theme.textMD);
+    expect(resolved?.fontFamily).toBe(theme.fontBodySemibold);
+    expect(resolved?.fontWeight).toBeUndefined();
+    expect(resolved?.fontSize).toBe(theme.textMD);
   });
 
   it('leaves an explicit family untouched — this is how Newsreader survives a sweep', () => {
     const display = { fontFamily: theme.fontDisplay, fontWeight: theme.weightRegular };
     const resolved = StyleSheet.flatten(resolveThemedTextStyle(display));
-    expect(resolved.fontFamily).toBe(theme.fontDisplay);
-    expect(resolved.fontWeight).toBe(theme.weightRegular);
+    expect(resolved?.fontFamily).toBe(theme.fontDisplay);
+    expect(resolved?.fontWeight).toBe(theme.weightRegular);
   });
 
   it('flattens an array and honours the last-wins override', () => {
     const resolved = StyleSheet.flatten(
       resolveThemedTextStyle([{ fontWeight: theme.weightRegular }, { fontWeight: theme.weightSemibold }])
     );
-    expect(resolved.fontFamily).toBe(theme.fontBodySemibold);
+    expect(resolved?.fontFamily).toBe(theme.fontBodySemibold);
   });
 
   it('handles a conditional [base, false] array without crashing', () => {
     const resolved = StyleSheet.flatten(
       resolveThemedTextStyle([{ fontWeight: theme.weightMedium }, false])
     );
-    expect(resolved.fontFamily).toBe(theme.fontBodyMedium);
+    expect(resolved?.fontFamily).toBe(theme.fontBodyMedium);
   });
 });
 
@@ -87,7 +87,7 @@ describe('ThemedText', () => {
   // type-errored on a ref that in fact worked. ThemedTextProps widens it; this pins
   // the behaviour so a later RN/React types bump cannot quietly break the sweeps.
   it('attaches a ref to the underlying Text — no forwardRef needed on React 19', () => {
-    const ref = createRef<Text>();
+    const ref = createRef<TextInstance>();
     render(<ThemedText ref={ref}>Nyx</ThemedText>);
     expect(ref.current).not.toBeNull();
   });

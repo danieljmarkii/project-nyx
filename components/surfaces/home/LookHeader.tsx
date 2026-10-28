@@ -35,7 +35,7 @@
 // second helper reached from here reds the build.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { type ViewInstance, AccessibilityInfo, Alert, Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
 import { colorRoles, theme } from '../../../constants/theme';
 import {
@@ -693,7 +693,7 @@ function AnsweredRow({
   const gloss = described.kind === 'observed' && described.words.length === 1 ? described.words[0].gloss : null;
   const time = formatTime(new Date(row.occurred_at));
   const undoOpacity = useRef(new Animated.Value(1)).current;
-  const undoRef = useRef<View>(null);
+  const undoRef = useRef<ViewInstance>(null);
   const focused = useRef(false);
   useEffect(() => {
     if (!undoLive || !takeFocus || focused.current) return;

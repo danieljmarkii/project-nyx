@@ -3,7 +3,7 @@ import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { isWhollyInView, scrollDeltaToReveal } from '../../lib/revealInScroll';
 import { measureNodeInWindow } from '../../lib/measureNode';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
-import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
+import { type ViewInstance, type ScrollViewInstance, View, StyleSheet, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
@@ -214,15 +214,15 @@ export default function EventDetailScreen() {
   const [mealFoodIds, setMealFoodIds] = useState<string[] | null>(null);
   // CUL-2088 — the scroll the heads-up line asks to be brought into view in, so it is
   // spent only once it is on screen (adversarial pass 1).
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollFrameRef = useRef<View>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollFrameRef = useRef<ViewInstance>(null);
   const scrollYRef = useRef(0);
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollYRef.current = e.nativeEvent.contentOffset.y;
   }, []);
-  const revealInScroll = useCallback((node: View) => {
+  const revealInScroll = useCallback((node: ViewInstance) => {
     // Through the shared helper: a node the platform will not measure is null, never a hang.
-    const rectOf = (n: View | null) => new Promise<{ top: number; bottom: number } | null>((done) =>
+    const rectOf = (n: ViewInstance | null) => new Promise<{ top: number; bottom: number } | null>((done) =>
       measureNodeInWindow(n, (r) => done(r && r.height > 0 ? { top: r.y, bottom: r.y + r.height } : null)));
     const measure = async () => {
       const [frame, line] = await Promise.all([rectOf(scrollFrameRef.current), rectOf(node)]);

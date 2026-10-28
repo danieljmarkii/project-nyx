@@ -125,7 +125,9 @@ export function easedSegment(
   easing: EasingFn,
 ): Animated.AnimatedInterpolation<number> {
   const { inputRange, outputRange } = easedSegmentRanges(start, dur, from, to, easing);
-  return clock.interpolate({ inputRange, outputRange, extrapolate: 'clamp' });
+  const config = { inputRange, outputRange, extrapolate: 'clamp' as const };
+  // RN 0.88 types the two `interpolate`s apart, so a union of them is not callable: narrow first.
+  return clock instanceof Animated.Value ? clock.interpolate(config) : clock.interpolate(config);
 }
 
 /** The exact (unsampled) value of a beat at `ms`: what a stopped clock pins to. */

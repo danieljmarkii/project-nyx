@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, View, type Text } from 'react-native';
+import { type TextInstance, Image, Pressable, StyleSheet, View, type Text } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
@@ -89,7 +89,7 @@ export function tileA11yLabel(tile: GalleryTile, tracksPattern: boolean): string
 interface Props {
   episodes: SignalScreenEpisodes;
   /** The header the screen moves VoiceOver to when an episode leaves (CUL-1219). */
-  headerRef?: React.RefObject<Text | null>;
+  headerRef?: React.RefObject<TextInstance | null>;
 }
 
 export function EpisodeGallery({ episodes, headerRef }: Props) {

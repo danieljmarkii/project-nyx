@@ -295,7 +295,7 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
         if (config.toValue !== COMPLETION_MOTION.discFillMs) return anim;
         return {
           ...anim,
-          start: (cb?: Animated.EndCallback) => { if (how === 'stopped') cb?.({ finished: false }); },
+          start: (cb?: Parameters<Animated.CompositeAnimation['start']>[0]) => { if (how === 'stopped') cb?.({ finished: false }); },
         };
       });
       try {
