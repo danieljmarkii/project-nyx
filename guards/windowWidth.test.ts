@@ -19,7 +19,9 @@
 // width, each with its reason, and it ratchets: a registered file that stops reading it
 // reds, so the entry is deleted the PR it goes stale.
 //
-// BLIND SPOT, stated: a width that arrives by `onLayout` is not a window read and is not
+// BLIND SPOTS, stated: `window.innerWidth` (web only, and nothing here runs on web but the
+// captures), and files outside the scanned folders (`widgets/` cannot import the hook). A
+// width that arrives by `onLayout` is not a window read and is not
 // scanned. That is the right tool for a component that sizes itself to its parent, and it
 // already follows the column.
 
@@ -47,12 +49,24 @@ function isWindowCall(node: ts.Node): node is ts.CallExpression {
   if (!ts.isCallExpression(node)) return false;
   const callee = node.expression;
   if (ts.isIdentifier(callee)) return callee.text === 'useWindowDimensions';
-  return (
-    ts.isPropertyAccessExpression(callee) &&
-    ts.isIdentifier(callee.expression) &&
-    callee.expression.text === 'Dimensions' &&
-    callee.name.text === 'get'
-  );
+  if (!ts.isPropertyAccessExpression(callee)) return false;
+  // `RN.useWindowDimensions()`, a namespace import.
+  if (callee.name.text === 'useWindowDimensions') return true;
+  // `Dimensions.get(...)` and `RN.Dimensions.get(...)`.
+  const owner = callee.expression;
+  const ownerName = ts.isIdentifier(owner) ? owner.text : ts.isPropertyAccessExpression(owner) ? owner.name.text : null;
+  return ownerName === 'Dimensions' && callee.name.text === 'get';
+}
+
+/** `.width` or `['width']` on `node`, whichever form the access takes. */
+function takesWidthOff(parent: ts.Node, node: ts.Node): boolean | null {
+  if (ts.isPropertyAccessExpression(parent) && parent.expression === node) return parent.name.text === 'width';
+  if (ts.isElementAccessExpression(parent) && parent.expression === node) {
+    const arg = parent.argumentExpression;
+    // A computed key the parser cannot read is counted, loud.
+    return !ts.isStringLiteralLike(arg) || arg.text === 'width';
+  }
+  return null;
 }
 
 function bindingTakesWidth(pattern: ts.ObjectBindingPattern): boolean {
@@ -67,7 +81,16 @@ function nameTakesWidth(sf: ts.SourceFile, name: string): boolean {
   let found = false;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === name && node.name.text === 'width') found = true;
+    if (ts.isIdentifier(node) && node.text === name && takesWidthOff(node.parent, node)) found = true;
+    // A rest destructure carries the width along with the rest.
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isObjectBindingPattern(node.name) &&
+      node.initializer &&
+      ts.isIdentifier(node.initializer) &&
+      node.initializer.text === name &&
+      node.name.elements.some((el) => el.dotDotDotToken)
+    ) found = true;
     if (
       ts.isVariableDeclaration(node) &&
       ts.isObjectBindingPattern(node.name) &&
@@ -92,10 +115,11 @@ export function windowWidthReads(src: string, fileName = 'file.tsx'): number[] {
   const visit = (node: ts.Node): void => {
     if (isWindowCall(node)) {
       const parent = node.parent;
-      if (ts.isPropertyAccessExpression(parent) && parent.expression === node) {
-        if (parent.name.text === 'width') at(node);
+      const off = takesWidthOff(parent, node);
+      if (off !== null) {
+        if (off) at(node);
       } else if (ts.isVariableDeclaration(parent) && parent.initializer === node) {
-        if (ts.isObjectBindingPattern(parent.name) ? bindingTakesWidth(parent.name) : ts.isIdentifier(parent.name) && nameTakesWidth(sf, parent.name.text)) at(node);
+        if (ts.isObjectBindingPattern(parent.name) ? bindingTakesWidth(parent.name) || parent.name.elements.some((el) => el.dotDotDotToken) : ts.isIdentifier(parent.name) && nameTakesWidth(sf, parent.name.text)) at(node);
       } else {
         at(node);
       }
@@ -134,6 +158,11 @@ describe('the detector', () => {
     ['a result handed on whole', 'plan(useWindowDimensions());', [1]],
     ['a subscription', "Dimensions.addEventListener('change', f);", [1]],
     ['an alias', 'const dims = useWindowDimensions;', [1]],
+    ['a bracketed width', "const w = useWindowDimensions()['width'];", [1]],
+    ['a namespaced hook', 'const { width } = RN.useWindowDimensions();', [1]],
+    ['a namespaced Dimensions', "const w = RN.Dimensions.get('window').width;", [1]],
+    ['a rest destructure', 'const { height, ...rest } = useWindowDimensions();', [1]],
+    ['a bracketed width through a binding', "const frame = useWindowDimensions();\nuse(frame['width']);", [1]],
   ])('reads %s', (_label, src, lines) => {
     expect(windowWidthReads(src)).toEqual(lines);
   });
@@ -144,6 +173,7 @@ describe('the detector', () => {
     ['a named binding read for height only', 'const frame = useWindowDimensions();\nplan(frame.height, frame.fontScale);'],
     ['a one-shot height', "const h = Dimensions.get('window').height;"],
     ['the import', "import { useWindowDimensions } from 'react-native';"],
+    ['a bracketed height', "const h = useWindowDimensions()['height'];"],
   ])('lets %s through', (_label, src) => {
     expect(windowWidthReads(src)).toEqual([]);
   });

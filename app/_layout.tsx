@@ -443,10 +443,12 @@ function RootLayoutTree() {
   return (
     <>
       <StatusBar style="auto" />
-      {/* Every route, sheet host and completion surface sits in the content column
+      {/* Every route, sheet host and completion card sits in the content column
           (CUL-2237): the window at compact, a centred column on the unfolded Duo. The
-          flight and the cold-start cover stay outside it, over the whole window: the
-          flight is placed in window coordinates, and the cover hides the window. */}
+          flight, the snackbar and the cold-start cover stay outside it, in their order
+          from before: the flight is placed in window coordinates, the snackbar draws over
+          it, and the cover hides the window. A `Modal` (the sheets) and a native modal
+          route present in their own window, outside this tree: PR-08 centres those. */}
       <LayoutColumn>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(auth)" />
@@ -491,7 +493,6 @@ function RootLayoutTree() {
         <MealCompletionCard />
         <MedicationCompletionCard />
         <NamedCompletionCard />
-        <Snackbar />
       </LayoutColumn>
       {/* The flight's clone (D2-6 / CUL-1069): the clone lives HERE, above the whole
           stack, because a push would unmount anything inside a screen — the Signal's chart
@@ -500,6 +501,8 @@ function RootLayoutTree() {
           INTO the meal card's check. Renders nothing when no flight is up; hidden from
           touch and from assistive tech. */}
       <FlightHost />
+      {/* Above the flight, as before the column; it insets itself by the gutter. */}
+      <Snackbar />
       <ColdStartOverlay />
     </>
   );
