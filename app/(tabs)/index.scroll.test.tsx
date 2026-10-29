@@ -129,7 +129,11 @@ function renderHome() {
   const view = render(<HomeScreen />);
   // The body's onLayout is the nearest handler above the sky marker.
   fireEvent(view.getByTestId('zone-sky'), 'layout', { nativeEvent: { layout: { height: VIEWPORT } } });
-  fireEvent(view.getByTestId('zone-today-v2'), 'layout', { nativeEvent: { layout: CARD } });
+  // The card leads the Today column, which stacks under the Signal's at compact (CUL-2239):
+  // the split under the scroll's padding, the column 236pt into it, the card at its top.
+  fireEvent(view.getByTestId('home-split'), 'layout', { nativeEvent: { layout: { x: 24, y: 24 } } });
+  fireEvent(view.getByTestId('home-column-today'), 'layout', { nativeEvent: { layout: { x: 0, y: CARD.y - 24, width: 342 } } });
+  fireEvent(view.getByTestId('zone-today-v2'), 'layout', { nativeEvent: { layout: { y: 0, height: CARD.height } } });
   fireEvent(view.getByTestId('zone-look'), 'layout', { nativeEvent: { layout: HEADER } });
   const scroll = (y: number) =>
     fireEvent.scroll(view.UNSAFE_getByType(ScrollView), { nativeEvent: { contentOffset: { y } } });

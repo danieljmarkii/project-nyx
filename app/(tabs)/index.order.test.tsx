@@ -99,6 +99,7 @@ jest.mock('../../store/petStore', () => {
   };
 });
 
+import { StyleSheet } from 'react-native';
 import { render } from '@testing-library/react-native';
 import HomeScreen from './index';
 
@@ -167,9 +168,12 @@ describe('Principle 3 at regular — the Signal leads the first column', () => {
     mockWindowWidth = 390;
   });
 
-  it('a phone draws one column, no split', () => {
+  it('a phone stacks the two columns into one, so a fold restyles the feed and never remounts it', () => {
     const view = render(<HomeScreen />);
-    expect(view.queryByTestId('home-split')).toBeNull();
+    expect(StyleSheet.flatten(view.getByTestId('home-split').props.style).flexDirection).toBeUndefined();
+    mockWindowWidth = 890;
+    view.rerender(<HomeScreen />);
+    expect(StyleSheet.flatten(view.getByTestId('home-split').props.style).flexDirection).toBe('row');
   });
 
   it.each([626, 890])('the unfolded Duo (%ipt) leads with the Signal column, Today beside it', (width) => {

@@ -67,9 +67,9 @@ export default function HomeScreen() {
   const [lookHeaderBox, setLookHeaderBox] = useState<LayoutBox | null>(null);
   // At regular Home lays out for the canvas (CUL-2239): the feed steps out of the root
   // column to the window, and the Signal's column leads with Today beside it. Null at
-  // compact, where the feed is main's one column, untouched. The Today column's box
-  // (its page y for the look's rect, its x and width for the exits) is measured, never
-  // derived from the split's flex arithmetic.
+  // compact, where the two columns stack into main's one. The Today column's box (its
+  // page y for the look's rect, its x and width for the exits) is measured at every
+  // width, never derived from the split's flex arithmetic.
   const canvas = useCanvas();
   const [splitOrigin, setSplitOrigin] = useState<{ x: number; y: number } | null>(null);
   const [todayColumn, setTodayColumn] = useState<{ x: number; y: number; width: number } | null>(null);
@@ -241,7 +241,7 @@ export default function HomeScreen() {
   // the look as its header, the medication strip's one-tap write is retired (a dose is a
   // fact on the spine once logged; Q1 ruled "that's the FAB's job"), the Trend card is
   // retired, and the coverage door closes the feed.
-  const todayColumnTop = !canvas ? 0 : splitOrigin && todayColumn ? splitOrigin.y + todayColumn.y : null;
+  const todayColumnTop = splitOrigin && todayColumn ? splitOrigin.y + todayColumn.y : null;
   const pinnedRect = lookRectInPage(todayCardBox, lookHeaderBox, todayColumnTop);
   // The exits hold to the Today column at regular, at the same reach past its edges the
   // body's padding gives them over the one column at compact.
@@ -286,8 +286,8 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // The feed's two halves, written once: at compact they are main's one column, in
-  // main's order; at regular each is a column of its own (CUL-2239).
+  // The feed's two halves (CUL-2239): stacked at compact, in main's order; side by side
+  // at regular.
   const lead = (
     <>
       {/* Cross-pet safety banner (multi-pet §4) — ABOVE the Signal because it
@@ -407,35 +407,30 @@ export default function HomeScreen() {
             />
           }
         >
-          {canvas ? (
-            // Principle 3 at regular: the Signal's column is the first one, read first and
-            // leading at the top of the feed, so a safety card leads exactly as it does on
-            // a phone. Today and the coverage door sit beside it; the order a screen reader
-            // walks is the phone's.
-            <View
-              testID="home-split"
-              style={styles.split}
-              onLayout={(e) => setSplitOrigin({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })}
-            >
-              <View testID="home-column-lead" style={styles.splitColumn}>
-                {lead}
-              </View>
-              <View
-                testID="home-column-today"
-                style={styles.splitColumn}
-                onLayout={(e) =>
-                  setTodayColumn({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y, width: e.nativeEvent.layout.width })
-                }
-              >
-                {today}
-              </View>
-            </View>
-          ) : (
-            <>
+          {/* Principle 3 at regular: the Signal's column is the first one, read first and
+              leading at the top of the feed, so a safety card leads exactly as it does on a
+              phone; Today and the coverage door sit beside it, and a screen reader walks the
+              phone's order. One tree at every width, so a fold or an unfold restyles the
+              feed and never remounts it (a half-picked look, an open run, survive). At
+              compact both columns stack with the feed's own gap, drawing main's pixels. */}
+          <View
+            testID="home-split"
+            style={[styles.split, canvas && styles.splitRow]}
+            onLayout={(e) => setSplitOrigin({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })}
+          >
+            <View testID="home-column-lead" style={[styles.splitColumn, canvas && styles.splitColumnShare]}>
               {lead}
+            </View>
+            <View
+              testID="home-column-today"
+              style={[styles.splitColumn, canvas && styles.splitColumnShare]}
+              onLayout={(e) =>
+                setTodayColumn({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y, width: e.nativeEvent.layout.width })
+              }
+            >
               {today}
-            </>
-          )}
+            </View>
+          </View>
         </ScrollView>
         {/* The second absolute layer (the first is the night band above). It draws
             nothing at all unless the Noticed grid is open — `LookExits` reads the card's
@@ -459,9 +454,12 @@ const styles = StyleSheet.create({
   // asserted ≥ the FAB's floor there (C-5). The last row's control is left-aligned for
   // the other half.
   scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: HOME_V2_SCROLL_INSET },
-  // Regular only (CUL-2239): two columns of equal share, each stacking as the phone's
-  // feed does, top-aligned so the Signal's column never sinks to meet Today's height.
-  split: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.space3 },
-  splitColumn: { flex: 1, minWidth: 0, gap: theme.space3 },
+  // CUL-2239: the feed's two columns, each stacking with the feed's gap. At compact they
+  // stack too; at regular they share the row equally, top-aligned so the Signal's column
+  // never sinks to meet Today's height.
+  split: { gap: theme.space3 },
+  splitRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  splitColumn: { gap: theme.space3 },
+  splitColumnShare: { flex: 1, minWidth: 0 },
   exitsFrame: { position: 'absolute', top: 0, bottom: 0 },
 });
