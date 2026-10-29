@@ -723,6 +723,30 @@ describe('EventTypeSheet', () => {
       expect(style.maxHeight).toBeGreaterThan(0);
     });
 
+    // CUL-2246: the cap is read from the live window, so a fold re-sizes an open sheet,
+    // and below the short line (the SE, the folded Duo) the sheet may stand to just under
+    // the status bar instead of keeping a fifth of a short screen as scrim. Mutation-
+    // proven: back to `windowHeight * 0.8` alone reds the short half; a cap read once at
+    // mount reds the second render.
+    it('sizes to the live window: 80% when tall, under the status bar when short', () => {
+      const rn = require('react-native') as typeof import('react-native');
+      const dims = jest.spyOn(rn, 'useWindowDimensions')
+        .mockReturnValue({ width: 390, height: 844, fontScale: 1, scale: 3 });
+      try {
+        const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+        expect(sheetStyleIn(kav(view)[0]).maxHeight).toBe(844 * 0.8);
+        // Fold the Duo with the sheet open.
+        dims.mockReturnValue({ width: 466, height: 678, fontScale: 1, scale: 3 });
+        view.rerender(<EventTypeSheet visible onClose={jest.fn()} />);
+        const short = sheetStyleIn(kav(view)[0]).maxHeight as number;
+        expect(short).toBeGreaterThan(678 * 0.8);
+        expect(short).toBeLessThanOrEqual(678 - theme.space5);
+        view.unmount();
+      } finally {
+        dims.mockRestore();
+      }
+    });
+
     it('the sheet can give height up to the keyboard', () => {
       const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
       // RN defaults flexShrink to 0, so without this the sheet keeps its natural

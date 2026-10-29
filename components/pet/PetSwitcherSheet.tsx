@@ -15,7 +15,7 @@ import { useAuthStore } from '../../store/authStore';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { petIdentityLine } from '../../lib/utils';
 import { PetAvatar } from './PetAvatar';
-import { useSheetCap } from '../../hooks/useLayoutClass';
+import { useSheetCap, useSheetMaxHeight } from '../../hooks/useLayoutClass';
 
 interface PetSwitcherSheetProps {
   visible: boolean;
@@ -93,6 +93,9 @@ export function PetSwitcherPanel({
   const { pets, activePet, selectPet } = usePetStore();
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
+  // On a short window the panel stops under the status bar and the pet list gives up the
+  // difference (CUL-2246), so Add a pet stays on screen; null on a tall one.
+  const sheetMaxHeight = useSheetMaxHeight(insets.top);
 
   const [hasArchived, setHasArchived] = useState(false);
 
@@ -192,6 +195,7 @@ export function PetSwitcherPanel({
         style={[
           styles.sheet,
           { paddingBottom: insets.bottom + theme.space2 },
+          sheetMaxHeight !== null && { maxHeight: sheetMaxHeight },
           sheetCap,
           { opacity: anim, transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [RISE, 0] }) }] },
         ]}

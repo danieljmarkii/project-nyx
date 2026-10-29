@@ -80,3 +80,32 @@ describe('PhotoCarousel', () => {
     expect(row.props.accessibilityState?.disabled).toBeFalsy();
   });
 });
+
+// ── CUL-2246 — a fold keeps the owner on the photo they were looking at ─────
+//
+// The slide is the column's live width, so a fold re-sizes every slide; the scroll's
+// offset is still written in the old width, which would leave the owner between two
+// photos. The carousel re-anchors on the page they were on, as a snap. Mutation-proven:
+// deleting the re-anchor effect leaves the offset where it was and this goes red.
+describe('PhotoCarousel — a fold keeps the page', () => {
+  it('re-anchors on the page the owner was on, at the new width', async () => {
+    const rn = require('react-native') as typeof import('react-native');
+    const dims = jest.spyOn(rn, 'useWindowDimensions')
+      .mockReturnValue({ width: 390, height: 844, fontScale: 1, scale: 3 });
+    try {
+      const view = render(<PhotoCarousel photoPaths={['a.jpg', 'b.jpg', 'c.jpg']} />);
+      await act(async () => {});
+      const scroll = view.UNSAFE_getAllByType(rn.ScrollView).find((n) => n.props.horizontal)!;
+      act(() => {
+        scroll.props.onScroll({ nativeEvent: { contentOffset: { x: 390 * 2, y: 0 } } });
+      });
+      const scrollTo = jest.spyOn(scroll.instance, 'scrollTo');
+      dims.mockReturnValue({ width: 466, height: 678, fontScale: 1, scale: 3 });
+      await act(async () => { view.rerender(<PhotoCarousel photoPaths={['a.jpg', 'b.jpg', 'c.jpg']} />); });
+      expect(scrollTo).toHaveBeenLastCalledWith({ x: 466 * 2, animated: false });
+      view.unmount();
+    } finally {
+      dims.mockRestore();
+    }
+  });
+});

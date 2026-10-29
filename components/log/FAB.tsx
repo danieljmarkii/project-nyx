@@ -15,7 +15,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useColumnWidth } from '../../hooks/useLayoutClass';
+import { useColumnWidth, useWindowFrame } from '../../hooks/useLayoutClass';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
@@ -581,6 +581,8 @@ export function FAB() {
   // The fan's width is the column's (CUL-2237); its height stays the window's.
   const frame = useWindowDimensions();
   const columnWidth = useColumnWidth();
+  // The page the disc and the pills are measured on, for the slide's signature below.
+  const windowFrame = useWindowFrame();
   const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
   const fanScroll = useRef<ScrollViewInstance>(null);
   const fanSnapped = useRef(false);
@@ -1565,8 +1567,10 @@ export function FAB() {
   // the render that moves them, so no move between this commit and the re-measure can
   // hit-test a stale frame; the effect above measures again once they are laid out.
   // The keys, and everything else that moves a pill without changing its key: the scroll
-  // branch, the width cap, each food's line count.
+  // branch, the width cap, each food's line count, and the window itself, since a fold
+  // moves the disc and every pill on the page while the plan can stay the same (CUL-2246).
   const sig = [
+    `${windowFrame.width}x${windowFrame.height}`,
     rows.map((r) => r.key).join('|'),
     fanPlan.scroll ? 'scroll' : 'column',
     fanPlan.pillMaxWidth,

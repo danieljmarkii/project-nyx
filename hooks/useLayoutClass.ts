@@ -86,6 +86,27 @@ export function useSheetCap(marginX = 0): ViewStyle | null {
   return sheetCapFor(useColumn().gutter, marginX);
 }
 
+/**
+ * A sheet's height, on a short window (CUL-2246). The width rule above leaves the height
+ * to each sheet, and each sheet had written one for a tall phone: a 320pt list, or 80% of
+ * the window. On the SE and the folded Duo that leaves a fifth of a short screen as scrim
+ * while the sheet's own rows scroll, and a list that cannot shrink pushes the rows under
+ * it (Add a pet, Close) toward the edge at large text. So below the short line a sheet may
+ * stand to just under the status bar, less one strip of scrim the owner can still tap to
+ * close; its scrolling part gives up the difference. Null on a tall window, so a phone
+ * above the line keeps exactly the sheet it had. Read live, so a fold re-sizes an open
+ * sheet.
+ */
+export function sheetMaxHeightFor(windowHeight: number, safeTop: number): number | null {
+  if (!layoutClassFor(0, windowHeight).short) return null;
+  return windowHeight - safeTop - theme.space5;
+}
+
+/** `safeTop` is the caller's safe-area top inset: every sheet already reads its insets. */
+export function useSheetMaxHeight(safeTop: number): number | null {
+  return sheetMaxHeightFor(useWindowDimensions().height, safeTop);
+}
+
 export function useLayoutClass(): LayoutClass {
   const { width, height } = useWindowDimensions();
   return layoutClassFor(width, height);
