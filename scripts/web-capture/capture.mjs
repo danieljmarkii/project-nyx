@@ -250,6 +250,16 @@ const REPORT_STAND_IN = {
   pet_name: 'Juniper', start_date: SWEEP_DAY(-90), end_date: SWEEP_DAY(0), scope_basis: 'default', photo_count: 0,
 };
 const SWEEP_SHOTS = [
+  // The vet routes last, so the warm launches have the longest to hydrate their rows.
+  { name: 'report-juniper', go: [push('/report')] },
+  { name: 'ask-juniper', go: [push('/ask')] },
+  // Onboarding, as the signed-in fixture account (each step reads the active pet).
+  // Pet name reads the draft's species and sends a cold arrival back to the first step, so
+  // it is reached the way the flow reaches it.
+  ...['pet-type', 'pet-breed', 'pet-gender', 'pet-age', 'disclaimer', 'paywall', 'done'].map((step) => ({
+    name: `onboarding-${step}`, go: [push(`/onboarding/${step}`)],
+  })),
+  { name: 'onboarding-pet-name', go: [push('/onboarding/pet-type'), link(/^Dog$/), link(/^Continue$/)] },
   { name: 'vet-visits-juniper', go: [push('/vet-visits')] },
   { name: 'vet-visit-juniper', go: [push(`/vet-visits/${SWEEP.visitId}`)] },
   { name: 'vet-visit-after-juniper', go: [push(`/vet-visits/after?appointment=${SWEEP.appointmentId}`)] },
@@ -260,15 +270,6 @@ const SWEEP_SHOTS = [
   { name: 'vet-document-juniper', go: [push(`/vet-document/${SWEEP.documentGroupId}`)] },
   { name: 'vet-call-juniper', go: [push(`/vet-call/${SWEEP.callId}`)] },
   { name: 'rundown-juniper', go: [push(`/rundown?appointmentId=${SWEEP.appointmentId}`)] },
-  { name: 'report-juniper', go: [push('/report')] },
-  { name: 'ask-juniper', go: [push('/ask')] },
-  // Onboarding, as the signed-in fixture account (each step reads the active pet).
-  // Pet name reads the draft's species and sends a cold arrival back to the first step, so
-  // it is reached the way the flow reaches it.
-  ...['pet-type', 'pet-breed', 'pet-gender', 'pet-age', 'disclaimer', 'paywall', 'done'].map((step) => ({
-    name: `onboarding-${step}`, go: [push(`/onboarding/${step}`)],
-  })),
-  { name: 'onboarding-pet-name', go: [push('/onboarding/pet-type'), link(/^Dog$/), link(/^Continue$/)] },
 ].map((s) => ({ pet: 'juniper', group: 'sweep', ...s }));
 // Signed out: a context with no stored session, so the app lands on the Landing.
 const SIGNED_OUT_SHOTS = [
@@ -375,7 +376,9 @@ async function captureSize(browser, size, server, shots, group) {
   // Two warm-up launches. The first builds the schema while its own screens race it
   // (a phone's first launch does the same, faster); the second hydrates the fixture
   // into SQLite, which OPFS keeps for the context. Every capture after is a warm launch.
-  for (let i = 0; i < 2; i++) {
+  // The sweep's vet rows hydrate after the fixture's events, late in the cycle, so its
+  // context takes one more warm launch before its first shot (CUL-2245).
+  for (let i = 0; i < (group === 'sweep' ? 3 : 2); i++) {
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForTimeout(settle * (i + 1));
   }

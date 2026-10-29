@@ -7,6 +7,7 @@ import { Check } from 'lucide-react-native';
 import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
 import { useAppConfig } from '../../hooks/useAppConfig';
+import { bleedFor, useColumn } from '../../hooks/useLayoutClass';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { ThemedText } from '../../components/ui/ThemedText';
 
@@ -53,6 +54,7 @@ export default function PaywallScreen() {
   // land on a dead, non-functional trial CTA — bounce to the completion screen
   // instead. Fails CLOSED (shipped client default `false`, lib/appConfig.ts).
   const { paywall_enabled: paywallEnabled } = useAppConfig();
+  const { gutter } = useColumn();
 
   // This is the only solid dark surface in the flow, so the status-bar icons must
   // flip to light while it's focused — and flip BACK when it blurs, whether the
@@ -105,7 +107,9 @@ export default function PaywallScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    // The flow's one dark ground reaches the window edge on the unfolded Duo, as the
+    // Landing's night does; the content stays in the column (CUL-2245).
+    <SafeAreaView style={[styles.container, bleedFor(gutter, theme.space3)]} edges={['top', 'bottom']}>
       <View style={styles.topRow}>
         <TouchableOpacity
           onPress={advance}
