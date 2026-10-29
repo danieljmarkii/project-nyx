@@ -1,5 +1,5 @@
 import { theme } from '../constants/theme';
-import { bleedFor, columnFor, layoutClassFor, sheetCapFor } from './useLayoutClass';
+import { bleedFor, canvasFor, columnFor, layoutClassFor, sheetCapFor } from './useLayoutClass';
 
 // The sizes the captures photograph (CUL-2237): every iPhone width, the SE's height, the
 // folded Duo and the unfolded Duo both ways. Duo points are pixels ÷ 3 (unpublished).
@@ -63,5 +63,26 @@ describe('sheetCapFor', () => {
     expect(sheetCapFor(gutter)).toEqual({ marginHorizontal: 165 });
     expect(890 - 2 * (sheetCapFor(gutter)!.marginHorizontal as number)).toBe(width);
     expect(sheetCapFor(gutter, 14)).toEqual({ marginHorizontal: 179 });
+  });
+});
+
+describe('canvasFor', () => {
+  it.each([320, 375, 390, 440, 466, theme.layoutRegularMinWidth - 1])('is nothing at compact (%i), so a phone keeps the column', (w) => {
+    expect(canvasFor(w)).toBeNull();
+  });
+
+  it.each([
+    // The unfolded Duo both ways: the window, stepped out to from the 560pt column.
+    [626, 626, 33],
+    [890, 890, 165],
+  ])('is the window at regular (%i)', (w, width, bleed) => {
+    expect(canvasFor(w)).toEqual({ width, bleed });
+    expect(columnFor(w).width + 2 * bleed).toBe(width);
+  });
+
+  it('never grows past its cap, and stays centred on the column', () => {
+    const { width, bleed } = canvasFor(1376)!;
+    expect(width).toBe(theme.layoutCanvasMaxWidth);
+    expect(columnFor(1376).width + 2 * bleed).toBe(width);
   });
 });

@@ -17,6 +17,13 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
+// The window (CUL-2239): jest's default is 750pt, which is regular, so each case names
+// the width it means. A phone is the default; the regular cases set the unfolded Duo.
+let mockWindowWidth = 390;
+jest.mock('../../hooks/useLayoutClass', () => {
+  const actual = jest.requireActual('../../hooks/useLayoutClass');
+  return { ...actual, useCanvas: () => actual.canvasFor(mockWindowWidth) };
+});
 jest.mock('expo-router', () => ({
   useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
 }));
@@ -148,3 +155,49 @@ describe('AC 3 — the appointment strip sits under the Signal, in the context r
     expect(order.indexOf('appointment')).toBeGreaterThan(order.indexOf('cross-pet-safety'));
   });
 });
+
+// CUL-2239 — at regular Home lays out across the canvas in two columns. Principle 3 is the
+// row's one safety line: the Signal's column is the FIRST one, so a safety or concern card
+// leads at the top of it, and nothing that is context sits above or beside it as the
+// column read first.
+describe('Principle 3 at regular — the Signal leads the first column', () => {
+  afterEach(() => {
+    mockWindowWidth = 390;
+  });
+
+  it('a phone draws one column, no split', () => {
+    const view = render(<HomeScreen />);
+    expect(view.queryByTestId('home-split')).toBeNull();
+  });
+
+  it.each([626, 890])('the unfolded Duo (%ipt) leads with the Signal column, Today beside it', (width) => {
+    mockWindowWidth = width;
+    const view = render(<HomeScreen />);
+    const regular = zoneOrder(view.toJSON());
+    // Non-vacuity: the split drew, and the zones are all there.
+    expect(view.getByTestId('home-split')).toBeTruthy();
+    expect(regular.length).toBeGreaterThan(6);
+
+    // Each column's markers, read off the host Views (a composite repeats its host's testID).
+    const column = (id: string) => [
+      ...new Set(
+        view
+          .getByTestId(id)
+          .findAll((n) => typeof n.props.testID === 'string' && n.props.testID.startsWith('zone-'))
+          .map((n) => (n.props.testID as string).slice(5)),
+      ),
+    ];
+    expect(column('home-column-lead')).toEqual(['cross-pet-safety', 'signal', 'appointment', 'trial']);
+    expect(column('home-column-today')).toEqual(['today-v2', 'coverage-door']);
+
+    // The first column is the first child of the split, so it is read first and sits left.
+    const split = view.getByTestId('home-split');
+    expect((split.children[0] as { props: { testID?: string } }).props.testID).toBe('home-column-lead');
+
+    // The order a screen reader walks is the phone's.
+    mockWindowWidth = 390;
+    const phone = zoneOrder(render(<HomeScreen />).toJSON());
+    expect(regular).toEqual(phone);
+  });
+});
+

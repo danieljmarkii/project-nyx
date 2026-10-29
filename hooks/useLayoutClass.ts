@@ -38,6 +38,28 @@ export function columnFor(windowWidth: number): ColumnGeometry {
   return { width, gutter: (windowWidth - width) / 2 };
 }
 
+export interface CanvasGeometry {
+  /** The width a screen with its own regular layout lays its columns across. */
+  width: number;
+  /** How far, each side, that screen steps out of the root column to reach it. */
+  bleed: number;
+}
+
+/**
+ * The canvas for a screen that lays out for the regular window rather than sitting in the
+ * column (CUL-2239: Home). Null at compact, so a phone keeps the one column, which there
+ * is the window. The bleed is measured from the column the screen already sits in.
+ */
+export function canvasFor(windowWidth: number): CanvasGeometry | null {
+  if (windowWidth < theme.layoutRegularMinWidth) return null;
+  const width = Math.min(windowWidth, theme.layoutCanvasMaxWidth);
+  return { width, bleed: (width - columnFor(windowWidth).width) / 2 };
+}
+
+export function useCanvas(): CanvasGeometry | null {
+  return canvasFor(useWindowDimensions().width);
+}
+
 /**
  * Chrome whose background reaches the window edge while its content stays in the column:
  * out by the gutter, back in by the gutter plus the chrome's own side padding. Null at

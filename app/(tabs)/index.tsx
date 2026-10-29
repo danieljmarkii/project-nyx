@@ -26,6 +26,7 @@ import { CoverageDoor } from '../../components/surfaces/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useUiStore } from '../../store/uiStore';
+import { useCanvas } from '../../hooks/useLayoutClass';
 import { RowSpeechContext, type RowSpeech } from '../../components/dayRow/rowSpeech';
 import { RunRevealContext, useRunRevealHost } from '../../components/motion/runRevealMotion';
 
@@ -64,6 +65,14 @@ export default function HomeScreen() {
   // header's box inside the card (CUL-1220, BRK-16).
   const [todayCardBox, setTodayCardBox] = useState<LayoutBox | null>(null);
   const [lookHeaderBox, setLookHeaderBox] = useState<LayoutBox | null>(null);
+  // At regular Home lays out for the canvas (CUL-2239): the feed steps out of the root
+  // column to the window, and the Signal's column leads with Today beside it. Null at
+  // compact, where the feed is main's one column, untouched. The Today column's box
+  // (its page y for the look's rect, its x and width for the exits) is measured, never
+  // derived from the split's flex arithmetic.
+  const canvas = useCanvas();
+  const [splitOrigin, setSplitOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [todayColumn, setTodayColumn] = useState<{ x: number; y: number; width: number } | null>(null);
   // The scroll offset lives in a ref, and reaches state (re-rendering the whole feed)
   // only while the Noticed grid is open: `LookExits` draws nothing unless the grid has
   // published its overlay, so a scroll with the grid closed has nothing to repaint.
@@ -232,7 +241,14 @@ export default function HomeScreen() {
   // the look as its header, the medication strip's one-tap write is retired (a dose is a
   // fact on the spine once logged; Q1 ruled "that's the FAB's job"), the Trend card is
   // retired, and the coverage door closes the feed.
-  const pinnedRect = lookRectInPage(todayCardBox, lookHeaderBox);
+  const todayColumnTop = !canvas ? 0 : splitOrigin && todayColumn ? splitOrigin.y + todayColumn.y : null;
+  const pinnedRect = lookRectInPage(todayCardBox, lookHeaderBox, todayColumnTop);
+  // The exits hold to the Today column at regular, at the same reach past its edges the
+  // body's padding gives them over the one column at compact.
+  const exitsFrame =
+    canvas && splitOrigin && todayColumn
+      ? { left: splitOrigin.x + todayColumn.x - theme.space3, width: todayColumn.width + 2 * theme.space3 }
+      : null;
 
   useEffect(() => {
     loadTodayEvents();
@@ -270,6 +286,85 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // The feed's two halves, written once: at compact they are main's one column, in
+  // main's order; at regular each is a column of its own (CUL-2239).
+  const lead = (
+    <>
+      {/* Cross-pet safety banner (multi-pet §4) — ABOVE the Signal because it
+          belongs to a DIFFERENT pet; renders nothing for single-pet households
+          or when no other pet has a cached safety finding. */}
+      <CrossPetSafetyBanner />
+      {/* GAP-13 (CUL-1566): the zone speaks a safety finding that arrives while Home is
+          in front, through the same focus check the spine's rows ask. The zone names
+          its own pet; it reads only `mayAnnounce` from this. */}
+      <RowSpeechContext.Provider value={rowSpeech}>
+        <SignalZone
+          withholdFallingVomit={withholdFallingVomit}
+          signalTrial={signalTrial}
+          trialNotEating={trialNotEating}
+        />
+      </RowSpeechContext.Provider>
+      {/* Engines v3 PR-36 (CUL-1419) — "What did the vet say?" once a call's question
+          is due: one navigation line under the Signal, never a card or a control (C-33).
+          Dark behind engines_v3_en14. */}
+      <FollowUpLine />
+      {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
+          and ABOVE Today. Deliberate: Principle 3 says safety insights always
+          lead, and a trial is context, not an insight. `resolveTrialStrip`
+          returns null unless a trial is ACTIVE, so Home gains nothing when
+          there isn't one. */}
+      {/* CUL-903 VV-5 (§4.1 A2) — the appointment strip, BETWEEN the Signal and the
+          trial strip, in the trial strip's register for the same reason the strip
+          below it gives: a visit that is coming is CONTEXT, not an insight, so a
+          live safety or intake card keeps its place above it with its own ask
+          intact. Nothing here changes, dates or re-phrases a Signal string because
+          an appointment exists, and the strip never gains urgency styling.
+
+          It draws nothing unless this pet has a booking inside the five-day window
+          (or one whose day just passed, asked once).
+
+          It carries ONE write: *It didn't* → `cancelled_at`. That is Home's third
+          write class and a Tier-2 amendment to `docs/nyx-med-strip-requirements.md`
+          §0.1, PM-approved 2026-09-11 as one CONFIRMATION and no form — see the
+          component header and `guards/homeWrites.test.ts`. */}
+      <AppointmentStrip />
+      <TrialStrip model={trialStripModel} petId={trialPetId} />
+    </>
+  );
+  const today = (
+    <>
+      {/* D2-4 — Today as a spine with the look as its header (the slot CUL-864 ruled
+          for the look, after the standing strips and before Today: the look is the
+          owner's own observation, not an insight), then the coverage door (the one
+          door to Patterns on Home; left-aligned, C-5). The header's rect feeds the
+          pinned exits (T-21). `trialNotEating` is the trial's own refusal register,
+          THREE-STATE (CUL-873); see its declaration above. */}
+      <RowSpeechContext.Provider value={rowSpeech}>
+        <RunRevealContext.Provider value={runReveal.request}>
+          <TodayCard
+            trialNotEating={trialNotEating}
+            onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
+            onLookLayout={(e) =>
+              setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+            }
+          />
+        </RunRevealContext.Provider>
+      </RowSpeechContext.Provider>
+      <CoverageDoor />
+    </>
+  );
+
+  const exits = (
+    <LookExits
+      {...exitVisibility({
+        cardTop: pinnedRect?.top ?? null,
+        cardHeight: pinnedRect?.height ?? null,
+        scrollY,
+        viewportHeight,
+      })}
+    />
+  );
+
   return (
     // 'top' is intentionally NOT a SafeAreaView edge here — the HomeHeader owns
     // the top inset so its white surface bleeds behind the status bar. Letting
@@ -283,7 +378,7 @@ export default function HomeScreen() {
           feed (below the pinned header, so it's already clear of the safe-area inset). */}
       <View
         ref={bodyRef}
-        style={styles.body}
+        style={[styles.body, canvas && { marginHorizontal: -canvas.bleed }]}
         onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
       >
         <PullToRefreshSky active={refreshing} />
@@ -312,75 +407,46 @@ export default function HomeScreen() {
             />
           }
         >
-          {/* Cross-pet safety banner (multi-pet §4) — ABOVE the Signal because it
-              belongs to a DIFFERENT pet; renders nothing for single-pet households
-              or when no other pet has a cached safety finding. */}
-          <CrossPetSafetyBanner />
-          {/* GAP-13 (CUL-1566): the zone speaks a safety finding that arrives while Home is
-              in front, through the same focus check the spine's rows ask. The zone names
-              its own pet; it reads only `mayAnnounce` from this. */}
-          <RowSpeechContext.Provider value={rowSpeech}>
-            <SignalZone
-              withholdFallingVomit={withholdFallingVomit}
-              signalTrial={signalTrial}
-              trialNotEating={trialNotEating}
-            />
-          </RowSpeechContext.Provider>
-          {/* Engines v3 PR-36 (CUL-1419) — "What did the vet say?" once a call's question
-              is due: one navigation line under the Signal, never a card or a control (C-33).
-              Dark behind engines_v3_en14. */}
-          <FollowUpLine />
-          {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
-              and ABOVE Today. Deliberate: Principle 3 says safety insights always
-              lead, and a trial is context, not an insight. `resolveTrialStrip`
-              returns null unless a trial is ACTIVE, so Home gains nothing when
-              there isn't one. */}
-          {/* CUL-903 VV-5 (§4.1 A2) — the appointment strip, BETWEEN the Signal and the
-              trial strip, in the trial strip's register for the same reason the strip
-              below it gives: a visit that is coming is CONTEXT, not an insight, so a
-              live safety or intake card keeps its place above it with its own ask
-              intact. Nothing here changes, dates or re-phrases a Signal string because
-              an appointment exists, and the strip never gains urgency styling.
-
-              It draws nothing unless this pet has a booking inside the five-day window
-              (or one whose day just passed, asked once).
-
-              It carries ONE write: *It didn't* → `cancelled_at`. That is Home's third
-              write class and a Tier-2 amendment to `docs/nyx-med-strip-requirements.md`
-              §0.1, PM-approved 2026-09-11 as one CONFIRMATION and no form — see the
-              component header and `guards/homeWrites.test.ts`. */}
-          <AppointmentStrip />
-          <TrialStrip model={trialStripModel} petId={trialPetId} />
-          {/* D2-4 — Today as a spine with the look as its header (the slot CUL-864 ruled
-              for the look, after the standing strips and before Today: the look is the
-              owner's own observation, not an insight), then the coverage door (the one
-              door to Patterns on Home; left-aligned, C-5). The header's rect feeds the
-              pinned exits (T-21). `trialNotEating` is the trial's own refusal register,
-              THREE-STATE (CUL-873); see its declaration above. */}
-          <RowSpeechContext.Provider value={rowSpeech}>
-            <RunRevealContext.Provider value={runReveal.request}>
-              <TodayCard
-                trialNotEating={trialNotEating}
-                onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
-                onLookLayout={(e) =>
-                  setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+          {canvas ? (
+            // Principle 3 at regular: the Signal's column is the first one, read first and
+            // leading at the top of the feed, so a safety card leads exactly as it does on
+            // a phone. Today and the coverage door sit beside it; the order a screen reader
+            // walks is the phone's.
+            <View
+              testID="home-split"
+              style={styles.split}
+              onLayout={(e) => setSplitOrigin({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y })}
+            >
+              <View testID="home-column-lead" style={styles.splitColumn}>
+                {lead}
+              </View>
+              <View
+                testID="home-column-today"
+                style={styles.splitColumn}
+                onLayout={(e) =>
+                  setTodayColumn({ x: e.nativeEvent.layout.x, y: e.nativeEvent.layout.y, width: e.nativeEvent.layout.width })
                 }
-              />
-            </RunRevealContext.Provider>
-          </RowSpeechContext.Provider>
-          <CoverageDoor />
+              >
+                {today}
+              </View>
+            </View>
+          ) : (
+            <>
+              {lead}
+              {today}
+            </>
+          )}
         </ScrollView>
         {/* The second absolute layer (the first is the night band above). It draws
             nothing at all unless the Noticed grid is open — `LookExits` reads the card's
             published handles and returns null otherwise. */}
-        <LookExits
-          {...exitVisibility({
-            cardTop: pinnedRect?.top ?? null,
-            cardHeight: pinnedRect?.height ?? null,
-            scrollY,
-            viewportHeight,
-          })}
-        />
+        {exitsFrame ? (
+          <View testID="home-exits-frame" style={[styles.exitsFrame, exitsFrame]} pointerEvents="box-none">
+            {exits}
+          </View>
+        ) : (
+          exits
+        )}
       </View>
     </SafeAreaView>
   );
@@ -393,4 +459,9 @@ const styles = StyleSheet.create({
   // asserted ≥ the FAB's floor there (C-5). The last row's control is left-aligned for
   // the other half.
   scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: HOME_V2_SCROLL_INSET },
+  // Regular only (CUL-2239): two columns of equal share, each stacking as the phone's
+  // feed does, top-aligned so the Signal's column never sinks to meet Today's height.
+  split: { flexDirection: 'row', alignItems: 'flex-start', gap: theme.space3 },
+  splitColumn: { flex: 1, minWidth: 0, gap: theme.space3 },
+  exitsFrame: { position: 'absolute', top: 0, bottom: 0 },
 });

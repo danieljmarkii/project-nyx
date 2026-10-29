@@ -66,6 +66,12 @@ describe('lookRectInPage — the header’s rect in page coordinates', () => {
     expect(lookRectInPage(card, null)).toBeNull();
   });
 
+  it('adds the Today column’s page y at regular, where the card’s y is column-local (CUL-2239)', () => {
+    // The split sits under the scroll's 24pt padding; the card leads its column at 0.
+    expect(lookRectInPage({ y: 0, height: 900 }, header, 24)).toEqual({ top: 63, height: 400 });
+    expect(lookRectInPage({ y: 0, height: 900 }, header, null)).toBeNull();
+  });
+
   it('the way back pins exactly when the header’s PAGE top passes the viewport top', () => {
     const rect = lookRectInPage(card, header)!;
     const at = (scrollY: number) =>

@@ -385,6 +385,9 @@ export const theme = {
   layoutTileMax: 120,
   layoutCompareLabelMax: 160,
   layoutFrameMaxHeightRatio: 0.5,
+  // A screen with a layout of its own at regular (CUL-2239, Home) steps out of the column
+  // to the window, up to this: two phone-width columns and their gutters, never wider.
+  layoutCanvasMaxWidth: 1120,
 
   // ── Hit target ────────────────────────────────────────────────────────────
   // The 44pt minimum touch target (Apple HIG; CUL-658, CUL-1897 D3). `minHeight: 44`
