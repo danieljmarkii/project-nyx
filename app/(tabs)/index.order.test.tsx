@@ -176,9 +176,16 @@ describe('Principle 3 at regular — the Signal leads the first column', () => {
     expect(StyleSheet.flatten(view.getByTestId('home-split').props.style).flexDirection).toBe('row');
   });
 
-  it.each([626, 890])('the unfolded Duo (%ipt) leads with the Signal column, Today beside it', (width) => {
-    mockWindowWidth = width;
+  it('the unfolded Duo upright (626pt) keeps the one column: beside the tab rail it is the column', () => {
+    mockWindowWidth = 626;
     const view = render(<HomeScreen />);
+    expect(StyleSheet.flatten(view.getByTestId('home-split').props.style).flexDirection).toBeUndefined();
+  });
+
+  it('the unfolded Duo on its side (890pt) leads with the Signal column, Today beside it', () => {
+    mockWindowWidth = 890;
+    const view = render(<HomeScreen />);
+    expect(StyleSheet.flatten(view.getByTestId('home-split').props.style).flexDirection).toBe('row');
     const regular = zoneOrder(view.toJSON());
     // Non-vacuity: the split drew, and the zones are all there.
     expect(view.getByTestId('home-split')).toBeTruthy();

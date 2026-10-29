@@ -1,5 +1,6 @@
 import { render, fireEvent, act } from '@testing-library/react-native';
-import { NyxTabBar, PET_ROUTE_NAME, type TabBarProps } from './NyxTabBar';
+import { StyleSheet } from 'react-native';
+import { NyxTabBar, PET_ROUTE_NAME, TAB_HEIGHT, type TabBarProps } from './NyxTabBar';
 import { usePetStore } from '../../store/petStore';
 import { colorRoles, theme } from '../../constants/theme';
 import type { Pet } from '../../store/petStore';
@@ -416,5 +417,75 @@ describe('navigation', () => {
     const { getByLabelText } = render(<NyxTabBar {...props} />);
     fireEvent.press(getByLabelText('Biscuit — pet profile'));
     expect(props.navigateToTab).toHaveBeenCalledWith('profile-1');
+  });
+});
+
+// CUL-2242 — at regular (the unfolded Duo) the bar is a rail down the right edge, under
+// the status bar; at compact it is the phone's bottom row, unchanged. The side itself is
+// the tab layout's `tabBarPosition`; this suite pins what the bar draws on each side.
+describe('the rail at regular', () => {
+  const { SafeAreaInsetsContext } = require('react-native-safe-area-context');
+  const { TAB_RAIL_WIDTH } = require('../../hooks/useLayoutClass');
+  const INSETS = { top: 24, right: 30, bottom: 20, left: 0 };
+
+  function renderAt(width: number, props = makeProps(0)) {
+    setWindowWidth(width);
+    const view = render(
+      <SafeAreaInsetsContext.Provider value={INSETS}>
+        <NyxTabBar {...props} />
+      </SafeAreaInsetsContext.Provider>,
+    );
+    const bar = StyleSheet.flatten(view.getByTestId('nyx-tab-bar').props.style);
+    return { ...view, bar, props };
+  }
+
+  it.each([320, 390, 466])('a phone (%ipt) keeps the bottom row, safe areas untouched', (w) => {
+    const { bar, getByLabelText } = renderAt(w);
+    expect(StyleSheet.flatten(getByLabelText('History').props.style).flex).toBe(1);
+    expect(bar.flexDirection).toBe('row');
+    expect(bar.height).toBe(TAB_HEIGHT);
+    expect(bar.width).toBeUndefined();
+    expect(bar.paddingRight).toBeUndefined();
+    expect(bar.paddingHorizontal).toBeUndefined();
+  });
+
+  it.each([626, 890])('the unfolded Duo (%ipt) stands the tabs in a column, clear of the status bar', (w) => {
+    const { bar } = renderAt(w);
+    expect(bar.flexDirection).toBe('column');
+    expect(bar.height).toBeUndefined();
+    expect(bar.width).toBe(TAB_RAIL_WIDTH + INSETS.right);
+    expect(bar.paddingRight).toBe(INSETS.right);
+    expect(bar.paddingTop).toBeGreaterThan(INSETS.top);
+    // The divider faces the content, on the rail's left.
+    expect(bar.borderLeftWidth).toBe(1);
+    expect(bar.borderTopWidth).toBeUndefined();
+  });
+
+  it('gives every tab a fixed box that clears the 44pt floor, not a share of the height', () => {
+    const { getByLabelText } = renderAt(890);
+    for (const label of ['Home', 'History', 'Foods', 'Biscuit — pet profile']) {
+      const tab = StyleSheet.flatten(getByLabelText(label).props.style);
+      expect(tab.flex).toBeUndefined();
+      expect(tab.height).toBeGreaterThanOrEqual(theme.hitTarget);
+    }
+  });
+
+  it('fits the pet’s name to one tab of the rail', () => {
+    setActivePet(makePet({ name: 'Schrodingers Cat' }));
+    const { queryByText, getByLabelText } = renderAt(890);
+    // Too long for an 80pt tab at either rung: the ladder falls back, VoiceOver keeps it.
+    expect(queryByText('Pet')).toBeTruthy();
+    expect(getByLabelText('Schrodingers Cat — pet profile')).toBeTruthy();
+  });
+
+  // AC 3: a re-tap is the screens' to answer (Home returns to the Signal, History to
+  // today), and they hear it through this event on either side.
+  it('a re-tap on the focused tab still emits tabPress and navigates nowhere', () => {
+    const { getByLabelText, props } = renderAt(890, makeProps(1));
+    fireEvent.press(getByLabelText('History'));
+    expect(props.emitter.emit).toHaveBeenCalledWith({ type: 'tabPress', target: 'history-1', canPreventDefault: true });
+    expect(props.navigateToTab).not.toHaveBeenCalled();
+    fireEvent.press(getByLabelText('Home'));
+    expect(props.navigateToTab).toHaveBeenCalledWith('index-1');
   });
 });

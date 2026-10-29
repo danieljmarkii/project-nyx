@@ -6,7 +6,7 @@ import { SyncBanner } from '../../components/ui';
 import { NyxTabBar } from '../../components/nav/NyxTabBar';
 import { useAuthStore } from '../../store/authStore';
 import { useAiConsentPreload } from '../../hooks/useAiConsentPreload';
-import { useColumn } from '../../hooks/useLayoutClass';
+import { useColumn, useTabRail } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 
 export default function TabsLayout() {
@@ -23,22 +23,24 @@ export default function TabsLayout() {
   useAiConsentPreload();
   // The tab navigator clips its scenes (`overflow: hidden`, the library's own), so a
   // header inside a tab cannot bleed past a navigator sitting in the root's column
-  // (CUL-2237). At regular it steps back out to the window, and each scene pads its
-  // content back into the column: the header bleeds into that padding, the bar pads
-  // itself. Nothing at compact.
+  // (CUL-2237). At regular the layout steps back out to the window, the bar stands down
+  // the right edge as a rail (CUL-2242), and each scene pads its content back into the
+  // column beside it: the header bleeds into that padding. The step out is the whole
+  // layout's, the FAB's included, so the + can sit at the rail's foot. Nothing at compact.
   const { gutter } = useColumn();
+  const rail = useTabRail();
 
   if (recoveryInProgress) {
     return <Redirect href="/(auth)/reset-password" />;
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, gutter > 0 && { marginHorizontal: -gutter }]}>
       {/* Everything under the FAB's menu, hidden from assistive tech while it is open
           (CUL-322 / C-14): the menu's layer is modal, and this is its host. */}
       <HiddenUnderFabMenu>
         <SyncBanner />
-        <View style={[styles.root, gutter > 0 && { marginHorizontal: -gutter }]}>
+        <View style={styles.root}>
           <Tabs
             // The bar is ours, not Expo's (components/nav/NyxTabBar.tsx) — the default
             // Tabs icon container clips a text-as-icon label, which is why this file
@@ -46,7 +48,17 @@ export default function TabsLayout() {
             // out to its own component so the Pet tab's fallback ladder can be tested;
             // the layout is back to being a router.
             tabBar={(props) => <NyxTabBar {...props} />}
-            screenOptions={gutter > 0 ? { headerShown: false, sceneStyle: [styles.scene, { paddingHorizontal: gutter }] } : { headerShown: false }}
+            // The bar's side is a layout class, not a device: one tree at every width, so a
+            // fold moves the bar from the bottom to the rail without remounting a tab.
+            screenOptions={
+              rail
+                ? {
+                    headerShown: false,
+                    tabBarPosition: 'right',
+                    sceneStyle: [styles.scene, { paddingHorizontal: rail.sceneInset }],
+                  }
+                : { headerShown: false }
+            }
           >
             <Tabs.Screen name="index" options={{ title: 'Home' }} />
             <Tabs.Screen name="history" options={{ title: 'History' }} />

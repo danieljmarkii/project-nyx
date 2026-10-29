@@ -1,4 +1,6 @@
+import { createContext, useContext } from 'react';
 import { useWindowDimensions, type ViewStyle } from 'react-native';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { theme } from '../constants/theme';
 
 // The one place a screen learns how much room it has (CUL-2237). From the iOS 27 SDK the
@@ -31,11 +33,52 @@ export function layoutClassFor(windowWidth: number, windowHeight: number): Layou
   };
 }
 
-export function columnFor(windowWidth: number): ColumnGeometry {
+/**
+ * The tab bar's rail at regular (CUL-2242): on the unfolded Duo the bar stands down the
+ * right edge under the status bar, as Apple's own bars do from the iOS 27.1 SDK, with the
+ * + at its foot. Wide enough for the widest fixed label and the pet's name at the ladder's
+ * top rung; the safe area's right inset is added on top, so the tabs clear the status bar.
+ */
+export const TAB_RAIL_WIDTH = theme.space6 + theme.space2;
+
+export function columnFor(windowWidth: number, safeRight = 0): ColumnGeometry {
   // Compact is the window, by construction, so no phone moves a point.
   if (windowWidth < theme.layoutRegularMinWidth) return { width: windowWidth, gutter: 0 };
-  const width = Math.min(windowWidth, theme.layoutColumnMaxWidth);
+  // At regular the column fits beside the tab rail, so a tab's content is never wider
+  // than the scene it sits in. Every route shares the one width, so a push from a tab
+  // keeps its content's width and only re-centres it in the window.
+  const width = Math.min(windowWidth - TAB_RAIL_WIDTH - safeRight, theme.layoutColumnMaxWidth);
   return { width, gutter: (windowWidth - width) / 2 };
+}
+
+export interface TabRailGeometry {
+  /** The rail's width, the right safe-area inset included. */
+  width: number;
+  /** The right safe-area inset the rail pads itself by. */
+  safeRight: number;
+  /** Each side's padding that centres the column in the scene beside the rail. */
+  sceneInset: number;
+}
+
+/** Null at compact, where the bar is the phone's bottom row. */
+export function tabRailFor(windowWidth: number, safeRight = 0): TabRailGeometry | null {
+  if (windowWidth < theme.layoutRegularMinWidth) return null;
+  const width = TAB_RAIL_WIDTH + safeRight;
+  return { width, safeRight, sceneInset: (windowWidth - width - columnFor(windowWidth, safeRight).width) / 2 };
+}
+
+// The insets context, not the hook: the hook throws without a provider, and a component
+// test renders most of these without one (on device expo-router's root always provides it).
+// A suite that mocks the library away leaves no context at all, so a stand-in keeps the
+// read unconditional.
+const NO_INSETS = createContext<{ right: number } | null>(null);
+
+function useSafeRight(): number {
+  return useContext(SafeAreaInsetsContext ?? NO_INSETS)?.right ?? 0;
+}
+
+export function useTabRail(): TabRailGeometry | null {
+  return tabRailFor(useWindowDimensions().width, useSafeRight());
 }
 
 export interface CanvasGeometry {
@@ -46,18 +89,22 @@ export interface CanvasGeometry {
 }
 
 /**
- * The canvas for a screen that lays out for the regular window rather than sitting in the
- * column (CUL-2239: Home). Null at compact, so a phone keeps the one column, which there
- * is the window. The bleed is measured from the column the screen already sits in.
+ * The canvas for a screen that lays two columns across the regular window rather than
+ * sitting in the column (CUL-2239: Home). It is the scene beside the tab rail, capped, and
+ * it exists only where two phone-width columns fit in it: the unfolded Duo on its side,
+ * not upright, where the scene beside the rail is the column itself. Null otherwise, so
+ * the screen keeps the one column. The bleed is measured from the column it sits in.
  */
-export function canvasFor(windowWidth: number): CanvasGeometry | null {
-  if (windowWidth < theme.layoutRegularMinWidth) return null;
-  const width = Math.min(windowWidth, theme.layoutCanvasMaxWidth);
-  return { width, bleed: (width - columnFor(windowWidth).width) / 2 };
+export function canvasFor(windowWidth: number, safeRight = 0): CanvasGeometry | null {
+  const rail = tabRailFor(windowWidth, safeRight);
+  if (!rail) return null;
+  const width = Math.min(windowWidth - rail.width, theme.layoutCanvasMaxWidth);
+  if (width < theme.layoutSplitMinWidth) return null;
+  return { width, bleed: (width - columnFor(windowWidth, safeRight).width) / 2 };
 }
 
 export function useCanvas(): CanvasGeometry | null {
-  return canvasFor(useWindowDimensions().width);
+  return canvasFor(useWindowDimensions().width, useSafeRight());
 }
 
 /**
@@ -113,7 +160,7 @@ export function useLayoutClass(): LayoutClass {
 }
 
 export function useColumn(): ColumnGeometry {
-  return columnFor(useWindowDimensions().width);
+  return columnFor(useWindowDimensions().width, useSafeRight());
 }
 
 export function useColumnWidth(): number {
