@@ -192,6 +192,144 @@ const SHOTS = [
   { name: 'home-end-juniper', pet: 'juniper', go: [toEnd] },
 ];
 
+// ── The every-size sweep (CUL-2244, CUL-2245): behind CAPTURE_SET=all ─────────────────
+// The default set above is what every PR touching a screen photographs. The sweep adds every
+// route the Every iPhone sweeps walk, so a run with CAPTURE_SET=all photographs the whole app
+// at each size; a PR run keeps its time. Each sweep group gets a browser context of its own,
+// so its rows and flags never reach the default shots' local store (OPFS is per context).
+//
+// The fixture writes no vet record, so the vet routes get capture-only rows: one visit three
+// weeks back with a two-page document, one booking three days out, and one "I've called" on
+// Juniper's latest vomit. They are served only to the sweep context.
+const SWEEP_DAY = (d) => new Date(NOW + d * 86400e3).toISOString().slice(0, 10);
+const SWEEP_AT = (d, h = 12) => new Date(Date.parse(`${SWEEP_DAY(d)}T00:00:00Z`) + h * 3600e3).toISOString();
+const SWEEP = {
+  visitId: 'c2245000-0000-4000-8000-000000000001',
+  appointmentId: 'c2245000-0000-4000-8000-000000000002',
+  callId: 'c2245000-0000-4000-8000-000000000003',
+  documentGroupId: 'c2245000-0000-4000-8000-000000000004',
+};
+function sweepTables() {
+  const j = pet('juniper').id;
+  const stamp = new Date(NOW - 60e3).toISOString();
+  const vomit = firstVomit(j);
+  return {
+    vet_visits: [{
+      id: SWEEP.visitId, pet_id: j, visited_at: SWEEP_DAY(-21), clinic_name: 'Northside Animal Clinic',
+      vet_name: 'Dr. Okafor', reason: 'Vomiting on and off for two weeks', notes: 'Bloods taken. Start the trial diet.',
+      next_visit_at: SWEEP_DAY(3), deleted_at: null, created_at: SWEEP_AT(-21), updated_at: stamp,
+    }],
+    vet_documents: [0, 1].map((page) => ({
+      id: `c2245000-0000-4000-8000-00000000001${page}`, pet_id: j, vet_visit_id: SWEEP.visitId,
+      document_group_id: SWEEP.documentGroupId, kind: 'lab_result', title: 'Blood panel', document_date: SWEEP_DAY(-21),
+      notes: null, source: 'camera', source_filename: null, storage_path: `${j}/c2245-doc-${page}.jpg`,
+      mime_type: 'image/jpeg', file_size_bytes: 240000, page_index: page, deleted_at: null,
+      created_at: SWEEP_AT(-21, 14), updated_at: stamp,
+    })),
+    vet_appointments: [{
+      id: SWEEP.appointmentId, pet_id: j, scheduled_at: SWEEP_AT(3, 15), clinic_name: 'Northside Animal Clinic',
+      vet_name: 'Dr. Okafor', reason: 'Trial recheck', questions: ['Is the vomiting slowing down enough?'],
+      notes_draft: null, vet_visit_id: null, cancelled_at: null, deleted_at: null, created_at: SWEEP_AT(-21, 15), updated_at: stamp,
+    }],
+    vet_calls: [{
+      id: SWEEP.callId, pet_id: j, called_on: vomit.occurred_at.slice(0, 10), event_id: vomit.id, note: null,
+      supersedes: null, withdrawn: false, covers_rank: null, covers_from: null, created_at: stamp,
+    }],
+    // The gated routes the sweep walks, on for the fixture account in this context only.
+    app_config: [
+      ...tables.app_config,
+      { key: 'paywall_enabled', value: true },
+      { key: 'ask_enabled', value: { enabled: true } },
+      { key: 'engines_v3_en14', value: { enabled: true } },
+    ],
+  };
+}
+const REPORT_STAND_IN = {
+  html: '<!doctype html><html><body style="font-family:sans-serif;padding:24px;color:#555">' +
+    '<p>Capture stand-in: the report body is rendered by generate-report, which the capture path does not run.</p></body></html>',
+  pet_name: 'Juniper', start_date: SWEEP_DAY(-90), end_date: SWEEP_DAY(0), scope_basis: 'default', photo_count: 0,
+};
+const SWEEP_SHOTS = [
+  // The vet routes last, so the warm launches have the longest to hydrate their rows.
+  { name: 'report-juniper', go: [push('/report')] },
+  { name: 'ask-juniper', go: [push('/ask')] },
+  // Onboarding, as the signed-in fixture account (each step reads the active pet).
+  // Pet name reads the draft's species and sends a cold arrival back to the first step, so
+  // it is reached the way the flow reaches it.
+  ...['pet-type', 'pet-breed', 'pet-gender', 'pet-age', 'disclaimer', 'paywall', 'done'].map((step) => ({
+    name: `onboarding-${step}`, go: [push(`/onboarding/${step}`)],
+  })),
+  { name: 'onboarding-pet-name', go: [push('/onboarding/pet-type'), link(/^Dog$/), link(/^Continue$/)] },
+  { name: 'vet-visits-juniper', go: [push('/vet-visits')] },
+  { name: 'vet-visit-juniper', go: [push(`/vet-visits/${SWEEP.visitId}`)] },
+  { name: 'vet-visit-after-juniper', go: [push(`/vet-visits/after?appointment=${SWEEP.appointmentId}`)] },
+  { name: 'vet-visit-at-the-vet-juniper', go: [push(`/vet-visits/at-the-vet?appointment=${SWEEP.appointmentId}`)] },
+  { name: 'vet-visit-edit-appointment-juniper', go: [push(`/vet-visits/edit-appointment?appointment=${SWEEP.appointmentId}`)] },
+  { name: 'vet-visit-edit-juniper', go: [push(`/vet-visits/edit?visit=${SWEEP.visitId}`)] },
+  { name: 'vet-files-juniper', go: [push('/vet-files')] },
+  { name: 'vet-document-juniper', go: [push(`/vet-document/${SWEEP.documentGroupId}`)] },
+  { name: 'vet-call-juniper', go: [push(`/vet-call/${SWEEP.callId}`)] },
+  { name: 'rundown-juniper', go: [push(`/rundown?appointmentId=${SWEEP.appointmentId}`)] },
+].map((s) => ({ pet: 'juniper', group: 'sweep', ...s }));
+// Signed out: a context with no stored session, so the app lands on the Landing.
+const SIGNED_OUT_SHOTS = [
+  { name: 'auth-landing', go: [] },
+  // The Landing's own doors, as an owner reaches them: a push from the Landing does not move.
+  { name: 'auth-how-it-works', go: [link('See how it works')] },
+  { name: 'auth-signup', go: [link(/^Create account$/)] },
+  { name: 'auth-login', go: [link(/^Log in$/)] },
+  { name: 'auth-forgot-password', go: [link(/^Log in$/), link(/^Forgot/)] },
+  { name: 'auth-confirm', go: [push('/confirm')] },
+  { name: 'auth-reset-password', go: [push('/reset-password')] },
+].map((s) => ({ pet: 'juniper', group: 'signedOut', ...s }));
+// Sweep 1 (CUL-2244): logging, the record, capture, Foods, the trial, Pet, settings and
+// Patterns' own routes. Patterns' index and the event editor are already default shots
+// (`patterns-juniper`, `edit-*-juniper`, `incident-juniper`), so they are not repeated here.
+// The fixture writes no medication, so one capture-only drug row stands behind the
+// medication screen, served to this group's context only.
+const SWEEP1_MEDICATION_ID = 'c2244000-0000-4000-8000-000000000001';
+function sweep1Tables() {
+  return {
+    medication_items: [{
+      id: SWEEP1_MEDICATION_ID, generic_name: 'Maropitant', brand_name: 'Cerenia', strength: '16 mg',
+      form: 'tablet', default_route: 'oral', is_prescription: true, is_critical: false, photo_paths: [],
+      notes: null, created_by_user_id: FIXTURE_USER_ID, archived_at: null,
+      created_at: new Date(NOW - 30 * 86400e3).toISOString(), updated_at: new Date(NOW - 60e3).toISOString(),
+    }],
+  };
+}
+const trialFoodOf = (key) => tables.diet_trial_foods.find((f) => f.pet_id === pet(key).id).food_item_id;
+// Home's lead card is the door to its finding's screen, the way an owner arrives. Its title
+// is Juniper's fixture lead, which signals.deno.ts refuses to compute when it moves.
+const openLead = link(/^Vomiting between/);
+const SWEEP1_SHOTS = [
+  { name: 'log-juniper', go: [push('/log')] },
+  { name: 'mix-miso', pet: 'miso', go: [() => {}, (page) => push(`/mix?event=${latestOf(pet('miso').id, 'meal').id}&pet=${pet('miso').id}&from=detail`)(page)] },
+  { name: 'event-meal-juniper', go: [() => {}, (page) => push(`/event/${latestOf(pet('juniper').id, 'meal').id}`)(page)] },
+  { name: 'day-summary-juniper', go: [push('/day-summary')] },
+  { name: 'food-capture', go: [push('/food-capture')] },
+  { name: 'medication-capture', go: [push('/medication-capture')] },
+  { name: 'food-juniper', go: [() => {}, (page) => push(`/food/${trialFoodOf('juniper')}`)(page)] },
+  { name: 'medication-juniper', go: [push(`/medication/${SWEEP1_MEDICATION_ID}`)] },
+  { name: 'foods-juniper', go: [tab('Foods')] },
+  { name: 'trial-foods-juniper', go: [() => {}, (page) => push(`/trial-foods?pet=${pet('juniper').id}`)(page)] },
+  { name: 'trial-exposures-juniper', go: [() => {}, (page) => push(`/trial-exposures?pet=${pet('juniper').id}`)(page)] },
+  { name: 'trial-juniper', go: [() => {}, (page) => push(`/trial/${pet('juniper').id}`)(page)] },
+  { name: 'profile-juniper', go: [label(/pet profile$/)] },
+  { name: 'add-pet', go: [push('/add-pet')] },
+  { name: 'archived-pets', go: [push('/archived-pets')] },
+  { name: 'weight-history-juniper', go: [() => {}, (page) => push(`/weight-history?petId=${pet('juniper').id}`)(page)] },
+  { name: 'settings', go: [push('/settings')] },
+  ...['ai-reading', 'beta', 'feedback', 'notifications', 'password'].map((s) => ({ name: `settings-${s}`, go: [push(`/settings/${s}`)] })),
+  { name: 'patterns-metric-juniper', go: [push('/insights/vomit')] },
+  { name: 'patterns-timing-juniper', go: [push('/insights/timing')] },
+  { name: 'patterns-trial-juniper', go: [push('/insights/trial')] },
+  { name: 'signal-juniper', go: [openLead] },
+].map((s) => ({ pet: 'juniper', group: 'sweep1', ...s }));
+
+const CAPTURE_SET = process.env.CAPTURE_SET ?? 'pr';
+if (!['pr', 'all'].includes(CAPTURE_SET)) throw new Error(`CAPTURE_SET is pr or all, not ${CAPTURE_SET}`);
+
 // Each size the run photographs, as `W[xH][@text]` (CUL-2237): a width alone keeps the
 // 844pt height every capture used before. Text multipliers are RN's own iOS table
 // (React/CoreModules/RCTAccessibilityManager.mm): xxxLarge is the largest size in
@@ -206,7 +344,10 @@ const SIZES = (process.env.CAPTURE_SIZES ?? '320@1,375x667@1,390@1,466x678@1,626
   return { width: Number(w), height: Number(h ?? 844), scale, label: `${dims}${text}` };
 });
 
-async function captureSize(browser, size, server, shots) {
+async function captureSize(browser, size, server, shots, group) {
+  // A group's rows: the sweep's capture-only vet record and flags on top of the fixture.
+  const served = group === 'sweep' ? { ...tables, ...sweepTables() } : group === 'sweep1' ? { ...tables, ...sweep1Tables() } : tables;
+  const signedIn = group !== 'signedOut';
   const port = server.address().port;
   const settle = Number(process.env.CAPTURE_SETTLE_MS ?? 6000);
   const notes = [];
@@ -220,13 +361,13 @@ async function captureSize(browser, size, server, shots) {
   await context.clock.setFixedTime(NOW);
   await context.addInitScript(
     ({ key, session, scale, storage }) => {
-      localStorage.setItem('securestore:' + key, JSON.stringify(session));
+      if (session) localStorage.setItem('securestore:' + key, JSON.stringify(session));
       for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
       globalThis.__NYX_FONT_SCALE = scale;
     },
     // CAPTURE_STORAGE seeds device-local state (AsyncStorage is localStorage on web), e.g.
     // an older build's beta opt-ins: '{"culprit.betaOptIns.v1":"{\\"history_v2\\":true}"}'.
-    { key: 'sb-fixture-auth-token', session, scale: size.scale, storage: JSON.parse(process.env.CAPTURE_STORAGE ?? '{}') },
+    { key: 'sb-fixture-auth-token', session: signedIn ? session : null, scale: size.scale, storage: JSON.parse(process.env.CAPTURE_STORAGE ?? '{}') },
   );
   // Realtime would open a socket to the fixture host; there is nothing to say on it.
   await context.routeWebSocket(/fixture\.nyx-capture\.invalid/, (ws) => ws.close());
@@ -235,7 +376,7 @@ async function captureSize(browser, size, server, shots) {
     const url = new URL(req.url());
     const cors = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'content-range' };
     if (url.pathname.startsWith('/rest/v1/')) {
-      const a = answerRest({ ...tables, ...shotOverlay }, req.method(), url, req.headers()['accept'] ?? '');
+      const a = answerRest({ ...served, ...shotOverlay }, req.method(), url, req.headers()['accept'] ?? '');
       if (process.env.CAPTURE_DEBUG) log(`${req.method()} ${url.pathname}${url.search.slice(0, 160)} -> ${a.status} ${a.body.length}b`);
       return route.fulfill({ status: a.status, contentType: 'application/json', body: a.body, headers: { ...cors, ...(a.headers ?? {}) } });
     }
@@ -245,7 +386,21 @@ async function captureSize(browser, size, server, shots) {
       return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: PHOTO_SVG, headers: cors });
     }
     if (req.method() === 'POST' && url.pathname.startsWith('/storage/v1/object/sign/')) {
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ signedURL: PHOTO_PATH }), headers: cors });
+      // A batch (`createSignedUrls`, the vet documents' pages) posts its paths and wants a row each.
+      const paths = req.postDataJSON()?.paths;
+      const body = Array.isArray(paths)
+        ? paths.map((path) => ({ path, signedURL: PHOTO_PATH, error: null }))
+        : { signedURL: PHOTO_PATH };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: cors });
+    }
+    // The vet report's body is the server's HTML (generate-report), which this path does not
+    // run, and its WebView has no web build anyway: a stand-in answer lets the screen reach
+    // its loaded frame (range, toggle, Send), which is the layout the sweep checks.
+    if (group === 'sweep' && url.pathname === '/functions/v1/generate-report') {
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(REPORT_STAND_IN) });
+    }
+    if (!signedIn && url.pathname.startsWith('/auth/v1/')) {
+      return route.fulfill({ status: 401, contentType: 'application/json', body: '{"message":"no session"}', headers: cors });
     }
     if (url.pathname.startsWith('/auth/v1/user')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user), headers: cors });
@@ -265,7 +420,9 @@ async function captureSize(browser, size, server, shots) {
   // Two warm-up launches. The first builds the schema while its own screens race it
   // (a phone's first launch does the same, faster); the second hydrates the fixture
   // into SQLite, which OPFS keeps for the context. Every capture after is a warm launch.
-  for (let i = 0; i < 2; i++) {
+  // The sweep's vet rows hydrate after the fixture's events, late in the cycle, so its
+  // context takes one more warm launch before its first shot (CUL-2245).
+  for (let i = 0; i < (group === 'sweep' ? 3 : 2); i++) {
     await page.goto(`http://127.0.0.1:${port}/`);
     await page.waitForTimeout(settle * (i + 1));
   }
@@ -300,11 +457,16 @@ await mkdir(outDir, { recursive: true });
 const server = await serve(dist);
 const browser = await chromium.launch();
 try {
-  const shots = SHOTS.filter((s) => !ONLY || ONLY.includes(s.name));
+  const all = [...SHOTS, ...(CAPTURE_SET === 'all' ? [...SWEEP_SHOTS, ...SIGNED_OUT_SHOTS, ...SWEEP1_SHOTS] : [])];
+  const shots = all.filter((s) => !ONLY || ONLY.includes(s.name));
   for (const size of SIZES) {
-    const { files, notes } = await captureSize(browser, size, server, shots);
-    for (const f of files) console.log(f);
-    for (const n of [...new Set(notes)].slice(0, Number(process.env.CAPTURE_NOTES ?? 12))) console.log('   ', n);
+    for (const group of ['default', 'sweep', 'signedOut', 'sweep1']) {
+      const inGroup = shots.filter((s) => (s.group ?? 'default') === group);
+      if (inGroup.length === 0) continue;
+      const { files, notes } = await captureSize(browser, size, server, inGroup, group);
+      for (const f of files) console.log(f);
+      for (const n of [...new Set(notes)].slice(0, Number(process.env.CAPTURE_NOTES ?? 12))) console.log('   ', n);
+    }
   }
 } finally {
   await browser.close();
