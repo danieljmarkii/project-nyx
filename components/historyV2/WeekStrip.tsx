@@ -61,7 +61,7 @@ import {
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { useLayoutClass } from '../../hooks/useLayoutClass';
-import { squareRowCap } from '../../lib/layoutCaps';
+import { squareRowCap, withCap } from '../../lib/layoutCaps';
 import { claimsFromOf, dayFactsOn, shiftDay, type DayFacts, type HistoryCourse, type HistoryFacts } from '../../lib/historyDays';
 import type { ResolvedWindow } from '../../lib/historyWindows';
 import {
@@ -171,7 +171,7 @@ export function WeekStrip({ facts, window, course, today, petName }: WeekStripPr
   if (!courseLoading && weeks.length === 0) return null;
 
   return (
-    <View onLayout={onLayout} style={[styles.strip, rowCap]} testID="week-strip">
+    <View onLayout={onLayout} style={withCap(styles.strip, rowCap)} testID="week-strip">
       {answered && bounds !== null ? (
         <StripPager
           petId={petId}

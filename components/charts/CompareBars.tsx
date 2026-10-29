@@ -2,7 +2,7 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useLayoutClass } from '../../hooks/useLayoutClass';
-import { compareLabelCap } from '../../lib/layoutCaps';
+import { compareLabelCap, withCap } from '../../lib/layoutCaps';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import type { CompareWindowsModel } from '../../lib/chartModels';
 import { compareBarsA11yLabel } from '../../lib/chartCopy';
@@ -81,7 +81,7 @@ export function CompareBars({ model, noun, drawIn = false, identity = 'compare',
           const isMasked = masked?.[i] === true;
           return (
             <View key={i} style={styles.row} testID={`compare-window-${i}`}>
-              <View style={labelCap ? [styles.labels, labelCap] : styles.labels}>
+              <View style={withCap(styles.labels, labelCap)}>
                 <ThemedText style={styles.windowLabel} numberOfLines={2}>
                   {w.label}
                 </ThemedText>

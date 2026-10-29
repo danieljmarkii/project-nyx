@@ -2,7 +2,7 @@ import { Image, StyleSheet, View } from 'react-native';
 import { Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { useLayoutClass } from '../../hooks/useLayoutClass';
-import { squareRowCap } from '../../lib/layoutCaps';
+import { squareRowCap, withCap } from '../../lib/layoutCaps';
 import { ThemedText } from '../ui/ThemedText';
 
 export interface PhotoSlot {
@@ -25,7 +25,7 @@ export function PhotoSlots({ slots, testID }: { slots: readonly PhotoSlot[]; tes
   const rowCap = squareRowCap(useLayoutClass().width, slots.length, theme.space2, theme.layoutTileMax);
   const summary = slots.map((s) => `${s.label.replace(' · ', ', ')}${s.uri ? ', added' : ''}`).join('; ');
   return (
-    <View style={[styles.row, rowCap]} accessible accessibilityLabel={`Photos: ${summary}`} testID={testID}>
+    <View style={withCap(styles.row, rowCap)} accessible accessibilityLabel={`Photos: ${summary}`} testID={testID}>
       {slots.map((s) => (
         <View key={s.label} style={styles.slot}>
           {s.uri ? (

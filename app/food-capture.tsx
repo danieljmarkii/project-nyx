@@ -35,7 +35,7 @@ import { PhotoSlots } from '../components/food/PhotoSlots';
 import { CaptureReadCard } from '../components/food/CaptureReadCard';
 import { useIsOnline } from '../hooks/useIsOnline';
 import { useColumnWidth, useLayoutClass, useWindowFrame } from '../hooks/useLayoutClass';
-import { frameCap } from '../lib/layoutCaps';
+import { frameCap, withCap } from '../lib/layoutCaps';
 import {
   ProteinSetPicker,
   type ProteinSetPickerHandle,
@@ -936,7 +936,7 @@ export default function FoodCaptureScreen() {
         <Header title="Add a food" leading="back" onLeadingPress={() => setStep('intro')} />
         <ScrollView contentContainerStyle={styles.scroll}>
           {frontPhoto && (
-            <HomeCard noPadding style={reviewFrameCap ? [styles.heroCard, reviewFrameCap] : styles.heroCard}>
+            <HomeCard noPadding style={withCap(styles.heroCard, reviewFrameCap)}>
               <Image
                 source={{ uri: frontPhoto.localUri }}
                 style={styles.reviewPhoto}
@@ -1005,7 +1005,7 @@ export default function FoodCaptureScreen() {
         <Header title="Confirm" />
         <ScrollView contentContainerStyle={styles.confirmScroll} scrollEnabled={!reading}>
           {frontPhoto && (
-            <HomeCard noPadding style={confirmFrameCap ? [styles.heroCard, confirmFrameCap] : styles.heroCard}>
+            <HomeCard noPadding style={withCap(styles.heroCard, confirmFrameCap)}>
               {reading ? (
                 // During the wait the photo is only a picture: no control, rather than a
                 // control announced as dimmed (C-7).

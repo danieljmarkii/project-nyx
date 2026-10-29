@@ -3,7 +3,7 @@ import { type TextInstance, Image, Pressable, StyleSheet, View, type LayoutChang
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useLayoutClass } from '../../../hooks/useLayoutClass';
-import { tilesAcross } from '../../../lib/layoutCaps';
+import { tilesAcross, withCap } from '../../../lib/layoutCaps';
 import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
 import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
@@ -177,7 +177,7 @@ function Tile({ tile, tracksPattern, widthStyle }: { tile: GalleryTile; tracksPa
           : tileA11yLabel(tile, tracksPattern)
       }
       accessibilityHint="Opens this episode's record"
-      style={widthStyle ? [styles.tile, widthStyle] : styles.tile}
+      style={withCap(styles.tile, widthStyle)}
       testID={`episode-tile-${tile.eventId}`}
     >
       <View style={styles.photoWell}>

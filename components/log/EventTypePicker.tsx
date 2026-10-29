@@ -6,7 +6,7 @@ import {
 import { SectionLabel } from '../ui/SectionLabel';
 import { colorRoles, theme } from '../../constants/theme';
 import { useColumnWidth, useLayoutClass } from '../../hooks/useLayoutClass';
-import { columnCap } from '../../lib/layoutCaps';
+import { columnCap, withCap } from '../../lib/layoutCaps';
 import { ThemedText } from '../ui/ThemedText';
 
 // The log's event-type picker (B-745), extracted out of app/log.tsx so both hosts
@@ -179,7 +179,7 @@ export function GroupedEventGrid({
   // grown a little, never half the unfolded window.
   const cap = columnCap(useLayoutClass().width, useColumnWidth());
   return (
-    <View style={cap ? [styles.groupedContent, cap] : styles.groupedContent}>
+    <View style={withCap(styles.groupedContent, cap)}>
       {groups.map((group) => {
         const fullWidthKeys = expandedFullWidthKeys(group.keys);
         return (

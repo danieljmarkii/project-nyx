@@ -6,7 +6,7 @@ import { colorRoles, theme, shadows } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { useLayoutClass } from '../../../hooks/useLayoutClass';
-import { squareRowCap } from '../../../lib/layoutCaps';
+import { squareRowCap, withCap } from '../../../lib/layoutCaps';
 import { dayMarkDateWord } from '../../../lib/chartCopy';
 import { TIER_WORDS, TIERED_CALLS_READ_AS } from '../../../lib/incidentTierWords';
 import { datedCallLinesOf } from '../../../lib/ruleSeam';
@@ -448,7 +448,7 @@ export function MonthInstrument({
             {layers.vomit ? model.line : model.coverageLine}
           </ThemedText>
 
-          <View style={[styles.weekdayHeader, rowCap]} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+          <View style={withCap(styles.weekdayHeader, rowCap)} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
             {WEEKDAY_LABELS.map((d, i) => (
               <ThemedText key={i} style={styles.weekdayLabel}>
                 {d}
@@ -456,7 +456,7 @@ export function MonthInstrument({
             ))}
           </View>
 
-          <View style={[styles.grid, rowCap]} testID="month-grid">
+          <View style={withCap(styles.grid, rowCap)} testID="month-grid">
             {model.rows.map((row, r) => {
               const openInRow = openDay != null && row.some((d) => d?.key === openDay);
               return (

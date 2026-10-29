@@ -227,7 +227,8 @@ export function DayMarkFace({
     dim && styles.boxDim,
     today && styles.boxToday,
     selected && styles.boxSelected,
-    cap,
+    // Only at regular, so a phone's array is exactly main's.
+    ...(cap ? [cap] : []),
   ];
 
   if (onPress && box !== 'outlined' && box !== 'none') {

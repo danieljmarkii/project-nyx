@@ -12,7 +12,7 @@
 import { StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import { useColumnWidth, useLayoutClass, useWindowFrame } from '../../../hooks/useLayoutClass';
-import { frameCap } from '../../../lib/layoutCaps';
+import { frameCap, withCap } from '../../../lib/layoutCaps';
 import { FILTER_CHIP_MIN_HEIGHT } from '../../ui/FilterChip';
 import { ThemedText } from '../../ui/ThemedText';
 import { Block, Line, SilhouetteFrame, Surface } from './Silhouette';
@@ -37,7 +37,7 @@ export function CaptureSilhouette({ working, withHead = true }: CaptureSilhouett
       {withHead ? (
         <>
           <SilhouetteFrame testID={`${CAPTURE_SILHOUETTE_TEST_ID}-hero`}>
-            <Block height={0} radius={theme.radiusMedium} style={heroCap ? [styles.hero, heroCap] : styles.hero} />
+            <Block height={0} radius={theme.radiusMedium} style={withCap(styles.hero, heroCap)} />
           </SilhouetteFrame>
           <View style={styles.line} accessible accessibilityRole="progressbar">
             <Tick working={working} />

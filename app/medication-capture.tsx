@@ -54,7 +54,7 @@ import { uploadedPhotoPath } from '../lib/captureUploads';
 import { uuid } from '../lib/utils';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { useColumnWidth, useLayoutClass, useWindowFrame } from '../hooks/useLayoutClass';
-import { frameCap } from '../lib/layoutCaps';
+import { frameCap, withCap } from '../lib/layoutCaps';
 import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
 import { consentUnreadableNotice } from '../constants/aiConsentCopy';
 import { AiConsentSheet } from '../components/consent/AiConsentSheet';
@@ -583,7 +583,7 @@ export default function MedicationCaptureScreen() {
         <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.confirmScroll} keyboardShouldPersistTaps="handled">
             {labelPhoto && (
-              <View style={heroCap ? [styles.confirmHero, heroCap] : styles.confirmHero}>
+              <View style={withCap(styles.confirmHero, heroCap)}>
                 <Image source={{ uri: labelPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
                 <View style={styles.confirmOverlay}>
                   <ThemedText style={styles.confirmName} numberOfLines={2}>{genericName || 'Medication'}</ThemedText>

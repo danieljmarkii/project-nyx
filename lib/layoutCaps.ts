@@ -1,4 +1,4 @@
-import type { ViewStyle } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { theme } from '../constants/theme';
 import type { WidthClass } from '../hooks/useLayoutClass';
 
@@ -9,6 +9,12 @@ import type { WidthClass } from '../hooks/useLayoutClass';
 //
 // Every helper answers null (or the phone's own number) at compact: a phone keeps main's
 // style tree exactly, so its captures stay pixel identical.
+
+/** `base` with a cap laid over it, or `base` itself, untouched, when there is no cap: a
+ *  phone's style stays the very object main passed, never an array holding a null. */
+export function withCap<T extends StyleProp<ViewStyle>>(base: T, cap: ViewStyle | null): T | [T, ViewStyle] {
+  return cap ? [base, cap] : base;
+}
 
 /** A day square's cap: its box never grows past `layoutDayCellMax`. */
 export function dayCellCap(width: WidthClass): ViewStyle | null {
@@ -22,7 +28,7 @@ export function dayCellCap(width: WidthClass): ViewStyle | null {
  * a day square unless the row says otherwise (a photo slot is a tile).
  */
 export function squareRowCap(width: WidthClass, count: number, gap: number, cell: number = theme.layoutDayCellMax): ViewStyle | null {
-  if (width === 'compact') return null;
+  if (width === 'compact' || count < 1) return null;
   return { width: '100%', maxWidth: count * cell + (count - 1) * gap, alignSelf: 'center' };
 }
 
