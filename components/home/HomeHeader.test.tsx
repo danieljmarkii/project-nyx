@@ -4,6 +4,7 @@ import { HomeHeader, HOME_HEADER_CONTENT_HEIGHT } from './HomeHeader';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { colorRoles, theme } from '../../constants/theme';
+import { TAB_RAIL_WIDTH } from '../../hooks/useLayoutClass';
 import {
   ASK_BORDER,
   ASK_DOT_GAP,
@@ -12,6 +13,7 @@ import {
   ASK_PILL_LABEL,
   HEADER_AVATAR_SIZE,
   HEADER_NAME_RUNGS,
+  HEADER_PADDING_X,
   headerNameBudget,
   resolveHeaderName,
 } from '../../lib/headerName';
@@ -368,5 +370,34 @@ describe('the day, named (CUL-1221, the critique’s BRK-26)', () => {
     const node = collect(render(<HomeHeader />).toJSON(), 'Text').find((t) => (t.children ?? []).includes(name));
     const style = Object.assign({}, ...[node.props.style].flat(2).filter(Boolean));
     expect(style.fontSize).toBe(resolveHeaderName(name!, withDate).fontSize);
+  });
+});
+
+// CUL-2239 — where Home's feed lays out across the canvas, its header row does too: the
+// surface reaches the scene's edges (the window's on the left, the tab rail's on the
+// right, CUL-2242), and the row's padding is the phone's, measured from those edges.
+describe('the row at regular spans Home’s canvas', () => {
+  const containerStyle = () => StyleSheet.flatten((render(<HomeHeader />).toJSON() as { props: { style: unknown } }).props.style as never) as Record<string, unknown>;
+
+  it('a phone keeps its padding and no bleed', () => {
+    setWindowWidth(390);
+    const style = containerStyle();
+    expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
+    expect(style.marginHorizontal).toBeUndefined();
+  });
+
+  it('the unfolded Duo upright (626pt): the scene beside the rail is the column, so no bleed', () => {
+    setWindowWidth(626);
+    const style = containerStyle();
+    expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
+    expect(style.marginHorizontal).toBeUndefined();
+  });
+
+  it('the unfolded Duo on its side (890pt): out to the scene edges, padded from them', () => {
+    setWindowWidth(890);
+    const style = containerStyle();
+    const sceneInset = (890 - TAB_RAIL_WIDTH - theme.layoutColumnMaxWidth) / 2;
+    expect(style.marginHorizontal).toBe(-sceneInset);
+    expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
   });
 });

@@ -81,6 +81,32 @@ export function useTabRail(): TabRailGeometry | null {
   return tabRailFor(useWindowDimensions().width, useSafeRight());
 }
 
+export interface CanvasGeometry {
+  /** The width a screen with its own regular layout lays its columns across. */
+  width: number;
+  /** How far, each side, that screen steps out of the root column to reach it. */
+  bleed: number;
+}
+
+/**
+ * The canvas for a screen that lays two columns across the regular window rather than
+ * sitting in the column (CUL-2239: Home). It is the scene beside the tab rail, capped, and
+ * it exists only where two phone-width columns fit in it: the unfolded Duo on its side,
+ * not upright, where the scene beside the rail is the column itself. Null otherwise, so
+ * the screen keeps the one column. The bleed is measured from the column it sits in.
+ */
+export function canvasFor(windowWidth: number, safeRight = 0): CanvasGeometry | null {
+  const rail = tabRailFor(windowWidth, safeRight);
+  if (!rail) return null;
+  const width = Math.min(windowWidth - rail.width, theme.layoutCanvasMaxWidth);
+  if (width < theme.layoutSplitMinWidth) return null;
+  return { width, bleed: (width - columnFor(windowWidth, safeRight).width) / 2 };
+}
+
+export function useCanvas(): CanvasGeometry | null {
+  return canvasFor(useWindowDimensions().width, useSafeRight());
+}
+
 /**
  * Chrome whose background reaches the window edge while its content stays in the column:
  * out by the gutter, back in by the gutter plus the chrome's own side padding. Null at

@@ -127,6 +127,8 @@
   --layoutTileMax: 120px;
   --layoutCompareLabelMax: 160px;
   --layoutFrameMaxHeightRatio: 0.5px;
+  --layoutCanvasMaxWidth: 1120px;
+  --layoutSplitMinWidth: 616px;
   --hitTarget: 44px;
   --railWidth: 3px;
   --radiusXS: 4px;

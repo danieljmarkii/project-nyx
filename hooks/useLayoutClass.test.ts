@@ -1,5 +1,5 @@
 import { theme } from '../constants/theme';
-import { bleedFor, columnFor, layoutClassFor, sheetCapFor, sheetMaxHeightFor, tabRailFor, TAB_RAIL_WIDTH } from './useLayoutClass';
+import { bleedFor, canvasFor, columnFor, layoutClassFor, sheetCapFor, sheetMaxHeightFor, tabRailFor, TAB_RAIL_WIDTH } from './useLayoutClass';
 
 // The sizes the captures photograph (CUL-2237): every iPhone width, the SE's height, the
 // folded Duo and the unfolded Duo both ways. Duo points are pixels ÷ 3 (unpublished).
@@ -118,5 +118,40 @@ describe('sheetMaxHeightFor', () => {
       // a fifth scrim while the sheet scrolls.
       expect(cap).toBeGreaterThan(h * 0.8);
     }
+  });
+});
+
+describe('canvasFor', () => {
+  it.each([320, 375, 390, 440, 466, theme.layoutRegularMinWidth - 1])('is nothing at compact (%i), so a phone keeps the column', (w) => {
+    expect(canvasFor(w)).toBeNull();
+  });
+
+  it('is nothing on the unfolded Duo upright: beside the rail the scene is the column, too narrow for two', () => {
+    // 626 less the 80pt rail is 546, the column itself; two columns there would be 237pt.
+    expect(columnFor(626).width).toBe(626 - TAB_RAIL_WIDTH);
+    expect(626 - TAB_RAIL_WIDTH).toBeLessThan(theme.layoutSplitMinWidth);
+    expect(canvasFor(626)).toBeNull();
+  });
+
+  it('is the scene beside the rail on the unfolded Duo on its side, stepped out to from the column', () => {
+    const rail = tabRailFor(890)!;
+    expect(canvasFor(890)).toEqual({ width: 890 - TAB_RAIL_WIDTH, bleed: rail.sceneInset });
+    expect(columnFor(890).width + 2 * canvasFor(890)!.bleed).toBe(890 - rail.width);
+  });
+
+  it('switches on the split line, not near it', () => {
+    const at = theme.layoutSplitMinWidth + TAB_RAIL_WIDTH;
+    expect(canvasFor(at - 1)).toBeNull();
+    expect(canvasFor(at)).not.toBeNull();
+  });
+
+  it('gives the right safe-area inset to the rail, never to the canvas', () => {
+    expect(canvasFor(890, 47)!.width).toBe(890 - TAB_RAIL_WIDTH - 47);
+  });
+
+  it('never grows past its cap, and stays centred on the column', () => {
+    const { width, bleed } = canvasFor(1376)!;
+    expect(width).toBe(theme.layoutCanvasMaxWidth);
+    expect(columnFor(1376).width + 2 * bleed).toBe(width);
   });
 });

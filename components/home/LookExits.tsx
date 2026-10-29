@@ -90,13 +90,18 @@ export interface LayoutBox {
  * `exitVisibility` compares against the page's `scrollY`. The page y is the card's own y
  * in the scroll content plus the header's y inside the card. Either half unmeasured →
  * `null`, which `exitVisibility` reads as "pin nothing" (never a guess).
+ *
+ * At regular Home lays Today in a column of its own (CUL-2239), so the card's y is
+ * column-local too: `columnTop` is that column's y in the scroll content, 0 where the
+ * card sits straight in it, and null while the column is unmeasured.
  */
 export function lookRectInPage(
   card: LayoutBox | null,
   header: LayoutBox | null,
+  columnTop: number | null = 0,
 ): { top: number; height: number } | null {
-  if (!card || !header) return null;
-  return { top: card.y + header.y, height: header.height };
+  if (!card || !header || columnTop === null) return null;
+  return { top: columnTop + card.y + header.y, height: header.height };
 }
 
 export function LookExits({ backPinned, donePinned }: ExitVisibility) {

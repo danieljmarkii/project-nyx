@@ -16,6 +16,13 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
+// The window (CUL-2239): jest's default is 750pt, which is regular, so each case names
+// the width it means. A phone is the default; the regular cases set the unfolded Duo.
+let mockWindowWidth = 390;
+jest.mock('../../hooks/useLayoutClass', () => {
+  const actual = jest.requireActual('../../hooks/useLayoutClass');
+  return { ...actual, useCanvas: () => actual.canvasFor(mockWindowWidth) };
+});
 jest.mock('expo-router', () => ({
   useNavigation: () => ({ isFocused: () => true, addListener: () => () => {} }),
 }));
@@ -96,9 +103,10 @@ jest.mock('../../store/petStore', () => {
   };
 });
 
-import { ScrollView } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import HomeScreen from './index';
+import { theme } from '../../constants/theme';
 import { useUiStore, type CaptureOverlay } from '../../store/uiStore';
 
 const OVERLAY: CaptureOverlay = {
@@ -121,7 +129,11 @@ function renderHome() {
   const view = render(<HomeScreen />);
   // The body's onLayout is the nearest handler above the sky marker.
   fireEvent(view.getByTestId('zone-sky'), 'layout', { nativeEvent: { layout: { height: VIEWPORT } } });
-  fireEvent(view.getByTestId('zone-today-v2'), 'layout', { nativeEvent: { layout: CARD } });
+  // The card leads the Today column, which stacks under the Signal's at compact (CUL-2239):
+  // the split under the scroll's padding, the column 236pt into it, the card at its top.
+  fireEvent(view.getByTestId('home-split'), 'layout', { nativeEvent: { layout: { x: 24, y: 24 } } });
+  fireEvent(view.getByTestId('home-column-today'), 'layout', { nativeEvent: { layout: { x: 0, y: CARD.y - 24, width: 342 } } });
+  fireEvent(view.getByTestId('zone-today-v2'), 'layout', { nativeEvent: { layout: { y: 0, height: CARD.height } } });
   fireEvent(view.getByTestId('zone-look'), 'layout', { nativeEvent: { layout: HEADER } });
   const scroll = (y: number) =>
     fireEvent.scroll(view.UNSAFE_getByType(ScrollView), { nativeEvent: { contentOffset: { y } } });
@@ -168,3 +180,54 @@ describe('Home — the scroll offset re-renders only what can draw it', () => {
     expect(lastExits()).toEqual({ backPinned: true, donePinned: false });
   });
 });
+
+// CUL-2239 — at regular Today sits in a column of its own, so the card's y is column-local
+// and the look's page rect adds the column's y in the scroll content. Read the wrong way,
+// the way back pins 24pt early, and the exits hold to the window rather than the card.
+describe('Home at regular — the exits read the Today column', () => {
+  const SPLIT = { x: 24, y: 24 };
+  const COLUMN = { x: 433, y: 0, width: 409 };
+
+  beforeEach(() => {
+    mockWindowWidth = 890;
+  });
+  afterEach(() => {
+    mockWindowWidth = 390;
+  });
+
+  function renderSplit({ measureColumn = true } = {}) {
+    const view = render(<HomeScreen />);
+    fireEvent(view.getByTestId('zone-sky'), 'layout', { nativeEvent: { layout: { height: VIEWPORT } } });
+    fireEvent(view.getByTestId('home-split'), 'layout', { nativeEvent: { layout: SPLIT } });
+    if (measureColumn) fireEvent(view.getByTestId('home-column-today'), 'layout', { nativeEvent: { layout: COLUMN } });
+    // The card leads its column; the header sits 40pt into it, so its page top is 64.
+    fireEvent(view.getByTestId('zone-today-v2'), 'layout', { nativeEvent: { layout: { y: 0, height: 1400 } } });
+    fireEvent(view.getByTestId('zone-look'), 'layout', { nativeEvent: { layout: HEADER } });
+    const scroll = (y: number) =>
+      fireEvent.scroll(view.UNSAFE_getByType(ScrollView), { nativeEvent: { contentOffset: { y } } });
+    return { ...view, scroll };
+  }
+
+  it('pins the way back at the header’s page top, column offset included', () => {
+    const { scroll } = renderSplit();
+    act(() => useUiStore.setState({ captureOverlay: OVERLAY }));
+    scroll(64);
+    expect(lastExits()).toEqual({ backPinned: false, donePinned: true });
+    scroll(65);
+    expect(lastExits()).toEqual({ backPinned: true, donePinned: true });
+  });
+
+  it('pins nothing while the column is unmeasured, never a column-local guess', () => {
+    const { scroll } = renderSplit({ measureColumn: false });
+    act(() => useUiStore.setState({ captureOverlay: OVERLAY }));
+    scroll(400);
+    expect(lastExits()).toEqual({ backPinned: false, donePinned: false });
+  });
+
+  it('holds the exits over the Today column, at the phone’s reach past its edges', () => {
+    const view = renderSplit();
+    const frame = StyleSheet.flatten(view.getByTestId('home-exits-frame').props.style);
+    expect(frame).toMatchObject({ position: 'absolute', left: 24 + 433 - theme.space3, width: 409 + 2 * theme.space3 });
+  });
+});
+
