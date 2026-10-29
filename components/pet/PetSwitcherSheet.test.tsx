@@ -303,3 +303,35 @@ describe('PetSwitcherSheet', () => {
     expect(view.queryByText(/not just this log/)).toBeTruthy();
   });
 });
+
+// CUL-2246: on a short window (the SE, the folded Duo) the panel stops under the status bar
+// and its list gives up the difference, so Add a pet stays on screen at large text; a tall
+// window keeps the panel it had, uncapped. Mutation-proven: dropping the cap reds the short
+// half; capping a tall window reds the first.
+describe('PetSwitcherPanel — short windows', () => {
+  const { StyleSheet } = require('react-native') as typeof import('react-native');
+  const panelStyle = (view: ReturnType<typeof render>) => {
+    const panels = view.UNSAFE_root.findAll(
+      (n: any) => typeof n.type !== 'string' && StyleSheet.flatten(n.props?.style)?.borderTopLeftRadius !== undefined,
+    );
+    return StyleSheet.flatten(panels[0].props.style);
+  };
+
+  it('caps the panel only below the short line, from the live window', () => {
+    const rn = require('react-native') as typeof import('react-native');
+    const dims = jest.spyOn(rn, 'useWindowDimensions')
+      .mockReturnValue({ width: 390, height: 844, fontScale: 1, scale: 3 });
+    try {
+      const view = render(<PetSwitcherPanel visible onClose={jest.fn()} />);
+      expect(panelStyle(view).maxHeight).toBeUndefined();
+      dims.mockReturnValue({ width: 375, height: 667, fontScale: 1, scale: 2 });
+      view.rerender(<PetSwitcherPanel visible onClose={jest.fn()} />);
+      // The suite's insets are zero, so the cap is the window less the strip of scrim.
+      expect(panelStyle(view).maxHeight).toBe(667 - theme.space5);
+      // Down before the real hook returns, so no late render runs a different hook list.
+      view.unmount();
+    } finally {
+      dims.mockRestore();
+    }
+  });
+});

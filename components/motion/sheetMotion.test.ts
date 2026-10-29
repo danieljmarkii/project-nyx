@@ -167,3 +167,37 @@ describe('useSheetMotion — CUL-1642', () => {
     expect(onExited).not.toHaveBeenCalled();
   });
 });
+
+// CUL-2246: the travel is the window's height, read when something opens. A fold with
+// the sheet open changes it, and the way out must clear the NEW window: a sheet that sank
+// only the old height would stop short of the edge of a taller one for its last frame.
+// Pinned so a refactor that captures the travel at mount (an Animated.Value's initial
+// value is the tempting place) reds here. Refactor-safety, green before and after.
+describe('useSheetMotion — a fold with the sheet open (CUL-2246)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useReducedMotionStore.setState({ reduceMotion: false });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    useReducedMotionStore.setState({ reduceMotion: null });
+  });
+
+  it('sinks the sheet by the window it closes in, not the one it opened in', () => {
+    type Q = { visible: boolean; travel: number };
+    const { result, rerender } = renderHook(
+      (p: Q) => useSheetMotion({ visible: p.visible, veil: 'own', travelPt: p.travel, appActive: true }),
+      { initialProps: { visible: true, travel: 626 } },
+    );
+    act(() => { result.current.onShow(); });
+    act(() => { jest.advanceTimersByTime(1500); });
+    expect(sheetY(result)).toBe(0);
+    // Unfold: the window is taller now.
+    rerender({ visible: true, travel: 890 });
+    expect(sheetY(result)).toBe(0);
+    rerender({ visible: false, travel: 890 });
+    act(() => { jest.advanceTimersByTime(1500); });
+    expect(result.current.phase).toBe('closed');
+    expect(sheetY(result)).toBe(890);
+  });
+});

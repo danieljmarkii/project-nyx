@@ -453,6 +453,32 @@ describe('the scroll branch is tap only', () => {
   });
 });
 
+// CUL-2246: a fold moves the disc and every pill on the page while the plan can stay the
+// same, so the frames measured before it are stale. A release after one hit-tests nothing
+// until the fan is measured again. Mutation-proven: dropping the window from the rows'
+// signature (FAB.tsx) lets this release log a vomit against a frame that has moved.
+describe('a resize under the finger drops the measure', () => {
+  it('releases over a pill measured before the fold do nothing until the fan is re-measured', async () => {
+    const rn = require('react-native') as typeof import('react-native');
+    const dims = jest.spyOn(rn, 'useWindowDimensions')
+      .mockReturnValue({ width: 466, height: 678, fontScale: 1, scale: 3 });
+    try {
+      const view = await mount();
+      await hold(view);
+      // The new frames never come back: what the release has is only what it had.
+      mockMeasureOn = false;
+      dims.mockReturnValue({ width: 466, height: 700, fontScale: 1, scale: 3 });
+      await act(async () => { view.rerender(<FAB />); });
+      move(view, centreOf('fab-pill-vomit'));
+      lift(view, centreOf('fab-pill-vomit'));
+      expect(useUiStore.getState().logSheet).toBeNull();
+      view.unmount();
+    } finally {
+      dims.mockRestore();
+    }
+  });
+});
+
 // E1 / E2 of the adversarial review: a fan closed under the finger ends the slide.
 describe('a close under the finger ends the slide', () => {
   it('after the capture overlay stands the FAB down, a move ticks and fills nothing', async () => {

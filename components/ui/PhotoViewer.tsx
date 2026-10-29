@@ -115,29 +115,44 @@ export function PhotoViewer({
   // resets on each open, which is the reset-zoom-on-open behaviour we want.
   const [box, setBox] = useState<Box | null>(null);
   const multi = uris.length > 1;
+  // The photo the gallery is anchored on: the tapped one at each open, then the one the
+  // owner is on whenever the box is re-measured (CUL-2246). A fold re-measures the box
+  // with the viewer open, and re-anchoring on the TAPPED photo there would throw the
+  // owner back to where they started. `pageRef` is the owner's page, written as they swipe.
+  const pageRef = useRef(initialIndex);
+  const [anchor, setAnchor] = useState(initialIndex);
 
   function handleMediaLayout(e: LayoutChangeEvent) {
     const { width, height } = e.nativeEvent.layout;
-    setBox((cur) => (cur && cur.w === width && cur.h === height ? cur : { w: width, h: height }));
+    if (box && box.w === width && box.h === height) return;
+    if (box) setAnchor(pageRef.current);
+    setBox({ w: width, h: height });
   }
 
-  // Snap to the tapped photo each time the viewer opens. Depends on `box`
-  // because the offset is in measured points; contentOffset alone is unreliable
-  // on Android, so we also scrollTo via the ref once mounted and measured.
+  // Snap to the tapped photo each time the viewer opens.
   useEffect(() => {
     if (!visible) return;
     const clamped = clampIndex(initialIndex, uris.length);
+    pageRef.current = clamped;
     setPage(clamped);
-    if (multi && box) {
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollTo({ x: clamped * box.w, animated: false });
-      });
-    }
-  }, [visible, initialIndex, uris.length, multi, box]);
+    setAnchor(clamped);
+  }, [visible, initialIndex, uris.length]);
+
+  // And onto the anchor whenever it or the box moves. Depends on `box` because the
+  // offset is in measured points; contentOffset alone is unreliable on Android, so we
+  // also scrollTo via the ref once mounted and measured.
+  useEffect(() => {
+    if (!visible || !multi || !box) return;
+    const x = clampIndex(anchor, uris.length) * box.w;
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ x, animated: false });
+    });
+  }, [visible, anchor, uris.length, multi, box]);
 
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     if (!box) return;
     const next = Math.round(e.nativeEvent.contentOffset.x / box.w);
+    pageRef.current = next;
     if (next !== page) {
       setPage(next);
       onPageChange?.(next);
@@ -171,7 +186,7 @@ export function PhotoViewer({
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
-                contentOffset={{ x: clampIndex(initialIndex, uris.length) * box.w, y: 0 }}
+                contentOffset={{ x: clampIndex(anchor, uris.length) * box.w, y: 0 }}
                 onScroll={handleScroll}
                 scrollEventThrottle={32}
               >
