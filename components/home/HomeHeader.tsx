@@ -10,7 +10,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
 import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
-import { bleedFor, useColumn } from '../../hooks/useLayoutClass';
+import { bleedFor, useCanvas, useColumn } from '../../hooks/useLayoutClass';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useTodayKey } from '../../hooks/useTodayKey';
 import { HeaderDate } from '../surfaces/home/HeaderDate';
@@ -100,8 +100,12 @@ export function HomeHeader() {
   const askEnabled = useAllowlistFlag('ask_enabled');
   // The name's rung is a function of the ROW's width, so it re-resolves on rotation
   // and on a foldable rather than baking in the width the app happened to launch at.
-  // The row sits in the column; the white surface still reaches the window edge.
-  const { width, gutter } = useColumn();
+  // The row sits in the column; the white surface still reaches the window edge. At
+  // regular Home's feed lays out across the canvas (CUL-2239), so its row does too: the
+  // name and the avatar line up with the feed's outer cards, not the column's.
+  const { width: columnWidth, gutter } = useColumn();
+  const canvas = useCanvas();
+  const width = canvas?.width ?? columnWidth;
   // Design v2 dates the day (CUL-1221).
   const todayKey = useTodayKey();
   const dateLabel = headerDateLabel(todayKey);
@@ -119,7 +123,7 @@ export function HomeHeader() {
   const name = resolveHeaderName(activePet.name, headerNameBudget({ windowWidth: width, multiPet, askEnabled, dateLabel }));
 
   return (
-    <View style={[styles.container, bleedFor(gutter, HEADER_PADDING_X), { paddingTop: insets.top + HEADER_PADDING_Y }]}>
+    <View style={[styles.container, bleedFor(gutter, HEADER_PADDING_X - (canvas?.bleed ?? 0)), { paddingTop: insets.top + HEADER_PADDING_Y }]}>
       <View style={styles.row}>
         <TouchableOpacity
           style={styles.identityCluster}

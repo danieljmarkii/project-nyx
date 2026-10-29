@@ -12,6 +12,7 @@ import {
   ASK_PILL_LABEL,
   HEADER_AVATAR_SIZE,
   HEADER_NAME_RUNGS,
+  HEADER_PADDING_X,
   headerNameBudget,
   resolveHeaderName,
 } from '../../lib/headerName';
@@ -368,5 +369,26 @@ describe('the day, named (CUL-1221, the critique’s BRK-26)', () => {
     const node = collect(render(<HomeHeader />).toJSON(), 'Text').find((t) => (t.children ?? []).includes(name));
     const style = Object.assign({}, ...[node.props.style].flat(2).filter(Boolean));
     expect(style.fontSize).toBe(resolveHeaderName(name!, withDate).fontSize);
+  });
+});
+
+// CUL-2239 — Home's feed lays out across the canvas at regular, so its header row does too:
+// the surface still reaches the window edge, and the row's padding is the phone's, measured
+// from the canvas edge rather than the column's.
+describe('the row at regular spans Home’s canvas', () => {
+  const containerStyle = () => StyleSheet.flatten((render(<HomeHeader />).toJSON() as { props: { style: unknown } }).props.style as never) as Record<string, unknown>;
+
+  it('a phone keeps its padding and no bleed', () => {
+    setWindowWidth(390);
+    const style = containerStyle();
+    expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
+    expect(style.marginHorizontal).toBeUndefined();
+  });
+
+  it.each([626, 890])('the unfolded Duo (%ipt) pads the row from the window edge', (width) => {
+    setWindowWidth(width);
+    const style = containerStyle();
+    expect(style.marginHorizontal).toBe(-(width - theme.layoutColumnMaxWidth) / 2);
+    expect(style.paddingHorizontal).toBe(HEADER_PADDING_X);
   });
 });
