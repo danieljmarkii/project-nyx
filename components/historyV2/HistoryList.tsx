@@ -73,6 +73,7 @@ import {
   Dimensions,
   LayoutAnimation,
   RefreshControl,
+  ScrollView,
   SectionList,
   StyleSheet,
   TouchableOpacity,
@@ -84,6 +85,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { colorRoles, theme } from '../../constants/theme';
+import { useCanvas } from '../../hooks/useLayoutClass';
 import { usePhotoReadingOff } from '../../hooks/usePhotoReadingOff';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../lib/analysis';
 import { focusAccessibility } from '../../lib/a11yFocus';
@@ -906,6 +908,12 @@ export function HistoryList() {
     [snapshot, pageRows, lookRows, nodesByDay, openRuns, toggleRun, openVisit, landedDay, dates, courseName, ledger, leaving, focusRefFor, landDraw],
   );
 
+  // At regular, where two phone-width columns fit (CUL-2240, PR-04's pattern), the header
+  // (the count line, the bowl's line and the week strip) is the first column, standing
+  // still beside the days so the week stays in reach however far the list scrolls; the
+  // days are the second. Null at compact and upright, where the header scrolls with the
+  // days as on main.
+  const canvas = useCanvas();
   const header = headerSnap ? (
     <View style={styles.header} testID="history-list-header">
       {countLine ? <CountLine line={countLine} filter={filter} /> : null}
@@ -1027,39 +1035,53 @@ export function HistoryList() {
     <CellLaidOut.Provider value={onCellLaidOut}>
       <OpenInPlaceReset.Provider value={runReset}>
         <RunRevealContext.Provider value={runReveal.request}>
-          <SectionList<HistorySection, ListSection>
-            ref={listRef}
-            style={styles.list}
-            sections={sections}
-            keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
-            renderSectionHeader={renderSectionHeader}
-            renderItem={renderItem}
-            stickySectionHeadersEnabled
-            // A drag through search results puts the keyboard away, as the platform's own lists do.
-            keyboardDismissMode="on-drag"
-            // A week of days on the first paint (a day is three cells: its header, its body, its
-            // footer): the strip shows this week, so a landing from it never waits on a measure.
-            initialNumToRender={INITIAL_CELLS}
-            ListHeaderComponent={header ?? undefined}
-            ListEmptyComponent={empty ?? undefined}
-            ListFooterComponent={footer ?? undefined}
-            onEndReached={() => {
-              if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
-            }}
-            onEndReachedThreshold={0.5}
-            onScrollBeginDrag={onDragBegin}
-            onScroll={onScroll}
-            scrollEventThrottle={16}
-            onLayout={onLayout}
-            onScrollToIndexFailed={onScrollToIndexFailed}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
-            }
-            contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
-            CellRendererComponent={HistoryCell}
-            onContentSizeChange={runReveal.onContentSizeChange}
-            testID="history-list"
-          />
+          {/* One tree at every width: the list keeps its place, so a fold or an unfold
+              restyles it and never remounts it (open runs, the scroll, a landing in flight
+              survive). Only the header moves between the aside and the list's own header;
+              it holds no state of its own. At compact the aside is an empty View, drawing
+              nothing, and the split is the column main drew. */}
+          <View testID="history-split" style={[styles.split, canvas && styles.splitRow]}>
+            <View testID="history-aside" style={canvas ? styles.aside : null}>
+              {canvas && header ? (
+                <ScrollView contentContainerStyle={styles.asideContent} testID="history-aside-scroll">
+                  {header}
+                </ScrollView>
+              ) : null}
+            </View>
+            <SectionList<HistorySection, ListSection>
+              ref={listRef}
+              style={[styles.list, canvas && styles.listShare]}
+              sections={sections}
+              keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
+              renderSectionHeader={renderSectionHeader}
+              renderItem={renderItem}
+              stickySectionHeadersEnabled
+              // A drag through search results puts the keyboard away, as the platform's own lists do.
+              keyboardDismissMode="on-drag"
+              // A week of days on the first paint (a day is three cells: its header, its body, its
+              // footer): the strip shows this week, so a landing from it never waits on a measure.
+              initialNumToRender={INITIAL_CELLS}
+              ListHeaderComponent={(canvas ? null : header) ?? undefined}
+              ListEmptyComponent={empty ?? undefined}
+              ListFooterComponent={footer ?? undefined}
+              onEndReached={() => {
+                if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
+              }}
+              onEndReachedThreshold={0.5}
+              onScrollBeginDrag={onDragBegin}
+              onScroll={onScroll}
+              scrollEventThrottle={16}
+              onLayout={onLayout}
+              onScrollToIndexFailed={onScrollToIndexFailed}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
+              }
+              contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
+              CellRendererComponent={HistoryCell}
+              onContentSizeChange={runReveal.onContentSizeChange}
+              testID="history-list"
+            />
+          </View>
         </RunRevealContext.Provider>
       </OpenInPlaceReset.Provider>
     </CellLaidOut.Provider>
@@ -1169,6 +1191,13 @@ const BOWL_BAR_HEIGHT = 14;
 
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: theme.colorNeutralLight },
+  // CUL-2240: the header and the days, stacked at compact (the aside is empty there), side
+  // by side at regular, sharing the row equally as Home's two columns do.
+  split: { flex: 1 },
+  splitRow: { flexDirection: 'row' },
+  aside: { flex: 1, minWidth: 0 },
+  asideContent: { paddingBottom: HISTORY_V2_SCROLL_INSET },
+  listShare: { minWidth: 0 },
   // The last row clears the + button at scroll end (AC 14; lib/fabFootprint.ts).
   content: { paddingBottom: HISTORY_V2_SCROLL_INSET },
   contentEmpty: { flexGrow: 1 },
