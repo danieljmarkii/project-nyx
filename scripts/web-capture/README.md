@@ -43,6 +43,11 @@ signed-out shots launch with no stored session and walk the Landing's own doors.
 body is generate-report's HTML in a WebView, neither of which runs here: its shot is the
 screen's frame.
 
+**Sweep 1 (`CAPTURE_SET=all`, CUL-2244).** Logging, the record, capture, Foods, the trial, Pet,
+settings and Patterns' own routes, in a context of their own. The fixture writes no medication,
+so one capture-only drug row stands behind the medication screen. The Signal screen is reached
+through Home's lead card, the way an owner arrives.
+
 ## What it changes, and what it never touches
 
 `metro.config.js` loads `metroWebCapture.js` only when `NYX_WEB_CAPTURE=1`, and every
