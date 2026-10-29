@@ -100,6 +100,7 @@ jest.mock('../../store/petStore', () => {
 });
 
 import { render } from '@testing-library/react-native';
+import type { ReactTestInstance } from 'react-test-renderer';
 import HomeScreen from './index';
 
 /** Every `zone-*` marker in the rendered tree, in render order. */
@@ -183,8 +184,8 @@ describe('Principle 3 at regular — the Signal leads the first column', () => {
       ...new Set(
         view
           .getByTestId(id)
-          .findAll((n) => typeof n.props.testID === 'string' && n.props.testID.startsWith('zone-'))
-          .map((n) => (n.props.testID as string).slice(5)),
+          .findAll((n: ReactTestInstance) => typeof n.props.testID === 'string' && n.props.testID.startsWith('zone-'))
+          .map((n: ReactTestInstance) => (n.props.testID as string).slice(5)),
       ),
     ];
     expect(column('home-column-lead')).toEqual(['cross-pet-safety', 'signal', 'appointment', 'trial']);
