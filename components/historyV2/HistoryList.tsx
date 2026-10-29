@@ -69,6 +69,7 @@
 import { type ComponentProps, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   type ViewInstance,
+  type ScrollViewInstance,
   AppState,
   Dimensions,
   LayoutAnimation,
@@ -301,6 +302,8 @@ export function HistoryList() {
   }, []);
 
   const listRef = useRef<SectionList<HistorySection, ListSection>>(null);
+  // The header's own scroll at regular (CUL-2240), back to its top with the list's.
+  const asideRef = useRef<ScrollViewInstance>(null);
   const scrollY = useRef(0);
   const viewport = useRef(0);
 
@@ -823,6 +826,7 @@ export function HistoryList() {
           y: 0,
           animated: scrollAnimates({ reducedMotion: reducedMotionNow(), distance: scrollY.current, viewport: viewport.current }),
         });
+        asideRef.current?.scrollTo({ y: 0, animated: !reducedMotionNow() });
         requestFocus(rePressFocusDay(sectionModels.current, todayRef.current));
       }),
     [navigation, ledger, requestFocus],
@@ -913,6 +917,8 @@ export function HistoryList() {
   // still beside the days so the week stays in reach however far the list scrolls; the
   // days are the second. Null at compact and upright, where the header scrolls with the
   // days as on main.
+  // Until the header has a read to draw (the first load, a failed one, no pet) the days
+  // column takes the whole row, so its skeleton or its state never sits beside an empty half.
   const canvas = useCanvas();
   const header = headerSnap ? (
     <View style={styles.header} testID="history-list-header">
@@ -937,6 +943,7 @@ export function HistoryList() {
       />
     </View>
   ) : null;
+  const aside = canvas !== null && header !== null;
 
   // The items dated before the record (CUL-1242): footer lines, never sections, so no count,
   // coverage line, run or strip door ever sees them.
@@ -1037,20 +1044,26 @@ export function HistoryList() {
         <RunRevealContext.Provider value={runReveal.request}>
           {/* One tree at every width: the list keeps its place, so a fold or an unfold
               restyles it and never remounts it (open runs, the scroll, a landing in flight
-              survive). Only the header moves between the aside and the list's own header;
-              it holds no state of its own. At compact the aside is an empty View, drawing
+              survive). Only the header moves between the aside and the list's own header,
+              and remounts as it does: the week it shows lives in the scope store, so it
+              comes back on the same week. At compact the aside is an empty View, drawing
               nothing, and the split is the column main drew. */}
-          <View testID="history-split" style={[styles.split, canvas && styles.splitRow]}>
-            <View testID="history-aside" style={canvas ? styles.aside : null}>
-              {canvas && header ? (
-                <ScrollView contentContainerStyle={styles.asideContent} testID="history-aside-scroll">
+          <View testID="history-split" style={[styles.split, aside && styles.splitRow]}>
+            <View testID="history-aside" style={aside ? styles.aside : null}>
+              {aside ? (
+                <ScrollView
+                  ref={asideRef}
+                  contentContainerStyle={styles.asideContent}
+                  keyboardDismissMode="on-drag"
+                  testID="history-aside-scroll"
+                >
                   {header}
                 </ScrollView>
               ) : null}
             </View>
             <SectionList<HistorySection, ListSection>
               ref={listRef}
-              style={[styles.list, canvas && styles.listShare]}
+              style={[styles.list, aside && styles.listShare]}
               sections={sections}
               keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
               renderSectionHeader={renderSectionHeader}
@@ -1061,7 +1074,7 @@ export function HistoryList() {
               // A week of days on the first paint (a day is three cells: its header, its body, its
               // footer): the strip shows this week, so a landing from it never waits on a measure.
               initialNumToRender={INITIAL_CELLS}
-              ListHeaderComponent={(canvas ? null : header) ?? undefined}
+              ListHeaderComponent={(aside ? null : header) ?? undefined}
               ListEmptyComponent={empty ?? undefined}
               ListFooterComponent={footer ?? undefined}
               onEndReached={() => {
