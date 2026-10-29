@@ -2241,3 +2241,39 @@ describe('FAB — the mix pill', () => {
     expect(p?.kind === 'meal' && p.foodProductName).toBeNull();
   });
 });
+
+// CUL-2242 — at regular the tab bar is a rail down the right edge, and the disc stands at
+// its foot, centred in it and clear of the home indicator. A phone keeps its corner.
+describe('FAB — the seat at the rail’s foot on the unfolded Duo', () => {
+  const RN = require('react-native');
+  const { SafeAreaInsetsContext } = require('react-native-safe-area-context');
+  const { TAB_RAIL_WIDTH } = require('../../hooks/useLayoutClass');
+  const { FAB_BOTTOM, FAB_DISC, FAN_RIGHT_INSET } = require('../../lib/fanBudget');
+  const INSETS = { top: 24, right: 30, bottom: 20, left: 0 };
+  let dims: jest.SpyInstance;
+  afterEach(() => dims?.mockRestore());
+
+  function seatAt(width: number, height: number) {
+    dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width, height, fontScale: 1, scale: 3 });
+    const view = render(
+      <SafeAreaInsetsContext.Provider value={INSETS}>
+        <FAB />
+      </SafeAreaInsetsContext.Provider>,
+    );
+    // The disc's container is the touch View's parent.
+    return StyleSheet.flatten(view.getByTestId('fab-disc-touch').parent!.parent!.props.style);
+  }
+
+  it.each([[320, 568], [390, 844], [466, 678]])('a phone (%ix%i) keeps the corner over the bottom bar', (w, h) => {
+    const seat = seatAt(w, h);
+    expect(seat).toMatchObject({ position: 'absolute', bottom: FAB_BOTTOM, right: FAN_RIGHT_INSET });
+  });
+
+  it.each([[626, 890], [890, 626]])('the unfolded Duo (%ix%i) seats the disc centred in the rail', (w, h) => {
+    const seat = seatAt(w, h);
+    expect(seat.right).toBe(INSETS.right + (TAB_RAIL_WIDTH - FAB_DISC) / 2);
+    expect(seat.bottom).toBe(INSETS.bottom + theme.space3);
+    // The disc fits inside the rail's own width, so it never reaches over a card.
+    expect((seat.right as number) - INSETS.right + FAB_DISC).toBeLessThanOrEqual(TAB_RAIL_WIDTH);
+  });
+});

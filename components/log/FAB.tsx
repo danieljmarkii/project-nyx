@@ -15,7 +15,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useColumnWidth, useWindowFrame } from '../../hooks/useLayoutClass';
+import { TAB_RAIL_WIDTH, useColumnWidth, useTabRail, useWindowFrame } from '../../hooks/useLayoutClass';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
@@ -584,6 +584,15 @@ export function FAB() {
   // The page the disc and the pills are measured on, for the slide's signature below.
   const windowFrame = useWindowFrame();
   const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
+  // At regular the tab bar is a rail down the right edge (CUL-2242), and the disc stands
+  // at its foot, centred in it, clear of the home indicator: the + belongs to the bar, so
+  // it never sits over a card. The layout steps out to the window at regular, so these
+  // offsets are the window's. Null at compact, where the disc keeps the phone's corner.
+  const rail = useTabRail();
+  const safeBottom = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  const railSeat = rail
+    ? { right: rail.safeRight + (TAB_RAIL_WIDTH - FAB_DISC) / 2, bottom: safeBottom + theme.space3 }
+    : null;
   const fanScroll = useRef<ScrollViewInstance>(null);
   const fanSnapped = useRef(false);
 
@@ -1635,7 +1644,7 @@ export function FAB() {
           </Animated.View>
         )}
 
-        <View style={styles.fabContainer} pointerEvents="box-none">
+        <View style={[styles.fabContainer, railSeat]} pointerEvents="box-none">
           {open && (
             <View style={styles.fan} pointerEvents="box-none">
               {fanPlan.scroll && activePet ? (

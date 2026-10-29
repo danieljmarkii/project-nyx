@@ -1,5 +1,7 @@
+import { useContext } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { useColumn } from '../../hooks/useLayoutClass';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { TAB_RAIL_WIDTH, useColumn, useTabRail } from '../../hooks/useLayoutClass';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { PetAvatar } from '../pet/PetAvatar';
@@ -115,6 +117,12 @@ const TAB_BOTTOM_PAD = Platform.OS === 'ios' ? theme.space3 : theme.space1;
  */
 export const TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD + TAB_BOTTOM_PAD;
 
+// The rail (CUL-2242). Each tab is the bottom bar's tab turned on its side: the same
+// slot, label and tick, in a box with the bar's own top and bottom padding, so a tab
+// reads the same whichever edge it stands on. The rail's top clears the status bar.
+const RAIL_TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD * 2;
+const RAIL_TOP_PAD = theme.space2;
+
 export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBarProps) {
   // Subscribed, not read once: switching pets must re-title the tab, and the
   // selector keeps that to the two fields the bar actually draws.
@@ -123,15 +131,33 @@ export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBar
 
   // The ladder is a function of the tab's width, and the tab's width is the column
   // split between the routes — so it re-resolves on rotation and on a foldable,
-  // rather than baking in the width the app happened to launch at. At regular the tab
-  // navigator spans the window (app/(tabs)/_layout.tsx), so the bar's surface reaches
-  // the edge and the bar pads its tabs into the column (CUL-2237).
-  const { width, gutter } = useColumn();
-  const labelBudget = tabLabelBudget(width, state.routes.length);
+  // rather than baking in the width the app happened to launch at. At regular the bar
+  // is a rail down the right edge (CUL-2242), every tab the rail's width, so the ladder
+  // fits the name to one tab of it.
+  const { width } = useColumn();
+  const rail = useTabRail();
+  const insets = useContext(SafeAreaInsetsContext);
+  const labelBudget = rail
+    ? tabLabelBudget(TAB_RAIL_WIDTH, 1)
+    : tabLabelBudget(width, state.routes.length);
   const petLabel = resolvePetTabLabel(petName, labelBudget);
 
   return (
-    <View style={[styles.tabBar, gutter > 0 && { paddingHorizontal: gutter }]}>
+    <View
+      testID="nyx-tab-bar"
+      style={
+        rail
+          ? [
+              styles.rail,
+              {
+                width: rail.width,
+                paddingRight: rail.safeRight,
+                paddingTop: (insets?.top ?? 0) + RAIL_TOP_PAD,
+              },
+            ]
+          : styles.tabBar
+      }
+    >
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const isFocused = state.index === index;
@@ -155,7 +181,7 @@ export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBar
         return (
           <TouchableOpacity
             key={route.key}
-            style={styles.tab}
+            style={[styles.tab, rail ? styles.railTab : styles.barTab]}
             onPress={() => {
               const event = emitter.emit({
                 type: 'tabPress',
@@ -218,8 +244,23 @@ const styles = StyleSheet.create({
     paddingBottom: TAB_BOTTOM_PAD,
     paddingTop: TAB_TOP_PAD,
   },
-  tab: {
+  // Down the right edge under the status bar, the + at its foot (the FAB places itself
+  // there). The divider moves with the bar, to the edge that faces the content.
+  rail: {
+    flexDirection: 'column',
+    backgroundColor: theme.colorSurface,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colorBorder,
+  },
+  // A fixed box, never `flex: 0`: react-native-web spells that with a zero basis, which
+  // beats the height and lays every tab out zero tall.
+  railTab: {
+    height: RAIL_TAB_HEIGHT,
+  },
+  barTab: {
     flex: 1,
+  },
+  tab: {
     alignItems: 'center',
     justifyContent: 'center',
     // The same 6pt the ladder's budget subtracts. It was missing here while the
