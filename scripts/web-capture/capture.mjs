@@ -155,6 +155,15 @@ const push = (path) => (page) =>
     window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
   }, path);
 
+// Every scroll on the page at its end: on web a ScrollView is an overflowing element.
+const toEnd = (page) =>
+  page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) {
+      const y = getComputedStyle(el).overflowY;
+      if ((y === 'auto' || y === 'scroll') && el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
+    }
+  });
+
 const SHOTS = [
   { name: 'home-juniper', pet: 'juniper', go: [] },
   { name: 'home-miso', pet: 'miso', go: [] },
@@ -178,6 +187,9 @@ const SHOTS = [
   // The log sheet is not: the FAB's fan does not open on the web build.
   { name: 'pet-switcher-juniper', pet: 'juniper', go: [label(/^Switch pet/)] },
   { name: 'scope-menu-pepper', pet: 'pepper', go: [tab('History'), label(/^Date range/)] },
+  // CUL-2246: Home at the end of its scroll, where the + must clear the last card's last
+  // row at every height (Home's bottom inset, lib/fabFootprint.ts).
+  { name: 'home-end-juniper', pet: 'juniper', go: [toEnd] },
 ];
 
 // Each size the run photographs, as `W[xH][@text]` (CUL-2237): a width alone keeps the
