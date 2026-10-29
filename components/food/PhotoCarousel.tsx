@@ -38,7 +38,11 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   // A fold changes the slide width under an offset written in the old one, which would
   // leave the owner between two photos (CUL-2246). Re-anchor on the photo they were on,
   // as a snap: the window moved, not the owner.
+  // Until it lands, an offset still in the old width says nothing about the page, so a
+  // scroll event in between is not allowed to rewrite it.
+  const anchoredWidth = useRef(screenWidth);
   useEffect(() => {
+    anchoredWidth.current = screenWidth;
     scrollRef.current?.scrollTo({ x: pageRef.current * screenWidth, animated: false });
   }, [screenWidth]);
 
@@ -127,6 +131,7 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
 
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const x = e.nativeEvent.contentOffset.x;
+    if (anchoredWidth.current !== screenWidth) return;
     const next = Math.round(x / screenWidth);
     pageRef.current = next;
     if (next !== page) setPage(next);
