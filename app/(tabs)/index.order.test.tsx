@@ -100,8 +100,9 @@ jest.mock('../../store/petStore', () => {
 });
 
 import { render } from '@testing-library/react-native';
-import type { ReactTestInstance } from 'react-test-renderer';
 import HomeScreen from './index';
+
+type ReactTestInstance = ReturnType<ReturnType<typeof render>['getByTestId']>;
 
 /** Every `zone-*` marker in the rendered tree, in render order. */
 function zoneOrder(tree: unknown, out: string[] = []): string[] {
