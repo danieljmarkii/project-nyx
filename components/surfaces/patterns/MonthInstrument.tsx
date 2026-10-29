@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { colorRoles, theme, shadows } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
+import { useLayoutClass } from '../../../hooks/useLayoutClass';
+import { squareRowCap, withCap } from '../../../lib/layoutCaps';
 import { dayMarkDateWord } from '../../../lib/chartCopy';
 import { TIER_WORDS, TIERED_CALLS_READ_AS } from '../../../lib/incidentTierWords';
 import { datedCallLinesOf } from '../../../lib/ruleSeam';
@@ -221,6 +223,9 @@ export function MonthInstrument({
   }, [facts, shown, today]);
   const lens = resolveLens(lenses, chosenLens);
   const words = lensWords(lens);
+  // At regular the month is seven capped squares wide, centred, so the whole month fits
+  // above the fold on the unfolded Duo (CUL-2238); null on a phone.
+  const rowCap = squareRowCap(useLayoutClass().width, 7, GRID_GAP);
   const model: MonthModel | null = useMemo(
     () =>
       facts
@@ -443,7 +448,7 @@ export function MonthInstrument({
             {layers.vomit ? model.line : model.coverageLine}
           </ThemedText>
 
-          <View style={styles.weekdayHeader} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+          <View style={withCap(styles.weekdayHeader, rowCap)} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
             {WEEKDAY_LABELS.map((d, i) => (
               <ThemedText key={i} style={styles.weekdayLabel}>
                 {d}
@@ -451,7 +456,7 @@ export function MonthInstrument({
             ))}
           </View>
 
-          <View style={styles.grid} testID="month-grid">
+          <View style={withCap(styles.grid, rowCap)} testID="month-grid">
             {model.rows.map((row, r) => {
               const openInRow = openDay != null && row.some((d) => d?.key === openDay);
               return (

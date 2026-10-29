@@ -11,6 +11,8 @@
 // only the blocks below it: the Type chips and the commit.
 import { StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
+import { useColumnWidth, useLayoutClass, useWindowFrame } from '../../../hooks/useLayoutClass';
+import { frameCap, withCap } from '../../../lib/layoutCaps';
 import { FILTER_CHIP_MIN_HEIGHT } from '../../ui/FilterChip';
 import { ThemedText } from '../../ui/ThemedText';
 import { Block, Line, SilhouetteFrame, Surface } from './Silhouette';
@@ -28,12 +30,14 @@ export interface CaptureSilhouetteProps {
 }
 
 export function CaptureSilhouette({ working, withHead = true }: CaptureSilhouetteProps) {
+  // The hero holds the 4:3 frame's place, so it caps the same way the frame does (CUL-2238).
+  const heroCap = frameCap(useLayoutClass().width, useColumnWidth(), useWindowFrame().height, 4 / 3);
   return (
     <View style={styles.fill}>
       {withHead ? (
         <>
           <SilhouetteFrame testID={`${CAPTURE_SILHOUETTE_TEST_ID}-hero`}>
-            <Block height={0} radius={theme.radiusMedium} style={styles.hero} />
+            <Block height={0} radius={theme.radiusMedium} style={withCap(styles.hero, heroCap)} />
           </SilhouetteFrame>
           <View style={styles.line} accessible accessibilityRole="progressbar">
             <Tick working={working} />

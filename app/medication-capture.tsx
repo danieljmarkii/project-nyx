@@ -53,6 +53,8 @@ import {
 import { uploadedPhotoPath } from '../lib/captureUploads';
 import { uuid } from '../lib/utils';
 import { useAppConfig } from '../hooks/useAppConfig';
+import { useColumnWidth, useLayoutClass, useWindowFrame } from '../hooks/useLayoutClass';
+import { frameCap, withCap } from '../lib/layoutCaps';
 import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
 import { consentUnreadableNotice } from '../constants/aiConsentCopy';
 import { AiConsentSheet } from '../components/consent/AiConsentSheet';
@@ -86,6 +88,9 @@ interface MedicationExtraction {
 
 export default function MedicationCaptureScreen() {
   const { activePet } = usePetStore();
+  // The modal presents outside the column, so at regular the label photo caps by height and
+  // by the column and centres (CUL-2238): never taller than the screen. Null on a phone.
+  const heroCap = frameCap(useLayoutClass().width, useColumnWidth(), useWindowFrame().height, 4 / 3);
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   // The dose completion card (CUL-613) — the same store handle the picker path
@@ -578,7 +583,7 @@ export default function MedicationCaptureScreen() {
         <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.confirmScroll} keyboardShouldPersistTaps="handled">
             {labelPhoto && (
-              <View style={styles.confirmHero}>
+              <View style={withCap(styles.confirmHero, heroCap)}>
                 <Image source={{ uri: labelPhoto.localUri }} style={styles.confirmPhoto} resizeMode="cover" />
                 <View style={styles.confirmOverlay}>
                   <ThemedText style={styles.confirmName} numberOfLines={2}>{genericName || 'Medication'}</ThemedText>

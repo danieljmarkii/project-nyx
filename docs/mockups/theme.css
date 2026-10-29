@@ -123,6 +123,10 @@
   --layoutRegularMinWidth: 600px;
   --layoutShortMaxHeight: 700px;
   --layoutColumnMaxWidth: 560px;
+  --layoutDayCellMax: 56px;
+  --layoutTileMax: 120px;
+  --layoutCompareLabelMax: 160px;
+  --layoutFrameMaxHeightRatio: 0.5px;
   --hitTarget: 44px;
   --railWidth: 3px;
   --radiusXS: 4px;

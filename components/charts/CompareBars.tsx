@@ -1,6 +1,8 @@
 import { Animated, StyleSheet, View } from 'react-native';
 import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
+import { useLayoutClass } from '../../hooks/useLayoutClass';
+import { compareLabelCap, withCap } from '../../lib/layoutCaps';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import type { CompareWindowsModel } from '../../lib/chartModels';
 import { compareBarsA11yLabel } from '../../lib/chartCopy';
@@ -58,6 +60,9 @@ const MIN_FILL_FRAC = 0.02;
 export function CompareBars({ model, noun, drawIn = false, identity = 'compare', drawDelayMs = 0, masked, maskCaption = null }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
+  // The label column is a share of the chart; at regular it stops growing so the bars
+  // take the room (CUL-2238). A width cap only: the chart reads as it does on a phone.
+  const labelCap = compareLabelCap(useLayoutClass().width);
   const { markStyle, labelStyle } = useDrawIn({
     kind: 'compare',
     count: 2,
@@ -76,7 +81,7 @@ export function CompareBars({ model, noun, drawIn = false, identity = 'compare',
           const isMasked = masked?.[i] === true;
           return (
             <View key={i} style={styles.row} testID={`compare-window-${i}`}>
-              <View style={styles.labels}>
+              <View style={withCap(styles.labels, labelCap)}>
                 <ThemedText style={styles.windowLabel} numberOfLines={2}>
                   {w.label}
                 </ThemedText>

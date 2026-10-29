@@ -1,6 +1,23 @@
 import { render, fireEvent, within } from '@testing-library/react-native';
 import { EventTypePicker } from './EventTypePicker';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { theme } from '../../constants/theme';
+import { columnFor, layoutClassFor } from '../../hooks/useLayoutClass';
+
+// The window the grid sees: a 390pt phone unless a test says otherwise (jest's own window
+// is 750pt wide, which is regular).
+let mockWindow = { width: 390, height: 844 };
+jest.mock('../../hooks/useLayoutClass', () => {
+  const actual = jest.requireActual('../../hooks/useLayoutClass');
+  return {
+    ...actual,
+    useLayoutClass: () => actual.layoutClassFor(mockWindow.width, mockWindow.height),
+    useColumnWidth: () => actual.columnFor(mockWindow.width).width,
+  };
+});
+beforeEach(() => {
+  mockWindow = { width: 390, height: 844 };
+});
 
 // EventTypePicker is a pure props component (no store/hook), so the grid renders
 // directly. There is ONE grid since both picker betas left beta together (CUL-962):
@@ -19,6 +36,24 @@ describe('EventTypePicker — the W1 family grid', () => {
   it('renders the grid', () => {
     const { toJSON } = render(<EventTypePicker onSelectType={jest.fn()} />);
     expect(toJSON()).toMatchSnapshot();
+  });
+
+  // CUL-2238: the log modal presents outside the column, so at regular the grid caps
+  // itself at the column's width and centres; a phone's grid carries no cap at all.
+  it('caps the grid at the column on the unfolded Duo, and not on a phone', () => {
+    // The grid is the ScrollView's content: ScrollView > its content View > the grid.
+    type Node = { props: { style: unknown }; children: Node[] | null };
+    const gridStyle = (root: ReturnType<typeof render>) => (root.toJSON() as unknown as Node).children?.[0].children?.[0].props.style;
+    const phone = render(<EventTypePicker onSelectType={jest.fn()} />);
+    expect(gridStyle(phone)).toEqual({ gap: theme.space3, padding: theme.space2 });
+    phone.unmount();
+
+    mockWindow = { width: 890, height: 626 };
+    expect(layoutClassFor(890, 626).width).toBe('regular');
+    const duo = render(<EventTypePicker onSelectType={jest.fn()} />);
+    expect(gridStyle(duo)).toEqual(
+      expect.arrayContaining([{ maxWidth: columnFor(890).width, width: '100%', alignSelf: 'center' }]),
+    );
   });
 
   it('renders the seven family groups of the confirmed W1 frame, in order', () => {

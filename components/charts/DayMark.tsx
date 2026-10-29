@@ -1,6 +1,8 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 import { colorRoles, theme } from '../../constants/theme';
+import { useLayoutClass } from '../../hooks/useLayoutClass';
+import { dayCellCap } from '../../lib/layoutCaps';
 import { dayMarkA11yLabel, type DayMarkCoverage, type DayMarkPhoto } from '../../lib/chartCopy';
 import { isCallDisplay, type CallDisplay } from '../../lib/incidentTierWords';
 import { holdsVomit } from '../../lib/monthModel';
@@ -175,6 +177,8 @@ export function DayMarkFace({
   onPress,
 }: DayMarkFaceProps) {
   const rose = box === 'rose';
+  // A square never grows past the cap at regular (CUL-2238), whatever row it sits in.
+  const cap = dayCellCap(useLayoutClass().width);
   const inner = (
     <>
       <ThemedText
@@ -223,6 +227,8 @@ export function DayMarkFace({
     dim && styles.boxDim,
     today && styles.boxToday,
     selected && styles.boxSelected,
+    // Only at regular, so a phone's array is exactly main's.
+    ...(cap ? [cap] : []),
   ];
 
   if (onPress && box !== 'outlined' && box !== 'none') {

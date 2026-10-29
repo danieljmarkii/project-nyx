@@ -5,6 +5,9 @@
 // wouldn't cheaply catch: a stale fallback URL surviving a photo removal, or a
 // live "Add photo" target flashing over an existing photo mid-fallback.
 
+import type { WidthClass } from '../hooks/useLayoutClass';
+import { heroHeight } from './layoutCaps';
+
 /**
  * The event screen's photo hero, in points. Held here — beside the display predicate
  * the screen already imports — rather than in the screen, so the Design v2 event
@@ -12,6 +15,14 @@
  * the same question ("how tall is the hero"), so they are one constant (C-34).
  */
 export const EVENT_HERO_HEIGHT = 320;
+
+/**
+ * The hero's height at this width (CUL-2238): `EVENT_HERO_HEIGHT` on a phone; at regular it
+ * follows the column so the crop keeps the phone's shape, never past half the window.
+ */
+export function eventHeroHeightFor(width: WidthClass, columnWidth: number, windowHeight: number): number {
+  return heroHeight(width, EVENT_HERO_HEIGHT, columnWidth, windowHeight);
+}
 
 export interface EventPhotoInput {
   // On-device file (preferred — no network). null when absent or cache-evicted.
