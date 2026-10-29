@@ -34,6 +34,8 @@ import { TimeEditSheet } from '../components/ui/TimeEditSheet';
 import { PhotoSlots } from '../components/food/PhotoSlots';
 import { CaptureReadCard } from '../components/food/CaptureReadCard';
 import { useIsOnline } from '../hooks/useIsOnline';
+import { useColumnWidth, useLayoutClass, useWindowFrame } from '../hooks/useLayoutClass';
+import { frameCap } from '../lib/layoutCaps';
 import {
   ProteinSetPicker,
   type ProteinSetPickerHandle,
@@ -132,6 +134,13 @@ function mapAiFormat(ai: string | null | undefined): string {
 
 export default function FoodCaptureScreen() {
   const { activePet, pets } = usePetStore();
+  // The modal presents outside the column, so at regular the photo frames cap by height and
+  // by the column and centre (CUL-2238): a frame is never taller than the screen. Null on a phone.
+  const widthClass = useLayoutClass().width;
+  const columnWidth = useColumnWidth();
+  const windowHeight = useWindowFrame().height;
+  const reviewFrameCap = frameCap(widthClass, columnWidth, windowHeight, 4 / 3);
+  const confirmFrameCap = frameCap(widthClass, columnWidth, windowHeight, 16 / 9);
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   // The meal completion card (CUL-613). Selected, not destructured off getState(),
@@ -927,7 +936,7 @@ export default function FoodCaptureScreen() {
         <Header title="Add a food" leading="back" onLeadingPress={() => setStep('intro')} />
         <ScrollView contentContainerStyle={styles.scroll}>
           {frontPhoto && (
-            <HomeCard noPadding style={styles.heroCard}>
+            <HomeCard noPadding style={reviewFrameCap ? [styles.heroCard, reviewFrameCap] : styles.heroCard}>
               <Image
                 source={{ uri: frontPhoto.localUri }}
                 style={styles.reviewPhoto}
@@ -996,7 +1005,7 @@ export default function FoodCaptureScreen() {
         <Header title="Confirm" />
         <ScrollView contentContainerStyle={styles.confirmScroll} scrollEnabled={!reading}>
           {frontPhoto && (
-            <HomeCard noPadding style={styles.heroCard}>
+            <HomeCard noPadding style={confirmFrameCap ? [styles.heroCard, confirmFrameCap] : styles.heroCard}>
               {reading ? (
                 // During the wait the photo is only a picture: no control, rather than a
                 // control announced as dimmed (C-7).

@@ -60,6 +60,8 @@ import {
 } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { colorRoles, theme } from '../../constants/theme';
+import { useLayoutClass } from '../../hooks/useLayoutClass';
+import { squareRowCap } from '../../lib/layoutCaps';
 import { claimsFromOf, dayFactsOn, shiftDay, type DayFacts, type HistoryCourse, type HistoryFacts } from '../../lib/historyDays';
 import type { ResolvedWindow } from '../../lib/historyWindows';
 import {
@@ -131,6 +133,9 @@ export function WeekStrip({ facts, window, course, today, petName }: WeekStripPr
   const setStripWeek = useHistoryScopeStore((s) => s.setStripWeek);
 
   const [width, setWidth] = useState(0);
+  // At regular the whole strip is seven capped squares wide and centred (CUL-2238): the
+  // measured width, the pages and the paging all follow, and the arrows sit over the week.
+  const rowCap = squareRowCap(useLayoutClass().width, 7, CELL_GAP);
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const next = e.nativeEvent.layout.width;
     setWidth((prev) => (Math.abs(prev - next) < 0.5 ? prev : next));
@@ -166,7 +171,7 @@ export function WeekStrip({ facts, window, course, today, petName }: WeekStripPr
   if (!courseLoading && weeks.length === 0) return null;
 
   return (
-    <View onLayout={onLayout} style={styles.strip} testID="week-strip">
+    <View onLayout={onLayout} style={[styles.strip, rowCap]} testID="week-strip">
       {answered && bounds !== null ? (
         <StripPager
           petId={petId}

@@ -7,7 +7,8 @@
 // breathing one appears only once the read section is waiting on the server.
 import { StyleSheet, View } from 'react-native';
 import { theme } from '../../../constants/theme';
-import { EVENT_HERO_HEIGHT } from '../../../lib/eventPhoto';
+import { eventHeroHeightFor } from '../../../lib/eventPhoto';
+import { useColumnWidth, useLayoutClass, useWindowFrame } from '../../../hooks/useLayoutClass';
 import { Block, Line, SilhouetteFrame, Surface } from './Silhouette';
 import { TICK_MOTION } from './Tick';
 
@@ -16,6 +17,8 @@ export const EVENT_SILHOUETTE_TEST_ID = 'design-v2-event-silhouette';
 const CHEVRON = 24;
 
 export function EventSilhouette() {
+  // The hero's shape at this width, the same number the screen draws (CUL-2238).
+  const heroHeight = eventHeroHeightFor(useLayoutClass().width, useColumnWidth(), useWindowFrame().height);
   return (
     <SilhouetteFrame testID={EVENT_SILHOUETTE_TEST_ID} style={styles.fill}>
       <View style={styles.header}>
@@ -27,7 +30,7 @@ export function EventSilhouette() {
       </View>
 
       <View style={styles.body}>
-        <Block height={EVENT_HERO_HEIGHT} radius={theme.radiusMedium} />
+        <Block height={heroHeight} radius={theme.radiusMedium} />
 
         {/* The read card: a still tick beside the pending line. */}
         <Surface style={styles.readCard}>

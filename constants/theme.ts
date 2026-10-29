@@ -378,6 +378,13 @@ export const theme = {
   layoutRegularMinWidth: 600,
   layoutShortMaxHeight: 700,
   layoutColumnMaxWidth: 560,
+  // What a piece inside the column may grow to at regular (CUL-2238), so it rearranges
+  // rather than stretching. A day square stays near the largest phone's; a photo tile near
+  // a phone's; a capture frame is never taller than this share of the window.
+  layoutDayCellMax: 56,
+  layoutTileMax: 120,
+  layoutCompareLabelMax: 160,
+  layoutFrameMaxHeightRatio: 0.5,
 
   // ── Hit target ────────────────────────────────────────────────────────────
   // The 44pt minimum touch target (Apple HIG; CUL-658, CUL-1897 D3). `minHeight: 44`

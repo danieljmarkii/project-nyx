@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { type TextInstance, Image, Pressable, StyleSheet, View, type Text } from 'react-native';
+import { type TextInstance, Image, Pressable, StyleSheet, View, type LayoutChangeEvent, type Text, type ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
+import { useLayoutClass } from '../../../hooks/useLayoutClass';
+import { tilesAcross } from '../../../lib/layoutCaps';
 import type { GalleryTile, SignalScreenEpisodes } from '../../../lib/signalScreen';
 import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
@@ -93,6 +95,14 @@ interface Props {
 }
 
 export function EpisodeGallery({ episodes, headerRef }: Props) {
+  // At regular the tiles rearrange instead of stretching (CUL-2238): as many across as keep
+  // each one at most a tile wide, filling the row. A phone keeps the 23% four-up.
+  const regular = useLayoutClass().width === 'regular';
+  const [gridWidth, setGridWidth] = useState(0);
+  const onGridLayout = (e: LayoutChangeEvent) => setGridWidth(e.nativeEvent.layout.width);
+  // Floored: a fractional share can round past the row and wrap the last tile.
+  const tileWidth: ViewStyle | null =
+    regular && gridWidth > 0 ? { width: Math.floor(tilesAcross(gridWidth, theme.layoutTileMax, theme.space1).size) } : null;
   return (
     <View testID="episode-gallery">
       <View style={styles.header}>
@@ -104,9 +114,9 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
         </ThemedText>
       </View>
       {episodes.tiles.length > 0 ? (
-        <View style={styles.grid}>
+        <View style={styles.grid} onLayout={regular ? onGridLayout : undefined}>
           {episodes.tiles.map((tile) => (
-            <Tile key={tile.eventId} tile={tile} tracksPattern={episodes.tracksPattern} />
+            <Tile key={tile.eventId} tile={tile} tracksPattern={episodes.tracksPattern} widthStyle={tileWidth} />
           ))}
         </View>
       ) : null}
@@ -114,7 +124,7 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
   );
 }
 
-function Tile({ tile, tracksPattern }: { tile: GalleryTile; tracksPattern: boolean }) {
+function Tile({ tile, tracksPattern, widthStyle }: { tile: GalleryTile; tracksPattern: boolean; widthStyle: ViewStyle | null }) {
   const { localUri, storagePath } = tile.photo;
   // A stale cache path is no local file at all (CUL-1269): asked once per path, the way
   // the record screen asks before it trusts the same column.
@@ -167,7 +177,7 @@ function Tile({ tile, tracksPattern }: { tile: GalleryTile; tracksPattern: boole
           : tileA11yLabel(tile, tracksPattern)
       }
       accessibilityHint="Opens this episode's record"
-      style={styles.tile}
+      style={widthStyle ? [styles.tile, widthStyle] : styles.tile}
       testID={`episode-tile-${tile.eventId}`}
     >
       <View style={styles.photoWell}>

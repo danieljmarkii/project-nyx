@@ -26,7 +26,8 @@ import {
 import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
-import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '../../lib/eventPhoto';
+import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT, eventHeroHeightFor } from '../../lib/eventPhoto';
+import { useColumnWidth, useLayoutClass, useWindowFrame } from '../../hooks/useLayoutClass';
 import { localFileExists } from '../../lib/localFile';
 import { foodFormatTag } from '../../lib/food';
 import { kgToLbs } from '../../lib/weight';
@@ -182,6 +183,9 @@ export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { removeFromToday } = useEventStore();
   const { pets } = usePetStore();
+  // The hero keeps the phone's crop at regular (CUL-2238); exactly HERO_HEIGHT on a phone.
+  const heroHeight = eventHeroHeightFor(useLayoutClass().width, useColumnWidth(), useWindowFrame().height);
+  const heroStyle = heroHeight === HERO_HEIGHT ? styles.hero : [styles.hero, { height: heroHeight }];
 
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -946,7 +950,7 @@ export default function EventDetailScreen() {
           >
             <Image
               source={{ uri: photoUri }}
-              style={styles.hero}
+              style={heroStyle}
               resizeMode="cover"
               onError={() => {
                 // The transformed URL failed to load (image transformations

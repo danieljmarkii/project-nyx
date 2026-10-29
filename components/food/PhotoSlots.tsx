@@ -1,6 +1,8 @@
 import { Image, StyleSheet, View } from 'react-native';
 import { Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { useLayoutClass } from '../../hooks/useLayoutClass';
+import { squareRowCap } from '../../lib/layoutCaps';
 import { ThemedText } from '../ui/ThemedText';
 
 export interface PhotoSlot {
@@ -18,9 +20,12 @@ export interface PhotoSlot {
  * accessible summary, never three buttons.
  */
 export function PhotoSlots({ slots, testID }: { slots: readonly PhotoSlot[]; testID?: string }) {
+  // At regular each slot stops at a tile's width and the row centres (CUL-2238): the
+  // capture modal presents outside the column, where three slots would split the window.
+  const rowCap = squareRowCap(useLayoutClass().width, slots.length, theme.space2, theme.layoutTileMax);
   const summary = slots.map((s) => `${s.label.replace(' · ', ', ')}${s.uri ? ', added' : ''}`).join('; ');
   return (
-    <View style={styles.row} accessible accessibilityLabel={`Photos: ${summary}`} testID={testID}>
+    <View style={[styles.row, rowCap]} accessible accessibilityLabel={`Photos: ${summary}`} testID={testID}>
       {slots.map((s) => (
         <View key={s.label} style={styles.slot}>
           {s.uri ? (
