@@ -1,5 +1,5 @@
 import { theme } from '../constants/theme';
-import { bleedFor, columnFor, layoutClassFor, sheetCapFor } from './useLayoutClass';
+import { bleedFor, columnFor, layoutClassFor, sheetCapFor, sheetMaxHeightFor } from './useLayoutClass';
 
 // The sizes the captures photograph (CUL-2237): every iPhone width, the SE's height, the
 // folded Duo and the unfolded Duo both ways. Duo points are pixels ÷ 3 (unpublished).
@@ -63,5 +63,23 @@ describe('sheetCapFor', () => {
     expect(sheetCapFor(gutter)).toEqual({ marginHorizontal: 165 });
     expect(890 - 2 * (sheetCapFor(gutter)!.marginHorizontal as number)).toBe(width);
     expect(sheetCapFor(gutter, 14)).toEqual({ marginHorizontal: 179 });
+  });
+});
+
+describe('sheetMaxHeightFor', () => {
+  it('leaves a tall window to the sheet, so a phone above the short line keeps its sheet', () => {
+    expect(sheetMaxHeightFor(844, 47)).toBeNull();
+    expect(sheetMaxHeightFor(theme.layoutShortMaxHeight, 20)).toBeNull();
+  });
+
+  it('stands a short sheet to under the status bar, less one strip of scrim', () => {
+    // The SE, the folded Duo, the unfolded Duo on its side.
+    for (const [h, top] of [[667, 20], [678, 47], [626, 24]]) {
+      const cap = sheetMaxHeightFor(h, top)!;
+      expect(cap).toBe(h - top - theme.space5);
+      // Taller than the 80% a tall phone's log sheet keeps, so a short screen is not
+      // a fifth scrim while the sheet scrolls.
+      expect(cap).toBeGreaterThan(h * 0.8);
+    }
   });
 });

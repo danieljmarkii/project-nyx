@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Image, StyleSheet, ScrollView,
   TouchableOpacity, Text,
-  NativeSyntheticEvent, NativeScrollEvent,
+  NativeSyntheticEvent, NativeScrollEvent, type ScrollViewInstance,
 } from 'react-native';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -32,6 +32,15 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   // A slide is the column's live width, not a one-shot `Dimensions.get` at render
   // (CUL-2237): a fold re-renders, and the paging stays one slide per page.
   const screenWidth = useColumnWidth();
+  // The page the owner is on, beside the state the dots read, for the re-anchor below.
+  const pageRef = useRef(0);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  // A fold changes the slide width under an offset written in the old one, which would
+  // leave the owner between two photos (CUL-2246). Re-anchor on the photo they were on,
+  // as a snap: the window moved, not the owner.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ x: pageRef.current * screenWidth, animated: false });
+  }, [screenWidth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,12 +128,14 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const x = e.nativeEvent.contentOffset.x;
     const next = Math.round(x / screenWidth);
+    pageRef.current = next;
     if (next !== page) setPage(next);
   }
 
   return (
     <View>
       <ScrollView
+        ref={scrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}

@@ -28,7 +28,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 import { useAuthStore } from '../../store/authStore';
 import { cachedAiConsent, loadAiConsent } from '../../store/aiConsentStore';
-import { useSheetCap } from '../../hooks/useLayoutClass';
+import { useSheetCap, useSheetMaxHeight } from '../../hooks/useLayoutClass';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -146,9 +146,11 @@ export function EventTypeSheet({
   const insets = useSafeAreaInsets();
   // The sheet's height cap, in POINTS (CUL-755) — see the avoider below for why it is
   // neither a percentage nor a property of the avoider. Read from the window rather
-  // than hardcoded so it survives rotation and iPad multitasking.
+  // than hardcoded so it survives rotation and iPad multitasking. A short window (the SE,
+  // the folded Duo) takes the shared short-sheet height instead (CUL-2246); both are
+  // re-read on every render, so a fold re-sizes an open sheet.
   const { height: windowHeight } = useWindowDimensions();
-  const sheetMaxHeight = windowHeight * 0.8;
+  const sheetMaxHeight = useSheetMaxHeight(insets.top) ?? windowHeight * 0.8;
   const [switcherVisible, setSwitcherVisible] = useState(false);
 
   // ── ONE VEIL, ONE PHYSICS (CUL-1642) ──────────────────────────────────────

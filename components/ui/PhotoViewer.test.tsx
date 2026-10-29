@@ -227,3 +227,32 @@ describe('PhotoViewer — caption (B-590)', () => {
     expect(tree.queryByText(/·/)).toBeNull();
   });
 });
+
+// ── CUL-2246 — a fold with the viewer open keeps the photo on screen ────────
+//
+// A fold re-measures the media box. The gallery used to re-anchor on the photo that was
+// TAPPED, so an owner who had swiped on was thrown back to where they started. Now the
+// anchor is the page they are on. Mutation-proven: anchoring on `initialIndex` again
+// reds both expectations.
+describe('PhotoViewer — a fold keeps the page', () => {
+  it('re-anchors on the swiped-to photo when the box is re-measured', () => {
+    const { ScrollView } = require('react-native') as typeof import('react-native');
+    const rafs: FrameRequestCallback[] = [];
+    const raf = jest.spyOn(global, 'requestAnimationFrame').mockImplementation((cb) => { rafs.push(cb); return 0; });
+    try {
+      const uris = ['file:///a.jpg', 'file:///b.jpg', 'file:///c.jpg'];
+      const tree = render(<PhotoViewer visible uris={uris} initialIndex={0} onClose={() => {}} />);
+      layout(tree, 393, 700);
+      const gallery = () => tree.UNSAFE_getAllByType(ScrollView).find((n) => n.props.horizontal)!;
+      fireEvent(gallery(), 'scroll', { nativeEvent: { contentOffset: { x: 393 * 2, y: 0 } } });
+      const scrollTo = jest.spyOn(gallery().instance, 'scrollTo');
+      // The unfolded Duo on its side.
+      layout(tree, 890, 560);
+      rafs.splice(0).forEach((cb) => cb(0));
+      expect(gallery().props.contentOffset).toEqual({ x: 890 * 2, y: 0 });
+      expect(scrollTo).toHaveBeenLastCalledWith({ x: 890 * 2, animated: false });
+    } finally {
+      raf.mockRestore();
+    }
+  });
+});

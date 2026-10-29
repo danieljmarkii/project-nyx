@@ -19,7 +19,7 @@
 // itemises exposures would let the record be edited to agree with the owner's
 // memory, on the artifact a vet reads.
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { ThemedText } from '../ui/ThemedText';
@@ -27,7 +27,7 @@ import {
   EXPOSURE_REASON_TITLE,
   type TrialExposureRow,
 } from '../../lib/trialExposuresScreen';
-import { useSheetCap } from '../../hooks/useLayoutClass';
+import { useSheetCap, useSheetMaxHeight } from '../../hooks/useLayoutClass';
 
 interface Props {
   row: TrialExposureRow;
@@ -36,6 +36,12 @@ interface Props {
 
 export function ExposureReasonSheet({ row, onClose }: Props) {
   const sheetCap = useSheetCap();
+  // On a short window the sheet stops under the status bar and the reason scrolls in what
+  // is left (CUL-2246), so Close stays on screen; null on a tall one. The bottom inset sits
+  // outside this sheet (the SafeAreaView below), so it comes off the height here.
+  const insets = useSafeAreaInsets();
+  const shortMaxHeight = useSheetMaxHeight(insets.top);
+  const sheetMaxHeight = shortMaxHeight === null ? null : { maxHeight: shortMaxHeight - insets.bottom };
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
@@ -45,7 +51,7 @@ export function ExposureReasonSheet({ row, onClose }: Props) {
         accessibilityLabel="Close"
       />
       <SafeAreaView edges={['bottom']} style={styles.sheetWrap}>
-        <View style={[styles.sheet, sheetCap]} testID="exposure-reason-sheet">
+        <View style={[styles.sheet, sheetMaxHeight, sheetCap]} testID="exposure-reason-sheet">
           <View style={styles.grabber} />
           <ThemedText style={styles.title}>{EXPOSURE_REASON_TITLE}</ThemedText>
           {/* The row's own identity, so the sheet can never be read against the
