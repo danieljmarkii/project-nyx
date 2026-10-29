@@ -440,7 +440,8 @@ describe('the rail at regular', () => {
   }
 
   it.each([320, 390, 466])('a phone (%ipt) keeps the bottom row, safe areas untouched', (w) => {
-    const { bar } = renderAt(w);
+    const { bar, getByLabelText } = renderAt(w);
+    expect(StyleSheet.flatten(getByLabelText('History').props.style).flex).toBe(1);
     expect(bar.flexDirection).toBe('row');
     expect(bar.height).toBe(TAB_HEIGHT);
     expect(bar.width).toBeUndefined();
@@ -464,7 +465,7 @@ describe('the rail at regular', () => {
     const { getByLabelText } = renderAt(890);
     for (const label of ['Home', 'History', 'Foods', 'Biscuit — pet profile']) {
       const tab = StyleSheet.flatten(getByLabelText(label).props.style);
-      expect(tab.flex).toBe(0);
+      expect(tab.flex).toBeUndefined();
       expect(tab.height).toBeGreaterThanOrEqual(theme.hitTarget);
     }
   });

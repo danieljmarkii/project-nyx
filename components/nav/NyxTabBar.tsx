@@ -181,7 +181,7 @@ export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBar
         return (
           <TouchableOpacity
             key={route.key}
-            style={rail ? [styles.tab, styles.railTab] : styles.tab}
+            style={[styles.tab, rail ? styles.railTab : styles.barTab]}
             onPress={() => {
               const event = emitter.emit({
                 type: 'tabPress',
@@ -252,12 +252,15 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: theme.colorBorder,
   },
+  // A fixed box, never `flex: 0`: react-native-web spells that with a zero basis, which
+  // beats the height and lays every tab out zero tall.
   railTab: {
-    flex: 0,
     height: RAIL_TAB_HEIGHT,
   },
-  tab: {
+  barTab: {
     flex: 1,
+  },
+  tab: {
     alignItems: 'center',
     justifyContent: 'center',
     // The same 6pt the ladder's budget subtracts. It was missing here while the

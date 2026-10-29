@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { createContext, useContext } from 'react';
 import { useWindowDimensions, type ViewStyle } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { theme } from '../constants/theme';
@@ -69,11 +69,12 @@ export function tabRailFor(windowWidth: number, safeRight = 0): TabRailGeometry 
 
 // The insets context, not the hook: the hook throws without a provider, and a component
 // test renders most of these without one (on device expo-router's root always provides it).
-// A suite that mocks the library away leaves no context at all; that is fixed per module,
-// so the hook order is the same on every render.
+// A suite that mocks the library away leaves no context at all, so a stand-in keeps the
+// read unconditional.
+const NO_INSETS = createContext<{ right: number } | null>(null);
+
 function useSafeRight(): number {
-  if (!SafeAreaInsetsContext) return 0;
-  return useContext(SafeAreaInsetsContext)?.right ?? 0;
+  return useContext(SafeAreaInsetsContext ?? NO_INSETS)?.right ?? 0;
 }
 
 export function useTabRail(): TabRailGeometry | null {

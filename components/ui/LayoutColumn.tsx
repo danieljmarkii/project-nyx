@@ -16,14 +16,10 @@ import { useColumn } from '../../hooks/useLayoutClass';
  * bleeds out by `useColumn().gutter` on its own, keeping its content in the column.
  */
 export function LayoutColumn({ children }: { children: ReactNode }) {
-  const { gutter } = useColumn();
-  // Padded in from the window rather than sized and centred: the children sit in the same
-  // column, but the inner View still spans the window, so chrome that steps out by the
-  // gutter (the tab rail, CUL-2242) stays inside its parent's bounds, where a touch reaches
-  // it on every platform.
+  const { width, gutter } = useColumn();
   return (
     <View style={[styles.fill, gutter > 0 && styles.ground]}>
-      <View style={[styles.fill, gutter > 0 && { paddingHorizontal: gutter }]}>{children}</View>
+      <View style={[styles.fill, gutter > 0 && styles.column, gutter > 0 && { width }]}>{children}</View>
     </View>
   );
 }
@@ -31,4 +27,5 @@ export function LayoutColumn({ children }: { children: ReactNode }) {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   ground: { backgroundColor: theme.colorNeutralLight },
+  column: { alignSelf: 'center' },
 });
