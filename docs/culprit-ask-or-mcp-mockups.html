@@ -1,0 +1,650 @@
+<title>Ask or MCP</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* Layout: a long-form decision brief. The page chrome follows the viewer's theme; every
+     phone frame uses FIXED Culprit app tokens (docs/mockups/theme.css, from constants/theme.ts)
+     so the app always looks like the app. Round 1, exploratory, CUL-2225, Oct 28, 2026. */
+  :root {
+    --canvas: #F2F4F7;
+    --panel: #FFFFFF;
+    --ink: #141826;
+    --ink-soft: #474D60;
+    --ink-faint: #6E7486;
+    --line: #DFE2EA;
+    --accent: #3F35A0;
+    --accent-tint: #ECEAFA;
+    --teal: #0B7B6C;
+    --teal-tint: #E2F2EF;
+    --amber: #8A5E00;
+    --amber-tint: #F5ECD5;
+    --rose: #A2303A;
+    --rose-tint: #F8E2E4;
+    --shadow: 0 1px 2px rgba(20,24,40,.05), 0 10px 30px rgba(20,24,40,.08);
+    --f-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --f-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #0E1018; --panel: #161925; --ink: #E8E9F1; --ink-soft: #A9ADC0; --ink-faint: #767B90;
+      --line: #282C3C; --accent: #A9A3F5; --accent-tint: #221F45; --teal: #3CCDB5; --teal-tint: #12302B;
+      --amber: #E2AC4C; --amber-tint: #2D2513; --rose: #F18D88; --rose-tint: #351D1D;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.45);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0E1018; --panel: #161925; --ink: #E8E9F1; --ink-soft: #A9ADC0; --ink-faint: #767B90;
+    --line: #282C3C; --accent: #A9A3F5; --accent-tint: #221F45; --teal: #3CCDB5; --teal-tint: #12302B;
+    --amber: #E2AC4C; --amber-tint: #2D2513; --rose: #F18D88; --rose-tint: #351D1D;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.45);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  code { font-family: var(--f-mono); font-size: .84em; background: var(--accent-tint); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+
+  .wrap { max-width: 1200px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: clamp(28px, 5vw, 64px) 96px; }
+  @media (min-width: 720px) { .wrap { padding-left: max(40px, env(safe-area-inset-left, 0px)); padding-right: max(40px, env(safe-area-inset-right, 0px)); } }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(38px, 6.5vw, 64px); line-height: 1; letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
+  .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 66ch; margin: 0; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  .status { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .pill b { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: clamp(56px, 8vw, 96px); }
+  .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  h2 { font-family: var(--f-display); font-weight: 400; font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.015em; margin: 0 0 12px; text-wrap: balance; max-width: 28ch; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .sec-lede { color: var(--ink-soft); max-width: 68ch; margin: 0; }
+  .sec-lede b { color: var(--ink); font-weight: 600; }
+
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+  .tag.now { background: var(--teal-tint); color: var(--teal); }
+  .tag.current { background: var(--accent-tint); color: var(--accent); }
+  .tag.option { background: var(--amber-tint); color: var(--amber); }
+  .tag.today { background: var(--line); color: var(--ink-soft); }
+  .tag.gate { background: var(--rose-tint); color: var(--rose); }
+
+  /* ── frames row ───────────────────────────────────────────── */
+  .frames { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: clamp(26px, 4vw, 44px) clamp(20px, 3vw, 32px); margin-top: 30px; align-items: start; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; }
+  .col-cap { width: 100%; max-width: 340px; }
+  .col-cap .k { font-weight: 600; font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .col-cap p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-soft); }
+  .col-foot { width: 100%; max-width: 340px; font-size: 12.5px; color: var(--ink-soft); margin: 0; }
+  .col-foot b { color: var(--ink); font-weight: 600; }
+  .optbox { border: 1.5px dashed var(--amber); border-radius: 40px; padding: 10px; }
+
+  /* ── phone frame (fixed app tokens) ───────────────────────── */
+  .phone {
+    --a-bg: #FAFAFA; --a-surface: #FFFFFF; --a-subtle: #F5F5F5;
+    --a-text: #0A0A0A; --a-text2: #525252; --a-text3: #737373;
+    --a-border: #EAEAEA; --a-border-strong: #D4D4D4;
+    --a-action: #3F35A0; --a-fact: #0B7B6C; --a-fact-light: #E0FBF7;
+    --a-sym-light: #FFE4E6; --a-sym-border: #FBCFD6; --a-sym-ink: #9F1239;
+    --a-med-light: #EAF0F7; --a-med-ink: #3D5875;
+    width: 340px; max-width: 100%; background: var(--a-bg); color: var(--a-text);
+    border-radius: 34px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
+    font-family: var(--f-body); font-size: 14px; line-height: 1.45;
+  }
+  .ph-head { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; padding: 14px 14px 10px; background: var(--a-surface); border-bottom: 1px solid var(--a-border); }
+  .ph-head .chev { width: 9px; height: 9px; border-left: 2px solid var(--a-text2); border-bottom: 2px solid var(--a-text2); transform: rotate(45deg); margin-left: 6px; }
+  .ph-head .t { text-align: center; line-height: 1.15; }
+  .ph-head .t b { display: block; font-family: var(--f-display); font-weight: 400; font-size: 17px; }
+  .ph-head .t span { font-size: 11px; color: var(--a-text3); }
+  .ph-body { padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .q { align-self: flex-end; max-width: 92%; background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 16px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; }
+  .safety { background: var(--a-sym-light); border: 1px solid var(--a-sym-border); border-radius: 14px; padding: 11px 12px; font-size: 12.5px; line-height: 1.45; color: var(--a-text); display: grid; gap: 4px; }
+  .safety .lbl { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--a-sym-ink); }
+  .safety b { font-weight: 600; }
+  .card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .hl { font-family: var(--f-display); font-size: 17px; line-height: 1.28; letter-spacing: -.3px; margin: 0; }
+  .dt { font-size: 12.5px; color: var(--a-text2); margin: 0; }
+  .sub { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--a-text3); margin: 4px 0 0; }
+  .rows { display: flex; flex-direction: column; border-top: 1px solid var(--a-border); }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 0; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .row .l { font-weight: 500; min-width: 0; }
+  .row .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
+  .row .m { grid-column: 1 / -1; font-size: 11px; color: var(--a-text3); }
+  .row.hi { background: var(--a-fact-light); margin-inline: -6px; padding-inline: 6px; border-radius: 6px; }
+  .fine { font-size: 11px; color: var(--a-text3); margin: 0; line-height: 1.45; }
+  .cant { margin: 0; padding-left: 16px; font-size: 12px; color: var(--a-text2); display: grid; gap: 3px; }
+  .prov { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--a-border); padding-top: 9px; font-size: 10.5px; color: var(--a-text3); }
+  .prov .go { color: var(--a-fact); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--a-border-strong); background: var(--a-surface); border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 500; }
+  .doors { display: flex; flex-direction: column; gap: 6px; }
+  .door { border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; text-align: center; }
+  .door.primary { background: var(--a-action); color: #FFFFFF; }
+  .door.secondary { border: 1px solid var(--a-border-strong); background: var(--a-surface); color: var(--a-text); }
+  .badge { align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .badge.rule { background: var(--a-fact-light); color: var(--a-fact); }
+  .badge.ai { background: #EFEDFB; color: var(--a-action); }
+  .sheet-sec { display: grid; gap: 6px; }
+  .sheet-sec + .sheet-sec { border-top: 1px solid var(--a-border); padding-top: 10px; }
+  .sheet-n { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--a-text3); }
+  .qs { margin: 0; padding-left: 18px; font-size: 12.5px; display: grid; gap: 4px; }
+  .prose-ai { font-size: 12.5px; color: var(--a-text); margin: 0; line-height: 1.5; }
+  .toggle { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .toggle .m { display: block; font-size: 11px; color: var(--a-text3); }
+  .sw { width: 34px; height: 20px; border-radius: 999px; background: var(--a-border-strong); position: relative; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background: var(--a-fact); }
+  .sw.on::after { left: 16px; }
+  .sw.lock { background: #9AD9CF; }
+  .sw.lock::after { left: 16px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--a-border-strong); border-radius: 10px; overflow: hidden; font-size: 12px; font-weight: 600; text-align: center; }
+  .seg span { padding: 8px 6px; }
+  .seg .on { background: var(--a-text); color: #FFFFFF; }
+  .mono { font-family: var(--f-mono); font-size: 10.5px; line-height: 1.5; color: var(--a-text); background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 10px; padding: 10px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .web { width: 340px; max-width: 100%; background: #FFFFFF; color: #0A0A0A; border-radius: 16px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; font-size: 13px; line-height: 1.45; }
+  .web .bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #F5F5F5; border-bottom: 1px solid #EAEAEA; font-family: var(--f-mono); font-size: 11px; color: #525252; }
+  .web .bar i { width: 8px; height: 8px; border-radius: 50%; background: #D4D4D4; display: inline-block; }
+  .web .bd { padding: 18px 18px 20px; display: grid; gap: 12px; }
+  .web h4 { font-family: var(--f-display); font-weight: 400; font-size: 21px; line-height: 1.2; margin: 0; }
+  .web ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12.5px; color: #262626; }
+  .web .btns { display: grid; gap: 8px; }
+  .web .b1 { background: #3F35A0; color: #FFFFFF; border-radius: 12px; padding: 11px; text-align: center; font-weight: 600; font-size: 13px; }
+  .web .b2 { border: 1px solid #D4D4D4; border-radius: 12px; padding: 11px; text-align: center; font-weight: 600; font-size: 13px; }
+  .web .small { font-size: 11px; color: #737373; margin: 0; }
+
+  /* ── briefs, conflicts, tables ────────────────────────────── */
+  .briefs { display: grid; gap: 14px; margin-top: 26px; }
+  .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 7px; font-size: 13.5px; color: var(--ink-soft); max-width: 940px; }
+  .brief h3 { color: var(--ink); font-size: 15.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0; }
+  .brief .k { color: var(--ink); font-weight: 600; }
+  .brief ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .conf { font-size: 13px; background: var(--canvas); border-left: 3px solid var(--amber); border-radius: 0 10px 10px 0; padding: 10px 12px; display: grid; gap: 6px; }
+  .conf p { margin: 0; }
+  .conf b { color: var(--ink); }
+  .tbl-wrap { overflow-x: auto; margin-top: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; background: var(--canvas); }
+  td.n { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 24px; }
+  .hz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--ink-soft); min-width: 0; }
+  .hz h3 { color: var(--ink); font-size: 14.5px; line-height: 1.35; margin: 0; }
+  .hz .big { font-family: var(--f-display); font-size: 34px; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .ledger { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 10px; max-width: 900px; }
+  .ledger li { display: grid; grid-template-columns: 130px 1fr; gap: 12px; font-size: 13.5px; color: var(--ink-soft); padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .ledger li b { color: var(--ink); font-weight: 600; }
+  @media (max-width: 520px) { .ledger li { grid-template-columns: 1fr; gap: 2px; } }
+  footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-faint); max-width: 900px; }
+  .plain { margin: 0; padding-left: 16px; font-size: 12px; color: var(--a-text); display: grid; gap: 5px; }
+  .web .meta { font-size: 12px; color: #525252; margin: 0; }
+
+  /* ── round 2 ─────────────────────────────────────────────── */
+  .ledger-t td:first-child { width: 32%; color: var(--ink); }
+  .rtag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .rtag.ruled, .rtag.t-in { background: var(--teal-tint); color: var(--teal); }
+  .rtag.asked, .rtag.t-opt { background: var(--accent-tint); color: var(--accent); }
+  .rtag.open { background: var(--amber-tint); color: var(--amber); }
+  .rtag.t-out { background: var(--rose-tint); color: var(--rose); }
+  .sub-sec { margin-top: clamp(40px, 6vw, 64px); }
+  .h3-lg { font-family: var(--f-display); font-weight: 400; font-size: clamp(21px, 2.6vw, 26px); line-height: 1.2; margin: 0 0 10px; max-width: 36ch; }
+
+  .flow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 26px; max-width: 1040px; }
+  @media (min-width: 860px) { .flow { grid-template-columns: 300px minmax(0, 1fr); align-items: center; } }
+  .src { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--rose); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); }
+  .dests { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .dest { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); align-content: start; }
+  .dest b { color: var(--ink); }
+  .dest.no { border: 1.5px dashed var(--rose); }
+  .st { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .st.ok { color: var(--teal); }
+  .st.no { color: var(--rose); }
+
+  .zone { display: flex; flex-direction: column; gap: 8px; }
+  .zone-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; color: var(--a-text3); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+  .strip { display: grid; grid-template-columns: 3px minmax(0, 1fr) auto; gap: 0 10px; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px 10px 10px 0; align-items: center; overflow: hidden; }
+  .strip .rail { align-self: stretch; background: #F43F5E; }
+  .strip .nm { font-size: 13px; font-weight: 600; line-height: 1.3; }
+  .strip .ct { font-size: 11px; color: var(--a-text3); margin-top: 2px; }
+  .strip .ask { font-size: 10.5px; font-weight: 600; color: var(--a-sym-ink); background: var(--a-sym-light); border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
+  .strip .ask.calm { color: var(--a-text2); background: var(--a-subtle); }
+  .strip.gap { background: transparent; border: 1.5px dashed #F43F5E; }
+  .strip.gap .nm { color: var(--a-sym-ink); }
+  .strip.new { box-shadow: 0 0 0 2px #3F35A0; }
+  .newtag { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #FFFFFF; background: #3F35A0; border-radius: 999px; padding: 2px 6px; margin-left: 6px; vertical-align: 1px; }
+  .foot { font-size: 11.5px; color: var(--a-text2); padding: 2px 2px 0; }
+
+  .wchart { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px; }
+  .rd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 0; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .rd .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .srcchip { font-size: 10px; font-weight: 600; border-radius: 999px; padding: 2px 7px; background: var(--a-subtle); color: var(--a-text2); border: 1px solid var(--a-border); margin-left: 4px; }
+  .door2 { grid-column: 1 / -1; font-size: 11.5px; color: #3F35A0; font-weight: 600; }
+
+  .paper { background: #FFFFFF; color: #0A0A0A; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 16px 18px; font-family: Georgia, "Times New Roman", serif; font-size: 12.5px; line-height: 1.5; width: 100%; max-width: 440px; }
+  .paper .band { font-family: var(--f-body); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #9F1239; border-bottom: 1px solid #EAEAEA; padding-bottom: 6px; margin-bottom: 8px; }
+  .paper .lbl { font-family: var(--f-body); font-weight: 700; font-size: 11px; margin-right: 6px; }
+  .mark { background: #FDF3DC; box-shadow: 0 0 0 2px #FDF3DC; border-radius: 2px; }
+
+  .answers { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 20px; max-width: 1040px; }
+  .ans { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; font-size: 13.5px; color: var(--ink-soft); align-content: start; }
+  .ans h3 { margin: 0; color: var(--ink); font-size: 14.5px; }
+  .ans .res { font-size: 12.5px; }
+  .ans .res b { color: var(--ink); }
+
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--a-border-strong); margin: 10px auto 0; }
+  .stamp { align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; font-size: 11.5px; font-weight: 600; color: var(--a-fact); background: var(--a-fact-light); border-radius: 999px; padding: 4px 10px; }
+  .inside { display: flex; flex-direction: column; border: 1px solid var(--a-border); border-radius: 12px; background: var(--a-surface); }
+  .in-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .in-row:last-child { border-bottom: 0; }
+  .in-row .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .in-row .n { color: var(--a-text3); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .linkish { font-size: 12px; color: #3F35A0; font-weight: 600; text-align: center; margin: 0; }
+
+  .chat { width: 340px; max-width: 100%; background: #FFFFFF; color: #0A0A0A; border-radius: 34px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; font-size: 13px; }
+  .chat .top { padding: 16px 14px 12px; border-bottom: 1px solid #EAEAEA; text-align: center; font-weight: 600; font-size: 13px; color: #525252; }
+  .chat .body { padding: 16px 14px 22px; display: flex; flex-direction: column; gap: 10px; min-height: 300px; }
+  .filechip { align-self: flex-end; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: center; background: #F5F5F5; border: 1px solid #EAEAEA; border-radius: 14px; padding: 8px 12px; max-width: 88%; }
+  .filechip .ic { width: 30px; height: 36px; border-radius: 6px; background: #FFFFFF; border: 1px solid #D4D4D4; display: grid; place-items: center; font-family: var(--f-mono); font-size: 9px; color: #525252; }
+  .filechip b { display: block; font-size: 12px; }
+  .filechip span span { font-size: 11px; color: #737373; }
+  .umsg { align-self: flex-end; background: #0A0A0A; color: #FFFFFF; border-radius: 16px; padding: 8px 12px; max-width: 88%; }
+  .aside { font-size: 11.5px; color: #737373; text-align: center; margin: auto 0 0; }
+
+  .doc { width: 100%; max-width: 620px; background: #FFFFFF; color: #0A0A0A; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 22px 24px; font-size: 12.5px; line-height: 1.55; }
+  .doc h4 { font-family: var(--f-display); font-weight: 400; font-size: 22px; line-height: 1.2; margin: 0 0 4px; }
+  .doc .meta { font-size: 11.5px; color: #525252; margin: 0 0 12px; }
+  .doc h5 { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #525252; margin: 16px 0 6px; }
+  .doc p { margin: 0 0 6px; }
+  .doc ol, .doc ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+  .doc .ent { font-family: var(--f-mono); font-size: 10.8px; background: #F5F5F5; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .doc dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 12px; }
+  .doc dt { font-weight: 600; }
+  .doc dd { margin: 0; color: #262626; }
+  @media (max-width: 520px) { .doc dl { grid-template-columns: minmax(0, 1fr); } .doc dd { margin-bottom: 4px; } .doc { padding: 18px 16px; } }
+</style>
+
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">CUL-2233 · round 2 · exploratory · Oct 30, 2026 · supersedes round 1 (commit 1c6fa53)</p>
+    <h1>Ask or MCP</h1>
+    <p class="lede"><b>Round 2 answers your reactions.</b> Brief 2 is drawn so you can rule it. "Copy for your AI" is redesigned and grows into the export you imagined: one file, laid out so any assistant can read the whole record. The connector has left the page.</p>
+    <div class="status">
+      <span class="pill"><b>3</b> rulings recorded</span>
+      <span class="pill"><b>Brief 2</b> ready to rule</span>
+      <span class="pill">Drawn on Nyx's record, <b>Oct 29 and 30</b></span>
+    </div>
+  </header>
+
+  <!-- ── ledger ───────────────────────────────────────────────── -->
+  <section id="ledger" style="margin-top:44px">
+    <p class="sec-eyebrow">What you said, and what moved</p>
+    <div class="tbl-wrap" style="margin-top:12px">
+      <table class="ledger-t">
+        <thead><tr><th>Your reaction</th><th>Ruled</th><th>On this page</th></tr></thead>
+        <tbody>
+          <tr><td>Brief 1 (a): "LOVE the concept of numbers in the Culprit Ask responses."</td><td><span class="rtag ruled">Ruled (a)</span></td><td>Numbers in Culprit's voice; judgment stays with your AI and your vet. Frame (a) stands as drawn in round 1. One word to confirm below: it relaxes Ask v2's "no before/after" line for counts tables only. Still open inside the line: (b) or (c), §4.</td></tr>
+          <tr><td>Brief 3 (a): "LOVE the concept of a copy for your AI … we can do a better job w/ the design."</td><td><span class="rtag ruled">Ruled (a)</span></td><td>Redrawn in §2: where you find it, a sheet that says what's inside in plain words, the hand-off to your AI app, and the file your AI receives.</td></tr>
+          <tr><td>"Is there any other data we should be providing in the AI export?" and the main export structured for AI.</td><td><span class="rtag asked">Answered</span></td><td>§3: everything Nyx's record holds and where each part goes, what the app doesn't capture yet, and one export with two depths.</td></tr>
+          <tr><td>Brief 2: "I think I'd need to better understand this one. Could you give it to me via mockup?"</td><td><span class="rtag open">Yours to rule</span></td><td>§1: where Nyx's weight finding lives today, Home now and with its row, what a tap shows, and the two smaller calls inside it.</td></tr>
+          <tr><td>Brief 4: "Let's punt on the true connector."</td><td><span class="rtag ruled">Ruled: punt</span></td><td>Left the page. The gate is kept on <a href="https://linear.app/projectnyx/issue/CUL-2273">CUL-2273</a> (Backlog); round 1's frames are in git.</td></tr>
+          <tr><td>Brief 5 and the two questions only you can answer.</td><td><span class="rtag open">No reaction yet</span></td><td>Unchanged, at the foot (§4).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 1 · brief 2 drawn ────────────────────────────────────── -->
+  <section id="floor">
+    <p class="sec-eyebrow">§1 · Brief 2, drawn · the floor</p>
+    <h2>The app already caught the weight drop. Home just can't show it.</h2>
+    <p class="sec-lede">The weight check has run on your account since Oct 11. Nyx's Signal holds its finding right now, third of her five safety findings. The vet report prints it and Ask can relay it. Home, the screen you open every day, has no row for it, so it never appears there. Brief 2 is about when Home learns to draw it.</p>
+
+    <div class="flow">
+      <div class="src">
+        <span class="st" style="color:var(--ink-faint)">Computed and stored · Oct 29, 8:03 PM</span>
+        <p style="margin:8px 0 6px;font-weight:600">Nyx's weight finding</p>
+        <p style="margin:0;font-size:13px;color:var(--ink-soft)">In the app's words, trimmed: Nyx weighed 8.2 lb on September 16, 2026 on a home scale, a single reading, down from 9.7 lb on June 15, 2026 on a home scale, a single reading; worth booking a vet visit.</p>
+      </div>
+      <div class="dests">
+        <div class="dest no"><span class="st no">Can't show it</span><b>Home</b><span>No row for this finding type yet. That row is PR-37 (<a href="https://linear.app/projectnyx/issue/CUL-1414">CUL-1414</a>).</span></div>
+        <div class="dest"><span class="st ok">Shows it</span><b>The vet report</b><span>A weight row in the safety band, since Oct 20. It also says "The owner was told", which isn't true yet (<a href="https://linear.app/projectnyx/issue/CUL-2274">CUL-2274</a>).</span></div>
+        <div class="dest"><span class="st ok">Shows it</span><b>Ask</b><span>Relays it when asked about her findings. Its lead line shows only the first safety finding.</span></div>
+        <div class="dest"><span class="st ok">Shows it</span><b>Patterns</b><span>Plots both weights and prints the 15%.</span></div>
+      </div>
+    </div>
+
+    <div class="frames">
+      <div class="col">
+        <div class="col-cap"><span class="k">Home today <span class="tag today">what ships</span></span><p>Nyx's Signal as stored Oct 29. Four safety rows draw; the weight finding sits third and is skipped.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span></span><div class="t"><b>Today</b><span>Nyx · Thu, Oct 29</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="zone">
+              <div class="zone-h"><span>Signal</span><span>5 to raise</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">A vomit read says call today</div><div class="ct">AI read · Oct 28</div></div><span class="ask">Call your vet</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">Vomiting days in a row</div><div class="ct">5 this week, 3 in a row · last Oct 28</div></div><span class="ask">Call your vet</span></div>
+              <div class="strip gap"><span class="rail" style="background:transparent"></span><div><div class="nm">Weight: computed, not drawn</div><div class="ct">Home has no row for this finding</div></div><span></span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">Recurring vomiting</div><div class="ct">17 episodes, 6 of 8 weeks · last Oct 28</div></div><span class="ask calm">Worth a vet visit</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">Recurring coughing</div><div class="ct">10 episodes, 5 of 8 weeks</div></div><span class="ask calm">Worth a vet visit</span></div>
+              <div class="foot">1 pattern · Vomiting soon after eating ›</div>
+            </div>
+          </div>
+        </div>
+        <p class="col-foot">Strip wording is approximated from <code>lib/signalCopy.ts</code>; the gap is exact.</p>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">Home with PR-37 <span class="tag current">recommended</span></span><p>The same Signal with the weight row in its slot. Wording from the weight spec §6.1.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span></span><div class="t"><b>Today</b><span>Nyx · Thu, Oct 29</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="zone">
+              <div class="zone-h"><span>Signal</span><span>5 to raise</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">A vomit read says call today</div><div class="ct">AI read · Oct 28</div></div><span class="ask">Call your vet</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">Vomiting days in a row</div><div class="ct">5 this week, 3 in a row · last Oct 28</div></div><span class="ask">Call your vet</span></div>
+              <div class="strip new"><span class="rail"></span><div><div class="nm">Weight down from 9.7 lb<span class="newtag">new</span></div><div class="ct">8.2 lb on Sep 16 · both home scale, one reading each</div></div><span class="ask calm">Worth a vet visit</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">Recurring vomiting</div><div class="ct">17 episodes, 6 of 8 weeks · last Oct 28</div></div><span class="ask calm">Worth a vet visit</span></div>
+              <div class="strip"><span class="rail"></span><div><div class="nm">Recurring coughing</div><div class="ct">10 episodes, 5 of 8 weeks</div></div><span class="ask calm">Worth a vet visit</span></div>
+              <div class="foot">1 pattern · Vomiting soon after eating ›</div>
+            </div>
+          </div>
+        </div>
+        <p class="col-foot">The weight row carries no number of its own beyond the readings: no percentage on Home (the spec's choice), and no cause.</p>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">A tap on the row <span class="tag current">recommended</span></span><p>The finding's screen (spec §6.2): both readings, where each came from, and a way to correct one.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Weight</b><span>Nyx</span></div><span></span></div>
+          <div class="ph-body">
+            <p class="hl">Nyx weighed 8.2 lb on Sep 16, down from 9.7 lb in June.</p>
+            <div class="wchart">
+              <svg viewBox="0 0 300 96" width="100%" role="img" aria-label="Two weigh-ins: 9.7 lb on June 15 and 8.2 lb on September 16, both on a home scale">
+                <line x1="20" y1="80" x2="290" y2="80" stroke="#EAEAEA"/>
+                <text x="20" y="94" font-size="9" fill="#737373" font-family="Geist, sans-serif">Jun</text>
+                <text x="150" y="94" font-size="9" fill="#737373" font-family="Geist, sans-serif">Aug</text>
+                <text x="262" y="94" font-size="9" fill="#737373" font-family="Geist, sans-serif">Oct</text>
+                <line x1="58" y1="22" x2="220" y2="64" stroke="#D4D4D4" stroke-dasharray="3 3"/>
+                <circle cx="58" cy="22" r="6" fill="#FFFFFF" stroke="#5B7A9E" stroke-width="2"/>
+                <circle cx="220" cy="64" r="6" fill="#FFFFFF" stroke="#5B7A9E" stroke-width="2"/>
+                <text x="70" y="20" font-size="10" fill="#0A0A0A" font-family="Geist, sans-serif" font-weight="600">9.7 lb</text>
+                <text x="232" y="62" font-size="10" fill="#0A0A0A" font-family="Geist, sans-serif" font-weight="600">8.2 lb</text>
+              </svg>
+              <p class="fine" style="margin-top:4px">Hollow dots are home scale readings. Filled dots would be the vet's.</p>
+            </div>
+            <div>
+              <div class="rd"><span>Jun 15 <span class="srcchip">home scale</span></span><span class="v">9.7 lb</span><span class="fine" style="grid-column:1/-1">Typed in on Oct 9</span><span class="door2">Was this from the vet, or a guess? Correct it ›</span></div>
+              <div class="rd"><span>Sep 16 <span class="srcchip">home scale</span></span><span class="v">8.2 lb</span><span class="door2">Correct it ›</span></div>
+            </div>
+            <p class="fine">Compared with her highest weight in the last 12 months, 9.7 lb in June.</p>
+            <div class="doors"><span class="door primary">Add a weigh-in</span><span class="door secondary">I've told my vet</span></div>
+          </div>
+        </div>
+        <p class="col-foot">"I've told my vet" is the care state other findings already have; drawn here, it needs EN-9's answer block on this type.</p>
+      </div>
+    </div>
+
+    <div class="sub-sec">
+      <h3 class="h3-lg">Inside Brief 2: how the vet report shows weight (W3)</h3>
+      <p class="sec-lede">W3 asks how the report prints weight. On Oct 23 you held it for a fresh brief, because a weight warning row shipped on the report three days earlier. The fresh brief picks one of these two before PR-37 builds the report's half.</p>
+      <div class="frames" style="margin-top:20px">
+        <div class="col">
+          <div class="col-cap"><span class="k">What the report prints today <span class="tag today">ships since Oct 20</span></span><p>A warning row in the safety band, in Home's words (CUL-2026).</p></div>
+          <div class="paper">
+            <div class="band">Safety · raise first</div>
+            <p style="margin:0"><span class="lbl">Weight</span><b>Weighed 3.73 kg (8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg (9.7 lb) on Jun 15, 2026 on a home scale, a single reading.</b> The latest reading against the highest before it, not a diagnosis; body condition was not assessed. <span class="mark">The owner was told it is worth booking a vet visit.</span></p>
+          </div>
+          <p class="col-foot">Abridged. The marked sentence is false on your account until Home draws the row; the stopgap is filed (<a href="https://linear.app/projectnyx/issue/CUL-2274">CUL-2274</a>).</p>
+        </div>
+        <div class="col">
+          <div class="col-cap"><span class="k">W3's earlier answer <span class="tag option">held Oct 23</span></span><p>No warning row. Each reading with its source, and one change line in the weight section.</p></div>
+          <div class="paper">
+            <div class="band" style="color:#525252">Weight</div>
+            <p style="margin:0 0 4px">3.73 kg on Sep 16 (home scale) · 4.40 kg on Jun 15 (home scale, one reading)</p>
+            <p style="margin:0"><b>Change:</b> 3.73 kg (home scale, Sep 16), from 4.40 kg (home scale, June; one reading) · −0.67 kg, about 15% of body weight. Descriptive, not a diagnosis.</p>
+          </div>
+          <p class="col-foot">The Oct 23 sheet's reason: a vet trusts two dated, sourced readings more than an app's verdict.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="sub-sec">
+      <h3 class="h3-lg">Also inside it, and only you know: was June's 9.7 lb from the vet?</h3>
+      <p class="sec-lede">Dr. Chen's question. The whole warning stands on June's reading, which you typed in on Oct 9, 116 days after its date. Your answer changes what Nyx's app says.</p>
+      <div class="answers">
+        <div class="ans"><h3>"The vet weighed her"</h3><span>Correct June to <i>at the vet</i>.</span><span class="res"><b>The row stands</b>, firm, now on a clinic anchor.</span></div>
+        <div class="ans"><h3>"Our scale at home"</h3><span>Nothing to change; that's how it's recorded.</span><span class="res"><b>The row stands</b>, firm under the Oct 2 rule (the drop is more than three times the scale's noise).</span></div>
+        <div class="ans"><h3>"A guess, or I'm not sure"</h3><span>Mark June as an estimate.</span><span class="res"><b>The row leaves</b> Home, the report and Ask: an estimate never anchors. Patterns still shows both, the June one marked estimate.</span></div>
+      </div>
+      <p class="sec-lede" style="margin-top:14px;font-size:13.5px">If June was a typo, fix the number and the row follows the corrected value. Whatever the answer, a weight on the clinic scale settles it. W7 (ruled Oct 23) adds the vet's weight to "How did it go?" after a visit.</p>
+    </div>
+
+    <div class="briefs">
+      <div class="brief">
+        <h3>Brief 2 · when Home learns to draw the weight row <span class="tag now">rule now</span></h3>
+        <span><span class="k">Deciding:</span> whether a finding the app already computed reaches the screen owners open, and when.</span>
+        <ul>
+          <li><span class="k">Next: a fresh W3 brief now, then PR-37 (Home's row, the finding's screen, the report's half), recommended.</span> The finding is computed and the report already claims you were told; Home is the only gap.</li>
+          <li>After 1.2.0 ships. The vet report and Ask carry it meanwhile, and the report's claim gets the stopgap.</li>
+        </ul>
+        <span><span class="k">Consequence:</span> (a) moves PR-37, already High in Engines v3.1, to the front of the weight work. Every other owner still waits for the threshold re-run before the check runs for them. <span class="k">Forecast:</span> 1 row (PR-37, filed) plus the W3 ruling.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 2 · copy for your AI, redesigned ─────────────────────── -->
+  <section id="copy">
+    <p class="sec-eyebrow">§2 · Brief 3, ruled (a) · redrawn</p>
+    <h2>Your AI does the reasoning. Culprit hands it a record it can't misread.</h2>
+    <p class="sec-lede">Round 1 was a toggle sheet and a wall of monospace. Round 2 starts where you'd look for it, says what's inside in plain words, sends it straight to the app you already use, and shows exactly what your AI receives. Counts are Nyx's real record as of Oct 30.</p>
+    <div class="frames">
+      <div class="col">
+        <div class="col-cap"><span class="k">1 · Where you find it <span class="tag current">current</span></span><p>On Nyx's tab, beside the vet report. One record, two readers: your vet and your AI.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span></span><div class="t"><b>Nyx</b><span>Cat · 3 years</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="card">
+              <p class="sub" style="margin:0">Vet report</p>
+              <p class="dt">Everything since her last visit, laid out for her vet.</p>
+              <div class="doors"><span class="door secondary">Open vet report</span></div>
+            </div>
+            <div class="card" style="border-color:#C9C4EE">
+              <p class="sub" style="margin:0;color:#3F35A0">Your own AI</p>
+              <p class="hl" style="font-size:16px">Ask any AI assistant about Nyx</p>
+              <p class="dt">Her whole record as one file, laid out so an assistant reads it right. Free, and yours.</p>
+              <div class="doors"><span class="door primary">Get Nyx's record</span></div>
+            </div>
+            <div class="card"><p class="sub" style="margin:0">Vet files</p><p class="dt">2 documents</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">2 · What's inside, in plain words <span class="tag current">current</span></span><p>Nothing to configure by default. Two things you choose to add.</p></div>
+        <div class="phone">
+          <div class="grab"></div>
+          <div class="ph-body" style="padding-top:8px">
+            <p class="hl">Nyx's record, for your AI</p>
+            <span class="stamp">● Through today, 10:15 AM</span>
+            <div class="inside">
+              <div class="in-row"><span class="dot" style="background:#F43F5E"></span><span>What the app flagged, urgent first</span><span class="n">6</span></div>
+              <div class="in-row"><span class="dot" style="background:#F43F5E"></span><span>Vomiting, coughing and other signs</span><span class="n">115</span></div>
+              <div class="in-row"><span class="dot" style="background:#00C2A8"></span><span>Meals, with the ingredients of all 66 foods</span><span class="n">1,155</span></div>
+              <div class="in-row"><span class="dot" style="background:#5B7A9E"></span><span>Medicine doses</span><span class="n">71</span></div>
+              <div class="in-row"><span class="dot" style="background:#5B7A9E"></span><span>Weights, each with its scale</span><span class="n">2</span></div>
+              <div class="in-row"><span class="dot" style="background:#00C2A8"></span><span>Diet trial, rabbit</span><span class="n">Jul 26 to Oct 20</span></div>
+              <div class="in-row"><span class="dot" style="background:#A3A3A3"></span><span>Noticed days and vet visits</span><span class="n">16 · 1</span></div>
+              <div class="in-row"><span class="dot" style="background:#A3A3A3"></span><span>Which days have entries, and which don't</span><span class="n">May 14 on</span></div>
+            </div>
+            <div>
+              <div class="toggle"><span>Add your notes<span class="m">65 notes, each marked as yours</span></span><span class="sw"></span></div>
+              <div class="toggle"><span>Add vet documents<span class="m">2 files, sent alongside</span></span><span class="sw"></span></div>
+            </div>
+            <p class="fine">Nothing in it can show Nyx is fine: a day with nothing logged is not a well day. What your AI says is its own.</p>
+            <div class="doors"><span class="door primary">Share to your AI app</span><span class="door secondary">Copy as text</span></div>
+            <p class="linkish">Preview the file ›</p>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="col-cap"><span class="k">3 · In your AI app <span class="tag current">current</span></span><p>The phone's share sheet hands the file to whichever assistant you use. Culprit never sees the conversation.</p></div>
+        <div class="chat">
+          <div class="top">Your AI assistant</div>
+          <div class="body">
+            <div class="filechip"><span class="ic">MD</span><span><b>Nyx · record through Oct 30.md</b><span>1,359 entries · 1 file</span></span></div>
+            <div class="umsg">Is it the chicken? She's thrown up a lot since we started it.</div>
+            <p class="aside">The assistant reads the whole file before it answers. Its answer is not Culprit's and not a vet's.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frames" style="grid-template-columns:minmax(0,1fr)">
+      <div class="col" style="align-items:flex-start">
+        <div class="col-cap" style="max-width:560px"><span class="k">4 · What your AI receives <span class="tag current">current</span></span><p>Plain text with headings. It describes itself; it never instructs the AI. Counts first, so the assistant never has to recount a long list. Entry lines and their numbers are illustrative.</p></div>
+        <div class="doc">
+          <h4>Nyx · cat · her record from Culprit</h4>
+          <p class="meta">Through Oct 30, 2026, 10:15 AM Central (CDT) · 1,359 entries from May 14, 2026 · American Shorthair, female, born Sep 1, 2023</p>
+          <h5>About this file</h5>
+          <p>Entries Nyx's owner logged in Culprit, and what the app computed from them. Culprit counted every number here. It does not say whether a food is the cause. A day with nothing logged is not a well day. Entries after the time above are missing here, not absent.</p>
+          <h5>1 · Safety findings, in the app's order (computed Oct 29, 8:03 PM)</h5>
+          <ol>
+            <li>AI reads of her latest vomits said to call the vet today.</li>
+            <li>Vomited 5 times this week, on 3 days in a row: worth a call to the vet today.</li>
+            <li>Weighed 8.2 lb on Sep 16 (home scale), down from 9.7 lb on Jun 15 (home scale, typed in Oct 9): worth booking a vet visit.</li>
+            <li>Vomiting logged in 6 of the last 8 weeks, 17 episodes since September. Coughing in 5 of 8 weeks, 10 episodes.</li>
+          </ol>
+          <h5>2 · Counts, each with its window</h5>
+          <p>Vomiting: 57 logs since May 14. Episodes merge logs within 90 minutes. By period: before the trial, the rabbit trial, after prednisolone ended, since chicken (Oct 18, 3:13 PM), each with its days and days logged.</p>
+          <h5>3 · What this record can't tell</h5>
+          <ul><li>Portions were never recorded; how much she ate is mostly unrated.</li><li>No stool entries.</li><li>Two chicken foods started together, with rice, guar gum, tapioca and oil.</li></ul>
+          <h5>4 · How to read the entries</h5>
+          <dl><dt>seen / found</dt><dd>watched as it happened, or found later (time is when found)</dd><dt>home scale / at the vet</dt><dd>where a weight was taken</dd><dt>AI photo read, unconfirmed</dt><dd>an automated read of one photo; only reads that raised a concern are included</dd><dt>Owner's note</dt><dd>text written by the owner or household (only if added)</dd></dl>
+          <h5>5 · Entries, one per line</h5>
+<pre class="ent">1188 · Sun Oct 18 2026 · 3:12 PM CDT · Meal · Blue Buffalo Tastefuls Purées with Chicken (chicken broth, chicken, tapioca starch, vegetable oil, guar gum) · seen
+1190 · Sun Oct 18 2026 · 3:39 PM CDT · Vomit · seen · foamy, white, partly digested food
+1340 · Tue Oct 27 2026 · 7:40 PM CDT · Vomit · seen · AI photo read, unconfirmed: call the vet today
+Totals: 57 vomit · 33 cough · 15 sneeze · 1,155 meals · 71 medicine doses. Each equals the count in section 2.</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 3 · what goes in it ──────────────────────────────────── -->
+  <section id="contents">
+    <p class="sec-eyebrow">§3 · Your question: what else belongs in the AI export</p>
+    <h2>Almost everything Nyx's record holds belongs in it. What makes it work is the layout, not the size.</h2>
+    <p class="sec-lede">Nyx's record since May 14 is about 1,360 entries. That's long for a person and ordinary for an assistant. The Oct 11 study of AI readers found the weak spot is recounting a long list, so the file leads with numbers the app already counted, then gives every entry its own line with date, year, time zone and source. Nothing in the file speaks to the AI; it describes itself.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Part of the record</th><th>In the AI file</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>The pet: species, breed, sex, birth date</td><td><span class="rtag t-in">In</span></td><td>Age and sex change what a vomiting cat could have.</td></tr>
+          <tr><td>The app's findings, with their limits</td><td><span class="rtag t-in">In, first</span></td><td>The urgent ask leads; the assistant shouldn't recount what the app counted.</td></tr>
+          <tr><td>Every sign: vomit, cough, sneeze, itch, lethargy</td><td><span class="rtag t-in">In</span></td><td>Date, time, zone, seen or found, and what it looked like, on one line each.</td></tr>
+          <tr><td>Meals, with each food's full ingredient list</td><td><span class="rtag t-in">In</span></td><td>"Chicken" was chicken, rice, guar gum, tapioca and oil. Mixed bowls carry their shares; portions say "not recorded".</td></tr>
+          <tr><td>Medicines: drug, dose, schedule, each dose given, partial or missed</td><td><span class="rtag t-in">In</span></td><td>Prednisolone ending 8 days before chicken was the chicken read's biggest confounder.</td></tr>
+          <tr><td>Weights, with the scale and the day each was typed in</td><td><span class="rtag t-in">In</span></td><td>The 15% drop stands on one reading typed in months later.</td></tr>
+          <tr><td>Diet trial: dates, phase, allowed foods, off-diet entries, outcome</td><td><span class="rtag t-in">In</span></td><td>The trial's own record, not a judgment of it.</td></tr>
+          <tr><td>Noticed days, intake answers, "your vet knows", calls to the vet</td><td><span class="rtag t-in">In</span></td><td>How she seemed, and what the vet already knows.</td></tr>
+          <tr><td>Coverage: which days have entries, which have none</td><td><span class="rtag t-in">In</span></td><td>So a quiet day can't pass for a well day.</td></tr>
+          <tr><td>Vet visits: date, clinic, reason</td><td><span class="rtag t-in">In</span></td><td>Visit notes ride with your notes.</td></tr>
+          <tr><td>Your notes (65)</td><td><span class="rtag t-opt">You add</span></td><td>Written by you and your household; each marked "Owner's note". Sam wants to read them first.</td></tr>
+          <tr><td>Vet documents (2)</td><td><span class="rtag t-opt">You add</span></td><td>The vet's own words, sent as separate files beside the record.</td></tr>
+          <tr><td>Photos</td><td><span class="rtag t-opt">Send directly</span></td><td>An assistant looks at a photo you send it; a text file can't carry one.</td></tr>
+          <tr><td>AI photo reads that found nothing</td><td><span class="rtag t-out">Out</span></td><td>A read that saw nothing reads as an all clear (counsel). The escalations reads raised stay in, as findings.</td></tr>
+          <tr><td>Your name, email, the clinic's contacts, other pets</td><td><span class="rtag t-out">Out</span></td><td>Not needed to reason about Nyx. One pet per file.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cards" style="margin-top:20px">
+      <div class="hz" style="border-style:dashed">
+        <h3>What the app doesn't capture yet</h3>
+        <span>These would sharpen any read, your AI's or your vet's. They aren't export fields; the app would have to start asking.</span>
+        <ul style="margin:4px 0 0;padding-left:18px;display:grid;gap:3px">
+          <li>How much she ate (portions never recorded)</li>
+          <li>Water intake</li>
+          <li>Stool (Nyx has none on file)</li>
+          <li>Vaccines, past diagnoses (her conditions list is empty)</li>
+          <li>Changes at home: new litter, travel, a new pet</li>
+          <li>What the vet asked you to watch for, and when to stop a test</li>
+        </ul>
+      </div>
+      <div class="hz">
+        <h3>The vet report stays the clinic's document</h3>
+        <span>It's already "the main export" for a vet, and clinic AI tools read it. <a href="https://linear.app/projectnyx/issue/CUL-1771">CUL-1771</a> hardens it with the same rules this file follows: each number with its scope on one line, the time zone stated, no caveat only in a footer.</span>
+      </div>
+    </div>
+
+    <div class="sub-sec">
+      <h3 class="h3-lg">Your idea, drawn: one export, two depths</h3>
+      <p class="sec-lede">The same layout serves you, your AI and your data rights. Depth decides what's added, never the layout.</p>
+      <div class="tbl-wrap" style="max-width:760px">
+        <table>
+          <thead><tr><th>Layer of the one file</th><th>For your AI (the default)</th><th>Everything (your data)</th></tr></thead>
+          <tbody>
+            <tr><td>1 · Safety findings, counts, what it can't tell</td><td class="n">✓</td><td class="n">✓</td></tr>
+            <tr><td>2 · How to read the entries</td><td class="n">✓</td><td class="n">✓</td></tr>
+            <tr><td>3 · Every entry, one per line</td><td class="n">✓</td><td class="n">✓</td></tr>
+            <tr><td>4 · Your notes, vet documents</td><td>If you add them</td><td class="n">✓</td></tr>
+            <tr><td>5 · Every AI read, photos as files, a spreadsheet copy</td><td>No</td><td class="n">✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="briefs">
+      <div class="brief">
+        <h3>New brief · one export, or two products <span class="tag current">rule with Brief 3</span></h3>
+        <span><span class="k">Deciding:</span> whether "Copy for your AI" is its own feature, or the default depth of the one export.</span>
+        <ul>
+          <li><span class="k">One export, two depths, recommended.</span> One layout to build and keep honest, your instinct, and the data rights export arrives with it. The default stays minimized, as Trust &amp; Safety and counsel asked; "Everything" is one tap for Jordan.</li>
+          <li>Two products: the short AI copy, and a separate spreadsheet export for data rights.</li>
+          <li>Everything, always (Jordan's "a button that copies everything").</li>
+        </ul>
+        <span><span class="k">Consequence:</span> (a) builds the portability export (<a href="https://linear.app/projectnyx/issue/CUL-232">CUL-232</a>) AI first, with <a href="https://linear.app/projectnyx/issue/CUL-85">CUL-85</a> as its default depth, after 1.2.0. <span class="k">Forecast:</span> 5 to 7 rows: the facts layer, the file writer, the sheet, the share path, the privacy review, the policy line.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 4 · still open ───────────────────────────────────────── -->
+  <section id="open">
+    <p class="sec-eyebrow">§4 · Still yours</p>
+    <h2>What's still yours from round 1</h2>
+    <div class="briefs">
+      <div class="brief">
+        <h3>Confirm one word on Brief 1 (a) <span class="tag now">one word</span></h3>
+        <span>Frame (a) puts counts beside the day chicken started. That relaxes Ask v2's "no before/after around a care event" (Oct 11) for counts tables, and keeps it for comparison sentences. Say "confirmed" and Ask v2's rulings 4 and 5 read against it.</span>
+      </div>
+      <div class="brief">
+        <h3>Inside the line: who writes a longer read? (b) or (c) <span class="tag option">still open</span></h3>
+        <span>Your Brief 3 words, "It's not Culprit making judgements", read as (b): a sheet built by fixed rules, no model prose. Say "b" and (c) leaves the page next round.</span>
+        <div class="conf">
+          <p><b>For (c), a model written read in the app, after the export:</b> the Sr. Product Designer (with Motion &amp; IA), Trust &amp; Safety, the Dir. of Engineering and the Data Scientist.</p>
+          <p><b>Against:</b> Dr. Alex Chen (with privacy counsel and the Product Owner): judgment without a vet client patient relationship. The VC and the strategist rank it last on margin.</p>
+          <p><b>PM decision needed:</b> (b) rule built facts only, or (c) model written synthesis in Culprit's voice? Both frames are in round 1 (commit 1c6fa53, §2).</p>
+        </div>
+      </div>
+      <div class="brief">
+        <h3>Brief 5 · Ask's job, and the Premium story <span class="tag current">after 1.2.0</span></h3>
+        <span>Recommended: facts in her calendar (Ask v2 as planned), every safety lead relayed (<a href="https://linear.app/projectnyx/issue/CUL-1803">CUL-1803</a>), the urgent route for red flags (<a href="https://linear.app/projectnyx/issue/CUL-1806">CUL-1806</a>), doors to the vet and the export. Re-opens D-M1: with the export free, a Premium Ask offers little more. Owners named prices: Jordan $5 a month in a trial or $10 to $15 once; Sam $3 to $5 a month in a flare up, never per cat.</span>
+      </div>
+      <div class="brief">
+        <h3>Also only yours</h3>
+        <ul>
+          <li><span class="k">Has a company been formed?</span> Counsel: if not, the exposure falls on you personally.</li>
+          <li><span class="k">Raise money or bootstrap?</span> The VC: it sets how fast anything after the export matters.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Round 2, exploratory, not build ready; supersedes round 1, whose frames stay in git (commit 1c6fa53). Source: <code>docs/culprit-ask-or-mcp-mockups.html</code>. Home and the file are drawn from Nyx's stored Signal of Oct 29 and her record's counts of Oct 30, read only; strip wording is approximated and entry numbering is illustrative. Research: <code>docs/research/2026-10-ask-or-mcp-landscape.md</code> and <code>docs/research/2026-10-vet-report-machine-readers.md</code>. Session record: <code>docs/sessions/2026-10-28-ask-or-mcp-convening.md</code>.
+  </footer>
+</div>
