@@ -24,9 +24,8 @@ import { theme } from '../../../constants/theme';
 import { LEAD_CHART_INSETS, SignalLeadCard, leadChartWidth } from './SignalLeadCard';
 import { DOOR_A11Y_HINT } from './SignalRow';
 import { HOME_CARD_INSET, HomeCard, RAIL_GUTTER } from '../home/HomeCard';
+import { homeFeedStyles } from '../../home/homeFeedLayout';
 import { abortFlight, getFlightState, landFlight, reverseFlight, setHeroReady, settleOutbound } from '../../motion/flightMotion';
-import * as fs from 'fs';
-import * as path from 'path';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
 import { signalWeeks, weekLine } from '../../../lib/signalWindows';
 import { weeklyBarsA11yLabel } from '../../../lib/chartCopy';
@@ -325,10 +324,8 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
   });
 
   it('`leadChartWidth` is pinned term by term against the rendered styles — the page and the HomeCard; the rail takes no width', async () => {
-    // The page's padding: Home's scroll container (`app/(tabs)/index.tsx`), read at source.
-    const home = fs.readFileSync(path.join(__dirname, '../../../app/(tabs)/index.tsx'), 'utf8');
-    expect(home).toMatch(/scroll:\s*\{\s*padding:\s*theme\.space3\b/);
-    expect(LEAD_CHART_INSETS.pagePadding).toBe(theme.space3);
+    // The page's padding: Home's scroll container, the style Home renders (`homeFeedLayout.ts`).
+    expect(LEAD_CHART_INSETS.pagePadding).toBe(StyleSheet.flatten(homeFeedStyles.scroll).padding);
     // The zone's HomeCard: its rendered padding.
     const card = render(<HomeCard testID="c">{null}</HomeCard>);
     expect(StyleSheet.flatten(card.getByTestId('c').props.style).padding).toBe(LEAD_CHART_INSETS.cardPadding);

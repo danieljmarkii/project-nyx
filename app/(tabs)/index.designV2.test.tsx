@@ -120,6 +120,7 @@ import { StyleSheet } from 'react-native';
 import { FAB_SCROLL_INSET_FLOOR, HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { analysisChainOutstanding, claimAnalysisChain, triggerVomitAnalysis, type AnalysisChainClaim } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
+import { homeFeedStyles } from '../../components/home/homeFeedLayout';
 import HomeScreen from './index';
 
 const vomitNow = () => ({
@@ -282,6 +283,8 @@ describe('the scroll inset clears the FAB (C-5)', () => {
   it('the content carries the page’s inset, at or above the floor', async () => {
     const t = render(<HomeScreen />);
     expect(insetOf(t)).toBe(HOME_V2_SCROLL_INSET);
+    // The feed's geometry is the module the header's alignment test reads (CUL-2279).
+    expect(t.UNSAFE_getByType(require('react-native').ScrollView).props.contentContainerStyle).toBe(homeFeedStyles.scroll);
     expect(HOME_V2_SCROLL_INSET).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
     await act(async () => {});
   });
