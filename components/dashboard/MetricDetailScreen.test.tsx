@@ -50,7 +50,7 @@ describe('MetricDetailScreen', () => {
     const { getByText, getByRole } = render(
       <MetricDetailScreen title="Vomiting" polarity="adverse" windows={windows} petName="Nyx" calibrationUnit="day" />,
     );
-    fireEvent.press(getByRole('tab', { name: 'Week' }));
+    fireEvent.press(getByRole('button', { name: 'Week' }));
     expect(getByText('Calmer than a usual week for Nyx.')).toBeTruthy();
     expect(getByText('2')).toBeTruthy();
   });
@@ -59,7 +59,7 @@ describe('MetricDetailScreen', () => {
     const { getByText, getByRole } = render(
       <MetricDetailScreen title="Vomiting" polarity="adverse" windows={windows} petName="Nyx" calibrationUnit="day" />,
     );
-    fireEvent.press(getByRole('tab', { name: '3 Months' }));
+    fireEvent.press(getByRole('button', { name: '3 Months' }));
     expect(getByText("Still learning Nyx's baseline — 2 more days to log.")).toBeTruthy();
   });
 
@@ -78,7 +78,7 @@ describe('MetricDetailScreen', () => {
     const { getByText, getByRole } = render(
       <MetricDetailScreen title="Vomiting" polarity="adverse" windows={emptyWindows} petName="Nyx" calibrationUnit="day" />,
     );
-    fireEvent.press(getByRole('tab', { name: 'Week' }));
+    fireEvent.press(getByRole('button', { name: 'Week' }));
     expect(getByText('No vomiting logged this week.')).toBeTruthy();
   });
 });
@@ -88,27 +88,36 @@ describe('MetricDetailScreen — the ranges at large text', () => {
   afterEach(() => jest.restoreAllMocks());
   const trackAt = (fontScale: number) => {
     jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, fontScale, scale: 2 });
-    const { getByRole, getByText } = render(
+    const { getByRole, getByText, getByTestId } = render(
       <MetricDetailScreen title="Vomiting" polarity="adverse" windows={windows} petName="Nyx" calibrationUnit="day" />,
     );
-    const week = getByRole('tab', { name: 'Week' });
-    let track = week.parent;
-    while (track && track.props.accessibilityRole !== 'tablist') track = track.parent;
-    return { track: RN.StyleSheet.flatten(track?.props.style), week, getByText };
+    const week = getByRole('button', { name: 'Week' });
+    const range = (w: string) => getByTestId(`metric-window-${w}`);
+    return { track: RN.StyleSheet.flatten(getByTestId('metric-window').props.style), week, range, getByText };
   };
 
-  it('keeps one row, with its slop, at the standard sizes', () => {
-    const { track, week } = trackAt(1.353);
+  // CUL-2278: on the shared control, every range holds the 44pt floor with no slop at
+  // every size, so no two ranges share a band (C-5); the old 6pt slop on 36pt boxes 3pt
+  // apart overlapped at the standard sizes.
+  const holdsTheFloorWithoutSlop = (range: (w: string) => { props: { style: unknown; hitSlop?: unknown } }) => {
+    for (const w of ['week', 'month', '3month']) {
+      expect(RN.StyleSheet.flatten(range(w).props.style as never).minHeight).toBe(44);
+      expect(range(w).props.hitSlop).toBeUndefined();
+    }
+  };
+
+  it('keeps one row, each range at the floor with no slop, at the standard sizes', () => {
+    const { track, range } = trackAt(1.353);
     expect(track.flexDirection).toBe('row');
-    expect(week.props.hitSlop).toBe(6);
+    holdsTheFloorWithoutSlop(range);
   });
 
-  it('stacks the ranges, without slop, at the accessibility sizes, and each still switches', () => {
-    const { track, week, getByText } = trackAt(3.571);
+  it('stacks the ranges at the accessibility sizes, each at the floor, and each still switches', () => {
+    const { track, week, range, getByText } = trackAt(3.571);
     expect(track.flexDirection).toBe('column');
-    expect(week.props.hitSlop).toBeUndefined();
-    // With no slop, each range holds the 44pt floor itself.
-    expect(RN.StyleSheet.flatten(week.props.style).minHeight).toBe(44);
+    holdsTheFloorWithoutSlop(range);
+    // Sized by its label in the column, never a zero flex basis.
+    expect(RN.StyleSheet.flatten(week.props.style).flexBasis).toBe('auto');
     fireEvent.press(week);
     expect(getByText('Calmer than a usual week for Nyx.')).toBeTruthy();
   });

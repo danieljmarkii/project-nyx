@@ -150,9 +150,12 @@ const styles = StyleSheet.create({
     columnGap: theme.space2,
     rowGap: 0,
   },
-  // Its own 44pt box, left-aligned and only as wide as its words (C-5; the FAB).
+  // Its own 44pt box, left-aligned and only as wide as its words (C-5; the FAB). Never
+  // wider than the line: at AX5 on a 320 phone "Outside the trial ›" outgrew it and ran
+  // past the screen's edge, so there its words wrap inside the box (CUL-2278).
   door: {
     alignSelf: 'flex-start',
+    maxWidth: '100%',
     minHeight: 44,
     justifyContent: 'center',
   },

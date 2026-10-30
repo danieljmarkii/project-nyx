@@ -110,7 +110,9 @@ export default function LandingScreen() {
                 exactly as it does inside AuthBrandMark). */}
             <View style={styles.lockup} accessible accessibilityRole="image" accessibilityLabel="Culprit">
               <CulpritMark size={moonSize} ground="night" accessible={false} />
-              <Text style={styles.wordmark}>Culprit</Text>
+              <Text style={styles.wordmark} maxFontSizeMultiplier={WORDMARK_MAX_SCALE}>
+                Culprit
+              </Text>
             </View>
             {showAuthActions && (
               <>
@@ -175,6 +177,14 @@ function LandingBody({ scrolls, children }: { scrolls: boolean; children: ReactN
     </ScrollView>
   );
 }
+
+// The wordmark's text-scale cap (PM, 2026-10-30, CUL-2278): at AX5 "Culprit" grew to
+// ~301pt, past a 320 phone's 272pt column, and lost its first and last letters. It is the
+// brand, one word, and never wraps, so it stops growing where it still fits. Newsreader
+// sets "Culprit" 84.4pt wide at 28pt, so 3.22 fills the column exactly; 3.1 (262pt) is the
+// largest tenth that keeps room for iOS's shaping to differ from Chromium's by a few
+// points. Every size through AX3 (2.643) scales under the cap, untouched.
+const WORDMARK_MAX_SCALE = 3.1;
 
 const styles = StyleSheet.create({
   // Night ground base sits behind the SVG + safe areas so the field is full-bleed

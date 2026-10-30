@@ -74,8 +74,8 @@ const CEILINGS = {
   fontSize: 22, // 71 until CUL-1910 moved food capture onto the kit; 48 after CUL-1911 (the pet profile); 41 after CUL-1908; 23 after CUL-1909 (the event editor); 22 after CUL-1912 (the event detail)
   lineHeight: 62, // 67 until CUL-1909; 66 after it; 62 after CUL-1912
   letterSpacing: 8,
-  spacing: 299, // 336 until CUL-1909; 317 after it; 300 after CUL-1912; 299 after CUL-2243 (a card inset named, not tokenised)
-  radius: 73, // 75 until CUL-1912
+  spacing: 297, // 336 until CUL-1909; 317 after it; 300 after CUL-1912; 299 after CUL-2243 (a card inset named, not tokenised); 297 after CUL-2278 (Patterns' ranges onto SegmentedControl)
+  radius: 72, // 75 until CUL-1912; 72 after CUL-2278
   duration: 90,
   whorlSpinner: 38, // 43 until CUL-1912
   hitTarget: 162, // added by CUL-2144 at 199, 2026-10-23; 198 after CUL-658 moved IntakeFirstMealSheet's row; 195 after CUL-1910; 188 after CUL-1911; 176 after CUL-1908; 162 after CUL-1912

@@ -81,7 +81,7 @@ describe('MetricDetailRoute', () => {
   it('switches the window via the segmented control', async () => {
     const { getByText, getByRole } = render(<MetricDetailRoute />);
     await waitFor(() => expect(getByText('9')).toBeTruthy());
-    fireEvent.press(getByRole('tab', { name: 'Week' }));
+    fireEvent.press(getByRole('button', { name: 'Week' }));
     expect(getByText('A busier week than usual for Nyx — worth keeping an eye on.')).toBeTruthy();
     expect(getByText('2')).toBeTruthy();
   });
@@ -111,7 +111,7 @@ describe('MetricDetailRoute', () => {
     expect(getByText('6')).toBeTruthy();
     expect(queryByText('No vomit logged this week.')).toBeNull();
     // The week empty state is honest + correctly scoped — only on explicit selection.
-    fireEvent.press(getByRole('tab', { name: 'Week' }));
+    fireEvent.press(getByRole('button', { name: 'Week' }));
     expect(getByText('No vomit logged this week.')).toBeTruthy();
   });
 });
