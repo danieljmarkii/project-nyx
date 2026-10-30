@@ -28,6 +28,7 @@ import { usePetStore } from '../../store/petStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { STACK_FONT_SCALE } from '../../components/ui/IdentityRow';
 
 /** Decode the cache's raw ai_extraction_confidence JSON text. Anything malformed
  *  reads as null, which the D10 gate treats as "panel unread" — the safe
@@ -57,12 +58,10 @@ type ThumbProps = { hasPhoto: boolean; photoUrl: string | null; photoLoading: bo
 // the brand on every row. A tap opens the food's detail screen; logging stays on
 // the FAB picker path. (The picker's 2-up toFoodRows chunker is deliberately not
 // used here — these are full-width rows, one food per line, not a 2-col grid.)
-// At the accessibility text sizes the title and "Add food" no longer fit one row: the title
-// was squeezed to a letter a line. The same line IdentityRow stacks at, for the same reason.
-const HEADER_STACK_FONT_SCALE = 1.6;
-
 export default function FoodsScreen() {
-  const headerStacked = useWindowDimensions().fontScale >= HEADER_STACK_FONT_SCALE;
+  // At the accessibility text sizes the title and "Add food" no longer fit one row (the
+  // title was squeezed to a letter a line), so the action stacks under it at IdentityRow's line.
+  const headerStacked = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
   const [library, setLibrary] = useState<LibraryFood[]>([]);
   // Archived foods (B-005 PR 3) — the removed-from-library set, shown in a
   // collapsed-by-default section at the bottom of the tab. Its own read so a
