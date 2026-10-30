@@ -7,7 +7,8 @@ import { theme } from '../../constants/theme';
 // 320pt) the row stacks the photo over the name, and so does a large text size, where
 // a name and a fact line beside a 96pt photo would wrap a word a line (round §13, §14).
 const TEXT_MIN_WIDTH = theme.space6 * 3;
-const STACK_FONT_SCALE = 1.6;
+// Exported: the Foods header stacks its action at the same size, for the same reason.
+export const STACK_FONT_SCALE = 1.6;
 
 /** Whether the row stacks, for a screen this wide at this text size. Pure for the test. */
 export function identityRowStacks(

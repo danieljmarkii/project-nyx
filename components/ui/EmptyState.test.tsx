@@ -1,3 +1,4 @@
+import { ScrollView } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 import { EmptyState } from './EmptyState';
 
@@ -27,5 +28,15 @@ describe('EmptyState', () => {
     );
     fireEvent.press(getByText('Try again'));
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  // CUL-2244: a centred block taller than its space climbed over the header at AX5. The
+  // full-screen form scrolls instead; the inset form, inside a list already, does not.
+  it('scrolls the fill form and leaves the inset form a plain block', () => {
+    const fill = render(<EmptyState title="Title" align="fill" testID="empty" />);
+    expect(fill.getByTestId('empty').type).toBe('RCTScrollView');
+    expect(fill.UNSAFE_queryAllByType(ScrollView)).toHaveLength(1);
+    const inset = render(<EmptyState title="Title" testID="empty" />);
+    expect(inset.UNSAFE_queryAllByType(ScrollView)).toHaveLength(0);
   });
 });

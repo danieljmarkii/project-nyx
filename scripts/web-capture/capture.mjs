@@ -286,6 +286,50 @@ const SIGNED_OUT_SHOTS = [
   { name: 'auth-confirm', go: [push('/confirm')] },
   { name: 'auth-reset-password', go: [push('/reset-password')] },
 ].map((s) => ({ pet: 'juniper', group: 'signedOut', ...s }));
+// Sweep 1 (CUL-2244): logging, the record, capture, Foods, the trial, Pet, settings and
+// Patterns' own routes. Patterns' index and the event editor are already default shots
+// (`patterns-juniper`, `edit-*-juniper`, `incident-juniper`), so they are not repeated here.
+// The fixture writes no medication, so one capture-only drug row stands behind the
+// medication screen, served to this group's context only.
+const SWEEP1_MEDICATION_ID = 'c2244000-0000-4000-8000-000000000001';
+function sweep1Tables() {
+  return {
+    medication_items: [{
+      id: SWEEP1_MEDICATION_ID, generic_name: 'Maropitant', brand_name: 'Cerenia', strength: '16 mg',
+      form: 'tablet', default_route: 'oral', is_prescription: true, is_critical: false, photo_paths: [],
+      notes: null, created_by_user_id: FIXTURE_USER_ID, archived_at: null,
+      created_at: new Date(NOW - 30 * 86400e3).toISOString(), updated_at: new Date(NOW - 60e3).toISOString(),
+    }],
+  };
+}
+const trialFoodOf = (key) => tables.diet_trial_foods.find((f) => f.pet_id === pet(key).id).food_item_id;
+// Home's lead card is the door to its finding's screen, the way an owner arrives. Its title
+// is Juniper's fixture lead, which signals.deno.ts refuses to compute when it moves.
+const openLead = link(/^Vomiting between/);
+const SWEEP1_SHOTS = [
+  { name: 'log-juniper', go: [push('/log')] },
+  { name: 'mix-miso', pet: 'miso', go: [() => {}, (page) => push(`/mix?event=${latestOf(pet('miso').id, 'meal').id}&pet=${pet('miso').id}&from=detail`)(page)] },
+  { name: 'event-meal-juniper', go: [() => {}, (page) => push(`/event/${latestOf(pet('juniper').id, 'meal').id}`)(page)] },
+  { name: 'day-summary-juniper', go: [push('/day-summary')] },
+  { name: 'food-capture', go: [push('/food-capture')] },
+  { name: 'medication-capture', go: [push('/medication-capture')] },
+  { name: 'food-juniper', go: [() => {}, (page) => push(`/food/${trialFoodOf('juniper')}`)(page)] },
+  { name: 'medication-juniper', go: [push(`/medication/${SWEEP1_MEDICATION_ID}`)] },
+  { name: 'foods-juniper', go: [tab('Foods')] },
+  { name: 'trial-foods-juniper', go: [() => {}, (page) => push(`/trial-foods?pet=${pet('juniper').id}`)(page)] },
+  { name: 'trial-exposures-juniper', go: [() => {}, (page) => push(`/trial-exposures?pet=${pet('juniper').id}`)(page)] },
+  { name: 'trial-juniper', go: [() => {}, (page) => push(`/trial/${pet('juniper').id}`)(page)] },
+  { name: 'profile-juniper', go: [label(/pet profile$/)] },
+  { name: 'add-pet', go: [push('/add-pet')] },
+  { name: 'archived-pets', go: [push('/archived-pets')] },
+  { name: 'weight-history-juniper', go: [() => {}, (page) => push(`/weight-history?petId=${pet('juniper').id}`)(page)] },
+  { name: 'settings', go: [push('/settings')] },
+  ...['ai-reading', 'beta', 'feedback', 'notifications', 'password'].map((s) => ({ name: `settings-${s}`, go: [push(`/settings/${s}`)] })),
+  { name: 'patterns-metric-juniper', go: [push('/insights/vomit')] },
+  { name: 'patterns-timing-juniper', go: [push('/insights/timing')] },
+  { name: 'patterns-trial-juniper', go: [push('/insights/trial')] },
+  { name: 'signal-juniper', go: [openLead] },
+].map((s) => ({ pet: 'juniper', group: 'sweep1', ...s }));
 
 const CAPTURE_SET = process.env.CAPTURE_SET ?? 'pr';
 if (!['pr', 'all'].includes(CAPTURE_SET)) throw new Error(`CAPTURE_SET is pr or all, not ${CAPTURE_SET}`);
@@ -306,7 +350,7 @@ const SIZES = (process.env.CAPTURE_SIZES ?? '320@1,375x667@1,390@1,466x678@1,626
 
 async function captureSize(browser, size, server, shots, group) {
   // A group's rows: the sweep's capture-only vet record and flags on top of the fixture.
-  const served = group === 'sweep' ? { ...tables, ...sweepTables() } : tables;
+  const served = group === 'sweep' ? { ...tables, ...sweepTables() } : group === 'sweep1' ? { ...tables, ...sweep1Tables() } : tables;
   const signedIn = group !== 'signedOut';
   const port = server.address().port;
   const settle = Number(process.env.CAPTURE_SETTLE_MS ?? 6000);
@@ -422,10 +466,10 @@ await mkdir(outDir, { recursive: true });
 const server = await serve(dist);
 const browser = await chromium.launch();
 try {
-  const all = [...SHOTS, ...(CAPTURE_SET === 'all' ? [...SWEEP_SHOTS, ...SIGNED_OUT_SHOTS] : [])];
+  const all = [...SHOTS, ...(CAPTURE_SET === 'all' ? [...SWEEP_SHOTS, ...SIGNED_OUT_SHOTS, ...SWEEP1_SHOTS] : [])];
   const shots = all.filter((s) => !ONLY || ONLY.includes(s.name));
   for (const size of SIZES) {
-    for (const group of ['default', 'sweep', 'signedOut']) {
+    for (const group of ['default', 'sweep', 'signedOut', 'sweep1']) {
       const inGroup = shots.filter((s) => (s.group ?? 'default') === group);
       if (inGroup.length === 0) continue;
       const { files, notes } = await captureSize(browser, size, server, inGroup, group);

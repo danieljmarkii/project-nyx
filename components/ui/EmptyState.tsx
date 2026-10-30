@@ -1,4 +1,4 @@
-import { View, StyleSheet, StyleProp, ViewStyle, TouchableOpacity } from 'react-native';
+import { View, ScrollView, StyleSheet, StyleProp, ViewStyle, TouchableOpacity } from 'react-native';
 import { colorRoles, theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
@@ -39,8 +39,8 @@ interface Props {
  * lives next to context — and only the layout is shared.
  */
 export function EmptyState({ title, body, action, align = 'inset', style, testID }: Props) {
-  return (
-    <View style={[align === 'fill' ? styles.fill : styles.inset, style]} testID={testID}>
+  const content = (
+    <>
       <ThemedText style={styles.title}>{title}</ThemedText>
       {body ? <ThemedText style={styles.body}>{body}</ThemedText> : null}
       {action ? (
@@ -54,6 +54,27 @@ export function EmptyState({ title, body, action, align = 'inset', style, testID
           <ThemedText style={styles.actionText}>{action.label}</ThemedText>
         </TouchableOpacity>
       ) : null}
+    </>
+  );
+  // A centred block taller than its space overflowed upward, over the header, at the
+  // accessibility text sizes. In a scroll it centres while it fits and scrolls once it
+  // doesn't; at ordinary sizes it never moves (no bounce on content that fits).
+  if (align === 'fill') {
+    return (
+      <ScrollView
+        style={styles.fillScroll}
+        contentContainerStyle={[styles.fill, style]}
+        alwaysBounceVertical={false}
+        showsVerticalScrollIndicator={false}
+        testID={testID}
+      >
+        {content}
+      </ScrollView>
+    );
+  }
+  return (
+    <View style={[styles.inset, style]} testID={testID}>
+      {content}
     </View>
   );
 }
@@ -69,8 +90,11 @@ const styles = StyleSheet.create({
   },
   // Vertically centred in whatever space is left — the full-screen guard states,
   // where there is no list to sit above.
-  fill: {
+  fillScroll: {
     flex: 1,
+  },
+  fill: {
+    flexGrow: 1,
     paddingHorizontal: theme.space4,
     alignItems: 'center',
     justifyContent: 'center',

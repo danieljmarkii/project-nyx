@@ -181,14 +181,18 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     letterSpacing: theme.trackingTight,
   },
+  // The delta yields beside the number, so a long label wraps at 320 rather than running
+  // past the screen's edge (CUL-2244).
   deltaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flexShrink: 1,
   },
   deltaText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
+    flexShrink: 1,
   },
   chart: {
     marginTop: theme.space1,

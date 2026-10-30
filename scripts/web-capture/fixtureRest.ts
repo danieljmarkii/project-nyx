@@ -58,6 +58,8 @@ export function buildFixtureTables(nowMs: number, timezone = 'UTC'): Record<stri
         id: f.id, brand: f.brand, product_name: f.productName, format: f.format, food_type: f.foodType,
         primary_protein: f.primaryProtein, proteins: f.proteins, is_novel_protein: f.isNovelProtein,
         ai_extraction_status: 'manual', source: 'user', created_by_user_id: story.userId,
+        // NOT NULL DEFAULT '{}' (migration 007): the food screen joins it unguarded.
+        photo_paths: [],
         archived_at: null, created_at: createdAt, updated_at: stamp,
       });
     }

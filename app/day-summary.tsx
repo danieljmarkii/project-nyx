@@ -18,7 +18,7 @@
 // retry, NEVER a false "nothing logged".
 import { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { useColumnWidth } from '../hooks/useLayoutClass';
+import { bleedFor, useColumn, useColumnWidth } from '../hooks/useLayoutClass';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { setStatusBarStyle } from 'expo-status-bar';
@@ -125,8 +125,12 @@ export default function DaySummaryScreen() {
     [],
   );
 
+  // The night ground reaches the window edge on the unfolded Duo, as the paywall's does;
+  // the recap stays in the column (CUL-2244).
+  const { gutter } = useColumn();
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, bleedFor(gutter)]} edges={['top']}>
       <Header title="Today" leading="back" night onLeadingPress={goBack} />
 
       {state.status === 'loading' ? (

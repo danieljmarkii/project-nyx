@@ -1037,14 +1037,19 @@ const styles = StyleSheet.create({
     columnGap: theme.space2,
     rowGap: theme.space0_5,
   },
+  // An item longer than the card's line wraps inside it rather than running off the
+  // card: the refused line's day count is the claim, and at 320 it was the cut half
+  // (CUL-2244).
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space0_5,
+    flexShrink: 1,
   },
   legendText: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+    flexShrink: 1,
   },
   swatch: {
     width: 12,
