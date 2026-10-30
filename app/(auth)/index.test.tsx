@@ -2,6 +2,7 @@ import { render, fireEvent, act } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import LandingScreen from './index';
 import { useAuthStore } from '../../store/authStore';
+import { theme } from '../../constants/theme';
 import type { Session } from '@supabase/supabase-js';
 
 // Landing tests (B-284 PR N2b hero + the cold-start session guard). The hero
@@ -103,6 +104,20 @@ describe('LandingScreen', () => {
       const hero = heroOf(getByTestId('landing-how-it-works'));
       expect(hero.flexGrow).toBe(1);
       expect(hero.flex).toBeUndefined();
+    });
+
+    // CUL-2278: at AX5 the wordmark outgrew a 320 column and lost its first and last
+    // letters. Newsreader sets "Culprit" 84.4pt wide at 28pt (measured in Chromium), so the
+    // cap times that width must fit the 320 phone's column, and sit above every standard size.
+    it('caps the wordmark where it still fits a 320 column', () => {
+      const { getByText } = at(3.571);
+      const wordmark = getByText('Culprit');
+      const cap = wordmark.props.maxFontSizeMultiplier as number;
+      const { fontSize } = RN.StyleSheet.flatten(wordmark.props.style) as { fontSize: number };
+      const widthPerPt = 84.4 / 28;
+      const column = 320 - theme.space3 * 2;
+      expect(cap * fontSize * widthPerPt).toBeLessThanOrEqual(column);
+      expect(cap).toBeGreaterThan(1.353);
     });
 
     it('keeps the fixed column, with no scroll, at the standard sizes', () => {

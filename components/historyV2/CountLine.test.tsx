@@ -59,6 +59,9 @@ describe('CountLine', () => {
       expect(style.minHeight).toBeGreaterThanOrEqual(44);
       // Boxes at the floor take no slop, so neither door reaches into the other.
       expect(door.props.hitSlop).toBeUndefined();
+      // Never wider than the line, so at AX5 on a 320 phone its words wrap inside the box
+      // rather than running past the screen's edge (CUL-2278).
+      expect((StyleSheet.flatten(door.props.style) as { maxWidth?: string }).maxWidth).toBe('100%');
     }
     // One row, as round 5 draws it: the rendered gap between the two boxes is at least the
     // two facing slops (none), and visible (C-5: read off the rendered row, not a token).

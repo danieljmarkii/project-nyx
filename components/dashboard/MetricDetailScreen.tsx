@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
@@ -16,6 +16,7 @@ import { ArrowUp, ArrowDown } from 'lucide-react-native';
 // here so existing importers (this component's test, the detail route) keep their import.
 import type { MetricDetailWindowData } from '../../lib/metricDetail';
 import { ThemedText } from '../ui/ThemedText';
+import { SegmentedControl, type SegmentOption } from '../ui/SegmentedControl';
 import { STACK_FONT_SCALE } from '../ui/IdentityRow';
 export type { MetricDetailWindowData } from '../../lib/metricDetail';
 
@@ -31,12 +32,12 @@ export type { MetricDetailWindowData } from '../../lib/metricDetail';
 // local selection. Below the sample floor a window shows the calibration state (§10),
 // never a fabricated line.
 
-const WINDOW_ORDER: AnalyticsWindow[] = ['week', 'month', '3month'];
-const WINDOW_UI_LABEL: Record<AnalyticsWindow, string> = {
-  week: 'Week',
-  month: 'Month',
-  '3month': '3 Months',
-};
+// The ranges in their order, on the shared control (CUL-2278).
+const WINDOW_OPTIONS: ReadonlyArray<SegmentOption<AnalyticsWindow>> = [
+  { value: 'week', label: 'Week' },
+  { value: 'month', label: 'Month' },
+  { value: '3month', label: '3 Months' },
+];
 
 // A sparkline-style band sized for glance legibility, deliberately off the 8pt grid;
 // width is derived per-render from the live column (useColumnWidth) so it survives
@@ -62,8 +63,7 @@ export function MetricDetailScreen({
 }: Props) {
   const [active, setActive] = useState<AnalyticsWindow>(initialWindow);
   // At the accessibility sizes three ranges cannot share one row (at 320, Week, Month and
-  // 3 Months drew over each other), so the track stacks them. Stacked, the 6pt slop would
-  // reach into the next range 3pt away, so it goes and each range holds 44pt itself.
+  // 3 Months drew over each other), so the shared control stacks them.
   const stacked = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
   const width = useColumnWidth();
   const chartWidth = width - theme.space3 * 4;
@@ -78,29 +78,13 @@ export function MetricDetailScreen({
     <View style={styles.container}>
       <ThemedText style={styles.title}>{title}</ThemedText>
 
-      <View
-        style={[styles.segmentedControl, stacked && styles.segmentedControlStacked]}
-        accessibilityRole="tablist"
-      >
-        {WINDOW_ORDER.map((w) => {
-          const isActive = w === active;
-          return (
-            <Pressable
-              key={w}
-              onPress={() => setActive(w)}
-              hitSlop={stacked ? undefined : 6}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={WINDOW_UI_LABEL[w]}
-              style={[styles.segment, stacked && styles.segmentStacked, isActive && styles.segmentActive]}
-            >
-              <ThemedText style={[styles.segmentLabel, isActive && styles.segmentLabelActive]}>
-                {WINDOW_UI_LABEL[w]}
-              </ThemedText>
-            </Pressable>
-          );
-        })}
-      </View>
+      <SegmentedControl
+        options={WINDOW_OPTIONS}
+        value={active}
+        onChange={setActive}
+        stacked={stacked}
+        testID="metric-window"
+      />
 
       {state.kind === 'calibrating' ? (
         <ThemedText style={styles.calibration}>
@@ -145,40 +129,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
-    color: theme.colorTextPrimary,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    backgroundColor: theme.colorSurfaceSubtle,
-    borderRadius: theme.radiusSmall,
-    padding: 3,
-    gap: 3,
-  },
-  segmentedControlStacked: {
-    flexDirection: 'column',
-  },
-  segment: {
-    flex: 1,
-    minHeight: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: theme.radiusSmall - 2,
-  },
-  // A range sized by its label in the stacked column, never a zero flex basis.
-  segmentStacked: {
-    flexGrow: 0,
-    flexBasis: 'auto',
-    minHeight: theme.hitTarget,
-  },
-  segmentActive: {
-    backgroundColor: theme.colorSurface,
-  },
-  segmentLabel: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-  },
-  segmentLabelActive: {
     color: theme.colorTextPrimary,
   },
   baselineRead: {
