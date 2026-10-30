@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
@@ -57,7 +57,12 @@ type ThumbProps = { hasPhoto: boolean; photoUrl: string | null; photoLoading: bo
 // the brand on every row. A tap opens the food's detail screen; logging stays on
 // the FAB picker path. (The picker's 2-up toFoodRows chunker is deliberately not
 // used here — these are full-width rows, one food per line, not a 2-col grid.)
+// At the accessibility text sizes the title and "Add food" no longer fit one row: the title
+// was squeezed to a letter a line. The same line IdentityRow stacks at, for the same reason.
+const HEADER_STACK_FONT_SCALE = 1.6;
+
 export default function FoodsScreen() {
+  const headerStacked = useWindowDimensions().fontScale >= HEADER_STACK_FONT_SCALE;
   const [library, setLibrary] = useState<LibraryFood[]>([]);
   // Archived foods (B-005 PR 3) — the removed-from-library set, shown in a
   // collapsed-by-default section at the bottom of the tab. Its own read so a
@@ -348,7 +353,7 @@ export default function FoodsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <View style={styles.header}>
+      <View style={[styles.header, headerStacked && styles.headerStacked]}>
         {/* B-626 — the tab's persistent pet context. Three layers of this
             surface are scoped to the ACTIVE PET over a per-account library (the
             reliable-favorites shelf, the per-row intake notes, and the B-616
@@ -687,6 +692,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space3,
     paddingTop: 14,
     paddingBottom: 8,
+  },
+  headerStacked: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: theme.space1,
   },
   // The title + its per-pet subtitle stack (B-626). `flexShrink` so a long pet
   // name truncates the subtitle rather than pushing the "Add food" action off the
