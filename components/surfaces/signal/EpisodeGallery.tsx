@@ -99,13 +99,19 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
   // each one at most a tile wide, filling the row. A phone keeps the 23% four-up.
   const regular = useLayoutClass().width === 'regular';
   const [gridWidth, setGridWidth] = useState(0);
-  const onGridLayout = (e: LayoutChangeEvent) => setGridWidth(e.nativeEvent.layout.width);
+  const [gridMeasured, setGridMeasured] = useState(false);
+  const onGridLayout = (e: LayoutChangeEvent) => {
+    setGridWidth(e.nativeEvent.layout.width);
+    setGridMeasured(true);
+  };
   // Floored: a fractional share can round past the row and wrap the last tile.
   const tileWidth: ViewStyle | null =
     regular && gridWidth > 0 ? { width: Math.floor(tilesAcross(gridWidth, theme.layoutTileMax, theme.space1).size) } : null;
   // At regular the tiles wait for the row's measure (CUL-2267): drawn first at the phone's
   // 23% they jumped a frame later to their regular width, and a tile mounts its photo once.
-  const tilesReady = !regular || gridWidth > 0;
+  // Any first measure releases them, a zero width included (they fall back to the 23%): a
+  // tile carries its call word, so the hold may cost a layout pass, never the tile.
+  const tilesReady = !regular || gridMeasured;
   return (
     <View testID="episode-gallery">
       <View style={styles.header}>

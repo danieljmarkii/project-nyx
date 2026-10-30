@@ -119,6 +119,17 @@ describe('the tiles at regular width', () => {
     }
   });
 
+  it('a row that measures zero wide still releases them, call word and all', () => {
+    mockWindowWidth = 890;
+    try {
+      const view = render(<EpisodeGallery episodes={episodes('file:///cache/a.jpg')} />);
+      fireEvent(view.getByTestId('episode-grid'), 'layout', { nativeEvent: { layout: { width: 0, height: 0, x: 0, y: 0 } } });
+      expect(view.getByTestId('episode-verdict-ev-1').props.children).toBe(TIER_WORDS.worth_a_call.short);
+    } finally {
+      mockWindowWidth = 390;
+    }
+  });
+
   it('a phone draws them on the first frame, unmeasured', () => {
     const view = render(<EpisodeGallery episodes={episodes('file:///cache/a.jpg')} />);
     expect(photoUri(view)).toBe('file:///cache/a.jpg');

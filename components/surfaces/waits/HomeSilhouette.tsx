@@ -53,48 +53,47 @@ export function HomeSilhouette({ topInset = 0, tabBarHeight, rail = null }: Home
   return (
     <SilhouetteFrame testID={HOME_SILHOUETTE_TEST_ID} style={[styles.fill, rail && styles.railed]}>
       <View style={styles.scene}>
-      {/* The header row: avatar, the pet's name, the date at the right. */}
-      <View style={[styles.header, { paddingTop: topInset }]}>
-        <View style={styles.headerRow}>
-          <Block width={HEADER_AVATAR_SIZE} height={HEADER_AVATAR_SIZE} radius={theme.radiusFull} />
-          <Line width={96} height={14} />
-          <View style={styles.headerSpacer} />
-          <Line width={64} height={10} />
+        {/* The header row: avatar, the pet's name, the date at the right. */}
+        <View style={[styles.header, { paddingTop: topInset }]}>
+          <View style={styles.headerRow}>
+            <Block width={HEADER_AVATAR_SIZE} height={HEADER_AVATAR_SIZE} radius={theme.radiusFull} />
+            <Line width={96} height={14} />
+            <View style={styles.headerSpacer} />
+            <Line width={64} height={10} />
+          </View>
         </View>
-      </View>
 
-      <View style={styles.body}>
-        {/* The Signal card: the rail, a title, the chart, the week line. */}
-        <Surface style={styles.signal}>
-          <Block width={RAIL_WIDTH} height={96} radius={theme.radiusXS} style={styles.rail} />
-          <View style={styles.signalBody}>
-            <Line width="72%" height={16} />
-            <Block height={64} />
-            <Line width="52%" height={10} />
-          </View>
-        </Surface>
-
-        {/* Today: the look question as its header, then the chips, then the count line. */}
-        <Surface>
-          <Line width="60%" height={14} />
-          <View style={styles.chips}>
-            {CHIP_WIDTHS.map((w, i) => (
-              <Block key={i} width={w} height={CHIP_HEIGHT} radius={theme.radiusFull} />
-            ))}
-          </View>
-          <Line width="54%" height={10} style={styles.countLine} />
-          {/* The first nodes of the spine. */}
-          {NODE_ROWS.map((w, i) => (
-            <View key={i} style={styles.node}>
-              <Block width={NODE_DOT} height={NODE_DOT} radius={theme.radiusFull} />
-              <Line width={w} height={12} />
-              <View style={styles.headerSpacer} />
-              <Line width={48} height={10} />
+        <View style={styles.body}>
+          {/* The Signal card: the rail, a title, the chart, the week line. */}
+          <Surface style={styles.signal}>
+            <Block width={RAIL_WIDTH} height={96} radius={theme.radiusXS} style={styles.rail} />
+            <View style={styles.signalBody}>
+              <Line width="72%" height={16} />
+              <Block height={64} />
+              <Line width="52%" height={10} />
             </View>
-          ))}
-        </Surface>
-      </View>
+          </Surface>
 
+          {/* Today: the look question as its header, then the chips, then the count line. */}
+          <Surface>
+            <Line width="60%" height={14} />
+            <View style={styles.chips}>
+              {CHIP_WIDTHS.map((w, i) => (
+                <Block key={i} width={w} height={CHIP_HEIGHT} radius={theme.radiusFull} />
+              ))}
+            </View>
+            <Line width="54%" height={10} style={styles.countLine} />
+            {/* The first nodes of the spine. */}
+            {NODE_ROWS.map((w, i) => (
+              <View key={i} style={styles.node}>
+                <Block width={NODE_DOT} height={NODE_DOT} radius={theme.radiusFull} />
+                <Line width={w} height={12} />
+                <View style={styles.headerSpacer} />
+                <Line width={48} height={10} />
+              </View>
+            ))}
+          </Surface>
+        </View>
       </View>
 
       {/* The tab bar, at the app's place: the rail at regular, the bottom bar on a phone. */}
