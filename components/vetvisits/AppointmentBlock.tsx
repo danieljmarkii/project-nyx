@@ -1,6 +1,7 @@
-import { StyleSheet, TouchableOpacity, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
+import { STACK_FONT_SCALE } from '../ui/IdentityRow';
 import type { AppointmentView } from '../../lib/vetVisits';
 
 interface Props {
@@ -40,6 +41,10 @@ interface Props {
 // press state is the whole affordance, which is the cost of D1 (a) the ruling took.
 export function AppointmentBlock({ appointment, variant = 'plain', onPress, style }: Props) {
   const { stamp } = appointment;
+  // At the accessibility sizes the date block sits above the time rather than beside it:
+  // beside, the day drew under the time ("17 3:00 pm"), and a wider block left the time
+  // too narrow to hold "Saturday" whole (CUL-2265).
+  const stacked = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
   // One accessible node: a screen reader reads "Tuesday · 3:00 pm, Riverside Animal
   // Hospital · recheck" as one sentence rather than four fragments, and the date
   // block's two numerals stop being their own stop. The label is the VISIBLE text on
@@ -49,12 +54,12 @@ export function AppointmentBlock({ appointment, variant = 'plain', onPress, styl
   const body = (
     <>
       {stamp ? (
-        <View style={styles.stamp} importantForAccessibility="no-hide-descendants">
+        <View style={[styles.stamp, stacked && styles.stampStacked]} importantForAccessibility="no-hide-descendants">
           <ThemedText style={styles.stampDay}>{stamp.day}</ThemedText>
           <ThemedText style={styles.stampMonth}>{stamp.month}</ThemedText>
         </View>
       ) : null}
-      <View style={styles.main}>
+      <View style={[styles.main, stacked && styles.mainStacked]}>
         <ThemedText style={styles.when}>{appointment.when}</ThemedText>
         {appointment.where ? (
           <ThemedText style={styles.where} numberOfLines={2}>
@@ -70,7 +75,7 @@ export function AppointmentBlock({ appointment, variant = 'plain', onPress, styl
       <TouchableOpacity
         // No hitSlop: the block is already far larger than the 44pt floor, and slop
         // would reach toward the doors beneath it (C-5).
-        style={[styles.row, variant === 'inset' && styles.inset, style]}
+        style={[styles.row, stacked && styles.rowStacked, variant === 'inset' && styles.inset, style]}
         onPress={onPress}
         activeOpacity={0.7}
         accessibilityRole="button"
@@ -84,7 +89,7 @@ export function AppointmentBlock({ appointment, variant = 'plain', onPress, styl
 
   return (
     <View
-      style={[styles.row, variant === 'inset' && styles.inset, style]}
+      style={[styles.row, stacked && styles.rowStacked, variant === 'inset' && styles.inset, style]}
       accessible
       accessibilityLabel={label}
     >
@@ -99,6 +104,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 11,
   },
+  rowStacked: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
   inset: {
     padding: 10,
     borderRadius: theme.radiusMedium,
@@ -107,6 +116,12 @@ const styles = StyleSheet.create({
   stamp: {
     width: 38,
     alignItems: 'center',
+  },
+  // Stacked, the day outgrows 38: a floor, not a width, so the block grows with its
+  // numerals rather than spilling past the row's edge.
+  stampStacked: {
+    width: undefined,
+    minWidth: 38,
   },
   stampDay: {
     fontSize: theme.textLG,
@@ -124,6 +139,12 @@ const styles = StyleSheet.create({
   main: {
     flex: 1,
     minWidth: 0,
+  },
+  // Stacked, the text takes the row's width and its own height, never a zero flex basis.
+  mainStacked: {
+    flexGrow: 0,
+    flexBasis: 'auto',
+    alignSelf: 'stretch',
   },
   when: {
     fontSize: theme.textSM,

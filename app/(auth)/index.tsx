@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { theme, colorRoles } from '../../constants/theme';
@@ -9,6 +9,7 @@ import { CulpritMark } from '../../components/brand/CulpritMark';
 import { NightHeroGround } from '../../components/onboarding/NightHeroGround';
 import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { STACK_FONT_SCALE } from '../../components/ui/IdentityRow';
 
 // The Culprit Landing hero (B-284 PR N2b, spec §4; hero recomposed 2026-07-26) —
 // the unauthenticated entry point. A full-bleed night ground (aurora + whorl
@@ -59,6 +60,11 @@ export default function LandingScreen() {
   const width = useColumnWidth();
   // ~44% of the column's width (spec §4; the screen's width on every phone). The moon is the screen's focal graphic.
   const moonSize = Math.round(width * 0.44);
+  // At the accessibility sizes the hero and the buttons outgrow the screen, and a fixed
+  // column drew Log in over the sub (CUL-2265), so there the page scrolls. Below them it
+  // keeps its fixed column: a scroller rasterizes its content on a layer of its own, which
+  // re-antialiases the moon's carve, and the brand moment stays exactly as it was.
+  const scrolls = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
 
   const session = useAuthStore((s) => s.session);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -97,61 +103,76 @@ export default function LandingScreen() {
     <View style={styles.root}>
       <NightHeroGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.hero}>
-          {/* Moon + wordmark are one "Culprit" a11y image so a screen reader hears
-              the brand once (the moon stays a silent child via accessible={false},
-              exactly as it does inside AuthBrandMark). */}
-          <View style={styles.lockup} accessible accessibilityRole="image" accessibilityLabel="Culprit">
-            <CulpritMark size={moonSize} ground="night" accessible={false} />
-            <Text style={styles.wordmark}>Culprit</Text>
+        <LandingBody scrolls={scrolls}>
+          <View style={[styles.hero, scrolls ? styles.heroScrolling : styles.heroFixed]}>
+            {/* Moon + wordmark are one "Culprit" a11y image so a screen reader hears
+                the brand once (the moon stays a silent child via accessible={false},
+                exactly as it does inside AuthBrandMark). */}
+            <View style={styles.lockup} accessible accessibilityRole="image" accessibilityLabel="Culprit">
+              <CulpritMark size={moonSize} ground="night" accessible={false} />
+              <Text style={styles.wordmark}>Culprit</Text>
+            </View>
+            {showAuthActions && (
+              <>
+                <ThemedText style={styles.sub}>
+                  Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.
+                </ThemedText>
+                {/* Tertiary affordance, deliberately NOT a filled button — keeps "Create
+                    account" the single obvious action while the value previews stay one
+                    tap away. */}
+                <TouchableOpacity
+                  onPress={() => router.push('/(auth)/how-it-works')}
+                  style={styles.learnMore}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="See how it works"
+                  testID="landing-how-it-works"
+                >
+                  <ThemedText style={styles.learnMoreText}>See how it works ›</ThemedText>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
+
+          {/* Pinned + persistent once the session decision lands (spec §4); at the
+              accessibility sizes it scrolls with the hero, below the fold. */}
           {showAuthActions && (
-            <>
-              <ThemedText style={styles.sub}>
-                Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.
-              </ThemedText>
-              {/* Tertiary affordance, deliberately NOT a filled button — keeps "Create
-                  account" the single obvious action while the value previews stay one
-                  tap away. */}
+            <View style={styles.cta}>
+              <PrimaryButton
+                label="Create account"
+                onPress={() => router.push('/(auth)/signup')}
+                // The action on the night ground: moonlight, since indigo cannot show
+                // on the indigo night (CUL-2200, C3).
+                variant="night"
+                testID="landing-create-account"
+              />
               <TouchableOpacity
-                onPress={() => router.push('/(auth)/how-it-works')}
-                style={styles.learnMore}
+                onPress={() => router.push('/(auth)/login')}
+                style={styles.loginButton}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="See how it works"
-                testID="landing-how-it-works"
+                accessibilityLabel="Log in"
+                testID="landing-log-in"
               >
-                <ThemedText style={styles.learnMoreText}>See how it works ›</ThemedText>
+                <ThemedText style={styles.loginText}>Log in</ThemedText>
               </TouchableOpacity>
-            </>
+            </View>
           )}
-        </View>
-
-        {/* Pinned + persistent once the session decision lands (spec §4). */}
-        {showAuthActions && (
-          <View style={styles.cta}>
-            <PrimaryButton
-              label="Create account"
-              onPress={() => router.push('/(auth)/signup')}
-              // The action on the night ground: moonlight, since indigo cannot show
-              // on the indigo night (CUL-2200, C3).
-              variant="night"
-              testID="landing-create-account"
-            />
-            <TouchableOpacity
-              onPress={() => router.push('/(auth)/login')}
-              style={styles.loginButton}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Log in"
-              testID="landing-log-in"
-            >
-              <ThemedText style={styles.loginText}>Log in</ThemedText>
-            </TouchableOpacity>
-          </View>
-        )}
+        </LandingBody>
       </SafeAreaView>
     </View>
+  );
+}
+
+// The Landing's column: a scroll whose content grows to fill at the accessibility sizes,
+// the plain fixed column at every other size (see `scrolls` above). Crossing the threshold
+// remounts the hero and buttons; the focus and redirect state live in the screen above.
+function LandingBody({ scrolls, children }: { scrolls: boolean; children: ReactNode }) {
+  if (!scrolls) return <>{children}</>;
+  return (
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} bounces={false}>
+      {children}
+    </ScrollView>
   );
 }
 
@@ -166,8 +187,20 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: theme.space3,
   },
-  hero: {
+  scroll: {
+    flexGrow: 1,
+  },
+  // The fixed column: the hero takes what the buttons leave.
+  heroFixed: {
     flex: 1,
+  },
+  // In the scroll a zero flex basis would collapse the hero to the buttons' leftovers, so
+  // it grows from its own height. Its own entry, never an override of `flex: 1`: web drops
+  // an undefined style key, so `flex: undefined` would leave the basis at zero there.
+  heroScrolling: {
+    flexGrow: 1,
+  },
+  hero: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.space2,

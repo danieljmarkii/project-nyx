@@ -8,6 +8,7 @@ import { colorRoles, theme } from '../../constants/theme';
 import { useColumnWidth, useLayoutClass } from '../../hooks/useLayoutClass';
 import { columnCap, withCap } from '../../lib/layoutCaps';
 import { ThemedText } from '../ui/ThemedText';
+import { usePickerColumns } from './pickerColumns';
 
 // The log's event-type picker (B-745), extracted out of app/log.tsx so both hosts
 // render ONE grid: the family grid of the confirmed round-3 W1 frame (taxonomy
@@ -96,29 +97,40 @@ function TileGlyph({ type }: { type: EventTypeKey }) {
 // the hit boundary must be unambiguous).
 const SEG_HIT = { top: 8, bottom: 8 };
 
-function StoolSplitTile({ onSelectType }: { onSelectType: (type: EventTypeKey) => void }) {
+// One column (the accessibility sizes): the two segments drop under the name and stack,
+// each the tile's width, since side by side they pushed the name to nothing and Loose off
+// the screen. Stacked, a vertical slop would reach into the other segment, so the slop
+// goes and each segment holds the 44pt floor itself.
+function StoolSplitTile({
+  onSelectType,
+  oneColumn,
+}: {
+  onSelectType: (type: EventTypeKey) => void;
+  oneColumn: boolean;
+}) {
+  const segHit = oneColumn ? undefined : SEG_HIT;
   return (
-    <View style={[styles.groupTile, styles.groupTileFull]}>
+    <View style={[styles.groupTile, styles.groupTileFull, oneColumn && styles.splitTileStacked]}>
       <TileGlyph type="stool_normal" />
       <ThemedText style={styles.groupTileLabel} numberOfLines={1}>
         {pickerLabel('stool_normal')}
       </ThemedText>
-      <View style={styles.splitSeg}>
+      <View style={[styles.splitSeg, oneColumn && styles.splitSegStacked]}>
         <TouchableOpacity
-          style={styles.splitBtn}
+          style={[styles.splitBtn, oneColumn && styles.splitBtnStacked]}
           onPress={() => onSelectType('stool_normal')}
           activeOpacity={0.7}
-          hitSlop={SEG_HIT}
+          hitSlop={segHit}
           accessibilityRole="button"
           accessibilityLabel="Log normal stool"
         >
           <ThemedText style={styles.splitBtnText}>Normal</ThemedText>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.splitBtn}
+          style={[styles.splitBtn, oneColumn && styles.splitBtnStacked]}
           onPress={() => onSelectType('diarrhea')}
           activeOpacity={0.7}
-          hitSlop={SEG_HIT}
+          hitSlop={segHit}
           accessibilityRole="button"
           accessibilityLabel="Log loose stool"
         >
@@ -178,6 +190,9 @@ export function GroupedEventGrid({
   // itself at the column's width and centres (CUL-2238): a 48% tile stays a phone's tile
   // grown a little, never half the unfolded window.
   const cap = columnCap(useLayoutClass().width, useColumnWidth());
+  // At the accessibility sizes a half-width tile breaks a name mid-word ("Coug / h"), so
+  // the grid drops to one column there, the rule the food and medication pickers keep.
+  const oneColumn = usePickerColumns() === 1;
   return (
     <View style={withCap(styles.groupedContent, cap)}>
       {groups.map((group) => {
@@ -188,9 +203,9 @@ export function GroupedEventGrid({
             <View style={styles.groupRow}>
               {group.keys.map((key) => {
                 if (key === 'stool_normal') {
-                  return <StoolSplitTile key={key} onSelectType={onSelectType} />;
+                  return <StoolSplitTile key={key} onSelectType={onSelectType} oneColumn={oneColumn} />;
                 }
-                const fullWidth = fullWidthKeys.has(key);
+                const fullWidth = oneColumn || fullWidthKeys.has(key);
                 return (
                   <TouchableOpacity
                     key={key}
@@ -266,6 +281,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: theme.space1,
   },
+  // One column: the segments wrap under the glyph and name and stack full width.
+  splitTileStacked: {
+    flexWrap: 'wrap',
+    rowGap: theme.space1,
+  },
+  splitSegStacked: {
+    width: '100%',
+    flexDirection: 'column',
+  },
   splitBtn: {
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -273,6 +297,11 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
     backgroundColor: theme.colorSurface,
+  },
+  splitBtnStacked: {
+    alignItems: 'center',
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
   },
   splitBtnText: {
     fontSize: theme.textSM,

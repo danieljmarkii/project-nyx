@@ -222,6 +222,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                 {
                   "width": "100%",
                 },
+                false,
               ]
             }
           >
@@ -320,10 +321,13 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
             </Text>
             <View
               style={
-                {
-                  "flexDirection": "row",
-                  "gap": 8,
-                }
+                [
+                  {
+                    "flexDirection": "row",
+                    "gap": 8,
+                  },
+                  false,
+                ]
               }
             >
               <View

@@ -70,6 +70,49 @@ describe('LandingScreen', () => {
     expect(mockedPush).toHaveBeenCalledWith('/(auth)/login');
   });
 
+  // CUL-2265: at the largest text the hero and the buttons outgrow the screen; a fixed
+  // column drew Log in over the sub. There the hero, the door and both buttons sit in one
+  // scroll, so every one of them can be reached; below it the column stays fixed.
+  describe('the scroll at large text', () => {
+    const RN = require('react-native') as typeof import('react-native');
+    afterEach(() => jest.restoreAllMocks());
+    // The hero: the nearest ancestor of the door that lays out the column's free space.
+    const heroOf = (door: { parent: unknown }) => {
+      let n = door.parent as { props: { style?: unknown }; parent: unknown } | null;
+      while (n) {
+        const style = RN.StyleSheet.flatten(n.props.style as never) as Record<string, unknown> | undefined;
+        if (style && ('flex' in style || 'flexGrow' in style)) return style;
+        n = n.parent as typeof n;
+      }
+      throw new Error('no hero above the door');
+    };
+    const at = (fontScale: number) => {
+      jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, fontScale, scale: 2 });
+      return render(<LandingScreen />);
+    };
+
+    it('holds the sub, the door and both buttons in one scroll at the accessibility sizes', () => {
+      const { getByTestId, UNSAFE_getByType } = at(3.571);
+      const scroll = UNSAFE_getByType(RN.ScrollView);
+      for (const id of ['landing-how-it-works', 'landing-create-account', 'landing-log-in']) {
+        let n = getByTestId(id).parent;
+        while (n && n !== scroll) n = n.parent;
+        expect(n).toBe(scroll);
+      }
+      // The hero grows from its own height in the scroll, never from a zero basis.
+      const hero = heroOf(getByTestId('landing-how-it-works'));
+      expect(hero.flexGrow).toBe(1);
+      expect(hero.flex).toBeUndefined();
+    });
+
+    it('keeps the fixed column, with no scroll, at the standard sizes', () => {
+      const { getByTestId, UNSAFE_queryAllByType } = at(1.353);
+      expect(UNSAFE_queryAllByType(RN.ScrollView)).toHaveLength(0);
+      expect(getByTestId('landing-log-in')).toBeTruthy();
+      expect(heroOf(getByTestId('landing-how-it-works')).flex).toBe(1);
+    });
+  });
+
   it('routes "See how it works" to the value-preview screen', () => {
     const { getByTestId } = render(<LandingScreen />);
     fireEvent.press(getByTestId('landing-how-it-works'));
