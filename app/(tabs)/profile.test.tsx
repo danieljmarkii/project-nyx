@@ -280,3 +280,22 @@ describe('the scroll inset clears the + (C-5, CUL-2264)', () => {
     expect(PET_TAB_SCROLL_INSET).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
   });
 });
+
+describe('the cards’ add actions sit where the + never floats (C-5, CUL-2264)', () => {
+  // The + floats over the right edge of whatever sits at the bottom of the screen, so an
+  // action at a card header's right edge sat under it at rest on a short phone. Each add
+  // is now its own left-aligned line at the card's foot, as the Weight card's is: never in
+  // a row beside the title, where space-between pushed it right.
+  const hostParentStyle = (node: any) => {
+    let n = node?.parent;
+    while (n && typeof n.type !== 'string') n = n.parent;
+    return StyleSheet.flatten(n?.props.style) ?? {};
+  };
+  it.each(['Add a condition', 'Add a medication'])('%s is a left-aligned button on its own line', (label) => {
+    const { getByLabelText } = render(<ProfileScreen />);
+    const link = getByLabelText(label);
+    expect(link.props.accessibilityRole).toBe('button');
+    expect(StyleSheet.flatten(link.props.style).alignSelf).toBe('flex-start');
+    expect(hostParentStyle(link).flexDirection).not.toBe('row');
+  });
+});

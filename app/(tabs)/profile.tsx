@@ -1344,10 +1344,7 @@ export default function ProfileScreen() {
 
         {/* ── Conditions ── */}
         <Card style={styles.sectionGap}>
-          <View style={styles.sectionHeader}>
-            <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
-            <TextLink label="Add" accessibilityLabel="Add a condition" onPress={openAddCondition} />
-          </View>
+          <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
 
           {conditionsView.kind === 'loading' ? (
             <SectionSkeleton lines={3} testID="conditions-loading" />
@@ -1387,6 +1384,10 @@ export default function ProfileScreen() {
               );
             })
           )}
+          {/* The card's action at its foot, on the left, as the Weight card's is: the + floats
+              over the right edge of whatever sits at the bottom of the screen, so a right-edge
+              action can sit under it at rest on a short phone (C-5; CUL-2264). */}
+          <TextLink label="Add a condition" onPress={openAddCondition} />
         </Card>
 
         {/* ── Current medications ── */}
@@ -1394,10 +1395,7 @@ export default function ProfileScreen() {
             target for a first row and as the fallback when the tapped strip names
             an ad-hoc course with no active regimen row to land on. */}
         <Card style={styles.sectionGap} testID="med-section" onLayout={handleMedSectionLayout}>
-          <View style={styles.sectionHeader}>
-            <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
-            <TextLink label="+ Add" accessibilityLabel="Add a medication" onPress={openAddMedication} />
-          </View>
+          <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
 
           {medicationsView.kind === 'loading' ? (
             <SectionSkeleton lines={3} testID="medications-loading" />
@@ -1570,6 +1568,8 @@ export default function ProfileScreen() {
               );
             })
           )}
+          {/* Left, at the foot, as Conditions' is (C-5; CUL-2264). */}
+          <TextLink label="Add a medication" onPress={openAddMedication} />
         </Card>
 
         {/* ── Past medications (B-140 extended, PR 2, mock §02) ──
@@ -1842,11 +1842,6 @@ const styles = StyleSheet.create({
   // ── Section layout (gap for inner rows) ──
   sectionGap: {
     gap: theme.space2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   sectionTitle: {
     fontSize: theme.textMD,
