@@ -1,5 +1,5 @@
 # Culprit — App Polish Requirements (Aug 2026)
-**Version:** 1.4 | **Status:** BUILD-READY | **Last Updated:** 2026-10-10
+**Version:** 1.5 | **Status:** BUILD-READY | **Last Updated:** 2026-10-30
 
 The build contract for the **Aug. 2026 Design Polish** track (Linear project, team Culprit). Born from the 2026-08-22 design/UX session: a four-lens audit (Jordan capture · Sam multi-pet · Designer periphery · PO Linear reconciliation) → three mock rounds, every decision PM-ruled same day. This doc is canonical; the Linear project links it as a Resource and the repo file wins on divergence.
 
@@ -30,7 +30,7 @@ Out of scope for this track, held in round 1's appendix for their own selection:
 `app/(tabs)/_layout.tsx` (NyxTabBar) + new glyphs in the `eventGlyphs` house style.
 
 - **Glyphs:** Home (house), History (clock), Foods (bowl) — three new stroke glyphs on the house line (react-native-svg via the shared `GlyphSvg` wrapper, B-745 PR 1 precedent; 1.75 stroke, 22pt). **Pet tab = `PetAvatar` mini** (photo; initial-chip fallback) + the pet's name as the label.
-- **Active state:** ink label (weightSemibold) + a 4pt teal tick beneath; inactive = `colorTextTertiary`. Pet tab active = a 2pt `colorAccent` ring on the avatar + ink label. No badge, no motion.
+- **Active state:** ink label (weightSemibold) + a 4pt teal tick beneath; inactive = `colorTextTertiary`. Pet tab active = a 2pt `colorAccent` ring on the avatar + ink label. No badge. On a tap that changes the tab, the dot travels and the glyph answers once (CUL-2251, PM 2026-10-28; `docs/culprit-tab-bar-motion-mockups.html` round 2 is the authority, design principles Principle 9 *A tap may answer once*). §3's ban on looping chrome motion holds.
 - **The ladder (D2):** label renders the full name at 11pt if it fits the tab's width (minus 6pt side padding); else 10pt; else the literal string `Pet`. Measurement once per name × width, cached (onTextLayout or a char-width budget — implementation's choice, deterministic either way). No ellipsis rung. Multi-pet: the tab always shows the **active** pet; re-renders on switch.
 - **A11y:** `tabBarAccessibilityLabel` always the full name (`"Biscuit — pet profile"`); labels stay fixed-size under Dynamic Type (platform tab-bar convention).
 - **AC:** 4 tabs render glyph+label at 320pt without wrap/clip · "Schrodingers Cat" falls back to "Pet", "Bartholomew" renders at the 10pt rung · VoiceOver reads the full name in every rung · flag-free (this is not a beta; it replaces the bar outright).
@@ -161,3 +161,4 @@ Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one sessi
 | v1.1 | 2026-09-14 | §5 R2 gains Undo, and the unconditional-Undo rule is stated for both registers (CUL-964, PM-ruled 2026-09-14). Dwell exception for an in-sheet beat recorded: 1800ms, with the touch pause rather than a longer base. |
 | v1.2 | 2026-10-05 | Design v2 GA (CUL-1071, PM-approved): §2 records the date at the head of the header's right cluster (CUL-1221, `HeaderDate`, still one row, the name's budget pays for it); §5.6 records the shipped haptic state (eight verbs; the look header ticks, the med strip is gone); §10 edit 1 marked written. Inline under ⚠ GA markers. |
 | v1.3 | 2026-10-09 | §5 R1 reworded (CUL-1691 D1, PM-ruled 2026-10-09): the named card is a daylight bottom card over a dimmed Home, never a full-screen white takeover; was "a warm dark bottom card over a dimmed Home (never a white flash)". |
+| v1.5 | 2026-10-30 | §1: "no motion" retires for the tab bar. On a tap that changes the tab, the dot travels and the glyph answers once (CUL-2251; PM ruled option 3 on 2026-10-28, wording approved 2026-10-30). §3's loop ban unchanged. |

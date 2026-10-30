@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 2.1 | **Status:** Stable | **Last Updated:** 2026-10-23
+**Version:** 2.2 | **Status:** Stable | **Last Updated:** 2026-10-30
 
 ---
 
@@ -164,6 +164,8 @@ One physics for the whole app: the rail is the continuous thread, the line leads
 
 **Chrome never moves on its own, except the one tick, while the app is working on the pet's behalf.** The breathing tick is the app's only looping motion: 3pt wide, a 1.4s breath, only while a request is in flight, and it becomes the rail of the thing it was waiting for. Reduced motion renders it still at full opacity. If a loop is on screen, name the request it is waiting on; if you cannot, it is chrome.
 
+**A tap may answer once (2026-10-28, CUL-2251).** A tab answers the tap that chose it with one gesture drawn from its own glyph's meaning. It plays once, only when the tab changes, lands with the house's one settle, and is silent. It never loops, never plays on its own, and is still under Reduce Motion. A generic bounce is chrome. The gestures, as ruled: `docs/culprit-tab-bar-motion-mockups.html` round 2.
+
 Never as a reward for a symptom. Touch is the same vocabulary felt: every commit reaches the hand, a symptom is acknowledged and never congratulated, and safety is silent. A motion or a haptic is verified on a phone, never in a test.
 
 **Reduce Motion.** Turn motion off: can you still tell what changed? The three-way rule: a still frame for content already on screen; a crossfade for content entering in place; instant for a viewport move beyond one screen.
@@ -306,6 +308,7 @@ These are intentionally deferred — answers belong in a future design sprint in
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2.2 | 2026-10-30 | Principle 9 gains *A tap may answer once*: a tab answers the tap that chose it with one gesture from its own glyph, never a loop, never on its own, still under Reduce Motion (CUL-2251; PM ruled option 3 on 2026-10-28, wording approved 2026-10-30). The tick stays the only loop. |
 | v2.1 | 2026-10-23 | Color: one accent becomes one action colour, indigo, and the hue table gives each hue one meaning (CUL-2145, D4 of CUL-1898; wording PM-approved 2026-10-23, building on G4 (C) of 2026-10-03). The trend line and chart paragraphs unchanged. |
 | v2.0 | 2026-10-05 | Design v2 GA (CUL-1071; PM-approved 1a). Principle 3 revised: Home has two jobs, not a list of zones. Two principles added: 8, the data is the delight (with the five things every chart shows), and 9, motion is the record moving (the gestures as shipped, the tick's carve-out, Reduce Motion's three-way rule). The Motion section rewritten in that vocabulary (absorbing CUL-635's D4 line, and recording the Signal's flight, CUL-1077 (a)). Philosophy gains *Calm is not quiet*; Color gains the never-colour-alone chart rule; the lens shapes gain a fifth invariant (scope resets on a pet switch). Principles 1, 2 and 4 to 7 unchanged. |
 | v1.1 | 2026-08-08 | Two Tier-2 additions from the Signal/Home design uplift (B-721, spec §10 — PM-approved). Principle 3 gains the S1 register-drop rule (richer evidence lives on the insight lane only; safety cards stay deliberately plain so plainness signals severity). Principle 5 gains the S6 quiet-is-labeled rule (a presence-gated surface labels its quiet in one explicit line, never shortens silently). No principle revised; both are additions. |
