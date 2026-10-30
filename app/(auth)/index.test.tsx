@@ -71,17 +71,31 @@ describe('LandingScreen', () => {
   });
 
   // CUL-2265: at the largest text the hero and the buttons outgrow the screen; a fixed
-  // column drew Log in over the sub. The hero, the door and both buttons now sit in one
-  // scroll, so every one of them can be reached.
-  it('holds the sub, the door and both buttons in one scroll', () => {
-    const { getByTestId, UNSAFE_getByType } = render(<LandingScreen />);
-    const { ScrollView } = require('react-native') as typeof import('react-native');
-    const scroll = UNSAFE_getByType(ScrollView);
-    for (const id of ['landing-how-it-works', 'landing-create-account', 'landing-log-in']) {
-      let n = getByTestId(id).parent;
-      while (n && n !== scroll) n = n.parent;
-      expect(n).toBe(scroll);
-    }
+  // column drew Log in over the sub. There the hero, the door and both buttons sit in one
+  // scroll, so every one of them can be reached; below it the column stays fixed.
+  describe('the scroll at large text', () => {
+    const RN = require('react-native') as typeof import('react-native');
+    afterEach(() => jest.restoreAllMocks());
+    const at = (fontScale: number) => {
+      jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, fontScale, scale: 2 });
+      return render(<LandingScreen />);
+    };
+
+    it('holds the sub, the door and both buttons in one scroll at the accessibility sizes', () => {
+      const { getByTestId, UNSAFE_getByType } = at(3.571);
+      const scroll = UNSAFE_getByType(RN.ScrollView);
+      for (const id of ['landing-how-it-works', 'landing-create-account', 'landing-log-in']) {
+        let n = getByTestId(id).parent;
+        while (n && n !== scroll) n = n.parent;
+        expect(n).toBe(scroll);
+      }
+    });
+
+    it('keeps the fixed column, with no scroll, at the standard sizes', () => {
+      const { getByTestId, UNSAFE_queryAllByType } = at(1.353);
+      expect(UNSAFE_queryAllByType(RN.ScrollView)).toHaveLength(0);
+      expect(getByTestId('landing-log-in')).toBeTruthy();
+    });
   });
 
   it('routes "See how it works" to the value-preview screen', () => {

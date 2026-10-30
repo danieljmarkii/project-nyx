@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { theme, colorRoles } from '../../constants/theme';
@@ -9,6 +9,7 @@ import { CulpritMark } from '../../components/brand/CulpritMark';
 import { NightHeroGround } from '../../components/onboarding/NightHeroGround';
 import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { ThemedText } from '../../components/ui/ThemedText';
+import { STACK_FONT_SCALE } from '../../components/ui/IdentityRow';
 
 // The Culprit Landing hero (B-284 PR N2b, spec §4; hero recomposed 2026-07-26) —
 // the unauthenticated entry point. A full-bleed night ground (aurora + whorl
@@ -59,6 +60,11 @@ export default function LandingScreen() {
   const width = useColumnWidth();
   // ~44% of the column's width (spec §4; the screen's width on every phone). The moon is the screen's focal graphic.
   const moonSize = Math.round(width * 0.44);
+  // At the accessibility sizes the hero and the buttons outgrow the screen, and a fixed
+  // column drew Log in over the sub (CUL-2265), so there the page scrolls. Below them it
+  // keeps its fixed column: a scroller rasterizes its content on a layer of its own, which
+  // re-antialiases the moon's carve, and the brand moment stays exactly as it was.
+  const scrolls = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
 
   const session = useAuthStore((s) => s.session);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -97,15 +103,8 @@ export default function LandingScreen() {
     <View style={styles.root}>
       <NightHeroGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        {/* Scrolls only when it must: at the largest text the hero and the buttons outgrow
-            the screen, and a fixed column drew Log in over the sub (CUL-2265). The content
-            grows to fill, so at every other size the hero still centres above the stack. */}
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          <View style={styles.hero}>
+        <LandingBody scrolls={scrolls}>
+          <View style={[styles.hero, scrolls && styles.heroScrolling]}>
             {/* Moon + wordmark are one "Culprit" a11y image so a screen reader hears
                 the brand once (the moon stays a silent child via accessible={false},
                 exactly as it does inside AuthBrandMark). */}
@@ -159,9 +158,20 @@ export default function LandingScreen() {
               </TouchableOpacity>
             </View>
           )}
-        </ScrollView>
+        </LandingBody>
       </SafeAreaView>
     </View>
+  );
+}
+
+// The Landing's column: a scroll whose content grows to fill at the accessibility sizes,
+// the plain fixed column at every other size (see `scrolls` above).
+function LandingBody({ scrolls, children }: { scrolls: boolean; children: ReactNode }) {
+  if (!scrolls) return <>{children}</>;
+  return (
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} bounces={false}>
+      {children}
+    </ScrollView>
   );
 }
 
@@ -179,8 +189,14 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
   },
-  hero: {
+  // In the scroll a zero flex basis would collapse the hero to the buttons' leftovers, so
+  // it grows from its own height instead.
+  heroScrolling: {
+    flex: undefined,
     flexGrow: 1,
+  },
+  hero: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.space2,
