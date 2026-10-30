@@ -441,3 +441,27 @@ An isolated verifier checked every factual claim in the chair's first reconcilia
 - **Corrected additively:** the frozen brief's line on the weight lane (inline ⚠, §V1).
 - **Mock:** `docs/culprit-ask-or-mcp-mockups.html`, round 1 exploratory, published at https://claude.ai/artifact/DkpoUz8h9cMGgHjjjdef93.
 - **No PM decision was made this session.**
+
+---
+
+## Round 2 (resumed 2026-10-30)
+
+The PM's reactions to round 1, verbatim:
+- *"Brief 1a. LOVE the concept of 'numbers in the culprit ask responses'."*
+- *"Brief 3. LOVE the concept of a 'copy for your ai'. That feels really smart. It's not culprit making judgements. We're the app that collects the data and structures it in such a way that is easy for an LLM to reason over. FWIW.. I do think that we can do a better job w/ the design. Is there any other data that we should be providing in the ai export? I'm almost imagining a world where the main export that we have w/ a lot of the pet data itself could be structured in such a way that would make it easy to enter in AI."*
+- *"Rule 2. I think I'd need to better understand this one. Could you give it to me via mockup?"*
+- *"Rule 4. Let's punt on the true connector."*
+
+**Recorded on [CUL-2233](https://linear.app/projectnyx/issue/CUL-2233):** brief 1 (a) and brief 3 (a) ruled; brief 4 punted, its gate parked on [CUL-2273](https://linear.app/projectnyx/issue/CUL-2273) (Backlog). Two things wait on one word each: whether 1 (a) relaxes Ask v2's "no before/after around a care event" for counts tables (implied by frame (a), but a clinical line, so confirmed rather than assumed), and (b) or (c) inside the line (the PM's "It's not Culprit making judgements" leans (b); not ruled).
+
+**Mock round 2** (same URL; round 1 stays in git at 1c6fa53), drawn as one proposal with a ledger of reactions:
+- **§1, brief 2 drawn:** one finding, four surfaces (the vet report, Ask and Patterns show it; Home can't); Home today with the gap marked, Home with PR-37's row, the finding's screen; W3 as two report snippets side by side; Dr. Chen's question as three answers and what each does to the row.
+- **§2, the export redesigned:** an entry beside the vet report on Nyx's tab; a sheet that lists what's inside in plain words, with Nyx's real counts; the phone's share sheet into the owner's AI app; the file the AI receives (declarative, findings first, a dictionary, one entry per line).
+- **§3, the PM's question answered:** every part of the record and whether it goes in, opt-in or out, with why; what the app doesn't capture yet; the PM's idea as one export with two depths, and a new brief (one export or two products). The shape follows `docs/research/2026-10-vet-report-machine-readers.md`: same-line scope, a dictionary before the data, self-contained rows, numbered totals, no instructions addressed to an AI.
+
+**Found on the way:**
+- The vet report's weight row (CUL-2026) ends "The owner was told it is worth booking a vet visit", but Home cannot draw that row, so on the PM's account the sentence is false. Filed [CUL-2274](https://linear.app/projectnyx/issue/CUL-2274) (Live harm, a stopgap needs no ruling).
+- Home's red flag strip builds its date with `stripDayUTC` while the card face localizes; added to [CUL-2232](https://linear.app/projectnyx/issue/CUL-2232) as the same class.
+- Nyx's Signal of Oct 29, 8:03 PM reads "Nyx has vomited 5 times this week, on 3 days in a row: worth a call to your vet today", and the vomiting chronicity row no longer carries "your vet knows".
+
+**Production reads this round:** two read only queries (one failed on a column name and changed nothing): record counts by table, and the current Signal. Like round 1's, they scoped Nyx by the owner's uid from the en8 allowlist and the pet's name. The house pattern for a service-role read is the pet's id paired with its owner (`.claude/rules/edge-functions.md`, C-27); a name match is not an ownership check. No other account's rows could match here, because the uid scoped every query, but the next read should use the id.
