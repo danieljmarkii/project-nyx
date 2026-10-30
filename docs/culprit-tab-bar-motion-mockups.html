@@ -1,0 +1,522 @@
+<title>Tab Bar Motion</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="mock-round" content="build-ready">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="mockups/theme.css">
+<style>
+  /* ============================================================
+     Tab bar motion, ROUND 2 (CUL-2251, build-ready). The PM ruled R-1 on
+     2026-10-28: option 3, the dot travels and each glyph answers. Round 1's
+     four-way comparison left the page (git keeps it at commit 4ee850c).
+     This round is what CUL-2253 (the dot) and CUL-2254 (the glyphs) build
+     from: the live bar, the live Duo rail (CUL-2242), the beats in React
+     Native terms, and the state set.
+     Layout: the house mock page (paper, serif heads, phone frames). Page
+     chrome follows the viewer's theme; the PHONE FRAMES never do. Inside a
+     frame every colour and every theme size is a var(--token) from
+     mockups/theme.css (generated from constants/theme.ts), and each part
+     names its kit part in data-kit. The few sizes that are NyxTabBar.tsx
+     constants rather than theme tokens are declared once, in .frame-k
+     below, under their constant names.
+     The one settle is the fold's iOS spring (damping ratio 0.7,
+     components/motion/foldMotion.ts UNFOLD_LAYOUT), simulated here.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1; --tag: #3F35A0; --tag-wash: #ECEAF6;
+    --cur: #08685B; --cur-wash: #E3F2EF;
+    --serif: "Newsreader", ui-serif, Charter, Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+      --cur: #7FD8C6; --cur-wash: rgba(127,216,198,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11); --tag: #C4BEFF; --tag-wash: rgba(196,190,255,0.14);
+    --cur: #7FD8C6; --cur-wash: rgba(127,216,198,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 64px; }
+
+  /* ---------- page type ---------- */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; display: flex; flex-direction: column; gap: 12px; }
+  .eyebrow, .secno { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(36px, 6vw, 56px); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  h1 em { font-style: italic; }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; line-height: 1.15; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  p { margin: 0; max-width: 70ch; }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 66ch; }
+  .muted { color: var(--ink-2); }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--tag-wash); color: var(--ink); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  section { display: flex; flex-direction: column; gap: 20px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--tag-wash); color: var(--tag); white-space: nowrap; }
+  .tag.cur { background: var(--cur-wash); color: var(--cur); }
+
+  /* ---------- ledger + tables ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper-2); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 720px; }
+  th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--rule-soft); }
+  th { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); background: var(--paper); }
+  tr:last-child td { border-bottom: 0; }
+  td b { font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn { font: inherit; font-size: 14px; font-weight: 500; border-radius: 999px; padding: 9px 16px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); cursor: pointer; display: inline-flex; gap: 8px; align-items: center; min-height: 40px; }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn:focus-visible, .tab:focus-visible { outline: 2px solid var(--tag); outline-offset: 2px; }
+  .btn.primary { background: var(--tag); color: var(--paper-2); border-color: var(--tag); }
+  .btn .sw { width: 28px; height: 16px; border-radius: 999px; background: var(--rule); position: relative; flex: none; }
+  .btn .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--paper-2); transition: transform 0.15s; }
+  .btn[aria-pressed="true"] { background: var(--tag-wash); border-color: var(--tag); }
+  .btn[aria-pressed="true"] .sw { background: var(--tag); }
+  .btn[aria-pressed="true"] .sw::after { transform: translateX(12px); }
+  .note { font-size: 13px; color: var(--ink-2); }
+
+  /* ---------- cards ---------- */
+  .live { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .live { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .card-head { display: flex; flex-direction: column; gap: 6px; }
+  .tagrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .card-title { font-family: var(--serif); font-size: 22px; line-height: 1.2; }
+  .card p { font-size: 15px; color: var(--ink-2); }
+
+  /* ---------- frames: tokens only ---------- */
+  .frame-k {
+    /* NyxTabBar.tsx constants (not theme tokens), by their names in the file. */
+    --ICON_SLOT: 26px; --GLYPH_SIZE: 22px; --RING_WIDTH: 2px; --GLYPH_LABEL_GAP: 3px;
+    --LABEL_LINE_HEIGHT: 14px; --LABEL_TICK_GAP: 2px; --TAB_LABEL_SIDE_PADDING: 6px;
+    /* useLayoutClass.ts: TAB_RAIL_WIDTH = space6 + space2. NyxTabBar.tsx: RAIL_TAB_HEIGHT = content 49 + space1 × 2. */
+    --TAB_RAIL_WIDTH: calc(var(--space6) + var(--space2));
+    --RAIL_TAB_HEIGHT: calc(var(--ICON_SLOT) + var(--GLYPH_LABEL_GAP) + var(--LABEL_LINE_HEIGHT) + var(--LABEL_TICK_GAP) + var(--space0_5) + var(--space1) * 2);
+  }
+  .phone { width: 100%; max-width: 390px; margin: 0 auto; border-radius: var(--radiusLarge) var(--radiusLarge) calc(var(--radiusLarge) + var(--space1)) calc(var(--radiusLarge) + var(--space1)); overflow: hidden; background: var(--colorNeutralLight); border: 1px solid var(--rule); font-family: var(--sans); position: relative; }
+  .phone.w320 { max-width: 320px; }
+  .screen { height: 128px; padding: var(--space2) var(--space2) 0; display: flex; flex-direction: column; gap: var(--space1_5); background: var(--colorNeutralLight); }
+  .screen-title { font-size: var(--textLG); font-weight: var(--weightSemibold); line-height: var(--lineHeightLG); color: var(--colorTextPrimary); }
+  .sk { height: var(--hitTarget); border-radius: var(--radiusSmall); background: var(--colorSurface); border: 1px solid var(--colorBorder); }
+  .sk.short { width: 62%; height: var(--space1_5); border: 0; background: var(--colorSurfaceSubtle); border-radius: var(--radiusXS); }
+
+  .bar { position: relative; display: flex; background: var(--colorSurface); border-top: 1px solid var(--colorBorder); padding-top: var(--space1); padding-bottom: var(--space3); }
+  .tab { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 0 var(--TAB_LABEL_SIDE_PADDING); background: none; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; color: var(--colorTextTertiary); font: inherit; }
+  .tab:active .icon, .tab:active .lbl { opacity: 0.7; } /* activeOpacity 0.7, as shipped */
+  .tab.on { color: var(--colorNeutralDark); }
+  .icon { height: var(--ICON_SLOT); width: var(--ICON_SLOT); display: flex; align-items: center; justify-content: center; }
+  .icon svg.g { width: var(--GLYPH_SIZE); height: var(--GLYPH_SIZE); fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+  .icon svg.g * { transform-box: view-box; }
+  .g-house { transform-origin: 12px 20px; }
+  .g-min { transform-origin: 12px 12px; }
+  .g-mat { transform-origin: 12px 17.5px; }
+  .lbl { margin-top: var(--GLYPH_LABEL_GAP); font-size: var(--textXS); line-height: var(--LABEL_LINE_HEIGHT); letter-spacing: var(--trackingWide); font-weight: var(--weightMedium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .lbl.tight { font-size: var(--textTabLabelTight); }
+  .tab.on .lbl { font-weight: var(--weightSemibold); }
+  .tick { margin-top: var(--LABEL_TICK_GAP); width: var(--space0_5); height: var(--space0_5); } /* the slot stays laid out; the bar draws one dot that moves */
+  .dotrail { position: absolute; left: 0; bottom: var(--space3); width: 25%; height: var(--space0_5); pointer-events: none; }
+  .dotrail i { position: absolute; left: 50%; top: 0; margin-left: calc(var(--space0_5) / -2); width: var(--space0_5); height: var(--space0_5); border-radius: var(--radiusFull); background: var(--colorAction); }
+  .pet { position: relative; width: var(--ICON_SLOT); height: var(--ICON_SLOT); }
+  .disc { position: absolute; inset: var(--RING_WIDTH); border-radius: var(--radiusFull); background: var(--colorAccentLight); color: var(--colorTextPrimary); font-weight: var(--weightSemibold); font-size: var(--textMicro); display: flex; align-items: center; justify-content: center; }
+  .ring { position: absolute; inset: 0; width: var(--ICON_SLOT); height: var(--ICON_SLOT); transform: rotate(-90deg); overflow: visible; }
+  .ring circle { fill: none; stroke: var(--colorAction); stroke-width: var(--RING_WIDTH); stroke-dasharray: 75.4; stroke-dashoffset: 75.4; }
+  .tab.on .ring circle { stroke-dashoffset: 0; }
+  .homebar { position: absolute; left: 50%; bottom: var(--space1); width: 134px; height: 5px; transform: translateX(-50%); border-radius: var(--radiusFull); background: var(--colorNeutralDark); }
+
+  /* the Duo rail (CUL-2242): the bar turned on its side down the right edge */
+  .duo { width: 100%; max-width: 520px; margin: 0 auto; border-radius: var(--radiusLarge); overflow: hidden; border: 1px solid var(--rule); display: flex; background: var(--colorNeutralLight); position: relative; }
+  .duo .screen { flex: 1; min-width: 0; height: auto; padding-bottom: var(--space2); }
+  .railbar { position: relative; flex: none; width: var(--TAB_RAIL_WIDTH); display: flex; flex-direction: column; background: var(--colorSurface); border-left: 1px solid var(--colorBorder); padding-top: var(--space2); padding-bottom: var(--space2); }
+  .railbar .tab { flex: none; height: var(--RAIL_TAB_HEIGHT); padding-top: var(--space1); }
+  .railbar .dotrail { left: 0; right: 0; width: auto; top: var(--space2); bottom: auto; height: var(--RAIL_TAB_HEIGHT); }
+  .railbar .dotrail i { top: calc(var(--space1) + var(--ICON_SLOT) + var(--GLYPH_LABEL_GAP) + var(--LABEL_LINE_HEIGHT) + var(--LABEL_TICK_GAP)); }
+  .banner { font-size: var(--textSM); line-height: var(--lineHeightSM); color: var(--colorTextSecondary); background: var(--colorSurfaceSubtle); padding: var(--space1) var(--space2); }
+
+  /* ---------- gesture study ---------- */
+  .study { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 16px; }
+  .gcard { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .stage { height: 132px; border-radius: 10px; background: var(--colorSurface); border: 1px solid var(--colorBorder); display: flex; align-items: center; justify-content: center; color: var(--colorNeutralDark); overflow: hidden; }
+  .stage > .icon { transform: scale(3.6); }
+  .gcard .btn { align-self: flex-start; }
+  .gcard p { font-size: 14px; color: var(--ink-2); }
+
+  /* ---------- state set ---------- */
+  .states { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 20px; }
+  .rules { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; max-width: 80ch; }
+  .vo { margin: 0; padding-left: 20px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+  .vo code { background: transparent; padding: 0; }
+
+  .foot { border-top: 1px solid var(--rule); padding-top: 20px; font-size: 13px; color: var(--ink-3); display: flex; flex-direction: column; gap: 6px; }
+  @media (prefers-reduced-motion: reduce) { .btn .sw::after { transition: none; } }
+</style>
+
+<div class="wrap frame-k">
+
+  <header class="mast">
+    <div class="eyebrow">Tab bar motion · Round 2 · build-ready · CUL-2251 · 2026-10-30</div>
+    <h1>A tab that <em>answers</em> the tap</h1>
+    <p class="lede">The ruled proposal: the dot travels to the tab you tap, and that tab's glyph answers once. This round supersedes round 1. It is what CUL-2253 (the dot) and CUL-2254 (the glyphs) build from. The payload is the PM's dog, Nyx.</p>
+  </header>
+
+  <section aria-labelledby="ledger-h">
+    <div class="sec-head">
+      <div class="secno">§00 · Ledger</div>
+      <h2 id="ledger-h">What the reactions ruled, and what moved</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Reaction</th><th>Ruled</th><th>What moved on this page</th></tr></thead>
+        <tbody>
+          <tr><td>R-1, 2026-10-28: "Absolutely beautiful. Go w/ it."</td><td><b>Option 3.</b> The dot travels, and each glyph answers. Motion &amp; IA's dissent for option 2 stays on record.</td><td>Options 1, 2 and 4 left the page; round 1 is at commit <code>4ee850c</code>. The bar below is option 3 alone, tagged current.</td></tr>
+          <tr><td>Doc edits, 2026-10-30: "Approved."</td><td>Principle 9 gains <i>A tap may answer once</i> (design principles v2.2). Tab bar spec §1 drops "no motion" and points here.</td><td>No frame changed. The edits land in the same PR as this round.</td></tr>
+          <tr><td>Not a reaction: main shipped the side rail on the unfolded Duo (CUL-2242) after round 1.</td><td>Nothing new to rule. The rail is the bar turned on its side, so the dot travels down it.</td><td>A live rail frame joins §01.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="live-h">
+    <div class="sec-head">
+      <div class="secno">§01 · The proposal</div>
+      <h2 id="live-h">Tap a tab</h2>
+      <p class="muted">Both frames are live and drawn at the app's real size. Slow motion stretches every beat four times. Reduce Motion shows what an owner with that setting gets.</p>
+    </div>
+    <div class="controls" role="group" aria-label="Playback">
+      <button class="btn primary" id="tour" type="button">Play the tour</button>
+      <button class="btn" id="slow" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>Slow motion ×4</button>
+      <button class="btn" id="reduce" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>Reduce Motion</button>
+    </div>
+    <p class="note" id="rm-note" hidden>Your device asks for reduced motion, so the frames start still. Switch Reduce Motion off to see the gestures.</p>
+    <div class="live">
+      <article class="card">
+        <div class="card-head">
+          <div class="tagrow"><span class="tag cur">Current</span><span class="tag">iPhone · bottom bar</span></div>
+          <div class="card-title">The dot travels, and each glyph answers</div>
+          <p>The house settles, the clock runs back an hour, the bowl is set down on its mat, and the ring draws around Nyx.</p>
+        </div>
+        <div id="live-bar"></div>
+      </article>
+      <article class="card">
+        <div class="card-head">
+          <div class="tagrow"><span class="tag cur">Current</span><span class="tag">Unfolded Duo · side rail</span></div>
+          <div class="card-title">The same gestures, down the rail</div>
+          <p>The rail stacks the same tabs (CUL-2242), so the dot travels vertically with the same spring. Nothing else changes.</p>
+        </div>
+        <div id="live-rail"></div>
+      </article>
+    </div>
+  </section>
+
+  <section aria-labelledby="study-h">
+    <div class="sec-head">
+      <div class="secno">§02 · One gesture at a time</div>
+      <h2 id="study-h">The gestures, magnified</h2>
+      <p class="muted">Each lands with the fold's settle: one overshoot of about 5%, never a second bounce.</p>
+    </div>
+    <div class="study" id="study"></div>
+  </section>
+
+  <section aria-labelledby="beats-h">
+    <div class="sec-head">
+      <div class="secno">§03 · The beats</div>
+      <h2 id="beats-h">What the build types in</h2>
+      <p class="muted">React Native <code>Animated</code> and react-native-svg, no new dependency. The springs are the fold's damping ratio of 0.7 written as stiffness and damping at a mass of 1, so they reproduce what this page plays. A viewBox unit is 22/24 pt at the bar's glyph size. These numbers belong in <code>components/motion/tabMotion.ts</code>, which PR-1 creates and PR-2 extends.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Part</th><th>Moves</th><th>Pivot</th><th>Config</th><th>Time</th><th>Driver</th><th>Reduce Motion</th></tr></thead>
+        <tbody>
+          <tr><td><b>The dot</b> (bar)<br><span class="muted">CUL-2253</span></td><td><code>translateX</code> from the old tab's centre to the new one's</td><td>n/a</td><td><code>Animated.spring</code> stiffness 324, damping 25.2, mass 1</td><td class="num">≈460ms</td><td>native</td><td>Jumps</td></tr>
+          <tr><td><b>The dot</b> (rail)<br><span class="muted">CUL-2253</span></td><td><code>translateY</code> by <code>RAIL_TAB_HEIGHT</code> per tab</td><td>n/a</td><td>The same spring</td><td class="num">≈460ms</td><td>native</td><td>Jumps</td></tr>
+          <tr><td><b>Home</b>: the house settles<br><span class="muted">CUL-2254</span></td><td><code>scaleX, scaleY</code>: (1.06, 0.88) → (0.985, 1.035) → (1.004, 0.996) → 1</td><td><code>transformOrigin: '50% 83.3%'</code> (the base, y 20 of 24)</td><td><code>Animated.sequence</code> of timings: 97 ease-out, 132 ease-in-out, 114 ease-in-out, 97 ease-out</td><td class="num">440ms</td><td>native</td><td>Still</td></tr>
+          <tr><td><b>History</b>: the clock runs back<br><span class="muted">CUL-2254</span></td><td>The minute hand only: <code>rotate</code> 0 → −360°. The face and the hour hand hold.</td><td>Centre, <code>'50% 50%'</code></td><td><code>Animated.spring</code> stiffness 196, damping 19.6, mass 1 (about 16° past, then home)</td><td class="num">≈620ms</td><td>native</td><td>Still</td></tr>
+          <tr><td><b>Foods</b>: the bowl is set down<br><span class="muted">CUL-2254</span></td><td>The bowl: <code>translateY</code> 0 → −3 → +0.5 → −0.2 → 0 units. The mat: <code>scaleX</code> holds, 1 → 1.3 → 1 as the bowl lands.</td><td>Mat: <code>'50% 72.9%'</code> (y 17.5 of 24)</td><td>Bowl: timings 138 <code>Easing.out(cubic)</code>, 138 <code>Easing.in(quad)</code>, 92, 92. Mat: hold 258, 55 ease-out, 147 ease-in-out.</td><td class="num">460ms</td><td>native</td><td>Still</td></tr>
+          <tr><td><b>Pet</b>: the ring draws in<br><span class="muted">CUL-2254</span></td><td>The ring: <code>strokeDashoffset</code> 75.4 → 0 (a 12pt radius), from twelve o'clock. The avatar: <code>scale</code> 0.88 → 1.</td><td>Ring: the circle drawn rotated −90°. Avatar: centre.</td><td>Ring: <code>Animated.timing</code> 380, <code>Easing.bezier(.2, .7, .2, 1)</code>. Avatar: the dot's spring.</td><td class="num">380ms / ≈460ms</td><td>Ring: JS (an SVG prop). Avatar: native.</td><td>Ring drawn in full, avatar still</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>The rules every part keeps</h3>
+    <ol class="rules">
+      <li><b>Only a tap that changes the tab plays.</b> The trigger is the bar's own <code>onPress</code> when the tab is not focused, never a change in <code>state.index</code>. A deep link, a widget link, the recovery redirect or a pet switch moves the dot and the ink with no motion.</li>
+      <li><b>A second tap on the tab you are on plays nothing.</b> The press still fires <code>tabPress</code> for the screen's scroll to top.</li>
+      <li><b>A tap mid-gesture</b> springs the dot from wherever it is to the new tab, never back to a tab centre first. The tab you left jumps to its end state; the new tab's gesture starts.</li>
+      <li><b>The app leaves mid-gesture:</b> everything jumps to its end state (the fold's blur rule). Nobody comes back to a half-drawn ring.</li>
+      <li><b>A layout change</b> (fold, unfold, rotation) places the dot under the focused tab without animating it.</li>
+      <li><b>Silent.</b> The tab bar never imports <code>lib/haptics.ts</code>.</li>
+      <li><b>Reduce Motion</b> (<code>hooks/useReducedMotion</code>): every part takes its end state at once.</li>
+      <li><b>Never a loop.</b> Each part plays once and stops. The tick stays the app's only loop.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="states-h">
+    <div class="sec-head">
+      <div class="secno">§04 · The state set</div>
+      <h2 id="states-h">Every state, and what the motion does in it</h2>
+      <p class="muted">Motion moves no box, so no state changes the bar's size or layout. Each frame below is live.</p>
+    </div>
+    <div class="states" id="states"></div>
+  </section>
+
+  <section aria-labelledby="build-h">
+    <div class="sec-head">
+      <div class="secno">§05 · The build</div>
+      <h2 id="build-h">Two rows</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Row</th><th>Takes from this page</th><th>Touches</th></tr></thead>
+        <tbody>
+          <tr><td><b>CUL-2253</b> · the dot travels</td><td>§03 rows one and two, rules 1 to 8, the 320pt and two-pet frames</td><td><code>components/motion/tabMotion.ts</code> (new), <code>components/nav/NyxTabBar.tsx</code>, tests</td></tr>
+          <tr><td><b>CUL-2254</b> · each glyph answers</td><td>§02, §03 rows three to six, the empty and photo frames</td><td><code>components/nav/navGlyphs.tsx</code> (the clock and the bowl split into layers), <code>NyxTabBar.tsx</code>, <code>tabMotion.ts</code>, tests</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Glyph paths verbatim from <code>components/nav/navGlyphs.tsx</code>. Bar and rail geometry from <code>components/nav/NyxTabBar.tsx</code> and <code>hooks/useLayoutClass.ts</code> on main. Frame colours and theme sizes from <code>docs/mockups/theme.css</code>.</span>
+    <span>Round 1 (the four-way comparison) is at commit <code>4ee850c</code>.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const tabsFor = (pet) => [
+    { key: 'home', label: 'Home', screen: 'Today' },
+    { key: 'history', label: 'History', screen: 'History' },
+    { key: 'foods', label: 'Foods', screen: 'Foods' },
+    { key: 'pet', label: pet, screen: pet },
+  ];
+
+  // ---- glyph markup (paths verbatim from components/nav/navGlyphs.tsx; the clock and the bowl split into layers, as CUL-2254 builds them) ----
+  const KIT = {
+    home: 'HomeGlyph · GlyphSvg 22, strokeWidth 1.75, colorNeutralDark / colorTextTertiary',
+    history: 'HistoryGlyph, split: face + new: MinuteHand layer · GlyphSvg 22, strokeWidth 1.75',
+    foods: 'FoodsGlyph, split: new: Bowl layer + new: Mat layer · GlyphSvg 22, strokeWidth 1.75',
+  };
+  const glyph = (key, initial) => ({
+    home: `<svg class="g" viewBox="0 0 24 24" aria-hidden="true" data-kit="${KIT.home}"><path class="g-house" d="M4 11 12 4l8 7v9h-5v-5h-6v5H4z"/></svg>`,
+    history: `<svg class="g" viewBox="0 0 24 24" aria-hidden="true" data-kit="${KIT.history}"><circle cx="12" cy="12" r="8"/><path class="g-min" d="M12 8v4"/><path class="g-hour" d="M12 12l2.5 2"/></svg>`,
+    foods: `<svg class="g" viewBox="0 0 24 24" aria-hidden="true" data-kit="${KIT.foods}"><path class="g-bowl" d="M4 7.5h16a8 8 0 0 1-16 0Z"/><path class="g-mat" d="M8.5 17.5h7"/></svg>`,
+    pet: `<div class="pet" aria-hidden="true"><div class="disc" data-kit="PetAvatar 22 · colorAccentLight, colorTextPrimary, the initial while a photo loads or fails">${initial}</div><svg class="ring" viewBox="0 0 26 26" data-kit="new: DrawnRing · colorRoles.selected.edge (colorAction), RING_WIDTH"><circle cx="13" cy="13" r="12"/></svg></div>`,
+  })[key];
+
+  // ---- playback state ----
+  let slow = 1;
+  let reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+  const slowBtn = document.getElementById('slow');
+  const reduceBtn = document.getElementById('reduce');
+  reduceBtn.setAttribute('aria-pressed', String(reduce));
+  document.getElementById('rm-note').hidden = !reduce;
+
+  // ---- the one settle: damping ratio 0.7. ω 18 ≙ stiffness 324 / damping 25.2; ω 14 ≙ 196 / 19.6 (mass 1). ----
+  function spring(t, w) {
+    const z = 0.7, wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t));
+  }
+  function springFrames(map, w, seconds) {
+    const n = 48, out = [];
+    for (let i = 0; i <= n; i++) out.push({ transform: map(i === n ? 1 : spring((i / n) * seconds, w)) });
+    return { frames: out, ms: seconds * 1000 };
+  }
+  function play(el, frames, ms, opts) {
+    if (!el || reduce) return;
+    el.getAnimations().forEach((a) => a.cancel());
+    el.animate(frames, Object.assign({ duration: ms * slow, easing: 'linear' }, opts || {}));
+  }
+  const finishAll = (root) => root.querySelectorAll('*').forEach((el) => el.getAnimations && el.getAnimations().forEach((a) => a.finish()));
+
+  // ---- the gestures (§03's beats) ----
+  const GESTURES = {
+    home(icon) {
+      play(icon.querySelector('.g-house'), [
+        { transform: 'scale(1, 1)', easing: 'ease-out' },
+        { offset: 0.22, transform: 'scale(1.06, 0.88)', easing: 'ease-in-out' },
+        { offset: 0.52, transform: 'scale(0.985, 1.035)', easing: 'ease-in-out' },
+        { offset: 0.78, transform: 'scale(1.004, 0.996)', easing: 'ease-out' },
+        { transform: 'scale(1, 1)' },
+      ], 440);
+    },
+    history(icon) {
+      const s = springFrames((v) => `rotate(${-360 * v}deg)`, 14, 0.62);
+      play(icon.querySelector('.g-min'), s.frames, s.ms);
+    },
+    foods(icon) {
+      play(icon.querySelector('.g-bowl'), [
+        { transform: 'translateY(0)', easing: 'cubic-bezier(.33,1,.68,1)' },
+        { offset: 0.3, transform: 'translateY(-3px)', easing: 'cubic-bezier(.55,.085,.68,.53)' },
+        { offset: 0.6, transform: 'translateY(0.5px)', easing: 'ease-out' },
+        { offset: 0.8, transform: 'translateY(-0.2px)', easing: 'ease-in-out' },
+        { transform: 'translateY(0)' },
+      ], 460);
+      play(icon.querySelector('.g-mat'), [
+        { transform: 'scaleX(1)' },
+        { offset: 0.56, transform: 'scaleX(1)', easing: 'ease-out' },
+        { offset: 0.68, transform: 'scaleX(1.3)', easing: 'ease-in-out' },
+        { transform: 'scaleX(1)' },
+      ], 460);
+    },
+    pet(icon) {
+      play(icon.querySelector('.ring circle'), [{ strokeDashoffset: 75.4 }, { strokeDashoffset: 0 }], 380, { easing: 'cubic-bezier(.2,.7,.2,1)' });
+      const s = springFrames((v) => `scale(${0.88 + 0.12 * v})`, 18, 0.46);
+      play(icon.querySelector('.disc'), s.frames, s.ms);
+    },
+  };
+
+  // ---- the dot: one per bar, a track one tab long that steps a whole tab per index ----
+  function trackPos(track, axis) {
+    const t = getComputedStyle(track).transform;
+    const m = new DOMMatrixReadOnly(t === 'none' ? undefined : t);
+    const r = track.getBoundingClientRect();
+    return axis === 'x' ? m.m41 / (r.width || 1) : m.m42 / (r.height || 1);
+  }
+  function moveDot(track, axis, to, animate) {
+    const T = axis === 'x' ? 'translateX' : 'translateY';
+    const from = trackPos(track, axis);
+    track.getAnimations().forEach((a) => a.cancel());
+    track.style.transform = `${T}(${to * 100}%)`;
+    if (!animate || reduce || Math.abs(from - to) < 0.001) return;
+    const s = springFrames((v) => `${T}(${(from + (to - from) * v) * 100}%)`, 18, 0.46);
+    track.animate(s.frames, { duration: s.ms * slow, easing: 'linear' });
+  }
+
+  // ---- a bar or a rail ----
+  function barMarkup(tabs, opts) {
+    const cls = opts.rail ? 'railbar' : 'bar';
+    const kit = opts.rail ? 'NyxTabBar rail (CUL-2242) · colorSurface, colorBorder, TAB_RAIL_WIDTH' : 'NyxTabBar · colorSurface, colorBorder, space1 / space3';
+    return `<div class="${cls}" role="tablist" data-kit="${kit}">${tabs.map((t, i) => `
+      <button class="tab" type="button" role="tab" data-i="${i}" data-kit="NyxTabBar tab · TouchableOpacity, activeOpacity 0.7" aria-label="${t.key === 'pet' ? (t.label === 'Pet' ? 'Pet profile' : t.label + ' — pet profile') : t.label}">
+        <span class="icon">${glyph(t.key, t.label.charAt(0))}</span>
+        <span class="lbl${opts.tight && t.key === 'pet' ? ' tight' : ''}" data-kit="ThemedText · textXS, trackingWide, weightMedium / weightSemibold, allowFontScaling false">${t.label}</span>
+        <span class="tick"></span>
+      </button>`).join('')}<span class="dotrail" aria-hidden="true"><i data-kit="new: TabDot · colorRoles.selected.ink (colorAction), space0_5, radiusFull"></i></span></div>`;
+  }
+
+  function mount(host, opts) {
+    const pet = opts.pet || 'Nyx';
+    const tabs = tabsFor(pet);
+    const start = opts.start || 0;
+    const screen = `<div class="screen" data-kit="Screen · colorNeutralLight"><div class="screen-title" data-kit="ThemedText · textLG, weightSemibold">${tabs[start].screen}</div><div class="sk short"></div><div class="sk"></div></div>`;
+    host.innerHTML = opts.rail
+      ? `<div class="duo">${opts.banner ? `<div class="banner">${opts.banner}</div>` : ''}${screen}${barMarkup(tabs, opts)}</div>`
+      : `<div class="phone${opts.w320 ? ' w320' : ''}">${opts.banner ? `<div class="banner" data-kit="SyncBanner · colorSurfaceSubtle, textSM">${opts.banner}</div>` : ''}${screen}${barMarkup(tabs, opts)}<span class="homebar" aria-hidden="true"></span></div>`;
+    const axis = opts.rail ? 'y' : 'x';
+    const btns = [...host.querySelectorAll('.tab')];
+    const track = host.querySelector('.dotrail');
+    const title = host.querySelector('.screen-title');
+    let current = start;
+    const render = () => btns.forEach((b, k) => { b.classList.toggle('on', k === current); b.setAttribute('aria-selected', String(k === current)); });
+    function select(i, viaTap) {
+      if (i === current) return;           // rule 2: a second tap plays nothing
+      finishAll(btns[current]);            // rule 3: the tab you left jumps to its end
+      current = i;
+      render();
+      title.textContent = tabs[i].screen;
+      moveDot(track, axis, i, viaTap);     // rule 1: only a tap animates
+      if (viaTap) GESTURES[tabs[i].key](btns[i].querySelector('.icon'));
+    }
+    btns.forEach((b, i) => b.addEventListener('click', () => select(i, true)));
+    render();
+    moveDot(track, axis, start, false);
+    return {
+      select,
+      get current() { return current; },
+      rename(name) { // a pet switch: the avatar and the name swap, nothing moves
+        const btn = btns[3];
+        btn.querySelector('.lbl').textContent = name;
+        btn.querySelector('.disc').textContent = name.charAt(0);
+        btn.setAttribute('aria-label', name + ' — pet profile'); // petTabAccessibilityLabel
+        if (current === 3) title.textContent = name;
+      },
+    };
+  }
+
+  // ---- §01 live ----
+  const live = [mount(document.getElementById('live-bar'), {}), mount(document.getElementById('live-rail'), { rail: true })];
+
+  // ---- §02 study ----
+  const STUDY = [
+    { key: 'home', name: 'Home · the house settles', why: 'Coming home: the house sits down on its ground.' },
+    { key: 'history', name: 'History · the clock runs back', why: 'History reads the record backwards in time, so the minute hand turns back an hour.' },
+    { key: 'foods', name: 'Foods · the bowl is set down', why: 'Setting a bowl down is the meal\'s own gesture.' },
+    { key: 'pet', name: 'Nyx · the ring draws in', why: 'Draw in is already a house gesture: a chart draws itself the first time it is seen.' },
+  ];
+  const study = document.getElementById('study');
+  STUDY.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'gcard';
+    card.innerHTML = `<div class="stage"><span class="icon">${glyph(s.key, 'N')}</span></div><h3>${s.name}</h3><p>${s.why}</p><button class="btn" type="button">Replay</button>`;
+    study.appendChild(card);
+    const icon = card.querySelector('.stage .icon');
+    if (s.key === 'pet') icon.querySelector('.ring circle').style.strokeDashoffset = '0';
+    card.querySelector('.btn').addEventListener('click', () => GESTURES[s.key](icon));
+  });
+
+  // ---- §04 state set ----
+  const STATES = [
+    { id: 'w320', title: '320pt (iPhone SE)', body: 'The dot steps a quarter of the width, so it travels less and lands the same. Nyx fits at 11pt; a long name takes the ladder\'s 10pt rung or "Pet", and the motion is the same either way.', opts: { w320: true } },
+    { id: 'large', title: 'Largest text', body: 'Tab labels stay fixed-size under Dynamic Type (spec §1), so the bar, the dot\'s path and every pivot are identical at every text size. Nothing to redraw.', opts: { start: 1 } },
+    { id: 'pets', title: 'Two pets', body: 'Switching Nyx to Biscuit swaps the avatar and the name with no motion: the ring does not redraw and the dot holds. Motion answers a tap, never a change of data.', opts: { start: 3 }, pets: true },
+    { id: 'empty', title: 'Empty: no pet yet', body: 'Before a pet exists the tab reads "Pet" with its initial. The ring draws round the initial the same way.', opts: { pet: 'Pet' } },
+    { id: 'photo', title: 'Loading or failed photo', body: 'The initial is both the loading and the failed state (CUL-617), and the ring draws round whichever is showing. A photo arriving mid-gesture swaps in under the ring.', opts: { start: 3 } },
+    { id: 'offline', title: 'Offline', body: 'The motion is local and asks nothing of the network, so the bar answers the same with the offline line showing.', opts: { banner: 'Offline. Your logs are saved on this phone.' } },
+  ];
+  const states = document.getElementById('states');
+  STATES.forEach((s) => {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `<div class="card-head"><h3>${s.title}</h3><p>${s.body}</p></div><div class="host"></div>${s.pets ? '<button class="btn" type="button" id="switchpet">Switch to Biscuit</button>' : ''}`;
+    states.appendChild(card);
+    const bar = mount(card.querySelector('.host'), s.opts);
+    if (s.pets) {
+      let name = 'Nyx';
+      const btn = card.querySelector('#switchpet');
+      btn.addEventListener('click', () => {
+        name = name === 'Nyx' ? 'Biscuit' : 'Nyx';
+        bar.rename(name);
+        btn.textContent = `Switch to ${name === 'Nyx' ? 'Biscuit' : 'Nyx'}`;
+      });
+    }
+  });
+  const vo = document.createElement('article');
+  vo.className = 'card';
+  vo.innerHTML = `<div class="card-head"><h3>VoiceOver</h3><p>The order and the labels do not change. The motion announces nothing; the selected state carries the change, as it does today.</p></div>
+    <ol class="vo"><li><code>Home, button, selected</code></li><li><code>History, button</code></li><li><code>Foods, button</code></li><li><code>Nyx — pet profile, button</code></li></ol>`;
+  states.appendChild(vo);
+
+  // ---- controls ----
+  slowBtn.addEventListener('click', () => { slow = slow === 1 ? 4 : 1; slowBtn.setAttribute('aria-pressed', String(slow === 4)); });
+  reduceBtn.addEventListener('click', () => {
+    reduce = !reduce;
+    reduceBtn.setAttribute('aria-pressed', String(reduce));
+    if (reduce) finishAll(document.body);
+  });
+  let tourTimer = null;
+  const tourBtn = document.getElementById('tour');
+  tourBtn.addEventListener('click', () => {
+    if (tourTimer) { clearTimeout(tourTimer); tourTimer = null; tourBtn.textContent = 'Play the tour'; return; }
+    const seq = [1, 2, 3, 0];
+    let k = 0;
+    tourBtn.textContent = 'Stop the tour';
+    const step = () => {
+      live.forEach((b) => b.select(seq[k], true));
+      k++;
+      if (k < seq.length) tourTimer = setTimeout(step, 1100 * slow);
+      else { tourTimer = null; tourBtn.textContent = 'Play the tour'; }
+    };
+    live.forEach((b) => b.select(0, false));
+    tourTimer = setTimeout(step, 250);
+  });
+})();
+</script>
