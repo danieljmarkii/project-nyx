@@ -55,6 +55,20 @@ const ONLY = process.env.CAPTURE_ONLY?.split(',');
 // A screen that does not get there within CAPTURE_SETTLE_TIMEOUT_MS is not photographed as
 // it stands: its file is named -UNSETTLED with what was missing, and the workflow goes red.
 // CAPTURE_SETTLE_MS is now the floor before the first look, not the whole wait.
+//
+// ── At rest, not mid-arrival (CUL-2279) ───────────────────────────────────────────────
+// The clock is frozen (setFixedTime) so every "today" and every "3h ago" is the same on every
+// run, and react-native-web's Animated reads Date.now for its progress: frozen, a draw-in
+// never advances and would be photographed on its first frame, still as stone, so the quiet
+// check above passed it. Every context is therefore shot under Reduce Motion, the app's own
+// still frame (each motion module and loader defines one, and reads the setting once at
+// launch, store/reducedMotionStore.ts): what an owner sees once the motion has finished,
+// with nothing left to advance. Not Playwright's clock run past each draw-in: a moving clock
+// moves Date.now by however long a screen took to settle, which varies with load, so a
+// relative time could print differently on two runs of one build.
+// A motion that ignores the setting would still sit at its first frame, so it is caught
+// rather than photographed: the page counts every requestAnimationFrame, and a screen that
+// is still asking for frames has not settled (it ends -UNSETTLED, naming it).
 const QUIET_MS = Number(process.env.CAPTURE_QUIET_MS ?? 1200);
 const POLL_MS = 300;
 const SETTLE_TIMEOUT_MS = Number(process.env.CAPTURE_SETTLE_TIMEOUT_MS ?? 90000);
@@ -77,14 +91,17 @@ const LOADING = {
 };
 // What Home owes each pet once its reads have answered: the Signal's lead where the engine
 // computed findings (a lead card, or a row when a safety finding leads), the trial card where
-// a trial runs, and the latest meal named by its food ("Pantry · Lamb & Brown Rice" for
-// Pepper: the day row draws the meal bare until the food library has hydrated).
+// a trial runs, and a meal logged today named by its food ("Pantry · Lamb & Brown Rice" for
+// Pepper: the day row draws the meal bare until the food library has hydrated). Every pet
+// with a meal today, not Pepper alone (CUL-2271: under two runs at once a Home caught its
+// meal row bare). The context's clock and zone are UTC, so "today" is NOW's UTC day.
 function homeMarkers(petId) {
   const present = [];
   if (!MARKERS) return present;
   if (tables.ai_signals?.some((r) => r.pet_id === petId && (r.findings ?? []).length > 0)) present.push(testId('signal-lead-card', 'signal-row'));
   if (tables.diet_trials.some((t) => t.pet_id === petId && t.status === 'active')) present.push(testId('trial-card-v2'));
-  if (petId === pet('pepper').id) present.push(text(foodNameOf(latestOf(petId, 'meal'))));
+  const meal = latestOf(petId, 'meal');
+  if (meal && meal.occurred_at.slice(0, 10) === new Date(NOW).toISOString().slice(0, 10)) present.push(text(foodNameOf(meal)));
   return present;
 }
 
@@ -368,14 +385,19 @@ const SWEEP1_SHOTS = [
   { name: 'foods-juniper', go: [tab('Foods')] },
   { name: 'trial-foods-juniper', go: [() => {}, (page) => push(`/trial-foods?pet=${pet('juniper').id}`)(page)] },
   { name: 'trial-exposures-juniper', go: [() => {}, (page) => push(`/trial-exposures?pet=${pet('juniper').id}`)(page)] },
-  { name: 'trial-juniper', reducedMotion: true, go: [() => {}, (page) => push(`/trial/${pet('juniper').id}`)(page)] },
-  { name: 'profile-juniper', go: [label(/pet profile$/)] },
+  { name: 'trial-juniper', go: [() => {}, (page) => push(`/trial/${pet('juniper').id}`)(page)] },
+  // Juniper's trial runs, so the tab owes its door under her name (CUL-2271: the quiet check
+  // alone passed a frame taken before the trial's read answered, under two runs at once).
+  { name: 'profile-juniper', ready: [testId('trial-door-row')], go: [label(/pet profile$/)] },
   { name: 'add-pet', go: [push('/add-pet')] },
   { name: 'archived-pets', go: [push('/archived-pets')] },
   { name: 'weight-history-juniper', go: [() => {}, (page) => push(`/weight-history?petId=${pet('juniper').id}`)(page)] },
   { name: 'settings', go: [push('/settings')] },
   ...['ai-reading', 'beta', 'feedback', 'notifications', 'password'].map((s) => ({ name: `settings-${s}`, go: [push(`/settings/${s}`)] })),
-  { name: 'patterns-metric-juniper', go: [push('/insights/vomit')] },
+  // The sparkline is gifted-charts' LineChart, which starts its own width timings on mount
+  // whatever Reduce Motion says and draws nothing with them: the shot matched main pixel for
+  // pixel while they ran (CUL-2279). Named here so the frame check holds for every other shot.
+  { name: 'patterns-metric-juniper', framesOk: 'gifted-charts LineChart: width timings that draw nothing', go: [push('/insights/vomit')] },
   { name: 'patterns-timing-juniper', go: [push('/insights/timing')] },
   { name: 'patterns-trial-juniper', go: [push('/insights/trial')] },
   { name: 'signal-juniper', go: [openLead] },
@@ -406,11 +428,13 @@ async function captureSize(browser, size, server, shots, group) {
   const settle = Number(process.env.CAPTURE_SETTLE_MS ?? 1500);
   const notes = [];
   const log = (m) => notes.push(m);
+  // Every context under Reduce Motion (CUL-2279): see AT REST above.
   const context = await browser.newContext({
     viewport: { width: size.width, height: size.height },
     deviceScaleFactor: 2,
     timezoneId: 'UTC',
     locale: 'en-US',
+    reducedMotion: 'reduce',
   });
   await context.clock.setFixedTime(NOW);
   await context.addInitScript(
@@ -418,6 +442,13 @@ async function captureSize(browser, size, server, shots, group) {
       if (session) localStorage.setItem('securestore:' + key, JSON.stringify(session));
       for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
       globalThis.__NYX_FONT_SCALE = scale;
+      // Every frame an animation asks for, counted (AT REST above).
+      const raf = window.requestAnimationFrame.bind(window);
+      globalThis.__NYX_CAPTURE_FRAMES = 0;
+      window.requestAnimationFrame = (cb) => {
+        globalThis.__NYX_CAPTURE_FRAMES++;
+        return raf(cb);
+      };
     },
     // CAPTURE_STORAGE seeds device-local state (AsyncStorage is localStorage on web), e.g.
     // an older build's beta opt-ins: '{"culprit.betaOptIns.v1":"{\\"history_v2\\":true}"}'.
@@ -519,10 +550,6 @@ async function captureSize(browser, size, server, shots, group) {
   for (const shot of shots) {
     const timeout = unsettledInARow >= 2 ? BROKEN_TIMEOUT_MS : SETTLE_TIMEOUT_MS;
     shotOverlay = shot.overlay ?? {};
-    // The trial screen's ledger draws in with Animated, whose clock is Date.now: frozen, it
-    // stays at its first frame (an empty card). Reduce Motion is the app's own still frame.
-    // Read once at launch (store/reducedMotionStore.ts), so it is set before the goto.
-    await page.emulateMedia({ reducedMotion: shot.reducedMotion ? 'reduce' : 'no-preference' });
     await page.evaluate((id) => localStorage.setItem('nyx.activePetId', id), pet(shot.pet).id);
     await launch();
     await page.waitForTimeout(settle);
@@ -546,7 +573,7 @@ async function captureSize(browser, size, server, shots, group) {
     }
     if (!failed && !unsettled) {
       try {
-        still = await settled(page, shot.name, MARKERS ? (shot.ready ?? []) : [], requests, timeout);
+        still = await settled(page, shot.name, MARKERS ? (shot.ready ?? []) : [], requests, timeout, Boolean(shot.framesOk));
       } catch (e) {
         unsettled = e.message;
       }
@@ -564,7 +591,8 @@ async function captureSize(browser, size, server, shots, group) {
 
 // Waits until the page is settled (see QUIET_MS above) and returns the settled screenshot.
 // Throws, naming the shot and what never arrived, when CAPTURE_SETTLE_TIMEOUT_MS runs out.
-async function settled(page, name, markers, requests, timeout) {
+// `framesOk` (a shot's named exemption) skips the frame check, never the others.
+async function settled(page, name, markers, requests, timeout, framesOk = false) {
   const markerList = [LOADING, ...markers];
   const start = Date.now();
   let prev = null;
@@ -581,11 +609,15 @@ async function settled(page, name, markers, requests, timeout) {
             : body.includes(m.text);
       return {
         db: globalThis.__NYX_CAPTURE_DB ?? null,
+        frames: globalThis.__NYX_CAPTURE_FRAMES ?? 0,
         unmet: list.filter((m) => has(m) === Boolean(m.absent)).map((m) => m.selector ? `still loading (${[...document.querySelectorAll(m.selector)].map((e) => e.dataset.testid).join(', ')})` : `${m.absent ? 'still showing' : 'missing'} ${m.testId?.join(' | ') ?? `"${m.text}"`}`),
       };
     }, markerList);
     const image = await page.screenshot();
     const activity = `${requests.started}:${state.db?.busy}:${state.db?.done}`;
+    // Apart from the requests and SQLite: a frame asked for since the last look is motion
+    // still running, however still the pixels (AT REST above).
+    const animating = !framesOk && prev !== null && prev.frames !== state.frames;
     const busy =
       state.db === null ? 'no SQLite stub on the page (an older build, or the bundle has not run)'
       : state.db.busy > 0 ? 'SQLite busy'
@@ -594,13 +626,15 @@ async function settled(page, name, markers, requests, timeout) {
     if (busy || state.unmet.length > 0) {
       why = busy ?? state.unmet.join(', ');
       quietSince = null;
-    } else if (quietSince === null || !prev || prev.activity !== activity || !prev.image.equals(image)) {
-      why = prev && prev.activity !== activity ? 'still loading' : 'screen still changing';
+    } else if (quietSince === null || !prev || prev.activity !== activity || animating || !prev.image.equals(image)) {
+      why = prev && prev.activity !== activity ? 'still loading'
+        : animating ? 'an animation still asking for frames (one that does not honour Reduce Motion)'
+        : 'screen still changing';
       quietSince = Date.now();
     } else if (Date.now() - quietSince >= QUIET_MS) {
       return image;
     }
-    prev = { activity, image };
+    prev = { activity, image, frames: state.frames };
     await page.waitForTimeout(POLL_MS);
   }
   throw new Error(`${name}: not settled after ${timeout}ms (${why})`);

@@ -58,10 +58,10 @@ import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 // door, D2-3's rise.
 
 /**
- * The chart's width on Home, from the window's: the page's padding (`app/(tabs)/index.tsx`
- * `styles.scroll`) and the zone's `HomeCard` inset. The rail hangs in the card's gutter
- * (CUL-1525, G1 A), so it and the row's gap no longer take width from the chart: the chart
- * runs the full text column. The screen's hero is this layout scaled (one aspect for both
+ * The chart's width on Home, from the window's: the page's padding (Home's scroll,
+ * `components/home/homeFeedLayout.ts`) and the zone's `HomeCard` inset. The rail hangs in
+ * the card's gutter (CUL-1525, G1 A), so it and the row's gap no longer take width from the
+ * chart: the chart runs the full text column. The screen's hero is this layout scaled (one aspect for both
  * charts — the flight's contract), so the formula lives here with the card that owns the
  * layout, and `SignalLeadCard.test.tsx` pins every term against the rendered styles.
  */

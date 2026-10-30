@@ -1,10 +1,11 @@
 import { StyleSheet } from 'react-native';
-import { render, fireEvent, act } from '@testing-library/react-native';
+import { render, renderHook, fireEvent, act } from '@testing-library/react-native';
 import { HomeHeader, HOME_HEADER_CONTENT_HEIGHT } from './HomeHeader';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { colorRoles, theme } from '../../constants/theme';
-import { TAB_RAIL_WIDTH, canvasFor, tabRailFor } from '../../hooks/useLayoutClass';
+import { TAB_RAIL_WIDTH, useCanvas } from '../../hooks/useLayoutClass';
+import { homeFeedBleed, homeFeedStyles } from './homeFeedLayout';
 import {
   ASK_BORDER,
   ASK_DOT_GAP,
@@ -402,27 +403,47 @@ describe('the row at regular spans Home’s canvas', () => {
   });
 });
 
-// CUL-2267 — Home's header lines up with its feed at regular because both measure from the
-// same edge. The feed steps out of the column by the canvas's bleed and pads by
-// `theme.space3` (`app/(tabs)/index.tsx`, `styles.scroll`); the header reaches the scene's
-// edge and pads its row by `HEADER_PADDING_X` less that same bleed. So the row sits as far
-// in from the feed's edge as it does on a phone from the window's, whatever the two paddings
-// are (16 and 24 today: they were never equal, and nothing asks them to be). The header side
-// is rendered; the feed side is the canvas geometry Home lays out on.
+// CUL-2267, CUL-2279 — Home's header lines up with its feed at regular because both measure
+// from the same edge. The feed steps out of the column by Home's bleed and pads by its
+// scroll's padding; the header reaches the scene's edge and pads its row by
+// `HEADER_PADDING_X` less that same bleed. So the row sits as far in from the feed's content
+// as it does on a phone, whatever the two paddings are (16 and 24 today: they were never
+// equal, and nothing asks them to be). Both sides are read from what renders: the header's
+// style, and the feed's from `homeFeedLayout.ts`, the scroll style and bleed Home itself lays
+// out with (`index.designV2.test.tsx` pins that Home renders them). A change to Home's
+// padding or bleed that the header does not follow reds this.
 describe('the header’s row keeps the phone’s inset from the feed’s edge', () => {
   const rowLeft = () => {
     const style = StyleSheet.flatten((render(<HomeHeader />).toJSON() as { props: { style: unknown } }).props.style as never) as Record<string, number | undefined>;
     return (style.marginHorizontal ?? 0) + (style.paddingHorizontal ?? 0);
   };
-
-  it.each([390, 626, 890])('at %ipt', (w) => {
+  // The feed's left padding, whichever key Home writes it with.
+  const feedPad = () => {
+    const scroll = StyleSheet.flatten(homeFeedStyles.scroll) as { padding?: number; paddingHorizontal?: number; paddingLeft?: number };
+    return scroll.paddingLeft ?? scroll.paddingHorizontal ?? scroll.padding ?? 0;
+  };
+  const feedLeft = () => {
+    const bleed = renderHook(() => homeFeedBleed(useCanvas())).result.current;
+    return ((bleed?.marginHorizontal as number | undefined) ?? 0) + feedPad();
+  };
+  // Header minus feed, both from the scene's content box (the header's origin and the
+  // body's, `sceneInset` in from the scene's edge).
+  const offsetAt = (w: number) => {
     setWindowWidth(w);
-    // The header's origin is the scene's content box, `sceneInset` in from the scene's edge.
-    const rail = tabRailFor(w);
-    const sceneInset = rail?.sceneInset ?? 0;
-    const headerRow = sceneInset + rowLeft();
-    // The feed's edge: the column, stepped out by the canvas's bleed where Home has one.
-    const feedEdge = sceneInset - (canvasFor(w)?.bleed ?? 0);
-    expect(headerRow - feedEdge).toBe(HEADER_PADDING_X);
+    return rowLeft() - feedLeft();
+  };
+
+  it('a phone: the row sits HEADER_PADDING_X in from the window, the feed its own padding', () => {
+    expect(offsetAt(390)).toBe(HEADER_PADDING_X - feedPad());
+  });
+
+  it.each([626, 890])('at %ipt, the same offset as the phone’s', (w) => {
+    const phone = offsetAt(390);
+    expect(offsetAt(w)).toBe(phone);
+  });
+
+  it('is not vacuous: the unfolded Duo on its side has a bleed for the header to follow', () => {
+    setWindowWidth(890);
+    expect(renderHook(() => homeFeedBleed(useCanvas())).result.current?.marginHorizontal).toBeLessThan(0);
   });
 });

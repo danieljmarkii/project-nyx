@@ -208,7 +208,7 @@ describe('useRunRevealHost — the list scrolls once, after the content grows', 
     return { ...h, scrollBy };
   }
   const low = { runTop: 640, mealBottom: 740 };
-  const plusTop = 764 + 80 - RUN_REVEAL.plusRisePt;
+  const plusTop = 764 + 80 - (fabBottomFor(false, 0) + FAB_DISC);
   const expected = runRevealDistance({ ...low, viewTop: VIEW.top, viewBottom: VIEW.bottom, plusTop });
 
   // CUL-2267 — at regular the plus stands at the rail's foot, so the run is shown clear of

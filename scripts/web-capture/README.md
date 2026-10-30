@@ -6,7 +6,7 @@ text sizes, signed in to the device-pass fixture account (CUL-1222). Layout only
 motion stays with the filmed sitting per TestFlight cut (CUL-1895 D2).
 
 ```bash
-deno run --allow-read --allow-env --allow-write scripts/web-capture/signals.deno.ts /tmp/signals.json
+deno run --cached-only --allow-read --allow-env --allow-write scripts/web-capture/signals.deno.ts /tmp/signals.json
 scripts/web-capture/build.sh /tmp/nyx-web          # ~4 min, NYX_WEB_CAPTURE=1 web export
 CAPTURE_SIGNALS=/tmp/signals.json \
   node --experimental-strip-types scripts/web-capture/capture.mjs /tmp/nyx-web /tmp/shots
@@ -38,9 +38,17 @@ on a trial, Pepper's meal named "Pantry · Lamb & Brown Rice". A shot may owe mo
 by `CAPTURE_SETTLE_TIMEOUT_MS` (90000) is written as `<shot>-UNSETTLED.png`, the log names
 what was missing, and the workflow goes red. After two in a row, the rest of that size's
 shots get 15 seconds each. `CAPTURE_MARKERS=off` keeps the quiet and loading checks and
-drops the markers, for an older commit whose screens predate them. The trial screen is shot under Reduce Motion:
-its ledger draws in with `Animated`, whose clock is the frozen `Date.now`, so without the
-app's own still frame it photographs as an empty card.
+drops the markers, for an older commit whose screens predate them.
+
+**At rest, not mid-arrival (CUL-2279).** Every context is shot under Reduce Motion. The clock
+is frozen and react-native-web's `Animated` reads `Date.now`, so a draw-in never advances: it
+would be photographed on its first frame (the trial's ledger as an empty card). Reduce Motion
+is the app's own still frame, the screen as it rests once the motion is done. Not Playwright's
+clock run past each draw-in: a moving clock moves `Date.now` by however long a screen took to
+settle, so a relative time could print differently on two runs. A motion that ignores the
+setting is caught, not photographed: the page counts `requestAnimationFrame` calls, and a
+screen still asking for frames has not settled. One shot is exempt by name (`framesOk`): `patterns-metric-juniper`, whose
+sparkline library starts width timings that draw nothing.
 
 **The incident screen's read states (CUL-1912).** The fixture writes no read and no photo, so
 `capture.mjs` adds four capture-only vomits 400 days back on Juniper, each with a drawn photo

@@ -23,10 +23,10 @@ import { resolveTrialStrip, isAnimalNotEating, notEatingFact } from '../../lib/d
 import { readIntakeDecline, vomitLineMayReassure } from '../../lib/dietTrialFacts';
 import { TodayCard } from '../../components/surfaces/home/TodayCard';
 import { CoverageDoor } from '../../components/surfaces/home/CoverageDoor';
-import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useUiStore } from '../../store/uiStore';
 import { useCanvas } from '../../hooks/useLayoutClass';
+import { homeFeedBleed, homeFeedStyles } from '../../components/home/homeFeedLayout';
 import { RowSpeechContext, type RowSpeech } from '../../components/dayRow/rowSpeech';
 import { RunRevealContext, useRunRevealHost } from '../../components/motion/runRevealMotion';
 
@@ -378,13 +378,13 @@ export default function HomeScreen() {
           feed (below the pinned header, so it's already clear of the safe-area inset). */}
       <View
         ref={bodyRef}
-        style={[styles.body, canvas && { marginHorizontal: -canvas.bleed }]}
+        style={[styles.body, homeFeedBleed(canvas)]}
         onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
       >
         <PullToRefreshSky active={refreshing} />
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={homeFeedStyles.scroll}
           showsVerticalScrollIndicator={false}
           onScroll={(e) => {
             scrollYRef.current = e.nativeEvent.contentOffset.y;
@@ -450,10 +450,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colorNeutralLight },
   body: { flex: 1 },
-  // D2-4 — paddingBottom is the page's inset, written once in lib/fabFootprint.ts and
-  // asserted ≥ the FAB's floor there (C-5). The last row's control is left-aligned for
-  // the other half.
-  scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: HOME_V2_SCROLL_INSET },
+  // The feed's scroll padding and its bleed: components/home/homeFeedLayout.ts.
   // CUL-2239: the feed's two columns, each stacking with the feed's gap. At compact they
   // stack too; at regular they share the row equally, top-aligned so the Signal's column
   // never sinks to meet Today's height.

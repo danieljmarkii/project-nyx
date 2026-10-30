@@ -28,7 +28,7 @@
 
 import { createContext, useCallback, useEffect, useRef } from 'react';
 import { theme } from '../../constants/theme';
-import { FAB_BOTTOM, FAB_DISC, fabBottomFor } from '../../lib/fanBudget';
+import { FAB_DISC, fabBottomFor } from '../../lib/fanBudget';
 import { useSafeBottom, useTabRail } from '../../hooks/useLayoutClass';
 import { RUN_MOTION } from './runOpenMotion';
 
@@ -42,9 +42,6 @@ export const RUN_REVEAL = {
   /** The latest the host waits for the content to grow: the box's own delay and a frame
    *  past it (the growth lands on the box's commit, never after its keyframe starts). */
   fallbackMs: RUN_MOTION.boxDelayMs + RUN_MOTION.mountFrameMs * 2,
-  /** How far the plus's top sits above the screen's foot on a phone (`components/log/FAB.tsx`).
-   *  At regular the host reads the disc's seat in the rail instead (`fabBottomFor`). */
-  plusRisePt: FAB_BOTTOM + FAB_DISC,
 } as const;
 
 export interface RunRevealGeometry {

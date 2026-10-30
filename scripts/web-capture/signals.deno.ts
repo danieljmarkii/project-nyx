@@ -1,7 +1,7 @@
 // The capture path's Signal (CUL-2150): the `ai_signals` rows Home reads, computed by the
 // shipped engine over exactly the rows the capture serves.
 //
-//   deno run --allow-read --allow-env --allow-write scripts/web-capture/signals.deno.ts <out.json>
+//   deno run --cached-only --allow-read --allow-env --allow-write scripts/web-capture/signals.deno.ts <out.json>
 //
 // Home reads its Signal from the `ai_signals` cache and asks `generate-signal` for a fresh one
 // when the cache is missing; the capture answers neither by default, so Home showed the
