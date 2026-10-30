@@ -22,7 +22,7 @@ Knobs (env): `CAPTURE_SIZES` (`320@1,375x667@1,390@1,466x678@1,626x890@1,890x626
 `W[xH]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_SET`
 (`pr`, the default: the shots every PR run takes; `all` adds the every-size sweeps' routes, CUL-2245), `CAPTURE_ONLY`
 (shot names), `CAPTURE_NOW` (the frozen clock), `CAPTURE_SETTLE_MS` (the floor before a
-screen is first looked at), `CAPTURE_QUIET_MS` and `CAPTURE_SETTLE_TIMEOUT_MS` (see below), `CAPTURE_FLAGS` and
+screen is first looked at), `CAPTURE_QUIET_MS`, `CAPTURE_SETTLE_TIMEOUT_MS` and `CAPTURE_MARKERS=off` (see below), `CAPTURE_FLAGS` and
 `CAPTURE_STORAGE` (app_config rows and device-local state, for building an older commit),
 `CAPTURE_DEBUG` (log every request), `CAPTURE_SIGNALS` (signals.deno.ts's output; capture
 refuses one computed at another instant or under other flags).
@@ -36,7 +36,9 @@ safety finding leads) for a pet the engine found something for, the trial card f
 on a trial, Pepper's meal named "Pantry · Lamb & Brown Rice". A shot may owe more
 (`ready:`). The photograph is the settled screenshot itself. A screen that has not settled
 by `CAPTURE_SETTLE_TIMEOUT_MS` (90000) is written as `<shot>-UNSETTLED.png`, the log names
-what was missing, and the workflow goes red. The trial screen is shot under Reduce Motion:
+what was missing, and the workflow goes red. After two in a row, the rest of that size's
+shots get 15 seconds each. `CAPTURE_MARKERS=off` keeps the quiet and loading checks and
+drops the markers, for an older commit whose screens predate them. The trial screen is shot under Reduce Motion:
 its ledger draws in with `Animated`, whose clock is the frozen `Date.now`, so without the
 app's own still frame it photographs as an empty card.
 
