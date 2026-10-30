@@ -9,6 +9,10 @@
 // and the handle is a facade: every *Async method waits for the real database, and
 // the two sync reads the app makes (lib/ask.ts, hooks/useSignal.ts) forward once it is
 // open.
+//
+// It also counts what is in flight (CUL-2266): capture.mjs photographs a screen only once
+// `__NYX_CAPTURE_DB` reads idle and unchanged, because a hydrate writing rows the screen has
+// not read yet looks, from outside, exactly like a settled screen.
 // The real module by file path: the bare name resolves back to this wrapper.
 import type * as RealModule from 'expo-sqlite';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -18,6 +22,9 @@ const Real: typeof RealModule = require('expo-sqlite/build/index');
 export * from 'expo-sqlite/build/index';
 
 type RealDb = RealModule.SQLiteDatabase;
+
+const activity: { busy: number; done: number } = ((globalThis as { __NYX_CAPTURE_DB?: { busy: number; done: number } })
+  .__NYX_CAPTURE_DB ??= { busy: 0, done: 0 });
 
 const opened = new Map<string, Promise<RealDb>>();
 const ready = new Map<string, RealDb>();
@@ -40,8 +47,14 @@ export function openDatabaseSync(name: string): RealDb {
       const db = ready.get(name);
       if (typeof key === 'string' && key.endsWith('Async')) {
         return async (...args: unknown[]) => {
-          const real = await pending;
-          return (real as unknown as Record<string, (...a: unknown[]) => unknown>)[key](...args);
+          activity.busy++;
+          try {
+            const real = await pending;
+            return await (real as unknown as Record<string, (...a: unknown[]) => unknown>)[key](...args);
+          } finally {
+            activity.busy--;
+            activity.done++;
+          }
         };
       }
       if (!db) {

@@ -3,7 +3,7 @@
 //
 //   node scripts/web-capture/sheet.mjs <shots-dir> <out.png> [summary.md]
 //
-// Reads the PNGs capture.mjs wrote (`<shot>-<size>[-UNREACHED].png`), lays them out in
+// Reads the PNGs capture.mjs wrote (`<shot>-<size>[-UNREACHED|-UNSETTLED].png`), lays them out in
 // Chromium, and photographs the page. With a third argument it also writes a Markdown table
 // of the same grid for the job summary. Exits non-zero when the directory holds no capture,
 // because a sheet of nothing would read as a clean run.
@@ -28,8 +28,9 @@ if (files.length === 0) {
 const grid = new Map();
 const sizes = new Set();
 for (const f of files) {
-  const unreached = f.endsWith('-UNREACHED.png');
-  const stem = f.replace(/(-UNREACHED)?\.png$/, '');
+  // A shot that could not reach its screen, or reached it and never settled (CUL-2266).
+  const unreached = f.match(/-(UNREACHED|UNSETTLED)\.png$/)?.[1] ?? null;
+  const stem = f.replace(/(-UNREACHED|-UNSETTLED)?\.png$/, '');
   const size = SIZE_ORDER.find((s) => stem.endsWith(`-${s}`)) ?? stem.slice(stem.lastIndexOf('-') + 1);
   const shot = stem.slice(0, stem.length - size.length - 1);
   sizes.add(size);
@@ -44,7 +45,7 @@ const cell = async (c) => {
   // One point scale across the sheet (CUL-2237): the PNG's width is 2x its points, drawn
   // at a quarter, so a 390 phone is 195px as before and the Duo is as wide as it is.
   const b64 = png.toString('base64');
-  return `<td${c.unreached ? ' class="unreached"' : ''}><img style="width:${png.readUInt32BE(16) / 4}px" src="data:image/png;base64,${b64}">${c.unreached ? '<div>UNREACHED</div>' : ''}</td>`;
+  return `<td${c.unreached ? ' class="unreached"' : ''}><img style="width:${png.readUInt32BE(16) / 4}px" src="data:image/png;base64,${b64}">${c.unreached ? `<div>${c.unreached}</div>` : ''}</td>`;
 };
 let rows = '';
 for (const [shot, bySize] of grid) {
@@ -75,7 +76,7 @@ console.log(out);
 if (summary) {
   const md = [`| shot | ${cols.join(' | ')} |`, `|---|${cols.map(() => '---').join('|')}|`];
   for (const [shot, bySize] of grid) {
-    md.push(`| ${shot} | ${cols.map((s) => (!bySize.get(s) ? '—' : bySize.get(s).unreached ? '**UNREACHED**' : '✓')).join(' | ')} |`);
+    md.push(`| ${shot} | ${cols.map((s) => (!bySize.get(s) ? '—' : bySize.get(s).unreached ? `**${bySize.get(s).unreached}**` : '✓')).join(' | ')} |`);
   }
   await writeFile(summary, md.join('\n') + '\n');
 }

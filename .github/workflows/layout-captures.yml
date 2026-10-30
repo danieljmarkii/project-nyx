@@ -149,3 +149,10 @@ jobs:
             echo "::error::a shot could not reach its screen: $(cd "$SHOTS" && ls *-UNREACHED.png | tr '\n' ' ')"
             exit 1
           fi
+          # CUL-2266: a screen that never settled (still loading, or a marker it owes never
+          # arrived) is photographed as it stood and named -UNSETTLED; the Capture step's log
+          # says what was missing.
+          if ls "$SHOTS"/*-UNSETTLED.png >/dev/null 2>&1; then
+            echo "::error::a shot never settled: $(cd "$SHOTS" && ls *-UNSETTLED.png | tr '\n' ' ')"
+            exit 1
+          fi
