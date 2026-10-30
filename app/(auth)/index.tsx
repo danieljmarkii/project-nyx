@@ -104,7 +104,7 @@ export default function LandingScreen() {
       <NightHeroGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <LandingBody scrolls={scrolls}>
-          <View style={[styles.hero, scrolls && styles.heroScrolling]}>
+          <View style={[styles.hero, scrolls ? styles.heroScrolling : styles.heroFixed]}>
             {/* Moon + wordmark are one "Culprit" a11y image so a screen reader hears
                 the brand once (the moon stays a silent child via accessible={false},
                 exactly as it does inside AuthBrandMark). */}
@@ -165,7 +165,8 @@ export default function LandingScreen() {
 }
 
 // The Landing's column: a scroll whose content grows to fill at the accessibility sizes,
-// the plain fixed column at every other size (see `scrolls` above).
+// the plain fixed column at every other size (see `scrolls` above). Crossing the threshold
+// remounts the hero and buttons; the focus and redirect state live in the screen above.
 function LandingBody({ scrolls, children }: { scrolls: boolean; children: ReactNode }) {
   if (!scrolls) return <>{children}</>;
   return (
@@ -189,14 +190,17 @@ const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
   },
+  // The fixed column: the hero takes what the buttons leave.
+  heroFixed: {
+    flex: 1,
+  },
   // In the scroll a zero flex basis would collapse the hero to the buttons' leftovers, so
-  // it grows from its own height instead.
+  // it grows from its own height. Its own entry, never an override of `flex: 1`: web drops
+  // an undefined style key, so `flex: undefined` would leave the basis at zero there.
   heroScrolling: {
-    flex: undefined,
     flexGrow: 1,
   },
   hero: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.space2,
