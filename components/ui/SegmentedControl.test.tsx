@@ -55,6 +55,27 @@ describe('SegmentedControl', () => {
     }
   });
 
+  // CUL-2278: Patterns stacks its ranges at the accessibility sizes. Off by default, so
+  // the row every other caller draws is unchanged.
+  it('stacks into a column of label-sized segments only when asked, each still at the floor', () => {
+    const row = render(
+      <SegmentedControl<Mode> options={OPTIONS} value="saw" onChange={() => {}} testID="seg" />,
+    );
+    expect(flat(row.getByTestId('seg')).flexDirection).toBe('row');
+    expect(flat(row.getByTestId('seg-saw')).flex).toBe(1);
+    expect(flat(row.getByTestId('seg-saw')).flexBasis).toBeUndefined();
+    row.unmount();
+
+    const { getByTestId } = render(
+      <SegmentedControl<Mode> options={OPTIONS} value="saw" onChange={() => {}} stacked testID="seg" />,
+    );
+    expect(flat(getByTestId('seg')).flexDirection).toBe('column');
+    for (const id of ['seg-saw', 'seg-found']) {
+      expect(flat(getByTestId(id))).toMatchObject({ flexGrow: 0, flexBasis: 'auto', minHeight: theme.hitTarget });
+      expect(getByTestId(id).props.hitSlop).toBeUndefined();
+    }
+  });
+
   it('announces the visible word unless an option names a fuller one', () => {
     const { getByTestId } = render(
       <SegmentedControl<Mode>
