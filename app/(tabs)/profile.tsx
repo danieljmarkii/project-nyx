@@ -1875,7 +1875,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space0_75,
   },
-  // B-136 — the inline card actions (Edit/Resolve/End/Log a dose/+Add on the
+  // B-136 — the inline card actions (Edit/Resolve/End/Log a dose on the
   // Conditions and Current medications cards) render small (textXS/textMD) text, so
   // a bare hitSlop left the tap target ≈27px tall, under the 44pt floor. minHeight 44
   // + centered lifts each to the floor without touching the text style; the existing
