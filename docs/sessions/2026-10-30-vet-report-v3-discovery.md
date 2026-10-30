@@ -36,7 +36,10 @@ The PM asked the product team to: convene the team, personas and any useful cons
 - **Product walkthrough:** blocking findings on the composer, preview and send (intake decline unflagged, a suggested update window that cropped itching silently, an after-hours call prompt to a closed clinic, a bold "0 doses logged" reading as non-compliance). All fixed.
 - **Adversarial pass 1: FAIL**, 12 findings (the staple washout clearing chicken, calm fills on refused days, the missing 30 in a row refusal run, a weight band that read as in range, question pointers that answered the owner, option B salience, the chronicity exemption's scope, and more). All fixed.
 - **Adversarial pass 2 (the cap): FAIL**, seven quiet breaks, several introduced by pass 1's fixes (the feline lipidosis line removed, phone surfaces still printing "4 of 154", calm fills on Cooper's no-itch days, a false "no safety flag is live", a 7 day emergency window that hid flags, an update that dropped back-dated entries, a question pinned to a live flag). **Fixed after the cap and not re-reviewed**; the PR says so. Loud residuals carried: the confounded pre-Jun 8 comparison (now worded), the weight range formula (footnoted), the mono legend names.
-- **Word count:** Cooper sheet 1 rose from 301 to about 376 as the reviews added guards back (the full chicken exposure, "Not tested", the Apoquel line). The ≤250 target is not met on this record; R-2 carries it.
+- **Word count:** Cooper sheet 1 rose from 301 to 404 as the reviews added guards back (the full chicken exposure, "Not tested", the Apoquel line, the chronicity span). The ≤250 target is not met on this record; R-2 carries it.
+- **Last read before publishing (this session):** a duplicate band line removed; the flow frames' chicken line re-dated to their own Sep to Oct timeline; R-8 brought in line with the flow (no per-send layout choice); owner pronouns made neutral (no persona pronouns are defined).
+
+**Mock:** https://claude.ai/artifact/DQSTtcVTKMJW3DPRtm6qTA (a new page for a clean slate; the round 1 and 2 page stays the deliberation archive).
 
 ## Decisions requested (R-1 to R-11 on CUL-2275, label Waiting on PM)
 
