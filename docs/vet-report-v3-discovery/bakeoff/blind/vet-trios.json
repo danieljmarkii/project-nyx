@@ -1,0 +1,44 @@
+{
+ "cooper": [
+  {
+   "id": "C03",
+   "summary": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial (hydrolysed soy) that began May 18, and chicken was logged on 29 of 154 meals and treats, with at least 4 off-list, the last on Jun 27. Dentastix, whose label lists chicken, were fed daily from Jun 8 and are on the owner-entered allowed list; no chicken-free day is recorded since Jun 8. Itching has 16 entries on 16 of 43 logged days over at least 35 days, and this record is not a test of the diet, with Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlapping the trial. The owner wrote “flare after the chicken on Sunday”, Sunday being Jun 14; this is not tested, as chicken was fed daily from Jun 8."
+  },
+  {
+   "id": "C09",
+   "summary": "Chicken on 29 of 154 meals and treats: Dentastix (label lists chicken) daily from Jun 8, on the owner-entered allowed list; at least 4 off-list, the last Jun 27. Owner-entered: Royal Canin HP, hydrolysed soy, day 46 of 56 since May 18, directed by Dr. A. Chen. No chicken-free day recorded since Jun 8. Itching: 16 entries on 16 of 43 logged days, over at least 35 days (chronicity flag). Not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial. Apoquel 16 mg once daily, prescribed Apr 30: doses not logged in Culprit. NexGard 68 mg chew, Jun 5 and Jul 2: flavour protein unknown, not counted off-list. Owner's words, Jun 18: “flare after the chicken on Sunday”, Sunday being Jun 14. Not tested: chicken was fed daily from Jun 8; before then (May 18 to Jun 7, trial weeks 1 to 3) chicken was logged only on Jun 2, so any comparison is confounded by the trial's own start. Also logged: loose stool Jun 22; 1 meal not finished Jun 24. Weight, home scale: −0.6 kg, −1.9%, 32.4 kg May 18 to 31.8 kg Jun 29, 3 readings."
+  },
+  {
+   "id": "C06",
+   "summary": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial since May 18, and chicken appears on 29 of 154 meals and treats during it, with at least 4 off-list, the last Jun 27. Dentastix, whose label lists chicken, is given daily from Jun 8 as an item on the owner-entered allowed list, and no chicken-free day is recorded since Jun 8. Itching has 16 entries on 16 of 43 logged days over at least 35 days and is not a test of the diet: Apoquel 16 mg once daily, doses not logged, and NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial. The NexGard 68 mg chews on Jun 5 and Jul 2 have flavour protein unknown and are not counted off-list."
+  }
+ ],
+ "mira": [
+  {
+   "id": "M03",
+   "summary": "Mira, an 8-year-old spayed Domestic Shorthair, refused every Hill's z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused, 4 partly eaten), and the diet trial was stopped on day 19 of 42. Intake not directly observed: a free-fed Purina ONE bowl was down, and what she ate from it is unknown. Weight is −6.8% in 18 days, 4.4 kg Jun 1 to 4.1 kg Jun 19, on 2 home-scale readings. In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window, and nothing is recorded after Jun 19. Vomiting is logged on 5 of 19 logged days, with no medicines entered, not verified."
+  },
+  {
+   "id": "M01",
+   "summary": "Every z/d feeding refused Jun 5 to 19: 30 in a row (34 of 38 rated feedings refused, 4 partly eaten, Jun 1 to 19). The trial was stopped on day 19. Intake not directly observed: a free-fed Purina ONE bowl was down. Weight −6.8% in 18 days: 4.4 to 4.1 kg, 2 home-scale readings. In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window. Mira's total intake was not observed, and nothing is recorded after Jun 19. A safety flag is live: call the clinic today rather than waiting for the visit. Owner-entered diet trial: Hill's z/d (hydrolysed chicken liver), Jun 1 to 19, stopped on day 19 of 42; directed by Dr. A. Chen. Vomiting: 5 entries on 5 of 19 logged days; nothing logged after Jun 19. Recorded condition, owner-entered: chronic vomiting since Apr 10, 2026. Medicines: none entered; not verified."
+  },
+  {
+   "id": "M02",
+   "summary": "Mira, an 8-year-old spayed Domestic Shorthair, refused every z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused), and her owner-entered Hill's z/d trial was stopped on day 19 of 42. Intake not directly observed, as a free-fed Purina ONE bowl was down, and her weight is −6.8% in 18 days, 4.4 to 4.1 kg on 2 home-scale readings rounded to 0.1 kg, so the true loss lies between 4.6% and 9.0%. In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window, and her total intake was not observed. Vomiting is recorded on 5 of 19 logged days, and nothing is recorded after Jun 19, 13 days before this report."
+  }
+ ],
+ "nyx": [
+  {
+   "id": "N01",
+   "summary": "Nyx, a 7-year-old female Domestic Shorthair with neuter status not recorded, has a live safety flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained. Vomiting was entered on 4 of the 7 days to Jun 30, her latest entries, and on 23 of 43 logged days over at least 47 days, first logged May 14, her first entry of any kind, with onset unknown. Her free-fed bowls, start not recorded, have intake not directly observed, and no food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested against it separately. 18 of 23 vomit entries have a legible AI photo read, unconfirmed and with no photos retained, and 5 have no usable read. Weight, medication, medical conditions and neuter status are not recorded, the record is logged on 43 of 90 days, and nothing is logged Jul 1 to 2."
+  },
+  {
+   "id": "N07",
+   "summary": "Nyx, a 7-year-old female Domestic Shorthair, neuter status not recorded, has a live flag for possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained. Vomiting is logged on 4 of the 7 days to Jun 30 and on 23 of 43 logged days over at least 47 days; her first entry of any kind is May 14, so onset is unknown. She is free-fed all day, start not recorded, with intake not directly observed. Logging covers 43 of 90 days, 4 of the first 45 and 39 of the last 45, with nothing logged Jul 1 to 2."
+  },
+  {
+   "id": "N06",
+   "summary": "Possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment · AI PHOTO READ · UNCONFIRMED · photo not retained. Vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag). Vomiting for at least 47 days: 23 entries on 23 of 43 logged days, first logged May 14 (her first entry of any kind, so onset is unknown), most recent Jun 30 (chronicity flag). AI photo reads, 18 legible of 23 entries: undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21); 5 without a usable read (2 uncertain, 2 not legible, 1 pending) · AI PHOTO READ · UNCONFIRMED · no photos retained. Free-fed all day, start not recorded: Nature's Variety Duck and Royal Canin Weight Care (lists chicken). Intake not directly observed. Also logged: Temptations Chicken treats, at least 20 feedings May 15 to Jun 28 (ingredient panel not captured); Fancy Feast Tuna wet food, 3 meals May 18 to Jun 20. No food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it. All 23 entries carry an owner-logged time between 10:00 and 14:00 (timing only, not an association). Not recorded: weight, body condition, medication, medical conditions, neuter status."
+  }
+ ]
+}

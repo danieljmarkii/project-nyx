@@ -17,3 +17,15 @@ Frozen point-in-time papers from the round 3 discovery. They carry the team's re
 | `panel/data-and-ts.md` | Data Scientist, Trust & Safety | Visual encodings that break the numbers; a guardrail they would sign; saved reports, links, consent |
 
 Every panel reader is a simulated persona and read browser renders of `main` at `18c86dc7` (fixtures, not live data). Paths marked "(session scratchpad)" point at session-local renders that were not committed; the fixtures and the harness method are reproducible from `docs/research/2026-10-vet-report-guardrail-map.md` Appendix A.
+
+## Round 4 (2026-10-30): the R-3 bake-off
+
+`bakeoff/` holds a reproducible test of AI writing the summary, run after the PM leaned toward it. `RESULTS.md` is the write-up.
+
+**Pipeline and protocol:** the spec, the prompts, the fact tables, the deterministic verifier and the rubric. The decision rule was registered before any draft was written.
+
+**Data:** all 24 drafts with every attempt, the blind packets and their key, two judges' scores, the checker's verdicts, and two blind vet reads.
+
+**Result:** the larger model passed the rule and the smaller model failed it.
+
+Re-run the checker with: `python3 -I docs/vet-report-v3-discovery/bakeoff/verify.py <facts.json> <summary.json>`.

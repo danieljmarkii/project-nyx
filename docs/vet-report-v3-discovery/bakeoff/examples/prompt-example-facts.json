@@ -1,0 +1,14 @@
+{"fixture":"prompt-example-biscuit","year":2026,"report_date":"2026-06-01","timezone":"America/Chicago",
+ "pet":{"name":"Biscuit","species":"dog","sex":"female","pronoun":"she"},
+ "clinical_question":"Symptom monitoring: soft stool.","safety_live":false,"intake_not_directly_observed":false,
+ "forbidden_names":[],
+ "lexicon":{"foods":{"Purina EN Gastroenteric":["Purina EN Gastroenteric","Purina EN"]},"drugs":{}},
+ "facts":[
+  {"id":"P","line":"masthead","role":"header","kind":"signalment","text":"Dog · Beagle · female, spayed · 9 y, born Feb 2, 2017 · 13.6 kg on May 30, home scale"},
+  {"id":"W","line":"masthead","role":"header","kind":"window","text":"May 2 to Jun 1, 2026 since the last visit · 26 of 31 days logged"},
+  {"id":"L1","line":1,"role":"lead","kind":"primary_sign","text":"Soft or loose stool: 9 entries on 8 of 26 logged days, first May 4, most recent May 31 (owner-described).","required":true,"must_say":[["8 of 26 logged days"]]},
+  {"id":"L2","line":2,"role":"record","kind":"present_blood","text":"Blood in stool, owner-described: 1 entry, May 18; this record cannot rule blood out on other days.","required":true,"must_say":[["cannot rule"]]},
+  {"id":"L3","line":3,"role":"record","kind":"medication_course","text":"Metronidazole 250 mg twice daily, May 20 to 26: 13 of 14 doses logged as given.","required":true,"must_say":[["logged"]]},
+  {"id":"L4","line":4,"role":"record","kind":"diet","text":"Diet, owner-entered: Purina EN Gastroenteric, unchanged in this window; at least 2 off-list feedings logged (cheese May 9, rawhide May 23).","must_say":[["at least 2"]]},
+  {"id":"U1","line":"unknowns","role":"unknown","kind":"unknown","text":"Unknown: stool on the 5 of 31 days with no entries."}
+ ]}
