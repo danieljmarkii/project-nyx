@@ -8,6 +8,9 @@ import type { AnalyticsWindow } from '../../lib/analytics';
 import { notEnoughData } from '../../lib/analytics';
 import { selectCardState } from '../../lib/dashboardCards';
 
+// The module object itself, so a spy reaches the component's own read (a namespace import is a copy).
+const RN = require('react-native') as typeof import('react-native');
+
 const windows: Record<AnalyticsWindow, MetricDetailWindowData> = {
   week: {
     value: '2',
@@ -77,5 +80,32 @@ describe('MetricDetailScreen', () => {
     );
     fireEvent.press(getByRole('tab', { name: 'Week' }));
     expect(getByText('No vomiting logged this week.')).toBeTruthy();
+  });
+});
+
+// CUL-2265: at 320 and the largest text, Week, Month and 3 Months drew over each other.
+describe('MetricDetailScreen — the ranges at large text', () => {
+  afterEach(() => jest.restoreAllMocks());
+  const trackAt = (fontScale: number) => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, fontScale, scale: 2 });
+    const { getByRole } = render(
+      <MetricDetailScreen title="Vomiting" polarity="adverse" windows={windows} petName="Nyx" calibrationUnit="day" />,
+    );
+    const week = getByRole('tab', { name: 'Week' });
+    let track = week.parent;
+    while (track && track.props.accessibilityRole !== 'tablist') track = track.parent;
+    return { track: RN.StyleSheet.flatten(track?.props.style), week };
+  };
+
+  it('keeps one row, with its slop, at the standard sizes', () => {
+    const { track, week } = trackAt(1.353);
+    expect(track.flexDirection).toBe('row');
+    expect(week.props.hitSlop).toBe(6);
+  });
+
+  it('stacks the ranges, without slop, at the accessibility sizes, and each still switches', () => {
+    const { track, week } = trackAt(3.571);
+    expect(track.flexDirection).toBe('column');
+    expect(week.props.hitSlop).toBeUndefined();
   });
 });

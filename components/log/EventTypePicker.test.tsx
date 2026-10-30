@@ -3,6 +3,7 @@ import { EventTypePicker } from './EventTypePicker';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { theme } from '../../constants/theme';
 import { columnFor, layoutClassFor } from '../../hooks/useLayoutClass';
+import { flat, owningTouchable, type TreeNode } from '../../testUtils/tree';
 
 // The window the grid sees: a 390pt phone unless a test says otherwise (jest's own window
 // is 750pt wide, which is regular).
@@ -15,8 +16,16 @@ jest.mock('../../hooks/useLayoutClass', () => {
     useColumnWidth: () => actual.columnFor(mockWindow.width).width,
   };
 });
+// The picker's column count: two at the standard sizes unless a test says otherwise (jest's
+// own window reports a fontScale of 2, which is an accessibility size).
+let mockColumns: 1 | 2 = 2;
+jest.mock('./pickerColumns', () => ({
+  ...jest.requireActual('./pickerColumns'),
+  usePickerColumns: () => mockColumns,
+}));
 beforeEach(() => {
   mockWindow = { width: 390, height: 844 };
+  mockColumns = 2;
 });
 
 // EventTypePicker is a pure props component (no store/hook), so the grid renders
@@ -163,5 +172,48 @@ describe('EventTypePicker — no Noticed tile', () => {
     const energy = within(getByTestId('event-group-Energy & behavior'));
     expect(energy.getByText('Lethargy')).toBeTruthy();
     expect(energy.queryByText(LOOK_LABEL)).toBeNull();
+  });
+});
+
+// CUL-2265: at the accessibility sizes a half-width tile broke a name mid-word ("Coug / h")
+// and the split Stool tile pushed its name to nothing and Loose off the screen.
+describe('EventTypePicker — one column at the accessibility sizes', () => {
+  const tileOf = (getByText: (t: string) => TreeNode, label: string): TreeNode => {
+    const tile = owningTouchable(getByText(label));
+    if (!tile) throw new Error(`${label} sits in no touchable`);
+    return tile;
+  };
+
+  it('draws every tile the full width of the row, Cough and Sneeze included', () => {
+    mockColumns = 1;
+    const { getByText } = render(<EventTypePicker onSelectType={jest.fn()} />);
+    for (const label of ['Vomit', 'Cough', 'Sneeze', 'Lethargy', 'Medication']) {
+      expect(flat(tileOf(getByText, label)).width).toBe('100%');
+    }
+  });
+
+  it('keeps the two-up pairs at the standard sizes', () => {
+    const { getByText } = render(<EventTypePicker onSelectType={jest.fn()} />);
+    expect(flat(tileOf(getByText, 'Cough')).width).toBe('48%');
+    expect(flat(tileOf(getByText, 'Sneeze')).width).toBe('48%');
+  });
+
+  it('stacks Normal and Loose under the name with no slop between them, and still routes each', () => {
+    mockColumns = 1;
+    const onSelectType = jest.fn();
+    const { getByText } = render(<EventTypePicker onSelectType={onSelectType} />);
+    const normal = tileOf(getByText, 'Normal');
+    const loose = tileOf(getByText, 'Loose');
+    expect(normal.props.hitSlop).toBeUndefined();
+    expect(loose.props.hitSlop).toBeUndefined();
+    fireEvent.press(getByText('Normal'));
+    expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('stool_normal');
+    fireEvent.press(getByText('Loose'));
+    expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('diarrhea');
+  });
+
+  it('keeps the vertical slop on the side-by-side segments at the standard sizes', () => {
+    const { getByText } = render(<EventTypePicker onSelectType={jest.fn()} />);
+    expect(tileOf(getByText, 'Normal').props.hitSlop).toEqual({ top: 8, bottom: 8 });
   });
 });

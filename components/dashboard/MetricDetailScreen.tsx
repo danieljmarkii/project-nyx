@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import { useColumnWidth } from '../../hooks/useLayoutClass';
 import { theme } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
@@ -16,6 +16,7 @@ import { ArrowUp, ArrowDown } from 'lucide-react-native';
 // here so existing importers (this component's test, the detail route) keep their import.
 import type { MetricDetailWindowData } from '../../lib/metricDetail';
 import { ThemedText } from '../ui/ThemedText';
+import { STACK_FONT_SCALE } from '../ui/IdentityRow';
 export type { MetricDetailWindowData } from '../../lib/metricDetail';
 
 // MetricDetailScreen — a card's "doorway" destination (§4.2 / §8). One metric across a
@@ -60,6 +61,10 @@ export function MetricDetailScreen({
   calibrationUnit = 'sample',
 }: Props) {
   const [active, setActive] = useState<AnalyticsWindow>(initialWindow);
+  // At the accessibility sizes three ranges cannot share one row (at 320, Week, Month and
+  // 3 Months drew over each other), so the track stacks them. Stacked, the 6pt slop would
+  // reach into the next range 3pt away, and each is already past 44pt tall, so it goes.
+  const stacked = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
   const width = useColumnWidth();
   const chartWidth = width - theme.space3 * 4;
   const data = windows[active];
@@ -73,18 +78,21 @@ export function MetricDetailScreen({
     <View style={styles.container}>
       <ThemedText style={styles.title}>{title}</ThemedText>
 
-      <View style={styles.segmentedControl} accessibilityRole="tablist">
+      <View
+        style={[styles.segmentedControl, stacked && styles.segmentedControlStacked]}
+        accessibilityRole="tablist"
+      >
         {WINDOW_ORDER.map((w) => {
           const isActive = w === active;
           return (
             <Pressable
               key={w}
               onPress={() => setActive(w)}
-              hitSlop={6}
+              hitSlop={stacked ? undefined : 6}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={WINDOW_UI_LABEL[w]}
-              style={[styles.segment, isActive && styles.segmentActive]}
+              style={[styles.segment, stacked && styles.segmentStacked, isActive && styles.segmentActive]}
             >
               <ThemedText style={[styles.segmentLabel, isActive && styles.segmentLabelActive]}>
                 {WINDOW_UI_LABEL[w]}
@@ -146,12 +154,20 @@ const styles = StyleSheet.create({
     padding: 3,
     gap: 3,
   },
+  segmentedControlStacked: {
+    flexDirection: 'column',
+  },
   segment: {
     flex: 1,
     minHeight: 36,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: theme.radiusSmall - 2,
+  },
+  // A range sized by its label in the stacked column, never a zero flex basis.
+  segmentStacked: {
+    flexGrow: 0,
+    flexBasis: 'auto',
   },
   segmentActive: {
     backgroundColor: theme.colorSurface,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { theme, colorRoles } from '../../constants/theme';
@@ -97,59 +97,68 @@ export default function LandingScreen() {
     <View style={styles.root}>
       <NightHeroGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.hero}>
-          {/* Moon + wordmark are one "Culprit" a11y image so a screen reader hears
-              the brand once (the moon stays a silent child via accessible={false},
-              exactly as it does inside AuthBrandMark). */}
-          <View style={styles.lockup} accessible accessibilityRole="image" accessibilityLabel="Culprit">
-            <CulpritMark size={moonSize} ground="night" accessible={false} />
-            <Text style={styles.wordmark}>Culprit</Text>
+        {/* Scrolls only when it must: at the largest text the hero and the buttons outgrow
+            the screen, and a fixed column drew Log in over the sub (CUL-2265). The content
+            grows to fill, so at every other size the hero still centres above the stack. */}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.hero}>
+            {/* Moon + wordmark are one "Culprit" a11y image so a screen reader hears
+                the brand once (the moon stays a silent child via accessible={false},
+                exactly as it does inside AuthBrandMark). */}
+            <View style={styles.lockup} accessible accessibilityRole="image" accessibilityLabel="Culprit">
+              <CulpritMark size={moonSize} ground="night" accessible={false} />
+              <Text style={styles.wordmark}>Culprit</Text>
+            </View>
+            {showAuthActions && (
+              <>
+                <ThemedText style={styles.sub}>
+                  Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.
+                </ThemedText>
+                {/* Tertiary affordance, deliberately NOT a filled button — keeps "Create
+                    account" the single obvious action while the value previews stay one
+                    tap away. */}
+                <TouchableOpacity
+                  onPress={() => router.push('/(auth)/how-it-works')}
+                  style={styles.learnMore}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="See how it works"
+                  testID="landing-how-it-works"
+                >
+                  <ThemedText style={styles.learnMoreText}>See how it works ›</ThemedText>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
+
+          {/* Pinned + persistent once the session decision lands (spec §4). */}
           {showAuthActions && (
-            <>
-              <ThemedText style={styles.sub}>
-                Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.
-              </ThemedText>
-              {/* Tertiary affordance, deliberately NOT a filled button — keeps "Create
-                  account" the single obvious action while the value previews stay one
-                  tap away. */}
+            <View style={styles.cta}>
+              <PrimaryButton
+                label="Create account"
+                onPress={() => router.push('/(auth)/signup')}
+                // The action on the night ground: moonlight, since indigo cannot show
+                // on the indigo night (CUL-2200, C3).
+                variant="night"
+                testID="landing-create-account"
+              />
               <TouchableOpacity
-                onPress={() => router.push('/(auth)/how-it-works')}
-                style={styles.learnMore}
+                onPress={() => router.push('/(auth)/login')}
+                style={styles.loginButton}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="See how it works"
-                testID="landing-how-it-works"
+                accessibilityLabel="Log in"
+                testID="landing-log-in"
               >
-                <ThemedText style={styles.learnMoreText}>See how it works ›</ThemedText>
+                <ThemedText style={styles.loginText}>Log in</ThemedText>
               </TouchableOpacity>
-            </>
+            </View>
           )}
-        </View>
-
-        {/* Pinned + persistent once the session decision lands (spec §4). */}
-        {showAuthActions && (
-          <View style={styles.cta}>
-            <PrimaryButton
-              label="Create account"
-              onPress={() => router.push('/(auth)/signup')}
-              // The action on the night ground: moonlight, since indigo cannot show
-              // on the indigo night (CUL-2200, C3).
-              variant="night"
-              testID="landing-create-account"
-            />
-            <TouchableOpacity
-              onPress={() => router.push('/(auth)/login')}
-              style={styles.loginButton}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Log in"
-              testID="landing-log-in"
-            >
-              <ThemedText style={styles.loginText}>Log in</ThemedText>
-            </TouchableOpacity>
-          </View>
-        )}
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -166,8 +175,11 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: theme.space3,
   },
+  scroll: {
+    flexGrow: 1,
+  },
   hero: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.space2,
