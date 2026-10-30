@@ -71,6 +71,17 @@ import { COMPLETION_MOTION } from '../motion/completionMotion';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { REMOVED_DURATION_MS } from '../../store/momentStore';
 
+import { TAB_RAIL_WIDTH } from '../../hooks/useLayoutClass';
+
+// jest-expo's default window is 750pt, which is regular width: pinned to a phone, with each
+// regular case stating its own (CUL-2267).
+let mockWindowWidth = 390;
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => ({ width: mockWindowWidth, height: 844, scale: 3, fontScale: 1 }),
+}));
+
+
 // Minimal structural stand-in for react-test-renderer's ReactTestInstance:
 // @types/react-test-renderer is not a dependency here, and three style predicates
 // do not justify adding one. findAll's parameter is bivariant, so a narrower
@@ -282,6 +293,28 @@ describe('NamedCompletionCard — where it sits (CUL-802)', () => {
     const view = render(<NamedCompletionCard />);
     seed();
     expect(wrapperStyle(view).bottom).toBe(80 + 64);
+  });
+
+  // CUL-2267 — at regular there is no bottom bar and the + is in the rail: the card sits at
+  // the bottom inset, centred on the scene beside the rail (half the rail to the left).
+  it('the unfolded Duo on its side: at the bottom inset, beside the rail, never over it', () => {
+    mockWindowWidth = 890;
+    mockPathname = '/history';
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed();
+      const node = view.UNSAFE_root.findAll((n: StyledNode) => {
+        const st = StyleSheet.flatten(n.props?.style as StyleProp<ViewStyle>) as { zIndex?: number; position?: string } | undefined;
+        return st?.position === 'absolute' && st?.zIndex === 50;
+      })[0];
+      const st = StyleSheet.flatten(node.props.style as StyleProp<ViewStyle>) as { bottom: number; left: number; right: number };
+      // No safe-area provider here, so the inset reads 0.
+      expect(st.bottom).toBe(theme.space2);
+      expect(st.left).toBe(theme.space2 - TAB_RAIL_WIDTH / 2);
+      expect(st.right).toBe(theme.space2 + TAB_RAIL_WIDTH / 2);
+    } finally {
+      mockWindowWidth = 390;
+    }
   });
 });
 

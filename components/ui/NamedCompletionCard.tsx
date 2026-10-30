@@ -21,6 +21,7 @@ import {
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
+import { useTransientSeat } from './transientSeat';
 import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { TimeEditSheet } from './TimeEditSheet';
 import { FloorRaiseLine } from './FloorRaiseLine';
@@ -116,6 +117,8 @@ export function NamedCompletionCard() {
   // which wraps the tree in a SafeAreaProvider, and expo-router's route info falls
   // back to a default when no navigator has mounted.
   const insets = useSafeAreaInsets();
+  // At regular the seat replaces both offsets: no bar, the + in the rail (CUL-2267).
+  const seat = useTransientSeat(true);
   const pathname = usePathname();
   const overRecord = pathname.startsWith(RECORD_ROUTE_PREFIX);
   const bottomOffset = overRecord
@@ -430,7 +433,7 @@ export function NamedCompletionCard() {
 
       <Animated.View
         pointerEvents={shown && !inert ? 'box-none' : 'none'}
-        style={[styles.wrapper, { bottom: bottomOffset, opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
+        style={[styles.wrapper, { bottom: bottomOffset }, seat, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
       >
         {/* A touch finishes the motion; lifting it lets the tone settle the halo (§2.3).
             This card has no dwell pause on its root, so it gains the finish only. Not

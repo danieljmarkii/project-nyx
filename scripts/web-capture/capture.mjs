@@ -8,7 +8,7 @@
 // clock at NOW so every row and every "today" is the same on every run, and photographs
 // each screen at each width. Playwright comes from the container's global install.
 import { createRequire } from 'node:module';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { serve } from './serve.mjs';
 import { buildFixtureTables, answerRest, captureFlagRows, CAPTURE_DEFAULT_NOW, FIXTURE_USER_ID, FIXTURE_EMAIL } from './fixtureRest.ts';
@@ -43,6 +43,50 @@ if (process.env.CAPTURE_SIGNALS) {
 }
 
 const ONLY = process.env.CAPTURE_ONLY?.split(',');
+
+// ── Settled, not timed (CUL-2266) ─────────────────────────────────────────────────────
+// A fixed wait photographed whatever had landed by then: under load, Home before its Signal
+// read or its trial, a day row before its food's name, the mix screen before the library.
+// Now a shot is taken when its screen has settled, which is all of:
+//   - nothing in flight: no fixture request for the quiet window, and the SQLite stub
+//     (stubs/sqlite.ts) idle with no call finished in it;
+//   - two screenshots across the quiet window identical, and the one written is the last;
+//   - every marker the screen owes present, and every loading frame gone.
+// A screen that does not get there within CAPTURE_SETTLE_TIMEOUT_MS is not photographed as
+// it stands: its file is named -UNSETTLED with what was missing, and the workflow goes red.
+// CAPTURE_SETTLE_MS is now the floor before the first look, not the whole wait.
+const QUIET_MS = Number(process.env.CAPTURE_QUIET_MS ?? 1200);
+const POLL_MS = 300;
+const SETTLE_TIMEOUT_MS = Number(process.env.CAPTURE_SETTLE_TIMEOUT_MS ?? 90000);
+// After two shots in a row fail to settle, the context is broken rather than slow: the rest
+// of its shots get this much, so one bad size cannot spend the workflow's whole timeout.
+const BROKEN_TIMEOUT_MS = 15000;
+// CAPTURE_MARKERS=off drops the screen markers (the quiet and loading checks stay), for
+// photographing an older commit whose screens predate them.
+const MARKERS = process.env.CAPTURE_MARKERS !== 'off';
+// A testId marker is met by any one of its ids.
+const testId = (...ids) => ({ testId: ids });
+const text = (t) => ({ text: t });
+const noText = (t) => ({ text: t, absent: true });
+// Loading frames are never a settled screen: every skeleton and silhouette the app draws
+// while a read is in flight (components/surfaces/waits/, the Signal's skeletons), the cold
+// start, and the Signal's building frame dissolving into its stack.
+const LOADING = {
+  selector: '[data-testid*="skeleton"], [data-testid*="silhouette"], [data-testid="design-v2-cold-start"], [data-testid="signal-arrival-outgoing"]',
+  absent: true,
+};
+// What Home owes each pet once its reads have answered: the Signal's lead where the engine
+// computed findings (a lead card, or a row when a safety finding leads), the trial card where
+// a trial runs, and the latest meal named by its food ("Pantry · Lamb & Brown Rice" for
+// Pepper: the day row draws the meal bare until the food library has hydrated).
+function homeMarkers(petId) {
+  const present = [];
+  if (!MARKERS) return present;
+  if (tables.ai_signals?.some((r) => r.pet_id === petId && (r.findings ?? []).length > 0)) present.push(testId('signal-lead-card', 'signal-row'));
+  if (tables.diet_trials.some((t) => t.pet_id === petId && t.status === 'active')) present.push(testId('trial-card-v2'));
+  if (petId === pet('pepper').id) present.push(text(foodNameOf(latestOf(petId, 'meal'))));
+  return present;
+}
 
 function b64url(o) {
   return Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -139,6 +183,10 @@ const readStateOverlay = (consent) => ({
 });
 const latestOf = (petId, type) =>
   tables.events.filter((e) => e.pet_id === petId && e.event_type === type).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
+const foodNameOf = (event) => {
+  const food = tables.food_items.find((f) => f.id === tables.meals.find((m) => m.event_id === event.id).food_item_id);
+  return `${food.brand} · ${food.product_name}`;
+};
 const firstVomit = (petId) =>
   tables.events.filter((e) => e.pet_id === petId && e.event_type === 'vomit').sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))[0];
 
@@ -168,7 +216,7 @@ const SHOTS = [
   { name: 'home-juniper', pet: 'juniper', go: [] },
   { name: 'home-miso', pet: 'miso', go: [] },
   { name: 'home-pepper', pet: 'pepper', go: [] },
-  { name: 'history-pepper', pet: 'pepper', go: [tab('History')] },
+  { name: 'history-pepper', pet: 'pepper', go: [tab('History')], ready: [text(foodNameOf(latestOf(pet('pepper').id, 'meal')))] },
   { name: 'incident-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page)] },
   // CUL-1909: the event editor, reached the one way an owner reaches it (the record's Edit).
   { name: 'edit-vomit-juniper', pet: 'juniper', go: [() => {}, (page) => push(`/event/${firstVomit(pet('juniper').id).id}`)(page), link(/^Edit$/)] },
@@ -308,7 +356,9 @@ const trialFoodOf = (key) => tables.diet_trial_foods.find((f) => f.pet_id === pe
 const openLead = link(/^Vomiting between/);
 const SWEEP1_SHOTS = [
   { name: 'log-juniper', go: [push('/log')] },
-  { name: 'mix-miso', pet: 'miso', go: [() => {}, (page) => push(`/mix?event=${latestOf(pet('miso').id, 'meal').id}&pet=${pet('miso').id}&from=detail`)(page)] },
+  // The picker draws from the food library, which hydrates on its own read: an empty
+  // library here is a capture that came too early (Miso has foods), never the designed state.
+  { name: 'mix-miso', pet: 'miso', ready: [text('Mixing with'), noText('foods will live here')], go: [() => {}, (page) => push(`/mix?event=${latestOf(pet('miso').id, 'meal').id}&pet=${pet('miso').id}&from=detail`)(page)] },
   { name: 'event-meal-juniper', go: [() => {}, (page) => push(`/event/${latestOf(pet('juniper').id, 'meal').id}`)(page)] },
   { name: 'day-summary-juniper', go: [push('/day-summary')] },
   { name: 'food-capture', go: [push('/food-capture')] },
@@ -318,7 +368,7 @@ const SWEEP1_SHOTS = [
   { name: 'foods-juniper', go: [tab('Foods')] },
   { name: 'trial-foods-juniper', go: [() => {}, (page) => push(`/trial-foods?pet=${pet('juniper').id}`)(page)] },
   { name: 'trial-exposures-juniper', go: [() => {}, (page) => push(`/trial-exposures?pet=${pet('juniper').id}`)(page)] },
-  { name: 'trial-juniper', go: [() => {}, (page) => push(`/trial/${pet('juniper').id}`)(page)] },
+  { name: 'trial-juniper', reducedMotion: true, go: [() => {}, (page) => push(`/trial/${pet('juniper').id}`)(page)] },
   { name: 'profile-juniper', go: [label(/pet profile$/)] },
   { name: 'add-pet', go: [push('/add-pet')] },
   { name: 'archived-pets', go: [push('/archived-pets')] },
@@ -353,7 +403,7 @@ async function captureSize(browser, size, server, shots, group) {
   const served = group === 'sweep' ? { ...tables, ...sweepTables() } : group === 'sweep1' ? { ...tables, ...sweep1Tables() } : tables;
   const signedIn = group !== 'signedOut';
   const port = server.address().port;
-  const settle = Number(process.env.CAPTURE_SETTLE_MS ?? 6000);
+  const settle = Number(process.env.CAPTURE_SETTLE_MS ?? 1500);
   const notes = [];
   const log = (m) => notes.push(m);
   const context = await browser.newContext({
@@ -421,6 +471,21 @@ async function captureSize(browser, size, server, shots, group) {
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{}', headers: cors });
   });
   const page = await context.newPage();
+  // Every request counts as activity (the bundle, its fonts, every fixture pull), and one
+  // still open is a page still loading, so a settle never lands between two pulls.
+  // Open requests are a set, emptied at each launch: a request the last document left
+  // without an end event cannot hold every later shot open.
+  const requests = { started: 0, open: new Set() };
+  page.on('request', (r) => {
+    requests.started++;
+    requests.open.add(r);
+  });
+  page.on('requestfinished', (r) => requests.open.delete(r));
+  page.on('requestfailed', (r) => requests.open.delete(r));
+  const launch = async () => {
+    requests.open.clear();
+    await page.goto(`http://127.0.0.1:${port}/`);
+  };
   page.on('pageerror', (e) => log(`pageerror ${e.message.slice(0, 300)}`));
   page.on('console', (m) => {
     if (m.type() === 'error' || (process.env.CAPTURE_DEBUG && m.type() === 'warning')) log(`console.${m.type()} ${m.text().slice(0, 300)}`);
@@ -431,20 +496,45 @@ async function captureSize(browser, size, server, shots, group) {
   // into SQLite, which OPFS keeps for the context. Every capture after is a warm launch.
   // The sweep's vet rows hydrate after the fixture's events, late in the cycle, so its
   // context takes one more warm launch before its first shot (CUL-2245).
+  // The timed waits are only a floor now (CAPTURE_SETTLE_MS, 6000 before CUL-2266): each
+  // launch and each step then waits for its screen to settle.
+  const launchMarkers = (petId) => (signedIn ? homeMarkers(petId) : []);
+  const activePet = () => page.evaluate(() => localStorage.getItem('nyx.activePetId'));
   for (let i = 0; i < (group === 'sweep' ? 3 : 2); i++) {
-    await page.goto(`http://127.0.0.1:${port}/`);
+    await launch();
     await page.waitForTimeout(settle * (i + 1));
+    // The first launch builds the schema and hydrates while its screen races it, so it
+    // waits for quiet only; Home's markers are owed from the second. A warm-up that never
+    // settles is logged and the shots go on: each one then settles, or fails, by its own.
+    try {
+      await settled(page, `warm-up ${i + 1}`, i === 0 ? [] : launchMarkers(await activePet()), requests, SETTLE_TIMEOUT_MS);
+    } catch (e) {
+      log(e.message);
+    }
   }
   if (!process.env.CAPTURE_DEBUG) notes.length = 0;
 
   const files = [];
+  let unsettledInARow = 0;
   for (const shot of shots) {
+    const timeout = unsettledInARow >= 2 ? BROKEN_TIMEOUT_MS : SETTLE_TIMEOUT_MS;
     shotOverlay = shot.overlay ?? {};
+    // The trial screen's ledger draws in with Animated, whose clock is Date.now: frozen, it
+    // stays at its first frame (an empty card). Reduce Motion is the app's own still frame.
+    // Read once at launch (store/reducedMotionStore.ts), so it is set before the goto.
+    await page.emulateMedia({ reducedMotion: shot.reducedMotion ? 'reduce' : 'no-preference' });
     await page.evaluate((id) => localStorage.setItem('nyx.activePetId', id), pet(shot.pet).id);
-    await page.goto(`http://127.0.0.1:${port}/`);
+    await launch();
     await page.waitForTimeout(settle);
     let failed = false;
-    for (const step of shot.go) {
+    let unsettled = null;
+    let still = null;
+    try {
+      await settled(page, `${shot.name} (launch)`, launchMarkers(pet(shot.pet).id), requests, timeout);
+    } catch (e) {
+      unsettled = e.message;
+    }
+    for (const step of unsettled ? [] : shot.go) {
       try {
         await step(page);
       } catch (e) {
@@ -454,12 +544,66 @@ async function captureSize(browser, size, server, shots, group) {
       }
       await page.waitForTimeout(settle / 2);
     }
-    const file = `${outDir}/${shot.name}-${size.label}${failed ? '-UNREACHED' : ''}.png`;
-    await page.screenshot({ path: file });
+    if (!failed && !unsettled) {
+      try {
+        still = await settled(page, shot.name, MARKERS ? (shot.ready ?? []) : [], requests, timeout);
+      } catch (e) {
+        unsettled = e.message;
+      }
+    }
+    if (unsettled) log(unsettled);
+    unsettledInARow = unsettled ? unsettledInARow + 1 : 0;
+    const file = `${outDir}/${shot.name}-${size.label}${failed ? '-UNREACHED' : unsettled ? '-UNSETTLED' : ''}.png`;
+    if (still) await writeFile(file, still);
+    else await page.screenshot({ path: file });
     files.push(file);
   }
   await context.close();
   return { files, notes };
+}
+
+// Waits until the page is settled (see QUIET_MS above) and returns the settled screenshot.
+// Throws, naming the shot and what never arrived, when CAPTURE_SETTLE_TIMEOUT_MS runs out.
+async function settled(page, name, markers, requests, timeout) {
+  const markerList = [LOADING, ...markers];
+  const start = Date.now();
+  let prev = null;
+  let quietSince = null;
+  let why = 'never sampled';
+  while (Date.now() - start < timeout) {
+    const state = await page.evaluate((list) => {
+      const body = document.body?.innerText ?? '';
+      const has = (m) =>
+        m.selector
+          ? document.querySelector(m.selector) !== null
+          : m.testId
+            ? m.testId.some((id) => document.querySelector(`[data-testid="${id}"]`) !== null)
+            : body.includes(m.text);
+      return {
+        db: globalThis.__NYX_CAPTURE_DB ?? null,
+        unmet: list.filter((m) => has(m) === Boolean(m.absent)).map((m) => m.selector ? `still loading (${[...document.querySelectorAll(m.selector)].map((e) => e.dataset.testid).join(', ')})` : `${m.absent ? 'still showing' : 'missing'} ${m.testId?.join(' | ') ?? `"${m.text}"`}`),
+      };
+    }, markerList);
+    const image = await page.screenshot();
+    const activity = `${requests.started}:${state.db?.busy}:${state.db?.done}`;
+    const busy =
+      state.db === null ? 'no SQLite stub on the page (an older build, or the bundle has not run)'
+      : state.db.busy > 0 ? 'SQLite busy'
+      : requests.open.size > 0 ? 'a request still open'
+      : null;
+    if (busy || state.unmet.length > 0) {
+      why = busy ?? state.unmet.join(', ');
+      quietSince = null;
+    } else if (quietSince === null || !prev || prev.activity !== activity || !prev.image.equals(image)) {
+      why = prev && prev.activity !== activity ? 'still loading' : 'screen still changing';
+      quietSince = Date.now();
+    } else if (Date.now() - quietSince >= QUIET_MS) {
+      return image;
+    }
+    prev = { activity, image };
+    await page.waitForTimeout(POLL_MS);
+  }
+  throw new Error(`${name}: not settled after ${timeout}ms (${why})`);
 }
 
 await mkdir(outDir, { recursive: true });

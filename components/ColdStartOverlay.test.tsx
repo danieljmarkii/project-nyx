@@ -5,11 +5,11 @@ jest.mock('./surfaces/waits/ColdStartSilhouette', () => {
   const { Text } = require('react-native');
   const React = require('react');
   return {
-    ColdStartSilhouette: ({ hydrating, tabBarHeight }: { hydrating: boolean; tabBarHeight: number }) =>
-      React.createElement(Text, { testID: 'cold-start-silhouette' }, `${hydrating ? 'hydrating' : 'done'} ${tabBarHeight}`),
+    ColdStartSilhouette: ({ hydrating, tabBarHeight, rail }: { hydrating: boolean; tabBarHeight: number; rail: { width: number; tabHeight: number } | null }) =>
+      React.createElement(Text, { testID: 'cold-start-silhouette', rail }, `${hydrating ? 'hydrating' : 'done'} ${tabBarHeight}`),
   };
 });
-jest.mock('./nav/NyxTabBar', () => ({ TAB_HEIGHT: 83 }));
+jest.mock('./nav/NyxTabBar', () => ({ TAB_HEIGHT: 83, RAIL_TAB_HEIGHT: 65 }));
 jest.mock('../store/petStore', () => {
   const state: { activePet: { id: string; name: string } | null; pets: unknown[] } = {
     activePet: { id: 'p1', name: 'Mochi' },
@@ -27,6 +27,7 @@ import { render } from '@testing-library/react-native';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 import { ColdStartOverlay } from './ColdStartOverlay';
+import { TAB_RAIL_WIDTH } from '../hooks/useLayoutClass';
 
 const petStore = usePetStore as unknown as { setState: (s: { activePet: unknown }) => void };
 
@@ -44,5 +45,16 @@ describe('ColdStartOverlay', () => {
   it('nothing without a pet — never over onboarding', () => {
     petStore.setState({ activePet: null });
     expect(render(<ColdStartOverlay />).toJSON()).toBeNull();
+  });
+});
+
+// CUL-2267 — at regular the bar is the rail, so the host hands the shape the rail.
+// jest-expo's default window is 750pt, which is regular width.
+describe('ColdStartOverlay at regular width', () => {
+  it('hands the silhouette the rail and the rail tab’s height', () => {
+    const { getByTestId } = render(<ColdStartOverlay />);
+    expect(getByTestId('cold-start-silhouette').props.rail).toEqual(
+      expect.objectContaining({ width: TAB_RAIL_WIDTH, tabHeight: 65 }),
+    );
   });
 });

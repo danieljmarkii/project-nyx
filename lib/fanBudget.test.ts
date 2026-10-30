@@ -3,7 +3,7 @@
 // phones either side of it. The plan is a pure function of the window, so the matrix
 // is asserted here over data; FAB.test.tsx proves the FAB draws what the plan says.
 import {
-  planFan, wrapEstimate, FAN_GAP, FAN_LEFT_MARGIN, FAN_RIGHT_INSET, PILL_MAX_WIDTH, type FanBudgetInput,
+  planFan, fabBottomFor, wrapEstimate, FAB_BOTTOM, FAN_GAP, FAN_LEFT_MARGIN, FAN_RIGHT_INSET, PILL_MAX_WIDTH, type FanBudgetInput,
 } from './fanBudget';
 
 const DOORS = ['More events', 'Loose stool', 'Vomit', 'Log food'];
@@ -142,5 +142,21 @@ describe('wrapEstimate', () => {
     expect(wrapEstimate('More events', 15, 2.643, 190)).toEqual(['More', 'events']);
     expect(wrapEstimate('Schrodingerscatsname', 10, 1, 60)).toEqual(['Schrodinge', 'rscatsname']);
     expect(wrapEstimate('', 15, 1, 100)).toEqual(['']);
+  });
+});
+
+// CUL-2267 — at regular the disc stands at the rail's foot (safe bottom + 24), not at the
+// phone's 72, so the fan's room is that much taller and a food that fits is drawn.
+describe('fabBottomFor — the fan reads the disc’s actual seat', () => {
+  it('a phone keeps FAB_BOTTOM; the rail seats the disc at the safe bottom + 24', () => {
+    expect(fabBottomFor(false, 34)).toBe(FAB_BOTTOM);
+    expect(fabBottomFor(true, 20)).toBe(20 + 24);
+  });
+
+  it('the budget grows by the difference, and omitting the seat is the phone’s', () => {
+    const base = { windowWidth: 546, windowHeight: 626, fontScale: 1, safeTop: 24, chipName: null, doors: DOORS, foods: FOODS };
+    const phone = planFan(base);
+    expect(planFan({ ...base, fabBottom: FAB_BOTTOM }).available).toBe(phone.available);
+    expect(planFan({ ...base, fabBottom: fabBottomFor(true, 20) }).available - phone.available).toBe(FAB_BOTTOM - 44);
   });
 });

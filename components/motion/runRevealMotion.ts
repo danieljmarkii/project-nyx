@@ -28,7 +28,8 @@
 
 import { createContext, useCallback, useEffect, useRef } from 'react';
 import { theme } from '../../constants/theme';
-import { FAB_BOTTOM, FAB_DISC } from '../../lib/fanBudget';
+import { FAB_BOTTOM, FAB_DISC, fabBottomFor } from '../../lib/fanBudget';
+import { useSafeBottom, useTabRail } from '../../hooks/useLayoutClass';
 import { RUN_MOTION } from './runOpenMotion';
 
 export const RUN_REVEAL = {
@@ -41,7 +42,8 @@ export const RUN_REVEAL = {
   /** The latest the host waits for the content to grow: the box's own delay and a frame
    *  past it (the growth lands on the box's commit, never after its keyframe starts). */
   fallbackMs: RUN_MOTION.boxDelayMs + RUN_MOTION.mountFrameMs * 2,
-  /** How far the plus's top sits above the screen's foot (`components/log/FAB.tsx`). */
+  /** How far the plus's top sits above the screen's foot on a phone (`components/log/FAB.tsx`).
+   *  At regular the host reads the disc's seat in the rail instead (`fabBottomFor`). */
   plusRisePt: FAB_BOTTOM + FAB_DISC,
 } as const;
 
@@ -113,8 +115,10 @@ export function useRunRevealHost({
   /** The owner has taken the list (a drag): a reveal not yet fired never lands. */
   cancel: () => void;
 } {
-  const params = useRef({ measureViewport, topInset, scrollBy, windowHeight });
-  params.current = { measureViewport, topInset, scrollBy, windowHeight };
+  // The plus's top, from the disc's actual seat: the rail's foot at regular (CUL-2267).
+  const plusRisePt = fabBottomFor(useTabRail() !== null, useSafeBottom()) + FAB_DISC;
+  const params = useRef({ measureViewport, topInset, scrollBy, windowHeight, plusRisePt });
+  params.current = { measureViewport, topInset, scrollBy, windowHeight, plusRisePt };
   const pending = useRef<{
     measure: RunRevealMeasure;
     timer: ReturnType<typeof setTimeout>;
@@ -138,7 +142,7 @@ export function useRunRevealHost({
           ...run,
           viewTop: viewTop + (params.current.topInset?.() ?? 0),
           viewBottom,
-          plusTop: params.current.windowHeight() - RUN_REVEAL.plusRisePt,
+          plusTop: params.current.windowHeight() - params.current.plusRisePt,
         });
         if (d > 0) params.current.scrollBy(d);
       });

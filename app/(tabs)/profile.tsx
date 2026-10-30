@@ -27,6 +27,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { TextLink } from '../../components/ui/TextLink';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
+import { PET_TAB_SCROLL_INSET } from '../../lib/fabFootprint';
 import {
   uploadPhoto, compressForUpload, getSignedUrls, markPetPhotoChanged, PET_PHOTOS_BUCKET,
 } from '../../lib/storage';
@@ -1343,10 +1344,7 @@ export default function ProfileScreen() {
 
         {/* ── Conditions ── */}
         <Card style={styles.sectionGap}>
-          <View style={styles.sectionHeader}>
-            <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
-            <TextLink label="Add" accessibilityLabel="Add a condition" onPress={openAddCondition} />
-          </View>
+          <ThemedText style={styles.sectionTitle}>Conditions</ThemedText>
 
           {conditionsView.kind === 'loading' ? (
             <SectionSkeleton lines={3} testID="conditions-loading" />
@@ -1386,6 +1384,10 @@ export default function ProfileScreen() {
               );
             })
           )}
+          {/* The card's action at its foot, on the left, as the Weight card's is: the + floats
+              over the right edge of whatever sits at the bottom of the screen, so a right-edge
+              action can sit under it at rest on a short phone (C-5; CUL-2264). */}
+          <TextLink label="Add a condition" onPress={openAddCondition} />
         </Card>
 
         {/* ── Current medications ── */}
@@ -1393,10 +1395,7 @@ export default function ProfileScreen() {
             target for a first row and as the fallback when the tapped strip names
             an ad-hoc course with no active regimen row to land on. */}
         <Card style={styles.sectionGap} testID="med-section" onLayout={handleMedSectionLayout}>
-          <View style={styles.sectionHeader}>
-            <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
-            <TextLink label="+ Add" accessibilityLabel="Add a medication" onPress={openAddMedication} />
-          </View>
+          <ThemedText style={styles.sectionTitle}>Current medications</ThemedText>
 
           {medicationsView.kind === 'loading' ? (
             <SectionSkeleton lines={3} testID="medications-loading" />
@@ -1569,6 +1568,8 @@ export default function ProfileScreen() {
               );
             })
           )}
+          {/* Left, at the foot, as Conditions' is (C-5; CUL-2264). */}
+          <TextLink label="Add a medication" onPress={openAddMedication} />
         </Card>
 
         {/* ── Past medications (B-140 extended, PR 2, mock §02) ──
@@ -1793,9 +1794,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
   },
+  // The last row clears the + button at scroll end (C-5; lib/fabFootprint.ts).
   scroll: {
     padding: theme.space3,
     gap: theme.space2,
+    paddingBottom: PET_TAB_SCROLL_INSET,
   },
 
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so
@@ -1840,11 +1843,6 @@ const styles = StyleSheet.create({
   sectionGap: {
     gap: theme.space2,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   sectionTitle: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
@@ -1877,7 +1875,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space0_75,
   },
-  // B-136 — the inline card actions (Edit/Resolve/End/Log a dose/+Add on the
+  // B-136 — the inline card actions (Edit/Resolve/End/Log a dose on the
   // Conditions and Current medications cards) render small (textXS/textMD) text, so
   // a bare hitSlop left the tap target ≈27px tall, under the 44pt floor. minHeight 44
   // + centered lifts each to the floor without touching the text style; the existing

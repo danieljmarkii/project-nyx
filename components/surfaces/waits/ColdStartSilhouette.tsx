@@ -24,7 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../../constants/theme';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { useSyncStore } from '../../../store/syncStore';
-import { HomeSilhouette } from './HomeSilhouette';
+import { HomeSilhouette, type SilhouetteRail } from './HomeSilhouette';
 
 /** The silhouette gives way to Home over this long (the mock's `.wait` transition). */
 export const COLD_START_CROSSFADE_MS = 320;
@@ -45,11 +45,13 @@ export interface ColdStartSilhouetteProps {
   hydrating: boolean;
   /** The tab bar's height (`TAB_HEIGHT`), from the host — see `HomeSilhouette`. */
   tabBarHeight: number;
+  /** The tab rail at regular (`useTabRail`), from the host: drawn in place of the bar. */
+  rail?: SilhouetteRail | null;
   /** Whose record is arriving: the host's active pet (the only pet a cold start reads). */
   petName: string;
 }
 
-export function ColdStartSilhouette({ hydrating, tabBarHeight, petName }: ColdStartSilhouetteProps) {
+export function ColdStartSilhouette({ hydrating, tabBarHeight, rail = null, petName }: ColdStartSilhouetteProps) {
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   const bumpColdStartHandoff = useSyncStore((s) => s.bumpColdStartHandoff);
@@ -117,7 +119,7 @@ export function ColdStartSilhouette({ hydrating, tabBarHeight, petName }: ColdSt
       accessibilityViewIsModal={hydrating}
       importantForAccessibility={hydrating ? 'yes' : 'no-hide-descendants'}
     >
-      <HomeSilhouette topInset={insets.top} tabBarHeight={tabBarHeight} />
+      <HomeSilhouette topInset={insets.top} tabBarHeight={tabBarHeight} rail={rail} />
     </Animated.View>
   );
 }

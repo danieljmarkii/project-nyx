@@ -1703,6 +1703,18 @@ describe('History on the unfolded Duo (CUL-2240)', () => {
     expect(mockStripProps?.factsPetId).toBe(PET_A.id);
   });
 
+  // CUL-2267 — a pull over the week side is the list's own pull: one handler, one state.
+  it('on its side: the aside takes the list’s pull, the same handler and the same state', async () => {
+    seedWeek();
+    mockWindowWidth = 890;
+    const view = await renderList();
+    const asideControl = screen.getByTestId('history-aside-scroll').props.refreshControl;
+    const listControl = view.UNSAFE_getByType(SectionList).props.refreshControl;
+    expect(asideControl).toBeTruthy();
+    expect(asideControl.props.onRefresh).toBe(listControl.props.onRefresh);
+    expect(asideControl.props.refreshing).toBe(listControl.props.refreshing);
+  });
+
   it('a fold and an unfold restyle the list and never remount it: an open run stays open', async () => {
     insertFood('rc', 'Royal Canin', 'Selected Protein PR');
     insertMeal('m4a', at(1, 8), 'rc', 'all');
