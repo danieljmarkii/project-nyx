@@ -56,7 +56,7 @@ import {
   type Point, type Rect, type Rest, type SlideKind, type SlideTarget,
 } from '../../lib/fanSlide';
 import {
-  planFan, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
+  planFan, fabBottomFor, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
   PILL_MIN_HEIGHT, PILL_PADDING_V, PILL_PADDING_LEFT, PILL_PADDING_RIGHT, PILL_INNER_GAP,
   PILL_GLYPH, PILL_CHEVRON, PILL_LABEL_SIZE, FOOD_TAG_GAP, FOOD_TAG_PADDING_H, FOOD_TAG_PADDING_V,
   LOG_FOR_LABEL_GAP, LOG_FOR_NAME_LINES,
@@ -590,8 +590,10 @@ export function FAB() {
   // offsets are the window's. Null at compact, where the disc keeps the phone's corner.
   const rail = useTabRail();
   const safeBottom = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  // The disc's seat from the screen's foot, read by the fan's budget too (CUL-2267).
+  const fabBottom = fabBottomFor(rail !== null, safeBottom);
   const railSeat = rail
-    ? { right: rail.safeRight + (TAB_RAIL_WIDTH - FAB_DISC) / 2, bottom: safeBottom + theme.space3 }
+    ? { right: rail.safeRight + (TAB_RAIL_WIDTH - FAB_DISC) / 2, bottom: fabBottom }
     : null;
   const fanScroll = useRef<ScrollViewInstance>(null);
   const fanSnapped = useRef(false);
@@ -1304,6 +1306,7 @@ export function FAB() {
     windowHeight: frame.height,
     fontScale: frame.fontScale,
     safeTop,
+    fabBottom,
     chipName: activePet && pets.length > 1 ? activePet.name : null,
     doors: activePet ? DOOR_LABELS : [],
     foods: [...foodText].map(([id, text]) => ({ id, ...text })),

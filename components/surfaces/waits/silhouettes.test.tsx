@@ -3,7 +3,7 @@
 // one-loop guard says the shape never moves. The report's line is the one thing an
 // owner is meant to read.
 import { render } from '@testing-library/react-native';
-import { Animated } from 'react-native';
+import { Animated, StyleSheet } from 'react-native';
 import { EVENT_SILHOUETTE_TEST_ID, EventSilhouette } from './EventSilhouette';
 import { HOME_SILHOUETTE_TEST_ID, HomeSilhouette } from './HomeSilhouette';
 import { PICKER_SILHOUETTE_TEST_ID, PickerSilhouette } from './PickerSilhouette';
@@ -73,5 +73,24 @@ describe('the silhouettes', () => {
     rerender(<CaptureSilhouette working={false} />);
     expect(queryByTestId('design-v2-tick', hidden)).toBeNull();
     jest.restoreAllMocks();
+  });
+});
+
+// CUL-2267 — Home's shape draws the bar where the app does: the rail at regular, the bottom
+// bar on a phone, never both.
+describe('Home’s silhouette and the tab bar’s side', () => {
+  // The frame is hidden from assistive tech, so the queries must look past that.
+  const HIDDEN = { includeHiddenElements: true };
+  it('a phone draws the bottom bar and no rail', () => {
+    const view = render(<HomeSilhouette topInset={47} tabBarHeight={83} />);
+    expect(view.queryByTestId('home-silhouette-bar', HIDDEN)).not.toBeNull();
+    expect(view.queryByTestId('home-silhouette-rail', HIDDEN)).toBeNull();
+  });
+
+  it('at regular the rail stands down the right edge, at its width, and no bottom bar', () => {
+    const view = render(<HomeSilhouette topInset={24} tabBarHeight={83} rail={{ width: 80, safeRight: 0, tabHeight: 65 }} />);
+    expect(view.queryByTestId('home-silhouette-bar', HIDDEN)).toBeNull();
+    const rail = view.getByTestId('home-silhouette-rail', HIDDEN);
+    expect(StyleSheet.flatten(rail.props.style)).toEqual(expect.objectContaining({ width: 80, paddingTop: 24 + 16 }));
   });
 });

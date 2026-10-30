@@ -71,10 +71,15 @@ export function tabRailFor(windowWidth: number, safeRight = 0): TabRailGeometry 
 // test renders most of these without one (on device expo-router's root always provides it).
 // A suite that mocks the library away leaves no context at all, so a stand-in keeps the
 // read unconditional.
-const NO_INSETS = createContext<{ right: number } | null>(null);
+const NO_INSETS = createContext<{ right: number; bottom: number } | null>(null);
 
 function useSafeRight(): number {
   return useContext(SafeAreaInsetsContext ?? NO_INSETS)?.right ?? 0;
+}
+
+/** The safe area's bottom inset, provider-safe for the same reason as the right one. */
+export function useSafeBottom(): number {
+  return useContext(SafeAreaInsetsContext ?? NO_INSETS)?.bottom ?? 0;
 }
 
 export function useTabRail(): TabRailGeometry | null {

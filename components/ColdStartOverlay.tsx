@@ -1,7 +1,8 @@
 import { useSyncStore } from '../store/syncStore';
 import { usePetStore } from '../store/petStore';
 import { ColdStartSilhouette } from './surfaces/waits/ColdStartSilhouette';
-import { TAB_HEIGHT } from './nav/NyxTabBar';
+import { RAIL_TAB_HEIGHT, TAB_HEIGHT } from './nav/NyxTabBar';
+import { useTabRail } from '../hooks/useLayoutClass';
 
 // B-054 §6 — the block-only-when-empty cold-start state.
 //
@@ -22,8 +23,17 @@ export function ColdStartOverlay() {
   const coldStartHydrating = useSyncStore((s) => s.coldStartHydrating);
   const activePet = usePetStore((s) => s.activePet);
   const petName = activePet?.name;
+  // At regular the bar is the rail down the right edge (CUL-2242), so the shape draws that.
+  const rail = useTabRail();
 
   if (!petName) return null;
 
-  return <ColdStartSilhouette hydrating={coldStartHydrating} tabBarHeight={TAB_HEIGHT} petName={petName} />;
+  return (
+    <ColdStartSilhouette
+      hydrating={coldStartHydrating}
+      tabBarHeight={TAB_HEIGHT}
+      rail={rail ? { width: rail.width, safeRight: rail.safeRight, tabHeight: RAIL_TAB_HEIGHT } : null}
+      petName={petName}
+    />
+  );
 }

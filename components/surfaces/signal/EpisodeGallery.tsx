@@ -103,6 +103,9 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
   // Floored: a fractional share can round past the row and wrap the last tile.
   const tileWidth: ViewStyle | null =
     regular && gridWidth > 0 ? { width: Math.floor(tilesAcross(gridWidth, theme.layoutTileMax, theme.space1).size) } : null;
+  // At regular the tiles wait for the row's measure (CUL-2267): drawn first at the phone's
+  // 23% they jumped a frame later to their regular width, and a tile mounts its photo once.
+  const tilesReady = !regular || gridWidth > 0;
   return (
     <View testID="episode-gallery">
       <View style={styles.header}>
@@ -114,8 +117,8 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
         </ThemedText>
       </View>
       {episodes.tiles.length > 0 ? (
-        <View style={styles.grid} onLayout={regular ? onGridLayout : undefined}>
-          {episodes.tiles.map((tile) => (
+        <View testID="episode-grid" style={styles.grid} onLayout={regular ? onGridLayout : undefined}>
+          {tilesReady && episodes.tiles.map((tile) => (
             <Tile key={tile.eventId} tile={tile} tracksPattern={episodes.tracksPattern} widthStyle={tileWidth} />
           ))}
         </View>

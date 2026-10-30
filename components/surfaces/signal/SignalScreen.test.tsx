@@ -291,6 +291,8 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
     await waitFor(() => expect(view.getByTestId('episode-gallery')).toBeTruthy());
+    // jest-expo's window is regular width, where the tiles wait for the row's measure (CUL-2267).
+    fireEvent(view.getByTestId('episode-grid'), 'layout', { nativeEvent: { layout: { width: 560, height: 0, x: 0, y: 0 } } });
     const model = ready(benign).model;
     const tiles = model.episodes?.tiles ?? [];
     expect(tiles).toHaveLength(9);
@@ -794,6 +796,9 @@ describe('the re-read (CUL-1219, GC-10)', () => {
     expect(isCalmDisplay(first.model.episodes!.tiles[1].verdict)).toBe(true);
     mockLoadSignalScreen.mockResolvedValue(first);
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    // jest-expo's window is regular width, where the tiles wait for the row's measure (CUL-2267).
+    await waitFor(() => expect(view.getByTestId('episode-grid')).toBeTruthy());
+    fireEvent(view.getByTestId('episode-grid'), 'layout', { nativeEvent: { layout: { width: 560, height: 0, x: 0, y: 0 } } });
     await waitFor(() => expect(view.getByTestId(`episode-verdict-${rose.eventId}`).props.children).toBe(TIER_WORDS.worth_a_call.short));
 
     // The re-read: the copy could not be read, so the loader answers every tile "No read yet".

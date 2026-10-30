@@ -23,6 +23,16 @@ jest.mock('../../../lib/storage', () => ({ getSignedUrl: (...a: unknown[]) => mo
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
 import { EpisodeGallery } from './EpisodeGallery';
+import { TIER_WORDS } from '../../../lib/incidentTierWords';
+
+// jest-expo's default window is 750pt, which is regular width: pinned to a phone, with each
+// regular case stating its own (CUL-2267).
+let mockWindowWidth = 390;
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => ({ width: mockWindowWidth, height: 844, scale: 3, fontScale: 1 }),
+}));
+
 
 const TRANSFORM = 'https://signed.example/tile.jpg?width=320';
 const RAW = 'https://signed.example/tile.jpg';
@@ -90,6 +100,28 @@ describe('EpisodeGallery tile photo (CUL-1269)', () => {
     expect(tile.props.accessibilityLabel).toMatch(/photo didn't load$/);
     fireEvent.press(tile);
     expect(jest.requireMock('expo-router').router.push).toHaveBeenCalledWith('/event/ev-1');
+  });
+});
+
+// CUL-2267 — at regular the tiles wait for the row's measure, so they never draw at the
+// phone's 23% first; the measure draws them, call word and all, at their regular width.
+describe('the tiles at regular width', () => {
+  it('wait for the row to be measured, then draw at the measured width', () => {
+    mockWindowWidth = 890;
+    try {
+      const view = render(<EpisodeGallery episodes={episodes('file:///cache/a.jpg')} />);
+      expect(view.queryByTestId('episode-photo-ev-1')).toBeNull();
+      fireEvent(view.getByTestId('episode-grid'), 'layout', { nativeEvent: { layout: { width: 560, height: 0, x: 0, y: 0 } } });
+      expect(photoUri(view)).toBe('file:///cache/a.jpg');
+      expect(view.getByTestId('episode-verdict-ev-1').props.children).toBe(TIER_WORDS.worth_a_call.short);
+    } finally {
+      mockWindowWidth = 390;
+    }
+  });
+
+  it('a phone draws them on the first frame, unmeasured', () => {
+    const view = render(<EpisodeGallery episodes={episodes('file:///cache/a.jpg')} />);
+    expect(photoUri(view)).toBe('file:///cache/a.jpg');
   });
 });
 
