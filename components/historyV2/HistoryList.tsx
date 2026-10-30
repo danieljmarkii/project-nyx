@@ -1056,6 +1056,11 @@ export function HistoryList() {
                   contentContainerStyle={styles.asideContent}
                   keyboardDismissMode="on-drag"
                   testID="history-aside-scroll"
+                  // The list's own pull (CUL-2267): a pull over the week side refreshes as one
+                  // over the days does, the same `refreshing` so both spinners agree.
+                  refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
+                  }
                 >
                   {header}
                 </ScrollView>
