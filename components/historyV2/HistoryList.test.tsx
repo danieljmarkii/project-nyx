@@ -26,6 +26,12 @@ jest.mock('../../lib/sync', () => ({
   syncPendingVetVisits: jest.fn(),
 }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+// The window the canvas is read for (CUL-2240): a phone unless a test unfolds it.
+let mockWindowWidth = 390;
+jest.mock('../../hooks/useLayoutClass', () => {
+  const actual = jest.requireActual('../../hooks/useLayoutClass');
+  return { ...actual, useCanvas: () => actual.canvasFor(mockWindowWidth) };
+});
 const mockFocus = jest.fn((..._a: unknown[]) => true);
 jest.mock('../../lib/a11yFocus', () => ({ focusAccessibility: (...a: unknown[]) => mockFocus(...a) }));
 // The paint ledger is the REAL one; every claim it grants is recorded, because a draw's
@@ -134,9 +140,9 @@ jest.mock('expo-sqlite', () => ({
   }),
 }));
 
-import { LayoutAnimation, SectionList, StyleSheet } from 'react-native';
+import { LayoutAnimation, ScrollView, SectionList, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { HistoryList } from './HistoryList';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from '../../lib/localSchema';
@@ -333,6 +339,7 @@ async function freshWorld(): Promise<void> {
   mockFail = false;
   mockStripDays = [];
   mockStripProps = null;
+  mockWindowWidth = 390;
   mockNavigation.focused = true;
   mockNavigation.listeners.clear();
   mockFocusCallbacks.clear();
@@ -1655,5 +1662,107 @@ describe('an open run re-keyed by the record stays open (CUL-1757)', () => {
     expect(screen.getByTestId('spine-node-compact:m4b').props.accessibilityState).toEqual({ expanded: true });
     expect(screen.getByTestId('spine-members-compact:m4b')).toBeTruthy();
     await waitOut(400);
+  });
+});
+
+describe('History on the unfolded Duo (CUL-2240)', () => {
+  beforeEach(freshWorld);
+
+  /** Where the one header draws: in the list, or in the aside beside it. */
+  function headerHost(): 'list' | 'aside' | null {
+    const headers = screen.queryAllByTestId('history-list-header');
+    if (headers.length !== 1) return null;
+    const aside = screen.queryByTestId('history-aside-scroll');
+    return aside && within(aside).queryByTestId('history-list-header') ? 'aside' : 'list';
+  }
+
+  it('a phone and the Duo upright: the header scrolls with the days, and the aside draws nothing', async () => {
+    seedWeek();
+    for (const width of [390, 626]) {
+      mockWindowWidth = width;
+      const view = await renderList();
+      expect(headerHost()).toBe('list');
+      expect(screen.queryByTestId('history-aside-scroll')).toBeNull();
+      expect(StyleSheet.flatten(screen.getByTestId('history-split').props.style).flexDirection).toBeUndefined();
+      expect(screen.getByTestId('history-aside').props.style).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('on its side: the header stands beside the days, read first', async () => {
+    seedWeek();
+    mockWindowWidth = 890;
+    await renderList();
+    expect(headerHost()).toBe('aside');
+    expect(StyleSheet.flatten(screen.getByTestId('history-split').props.style).flexDirection).toBe('row');
+    // The aside leads the row, so a screen reader meets the week before the days.
+    const split = screen.getByTestId('history-split');
+    const order = (split.children as ({ props: { testID?: string } } | string)[]).map((c) => (typeof c === 'string' ? c : c.props.testID));
+    expect(order.indexOf('history-aside')).toBeLessThan(order.indexOf('history-list'));
+    // The strip is still handed the record's facts.
+    expect(mockStripProps?.factsPetId).toBe(PET_A.id);
+  });
+
+  it('a fold and an unfold restyle the list and never remount it: an open run stays open', async () => {
+    insertFood('rc', 'Royal Canin', 'Selected Protein PR');
+    insertMeal('m4a', at(1, 8), 'rc', 'all');
+    insertMeal('m4b', at(1, 9), 'rc', 'all');
+    useReducedMotionStore.setState({ reduceMotion: true, gateOpen: true });
+    const view = await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    fireEvent.press(screen.getByTestId('spine-node-compact:m4a'));
+    await waitOut(400);
+    const list = view.UNSAFE_getByType(SectionList).instance;
+    for (const width of [890, 390]) {
+      mockWindowWidth = width;
+      view.rerender(<HistoryList />);
+      await settle();
+      expect(headerHost()).toBe(width === 890 ? 'aside' : 'list');
+      expect(view.UNSAFE_getByType(SectionList).instance).toBe(list);
+      expect(screen.getByTestId('spine-members-compact:m4a')).toBeTruthy();
+    }
+  });
+
+  it('before the header has a read (a failed one here), the days column takes the whole row', async () => {
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    seedWeek();
+    mockWindowWidth = 890;
+    mockFail = true;
+    await renderList();
+    expect(screen.getByTestId('history-error')).toBeTruthy();
+    expect(screen.queryByTestId('history-aside-scroll')).toBeNull();
+    expect(screen.getByTestId('history-aside').props.style).toBeNull();
+    expect(StyleSheet.flatten(screen.getByTestId('history-split').props.style).flexDirection).toBeUndefined();
+    mockFail = false;
+    fireEvent.press(screen.getByText('Try again'));
+    await settle();
+    expect(headerHost()).toBe('aside');
+    logged.mockRestore();
+  });
+
+  it('a strip tap still lands the list on its day (CUL-1282), with the strip beside it', async () => {
+    seedDays(12, 10);
+    mockWindowWidth = 890;
+    await renderList();
+    const aim = jest.spyOn(SectionList.prototype, 'scrollToLocation').mockImplementation(() => {});
+    act(() => {
+      useHistoryScopeStore.getState().landOn(PET_A.id, dayAgo(10));
+    });
+    await settle();
+    expect(aim).toHaveBeenLastCalledWith({ sectionIndex: 10, itemIndex: LANDING_ITEM_INDEX, viewOffset: 0, animated: false });
+    aim.mockRestore();
+  });
+
+  it('a second tap on the tab takes the header back to its top with the days', async () => {
+    seedWeek();
+    mockWindowWidth = 890;
+    await renderList();
+    const scrolled = jest.spyOn(ScrollView.prototype, 'scrollTo');
+    act(() => mockNavigation.listeners.forEach((cb) => cb()));
+    // The aside's scroll: the list's own goes through its scroll responder, which the
+    // renderer leaves without a native ScrollView, so the one call here is the header's
+    // (removing it reds this test).
+    expect(scrolled.mock.calls.filter(([to]) => (to as { y?: number } | undefined)?.y === 0)).toHaveLength(1);
+    scrolled.mockRestore();
   });
 });
