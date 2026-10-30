@@ -20,13 +20,19 @@ import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { useHistoryDoor } from '../../hooks/useHistoryDoor';
+import { useCanvas } from '../../hooks/useLayoutClass';
 import { HistoryList } from './HistoryList';
 import { PinnedRow } from './PinnedRow';
 
 export function HistoryScreen() {
   useHistoryDoor();
+  // At regular, where two phone-width columns fit (CUL-2240, PR-04's pattern), the screen
+  // steps out of the root column to the canvas: the pinned row spans it, and the list lays
+  // its header beside the days (HistoryList). Null at compact and upright, so the screen
+  // keeps the one column and a phone draws main's pixels.
+  const canvas = useCanvas();
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']} testID="history-v2-screen">
+    <SafeAreaView style={[styles.container, canvas && { marginHorizontal: -canvas.bleed }]} edges={['top', 'left', 'right']} testID="history-v2-screen">
       <PinnedRow />
       <HistoryList />
     </SafeAreaView>
