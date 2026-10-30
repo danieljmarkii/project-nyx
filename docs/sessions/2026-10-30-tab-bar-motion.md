@@ -1,6 +1,8 @@
 # Tab bar motion: the dot travels and each glyph answers, ruled and drawn build-ready
 
 **Date:** 2026-10-30
+**One thing (re-ask):** G3 L1 — A squash merge flattens a PR into one commit (asked again on today's merge: this PR's two commits become one on main, and the mock says round 1 is at commit 4ee850c; where does that commit still live once the branch is gone?) · check: pending
+**One thing:** P2 L1 — Reversibility: today's gestures are a two-way door, the new line in Principle 9 is closer to a one-way one · check: pending
 
 Shipped via #1348. Finishes CUL-2251.
 
