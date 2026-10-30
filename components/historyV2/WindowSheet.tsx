@@ -24,6 +24,8 @@ interface Props {
   /** The pill's words (the short name, *Since Jul 26*) and what VoiceOver reads for it
    *  (the long name and its date). */
   pill: { label: string; accessibilityLabel: string };
+  /** The pill's words wrap rather than cut (the stacked header, CUL-2264). */
+  pillWraps?: boolean;
 }
 
 /** The menu's key for a window: All time is the default, null. */
@@ -31,7 +33,7 @@ function keyOf(window: HistoryWindowKey): string | null {
   return window.kind === 'all' ? null : windowParam(window);
 }
 
-export function WindowSheet({ petId, current, rows, pill, caption, notice }: Props) {
+export function WindowSheet({ petId, current, rows, pill, caption, notice, pillWraps }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryWindowKey>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -63,6 +65,7 @@ export function WindowSheet({ petId, current, rows, pill, caption, notice }: Pro
       pillLabel={pill.label}
       pillAccessibilityLabel={pill.accessibilityLabel}
       openAtSelected
+      pillWraps={pillWraps}
       caption={caption}
       notice={notice}
     />

@@ -123,6 +123,7 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { Modal, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import ProfileScreen from './profile';
+import { FAB_SCROLL_INSET_FLOOR, PET_TAB_SCROLL_INSET } from '../../lib/fabFootprint';
 
 /** The nearest ancestor of `node` that is actually a touch responder. */
 function owningTouchable(node: any) {
@@ -267,5 +268,34 @@ describe('the identity row and the foot (round P1, P2, P10)', () => {
       expect(style.backgroundColor).toBe('transparent');
       expect(style.borderWidth).toBeUndefined();
     }
+  });
+});
+
+describe('the scroll inset clears the + (C-5, CUL-2264)', () => {
+  it('the content carries the Pet tab’s inset, at or above the floor, so the last card’s last row clears the disc at scroll end', () => {
+    const t = render(<ProfileScreen />);
+    const scroll = t.UNSAFE_getByType(require('react-native').ScrollView);
+    const { paddingBottom } = StyleSheet.flatten(scroll.props.contentContainerStyle) as { paddingBottom?: number };
+    expect(paddingBottom).toBe(PET_TAB_SCROLL_INSET);
+    expect(PET_TAB_SCROLL_INSET).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
+  });
+});
+
+describe('the cards’ add actions sit where the + never floats (C-5, CUL-2264)', () => {
+  // The + floats over the right edge of whatever sits at the bottom of the screen, so an
+  // action at a card header's right edge sat under it at rest on a short phone. Each add
+  // is now its own left-aligned line at the card's foot, as the Weight card's is: never in
+  // a row beside the title, where space-between pushed it right.
+  const hostParentStyle = (node: any) => {
+    let n = node?.parent;
+    while (n && typeof n.type !== 'string') n = n.parent;
+    return StyleSheet.flatten(n?.props.style) ?? {};
+  };
+  it.each(['Add a condition', 'Add a medication'])('%s is a left-aligned button on its own line', (label) => {
+    const { getByLabelText } = render(<ProfileScreen />);
+    const link = getByLabelText(label);
+    expect(link.props.accessibilityRole).toBe('button');
+    expect(StyleSheet.flatten(link.props.style).alignSelf).toBe('flex-start');
+    expect(hostParentStyle(link).flexDirection).not.toBe('row');
   });
 });

@@ -8,6 +8,13 @@
 // the wiring: that the pills and the sheets show those rules' answers, that a tap writes
 // the store, and that a pet switch closes everything and names the new pet.
 
+// The text size the row lays out for (CUL-2264): standard unless a test says otherwise.
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({ width: 390, height: 844, scale: 3, fontScale: 1 })),
+}));
+const mockedUseWindowDimensions =
+  require('react-native/Libraries/Utilities/useWindowDimensions').default as jest.Mock;
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
@@ -59,10 +66,11 @@ jest.mock('../../hooks/useHistoryRecordFacts', () => {
 });
 
 import { Keyboard, StyleSheet } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { PinnedRow } from './PinnedRow';
 import { SEARCH_WRITE_DELAY_MS } from './SearchField';
+import { STACK_FONT_SCALE } from '../ui/IdentityRow';
 import { RECORD_RETRY, typeSheetFailedOf, windowSheetFailedOf } from '../../lib/historyControls';
 import { SEARCH_COUNTS_NOTHING, buildDayFacts, historyCourseOf, type PopulationRow } from '../../lib/historyDays';
 import { windowTrialOf, type WindowFacts } from '../../lib/historyWindows';
@@ -215,6 +223,7 @@ const store = () => useHistoryScopeStore.getState();
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockedUseWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 3, fontScale: 1 });
   useAuthStore.setState({ user: { id: 'u1' } } as never);
   useAiConsentStore.getState().reset();
   // Through no pet and back, so the scope store's own subscription starts every test
@@ -659,5 +668,64 @@ describe('geometry: no two controls share hit area (C-5)', () => {
     expect(slop).toBeGreaterThan(0);
     const field = view.getByTestId('history-v2-search-field');
     expect(StyleSheet.flatten(field.props.style).marginTop).toBeGreaterThanOrEqual(slop);
+  });
+});
+
+describe('the largest text sizes (CUL-2264)', () => {
+  type Flex = { flexDirection?: string; flexWrap?: string; marginLeft?: unknown; rowGap?: number; maxWidth?: unknown; flexShrink?: number };
+  const flat = (view: Awaited<ReturnType<typeof renderAnswered>>, id: string) =>
+    StyleSheet.flatten(view.getByTestId(id).props.style) as Flex;
+  const rowOf = (view: Awaited<ReturnType<typeof renderAnswered>>) =>
+    flat(view, 'history-v2-pinned-line');
+  const controlsOf = (view: Awaited<ReturnType<typeof renderAnswered>>) =>
+    flat(view, 'history-v2-controls');
+  const atScale = (fontScale: number) =>
+    mockedUseWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 3, fontScale });
+
+  it('below the accessibility sizes the row is the one line it always was', async () => {
+    atScale(1.353);
+    const view = await renderAnswered();
+    expect(rowOf(view).flexDirection).toBe('row');
+    expect(controlsOf(view).flexWrap).toBeUndefined();
+    expect(controlsOf(view).marginLeft).toBe('auto');
+    expect(flat(view, 'history-v2-window-pill').maxWidth).toBeUndefined();
+  });
+
+  it('at AX5 the name takes its own line and the pills wrap beneath it, so the type pill is never under the window pill', async () => {
+    atScale(3.571);
+    const view = await renderAnswered();
+    expect(rowOf(view).flexDirection).toBe('column');
+    expect(controlsOf(view)).toMatchObject({ flexWrap: 'wrap', marginLeft: 0 });
+    // A pill wider than its line cuts rather than running off the phone.
+    expect(flat(view, 'history-v2-window-pill').maxWidth).toBe('100%');
+  });
+
+  it('a pill wider than its line wraps its words at AX5, so a window’s date is never cut; one line below it', async () => {
+    const lines = (view: Awaited<ReturnType<typeof renderAnswered>>) => [
+      within(view.getByTestId('history-v2-type-pill')).getByText('All types').props.numberOfLines,
+      within(view.getByTestId('history-v2-window-pill')).getByText('All time').props.numberOfLines,
+    ];
+    atScale(1.353);
+    expect(lines(await renderAnswered())).toEqual([1, 1]);
+    atScale(3.571);
+    expect(lines(await renderAnswered())).toEqual([undefined, undefined]);
+  });
+
+  it('stacks from the threshold the other headers stack at', async () => {
+    atScale(STACK_FONT_SCALE);
+    const view = await renderAnswered();
+    expect(rowOf(view).flexDirection).toBe('column');
+  });
+
+  it('no two stacked controls share hit area: the gaps are derived from the pill’s rendered slop (C-5)', async () => {
+    atScale(3.571);
+    const view = await renderAnswered();
+    const slop = view.getByLabelText('Filter: All types').props.hitSlop as { top: number; bottom: number };
+    expect(slop.top).toBeGreaterThan(0);
+    // The name carries no slop, so a pill under it owes the gap its own reach up.
+    expect(view.getByTestId('history-v2-pet-door').props.hitSlop).toBeUndefined();
+    expect(rowOf(view).rowGap).toBeGreaterThanOrEqual(slop.top);
+    // Two lines of pills face each other with both reaches.
+    expect(controlsOf(view).rowGap).toBeGreaterThanOrEqual(slop.top + slop.bottom);
   });
 });

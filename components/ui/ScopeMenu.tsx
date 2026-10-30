@@ -77,6 +77,10 @@ interface Props {
   // indicator so the rows past the fold read as there, never as the end of the list
   // (B-146's hidden option, turned vertical). Off by default. (HV-9)
   openAtSelected?: boolean;
+  // The pill's words wrap rather than cut: a header that stacks its pills at the largest
+  // text sizes, where a line can be narrower than one pill and a cut date reads as
+  // another date ('Since Jul 2…' for Jul 26). Off by default: one line. (CUL-2264)
+  pillWraps?: boolean;
   // One quiet line under the sheet label saying what the rows' numbers count ('Logged
   // since the trial started, Jul 26'). The scope sits where the reader meets the number
   // (C-3). Absent, the sheet renders as it always has. (CUL-1532)
@@ -100,9 +104,13 @@ export interface ScopeMenuNotice {
 // about one row, so the owner can see it is not the top.
 const SELECTED_ROW_PEEK = 48;
 
+/** The pill's vertical reach past its box, each side. Exported so a row that stacks pills
+ *  derives its gap from it rather than retyping it (C-5; History's header, CUL-2264). */
+export const SCOPE_PILL_HIT_SLOP = { top: 8, bottom: 8 } as const;
+
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
-  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption, notice,
+  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, pillWraps, caption, notice,
 }: Props) {
   const sheetCap = useSheetCap();
   const [open, setOpen] = useState(false);
@@ -148,13 +156,13 @@ export function ScopeMenu({
         // ONLY — two ScopeMenus sit 8pt apart in the History header, so any
         // horizontal slop would overlap adjacent pills' tap zones (the same
         // reasoning as FilterChip). Width already clears 44pt from content.
-        hitSlop={{ top: 8, bottom: 8 }}
+        hitSlop={SCOPE_PILL_HIT_SLOP}
         accessibilityRole="button"
         accessibilityLabel={pillAccessibilityLabel ?? `${accessibilityPrefix}: ${pillLabel}`}
       >
         <ThemedText
           style={[styles.pillLabel, filtered && styles.pillLabelActive]}
-          numberOfLines={1}
+          numberOfLines={pillWraps ? undefined : 1}
         >
           {pillLabel}
         </ThemedText>

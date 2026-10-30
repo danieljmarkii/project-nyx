@@ -20,6 +20,8 @@ interface Props {
   notice: ScopeMenuNotice | null;
   rows: readonly SheetRow<HistoryFilter>[];
   pill: TypePill;
+  /** The pill's words wrap rather than cut (the stacked header, CUL-2264). */
+  pillWraps?: boolean;
 }
 
 /** The menu's key for a filter: All types is the default, null. */
@@ -27,7 +29,7 @@ function keyOf(filter: HistoryFilter): string | null {
   return filter.kind === 'all' ? null : filterId(filter);
 }
 
-export function TypeSheet({ petId, filter, rows, pill, caption, notice }: Props) {
+export function TypeSheet({ petId, filter, rows, pill, caption, notice, pillWraps }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryFilter>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -61,6 +63,7 @@ export function TypeSheet({ petId, filter, rows, pill, caption, notice }: Props)
       pillCount={pill.count}
       pillAccessibilityLabel={pill.accessibilityLabel}
       openAtSelected
+      pillWraps={pillWraps}
       caption={caption}
       notice={notice}
     />
