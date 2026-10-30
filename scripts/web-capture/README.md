@@ -21,10 +21,24 @@ a shot broke (a screen it could not reach, a Signal lead that moved), and it hol
 Knobs (env): `CAPTURE_SIZES` (`320@1,375x667@1,390@1,466x678@1,626x890@1,890x626@1,390@3.571,320@3.571`;
 `W[xH]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_SET`
 (`pr`, the default: the shots every PR run takes; `all` adds the every-size sweeps' routes, CUL-2245), `CAPTURE_ONLY`
-(shot names), `CAPTURE_NOW` (the frozen clock), `CAPTURE_SETTLE_MS`, `CAPTURE_FLAGS` and
+(shot names), `CAPTURE_NOW` (the frozen clock), `CAPTURE_SETTLE_MS` (the floor before a
+screen is first looked at), `CAPTURE_QUIET_MS` and `CAPTURE_SETTLE_TIMEOUT_MS` (see below), `CAPTURE_FLAGS` and
 `CAPTURE_STORAGE` (app_config rows and device-local state, for building an older commit),
 `CAPTURE_DEBUG` (log every request), `CAPTURE_SIGNALS` (signals.deno.ts's output; capture
 refuses one computed at another instant or under other flags).
+
+**When a shot is taken (CUL-2266).** Never on a timer alone. After a short floor, the
+script waits until the screen has settled: no request open or newly started, the SQLite
+stub (`stubs/sqlite.ts` counts its calls) idle, two screenshots `CAPTURE_QUIET_MS` (1200)
+apart identical, no skeleton or silhouette on the page, and the markers the screen owes
+present. Every signed-in launch owes Home's: the Signal's lead (a card, or a row when a
+safety finding leads) for a pet the engine found something for, the trial card for a pet
+on a trial, Pepper's meal named "Pantry · Lamb & Brown Rice". A shot may owe more
+(`ready:`). The photograph is the settled screenshot itself. A screen that has not settled
+by `CAPTURE_SETTLE_TIMEOUT_MS` (90000) is written as `<shot>-UNSETTLED.png`, the log names
+what was missing, and the workflow goes red. The trial screen is shot under Reduce Motion:
+its ledger draws in with `Animated`, whose clock is the frozen `Date.now`, so without the
+app's own still frame it photographs as an empty card.
 
 **The incident screen's read states (CUL-1912).** The fixture writes no read and no photo, so
 `capture.mjs` adds four capture-only vomits 400 days back on Juniper, each with a drawn photo
