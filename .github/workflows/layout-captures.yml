@@ -88,11 +88,18 @@ jobs:
           "$WORK/pw/node_modules/.bin/playwright" install --with-deps chromium
 
       # Home's Signal lead: the shipped pipeline over the fixture's rows at the frozen instant.
-      # Fails when a pet's lead differs from the one the fixture declares. `--check` because
-      # ci.yml's `Deno check (scripts)` globs one level of scripts/ and does not reach here.
+      # Fails when a pet's lead differs from the one the fixture declares.
+      #
+      # OFF THE NETWORK (CUL-2279). The script's code graph is entirely local; its only remote
+      # files were supabase-js's `.d.ts`s, behind one `import type` (_shared/engineStamps.ts),
+      # fetched only to type-check. esm.sh once served one of them in other bytes and `--lock`
+      # reddened this step before a shot was taken. So it runs unchecked, and `--cached-only`
+      # holds the property: a remote import that ever joins the graph fails here by name, from
+      # a cold DENO_DIR, rather than reaching a CDN. Its type check lives in ci.yml's
+      # `Deno check (scripts)`, whose graph is the warmed, cached one.
       - name: Compute the fixture's Signal
         run: |
-          deno run --check --lock=deno.lock --allow-read --allow-env --allow-write="$WORK" \
+          deno run --cached-only --lock=deno.lock --allow-read --allow-env --allow-write="$WORK" \
             scripts/web-capture/signals.deno.ts "$WORK/signals.json"
 
       - name: Build the web bundle
