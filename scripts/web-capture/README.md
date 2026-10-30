@@ -47,7 +47,8 @@ is the app's own still frame, the screen as it rests once the motion is done. No
 clock run past each draw-in: a moving clock moves `Date.now` by however long a screen took to
 settle, so a relative time could print differently on two runs. A motion that ignores the
 setting is caught, not photographed: the page counts `requestAnimationFrame` calls, and a
-screen still asking for frames has not settled.
+screen still asking for frames has not settled. One shot is exempt by name (`framesOk`): `patterns-metric-juniper`, whose
+sparkline library starts width timings that draw nothing.
 
 **The incident screen's read states (CUL-1912).** The fixture writes no read and no photo, so
 `capture.mjs` adds four capture-only vomits 400 days back on Juniper, each with a drawn photo

@@ -394,7 +394,10 @@ const SWEEP1_SHOTS = [
   { name: 'weight-history-juniper', go: [() => {}, (page) => push(`/weight-history?petId=${pet('juniper').id}`)(page)] },
   { name: 'settings', go: [push('/settings')] },
   ...['ai-reading', 'beta', 'feedback', 'notifications', 'password'].map((s) => ({ name: `settings-${s}`, go: [push(`/settings/${s}`)] })),
-  { name: 'patterns-metric-juniper', go: [push('/insights/vomit')] },
+  // The sparkline is gifted-charts' LineChart, which starts its own width timings on mount
+  // whatever Reduce Motion says and draws nothing with them: the shot matched main pixel for
+  // pixel while they ran (CUL-2279). Named here so the frame check holds for every other shot.
+  { name: 'patterns-metric-juniper', framesOk: 'gifted-charts LineChart: width timings that draw nothing', go: [push('/insights/vomit')] },
   { name: 'patterns-timing-juniper', go: [push('/insights/timing')] },
   { name: 'patterns-trial-juniper', go: [push('/insights/trial')] },
   { name: 'signal-juniper', go: [openLead] },
@@ -570,7 +573,7 @@ async function captureSize(browser, size, server, shots, group) {
     }
     if (!failed && !unsettled) {
       try {
-        still = await settled(page, shot.name, MARKERS ? (shot.ready ?? []) : [], requests, timeout);
+        still = await settled(page, shot.name, MARKERS ? (shot.ready ?? []) : [], requests, timeout, Boolean(shot.framesOk));
       } catch (e) {
         unsettled = e.message;
       }
@@ -588,7 +591,8 @@ async function captureSize(browser, size, server, shots, group) {
 
 // Waits until the page is settled (see QUIET_MS above) and returns the settled screenshot.
 // Throws, naming the shot and what never arrived, when CAPTURE_SETTLE_TIMEOUT_MS runs out.
-async function settled(page, name, markers, requests, timeout) {
+// `framesOk` (a shot's named exemption) skips the frame check, never the others.
+async function settled(page, name, markers, requests, timeout, framesOk = false) {
   const markerList = [LOADING, ...markers];
   const start = Date.now();
   let prev = null;
@@ -613,7 +617,7 @@ async function settled(page, name, markers, requests, timeout) {
     const activity = `${requests.started}:${state.db?.busy}:${state.db?.done}`;
     // Apart from the requests and SQLite: a frame asked for since the last look is motion
     // still running, however still the pixels (AT REST above).
-    const animating = prev !== null && prev.frames !== state.frames;
+    const animating = !framesOk && prev !== null && prev.frames !== state.frames;
     const busy =
       state.db === null ? 'no SQLite stub on the page (an older build, or the bundle has not run)'
       : state.db.busy > 0 ? 'SQLite busy'
