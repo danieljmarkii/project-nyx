@@ -209,6 +209,11 @@ const SWEEP = {
   callId: 'c2245000-0000-4000-8000-000000000003',
   documentGroupId: 'c2245000-0000-4000-8000-000000000004',
 };
+const SWEEP_FLAGS = [
+  { key: 'paywall_enabled', value: true },
+  { key: 'ask_enabled', value: { enabled: true } },
+  { key: 'engines_v3_en14', value: { enabled: true } },
+];
 function sweepTables() {
   const j = pet('juniper').id;
   const stamp = new Date(NOW - 60e3).toISOString();
@@ -236,11 +241,10 @@ function sweepTables() {
       supersedes: null, withdrawn: false, covers_rank: null, covers_from: null, created_at: stamp,
     }],
     // The gated routes the sweep walks, on for the fixture account in this context only.
+    // They replace a CAPTURE_FLAGS row of the same key rather than sitting beside it.
     app_config: [
-      ...tables.app_config,
-      { key: 'paywall_enabled', value: true },
-      { key: 'ask_enabled', value: { enabled: true } },
-      { key: 'engines_v3_en14', value: { enabled: true } },
+      ...tables.app_config.filter((r) => !SWEEP_FLAGS.some((f) => f.key === r.key)),
+      ...SWEEP_FLAGS,
     ],
   };
 }
@@ -343,7 +347,12 @@ async function captureSize(browser, size, server, shots, group) {
     }
     if (req.method() === 'POST' && url.pathname.startsWith('/storage/v1/object/sign/')) {
       // A batch (`createSignedUrls`, the vet documents' pages) posts its paths and wants a row each.
-      const paths = req.postDataJSON()?.paths;
+      let paths = null;
+      try {
+        paths = req.postDataJSON()?.paths;
+      } catch {
+        // Not JSON: answered as a single signing, as before.
+      }
       const body = Array.isArray(paths)
         ? paths.map((path) => ({ path, signedURL: PHOTO_PATH, error: null }))
         : { signedURL: PHOTO_PATH };
