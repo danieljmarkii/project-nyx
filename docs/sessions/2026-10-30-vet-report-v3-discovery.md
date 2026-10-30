@@ -65,3 +65,43 @@ R-1 Principle 6, better than the rule · R-2 page 1 direction · R-3 who writes 
 **Alternate prompts:**
 - "Build [CUL-2276](https://linear.app/projectnyx/issue/CUL-2276): today's text layer misleads a clinic AI on a refused trial. Server only, `generate-report/render.ts`."
 - "Export one vet report PDF from my phone and run the [CUL-1771](https://linear.app/projectnyx/issue/CUL-1771) probe: `pdffonts` plus pypdf, grep the flag lines for digits."
+
+## Round 4 (same session): the PM's reactions, and R-3 tested
+
+**PM rulings (2026-10-30, chat):**
+- R-1: clinical grade, not marketing, but it must be beautiful.
+- R-2, R-4 and R-6: as recommended.
+- R-7: punt the vet link.
+- R-5a: the owner's questions appear.
+- Kept open: R-3 (the PM leans toward AI writing; "explore the pros/cons") and R-5b (the gaps block: "clinicians should know this").
+- New: the PM loves the app drafting the email body.
+
+**Mock reactions:** keep the QR (a distribution channel); no line through two points; the lead chart is loved; B's stacked charts where they make sense; the day grids are confusing.
+
+**Correction to the PM:** Dr. Chen never objected to the owner's questions. The objection was to questions generated for the vet.
+
+**The R-3 bake-off** (`docs/vet-report-v3-discovery/bakeoff/`, `RESULTS.md`):
+- **Pipeline:** the AI architect designed it, with the decision rule registered before any draft: a closed fact table, a deterministic verifier, a second-model checker, and a fallback to the code lines.
+- **Drafts:** 8 independent writers (4 on each of two models) wrote 24 drafts, every one in a fresh context.
+- **Scoring, all blind:** two hazard judges, two vets, and the pipeline's own checker.
+- **Results:**
+  - The larger model passed: 0 material findings in 12 shipped; median usefulness 5.0 against 4.0 for the code lines.
+  - The smaller model failed: three Nyx drafts put the plastic flag second, and the checker passed all three.
+  - Both vets ranked the code lines first for Cooper and Nyx and tied on Mira. Both asked for a 1 to 3 sentence lead above the lines.
+- **Deviation:** 4 drafts per pet per arm instead of 10.
+- **Recommendation moved:** an AI lead in a flagged beta above the code lines, larger model only, with the safety band code-written above it.
+
+**Mock round 4 (same URL, version 2):**
+- One proposal, with a ledger mapping each reaction to what moved.
+- A's lead chart is larger, with every sign stacked on the same weeks.
+- Day grids carry one fill plus hatch; Mira's grid became stacked weekly rows.
+- No two-point lines.
+- A tokenless QR sits in the colophon, with a masthead option drawn beside it.
+- Round 3's B and C directions and AI options B, C and D are retired (commit 7e7d0c58 keeps them).
+- The bake-off's real drafts are drawn as sheet tops.
+- The email body draft is drawn with suggestion chips (R-12).
+- The vets' catch: "call the clinic today" on the vet's page is now a dated record of the in-app prompt.
+
+**No adversarial pass on round 4:** the PR already used its two. The bake-off's blind judges stand in as the hazard check for R-3.
+
+**Open on CUL-2275:** R-3, R-5b, R-8, R-12; R-9 to R-11 are persona conflicts.
