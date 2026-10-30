@@ -3,11 +3,17 @@ import { usePathname } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { useColumn, useSafeBottom, useTabRail } from '../../hooks/useLayoutClass';
 
+/** The tab routes' names, as `app/(tabs)/_layout.tsx` declares its screens. */
+const TAB_ROUTE_NAMES = ['index', 'history', 'foods', 'profile'] as const;
+
 /**
  * The tab routes, as `usePathname` spells them: one per screen in `app/(tabs)/`, which
- * `transientSeat.test.ts` reads off the folder, so a new tab cannot be missed here.
+ * `transientSeat.test.ts` reads off the folder, so a new tab cannot be missed here. Built
+ * from the names, not written as paths: this is no door into any tab.
  */
-export const TAB_PATHS: ReadonlySet<string> = new Set(['/', '/history', '/foods', '/profile']);
+export const TAB_PATHS: ReadonlySet<string> = new Set(
+  TAB_ROUTE_NAMES.map((name) => (name === 'index' ? '/' : `/${name}`)),
+);
 
 /**
  * Where the transient bottom surfaces sit at regular width (CUL-2267): the three completion
