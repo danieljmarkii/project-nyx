@@ -105,3 +105,5 @@ R-1 Principle 6, better than the rule · R-2 page 1 direction · R-3 who writes 
 **No adversarial pass on round 4:** the PR already used its two. The bake-off's blind judges stand in as the hazard check for R-3.
 
 **Open on CUL-2275:** R-3, R-5b, R-8, R-12; R-9 to R-11 are persona conflicts.
+
+**R-3 ruled (PM, 2026-10-30):** "Go with the AI lead in beta." Option 1 as drafted: an AI lead of at most 3 sentences above the code lines, in a flagged beta, larger model only, behind the verifier and the checker, with the safety band code-written above it. Gate before GA: re-run the bake-off at 10 drafts per pet and on real records. The ruling unseats spec §5's "no generative phrasing" (2026-07-02) for the lead only, and round 2's B1 recommendation.
