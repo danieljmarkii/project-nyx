@@ -325,7 +325,7 @@ describe('the flight’s door (D2-6 · CUL-1069)', () => {
 
   it('`leadChartWidth` is pinned term by term against the rendered styles — the page and the HomeCard; the rail takes no width', async () => {
     // The page's padding: Home's scroll container, the style Home renders (`homeFeedLayout.ts`).
-    expect(LEAD_CHART_INSETS.pagePadding).toBe(StyleSheet.flatten(homeFeedStyles.scroll).padding);
+    expect(LEAD_CHART_INSETS.pagePadding).toBe(StyleSheet.flatten(homeFeedStyles.scroll)?.padding);
     // The zone's HomeCard: its rendered padding.
     const card = render(<HomeCard testID="c">{null}</HomeCard>);
     expect(StyleSheet.flatten(card.getByTestId('c').props.style).padding).toBe(LEAD_CHART_INSETS.cardPadding);
