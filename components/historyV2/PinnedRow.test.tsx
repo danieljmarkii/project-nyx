@@ -66,7 +66,7 @@ jest.mock('../../hooks/useHistoryRecordFacts', () => {
 });
 
 import { Keyboard, StyleSheet } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { PinnedRow } from './PinnedRow';
 import { SEARCH_WRITE_DELAY_MS } from './SearchField';
@@ -698,6 +698,17 @@ describe('the largest text sizes (CUL-2264)', () => {
     expect(controlsOf(view)).toMatchObject({ flexWrap: 'wrap', marginLeft: 0 });
     // A pill wider than its line cuts rather than running off the phone.
     expect(flat(view, 'history-v2-window-pill').maxWidth).toBe('100%');
+  });
+
+  it('a pill wider than its line wraps its words at AX5, so a window’s date is never cut; one line below it', async () => {
+    const lines = (view: Awaited<ReturnType<typeof renderAnswered>>) => [
+      within(view.getByTestId('history-v2-type-pill')).getByText('All types').props.numberOfLines,
+      within(view.getByTestId('history-v2-window-pill')).getByText('All time').props.numberOfLines,
+    ];
+    atScale(1.353);
+    expect(lines(await renderAnswered())).toEqual([1, 1]);
+    atScale(3.571);
+    expect(lines(await renderAnswered())).toEqual([undefined, undefined]);
   });
 
   it('stacks from the threshold the other headers stack at', async () => {

@@ -146,6 +146,7 @@ export function PinnedRow() {
               pill={view.typePill}
               caption={view.typeCaption}
               notice={notices?.type ?? null}
+              pillWraps={stacked}
             />
           </View>
           <View style={[styles.windowPill, stacked && styles.windowPillStacked]} onTouchStart={Keyboard.dismiss} testID="history-v2-window-pill">
@@ -156,6 +157,7 @@ export function PinnedRow() {
               pill={view.windowPill}
               caption={view.windowCaption}
               notice={notices?.window ?? null}
+              pillWraps={stacked}
             />
           </View>
           <TouchableOpacity
@@ -193,9 +195,8 @@ export function PinnedRow() {
 //
 // At the accessibility text sizes (CUL-2264) there is no width to give: at AX5 the window
 // pill alone outgrows a 390pt phone's row, and the type pill shrank to nothing under it. So
-// the name takes its own line and the controls wrap beneath it, each pill whole wherever it
-// fits. The window pill may then cut only where a line is narrower than it, never under a
-// neighbour. Every gap is the pills' slop, so no two controls share hit area (C-5): the
+// the name takes its own line and the controls wrap beneath it. A pill wider than its line
+// wraps its words rather than cutting them, so the window's date is still never cut. Every gap is the pills' slop, so no two controls share hit area (C-5): the
 // name has none, so a pill under it needs one slop; two pill lines need both.
 const PILL_REACH_UP = SCOPE_PILL_HIT_SLOP.top;
 const PILL_LINES_GAP = SCOPE_PILL_HIT_SLOP.top + SCOPE_PILL_HIT_SLOP.bottom;

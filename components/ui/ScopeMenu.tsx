@@ -77,6 +77,10 @@ interface Props {
   // indicator so the rows past the fold read as there, never as the end of the list
   // (B-146's hidden option, turned vertical). Off by default. (HV-9)
   openAtSelected?: boolean;
+  // The pill's words wrap rather than cut: a header that stacks its pills at the largest
+  // text sizes, where a line can be narrower than one pill and a cut date reads as
+  // another date ('Since Jul 2…' for Jul 26). Off by default: one line. (CUL-2264)
+  pillWraps?: boolean;
   // One quiet line under the sheet label saying what the rows' numbers count ('Logged
   // since the trial started, Jul 26'). The scope sits where the reader meets the number
   // (C-3). Absent, the sheet renders as it always has. (CUL-1532)
@@ -106,7 +110,7 @@ export const SCOPE_PILL_HIT_SLOP = { top: 8, bottom: 8 } as const;
 
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
-  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption, notice,
+  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, pillWraps, caption, notice,
 }: Props) {
   const sheetCap = useSheetCap();
   const [open, setOpen] = useState(false);
@@ -158,7 +162,7 @@ export function ScopeMenu({
       >
         <ThemedText
           style={[styles.pillLabel, filtered && styles.pillLabelActive]}
-          numberOfLines={1}
+          numberOfLines={pillWraps ? undefined : 1}
         >
           {pillLabel}
         </ThemedText>
