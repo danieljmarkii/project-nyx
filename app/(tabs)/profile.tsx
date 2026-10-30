@@ -27,6 +27,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { TextLink } from '../../components/ui/TextLink';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
+import { PET_TAB_SCROLL_INSET } from '../../lib/fabFootprint';
 import {
   uploadPhoto, compressForUpload, getSignedUrls, markPetPhotoChanged, PET_PHOTOS_BUCKET,
 } from '../../lib/storage';
@@ -1793,9 +1794,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
   },
+  // The last row clears the + button at scroll end (C-5; lib/fabFootprint.ts).
   scroll: {
     padding: theme.space3,
     gap: theme.space2,
+    paddingBottom: PET_TAB_SCROLL_INSET,
   },
 
   // CUL-618 — the name's row, shared by the switcher branch and the plain one so

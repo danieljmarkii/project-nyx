@@ -24,3 +24,8 @@ export const HOME_V2_SCROLL_INSET = 96;
  *  end. The round-5 page's list pads by the same 96pt Home does, and it is never below the
  *  floor. */
 export const HISTORY_V2_SCROLL_INSET = 96;
+
+/** The Pet tab's bottom inset (CUL-2264): the + floats over this tab too, so the last
+ *  card's last row (the Conditions card's Add, on a short record) clears the disc at
+ *  scroll end. The same 96pt Home and History pad by; never below the floor. */
+export const PET_TAB_SCROLL_INSET = 96;

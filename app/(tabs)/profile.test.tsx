@@ -123,6 +123,7 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { Modal, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import ProfileScreen from './profile';
+import { FAB_SCROLL_INSET_FLOOR, PET_TAB_SCROLL_INSET } from '../../lib/fabFootprint';
 
 /** The nearest ancestor of `node` that is actually a touch responder. */
 function owningTouchable(node: any) {
@@ -267,5 +268,15 @@ describe('the identity row and the foot (round P1, P2, P10)', () => {
       expect(style.backgroundColor).toBe('transparent');
       expect(style.borderWidth).toBeUndefined();
     }
+  });
+});
+
+describe('the scroll inset clears the + (C-5, CUL-2264)', () => {
+  it('the content carries the Pet tab’s inset, at or above the floor, so the last card’s last row clears the disc at scroll end', () => {
+    const t = render(<ProfileScreen />);
+    const scroll = t.UNSAFE_getByType(require('react-native').ScrollView);
+    const { paddingBottom } = StyleSheet.flatten(scroll.props.contentContainerStyle) as { paddingBottom?: number };
+    expect(paddingBottom).toBe(PET_TAB_SCROLL_INSET);
+    expect(PET_TAB_SCROLL_INSET).toBeGreaterThanOrEqual(FAB_SCROLL_INSET_FLOOR);
   });
 });

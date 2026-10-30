@@ -100,6 +100,10 @@ export interface ScopeMenuNotice {
 // about one row, so the owner can see it is not the top.
 const SELECTED_ROW_PEEK = 48;
 
+/** The pill's vertical reach past its box, each side. Exported so a row that stacks pills
+ *  derives its gap from it rather than retyping it (C-5; History's header, CUL-2264). */
+export const SCOPE_PILL_HIT_SLOP = { top: 8, bottom: 8 } as const;
+
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
   pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption, notice,
@@ -148,7 +152,7 @@ export function ScopeMenu({
         // ONLY — two ScopeMenus sit 8pt apart in the History header, so any
         // horizontal slop would overlap adjacent pills' tap zones (the same
         // reasoning as FilterChip). Width already clears 44pt from content.
-        hitSlop={{ top: 8, bottom: 8 }}
+        hitSlop={SCOPE_PILL_HIT_SLOP}
         accessibilityRole="button"
         accessibilityLabel={pillAccessibilityLabel ?? `${accessibilityPrefix}: ${pillLabel}`}
       >

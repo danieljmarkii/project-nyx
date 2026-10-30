@@ -20,10 +20,12 @@
 // is also the household's "Add a pet" door, so the name stays tappable for a one-pet
 // household, exactly as on Home.
 import { useCallback, useMemo, useState } from 'react';
-import { Keyboard, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Keyboard, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { ChevronDown, Search } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
+import { STACK_FONT_SCALE } from '../ui/IdentityRow';
+import { SCOPE_PILL_HIT_SLOP } from '../ui/ScopeMenu';
 import { ThemedText } from '../ui/ThemedText';
 import { SearchField } from './SearchField';
 import { TypeSheet } from './TypeSheet';
@@ -61,6 +63,9 @@ export function PinnedRow() {
   const readingOff = usePhotoReadingOff();
   const [focusTick, setFocusTick] = useState(0);
   const species = activePet?.species;
+  // At the accessibility text sizes the three controls cannot share one line with the name,
+  // so they stack under it (CUL-2264; the note above the styles).
+  const stacked = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
 
   const view = useMemo(
     () =>
@@ -106,9 +111,9 @@ export function PinnedRow() {
 
   return (
     <View style={styles.container} testID="history-v2-pinned-row">
-      <View style={styles.row}>
+      <View style={[styles.row, stacked && styles.rowStacked]} testID="history-v2-pinned-line">
         <TouchableOpacity
-          style={styles.petDoor}
+          style={[styles.petDoor, stacked && styles.petDoorStacked]}
           onPress={() => {
             Keyboard.dismiss();
             setSwitcherVisible(true);
@@ -130,7 +135,7 @@ export function PinnedRow() {
             />
           ) : null}
         </TouchableOpacity>
-        <View style={styles.controls}>
+        <View style={[styles.controls, stacked && styles.controlsStacked]} testID="history-v2-controls">
           {/* A sheet opened while the search field is focused must not sit under the
               keyboard, so a touch on either pill puts the keyboard away first. */}
           <View style={styles.typePill} onTouchStart={Keyboard.dismiss} testID="history-v2-type-pill">
@@ -143,7 +148,7 @@ export function PinnedRow() {
               notice={notices?.type ?? null}
             />
           </View>
-          <View style={styles.windowPill} onTouchStart={Keyboard.dismiss} testID="history-v2-window-pill">
+          <View style={[styles.windowPill, stacked && styles.windowPillStacked]} onTouchStart={Keyboard.dismiss} testID="history-v2-window-pill">
             <WindowSheet
               petId={petId}
               current={view.currentWindow}
@@ -185,6 +190,16 @@ export function PinnedRow() {
 // name and the type pill's words give way instead, together and in proportion to their
 // width; the type pill's count never does (ScopeMenu keeps it in its own unshrinking
 // text), and VoiceOver reads every one of them whole (C-8).
+//
+// At the accessibility text sizes (CUL-2264) there is no width to give: at AX5 the window
+// pill alone outgrows a 390pt phone's row, and the type pill shrank to nothing under it. So
+// the name takes its own line and the controls wrap beneath it, each pill whole wherever it
+// fits. The window pill may then cut only where a line is narrower than it, never under a
+// neighbour. Every gap is the pills' slop, so no two controls share hit area (C-5): the
+// name has none, so a pill under it needs one slop; two pill lines need both.
+const PILL_REACH_UP = SCOPE_PILL_HIT_SLOP.top;
+const PILL_LINES_GAP = SCOPE_PILL_HIT_SLOP.top + SCOPE_PILL_HIT_SLOP.bottom;
+
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: theme.space2,
@@ -196,6 +211,11 @@ const styles = StyleSheet.create({
     minHeight: TOUCH_FLOOR,
     gap: theme.space1,
   },
+  rowStacked: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    rowGap: PILL_REACH_UP,
+  },
   // The name and its chevron: one tap target at the row's 44pt floor, with no slop, so it
   // shares no hit area with the type pill beside it (C-5). It gives way on a narrow phone
   // as the bare name did (the note above).
@@ -205,6 +225,10 @@ const styles = StyleSheet.create({
     minHeight: TOUCH_FLOOR,
     flexShrink: 1,
     minWidth: 0,
+  },
+  petDoorStacked: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
   },
   chevron: {
     marginLeft: HEADER_CHEVRON_GAP,
@@ -227,12 +251,21 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
   },
+  controlsStacked: {
+    flexWrap: 'wrap',
+    marginLeft: 0,
+    columnGap: theme.space0_5,
+    rowGap: PILL_LINES_GAP,
+  },
   typePill: {
     flexShrink: 1,
     minWidth: 0,
   },
   windowPill: {
     flexShrink: 0,
+  },
+  windowPillStacked: {
+    maxWidth: '100%',
   },
   searchButton: {
     width: TOUCH_FLOOR,
