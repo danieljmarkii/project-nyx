@@ -70,6 +70,20 @@ describe('LandingScreen', () => {
     expect(mockedPush).toHaveBeenCalledWith('/(auth)/login');
   });
 
+  // CUL-2265: at the largest text the hero and the buttons outgrow the screen; a fixed
+  // column drew Log in over the sub. The hero, the door and both buttons now sit in one
+  // scroll, so every one of them can be reached.
+  it('holds the sub, the door and both buttons in one scroll', () => {
+    const { getByTestId, UNSAFE_getByType } = render(<LandingScreen />);
+    const { ScrollView } = require('react-native') as typeof import('react-native');
+    const scroll = UNSAFE_getByType(ScrollView);
+    for (const id of ['landing-how-it-works', 'landing-create-account', 'landing-log-in']) {
+      let n = getByTestId(id).parent;
+      while (n && n !== scroll) n = n.parent;
+      expect(n).toBe(scroll);
+    }
+  });
+
   it('routes "See how it works" to the value-preview screen', () => {
     const { getByTestId } = render(<LandingScreen />);
     fireEvent.press(getByTestId('landing-how-it-works'));

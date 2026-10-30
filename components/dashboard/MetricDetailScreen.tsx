@@ -63,7 +63,7 @@ export function MetricDetailScreen({
   const [active, setActive] = useState<AnalyticsWindow>(initialWindow);
   // At the accessibility sizes three ranges cannot share one row (at 320, Week, Month and
   // 3 Months drew over each other), so the track stacks them. Stacked, the 6pt slop would
-  // reach into the next range 3pt away, and each is already past 44pt tall, so it goes.
+  // reach into the next range 3pt away, so it goes and each range holds 44pt itself.
   const stacked = useWindowDimensions().fontScale >= STACK_FONT_SCALE;
   const width = useColumnWidth();
   const chartWidth = width - theme.space3 * 4;
@@ -168,6 +168,7 @@ const styles = StyleSheet.create({
   segmentStacked: {
     flexGrow: 0,
     flexBasis: 'auto',
+    minHeight: theme.hitTarget,
   },
   segmentActive: {
     backgroundColor: theme.colorSurface,

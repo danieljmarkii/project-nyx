@@ -99,8 +99,8 @@ const SEG_HIT = { top: 8, bottom: 8 };
 
 // One column (the accessibility sizes): the two segments drop under the name and stack,
 // each the tile's width, since side by side they pushed the name to nothing and Loose off
-// the screen. Stacked, a vertical slop would reach into the other segment, and each is
-// already far past 44pt tall at those sizes, so the slop goes.
+// the screen. Stacked, a vertical slop would reach into the other segment, so the slop
+// goes and each segment holds the 44pt floor itself.
 function StoolSplitTile({
   onSelectType,
   oneColumn,
@@ -300,6 +300,8 @@ const styles = StyleSheet.create({
   },
   splitBtnStacked: {
     alignItems: 'center',
+    minHeight: theme.hitTarget,
+    justifyContent: 'center',
   },
   splitBtnText: {
     fontSize: theme.textSM,

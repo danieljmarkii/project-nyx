@@ -88,13 +88,13 @@ describe('MetricDetailScreen — the ranges at large text', () => {
   afterEach(() => jest.restoreAllMocks());
   const trackAt = (fontScale: number) => {
     jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, fontScale, scale: 2 });
-    const { getByRole } = render(
+    const { getByRole, getByText } = render(
       <MetricDetailScreen title="Vomiting" polarity="adverse" windows={windows} petName="Nyx" calibrationUnit="day" />,
     );
     const week = getByRole('tab', { name: 'Week' });
     let track = week.parent;
     while (track && track.props.accessibilityRole !== 'tablist') track = track.parent;
-    return { track: RN.StyleSheet.flatten(track?.props.style), week };
+    return { track: RN.StyleSheet.flatten(track?.props.style), week, getByText };
   };
 
   it('keeps one row, with its slop, at the standard sizes', () => {
@@ -104,8 +104,12 @@ describe('MetricDetailScreen — the ranges at large text', () => {
   });
 
   it('stacks the ranges, without slop, at the accessibility sizes, and each still switches', () => {
-    const { track, week } = trackAt(3.571);
+    const { track, week, getByText } = trackAt(3.571);
     expect(track.flexDirection).toBe('column');
     expect(week.props.hitSlop).toBeUndefined();
+    // With no slop, each range holds the 44pt floor itself.
+    expect(RN.StyleSheet.flatten(week.props.style).minHeight).toBe(44);
+    fireEvent.press(week);
+    expect(getByText('Calmer than a usual week for Nyx.')).toBeTruthy();
   });
 });

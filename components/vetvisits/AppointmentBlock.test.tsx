@@ -39,3 +39,22 @@ describe('AppointmentBlock — the date block at large text', () => {
     expect(rowOf(3.571).flexDirection).toBe('column');
   });
 });
+
+describe('AppointmentBlock — the date block width', () => {
+  const stampAt = (fontScale: number) => {
+    jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width: 320, height: 568, fontScale, scale: 2 });
+    const { getByRole } = render(<AppointmentBlock appointment={appointment} onPress={jest.fn()} />);
+    const row = getByRole('button', { name: 'Saturday · 3:00 pm, Northside Animal Clinic' }) as unknown as { children: TreeNode[] };
+    return flat(row.children[0]);
+  };
+
+  it('keeps its 38pt column beside the time', () => {
+    expect(stampAt(1).width).toBe(38);
+  });
+
+  it('grows with its numerals when stacked, never narrower than 38', () => {
+    const stamp = stampAt(3.571);
+    expect(stamp.width).toBeUndefined();
+    expect(stamp.minWidth).toBe(38);
+  });
+});

@@ -135,7 +135,8 @@ export default function LandingScreen() {
             )}
           </View>
 
-          {/* Pinned + persistent once the session decision lands (spec §4). */}
+          {/* Pinned + persistent once the session decision lands (spec §4); at the
+              accessibility sizes it scrolls with the hero, below the fold. */}
           {showAuthActions && (
             <View style={styles.cta}>
               <PrimaryButton

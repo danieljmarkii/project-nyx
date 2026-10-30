@@ -206,6 +206,9 @@ describe('EventTypePicker — one column at the accessibility sizes', () => {
     const loose = tileOf(getByText, 'Loose');
     expect(normal.props.hitSlop).toBeUndefined();
     expect(loose.props.hitSlop).toBeUndefined();
+    // With no slop, each segment holds the 44pt floor itself.
+    expect(flat(normal).minHeight).toBe(theme.hitTarget);
+    expect(flat(loose).minHeight).toBe(theme.hitTarget);
     fireEvent.press(getByText('Normal'));
     expect(onSelectType).toHaveBeenLastCalledWith<[EventTypeKey]>('stool_normal');
     fireEvent.press(getByText('Loose'));

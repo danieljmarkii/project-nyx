@@ -54,7 +54,7 @@ export function AppointmentBlock({ appointment, variant = 'plain', onPress, styl
   const body = (
     <>
       {stamp ? (
-        <View style={styles.stamp} importantForAccessibility="no-hide-descendants">
+        <View style={[styles.stamp, stacked && styles.stampStacked]} importantForAccessibility="no-hide-descendants">
           <ThemedText style={styles.stampDay}>{stamp.day}</ThemedText>
           <ThemedText style={styles.stampMonth}>{stamp.month}</ThemedText>
         </View>
@@ -113,11 +113,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     backgroundColor: theme.colorAccentLight,
   },
-  // A floor, not a width: stacked at the largest text, the day outgrows 38 and the
-  // block grows with its numerals rather than spilling past the row's edge.
   stamp: {
-    minWidth: 38,
+    width: 38,
     alignItems: 'center',
+  },
+  // Stacked, the day outgrows 38: a floor, not a width, so the block grows with its
+  // numerals rather than spilling past the row's edge.
+  stampStacked: {
+    width: undefined,
+    minWidth: 38,
   },
   stampDay: {
     fontSize: theme.textLG,
