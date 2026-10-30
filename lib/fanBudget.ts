@@ -43,6 +43,15 @@ import { theme } from '../constants/theme';
 /** The disc's offset from the bottom of the screen, its size, and the fan's lift off it. */
 export const FAB_BOTTOM = 72;
 export const FAB_DISC = 56;
+
+/**
+ * The disc's actual offset from the screen's foot. On a phone it is `FAB_BOTTOM`, over the
+ * bottom bar; at regular it stands at the rail's foot, clear of the home indicator (CUL-2242),
+ * so the fan's room and a run reveal's clearance read that seat, not the phone's (CUL-2267).
+ */
+export function fabBottomFor(railed: boolean, safeBottom: number): number {
+  return railed ? safeBottom + theme.space3 : FAB_BOTTOM;
+}
 export const FAN_MARGIN_BOTTOM = theme.space2;
 /** Space kept clear under the status bar / Dynamic Island, above the fan's top row. */
 export const FAN_TOP_MARGIN = theme.space1;
@@ -95,6 +104,8 @@ export interface FanBudgetInput {
   fontScale: number;
   /** The safe area's top inset. */
   safeTop: number;
+  /** The disc's offset from the screen's foot (`fabBottomFor`); `FAB_BOTTOM` when omitted. */
+  fabBottom?: number;
   /** The pet's name when the chip is drawn (two or more pets), else null. */
   chipName: string | null;
   /** The doors' labels, top to bottom. */
@@ -221,9 +232,10 @@ function stack(heights: number[]): number {
 
 export function planFan(input: FanBudgetInput): FanPlan {
   const { windowWidth, windowHeight, fontScale, safeTop, chipName, doors, foods } = input;
+  const fabBottom = input.fabBottom ?? FAB_BOTTOM;
   const pillMaxWidth = Math.min(PILL_MAX_WIDTH, windowWidth - FAN_RIGHT_INSET - FAN_LEFT_MARGIN);
   const available =
-    windowHeight - safeTop - FAN_TOP_MARGIN - (FAB_BOTTOM + FAB_DISC + FAN_MARGIN_BOTTOM);
+    windowHeight - safeTop - FAN_TOP_MARGIN - (fabBottom + FAB_DISC + FAN_MARGIN_BOTTOM);
 
   const chip = chipName === null ? null : chipHeight(chipName, fontScale, pillMaxWidth);
   const doorHeights = doors.map((d) => doorHeight(d, fontScale, pillMaxWidth));

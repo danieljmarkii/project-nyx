@@ -44,12 +44,14 @@ import {
 import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
 import { FOLD_LAYOUT } from '../motion/foldMotion';
 import { measureNodeInWindow } from '../../lib/measureNode';
+import { useTransientSeat } from './transientSeat';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
 // its own `Platform.OS === 'ios' ? 80 : 60` sourced by comment from
 // app/(tabs)/_layout.tsx, which stopped defining it (CUL-599) — and the bar has
 // since grown. The card must clear the bar so it is not occluded when the owner
-// lands back on a tabs screen after a log.
+// lands back on a tabs screen after a log. At regular there is no bottom bar, and the
+// card takes its seat from `useTransientSeat` instead (CUL-2267).
 import { TAB_HEIGHT } from '../nav/NyxTabBar';
 
 // Hold the card open this long after a chip tap so the selected chip is visibly
@@ -231,6 +233,7 @@ export function MealCompletionCard() {
   const { pets } = usePetStore();
   // The route, read at tap time through a ref (C-22's shape), for the floor line's door.
   const pathname = usePathname();
+  const seat = useTransientSeat(true);
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
   const pathnameNow = () => pathnameRef.current;
@@ -881,7 +884,7 @@ export function MealCompletionCard() {
     <>
       <Animated.View
         pointerEvents={shown && !inert ? 'box-none' : 'none'}
-        style={[styles.wrapper, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
+        style={[styles.wrapper, seat, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
       >
         {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
             and any interaction resets it. Wired at the ROOT because touch events bubble
@@ -1189,9 +1192,8 @@ export function MealCompletionCard() {
 }
 
 const styles = StyleSheet.create({
-  // Sits ABOVE the FAB so the chip row can span full width without colliding
-  // with it. FAB is at bottom: 72, height 56 → its top is at 128; the card
-  // clears that with breathing room.
+  // On a phone, above the bar and the FAB so the chip row can span full width without
+  // colliding with the disc. At regular `useTransientSeat` replaces the berth.
   wrapper: {
     position: 'absolute',
     bottom: TAB_HEIGHT + 64,

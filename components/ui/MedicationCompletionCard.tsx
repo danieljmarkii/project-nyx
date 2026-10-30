@@ -35,6 +35,7 @@ import { VehicleChipRow } from '../log/VehicleChipRow';
 // since grown. The card must clear the bar so it is not occluded when the owner
 // lands back on a tabs screen after a log.
 import { TAB_HEIGHT } from '../nav/NyxTabBar';
+import { useTransientSeat } from './transientSeat';
 
 // Hold the card open this long after a chip tap (adherence OR vehicle) so the
 // selection is visibly confirmed before dismiss (same rationale as the meal card's
@@ -82,6 +83,7 @@ export function MedicationCompletionCard() {
   // Read in the render, as the meal card does: the store has the OS answer before the
   // first frame (CUL-1123), and unknown reads as still (C-43).
   const reduced = useReducedMotion();
+  const seat = useTransientSeat(true);
   const appActive = useAppActive();
 
   // The eventId the picker was OPENED for; null while closed (CUL-709) — see the
@@ -454,7 +456,7 @@ export function MedicationCompletionCard() {
     <>
     <Animated.View
       pointerEvents={shown && !inert ? 'box-none' : 'none'}
-      style={[styles.wrapper, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
+      style={[styles.wrapper, seat, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
     >
       {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
           and any interaction resets it. Wired at the ROOT because touch events bubble
@@ -650,8 +652,8 @@ export function MedicationCompletionCard() {
 }
 
 const styles = StyleSheet.create({
-  // Sits above the FAB so the chip row can span full width without colliding with
-  // it — same placement as the meal card.
+  // On a phone, above the bar and the FAB, the meal card's berth. At regular
+  // `useTransientSeat` replaces it (CUL-2267).
   wrapper: {
     position: 'absolute',
     bottom: TAB_HEIGHT + 64,

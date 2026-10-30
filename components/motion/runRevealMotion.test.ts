@@ -11,7 +11,17 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { LayoutAnimation } from 'react-native';
 import { RUN_MOTION, useRunOpen } from './runOpenMotion';
+import { FAB_DISC, fabBottomFor } from '../../lib/fanBudget';
 import { RUN_REVEAL, runRevealDistance, useRunRevealHost, type RunRevealGeometry } from './runRevealMotion';
+
+// jest-expo's default window is 750pt, which is regular width: pinned to a phone, with each
+// regular case stating its own (CUL-2267).
+let mockWindowWidth = 390;
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => ({ width: mockWindowWidth, height: 844, scale: 3, fontScale: 1 }),
+}));
+
 
 /** A small seeded PRNG (mulberry32), so a failure reproduces. */
 function prng(seed: number) {
@@ -200,6 +210,26 @@ describe('useRunRevealHost — the list scrolls once, after the content grows', 
   const low = { runTop: 640, mealBottom: 740 };
   const plusTop = 764 + 80 - RUN_REVEAL.plusRisePt;
   const expected = runRevealDistance({ ...low, viewTop: VIEW.top, viewBottom: VIEW.bottom, plusTop });
+
+  // CUL-2267 — at regular the plus stands at the rail's foot, so the run is shown clear of
+  // that seat, not the phone's: a reveal moves the list less, never more.
+  it('at regular the plus’s top is the rail seat’s, not the phone’s', () => {
+    mockWindowWidth = 890;
+    try {
+      const t = host();
+      t.result.current.request((done) => done(low));
+      act(() => {
+        jest.advanceTimersByTime(RUN_REVEAL.fallbackMs);
+      });
+      const railPlusTop = 764 + 80 - (fabBottomFor(true, 0) + FAB_DISC);
+      const railExpected = runRevealDistance({ ...low, viewTop: VIEW.top, viewBottom: VIEW.bottom, plusTop: railPlusTop });
+      expect(railExpected).toBeLessThan(expected);
+      if (railExpected > 0) expect(t.scrollBy).toHaveBeenCalledWith(railExpected);
+      else expect(t.scrollBy).not.toHaveBeenCalled();
+    } finally {
+      mockWindowWidth = 390;
+    }
+  });
 
   it('fires on the growth, a frame later, by the distance; a second growth does not fire again', () => {
     const t = host();

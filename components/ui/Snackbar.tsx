@@ -3,7 +3,6 @@ import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { colorRoles, shadows, theme } from '../../constants/theme';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { useColumn } from '../../hooks/useLayoutClass';
 import { COMPLETION_MOTION, EASE } from '../motion/completionMotion';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
@@ -13,6 +12,7 @@ import { COMPLETION_MOTION, EASE } from '../motion/completionMotion';
 // lands back on a tabs screen after a log.
 import { TAB_HEIGHT } from '../nav/NyxTabBar';
 import { ThemedText } from './ThemedText';
+import { useTransientSeat } from './transientSeat';
 
 // Root-mounted snackbar overlay (B-005 PR 2). Store-driven (snackbarStore) so it
 // survives the dismissal of whatever modal armed it — the food-detail "Remove
@@ -35,9 +35,9 @@ import { ThemedText } from './ThemedText';
 export function Snackbar() {
   const { visible, payload, runAction } = useSnackbarStore();
   const reduced = useReducedMotion();
-  // Outside the column, over the flight (app/_layout.tsx), so it insets by the gutter itself:
-  // nothing at compact, the column's edges on the unfolded Duo (CUL-2237).
-  const { gutter } = useColumn();
+  // Outside the column, over the flight (app/_layout.tsx), so its seat steps in by the
+  // gutter itself: nothing at compact, beside the rail on the unfolded Duo (CUL-2267).
+  const seat = useTransientSeat(false);
 
   // The rise and the drift are two values summed, as on the card: an exit that starts
   // mid-rise stops the rise where it stands and drifts from there, never snapping.
@@ -100,7 +100,7 @@ export function Snackbar() {
   return (
     <Animated.View
       pointerEvents={visible ? 'box-none' : 'none'}
-      style={[styles.wrapper, gutter > 0 && { left: theme.space2 + gutter, right: theme.space2 + gutter }, { opacity, transform: [{ translateY }] }]}
+      style={[styles.wrapper, seat, { opacity, transform: [{ translateY }] }]}
     >
       <View style={styles.card}>
         <ThemedText style={styles.message} numberOfLines={2}>
@@ -123,8 +123,8 @@ export function Snackbar() {
 }
 
 const styles = StyleSheet.create({
-  // Above the FAB (bottom-right), matching the meal card's clearance so the Undo
-  // action never sits under the floating button.
+  // On a phone, above the FAB (bottom-right), matching the meal card's clearance so the
+  // Undo action never sits under the floating button. At regular, `useTransientSeat`.
   wrapper: {
     position: 'absolute',
     bottom: TAB_HEIGHT + 64,

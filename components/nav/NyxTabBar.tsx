@@ -120,7 +120,7 @@ export const TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD + TAB_BOTTOM_PAD;
 // The rail (CUL-2242). Each tab is the bottom bar's tab turned on its side: the same
 // slot, label and tick, in a box with the bar's own top and bottom padding, so a tab
 // reads the same whichever edge it stands on. The rail's top clears the status bar.
-const RAIL_TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD * 2;
+export const RAIL_TAB_HEIGHT = TAB_CONTENT_HEIGHT + TAB_TOP_PAD * 2;
 const RAIL_TOP_PAD = theme.space2;
 
 export function NyxTabBar({ state, descriptors, emitter, navigateToTab }: TabBarProps) {

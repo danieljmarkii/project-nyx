@@ -26,66 +26,90 @@ const CHIP_HEIGHT = 30;
 /** Three nodes of the spine — enough to say "a day", never a firehose. */
 const NODE_ROWS = ['46%', '58%', '40%'] as const;
 const NODE_DOT = 8;
-/** The tab bar's five slots. */
+/** The tab bar's four slots. */
 const TAB_SLOTS = 4;
 
 export const HOME_SILHOUETTE_TEST_ID = 'design-v2-home-silhouette';
+
+/** The tab rail at regular (CUL-2242): its width, the right safe inset included. */
+export interface SilhouetteRail {
+  width: number;
+  safeRight: number;
+  /** One rail tab's height (`RAIL_TAB_HEIGHT`), handed in for the reason `tabBarHeight` is. */
+  tabHeight: number;
+}
 
 export interface HomeSilhouetteProps {
   /** The safe-area top, so the header row sits where `HomeHeader` puts it. */
   topInset?: number;
   /** `TAB_HEIGHT` from the host; omit to draw no bar (a body-only silhouette). */
   tabBarHeight?: number;
+  /** At regular, the rail the host's bar stands as: drawn down the right edge in place of
+   *  the bottom bar, so the shape gives way to the screen it predicts (CUL-2267). */
+  rail?: SilhouetteRail | null;
 }
 
-export function HomeSilhouette({ topInset = 0, tabBarHeight }: HomeSilhouetteProps) {
+export function HomeSilhouette({ topInset = 0, tabBarHeight, rail = null }: HomeSilhouetteProps) {
   return (
-    <SilhouetteFrame testID={HOME_SILHOUETTE_TEST_ID} style={styles.fill}>
-      {/* The header row: avatar, the pet's name, the date at the right. */}
-      <View style={[styles.header, { paddingTop: topInset }]}>
-        <View style={styles.headerRow}>
-          <Block width={HEADER_AVATAR_SIZE} height={HEADER_AVATAR_SIZE} radius={theme.radiusFull} />
-          <Line width={96} height={14} />
-          <View style={styles.headerSpacer} />
-          <Line width={64} height={10} />
+    <SilhouetteFrame testID={HOME_SILHOUETTE_TEST_ID} style={[styles.fill, rail && styles.railed]}>
+      <View style={styles.scene}>
+        {/* The header row: avatar, the pet's name, the date at the right. */}
+        <View style={[styles.header, { paddingTop: topInset }]}>
+          <View style={styles.headerRow}>
+            <Block width={HEADER_AVATAR_SIZE} height={HEADER_AVATAR_SIZE} radius={theme.radiusFull} />
+            <Line width={96} height={14} />
+            <View style={styles.headerSpacer} />
+            <Line width={64} height={10} />
+          </View>
+        </View>
+
+        <View style={styles.body}>
+          {/* The Signal card: the rail, a title, the chart, the week line. */}
+          <Surface style={styles.signal}>
+            <Block width={RAIL_WIDTH} height={96} radius={theme.radiusXS} style={styles.rail} />
+            <View style={styles.signalBody}>
+              <Line width="72%" height={16} />
+              <Block height={64} />
+              <Line width="52%" height={10} />
+            </View>
+          </Surface>
+
+          {/* Today: the look question as its header, then the chips, then the count line. */}
+          <Surface>
+            <Line width="60%" height={14} />
+            <View style={styles.chips}>
+              {CHIP_WIDTHS.map((w, i) => (
+                <Block key={i} width={w} height={CHIP_HEIGHT} radius={theme.radiusFull} />
+              ))}
+            </View>
+            <Line width="54%" height={10} style={styles.countLine} />
+            {/* The first nodes of the spine. */}
+            {NODE_ROWS.map((w, i) => (
+              <View key={i} style={styles.node}>
+                <Block width={NODE_DOT} height={NODE_DOT} radius={theme.radiusFull} />
+                <Line width={w} height={12} />
+                <View style={styles.headerSpacer} />
+                <Line width={48} height={10} />
+              </View>
+            ))}
+          </Surface>
         </View>
       </View>
 
-      <View style={styles.body}>
-        {/* The Signal card: the rail, a title, the chart, the week line. */}
-        <Surface style={styles.signal}>
-          <Block width={RAIL_WIDTH} height={96} radius={theme.radiusXS} style={styles.rail} />
-          <View style={styles.signalBody}>
-            <Line width="72%" height={16} />
-            <Block height={64} />
-            <Line width="52%" height={10} />
-          </View>
-        </Surface>
-
-        {/* Today: the look question as its header, then the chips, then the count line. */}
-        <Surface>
-          <Line width="60%" height={14} />
-          <View style={styles.chips}>
-            {CHIP_WIDTHS.map((w, i) => (
-              <Block key={i} width={w} height={CHIP_HEIGHT} radius={theme.radiusFull} />
-            ))}
-          </View>
-          <Line width="54%" height={10} style={styles.countLine} />
-          {/* The first nodes of the spine. */}
-          {NODE_ROWS.map((w, i) => (
-            <View key={i} style={styles.node}>
-              <Block width={NODE_DOT} height={NODE_DOT} radius={theme.radiusFull} />
-              <Line width={w} height={12} />
-              <View style={styles.headerSpacer} />
-              <Line width={48} height={10} />
+      {/* The tab bar, at the app's place: the rail at regular, the bottom bar on a phone. */}
+      {rail ? (
+        <View
+          testID="home-silhouette-rail"
+          style={[styles.tabRail, { width: rail.width, paddingRight: rail.safeRight, paddingTop: topInset + theme.space2 }]}
+        >
+          {Array.from({ length: TAB_SLOTS }, (_, i) => (
+            <View key={i} style={[styles.railSlot, { height: rail.tabHeight }]}>
+              <Block width={24} height={24} radius={theme.radiusSmall} />
             </View>
           ))}
-        </Surface>
-      </View>
-
-      {/* The tab bar, at the app's place. */}
-      {tabBarHeight != null && (
-        <View style={[styles.tabBar, { height: tabBarHeight }]}>
+        </View>
+      ) : tabBarHeight != null && (
+        <View testID="home-silhouette-bar" style={[styles.tabBar, { height: tabBarHeight }]}>
           {Array.from({ length: TAB_SLOTS }, (_, i) => (
             <Block key={i} width={24} height={24} radius={theme.radiusSmall} />
           ))}
@@ -99,6 +123,23 @@ const styles = StyleSheet.create({
   fill: {
     ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorNeutralLight,
+  },
+  railed: {
+    flexDirection: 'row',
+  },
+  // Groups the header and body, so at regular the rail can stand beside them. On a phone
+  // it is the frame's column, unchanged.
+  scene: {
+    flex: 1,
+  },
+  tabRail: {
+    backgroundColor: theme.colorSurface,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colorBorder,
+    alignItems: 'center',
+  },
+  railSlot: {
+    justifyContent: 'center',
   },
   header: {
     backgroundColor: theme.colorSurface,
