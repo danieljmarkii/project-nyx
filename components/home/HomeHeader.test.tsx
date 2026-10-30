@@ -417,11 +417,14 @@ describe('the header’s row keeps the phone’s inset from the feed’s edge', 
     const style = StyleSheet.flatten((render(<HomeHeader />).toJSON() as { props: { style: unknown } }).props.style as never) as Record<string, number | undefined>;
     return (style.marginHorizontal ?? 0) + (style.paddingHorizontal ?? 0);
   };
+  // The feed's left padding, whichever key Home writes it with.
+  const feedPad = () => {
+    const scroll = StyleSheet.flatten(homeFeedStyles.scroll) as { padding?: number; paddingHorizontal?: number; paddingLeft?: number };
+    return scroll.paddingLeft ?? scroll.paddingHorizontal ?? scroll.padding ?? 0;
+  };
   const feedLeft = () => {
     const bleed = renderHook(() => homeFeedBleed(useCanvas())).result.current;
-    const scroll = StyleSheet.flatten(homeFeedStyles.scroll) as { padding?: number; paddingHorizontal?: number; paddingLeft?: number };
-    const pad = scroll.paddingLeft ?? scroll.paddingHorizontal ?? scroll.padding ?? 0;
-    return ((bleed?.marginHorizontal as number | undefined) ?? 0) + pad;
+    return ((bleed?.marginHorizontal as number | undefined) ?? 0) + feedPad();
   };
   // Header minus feed, both from the scene's content box (the header's origin and the
   // body's, `sceneInset` in from the scene's edge).
@@ -431,7 +434,7 @@ describe('the header’s row keeps the phone’s inset from the feed’s edge', 
   };
 
   it('a phone: the row sits HEADER_PADDING_X in from the window, the feed its own padding', () => {
-    expect(offsetAt(390)).toBe(HEADER_PADDING_X - (StyleSheet.flatten(homeFeedStyles.scroll) as { padding: number }).padding);
+    expect(offsetAt(390)).toBe(HEADER_PADDING_X - feedPad());
   });
 
   it.each([626, 890])('at %ipt, the same offset as the phone’s', (w) => {

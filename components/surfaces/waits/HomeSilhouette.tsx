@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
   headerSpacer: {
     flex: 1,
   },
-  // Home's own scroll padding (`app/(tabs)/index.tsx` → `styles.scroll`).
+  // Home's own scroll padding (`components/home/homeFeedLayout.ts` → `homeFeedStyles.scroll`).
   body: {
     flex: 1,
     padding: theme.space3,
