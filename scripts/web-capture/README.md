@@ -19,7 +19,8 @@ full captures from its check's summary. Reported, never gating: red means the ha
 a shot broke (a screen it could not reach, a Signal lead that moved), and it holds no merge.
 
 Knobs (env): `CAPTURE_SIZES` (`320@1,375x667@1,390@1,466x678@1,626x890@1,890x626@1,390@3.571,320@3.571`;
-`W[xH]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_ONLY`
+`W[xH]@text multiplier`, height 844 when omitted, the multiplier from RN's iOS table: 1.353 is the largest Settings size, 3.571 is AX5), `CAPTURE_SET`
+(`pr`, the default: the shots every PR run takes; `all` adds the every-size sweeps' routes, CUL-2245), `CAPTURE_ONLY`
 (shot names), `CAPTURE_NOW` (the frozen clock), `CAPTURE_SETTLE_MS`, `CAPTURE_FLAGS` and
 `CAPTURE_STORAGE` (app_config rows and device-local state, for building an older commit),
 `CAPTURE_DEBUG` (log every request), `CAPTURE_SIGNALS` (signals.deno.ts's output; capture
@@ -32,6 +33,15 @@ with its findings), `incident-off-juniper` (a photo not read under a no) and `in
 that never landed). The read rows and
 the consent answer are served only to those shots, and the four records sit outside every
 window the other shots read.
+
+**The sweep (`CAPTURE_SET=all`, CUL-2245).** The vet screens, the report, Ask, onboarding and
+the signed-out screens, each in a browser context of its own so nothing it serves reaches the
+default shots' store. The fixture writes no vet record, so the sweep serves one visit with a
+two-page document, one booking and one "I've called", and turns on the flags its routes sit
+behind (`paywall_enabled`, `ask_enabled`, `engines_v3_en14`) for that context only. The
+signed-out shots launch with no stored session and walk the Landing's own doors. The report's
+body is generate-report's HTML in a WebView, neither of which runs here: its shot is the
+screen's frame.
 
 ## What it changes, and what it never touches
 
