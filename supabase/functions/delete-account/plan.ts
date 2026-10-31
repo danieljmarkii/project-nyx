@@ -547,6 +547,10 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
 // What this cannot see, stated: a row written AFTER the recount but before the auth
 // delete (the purge loop's window) is not in the list. That window predates this change.
 //
+// DEPLOY SCOPE. Importing `_shared/pull.ts` puts it in this function's shipping closure,
+// so an edit there now redeploys delete-account too; pull.ts's own header still names
+// three importers. Left unedited here so this fix deploys delete-account alone.
+//
 // Cost: an account above the page ceiling in one table (40 pages less 39 overlap rows:
 // 19,961 at a 500-row page) cannot delete until it moves. Loud, never partial.
 export const OWNED_PATH_PAGE = 500

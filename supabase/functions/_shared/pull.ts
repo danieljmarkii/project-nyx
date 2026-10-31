@@ -13,13 +13,9 @@
 //     as "at least N" (pipeline.ts, `incompletePulls`).
 //   • ask — an incomplete read answers nothing: the designed deflection, with the engine's
 //     safety lead still attached (index.ts).
-//   • delete-account — not a fetchAll caller: it imports `rowsOrThrow` and
-//     `isRangeNotSatisfiable` for its own walk, which runs to the end of the table instead
-//     of stopping at the count, because its random-UUID order lets an insert land ahead of
-//     the cursor (plan.ts readAllOwnedPaths, CUL-2312). Its incomplete read throws.
 //
 // DEPLOY SCOPE. A `_shared/` file is inlined only into the functions that import it
-// (scripts/edge-deploy/fingerprint.ts), so an edit here redeploys exactly those four.
+// (scripts/edge-deploy/fingerprint.ts), so an edit here redeploys exactly those three.
 //
 // Pure of I/O: the caller hands `fetchAll` a page builder, so the loop is tested offline
 // (generate-report/index.test.ts drives it against a server that caps).
