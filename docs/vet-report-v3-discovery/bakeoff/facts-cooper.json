@@ -1,0 +1,504 @@
+{
+  "fixture": "cooper-trial-dog",
+  "fact_table_version": "bakeoff-1",
+  "source": "render/_data/cooper-trial-dog.snapshot.json; record lines from docs/culprit-vet-report-v3-mockups.html §03a (sheet 1, and sheet 2's dated off-list table)",
+  "report_date": "2026-07-02",
+  "year": 2026,
+  "timezone": "America/New_York",
+  "pet": {
+    "name": "Cooper",
+    "species": "dog",
+    "sex": "male",
+    "pronoun": "he"
+  },
+  "clinical_question": "Is the diet trial interpretable, and what has the itching done during it?",
+  "safety_live": false,
+  "intake_not_directly_observed": false,
+  "forbidden_names": [
+    "Dr. A. Chen",
+    "A. Chen",
+    "Chen",
+    "Jordan Reyes",
+    "Jordan"
+  ],
+  "lexicon": {
+    "foods": {
+      "Royal Canin Hydrolyzed Protein HP": [
+        "Royal Canin Hydrolyzed Protein HP Loaf",
+        "Royal Canin Hydrolyzed Protein HP",
+        "Royal Canin Hydrolyzed Protein",
+        "Royal Canin HP",
+        "Royal Canin",
+        "HP diet",
+        "HP"
+      ],
+      "Royal Canin Hydrolyzed Treats": [
+        "Royal Canin Hydrolyzed Treats",
+        "hydrolysed treats",
+        "hydrolyzed treats"
+      ],
+      "Pedigree Dentastix": [
+        "Pedigree Dentastix",
+        "Dentastix"
+      ],
+      "Purina Pro Plan Sensitive Skin": [
+        "Purina Pro Plan Sensitive Skin",
+        "Pro Plan Sensitive Skin",
+        "Pro Plan",
+        "Purina"
+      ],
+      "Home roast chicken": [
+        "home roast chicken",
+        "roast chicken"
+      ]
+    },
+    "drugs": {
+      "Apoquel": [
+        "Apoquel",
+        "oclacitinib"
+      ],
+      "NexGard": [
+        "NexGard",
+        "afoxolaner"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "id": "P",
+      "line": "masthead",
+      "role": "header",
+      "kind": "signalment",
+      "text": "Dog · Labrador Retriever · male, neutered · 6 y, born Mar 14, 2020 · 31.8 kg on Jun 29, home scale",
+      "fields": {
+        "species": "dog",
+        "breed": "Labrador Retriever",
+        "sex": "male",
+        "neuter": "neutered",
+        "age_years": 6,
+        "dob": "2020-03-14",
+        "latest_weight_kg": 31.8,
+        "latest_weight_date": "2026-06-29",
+        "weight_source": "home scale"
+      }
+    },
+    {
+      "id": "W",
+      "line": "masthead",
+      "role": "header",
+      "kind": "window",
+      "text": "May 18 to Jul 2, 2026 since the last visit · 43 of 46 days logged",
+      "fields": {
+        "start": "2026-05-18",
+        "end": "2026-07-02",
+        "basis": "since_last_visit",
+        "window_days": 46,
+        "logged_days": 43
+      }
+    },
+    {
+      "id": "L1",
+      "line": 1,
+      "role": "lead",
+      "kind": "trial_exposure",
+      "text": "Chicken on 29 of 154 meals and treats: Dentastix (label lists chicken) daily from Jun 8, on the owner-entered allowed list; at least 4 off-list, the last Jun 27.",
+      "fields": {
+        "protein": "chicken",
+        "feedings_with_protein": 29,
+        "total_feedings": 154,
+        "from_allowed_item": 25,
+        "allowed_item": "Pedigree Dentastix",
+        "allowed_from": "2026-06-08",
+        "allowed_list_source": "owner",
+        "off_list_at_least": 4,
+        "off_list_is_floor": true,
+        "last_off_list": "2026-06-27",
+        "label_read": "photo"
+      },
+      "required": true,
+      "must_say": [
+        [
+          "chicken"
+        ],
+        [
+          "at least 4",
+          "at least four"
+        ]
+      ],
+      "hazards": [
+        "H1",
+        "H5"
+      ],
+      "note": "The trial-compromise fact. The off-list count is a floor; the 25 Dentastix feedings are on the owner's allowed list but carry chicken."
+    },
+    {
+      "id": "L2",
+      "line": 2,
+      "role": "record",
+      "kind": "trial",
+      "text": "Owner-entered: Royal Canin HP, hydrolysed soy, day 46 of 56 since May 18, directed by Dr. A. Chen. No chicken-free day recorded since Jun 8.",
+      "fields": {
+        "diet": "Royal Canin Hydrolyzed Protein HP",
+        "protein": "soy",
+        "hydrolysed": true,
+        "start": "2026-05-18",
+        "day": 46,
+        "target_days": 56,
+        "status": "active",
+        "source": "owner-entered",
+        "may_state_record_clean": false,
+        "chicken_free_day_since": null
+      },
+      "required": true,
+      "must_say": [
+        [
+          "day 46 of 56",
+          "day 46 of a 56"
+        ]
+      ],
+      "hazards": [
+        "H1"
+      ],
+      "note": "The vet's name is owner-entered; never name a person in the summary."
+    },
+    {
+      "id": "X1",
+      "line": "chart",
+      "role": "chart",
+      "kind": "weekly_itch_twin",
+      "text": "Itching by week from May 18: 3 (4 d logged), 5, 3, 1, 3, 1, 0 (4 d so far). Filled tick: entries that day; hollow: nothing logged. Off-list Jun 2, 14, 21, 27; NexGard Jun 5, Jul 2.",
+      "fields": {
+        "weekly_itch_entries": [
+          3,
+          5,
+          3,
+          1,
+          3,
+          1,
+          0
+        ],
+        "week_starts": [
+          "2026-05-18",
+          "2026-05-25",
+          "2026-06-01",
+          "2026-06-08",
+          "2026-06-15",
+          "2026-06-22",
+          "2026-06-29"
+        ],
+        "logged_days_by_week": [
+          4,
+          7,
+          7,
+          7,
+          7,
+          7,
+          4
+        ],
+        "days_in_week": [
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          4
+        ]
+      },
+      "must_say": [
+        [
+          "logged"
+        ],
+        [
+          "not a test of the diet"
+        ]
+      ],
+      "hazards": [
+        "H2",
+        "H4",
+        "H5"
+      ],
+      "note": "If any weekly count is used, the same sentence must carry coverage and the attribution limit."
+    },
+    {
+      "id": "L3",
+      "line": 3,
+      "role": "record",
+      "kind": "primary_sign",
+      "text": "Itching: 16 entries on 16 of 43 logged days, over at least 35 days (chronicity flag). Not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+      "fields": {
+        "sign": "itching",
+        "entries": 16,
+        "sign_days": 16,
+        "logged_days": 43,
+        "span_days_at_least": 35,
+        "first_logged": "2026-05-21",
+        "last": "2026-06-25",
+        "chronicity_flag": true,
+        "overlaps": [
+          "Apoquel (doses not logged)",
+          "NexGard from 2026-06-05",
+          "Dentastix from 2026-06-08"
+        ]
+      },
+      "required": true,
+      "must_say": [
+        [
+          "16 of 43 logged days",
+          "16 of the 43 logged days",
+          "16 of 43 days logged"
+        ],
+        [
+          "not a test of the diet"
+        ]
+      ],
+      "hazards": [
+        "H2",
+        "H5"
+      ]
+    },
+    {
+      "id": "L4",
+      "line": 4,
+      "role": "record",
+      "kind": "medication_regimen",
+      "text": "Apoquel 16 mg once daily, prescribed Apr 30: doses not logged in Culprit.",
+      "fields": {
+        "drug": "Apoquel",
+        "strength": "16 mg",
+        "frequency": "once daily",
+        "started": "2026-04-30",
+        "doses_logged": 0,
+        "adherence": "not_tracked"
+      },
+      "required": true,
+      "must_say": [
+        [
+          "doses not logged",
+          "no doses logged",
+          "doses were not logged",
+          "no dose logged"
+        ]
+      ],
+      "hazards": [
+        "H1",
+        "H5"
+      ],
+      "numbers": [
+        0
+      ]
+    },
+    {
+      "id": "L5",
+      "line": 5,
+      "role": "record",
+      "kind": "medication_doses",
+      "text": "NexGard 68 mg chew, Jun 5 and Jul 2: flavour protein unknown, not counted off-list.",
+      "fields": {
+        "drug": "NexGard",
+        "strength": "68 mg",
+        "route": "chew",
+        "doses": 2,
+        "dose_dates": [
+          "2026-06-05",
+          "2026-07-02"
+        ],
+        "flavour_protein": null,
+        "counted_off_list": false
+      },
+      "must_say": [
+        [
+          "protein unknown",
+          "protein not recorded",
+          "protein is unknown"
+        ]
+      ],
+      "hazards": [
+        "H1"
+      ],
+      "numbers": [
+        2
+      ]
+    },
+    {
+      "id": "L6",
+      "line": 6,
+      "role": "record",
+      "kind": "owner_words",
+      "text": "Owner's words, Jun 18: “flare after the chicken on Sunday”, Sunday being Jun 14. Not tested: chicken was fed daily from Jun 8; before then (May 18 to Jun 7, trial weeks 1 to 3) chicken was logged only on Jun 2, so any comparison is confounded by the trial's own start.",
+      "fields": {
+        "note_date": "2026-06-18",
+        "quote": "flare after the chicken on Sunday",
+        "refers_to": "2026-06-14",
+        "association_tested": false,
+        "reason": "chicken daily from 2026-06-08; before then logged only 2026-06-02; confounded by the trial's start"
+      },
+      "quotes": [
+        "flare after the chicken on Sunday"
+      ],
+      "must_say": [
+        [
+          "not tested"
+        ]
+      ],
+      "hazards": [
+        "H2",
+        "H6"
+      ],
+      "note": "Owner free text, printed on sheet 1 by code. If used, quote it verbatim and keep 'not tested' in the same sentence."
+    },
+    {
+      "id": "O1",
+      "line": "sheet 2",
+      "role": "record",
+      "kind": "off_list_dated",
+      "text": "Off-list feedings, dated: Jun 2 Pedigree Dentastix (lists cereal, chicken), before it joined the allowed list on Jun 8; Jun 14 home roast chicken; Jun 21 Purina Pro Plan Sensitive Skin (lists salmon, chicken); Jun 27 home roast chicken.",
+      "fields": {
+        "items": [
+          {
+            "date": "2026-06-02",
+            "food": "Pedigree Dentastix",
+            "proteins": [
+              "cereal",
+              "chicken"
+            ]
+          },
+          {
+            "date": "2026-06-14",
+            "food": "Home roast chicken",
+            "proteins": [
+              "chicken"
+            ]
+          },
+          {
+            "date": "2026-06-21",
+            "food": "Purina Pro Plan Sensitive Skin",
+            "proteins": [
+              "salmon",
+              "chicken"
+            ]
+          },
+          {
+            "date": "2026-06-27",
+            "food": "Home roast chicken",
+            "proteins": [
+              "chicken"
+            ]
+          }
+        ],
+        "is_floor": true
+      },
+      "must_say": [
+        [
+          "at least"
+        ]
+      ],
+      "hazards": [
+        "H1"
+      ],
+      "numbers": [
+        2,
+        4
+      ]
+    },
+    {
+      "id": "L7",
+      "line": 7,
+      "role": "record",
+      "kind": "other_signs",
+      "text": "Also logged: loose stool Jun 22; 1 meal not finished Jun 24.",
+      "fields": {
+        "loose_stool": [
+          "2026-06-22"
+        ],
+        "meals_not_finished": 1,
+        "meal_not_finished_date": "2026-06-24",
+        "rating": "ate most"
+      }
+    },
+    {
+      "id": "L8",
+      "line": 8,
+      "role": "record",
+      "kind": "weight",
+      "text": "Weight, home scale: −0.6 kg, −1.9%, 32.4 kg May 18 to 31.8 kg Jun 29, 3 readings.",
+      "fields": {
+        "delta_kg": -0.6,
+        "delta_pct": -1.9,
+        "first_kg": 32.4,
+        "first_date": "2026-05-18",
+        "last_kg": 31.8,
+        "last_date": "2026-06-29",
+        "readings": 3,
+        "source": "home scale",
+        "body_condition": "not assessed"
+      },
+      "must_say": [
+        [
+          "home scale",
+          "home-scale"
+        ]
+      ],
+      "hazards": [
+        "H4"
+      ]
+    },
+    {
+      "id": "R1",
+      "line": "appendix B",
+      "role": "record",
+      "kind": "recorded_condition",
+      "text": "Recorded condition, owner-entered: chronic pruritus since Mar 2, 2026 (owner-recorded history, not a finding of this record).",
+      "fields": {
+        "condition": "chronic pruritus",
+        "since": "2026-03-02",
+        "source": "owner-entered"
+      },
+      "must_say": [
+        [
+          "owner"
+        ]
+      ]
+    },
+    {
+      "id": "U1",
+      "line": "unknowns",
+      "role": "unknown",
+      "kind": "unknown",
+      "text": "Unknown: whether Apoquel was given."
+    },
+    {
+      "id": "U2",
+      "line": "unknowns",
+      "role": "unknown",
+      "kind": "unknown",
+      "text": "Unknown: itch severity or body site."
+    },
+    {
+      "id": "U3",
+      "line": "unknowns",
+      "role": "unknown",
+      "kind": "unknown",
+      "text": "Unknown: who approved the Dentastix."
+    }
+  ],
+  "conditional": [
+    {
+      "when": "mentions_any",
+      "terms": [
+        "Pro Plan",
+        "roast chicken",
+        "salmon",
+        "cereal"
+      ],
+      "cite": "O1",
+      "why": "naming a dated off-list item needs the dated list, a floor"
+    }
+  ],
+  "excluded_from_model": [
+    "owner's questions (printed in their own block)",
+    "owner notes other than the one printed on sheet 1 (\"kids fed him at the table\", \"ran out of the HP, one breakfast\")",
+    "owner and vet names (forbidden_names)",
+    "photos"
+  ]
+}
