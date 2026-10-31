@@ -1,6 +1,7 @@
 # Vet report round 3, clean slate: a report in the house language, AI reopened, built for clinic AI, and the flow after the button (CUL-2275)
 
 **Date:** 2026-10-30
+**One thing:** P2 L1 — Reversibility: the AI lead ships as a flagged beta (a two-way door); turning it on for every owner is the one-way door the GA re-run guards · check: pending
 
 DISCOVERY session on [CUL-2275](https://linear.app/projectnyx/issue/CUL-2275), filed this session at the PM's direction (the exploration started from a chat prompt). No app or Edge Function code. Shipped via #1361, which names only its sub-issue [CUL-2277](https://linear.app/projectnyx/issue/CUL-2277) so the decision briefs stay open on the parent. Branch `claude/serene-ramanujan-q6iqnv`.
 
@@ -57,7 +58,7 @@ R-1 Principle 6, better than the rule · R-2 page 1 direction · R-3 who writes 
 - No rival app was installed and no rival PDF generated ([CUL-1777](https://linear.app/projectnyx/issue/CUL-1777) is the hands-on pass).
 - The fixes after adversarial pass 2 were not reviewed again (the cap).
 
-### Next Session Kickoff
+### Next Session Kickoff (round 3, superseded by the final kickoff at the end)
 
 **Recommended first prompt:**
 > Rule [CUL-2275](https://linear.app/projectnyx/issue/CUL-2275)'s briefs R-1 to R-11 from the round 3 mock, then set up a "Vet report v2" project with the run order the rulings imply. Read `docs/culprit-vet-report-v3-mockups.html` §11 first.
@@ -107,3 +108,21 @@ R-1 Principle 6, better than the rule · R-2 page 1 direction · R-3 who writes 
 **Open on CUL-2275:** R-3, R-5b, R-8, R-12; R-9 to R-11 are persona conflicts.
 
 **R-3 ruled (PM, 2026-10-30):** "Go with the AI lead in beta." Option 1 as drafted: an AI lead of at most 3 sentences above the code lines, in a flagged beta, larger model only, behind the verifier and the checker, with the safety band code-written above it. Gate before GA: re-run the bake-off at 10 drafts per pet and on real records. The ruling unseats spec §5's "no generative phrasing" (2026-07-02) for the lead only, and round 2's B1 recommendation.
+
+## Close (2026-10-31)
+
+Wrapped at the PM's word: "I like where we're landing… I'll set up a new session to convene the product team to review the requirements and mocks… refine ahead of implementation." No v2 requirements spec exists yet; the rulings live on CUL-2275 and the mock (version 3). MERGE CHECK: CLEAN against main 36be364. STATUS.md untouched: no track started or ended (the Vet report v2 project is set up after the remaining rulings).
+
+### Next Session Kickoff
+
+**Recommended first prompt:**
+> Convene the product team to review the vet report v2 round 4 mock and its rulings before implementation ([CUL-2275](https://linear.app/projectnyx/issue/CUL-2275)). Read the mock `docs/culprit-vet-report-v3-mockups.html` (§00 ledger, §11 briefs), `docs/vet-report-v3-discovery/README.md` and `docs/vet-report-v3-discovery/bakeoff/RESULTS.md` first. Run `/design-critique` at full depth on the mock, get me to rule R-5b, R-8, R-12 and the persona conflicts R-9 to R-11, then draft `docs/nyx-vet-report-v2-requirements.md` (the Tier-2 edits to spec §5 and Principle 6 included) and the Vet report v2 project's run order.
+
+**Alternate prompts:**
+- "Build [CUL-2276](https://linear.app/projectnyx/issue/CUL-2276): today's vet report text layer misleads a clinic AI on a refused trial. Server only, `supabase/functions/generate-report/render.ts`."
+- "I exported a vet report PDF from my phone: run the [CUL-1771](https://linear.app/projectnyx/issue/CUL-1771) probe (pdffonts plus pypdf on the flag lines) and tell me whether clinic tools lose the digits."
+
+**Parallel / efficiencies:**
+- CUL-2276 (render.ts text order) runs alongside the review session: disjoint files, and its fixes carry into v2 regardless of the design.
+- One phone PDF from the PM settles CUL-1771 and the print-margin fix (CUL-1864) together.
+- The review session is gated on nothing; the requirements draft is gated on R-5b, R-8 and R-12.
