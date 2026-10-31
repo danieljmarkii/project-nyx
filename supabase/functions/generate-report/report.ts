@@ -2964,31 +2964,47 @@ export interface RecordEdge {
   /** Report date minus the window end, in local days; 0 on every window that runs to the report date. */
   windowEndDaysBeforeReport: number
   /**
-   * Entries of any kind on local days after the window end, INCLUDING any dated after the report:
-   * the cherry-pick guard counts those too, and the two sentences must agree on one population.
+   * Entries of any kind on local days after the window end, through the report date. Rows dated
+   * after the report are kept apart (`futureDated*`, below): one such row may not turn "nothing
+   * logged after Jun 12" into "1 entry after it" (adversarial pass 2, R3).
    */
   afterWindowEntries: number
   /** Of those, the symptom entries (`REPORT_SYMPTOM_TYPES`). A meal logged as refused is NOT one. */
   afterWindowSymptomEntries: number
   /**
-   * Of those, the rated meals not finished (any rating but 'all'), and of THOSE the ones refused.
-   * Adversarial pass 1: a cat eating in a hand-picked window and refusing 42 meals after it read
-   * "42 entries, none of them a symptom entry" beside "20 of 20 fully eaten". Intake is not
-   * preference, and a refusal is the accusing number; it is counted wherever the symptom count is.
+   * Of those, the meals; the rated ones not finished (any rating but 'all'); of THOSE the refused;
+   * and the meals with no rating. Adversarial pass 1: a cat eating in a hand-picked window and
+   * refusing 42 meals after it read "42 entries, none of them a symptom entry" beside "20 of 20
+   * fully eaten". Pass 2: without the unrated count, "1 not finished" of 11 meals read as 10 eaten.
+   * Intake is not preference; the refusal is the accusing number, counted wherever symptoms are.
    */
+  afterWindowMeals: number
   afterWindowMealsNotFinished: number
   afterWindowMealsRefused: number
-  /** The newest local day among the after-window entries, report cap not applied; null when none. */
+  afterWindowMealsUnrated: number
+  /** Doses after the window recorded missed, refused or partly given (dose_adherence). */
+  afterWindowDosesNotGiven: number
+  /** The newest local day among the after-window entries through the report date; null when none. */
   afterWindowLastDate: string | null
-  /** Entries dated after the report date (any window). Never the last entry; always disclosed. */
-  futureDatedEntries: number
   /**
-   * Daily looks (CUL-891 keeps them out of every count above). The newest local day with a look on
-   * or before the report date, and the distinct look days after the window end through it: a look
-   * answered after the window is an owner observation, so "no entry of any kind" may not hide it.
+   * Entries dated after the report date (any window), their symptom entries and the latest such day.
+   * Never the last entry. The symptom count joins `afterWindowSymptomEntries` to equal the
+   * cherry-pick guard's "after it" count, which has no report cap.
+   */
+  futureDatedEntries: number
+  futureDatedSymptomEntries: number
+  futureDatedLastDate: string | null
+  /**
+   * Daily looks (CUL-891 keeps them out of every count above), read from the stored look rows by
+   * their stored `local_day` (T-19). The newest look day on or before the report date; the distinct
+   * look days after the window end; and of those, the days where the owner MARKED something
+   * ('observed'), or whose answer could not be read. Pass 2: eleven days of "hiding, won't touch food"
+   * after the window rendered byte-identical to eleven "nothing unusual" days.
    */
   lastLookDate: string | null
   afterWindowLookDays: number
+  afterWindowLookDaysMarked: number
+  afterWindowLookDaysUnread: number
 }
 
 /**
@@ -4088,9 +4104,17 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
  * no upper bound, so every entry after a window that closes early is in hand. The report day is
  * derived exactly as `resolveScope` derives "today", so the custom window's clamp and this agree.
  */
+/** A look, as the record edge reads it: its stored day and its outcome (null when unread). */
+export interface RecordEdgeLook {
+  localDay: string | null
+  occurredAt: string
+  outcome: string | null
+}
+
 export function recordEdgeOf(
   events: ReadonlyArray<Pick<ReportEventInput, 'type' | 'occurredAt' | 'meal'>>,
-  looks: ReadonlyArray<Pick<ReportEventInput, 'occurredAt'>>,
+  looks: ReadonlyArray<RecordEdgeLook>,
+  doses: ReadonlyArray<Pick<ReportDoseInput, 'occurredAt' | 'adherence'>>,
   windowEndDayNum: number,
   nowIso: string,
   tz: string | null,
@@ -4100,50 +4124,81 @@ export function recordEdgeOf(
   const reportDayNum = dayNumber(reportKey) ?? Math.round(nowMs / MS_PER_DAY)
   let lastDn: number | null = null
   let afterLastDn: number | null = null
+  let futureLastDn: number | null = null
   let afterWindowEntries = 0
   let afterWindowSymptomEntries = 0
+  let afterWindowMeals = 0
   let afterWindowMealsNotFinished = 0
   let afterWindowMealsRefused = 0
+  let afterWindowMealsUnrated = 0
   let futureDatedEntries = 0
+  let futureDatedSymptomEntries = 0
   for (const e of events) {
     const dn = eventDayNumber(e.occurredAt, tz)
     if (dn === null) continue
-    // A row dated after the report is counted after the window (so this agrees with the cherry-pick
-    // guard) and disclosed, but is never the LAST ENTRY: it may not shorten the stated silence.
-    if (dn > reportDayNum) futureDatedEntries++
-    else if (lastDn === null || dn > lastDn) lastDn = dn
-    if (dn > windowEndDayNum) {
-      afterWindowEntries++
-      if (afterLastDn === null || dn > afterLastDn) afterLastDn = dn
-      if (REPORT_SYMPTOM_SET.has(e.type)) afterWindowSymptomEntries++
-      const rating = e.meal?.intakeRating ?? null
-      if (rating !== null && rating !== 'all') {
+    // A row dated after the report is disclosed on its own, never the last entry and never "after
+    // the window": it may neither shorten the stated silence nor stand in for logging that did not happen.
+    if (dn > reportDayNum) {
+      futureDatedEntries++
+      if (REPORT_SYMPTOM_SET.has(e.type)) futureDatedSymptomEntries++
+      if (futureLastDn === null || dn > futureLastDn) futureLastDn = dn
+      continue
+    }
+    if (lastDn === null || dn > lastDn) lastDn = dn
+    if (dn <= windowEndDayNum) continue
+    afterWindowEntries++
+    if (afterLastDn === null || dn > afterLastDn) afterLastDn = dn
+    if (REPORT_SYMPTOM_SET.has(e.type)) afterWindowSymptomEntries++
+    if (e.meal) {
+      afterWindowMeals++
+      const rating = e.meal.intakeRating
+      if (rating === null) afterWindowMealsUnrated++
+      else if (rating !== 'all') {
         afterWindowMealsNotFinished++
         if (rating === 'refused') afterWindowMealsRefused++
       }
     }
   }
+  let afterWindowDosesNotGiven = 0
+  for (const d of doses) {
+    const dn = eventDayNumber(d.occurredAt, tz)
+    if (dn === null || dn <= windowEndDayNum || dn > reportDayNum) continue
+    if (d.adherence === 'missed' || d.adherence === 'refused' || d.adherence === 'partial') afterWindowDosesNotGiven++
+  }
   let lastLookDn: number | null = null
-  const afterWindowLookDayNums = new Set<number>()
+  const lookDays = new Map<number, { marked: boolean; unread: boolean }>()
   for (const l of looks) {
-    const dn = eventDayNumber(l.occurredAt, tz)
+    const dn = l.localDay !== null ? dayNumber(l.localDay) : eventDayNumber(l.occurredAt, tz)
     if (dn === null || dn > reportDayNum) continue
     if (lastLookDn === null || dn > lastLookDn) lastLookDn = dn
-    if (dn > windowEndDayNum) afterWindowLookDayNums.add(dn)
+    if (dn <= windowEndDayNum) continue
+    const day = lookDays.get(dn) ?? { marked: false, unread: false }
+    if (l.outcome === 'observed') day.marked = true
+    else if (l.outcome !== 'nothing_unusual') day.unread = true
+    lookDays.set(dn, day)
   }
+  const key = (dn: number | null): string | null => (dn === null ? null : dayKeyFromNumber(dn))
   return {
     reportDate: dayKeyFromNumber(reportDayNum),
-    lastEntryDate: lastDn === null ? null : dayKeyFromNumber(lastDn),
+    lastEntryDate: key(lastDn),
     lastEntryDaysBeforeReport: lastDn === null ? null : reportDayNum - lastDn,
     windowEndDaysBeforeReport: Math.max(0, reportDayNum - windowEndDayNum),
     afterWindowEntries,
     afterWindowSymptomEntries,
+    afterWindowMeals,
     afterWindowMealsNotFinished,
     afterWindowMealsRefused,
-    afterWindowLastDate: afterLastDn === null ? null : dayKeyFromNumber(afterLastDn),
+    afterWindowMealsUnrated,
+    afterWindowDosesNotGiven,
+    afterWindowLastDate: key(afterLastDn),
     futureDatedEntries,
-    lastLookDate: lastLookDn === null ? null : dayKeyFromNumber(lastLookDn),
-    afterWindowLookDays: afterWindowLookDayNums.size,
+    futureDatedSymptomEntries,
+    futureDatedLastDate: key(futureLastDn),
+    lastLookDate: key(lastLookDn),
+    afterWindowLookDays: lookDays.size,
+    afterWindowLookDaysMarked: [...lookDays.values()].filter((d) => d.marked).length,
+    // A day marked by one look is marked, whatever its other looks say; only an unmarked day is unread.
+    afterWindowLookDaysUnread: [...lookDays.values()].filter((d) => !d.marked && d.unread).length,
   }
 }
 
@@ -6379,7 +6434,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     lastLoggedDate: lastLoggedDayNum === null ? null : dayKeyFromNumber(lastLoggedDayNum),
     recordEdge: recordEdgeOf(
       dedupedAll,
-      input.events.filter((e) => e.type === LOOK_EVENT_TYPE),
+      // The stored look rows when the caller pulled them (their outcome is what a page must not
+      // flatten); otherwise the look events, whose answers this read cannot see.
+      input.lookRows !== undefined
+        ? input.lookRows.map((l) => ({ localDay: l.localDay, occurredAt: l.occurredAt, outcome: l.outcome }))
+        : input.events.filter((e) => e.type === LOOK_EVENT_TYPE).map((e) => ({ localDay: null, occurredAt: e.occurredAt, outcome: null })),
+      input.doses,
       endDayNum,
       input.now,
       tz,

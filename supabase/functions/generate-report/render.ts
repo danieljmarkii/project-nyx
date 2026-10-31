@@ -70,6 +70,7 @@ import type {
   ScopeInfo,
   Signalment,
   AtAGlance,
+  RecordEdge,
   IncidentPhoto,
   SymptomLogPhenotype,
   ProteinSetView,
@@ -1857,7 +1858,7 @@ function joinList(items: string[]): string {
  */
 function lastEntryLine(snap: ReportSnapshot): string {
   const e = snap.atAGlance.recordEdge
-  if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) return 'No entry in the record read'
+  if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) return `No entry in the record read${futureNote(e)}`
   const d = e.lastEntryDaysBeforeReport
   const when = d === 0 ? 'the day of this report' : `${num(d)}&nbsp;day${d === 1 ? '' : 's'} before this report`
   // A daily look is not an entry in any count (CUL-891), but it is the owner writing something down:
@@ -1866,7 +1867,16 @@ function lastEntryLine(snap: ReportSnapshot): string {
     e.lastLookDate !== null && e.lastLookDate > e.lastEntryDate
       ? `; last daily look ${h(fmtDayScopedTo(e.lastLookDate, snap.scope.endDate))}`
       : ''
-  return `Last entry ${h(fmtDayScopedTo(e.lastEntryDate, snap.scope.endDate))}, ${when}${look}`
+  return `Last entry ${h(fmtDayScopedTo(e.lastEntryDate, snap.scope.endDate))}, ${when}${look}${futureNote(e)}`
+}
+
+/**
+ * Rows dated after the report date, on every report (adversarial pass 2, R3): the window can run to
+ * today and still not reach them, so without this a vomit dated two days ahead printed nowhere.
+ */
+function futureNote(e: RecordEdge): string {
+  if (e.futureDatedEntries === 0) return ''
+  return `; <b>${num(e.futureDatedEntries)} dated after this report</b>`
 }
 
 /** "Jun 19", or "Jan 3, 2027" when the day falls in another year than the range box states. */
@@ -1896,43 +1906,66 @@ function recordEdgeDisclosure(snap: ReportSnapshot): string {
   const lead = `<b>Window ends before this report.</b> It closes ${h(fmtDayScopedTo(end, e.reportDate))}, ${dayCount(
     e.windowEndDaysBeforeReport,
   )} before the report date.`
-  const looks =
-    e.afterWindowLookDays > 0
-      ? ` Daily looks were answered on ${dayCount(e.afterWindowLookDays)} after ${h(fmtDay(end))}.`
-      : ''
+  const notRead = ` Nothing after ${h(fmtDay(end))} is read on this report: no count or flag above includes it.`
+  const parts: string[] = [lead]
   if (e.afterWindowEntries === 0) {
     if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) {
-      return cherry(`${lead} Nothing is logged in the record read for this report.${looks}`)
+      parts.push(' Nothing is logged in the record read for this report.')
+    } else {
+      const what = e.lastLookDate !== null && e.lastLookDate > e.lastEntryDate ? 'no meal, symptom or other entry' : 'no entry of any kind'
+      parts.push(
+        ` Nothing logged after ${h(fmtDayScopedTo(e.lastEntryDate, end))}: ${what} in the ${dayCount(
+          e.lastEntryDaysBeforeReport,
+        )} before this report.`,
+      )
     }
-    const what = e.lastLookDate !== null && e.lastLookDate > e.lastEntryDate ? 'no meal, symptom or other entry' : 'no entry of any kind'
-    return cherry(
-      `${lead} Nothing logged after ${h(fmtDayScopedTo(e.lastEntryDate, end))}: ${what} in the ${dayCount(
-        e.lastEntryDaysBeforeReport,
-      )} before this report.${looks}${looks ? ' They are not read on this report.' : ''}`,
+  } else {
+    const through = e.afterWindowLastDate === null ? '' : `, through ${h(fmtDayScopedTo(e.afterWindowLastDate, end))}`
+    parts.push(
+      ` ${num(e.afterWindowEntries)} entr${e.afterWindowEntries === 1 ? 'y was' : 'ies were'} logged after it${through}.`,
+    )
+    // INTAKE FIRST, in bold, over its whole denominator (adversarial passes 1 and 2): a refused meal
+    // is not a symptom entry, and an unrated meal is not an eaten one.
+    if (e.afterWindowMeals > 0) {
+      const short =
+        e.afterWindowMealsNotFinished > 0
+          ? `<b>${num(e.afterWindowMealsNotFinished)} not finished${
+              e.afterWindowMealsRefused > 0 ? `, ${num(e.afterWindowMealsRefused)} of them refused` : ''
+            }</b>`
+          : 'none rated short of finished'
+      const unrated = e.afterWindowMealsUnrated > 0 ? `; ${num(e.afterWindowMealsUnrated)} with no intake rating` : ''
+      parts.push(` Of ${num(e.afterWindowMeals)} meal${e.afterWindowMeals === 1 ? '' : 's'}: ${short}${unrated}.`)
+    }
+    if (e.afterWindowDosesNotGiven > 0) {
+      parts.push(
+        ` <b>${num(e.afterWindowDosesNotGiven)} dose${e.afterWindowDosesNotGiven === 1 ? ' was' : 's were'} missed, refused or partly given.</b>`,
+      )
+    }
+    parts.push(
+      e.afterWindowSymptomEntries === 0
+        ? ' None is a symptom entry.'
+        : ` <b>${num(e.afterWindowSymptomEntries)} ${e.afterWindowSymptomEntries === 1 ? 'is a symptom entry' : 'are symptom entries'}.</b>`,
     )
   }
-  const through = e.afterWindowLastDate === null ? '' : `, through ${h(fmtDayScopedTo(e.afterWindowLastDate, end))}`
-  const future =
-    e.futureDatedEntries > 0
-      ? ` (${num(e.futureDatedEntries)} dated after the report date)`
-      : ''
-  // INTAKE FIRST, and in bold (adversarial pass 1, finding 1): a refused meal is not a symptom entry,
-  // so the symptom count alone made a three-week hunger strike read as "none of them a symptom entry".
-  const intake =
-    e.afterWindowMealsNotFinished > 0
-      ? ` <b>${num(e.afterWindowMealsNotFinished)} ${e.afterWindowMealsNotFinished === 1 ? 'is a meal' : 'are meals'} not finished${
-          e.afterWindowMealsRefused > 0 ? `, ${num(e.afterWindowMealsRefused)} of them refused` : ''
-        }.</b>`
-      : ''
-  const symptoms =
-    e.afterWindowSymptomEntries === 0
-      ? ' None is a symptom entry.'
-      : ` <b>${num(e.afterWindowSymptomEntries)} ${e.afterWindowSymptomEntries === 1 ? 'is a symptom entry' : 'are symptom entries'}.</b>`
-  return cherry(
-    `${lead} ${num(e.afterWindowEntries)} entr${e.afterWindowEntries === 1 ? 'y was' : 'ies were'} logged after it${through}${future}.${intake}${symptoms}${looks} Nothing after ${h(
-      fmtDay(end),
-    )} is read on this report: no count or flag above includes it.`,
-  )
+  if (e.afterWindowLookDays > 0) {
+    // The answers, not just the days (pass 2, R1): "answered on 11 days" over eleven days of "hiding,
+    // won't touch food" read as an owner who watched and saw nothing.
+    const marked =
+      e.afterWindowLookDaysMarked > 0
+        ? ` <b>On ${dayCount(e.afterWindowLookDaysMarked)} the owner marked something.</b>`
+        : ''
+    const unread = e.afterWindowLookDaysUnread > 0 ? ` On ${dayCount(e.afterWindowLookDaysUnread)} the answer could not be read.` : ''
+    parts.push(` Daily looks were answered on ${dayCount(e.afterWindowLookDays)} after ${h(fmtDay(end))}.${marked}${unread}`)
+  }
+  if (e.futureDatedEntries > 0) {
+    parts.push(
+      ` <b>${num(e.futureDatedEntries)} entr${e.futureDatedEntries === 1 ? 'y is' : 'ies are'} dated after the report date${
+        e.futureDatedLastDate === null ? '' : ` (latest ${h(fmtDayScopedTo(e.futureDatedLastDate, end))})`
+      }${e.futureDatedSymptomEntries > 0 ? `, ${num(e.futureDatedSymptomEntries)} of them ${e.futureDatedSymptomEntries === 1 ? 'a symptom entry' : 'symptom entries'}` : ''}.</b>`,
+    )
+  }
+  if (e.afterWindowEntries > 0 || e.afterWindowLookDays > 0 || e.futureDatedEntries > 0) parts.push(notRead)
+  return cherry(parts.join(''))
 }
 
 /** "1 day", "13 days" — the number in the report's numeral span. */
