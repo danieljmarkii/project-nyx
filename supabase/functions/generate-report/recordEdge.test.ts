@@ -46,6 +46,7 @@ Deno.test('CUL-2283 — Mira, window Jun 1 to 19, made Jul 2: the thirteen silen
     afterWindowMealsNotFinished: 0,
     afterWindowMealsRefused: 0,
     afterWindowMealsUnrated: 0,
+    afterWindowObservations: 0,
     afterWindowDosesNotGiven: 0,
     afterWindowLastDate: null,
     futureDatedEntries: 0,
@@ -98,7 +99,7 @@ Deno.test('CUL-2283 — entries after the window, none a symptom entry: the refu
   const text = plain(html)
   assert.ok(
     text.includes(
-      '4 entries were logged after it, through Jun 19. Of 4 meals: 4 not finished, 4 of them refused. None is a symptom entry. Nothing after Jun 17 is read on this report: no count or flag above includes it.',
+      '4 entries were logged after it, through Jun 19. Of 4 meals: 4 not finished, 4 of them refused. None is a symptom entry. Nothing after Jun 17 is counted or flagged on this report.',
     ),
     'the intake comes before the symptom count, and the reader is told none of it is counted',
   )
@@ -178,7 +179,7 @@ Deno.test('CUL-2283 passes 1 and 2 — daily looks after the window: named, neve
   assert.ok(text.includes('Last entry Jun 19, 13 days before this report; last daily look Jun 30'))
   assert.ok(
     text.includes(
-      'Nothing logged after Jun 19: no meal, symptom or other entry in the 13 days before this report. Daily looks were answered on 3 days after Jun 19. On 3 days the owner marked something. Nothing after Jun 19 is read on this report',
+      'Nothing logged after Jun 19: no meal, symptom or other entry in the 13 days before this report. Daily looks were answered on 3 days after Jun 19. On 3 days the owner marked something. Nothing after Jun 19 is counted or flagged on this report',
     ),
     'the looks are pointed at, and what they marked is counted',
   )
@@ -274,4 +275,78 @@ Deno.test('CUL-2283 — recordEdgeOf: a future-dated row never shortens the sile
   const s = assembleReport(mira())
   const html = plain(renderReport({ ...s, atAGlance: { ...s.atAGlance, recordEdge: { ...none, windowEndDaysBeforeReport: 0 } } }))
   assert.ok(html.includes('No entry in the record read'), 'an empty record is said, never left blank')
+})
+
+// ── Adversarial pass 3 (run past the cap at the PM's request) ─────────────────────────────────
+
+const lookRow = (d: string, outcome: 'observed' | 'nothing_unusual') => ({
+  eventId: `look-${d}`,
+  localDay: d,
+  createdAt: `${d}T14:00:00Z`,
+  occurredAt: `${d}T14:00:00Z`,
+  outcome,
+  words: outcome === 'observed' ? ['hiding'] : [],
+  vocabVersion: 1,
+  notes: null,
+})
+const lookEvent = (tmpl: ReportInput['events'][number], d: string) => ({ ...tmpl, id: `look-${d}`, type: 'check_in', occurredAt: `${d}T14:00:00Z`, loggedAt: `${d}T14:00:00Z`, meal: null })
+
+Deno.test('CUL-2283 pass 3 — the intake flag never says "no event of any kind" over looks marked after the window', () => {
+  // Window Jun 1 to 20, Mira's last entry Jun 19, looks marked "hiding" Jun 21 to 24, made Jul 2.
+  const base = mira()
+  const tmpl = base.events.find((e) => e.type === 'meal')!
+  const days = ['2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24']
+  const snap = assembleReport({
+    ...window(base, '2026-06-01', '2026-06-20'),
+    events: [...base.events, ...days.map((d) => lookEvent(tmpl, d))],
+    lookRows: days.map((d) => lookRow(d, 'observed')),
+  })
+  assert.equal(snap.atAGlance.unloggedTailDays, 1, 'non-vacuous: the one-day tail is named')
+  const text = plain(renderReport(snap))
+  assert.ok(text.includes('No meal, symptom or other entry logged in this window after Jun 19 (the window’s last day)'), 'the intake flag is scoped and true')
+  assert.ok(!/[Nn]o event of any kind logged/.test(text), 'never "of any kind" over a marked look')
+  assert.ok(!text.includes('13 days before this report)'), 'the silence is not stretched to the report over the looks')
+})
+
+Deno.test('CUL-2283 pass 3 — the owner’s own observations after the window are counted, in bold', () => {
+  const base = mira()
+  const tmpl = base.events.find((e) => e.type === 'vomit')!
+  const other = (d: string) => ({ ...tmpl, id: `o-${d}`, type: 'other', occurredAt: `${d}T14:00:00Z`, loggedAt: `${d}T14:00:00Z`, notes: 'collapsed' })
+  const snap = assembleReport({ ...window(base, '2026-06-01', '2026-06-19'), events: [...base.events, other('2026-06-25'), other('2026-06-28')] })
+  assert.equal(snap.atAGlance.recordEdge.afterWindowObservations, 2)
+  const html = renderReport(snap)
+  assert.ok(html.includes('<b><span class="num">2</span> are observations the owner wrote in their own words.</b>'))
+  assert.ok(plain(html).includes('None is on the report’s symptom list.'), 'never the bare "none is a symptom entry" beside them')
+})
+
+Deno.test('CUL-2283 pass 3 — a meal whose meal row has not synced is still a meal, with no rating', () => {
+  const base = mira()
+  const tmpl = base.events.find((e) => e.type === 'meal')!
+  const bare = ['2026-06-21', '2026-06-22'].map((d) => ({ ...tmpl, id: `bare-${d}`, occurredAt: `${d}T13:00:00Z`, loggedAt: `${d}T13:00:00Z`, meal: null }))
+  const snap = assembleReport({ ...window(base, '2026-06-01', '2026-06-19'), events: [...base.events, ...bare] })
+  const e = snap.atAGlance.recordEdge
+  assert.deepEqual([e.afterWindowMeals, e.afterWindowMealsUnrated], [2, 2])
+  assert.ok(plain(renderReport(snap)).includes('Of 2 meals: none with an intake rating.'))
+})
+
+Deno.test('CUL-2283 pass 3 — a look event whose look row has not synced is an unread look day, never dropped', () => {
+  const base = mira()
+  const tmpl = base.events.find((e) => e.type === 'meal')!
+  const snap = assembleReport({ ...window(base, '2026-06-01', '2026-06-19'), events: [...base.events, lookEvent(tmpl, '2026-06-22')], lookRows: [] })
+  const e = snap.atAGlance.recordEdge
+  assert.deepEqual([e.afterWindowLookDays, e.afterWindowLookDaysUnread, e.lastLookDate], [1, 1, '2026-06-22'])
+  const text = plain(renderReport(snap))
+  assert.ok(text.includes('Daily looks were answered on 1 day after Jun 19. On 1 day the answer could not be read.'))
+  assert.ok(!text.includes('no entry of any kind in the'))
+  // A look row present for the event is not counted twice.
+  const both = assembleReport({ ...window(base, '2026-06-01', '2026-06-19'), events: [...base.events, lookEvent(tmpl, '2026-06-22')], lookRows: [lookRow('2026-06-22', 'nothing_unusual')] })
+  assert.deepEqual([both.atAGlance.recordEdge.afterWindowLookDays, both.atAGlance.recordEdge.afterWindowLookDaysUnread], [1, 0])
+})
+
+Deno.test('CUL-2283 pass 3 — on a default window, a future-dated vomit is named as a symptom in the range box', () => {
+  const base = mira()
+  const tmpl = base.events.find((e) => e.type === 'vomit')!
+  const future = { ...tmpl, id: 'v-future', occurredAt: '2026-07-04T14:00:00Z', loggedAt: '2026-07-01T14:00:00Z' }
+  const html = renderReport(assembleReport({ ...base, events: [...base.events, future] }))
+  assert.ok(html.includes('; <b><span class="num">1</span> dated after this report, <span class="num">1</span> of them a symptom</b>'))
 })

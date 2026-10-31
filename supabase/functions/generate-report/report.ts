@@ -2982,6 +2982,12 @@ export interface RecordEdge {
   afterWindowMealsNotFinished: number
   afterWindowMealsRefused: number
   afterWindowMealsUnrated: number
+  /**
+   * Of those, the owner's free observations ('other', "What did you notice?"): in none of the
+   * report's symptom counts, so "none is a symptom entry" alone read as "nothing clinical" over a
+   * logged collapse (adversarial pass 3). The in-window twin is `uncategorisedObservations`.
+   */
+  afterWindowObservations: number
   /** Doses after the window recorded missed, refused or partly given (dose_adherence). */
   afterWindowDosesNotGiven: number
   /** The newest local day among the after-window entries through the report date; null when none. */
@@ -4131,6 +4137,7 @@ export function recordEdgeOf(
   let afterWindowMealsNotFinished = 0
   let afterWindowMealsRefused = 0
   let afterWindowMealsUnrated = 0
+  let afterWindowObservations = 0
   let futureDatedEntries = 0
   let futureDatedSymptomEntries = 0
   for (const e of events) {
@@ -4149,9 +4156,12 @@ export function recordEdgeOf(
     afterWindowEntries++
     if (afterLastDn === null || dn > afterLastDn) afterLastDn = dn
     if (REPORT_SYMPTOM_SET.has(e.type)) afterWindowSymptomEntries++
-    if (e.meal) {
+    if (e.type === 'other') afterWindowObservations++
+    // By the EVENT's type, not the meal row: a meal whose child row has not synced yet carries
+    // `meal: null` and is still a meal, with no rating anyone can read (adversarial pass 3).
+    if (e.type === 'meal') {
       afterWindowMeals++
-      const rating = e.meal.intakeRating
+      const rating = e.meal?.intakeRating ?? null
       if (rating === null) afterWindowMealsUnrated++
       else if (rating !== 'all') {
         afterWindowMealsNotFinished++
@@ -4189,6 +4199,7 @@ export function recordEdgeOf(
     afterWindowMealsNotFinished,
     afterWindowMealsRefused,
     afterWindowMealsUnrated,
+    afterWindowObservations,
     afterWindowDosesNotGiven,
     afterWindowLastDate: key(afterLastDn),
     futureDatedEntries,
@@ -6408,6 +6419,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     else if (inLastHalf(dn)) secondHalfLoggedDays++
   }
 
+  const lookRowEventIds = new Set((input.lookRows ?? []).map((l) => l.eventId))
   const atAGlance: AtAGlance = {
     primarySymptom,
     totalSymptomIncidents,
@@ -6434,11 +6446,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     lastLoggedDate: lastLoggedDayNum === null ? null : dayKeyFromNumber(lastLoggedDayNum),
     recordEdge: recordEdgeOf(
       dedupedAll,
-      // The stored look rows when the caller pulled them (their outcome is what a page must not
-      // flatten); otherwise the look events, whose answers this read cannot see.
-      input.lookRows !== undefined
-        ? input.lookRows.map((l) => ({ localDay: l.localDay, occurredAt: l.occurredAt, outcome: l.outcome }))
-        : input.events.filter((e) => e.type === LOOK_EVENT_TYPE).map((e) => ({ localDay: null, occurredAt: e.occurredAt, outcome: null })),
+      // The stored look rows (their outcome is what a page must not flatten). A look EVENT with no look row (the child has not synced, pass 3) is still a look: it joins
+      // as a day whose answer could not be read, never dropped.
+      [
+        ...(input.lookRows ?? []).map((l) => ({ localDay: l.localDay, occurredAt: l.occurredAt, outcome: l.outcome })),
+        ...input.events
+          .filter((e) => e.type === LOOK_EVENT_TYPE && !lookRowEventIds.has(e.id))
+          .map((e) => ({ localDay: null, occurredAt: e.occurredAt, outcome: null })),
+      ],
       input.doses,
       endDayNum,
       input.now,

@@ -1876,7 +1876,12 @@ function lastEntryLine(snap: ReportSnapshot): string {
  */
 function futureNote(e: RecordEdge): string {
   if (e.futureDatedEntries === 0) return ''
-  return `; <b>${num(e.futureDatedEntries)} dated after this report</b>`
+  // Its symptoms named on every basis (pass 3): on a default window this is the row's only trace.
+  const sym =
+    e.futureDatedSymptomEntries > 0
+      ? `, ${num(e.futureDatedSymptomEntries)} of them ${e.futureDatedSymptomEntries === 1 ? 'a symptom' : 'symptoms'}`
+      : ''
+  return `; <b>${num(e.futureDatedEntries)} dated after this report${sym}</b>`
 }
 
 /** "Jun 19", or "Jan 3, 2027" when the day falls in another year than the range box states. */
@@ -1906,7 +1911,8 @@ function recordEdgeDisclosure(snap: ReportSnapshot): string {
   const lead = `<b>Window ends before this report.</b> It closes ${h(fmtDayScopedTo(end, e.reportDate))}, ${dayCount(
     e.windowEndDaysBeforeReport,
   )} before the report date.`
-  const notRead = ` Nothing after ${h(fmtDay(end))} is read on this report: no count or flag above includes it.`
+  // "Counted or flagged", not "read": the header's latest weight can be after the window (pass 3).
+  const notRead = ` Nothing after ${h(fmtDay(end))} is counted or flagged on this report.`
   const parts: string[] = [lead]
   if (e.afterWindowEntries === 0) {
     if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) {
@@ -1946,9 +1952,18 @@ function recordEdgeDisclosure(snap: ReportSnapshot): string {
         ` <b>${num(e.afterWindowDosesNotGiven)} dose${e.afterWindowDosesNotGiven === 1 ? ' was' : 's were'} missed, refused or partly given.</b>`,
       )
     }
+    if (e.afterWindowObservations > 0) {
+      // The owner's own observations lead the symptom count (pass 3): "none is a symptom entry" over
+      // a logged collapse read as "nothing clinical".
+      parts.push(
+        ` <b>${num(e.afterWindowObservations)} ${
+          e.afterWindowObservations === 1 ? 'is an observation' : 'are observations'
+        } the owner wrote in their own words.</b>`,
+      )
+    }
     parts.push(
       e.afterWindowSymptomEntries === 0
-        ? ' None is a symptom entry.'
+        ? ` None is ${e.afterWindowObservations > 0 ? 'on the report&rsquo;s symptom list' : 'a symptom entry'}.`
         : ` <b>${num(e.afterWindowSymptomEntries)} ${e.afterWindowSymptomEntries === 1 ? 'is a symptom entry' : 'are symptom entries'}.</b>`,
     )
   }
@@ -5545,8 +5560,10 @@ function unloggedTailOf(ag: AtAGlance): UnloggedTail | null {
     days: ag.unloggedTailDays,
     after: ag.lastLoggedDate,
     windowEndsEarly: ag.recordEdge.windowEndDaysBeforeReport > 0,
-    recordContinues: ag.recordEdge.afterWindowEntries > 0,
+    // A look after the window is the owner writing something down: the record continues (pass 3).
+    recordContinues: ag.recordEdge.afterWindowEntries > 0 || ag.recordEdge.afterWindowLookDays > 0,
     toReport: ag.recordEdge.lastEntryDaysBeforeReport,
+    looksAfter: ag.lastLoggedDate !== null && ag.recordEdge.lastLookDate !== null && ag.recordEdge.lastLookDate > ag.lastLoggedDate,
   }
 }
 
@@ -5564,6 +5581,11 @@ interface UnloggedTail {
   recordContinues: boolean
   /** The record's silence to the report date, when the tail is the record's (adversarial pass 1). */
   toReport: number | null
+  /**
+   * A daily look was answered after the tail's date. A look is a `check_in` event, so "no event of
+   * any kind" over it is false, and on the intake flag it hid looks marked "not eating" (pass 3).
+   */
+  looksAfter: boolean
 }
 
 /**
@@ -5573,7 +5595,8 @@ interface UnloggedTail {
  */
 function nothingLoggedAfter(t: UnloggedTail): string {
   if (t.after === null) return 'no event of any kind logged in this window'
-  return `no event of any kind logged ${t.recordContinues ? 'in this window ' : ''}after ${fmtDay(t.after)}`
+  const what = t.looksAfter ? 'no meal, symptom or other entry' : 'no event of any kind'
+  return `${what} logged ${t.recordContinues ? 'in this window ' : ''}after ${fmtDay(t.after)}`
 }
 
 /** The same, with its length: a date alone left the reader to turn it into days (cold read 2). */
@@ -5610,7 +5633,7 @@ function trialTiles(snap: ReportSnapshot): string[] {
       ? ''
       : tail.after === null
         ? '<br/>nothing logged in this window'
-        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; no event logged ${tail.recordContinues ? 'in this window ' : ''}after ${fmtDay(tail.after)}`
+        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; ${tail.looksAfter ? 'no meal, symptom or other entry' : 'no event'} logged ${tail.recordContinues ? 'in this window ' : ''}after ${fmtDay(tail.after)}`
   tiles.push(
     tile(
       `${ag.totalSymptomIncidents}`,

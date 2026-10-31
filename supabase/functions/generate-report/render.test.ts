@@ -243,7 +243,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       loggedDaysSinceLastEpisode: null,
       firstHalfLoggedDays: 0,
       secondHalfLoggedDays: 0, unloggedTailDays: 0, lastLoggedDate: null,
-      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
+      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowObservations: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
     },
     symptoms: [],
     vomitPhenotype: null,
@@ -1019,7 +1019,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0, lastLoggedDate: null, recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 } },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0, lastLoggedDate: null, recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowObservations: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 } },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -2106,7 +2106,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       loggedDaysSinceLastEpisode: 2,
       firstHalfLoggedDays: 3,
       secondHalfLoggedDays: 37, unloggedTailDays: 0, lastLoggedDate: null,
-      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
+      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowObservations: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
     },
     diet: {
       trialTargetProtein: null,
@@ -5791,7 +5791,7 @@ Deno.test('B-532 ADV① — page 1 and the symptom panel never disagree about di
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 18,
         secondHalfLoggedDays: 18, unloggedTailDays: 0, lastLoggedDate: null,
-      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
+      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowObservations: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
       },
     }),
   )
@@ -5832,7 +5832,7 @@ Deno.test('B-532 ADV② — the tile’s sparse caveat counts over the window it
         loggedDaysSinceLastEpisode: 1,
         firstHalfLoggedDays: 6,
         secondHalfLoggedDays: 3, unloggedTailDays: 0, lastLoggedDate: null,
-      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
+      recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowObservations: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 },
       },
     }),
   )
