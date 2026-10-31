@@ -623,20 +623,27 @@ export async function readAllOwnedPaths(
 // each owned folder and removes whatever sits in it, finding the file by its folder
 // rather than by a row that no longer exists.
 //
-// Why AFTER the delete: once the cascade has run, an owner's client can no longer
-// write under these folders (the Storage policies key on pet / creator / uid
-// ownership), so the sweep sees the folders' final contents. Swept before the
-// delete, the same race would reopen behind it.
+// Why AFTER the delete: once the cascade has run, the pet, food, vet-document and
+// vet-attachment upload policies refuse every write under these folders (each looks
+// up a `pets` or `food_items` row the cascade removed), so for those buckets the sweep
+// sees the folders' final contents. Swept before the delete, the same race would
+// reopen behind it. NOT so for `nyx-medication-photos`: its policy (021) checks only
+// that the first folder is `auth.uid()`, so a device still holding an unexpired access
+// token can write a label after the sweep (see below).
 //
 // Safety: the roots are ids the account's own rows named (`pets.user_id`,
 // `food_items.created_by_user_id`) or the verified-JWT uid, never a stored path, so
 // a crafted row cannot steer the sweep into another account's folder. Each root must
 // be one safe segment, so a blank root can never list a bucket's top level.
 //
-// What it cannot see, stated: a pet or food item CREATED after index.ts's last id
-// read (one round trip before the delete) has a folder this sweep does not know, and
-// a service-role writer that uploads after the sweep still lands. The orphan sweep
-// (B-121, CUL-231) is the backstop for both.
+// What it cannot see, stated: (1) a pet or food item CREATED after index.ts's last id
+// read (one round trip before the delete) has a folder this sweep does not know;
+// (2) a drug-label upload from a device whose access token outlives the delete lands
+// after the sweep (policy 021 has no table lookup); (3) an upload whose permission
+// check passed before the cascade but whose object commits after the listing; (4) a
+// food the account hard-deleted before deletion began has no row, so its leftover
+// photos are not swept (the retired-id ledger that names them is migration 106).
+// The orphan sweep (B-121, CUL-231) is the backstop for all four.
 
 // Which owned id keys each bucket's first folder. A mapped type over every
 // STORAGE_BUCKETS key, so a new bucket fails the build until it says how it is swept.

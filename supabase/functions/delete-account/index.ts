@@ -127,17 +127,18 @@ function ownedPathPage(adminClient: SupabaseClient, table: string, petIds: strin
       .range(from, to)
 }
 
-// One page of a bucket folder's direct children, for listPrefixRecursive. A missing
-// bucket holds no objects, so it lists as empty (nyx-vet-reports before its first saved
-// report); every other error THROWS, because a listing that came back short would read
-// exactly like a complete one.
+// One page of a bucket folder's direct children, for listPrefixRecursive. Every error
+// THROWS, because a listing that came back short would read exactly like a complete
+// one. One exception: `nyx-vet-reports` has no writer yet and may not exist, and a
+// missing bucket holds no objects, so for that bucket alone "Bucket not found" lists as
+// empty. Any other bucket missing is a misnamed constant, and fails loud.
 function bucketLister(adminClient: SupabaseClient, bucket: string): StorageLister {
   return async (prefix, offset, limit) => {
     const { data, error } = await adminClient.storage
       .from(bucket)
       .list(prefix, { limit, offset, sortBy: { column: 'name', order: 'asc' } })
     if (error) {
-      if (/bucket not found/i.test(error.message)) return []
+      if (bucket === STORAGE_BUCKETS.vetReports && /bucket not found/i.test(error.message)) return []
       throw new Error(`Failed to list ${bucket}: ${error.message}`)
     }
     // storage-api returns a folder with a null id; supabase-js types id as string.
@@ -147,15 +148,22 @@ function bucketLister(adminClient: SupabaseClient, bucket: string): StorageListe
 
 // CUL-2314: the ids whose folders the post-delete sweep lists. Re-read immediately
 // before the auth delete, AFTER the purge loop (the long window), so a pet or food item
-// created while the purge ran still has its folder swept. THROWS on a read error: this
-// runs before the delete, so the account survives and the call retries.
+// created while the purge ran still has its folder swept. THROWS on a read error or a
+// short read: this runs before the delete, so the account survives and the call
+// retries. `count: 'exact'` is what proves the read complete (C-42): a PostgREST
+// max-rows below the account's row count would otherwise drop folders silently.
 async function readSweepIds(adminClient: SupabaseClient, userId: string): Promise<SweepIds> {
   const [petsRes, foodRes] = await Promise.all([
-    adminClient.from('pets').select('id').eq('user_id', userId),
-    adminClient.from('food_items').select('id').eq('created_by_user_id', userId),
+    adminClient.from('pets').select('id', { count: 'exact' }).eq('user_id', userId),
+    adminClient.from('food_items').select('id', { count: 'exact' }).eq('created_by_user_id', userId),
   ])
   if (petsRes.error) throw new Error(`Failed to re-read pets: ${petsRes.error.message}`)
   if (foodRes.error) throw new Error(`Failed to re-read food_items: ${foodRes.error.message}`)
+  for (const [table, res] of [['pets', petsRes], ['food_items', foodRes]] as const) {
+    if (typeof res.count !== 'number' || (res.data ?? []).length < res.count) {
+      throw new Error(`Failed to re-read every ${table} id (read ${(res.data ?? []).length}, count ${res.count ?? 'absent'})`)
+    }
+  }
   return {
     petIds: (petsRes.data ?? []).map((p) => p.id as string),
     foodItemIds: (foodRes.data ?? []).map((f) => f.id as string),
@@ -409,6 +417,12 @@ Deno.serve(async (req: Request) => {
     //    by its owned folder. Best-effort: the account is gone, so a failure is logged
     //    with its bucket and folder rather than thrown.
     if (authDeleted) {
+      // Name the folders before touching them: if the function dies mid-sweep (its
+      // wall clock), this line is the only record of what may be left behind.
+      console.log(
+        `delete-account: sweeping ${sweep.length} owned folder(s) for deleted user ${userId}:`,
+        sweep.map((s) => `${s.bucket}/${s.root}/`).join(' '),
+      )
       const swept = await sweepOwnedPrefixes(
         sweep,
         (bucket) => bucketLister(adminClient, bucket),
