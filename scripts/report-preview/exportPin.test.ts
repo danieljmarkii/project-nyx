@@ -18,7 +18,7 @@ import { READS } from './reads'
 // subject pet and its owner, or carry a column no render needs?), then paste the new hash
 // with that review's issue and date. A comment edit does not change the hash.
 const PIN: ExportPin = {
-  sha256: 'ba287fe3d0a4a4e74be22373f35bff77eb8bb8f30f010e4d4af7b9e57982d01a',
+  sha256: '9e1378c8750da6d29deeb088ec76cba8d9c4ad70b25a1fde33947828413953ce',
   review: 'pending: rls-privacy-reviewer pass on CUL-2308',
 }
 

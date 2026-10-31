@@ -84,3 +84,26 @@ Deno.test('a filter on a column the dump neither carries nor applied is refused'
   assert.ok(r.error)
   assert.equal(stand.refusals.length, 1)
 })
+
+Deno.test('a filter on an embed\u2019s column is refused, not read as the parent\u2019s (rls-privacy-reviewer, CUL-2308)', async () => {
+  const dump = verifyExport(fixtureExport(), [FIXTURE_PET])
+  const stand = standInClient(dump)
+  const client = stand.client as unknown as {
+    from: (t: string) => { select: (s: string) => { eq: (c: string, v: unknown) => PromiseLike<{ error: unknown }> } }
+  }
+  // `events` selects meal_components(..., deleted_at, ...) but carries no `deleted_at` of its own.
+  const r = await client.from('events').select(EVENTS_SELECT).eq('deleted_at', 'x')
+  assert.ok(r.error)
+  assert.equal(stand.refusals.length, 1)
+})
+
+Deno.test('a builder method the dumped reads never use is a recorded refusal, not a crash', async () => {
+  const dump = verifyExport(fixtureExport(), [FIXTURE_PET])
+  const stand = standInClient(dump)
+  const client = stand.client as unknown as {
+    from: (t: string) => { select: (s: string) => { neq: (c: string, v: unknown) => PromiseLike<{ error: unknown }> } }
+  }
+  const r = await client.from('app_config').select('key, value').neq('key', 'x')
+  assert.ok(r.error)
+  assert.equal(stand.refusals.length, 1)
+})

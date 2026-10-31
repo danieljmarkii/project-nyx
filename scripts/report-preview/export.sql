@@ -24,10 +24,18 @@
 -- rule is followed, never enforced.
 --
 -- RLS, restated where the service role drops it. In production every read runs on the
--- caller's JWT. Here: the pet's own rows are scoped by pet id; the household and the
+-- caller's JWT. Here: the pet's own rows are scoped by pet id, and so is every child-row
+-- embed (meals, meal_components, diet_trial_foods, the parent events), because each child
+-- table's policy scopes on its OWN pet_id, not its parent's: a meals row another account
+-- points at this pet's event is hidden by RLS and must be hidden here (rls-privacy-reviewer,
+-- CUL-2308; the CUL-736 join pattern). The household and the
 -- profile by the subject's owner; food_items and medication_items embeds by
 -- created_by_user_id = the owner, as their read policies are (migration 033), so a food row
 -- RLS would hide comes back null, as it would for the owner.
+--
+-- Wider than the render: events and looks are the pet's whole history (production bounds
+-- events to the report's lookback and caps looks), so every event note leaves, not only the
+-- window's. The stand-in applies the lookback and the cap, so the render is production's.
 --
 -- Taken out, because no render the harness makes prints them:
 --   * looks.notes is returned as null (a look's note prints only on the owner's appendix
@@ -96,7 +104,7 @@ reads as (
               'product_name', fi.product_name, 'format', fi.format)
             from food_items fi where fi.id = d.food_item_id and fi.created_by_user_id = (select user_id from subj))
         ) order by d.id), '[]'::json)
-        from diet_trial_foods d where d.diet_trial_id = t.id and d.deleted_at is null)
+        from diet_trial_foods d where d.diet_trial_id = t.id and d.pet_id = (select id from subj) and d.deleted_at is null)
     ) order by t.started_at desc, t.id desc)::text, '[]')
     from diet_trials t where t.pet_id = (select id from subj)
   union all
@@ -126,7 +134,7 @@ reads as (
               'ai_extraction_confidence', fi.ai_extraction_confidence, 'brand', fi.brand,
               'product_name', fi.product_name)
             from food_items fi where fi.id = m.food_item_id and fi.created_by_user_id = (select user_id from subj)))
-        from meals m where m.event_id = e.id),
+        from meals m where m.event_id = e.id and m.pet_id = (select id from subj)),
       'meal_components', (select coalesce(json_agg(json_build_object(
           'id', mc.id, 'position', mc.position, 'food_item_id', mc.food_item_id,
           'food_label', mc.food_label, 'share', mc.share, 'share_source', mc.share_source,

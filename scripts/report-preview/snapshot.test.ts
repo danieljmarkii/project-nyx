@@ -1,5 +1,5 @@
 // CUL-2308 — the loader refuses every export it cannot vouch for.
-import { mkdtempSync, writeFileSync } from 'fs'
+import { mkdtempSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -87,6 +87,15 @@ describe('assertOutsideRepo', () => {
     expect(() => assertOutsideRepo(REPO, REPO)).toThrow(/inside the repository/)
     expect(() => assertOutsideRepo(join(REPO, 'scripts', 'out'), REPO)).toThrow(/inside the repository/)
     expect(() => assertOutsideRepo(join(REPO, 'scripts', '..', 'docs'), REPO)).toThrow(/inside the repository/)
+  })
+  it('refuses a path that reaches the repository through a symlink (rls-privacy-reviewer, CUL-2308)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'report-preview-link-'))
+    symlinkSync(join(REPO, 'scripts'), join(dir, 'link'))
+    expect(() => assertOutsideRepo(join(dir, 'link', 'zz'), REPO)).toThrow(/inside the repository/)
+    expect(() => assertOutsideRepo(join(dir, 'link'), REPO)).toThrow(/inside the repository/)
+  })
+  it('refuses a case variant of the repository path', () => {
+    expect(() => assertOutsideRepo(join(REPO.toUpperCase(), 'out'), REPO)).toThrow(/inside the repository/)
   })
   it('allows a scratch directory outside it', () => {
     expect(() => assertOutsideRepo(join(tmpdir(), 'report-preview'), REPO)).not.toThrow()

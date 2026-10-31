@@ -15,8 +15,8 @@
 // Pure of Deno: node's fs/crypto/path, so jest covers it and run.deno.ts imports it.
 
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { isAbsolute, relative, resolve } from 'node:path'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 
 import { META_READ, READS } from './reads.ts'
 import type { Dump, DumpMeta } from './standInClient.ts'
@@ -126,10 +126,34 @@ export function loadExport(path: string, subjectPetIds: readonly string[]): Dump
   return verifyExport(exportRowsFrom(readFileSync(path, 'utf8')), subjectPetIds)
 }
 
-/** Health data never lands in the repository: refuse an output directory inside it. */
+/** The real path of `p`: its nearest existing ancestor resolved through every symlink, plus the rest. */
+function realish(p: string): string {
+  let head = resolve(p)
+  const tail: string[] = []
+  while (!existsSync(head)) {
+    const up = dirname(head)
+    if (up === head) break
+    tail.unshift(basename(head))
+    head = up
+  }
+  return join(realpathSync(head), ...tail)
+}
+
+/**
+ * Health data never lands in the repository: refuse an output directory inside it.
+ *
+ * Compared on REAL paths, because `resolve` does not follow symlinks: an `--out` through a
+ * link into the repo wrote a render into `scripts/` (rls-privacy-reviewer, CUL-2308). And
+ * compared case-insensitively too, so `Project-Nyx` on a case-insensitive disk is the repo.
+ * On a case-sensitive disk that can refuse a sibling differing only by case: loud, never quiet.
+ */
 export function assertOutsideRepo(outDir: string, repoRoot: string): void {
-  const rel = relative(resolve(repoRoot), resolve(outDir))
-  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) {
-    throw new Error(`refusing to write inside the repository (${outDir}); pass --out to a scratch directory`)
+  const repo = realish(repoRoot)
+  const out = realish(outDir)
+  for (const [r, o] of [[repo, out], [repo.toLowerCase(), out.toLowerCase()]]) {
+    const rel = relative(r, o)
+    if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) {
+      throw new Error(`refusing to write inside the repository (${outDir}); pass --out to a scratch directory`)
+    }
   }
 }

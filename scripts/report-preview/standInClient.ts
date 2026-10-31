@@ -77,11 +77,9 @@ export function standInClient(dump: Dump, serverMaxRows = 1000): StandIn {
       spec.preApplied.some(
         (p) => p.op === op && p.column === column && (p.value === '$pet' ? value === dump.meta.pet_id : p.value === value),
       )
-    const carries = (column: string): boolean => {
-      const rows = spec ? dump.rows[spec.name] ?? [] : []
-      // A column the select names is carried even when the read is empty.
-      return spec !== null && (spec.select.split(',').some((c) => c.trim() === column) || rows.some((r) => column in (r as Row)))
-    }
+    // Top-level columns only: an embed's own column (`meal_components(deleted_at)`) is not a
+    // column of the parent row, and counting it would turn a refusal into an empty read.
+    const carries = (column: string): boolean => spec !== null && topLevelColumns(spec.select).includes(column)
 
     chain.select = (cols: string, opts?: { count?: string }) => {
       spec = readFor(table, cols)
@@ -118,6 +116,14 @@ export function standInClient(dump: Dump, serverMaxRows = 1000): StandIn {
       if (opts?.ascending !== false) refuse(`order(${column}) ascending; export.sql sorts newest first`)
       orders.push(column)
       return chain
+    }
+    // Every other builder method is a refusal, not a TypeError: readEngineFlags swallows a
+    // throw and fails closed, so a crash there would leave no trace in `refusals`.
+    for (const m of ['neq', 'gt', 'lt', 'lte', 'like', 'ilike', 'or', 'not', 'match', 'filter', 'contains', 'single', 'csv']) {
+      chain[m] = () => {
+        refuse(`.${m}() is not a method the dumped reads use`)
+        return chain
+      }
     }
     chain.limit = (n: number) => {
       hi = Math.min(hi, n - 1)
@@ -175,6 +181,26 @@ export function standInClient(dump: Dump, serverMaxRows = 1000): StandIn {
         .filter(([, c]) => c.delivered.size < c.total)
         .map(([name, c]) => `${name}: ${c.delivered.size} of ${c.total} rows read`),
   }
+}
+
+/** The select's own columns, embeds skipped (`food_items(...)` contributes nothing). */
+export function topLevelColumns(select: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let cur = ''
+  for (const ch of select) {
+    if (ch === '(') depth++
+    if (depth === 0 && ch === ',') {
+      out.push(cur.trim())
+      cur = ''
+      continue
+    }
+    if (depth === 0) cur += ch
+    if (ch === ')') depth--
+  }
+  out.push(cur.trim())
+  // An embed's name (`food_items`, `events!fk`) sits before its `(` and is not a column either.
+  return out.filter((c) => /^[a-z_]+$/.test(c) && !select.includes(`${c}(`))
 }
 
 /** Reads the loader must have made on any run (all but the conditional ones). */
