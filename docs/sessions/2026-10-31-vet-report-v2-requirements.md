@@ -1,9 +1,9 @@
 # Vet report v2: the team reviews round 4, the PM rules the rest, the requirements and the run order (CUL-2275)
 
 **Date:** 2026-10-31
-**One thing:** A safeguard that can never fire: round 4's "worsening always leads" read well and protected nothing, because the engine folds a worsening into chronicity before the report sees it; a mutation test is how you find that out before a patient does · check: pending
+**One thing:** D4 L1 — A safeguard that can never fire: round 4's "worsening always leads" read well and protected nothing, and a mutation test is how you find that out before a patient does · check: pending
 
-DISCOVERY session on [CUL-2275](https://linear.app/projectnyx/issue/CUL-2275), stacked on danieljmarkii/project-nyx#1361 (the round 4 mock and working papers, still a draft). No app or Edge Function code. Shipped via the session's draft PR, which names only CUL-2275.
+DISCOVERY session on [CUL-2275](https://linear.app/projectnyx/issue/CUL-2275). No app or Edge Function code. Shipped via #1364, which at the PM's choice (2026-10-31) also carries #1361's round 3 and round 4 commits, so the two land as one merge; #1361 closes as superseded and [CUL-2277](https://linear.app/projectnyx/issue/CUL-2277), its sub-issue, closes with this merge.
 
 ## The ask
 

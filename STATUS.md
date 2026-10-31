@@ -56,6 +56,7 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 | **Engines v3.1: what v3.0 left open** | New (2026-10-10). Everything Engines v3 carried past its 2026-10-10 re-scope: the weight lane, honest inference, vision hardening, the app halves still open, the go-lives and the review findings. **The project description carries the run order** (23 rows in the /dispatch layout, written 2026-10-23; its Done means line is a proposal the PM confirms at the first dispatch). On `Waiting on PM`: the Sheet B sitting (CUL-1795) frees rows 11 to 17, and D5b on CUL-1962 routes 46 review findings. |
 | **Ask v2: answers in the pet's calendar** | New as a project (2026-10-23, grooming D6). **The project description carries the run order**, moved from CUL-1802 into the /dispatch layout. |
 | **Reintroduction: after the diet trial** | New as a project (2026-10-23, grooming D6). No rows yet: they wait on the CUL-1821 decision round. |
+| **Vet report v2: the Front Page, the AI lead and the send flow** | New (2026-10-31, CUL-2275). The v2 report beside v1 behind two beta flags; spec `docs/nyx-vet-report-v2-requirements.md` v1.0. **The project description carries the run order** (26 rows; three safety fixes to today's report lead). |
 | **Legacy Backlog** | The migrated `B-NNN` rows only. Not a track, and **closed to new issues** (CUL-1284): a new issue joins a live project or takes none. |
 
 ### Standing holds
