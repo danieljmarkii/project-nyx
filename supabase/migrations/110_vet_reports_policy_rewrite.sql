@@ -95,7 +95,7 @@
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT
 -- ------------------------------------------------------------
---   Destructive:  n. One policy dropped and three created, grants narrowed, a
+--   Destructive:  n. One policy dropped and two created, grants narrowed, a
 --                 CHECK and a trigger added. No column, row or index touched.
 --                 Row count before applying (expect 0; the CHECK validates
 --                 every existing row and would fail on a bad one):
