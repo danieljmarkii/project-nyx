@@ -5714,7 +5714,7 @@ Deno.test('B-532 — the weight sparkline states the range it is drawn over', ()
     }),
   )
   assert.ok(
-    /chart spans 31.8–32.4 kg/.test(plain(html)),
+    /chart spans 31.80–32.40 kg/.test(plain(html)),
     'a 0.6 kg fall and a 6 kg fall draw the identical cliff, so the vertical is named',
   )
 })
@@ -8685,4 +8685,78 @@ Deno.test('CUL-2092 — every other ended or active trial keeps its headline lea
   assert.equal(lead({ status: 'abandoned' }), 'Stopped early')
   assert.equal(lead({ status: 'abandoned', dayCounter: 56 }), 'Stopped early')
   assert.ok(/^Tracking /.test(headlineOf(renderReport(endedTrialSnap({ status: 'active', endedAt: null }))).trim()))
+})
+
+// CUL-2284 (round 4 BRK-11) — the Weight block prints kg at the column's stored 2 dp. At 1 dp a
+// small cat going 1.95 → 1.86 kg printed "1.9 → 1.9 kg": a 4.6% loss read as steady. Sliced to
+// the block so a 1-dp kilogram anywhere in it fails, whichever of its four prints regresses.
+function weightBlockText(html: string): string {
+  const m = html.match(/<div class="weight[^"]*">[\s\S]*?<\/div>\s*<\/div>/)
+  assert.ok(m, 'the Weight block renders')
+  return plain(m[0])
+}
+const ONE_DP = /(?<![\d.])\d+\.\d(?![\d.])/
+
+Deno.test('CUL-2284 — a 1.95 → 1.86 kg cat prints both readings at 2 dp, never "1.9 → 1.9"', () => {
+  const t = weightBlockText(
+    renderReport(
+      base({
+        weight: {
+          isEmpty: false,
+          latest: { kg: 1.86, lbs: 4.1, date: '2026-06-29' },
+          trend: {
+            readingCount: 2,
+            seriesLbs: [4.3, 4.1],
+            seriesKg: [1.95, 1.86],
+            latestLbs: 4.1,
+            latestKg: 1.86,
+            earliestDate: '2026-06-01',
+            latestDate: '2026-06-29',
+            deltaLbs: -0.2,
+            deltaKg: -0.09,
+            direction: 'down',
+          },
+        },
+      }),
+    ),
+  )
+  assert.ok(/1\.95 → 1\.86 kg/.test(t), `the trajectory carries both stored readings: ${t}`)
+  assert.ok(/chart spans 1\.86–1\.95 kg/.test(t), 'the stated chart range is at 2 dp too')
+  assert.ok(!/1\.9 → 1\.9/.test(t), 'the loss never reads as steady')
+  assert.ok(!ONE_DP.test(t), `no kilogram in the block prints at 1 dp: ${t}`)
+})
+
+Deno.test('CUL-2284 — a single in-window reading prints at 2 dp', () => {
+  const t = weightBlockText(
+    renderReport(
+      base({
+        weight: {
+          isEmpty: false,
+          latest: { kg: 2.1, lbs: 4.6, date: '2026-06-29' },
+          trend: {
+            readingCount: 1,
+            seriesLbs: [4.6],
+            seriesKg: [2.1],
+            latestLbs: 4.6,
+            latestKg: 2.1,
+            earliestDate: '2026-06-29',
+            latestDate: '2026-06-29',
+            deltaLbs: null,
+            deltaKg: null,
+            direction: null,
+          },
+        },
+      }),
+    ),
+  )
+  assert.ok(/2\.10 kg/.test(t), `a stored 2.10 prints as recorded: ${t}`)
+  assert.ok(!ONE_DP.test(t), `no kilogram in the block prints at 1 dp: ${t}`)
+})
+
+Deno.test('CUL-2284 — the out-of-window latest reading prints at 2 dp', () => {
+  const t = weightBlockText(
+    renderReport(base({ weight: { isEmpty: false, latest: { kg: 1.86, lbs: 4.1, date: '2026-01-02' }, trend: null } })),
+  )
+  assert.ok(/1\.86 kg/.test(t), `the stored reading prints as recorded: ${t}`)
+  assert.ok(!ONE_DP.test(t), `no kilogram in the block prints at 1 dp: ${t}`)
 })
