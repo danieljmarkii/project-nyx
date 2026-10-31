@@ -378,8 +378,8 @@ Deno.serve(async (req: Request) => {
             if (error) storageFailures.push(`${step.bucket}: ${error.message}`)
             else removed += data?.length ?? 0
           } catch (e) {
-            // A non-existent bucket (nyx-vet-reports before Step 9) may throw
-            // rather than return an error — tolerate it; this is best-effort.
+            // A non-existent bucket (nyx-vet-reports before its first saved report)
+            // may throw rather than return an error — tolerate it; this is best-effort.
             storageFailures.push(`${step.bucket}: ${e instanceof Error ? e.message : String(e)}`)
           }
         }
