@@ -22,7 +22,9 @@ import { stripSqlComments } from './sqlComments';
 // For each object the LAST statement in filename order is the live one.
 //
 // MUTANTS, run against 110 on 2026-10-31 (each applied to the real file, the
-// suite run, the file restored), all 17 killed:
+// suite run, the file restored), all 26 killed. The first 17 are the author's;
+// R1 to R7 are the rls-privacy-reviewer's survivors of the first cut, which
+// the exemption, CHECK, PUBLIC, DISABLE and role-list tests now pin:
 //   ✗ a FOR INSERT policy added              ✗ the UPDATE's WITH CHECK dropped
 //   ✗ the SELECT policy back to generated_by ✗ TO authenticated dropped
 //   ✗ GRANT INSERT to authenticated          ✗ GRANT UPDATE table-wide
@@ -31,7 +33,11 @@ import { stripSqlComments } from './sqlComments';
 //   ✗ the CHECK dropped later                ✗ share_token added to the allowlist
 //   ✗ the extension test removed             ✗ a value formatted into the RAISE
 //   ✗ the trigger renamed past updated_at    ✗ the trigger dropped later
-//   ✗ the freeze made SECURITY DEFINER
+//   ✗ the freeze made SECURITY DEFINER       ✗ R1 the exemption forced on
+//   ✗ R2 the CHECK's middle loosened (-.*)   ✗ R3 GRANT SELECT ... TO PUBLIC
+//   ✗ R4 DISABLE TRIGGER the freeze          ✗ R5 DISABLE ROW LEVEL SECURITY
+//   ✗ R6 SELECT TO authenticated, anon       ✗ R7 exemption on current_user only
+//   ✗ the session-role arm removed           ✗ DISABLE TRIGGER ALL
 //
 // WHAT IT DOES NOT CLAIM (C-38):
 //   * It reads the migration files, not production. 110's VERIFY block and
@@ -94,7 +100,9 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     expect([...live.keys()].sort()).toEqual(['vet_reports_select_owner', 'vet_reports_update_owner']);
     for (const text of live.values()) {
       expect(text).not.toMatch(/\bFOR\s+(?:ALL|INSERT|DELETE)\b/i);
-      expect(text).toMatch(/\bTO authenticated\b/);
+      // Exactly one role: `TO authenticated, anon` would reach anon the day a
+      // grant does.
+      expect(text).toMatch(/\bTO authenticated (?:USING|WITH CHECK)\b/);
       expect(text).not.toMatch(/generated_by/);
     }
   });
@@ -116,6 +124,10 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     expect(anon[anon.length - 1]).toBe('REVOKE ALL ON TABLE public.vet_reports FROM anon;');
   });
 
+  it('never grants to PUBLIC, which reaches anon', () => {
+    expect(grantsFor(sql, 'PUBLIC').filter((g) => /^GRANT\b/i.test(g))).toEqual([]);
+  });
+
   it('gives authenticated SELECT and UPDATE (token_expires_at) only', () => {
     const authed = grantsFor(sql, 'authenticated');
     const reset = authed.lastIndexOf('REVOKE ALL ON TABLE public.vet_reports FROM authenticated;');
@@ -134,12 +146,24 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     );
   });
 
+  it('keeps RLS and the freeze switched on after 110', () => {
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_client_freeze\b/);
+    expect(create).toBeGreaterThan(-1);
+    const after = sql.slice(create);
+    const alter = new RegExp(String.raw`ALTER TABLE\s+(?:ONLY\s+)?${TABLE}[^;]*?\b(?:DISABLE\s+ROW\s+LEVEL\s+SECURITY|NO\s+FORCE\s+ROW\s+LEVEL\s+SECURITY|DISABLE\s+TRIGGER\s+(?:ALL|USER|trg_vet_reports_client_freeze))\b`, 'i');
+    expect(after).not.toMatch(alter);
+    expect(sql).toMatch(new RegExp(String.raw`ALTER TABLE\s+${TABLE}\s+ENABLE ROW LEVEL SECURITY`, 'i'));
+  });
+
   it('keeps the whole-shape storage_path CHECK, anchored at the row\'s pet', () => {
     const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_storage_path_shape CHECK/);
     expect(add).toBeGreaterThan(-1);
     expect(sql.slice(add)).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_storage_path_shape\b/);
     const check = sql.slice(add, sql.indexOf(';', add));
-    expect(check).toMatch(/storage_path ~ \(\s*'\^' \|\| pet_id::text\s*\|\| '\/\[0-9a-f\]\{8\}-[^']*\\\.\(html\|pdf\)\$'\s*\)/);
+    // The whole pattern, verbatim: a looser middle (`-.*`) brings traversal back.
+    expect(check.replace(/\s+/g, ' ')).toContain(
+      "storage_path ~ ( '^' || pet_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(html|pdf)$' )",
+    );
   });
 
   it('freezes every column but the control set, and only lets the expiry move earlier', () => {
@@ -149,6 +173,13 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     const control = /control text\[\] := ARRAY\[([^\]]*)\];/.exec(body);
     expect(control).not.toBeNull();
     expect((control?.[1] ?? '').split(',').map((c) => c.trim().replace(/'/g, ''))).toEqual(CONTROL);
+    // The exemption, verbatim: all three must hold to skip the freeze. The
+    // session role is what a SECURITY DEFINER function called by anon cannot
+    // hide (there current_user is the owner).
+    expect(body.replace(/\s+/g, ' ')).toContain(
+      "IF auth.uid() IS NULL AND current_user NOT IN ('anon', 'authenticated') AND coalesce(current_setting('role', true), 'none') NOT IN ('anon', 'authenticated') THEN RETURN NEW; END IF;",
+    );
+    expect(body.match(/RETURN NEW;/g)?.length).toBe(2);
     expect(body).toMatch(/\(to_jsonb\(NEW\) - control\) IS DISTINCT FROM \(to_jsonb\(OLD\) - control\)/);
     expect(body).toMatch(/OR NEW\.token_expires_at > OLD\.token_expires_at/);
   });

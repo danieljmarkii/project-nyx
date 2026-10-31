@@ -47,8 +47,10 @@
 --               updated_at is stamped by trg_vet_reports_updated_at regardless.
 --   DELETE      No client path. Account deletion runs as the service role.
 --   Path        storage_path is exactly `{pet_id}/{uuid}.html` or `.pdf`, the
---               two-segment shape delete-account's scopeVetReportPaths keeps
---               (VR2-1). A traversal (`{own}/../{victim}/x.pdf`), an extra
+--               two-segment shape delete-account's scopeVetReportPaths will
+--               keep (VR2-1, PR-01, in review; main's purge runs these paths
+--               through cleanPaths only, so today this CHECK is the one thing
+--               tying a path to its pet). A traversal (`{own}/../{victim}/x.pdf`), an extra
 --               segment, another pet's prefix or an upper-case id all fail by
 --               construction, for every writer including the service role.
 --
@@ -58,16 +60,25 @@
 -- another row, so neither is a cross-tenant oracle (C-31): the trigger runs
 -- with the caller's rights and its message names only column names.
 --
--- Who is a client: a call with a user (auth.uid() set) or one running as anon
--- or authenticated. The service role and the migration owner are not; VR2-7's
--- content freeze binds them too.
+-- Who is a client: a call with a user (auth.uid() set), one running as anon or
+-- authenticated, or one whose session role is either, which reaches a
+-- SECURITY DEFINER function called by anon (there current_user is the owner;
+-- rls-privacy-reviewer on this file, measured). The service role with no user
+-- and the migration owner are not; VR2-7's content freeze binds them too.
 --
 -- WHAT IS NOT CLOSED, stated:
 --   * Visit links. The table has no vet_visit_id or vet_appointment_id yet.
 --     Their same-pet guard lands with the columns in VR2-7 (PM, 2026-10-31,
 --     option a), bound to enforce_vet_visit_link_same_pet.
 --   * generated_by is not bound to the pet's owner. Only the service role can
---     write it now, so the Edge Function is the binding; VR2-7 may add a check.
+--     write it now, so the Edge Function is the binding. A wrong value is worse
+--     than a wrong label: generated_by cascades from auth.users, so deleting
+--     the account it wrongly names deletes the row, and the owner's own
+--     deletion later finds no row and leaves the stored file behind. VR2-7
+--     binds it (a check that it is the pet's owner).
+--   * A SECURITY DEFINER function owned by the migration owner and called by
+--     the service role with no user is exempt from the freeze, as the service
+--     role is. VR2-7's public share read must not write through one.
 --   * The service role is trusted with every column. The CHECK above is the
 --     one rule it cannot pass; the content freeze is VR2-7's.
 --   * A per-report delete by the owner does not exist. If the library grows
@@ -93,8 +104,13 @@
 --                   DROP POLICY vet_reports_update_owner ON public.vet_reports;
 --                   CREATE POLICY "vet_reports_owner" ON public.vet_reports
 --                     FOR ALL USING (auth.uid() = generated_by);
---                   GRANT ALL ON TABLE public.vet_reports TO anon, authenticated;
---                 (Both held arwdDxt before this file, read 2026-10-31.)
+--                   GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES,
+--                     TRIGGER ON TABLE public.vet_reports TO anon, authenticated;
+--                 (Both held arwdDxt before this file, read 2026-10-31; named
+--                 rather than ALL, which on PG17 adds MAINTAIN.) Not an exact
+--                 restore: authenticated's column grant on token_expires_at
+--                 survives it (harmless under the table grant; a re-apply's
+--                 REVOKE ALL clears it).
 --   Ordering:     after 109; before VR2-7 (CUL-2287), which it blocks. No app
 --                 or Edge Function reads or writes vet_reports as a client
 --                 today (delete-account reads it as the service role).
@@ -165,7 +181,12 @@ DECLARE
   -- trg_vet_reports_updated_at after this trigger, whatever the client sent.
   control text[] := ARRAY['token_expires_at', 'updated_at'];
 BEGIN
-  IF auth.uid() IS NULL AND current_user NOT IN ('anon', 'authenticated') THEN
+  -- Exempt only with no user, no client role, and no client role set on the
+  -- session. The third test is the one a SECURITY DEFINER function cannot hide:
+  -- inside one, current_user is the owner, but the role PostgREST SET stays.
+  IF auth.uid() IS NULL
+     AND current_user NOT IN ('anon', 'authenticated')
+     AND coalesce(current_setting('role', true), 'none') NOT IN ('anon', 'authenticated') THEN
     RETURN NEW;
   END IF;
 
@@ -193,7 +214,7 @@ CREATE TRIGGER trg_vet_reports_client_freeze
   FOR EACH ROW EXECUTE FUNCTION public.vet_reports_client_freeze();
 
 COMMENT ON FUNCTION public.vet_reports_client_freeze() IS
-  'CUL-283 (110): for a client caller (a user, or the anon / authenticated role), every vet_reports column but token_expires_at is frozen, and token_expires_at may only move earlier (revoke, never extend). An allowlist over to_jsonb, so columns added later are frozen until named. SECURITY INVOKER, reads no other row, message names no value (C-31). Service role and the owner are exempt; VR2-7''s content freeze binds them.';
+  'CUL-283 (110): for a client caller (a user, the anon / authenticated role, or a session whose role is either, which reaches a DEFINER function called by anon), every vet_reports column but token_expires_at is frozen, and token_expires_at may only move earlier (revoke, never extend). An allowlist over to_jsonb, so columns added later are frozen until named. SECURITY INVOKER, reads no other row, message names no value (C-31). The service role and the owner, with no user, are exempt; VR2-7''s content freeze binds them.';
 
 
 -- ============================================================
@@ -225,4 +246,15 @@ COMMENT ON FUNCTION public.vet_reports_client_freeze() IS
 --         ORDER BY tgname;
 --      -> trg_vet_reports_client_freeze  vet_reports_client_freeze
 --         trg_vet_reports_updated_at     set_updated_at
---   4. The behaviour: the probe in the PR.
+--   4. The same through has_*_privilege, which sees grants information_schema
+--      hides (another grantor):
+--        SELECT has_table_privilege('anon', 'public.vet_reports',
+--                 'SELECT,INSERT,UPDATE,DELETE')                         AS anon_any,
+--               has_table_privilege('authenticated', 'public.vet_reports',
+--                 'INSERT,DELETE,TRUNCATE')                              AS authed_write,
+--               has_column_privilege('authenticated', 'public.vet_reports',
+--                 'share_token', 'UPDATE')                               AS authed_token,
+--               (SELECT relacl FROM pg_class
+--                 WHERE oid = 'public.vet_reports'::regclass)            AS acl;
+--      -> f, f, f, and an acl with no anon entry and authenticated=r.
+--   5. The behaviour: the probe in the PR.
