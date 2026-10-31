@@ -1,0 +1,3787 @@
+{
+ "_fixture": "nyx-live-2026-10-31",
+ "_note": "Nyx's real record, de-identified (PM ruling X, 2026-10-31): the snapshot the shipped generateReportForPet + assembleReport produced from production at 2026-10-31T16:45:00Z, read-only. Owner, vet and clinic names replaced; every database id replaced with a sequential placeholder; dates, counts and the owner's own notes kept. Photos absent (dataUri null).",
+ "snapshot": {
+  "generatedAt": "2026-10-31T16:45:00.000Z",
+  "timezone": "America/Chicago",
+  "scope": {
+   "basis": "since_visit",
+   "startDate": "2026-09-16",
+   "endDate": "2026-10-31",
+   "startDayNum": 20712,
+   "endDayNum": 20757,
+   "windowDays": 46,
+   "detectionNowIso": "2026-10-31T16:45:00.000Z",
+   "lastVisitDate": "2026-09-16",
+   "trialStartDate": null,
+   "isCustomOverride": false,
+   "outOfWindowSymptomCount": 0,
+   "outOfWindowMostRecent": null,
+   "outOfWindowMostRecentType": null,
+   "outOfWindowBefore": 0,
+   "outOfWindowAfter": 0,
+   "trialCropSymptoms": {
+    "count": 42,
+    "mostRecentIso": "2026-09-14T13:13:43.000+00:00",
+    "mostRecentType": "cough",
+    "byType": [
+     {
+      "type": "cough",
+      "count": 21
+     },
+     {
+      "type": "vomit",
+      "count": 10
+     },
+     {
+      "type": "sneeze",
+      "count": 7
+     },
+     {
+      "type": "itch",
+      "count": 3
+     },
+     {
+      "type": "lethargy",
+      "count": 1
+     }
+    ],
+    "cropDays": 52,
+    "mealLoggedDaysInCrop": 52,
+    "countIsFloor": false
+   }
+  },
+  "signalment": {
+   "name": "Nyx",
+   "species": "cat",
+   "breed": "American Shorthair",
+   "sex": "female",
+   "neuterStatus": "not_recorded",
+   "ageYears": 3,
+   "ageMonths": 1,
+   "dateOfBirth": "2023-09-01",
+   "dateOfBirthPrecision": "exact",
+   "ownerName": "Owner",
+   "household": {
+    "others": [
+     {
+      "species": "cat",
+      "count": 1
+     }
+    ],
+    "complete": true
+   },
+   "latestWeight": {
+    "kg": 3.73,
+    "lbs": 8.2,
+    "date": "2026-09-16"
+   }
+  },
+  "clinicalQuestion": {
+   "question": "diet_trial_working",
+   "primarySymptom": "vomit"
+  },
+  "safetyFlags": [
+   {
+    "kind": "present_foreign",
+    "incidents": [
+     {
+      "eventId": "e1096",
+      "occurredAt": "2026-09-22T06:30:00.000+00:00",
+      "note": "There is a dark grey, irregularly shaped piece of material visible that does not appear to be food — it could be fabric, rubber, or another non-food item."
+     }
+    ]
+   },
+   {
+    "kind": "trial_diet_refusal",
+    "refusal": {
+     "refusedFeedings": 2,
+     "ratedFeedings": 4,
+     "days": 2,
+     "population": "trial_diet",
+     "history": {
+      "firstUnfinishedDayIndex": 20717,
+      "lastUnfinishedDayIndex": 20734,
+      "ratedSinceLastUnfinished": 0,
+      "ratedMealsSinceLastUnfinished": 1,
+      "unfinishedInRecentWindow": true,
+      "unfinishedSinceElsewhere": false
+     },
+     "run": null
+    },
+    "stoppedForRefusal": false,
+    "species": "cat",
+    "trialDietLabels": [
+     "Royal Canin Selected Protein PR, Dry",
+     "Royal Canin Selected Protein PR, Wet",
+     "Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T.",
+     "Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy",
+     "Rabbit Meat Cooked Rabbit",
+     "Vital Essentials Freeze-Dried Raw Rabbit Bites"
+    ],
+    "evidenceStartDate": "2026-09-16",
+    "evidenceEndDate": "2026-10-20"
+   },
+   {
+    "kind": "symptom_burden",
+    "symptomType": "vomit",
+    "count": 6,
+    "days": 4,
+    "runDays": 3,
+    "windowDays": 7,
+    "tier": "soon"
+   },
+   {
+    "kind": "weight_loss",
+    "asOf": "now",
+    "latest": {
+     "kg": 3.73,
+     "source": "home_scale",
+     "single": true,
+     "day": "2026-09-16"
+    },
+    "highBefore": {
+     "kg": 4.4,
+     "source": "home_scale",
+     "single": true,
+     "day": "2026-06-15"
+    },
+    "tier": "firm",
+    "planned": false,
+    "mixedInstruments": false,
+    "windowDays": 365
+   },
+   {
+    "kind": "chronicity",
+    "symptomType": "vomit",
+    "episodeCount": 14,
+    "spanDays": 43,
+    "activeWeeks": 5,
+    "symptomDays": 12,
+    "daysSinceLastEpisode": 0,
+    "firstOnsetIso": "2026-09-17T15:58:53.000Z",
+    "firstLoggedIso": "2026-09-17T15:58:53.000Z",
+    "tier": "firm",
+    "windowDays": 56,
+    "coughVomitAdjacent": true
+   },
+   {
+    "kind": "chronicity",
+    "symptomType": "cough",
+    "episodeCount": 5,
+    "spanDays": 34,
+    "activeWeeks": 3,
+    "symptomDays": 5,
+    "daysSinceLastEpisode": 10,
+    "firstOnsetIso": "2026-09-17T22:09:00.000Z",
+    "firstLoggedIso": "2026-09-17T22:09:00.000Z",
+    "tier": "firm",
+    "windowDays": 56
+   }
+  ],
+  "safetyChecks": [],
+  "weight": {
+   "isEmpty": false,
+   "latest": {
+    "kg": 3.73,
+    "lbs": 8.2,
+    "date": "2026-09-16"
+   },
+   "trend": {
+    "readingCount": 1,
+    "seriesLbs": [
+     8.2
+    ],
+    "seriesKg": [
+     3.73
+    ],
+    "latestLbs": 8.2,
+    "latestKg": 3.73,
+    "earliestDate": "2026-09-16",
+    "latestDate": "2026-09-16",
+    "deltaLbs": null,
+    "deltaKg": null,
+    "direction": null
+   }
+  },
+  "atAGlance": {
+   "primarySymptom": {
+    "type": "vomit",
+    "count": 16
+   },
+   "totalSymptomIncidents": 24,
+   "windowDays": 46,
+   "loggedDays": 45,
+   "anySymptomDays": 18,
+   "trialDaysLogged": 34,
+   "weightState": "single",
+   "sinceOnsetDays": 45,
+   "daysSinceLastEpisode": 0,
+   "loggedDaysSinceLastEpisode": 0,
+   "firstHalfLoggedDays": 22,
+   "secondHalfLoggedDays": 23,
+   "unloggedTailDays": 0,
+   "lastLoggedDate": "2026-10-31"
+  },
+  "symptoms": [
+   {
+    "type": "vomit",
+    "count": 16,
+    "symptomDays": 12,
+    "windowDays": 46,
+    "loggedDays": 45,
+    "firstOnset": "2026-09-17T15:58:53.000+00:00",
+    "lastOnset": "2026-10-31T15:07:07.000+00:00",
+    "weeklyBuckets": [
+     4,
+     2,
+     0,
+     1,
+     3,
+     4,
+     2
+    ],
+    "bucketStartDates": [
+     "2026-09-16",
+     "2026-09-23",
+     "2026-09-30",
+     "2026-10-07",
+     "2026-10-14",
+     "2026-10-21",
+     "2026-10-28"
+    ],
+    "loggedDaysByBucket": [
+     6,
+     7,
+     7,
+     7,
+     7,
+     7,
+     4
+    ],
+    "bucketDays": [
+     7,
+     7,
+     7,
+     7,
+     7,
+     7,
+     4
+    ],
+    "lateLogged": null,
+    "trendHalves": {
+     "days": 23,
+     "firstCount": 6,
+     "lastCount": 10,
+     "firstStartDate": "2026-09-16",
+     "firstEndDate": "2026-10-08",
+     "lastStartDate": "2026-10-09",
+     "lastEndDate": "2026-10-31",
+     "middleCount": 0,
+     "middleDate": null,
+     "thinWeeks": {
+      "first": [],
+      "last": []
+     }
+    }
+   },
+   {
+    "type": "cough",
+    "count": 5,
+    "symptomDays": 5,
+    "windowDays": 46,
+    "loggedDays": 45,
+    "firstOnset": "2026-09-17T22:09:00.000+00:00",
+    "lastOnset": "2026-10-21T22:55:04.000+00:00",
+    "weeklyBuckets": [
+     1,
+     1,
+     2,
+     0,
+     0,
+     1,
+     0
+    ],
+    "bucketStartDates": [
+     "2026-09-16",
+     "2026-09-23",
+     "2026-09-30",
+     "2026-10-07",
+     "2026-10-14",
+     "2026-10-21",
+     "2026-10-28"
+    ],
+    "loggedDaysByBucket": [
+     6,
+     7,
+     7,
+     7,
+     7,
+     7,
+     4
+    ],
+    "bucketDays": [
+     7,
+     7,
+     7,
+     7,
+     7,
+     7,
+     4
+    ],
+    "lateLogged": null,
+    "trendHalves": {
+     "days": 23,
+     "firstCount": 4,
+     "lastCount": 1,
+     "firstStartDate": "2026-09-16",
+     "firstEndDate": "2026-10-08",
+     "lastStartDate": "2026-10-09",
+     "lastEndDate": "2026-10-31",
+     "middleCount": 0,
+     "middleDate": null,
+     "thinWeeks": {
+      "first": [],
+      "last": []
+     }
+    }
+   },
+   {
+    "type": "sneeze",
+    "count": 3,
+    "symptomDays": 3,
+    "windowDays": 46,
+    "loggedDays": 45,
+    "firstOnset": "2026-10-01T22:21:49.000+00:00",
+    "lastOnset": "2026-10-24T22:40:00.000+00:00",
+    "weeklyBuckets": [
+     0,
+     0,
+     1,
+     0,
+     1,
+     1,
+     0
+    ],
+    "bucketStartDates": [
+     "2026-09-16",
+     "2026-09-23",
+     "2026-09-30",
+     "2026-10-07",
+     "2026-10-14",
+     "2026-10-21",
+     "2026-10-28"
+    ],
+    "loggedDaysByBucket": [
+     6,
+     7,
+     7,
+     7,
+     7,
+     7,
+     4
+    ],
+    "bucketDays": [
+     7,
+     7,
+     7,
+     7,
+     7,
+     7,
+     4
+    ],
+    "lateLogged": null,
+    "trendHalves": {
+     "days": 23,
+     "firstCount": 1,
+     "lastCount": 2,
+     "firstStartDate": "2026-09-16",
+     "firstEndDate": "2026-10-08",
+     "lastStartDate": "2026-10-09",
+     "lastEndDate": "2026-10-31",
+     "middleCount": 0,
+     "middleDate": null,
+     "thinWeeks": {
+      "first": [],
+      "last": []
+     }
+    }
+   }
+  ],
+  "vomitPhenotype": {
+   "totalIncidents": 16,
+   "withAnalysis": 16,
+   "states": {
+    "completed": 15,
+    "uncertain": 1,
+    "failed": 0,
+    "pending": 0
+   },
+   "assessedCount": 15,
+   "contentsMix": {
+    "food": 12,
+    "bile": 1,
+    "hairball": 1,
+    "foam_liquid": 0,
+    "grass": 0,
+    "unsure": 1
+   },
+   "consistencyDistribution": {
+    "chunky": 10,
+    "watery": 1,
+    "foamy": 2,
+    "unsure": 1,
+    "soft_formed": 1
+   },
+   "colourDistribution": {
+    "tan": 8,
+    "mixed": 1,
+    "yellow": 2,
+    "white": 1,
+    "brown": 2
+   },
+   "bloodPresent": [],
+   "foreignPresent": [
+    {
+     "eventId": "e1096",
+     "occurredAt": "2026-09-22T06:30:00.000+00:00",
+     "note": "There is a dark grey, irregularly shaped piece of material visible that does not appear to be food — it could be fabric, rubber, or another non-food item."
+    }
+   ],
+   "reviewedCount": 0
+  },
+  "stool": null,
+  "diet": {
+   "trialTargetProtein": "rabbit",
+   "trialProteinProvenance": {
+    "source": "derived",
+    "confirmedDay": null
+   },
+   "trialProteinMismatch": null,
+   "trial": {
+    "foodLabel": "Royal Canin Selected Protein PR, Dry (Dry)",
+    "primaryProtein": "rabbit",
+    "startedAt": "2026-07-26",
+    "targetDurationDays": 84,
+    "vetName": null,
+    "proteinSet": {
+     "proteins": [
+      "rabbit",
+      "pea protein",
+      "hydrolyzed soy protein"
+     ],
+     "complete": true,
+     "source": "photo",
+     "offTrial": [
+      "pea protein",
+      "hydrolyzed soy protein"
+     ]
+    }
+   },
+   "freeFed": [],
+   "intakeNotDirectlyObserved": false,
+   "mealCompletion": {
+    "ratedMeals": 3,
+    "finishedMeals": 1,
+    "rate": 0.3333333333333333,
+    "recentNotFullyEatenRun": 0,
+    "intakeBreakdown": [
+     {
+      "rating": "all",
+      "count": 1
+     },
+     {
+      "rating": "most",
+      "count": 1
+     },
+     {
+      "rating": "picked",
+      "count": 1
+     }
+    ]
+   },
+   "mealItems": [
+    {
+     "foodLabel": "Royal Canin Selected Protein PR, Dry (Dry)",
+     "primaryProtein": "rabbit",
+     "format": "dry_kibble",
+     "count": 117,
+     "firstDate": "2026-09-16",
+     "lastDate": "2026-10-31",
+     "lastRatedDate": null,
+     "intakeBreakdown": [],
+     "proteinSet": {
+      "proteins": [
+       "rabbit",
+       "pea protein",
+       "hydrolyzed soy protein"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "pea protein",
+       "hydrolyzed soy protein"
+      ]
+     }
+    },
+    {
+     "foodLabel": "Royal Canin Selected Protein PR, Wet (Wet)",
+     "primaryProtein": "rabbit",
+     "format": "wet_canned",
+     "count": 58,
+     "firstDate": "2026-09-16",
+     "lastDate": "2026-10-30",
+     "lastRatedDate": "2026-10-02",
+     "intakeBreakdown": [
+      {
+       "rating": "most",
+       "count": 1
+      }
+     ],
+     "proteinSet": {
+      "proteins": [
+       "rabbit"
+      ],
+      "complete": false,
+      "source": "photo",
+      "offTrial": []
+     }
+    },
+    {
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "count": 25,
+     "firstDate": "2026-10-18",
+     "lastDate": "2026-10-27",
+     "lastRatedDate": "2026-10-19",
+     "intakeBreakdown": [
+      {
+       "rating": "all",
+       "count": 1
+      }
+     ],
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     }
+    },
+    {
+     "foodLabel": "Applaws Chicken Breast in broth (Wet)",
+     "primaryProtein": "chicken",
+     "format": "wet_canned",
+     "count": 8,
+     "firstDate": "2026-10-19",
+     "lastDate": "2026-10-24",
+     "lastRatedDate": null,
+     "intakeBreakdown": [],
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     }
+    },
+    {
+     "foodLabel": "Royal Canin Selected Protein PR, Wet (Wet) + Applaws Chicken Breast in broth (Wet), mixed, after the trial",
+     "primaryProtein": null,
+     "format": null,
+     "count": 8,
+     "firstDate": "2026-10-22",
+     "lastDate": "2026-10-28",
+     "lastRatedDate": null,
+     "intakeBreakdown": [],
+     "proteinSet": {
+      "proteins": [
+       "rabbit",
+       "chicken"
+      ],
+      "complete": false,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "mix": {
+      "incomplete": false,
+      "foods": [
+       {
+        "label": "Royal Canin Selected Protein PR, Wet (Wet)",
+        "first": {
+         "normalizedShare": 0.667,
+         "shareSource": "preset",
+         "amountValue": null,
+         "amountUnit": null
+        },
+        "last": {
+         "normalizedShare": 0.667,
+         "shareSource": "preset",
+         "amountValue": null,
+         "amountUnit": null
+        }
+       },
+       {
+        "label": "Applaws Chicken Breast in broth (Wet)",
+        "first": {
+         "normalizedShare": 0.333,
+         "shareSource": "preset",
+         "amountValue": null,
+         "amountUnit": null
+        },
+        "last": {
+         "normalizedShare": 0.333,
+         "shareSource": "preset",
+         "amountValue": null,
+         "amountUnit": null
+        }
+       }
+      ]
+     }
+    },
+    {
+     "foodLabel": "Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy (Wet)",
+     "primaryProtein": "rabbit",
+     "format": "wet_canned",
+     "count": 3,
+     "firstDate": "2026-09-21",
+     "lastDate": "2026-10-30",
+     "lastRatedDate": "2026-09-21",
+     "intakeBreakdown": [
+      {
+       "rating": "picked",
+       "count": 1
+      }
+     ],
+     "proteinSet": {
+      "proteins": [
+       "rabbit"
+      ],
+      "complete": false,
+      "source": "photo",
+      "offTrial": []
+     }
+    }
+   ],
+   "treats": {
+    "count": 49,
+    "distinctItems": 2
+   },
+   "humanFood": {
+    "count": 0,
+    "days": 0,
+    "items": []
+   },
+   "previousDiet": {
+    "labels": [
+     "Instinct Paté Grain-Free Real Chicken Entrée (Wet)",
+     "Instinct Limited Ingredient Diet (Turkey) (Wet)",
+     "Purina Friskies Party Mix Original Crunch (Treat)",
+     "Instinct Original Grain-Free Pâté Real Chicken Recipe (Wet)",
+     "Instinct Limited Ingredient Diet (Wet)",
+     "Purina Fancy Feast Fancy Feast Medleys White Meat Chicken Florentine with Spinach in a Light Broth (Wet)",
+     "Tiki Cat Solutions Digestion Mousse Chicken & Egg Recipe in Broth (Wet)",
+     "Delectables Squeeze Up with Tuna & Salmon (Treat)",
+     "Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy (Wet)",
+     "Purina Fancy Feast Fancy Feast Lovers Gravy Ocean Whitefish & Tuna Feast in Gravy Paté (Wet)",
+     "Hill's Science Diet Perfect Digestion Adult 1-6 Chicken, Vegetable & Rice Stew (Wet)",
+     "Rabbit Meat Cooked Rabbit (Fresh)",
+     "Blue Buffalo Wilderness Duck Recipe For Adult Cats (Wet)",
+     "Fancy Feast Chicken Feast Chunky (Wet)",
+     "Fancy Feast Ocean Whitefish & Tuna Feast Classic Paté (Wet)",
+     "Fancy Feast Tender Beef & Chicken Feast Classic Paté (Wet)",
+     "Fancy Feast Tender Beef Feast Classic Paté (Wet)",
+     "Fancy Feast Tender Chicken & Liver Feast Classic Paté (Wet)",
+     "Hill's Science Diet Sensitive Stomach & Skin Adult Chicken & Vegetable Entrée (Wet)",
+     "Hill's Science Diet Sensitive Stomach & Skin Adult Duck & Vegetable Entrée (Wet)",
+     "Hill's Science Diet Sensitive Stomach & Skin Adult Tuna & Vegetable Entrée (Wet)",
+     "Royal Canin Selected Protein PR, Wet (Wet)",
+     "Sheba BISTRO Chicken in Alfredo Sauce Entrée (Wet)",
+     "Simply Nourish Natural Solutions Adult Digestion Recipe Made with Turkey (Wet)",
+     "Tiki Cat after DARK Rabbit & Chicken Liver Recipe (Wet)",
+     "Tiki Cat Aloha Friends Tuna & Pumpkin Recipe in Broth (Wet)",
+     "Tiki Cat Luau Velvet Mousse with Chicken in Broth (Wet)",
+     "Wellness Complete Health Minced Tuna Dinner Bits in Light Gravy (Wet)",
+     "Weruva Cats in the Kitchen Lamb Burger-ini, Lamb Recipe Au Jus (Wet)"
+    ],
+    "feedings": 115,
+    "firstDay": "2026-05-17",
+    "lastDay": "2026-07-25"
+   },
+   "medicationVehicles": null,
+   "proteinSources": {
+    "photo": 6,
+    "owner": 1
+   }
+  },
+  "trial": {
+   "transition": {
+    "firstFedDate": "2026-05-28",
+    "firstFedMixed": false,
+    "firstFedShare": 1,
+    "fedDaysBeforeDay1": 6,
+    "mixedDaysBeforeDay1": 0,
+    "otherFoodLabels": [],
+    "firstExclusive": null
+   },
+   "newFoods": [
+    {
+     "label": "Applaws Chicken Breast in broth",
+     "firstFedDayIndex": 20747,
+     "lastFedDayIndex": 20754,
+     "ramp": [
+      {
+       "dayIndex": 20747,
+       "share": 1
+      },
+      {
+       "dayIndex": 20747,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20749,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20750,
+       "share": 1
+      },
+      {
+       "dayIndex": 20750,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20751,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20751,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20752,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20753,
+       "share": 0.333
+      },
+      {
+       "dayIndex": 20754,
+       "share": 0.333
+      }
+     ],
+     "symptomsInWindow": [
+      {
+       "occurredAt": "2026-10-24T22:40:00.000+00:00",
+       "eventType": "sneeze",
+       "dayIndex": 20750
+      },
+      {
+       "occurredAt": "2026-10-26T11:10:26.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20752
+      },
+      {
+       "occurredAt": "2026-10-26T11:26:49.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20752
+      },
+      {
+       "occurredAt": "2026-10-27T12:44:47.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20753
+      },
+      {
+       "occurredAt": "2026-10-28T00:40:00.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20753
+      },
+      {
+       "occurredAt": "2026-10-28T16:43:55.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20754
+      },
+      {
+       "occurredAt": "2026-10-31T15:07:07.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20757
+      }
+     ],
+     "fedDays": 8,
+     "windowDaysElapsed": 10,
+     "windowDaysLogged": 10
+    },
+    {
+     "label": "Blue Buffalo Tastefuls Purées with Chicken",
+     "firstFedDayIndex": 20747,
+     "lastFedDayIndex": 20753,
+     "ramp": [
+      {
+       "dayIndex": 20747,
+       "share": 1
+      },
+      {
+       "dayIndex": 20747,
+       "share": 1
+      },
+      {
+       "dayIndex": 20747,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 1
+      },
+      {
+       "dayIndex": 20748,
+       "share": 1
+      },
+      {
+       "dayIndex": 20749,
+       "share": 1
+      },
+      {
+       "dayIndex": 20749,
+       "share": 1
+      },
+      {
+       "dayIndex": 20750,
+       "share": 1
+      },
+      {
+       "dayIndex": 20750,
+       "share": 1
+      },
+      {
+       "dayIndex": 20750,
+       "share": 1
+      },
+      {
+       "dayIndex": 20751,
+       "share": 1
+      },
+      {
+       "dayIndex": 20751,
+       "share": 1
+      },
+      {
+       "dayIndex": 20751,
+       "share": 1
+      },
+      {
+       "dayIndex": 20752,
+       "share": 1
+      },
+      {
+       "dayIndex": 20753,
+       "share": 1
+      }
+     ],
+     "symptomsInWindow": [
+      {
+       "occurredAt": "2026-10-24T22:40:00.000+00:00",
+       "eventType": "sneeze",
+       "dayIndex": 20750
+      },
+      {
+       "occurredAt": "2026-10-26T11:10:26.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20752
+      },
+      {
+       "occurredAt": "2026-10-26T11:26:49.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20752
+      },
+      {
+       "occurredAt": "2026-10-27T12:44:47.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20753
+      },
+      {
+       "occurredAt": "2026-10-28T00:40:00.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20753
+      },
+      {
+       "occurredAt": "2026-10-28T16:43:55.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20754
+      },
+      {
+       "occurredAt": "2026-10-31T15:07:07.000+00:00",
+       "eventType": "vomit",
+       "dayIndex": 20757
+      }
+     ],
+     "fedDays": 7,
+     "windowDaysElapsed": 10,
+     "windowDaysLogged": 10
+    }
+   ],
+   "id": "00000000-0000-4000-8000-000000000003",
+   "status": "completed",
+   "startedAt": "2026-07-26",
+   "endedAt": "2026-10-20",
+   "targetDurationDays": 84,
+   "windowChange": {
+    "fromDays": 56,
+    "movedOnDate": "2026-09-18",
+    "movedOnDay": 55,
+    "daysPastOriginalWindowNow": 31,
+    "vetDirected": true,
+    "direction": "extended"
+   },
+   "vetName": null,
+   "indication": "gi",
+   "species": "cat",
+   "trialDietLabels": [
+    "Royal Canin Selected Protein PR, Dry",
+    "Royal Canin Selected Protein PR, Wet",
+    "Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T.",
+    "Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy",
+    "Rabbit Meat Cooked Rabbit",
+    "Vital Essentials Freeze-Dried Raw Rabbit Bites"
+   ],
+   "dayCounter": 87,
+   "daysPastTarget": 3,
+   "rangeStartDate": "2026-09-16",
+   "rangeEndDate": "2026-10-20",
+   "evidenceStartDate": "2026-09-16",
+   "evidenceEndDate": "2026-10-20",
+   "rangeClipped": true,
+   "coverageClosedByOverrun": false,
+   "gateCoverage": {
+    "daysLogged": 31,
+    "daysElapsed": 32
+   },
+   "untrackedDaysBeforeFirstLog": 0,
+   "trialDaysOutsideRange": {
+    "before": 52,
+    "after": 0
+   },
+   "trialDaysElapsed": 87,
+   "elapsedStartDayIndex": 20660,
+   "elapsedEndDayIndex": 20746,
+   "coverage": {
+    "daysLogged": 34,
+    "daysElapsed": 35
+   },
+   "exposures": {
+    "totalFeedings": 167,
+    "offDiet": 11,
+    "mixedWithTrialDiet": 0,
+    "byRung": {
+     "derived_protein": 11,
+     "unrecognised": 0
+    },
+    "fedBeforePermitted": 0,
+    "unclassifiable": 0,
+    "items": [
+     {
+      "eventId": "e1261",
+      "occurredAt": "2026-10-18T20:13:00.000+00:00",
+      "dayIndex": 20744,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1266",
+      "occurredAt": "2026-10-18T23:57:24.000+00:00",
+      "dayIndex": 20744,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1270",
+      "occurredAt": "2026-10-19T11:21:05.000+00:00",
+      "dayIndex": 20745,
+      "label": "Applaws Chicken Breast in broth",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1271",
+      "occurredAt": "2026-10-19T16:59:53.000+00:00",
+      "dayIndex": 20745,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1272",
+      "occurredAt": "2026-10-19T22:48:59.000+00:00",
+      "dayIndex": 20745,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1273",
+      "occurredAt": "2026-10-19T23:10:28.000+00:00",
+      "dayIndex": 20745,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1275",
+      "occurredAt": "2026-10-20T00:29:18.000+00:00",
+      "dayIndex": 20745,
+      "label": "Applaws Chicken Breast in broth",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1276",
+      "occurredAt": "2026-10-20T11:35:40.000+00:00",
+      "dayIndex": 20746,
+      "label": "Applaws Chicken Breast in broth",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1279",
+      "occurredAt": "2026-10-20T22:05:00.000+00:00",
+      "dayIndex": 20746,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1281",
+      "occurredAt": "2026-10-20T22:13:12.000+00:00",
+      "dayIndex": 20746,
+      "label": "Applaws Chicken Breast in broth",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     },
+     {
+      "eventId": "e1284",
+      "occurredAt": "2026-10-21T02:09:32.000+00:00",
+      "dayIndex": 20746,
+      "label": "Blue Buffalo Tastefuls Purées with Chicken",
+      "classification": {
+       "verdict": "off_diet_protein",
+       "rung": "derived_protein",
+       "offDiet": true,
+       "countsAsFeeding": true,
+       "antigens": [
+        "chicken"
+       ],
+       "role": null,
+       "matchedBy": null,
+       "permittedBy": null,
+       "attributionChecked": true
+      },
+      "symptomInChallengeWindow": true,
+      "panelWasRead": true,
+      "attributionChecked": true,
+      "permittedLaterFrom": null
+     }
+    ]
+   },
+   "antigenTally": [
+    {
+     "protein": "chicken",
+     "feedings": 11,
+     "fromPermitted": 0
+    }
+   ],
+   "permittedFoods": [
+    {
+     "label": "Royal Canin Selected Protein PR, Dry",
+     "role": "primary_diet",
+     "allowedFrom": "2026-07-26",
+     "allowedUntil": null,
+     "feedings": 93,
+     "addedAfterStart": false,
+     "endedBeforeWindowEnd": false,
+     "proteins": [
+      "rabbit",
+      "pea protein",
+      "hydrolyzed soy protein"
+     ],
+     "panelRead": true,
+     "source": "photo"
+    },
+    {
+     "label": "Royal Canin Selected Protein PR, Wet",
+     "role": "primary_diet",
+     "allowedFrom": "2026-07-26",
+     "allowedUntil": null,
+     "feedings": 51,
+     "addedAfterStart": false,
+     "endedBeforeWindowEnd": false,
+     "proteins": [
+      "rabbit"
+     ],
+     "panelRead": true,
+     "source": "photo"
+    },
+    {
+     "label": "Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T.",
+     "role": "primary_diet",
+     "allowedFrom": "2026-07-26",
+     "allowedUntil": null,
+     "feedings": 11,
+     "addedAfterStart": false,
+     "endedBeforeWindowEnd": false,
+     "proteins": [
+      "rabbit"
+     ],
+     "panelRead": true,
+     "source": "photo"
+    },
+    {
+     "label": "Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy",
+     "role": "primary_diet",
+     "allowedFrom": "2026-07-26",
+     "allowedUntil": null,
+     "feedings": 1,
+     "addedAfterStart": false,
+     "endedBeforeWindowEnd": false,
+     "proteins": [
+      "rabbit"
+     ],
+     "panelRead": true,
+     "source": "photo"
+    },
+    {
+     "label": "Rabbit Meat Cooked Rabbit",
+     "role": "primary_diet",
+     "allowedFrom": "2026-07-26",
+     "allowedUntil": null,
+     "feedings": 0,
+     "addedAfterStart": false,
+     "endedBeforeWindowEnd": false,
+     "proteins": [
+      "rabbit"
+     ],
+     "panelRead": true,
+     "source": "owner"
+    },
+    {
+     "label": "Vital Essentials Freeze-Dried Raw Rabbit Bites",
+     "role": "primary_diet",
+     "allowedFrom": "2026-07-26",
+     "allowedUntil": null,
+     "feedings": 0,
+     "addedAfterStart": false,
+     "endedBeforeWindowEnd": false,
+     "proteins": [
+      "rabbit"
+     ],
+     "panelRead": true,
+     "source": "photo"
+    }
+   ],
+   "allowedSetChangedAfterStart": false,
+   "allowedSetUnavailable": false,
+   "interpretability": "supports",
+   "interpretabilityStatement": "This record covers 34 of 35 days of this report’s window and supports interpreting that window — not the trial as a whole.",
+   "belowCoverageFloor": false,
+   "mayClaimAllMatched": false,
+   "mayStateRecordClean": false,
+   "oralRoute": [
+    {
+     "eventId": "e1090",
+     "occurredAt": "2026-09-21T18:00:00+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1098",
+     "occurredAt": "2026-09-22T11:27:31.801+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1107",
+     "occurredAt": "2026-09-23T11:10:57.774+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1114",
+     "occurredAt": "2026-09-24T08:30:00+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1122",
+     "occurredAt": "2026-09-25T08:30:41.37+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1132",
+     "occurredAt": "2026-09-26T11:38:29.94+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1138",
+     "occurredAt": "2026-09-27T11:44:30.805+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1144",
+     "occurredAt": "2026-09-28T12:09:27.147+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1152",
+     "occurredAt": "2026-09-29T11:17:52.489+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1154",
+     "occurredAt": "2026-09-30T23:00:00+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1166",
+     "occurredAt": "2026-10-02T12:15:00+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1181",
+     "occurredAt": "2026-10-04T12:51:31.574+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1196",
+     "occurredAt": "2026-10-06T12:06:41.611+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1205",
+     "occurredAt": "2026-10-08T11:32:31.545+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1218",
+     "occurredAt": "2026-10-10T13:51:02.827+00:00",
+     "drugLabel": "Prednisolone",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1224",
+     "occurredAt": "2026-10-11T12:35:06.492+00:00",
+     "drugLabel": "Zyrtec",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1234",
+     "occurredAt": "2026-10-12T15:56:10.921+00:00",
+     "drugLabel": "Zyrtec",
+     "trigger": "food_vehicle"
+    },
+    {
+     "eventId": "e1278",
+     "occurredAt": "2026-10-20T11:45:42.9+00:00",
+     "drugLabel": "Zyrtec",
+     "trigger": "food_vehicle"
+    }
+   ],
+   "arrangementExposures": [],
+   "intakeNotDirectlyObserved": false,
+   "contamination": [
+    {
+     "food": {
+      "foodItemId": "f56",
+      "foodKey": "royal canin\u001fselected protein pr, dry",
+      "label": "Royal Canin Selected Protein PR, Dry",
+      "role": "primary_diet",
+      "allowedFrom": "2026-07-26",
+      "allowedUntil": null,
+      "primaryProtein": "rabbit",
+      "proteins": [
+       "rabbit",
+       "pea protein",
+       "hydrolyzed soy protein"
+      ]
+     },
+     "extraProteins": [
+      "pea protein",
+      "hydrolyzed soy protein"
+     ],
+     "derivedFromPrimary": []
+    }
+   ],
+   "antigenAttributionPaused": [],
+   "antigenArmDark": false,
+   "trialDietRefusal": null,
+   "rangeRefusal": {
+    "refusedFeedings": 2,
+    "ratedFeedings": 4,
+    "days": 2,
+    "population": "trial_diet",
+    "history": {
+     "firstUnfinishedDayIndex": 20717,
+     "lastUnfinishedDayIndex": 20734,
+     "ratedSinceLastUnfinished": 0,
+     "ratedMealsSinceLastUnfinished": 1,
+     "unfinishedInRecentWindow": true,
+     "unfinishedSinceElsewhere": false
+    },
+    "run": null
+   },
+   "rangeRefusalSpansEpisodes": true,
+   "stoppedReason": null,
+   "outcome": "improved",
+   "outcomeNotes": "It seems like we’re mostly down to scarf and barfs now. We got Nyx a slow feeder and are starting to get better about using it properly. Ex. Actually filling it up only a bit so that she has to hunt and peck for kibble. We’re only using it a dry food.",
+   "medicationOverlap": [
+    {
+     "drugName": "Motozol",
+     "isSupplement": false,
+     "startedAt": "2026-07-16",
+     "endedAt": "2026-08-09",
+     "fromDate": "2026-07-26",
+     "toDate": "2026-08-09",
+     "daysOverlapping": 15,
+     "activeAtWindowEnd": false,
+     "overlapsLast7Days": false,
+     "antibacterialInGiTrial": false
+    },
+    {
+     "drugName": "Motozol",
+     "isSupplement": false,
+     "startedAt": "2026-09-21",
+     "endedAt": "2026-09-27",
+     "fromDate": "2026-09-21",
+     "toDate": "2026-09-27",
+     "daysOverlapping": 7,
+     "activeAtWindowEnd": false,
+     "overlapsLast7Days": false,
+     "antibacterialInGiTrial": false
+    },
+    {
+     "drugName": "Prednisolone",
+     "isSupplement": false,
+     "startedAt": "2026-09-21",
+     "endedAt": "2026-10-11",
+     "fromDate": "2026-09-21",
+     "toDate": "2026-10-11",
+     "daysOverlapping": 21,
+     "activeAtWindowEnd": false,
+     "overlapsLast7Days": false,
+     "antibacterialInGiTrial": false
+    },
+    {
+     "drugName": "Cetirizine HCl (Zyrtec)",
+     "isSupplement": true,
+     "startedAt": "2026-10-03",
+     "endedAt": "2026-10-24",
+     "fromDate": "2026-10-03",
+     "toDate": "2026-10-20",
+     "daysOverlapping": 18,
+     "activeAtWindowEnd": true,
+     "overlapsLast7Days": true,
+     "antibacterialInGiTrial": false
+    }
+   ],
+   "loggingDensity": {
+    "meals": {
+     "firstHalf": {
+      "daysLogged": 16,
+      "days": 17
+     },
+     "lastHalf": {
+      "daysLogged": 17,
+      "days": 17
+     }
+    }
+   },
+   "challengeWindowDays": 7,
+   "challengeMarkerBaseRatePct": 100
+  },
+  "medications": [
+   {
+    "regimenId": "00000000-0000-4000-8000-000000000005",
+    "drugName": "Motozol",
+    "strength": null,
+    "doseAmount": "1 drop",
+    "route": "otic",
+    "dosesPerDay": 2,
+    "scheduleNotes": "Once in the morning and once in the evening. Approx. 12 hours apart.",
+    "indication": "Ear infection",
+    "startedAt": "2026-07-16",
+    "endedAt": "2026-08-09",
+    "status": "completed",
+    "isSupplement": false,
+    "overlapsWindow": false,
+    "adherenceState": "tracked",
+    "elapsedDaysInWindow": 0,
+    "daysWithDose": 0,
+    "courseDays": {
+     "given": 0,
+     "loggedNotGiven": 0,
+     "nothingLogged": 0,
+     "outsideCourseGiven": 0,
+     "outsideCourseNotGiven": 0,
+     "outsideCourseGivenDays": [],
+     "outsideCourseNotGivenDays": []
+    },
+    "doseDays": [],
+    "prescribedDoses": 28,
+    "lifetimeDosesLogged": 28,
+    "lifetimeFirstDoseDay": "2026-07-16",
+    "lifetimeLastDoseDay": "2026-07-30",
+    "lifetimeDoseDayCount": 15,
+    "windowDosesLogged": 0,
+    "windowDosesTotal": 0,
+    "courseEnded": true,
+    "givenDoses": 0,
+    "partialDoses": 0,
+    "missedDoses": 0,
+    "refusedDoses": 0,
+    "unconfirmedDoses": 0
+   },
+   {
+    "regimenId": "00000000-0000-4000-8000-000000000001",
+    "drugName": "Prednisolone",
+    "strength": "5 mg",
+    "doseAmount": "5mg",
+    "route": "oral",
+    "dosesPerDay": 1,
+    "scheduleNotes": "1 tablet every 24 hours for 10 days, then every 48 hours until gone",
+    "indication": "Coughing",
+    "startedAt": "2026-09-21",
+    "endedAt": "2026-10-11",
+    "status": "completed",
+    "isSupplement": false,
+    "overlapsWindow": true,
+    "adherenceState": "tracked",
+    "elapsedDaysInWindow": 21,
+    "daysWithDose": 15,
+    "courseDays": {
+     "given": 15,
+     "loggedNotGiven": 0,
+     "nothingLogged": 6,
+     "outsideCourseGiven": 0,
+     "outsideCourseNotGiven": 0,
+     "outsideCourseGivenDays": [],
+     "outsideCourseNotGivenDays": []
+    },
+    "doseDays": [
+     "2026-09-21",
+     "2026-09-22",
+     "2026-09-23",
+     "2026-09-24",
+     "2026-09-25",
+     "2026-09-26",
+     "2026-09-27",
+     "2026-09-28",
+     "2026-09-29",
+     "2026-09-30",
+     "2026-10-02",
+     "2026-10-04",
+     "2026-10-06",
+     "2026-10-08",
+     "2026-10-10"
+    ],
+    "prescribedDoses": 15,
+    "lifetimeDosesLogged": 15,
+    "lifetimeFirstDoseDay": "2026-09-21",
+    "lifetimeLastDoseDay": "2026-10-10",
+    "lifetimeDoseDayCount": 15,
+    "windowDosesLogged": 15,
+    "windowDosesTotal": 15,
+    "courseEnded": true,
+    "givenDoses": 4,
+    "partialDoses": 11,
+    "missedDoses": 0,
+    "refusedDoses": 0,
+    "unconfirmedDoses": 0
+   }
+  ],
+  "unlinkedMedications": [
+   {
+    "itemId": "00000000-0000-4000-8000-000000000002",
+    "drugName": "Cetirizine HCl (Zyrtec)",
+    "isSupplement": true,
+    "strength": "5 mg",
+    "route": "oral",
+    "administeredDoses": 5,
+    "partialDoses": 2,
+    "unconfirmedDoses": 0,
+    "refusedDoses": 0,
+    "missedDoses": 0,
+    "totalDoses": 5,
+    "firstDate": "2026-10-03",
+    "lastDate": "2026-10-24",
+    "doseDays": [
+     "2026-10-03",
+     "2026-10-11",
+     "2026-10-12",
+     "2026-10-20",
+     "2026-10-24"
+    ]
+   },
+   {
+    "itemId": "00000000-0000-4000-8000-000000000000",
+    "drugName": "Motozol",
+    "isSupplement": false,
+    "strength": null,
+    "route": "otic",
+    "administeredDoses": 7,
+    "partialDoses": 0,
+    "unconfirmedDoses": 0,
+    "refusedDoses": 0,
+    "missedDoses": 0,
+    "totalDoses": 7,
+    "firstDate": "2026-09-21",
+    "lastDate": "2026-09-27",
+    "doseDays": [
+     "2026-09-21",
+     "2026-09-22",
+     "2026-09-23",
+     "2026-09-24",
+     "2026-09-25",
+     "2026-09-26",
+     "2026-09-27"
+    ]
+   }
+  ],
+  "medicationHistory": {
+   "entries": [
+    {
+     "key": "item:00000000-0000-4000-8000-000000000002",
+     "source": "doses",
+     "drugName": "Cetirizine HCl (Zyrtec)",
+     "isActive": false,
+     "ended": false,
+     "endStatus": null,
+     "endedDay": null,
+     "startedDay": null,
+     "firstDoseDay": "2026-07-01",
+     "lastDoseDay": "2026-10-24",
+     "singleDay": false,
+     "targetDurationDays": null,
+     "targetDurationDoses": null,
+     "dosesPerDay": null,
+     "scheduleNotes": null,
+     "runDays": null,
+     "plannedDoses": null,
+     "dosesLogged": 21
+    },
+    {
+     "key": "00000000-0000-4000-8000-000000000001",
+     "source": "regimen",
+     "drugName": "Prednisolone",
+     "isActive": false,
+     "ended": true,
+     "endStatus": "completed",
+     "endedDay": "2026-10-11",
+     "startedDay": "2026-09-21",
+     "firstDoseDay": "2026-09-21",
+     "lastDoseDay": "2026-10-10",
+     "singleDay": false,
+     "targetDurationDays": null,
+     "targetDurationDoses": 15,
+     "dosesPerDay": 1,
+     "scheduleNotes": "1 tablet every 24 hours for 10 days, then every 48 hours until gone",
+     "runDays": 21,
+     "plannedDoses": 15,
+     "dosesLogged": 15
+    },
+    {
+     "key": "item:00000000-0000-4000-8000-000000000000",
+     "source": "doses",
+     "drugName": "Motozol",
+     "isActive": false,
+     "ended": false,
+     "endStatus": null,
+     "endedDay": null,
+     "startedDay": null,
+     "firstDoseDay": "2026-09-21",
+     "lastDoseDay": "2026-09-27",
+     "singleDay": false,
+     "targetDurationDays": null,
+     "targetDurationDoses": null,
+     "dosesPerDay": null,
+     "scheduleNotes": null,
+     "runDays": null,
+     "plannedDoses": null,
+     "dosesLogged": 7
+    },
+    {
+     "key": "00000000-0000-4000-8000-000000000005",
+     "source": "regimen",
+     "drugName": "Motozol",
+     "isActive": false,
+     "ended": true,
+     "endStatus": "completed",
+     "endedDay": "2026-08-09",
+     "startedDay": "2026-07-16",
+     "firstDoseDay": "2026-07-16",
+     "lastDoseDay": "2026-07-30",
+     "singleDay": false,
+     "targetDurationDays": null,
+     "targetDurationDoses": 28,
+     "dosesPerDay": 2,
+     "scheduleNotes": "Once in the morning and once in the evening. Approx. 12 hours apart.",
+     "runDays": 25,
+     "plannedDoses": 28,
+     "dosesLogged": 28
+    }
+   ],
+   "sinceDay": "2026-07-01"
+  },
+  "correlation": {
+   "established": [],
+   "hasEstablished": false,
+   "noThreshold": true,
+   "early": [],
+   "stapleProtein": "rabbit",
+   "timing": [
+    {
+     "kind": "postprandial_timing",
+     "symptomType": "vomit",
+     "windowDays": 60,
+     "detail": {
+      "rapidCount": 9,
+      "eligibleCount": 14,
+      "totalEpisodes": 14,
+      "rapidWindowMinutes": 30,
+      "medianMinutesSinceFeeding": 2
+     }
+    }
+   ]
+  },
+  "concurrentChanges": [
+   {
+    "kind": "diet_trial",
+    "label": "Royal Canin Selected Protein PR, Dry (Dry)",
+    "startDate": "2026-07-26",
+    "bucketIndex": null,
+    "ongoing": true,
+    "endInWindow": "2026-10-20",
+    "endBucketIndex": 4,
+    "endIsDeclared": true
+   },
+   {
+    "kind": "medication",
+    "label": "Motozol",
+    "startDate": "2026-09-21",
+    "bucketIndex": 0,
+    "ongoing": false,
+    "endInWindow": "2026-09-27",
+    "endBucketIndex": 1,
+    "endIsDeclared": false
+   },
+   {
+    "kind": "medication",
+    "label": "Prednisolone",
+    "startDate": "2026-09-21",
+    "bucketIndex": 0,
+    "ongoing": false,
+    "endInWindow": "2026-10-11",
+    "endBucketIndex": 3,
+    "endIsDeclared": true
+   },
+   {
+    "kind": "supplement",
+    "label": "Cetirizine HCl (Zyrtec)",
+    "startDate": "2026-10-03",
+    "bucketIndex": 2,
+    "ongoing": false,
+    "endInWindow": "2026-10-24",
+    "endBucketIndex": 5,
+    "endIsDeclared": false
+   }
+  ],
+  "proteinTimeline": {
+   "weekStartDates": [
+    "2026-09-16",
+    "2026-09-23",
+    "2026-09-30",
+    "2026-10-07",
+    "2026-10-14",
+    "2026-10-21",
+    "2026-10-28"
+   ],
+   "proteins": [
+    "chicken"
+   ],
+   "bins": [
+    [
+     0
+    ],
+    [
+     0
+    ],
+    [
+     0
+    ],
+    [
+     0
+    ],
+    [
+     11
+    ],
+    [
+     0
+    ],
+    [
+     0
+    ]
+   ],
+   "unknownByWeek": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "mealDaysByBucket": [
+    6,
+    7,
+    7,
+    7,
+    7,
+    0,
+    0
+   ],
+   "scopeDaysByBucket": [
+    7,
+    7,
+    7,
+    7,
+    7,
+    0,
+    0
+   ],
+   "scopeStartDate": "2026-09-16",
+   "scopeEndDate": "2026-10-20",
+   "trialScoped": true,
+   "zeroWithheld": true,
+   "feedingsByWeek": [
+    0,
+    0,
+    0,
+    0,
+    11,
+    0,
+    0
+   ],
+   "totalByProtein": {
+    "chicken": 11
+   },
+   "hasUnknown": false,
+   "totalFeedings": 11,
+   "incompleteFeedings": 0,
+   "humanFoodFeedings": 0,
+   "incompleteHumanFoodFeedings": 0,
+   "packagedReadable": 11,
+   "packagedUnread": 0
+  },
+  "provenance": {
+   "ownerReported": true,
+   "totalSymptomIncidents": 24,
+   "estimatedOrWindowCount": 0,
+   "deletedExcluded": true,
+   "symptomLog": [
+    {
+     "eventId": "e1074",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-17T15:58:53.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-17T15:59:18.000+00:00",
+     "severity": null,
+     "notes": "Right after eating",
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1078",
+     "type": "cough",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-17T22:09:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-17T22:10:45.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1079",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-17T22:11:01.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-17T22:11:05.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1092",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-21T21:40:16.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-21T22:05:51.000+00:00",
+     "severity": null,
+     "notes": "Right after a scarf and barf. We recently got a slow feeder and are starting to introduce it after this vomit.",
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1096",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-22T06:30:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-22T13:05:18.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "mixed",
+      "bloodPresent": null,
+      "foreignPresent": true,
+      "foreignNote": "There is a dark grey, irregularly shaped piece of material visible that does not appear to be food — it could be fabric, rubber, or another non-food item.",
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1109",
+     "type": "cough",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-23T22:29:30.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-23T22:29:34.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1126",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-26T00:08:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-26T00:18:11.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "watery",
+      "colour": "yellow",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1128",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-09-26T01:10:08.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-09-26T01:11:53.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "bile",
+      "consistency": "foamy",
+      "colour": "yellow",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1161",
+     "type": "sneeze",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-01T22:21:49.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-01T22:21:52.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1167",
+     "type": "cough",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-02T16:06:26.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-02T16:06:27.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1183",
+     "type": "cough",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-04T16:30:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-04T22:47:00.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1214",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-09T19:53:17.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-09T19:53:32.000+00:00",
+     "severity": null,
+     "notes": "Happened right after eating",
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1246",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-14T22:44:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-14T23:01:54.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1253",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-16T12:33:12.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-16T12:33:48.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "hairball",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1255",
+     "type": "sneeze",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-17T03:54:22.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-17T03:54:24.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1264",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-18T20:39:51.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-18T20:39:55.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "foamy",
+      "colour": "white",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1292",
+     "type": "cough",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-21T22:55:04.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-21T22:55:05.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1319",
+     "type": "sneeze",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-24T22:40:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-24T22:50:17.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": null
+    },
+    {
+     "eventId": "e1335",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-26T11:10:26.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-26T11:10:35.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "unsure",
+      "consistency": "unsure",
+      "colour": "unsure",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1336",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-26T11:26:49.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-26T11:26:57.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "brown",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1343",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-27T12:44:47.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-27T12:44:55.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1345",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-28T00:40:00.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-28T00:50:55.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "chunky",
+      "colour": "tan",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1349",
+     "type": "vomit",
+     "photoRemoved": false,
+     "occurredAt": "2026-10-28T16:43:55.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-28T16:44:04.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "completed",
+      "contentsCategory": "food",
+      "consistency": "soft_formed",
+      "colour": "brown",
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    },
+    {
+     "eventId": "e1373",
+     "type": "vomit",
+     "photoRemoved": true,
+     "occurredAt": "2026-10-31T15:07:07.000+00:00",
+     "occurredAtConfidence": "witnessed",
+     "occurredAtEarliest": null,
+     "occurredAtLatest": null,
+     "loggedAt": "2026-10-31T15:07:14.000+00:00",
+     "severity": null,
+     "notes": null,
+     "dupCount": 1,
+     "phenotype": {
+      "kind": "vomit",
+      "status": "uncertain",
+      "contentsCategory": null,
+      "consistency": null,
+      "colour": null,
+      "bloodPresent": null,
+      "foreignPresent": null,
+      "foreignNote": null,
+      "bristol": null,
+      "stoolColour": null,
+      "stoolBlood": null,
+      "mucusPresent": null,
+      "edited": false
+     }
+    }
+   ],
+   "uncategorisedObservations": 0,
+   "intakeLog": [
+    {
+     "eventId": "e1165",
+     "occurredAt": "2026-10-02T12:15:00.000+00:00",
+     "foodLabel": "Royal Canin Selected Protein PR, Wet (Wet)",
+     "intakeRating": "most",
+     "isLastFullMeal": false,
+     "notCountedFreeFed": false,
+     "pinned": false
+    },
+    {
+     "eventId": "e1089",
+     "occurredAt": "2026-09-21T18:00:00.000+00:00",
+     "foodLabel": "Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy (Wet)",
+     "intakeRating": "picked",
+     "isLastFullMeal": false,
+     "notCountedFreeFed": false,
+     "pinned": false
+    }
+   ],
+   "intakeLogHiddenOlder": 0,
+   "intakeLogFreeFedExcluded": 0,
+   "intakeLogFreeFedAfterAnchor": 0,
+   "intakeLogScope": "unfinished",
+   "confounders": [
+    {
+     "eventId": "e1261",
+     "occurredAt": "2026-10-18T20:13:00.000+00:00",
+     "dayKey": "2026-10-18",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1266",
+     "occurredAt": "2026-10-18T23:57:24.000+00:00",
+     "dayKey": "2026-10-18",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1270",
+     "occurredAt": "2026-10-19T11:21:05.000+00:00",
+     "dayKey": "2026-10-19",
+     "foodLabel": "Applaws Chicken Breast in broth (Wet)",
+     "primaryProtein": "chicken",
+     "format": "wet_canned",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1271",
+     "occurredAt": "2026-10-19T16:59:53.000+00:00",
+     "dayKey": "2026-10-19",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1272",
+     "occurredAt": "2026-10-19T22:48:59.000+00:00",
+     "dayKey": "2026-10-19",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1273",
+     "occurredAt": "2026-10-19T23:10:28.000+00:00",
+     "dayKey": "2026-10-19",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1275",
+     "occurredAt": "2026-10-20T00:29:18.000+00:00",
+     "dayKey": "2026-10-19",
+     "foodLabel": "Applaws Chicken Breast in broth (Wet)",
+     "primaryProtein": "chicken",
+     "format": "wet_canned",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1276",
+     "occurredAt": "2026-10-20T11:35:40.000+00:00",
+     "dayKey": "2026-10-20",
+     "foodLabel": "Applaws Chicken Breast in broth (Wet)",
+     "primaryProtein": "chicken",
+     "format": "wet_canned",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1279",
+     "occurredAt": "2026-10-20T22:05:00.000+00:00",
+     "dayKey": "2026-10-20",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1281",
+     "occurredAt": "2026-10-20T22:13:12.000+00:00",
+     "dayKey": "2026-10-20",
+     "foodLabel": "Applaws Chicken Breast in broth (Wet)",
+     "primaryProtein": "chicken",
+     "format": "wet_canned",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    },
+    {
+     "eventId": "e1284",
+     "occurredAt": "2026-10-21T02:09:32.000+00:00",
+     "dayKey": "2026-10-20",
+     "foodLabel": "Blue Buffalo Tastefuls Purées with Chicken (Treat)",
+     "primaryProtein": "chicken",
+     "format": "treat",
+     "foodType": "meal",
+     "note": null,
+     "proteinSet": {
+      "proteins": [
+       "chicken"
+      ],
+      "complete": true,
+      "source": "photo",
+      "offTrial": [
+       "chicken"
+      ]
+     },
+     "rung": "derived_protein",
+     "antigens": [
+      "chicken"
+     ],
+     "symptomInChallengeWindow": true,
+     "panelWasRead": true,
+     "attributionChecked": true,
+     "permittedLaterFrom": null
+    }
+   ],
+   "proteinExposureTally": {
+    "chicken": 11
+   },
+   "proteinUnknownCount": 0,
+   "conditions": []
+  },
+  "incompletePulls": [],
+  "incidentPhotos": [
+   {
+    "eventId": "e1349",
+    "storagePath": "00000000-0000-4000-8000-000000000004/73.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-28T16:43:55.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "soft_formed",
+     "colour": "brown",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1345",
+    "storagePath": "00000000-0000-4000-8000-000000000004/72.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-28T00:40:00.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1343",
+    "storagePath": "00000000-0000-4000-8000-000000000004/71.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-27T12:44:47.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1336",
+    "storagePath": "00000000-0000-4000-8000-000000000004/70.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-26T11:26:49.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "brown",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1335",
+    "storagePath": "00000000-0000-4000-8000-000000000004/69.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-26T11:10:26.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "unsure",
+     "consistency": "unsure",
+     "colour": "unsure",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1264",
+    "storagePath": "00000000-0000-4000-8000-000000000004/68.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-18T20:39:51.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "foamy",
+     "colour": "white",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1253",
+    "storagePath": "00000000-0000-4000-8000-000000000004/67.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-16T12:33:12.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "hairball",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1246",
+    "storagePath": "00000000-0000-4000-8000-000000000004/66.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-14T22:44:00.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1214",
+    "storagePath": "00000000-0000-4000-8000-000000000004/65.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-10-09T19:53:17.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": "Happened right after eating",
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1128",
+    "storagePath": "00000000-0000-4000-8000-000000000004/64.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-09-26T01:10:08.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "bile",
+     "consistency": "foamy",
+     "colour": "yellow",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1126",
+    "storagePath": "00000000-0000-4000-8000-000000000004/63.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-09-26T00:08:00.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "watery",
+     "colour": "yellow",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1096",
+    "storagePath": "00000000-0000-4000-8000-000000000004/62.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-09-22T06:30:00.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": "foreign",
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "mixed",
+     "bloodPresent": null,
+     "foreignPresent": true,
+     "foreignNote": "There is a dark grey, irregularly shaped piece of material visible that does not appear to be food — it could be fabric, rubber, or another non-food item.",
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1092",
+    "storagePath": "00000000-0000-4000-8000-000000000004/61.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-09-21T21:40:16.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": "Right after a scarf and barf. We recently got a slow feeder and are starting to introduce it after this vomit.",
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1079",
+    "storagePath": "00000000-0000-4000-8000-000000000004/60.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-09-17T22:11:01.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": null,
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   },
+   {
+    "eventId": "e1074",
+    "storagePath": "00000000-0000-4000-8000-000000000004/59.jpg",
+    "type": "vomit",
+    "occurredAt": "2026-09-17T15:58:53.000+00:00",
+    "occurredAtConfidence": "witnessed",
+    "occurredAtEarliest": null,
+    "occurredAtLatest": null,
+    "notes": "Right after eating",
+    "safety": null,
+    "phenotype": {
+     "kind": "vomit",
+     "status": "completed",
+     "contentsCategory": "food",
+     "consistency": "chunky",
+     "colour": "tan",
+     "bloodPresent": null,
+     "foreignPresent": null,
+     "foreignNote": null,
+     "bristol": null,
+     "stoolColour": null,
+     "stoolBlood": null,
+     "mucusPresent": null,
+     "edited": false
+    },
+    "dataUri": null
+   }
+  ],
+  "incidentPhotosRemoved": [
+   {
+    "eventId": "e1373",
+    "type": "vomit",
+    "occurredAt": "2026-10-31T15:07:07.000+00:00"
+   }
+  ],
+  "noticed": {
+   "windowDays": 46,
+   "answeredDays": 15,
+   "absenceDays": 8,
+   "activityOnlyDays": 6,
+   "unreadableDays": 0,
+   "windowTruncated": false,
+   "absenceOnVomitDays": 2,
+   "answeredAfterVomitDays": 4,
+   "answeredVomitDays": 4,
+   "vomitDaysInWindow": 12,
+   "multiWordDays": 0,
+   "vomitDays": [
+    "2026-09-17",
+    "2026-09-21",
+    "2026-09-22",
+    "2026-09-25",
+    "2026-10-09",
+    "2026-10-14",
+    "2026-10-16",
+    "2026-10-18",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-31"
+   ],
+   "countsSum": 9,
+   "baseline": {
+    "answeredDays": 3,
+    "sinceDay": "2026-09-22",
+    "firstDay": "2026-09-25",
+    "spanDays": 3
+   },
+   "concernWords": [
+    {
+     "key": "hunched",
+     "label": "Hunched or tucked up",
+     "kind": "concern",
+     "dayCount": 1,
+     "firstDay": "2026-09-25",
+     "firstDayInWindow": true,
+     "firstDayIsRecordFirst": true,
+     "priorCoverage": {
+      "answeredDays": 3,
+      "sinceDay": "2026-09-22"
+     }
+    }
+   ],
+   "activityWords": [
+    {
+     "key": "played",
+     "label": "Played",
+     "kind": "positive",
+     "dayCount": 7,
+     "firstDay": "2026-09-25",
+     "firstDayInWindow": true,
+     "firstDayIsRecordFirst": true,
+     "priorCoverage": {
+      "answeredDays": 3,
+      "sinceDay": "2026-09-22"
+     }
+    }
+   ],
+   "barsRender": true,
+   "barsWithheld": null,
+   "barsStartDate": "2026-09-16",
+   "barsEndDate": "2026-10-31",
+   "strip": {
+    "startDate": "2026-10-04",
+    "endDate": "2026-10-31",
+    "days": [
+     {
+      "day": "2026-10-04",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-05",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-06",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-07",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-08",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-09",
+      "mark": "unanswered",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-10",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-11",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-12",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-13",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-14",
+      "mark": "unanswered",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-15",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-16",
+      "mark": "unanswered",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-17",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-18",
+      "mark": "unanswered",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-19",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-20",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-21",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-22",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-23",
+      "mark": "clear",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-24",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-25",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-26",
+      "mark": "unanswered",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-27",
+      "mark": "clear",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-28",
+      "mark": "clear",
+      "vomit": true
+     },
+     {
+      "day": "2026-10-29",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-30",
+      "mark": "unanswered",
+      "vomit": false
+     },
+     {
+      "day": "2026-10-31",
+      "mark": "unanswered",
+      "vomit": true
+     }
+    ],
+    "answeredDays": 9,
+    "unansweredVomitDays": 6,
+    "wordDaysInSpan": [],
+    "wordsAbsentInSpan": [
+     {
+      "key": "hunched",
+      "label": "Hunched or tucked up"
+     }
+    ]
+   },
+   "days": [
+    {
+     "day": "2026-09-22",
+     "entries": [
+      {
+       "eventId": "e1104",
+       "occurredAt": "2026-09-23T02:25:28.342+00:00",
+       "localDay": "2026-09-22",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-09-23",
+     "entries": [
+      {
+       "eventId": "e1110",
+       "occurredAt": "2026-09-23T22:34:51.236+00:00",
+       "localDay": "2026-09-23",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-09-24",
+     "entries": [
+      {
+       "eventId": "e1120",
+       "occurredAt": "2026-09-25T00:32:28.464+00:00",
+       "localDay": "2026-09-24",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-09-25",
+     "entries": [
+      {
+       "eventId": "e1127",
+       "occurredAt": "2026-09-26T01:00:50.51+00:00",
+       "localDay": "2026-09-25",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      },
+      {
+       "eventId": "e1129",
+       "occurredAt": "2026-09-26T01:18:04.954+00:00",
+       "localDay": "2026-09-25",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "hunched",
+         "label": "Hunched or tucked up"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-09-26",
+     "entries": [
+      {
+       "eventId": "e1134",
+       "occurredAt": "2026-09-26T22:07:58.393+00:00",
+       "localDay": "2026-09-26",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-03",
+     "entries": [
+      {
+       "eventId": "e1176",
+       "occurredAt": "2026-10-04T01:48:10.344+00:00",
+       "localDay": "2026-10-03",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-06",
+     "entries": [
+      {
+       "eventId": "e1199",
+       "occurredAt": "2026-10-07T02:09:46.968+00:00",
+       "localDay": "2026-10-06",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-08",
+     "entries": [
+      {
+       "eventId": "e1209",
+       "occurredAt": "2026-10-08T22:33:23.475+00:00",
+       "localDay": "2026-10-08",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-11",
+     "entries": [
+      {
+       "eventId": "e1227",
+       "occurredAt": "2026-10-11T22:17:02.535+00:00",
+       "localDay": "2026-10-11",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-13",
+     "entries": [
+      {
+       "eventId": "e1240",
+       "occurredAt": "2026-10-13T22:19:00.951+00:00",
+       "localDay": "2026-10-13",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-20",
+     "entries": [
+      {
+       "eventId": "e1283",
+       "occurredAt": "2026-10-21T00:39:05.166+00:00",
+       "localDay": "2026-10-20",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-21",
+     "entries": [
+      {
+       "eventId": "e1295",
+       "occurredAt": "2026-10-22T00:45:15.143+00:00",
+       "localDay": "2026-10-21",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-23",
+     "entries": [
+      {
+       "eventId": "e1310",
+       "occurredAt": "2026-10-23T22:54:39.904+00:00",
+       "localDay": "2026-10-23",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-27",
+     "entries": [
+      {
+       "eventId": "e1346",
+       "occurredAt": "2026-10-28T01:18:27.087+00:00",
+       "localDay": "2026-10-27",
+       "outcome": "nothing_unusual",
+       "words": [],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    },
+    {
+     "day": "2026-10-28",
+     "entries": [
+      {
+       "eventId": "e1351",
+       "occurredAt": "2026-10-29T02:52:57.035+00:00",
+       "localDay": "2026-10-28",
+       "outcome": "observed",
+       "words": [
+        {
+         "key": "played",
+         "label": "Played"
+        }
+       ],
+       "unknownWords": 0,
+       "note": null
+      }
+     ]
+    }
+   ],
+   "notesIncluded": false,
+   "notesWithheld": 0,
+   "intake": {
+    "kind": "none"
+   },
+   "hasUnknownWords": false
+  }
+ }
+}

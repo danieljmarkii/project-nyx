@@ -1,6 +1,6 @@
 # Nyx Vet Report v2 — The Front Page, the AI Lead, Clinic AI and the Flow After "Vet report" — Requirements (CUL-2275)
 
-**Version:** 1.0 — **RULED, NOT YET BUILD-READY** (every PM ruling is in; the build-ready mock round, row VR2-4, gates the render and flow rows) | **Date:** 2026-10-31 | **Status:** R-1 to R-12 ruled (PM, 2026-10-30 and 2026-10-31), the weight boundary, the thin record and the paywall trigger ruled 2026-10-31 | **Owner:** the Vet report v2 project (Linear, team Culprit)
+**Version:** 1.1 — **RULED, NOT YET BUILD-READY** (every PM ruling is in; the build-ready mock round, row VR2-4, gates the render and flow rows) | **Date:** 2026-10-31 | **Status:** R-1 to R-12 ruled (PM, 2026-10-30 and 2026-10-31), the weight boundary, the thin record and the paywall trigger ruled 2026-10-31 | **Owner:** the Vet report v2 project (Linear, team Culprit)
 
 **Read with:** `docs/nyx-vet-report-requirements.md` (v1; its §3 to §8 still bind v2 except where this spec or its v3.0 amendments say otherwise), `docs/nyx-design-principles-v1_0.md` Principles 6 (rewritten 2026-10-31), 8 and 9, `docs/nyx-chart-standard.md`, `docs/nyx-care-state-requirements.md` §3, `docs/nyx-weight-lane-requirements.md` §5, `docs/nyx-beta-features-requirements.md`, `docs/monetization-and-throttling-requirements.md`.
 
@@ -30,7 +30,10 @@
 | **W** | Weight units (answers W3 on CUL-1390) | **Three classes** (PM 2026-10-31): app screens read lb with no percentage; the report in every rendering reads kg at the stored 2 dp with lb beside each reading; the email subject carries no weight number. §5.8. |
 | **T** | A record too short for a check | **One scope line** where the band sits, never styled as the band, naming only what could not run (PM 2026-10-31). v1 spec rule 3 (v2 amendment). §5.1. |
 | **P** | B-265's "first vet report shared" paywall trigger (CUL-90) | **Retired** (PM 2026-10-31). No report surface is ever a paywall moment. §13. |
-| **F** | Forecast | **About 26 rows accepted** (PM 2026-10-31; the D3 fork from 17 returned and ruled). §16. |
+| **F** | Forecast | **About 26 rows accepted** (PM 2026-10-31; the D3 fork from 17 returned and ruled). **27** after ruling H. §16. |
+| **B** | What the sheet 1 word budget counts | **Only the prose that can be cut** (PM 2026-10-31, after the live Nyx render): the summary sentence or AI lead, the record lines, the confounder line and the gap lines, about 200 words. The masthead, the band, the thin-record scope line, the chart's text twin and the colophon sit outside it and are never trimmed to meet it. It unseats the single 250-word sheet target. §5.7. |
+| **H** | A real-record harness | **Added as row VR2-27** (PM 2026-10-31): the shipped report code run read-only on one consenting owner's pet, so cold reads and the bake-off run on real records. §16. |
+| **X** | A real record as a fixture | **Yes, de-identified** (PM 2026-10-31): Nyx's live snapshot with owner, vet and clinic names and every database id removed, dates kept. `docs/vet-report-v3-discovery/fixtures/`. |
 
 ### 0.2 Team defaults (the PM can veto)
 
@@ -153,7 +156,7 @@ A `docs/nyx-chart-standard.md` row lands before the chart ships. Rules:
 
 ### 5.7 Copy and the word budget
 
-- One budget by part, measured in Deno with a per-fixture ratchet in CI. Round 4's Cooper sheet 1 ran 489 words against a 250 target.
+- **The budget counts only the prose that can be cut (ruling B):** the summary sentence or AI lead, the record lines, the confounder line and the gap lines, about 200 words, measured in Deno with a per-fixture ratchet in CI. The masthead, the band, the thin-record scope line, the chart's text twin and the colophon sit outside it, are never trimmed to meet it, and are reported beside it so their growth stays visible. Why: on Nyx's live record (five flags) those required parts alone ran 332 words, so a whole-sheet target of 250 could only be met by cutting a safety line or loosening the ratchet. Round 4's Cooper sheet 1 ran 489 words in all.
 - The AI lead displaces code prose, never adds to it.
 - **Overflow order:** the band and the record lines are fixed; questions move to sheet 2 first, then gap lines, each leaving a pointer. "Sheet N of M" is computed from the render.
 - A fact prints once; the lead may restate band item 1 in one cited sentence, no more (WBC-3).
@@ -407,9 +410,9 @@ The flow rows carry a browser-driven motion demo in the round 5 mock (VR2-4) and
 
 ---
 
-## 16. Run order (the Linear project "Vet report v2" carries the same table as PR-01 to PR-26)
+## 16. Run order (the Linear project "Vet report v2" carries the same table as PR-01 to PR-27)
 
-**Forecast: 26 rows** (ruled F). A row needing RLS, deletion, a clinical change or a migration says so; each migration is its own PR.
+**Forecast: 27 rows** (ruled F, plus H). A row needing RLS, deletion, a clinical change or a migration says so; each migration is its own PR.
 
 | Row | Issue | What it is | After | Gate |
 |---|---|---|---|---|
@@ -439,6 +442,7 @@ The flow rows carry a browser-driven motion demo in the round 5 mock (VR2-4) and
 | VR2-24 | [CUL-2304](https://linear.app/projectnyx/issue/CUL-2304) | Migration: the `report_summary` consent scope, the AI-lead flag, the cap key; privacy answers and policy copy | — | Migration, privacy |
 | VR2-25 | [CUL-2305](https://linear.app/projectnyx/issue/CUL-2305) | The AI lead pipeline: fact table, writer, the Deno verifier, the checker, storage, lifecycle, the regression suite | VR2-10, VR2-24 | Clinical, adversarial-reviewer |
 | VR2-26 | [CUL-2306](https://linear.app/projectnyx/issue/CUL-2306) | The smoke bake-off of the shipping configuration before the AI flag reaches anyone | VR2-25 | Discovery |
+| VR2-27 | [CUL-2308](https://linear.app/projectnyx/issue/CUL-2308) | The real-record harness: the shipped `generateReportForPet` run read-only on one consenting owner's pet (owner-paired reads, checksummed dumps, a stand-in client), for cold reads and the bake-off | — | Privacy, rls-privacy-reviewer |
 
 **Also on the path:** CUL-282 (`getculprit.app/vets`, repo culprit-web) ships before any QR change; CUL-1864 and CUL-1771 are named dependencies.
 
@@ -489,4 +493,5 @@ The flow rows carry a browser-driven motion demo in the round 5 mock (VR2-4) and
 
 | Version | Date | Summary |
 |---|---|---|
+| 1.1 | 2026-10-31 | Rulings B, H and X after the live Nyx render: §5.7's budget counts only cuttable prose; row VR2-27 (forecast 27); a de-identified real-record fixture. |
 | 1.0 | 2026-10-31 | First draft from round 4, the full-depth critique and the PM's rulings R-1 to R-12, W, T, P and F (CUL-2275). Tier-2 edits applied the same day: design principles v2.3 (Principle 6) and the vet report spec's v3.0 amendments (§5, rules 3 and 9, §7.1). |
