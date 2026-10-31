@@ -110,13 +110,12 @@
 --                   DROP POLICY vet_reports_update_owner ON public.vet_reports;
 --                   CREATE POLICY "vet_reports_owner" ON public.vet_reports
 --                     FOR ALL USING (auth.uid() = generated_by);
---                   GRANT INSERT, SELECT, UPDATE, DELETE, TRUNCATE, REFERENCES,
---                     TRIGGER ON TABLE public.vet_reports TO anon, authenticated;
---                 (Both held arwdDxt before this file, read 2026-10-31; named
---                 rather than ALL, which on PG17 adds MAINTAIN.) Not an exact
---                 restore: authenticated's column grant on token_expires_at
---                 survives it (harmless under the table grant; a re-apply's
---                 REVOKE ALL clears it).
+--                   GRANT ALL ON TABLE public.vet_reports TO anon, authenticated;
+--                 (Both held arwdDxtm before this file, read from production,
+--                 PG 17.6, 2026-10-31; ALL restores exactly that, MAINTAIN
+--                 included.) Not an exact restore: authenticated's column
+--                 grant on token_expires_at survives it (harmless under the
+--                 table grant; a re-apply's REVOKE ALL clears it).
 --   Ordering:     after 109; before VR2-7 (CUL-2287), which it blocks. No app
 --                 or Edge Function reads or writes vet_reports as a client
 --                 today (delete-account reads it as the service role).
