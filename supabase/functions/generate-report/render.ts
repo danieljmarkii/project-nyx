@@ -3867,11 +3867,20 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // The error runs in the alarming direction so it costs no patient anything; it costs the
     // page credibility at the exact point it is being verified, and "took some on four days"
     // does modestly change the lipidosis urgency.
-    const eaten = total
-      ? `Not one rated feeding of the trial diet was finished (${num(refusalFact!.refusedFeedings)} of ${num(
-          refusalFact!.ratedFeedings,
-        )})`
-      : 'The trial diet was largely not eaten'
+    //
+    // CUL-2307 — AND NEVER "LARGELY" ON A PARTIAL ONE. The fact fires at 3 rated feedings and
+    // a 0.5 share, so 2 of 4 rated is enough; on the live record those 4 sat among ~167
+    // feedings, and "largely" described the ~163 nobody rated. The sentence states the rated
+    // count it rests on, in the noun the population allows (B-530: over `meal_record` the
+    // trial diet was not identified, so naming it would be a fabricated attribution). With
+    // no fact at all, only the owner's recorded stop reason is stated.
+    const noun = refusalFact?.population === 'meal_record' ? 'meal' : 'feeding of the trial diet'
+    const nouns = refusalFact?.population === 'meal_record' ? 'meals' : 'feedings of the trial diet'
+    const eaten = !refusalFact
+      ? 'The trial was recorded as stopped because the diet was refused'
+      : total
+        ? `Not one rated ${noun} was finished (${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)})`
+        : `${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)} rated ${nouns} were not finished`
     refusalCaveat =
       `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
   }

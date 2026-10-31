@@ -2379,6 +2379,27 @@ Deno.test('R4 — a TOTAL refusal is not hedged as "largely not eaten"', () => {
   assert.ok(!/largely not eaten/.test(text))
 })
 
+Deno.test('CUL-2307 — a PARTIAL refusal states the rated count it rests on, never "largely"', () => {
+  // The live record: 2 of 4 rated feedings unfinished among ~167 in the window. The flag
+  // fires (3 rated, 0.5 share), and the old fallback said "The trial diet was largely not
+  // eaten" — "largely" describing the unrated feedings it knows nothing about.
+  const input = wellLoggedTrialInput({ events: [] })
+  const ds = days('2026-06-14', '2026-07-02')
+  const HP = { brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }
+  for (const d of ds) {
+    input.events.push(meal({ date: d, ...HP, time: '08:00:00' }))
+    input.events.push(meal({ date: d, ...HP, time: '18:00:00' }))
+  }
+  const rated: Array<'some' | 'most'> = ['some', 'some', 'most', 'most']
+  ds.slice(-4).forEach((d, i) => input.events.push(meal({ date: d, ...HP, intakeRating: rated[i] })))
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(
+    /2 of 4 rated feedings of the trial diet were not finished, so this record documents a refusal/.test(text),
+    `the refusal sentence read: ${text.slice(text.indexOf('rated feedings'), text.indexOf('rated feedings') + 160)}`,
+  )
+  assert.ok(!/largely/.test(text), '"largely" never describes feedings nobody rated')
+})
+
 Deno.test('R4 — each allowed food carries its own protein set, since appendix B does not', () => {
   // The second-most-fed item in the record ("Royal Canin Hydrolyzed Treats ×39") had no
   // ingredient data anywhere in the document, behind a page-1 pointer to appendix B —
