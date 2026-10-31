@@ -5047,7 +5047,7 @@ function weightBlock(snap: ReportSnapshot): string {
         : 'before this window'
     return `
   <div class="weight">
-    <div class="wt-read"><span class="v num">${h(latest.kg.toFixed(1))}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
+    <div class="wt-read"><span class="v num">${weightKgText(latest.kg)}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
       fmtDay(latest.date),
     )} (${latestSide})</span><br/>
     <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.${flagNote}</span></div>
@@ -5055,10 +5055,14 @@ function weightBlock(snap: ReportSnapshot): string {
   }
   const first = t.seriesKg[0]
   const last = t.latestKg ?? t.seriesKg[t.seriesKg.length - 1]
+  // EVERY KILOGRAM HERE PRINTS AT THE COLUMN'S 2 DP (CUL-2284). At 1 dp a small cat going
+  // 1.95 → 1.86 kg printed "1.9 → 1.9 kg": a 4.6% loss read as steady, on the block a vet
+  // reads for exactly that question. The stored value is NUMERIC(5,2); rounding it further
+  // here only ever hides a change, so the block prints what was recorded.
   const trajectory =
     t.readingCount >= 2
-      ? `${num(first.toFixed(1))} &rarr; ${num(last.toFixed(1))}&nbsp;kg`
-      : `${num(last.toFixed(1))}&nbsp;kg`
+      ? `${weightKgText(first)} &rarr; ${weightKgText(last)}&nbsp;kg`
+      : `${weightKgText(last)}&nbsp;kg`
   const dateSpan =
     t.earliestDate && t.latestDate && t.readingCount >= 2
       ? `${h(fmtDay(t.earliestDate))} &ndash; ${h(fmtDay(t.latestDate))}`
@@ -5074,7 +5078,7 @@ function weightBlock(snap: ReportSnapshot): string {
   const hi = Math.max(...t.seriesKg)
   const scaleBit =
     t.readingCount >= 2 && hi > lo
-      ? ` <span class="l">&middot; chart spans ${num(lo.toFixed(1))}&ndash;${num(hi.toFixed(1))}&nbsp;kg</span>`
+      ? ` <span class="l">&middot; chart spans ${weightKgText(lo)}&ndash;${weightKgText(hi)}&nbsp;kg</span>`
       : ''
   return `
   <div class="weight">
