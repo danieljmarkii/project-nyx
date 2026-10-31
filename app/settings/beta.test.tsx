@@ -56,6 +56,7 @@ const FIXTURE_BETA: BetaFeature = {
   addedDate: '2026-10-01',
   reviewBy: '2027-01-01',
   serverCost: false,
+  careSurface: false,
 };
 function seedFixtureBeta(): void {
   beforeEach(() => {

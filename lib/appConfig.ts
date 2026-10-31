@@ -102,6 +102,12 @@ export type AppConfigKey = keyof AppConfigValues;
 // under a vomit read ("Has she eaten since …?"); the server resolves the same row for the
 // vomit read's intake arm. SEEDED OFF by migration 097. With it off nothing draws and
 // nothing is read.
+//
+// `report_composer_v2` and `report_document_v2` (Vet report v2 PR-08, CUL-2288) are the two
+// report rollout flags, SEEDED OFF by migration 111: the new flow after "Vet report" and the
+// new document, one Early access switch each, no nested inverse (spec §12, R-8). The server
+// checks `report_document_v2` on every report request (that check lands with VR2-10). Both
+// are care surfaces: never a tier gate (spec §13, `careSurface` in lib/betaFeatures.ts).
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
@@ -109,6 +115,8 @@ export const ALLOWLIST_FLAG_KEYS = [
   'engines_v3_en3',
   'engines_v3_en4',
   'engines_v3_en5',
+  'report_composer_v2',
+  'report_document_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -127,6 +135,8 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   engines_v3_en3: undefined,
   engines_v3_en4: undefined,
   engines_v3_en5: undefined,
+  report_composer_v2: undefined,
+  report_document_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /
