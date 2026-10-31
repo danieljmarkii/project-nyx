@@ -111,7 +111,7 @@ Disagreement is information. Surface it. Never resolve a persona conflict silent
 3. Home is an intelligence surface — a curated, prioritized set of insight cards; safety/concern insights always lead and are never dropped to honor a layout cap; never a firehose, feed, nav menu, or upsell. _(Revised 2026-05-30; see `design-principles.md` §3.1.)_
 4. The nudge is warm, not nagging — one per day max, specific copy.
 5. Empty states are features — warm, honest, forward-looking.
-6. The vet report is clinical-grade — scannable in 60s, no decoration.
+6. The vet report is clinical grade: the patient leads, the maker signs.
 7. Premium wraps convenience, never care.
 8. The data is the delight — every number owns a shape a reader can check without a legend.
 9. Motion is the record moving — chrome is still; the one loop is the tick.

@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 2.2 | **Status:** Stable | **Last Updated:** 2026-10-30
+**Version:** 2.3 | **Status:** Stable | **Last Updated:** 2026-10-31
 
 ---
 
@@ -113,17 +113,23 @@ _Added 2026-08-07 (Signal/Home uplift B-721, spine rule S6; PM-approved). A surf
 
 ---
 
-### 6. The Vet Report Is Clinical-Grade, Not Pretty
+### 6. The Vet Report Is Clinical Grade, Drawn in the House Language
 
-When Jordan exports a report for a vet appointment, the output must look like something Dr. Alex Chen would pick up and read — not a branded PDF with a paw print logo. Clinical utility over brand expression on this surface.
+**The patient leads, the maker signs.** When Jordan sends a report before a visit, Dr. Alex Chen should read it as a clinical document about Cooper, made with the same care as the app: the record answers the clinical question first, and Culprit appears only in the colophon. Clinical grade, not marketing, but it must be beautiful.
 
 **What this means in practice:**
-- Report layout: structured, dense, scannable in under 60 seconds
-- Content: frequency counts, severity averages, food-to-event time windows, date range clearly stated
-- Format: clean enough to hand over without explanation; no app branding that would make a vet feel like they're reading a marketing document
-- Delivery: shareable link and downloadable PDF; printable
+- **The patient leads.** The pet's name is the largest type on the sheet. Safety findings come first, in a plain, code-written band; then one summary sentence and one lead chart; then the record lines, each with its count, its denominator and its window. Scannable in under 60 seconds.
+- **The maker signs.** No wordmark, mascot or brand colour above the patient. The maker's mark sits in the colophon with the report's short id and a tokenless QR.
+- **Beautiful means the house language, used with restraint.** The app's type, ink and marks (Principle 8): tabular numerals, one mark meaning per mark, hatch for nothing logged and nothing else, every count printed on its mark. Decoration that carries no datum is out.
+- **The report is paper.** Nothing on it moves in any view: preview, as printed, the exam-room mode or a saved copy. The flow around it carries the motion (Principle 9).
+- **Absence prints on paper.** Every absence rule a v1 page carried prints on paper in v2; no flag is never an all-clear, and a record too short for a check says so in words.
+- **One artifact, two layouts.** The printed sheet and the phone reflow carry the same words in the same order; print sizes are absolute, and the phone follows the owner's text size.
+- **Frequency over severity.** Counts and rates lead; severity is owner-reported, per event, and never averaged.
+- **Delivery:** a PDF named for the patient, printable in mono, readable by a clinic's AI; a phone view for the exam room.
 
-**The test:** Hand the report to someone who has never used Nyx. Can they understand what it says in under 60 seconds without any context? If no, redesign.
+**The test:** Hand sheet 1 to a GP who has never met the patient. In 60 seconds can they say what the owner is worried about, what the record shows, and how complete it is? And would a designer at Calm or Linear be proud of the page? If either answer is no, redesign.
+
+_Rewritten 2026-10-31 (v2.3, CUL-2275 R-1; PM, 2026-10-30: "Clinical grade. Not marketing. But it must be beautiful."). It replaces "The Vet Report Is Clinical-Grade, Not Pretty" (May 2026), which protected the report from reading as marketing; that protection holds through "the maker signs". It also removes "severity averages", which contradicted the vet report spec's rule 5. Requirements: `docs/nyx-vet-report-v2-requirements.md`._
 
 ---
 
@@ -308,6 +314,7 @@ These are intentionally deferred — answers belong in a future design sprint in
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2.3 | 2026-10-31 | Principle 6 rewritten: "Clinical grade, drawn in the house language: the patient leads, the maker signs" (CUL-2275 R-1, PM 2026-10-30). Adds: the report is paper, nothing on it moves; every absence rule prints on paper; one artifact, two layouts. Drops "severity averages" (contradicted spec rule 5). |
 | v2.2 | 2026-10-30 | Principle 9 gains *A tap may answer once*: a tab answers the tap that chose it with one gesture from its own glyph, never a loop, never on its own, still under Reduce Motion (CUL-2251; PM ruled option 3 on 2026-10-28, wording approved 2026-10-30). The tick stays the only loop. |
 | v2.1 | 2026-10-23 | Color: one accent becomes one action colour, indigo, and the hue table gives each hue one meaning (CUL-2145, D4 of CUL-1898; wording PM-approved 2026-10-23, building on G4 (C) of 2026-10-03). The trend line and chart paragraphs unchanged. |
 | v2.0 | 2026-10-05 | Design v2 GA (CUL-1071; PM-approved 1a). Principle 3 revised: Home has two jobs, not a list of zones. Two principles added: 8, the data is the delight (with the five things every chart shows), and 9, motion is the record moving (the gestures as shipped, the tick's carve-out, Reduce Motion's three-way rule). The Motion section rewritten in that vocabulary (absorbing CUL-635's D4 line, and recording the Signal's flight, CUL-1077 (a)). Philosophy gains *Calm is not quiet*; Color gains the never-colour-alone chart rule; the lens shapes gain a fifth invariant (scope resets on a pet switch). Principles 1, 2 and 4 to 7 unchanged. |
