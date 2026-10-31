@@ -23,7 +23,7 @@ Only evaluation subjects (PMD-12): the pets in `scripts/engine-replay/evaluation
 
 ## What leaves the database, and what does not
 
-Leaves, into the session: a superset of the rows the report reads. Events and looks come out as the pet's whole history, every event note included; the stand-in applies production's lookback and look cap, so the render matches production's. Also the owner's display name (the report prints both), and the trial window's provenance (its one sanctioned reader is the report). Stays: look notes (returned null; neither audience the harness renders prints them), photo paths and bytes (paths withheld, Storage never read, photos render as placeholders), and every other account's id (flag allowlists cut to the owner).
+Leaves, into the session: a superset of the rows the report reads. Events and looks come out as the pet's whole history, every event note included; the stand-in applies production's lookback and look cap, so the render matches production's. Also the owner's display name (the report prints it), and the trial window's provenance (its one sanctioned reader is the report). Stays: look notes (returned null; neither audience the harness renders prints them), photo paths and bytes (paths withheld, Storage never read, photos render as placeholders), and every other account's id (flag allowlists cut to the owner).
 
 **Outputs never enter git, Linear, a session record or an artifact without the PM's word.** A real render is health data about a named pet.
 
