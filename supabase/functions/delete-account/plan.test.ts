@@ -13,6 +13,7 @@ import {
   scopeMedicationPaths,
   scopeFoodPaths,
   scopeVetDocumentPaths,
+  scopeVetReportPaths,
   scopePetPhotoPaths,
   collectStoragePaths,
   buildDeletionPlan,
@@ -301,6 +302,72 @@ Deno.test('scopeVetDocumentPaths — passes nulls through for cleanPaths to drop
   assertEquals(scopeVetDocumentPaths([null, undefined, 'pet-1/d.pdf'], ['pet-1']), ['pet-1/d.pdf'])
 })
 
+// ── scopeVetReportPaths (CUL-2282, VR2-1) ────────────────────────────────────
+// `vet_reports.storage_path` is unconstrained TEXT, so this guard is the ONLY thing
+// between a crafted owned row and a service-role remove() of another owner's report.
+
+Deno.test('scopeVetReportPaths — keeps a legitimate {petId}/{reportId}.pdf key', () => {
+  assertEquals(
+    scopeVetReportPaths(['pet-1/rep-1.pdf', 'pet-2/rep-9.pdf'], ['pet-1', 'pet-2']),
+    ['pet-1/rep-1.pdf', 'pet-2/rep-9.pdf'],
+  )
+})
+
+Deno.test('scopeVetReportPaths — drops a path naming a pet the user does not own', () => {
+  // The attack: an owned vet_reports row whose storage_path names a victim's pet.
+  assertEquals(
+    scopeVetReportPaths(['pet-mine/r1.pdf', 'pet-victim/r2.pdf'], ['pet-mine']),
+    ['pet-mine/r1.pdf'],
+  )
+})
+
+Deno.test('scopeVetReportPaths — drops every `..` traversal variant', () => {
+  // The first segment of `{own}/../{victim}/x.pdf` IS an owned pet; only the
+  // two-segment shape test drops it.
+  assertEquals(scopeVetReportPaths([
+    'pet-mine/../pet-victim/r.pdf',
+    'pet-mine/../../pet-victim/r.pdf',
+    'pet-mine//pet-victim/r.pdf',
+    '../pet-victim/r.pdf',
+    'pet-victim/../pet-mine/r.pdf',
+    './pet-mine/r.pdf',
+  ], ['pet-mine']), [])
+})
+
+Deno.test('scopeVetReportPaths — a degenerate, slashless or extra-segment key is dropped', () => {
+  assertEquals(scopeVetReportPaths(['pet-1/', 'pet-1/.', 'pet-1/..', 'pet-1', 'pet-1/a/r.pdf'], ['pet-1']), [])
+})
+
+Deno.test('scopeVetReportPaths — a pet id that is a string PREFIX of another is not a match', () => {
+  assertEquals(scopeVetReportPaths(['pet-12/r.pdf'], ['pet-1']), [])
+})
+
+Deno.test('scopeVetReportPaths — an empty owned-pet set fails CLOSED', () => {
+  assertEquals(scopeVetReportPaths(['pet-1/r.pdf'], []), [])
+  assertEquals(scopeVetReportPaths(['pet-1/r.pdf'], ['', '   ']), [])
+})
+
+Deno.test('scopeVetReportPaths — passes nulls through for cleanPaths to drop', () => {
+  assertEquals(scopeVetReportPaths([null, undefined, 'pet-1/r.pdf'], ['pet-1']), ['pet-1/r.pdf'])
+})
+
+Deno.test('collectStoragePaths — CUL-2282: a foreign or traversal report path never reaches the purge', () => {
+  const purges = collectStoragePaths(owned({
+    ownedPetIds: ['pet-mine'],
+    vetReportPaths: ['pet-mine/r1.pdf', 'pet-victim/r2.pdf', 'pet-mine/../pet-victim/r3.pdf'],
+  }))
+  const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
+  assertEquals(byBucket[STORAGE_BUCKETS.vetReports], ['pet-mine/r1.pdf'])
+  for (const p of purges) {
+    for (const key of p.paths) assert(!key.includes('pet-victim'), `victim key reached ${p.bucket}: ${key}`)
+  }
+})
+
+Deno.test('collectStoragePaths — CUL-2282: a user with no pets purges no report, even a listed one', () => {
+  const purges = collectStoragePaths(owned({ vetReportPaths: ['pet-victim/r.pdf'] }))
+  assertEquals(purges.some((p) => p.bucket === STORAGE_BUCKETS.vetReports), false)
+})
+
 // ── scopePetPhotoPaths (B-463) ───────────────────────────────────────────────
 // Defense-in-depth BEHIND migration 042's `pets_photo_path_pet_prefix` CHECK.
 // The CHECK closed the plain cross-tenant write; these cases pin the two things
@@ -385,7 +452,7 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
     // {pet_id}/{document_id}.{ext} — the B-478 convention (buildVetDocumentPath).
     vetDocumentPaths: ['pet-1/doc-7.pdf'],
     ownedPetIds: ['pet-1'],
-    vetReportPaths: ['rep/r1.pdf'],
+    vetReportPaths: ['pet-1/rep-1.pdf'],
     // {user_id}/{medication_item_id}/{slot}.jpg — the per-user-prefix convention
     // from migration 021 (buildMedicationPhotoPath).
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
@@ -398,7 +465,7 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
   assertEquals(byBucket[STORAGE_BUCKETS.eventAttachments], ['ev/a1.jpg', 'ev/a2.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['vet/v1.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetDocuments], ['pet-1/doc-7.pdf'])
-  assertEquals(byBucket[STORAGE_BUCKETS.vetReports], ['rep/r1.pdf'])
+  assertEquals(byBucket[STORAGE_BUCKETS.vetReports], ['pet-1/rep-1.pdf'])
   assertEquals(byBucket[STORAGE_BUCKETS.medicationPhotos], ['user-1/med-9/label.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.foodPhotos], ['food-1/0-front.jpg'])
 })
@@ -500,7 +567,7 @@ Deno.test('collectStoragePaths — never emits a PRESERVED bucket (invariant sur
     ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
-    vetReportPaths: ['rep/r1.pdf'],
+    vetReportPaths: ['pet-1/rep-1.pdf'],
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
     foodPhotoPaths: ['food-1/0-front.jpg'],
     ownedFoodItemIds: ['food-1'],
@@ -607,7 +674,7 @@ Deno.test('collectStoragePaths — output buckets are always a subset of the pur
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetDocumentPaths: ['pet-1/doc-7.pdf'],
     ownedPetIds: ['pet-1'],
-    vetReportPaths: ['rep/r1.pdf'],
+    vetReportPaths: ['pet-1/rep-1.pdf'],
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
     foodPhotoPaths: ['food-1/0-front.jpg'],
     ownedFoodItemIds: ['food-1'],
@@ -641,7 +708,7 @@ Deno.test('buildDeletionPlan — auth-user delete is ALWAYS the final step', () 
     petPhotoPaths: ['pet-1/profile.jpg'],
     ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
-    vetReportPaths: ['rep/r1.pdf'],
+    vetReportPaths: ['pet-1/rep-1.pdf'],
   }))
   assert(isAuthDelete(plan[plan.length - 1]), 'last step must be delete-auth-user')
 })
@@ -652,7 +719,7 @@ Deno.test('buildDeletionPlan — auth-user delete appears EXACTLY once', () => {
     ownedPetIds: ['pet-1'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
-    vetReportPaths: ['rep/r1.pdf'],
+    vetReportPaths: ['pet-1/rep-1.pdf'],
   }))
   assertEquals(plan.filter(isAuthDelete).length, 1)
 })

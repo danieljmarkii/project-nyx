@@ -187,8 +187,8 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     listPrefixRecursive(medicationLister, userId),
   ])
   if (petsRes.error) throw new Error(`Failed to read pets: ${petsRes.error.message}`)
-  // medication_items exists today (migration 020, applied to live DB) — unlike the
-  // forward-looking vet_reports below, a read error here is a REAL failure. Throw so
+  // medication_items exists today (migration 020, applied to live DB) — a read
+  // error here is a REAL failure, as it is for every table this function reads. Throw so
   // the whole run aborts and retries (idempotent, FR-6) rather than silently skipping
   // the prescription-label purge and leaking PII.
   if (medItemsRes.error) throw new Error(`Failed to read medication_items: ${medItemsRes.error.message}`)
@@ -235,41 +235,33 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   ])
   if (eventAttRes.error) throw new Error(`Failed to read event_attachments: ${eventAttRes.error.message}`)
   if (vetAttRes.error) throw new Error(`Failed to read vet_visit_attachments: ${vetAttRes.error.message}`)
-  // vet_documents is a HARD failure, NOT the tolerated degrade vet_reports gets below.
-  // The distinction is deliberate. vet_reports is tolerated because its table genuinely
-  // does not exist yet (Step 9), so a read error there is the expected state rather
-  // than a fault. `vet_documents` ships in migration 044, in the same PR as this
-  // change and applied before it is deployed — so a read error here means something is
-  // actually wrong, and degrading it to "no documents" would let the run report a
-  // clean deletion while leaving every one of this owner's lab results and
-  // vaccination certificates sitting in the bucket. Silence in the direction of "we
-  // erased it" is the one failure mode an erasure path must not have (§6.2: verified
-  // in QA, not assumed). Throw so the whole run aborts and retries — it is idempotent
-  // by construction (FR-6: the auth delete is last), so the account survives intact.
+  // vet_documents and vet_reports are HARD failures, like every read above. Degrading
+  // either to "no files" would let the run report a clean deletion while leaving this
+  // owner's lab results, vaccination certificates or saved vet reports sitting in the
+  // bucket. Silence in the direction of "we erased it" is the one failure mode an
+  // erasure path must not have (§6.2: verified in QA, not assumed). Throw so the
+  // whole run aborts and retries — it is idempotent by construction (FR-6: the auth
+  // delete is last), so the account survives intact.
+  //
+  // vet_reports used to be tolerated here on the claim its table did not exist yet.
+  // It has existed since migration 001 (CUL-2282, round 4 critique BRK-7), so a read
+  // error is a real fault, and once saved reports ship (VR2-20) tolerating it would
+  // leave every saved report behind on a "successful" deletion.
   if (vetDocRes.error) throw new Error(`Failed to read vet_documents: ${vetDocRes.error.message}`)
-  // vet_reports is forward-looking (Step 9). Degrade a read error to "no PDFs"
-  // rather than fail the whole deletion — there are no rows today, and when Step 9
-  // ships the table read succeeds normally. The actual PDF removal is best-effort
-  // below regardless.
-  let vetReportPaths: (string | null)[] = []
-  if (vetReportRes.error) {
-    console.warn('delete-account: vet_reports read failed (forward-looking, tolerated):', vetReportRes.error.message)
-  } else {
-    vetReportPaths = (vetReportRes.data ?? []).map((r) => r.storage_path as string)
-  }
+  if (vetReportRes.error) throw new Error(`Failed to read vet_reports: ${vetReportRes.error.message}`)
 
   return {
     petPhotoPaths,
     eventAttachmentPaths: (eventAttRes.data ?? []).map((r) => r.storage_path as string),
     vetAttachmentPaths: (vetAttRes.data ?? []).map((r) => r.storage_path as string),
     vetDocumentPaths: (vetDocRes.data ?? []).map((r) => r.storage_path as string),
-    vetReportPaths,
+    vetReportPaths: (vetReportRes.data ?? []).map((r) => r.storage_path as string),
     medicationPhotoPaths,
     foodPhotoPaths,
     ownedFoodItemIds,
     // The same pet ids that scoped the reads above, passed through so
-    // scopeVetDocumentPaths and scopePetPhotoPaths (B-463) can re-check each
-    // vet-document / pet-photo key against them — a path and the ids that permit it
+    // scopeVetDocumentPaths, scopeVetReportPaths (CUL-2282) and scopePetPhotoPaths
+    // (B-463) can re-check each vet-document / vet-report / pet-photo key against them — a path and the ids that permit it
     // always travel together. Both validate the whole two-segment shape, not just
     // the leading segment; a first-segment-only test keeps the `..` traversal key
     // (see plan.ts).
