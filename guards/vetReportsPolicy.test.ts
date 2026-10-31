@@ -1,0 +1,176 @@
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
+
+import { stripSqlComments } from './sqlComments';
+
+// CUL-283 (migration 110): the vet_reports policy rewrite. Before 110 the one
+// policy was FOR ALL USING (auth.uid() = generated_by) with no WITH CHECK, so
+// any signed-in account could insert a row naming another account's pet and a
+// storage_path of its choosing, then edit or extend it. Measured on a PG16
+// replay of 001 to 109 (the PR records the probe). Vet report v2 keeps a saved
+// copy of every report sent there, so this pins the shape 110 leaves:
+//
+//   * live policies: exactly a SELECT and an UPDATE, both TO authenticated,
+//     pet ownership through pets.user_id, and the UPDATE checks it in WITH CHECK
+//     too. No INSERT, DELETE or FOR ALL policy, ever again, without editing this;
+//   * grants: anon nothing; authenticated SELECT and UPDATE (token_expires_at);
+//   * the storage_path CHECK is present, anchored, and starts at the row's pet;
+//   * the client freeze is an allowlist of exactly token_expires_at and
+//     updated_at, refuses an extension, names no value, and fires before the
+//     updated_at stamp.
+//
+// For each object the LAST statement in filename order is the live one.
+//
+// MUTANTS, run against 110 on 2026-10-31 (each applied to the real file, the
+// suite run, the file restored), all 17 killed:
+//   ✗ a FOR INSERT policy added              ✗ the UPDATE's WITH CHECK dropped
+//   ✗ the SELECT policy back to generated_by ✗ TO authenticated dropped
+//   ✗ GRANT INSERT to authenticated          ✗ GRANT UPDATE table-wide
+//   ✗ anon's REVOKE removed                  ✗ a schema-wide grant after it
+//   ✗ the CHECK's '^' anchor dropped         ✗ the CHECK's '$' anchor dropped
+//   ✗ the CHECK dropped later                ✗ share_token added to the allowlist
+//   ✗ the extension test removed             ✗ a value formatted into the RAISE
+//   ✗ the trigger renamed past updated_at    ✗ the trigger dropped later
+//   ✗ the freeze made SECURITY DEFINER
+//
+// WHAT IT DOES NOT CLAIM (C-38):
+//   * It reads the migration files, not production. 110's VERIFY block and
+//     get_advisors cover a hand edit in the dashboard.
+//   * It pins shape, not behaviour. The behaviour is the probe in the PR.
+//   * A policy or grant made through a DO block's EXECUTE is invisible here.
+//   * VR2-7 (CUL-2287) adds columns and its own content freeze; when it names a
+//     new control column it edits CONTROL below, which is the point.
+
+const MIGRATIONS_DIR = join(__dirname, '..', 'supabase', 'migrations');
+const TABLE = String.raw`(?:public\.)?vet_reports\b`;
+const OWNED = String.raw`pet_id IN \(SELECT p\.id FROM public\.pets p WHERE p\.user_id = \(SELECT auth\.uid\(\)\)\)`;
+const CONTROL = ['token_expires_at', 'updated_at'];
+
+function allMigrations(dir: string = MIGRATIONS_DIR): string {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => stripSqlComments(readFileSync(join(dir, f), 'utf8')))
+    .join('\n');
+}
+
+/** Replays CREATE / DROP POLICY on vet_reports in order; the survivors with their text. */
+function livePolicies(sql: string): Map<string, string> {
+  const live = new Map<string, string>();
+  const re = new RegExp(String.raw`\b(CREATE|DROP)\s+POLICY\s+(?:IF\s+EXISTS\s+)?"?(\w+)"?\s+ON\s+${TABLE}[^;]*;`, 'gi');
+  for (const m of sql.matchAll(re)) {
+    if (m[1].toUpperCase() === 'CREATE') live.set(m[2], m[0].replace(/\s+/g, ' '));
+    else live.delete(m[2]);
+  }
+  return live;
+}
+
+/** Every GRANT / REVOKE on vet_reports naming the role, in order. */
+function grantsFor(sql: string, role: string): string[] {
+  const re = new RegExp(String.raw`\b(?:GRANT|REVOKE)\s[^;]*?\bON\s+(?:TABLE\s+)?${TABLE}[^;]*?\b(?:TO|FROM)\s+[^;]*\b${role}\b[^;]*;`, 'gi');
+  return [...sql.matchAll(re)].map((m) => m[0].replace(/\s+/g, ' '));
+}
+
+function lastIndexOf(sql: string, re: RegExp): number {
+  let at = -1;
+  for (const m of sql.matchAll(new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`))) at = m.index ?? at;
+  return at;
+}
+
+function freezeBody(sql: string): { header: string; body: string } {
+  const defs = [
+    ...sql.matchAll(/CREATE OR REPLACE FUNCTION public\.vet_reports_client_freeze\(\)([\s\S]*?)\$\$([\s\S]*?)\$\$;/g),
+  ];
+  expect(defs.length).toBeGreaterThan(0);
+  const last = defs[defs.length - 1];
+  return { header: last[1], body: last[2].replace(/--[^\n]*/g, '') };
+}
+
+describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
+  const sql = allMigrations();
+
+  it('leaves exactly an owner SELECT and an owner UPDATE', () => {
+    const live = livePolicies(sql);
+    expect([...live.keys()].sort()).toEqual(['vet_reports_select_owner', 'vet_reports_update_owner']);
+    for (const text of live.values()) {
+      expect(text).not.toMatch(/\bFOR\s+(?:ALL|INSERT|DELETE)\b/i);
+      expect(text).toMatch(/\bTO authenticated\b/);
+      expect(text).not.toMatch(/generated_by/);
+    }
+  });
+
+  it('binds the SELECT to the caller\'s pets', () => {
+    const text = livePolicies(sql).get('vet_reports_select_owner') ?? '';
+    expect(text).toMatch(/\bFOR SELECT\b/);
+    expect(text).toMatch(new RegExp(String.raw`USING \( ${OWNED} \)`));
+  });
+
+  it('checks pet ownership on the UPDATE in USING and in WITH CHECK', () => {
+    const text = livePolicies(sql).get('vet_reports_update_owner') ?? '';
+    expect(text).toMatch(/\bFOR UPDATE\b/);
+    expect(text).toMatch(new RegExp(String.raw`USING \( ${OWNED} \) WITH CHECK \( ${OWNED} \)`));
+  });
+
+  it('gives anon nothing', () => {
+    const anon = grantsFor(sql, 'anon');
+    expect(anon[anon.length - 1]).toBe('REVOKE ALL ON TABLE public.vet_reports FROM anon;');
+  });
+
+  it('gives authenticated SELECT and UPDATE (token_expires_at) only', () => {
+    const authed = grantsFor(sql, 'authenticated');
+    const reset = authed.lastIndexOf('REVOKE ALL ON TABLE public.vet_reports FROM authenticated;');
+    expect(reset).toBeGreaterThan(-1);
+    expect(authed.slice(reset + 1)).toEqual([
+      'GRANT SELECT ON TABLE public.vet_reports TO authenticated;',
+      'GRANT UPDATE (token_expires_at) ON TABLE public.vet_reports TO authenticated;',
+    ]);
+  });
+
+  it('has no schema-wide grant to a client role after the revokes', () => {
+    const revoke = lastIndexOf(sql, /REVOKE ALL ON TABLE public\.vet_reports FROM authenticated;/);
+    expect(revoke).toBeGreaterThan(-1);
+    expect(sql.slice(revoke)).not.toMatch(
+      /\bGRANT\s[^;]*\bON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+public\b[^;]*\bTO\s+[^;]*\b(?:anon|authenticated)\b/i,
+    );
+  });
+
+  it('keeps the whole-shape storage_path CHECK, anchored at the row\'s pet', () => {
+    const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_storage_path_shape CHECK/);
+    expect(add).toBeGreaterThan(-1);
+    expect(sql.slice(add)).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_storage_path_shape\b/);
+    const check = sql.slice(add, sql.indexOf(';', add));
+    expect(check).toMatch(/storage_path ~ \(\s*'\^' \|\| pet_id::text\s*\|\| '\/\[0-9a-f\]\{8\}-[^']*\\\.\(html\|pdf\)\$'\s*\)/);
+  });
+
+  it('freezes every column but the control set, and only lets the expiry move earlier', () => {
+    const { header, body } = freezeBody(sql);
+    expect(header).toMatch(/SECURITY INVOKER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const control = /control text\[\] := ARRAY\[([^\]]*)\];/.exec(body);
+    expect(control).not.toBeNull();
+    expect((control?.[1] ?? '').split(',').map((c) => c.trim().replace(/'/g, ''))).toEqual(CONTROL);
+    expect(body).toMatch(/\(to_jsonb\(NEW\) - control\) IS DISTINCT FROM \(to_jsonb\(OLD\) - control\)/);
+    expect(body).toMatch(/OR NEW\.token_expires_at > OLD\.token_expires_at/);
+  });
+
+  it('names no value in its RAISE (C-31)', () => {
+    const { body } = freezeBody(sql);
+    const raises = [...body.matchAll(/RAISE EXCEPTION\s*('(?:[^']|'')*')\s*([^;]*);/g)];
+    expect(raises.length).toBe(1);
+    expect(raises[0][1]).not.toMatch(/%/);
+    expect(raises[0][2].trim()).toBe("USING ERRCODE = 'check_violation'");
+  });
+
+  it('binds the freeze ahead of the updated_at stamp', () => {
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_client_freeze\s+BEFORE UPDATE ON public\.vet_reports\s+FOR EACH ROW EXECUTE FUNCTION public\.vet_reports_client_freeze\(\);/);
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_reports_client_freeze\b/);
+    // Same-event triggers fire in name order: the freeze sorts before every
+    // other BEFORE UPDATE trigger on the table, so it judges the client's row.
+    const others = [...sql.matchAll(/CREATE TRIGGER (\w+)\s+BEFORE UPDATE ON (?:public\.)?vet_reports\b/g)]
+      .map((m) => m[1])
+      .filter((n) => n !== 'trg_vet_reports_client_freeze');
+    expect(others).toContain('trg_vet_reports_updated_at');
+    for (const name of others) expect('trg_vet_reports_client_freeze' < name).toBe(true);
+  });
+});
