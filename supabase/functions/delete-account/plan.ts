@@ -11,7 +11,7 @@
 // shell fetches the user's OWNED rows and executes this plan. Keeping it pure is
 // what makes the scoping and ordering invariants testable offline (AC-11).
 
-import { fetchAll, type PullPage } from '../_shared/pull.ts'
+import { isRangeNotSatisfiable, rowsOrThrow, type PullPage } from '../_shared/pull.ts'
 
 // ── Storage buckets ───────────────────────────────────────────────────────────
 // The buckets whose objects are THIS user's PII/data and must be erased (FR-3).
@@ -518,25 +518,40 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
 }
 
 // ── Owned-row path reads (CUL-2312) ───────────────────────────────────────────
-// Every `storage_path` a pet-scoped table holds for the account's pets, read through
-// the shared C-42 reader. An earlier loop here ended its walk on a SHORT page, so a
-// PostgREST `max-rows` below its page size would have returned page one, erased only
-// those objects and reported success. `fetchAll` advances by the rows RECEIVED and
-// earns completeness from page 0's `count: 'exact'`; an absent count, a shifted offset
-// or the page ceiling all read as incomplete. Incomplete THROWS: the run aborts before
-// any purge or the auth delete (FR-6), so the account survives and the call retries.
+// Every `storage_path` a pet-scoped table holds for the account's pets. An earlier loop
+// ended on a SHORT page, so a PostgREST `max-rows` below its page size would erase page
+// one's objects and report success (C-42). This walk follows the shared reader's rules
+// (`_shared/pull.ts` fetchAll): advance by the rows RECEIVED, one row of overlap on every
+// later page to detect a shifted offset, and completeness from `count: 'exact'`.
 //
-// THE RECOUNT. `fetchAll` stops once it holds page 0's count of rows. Its callers read
-// newest-first, where a concurrent insert lands behind the cursor; these tables sort
-// on a random v4 `id`, so an insert can land AHEAD of it, fill the count, and end the
-// walk one pre-existing row short while `complete` reads true (rls-privacy-reviewer on
-// this PR: 999 rows, one insert mid-read, `p/998` left behind under `ok: true`). So a
-// non-empty pull is recounted after the walk and must match the distinct rows read
-// exactly. Any write during the read then throws (loud, retryable), never a short erase.
-// An empty pull needs no recount: a count of 0 at page 0 left no pre-existing row to miss.
+// WHY NOT fetchAll ITSELF. fetchAll STOPS once it holds page 0's count of rows. Its callers
+// read newest-first, where a concurrent insert lands behind the cursor. These tables sort
+// on a random v4 `id`, so an insert lands anywhere: ahead of the cursor it fills the count
+// and ends the walk one pre-existing row short with `complete: true`, and a later delete
+// of a row already read makes even a recount agree (rls-privacy-reviewer, two passes on
+// this PR: 999 rows, `p/998` left in Storage under ok: true). So this walk never stops on
+// a count. It stops only at the END OF THE TABLE: a page with nothing past its overlap row.
 //
-// The cost: an account above the page ceiling in one table (40 pages less 39 overlap
-// rows: 19,961 at a 500-row page) cannot delete until it moves. Loud, never partial.
+// THE PROOF OF COMPLETENESS, all four must hold or it THROWS (the run aborts before any
+// purge or the auth delete, FR-6, so the account survives and the call retries):
+//   1. the walk reached the end of the table, not the page ceiling;
+//   2. no later page began on a row it had not seen (a delete behind the cursor shifts
+//      the list up under it and would skip a row: that is caught here);
+//   3. the distinct rows read are at least page 0's count;
+//   4. a recount AFTER the walk equals the distinct rows read exactly, so a write
+//      landing between the last page and the recount also fails loud.
+// An insert ahead of the cursor is simply read (the walk runs to the end), and an insert
+// behind it re-serves a row already seen. Neither can hide a live row. A max-rows of 1
+// returns only the overlap row and looks like the end, which (3) catches.
+//
+// What this cannot see, stated: a row written AFTER the recount but before the auth
+// delete (the purge loop's window) is not in the list. That window predates this change.
+//
+// Cost: an account above the page ceiling in one table (40 pages less 39 overlap rows:
+// 19,961 at a 500-row page) cannot delete until it moves. Loud, never partial.
+export const OWNED_PATH_PAGE = 500
+export const OWNED_PATH_MAX_PAGES = 40
+
 export interface OwnedPathRow {
   id: string
   storage_path: string
@@ -546,21 +561,51 @@ export async function readAllOwnedPaths(
   table: string,
   page: (from: number, to: number) => PromiseLike<PullPage>,
 ): Promise<string[]> {
-  // fetchAll throws on a query error (rowsOrThrow); only the shortfall is ours.
-  const pull = await fetchAll<OwnedPathRow>(table, (r) => r.id, page)
-  if (!pull.complete) {
-    throw new Error(`Failed to read every ${table} row (read ${pull.rows.length}, completeness unproven)`)
-  }
-  if (pull.rows.length > 0) {
-    const recount = await page(0, 0)
-    if (recount.error) throw new Error(`${table} recount failed: ${recount.error.message}`)
-    if (typeof recount.count !== 'number' || recount.count !== pull.rows.length) {
-      throw new Error(
-        `Failed to read every ${table} row (read ${pull.rows.length}, recount ${recount.count ?? 'absent'}, completeness unproven)`,
-      )
+  const rows: OwnedPathRow[] = []
+  const seen = new Set<string>()
+  let total: number | null = null
+  let reachedEnd = false
+  let shifted = false
+  let from = 0
+  for (let p = 0; p < OWNED_PATH_MAX_PAGES; p++) {
+    const start = p === 0 ? 0 : from - 1
+    const res = await page(start, start + OWNED_PATH_PAGE - 1)
+    // Past the end of the set. On page 0 the count stays null, so (3) throws below.
+    if (isRangeNotSatisfiable(res.error)) {
+      reachedEnd = true
+      break
     }
+    const batch = rowsOrThrow<OwnedPathRow>(res, table)
+    if (p === 0 && typeof res.count === 'number') total = res.count
+    if (p > 0 && batch.length > 0 && !seen.has(batch[0].id)) shifted = true
+    let fresh = 0
+    for (const row of batch) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      rows.push(row)
+      fresh++
+    }
+    // The end: nothing at all, or nothing past the overlap row.
+    if (batch.length === 0 || (p > 0 && fresh === 0)) {
+      reachedEnd = true
+      break
+    }
+    from = start + batch.length
   }
-  return pull.rows.map((r) => r.storage_path)
+
+  const fail = (why: string) =>
+    new Error(`Failed to read every ${table} row (${why}, read ${rows.length}, completeness unproven)`)
+  if (!reachedEnd) throw fail('page ceiling reached')
+  if (shifted) throw fail('rows moved during the read')
+  if (total === null) throw fail('no count')
+  if (rows.length < total) throw fail(`count ${total}`)
+  const recount = await page(0, 0)
+  if (recount.error && !isRangeNotSatisfiable(recount.error)) {
+    throw new Error(`${table} recount failed: ${recount.error.message}`)
+  }
+  const after = isRangeNotSatisfiable(recount.error) ? 0 : recount.count
+  if (typeof after !== 'number' || after !== rows.length) throw fail(`recount ${after ?? 'absent'}`)
+  return rows.map((r) => r.storage_path)
 }
 
 // ── Ordering ──────────────────────────────────────────────────────────────────

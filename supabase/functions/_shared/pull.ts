@@ -13,8 +13,10 @@
 //     as "at least N" (pipeline.ts, `incompletePulls`).
 //   • ask — an incomplete read answers nothing: the designed deflection, with the engine's
 //     safety lead still attached (index.ts).
-//   • delete-account — an incomplete read of an owned file list throws before any purge,
-//     so the account survives and the deletion retries (plan.ts readAllOwnedPaths, CUL-2312).
+//   • delete-account — not a fetchAll caller: it imports `rowsOrThrow` and
+//     `isRangeNotSatisfiable` for its own walk, which runs to the end of the table instead
+//     of stopping at the count, because its random-UUID order lets an insert land ahead of
+//     the cursor (plan.ts readAllOwnedPaths, CUL-2312). Its incomplete read throws.
 //
 // DEPLOY SCOPE. A `_shared/` file is inlined only into the functions that import it
 // (scripts/edge-deploy/fingerprint.ts), so an edit here redeploys exactly those four.

@@ -1095,23 +1095,103 @@ Deno.test('readAllOwnedPaths — a table past the page ceiling THROWS rather tha
   await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
 })
 
-Deno.test('readAllOwnedPaths — a row inserted AHEAD of the cursor mid-read THROWS, never ends one row short', async () => {
-  // rls-privacy-reviewer on CUL-2312: ids are random v4, so under `id ASC` an insert can
-  // land in the unread tail, fill page 0's count and stop fetchAll one pre-existing row
-  // early with `complete: true`. 999 rows, pages of 500, an insert at 90% before page 1:
-  // without the recount `obj-998` is left in Storage under ok: true.
+Deno.test('readAllOwnedPaths — a row inserted AHEAD of the cursor mid-read is read, and no pre-existing row is lost', async () => {
+  // rls-privacy-reviewer pass 1 on CUL-2312: ids are random v4, so under `id ASC` an insert
+  // can land in the unread tail. A walk that stopped at page 0's count ended one row short
+  // (`obj-998` left in Storage under ok: true). This walk runs to the end of the table.
   const t = cappedTable(999, 1000, {
     beforeRequest: (call, rows) => {
       if (call === 1) rows.splice(900, 0, { id: 'id-000899x', storage_path: 'pet-1/late.jpg' })
     },
   })
-  await assertRejects(() => readAllOwnedPaths('vet_documents', t.page), Error, 'recount 1000')
+  const paths = await readAllOwnedPaths('vet_documents', t.page)
+  for (const p of t.original) assert(paths.includes(p), `${p} was not read`)
+  assert(paths.includes('pet-1/late.jpg'))
+})
+
+Deno.test('readAllOwnedPaths — insert ahead mid-walk plus a delete of a read row before the recount THROWS or reads all', async () => {
+  // rls-privacy-reviewer pass 2: with a count-stopping walk this returned ok: true with
+  // `p/998` unread, because the delete made the recount agree with the short list.
+  for (const [n, cap] of [[999, 1000], [5, 2], [797, 200]] as const) {
+    let lastPageCall = -1
+    const t = cappedTable(n, cap, {
+      beforeRequest: (call, rows) => {
+        if (call === 1) rows.splice(Math.floor(rows.length * 0.9), 0, { id: `id-${String(Math.floor(n * 0.9)).padStart(6, '0')}x`, storage_path: 'pet-1/late.jpg' })
+        if (lastPageCall >= 0 && call === lastPageCall + 1) rows.splice(0, 1)
+      },
+    })
+    const wrapped = (from: number, to: number) => {
+      if (from === 0 && to === 0) lastPageCall = t.ranges.length - 1
+      return t.page(from, to)
+    }
+    // The delete lands just before the recount, so it is a write after the walk: loud.
+    await assertRejects(() => readAllOwnedPaths('event_attachments', wrapped), Error, 'completeness unproven')
+  }
+})
+
+// A seeded fuzz over concurrent writes. The property an erasure path needs: the call
+// either THROWS, or returns every row that existed when the read began AND still exists
+// when it returned. (A row deleted mid-read is gone from the database; its object is the
+// client delete path's to remove, not this function's.)
+Deno.test('readAllOwnedPaths — fuzz: concurrent inserts and deletes never yield success with a live row unread', async () => {
+  let seed = 2312
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed / 0x7fffffff
+  }
+  let successes = 0
+  let throws = 0
+  let nextId = 0
+  for (let trial = 0; trial < 3000; trial++) {
+    const n = 1 + Math.floor(rand() * 60)
+    const cap = 2 + Math.floor(rand() * 12)
+    const writeRate = rand() * 0.6
+    const rows: OwnedRow[] = []
+    const mkId = () => `${rand().toString(36).slice(2, 10)}-${nextId++}`
+    for (let i = 0; i < n; i++) rows.push({ id: mkId(), storage_path: '' })
+    for (const r of rows) r.storage_path = `pet-1/${r.id}.jpg`
+    rows.sort((x, y) => (x.id < y.id ? -1 : 1))
+    const startIds = new Set(rows.map((r) => r.id))
+    const page = (from: number, to: number) => {
+      // Before each request, a burst of up to three writes: inserts at random places and
+      // deletes. One write per request cannot beat the recount alone, so the layers under
+      // it (the overlap check, the walk to the end) would go untested; a burst reaches them.
+      for (let k = 0; k < 3; k++) if (rand() < writeRate) {
+        if (rand() < 0.5 || rows.length === 0) {
+          const id = mkId()
+          rows.push({ id, storage_path: `pet-1/${id}.jpg` })
+          rows.sort((x, y) => (x.id < y.id ? -1 : 1))
+        } else {
+          rows.splice(Math.floor(rand() * rows.length), 1)
+        }
+      }
+      if (from >= rows.length && from > 0) {
+        return Promise.resolve({ data: null, error: { message: 'Requested range not satisfiable', code: 'PGRST103' }, count: null })
+      }
+      const served = rows.slice(from, Math.min(to + 1, from + cap))
+      return Promise.resolve({ data: served, error: null, count: rows.length })
+    }
+    try {
+      const paths = new Set(await readAllOwnedPaths('vet_documents', page))
+      successes++
+      for (const r of rows) {
+        if (startIds.has(r.id)) assert(paths.has(r.storage_path), `trial ${trial}: live row ${r.id} unread under success`)
+      }
+    } catch (e) {
+      assert((e as Error).message.includes('completeness unproven'), (e as Error).message)
+      throws++
+    }
+  }
+  // Non-vacuity: the fuzz must exercise both outcomes.
+  assert(successes > 200, `only ${successes} successes`)
+  assert(throws > 1000, `only ${throws} throws`)
 })
 
 Deno.test('readAllOwnedPaths — a row inserted after the walk but before the recount THROWS', async () => {
+  // Calls: 0 = page 0, 1 = the end-of-table page, 2 = the recount.
   const t = cappedTable(3, 500, {
     beforeRequest: (call, rows) => {
-      if (call === 1) rows.push({ id: 'id-999999', storage_path: 'pet-1/late.jpg' })
+      if (call === 2) rows.push({ id: 'id-999999', storage_path: 'pet-1/late.jpg' })
     },
   })
   await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
@@ -1121,7 +1201,7 @@ Deno.test('readAllOwnedPaths — a failed recount THROWS rather than trusting th
   let calls = 0
   const page = (from: number, to: number) => {
     calls++
-    if (calls > 1) return Promise.resolve({ data: null, error: { message: 'timeout' }, count: null })
+    if (calls > 1 && from === 0 && to === 0) return Promise.resolve({ data: null, error: { message: 'timeout' }, count: null })
     return Promise.resolve({ data: [{ id: 'a', storage_path: 'pet-1/a.jpg' }].slice(from, to + 1), error: null, count: 1 })
   }
   await assertRejects(() => readAllOwnedPaths('vet_reports', page), Error, 'recount failed')
