@@ -88,6 +88,7 @@ const FIXTURE_BETA: BetaFeature = {
   addedDate: '2026-10-01',
   reviewBy: '2027-01-01',
   serverCost: false,
+  careSurface: false,
 };
 function seedFixtureBeta(): void {
   beforeEach(() => {
@@ -164,18 +165,28 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   });
 });
 
-describe('Settings — the widget graduated, so no account sees the opt in (CUL-1842)', () => {
-  it('shows no Early access row with the shipped registry, whatever the allowlists say', () => {
-    // Every allowlist key opened to everyone: the row would have every chance to
-    // render if any shipped beta were left on the shelf.
+describe('Settings — the shipped registry: the widget graduated (CUL-1842), the report flow joined (CUL-2288)', () => {
+  it('shows the Early access row only through the report flow, and never the widget', () => {
+    // Every allowlist key opened to everyone: a graduated card would have every chance
+    // to render. The one shipped row is the report flow.
     const open = { enabled: true, allowlist: [] };
     setAllowlist(
       Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>,
     );
-    const { queryByText } = render(<SettingsScreen />);
-    expect(BETA_REGISTRY).toHaveLength(0);
-    expect(queryByText('Early access')).toBeNull();
+    const { getByText, queryByText } = render(<SettingsScreen />);
+    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2']);
+    expect(getByText('Early access')).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
+  });
+
+  it('shows no Early access row under the dark seed (migration 111), whatever else is open', () => {
+    const open = { enabled: true, allowlist: [] };
+    setAllowlist({
+      ...(Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>),
+      report_composer_v2: { enabled: false, allowlist: [] },
+    });
+    const { queryByText } = render(<SettingsScreen />);
+    expect(queryByText('Early access')).toBeNull();
   });
 });
 

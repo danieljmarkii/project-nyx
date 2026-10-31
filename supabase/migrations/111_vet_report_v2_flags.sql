@@ -1,0 +1,62 @@
+-- ============================================================
+-- Migration 111: seed the two vet report v2 rollout flags, off
+--   (Vet report v2 PR-08, VR2-8)
+-- See: CUL-2288 (the row; its plan comment, PM go 2026-10-31 with option (a));
+--      docs/nyx-vet-report-v2-requirements.md §0.1 R-8, §12, §13;
+--      063_daily_look_config.sql (the allowlist seed this copies verbatim).
+-- ============================================================
+--
+-- WHAT THE TWO FLAGS ARE (spec §12, R-8: no per-send choice)
+-- ------------------------------------------------------------
+--   report_composer_v2   The new flow after "Vet report": the composer, the
+--                        preview, the send sheet (VR2-16 and after). Read on the
+--                        phone through resolveAllowlistFlag, AND-ed with its Early
+--                        access switch (the B-712 two-gate shape).
+--   report_document_v2   The new document (sheet 1, the back sheets, the phone
+--                        reflow; VR2-10 and after). The SERVER checks it on every
+--                        request in generate-report, against the JWT uid, never a
+--                        body value. Its Early access row and that server check
+--                        land together in VR2-10 (CUL-2288 ruling (a)), so the
+--                        shelf never shows a switch the server does not enforce.
+--
+-- Two switches, one each, no nested inverse: flag off is today's report.
+--
+-- PETS > $ (spec §13): both are care surfaces. Their eligibility is this
+-- allowlist and, at GA, `enabled: true` for every account. They are exempt from
+-- the beta shelf's Premium swap (a named narrowing of beta-features D9); the
+-- client marks their registry rows `careSurface: true` and
+-- guards/reportNoEntitlement.test.ts reds any report module that reads an
+-- entitlement. No eligibility predicate here ever references a tier.
+--
+-- SHIP-DARK (seed-first, default nobody): {"enabled": false, "allowlist": []}
+-- means both are eligible for no one, so creating these rows changes nothing an
+-- owner can see. Nothing consumes either flag yet. Cohort enablement is a later,
+-- recorded app_config UPDATE, never baked into this seed, so a re-applied seed
+-- never resets a live allowlist. The App Review demo account stays off the
+-- allowlist (allowlist values are readable by every authenticated client).
+-- The document flag reaches no owner until the back sheets, the legend and the
+-- must-carry parity guard have shipped (spec §12).
+--
+-- No new table, column, policy or function: app_config (030) keeps its
+-- read-only-to-authenticated RLS, which these rows inherit unchanged.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (purely additive: 2 new rows in an existing table; nothing
+--                     is dropped, renamed, retyped or altered.)
+--   Rollback:     DELETE FROM app_config
+--                   WHERE key IN ('report_composer_v2', 'report_document_v2');
+--                 (Only before any consumer ships: a server read of a missing
+--                 row fails closed, which is today's report.)
+--   Backfill:     N/A (two brand-new config rows; no existing data is read).
+--   Affected tables: app_config (INSERT only). Check before applying:
+--                   SELECT key FROM app_config
+--                     WHERE key IN ('report_composer_v2', 'report_document_v2');
+--                   -- expect: 0 rows
+-- ============================================================
+
+-- ON CONFLICT DO NOTHING: idempotent, and a re-apply after a live allowlist edit
+-- keeps the live value (the 030/037/054/055/056/061/063 discipline).
+INSERT INTO app_config (key, value) VALUES
+  ('report_composer_v2', '{"enabled": false, "allowlist": []}'::jsonb),
+  ('report_document_v2', '{"enabled": false, "allowlist": []}'::jsonb)
+ON CONFLICT (key) DO NOTHING;

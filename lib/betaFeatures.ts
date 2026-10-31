@@ -25,7 +25,8 @@ import {
 // ── The registry (D7 §4.3.1) ──────────────────────────────────────────────────
 // One typed row per beta, keyed on the `app_config` eligibility flag — which is
 // ALSO the opt-in store key, so one key carries both gates. The page maps over the
-// entries the caller is eligible for; at 1.2.0 it holds none (CUL-1842).
+// entries the caller is eligible for; at 1.2.0 it held none (CUL-1842), and Vet
+// report v2 adds the first row since (CUL-2288).
 //
 // The fields past key/title/blurb are the graduation policy's teeth — a small
 // registry with a forcing date is the counter-force to the "beta graveyard" (a
@@ -45,6 +46,15 @@ import {
 //                  the owner's own local data, so it was false. The test asserts every
 //                  serverCost:true entry has a matching server gate — the rule is
 //                  grep-able, so beta #2 can't forget it.
+//   • careSurface — true ⇒ the beta is a CARE surface (Pets > $), so its Gate 1 is
+//                  the allowlist and then GA for everyone, NEVER the Premium check.
+//                  This is a named narrowing of beta-features D9 (vet report v2
+//                  spec §13, CUL-2288): D9's scale path swaps Gate 1 to the
+//                  entitlement, and a care surface is exempt from that swap. Required,
+//                  not optional, so every new row answers the question; the swap, when
+//                  it is built, must skip these rows, and
+//                  guards/reportNoEntitlement.test.ts reds a gate file that reads an
+//                  entitlement without naming `careSurface`.
 export interface BetaFeature {
   key: AllowlistFlagKey;
   title: string;
@@ -53,6 +63,7 @@ export interface BetaFeature {
   addedDate: string;
   reviewBy: string;
   serverCost: boolean;
+  careSurface: boolean;
 }
 
 export const BETA_REGISTRY: BetaFeature[] = [
@@ -71,6 +82,25 @@ export const BETA_REGISTRY: BetaFeature[] = [
   // the next beta joins. Removing a row removes its shelf card; a persisted opt-in for
   // any of the ten keys self-cleans (parseBetaOptIns keeps only known keys), so no
   // storage migration is owed.
+  //
+  // Vet report v2's flow (CUL-2288, spec §12): the new composer, preview and send sheet.
+  // Seeded off (migration 111), so no account is eligible and this card renders for no
+  // one until the PM allowlists a cohort; nothing reads the opt-in until VR2-16 builds
+  // the composer behind it. Client-only (serverCost false): the flow's server spends
+  // (the AI lead) carry their own server-checked flags and caps. Its sibling,
+  // `report_document_v2`, joins with the server check generate-report reads (VR2-10,
+  // ruling (a) on CUL-2288), so the shelf never offers a switch the server ignores.
+  {
+    key: 'report_composer_v2',
+    title: 'New report flow',
+    blurb:
+      'A new way to put a report together and send it to your vet. Switch it off to go back to the current one.',
+    owner: 'Vet report v2 (CUL-2275)',
+    addedDate: '2026-10-31',
+    reviewBy: '2027-01-31',
+    serverCost: false,
+    careSurface: true,
+  },
 ];
 
 // ── The shelf derivation (B-747 — the OR over the registry) ───────────────────

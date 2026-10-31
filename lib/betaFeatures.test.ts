@@ -51,16 +51,52 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('is empty at 1.2.0: the widget, the last beta, graduated (CUL-1842)', () => {
-    // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
-    // retired from the shelf (CUL-547 + CUL-548), the two capture betas (the log
-    // screen redesign, B-745, and more event types, B-756) followed (CUL-962), and
-    // then Vet visits, the appointment companion (CUL-905), Noticed, the daily look
-    // (CUL-876), the diet trial's own screen (CUL-1307), History v2 (CUL-1175),
-    // Design v2 (CUL-1071) and the Home Screen widget (CUL-1842, D8). The graduated
-    // keys are out of the AllowlistFlagKey union, so the length is what pins it.
-    expect(BETA_REGISTRY).toHaveLength(0);
+  it('holds exactly the report flow at Vet report v2 PR-08 (CUL-2288); the widget stays graduated', () => {
+    // The shelf was empty at 1.2.0 (CUL-1842: the ten earlier betas graduated, the
+    // widget last). The report flow is the first row since. Its sibling,
+    // report_document_v2, joins with its server check in VR2-10 (ruling (a)), so
+    // its absence here is pinned, not forgotten.
+    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2']);
+    expect(ALLOWLIST_FLAG_KEYS as readonly string[]).toContain('report_document_v2');
     expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('widget_enabled');
+  });
+});
+
+// ── careSurface: report betas never move behind Premium (spec §13, CUL-2288) ──
+// A named narrowing of beta-features D9: the scale path swaps Gate 1 from the
+// allowlist to the entitlement, and a care surface is exempt. Every report flag is a
+// care surface, so its row must say so; the swap itself is unbuilt, and
+// guards/reportNoEntitlement.test.ts holds its half.
+
+const REPORT_FLAG = /^report_/;
+
+describe('careSurface (the D9 narrowing)', () => {
+  it('every report beta on the shelf is a care surface', () => {
+    const reportRows = BETA_REGISTRY.filter((b) => REPORT_FLAG.test(b.key));
+    // Non-vacuity: the shelf holds a report row today, so the loop below runs.
+    expect(reportRows.length).toBeGreaterThan(0);
+    for (const b of reportRows) expect(b.careSurface).toBe(true);
+  });
+
+  it('the client knows exactly the two report flags migration 111 seeds', () => {
+    // The check above keys on the prefix, so a third report flag added under another
+    // name would slip past it; pinning the list makes the next one a deliberate edit.
+    const known = (ALLOWLIST_FLAG_KEYS as readonly string[]).filter((k) => REPORT_FLAG.test(k));
+    expect(known).toEqual(['report_composer_v2', 'report_document_v2']);
+  });
+
+  it('the field is required: a row without it does not typecheck', () => {
+    // @ts-expect-error careSurface is required on every BetaFeature (CUL-2288).
+    const row: BetaFeature = {
+      key: 'ask_enabled',
+      title: 't',
+      blurb: 'b',
+      owner: 'o',
+      addedDate: '2026-10-01',
+      reviewBy: '2027-01-01',
+      serverCost: false,
+    };
+    expect(row.key).toBe('ask_enabled');
   });
 });
 
@@ -87,11 +123,22 @@ describe('deriveBetaShelf (B-747)', () => {
     addedDate: '2026-10-01',
     reviewBy: '2027-01-01',
     serverCost: false,
+    careSurface: false,
   });
   const REG = [fixture('ask_enabled'), fixture('ask_general_enabled')];
 
-  it('the shipped (empty) registry gives every account no shelf (CUL-1842)', () => {
-    expect(deriveBetaShelf(allow({ ask_enabled: { enabled: true, allowlist: [] } }), 'uid-1', {}).eligible).toEqual([]);
+  it('the shipped registry under the dark seed gives every account no shelf (migration 111)', () => {
+    const darkSeed = allow({
+      ask_enabled: { enabled: true, allowlist: [] },
+      report_composer_v2: { enabled: false, allowlist: [] },
+    });
+    expect(deriveBetaShelf(darkSeed, 'uid-1', {}).eligible).toEqual([]);
+  });
+
+  it('the report flow card reaches an allowlisted account, and only it', () => {
+    const cohort = allow({ report_composer_v2: { enabled: false, allowlist: ['uid-1'] } });
+    expect(deriveBetaShelf(cohort, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(['report_composer_v2']);
+    expect(deriveBetaShelf(cohort, 'uid-2', {}).eligible).toEqual([]);
   });
 
   it('an eligible account gets the shelf, and eligibility turns nothing on', () => {
