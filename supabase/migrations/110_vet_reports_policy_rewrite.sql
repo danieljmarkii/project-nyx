@@ -62,9 +62,15 @@
 --
 -- Who is a client: a call with a user (auth.uid() set), one running as anon or
 -- authenticated, or one whose session role is either, which reaches a
--- SECURITY DEFINER function called by anon (there current_user is the owner;
--- rls-privacy-reviewer on this file, measured). The service role with no user
--- and the migration owner are not; VR2-7's content freeze binds them too.
+-- SECURITY DEFINER function called by anon, or by authenticated with no user
+-- (there current_user is the owner, and Postgres refuses to SET role inside
+-- one; rls-privacy-reviewer on this file, two passes, measured). The service
+-- role with no user and the migration owner are not; VR2-7's content freeze
+-- binds them too. The service role carrying a user (a sub claim) is frozen,
+-- which fails closed; no current path sends one. A client-callable function
+-- with a `SET role = service_role` clause is exempt, as it is from every
+-- policy in the schema: shipping one hands anon the service role, which is a
+-- compromise of its own, not a gap in this file.
 --
 -- WHAT IS NOT CLOSED, stated:
 --   * Visit links. The table has no vet_visit_id or vet_appointment_id yet.

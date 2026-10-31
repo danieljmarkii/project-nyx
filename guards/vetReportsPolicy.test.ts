@@ -22,7 +22,8 @@ import { stripSqlComments } from './sqlComments';
 // For each object the LAST statement in filename order is the live one.
 //
 // MUTANTS, run against 110 on 2026-10-31 (each applied to the real file, the
-// suite run, the file restored), all 26 killed. The first 17 are the author's;
+// suite run, the file restored), all 31 killed (the five after the list are
+// the second pass's N15, N3, N6, N7 and N8 spellings). The first 17 are the author's;
 // R1 to R7 are the rls-privacy-reviewer's survivors of the first cut, which
 // the exemption, CHECK, PUBLIC, DISABLE and role-list tests now pin:
 //   ✗ a FOR INSERT policy added              ✗ the UPDATE's WITH CHECK dropped
@@ -44,6 +45,14 @@ import { stripSqlComments } from './sqlComments';
 //     get_advisors cover a hand edit in the dashboard.
 //   * It pins shape, not behaviour. The behaviour is the probe in the PR.
 //   * A policy or grant made through a DO block's EXECUTE is invisible here.
+//   * Each mutant above is one spelling. Later-file forms it does NOT catch
+//     (rls-privacy-reviewer, second pass, measured): a replacement freeze
+//     written with a named dollar tag (`$function$`), which freezeBody skips;
+//     a trigger declared `BEFORE INSERT OR UPDATE` that sorts ahead of the
+//     freeze; `GRANT authenticated TO anon`; renaming the CHECK and dropping it
+//     under its new name; renaming the table. ALTER POLICY, ALTER / DROP
+//     FUNCTION on the freeze and ENABLE REPLICA / ALWAYS on its trigger ARE
+//     refused, by the test that says so.
 //   * VR2-7 (CUL-2287) adds columns and its own content freeze; when it names a
 //     new control column it edits CONTROL below, which is the point.
 
@@ -155,6 +164,15 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     expect(sql).toMatch(new RegExp(String.raw`ALTER TABLE\s+${TABLE}\s+ENABLE ROW LEVEL SECURITY`, 'i'));
   });
 
+  it('never alters a policy, or alters or drops the freeze function, in place', () => {
+    // The live text is the CREATE the replay above reads; an ALTER would change
+    // it where this file does not look. A later file that needs a change drops
+    // and recreates the policy, or CREATE OR REPLACEs the function.
+    expect(sql).not.toMatch(new RegExp(String.raw`\bALTER\s+POLICY\s+"?\w+"?\s+ON\s+${TABLE}`, 'i'));
+    expect(sql).not.toMatch(/\b(?:ALTER|DROP)\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:public\.)?vet_reports_client_freeze\b/i);
+    expect(sql).not.toMatch(/\bENABLE\s+(?:REPLICA|ALWAYS)\s+TRIGGER\s+trg_vet_reports_client_freeze\b/i);
+  });
+
   it('keeps the whole-shape storage_path CHECK, anchored at the row\'s pet', () => {
     const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_storage_path_shape CHECK/);
     expect(add).toBeGreaterThan(-1);
@@ -180,8 +198,11 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
       "IF auth.uid() IS NULL AND current_user NOT IN ('anon', 'authenticated') AND coalesce(current_setting('role', true), 'none') NOT IN ('anon', 'authenticated') THEN RETURN NEW; END IF;",
     );
     expect(body.match(/RETURN NEW;/g)?.length).toBe(2);
-    expect(body).toMatch(/\(to_jsonb\(NEW\) - control\) IS DISTINCT FROM \(to_jsonb\(OLD\) - control\)/);
-    expect(body).toMatch(/OR NEW\.token_expires_at > OLD\.token_expires_at/);
+    // The whole condition through THEN: a weakened bound (`> OLD + interval`)
+    // must not pass as a prefix match.
+    expect(body.replace(/\s+/g, ' ')).toContain(
+      'IF (to_jsonb(NEW) - control) IS DISTINCT FROM (to_jsonb(OLD) - control) OR NEW.token_expires_at > OLD.token_expires_at THEN',
+    );
   });
 
   it('names no value in its RAISE (C-31)', () => {
