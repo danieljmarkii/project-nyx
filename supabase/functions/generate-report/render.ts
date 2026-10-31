@@ -1860,7 +1860,13 @@ function lastEntryLine(snap: ReportSnapshot): string {
   if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) return 'No entry in the record read'
   const d = e.lastEntryDaysBeforeReport
   const when = d === 0 ? 'the day of this report' : `${num(d)}&nbsp;day${d === 1 ? '' : 's'} before this report`
-  return `Last entry ${h(fmtDayScopedTo(e.lastEntryDate, snap.scope.endDate))}, ${when}`
+  // A daily look is not an entry in any count (CUL-891), but it is the owner writing something down:
+  // a later one is named so "last entry" cannot read as "last word from the owner" (pass 1, finding 2).
+  const look =
+    e.lastLookDate !== null && e.lastLookDate > e.lastEntryDate
+      ? `; last daily look ${h(fmtDayScopedTo(e.lastLookDate, snap.scope.endDate))}`
+      : ''
+  return `Last entry ${h(fmtDayScopedTo(e.lastEntryDate, snap.scope.endDate))}, ${when}${look}`
 }
 
 /** "Jun 19", or "Jan 3, 2027" when the day falls in another year than the range box states. */
@@ -1886,29 +1892,57 @@ function recordEdgeDisclosure(snap: ReportSnapshot): string {
   const e = snap.atAGlance.recordEdge
   if (e.windowEndDaysBeforeReport <= 0) return ''
   const end = snap.scope.endDate
-  const lead = `<b>Window ends before this report.</b> It closes ${h(fmtDay(end))}, ${num(e.windowEndDaysBeforeReport)} day${
-    e.windowEndDaysBeforeReport === 1 ? '' : 's'
-  } before the report date.`
-  let body: string
+  // The close date carries its year when the report falls in another year (pass 1, finding 6).
+  const lead = `<b>Window ends before this report.</b> It closes ${h(fmtDayScopedTo(end, e.reportDate))}, ${dayCount(
+    e.windowEndDaysBeforeReport,
+  )} before the report date.`
+  const looks =
+    e.afterWindowLookDays > 0
+      ? ` Daily looks were answered on ${dayCount(e.afterWindowLookDays)} after ${h(fmtDay(end))}.`
+      : ''
   if (e.afterWindowEntries === 0) {
-    body =
-      e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null
-        ? ' Nothing is logged in the record read for this report.'
-        : ` Nothing logged after ${h(fmtDayScopedTo(e.lastEntryDate, end))}: no entry of any kind in the ${num(
-            e.lastEntryDaysBeforeReport,
-          )} day${e.lastEntryDaysBeforeReport === 1 ? '' : 's'} before this report.`
-  } else {
-    const through = e.lastEntryDate === null ? '' : `, through ${h(fmtDayScopedTo(e.lastEntryDate, end))}`
-    const symptoms =
-      e.afterWindowSymptomEntries === 0
-        ? 'none of them a symptom entry'
-        : `<b>${num(e.afterWindowSymptomEntries)} of them symptom entr${e.afterWindowSymptomEntries === 1 ? 'y' : 'ies'}</b>`
-    body = ` ${num(e.afterWindowEntries)} entr${e.afterWindowEntries === 1 ? 'y was' : 'ies were'} logged after it${through}, ${symptoms}. Meals, symptoms and every other entry after ${h(
-      fmtDay(end),
-    )} are not read on this report.`
+    if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) {
+      return cherry(`${lead} Nothing is logged in the record read for this report.${looks}`)
+    }
+    const what = e.lastLookDate !== null && e.lastLookDate > e.lastEntryDate ? 'no meal, symptom or other entry' : 'no entry of any kind'
+    return cherry(
+      `${lead} Nothing logged after ${h(fmtDayScopedTo(e.lastEntryDate, end))}: ${what} in the ${dayCount(
+        e.lastEntryDaysBeforeReport,
+      )} before this report.${looks}${looks ? ' They are not read on this report.' : ''}`,
+    )
   }
+  const through = e.afterWindowLastDate === null ? '' : `, through ${h(fmtDayScopedTo(e.afterWindowLastDate, end))}`
+  const future =
+    e.futureDatedEntries > 0
+      ? ` (${num(e.futureDatedEntries)} dated after the report date)`
+      : ''
+  // INTAKE FIRST, and in bold (adversarial pass 1, finding 1): a refused meal is not a symptom entry,
+  // so the symptom count alone made a three-week hunger strike read as "none of them a symptom entry".
+  const intake =
+    e.afterWindowMealsNotFinished > 0
+      ? ` <b>${num(e.afterWindowMealsNotFinished)} ${e.afterWindowMealsNotFinished === 1 ? 'is a meal' : 'are meals'} not finished${
+          e.afterWindowMealsRefused > 0 ? `, ${num(e.afterWindowMealsRefused)} of them refused` : ''
+        }.</b>`
+      : ''
+  const symptoms =
+    e.afterWindowSymptomEntries === 0
+      ? ' None is a symptom entry.'
+      : ` <b>${num(e.afterWindowSymptomEntries)} ${e.afterWindowSymptomEntries === 1 ? 'is a symptom entry' : 'are symptom entries'}.</b>`
+  return cherry(
+    `${lead} ${num(e.afterWindowEntries)} entr${e.afterWindowEntries === 1 ? 'y was' : 'ies were'} logged after it${through}${future}.${intake}${symptoms}${looks} Nothing after ${h(
+      fmtDay(end),
+    )} is read on this report: no count or flag above includes it.`,
+  )
+}
+
+/** "1 day", "13 days" — the number in the report's numeral span. */
+function dayCount(n: number): string {
+  return `${num(n)} day${n === 1 ? '' : 's'}`
+}
+
+function cherry(body: string): string {
   return `
-  <div class="cherry">${lead}${body}</div>`
+  <div class="cherry">${body}</div>`
 }
 
 /** §6 cherry-pick guard — only on a custom window with out-of-window events. */
@@ -5474,6 +5508,7 @@ function unloggedTailOf(ag: AtAGlance): UnloggedTail | null {
     after: ag.lastLoggedDate,
     windowEndsEarly: ag.recordEdge.windowEndDaysBeforeReport > 0,
     recordContinues: ag.recordEdge.afterWindowEntries > 0,
+    toReport: ag.recordEdge.lastEntryDaysBeforeReport,
   }
 }
 
@@ -5489,6 +5524,8 @@ interface UnloggedTail {
   after: string | null
   windowEndsEarly: boolean
   recordContinues: boolean
+  /** The record's silence to the report date, when the tail is the record's (adversarial pass 1). */
+  toReport: number | null
 }
 
 /**
@@ -5509,7 +5546,12 @@ function nothingLoggedFor(t: UnloggedTail): string {
 /** "the last 7 days", or "the window's last 7 days" when the window ends before the report date. */
 function tailSpan(t: UnloggedTail): string {
   const whose = t.windowEndsEarly ? 'window&rsquo;s ' : ''
-  return t.days === 1 ? `the ${whose}last day` : `the ${whose}last ${num(t.days)} days`
+  const span = t.days === 1 ? `the ${whose}last day` : `the ${whose}last ${num(t.days)} days`
+  // A window closing early with nothing logged after it: the window's tail is only the start of the
+  // silence, so its length to the report rides in the same clause (adversarial pass 1, finding 5).
+  return t.windowEndsEarly && !t.recordContinues && t.toReport !== null && t.toReport > t.days
+    ? `${span}; ${num(t.toReport)} days before this report`
+    : span
 }
 
 /** The diet-trial At-a-glance tiles (the pre-round-2 set — appropriate only when a trial is active). */

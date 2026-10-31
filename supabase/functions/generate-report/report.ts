@@ -2963,10 +2963,32 @@ export interface RecordEdge {
   lastEntryDaysBeforeReport: number | null
   /** Report date minus the window end, in local days; 0 on every window that runs to the report date. */
   windowEndDaysBeforeReport: number
-  /** Entries of any kind on local days after the window end, through the report date. */
+  /**
+   * Entries of any kind on local days after the window end, INCLUDING any dated after the report:
+   * the cherry-pick guard counts those too, and the two sentences must agree on one population.
+   */
   afterWindowEntries: number
   /** Of those, the symptom entries (`REPORT_SYMPTOM_TYPES`). A meal logged as refused is NOT one. */
   afterWindowSymptomEntries: number
+  /**
+   * Of those, the rated meals not finished (any rating but 'all'), and of THOSE the ones refused.
+   * Adversarial pass 1: a cat eating in a hand-picked window and refusing 42 meals after it read
+   * "42 entries, none of them a symptom entry" beside "20 of 20 fully eaten". Intake is not
+   * preference, and a refusal is the accusing number; it is counted wherever the symptom count is.
+   */
+  afterWindowMealsNotFinished: number
+  afterWindowMealsRefused: number
+  /** The newest local day among the after-window entries, report cap not applied; null when none. */
+  afterWindowLastDate: string | null
+  /** Entries dated after the report date (any window). Never the last entry; always disclosed. */
+  futureDatedEntries: number
+  /**
+   * Daily looks (CUL-891 keeps them out of every count above). The newest local day with a look on
+   * or before the report date, and the distinct look days after the window end through it: a look
+   * answered after the window is an owner observation, so "no entry of any kind" may not hide it.
+   */
+  lastLookDate: string | null
+  afterWindowLookDays: number
 }
 
 /**
@@ -4067,7 +4089,8 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
  * derived exactly as `resolveScope` derives "today", so the custom window's clamp and this agree.
  */
 export function recordEdgeOf(
-  events: ReadonlyArray<Pick<ReportEventInput, 'type' | 'occurredAt'>>,
+  events: ReadonlyArray<Pick<ReportEventInput, 'type' | 'occurredAt' | 'meal'>>,
+  looks: ReadonlyArray<Pick<ReportEventInput, 'occurredAt'>>,
   windowEndDayNum: number,
   nowIso: string,
   tz: string | null,
@@ -4076,17 +4099,37 @@ export function recordEdgeOf(
   const reportKey = localDayKey(nowIso, tz) ?? new Date(nowMs).toISOString().slice(0, 10)
   const reportDayNum = dayNumber(reportKey) ?? Math.round(nowMs / MS_PER_DAY)
   let lastDn: number | null = null
+  let afterLastDn: number | null = null
   let afterWindowEntries = 0
   let afterWindowSymptomEntries = 0
+  let afterWindowMealsNotFinished = 0
+  let afterWindowMealsRefused = 0
+  let futureDatedEntries = 0
   for (const e of events) {
     const dn = eventDayNumber(e.occurredAt, tz)
-    // Undateable, or dated after the report: neither may shorten the silence the page states.
-    if (dn === null || dn > reportDayNum) continue
-    if (lastDn === null || dn > lastDn) lastDn = dn
+    if (dn === null) continue
+    // A row dated after the report is counted after the window (so this agrees with the cherry-pick
+    // guard) and disclosed, but is never the LAST ENTRY: it may not shorten the stated silence.
+    if (dn > reportDayNum) futureDatedEntries++
+    else if (lastDn === null || dn > lastDn) lastDn = dn
     if (dn > windowEndDayNum) {
       afterWindowEntries++
+      if (afterLastDn === null || dn > afterLastDn) afterLastDn = dn
       if (REPORT_SYMPTOM_SET.has(e.type)) afterWindowSymptomEntries++
+      const rating = e.meal?.intakeRating ?? null
+      if (rating !== null && rating !== 'all') {
+        afterWindowMealsNotFinished++
+        if (rating === 'refused') afterWindowMealsRefused++
+      }
     }
+  }
+  let lastLookDn: number | null = null
+  const afterWindowLookDayNums = new Set<number>()
+  for (const l of looks) {
+    const dn = eventDayNumber(l.occurredAt, tz)
+    if (dn === null || dn > reportDayNum) continue
+    if (lastLookDn === null || dn > lastLookDn) lastLookDn = dn
+    if (dn > windowEndDayNum) afterWindowLookDayNums.add(dn)
   }
   return {
     reportDate: dayKeyFromNumber(reportDayNum),
@@ -4095,6 +4138,12 @@ export function recordEdgeOf(
     windowEndDaysBeforeReport: Math.max(0, reportDayNum - windowEndDayNum),
     afterWindowEntries,
     afterWindowSymptomEntries,
+    afterWindowMealsNotFinished,
+    afterWindowMealsRefused,
+    afterWindowLastDate: afterLastDn === null ? null : dayKeyFromNumber(afterLastDn),
+    futureDatedEntries,
+    lastLookDate: lastLookDn === null ? null : dayKeyFromNumber(lastLookDn),
+    afterWindowLookDays: afterWindowLookDayNums.size,
   }
 }
 
@@ -6328,7 +6377,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     secondHalfLoggedDays,
     unloggedTailDays: lastLoggedDayNum === null ? windowDays : Math.max(0, endDayNum - lastLoggedDayNum),
     lastLoggedDate: lastLoggedDayNum === null ? null : dayKeyFromNumber(lastLoggedDayNum),
-    recordEdge: recordEdgeOf(dedupedAll, endDayNum, input.now, tz),
+    recordEdge: recordEdgeOf(
+      dedupedAll,
+      input.events.filter((e) => e.type === LOOK_EVENT_TYPE),
+      endDayNum,
+      input.now,
+      tz,
+    ),
   }
 
   // ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ───────────────
