@@ -1,0 +1,135 @@
+{
+  "_about": "Canonical vet report v2 fixtures (CUL-2285, VR2-4; critique MFU-1). One name per record, shared by docs/culprit-vet-report-v3-mockups.html round 5 and every v2 test (parity, extraction, the sheet 1 budget ratchet, the render guards). A test that needs a record uses one of these ids; a fixture marked 'to build' is created by the row named in builtBy, under this id, with the shape written here.",
+  "fixtures": [
+    {
+      "id": "cooper",
+      "pet": "Cooper Reyes, dog, skin trial",
+      "shape": "Hydrolysed soy trial, chronicity on the trial’s own sign (itching), Apoquel with no doses, NexGard, Dentastix, chicken off-list, 3 weigh-ins",
+      "proves": "R-11, the confounder line, hollow dashed spans, the 3-reading rule",
+      "source": "supabase/functions/generate-report/cooperDemo.testutil.ts (the demo seed)",
+      "status": "committed",
+      "builtBy": null,
+      "drawnInMock": "§R5.2b, round 4 §03"
+    },
+    {
+      "id": "mira",
+      "pet": "Mira Ortiz, cat, GI trial stopped",
+      "shape": "A refusal run of 30, a free-fed bowl, 2 weigh-ins, nothing logged for the last 13 days",
+      "proves": "Refusal as a finding, the record-edge line, the AI lead’s required facts",
+      "source": "Built in VR2-9 from round 4’s sheet",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "§R5.2d, round 4 §03"
+    },
+    {
+      "id": "nyx-live",
+      "pet": "Nyx, cat, the PM’s real record",
+      "shape": "Five flags, an ended trial, post-trial foods the next day, four medication changes, three signs on overlapping days, 15 incident photos, a window covering 35 of the trial’s 87 days",
+      "proves": "The five-flag band, the multi-sign rows, the five spans, the AI lead dropping when its facts don’t fit",
+      "source": "fixtures/nyx-live-2026-10-31.snapshot.json (committed, de-identified, ruling X)",
+      "status": "committed",
+      "builtBy": null,
+      "drawnInMock": "§R5.2a, §R5.3, §R5.4"
+    },
+    {
+      "id": "nyx-safety-cat",
+      "pet": "Nyx, July reconstruction",
+      "shape": "One sign, a possible-foreign-material photo, no trial, no medication",
+      "proves": "A single safety flag leading with a printed photo",
+      "source": "Built in VR2-9 from round 4’s d5",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "round 4 d5"
+    },
+    {
+      "id": "noticed-monitoring-cat",
+      "pet": "Pip, cat",
+      "shape": "Daily Noticed answers, a concern word on 3 days, one vomit",
+      "proves": "Rule 12’s contradiction line; looks never lead",
+      "source": "Built in VR2-9",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "none (back sheet)"
+    },
+    {
+      "id": "no-trial-multi-sign",
+      "pet": "Pickle, dog, no trial",
+      "shape": "Vomiting, loose stool and coughing on overlapping days, one antibiotic course",
+      "proves": "Lead choice by most days with an entry; three stacked rows without a trial line",
+      "source": "Built in VR2-9",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "none: Nyx draws the shape"
+    },
+    {
+      "id": "new-account-4-days",
+      "pet": "Juniper Okafor, cat",
+      "shape": "Four days of record, two vomits on day 1, no weight",
+      "proves": "Ruling T’s scope line, the 14-day day row, the AI lead suppressed",
+      "source": "Built in VR2-9",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "§R5.2c"
+    },
+    {
+      "id": "looks-only",
+      "pet": "Olive Brandt, cat",
+      "shape": "Six weeks of Noticed answers and meals, no symptom entry",
+      "proves": "The zero-sign sheet: coverage leads, v1’s absence sentence verbatim",
+      "source": "Built in VR2-9",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "§R5.2c, e1"
+    },
+    {
+      "id": "free-fed-meals-only",
+      "pet": "Bean Castillo, cat",
+      "shape": "Every meal from a bowl left down, no symptom entry",
+      "proves": "B-040’s “Intake not directly observed.” verbatim",
+      "source": "Built in VR2-9",
+      "status": "to build",
+      "builtBy": "VR2-9",
+      "drawnInMock": "§R5.2c"
+    },
+    {
+      "id": "stool-photo-dog",
+      "pet": "Rufus, dog",
+      "shape": "Loose stool with photos, one read showing blood present",
+      "proves": "Blood present leads the band; never “0 of” beside blood",
+      "source": "Built in VR2-13",
+      "status": "to build",
+      "builtBy": "VR2-13",
+      "drawnInMock": "sheet 2 (VR2-13)"
+    },
+    {
+      "id": "owner-name-no-surname",
+      "pet": "Nyx (nyx-live)",
+      "shape": "user_profiles.last_name empty",
+      "proves": "The surname omitted, never taken from the email address",
+      "source": "nyx-live",
+      "status": "committed",
+      "builtBy": null,
+      "drawnInMock": "§R5.2a masthead"
+    },
+    {
+      "id": "owner-name-transliterated",
+      "pet": "Zoë, dog",
+      "shape": "Owner last name “Müller-Ñúñez”",
+      "proves": "Filename and subject transliterate to “Muller-Nunez”; the masthead keeps the name as written",
+      "source": "Built in VR2-12",
+      "status": "to build",
+      "builtBy": "VR2-12",
+      "drawnInMock": "none (filename)"
+    },
+    {
+      "id": "two-pets",
+      "pet": "Cooper and Nyx, one account",
+      "shape": "Two pets with reports",
+      "proves": "C-9: every screen names the pet",
+      "source": "cooper + nyx-live",
+      "status": "committed",
+      "builtBy": null,
+      "drawnInMock": "§R5.4"
+    }
+  ]
+}
