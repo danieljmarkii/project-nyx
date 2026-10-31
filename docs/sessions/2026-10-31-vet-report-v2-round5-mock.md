@@ -1,8 +1,9 @@
 # Vet report v2 PR-04: round 5, the build-ready mock
 
 **Date:** 2026-10-31
+**One thing:** none — dispatched session, not this round's teach row
 
-Dispatched DISCOVERY row VR2-4 ([CUL-2285](https://linear.app/projectnyx/issue/CUL-2285)). A mock, a fixture manifest and a CSS fix; no app or Edge Function code. Shipped via #1369.
+Dispatched DISCOVERY row VR2-4 ([CUL-2285](https://linear.app/projectnyx/issue/CUL-2285)). A mock, a fixture manifest and a CSS fix; no app or Edge Function code. Shipped via #1369. Merged on the PM's `/wrap and merge`, with the two QUIET design residuals left blocking their own build rows.
 
 ## What shipped
 
