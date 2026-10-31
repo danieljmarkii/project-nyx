@@ -1,0 +1,158 @@
+// CUL-2283 (VR2-2, round 4 BRK-9) — the record's silence measured to the REPORT date, and the
+// last-entry line every report prints, whatever the window. With CUL-2125, the one-day tail on a
+// window that ends before the report date.
+//
+// Run with:  deno test --allow-read=supabase/functions supabase/functions/generate-report/recordEdge.test.ts
+//
+// Built on the same sample records `vet-report-cold-read` reads (`scripts/render-trial-report-sample.deno.ts`),
+// so every claim here is about a report a vet could be handed.
+import assert from 'node:assert/strict'
+import { assembleReport, recordEdgeOf, UNLOGGED_TAIL_MIN_DAYS, unloggedTailFloor, type ReportInput } from './report.ts'
+import { renderReport } from './render.ts'
+import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
+
+const inputs = new Map(sampleCases().map(([name, input]) => [name, input] as const))
+const input = (name: string): ReportInput => {
+  const i = inputs.get(name)
+  if (!i) throw new Error(`no sample named ${name}`)
+  return i
+}
+/** Mira: a cat who would not eat the diet; the last entry of any kind is Jun 19; made Jul 2. */
+const mira = (): ReportInput => input('trial-report-refused.html')
+const window = (i: ReportInput, startDate: string, endDate: string): ReportInput => ({ ...i, requestedWindow: { startDate, endDate } })
+/** Tags stripped and entities read, so a sentence is asserted as a reader meets it. */
+const plain = (html: string): string =>
+  html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&mdash;/g, '—')
+    .replace(/\s+/g, ' ')
+
+Deno.test('CUL-2283 — Mira, window Jun 1 to 19, made Jul 2: the thirteen silent days are on the page', () => {
+  const snap = assembleReport(window(mira(), '2026-06-01', '2026-06-19'))
+  // The defect, as the issue states it: the window alone reads fully logged.
+  assert.equal(snap.atAGlance.windowDays, 19)
+  assert.equal(snap.atAGlance.loggedDays, 19, 'every window day has a log, so the window says nothing is missing')
+  assert.equal(snap.atAGlance.unloggedTailDays, 0, 'the in-window tail is empty: the silence is all after the window')
+  assert.deepEqual(snap.atAGlance.recordEdge, {
+    reportDate: '2026-07-02',
+    lastEntryDate: '2026-06-19',
+    lastEntryDaysBeforeReport: 13,
+    windowEndDaysBeforeReport: 13,
+    afterWindowEntries: 0,
+    afterWindowSymptomEntries: 0,
+  })
+  const text = plain(renderReport(snap))
+  assert.ok(text.includes('Last entry Jun 19, 13 days before this report'), 'the range box names the last entry and its distance')
+  assert.ok(
+    text.includes(
+      'Window ends before this report. It closes Jun 19, 13 days before the report date. Nothing logged after Jun 19: no entry of any kind in the 13 days before this report.',
+    ),
+    'the disclosure says nothing was logged after it, in days',
+  )
+  assert.ok(!text.includes('none of them a symptom entry'), 'never the "no symptom entries" sentence when nothing at all was logged')
+})
+
+Deno.test('CUL-2283 — the last-entry line prints on every report, whatever the window', () => {
+  for (const [name, i] of inputs) {
+    const snap = assembleReport(i)
+    const e = snap.atAGlance.recordEdge
+    const text = plain(renderReport(snap))
+    assert.ok(e.lastEntryDate !== null, `${name}: every sample has an entry`)
+    const when = e.lastEntryDaysBeforeReport === 0 ? 'the day of this report' : `${e.lastEntryDaysBeforeReport} day`
+    assert.ok(text.includes(`Last entry `) && text.includes(when), `${name}: the line and its distance print`)
+  }
+  // A window running to the report date is measured the same way: Mira's default window ends Jul 2.
+  const def = plain(renderReport(assembleReport(mira())))
+  assert.ok(def.includes('Last entry Jun 19, 13 days before this report'), 'the default window states the same edge')
+  assert.ok(!def.includes('Window ends before this report'), 'a window that runs to the report date has no disclosure')
+  // Logged today: the distance is the report day itself, never "0 days".
+  const today = plain(renderReport(assembleReport(input('trial-report-clean.html'))))
+  assert.ok(today.includes('Last entry Jul 2, the day of this report'))
+  assert.ok(!/0 days before this report/.test(today))
+})
+
+Deno.test('CUL-2283 — entries after the window, none a symptom entry: said as that, and never as quiet days', () => {
+  // Mira's window closed Jun 17, after her last vomit: the meals she refused Jun 18 and 19 lie after it.
+  const snap = assembleReport(window(mira(), '2026-06-01', '2026-06-17'))
+  const e = snap.atAGlance.recordEdge
+  assert.equal(e.windowEndDaysBeforeReport, 15)
+  assert.equal(e.afterWindowEntries, 4, 'two refused meals a day, Jun 18 and 19')
+  assert.equal(e.lastEntryDate, '2026-06-19')
+  assert.ok(e.afterWindowEntries > 0, 'non-vacuous: entries do fall after the window')
+  assert.equal(e.afterWindowSymptomEntries, 0, 'a refused meal is not a symptom entry')
+  const text = plain(renderReport(snap))
+  assert.ok(
+    text.includes(
+      `${e.afterWindowEntries} entries were logged after it, through Jun 19, none of them a symptom entry. Meals, symptoms and every other entry after Jun 17 are not read on this report.`,
+    ),
+    'the refusals after the window are pointed at, not read as quiet',
+  )
+  assert.ok(!text.includes('Nothing logged after'), 'never the nothing-logged sentence when entries exist')
+})
+
+Deno.test('CUL-2283 — symptom entries after the window: their count, in bold', () => {
+  const snap = assembleReport(input('trial-report-past-window.html'))
+  const e = snap.atAGlance.recordEdge
+  assert.deepEqual(
+    [e.windowEndDaysBeforeReport, e.lastEntryDate, e.afterWindowEntries, e.afterWindowSymptomEntries],
+    [43, '2026-05-31', 24, 1],
+  )
+  const html = renderReport(snap)
+  assert.ok(html.includes('logged after it, through May 31, <b><span class="num">1</span> of them symptom entry</b>'), 'the symptom count is bold')
+  assert.ok(plain(html).includes('24 entries were logged after it'))
+  // The symptom count here and the cherry-pick guard's "after it" count read the same record.
+  assert.equal(snap.scope.outOfWindowAfter, e.afterWindowSymptomEntries, 'one population, two sentences, one number')
+})
+
+Deno.test('CUL-2125 — a window that ends before the report date names a one-day tail; a window to today does not', () => {
+  assert.equal(unloggedTailFloor({ windowEndDaysBeforeReport: 0 }), UNLOGGED_TAIL_MIN_DAYS)
+  assert.equal(unloggedTailFloor({ windowEndDaysBeforeReport: 1 }), 1)
+  // Rosie's last entry is Jun 25. A window closing Jun 26 leaves one whole elapsed day unlogged.
+  const rosie = input('trial-report-completed.html')
+  const early = assembleReport(window(rosie, '2026-05-08', '2026-06-26'))
+  assert.equal(early.atAGlance.unloggedTailDays, 1)
+  const earlyText = plain(renderReport(early))
+  assert.ok(
+    earlyText.includes('no event of any kind logged after Jun 25 (the window’s last day)'),
+    'the one-day tail is named, scoped to the window',
+  )
+  // The same one-day tail on a window that ends today stays unnamed: that day is today, not over.
+  const s = assembleReport(rosie)
+  const atToday = renderReport({ ...s, atAGlance: { ...s.atAGlance, unloggedTailDays: 1 } })
+  assert.equal(atToday, renderReport({ ...s, atAGlance: { ...s.atAGlance, unloggedTailDays: 0 } }), 'one day ending today is never named')
+})
+
+Deno.test('CUL-2283 — when the record goes on past the window, the tail is the window’s, never the record’s', () => {
+  // Rosie with Jun 18 to 20 unlogged, window closing Jun 20: the in-window tail is three days, and
+  // she was logged again Jun 21 to 25. "No event of any kind logged after Jun 17" would be false.
+  const rosie = input('trial-report-completed.html')
+  const gap = (iso: string): boolean => iso >= '2026-06-18' && iso < '2026-06-21'
+  const cut: ReportInput = { ...window(rosie, '2026-05-08', '2026-06-20'), events: rosie.events.filter((e) => !gap(e.occurredAt)) }
+  const snap = assembleReport(cut)
+  assert.equal(snap.atAGlance.unloggedTailDays, 3, 'non-vacuous: a real tail inside the window')
+  assert.ok(snap.atAGlance.recordEdge.afterWindowEntries > 0, 'non-vacuous: the record continues after it')
+  const text = plain(renderReport(snap))
+  assert.ok(text.includes('logged in this window after Jun 17'), 'the date is scoped to the window')
+  assert.ok(!/logged after Jun 17/.test(text), 'never the unscoped, false sentence')
+})
+
+Deno.test('CUL-2283 — recordEdgeOf: a future-dated row never shortens the silence; days are local', () => {
+  const ev = (occurredAt: string, type = 'meal') => ({ occurredAt, type })
+  // Report at 2026-07-02 18:00Z in New York (14:00 local). Window ends Jun 19 = dayNumber below.
+  const endDn = Date.UTC(2026, 5, 19) / 86_400_000
+  const edge = recordEdgeOf([ev('2026-06-19T15:00:00Z'), ev('2026-07-05T12:00:00Z', 'vomit')], endDn, '2026-07-02T18:00:00Z', 'America/New_York')
+  assert.equal(edge.lastEntryDate, '2026-06-19', 'the row dated after the report is not the last entry')
+  assert.equal(edge.afterWindowEntries, 0, 'nor an entry after the window')
+  // 2026-07-02T02:00Z is Jul 1, 22:00 in New York: one day before the report, not the report day.
+  const local = recordEdgeOf([ev('2026-07-02T02:00:00Z')], endDn, '2026-07-02T18:00:00Z', 'America/New_York')
+  assert.equal(local.lastEntryDate, '2026-07-01')
+  assert.equal(local.lastEntryDaysBeforeReport, 1)
+  // Nothing at all: no date, and the page says so in words.
+  const none = recordEdgeOf([], endDn, '2026-07-02T18:00:00Z', 'America/New_York')
+  assert.deepEqual([none.lastEntryDate, none.lastEntryDaysBeforeReport, none.windowEndDaysBeforeReport], [null, null, 13])
+  const s = assembleReport(mira())
+  const html = plain(renderReport({ ...s, atAGlance: { ...s.atAGlance, recordEdge: { ...none, windowEndDaysBeforeReport: 0 } } }))
+  assert.ok(html.includes('No entry in the record read'), 'an empty record is said, never left blank')
+})

@@ -2937,6 +2937,45 @@ export interface AtAGlance {
   /** The last local day with any log in the window ('YYYY-MM-DD'), null when nothing was logged.
    *  The render names the tail by this DATE, which no window or lookback can overstate (C-19). */
   lastLoggedDate: string | null
+  /**
+   * THE RECORD EDGE (CUL-2283, VR2-2; v2 spec §5.3 reuses this field). Everything above is measured
+   * to the WINDOW END, which on a hand-picked window can sit weeks before the day the report is
+   * made: Mira's owner picks Jun 1 to Jun 19 on Jul 2, nothing was logged after Jun 19, and the page
+   * read "19 of 19 days logged" with the thirteen silent days of a cat refusing food nowhere on it.
+   * This measures the record's own silence to the REPORT DATE, whatever the window.
+   * Required, not optional: a fixture that omits it would silently claim a record logged to today.
+   */
+  recordEdge: RecordEdge
+}
+
+export interface RecordEdge {
+  /** The local calendar day the report was generated ('YYYY-MM-DD'). */
+  reportDate: string
+  /**
+   * The newest local day with an entry of ANY kind, on or before the report date, read across the
+   * whole pull (not the window). Same population as `loggedDays` (deduped, looks excluded, CUL-891),
+   * so the edge can never disagree with "N of M days logged". A row dated after the report date is
+   * not counted: leaving it out can only make the stated silence longer, never shorter.
+   * null when the pull holds no dateable entry at all.
+   */
+  lastEntryDate: string | null
+  /** Report date minus `lastEntryDate`, in local days; null with it. */
+  lastEntryDaysBeforeReport: number | null
+  /** Report date minus the window end, in local days; 0 on every window that runs to the report date. */
+  windowEndDaysBeforeReport: number
+  /** Entries of any kind on local days after the window end, through the report date. */
+  afterWindowEntries: number
+  /** Of those, the symptom entries (`REPORT_SYMPTOM_TYPES`). A meal logged as refused is NOT one. */
+  afterWindowSymptomEntries: number
+}
+
+/**
+ * The shortest unlogged tail the report names ON THIS REPORT (CUL-2125). `UNLOGGED_TAIL_MIN_DAYS`
+ * rests on "the window's last day is today, and today is not over"; on a window that ends before the
+ * report date that day is a whole elapsed day nobody logged, so one day is already a tail.
+ */
+export function unloggedTailFloor(edge: Pick<RecordEdge, 'windowEndDaysBeforeReport'>): number {
+  return edge.windowEndDaysBeforeReport > 0 ? 1 : UNLOGGED_TAIL_MIN_DAYS
 }
 
 /**
@@ -4020,6 +4059,45 @@ function runDetection(detInput: DetectionInput, config: DetectionConfig): Detect
  *   4. reuse the detection engine over the window for correlations + safety flags
  *   5. compose safety flags (present blood/foreign lead, §2/§5.9), never a false all-clear (§5.3)
  */
+/**
+ * The record edge (CUL-2283): the record's last entry and its silence, measured to the REPORT DATE.
+ *
+ * Reads `events` already deduped across the whole pull, which runs from the lookback to `now` with
+ * no upper bound, so every entry after a window that closes early is in hand. The report day is
+ * derived exactly as `resolveScope` derives "today", so the custom window's clamp and this agree.
+ */
+export function recordEdgeOf(
+  events: ReadonlyArray<Pick<ReportEventInput, 'type' | 'occurredAt'>>,
+  windowEndDayNum: number,
+  nowIso: string,
+  tz: string | null,
+): RecordEdge {
+  const nowMs = parseMs(nowIso) ?? 0
+  const reportKey = localDayKey(nowIso, tz) ?? new Date(nowMs).toISOString().slice(0, 10)
+  const reportDayNum = dayNumber(reportKey) ?? Math.round(nowMs / MS_PER_DAY)
+  let lastDn: number | null = null
+  let afterWindowEntries = 0
+  let afterWindowSymptomEntries = 0
+  for (const e of events) {
+    const dn = eventDayNumber(e.occurredAt, tz)
+    // Undateable, or dated after the report: neither may shorten the silence the page states.
+    if (dn === null || dn > reportDayNum) continue
+    if (lastDn === null || dn > lastDn) lastDn = dn
+    if (dn > windowEndDayNum) {
+      afterWindowEntries++
+      if (REPORT_SYMPTOM_SET.has(e.type)) afterWindowSymptomEntries++
+    }
+  }
+  return {
+    reportDate: dayKeyFromNumber(reportDayNum),
+    lastEntryDate: lastDn === null ? null : dayKeyFromNumber(lastDn),
+    lastEntryDaysBeforeReport: lastDn === null ? null : reportDayNum - lastDn,
+    windowEndDaysBeforeReport: Math.max(0, reportDayNum - windowEndDayNum),
+    afterWindowEntries,
+    afterWindowSymptomEntries,
+  }
+}
+
 export function assembleReport(input: ReportInput): ReportSnapshot {
   const tz = input.timezone
   const nowMs = parseMs(input.now) ?? 0
@@ -6250,6 +6328,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     secondHalfLoggedDays,
     unloggedTailDays: lastLoggedDayNum === null ? windowDays : Math.max(0, endDayNum - lastLoggedDayNum),
     lastLoggedDate: lastLoggedDayNum === null ? null : dayKeyFromNumber(lastLoggedDayNum),
+    recordEdge: recordEdgeOf(dedupedAll, endDayNum, input.now, tz),
   }
 
   // ── Noticed — the owner's daily looks (CUL-875 / N-6, spec §8) ───────────────

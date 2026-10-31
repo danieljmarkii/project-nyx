@@ -5515,29 +5515,31 @@ for (const [tz, now] of [
 
 // Before/after: a trial whose end is on or before the report's today, or that has no
 // end, renders exactly what it rendered before CUL-2094. Digests were captured from
-// `main` at a8efdd9 by running this grid there.
+// `main` at a8efdd9 by running this grid there. Re-captured at CUL-2283, which adds the record's
+// last entry to every range box: with that line, its disclosure and the tail floor switched off,
+// this grid reproduced the a8efdd9 digests exactly before they were replaced.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': 'eb3be69a636edfc6',
-  'endedPast/window/America/Phoenix': '1589209a7f9bd3ee',
-  'endedToday/America/Phoenix': '07ad0bcf16efd92b',
-  'endedToday/window/America/Phoenix': 'd178b78c1ab4a7e7',
-  'endedOnTarget/America/Phoenix': '0122bb4a0b3de7f7',
-  'endedOnTarget/window/America/Phoenix': '4940389b68dd2f7b',
-  'active/America/Phoenix': '4198c96781bd3486',
-  'endedPast/Pacific/Noumea': 'eb3be69a636edfc6',
-  'endedPast/window/Pacific/Noumea': '1589209a7f9bd3ee',
-  'endedToday/Pacific/Noumea': '07ad0bcf16efd92b',
-  'endedToday/window/Pacific/Noumea': 'd178b78c1ab4a7e7',
-  'endedOnTarget/Pacific/Noumea': '0122bb4a0b3de7f7',
-  'endedOnTarget/window/Pacific/Noumea': '4940389b68dd2f7b',
-  'active/Pacific/Noumea': '9021197ecc737c42',
-  'endedPast/UTC': 'eb3be69a636edfc6',
-  'endedPast/window/UTC': '1589209a7f9bd3ee',
-  'endedToday/UTC': '07ad0bcf16efd92b',
-  'endedToday/window/UTC': 'd178b78c1ab4a7e7',
-  'endedOnTarget/UTC': '0122bb4a0b3de7f7',
-  'endedOnTarget/window/UTC': '4940389b68dd2f7b',
-  'active/UTC': '4198c96781bd3486',
+  'endedPast/America/Phoenix': 'b8da4912d43c4262',
+  'endedPast/window/America/Phoenix': '25f8d2ab1012968e',
+  'endedToday/America/Phoenix': 'c920c3d25a240600',
+  'endedToday/window/America/Phoenix': '46560473301b39f6',
+  'endedOnTarget/America/Phoenix': '22954ff622912dd7',
+  'endedOnTarget/window/America/Phoenix': 'f578c9f5253bc125',
+  'active/America/Phoenix': '031e81c075e82281',
+  'endedPast/Pacific/Noumea': 'b8da4912d43c4262',
+  'endedPast/window/Pacific/Noumea': '25f8d2ab1012968e',
+  'endedToday/Pacific/Noumea': 'c920c3d25a240600',
+  'endedToday/window/Pacific/Noumea': '46560473301b39f6',
+  'endedOnTarget/Pacific/Noumea': '22954ff622912dd7',
+  'endedOnTarget/window/Pacific/Noumea': 'f578c9f5253bc125',
+  'active/Pacific/Noumea': 'd7a7540dc24c9b86',
+  'endedPast/UTC': 'b8da4912d43c4262',
+  'endedPast/window/UTC': '25f8d2ab1012968e',
+  'endedToday/UTC': 'c920c3d25a240600',
+  'endedToday/window/UTC': '46560473301b39f6',
+  'endedOnTarget/UTC': '22954ff622912dd7',
+  'endedOnTarget/window/UTC': 'f578c9f5253bc125',
+  'active/UTC': '031e81c075e82281',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {

@@ -88,7 +88,7 @@ import { summariseIntake } from './report.ts'
 import { drawsStopMark, isWindowChange } from './report.ts'
 // The symptom chart's week floor and the late-log line's threshold (CUL-1995, CUL-2001): value
 // imports, so the chart, the half trend and the copy read the number the snapshot was built on.
-import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, UNLOGGED_TAIL_MIN_DAYS, type SafetyCheck, type ThinWeek } from './report.ts'
+import { LATE_LOG_MIN_HOURS, SYMPTOM_WEEK_MIN_LOGGED_DAYS, unloggedTailFloor, type SafetyCheck, type ThinWeek } from './report.ts'
 import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
@@ -1771,9 +1771,10 @@ function signalmentBlock(snap: ReportSnapshot): string {
     <div class="rangebox">
       <div class="win num">${h(fmtRange(scope.startDate, scope.endDate))}</div>
       <div class="days">${num(scope.windowDays)}&nbsp;days &middot; ${num(snap.atAGlance.loggedDays)}&nbsp;days with a log</div>
+      <div class="days">${lastEntryLine(snap)}</div>
       <div class="basis">${h(scopeBasisLabel(scope))}</div>
     </div>
-  </div>${cherryPickDisclosure(snap)}${truncationDisclosure(snap)}`
+  </div>${cherryPickDisclosure(snap)}${recordEdgeDisclosure(snap)}${truncationDisclosure(snap)}`
 }
 
 /**
@@ -1841,6 +1842,73 @@ const TRUNCATION_NOUNS: Record<string, string> = {
 function joinList(items: string[]): string {
   if (items.length <= 1) return items[0] ?? ''
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
+/**
+ * CUL-2283 — THE RECORD'S LAST ENTRY, ON EVERY REPORT, WHATEVER THE WINDOW.
+ *
+ * The range box said how many of the window's days had a log and nothing about the days after it.
+ * On a hand-picked window closing Jun 19, made Jul 2, the box read "19 days · 19 days with a log"
+ * and the thirteen days nobody logged anything were nowhere on the page. The last entry and its
+ * distance from the REPORT date are a fact about the record, not the window, so they print on
+ * every report: a window that runs to today and was logged today says "the day of this report".
+ * Present on every report on purpose: a line that appears only when something is wrong teaches the
+ * reader that its absence means all is well, and a record with no entry at all says so in words.
+ */
+function lastEntryLine(snap: ReportSnapshot): string {
+  const e = snap.atAGlance.recordEdge
+  if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) return 'No entry in the record read'
+  const d = e.lastEntryDaysBeforeReport
+  const when = d === 0 ? 'the day of this report' : `${num(d)}&nbsp;day${d === 1 ? '' : 's'} before this report`
+  return `Last entry ${h(fmtDayScopedTo(e.lastEntryDate, snap.scope.endDate))}, ${when}`
+}
+
+/** "Jun 19", or "Jan 3, 2027" when the day falls in another year than the range box states. */
+function fmtDayScopedTo(dayKey: string, windowEndKey: string): string {
+  const y = dayParts(dayKey)?.y
+  return y !== undefined && y !== dayParts(windowEndKey)?.y ? fmtDayYear(dayKey) : fmtDay(dayKey)
+}
+
+/**
+ * CUL-2283 — A WINDOW THAT ENDS BEFORE THE REPORT DATE SAYS WHAT CAME AFTER IT.
+ *
+ * Only a hand-picked window can end before the report date (every default basis runs to today), and
+ * the cherry-pick guard above it speaks only when SYMPTOM entries fall outside: a window closing on
+ * the last day anyone logged had no line at all. Three records, three sentences, never one:
+ *   - nothing logged after the window: the silence runs to the report, and is named in days;
+ *   - entries after it, none a symptom entry: said as exactly that, and followed by "not read on this
+ *     report", because a meal logged as refused is not a symptom entry and "no symptoms after it"
+ *     alone would read as quiet days for a cat who stopped eating;
+ *   - symptom entries after it: their count, beside the guard that names the most recent.
+ * Present-only: a window that runs to the report date renders nothing here.
+ */
+function recordEdgeDisclosure(snap: ReportSnapshot): string {
+  const e = snap.atAGlance.recordEdge
+  if (e.windowEndDaysBeforeReport <= 0) return ''
+  const end = snap.scope.endDate
+  const lead = `<b>Window ends before this report.</b> It closes ${h(fmtDay(end))}, ${num(e.windowEndDaysBeforeReport)} day${
+    e.windowEndDaysBeforeReport === 1 ? '' : 's'
+  } before the report date.`
+  let body: string
+  if (e.afterWindowEntries === 0) {
+    body =
+      e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null
+        ? ' Nothing is logged in the record read for this report.'
+        : ` Nothing logged after ${h(fmtDayScopedTo(e.lastEntryDate, end))}: no entry of any kind in the ${num(
+            e.lastEntryDaysBeforeReport,
+          )} day${e.lastEntryDaysBeforeReport === 1 ? '' : 's'} before this report.`
+  } else {
+    const through = e.lastEntryDate === null ? '' : `, through ${h(fmtDayScopedTo(e.lastEntryDate, end))}`
+    const symptoms =
+      e.afterWindowSymptomEntries === 0
+        ? 'none of them a symptom entry'
+        : `<b>${num(e.afterWindowSymptomEntries)} of them symptom entr${e.afterWindowSymptomEntries === 1 ? 'y' : 'ies'}</b>`
+    body = ` ${num(e.afterWindowEntries)} entr${e.afterWindowEntries === 1 ? 'y was' : 'ies were'} logged after it${through}, ${symptoms}. Meals, symptoms and every other entry after ${h(
+      fmtDay(end),
+    )} are not read on this report.`
+  }
+  return `
+  <div class="cherry">${lead}${body}</div>`
 }
 
 /** §6 cherry-pick guard — only on a custom window with out-of-window events. */
@@ -2636,7 +2704,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const recencyTail =
         tail === null
           ? ''
-          : `; ${nothingLoggedAfter(tail)}${tail.days <= f.daysSinceLastEpisode ? ` (the last ${num(tail.days)} days)` : ''}`
+          : `; ${nothingLoggedAfter(tail)}${tail.days <= f.daysSinceLastEpisode ? ` (${tailSpan(tail)})` : ''}`
       return flagRow(
         'Chronicity',
         // "SPANS", not "has been ongoing" (CUL-687, adversarial pass 2026-08-28). This is the
@@ -5399,8 +5467,28 @@ function noticedStrip(snap: ReportSnapshot, n: NoticedBlock): string {
  * The unlogged tail a claim spans, or null when there is none worth naming (CUL-2101). Every caller
  * renders nothing on null, which is what keeps a report without a tail byte-identical.
  */
-function unloggedTailOf(ag: AtAGlance): { days: number; after: string | null } | null {
-  return ag.unloggedTailDays >= UNLOGGED_TAIL_MIN_DAYS ? { days: ag.unloggedTailDays, after: ag.lastLoggedDate } : null
+function unloggedTailOf(ag: AtAGlance): UnloggedTail | null {
+  if (ag.unloggedTailDays < unloggedTailFloor(ag.recordEdge)) return null
+  return {
+    days: ag.unloggedTailDays,
+    after: ag.lastLoggedDate,
+    windowEndsEarly: ag.recordEdge.windowEndDaysBeforeReport > 0,
+    recordContinues: ag.recordEdge.afterWindowEntries > 0,
+  }
+}
+
+/**
+ * The tail and the two facts that decide how it may be said (CUL-2283). On a window that ends before
+ * the report date, "the last 7 days" reads as the seven days before the report, so the count is
+ * scoped to the window; and when the record goes on past the window end, "no event of any kind
+ * logged after Jun 25" is false (entries exist after it), so the date is scoped to the window too.
+ * On a window that runs to the report date both are false and every sentence is unchanged.
+ */
+interface UnloggedTail {
+  days: number
+  after: string | null
+  windowEndsEarly: boolean
+  recordContinues: boolean
 }
 
 /**
@@ -5408,13 +5496,20 @@ function unloggedTailOf(ag: AtAGlance): { days: number; after: string | null } |
  * unlogged" glued to an itching sentence read as seven itch-free days, so it names "of any kind",
  * and a date cannot overstate any window or lookback it sits beside.
  */
-function nothingLoggedAfter(t: { after: string | null }): string {
-  return t.after === null ? 'no event of any kind logged in this window' : `no event of any kind logged after ${fmtDay(t.after)}`
+function nothingLoggedAfter(t: UnloggedTail): string {
+  if (t.after === null) return 'no event of any kind logged in this window'
+  return `no event of any kind logged ${t.recordContinues ? 'in this window ' : ''}after ${fmtDay(t.after)}`
 }
 
 /** The same, with its length: a date alone left the reader to turn it into days (cold read 2). */
-function nothingLoggedFor(t: { days: number; after: string | null }): string {
-  return t.after === null ? nothingLoggedAfter(t) : `${nothingLoggedAfter(t)} (the last ${num(t.days)} days)`
+function nothingLoggedFor(t: UnloggedTail): string {
+  return t.after === null ? nothingLoggedAfter(t) : `${nothingLoggedAfter(t)} (${tailSpan(t)})`
+}
+
+/** "the last 7 days", or "the window's last 7 days" when the window ends before the report date. */
+function tailSpan(t: UnloggedTail): string {
+  const whose = t.windowEndsEarly ? 'window&rsquo;s ' : ''
+  return t.days === 1 ? `the ${whose}last day` : `the ${whose}last ${num(t.days)} days`
 }
 
 /** The diet-trial At-a-glance tiles (the pre-round-2 set — appropriate only when a trial is active). */
@@ -5435,7 +5530,7 @@ function trialTiles(snap: ReportSnapshot): string[] {
       ? ''
       : tail.after === null
         ? '<br/>nothing logged in this window'
-        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; no event logged after ${fmtDay(tail.after)}`
+        : `<br/>${num(ag.loggedDays)} of ${num(ag.windowDays)} days logged; no event logged ${tail.recordContinues ? 'in this window ' : ''}after ${fmtDay(tail.after)}`
   tiles.push(
     tile(
       `${ag.totalSymptomIncidents}`,
