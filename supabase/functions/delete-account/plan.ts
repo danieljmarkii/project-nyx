@@ -26,12 +26,15 @@
 //     FK CASCADE (migration 033 flipped `created_by_user_id → SET NULL` to `CASCADE`),
 //     so — unlike medication, whose row survives with attribution nulled — both the food
 //     row AND its label photo are erased.
-// `nyx-vet-reports` is forward-looking — the bucket lands with Step 9; today there
-// are no `vet_reports` rows so it is simply never touched, and once it exists the
-// best-effort purge in index.ts tolerates its absence (FR-3's "tolerate its absence
-// today"). The same tolerance covers `nyx-medication-photos` before its dashboard
-// creation / first PR-5 upload — until then there are no `photo_paths`, so the
-// bucket is never even reached.
+//   • `vetReports` (CUL-2282): saved vet report PDFs. The `vet_reports` table has
+//     existed since migration 001; no path writes rows to it yet, so the bucket is
+//     simply never reached today. A READ error on that table is a hard failure in
+//     index.ts (an erasure that cannot list what it must erase has not erased it),
+//     and its paths are re-scoped to the owned-pet-id set like vet documents. The
+//     Storage REMOVE stays best-effort like every bucket, which also tolerates the
+//     bucket's absence. The same remove-side tolerance covers `nyx-medication-photos`
+//     before its first upload — until then there are no `photo_paths`, so the bucket
+//     is never even reached.
 //   • `vetDocuments` (B-478 VF-1): the Vet Files library — lab PDFs, vaccination
 //     certificates, discharge summaries, screenshots of clinic email. Pet-scoped like
 //     the first four. It joins this list in the SAME PR that creates the table, before
@@ -83,6 +86,9 @@ export interface OwnedStoragePaths {
   // re-scoped before the purge — see scopeVetDocumentPaths for the residual that
   // motivates it.
   vetDocumentPaths: ReadonlyArray<string | null | undefined>
+  // Saved vet report PDFs (CUL-2282), read from `vet_reports.storage_path` for the
+  // user's own pets and re-scoped to the owned-pet-id set before the purge — see
+  // scopeVetReportPaths.
   vetReportPaths: ReadonlyArray<string | null | undefined>
   // Drug-label photos. `medication_items.photo_paths` is a `TEXT[]` (one array per
   // drug row), so index.ts FLATTENS every owned row's array into this one flat list
@@ -334,6 +340,29 @@ export function scopeVetDocumentPaths(
   return scopeTwoSegmentOwnedPaths(paths, ownedPetIds)
 }
 
+// CUL-2282 (VR2-1) — cross-tenant delete guard for saved vet report PDFs.
+//
+// `vet_reports.storage_path` is plain TEXT with no prefix CHECK at all, and the
+// owner RLS on the table gates which ROW is written, never the column CONTENTS. So
+// once saved reports ship (VR2-20), an owner could point a row they own at
+// `{victimPetId}/{reportId}.pdf` and let their own account deletion service-role-
+// remove another owner's report — the B-431 pet-photo attack, on a bucket with no
+// write-side guard behind it. The convention is `{petId}/{reportId}.pdf`: exactly two
+// segments, the first a pet THIS user owns — the shared predicate's shape, so every
+// traversal variant (`{own}/../{victim}/x.pdf`) drops by construction and an empty
+// owned-pet set fails CLOSED.
+//
+// Deliberately NOT a `.pdf` suffix test on top: a future writer emitting a different
+// extension would then have its files silently skipped by the erasure, which is the
+// quiet direction for a deletion path. Ownership and shape are what stop a
+// cross-tenant key; the extension adds nothing to that.
+export function scopeVetReportPaths(
+  paths: ReadonlyArray<string | null | undefined>,
+  ownedPetIds: ReadonlyArray<string>,
+): Array<string | null | undefined> {
+  return scopeTwoSegmentOwnedPaths(paths, ownedPetIds)
+}
+
 // B-463 — cross-tenant delete guard for pet profile photos, defense-in-depth
 // BEHIND migration 042's DB CHECK (where the food/medication guards above stand
 // alone — their catalogs have no CHECK at all).
@@ -367,9 +396,9 @@ export function scopePetPhotoPaths(
 // Map each owned path-list to its bucket, dropping any bucket with nothing to
 // remove. The output can ONLY ever contain the seven STORAGE_BUCKETS above, and
 // PRESERVED_BUCKETS is now empty — every bucket a user's objects can live in is
-// purgeable. Four lists are re-scoped BEFORE cleaning, each against the key its own
+// purgeable. Five lists are re-scoped BEFORE cleaning, each against the key its own
 // Storage policy uses — medication to the owner's `{uid}/` prefix, food to the
-// owned-food-id SET, vet documents and pet photos to the owned-pet-id SET — so a
+// owned-food-id SET, vet documents, vet reports and pet photos to the owned-pet-id SET — so a
 // crafted cross-tenant path never reaches the service-role purge. The
 // event/vet-attachment lists are NOT re-scoped here: their `{petId}/…` prefix CHECKs
 // (migrations 025/043) carry the same traversal residual, and their three-segment
@@ -391,7 +420,12 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
       bucket: STORAGE_BUCKETS.vetDocuments,
       paths: cleanPaths(scopeVetDocumentPaths(input.vetDocumentPaths, input.ownedPetIds)),
     },
-    { bucket: STORAGE_BUCKETS.vetReports, paths: cleanPaths(input.vetReportPaths) },
+    // vetReports is re-scoped to the owned-pet-id SET too (CUL-2282): its
+    // `storage_path` column has no CHECK, so this guard is the only boundary.
+    {
+      bucket: STORAGE_BUCKETS.vetReports,
+      paths: cleanPaths(scopeVetReportPaths(input.vetReportPaths, input.ownedPetIds)),
+    },
     // medicationPhotos is sourced from a globally-writable catalog, so its paths are
     // prefix-scoped to the deleting user's own `{uid}/` before cleaning (B-128).
     {
