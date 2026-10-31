@@ -20,6 +20,9 @@
 //   • A helper outside the set that a report module imports is not followed: a shared
 //     `lib/tier.ts` read reached through one import hop passes. Half 2 covers the gate
 //     files; a new shared tier helper owes its own entry here.
+//   • GATE_FILES is a hand-kept list: a swap built in a gate file under another name
+//     escapes half 2 until it is added here. No gate file reads an entitlement today,
+//     so half 2's live check is green over nothing; its mutation test is the proof.
 //   • Half 2 checks that `careSurface` is named, not that the swap honours it; the swap's
 //     own PR carries the behavioural test.
 //
