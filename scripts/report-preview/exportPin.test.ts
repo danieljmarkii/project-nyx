@@ -19,7 +19,8 @@ import { READS } from './reads'
 // with that review's issue and date. A comment edit does not change the hash.
 const PIN: ExportPin = {
   sha256: '9e1378c8750da6d29deeb088ec76cba8d9c4ad70b25a1fde33947828413953ce',
-  review: 'pending: rls-privacy-reviewer pass on CUL-2308',
+  review:
+    'rls-privacy-reviewer, CUL-2308, 2026-10-31: every read and embed traced through subj (meals and diet_trial_foods pet-scoped on their own pet_id, food/medication items owner-scoped, allowlists cut to the owner); columns match generateReportForPet; pin mutants red; output path checked on real paths',
 }
 
 const SQL = readFileSync(join(__dirname, 'export.sql'), 'utf8')
