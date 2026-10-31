@@ -525,8 +525,18 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
 // earns completeness from page 0's `count: 'exact'`; an absent count, a shifted offset
 // or the page ceiling all read as incomplete. Incomplete THROWS: the run aborts before
 // any purge or the auth delete (FR-6), so the account survives and the call retries.
-// The one cost is an account above PULL_MAX_PAGES pages in one table (20,000 rows at
-// the default cap) cannot delete until the ceiling moves: loud, never a partial erase.
+//
+// THE RECOUNT. `fetchAll` stops once it holds page 0's count of rows. Its callers read
+// newest-first, where a concurrent insert lands behind the cursor; these tables sort
+// on a random v4 `id`, so an insert can land AHEAD of it, fill the count, and end the
+// walk one pre-existing row short while `complete` reads true (rls-privacy-reviewer on
+// this PR: 999 rows, one insert mid-read, `p/998` left behind under `ok: true`). So a
+// non-empty pull is recounted after the walk and must match the distinct rows read
+// exactly. Any write during the read then throws (loud, retryable), never a short erase.
+// An empty pull needs no recount: a count of 0 at page 0 left no pre-existing row to miss.
+//
+// The cost: an account above the page ceiling in one table (40 pages less 39 overlap
+// rows: 19,961 at a 500-row page) cannot delete until it moves. Loud, never partial.
 export interface OwnedPathRow {
   id: string
   storage_path: string
@@ -540,6 +550,15 @@ export async function readAllOwnedPaths(
   const pull = await fetchAll<OwnedPathRow>(table, (r) => r.id, page)
   if (!pull.complete) {
     throw new Error(`Failed to read every ${table} row (read ${pull.rows.length}, completeness unproven)`)
+  }
+  if (pull.rows.length > 0) {
+    const recount = await page(0, 0)
+    if (recount.error) throw new Error(`${table} recount failed: ${recount.error.message}`)
+    if (typeof recount.count !== 'number' || recount.count !== pull.rows.length) {
+      throw new Error(
+        `Failed to read every ${table} row (read ${pull.rows.length}, recount ${recount.count ?? 'absent'}, completeness unproven)`,
+      )
+    }
   }
   return pull.rows.map((r) => r.storage_path)
 }

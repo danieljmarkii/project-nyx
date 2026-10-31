@@ -1023,20 +1023,27 @@ Deno.test('listPrefixRecursive — a crafted cross-tenant key from a lister is s
 // ── readAllOwnedPaths (CUL-2312) ──────────────────────────────────────────────
 // A fake PostgREST over `n` owned rows that serves at most `cap` rows per request,
 // whatever range is asked for: the server-side `max-rows` the function cannot see.
-function cappedTable(n: number, cap: number, opts: { count?: boolean; error?: string } = {}) {
-  const rows = Array.from({ length: n }, (_, i) => ({
+function cappedTable(
+  n: number,
+  cap: number,
+  opts: { count?: boolean; error?: string; beforeRequest?: (call: number, rows: OwnedRow[]) => void } = {},
+) {
+  const rows: OwnedRow[] = Array.from({ length: n }, (_, i) => ({
     id: `id-${String(i).padStart(6, '0')}`,
     storage_path: `pet-1/obj-${i}.jpg`,
   }))
+  const original = rows.map((r) => r.storage_path)
   const ranges: [number, number][] = []
   const page = (from: number, to: number) => {
+    opts.beforeRequest?.(ranges.length, rows)
     ranges.push([from, to])
     if (opts.error) return Promise.resolve({ data: null, error: { message: opts.error }, count: null })
     const served = rows.slice(from, Math.min(to + 1, from + cap))
-    return Promise.resolve({ data: served, error: null, count: opts.count === false ? null : n })
+    return Promise.resolve({ data: served, error: null, count: opts.count === false ? null : rows.length })
   }
-  return { rows, page, ranges }
+  return { rows, original, page, ranges }
 }
+type OwnedRow = { id: string; storage_path: string }
 
 Deno.test('readAllOwnedPaths — a server cap BELOW the page size still returns every path', async () => {
   // The CUL-2312 defect: under max-rows 200 the old loop read page one (200 < 500),
@@ -1045,13 +1052,13 @@ Deno.test('readAllOwnedPaths — a server cap BELOW the page size still returns 
   const paths = await readAllOwnedPaths('vet_documents', t.page)
   assertEquals(paths.length, 1234)
   assertEquals(new Set(paths).size, 1234)
-  assertEquals(paths, t.rows.map((r) => r.storage_path))
+  assertEquals(paths, t.original)
   assert(t.ranges.length > 1, 'a short first page must not end the walk')
 })
 
 Deno.test('readAllOwnedPaths — a two-row cap still returns every path', async () => {
   const t = cappedTable(7, 2)
-  assertEquals(await readAllOwnedPaths('event_attachments', t.page), t.rows.map((r) => r.storage_path))
+  assertEquals(await readAllOwnedPaths('event_attachments', t.page), t.original)
 })
 
 Deno.test('readAllOwnedPaths — a one-row cap cannot advance past the overlap row, so it THROWS', async () => {
@@ -1064,7 +1071,7 @@ Deno.test('readAllOwnedPaths — a one-row cap cannot advance past the overlap r
 Deno.test('readAllOwnedPaths — an uncapped multi-page table returns every path once', async () => {
   const t = cappedTable(1201, 10_000)
   const paths = await readAllOwnedPaths('event_attachments', t.page)
-  assertEquals(paths, t.rows.map((r) => r.storage_path))
+  assertEquals(paths, t.original)
 })
 
 Deno.test('readAllOwnedPaths — an empty table is complete, not an error', async () => {
@@ -1086,4 +1093,42 @@ Deno.test('readAllOwnedPaths — a table past the page ceiling THROWS rather tha
   // 40 pages x a 10-row cap = 400 rows readable; 401 cannot be proven complete.
   const t = cappedTable(401, 10)
   await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — a row inserted AHEAD of the cursor mid-read THROWS, never ends one row short', async () => {
+  // rls-privacy-reviewer on CUL-2312: ids are random v4, so under `id ASC` an insert can
+  // land in the unread tail, fill page 0's count and stop fetchAll one pre-existing row
+  // early with `complete: true`. 999 rows, pages of 500, an insert at 90% before page 1:
+  // without the recount `obj-998` is left in Storage under ok: true.
+  const t = cappedTable(999, 1000, {
+    beforeRequest: (call, rows) => {
+      if (call === 1) rows.splice(900, 0, { id: 'id-000899x', storage_path: 'pet-1/late.jpg' })
+    },
+  })
+  await assertRejects(() => readAllOwnedPaths('vet_documents', t.page), Error, 'recount 1000')
+})
+
+Deno.test('readAllOwnedPaths — a row inserted after the walk but before the recount THROWS', async () => {
+  const t = cappedTable(3, 500, {
+    beforeRequest: (call, rows) => {
+      if (call === 1) rows.push({ id: 'id-999999', storage_path: 'pet-1/late.jpg' })
+    },
+  })
+  await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — a failed recount THROWS rather than trusting the walk', async () => {
+  let calls = 0
+  const page = (from: number, to: number) => {
+    calls++
+    if (calls > 1) return Promise.resolve({ data: null, error: { message: 'timeout' }, count: null })
+    return Promise.resolve({ data: [{ id: 'a', storage_path: 'pet-1/a.jpg' }].slice(from, to + 1), error: null, count: 1 })
+  }
+  await assertRejects(() => readAllOwnedPaths('vet_reports', page), Error, 'recount failed')
+})
+
+Deno.test('readAllOwnedPaths — a stable table is recounted once and passes', async () => {
+  const t = cappedTable(1234, 200)
+  await readAllOwnedPaths('vet_documents', t.page)
+  assertEquals(t.ranges[t.ranges.length - 1], [0, 0])
 })
