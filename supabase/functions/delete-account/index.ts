@@ -51,6 +51,7 @@ import {
   chunk,
   extractPassword,
   listPrefixRecursive,
+  readAllOwnedPaths,
   STORAGE_BUCKETS,
   STORAGE_REMOVE_CHUNK,
   type OwnedStoragePaths,
@@ -102,51 +103,21 @@ const CORS_HEADERS = {
 // boundary to depend on Storage treating keys as opaque. Note it is the SHAPE test,
 // not a first-segment test, that does the work — a first-segment filter keeps the
 // traversal key, which is what an earlier revision of this got wrong.
-// Read EVERY `storage_path` a pet-scoped table holds for these pets, paging past
-// PostgREST's row cap.
-//
-// ⚠ This paginates on purpose, and the un-paginated version was a real erasure hole
-// (found by the VF-1 rls-privacy-reviewer). PostgREST applies a `Max rows` cap to
-// every request; a plain `.select().in(...)` silently returns only the first page,
-// and the surplus objects then survive the purge while the function still returns
-// `ok: true` with a `removed` count that reads like success. Silent under-deletion is
-// the one failure mode an erasure path must not have. The app's own hydration
-// (`lib/sync.ts` fetchAllRows) has paged for exactly this reason since B-054; this
-// function had not, which was an inconsistency rather than a decision.
-//
-// B-478 is what made it worth fixing now rather than filing: §4.4 makes
-// `vet_documents` the first table where ONE document is N ROWS (one per page of a
-// multi-page discharge sheet or an N-screenshot email thread), so a real library
-// reaches the cap far sooner than events or attachments ever did — and AC 8 asks for
-// "zero objects, verified count, not assumed."
-//
-// Ordered by `id` (stable and unique) so pages neither skip nor duplicate — the same
-// argument fetchAllRows makes. A page shorter than the request size ends the walk;
-// note that if the server cap is BELOW `PATH_PAGE` every page comes back short, so
-// the request size is deliberately kept small enough to sit under any plausible cap.
-const PATH_PAGE = 500
-async function readAllOwnedPaths(
-  adminClient: SupabaseClient,
-  table: string,
-  petIds: string[],
-): Promise<{ data: { storage_path: string }[] | null; error: { message: string } | null }> {
-  const out: { storage_path: string }[] = []
-  for (let from = 0; ; from += PATH_PAGE) {
-    const { data, error } = await adminClient
+// Read EVERY `storage_path` a pet-scoped table holds for these pets, past PostgREST's
+// row cap. The un-paginated version was a real erasure hole (VF-1 rls-privacy-reviewer):
+// a plain `.select().in(...)` returns only the first `max-rows`, and the surplus objects
+// survive the purge under `ok: true`. B-478 made it urgent: one vet document is N rows.
+// The loop and its completeness proof live in plan.ts `readAllOwnedPaths` (CUL-2312,
+// C-42); this builds the page. `count: 'exact'` is what proves the read complete, and
+// `id` is the total order (unique) the reader's overlap check needs.
+function ownedPathPage(adminClient: SupabaseClient, table: string, petIds: string[]) {
+  return (from: number, to: number) =>
+    adminClient
       .from(table)
-      .select('storage_path')
+      .select('id, storage_path', { count: 'exact' })
       .in('pet_id', petIds)
       .order('id', { ascending: true })
-      .range(from, from + PATH_PAGE - 1)
-    // Surface the error rather than returning a partial list: every caller below
-    // decides for itself whether a read failure is fatal, and a silently truncated
-    // list would look exactly like a complete one.
-    if (error) return { data: null, error }
-    const page = (data ?? []) as { storage_path: string }[]
-    out.push(...page)
-    if (page.length < PATH_PAGE) break
-  }
-  return { data: out, error: null }
+      .range(from, to)
 }
 
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
@@ -226,36 +197,26 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetDocumentPaths: [], vetReportPaths: [], medicationPhotoPaths, foodPhotoPaths, ownedFoodItemIds, ownedPetIds: petIds, ownerUserId: userId }
   }
 
-  const [eventAttRes, vetAttRes, vetDocRes, vetReportRes] = await Promise.all([
-    readAllOwnedPaths(adminClient, 'event_attachments', petIds),
-    readAllOwnedPaths(adminClient, 'vet_visit_attachments', petIds),
+  // Each read THROWS on a query error or an unproven-complete read, and Promise.all
+  // rejects on the first, so the whole run aborts before any purge (FR-6: the auth
+  // delete is last, the account survives, the call retries). vet_documents and
+  // vet_reports are hard failures like the rest: degrading either to "no files" would
+  // report a clean deletion over this owner's lab results or saved vet reports.
+  // vet_reports has existed since migration 001 (CUL-2282, round 4 critique BRK-7).
+  const [eventAttachmentPaths, vetAttachmentPaths, vetDocumentPaths, vetReportPaths] = await Promise.all([
+    readAllOwnedPaths('event_attachments', ownedPathPage(adminClient, 'event_attachments', petIds)),
+    readAllOwnedPaths('vet_visit_attachments', ownedPathPage(adminClient, 'vet_visit_attachments', petIds)),
     // B-478 VF-1 — the Vet Files library. Pet-scoped exactly like the two above.
-    readAllOwnedPaths(adminClient, 'vet_documents', petIds),
-    readAllOwnedPaths(adminClient, 'vet_reports', petIds),
+    readAllOwnedPaths('vet_documents', ownedPathPage(adminClient, 'vet_documents', petIds)),
+    readAllOwnedPaths('vet_reports', ownedPathPage(adminClient, 'vet_reports', petIds)),
   ])
-  if (eventAttRes.error) throw new Error(`Failed to read event_attachments: ${eventAttRes.error.message}`)
-  if (vetAttRes.error) throw new Error(`Failed to read vet_visit_attachments: ${vetAttRes.error.message}`)
-  // vet_documents and vet_reports are HARD failures, like every read above. Degrading
-  // either to "no files" would let the run report a clean deletion while leaving this
-  // owner's lab results, vaccination certificates or saved vet reports sitting in the
-  // bucket. Silence in the direction of "we erased it" is the one failure mode an
-  // erasure path must not have (§6.2: verified in QA, not assumed). Throw so the
-  // whole run aborts and retries — it is idempotent by construction (FR-6: the auth
-  // delete is last), so the account survives intact.
-  //
-  // vet_reports used to be tolerated here on the claim its table did not exist yet.
-  // It has existed since migration 001 (CUL-2282, round 4 critique BRK-7), so a read
-  // error is a real fault, and once saved reports ship (VR2-20) tolerating it would
-  // leave every saved report behind on a "successful" deletion.
-  if (vetDocRes.error) throw new Error(`Failed to read vet_documents: ${vetDocRes.error.message}`)
-  if (vetReportRes.error) throw new Error(`Failed to read vet_reports: ${vetReportRes.error.message}`)
 
   return {
     petPhotoPaths,
-    eventAttachmentPaths: (eventAttRes.data ?? []).map((r) => r.storage_path as string),
-    vetAttachmentPaths: (vetAttRes.data ?? []).map((r) => r.storage_path as string),
-    vetDocumentPaths: (vetDocRes.data ?? []).map((r) => r.storage_path as string),
-    vetReportPaths: (vetReportRes.data ?? []).map((r) => r.storage_path as string),
+    eventAttachmentPaths,
+    vetAttachmentPaths,
+    vetDocumentPaths,
+    vetReportPaths,
     medicationPhotoPaths,
     foodPhotoPaths,
     ownedFoodItemIds,

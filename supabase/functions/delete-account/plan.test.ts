@@ -20,6 +20,7 @@ import {
   chunk,
   extractPassword,
   listPrefixRecursive,
+  readAllOwnedPaths,
   STORAGE_BUCKETS,
   STORAGE_LIST_MAX_DEPTH,
   STORAGE_LIST_PAGE,
@@ -1017,4 +1018,72 @@ Deno.test('listPrefixRecursive — a crafted cross-tenant key from a lister is s
   // scopeMedicationPaths keeps only the deleting user's own prefix.
   const plan = buildDeletionPlan(owned({ medicationPhotoPaths: ['user-2/med-x/0-label.jpg', 'user-12/m/0-label.jpg'] }))
   assertEquals(plan, [{ kind: 'delete-auth-user' }])
+})
+
+// ── readAllOwnedPaths (CUL-2312) ──────────────────────────────────────────────
+// A fake PostgREST over `n` owned rows that serves at most `cap` rows per request,
+// whatever range is asked for: the server-side `max-rows` the function cannot see.
+function cappedTable(n: number, cap: number, opts: { count?: boolean; error?: string } = {}) {
+  const rows = Array.from({ length: n }, (_, i) => ({
+    id: `id-${String(i).padStart(6, '0')}`,
+    storage_path: `pet-1/obj-${i}.jpg`,
+  }))
+  const ranges: [number, number][] = []
+  const page = (from: number, to: number) => {
+    ranges.push([from, to])
+    if (opts.error) return Promise.resolve({ data: null, error: { message: opts.error }, count: null })
+    const served = rows.slice(from, Math.min(to + 1, from + cap))
+    return Promise.resolve({ data: served, error: null, count: opts.count === false ? null : n })
+  }
+  return { rows, page, ranges }
+}
+
+Deno.test('readAllOwnedPaths — a server cap BELOW the page size still returns every path', async () => {
+  // The CUL-2312 defect: under max-rows 200 the old loop read page one (200 < 500),
+  // took the short page for the end and erased 200 of 1,234 objects under ok: true.
+  const t = cappedTable(1234, 200)
+  const paths = await readAllOwnedPaths('vet_documents', t.page)
+  assertEquals(paths.length, 1234)
+  assertEquals(new Set(paths).size, 1234)
+  assertEquals(paths, t.rows.map((r) => r.storage_path))
+  assert(t.ranges.length > 1, 'a short first page must not end the walk')
+})
+
+Deno.test('readAllOwnedPaths — a two-row cap still returns every path', async () => {
+  const t = cappedTable(7, 2)
+  assertEquals(await readAllOwnedPaths('event_attachments', t.page), t.rows.map((r) => r.storage_path))
+})
+
+Deno.test('readAllOwnedPaths — a one-row cap cannot advance past the overlap row, so it THROWS', async () => {
+  // fetchAll re-reads one row per page for its continuity check, so a max-rows of 1
+  // never moves past row 0. It must fail loud (account intact), never erase one object.
+  const t = cappedTable(7, 1)
+  await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — an uncapped multi-page table returns every path once', async () => {
+  const t = cappedTable(1201, 10_000)
+  const paths = await readAllOwnedPaths('event_attachments', t.page)
+  assertEquals(paths, t.rows.map((r) => r.storage_path))
+})
+
+Deno.test('readAllOwnedPaths — an empty table is complete, not an error', async () => {
+  assertEquals(await readAllOwnedPaths('vet_reports', cappedTable(0, 500).page), [])
+})
+
+Deno.test('readAllOwnedPaths — an absent count is incomplete and THROWS (never a clean erase)', async () => {
+  // Even when every row did come back: without the count nothing proves it.
+  const t = cappedTable(3, 500, { count: false })
+  await assertRejects(() => readAllOwnedPaths('vet_visit_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — a query error THROWS rather than reading as no files', async () => {
+  const t = cappedTable(3, 500, { error: 'permission denied' })
+  await assertRejects(() => readAllOwnedPaths('vet_documents', t.page), Error, 'permission denied')
+})
+
+Deno.test('readAllOwnedPaths — a table past the page ceiling THROWS rather than truncating', async () => {
+  // 40 pages x a 10-row cap = 400 rows readable; 401 cannot be proven complete.
+  const t = cappedTable(401, 10)
+  await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
 })

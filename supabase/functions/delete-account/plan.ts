@@ -11,6 +11,8 @@
 // shell fetches the user's OWNED rows and executes this plan. Keeping it pure is
 // what makes the scoping and ordering invariants testable offline (AC-11).
 
+import { fetchAll, type PullPage } from '../_shared/pull.ts'
+
 // ── Storage buckets ───────────────────────────────────────────────────────────
 // The buckets whose objects are THIS user's PII/data and must be erased (FR-3).
 // The first four are pet-health objects scoped through the user's pets. The last
@@ -513,6 +515,33 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
   }
   await walk(root, 1)
   return keys
+}
+
+// ── Owned-row path reads (CUL-2312) ───────────────────────────────────────────
+// Every `storage_path` a pet-scoped table holds for the account's pets, read through
+// the shared C-42 reader. An earlier loop here ended its walk on a SHORT page, so a
+// PostgREST `max-rows` below its page size would have returned page one, erased only
+// those objects and reported success. `fetchAll` advances by the rows RECEIVED and
+// earns completeness from page 0's `count: 'exact'`; an absent count, a shifted offset
+// or the page ceiling all read as incomplete. Incomplete THROWS: the run aborts before
+// any purge or the auth delete (FR-6), so the account survives and the call retries.
+// The one cost is an account above PULL_MAX_PAGES pages in one table (20,000 rows at
+// the default cap) cannot delete until the ceiling moves: loud, never a partial erase.
+export interface OwnedPathRow {
+  id: string
+  storage_path: string
+}
+
+export async function readAllOwnedPaths(
+  table: string,
+  page: (from: number, to: number) => PromiseLike<PullPage>,
+): Promise<string[]> {
+  // fetchAll throws on a query error (rowsOrThrow); only the shortfall is ours.
+  const pull = await fetchAll<OwnedPathRow>(table, (r) => r.id, page)
+  if (!pull.complete) {
+    throw new Error(`Failed to read every ${table} row (read ${pull.rows.length}, completeness unproven)`)
+  }
+  return pull.rows.map((r) => r.storage_path)
 }
 
 // ── Ordering ──────────────────────────────────────────────────────────────────
