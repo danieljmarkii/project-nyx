@@ -220,7 +220,7 @@ Deno.test('CUL-2283 — symptom entries after the window: their count, in bold',
   )
   const html = renderReport(snap)
   assert.ok(html.includes('<b><span class="num">1</span> is a symptom entry.</b>'), 'the symptom count is bold')
-  assert.ok(plain(html).includes('24 entries were logged after it, through May 31.'))
+  assert.ok(plain(html).includes('24 entries were logged after it, through May 31. Of 23 meals: 22 rated finished; 1 with no intake rating.'), 'the unrated meal is never folded into the finished')
   // The symptom count here and the cherry-pick guard's "after it" count read the same record.
   assert.equal(snap.scope.outOfWindowAfter, e.afterWindowSymptomEntries, 'one population, two sentences, one number')
 })

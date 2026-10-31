@@ -1932,8 +1932,13 @@ function recordEdgeDisclosure(snap: ReportSnapshot): string {
           ? `<b>${num(e.afterWindowMealsNotFinished)} not finished${
               e.afterWindowMealsRefused > 0 ? `, ${num(e.afterWindowMealsRefused)} of them refused` : ''
             }</b>`
-          : 'none rated short of finished'
-      const unrated = e.afterWindowMealsUnrated > 0 ? `; ${num(e.afterWindowMealsUnrated)} with no intake rating` : ''
+          : e.afterWindowMeals > e.afterWindowMealsUnrated
+            ? `${num(e.afterWindowMeals - e.afterWindowMealsUnrated)} rated finished`
+            : 'none with an intake rating'
+      const unrated =
+        e.afterWindowMealsUnrated > 0 && e.afterWindowMeals > e.afterWindowMealsUnrated
+          ? `; ${num(e.afterWindowMealsUnrated)} with no intake rating`
+          : ''
       parts.push(` Of ${num(e.afterWindowMeals)} meal${e.afterWindowMeals === 1 ? '' : 's'}: ${short}${unrated}.`)
     }
     if (e.afterWindowDosesNotGiven > 0) {
