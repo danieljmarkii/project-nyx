@@ -596,6 +596,13 @@ describe('ai_consent guard — mutants, each killed', () => {
     expect(findAlters(statementsIntactOf(reAddDropped), 'ai_consent')).not.toEqual(STATE.alters);
   });
 
+  it("112 seeds report_ai_lead off for everyone, and a re-apply never resets a live allowlist", () => {
+    const seed = statementsIntactOf(base).filter((st) => /^INSERT INTO app_config\b.*'report_ai_lead'/.test(st));
+    expect(seed).toEqual([
+      `INSERT INTO app_config (key, value) VALUES ('report_ai_lead', '{"enabled": false, "allowlist": []}'::jsonb) ON CONFLICT (key) DO NOTHING`,
+    ]);
+  });
+
   it('the intact split keeps a literal ; inside its statement', () => {
     expect(statementsIntactOf(["COMMENT ON TABLE x IS 'a; b'; ALTER TABLE public.ai_consent DROP CONSTRAINT c;"]))
       .toEqual(["COMMENT ON TABLE x IS 'a; b'", 'ALTER TABLE public.ai_consent DROP CONSTRAINT c']);
