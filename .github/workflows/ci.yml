@@ -324,4 +324,16 @@ jobs:
         # unchecked and off the network in layout-captures.yml. Same shape as the replay:
         # its one remote edge is supabase-js's types, behind _shared/engineStamps.ts, a
         # module the warm step caches (measured zero downloads after it).
-        run: deno check --lock=deno.lock scripts/*.deno.ts scripts/engine-replay/*.deno.ts scripts/web-capture/*.deno.ts
+        #
+        # scripts/report-preview/ (CUL-2308) is the real-record report harness. Same shape:
+        # its one remote edge is supabase-js, imported by generate-report/index.ts, which the
+        # warm step caches.
+        run: deno check --lock=deno.lock scripts/*.deno.ts scripts/engine-replay/*.deno.ts scripts/web-capture/*.deno.ts scripts/report-preview/*.deno.ts
+
+      # The report harness end to end (CUL-2308): the unchanged generateReportForPet reading a
+      # synthetic export through the stand-in client. It is also the harness's drift guard:
+      # when index.ts changes a select or an order, the stand-in refuses it and this goes red.
+      # Named by path because its `.deno.ts` suffix (which keeps it out of jest and tsc) is not
+      # a pattern `deno test` discovers. Read-only, no network, same cached graph.
+      - name: Deno test (report preview)
+        run: deno test --lock=deno.lock --cached-only --allow-read=supabase/functions,scripts scripts/report-preview/e2e.deno.ts

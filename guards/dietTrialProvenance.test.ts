@@ -125,6 +125,8 @@ const ALLOWED: Record<string, string> = {
     'THE WRITER (CUL-1039, PR 2). changeTrialWindow stamps COALESCE(initial, target_duration_days) so the FIRST window survives every later move, writes set_at on every change because it is the predicate, and assigns vet_directed unconditionally from THAT call’s own checkbox — never leaving a prior true in place for a later owner-initiated move.',
   'lib/sync.ts':
     'hydrateDietTrials, which pulls the three columns down and mirrors them locally so an owner sees her own window change after a round trip. An explicit column list, never a select(*).',
+  'scripts/report-preview/reads.ts':
+    'THE REPORT’S OWN READ, restated so the real-record harness can refuse drift (CUL-2308). It holds generate-report’s diet_trials select string verbatim and builds nothing from it: the stand-in serves a dumped row only to a query whose select matches exactly, and the rows go to the unchanged generateReportForPet and nowhere else. The privacy-pinned export.sql is where the values are read; this file only names them.',
   'scripts/render-trial-report-sample.deno.ts':
     'A fixture generator for the vet-report-cold-read gate. Pure — no network, no Supabase, synthetic pets only; it renders the artifact the review reads.',
   'supabase/functions/generate-report/render.ts':
