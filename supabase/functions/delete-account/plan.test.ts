@@ -20,6 +20,7 @@ import {
   chunk,
   extractPassword,
   listPrefixRecursive,
+  readAllOwnedPaths,
   STORAGE_BUCKETS,
   STORAGE_LIST_MAX_DEPTH,
   STORAGE_LIST_PAGE,
@@ -1017,4 +1018,197 @@ Deno.test('listPrefixRecursive — a crafted cross-tenant key from a lister is s
   // scopeMedicationPaths keeps only the deleting user's own prefix.
   const plan = buildDeletionPlan(owned({ medicationPhotoPaths: ['user-2/med-x/0-label.jpg', 'user-12/m/0-label.jpg'] }))
   assertEquals(plan, [{ kind: 'delete-auth-user' }])
+})
+
+// ── readAllOwnedPaths (CUL-2312) ──────────────────────────────────────────────
+// A fake PostgREST over `n` owned rows that serves at most `cap` rows per request,
+// whatever range is asked for: the server-side `max-rows` the function cannot see.
+function cappedTable(
+  n: number,
+  cap: number,
+  opts: { count?: boolean; error?: string; beforeRequest?: (call: number, rows: OwnedRow[]) => void } = {},
+) {
+  const rows: OwnedRow[] = Array.from({ length: n }, (_, i) => ({
+    id: `id-${String(i).padStart(6, '0')}`,
+    storage_path: `pet-1/obj-${i}.jpg`,
+  }))
+  const original = rows.map((r) => r.storage_path)
+  const ranges: [number, number][] = []
+  const page = (from: number, to: number) => {
+    opts.beforeRequest?.(ranges.length, rows)
+    ranges.push([from, to])
+    if (opts.error) return Promise.resolve({ data: null, error: { message: opts.error }, count: null })
+    const served = rows.slice(from, Math.min(to + 1, from + cap))
+    return Promise.resolve({ data: served, error: null, count: opts.count === false ? null : rows.length })
+  }
+  return { rows, original, page, ranges }
+}
+type OwnedRow = { id: string; storage_path: string }
+
+Deno.test('readAllOwnedPaths — a server cap BELOW the page size still returns every path', async () => {
+  // The CUL-2312 defect: under max-rows 200 the old loop read page one (200 < 500),
+  // took the short page for the end and erased 200 of 1,234 objects under ok: true.
+  const t = cappedTable(1234, 200)
+  const paths = await readAllOwnedPaths('vet_documents', t.page)
+  assertEquals(paths.length, 1234)
+  assertEquals(new Set(paths).size, 1234)
+  assertEquals(paths, t.original)
+  assert(t.ranges.length > 1, 'a short first page must not end the walk')
+})
+
+Deno.test('readAllOwnedPaths — a two-row cap still returns every path', async () => {
+  const t = cappedTable(7, 2)
+  assertEquals(await readAllOwnedPaths('event_attachments', t.page), t.original)
+})
+
+Deno.test('readAllOwnedPaths — a one-row cap cannot advance past the overlap row, so it THROWS', async () => {
+  // fetchAll re-reads one row per page for its continuity check, so a max-rows of 1
+  // never moves past row 0. It must fail loud (account intact), never erase one object.
+  const t = cappedTable(7, 1)
+  await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — an uncapped multi-page table returns every path once', async () => {
+  const t = cappedTable(1201, 10_000)
+  const paths = await readAllOwnedPaths('event_attachments', t.page)
+  assertEquals(paths, t.original)
+})
+
+Deno.test('readAllOwnedPaths — an empty table is complete, not an error', async () => {
+  assertEquals(await readAllOwnedPaths('vet_reports', cappedTable(0, 500).page), [])
+})
+
+Deno.test('readAllOwnedPaths — an absent count is incomplete and THROWS (never a clean erase)', async () => {
+  // Even when every row did come back: without the count nothing proves it.
+  const t = cappedTable(3, 500, { count: false })
+  await assertRejects(() => readAllOwnedPaths('vet_visit_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — a query error THROWS rather than reading as no files', async () => {
+  const t = cappedTable(3, 500, { error: 'permission denied' })
+  await assertRejects(() => readAllOwnedPaths('vet_documents', t.page), Error, 'permission denied')
+})
+
+Deno.test('readAllOwnedPaths — a table past the page ceiling THROWS rather than truncating', async () => {
+  // 40 pages x a 10-row cap = 400 rows readable; 401 cannot be proven complete.
+  const t = cappedTable(401, 10)
+  await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — a row inserted AHEAD of the cursor mid-read is read, and no pre-existing row is lost', async () => {
+  // rls-privacy-reviewer pass 1 on CUL-2312: ids are random v4, so under `id ASC` an insert
+  // can land in the unread tail. A walk that stopped at page 0's count ended one row short
+  // (`obj-998` left in Storage under ok: true). This walk runs to the end of the table.
+  const t = cappedTable(999, 1000, {
+    beforeRequest: (call, rows) => {
+      if (call === 1) rows.splice(900, 0, { id: 'id-000899x', storage_path: 'pet-1/late.jpg' })
+    },
+  })
+  const paths = await readAllOwnedPaths('vet_documents', t.page)
+  for (const p of t.original) assert(paths.includes(p), `${p} was not read`)
+  assert(paths.includes('pet-1/late.jpg'))
+})
+
+Deno.test('readAllOwnedPaths — insert ahead mid-walk plus a delete of a read row before the recount THROWS or reads all', async () => {
+  // rls-privacy-reviewer pass 2: with a count-stopping walk this returned ok: true with
+  // `p/998` unread, because the delete made the recount agree with the short list.
+  for (const [n, cap] of [[999, 1000], [5, 2], [797, 200]] as const) {
+    let lastPageCall = -1
+    const t = cappedTable(n, cap, {
+      beforeRequest: (call, rows) => {
+        if (call === 1) rows.splice(Math.floor(rows.length * 0.9), 0, { id: `id-${String(Math.floor(n * 0.9)).padStart(6, '0')}x`, storage_path: 'pet-1/late.jpg' })
+        if (lastPageCall >= 0 && call === lastPageCall + 1) rows.splice(0, 1)
+      },
+    })
+    const wrapped = (from: number, to: number) => {
+      if (from === 0 && to === 0) lastPageCall = t.ranges.length - 1
+      return t.page(from, to)
+    }
+    // The delete lands just before the recount, so it is a write after the walk: loud.
+    await assertRejects(() => readAllOwnedPaths('event_attachments', wrapped), Error, 'completeness unproven')
+  }
+})
+
+// A seeded fuzz over concurrent writes. The property an erasure path needs: the call
+// either THROWS, or returns every row that existed when the read began AND still exists
+// when it returned. (A row deleted mid-read is gone from the database; its object is the
+// client delete path's to remove, not this function's.)
+Deno.test('readAllOwnedPaths — fuzz: concurrent inserts and deletes never yield success with a live row unread', async () => {
+  let seed = 2312
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed / 0x7fffffff
+  }
+  let successes = 0
+  let throws = 0
+  let nextId = 0
+  for (let trial = 0; trial < 3000; trial++) {
+    const n = 1 + Math.floor(rand() * 60)
+    const cap = 2 + Math.floor(rand() * 12)
+    const writeRate = rand() * 0.6
+    const rows: OwnedRow[] = []
+    const mkId = () => `${rand().toString(36).slice(2, 10)}-${nextId++}`
+    for (let i = 0; i < n; i++) rows.push({ id: mkId(), storage_path: '' })
+    for (const r of rows) r.storage_path = `pet-1/${r.id}.jpg`
+    rows.sort((x, y) => (x.id < y.id ? -1 : 1))
+    const startIds = new Set(rows.map((r) => r.id))
+    const page = (from: number, to: number) => {
+      // Before each request, a burst of up to three writes: inserts at random places and
+      // deletes. One write per request cannot beat the recount alone, so the layers under
+      // it (the overlap check, the walk to the end) would go untested; a burst reaches them.
+      for (let k = 0; k < 3; k++) if (rand() < writeRate) {
+        if (rand() < 0.5 || rows.length === 0) {
+          const id = mkId()
+          rows.push({ id, storage_path: `pet-1/${id}.jpg` })
+          rows.sort((x, y) => (x.id < y.id ? -1 : 1))
+        } else {
+          rows.splice(Math.floor(rand() * rows.length), 1)
+        }
+      }
+      if (from >= rows.length && from > 0) {
+        return Promise.resolve({ data: null, error: { message: 'Requested range not satisfiable', code: 'PGRST103' }, count: null })
+      }
+      const served = rows.slice(from, Math.min(to + 1, from + cap))
+      return Promise.resolve({ data: served, error: null, count: rows.length })
+    }
+    try {
+      const paths = new Set(await readAllOwnedPaths('vet_documents', page))
+      successes++
+      for (const r of rows) {
+        if (startIds.has(r.id)) assert(paths.has(r.storage_path), `trial ${trial}: live row ${r.id} unread under success`)
+      }
+    } catch (e) {
+      assert((e as Error).message.includes('completeness unproven'), (e as Error).message)
+      throws++
+    }
+  }
+  // Non-vacuity: the fuzz must exercise both outcomes.
+  assert(successes > 200, `only ${successes} successes`)
+  assert(throws > 1000, `only ${throws} throws`)
+})
+
+Deno.test('readAllOwnedPaths — a row inserted after the walk but before the recount THROWS', async () => {
+  // Calls: 0 = page 0, 1 = the end-of-table page, 2 = the recount.
+  const t = cappedTable(3, 500, {
+    beforeRequest: (call, rows) => {
+      if (call === 2) rows.push({ id: 'id-999999', storage_path: 'pet-1/late.jpg' })
+    },
+  })
+  await assertRejects(() => readAllOwnedPaths('event_attachments', t.page), Error, 'completeness unproven')
+})
+
+Deno.test('readAllOwnedPaths — a failed recount THROWS rather than trusting the walk', async () => {
+  let calls = 0
+  const page = (from: number, to: number) => {
+    calls++
+    if (calls > 1 && from === 0 && to === 0) return Promise.resolve({ data: null, error: { message: 'timeout' }, count: null })
+    return Promise.resolve({ data: [{ id: 'a', storage_path: 'pet-1/a.jpg' }].slice(from, to + 1), error: null, count: 1 })
+  }
+  await assertRejects(() => readAllOwnedPaths('vet_reports', page), Error, 'recount failed')
+})
+
+Deno.test('readAllOwnedPaths — a stable table is recounted once and passes', async () => {
+  const t = cappedTable(1234, 200)
+  await readAllOwnedPaths('vet_documents', t.page)
+  assertEquals(t.ranges[t.ranges.length - 1], [0, 0])
 })
