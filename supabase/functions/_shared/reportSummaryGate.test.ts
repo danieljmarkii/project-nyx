@@ -174,7 +174,7 @@ Deno.test('cap: the gate file reads no tier, entitlement or Premium state (Pets 
 
 // ── The order ────────────────────────────────────────────────────────────────────────────
 
-function io(over: Partial<{ consent: unknown; config: unknown; counts: unknown; throwAt: string }>) {
+function io(over: Partial<{ consent: unknown; config: unknown; owned: unknown; counts: unknown; throwAt: string }>) {
   const reached: string[] = []
   const impl: SummaryGateIO = {
     readConsent: () => {
@@ -186,6 +186,11 @@ function io(over: Partial<{ consent: unknown; config: unknown; counts: unknown; 
       reached.push('config')
       if (over.throwAt === 'config') throw new Error('x')
       return Promise.resolve((over.config === undefined ? flagsOn : over.config) as { key: string; value: unknown }[] | null)
+    },
+    petOwned: () => {
+      reached.push('pet')
+      if (over.throwAt === 'pet') throw new Error('x')
+      return Promise.resolve((over.owned === undefined ? true : over.owned) as boolean)
     },
     recordUsage: () => {
       reached.push('usage')
@@ -199,7 +204,15 @@ function io(over: Partial<{ consent: unknown; config: unknown; counts: unknown; 
 Deno.test('order: all clear reads consent, then config, then spends one count', async () => {
   const { impl, reached } = io({})
   assertEquals(await runSummaryGate(impl, UID), { allow: true })
-  assertEquals(reached, ['consent', 'config', 'usage'])
+  assertEquals(reached, ['consent', 'config', 'pet', 'usage'])
+})
+
+Deno.test("order: another owner's pet (or an unreadable one) never reaches the counter", async () => {
+  for (const owned of [false, null, 'true', 1]) {
+    const { impl, reached } = io({ owned })
+    assertEquals(await runSummaryGate(impl, UID), { allow: false, reason: 'pet_not_owned' })
+    assertEquals(reached, ['consent', 'config', 'pet'])
+  }
 })
 
 Deno.test('order: a declined owner never reaches the config or the counter', async () => {
@@ -228,7 +241,8 @@ Deno.test('order: a throw at any step is a refusal at that step, never a pass', 
   const want: Record<string, string[]> = {
     consent: ['consent'],
     config: ['consent', 'config'],
-    usage: ['consent', 'config', 'usage'],
+    pet: ['consent', 'config', 'pet'],
+    usage: ['consent', 'config', 'pet', 'usage'],
   }
   for (const at of Object.keys(want)) {
     const { impl, reached } = io({ throwAt: at })

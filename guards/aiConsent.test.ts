@@ -96,8 +96,7 @@ const TABLES: readonly TableSpec[] = [
     writeLocked: null,
     serviceRevoke: 'REVOKE DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.ai_consent FROM service_role',
     alters: [
-      'ALTER TABLE public.ai_consent DROP CONSTRAINT ai_consent_scope_check',
-      "ALTER TABLE public.ai_consent ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
+      "ALTER TABLE public.ai_consent DROP CONSTRAINT ai_consent_scope_check, ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
     ],
     create: squash(`
       CREATE TABLE public.ai_consent (
@@ -124,8 +123,7 @@ const TABLES: readonly TableSpec[] = [
     writeLocked: /(?:^|[\s,"])service_role(?=$|[\s,"])/i,
     serviceRevoke: 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.ai_consent_events FROM service_role',
     alters: [
-      'ALTER TABLE public.ai_consent_events DROP CONSTRAINT ai_consent_events_scope_check',
-      "ALTER TABLE public.ai_consent_events ADD CONSTRAINT ai_consent_events_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
+      "ALTER TABLE public.ai_consent_events DROP CONSTRAINT ai_consent_events_scope_check, ADD CONSTRAINT ai_consent_events_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
     ],
     create: squash(`
       CREATE TABLE public.ai_consent_events (
@@ -590,8 +588,8 @@ describe('ai_consent guard — mutants, each killed', () => {
     );
     expect(findAlters(statementsIntactOf(historyNarrowed), 'ai_consent_events')).not.toEqual(EVENTS.alters);
     const reAddDropped = in112(
-      "ALTER TABLE public.ai_consent ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));",
-      '',
+      ",\n  ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));",
+      ';',
     );
     expect(findAlters(statementsIntactOf(reAddDropped), 'ai_consent')).not.toEqual(STATE.alters);
   });

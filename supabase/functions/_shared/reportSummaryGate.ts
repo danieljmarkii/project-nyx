@@ -10,7 +10,10 @@
 //      row, a failed read, or a yes given against old summary copy under EITHER is a no.
 //   2. Flags. `report_document_v2` (111) and `report_ai_lead` (112), both resolved against
 //      the JWT-verified uid, both failing CLOSED on a missing or malformed row.
-//   3. The cap, last, because `record_ai_usage` INCREMENTS. A declined or flagged-off owner
+//   3. The pet. A service-role read that `petId` belongs to the verified uid, because the cap
+//      is scoped by petId: a caller who could name any UUID would get a fresh counter per
+//      UUID and the cap would bound nothing (rls-privacy-reviewer, F3). Fails closed.
+//   4. The cap, last, because `record_ai_usage` INCREMENTS. A declined or flagged-off owner
 //      never spends a count, and a count is never a record that a summary was asked for
 //      by someone who said no.
 // Each step runs only if the one before allowed, so a "no" short-circuits every read after
@@ -31,9 +34,16 @@
 // payload is refused whole (never stripped and sent: a builder that leaks a note is a bug to
 // see, not to paper over). OWNER_WORDS_KEYS can never join the allowlist (a test pins the two
 // sets disjoint). VR2-25 may add keys its fact table needs; never one an owner typed.
-// Blind spot, stated: this checks KEYS, not values. A builder that copies a note into an
-// allowed `text` field passes it. The fact table's builder (VR2-25) owns that half, and the
-// verifier's quote rejection (§9.1) is the second net.
+// Blind spots, stated (rls-privacy-reviewer, F4):
+//   · It checks KEYS, not values. A builder that copies a note into an allowed `text` field
+//     passes it. The fact table's builder (VR2-25) owns that half, and the verifier's quote
+//     rejection (§9.1) is the second net.
+//   · Some allowed values ARE owner-typed by design: the pet's name, and food, medicine and
+//     trial-protein names from the owner's own library inside `label` / `text`. The policy
+//     paragraph names them; nothing here pretends they are not sent.
+//   · No length bound on string values.
+//   · It proves nothing about the bytes actually sent: VR2-25's call site must check the
+//     final payload it serialises (prompt wrapper included), not an earlier copy.
 //
 // WHOSE ANSWER. `uid` is the caller's id verified by `auth.getUser()` on the request JWT,
 // never a body value. Consent and config read through service_role scoped by that uid; the
@@ -66,6 +76,7 @@ export type SummaryGate =
   | { allow: true }
   | { allow: false; reason: 'consent_declined'; scope: 'ai_boundary' | 'report_summary' }
   | { allow: false; reason: 'flag_off'; flag: typeof REPORT_DOCUMENT_FLAG | typeof REPORT_AI_LEAD_FLAG }
+  | { allow: false; reason: 'pet_not_owned' }
   | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
   | { allow: false; reason: 'cap_unknown' }
 
@@ -108,8 +119,8 @@ export function flagDecision(
   return { allow: true }
 }
 
-/** The cap in force: `ai_caps.report_summary.{daily,monthly}` when they are finite positive
- *  numbers, else the code default. Reads nothing else from the override. */
+/** The cap in force: `ai_caps.report_summary.{daily,monthly}` when they are finite and not
+ *  negative (0 turns the summary off for everyone, which fails closed), else the code default. Reads nothing else from the override. */
 export function resolveSummaryCaps(aiCaps: unknown): SummaryCaps {
   const entry = aiCaps && typeof aiCaps === 'object'
     ? (aiCaps as Record<string, unknown>)[REPORT_SUMMARY_FUNCTION_KEY]
@@ -138,6 +149,8 @@ export function capDecision(
 export interface SummaryGateIO {
   readConsent(): Promise<{ data: unknown; error: unknown }>
   readConfig(): Promise<{ key: string; value: unknown }[] | null>
+  /** True only when the pet exists and belongs to the verified uid. */
+  petOwned(): Promise<boolean>
   recordUsage(): Promise<{ dayCount: number; monthCount: number } | null>
 }
 
@@ -164,6 +177,14 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string): Promise<Su
   const flags = flagDecision(config, uid)
   if (!flags.allow) return flags
 
+  let owned = false
+  try {
+    owned = (await io.petOwned()) === true
+  } catch {
+    owned = false
+  }
+  if (!owned) return { allow: false, reason: 'pet_not_owned' }
+
   let counts: { dayCount: number; monthCount: number } | null = null
   try {
     counts = await io.recordUsage()
@@ -175,7 +196,7 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string): Promise<Su
 
 /** The production wiring. `adminClient` is service-role; `userClient` carries the caller's
  *  JWT (record_ai_usage reads auth.uid()); `uid` is the verified caller id; `petId` scopes
- *  the cap and must already be checked as the caller's pet. */
+ *  the cap, and the gate itself checks it is the caller's pet (step 3). */
 export function summaryGateIO(
   adminClient: SupabaseClient,
   userClient: SupabaseClient,
@@ -202,6 +223,20 @@ export function summaryGateIO(
         return null
       }
       return (data ?? []) as { key: string; value: unknown }[]
+    },
+    petOwned: async () => {
+      if (typeof petId !== 'string' || petId.length === 0) return false
+      const { data, error } = await adminClient
+        .from('pets')
+        .select('id')
+        .eq('id', petId)
+        .eq('user_id', uid)
+        .maybeSingle()
+      if (error) {
+        console.warn('pets read failed; the summary is skipped:', error.message)
+        return false
+      }
+      return !!data
     },
     recordUsage: async () => {
       const { data, error } = await userClient.rpc('record_ai_usage', {

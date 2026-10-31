@@ -61,18 +61,19 @@
 --   Destructive:  n  (widens two CHECKs to admit one more value; every row
 --                     they admitted before they admit now. One new
 --                     app_config row. Nothing dropped, renamed or retyped.)
---   Rollback:     BEGIN;
---                 DELETE FROM app_config WHERE key = 'report_ai_lead';
---                 -- Only if report_summary rows exist (no writer ships before
---                 -- VR2-25); the history's rows need the table owner, as
---                 -- service_role holds no DELETE there (100 §5):
---                 DELETE FROM public.ai_consent        WHERE scope = 'report_summary';
---                 DELETE FROM public.ai_consent_events WHERE scope = 'report_summary';
---                 ALTER TABLE public.ai_consent        DROP CONSTRAINT ai_consent_scope_check;
---                 ALTER TABLE public.ai_consent        ADD  CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary'));
---                 ALTER TABLE public.ai_consent_events DROP CONSTRAINT ai_consent_events_scope_check;
---                 ALTER TABLE public.ai_consent_events ADD  CONSTRAINT ai_consent_events_scope_check CHECK (scope IN ('ai_boundary'));
---                 COMMIT;
+--   Rollback:     Turn the feature off; never erase an answer:
+--                   UPDATE app_config SET value = '{"enabled": false, "allowlist": []}'::jsonb
+--                     WHERE key = 'report_ai_lead';
+--                 The gate refuses on that flag alone, so the scope stays in place.
+--                 Narrowing the CHECK back would first require deleting owners'
+--                 recorded 'report_summary' answers, recorded noes included, which
+--                 100 forbids ("no client erases an answer") and which service_role
+--                 cannot do anyway (DELETE revoked on the history). If a full
+--                 reversal is ever ruled necessary, copy both tables' report_summary
+--                 rows out first (CREATE TABLE ... AS SELECT) and record the ruling.
+--                 Before any answer exists (nothing writes one before VR2-25), the
+--                 full reversal is: DELETE the report_ai_lead row; ALTER each table
+--                 DROP CONSTRAINT <name>, ADD CONSTRAINT <name> CHECK (scope IN ('ai_boundary')).
 --   Backfill:     N/A. No account is given a 'report_summary' row: absence is
 --                 "never asked", the gate reads it as declined, and the
 --                 preview asks. Inventing a yes is what 5.1.2(i) forbids.
@@ -90,10 +91,14 @@
 --                   -- expect: {"enabled": false, "allowlist": []}
 -- ============================================================
 
-ALTER TABLE public.ai_consent DROP CONSTRAINT ai_consent_scope_check;
-ALTER TABLE public.ai_consent ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));
-ALTER TABLE public.ai_consent_events DROP CONSTRAINT ai_consent_events_scope_check;
-ALTER TABLE public.ai_consent_events ADD CONSTRAINT ai_consent_events_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));
+-- One statement per table, so each swap is atomic on its own, not only by
+-- virtue of the file running as one transaction.
+ALTER TABLE public.ai_consent
+  DROP CONSTRAINT ai_consent_scope_check,
+  ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));
+ALTER TABLE public.ai_consent_events
+  DROP CONSTRAINT ai_consent_events_scope_check,
+  ADD CONSTRAINT ai_consent_events_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));
 
 COMMENT ON COLUMN public.ai_consent.scope IS
   'CUL-552 D10: ''ai_boundary'' covers every Anthropic call. CUL-2304 (112): ''report_summary'' is the vet report''s AI summary, which needs BOTH scopes granted; a decline under either wins. A new scope is an additive migration that updates guards/aiConsent.test.ts.';
