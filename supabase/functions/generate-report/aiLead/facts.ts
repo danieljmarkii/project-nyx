@@ -106,7 +106,7 @@ export function buildLeadFacts(
   if (!leadSentence) return { eligible: false, reason: 'no_record_lines' }
 
   const bandBlock = blockOf(doc, 'band')
-  const bandItems = (bandBlock?.items ?? []).map((i) => ({ id: i.id, label: i.tag, text: textOf(i.html), html: i.html }))
+  const bandItems = (bandBlock?.items ?? []).map((i) => ({ id: i.id, label: i.tag, text: textOf(i.html) }))
   // R-11 (spec §5.2): the exempt flag leaves the band and leads as the chart's heading, and "stays
   // safety_live, so the AI lead's first sentence still cites it". So it is band item 1 here, with
   // its heading and v1's own row (adversarial pass 1, break 1: without it the lead could open on
@@ -114,12 +114,9 @@ export function buildLeadFacts(
   const chart = blockOf(doc, 'lead_chart')?.chart
   if (chart?.flagHtml) {
     const label = chart.heading.replace(/^Flag:\s*/, '').split(/\s+over\s+/)[0]
-    bandItems.unshift({ id: 'band-r11', label, text: `${chart.heading}. ${textOf(chart.flagHtml)}`, html: `<b>${chart.heading}</b>` })
+    bandItems.unshift({ id: 'band-r11', label, text: `${chart.heading}. ${textOf(chart.flagHtml)}` })
   }
-  const band = bandItems.map(({ id, label, text }) => ({ id, label, text }))
-  // Band item 1's headline numbers (its bold spans), which sentence 1 must carry as digits, so the
-  // lead cannot restate the flag with its numbers dropped or weakened (adversarial pass 1, 7 and 8).
-  const leadNumbers = bandItems.length > 0 ? headlineNumbers(bandItems[0].html) : []
+  const band = bandItems
 
   const lines: RecordLine[] = [
     { id: leadSentence.text.startsWith(TRIAL_PREFIX) ? 'trial' : 'line-1', text: leadSentence.text },
@@ -144,18 +141,15 @@ export function buildLeadFacts(
     record_edge: edge,
   }
 
-  return { eligible: true, payload, table: tableFromPayload(payload, { leadNumbers }) }
+  return { eligible: true, payload, table: tableFromPayload(payload) }
 }
 
 /** The verifier's view of a payload: what is required, what each cited line must still say. One
  *  function, so a hand-built payload in a test is judged exactly as production's is. */
-export function tableFromPayload(payload: LeadFactPayload, extra: { leadNumbers?: string[] } = {}): FactTable {
+export function tableFromPayload(payload: LeadFactPayload): FactTable {
   const { band, record_lines: recordLines, trial_line: trial, record_edge: edge } = payload
   const facts: Fact[] = [
-    ...band.map((b, i) => ({
-      id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: mustSayOf(b.text),
-      ...(i === 0 ? { lead_numbers: extra.leadNumbers ?? [] } : {}),
-    })),
+    ...band.map((b, i) => ({ id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: mustSayOf(b.text) })),
     ...recordLines.map((l) => ({ id: l.id, text: l.text, role: l.kind, must_say: mustSayOf(l.text) })),
     ...(trial ? [{ id: 'trial', text: trial.text, role: 'record', required: true, must_say: mustSayOf(trial.text) }] : []),
     ...edge.map((e) => ({ id: e.id, text: e.text, role: 'edge', required: true, must_say: [...mustSayOf(e.text), ...edgeDate(e.text)] })),
@@ -171,12 +165,6 @@ export function tableFromPayload(payload: LeadFactPayload, extra: { leadNumbers?
     require_any_sentence: [],
     conditional: [],
   }
-}
-
-/** The numbers in a band row's bold spans (its headline), as printed digits. */
-export function headlineNumbers(html: string): string[] {
-  const bold = [...html.matchAll(/<b>([\s\S]*?)<\/b>/g)].map((m) => textOf(m[1])).join(' ')
-  return [...new Set(bold.match(/(?<![\d.])\d+(?:\.\d+)?(?![\d.])/g) ?? [])]
 }
 
 /** The record-end clause must carry its own date ("Record ends Jun 19"), so the sentence that

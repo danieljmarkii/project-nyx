@@ -9,7 +9,7 @@
 // against and judged on. A change here changes PROMPT_VERSION, which is part of the fact-table
 // hash, so a cached lead never outlives the prompt that wrote it.
 
-export const PROMPT_VERSION = 'vr2-lead-2'
+export const PROMPT_VERSION = 'vr2-lead-3'
 
 /** The writer. The larger model only (spec §9.1); the id is the `claude-api` skill's current Opus. */
 export const WRITER_MODEL = 'claude-opus-5-5'
@@ -29,7 +29,7 @@ YOUR JOB
 Write 1 to 3 sentences, 60 words at most in all, that let the vet grasp the case in one read. The lines are a list; your sentences are the synthesis a careful colleague would write after reading them. They never replace the lines and never add to them.
 
 REQUIRED, or the summary is discarded:
-- When "band" is not empty, sentence 1 states band item 1 and cites its id, and its first clause (before any comma, colon or semicolon) uses that item's "label" words. It keeps every number from that item's headline, written as digits. Cite band facts in that one sentence only; the band prints above you and is not restated twice. Nothing you write may read calmer than any band item.
+- When "band" is not empty, sentence 1 states band item 1 and cites its id, and its first clause (before any comma, colon or semicolon) uses that item's "label" words. It keeps every number that item prints (outside its dates), written as digits. Cite band facts in that one sentence only; the band prints above you and is not restated twice. Nothing you write may read calmer than any band item.
 - When "trial_line" is not null, one sentence cites it.
 - Every "record_edge" line is cited, in a sentence that gives its date.
 
@@ -40,7 +40,8 @@ A summary that breaks any of these is discarded, and the vet sees the record lin
 - Names: name foods, medicines and products only as the facts name them, with the same capitals. Never name a person. Say "the owner".
 - No quotation marks of any kind, and no owner's words.
 - Exposure and signs: never put a diet, a food, a trial or a medicine in the same sentence as a sign, a meal count or a flag, by any word. Give them separate sentences, and once you have named one, never set a later sentence about a sign in time after it (no "after", "then", "since", "during", "while", "following").
-- Never say a sign or a flag stopped, ended, resolved, was single, isolated or brief, dipped, or was not seen again, unless the line you cite says that word.
+- Never say a sign or a flag stopped, ended, resolved, faded, tapered, was single, isolated, rare or brief, dipped, was not seen again or not logged since, or is short of, under or within any window, even when a line you cite uses the word.
+- Write every count as digits, and keep the word its line prints after it: "16 entries", "12 of 45 logged days", "about 50 h", never "16 times" or "4 of 44".
 - Citations: list in "cites" the id of every fact a sentence draws on. Do not put citation marks in the text; code prints them.
 
 NEVER, because each of these has misled a vet before
@@ -61,8 +62,8 @@ Fact table:
 {"pet_name":"Biscuit","species":"dog","record_start":"2026-05-02","record_end":"2026-06-01","band":[{"id":"band-1-blood","label":"Blood in stool","text":"1 entry of blood in stool (May 18), owner-described; this record cannot rule blood out on other days."}],"record_lines":[{"id":"line-1","kind":"lead","text":"Soft or loose stool: 9 entries on 8 of 26 logged days, the last May 31."},{"id":"medication-1","kind":"record","text":"Metronidazole: given on 13 of 14 course days."}],"trial_line":null,"record_edge":[]}
 Output:
 {"sentences":[
- {"text":"Blood in stool was described once, on May 18, and this record cannot rule blood out on other days.","cites":["band-1-blood"]},
- {"text":"Soft or loose stool was logged 9 times on 8 of 26 logged days, the last May 31.","cites":["line-1"]},
+ {"text":"Blood in stool: 1 entry, on May 18, owner-described; this record cannot rule blood out on other days.","cites":["band-1-blood"]},
+ {"text":"Soft or loose stool: 9 entries on 8 of 26 logged days, the last May 31.","cites":["line-1"]},
  {"text":"Metronidazole was given on 13 of 14 course days.","cites":["medication-1"]}]}
 Why it works: the flag leads with its own words and its limit. The drug has its own sentence and is never said to have helped.`
 
