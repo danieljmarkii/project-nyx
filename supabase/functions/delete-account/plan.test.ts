@@ -25,7 +25,12 @@ import {
   buildPrefixSweep,
   mergeSweepIds,
   SWEEP_BUDGET_MS,
+  SWEEP_CALL_TIMEOUT_MS,
   SWEEP_CONCURRENCY,
+  SWEEP_CUTOFF_MS,
+  SWEEP_TIME_LIMIT,
+  sweepBudget,
+  sweepLeftoversLine,
   sweepOwnedPrefixes,
   SWEEP_SCOPE,
   STORAGE_BUCKETS,
@@ -1547,4 +1552,139 @@ Deno.test('sweepOwnedPrefixes — partial names exactly the folders left with so
   assertEquals(res.partial.map((p) => p.root).sort(), ['pet-gap', 'pet-rej'])
   assertEquals(res.removed, 13)
   assertEquals(res.unswept, [])
+})
+
+// ── CUL-2343: a folder in flight is cut by the clock and named, never left unnamed ──
+
+const ONE_FOLDER = [{ bucket: STORAGE_BUCKETS.eventAttachments, root: 'pet-a' }]
+const hang = <T>(): Promise<T> => new Promise<T>(() => {})
+
+Deno.test('sweepBudget — CUL-2343: the deadline precedes the cutoff, and both end inside the 150 s limit', () => {
+  assertEquals(sweepBudget(1_000), { deadline: 1_000 + SWEEP_BUDGET_MS, cutoff: 1_000 + SWEEP_CUTOFF_MS })
+  assert(SWEEP_BUDGET_MS < SWEEP_CUTOFF_MS)
+  // The last folder starts before the deadline; its first call still gets a full timeout.
+  assert(SWEEP_BUDGET_MS + SWEEP_CALL_TIMEOUT_MS <= SWEEP_CUTOFF_MS)
+  // Room for the leftovers line and the response under the runtime's 150 s.
+  assert(SWEEP_CUTOFF_MS <= 150_000 - 15_000)
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2343: a hung list times out into the gap path and the folder lands in partial on the leftovers line', async () => {
+  const fs = fakeStorage({
+    [STORAGE_BUCKETS.eventAttachments]: ['pet-a/evt-1/photo.jpg', 'pet-a/evt-2/photo.jpg'],
+    [STORAGE_BUCKETS.petPhotos]: ['pet-b/profile.jpg'],
+  })
+  // pet-a's root lists fine; its evt-2 sub-folder never answers.
+  const listerFor = (bucket: string): StorageLister => (prefix, offset, limit) =>
+    prefix === 'pet-a/evt-2' ? hang() : fs.listerFor(bucket)(prefix, offset, limit)
+  const sweep = [...ONE_FOLDER, { bucket: STORAGE_BUCKETS.petPhotos, root: 'pet-b' }]
+  const res = await sweepOwnedPrefixes(sweep, listerFor, fs.remove, { callTimeoutMs: 20 })
+  // What the walk reached is still removed, the sibling folder is finished.
+  assertEquals(res.removed, 2)
+  assertEquals([...fs.store.get(STORAGE_BUCKETS.eventAttachments)!], ['pet-a/evt-2/photo.jpg'])
+  assertEquals(res.partial, ONE_FOLDER)
+  assertEquals(res.unswept, [])
+  assertEquals(res.failures.length, 1)
+  assert(res.failures[0].startsWith(`${STORAGE_BUCKETS.eventAttachments}/pet-a/ (sweep gap)`))
+  assert(res.failures[0].includes(SWEEP_TIME_LIMIT))
+  const line = JSON.parse(sweepLeftoversLine('user-1', res)!)
+  assertEquals(line, {
+    event: 'delete-account.sweep.leftovers',
+    userId: 'user-1',
+    unswept: [],
+    partial: [{ bucket: STORAGE_BUCKETS.eventAttachments, root: 'pet-a' }],
+  })
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2343: a hung remove times out, later batches still run, the folder lands in partial', async () => {
+  const keys = Array.from({ length: STORAGE_REMOVE_CHUNK + 5 }, (_, i) => `pet-a/evt/${String(i).padStart(4, '0')}.jpg`)
+  const fs = fakeStorage({ [STORAGE_BUCKETS.eventAttachments]: keys })
+  let calls = 0
+  const remove = (bucket: string, batch: string[]) => (++calls === 1 ? hang<number>() : fs.remove(bucket, batch))
+  const res = await sweepOwnedPrefixes(ONE_FOLDER, fs.listerFor, remove, { callTimeoutMs: 20 })
+  assertEquals(calls, 2)
+  assertEquals(res.removed, 5)
+  assertEquals(res.partial, ONE_FOLDER)
+  assertEquals(res.failures.length, 1)
+  assert(res.failures[0].includes('(sweep remove, 100 objects)'))
+  assert(res.failures[0].includes(SWEEP_TIME_LIMIT))
+  assertEquals(JSON.parse(sweepLeftoversLine('user-1', res)!).partial, ONE_FOLDER)
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2343: a folder cut short mid-walk by the cutoff lands in partial, with no Storage call past it', async () => {
+  // Two pages at the root (STORAGE_LIST_PAGE + 1 files). The clock crosses the cutoff
+  // after page one, so page two and the empty-page probe are never asked for.
+  const keys = Array.from({ length: STORAGE_LIST_PAGE + 1 }, (_, i) => `pet-a/${String(i).padStart(4, '0')}.jpg`)
+  const fs = fakeStorage({ [STORAGE_BUCKETS.eventAttachments]: keys })
+  let clock = 0
+  const offsets: number[] = []
+  const listerFor = (bucket: string): StorageLister => async (prefix, offset, limit) => {
+    offsets.push(offset)
+    const page = await fs.listerFor(bucket)(prefix, offset, limit)
+    clock = 200 // the page took us past the cutoff
+    return page
+  }
+  let removeCalls = 0
+  const remove = async (bucket: string, batch: string[]) => {
+    removeCalls++
+    return fs.remove(bucket, batch)
+  }
+  const res = await sweepOwnedPrefixes(ONE_FOLDER, listerFor, remove, {
+    deadline: 50,
+    cutoff: 100,
+    now: () => clock,
+    callTimeoutMs: 1_000,
+  })
+  assertEquals(offsets, [0])
+  // Page one's keys reached the remove step, but it too is past the cutoff, so no
+  // remove is sent: the folder is named, not half-reported as emptied.
+  assertEquals(removeCalls, 0)
+  assertEquals(res.removed, 0)
+  assertEquals(res.partial, ONE_FOLDER)
+  assertEquals(res.unswept, [])
+  assert(res.failures.some((f) => f.includes('(sweep gap)') && f.includes(SWEEP_TIME_LIMIT)))
+  assert(res.failures.some((f) => f.includes('(sweep remove, 100 objects)') && f.includes(SWEEP_TIME_LIMIT)))
+  assertEquals(JSON.parse(sweepLeftoversLine('user-1', res)!).partial, ONE_FOLDER)
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2343: the per-call timeout shrinks to the time left before the cutoff', async () => {
+  let clock = 0
+  const started: number[] = []
+  const listerFor = (): StorageLister => () => {
+    started.push(clock)
+    return hang()
+  }
+  const t0 = Date.now()
+  // A 10 s per-call ceiling, but only 30 ms left before the cutoff: the hang ends in ~30 ms.
+  const res = await sweepOwnedPrefixes(ONE_FOLDER, listerFor, async () => 0, {
+    cutoff: 30,
+    now: () => clock,
+    callTimeoutMs: 10_000,
+  })
+  assert(Date.now() - t0 < 5_000)
+  assertEquals(started, [0])
+  assertEquals(res.partial, ONE_FOLDER)
+  assert(res.failures[0].includes('no answer in 30 ms'))
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2343: a fast run leaves no timer pending and no leftovers line', async () => {
+  const fs = fakeStorage({ [STORAGE_BUCKETS.eventAttachments]: ['pet-a/evt/photo.jpg'] })
+  // Deno's test sanitizer fails this test if a race timer outlives the sweep.
+  const res = await sweepOwnedPrefixes(ONE_FOLDER, fs.listerFor, fs.remove, { cutoff: Date.now() + 60_000 })
+  assertEquals(res, { removed: 1, failures: [], unswept: [], partial: [] })
+  assertEquals(sweepLeftoversLine('user-1', res), null)
+})
+
+Deno.test('sweepLeftoversLine — CUL-2343: names unswept and partial folders separately', () => {
+  const line = sweepLeftoversLine('user-1', {
+    removed: 0,
+    failures: ['x'],
+    unswept: [{ bucket: 'b1', root: 'r1' }],
+    partial: [],
+  })
+  assertEquals(JSON.parse(line!), {
+    event: 'delete-account.sweep.leftovers',
+    userId: 'user-1',
+    unswept: [{ bucket: 'b1', root: 'r1' }],
+    partial: [],
+  })
 })
