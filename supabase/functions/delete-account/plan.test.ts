@@ -28,7 +28,9 @@ import {
   SWEEP_CALL_TIMEOUT_MS,
   SWEEP_CONCURRENCY,
   SWEEP_CUTOFF_MS,
+  SWEEP_REQUEST_LIMIT_MS,
   SWEEP_TIME_LIMIT,
+  EDGE_WORKER_WALL_CLOCK_MS,
   sweepBudget,
   sweepLeftoversLine,
   sweepOwnedPrefixes,
@@ -1712,4 +1714,52 @@ Deno.test('sweepLeftoversLine — CUL-2343: names unswept and partial folders se
     unswept: [{ bucket: 'b1', root: 'r1' }],
     partial: [],
   })
+})
+
+// ── CUL-2345: the worker's wall clock, not only the request's ──────────────────
+
+const T0 = 1_700_000_000_000
+
+Deno.test('sweepBudget — CUL-2345: a fresh worker keeps the request-based budget', () => {
+  assertEquals(sweepBudget(T0, T0), { deadline: T0 + SWEEP_BUDGET_MS, cutoff: T0 + SWEEP_CUTOFF_MS })
+  // The one-argument form is the same as a worker booted by this request.
+  assertEquals(sweepBudget(T0), sweepBudget(T0, T0))
+})
+
+Deno.test('sweepBudget — CUL-2345: a warm worker moves both edges to its own wall clock', () => {
+  const worker = T0 - 300_000 // booted 300 s before this request
+  const b = sweepBudget(T0, worker)
+  assertEquals(b, { deadline: worker + 340_000, cutoff: worker + 380_000 })
+  // Same spacing as the request budget: 40 s from last start to last call, 20 s to the kill.
+  assertEquals(b.cutoff - b.deadline, SWEEP_CUTOFF_MS - SWEEP_BUDGET_MS)
+  assertEquals(worker + EDGE_WORKER_WALL_CLOCK_MS - b.cutoff, SWEEP_REQUEST_LIMIT_MS - SWEEP_CUTOFF_MS)
+})
+
+Deno.test('sweepBudget — CUL-2345: every edge ends before both kills, at every worker age', () => {
+  for (let age = 0; age <= EDGE_WORKER_WALL_CLOCK_MS + 60_000; age += 5_000) {
+    const worker = T0 - age
+    const { deadline, cutoff } = sweepBudget(T0, worker)
+    assert(deadline < cutoff, `age ${age}: deadline before cutoff`)
+    assert(cutoff <= T0 + SWEEP_REQUEST_LIMIT_MS - 20_000, `age ${age}: cutoff inside the request limit`)
+    assert(cutoff <= worker + EDGE_WORKER_WALL_CLOCK_MS - 20_000, `age ${age}: cutoff inside the worker limit`)
+  }
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2345: a worker past its edge names every folder in unswept and calls no Storage', async () => {
+  const { deadline, cutoff } = sweepBudget(T0, T0 - (EDGE_WORKER_WALL_CLOCK_MS - 10_000))
+  assert(cutoff < T0 && deadline < T0)
+  let calls = 0
+  const listerFor = (): StorageLister => async () => {
+    calls++
+    return []
+  }
+  const sweep = buildPrefixSweep(SWEEP_IDS)
+  const res = await sweepOwnedPrefixes(sweep, listerFor, async () => {
+    calls++
+    return 0
+  }, { deadline, cutoff, now: () => T0 })
+  assertEquals(calls, 0)
+  assertEquals(res.unswept, sweep)
+  assertEquals(res.partial, [])
+  assertEquals(JSON.parse(sweepLeftoversLine('user-1', res)!).unswept.length, sweep.length)
 })
