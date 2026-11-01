@@ -5570,9 +5570,25 @@ function resolveChronicityTier(
   species: Species,
   cfg: DetectionConfig['chronicity'],
 ): ChronicityTier {
-  return s.spanDays >= chronicityFloorsFor(s.symptomType, species, cfg).firmSpanDays
-    ? 'firm'
-    : 'standard'
+  return chronicitySpanTier(s.symptomType, s.spanDays, species, cfg)
+}
+
+/**
+ * The tier a course earns from its SPAN alone: the one rule `resolveChronicityTier` applies,
+ * exported so a reader can tell a span-earned tier from one lent by the composition layer
+ * (the §4.5 inheritance in `suppressWorseningWhenChronic`, or the CUL-1272 hold).
+ *
+ * CUL-2289 (vet report v2, R-11 condition 4): a chronicity flag on a skin trial's own sign may
+ * leave the report's band only when its tier "comes from the span alone". Comparing the card's
+ * tier to this answers that without re-deriving the floor anywhere else.
+ */
+export function chronicitySpanTier(
+  symptomType: SymptomType,
+  spanDays: number,
+  species: Species,
+  cfg: DetectionConfig['chronicity'],
+): ChronicityTier {
+  return spanDays >= chronicityFloorsFor(symptomType, species, cfg).firmSpanDays ? 'firm' : 'standard'
 }
 // NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
 // week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
@@ -8034,6 +8050,39 @@ export function repickWorseningPastChronic(
   const folded = findings.some((f) => f.type === 'symptom_worsening' && chronic.has(f.symptomType))
   if (!folded) return findings
   return [...findings, ...detectWorsening(input, config, chronic)]
+}
+
+/**
+ * CUL-2289 (vet report v2, R-11 condition 3) — would ④ flag THIS sign, judged on its own?
+ *
+ * `suppressWorseningWhenChronic` drops a same-sign ④ card into its ⑦ card, so once the set is
+ * composed nothing says a chronic course is also rising. A reader that must know (the report's
+ * skin-trial exemption may move a chronicity flag out of the band only when no worsening was
+ * folded into it) asks here.
+ *
+ * Judged on the sign ALONE, not on whether it was ④'s single pick: ④ emits one card, the
+ * steepest rise, so a second sign rising behind it is never the pick and was never folded, yet
+ * it IS rising. Every other sign is excluded, so this is "would the card fire on this sign".
+ * That reads more signs as rising than the composed set folds, which is the loud direction.
+ *
+ * Three answers, never a boolean: when ④'s two weeks are not logging-eligible the rise could not
+ * be measured, and "not rising" would be a claim the engine never made.
+ */
+export type WorseningOnSign = 'rising' | 'not_rising' | 'not_measured'
+
+export function foldedWorsening(
+  input: DetectionInput,
+  config: DetectionConfig,
+  symptomType: SymptomType,
+): WorseningOnSign {
+  // A sign outside ④'s lane (cough, at W1) is never measured for a rise at all.
+  if (!LANE_SYMPTOM_TYPES.symptomDelta.includes(symptomType)) return 'not_measured'
+  const windowed = computeWindowedStats(input, config)
+  if (!windowed || !windowed.loggingEligible) return 'not_measured'
+  const others = new Set<SymptomType>(LANE_SYMPTOM_TYPES.symptomDelta.filter((t) => t !== symptomType))
+  return detectWorsening(input, config, others).some((f) => f.symptomType === symptomType)
+    ? 'rising'
+    : 'not_rising'
 }
 
 export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
