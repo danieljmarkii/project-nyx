@@ -391,7 +391,7 @@ Deno.test('cold read — a free-fed bowl is named beside the trial, not only on 
   const s = assembleReport(sampleCases().find(([n]) => n === 'trial-report-refused.html')![1])
   const conf = block(docOf(s), 'confounder')
   assert.ok(conf)
-  assert.match(conf.text, /A free-fed bowl was down in this window \(.+\): intake not directly observed, and the trial cannot exclude it\./)
+  assert.match(conf.text, /A free-fed bowl was down in this window; the trial cannot exclude it\. Free-fed: .+; intake not directly observed\./)
 })
 
 // ── Adversarial pass 1 fixes (CUL-2290) ─────────────────────────────────────

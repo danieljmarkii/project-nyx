@@ -1,6 +1,6 @@
 # Nyx Vet Report v2 — The Front Page, the AI Lead, Clinic AI and the Flow After "Vet report" — Requirements (CUL-2275)
 
-**Version:** 1.2 — **RULED, NOT YET BUILD-READY** (every PM ruling is in; the build-ready mock round, row VR2-4, gates the render and flow rows) | **Date:** 2026-11-01 | **Status:** R-1 to R-12 ruled (PM, 2026-10-30 and 2026-10-31), the weight boundary, the thin record and the paywall trigger ruled 2026-10-31 | **Owner:** the Vet report v2 project (Linear, team Culprit)
+**Version:** 1.3 — **RULED, NOT YET BUILD-READY** (every PM ruling is in; the build-ready mock round, row VR2-4, gates the render and flow rows) | **Date:** 2026-11-01 | **Status:** R-1 to R-12 ruled (PM, 2026-10-30 and 2026-10-31), the weight boundary, the thin record and the paywall trigger ruled 2026-10-31 | **Owner:** the Vet report v2 project (Linear, team Culprit)
 
 **Read with:** `docs/nyx-vet-report-requirements.md` (v1; its §3 to §8 still bind v2 except where this spec or its v3.0 amendments say otherwise), `docs/nyx-design-principles-v1_0.md` Principles 6 (rewritten 2026-10-31), 8 and 9, `docs/nyx-chart-standard.md`, `docs/nyx-care-state-requirements.md` §3, `docs/nyx-weight-lane-requirements.md` §5, `docs/nyx-beta-features-requirements.md`, `docs/monetization-and-throttling-requirements.md`.
 
@@ -212,7 +212,7 @@ v2 never drops a v1 floor. One row per v1 §3 and §4 item; a parity guard fails
 ### 6.2 The phone reflow (frame 09)
 
 - Laid out at column width from the same row model, never scaled (BRK-2). Row labels, scale captions and dates are HTML cells that follow the text scale; the SVG keeps marks and counts at 11pt or larger.
-- The confounder line sits directly under the lead chart, above the fold.
+- **The keep-together rule** (PM ruling (a) on CUL-2320 and option 1 on CUL-2295, 2026-11-01; it replaces "above the fold", which cannot hold once the band leads). The lead chart's heading, its bars and its confounder line are one unit that never straddles a frame boundary: when it would, it starts in the next frame. The phone also prints the line's lead sentence (the model's `lead`: "Not a test of the diet alone." when a course overlaps, the free-fed bowl's sentence when only a bowl does) between the heading and the bars, pinned to the top of the screen while the bars scroll under it, with the page's scroll padding set to its height so a page-step scroll never lands content under it. It shows on every record with a confounder line, including when the unit fits a frame: a free scroll can rest anywhere, and hiding the repeat on a measured fit left resting positions with bars on screen and the line below it (adversarial pass on CUL-2295; whether it may hide is the PM's to re-rule). It is `aria-hidden`, never prints, holds no owner-entered text (the bowl's names follow it in the line), and stops growing at 1.25×, so it never takes more than 40% of a 320pt screen. A render guard at 320pt, 390pt and AX5 fails when any page-step frame or 8pt free-scroll position shows bars without the confounder line or the lead sentence, when the repeat is not the line's own warning or takes over 40% of the screen (a 320 by 460pt frame included), when any chart row is never seen uncovered, and on the same checks after a live text-size change.
 - A render guard at 320pt, 390pt and the largest Dynamic Type step fails on clipped text or any label under 11pt.
 
 ### 6.3 Dynamic Type and reading order (the Mobile IA NOT READY condition)
@@ -493,6 +493,7 @@ The flow rows carry a browser-driven motion demo in the round 5 mock (VR2-4) and
 
 | Version | Date | Summary |
 |---|---|---|
+| 1.3 | 2026-11-01 | Ruling (a) on CUL-2320 and option 1 on CUL-2295: §6.2's keep-together rule replaces "above the fold"; the phone pins the line's lead sentence beside the bars (row VR2-15). |
 | 1.2 | 2026-11-01 | Ruling (a) on CUL-2290: §12's document switch is an opt-in, default off; the server needs the allowlist and the request. |
 | 1.1 | 2026-10-31 | Rulings B, H and X after the live Nyx render: §5.7's budget counts only cuttable prose; row VR2-27 (forecast 27); a de-identified real-record fixture. |
 | 1.0 | 2026-10-31 | First draft from round 4, the full-depth critique and the PM's rulings R-1 to R-12, W, T, P and F (CUL-2275). Tier-2 edits applied the same day: design principles v2.3 (Principle 6) and the vet report spec's v3.0 amendments (§5, rules 3 and 9, §7.1). |

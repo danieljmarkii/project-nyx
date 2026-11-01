@@ -159,7 +159,19 @@ export interface QuestionItem {
 }
 
 export type BlockV2 =
-  | { kind: 'masthead'; id: 'masthead'; eyebrow: string; name: string; signalment: string; conditions: string | null; window: string; lastEntryHtml: string }
+  | {
+      kind: 'masthead'
+      id: 'masthead'
+      eyebrow: string
+      name: string
+      signalment: string
+      /** Species, sex, age and the latest weight: the part of the signalment that decides urgency,
+       *  for a surface with room for one line of it (the phone at large text, CUL-2295). */
+      signalmentBrief: string
+      conditions: string | null
+      window: string
+      lastEntryHtml: string
+    }
   | { kind: 'disclosure'; id: 'disclosure'; html: string }
   | { kind: 'band'; id: 'band'; heading: string; items: Array<{ id: string; tag: string; html: string }>; checksHtml: string | null }
   | { kind: 'checks'; id: 'checks'; html: string }
@@ -168,7 +180,14 @@ export type BlockV2 =
   | { kind: 'record_edge'; id: 'record-edge'; lines: string[] }
   | { kind: 'lead_sentence'; id: 'lead-sentence'; text: string }
   | { kind: 'lead_chart'; id: 'lead-chart'; chart: LeadChart }
-  | { kind: 'confounder'; id: 'confounder'; text: string }
+  | {
+      kind: 'confounder'
+      id: 'confounder'
+      text: string
+      /** The sentence of `text` that leads it as a warning: the one a surface that cannot show
+       *  the whole line beside the chart shows there (the phone's pinned repeat, CUL-2295). */
+      lead: string
+    }
   | { kind: 'record_lines'; id: 'record-lines'; lines: RecordLine[] }
   | { kind: 'gap_lines'; id: 'gap-lines'; heading: string; lines: GapLine[] }
   | { kind: 'questions'; id: 'questions'; heading: string; items: QuestionItem[] }
@@ -268,6 +287,18 @@ export function signalmentLineOf(snap: ReportSnapshot): string {
   }
   parts.push(s.latestWeight ? `${weightText(s.latestWeight.kg)} on ${plainDay(s.latestWeight.date)}` : 'no weight recorded')
   return parts.join(' · ')
+}
+
+/** "Cat · female · 8 y · 4.10 kg (9.0 lb)": species, sex, age and weight, from the same
+ *  fields and words as `signalmentLineOf`, without breed, neuter status, birth date or household. */
+export function signalmentBriefOf(snap: ReportSnapshot): string {
+  const s = snap.signalment
+  const species = SPECIES_WORD[s.species] ?? s.species.charAt(0).toUpperCase() + s.species.slice(1)
+  const sex = s.sex === 'unknown' ? 'sex not recorded' : s.sex
+  const age = s.ageYears === null ? 'age not recorded' : s.dateOfBirthPrecision === 'approximate' || s.dateOfBirth === null ? `~${s.ageYears} y` : `${s.ageYears} y`
+  // The weight's date stays on the full line: the brief is a glance, the fold one tap away.
+  const weight = s.latestWeight ? weightText(s.latestWeight.kg) : 'no weight recorded'
+  return [species, sex, age, weight].join(' · ')
 }
 
 /** v1's active-condition line (B-532), kept on the masthead because it frames every number. */
@@ -766,16 +797,26 @@ function recordLinesOf(snap: ReportSnapshot, lead: Lead | null, edgeHolds: boole
   return out
 }
 
+/** A free-fed bowl beside a trial, as a warning with no owner text in it (it is pinned on the phone). */
+const BOWL_WARNING = 'A free-fed bowl was down in this window; the trial cannot exclude it.'
+
 /** The confounder line: what overlaps a trial, as recorded (spec §5 order, v1 §7.2's caveat). */
-function confounderOf(snap: ReportSnapshot): string | null {
+function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | null {
   const t = snap.trial
   if (!t) return null
   // A bowl left down beside a trial is a competing food the trial cannot exclude (cold read on
   // CUL-2290, Mira): named here, beside the trial, not only on the meals line.
   const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named')
-  const bowl = bowls.length > 0 ? ` A free-fed bowl was down in this window (${bowls.join(', ')}): intake not directly observed, and the trial cannot exclude it.` : ''
+  // The warning is a fixed sentence and the owner's labels follow it (adversarial pass 2 on
+  // CUL-2295): a surface that pins the warning beside the chart pins a bounded sentence, never a
+  // list of free-text names that can grow past the screen.
+  const bowl = bowls.length > 0 ? ` ${BOWL_WARNING} Free-fed: ${bowls.join(', ')}; intake not directly observed.` : ''
   if (t.medicationOverlap.length === 0) {
-    return `No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.${bowl}`
+    const none = 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.'
+    // With no medication overlapping, a bowl left down is the line's warning, so it leads wherever
+    // only one sentence fits (cold read on CUL-2295, Mira): the "no medication" sentence alone
+    // reads as a clean trial.
+    return { text: `${none}${bowl}`, lead: bowl ? BOWL_WARNING : none }
   }
   const items = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)
@@ -785,7 +826,10 @@ function confounderOf(snap: ReportSnapshot): string | null {
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
     : ''
-  return `Not a test of the diet alone. Overlapping the trial: ${items.join('; ')}. Spans are the courses as recorded, not evidence of administration.${abx}${bowl}`
+  return {
+    text: `Not a test of the diet alone. Overlapping the trial: ${items.join('; ')}. Spans are the courses as recorded, not evidence of administration.${abx}${bowl}`,
+    lead: 'Not a test of the diet alone.',
+  }
 }
 
 // ── The document ─────────────────────────────────────────────────────────────
@@ -800,6 +844,7 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
     eyebrow: 'Owner’s home log',
     name: snap.signalment.name,
     signalment: signalmentLineOf(snap),
+    signalmentBrief: signalmentBriefOf(snap),
     conditions: conditionsLineOf(snap),
     window: windowLineOf(snap),
     lastEntryHtml: lastEntryLine(snap),
@@ -847,7 +892,7 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
   if (changesBlock && !zeroSign) blocks.push(changesBlock)
 
   const confounder = confounderOf(snap)
-  if (confounder) blocks.push({ kind: 'confounder', id: 'confounder', text: confounder })
+  if (confounder) blocks.push({ kind: 'confounder', id: 'confounder', ...confounder })
 
   if (lines.length > 1) blocks.push({ kind: 'record_lines', id: 'record-lines', lines: lines.slice(1) })
 
