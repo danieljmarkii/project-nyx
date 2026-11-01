@@ -62,9 +62,14 @@
 --         long before any delete.
 --       · AFTER, so it reserves the id as stored: after 104 has replaced a
 --         client's id, and after any later-named BEFORE trigger has run.
---       · A reservation that silently did not land (a DO INSTEAD rule or a
---         RETURN NULL trigger on the ledger, both owner-only) fails the
---         insert by row count (114's M6 / M14).
+--       · A reservation that silently did not land (a DO INSTEAD NOTHING
+--         rule or a RETURN NULL trigger on the ledger, both owner-only) fails
+--         the insert by row count (114's M6 / M14). The row count cannot see
+--         a rule that redirects the insert elsewhere, a ledger trigger that
+--         rewrites the id, or a dropped primary key: each reports one row and
+--         lets a re-insert land (rls-privacy-reviewer pass 1, F1 / F2,
+--         measured). Those are owner-only DDL in a later migration, and
+--         guards/petIdsNeverReused.test.ts reds on each.
 --       · The table is server-only and append-only: RLS on with no policy,
 --         every grant revoked, service_role INCLUDED (G2's actor is the
 --         service role, so a ledger it could DELETE from would reopen the

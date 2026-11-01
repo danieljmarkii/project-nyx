@@ -32,10 +32,20 @@ import { stripSqlComments } from './sqlComments';
 //     is still judged by its command alone: a FOR ALL / FOR DELETE policy on
 //     pets reds whoever it names. Over-strict on purpose; no such policy is
 //     planned.
-//   · Owner-only DDL this file does not read: `ALTER TABLE pets RENAME`, a
-//     `CREATE RULE … ON INSERT TO pets`, `ALTER POLICY … RENAME`, and a
-//     DISABLE split by an inline block comment. Each needs the table owner,
-//     i.e. a migration a reviewer reads.
+//   · Reds on (rls-privacy-reviewer pass 1, F1 / F3, each measured on the
+//     replay to undo 116): ANY `ALTER TABLE pet_ids_retired` other than
+//     enabling or forcing row level security (a dropped primary key, OWNER
+//     TO, RENAME, a trigger toggle); any trigger on the ledger beyond its two
+//     pinned ones (a BEFORE INSERT that rewrites the id); any rule on pets or
+//     the ledger (a redirecting DO INSTEAD); a table that INHERITS or is a
+//     PARTITION OF pets (its rows escape the parent's key and triggers);
+//     `ALTER TABLE pets OWNER TO`; a policy name in quotes with spaces; and a
+//     GRANT naming a list of tables.
+//   · Owner-only DDL this file still does not read: `ALTER TABLE pets RENAME`,
+//     `ALTER POLICY … RENAME` / `ALTER POLICY … USING`, an `ALTER TABLE … INHERIT
+//     pets` on a table created elsewhere, and a DISABLE split by an inline
+//     block comment. Each needs the table owner, i.e. a migration a reviewer
+//     reads.
 //   · A grant through a role the API roles are members of is not read.
 //   · A superuser can disable triggers or set session_replication_role.
 
@@ -90,19 +100,49 @@ function liveFunctions(sql: string): Map<string, { text: string; index: number }
 const roleNamed = (list: string, role: string): boolean =>
   new RegExp(String.raw`(?:^|[\s,"])${role}(?:$|[\s,";])`, 'i').test(list);
 
+const OBJECT_NAME = /^(?:"?(\w+)"?\s*\.\s*)?"?(\w+)"?$/;
+
+/**
+ * Every table GRANT in `sql`, with the privileges, the public tables it names
+ * (a list included: `ON public.pets, public.x`; `ALL TABLES IN SCHEMA public`
+ * reads as '*') and the grantees. Grants on functions, schemas and sequences
+ * are skipped.
+ */
+function tableGrants(sql: string): { privileges: string; tables: string[]; roles: string; index: number }[] {
+  const out: { privileges: string; tables: string[]; roles: string; index: number }[] = [];
+  for (const m of sql.matchAll(/\bGRANT\s+([^;]*?)\s+ON\s+([^;]*?)\s+TO\s+([^;]*);/gi)) {
+    const target = m[2].trim();
+    let tables: string[];
+    if (/^ALL\s+TABLES\s+IN\s+SCHEMA\s+"?public"?$/i.test(target)) tables = ['*'];
+    else if (/^(?:ALL\s+\w+\s+IN\s+SCHEMA|FUNCTION|PROCEDURE|ROUTINE|SCHEMA|SEQUENCE|DATABASE|LARGE|TYPE|DOMAIN|FOREIGN|LANGUAGE|TABLESPACE|PARAMETER)\b/i.test(target)) continue;
+    else {
+      tables = target
+        .replace(/^TABLE\s+/i, '')
+        .split(',')
+        .map((t) => OBJECT_NAME.exec(t.trim()))
+        .filter((x): x is RegExpExecArray => x !== null && (!x[1] || x[1].toLowerCase() === 'public'))
+        .map((x) => x[2].toLowerCase());
+    }
+    out.push({ privileges: m[1], tables, roles: m[3], index: m.index ?? 0 });
+  }
+  return out;
+}
+
+const grantsTo = (roles: string, names: string[]): boolean => names.some((r) => roleNamed(roles, r));
+
 /** G1: the problems with client DELETE on pets, read from every migration in order. Empty when it holds. */
 export function petDeleteProblems(sql: string): string[] {
   const problems: string[] = [];
   // The live policy set on pets: CREATE adds by name, DROP removes.
   const live = new Map<string, string>();
   const policyRe = new RegExp(
-    String.raw`(CREATE|DROP)\s+POLICY\s+(?:IF\s+EXISTS\s+)?"?([^"\s]+)"?\s+ON\s+${PUB('pets')}(?=[\s;])([^;]*);`,
+    String.raw`(CREATE|DROP)\s+POLICY\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([^\s"]+))\s+ON\s+${PUB('pets')}(?=[\s;])([^;]*);`,
     'gi',
   );
   for (const m of sql.matchAll(policyRe)) {
-    const name = m[2].toLowerCase();
+    const name = (m[2] ?? m[3]).toLowerCase();
     if (m[1].toUpperCase() === 'DROP') live.delete(name);
-    else live.set(name, m[3]);
+    else live.set(name, m[4]);
   }
   if (live.size === 0) problems.push('no policy on pets');
   for (const [name, rest] of live) {
@@ -120,12 +160,20 @@ export function petDeleteProblems(sql: string): string[] {
   if (missing.length > 0) {
     problems.push(`DELETE and TRUNCATE on pets are not revoked from ${missing.join(', ')}`);
   } else {
-    const later = sql.slice((lastRevoke.index ?? 0) + lastRevoke[0].length);
-    const grants = new RegExp(
-      String.raw`GRANT\s+[^;]*?\b(?:DELETE|TRUNCATE|ALL)\b[^;]*?\bON\s+(?:(?:TABLE\s+)?${PUB('pets')}|ALL\s+TABLES\s+IN\s+SCHEMA\s+"?public"?)\s+TO\s+[^;]*\b(?:anon|authenticated|PUBLIC)\b`,
-      'i',
+    const from = (lastRevoke.index ?? 0) + lastRevoke[0].length;
+    const back = tableGrants(sql).some(
+      (g) =>
+        g.index >= from &&
+        /\b(?:DELETE|TRUNCATE|ALL)\b/i.test(g.privileges) &&
+        (g.tables.includes('pets') || g.tables.includes('*')) &&
+        grantsTo(g.roles, ['anon', 'authenticated', 'PUBLIC']),
     );
-    if (grants.test(later)) problems.push('a later GRANT gives DELETE or TRUNCATE on pets back to a client role');
+    if (back) problems.push('a later GRANT gives DELETE or TRUNCATE on pets back to a client role');
+  }
+  // A client could own pets outright, or a child table could hold pet ids
+  // outside the parent's key and triggers (pass 1, F3 / the INHERITS case).
+  if (new RegExp(String.raw`ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${PUB('pets')}\s+OWNER\s+TO\b`, 'i').test(sql)) {
+    problems.push('pets changes owner');
   }
   return problems;
 }
@@ -209,9 +257,20 @@ export function petIdReservationProblems(sql: string): string[] {
   if (!created) return [...problems, 'no table pet_ids_retired'];
   const after = sql.slice(created.index);
   if (new RegExp(String.raw`DROP\s+TABLE\s[^;]*\bpet_ids_retired\b`, 'i').test(after)) problems.push('pet_ids_retired is dropped');
-  if (new RegExp(String.raw`ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${table}\s+(?:RENAME|DISABLE\s+ROW|NO\s+FORCE)`, 'i').test(after)) {
-    problems.push('pet_ids_retired is renamed or loses row level security');
+  // Any ALTER beyond turning row level security on is an undo: a dropped
+  // primary key, OWNER TO, RENAME, a trigger toggle (pass 1, F1, measured).
+  const ledgerAlters = [
+    ...after.matchAll(new RegExp(String.raw`ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${table}\s+([^;]*);`, 'gi')),
+  ];
+  if (ledgerAlters.some((m) => !/^(?:ENABLE|FORCE)\s+ROW\s+LEVEL\s+SECURITY$/i.test(squash(m[1])))) {
+    problems.push('pet_ids_retired is altered beyond enabling row level security');
   }
+  // Only the two pinned triggers may sit on the ledger: another can rewrite
+  // the id before it lands (pass 1, F1, measured).
+  const ledgerTriggers = [
+    ...after.matchAll(new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+"?(\w+)"?\s[^;]*?\bON\s+${table}(?=[\s;])`, 'gi')),
+  ].map((m) => m[1].toLowerCase()).filter((n) => n !== 'trg_pet_ids_retired_append_only' && n !== 'trg_pet_ids_retired_no_truncate');
+  if (ledgerTriggers.length > 0) problems.push(`another trigger sits on pet_ids_retired (${ledgerTriggers.join(', ')})`);
   if (!new RegExp(String.raw`ALTER\s+TABLE\s+${table}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY`, 'i').test(after)) {
     problems.push('row level security is not enabled on pet_ids_retired');
   }
@@ -222,8 +281,23 @@ export function petIdReservationProblems(sql: string): string[] {
       problems.push(`pet_ids_retired is not revoked from ${role}`);
     }
   }
-  if (new RegExp(String.raw`GRANT\s+[^;]*?\bON\s+(?:(?:TABLE\s+)?${table}|ALL\s+TABLES\s+IN\s+SCHEMA\s+"?public"?)\s+TO\s+[^;]*\b(?:anon|authenticated|service_role|PUBLIC)\b`, 'i').test(after)) {
+  if (
+    tableGrants(after).some(
+      (g) => (g.tables.includes('pet_ids_retired') || g.tables.includes('*')) && grantsTo(g.roles, ALL_API_ROLES),
+    )
+  ) {
     problems.push('a later GRANT opens pet_ids_retired to an API role');
+  }
+  // A rule redirects a write (pass 1, F1: a DO INSTEAD on the ledger landed
+  // the re-insert with ROW_COUNT 1), and a child of pets holds ids outside
+  // the parent's key and triggers.
+  for (const t of ['pets', 'pet_ids_retired']) {
+    if (new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?RULE\s[^;]*?\bTO\s+${PUB(t)}(?=[\s;])`, 'i').test(sql)) {
+      problems.push(`a rule rewrites writes to ${t}`);
+    }
+  }
+  if (new RegExp(String.raw`(?:INHERITS\s*\((?:[^)]*?[\s,])?\s*${PUB('pets')}\s*[,)]|PARTITION\s+OF\s+${PUB('pets')}(?=[\s(]))`, 'i').test(sql)) {
+    problems.push('a table inherits pets');
   }
   return problems;
 }
@@ -280,6 +354,15 @@ describe('a pet leaves only with its account, and its id never comes back (CUL-2
       expect(admits(grant)).toEqual(['a later GRANT gives DELETE or TRUNCATE on pets back to a client role']);
     }
     expect(admits('GRANT DELETE ON public.pets TO service_role;')).toEqual([]);
+    // rls-privacy-reviewer pass 1, F3: a spaced policy name and a table-list grant, together.
+    expect(admits('CREATE POLICY "pets: owner all" ON public.pets USING (user_id = auth.uid());')).toEqual([
+      'policy pets: owner all on pets admits DELETE (FOR ALL)',
+    ]);
+    expect(admits('GRANT DELETE ON public.pets, public.vet_visits TO authenticated;')).toEqual([
+      'a later GRANT gives DELETE or TRUNCATE on pets back to a client role',
+    ]);
+    expect(admits('GRANT DELETE ON public.vet_visits, public.pets_archive TO authenticated;')).toEqual([]);
+    expect(admits('ALTER TABLE public.pets OWNER TO authenticated;')).toEqual(['pets changes owner']);
     expect(admits('GRANT SELECT, UPDATE ON public.pets TO authenticated;')).toEqual([]);
   });
 
@@ -308,6 +391,7 @@ describe('a pet leaves only with its account, and its id never comes back (CUL-2
     expect(later('ALTER TABLE public.pet_ids_retired DISABLE TRIGGER ALL;')).toEqual([
       'trg_pet_ids_retired_append_only is disabled after its last creation',
       'trg_pet_ids_retired_no_truncate is disabled after its last creation',
+      'pet_ids_retired is altered beyond enabling row level security',
     ]);
     expect(later('DROP FUNCTION public.reserve_pet_id() CASCADE;')).toEqual(['reserve_pet_id is dropped after its live definition or trg_pets_reserve_id\'s last creation']);
     expect(later('ALTER TABLE pets DISABLE TRIGGER ALL; ALTER TABLE pets ENABLE TRIGGER ALL;')).toEqual([]);
@@ -317,8 +401,25 @@ describe('a pet leaves only with its account, and its id never comes back (CUL-2
   it('G2 reds when the ledger is dropped, opened or loses a revoke', () => {
     const later = (s: string): string[] => petIdReservationProblems(`${base}\n${s}`);
     expect(later('DROP TABLE public.pet_ids_retired;')).toEqual(['pet_ids_retired is dropped']);
-    expect(later('ALTER TABLE public.pet_ids_retired RENAME TO old_ids;')).toEqual(['pet_ids_retired is renamed or loses row level security']);
-    expect(later('ALTER TABLE pet_ids_retired DISABLE ROW LEVEL SECURITY;')).toEqual(['pet_ids_retired is renamed or loses row level security']);
+    const altered = ['pet_ids_retired is altered beyond enabling row level security'];
+    expect(later('ALTER TABLE public.pet_ids_retired RENAME TO old_ids;')).toEqual(altered);
+    expect(later('ALTER TABLE pet_ids_retired DISABLE ROW LEVEL SECURITY;')).toEqual(altered);
+    // rls-privacy-reviewer pass 1, F1: each measured on the replay to land a re-insert.
+    expect(later('ALTER TABLE public.pet_ids_retired DROP CONSTRAINT pet_ids_retired_pkey;')).toEqual(altered);
+    expect(later('ALTER TABLE public.pet_ids_retired OWNER TO service_role;')).toEqual(altered);
+    expect(later('ALTER TABLE public.pet_ids_retired FORCE ROW LEVEL SECURITY;')).toEqual([]);
+    expect(later('CREATE TRIGGER aa BEFORE INSERT ON public.pet_ids_retired FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();')).toEqual([
+      'another trigger sits on pet_ids_retired (aa)',
+    ]);
+    expect(later('CREATE RULE redirect AS ON INSERT TO public.pet_ids_retired DO INSTEAD INSERT INTO public.scratch VALUES (NEW.id);')).toEqual([
+      'a rule rewrites writes to pet_ids_retired',
+    ]);
+    expect(later('create rule r as on insert to pets do also select 1;')).toEqual(['a rule rewrites writes to pets']);
+    expect(later('CREATE TABLE public.pets_child () INHERITS (public.pets);')).toEqual(['a table inherits pets']);
+    expect(later('CREATE TABLE pets_p PARTITION OF pets FOR VALUES IN (1);')).toEqual(['a table inherits pets']);
+    expect(later('CREATE TABLE public.notes () INHERITS (public.pets_archive);')).toEqual([]);
+    expect(later('GRANT DELETE ON public.pet_ids_retired, public.x TO service_role;')).toEqual(['a later GRANT opens pet_ids_retired to an API role']);
+    expect(later('GRANT EXECUTE ON FUNCTION public.reserve_pet_id() TO postgres;')).toEqual([]);
     expect(later('CREATE POLICY "read" ON public.pet_ids_retired FOR SELECT USING (true);')).toEqual(['a policy opens pet_ids_retired']);
     for (const grant of [
       'GRANT SELECT ON public.pet_ids_retired TO service_role;',
