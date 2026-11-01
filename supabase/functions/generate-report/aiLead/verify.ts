@@ -19,6 +19,7 @@
 //   period-run  no run of 3 or more period counts ("3 in week 1, 2 in week 2, 0 in week 3")
 //   order       H2 by order with no causal word (the Data Scientist's 2026-10-31 exhibit): an
 //               exposure fact and an observation fact in one sentence with a word of order
+//   waiver      "not as a cause" only, when a cited fact prints it (waiveSideBySide)
 //   names       every capitalised word past the first is printed in a cited fact (a product the
 //               lexicon does not know is still caught)
 
@@ -66,7 +67,7 @@ function firstClause(text: string): string {
   return norm(text).split(/[,:;]|\s[–—-]\s/)[0].toLowerCase()
 }
 
-/** The sentences exactly as they print, in order. The renderer, the stored `ai_lead_text` and
+/** The sentences exactly as they print, in order. The renderer, the stored lead text and
  *  this verifier all read this one function's output. */
 export function printedSentences(summary: LeadSummary): string[] {
   return summary.sentences.map((s) => norm(s.text))
@@ -81,7 +82,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   // The core judges the printed form, never the model's raw strings.
   const printed: LeadSummary = { sentences: summary.sentences.map((s, i) => ({ text: printedSentences(summary)[i], cites: s.cites })) }
   const core = verifyBakeoff(table, printed, { minSentences: 1, maxSentences: LEAD_MAX_SENTENCES, maxWordsPerSentence: LEAD_MAX_WORDS })
-  const errors: VerifyIssue[] = [...core.errors]
+  const errors: VerifyIssue[] = waiveSideBySide(core.errors, printed, table)
   const err = (sentence: number | null, check: string, detail: string) => errors.push({ sentence, check, detail })
   const facts = new Map(table.facts.map((f) => [f.id, f]))
   const sents = printed.sentences
@@ -132,4 +133,25 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   })
 
   return { verifier: LEAD_VERIFIER_VERSION, pass: errors.length === 0, errors, core }
+}
+
+/** The one waiver: the core bans "cause" outright (H2), which would also reject the exhibit's own
+ *  fix, a line stating two windows "side by side, not as a cause". A `'cause'` hit is waived only
+ *  for each exact "not as a cause" in a sentence that cites a fact printing that same phrase; any
+ *  other cause word in the sentence still rejects it. */
+function waiveSideBySide(errors: VerifyIssue[], summary: LeadSummary, table: FactTable): VerifyIssue[] {
+  const facts = new Map(table.facts.map((f) => [f.id, f]))
+  const budget = new Map<number, number>()
+  summary.sentences.forEach((s, idx) => {
+    const cited = s.cites.some((c) => /\bnot as a cause\b/i.test(facts.get(c)?.text ?? ''))
+    const n = (norm(s.text).match(/\bnot as a cause\b/gi) ?? []).length
+    if (cited && n > 0) budget.set(idx + 1, n)
+  })
+  return errors.filter((e) => {
+    if (e.check !== 'banned:H2' || e.detail !== "'cause'" || e.sentence === null) return true
+    const left = budget.get(e.sentence) ?? 0
+    if (left === 0) return true
+    budget.set(e.sentence, left - 1)
+    return false
+  })
 }

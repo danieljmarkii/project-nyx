@@ -33,6 +33,15 @@ const REGISTERED: Record<string, string> = {
   'extract-medication-from-photo/index.ts': 'medication extraction: feature_disabled before the gate config, the counter and the download',
 }
 
+// Files gated by the vet report summary's gate (reportSummaryGate.ts), which requires BOTH the
+// ai_boundary yes this suite exists for and the report_summary yes (CUL-2304), reading the
+// consent table inside the shared gate rather than through `readAiBoundaryConsent`. Their chain
+// is pinned below instead: the verified uid → `runSummaryGate` → a ticket only an allowing gate
+// mints → the one send, which refuses without a ticket before any fetch (VR2-25, CUL-2305).
+const SUMMARY_GATED: Record<string, string> = {
+  'generate-report/aiLead/model.ts': 'the vet report AI lead: runSummaryGate (both scopes, both flags, pet, cap) → GateTicket → sendChecked',
+}
+
 // The endpoint, the key, and the two headers every Anthropic request must carry: a URL or
 // a key name can be built out of pieces, the mandatory `anthropic-version` header and the
 // `x-api-key` header far less plausibly (rls-privacy-reviewer, proved by mutation).
@@ -49,7 +58,40 @@ Deno.test('consent guard — every file that reaches Anthropic is registered, an
     if (rel === '_shared/aiConsent.ts') continue // the reader itself names neither
     if (REACHES_ANTHROPIC.test(blankComments(await Deno.readTextFile(url)))) found.push(rel)
   }
-  assertEquals(found.sort(), Object.keys(REGISTERED).sort())
+  assertEquals(found.sort(), [...Object.keys(REGISTERED), ...Object.keys(SUMMARY_GATED)].sort())
+})
+
+Deno.test('consent guard — the AI lead: no ticket, no fetch; a ticket only from an allowing gate', async () => {
+  const model = await read('generate-report/aiLead/model.ts')
+  const send = model.slice(model.indexOf('export async function sendChecked'))
+  const refuse = send.indexOf('if (ticket === null) return')
+  assert(refuse > 0, 'sendChecked no longer refuses a missing ticket')
+  assert(refuse < send.indexOf('fetchWithTimeout('), 'sendChecked fetches before it checks the ticket')
+  assert(send.indexOf('assertSendable(role, body)') < send.indexOf('fetchWithTimeout('), 'sendChecked fetches before it checks the payload')
+  assert(/export function ticketFor\(gate: SummaryGate\): GateTicket \| null \{\s*return gate\.allow === true \? /.test(model), 'ticketFor mints on something other than an allowing gate')
+  assertEquals(model.split('fetchWithTimeout(').length - 1, 1, 'a second fetch in model.ts')
+})
+
+Deno.test('consent guard — the AI lead: the one ticket comes from runSummaryGate, for the verified uid', async () => {
+  const minted: string[] = []
+  for await (const url of sourceFiles(ROOT)) {
+    const rel = url.pathname.slice(ROOT.pathname.length)
+    if (rel.endsWith('.test.ts') || rel === 'generate-report/aiLead/model.ts') continue
+    if (blankComments(await Deno.readTextFile(url)).includes('ticketFor(')) minted.push(rel)
+  }
+  assertEquals(minted, ['generate-report/aiLead/leadPipeline.ts'])
+  const pipeline = await read('generate-report/aiLead/leadPipeline.ts')
+  assert(/const gate = await io\.runGate\(true\)[\s\S]*?const ticket = ticketFor\(gate\)/.test(pipeline), 'the ticket is not minted from the spending gate')
+  assertEquals(pipeline.split('ticketFor(').length - 1, 1)
+  const run = await read('generate-report/aiLead/run.ts')
+  assert(/runGate: \(spend\) => runSummaryGate\(summaryGateIO\(admin, user, key\.uid, key\.petId\), key\.uid, \{ spend \}\)/.test(run), 'runGate is not the shared summary gate for the key\'s uid')
+  const index = await read('generate-report/index.ts')
+  const fn = index.slice(index.indexOf('async function aiLeadForPet('))
+  const body = fn.slice(0, fn.indexOf('\n}\n'))
+  assert(/draftLeadIO\(adminClient, supabase, \{ reportId: req\.reportId, petId, uid: user\.id \}\)/.test(body), 'the draft key\'s uid is not the verified user.id')
+  const verified = body.indexOf('if (userErr || !user) return')
+  assert(body.indexOf('supabase.auth.getUser(') >= 0 && verified > body.indexOf('supabase.auth.getUser('), 'aiLeadForPet does not verify the uid')
+  assert(verified < body.indexOf('draftLeadIO('), 'the uid is used before it is verified')
 })
 
 Deno.test('consent guard — every registered file reads consent through the one reader, for the verified uid', async () => {

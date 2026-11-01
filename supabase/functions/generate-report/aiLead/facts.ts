@@ -108,15 +108,22 @@ export function buildLeadFacts(
     record_edge: edge,
   }
 
+  return { eligible: true, payload, table: tableFromPayload(payload) }
+}
+
+/** The verifier's view of a payload: what is required, what each cited line must still say. One
+ *  function, so a hand-built payload in a test is judged exactly as production's is. */
+export function tableFromPayload(payload: LeadFactPayload): FactTable {
+  const { band, record_lines: recordLines, trial_line: trial, record_edge: edge } = payload
   const facts: Fact[] = [
     ...band.map((b, i) => ({ id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: mustSayOf(b.text) })),
     ...recordLines.map((l) => ({ id: l.id, text: l.text, role: l.kind, must_say: mustSayOf(l.text) })),
     ...(trial ? [{ id: 'trial', text: trial.text, role: 'record', required: true, must_say: mustSayOf(trial.text) }] : []),
     ...edge.map((e) => ({ id: e.id, text: e.text, role: 'edge', required: true, must_say: [...mustSayOf(e.text), ...edgeDate(e.text)] })),
   ]
-  const table: FactTable = {
-    fixture: `${ctx.petName}-${ctx.recordEnd}`,
-    year: Number(ctx.recordEnd.slice(0, 4)),
+  return {
+    fixture: `${payload.pet_name}-${payload.record_end}`,
+    year: Number(payload.record_end.slice(0, 4)),
     facts,
     lexicon: { foods: {}, drugs: {} },
     forbidden_names: [],
@@ -125,7 +132,6 @@ export function buildLeadFacts(
     require_any_sentence: [],
     conditional: [],
   }
-  return { eligible: true, payload, table }
 }
 
 /** The record-end clause must carry its own date ("Record ends Jun 19"), so the sentence that

@@ -1,8 +1,8 @@
 // Supabase Edge Functions shared module: the gate in front of the vet report's AI summary
 // (Vet report v2 PR-24, CUL-2304; spec docs/nyx-vet-report-v2-requirements.md §9.3, §13).
 //
-// VR2-25 (CUL-2305) calls the gate from the summary pipeline. Until then the only import is
-// `REPORT_DOCUMENT_FLAG`, by generate-report's document check (CUL-2290, `documentFlag.ts`).
+// VR2-25 (CUL-2305) calls the gate from the summary pipeline (generate-report/aiLead/), and
+// generate-report's document check imports `REPORT_DOCUMENT_FLAG` (CUL-2290, `documentFlag.ts`).
 //
 // THE ORDER IS THE CONTRACT (pinned by reportSummaryGate.test.ts):
 //   1. Consent. BOTH scopes in `ai_consent` must say `granted = true`: 'ai_boundary' (D10,
@@ -155,8 +155,10 @@ export interface SummaryGateIO {
 }
 
 /** The gate, in its pinned order. Never throws: a step that throws is a refusal at that
- *  step. */
-export async function runSummaryGate(io: SummaryGateIO, uid: string): Promise<SummaryGate> {
+ *  step. `spend: false` (VR2-25's cache hit, which calls no model) runs steps 1 to 3 and skips
+ *  the cap, so re-showing a lead already written costs no count; consent and both flags are
+ *  still read first, so a withdrawn yes or a flag turned off is never served from the cache. */
+export async function runSummaryGate(io: SummaryGateIO, uid: string, opts: { spend: boolean } = { spend: true }): Promise<SummaryGate> {
   if (typeof uid !== 'string' || uid.length === 0) {
     return { allow: false, reason: 'consent_declined', scope: 'ai_boundary' }
   }
@@ -184,6 +186,7 @@ export async function runSummaryGate(io: SummaryGateIO, uid: string): Promise<Su
     owned = false
   }
   if (!owned) return { allow: false, reason: 'pet_not_owned' }
+  if (!opts.spend) return { allow: true }
 
   let counts: { dayCount: number; monthCount: number } | null = null
   try {
@@ -264,6 +267,9 @@ export const SUMMARY_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   'record_start', 'record_end',
   'band', 'record_lines', 'trial_line', 'record_edge',
   'id', 'label', 'text', 'date', 'start', 'end', 'count', 'denominator', 'kind', 'sign', 'cites',
+  // VR2-25 (CUL-2305): the checker and the repair turn read the writer's own draft and the
+  // verifier's or checker's findings about it. Model output and code output, never an owner's.
+  'draft', 'sentences', 'findings', 'sentence', 'check', 'detail',
 ])
 
 /** What an owner types, and who they are. Never in the allowlist; refused if present. */

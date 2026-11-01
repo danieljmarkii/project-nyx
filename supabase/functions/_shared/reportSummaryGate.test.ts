@@ -207,6 +207,18 @@ Deno.test('order: all clear reads consent, then config, then spends one count', 
   assertEquals(reached, ['consent', 'config', 'pet', 'usage'])
 })
 
+Deno.test('order: spend false (the cache hit, VR2-25) reads consent, config and the pet, and never the counter', async () => {
+  const { impl, reached } = io({})
+  assertEquals(await runSummaryGate(impl, UID, { spend: false }), { allow: true })
+  assertEquals(reached, ['consent', 'config', 'pet'])
+  // A withdrawn yes still refuses first: the cache never serves a declined owner.
+  const declined = io({ consent: { data: [boundaryYes, { ...summaryYes, granted: false }], error: null } })
+  assertEquals((await runSummaryGate(declined.impl, UID, { spend: false })).allow, false)
+  assertEquals(declined.reached, ['consent'])
+  const notOwned = io({ owned: false })
+  assertEquals(await runSummaryGate(notOwned.impl, UID, { spend: false }), { allow: false, reason: 'pet_not_owned' })
+})
+
 Deno.test("order: another owner's pet (or an unreadable one) never reaches the counter", async () => {
   for (const owned of [false, null, 'true', 1]) {
     const { impl, reached } = io({ owned })

@@ -19,6 +19,14 @@
 //   - every label over a mark wears the paper halo (`paint-order: stroke`).
 //
 // Fonts and the QR are VR2-11 (CUL-2291); this file names the families and draws no QR.
+//
+// THE AI LEAD (VR2-25, CUL-2305; spec §5.3, §9.1). When a verified lead is handed in, it takes the
+// one serif slot where the lead sentence stands, under its label, and the code's line 1 drops to
+// body type directly beneath it (displaced, never removed: the lead adds nothing the lines do not
+// say). Everything above that slot, the band included, renders byte-for-byte as without a lead.
+// The sentences print exactly as stored and verified (`aiLeadSlot` adds markup, never words);
+// each is followed by its citations, named by the lines' own nouns.
+import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
 
@@ -182,7 +190,41 @@ export function chartSvg(chart: LeadChart): string {
   return `<svg class="chart" aria-hidden="true" focusable="false" viewBox="0 0 ${LABEL_W + PLOT_W} ${y}" width="${LABEL_W + PLOT_W}pt" height="${y}pt">${hatch}${body.join('')}</svg>`
 }
 
-function block(b: BlockV2): string {
+/** The label the spec prints over the lead (§9.1), unboxed: a frame is the band's register. */
+export const AI_LEAD_LABEL = 'Summary written by AI from the lines below · checked against them'
+
+/** The noun a citation prints for a fact id: a band item's tag, a line's words before its colon. */
+function citationLabels(doc: DocumentV2): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const b of doc.blocks) {
+    if (b.kind === 'band') b.items.forEach((i) => out.set(i.id, `Flag: ${i.tag.toLowerCase()}`))
+    if (b.kind === 'record_lines') b.lines.forEach((l) => out.set(l.id, l.text.split(':')[0]))
+    if (b.kind === 'lead_sentence') {
+      const noun = b.text.split(':')[0]
+      out.set('line-1', noun)
+      out.set('trial', noun)
+    }
+    if (b.kind === 'confounder') out.set('confounder', 'Overlapping the trial')
+    if (b.kind === 'record_edge') b.lines.forEach((_, i) => out.set(`edge-${i + 1}`, 'Record edge'))
+  }
+  // A record line named `trial` wins over line 1's noun when both exist.
+  for (const b of doc.blocks) if (b.kind === 'record_lines') b.lines.forEach((l) => l.id === 'trial' && out.set('trial', l.text.split(':')[0]))
+  return out
+}
+
+/** The lead's slot: the label, then each sentence exactly as verified, then its citations. */
+export function aiLeadSlot(doc: DocumentV2, sentences: readonly LeadSentence[]): string {
+  const labels = citationLabels(doc)
+  const body = sentences
+    .map((s) => {
+      const cites = s.cites.map((c) => labels.get(c) ?? c)
+      return `<span class="ais">${h(s.text)}</span><sup class="cite"> ${h(cites.join(' · '))}</sup>`
+    })
+    .join(' ')
+  return `<section class="ailead" data-block="ai-lead"><p class="ailabel">${h(AI_LEAD_LABEL)} <span class="beta">beta</span></p><p class="lede serif">${body}</p></section>`
+}
+
+function block(b: BlockV2, aiLead: string | null = null): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'masthead':
@@ -207,7 +249,8 @@ function block(b: BlockV2): string {
     case 'record_edge':
       return `${open('div', 'edge')}${b.lines.map((l) => `<p>${h(l)}</p>`).join('')}</div>`
     case 'lead_sentence':
-      return `${open('p', 'lede serif')}${h(b.text)}</p>`
+      // With a lead, line 1 drops to body under it (spec §5.3: one serif sentence per sheet).
+      return aiLead === null ? `${open('p', 'lede serif')}${h(b.text)}</p>` : `${aiLead}\n${open('p', 'lede body')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
       return `${open('section', c.flagHtml ? 'leadchart flagged' : 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
@@ -264,6 +307,12 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .gaps li{list-style:circle;}
 .edge p{font-size:10.5pt;font-weight:600;margin:8pt 0 0;}
 .lede{font-size:13pt;line-height:1.3;margin:10pt 0 0;}
+.lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
+.ailead{margin:10pt 0 0;}
+.ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
+.ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}
+.ailead .lede{margin:2pt 0 0;}
+.ailead .cite{font-family:"Geist",ui-sans-serif,system-ui,sans-serif;font-size:6.5pt;color:var(--ink2);}
 .leadchart .flagh{color:var(--concern);}
 .leadchart.flagged{border:1.25pt solid var(--ink);padding:7pt 9pt;}
 svg .cnt.nr{fill:var(--ink2);font-weight:400;}
@@ -293,8 +342,10 @@ svg .ax.part{fill:var(--ink);}
 @media print{.sheet{width:auto;}}
 `
 
-/** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). */
-export function renderPrintV2(doc: DocumentV2): string {
+/** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). `aiLead`
+ *  is a lead the send path read back with `storedLeadForDocument` (verified, same facts) or null. */
+export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] | null = null): string {
+  const slot = aiLead !== null && aiLead.length > 0 && doc.blocks.some((b) => b.kind === 'lead_sentence') ? aiLeadSlot(doc, aiLead) : null
   const name = doc.blocks.find((b) => b.kind === 'masthead')
   const title = name && name.kind === 'masthead' ? `${name.name}: owner's home log` : "Owner's home log"
   return `<!DOCTYPE html>
@@ -308,7 +359,7 @@ export function renderPrintV2(doc: DocumentV2): string {
 </head>
 <body>
 <main class="sheet" data-sheet="1">
-${doc.blocks.map(block).join('\n')}
+${doc.blocks.map((b) => block(b, slot)).join('\n')}
 </main>
 </body>
 </html>`
