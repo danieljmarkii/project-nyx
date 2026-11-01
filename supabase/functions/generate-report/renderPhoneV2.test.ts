@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict'
 import { buildDocumentV2, h, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
 import { blockIdsOf, renderPrintV2 } from './renderPrintV2.ts'
-import { BODY_PX, PLOT_W, renderPhoneV2, STYLE_PHONE, SVG_TEXT_MIN, verdictOf } from './renderPhoneV2.ts'
-import { v2DocFixtures } from './v2DocFixtures.testutil.ts'
+import { BODY_PX, COMPACT_SCALE, PLOT_W, VERDICT_MAX_PX, renderPhoneV2, STYLE_PHONE, SVG_TEXT_MIN, verdictOf } from './renderPhoneV2.ts'
+import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: ['Is the itching worse at night?'] }
@@ -94,6 +94,10 @@ Deno.test('type — the root follows -apple-system-body over a 17px fallback; ev
   assert.ok(sizes.length > 10)
   for (const { sel, v } of sizes) {
     if (sel === 'html') continue // the fallback, overridden by -apple-system-body
+    if (sel === '.verdict') {
+      assert.equal(v, `min(1rem, ${VERDICT_MAX_PX}px)`, 'the pinned repeat grows with the text up to the compaction scale')
+      continue
+    }
     if (sel === 'svg .cnt') {
       assert.equal(v, `${SVG_TEXT_MIN}px`, 'counts are viewBox units, scaled with the plot, never below 1:1')
       continue
@@ -194,4 +198,19 @@ Deno.test('keep — the layout script hides the repeat only after measuring a fi
   assert.match(script, /if \(!frame\) \{ if \(rep\) rep\.hidden = false; return; \}/)
   assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(rep\) rep\.hidden = fits;\s*if \(!fits\) return;/)
   assert.match(script, /if \(scale\(\) >= 1\.6\) root\.setAttribute\('data-compact', ''\)/)
+})
+
+Deno.test('compact — at scale 1.6 the signalment folds behind one line; the last entry and print never fold', () => {
+  assert.equal(COMPACT_SCALE, 1.6)
+  assert.equal(VERDICT_MAX_PX, Math.round(BODY_PX * COMPACT_SCALE))
+  const { screen, print } = cssParts()
+  const compact = screen.slice(screen.indexOf('@media screen{'))
+  assert.ok(compact.length > 0, 'compaction lives in a screen-only block')
+  assert.match(compact, /\[data-compact\] \.mast:not\(\[data-open\]\) \.sig\{display:none;\}/)
+  assert.doesNotMatch(compact, /\.last\{[^}]*display:none/, 'the last entry never folds')
+  assert.doesNotMatch(print, /data-compact/, 'compaction never reaches print')
+  assert.doesNotMatch(screen.slice(0, screen.indexOf('@media screen{')), /data-compact/, 'no compact rule outside the screen block')
+  const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
+  assert.match(html, /<button class="more" type="button" aria-expanded="false" aria-controls="v2sig">[^<]+<\/button><p class="sig" id="v2sig">/)
+  assert.match(screen, /\[data-compact\] \.mast \.more\{display:block;min-height:44px;/, 'the fold line is a 44pt target')
 })

@@ -39,6 +39,10 @@ export const SVG_TEXT_MIN = 11
 export const COMPACT_SCALE = 1.6
 /** The root size `-apple-system-body` resolves to at the default text size. */
 export const BODY_PX = 17
+/** The pinned repeat stops growing at the compaction scale, so it never fills the frame it pins
+ *  to (at AX5 on a 320pt screen a full-size sentence is taller than the frame). It repeats words
+ *  that print at full size in their own place, which still grows with the text. */
+export const VERDICT_MAX_PX = Math.round(BODY_PX * COMPACT_SCALE)
 
 const SIGN_ROW_H = 34
 const BAR_H = 22
@@ -204,7 +208,9 @@ function block(b: BlockV2, verdict: string | null): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'masthead':
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="sig"><span>${h(b.signalment)}</span>${
+      // At font scale 1.6 the signalment, conditions and window fold behind one line (spec
+      // §6.3), so the band still starts in the first frame; the last entry never folds.
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><button class="more" type="button" aria-expanded="false" aria-controls="v2sig">Patient details</button><p class="sig" id="v2sig"><span>${h(b.signalment)}</span>${
         b.conditions ? `<span class="cond">${h(b.conditions)}</span>` : ''
       }<span class="win">${h(b.window)}</span></p><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -302,7 +308,7 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .leadchart .flagh{color:var(--concern);}
 .leadchart.flagged{border:1.5px solid var(--ink);padding:0.6rem 10px;}
 .leadchart .why,.flagrow{color:var(--ink2);margin:0 0 0.4rem;}
-.verdict{position:sticky;top:0;z-index:1;margin:0 0 0.4rem;padding:0.3rem 0;background:var(--paper);font-weight:650;border-bottom:1px solid var(--hair);}
+.verdict{position:sticky;top:0;z-index:1;margin:0 0 0.4rem;padding:0.3rem 0;background:var(--paper);font-weight:650;border-bottom:1px solid var(--hair);font-size:min(1rem, ${VERDICT_MAX_PX}px);}
 .verdict[hidden]{display:none;}
 .chart{margin:0.2rem 0 0;}
 .crow{margin:0 0 0.35rem;}
@@ -330,9 +336,21 @@ svg .span.hollow{stroke-dasharray:3 2;stroke-width:1;fill:none;}
 svg .cnt{font-size:${SVG_TEXT_MIN}px;fill:var(--ink);font-weight:600;}
 svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
-[data-compact] .mast .sig span{display:inline;}
-[data-compact] .mast .sig span + span::before{content:" · ";}
+.mast .more{display:none;}
+@media screen{
+[data-compact] .mast .more{display:block;min-height:44px;width:100%;margin:0.1rem 0;padding:0.15rem 0;border:0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);background:none;color:var(--ink2);font:inherit;font-size:0.875rem;text-align:left;}
+[data-compact] .mast .more::after{content:" ›";}
+[data-compact] .mast:not([data-open]) .sig{display:none;}
+[data-compact] .mast[data-open] .more::after{content:" ⌄";}
 [data-compact] .band li{margin-bottom:0.3rem;}
+[data-compact] .sheet{padding-top:0.4rem;}
+[data-compact] .mast .eyebrow{display:none;}
+[data-compact] .mast h1{font-size:1.25rem;margin:0 0 0.1rem;}
+[data-compact] .mast .last{margin-top:0.1rem;}
+[data-compact] section{margin-top:0.5rem;}
+[data-compact] .band{padding:0.35rem 0.5rem;}
+[data-compact] .band h2{text-transform:none;letter-spacing:0;}
+}
 @media print{
 html,body{font-size:9.5pt;}
 .sheet{padding:0;max-width:none;}
@@ -375,6 +393,14 @@ const SCRIPT_PHONE = `
     var end = top + unit.getBoundingClientRect().height;
     if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
   }
+  var more = document.querySelector('.mast .more');
+  if (more) more.addEventListener('click', function(){
+    var mast = more.parentNode;
+    var open = !mast.hasAttribute('data-open');
+    if (open) mast.setAttribute('data-open', ''); else mast.removeAttribute('data-open');
+    more.setAttribute('aria-expanded', open ? 'true' : 'false');
+    lay();
+  });
   window.__nyxV2Layout = lay;
   lay();
   window.addEventListener('resize', lay);
