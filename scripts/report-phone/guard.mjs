@@ -5,9 +5,11 @@
 //      2.35: no text clipped or pushed past the screen's edge, and no label drawn under 11pt
 //      (HTML by its computed size, SVG by its size times the plot's on-screen scale);
 //   2. the band inside the first frame at 1.0 and 2.35;
-//   3. the keep-together rule: walking the page frame by frame (one screen height each), no
-//      frame shows the lead chart's bars without its confounder line or the line's opening
-//      sentence, and a unit that fits a frame never straddles a boundary;
+//   3. the keep-together rule: a unit that fits a frame never straddles a boundary; the lead
+//      sentence always shows and is the line's own warning; at every page-step frame and every
+//      8pt free-scroll resting position, no screen shows the bars without the confounder line or
+//      the pinned lead sentence; every chart label and mark is seen uncovered by some page step;
+//      and all of it again after the text size changes with the report open;
 //   4. every fixture's PDF, print and phone documents both, at scale 1.0 and 3.1: the same page
 //      count, the same text layer, the same sheet 1 word count.
 //
@@ -110,6 +112,8 @@ async function keepChecks(page, where) {
       height: r.height,
       hasConf: !!u.querySelector('[data-block="confounder"]'),
       repShown: rep ? getComputedStyle(rep).display !== 'none' : null,
+      repText: rep ? rep.textContent.trim() : null,
+      confText: u.querySelector('[data-block="confounder"]')?.textContent.trim() ?? null,
       docH: document.documentElement.scrollHeight,
       H: window.innerHeight,
     }
@@ -119,11 +123,39 @@ async function keepChecks(page, where) {
   if (unit.height <= H) {
     const k = Math.floor(unit.top / H)
     if (unit.top + unit.height > (k + 1) * H + 0.5) fail(where, `the unit fits a frame (${unit.height.toFixed(0)}pt) but straddles the boundary at ${(k + 1) * H}pt`)
-    if (unit.repShown) fail(where, 'the unit fits, yet the opening sentence still repeats')
-  } else if (unit.hasConf && unit.repShown === false) {
-    fail(where, `the unit is taller than a frame (${unit.height.toFixed(0)} > ${H}) and the opening sentence is hidden`)
   }
   if (!unit.hasConf) return unit
+  if (unit.repShown !== true) fail(where, 'the lead sentence is hidden (it must show beside the bars on every record with a confounder)')
+  // What the repeat says: the line's own warning, never a clause that reads as a clean trial.
+  const r = unit.repText ?? ''
+  const c = unit.confText ?? ''
+  if (!r || !c.includes(r)) fail(where, `the repeat "${r.slice(0, 40)}" is not a sentence of the confounder line`)
+  else if (c.startsWith('Not a test of the diet alone.') && r !== 'Not a test of the diet alone.') fail(where, `an overlapping course pins "${r.slice(0, 40)}"`)
+  else if (!c.startsWith('Not a test') && c.includes('free-fed bowl') && !r.includes('free-fed bowl')) fail(where, `a free-fed bowl is the warning, yet the repeat says "${r.slice(0, 40)}"`)
+  // Free scroll rests anywhere: sweep every 8pt through the unit and check each resting position.
+  const gaps = await page.evaluate(({ from, to }) => {
+    const out = []
+    const H = window.innerHeight
+    const lc = document.querySelector('[data-keep="lead"] [data-block="lead-chart"]')
+    const marks = [...lc.querySelectorAll('svg.marks rect.bar, svg.marks rect.hatch, svg.marks rect.cov, svg.marks line.span')]
+    const rep = document.querySelector('[data-part="confounder-verdict"]')
+    const conf = document.querySelector('[data-keep="lead"] [data-block="confounder"]')
+    for (let y = from; y <= to; y += 8) {
+      window.scrollTo(0, y)
+      const repR = rep && getComputedStyle(rep).display !== 'none' ? rep.getBoundingClientRect() : null
+      const floor = repR && repR.top <= 0.5 ? repR.bottom : 0
+      const bars = marks.some((m) => { const q = m.getBoundingClientRect(); return Math.min(q.bottom, H) - Math.max(q.top, floor) >= 2 })
+      if (!bars) continue
+      const repSeen = !!repR && repR.top >= -0.5 && repR.bottom <= H + 0.5
+      const cr = conf.getBoundingClientRect()
+      const line = parseFloat(getComputedStyle(conf).lineHeight) || parseFloat(getComputedStyle(conf).fontSize) * 1.4
+      const confSeen = cr.top >= floor - 0.5 && cr.top + line <= H + 0.5
+      if (!repSeen && !confSeen) out.push(Math.round(window.scrollY))
+    }
+    window.scrollTo(0, 0)
+    return out
+  }, { from: Math.max(0, Math.floor(unit.top - H)), to: Math.ceil(unit.top + unit.height) })
+  if (gaps.length > 0) fail(where, `free scroll: bars without the warning at ${gaps.length} resting position(s), first at scrollY ${gaps[0]}`)
   // Walk the frames a screen-step scroll lands on (VoiceOver, a keyboard's page key): each step is
   // one screen less the page's scroll padding, which the layout sets to the pinned repeat's height.
   const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0)
@@ -209,6 +241,12 @@ try {
         await page.evaluate(() => window.__nyxV2Layout && window.__nyxV2Layout())
         await screenChecks(page, where, s, size)
         const unit = await keepChecks(page, where)
+        if (s === 1) {
+          // Dynamic Type changed with the report open: no reload and no resize event.
+          await page.evaluate((px) => { document.documentElement.style.fontSize = px }, `${(BODY_PX * 2.35).toFixed(2)}px`)
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+          await keepChecks(page, `${where} → 2.35 live`)
+        }
         if (unit) {
           seenCounts.units++
           if (unit.hasConf) seenCounts.unitsWithConf++
@@ -251,7 +289,7 @@ try {
 if (seenCounts.fixtures < 10) fail('guard', `only ${seenCounts.fixtures} fixtures ran`)
 if (seenCounts.bandChecked < 1) fail('guard', 'no band was checked against the first frame')
 if (seenCounts.unitsWithConf < 1) fail('guard', 'no keep-together unit with a confounder was walked')
-if (seenCounts.repeatShown < 1 || seenCounts.repeatHidden < 1) fail('guard', `the repeat was not seen both shown (${seenCounts.repeatShown}) and hidden (${seenCounts.repeatHidden})`)
+if (seenCounts.repeatShown < 1) fail('guard', 'no repeat was seen')
 console.log(summary.join('\n'))
 console.log(JSON.stringify(seenCounts))
 if (failures.length > 0) {

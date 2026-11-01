@@ -23,9 +23,9 @@
 // sentence (the model's `lead`: its warning) also prints between the heading and the bars
 // (`data-part`, never a block, so parity holds) and stays pinned to the top of the frame while the
 // bars scroll under it; the page's scroll padding equals its height, so a screen-step scroll
-// never lands content under it. The
-// repeat shows by default and the layout script hides it only once it has measured that the unit
-// fits: without the script, the page errs toward the extra warning, never toward bars alone.
+// never lands content under it. The repeat always shows, even when the unit fits a frame: a free
+// scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
+// (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
 import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
@@ -389,14 +389,16 @@ const SCRIPT_PHONE = `
     var rep = unit.querySelector('[data-part="confounder-verdict"]');
     push.style.height = '0px';
     root.style.scrollPaddingTop = '';
-    var frame = window.innerHeight;
-    if (!frame) { if (rep) rep.hidden = false; return; }
-    if (rep) rep.hidden = true;
-    var fits = unit.getBoundingClientRect().height <= frame;
-    if (rep) rep.hidden = fits;
+    // The repeat always shows. Hiding it when the unit fits a frame left 220 to 440pt of resting
+    // scroll positions with the bars on screen and the confounder below it (adversarial pass on
+    // CUL-2295): a free scroll has no frames, so only a sentence pinned beside the bars holds.
+    if (rep) rep.hidden = false;
     // A page-step scroll (VoiceOver, a keyboard) lands below the pinned repeat, so nothing the
     // repeat covers is skipped between one screen and the next (cold read on CUL-2295).
-    if (rep && !fits) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';
+    if (rep) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';
+    var frame = window.innerHeight;
+    if (!frame) return;
+    var fits = unit.getBoundingClientRect().height <= frame;
     if (!fits) return;
     var top = unit.getBoundingClientRect().top + window.pageYOffset;
     var k = Math.floor(top / frame);
@@ -416,6 +418,15 @@ const SCRIPT_PHONE = `
   window.addEventListener('resize', lay);
   window.addEventListener('load', lay);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(lay);
+  // A text-size change with no reload fires no resize: watch what it moves.
+  if (window.ResizeObserver) {
+    var queued = false;
+    var ro = new ResizeObserver(function(){ if (queued) return; queued = true; requestAnimationFrame(function(){ queued = false; lay(); }); });
+    var probe = document.getElementById('v2probe');
+    if (probe) ro.observe(probe);
+    var u = document.querySelector('[data-keep="lead"]');
+    if (u) ro.observe(u);
+  }
 })();
 `
 

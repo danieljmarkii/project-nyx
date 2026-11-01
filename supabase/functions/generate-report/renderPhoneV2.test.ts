@@ -186,7 +186,7 @@ Deno.test('keep — the lead chart, the lines under it and the confounder are on
   assert.ok(withConf >= 2, 'the confounder is exercised')
 })
 
-Deno.test('keep — the confounder’s opening sentence sits between the heading and the bars, shown unless measured to fit', () => {
+Deno.test('keep — the line’s lead sentence sits between the heading and the bars, and is never hidden in the HTML', () => {
   for (const [name, d] of docs()) {
     const html = renderPhoneV2(d)
     const conf = d.blocks.find((b) => b.kind === 'confounder')
@@ -196,7 +196,7 @@ Deno.test('keep — the confounder’s opening sentence sits between the heading
       continue
     }
     assert.ok(rep, `${name}: the repeat is drawn`)
-    assert.doesNotMatch(rep[1], /(^|\s)hidden(\s|=|$)/, `${name}: shown by default (the script may hide it once it fits)`)
+    assert.doesNotMatch(rep[1], /(^|\s)hidden(\s|=|$)/, `${name}: shown (the script never hides it)`)
     assert.match(rep[1], /aria-hidden="true"/, `${name}: a screen reader hears the confounder once, in its place`)
     assert.equal(rep[2], h(conf.lead), name)
     assert.ok(conf.lead.length > 0 && conf.text.includes(conf.lead), `${name}: the repeat is the line’s own words`)
@@ -236,13 +236,18 @@ Deno.test('keep — the lead is the line’s warning: the overlap verdict, or th
   assert.ok(bowlOnly >= 1, 'a bowl with no overlapping course is exercised (Mira)')
 })
 
-Deno.test('keep — the layout script hides the repeat only after measuring a fit, and pushes only a unit that fits', () => {
+Deno.test('keep — the layout script never hides the repeat, pads page steps below it, and re-lays on a text-size change', () => {
   const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
   const script = html.slice(html.indexOf('<script>'))
-  // Loud on every path the script cannot measure: no frame height → shown.
-  assert.match(script, /if \(rep && !fits\) root\.style\.scrollPaddingTop = rep\.getBoundingClientRect\(\)\.height \+ 'px';/, 'a page-step scroll lands below the pin')
-  assert.match(script, /if \(!frame\) \{ if \(rep\) rep\.hidden = false; return; \}/)
-  assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(rep\) rep\.hidden = fits;[\s\S]*?if \(!fits\) return;/)
+  // Free scroll has no frames: hiding the repeat on a measured fit left bars without the warning
+  // at resting positions (adversarial pass on CUL-2295). Nothing in the script may set it hidden.
+  assert.match(script, /if \(rep\) rep\.hidden = false;/)
+  assert.doesNotMatch(script, /rep\.hidden = (true|fits|!)/, 'the repeat is never hidden')
+  assert.match(script, /if \(rep\) root\.style\.scrollPaddingTop = rep\.getBoundingClientRect\(\)\.height \+ 'px';/, 'a page-step scroll lands below the pin')
+  assert.match(script, /new ResizeObserver\(/, 'a Dynamic Type change with no resize event re-lays the page')
+  assert.match(script, /ro\.observe\(probe\)/)
+  // The spacer pushes only a unit that fits a frame.
+  assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(!fits\) return;/)
   assert.match(script, /if \(scale\(\) >= 1\.6\) root\.setAttribute\('data-compact', ''\)/)
 })
 
