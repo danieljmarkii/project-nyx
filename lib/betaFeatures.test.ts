@@ -51,14 +51,23 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('holds exactly the report flow at Vet report v2 PR-08 (CUL-2288); the widget stays graduated', () => {
+  it('holds the report flow and the report layout (CUL-2288, CUL-2347); the widget stays graduated', () => {
     // The shelf was empty at 1.2.0 (CUL-1842: the ten earlier betas graduated, the
-    // widget last). The report flow is the first row since. Its sibling,
-    // report_document_v2, joins with its server check in VR2-10 (ruling (a)), so
-    // its absence here is pinned, not forgotten.
-    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2']);
-    expect(ALLOWLIST_FLAG_KEYS as readonly string[]).toContain('report_document_v2');
+    // widget last). The report flow is the first row since; the layout joined with its
+    // server check (PR-10) in place (PM ruling (a) on CUL-2290).
+    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2', 'report_document_v2']);
     expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('widget_enabled');
+  });
+
+  it('the report layout is one switch that spends a server render, so D6 must find its server gate', () => {
+    // Ruling (a): an opt-in, default off, one switch and no inverse. serverCost:true is
+    // what makes the D6 scan below require the key under supabase/functions; a row that
+    // said false would let the shelf offer a switch the server never re-checks.
+    const rows = BETA_REGISTRY.filter((b) => b.key === 'report_document_v2');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe('New report layout');
+    expect(rows[0].serverCost).toBe(true);
+    expect(rows[0].careSurface).toBe(true);
   });
 });
 
@@ -131,6 +140,7 @@ describe('deriveBetaShelf (B-747)', () => {
     const darkSeed = allow({
       ask_enabled: { enabled: true, allowlist: [] },
       report_composer_v2: { enabled: false, allowlist: [] },
+      report_document_v2: { enabled: false, allowlist: [] },
     });
     expect(deriveBetaShelf(darkSeed, 'uid-1', {}).eligible).toEqual([]);
   });
@@ -138,6 +148,14 @@ describe('deriveBetaShelf (B-747)', () => {
   it('the report flow card reaches an allowlisted account, and only it', () => {
     const cohort = allow({ report_composer_v2: { enabled: false, allowlist: ['uid-1'] } });
     expect(deriveBetaShelf(cohort, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(['report_composer_v2']);
+    expect(deriveBetaShelf(cohort, 'uid-2', {}).eligible).toEqual([]);
+  });
+
+  it('the report layout card reaches an allowlisted account, and only it, and starts off', () => {
+    const cohort = allow({ report_document_v2: { enabled: false, allowlist: ['uid-1'] } });
+    const shelf = deriveBetaShelf(cohort, 'uid-1', {});
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['report_document_v2']);
+    expect(shelf.activeCount).toBe(0); // default off: eligibility turns nothing on
     expect(deriveBetaShelf(cohort, 'uid-2', {}).eligible).toEqual([]);
   });
 

@@ -87,9 +87,7 @@ export const BETA_REGISTRY: BetaFeature[] = [
   // Seeded off (migration 111), so no account is eligible and this card renders for no
   // one until the PM allowlists a cohort; nothing reads the opt-in until VR2-16 builds
   // the composer behind it. Client-only (serverCost false): the flow's server spends
-  // (the AI lead) carry their own server-checked flags and caps. Its sibling,
-  // `report_document_v2`, joins with the server check generate-report reads (VR2-10,
-  // ruling (a) on CUL-2288), so the shelf never offers a switch the server ignores.
+  // (the AI lead) carry their own server-checked flags and caps.
   {
     key: 'report_composer_v2',
     title: 'New report flow',
@@ -99,6 +97,24 @@ export const BETA_REGISTRY: BetaFeature[] = [
     addedDate: '2026-10-31',
     reviewBy: '2027-01-31',
     serverCost: false,
+    careSurface: true,
+  },
+  // Vet report v2's document (CUL-2347; PM ruling (a) on CUL-2290: an opt-in, default off).
+  // The switch asks for the new layout; it never draws it. lib/pdf.ts sends
+  // `reportVersion: 'v2'` only when this account is eligible AND opted in, and
+  // generate-report re-resolves this key against the JWT uid before it renders v2
+  // (supabase/functions/generate-report/documentFlag.ts), so serverCost is true and D6
+  // holds the server half. Seeded off (migration 111); the allowlist stays empty until
+  // the back sheets, the legend and the must-carry parity guard ship (spec §12).
+  {
+    key: 'report_document_v2',
+    title: 'New report layout',
+    blurb:
+      'A new layout for the report your vet reads. Switch it off to go back to the current one.',
+    owner: 'Vet report v2 (CUL-2275)',
+    addedDate: '2026-11-01',
+    reviewBy: '2027-02-01',
+    serverCost: true,
     careSurface: true,
   },
 ];

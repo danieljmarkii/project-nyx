@@ -166,15 +166,15 @@ describe('Settings — the Early-access row gate (B-747)', () => {
 });
 
 describe('Settings — the shipped registry: the widget graduated (CUL-1842), the report flow joined (CUL-2288)', () => {
-  it('shows the Early access row only through the report flow, and never the widget', () => {
+  it('shows the Early access row only through the report betas, and never the widget', () => {
     // Every allowlist key opened to everyone: a graduated card would have every chance
-    // to render. The one shipped row is the report flow.
+    // to render. The shipped rows are the report flow and the report layout.
     const open = { enabled: true, allowlist: [] };
     setAllowlist(
       Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>,
     );
     const { getByText, queryByText } = render(<SettingsScreen />);
-    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2']);
+    expect(BETA_REGISTRY.map((b) => b.key)).toEqual(['report_composer_v2', 'report_document_v2']);
     expect(getByText('Early access')).toBeTruthy();
     expect(queryByText('Home screen widget')).toBeNull();
   });
@@ -184,6 +184,7 @@ describe('Settings — the shipped registry: the widget graduated (CUL-1842), th
     setAllowlist({
       ...(Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>),
       report_composer_v2: { enabled: false, allowlist: [] },
+      report_document_v2: { enabled: false, allowlist: [] },
     });
     const { queryByText } = render(<SettingsScreen />);
     expect(queryByText('Early access')).toBeNull();
