@@ -593,3 +593,28 @@ Deno.test('R-17 item 5 — a heading never sits alone at the foot of a sheet', (
   const body = rules().find((r) => r.selector === 'body' && /orphans/.test(r.body))
   assert.ok(body && /orphans:3/.test(body.body) && /widows:3/.test(body.body), 'prose inherits an orphan/widow floor')
 })
+
+// ── CUL-2385: the PDF keeps its digits ───────────────────────────────────────
+//
+// `font-variant-numeric:tabular-nums` (or a `tnum` feature setting) makes Chromium and
+// WebKit draw alternate digit glyphs. The PDF's font subset gives those glyphs no
+// ToUnicode entry, so every extractor (pypdf, pdfminer, a clinic's AI tool, copy-paste)
+// drops them: measured on the clean trial sample, 978 digits in the HTML and 374 in the
+// PDF's text layer. Aligned figures come back only with an embedded subset whose default
+// cmap holds them (CUL-2291), never by re-adding the declaration.
+
+const DIGIT_DROPPERS = /font-variant-numeric|font-variant\s*:[^;}]*tabular|font-feature-settings\s*:[^;}]*tnum/i
+
+Deno.test('CUL-2385 — the shipped sheet asks for no tabular or alternate digit glyphs', () => {
+  // The half that fails: the declaration this replaced, and its two spellings, are caught.
+  for (const old of [
+    '.num{font-variant-numeric:tabular-nums;}',
+    'body{font-variant:tabular-nums;}',
+    '.x{font-feature-settings:"tnum" 1;}',
+  ]) {
+    assert.ok(DIGIT_DROPPERS.test(old), `the guard catches ${old}`)
+  }
+  // The half that passes: nothing on the sheet as shipped asks for them.
+  const hit = SHIPPED_STYLE.match(DIGIT_DROPPERS)
+  assert.equal(hit, null, `the v1 sheet must not carry ${hit?.[0]}: extractors drop the digits it draws`)
+})

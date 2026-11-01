@@ -120,7 +120,8 @@ export function h(v: string | number | null | undefined): string {
     .replace(/'/g, '&#39;')
 }
 
-/** A tabular-figures numeric span (cosmetic alignment only; the value is the datum). */
+/** A numeric span (a styling hook only; the value is the datum). It carries no
+ *  font-variant-numeric: see the note where `.num` used to be styled in STYLE. */
 function num(v: string | number): string {
   return `<span class="num">${h(v)}</span>`
 }
@@ -10590,7 +10591,11 @@ const STYLE = `
        single line is left alone at a fold. */
     orphans:3;widows:3;
   }
-  .num{font-variant-numeric:tabular-nums;}
+  /* No .num rule, and no font-variant-numeric or tnum anywhere on this sheet (CUL-2385).
+     tabular-nums draws alternate digit glyphs that carry no ToUnicode entry in the PDF's
+     font subset, so pypdf, pdfminer and copy-paste read "for 2 consecutive days" as
+     "for  consecutive days". The span stays as a hook; aligned figures return only with
+     an embedded subset whose default cmap holds them (CUL-2291). style.test.ts pins it. */
   .serif{font-family:"Newsreader",Georgia,"Iowan Old Style","Palatino Linotype",serif;}
 
   /* The page's radius and shadow are the IN-APP PREVIEW's, not the sheet's: they draw a
