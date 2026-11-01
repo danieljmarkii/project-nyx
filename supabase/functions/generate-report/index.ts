@@ -1993,10 +1993,10 @@ const handler = async (req: Request): Promise<Response> => {
 
 /**
  * VR2-25 (CUL-2305) — the AI lead for one draft. The uid is the one `auth.getUser()` verifies on
- * the request JWT, never a body value. The document is built the way the lead needs it: the
- * handler's owner arm with notes forced off (and buildLeadFacts refuses it otherwise), and no
- * owner questions, so no owner words reach the fact table (R-12). The gate, the model calls and
- * the write are aiLead/'s.
+ * the request JWT, never a body value. The snapshot is the handler's owner arm with notes forced
+ * off (buildLeadFacts refuses it otherwise); aiLead/ builds the lead's own document from it (no
+ * incident notes, no questions), so no owner words reach the fact table (R-12). The gate, the
+ * model calls and the write are aiLead/'s.
  */
 async function aiLeadForPet(
   supabase: SupabaseClient,
@@ -2016,18 +2016,11 @@ async function aiLeadForPet(
   const built = await buildReportSnapshotForPet(supabase, petId, Date.now(), requestedWindow, audience, callerJwt, requestTimezone)
   if (built.kind === 'response') return { status: built.status, body: built.body }
   const { snapshot } = built
-  const doc = buildDocumentV2(snapshot, { owner: null, shortId: null, questions: [] })
   const result = await runAiLeadForDraft(
     draftLeadIO(adminClient, supabase, { reportId: req.reportId, petId, uid: user.id }),
-    doc,
-    {
-      petName: snapshot.signalment.name,
-      species: snapshot.signalment.species,
-      recordStart: snapshot.scope.startDate,
-      recordEnd: snapshot.scope.endDate,
-      // Fails closed: anything but an owner arm without notes reads as notes on, which is refused.
-      includeLookNotes: audience.kind === 'shared_link' ? true : audience.includeLookNotes,
-    },
+    snapshot,
+    // Fails closed: anything but an owner arm without notes reads as notes on, which is refused.
+    audience.kind === 'shared_link' ? true : audience.includeLookNotes,
     req.leaveOut,
   )
   if (result.outcome === 'draft_not_found') return { status: 404, body: { error: 'Draft not found' } }
