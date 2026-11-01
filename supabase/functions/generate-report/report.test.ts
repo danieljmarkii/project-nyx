@@ -6257,3 +6257,41 @@ Deno.test('CUL-2286 — an owner estimate is listed, never the latest weigh-in o
   assert.ok(/latest weight 4\.02 kg \(8\.9 lb\) on Mar 8/.test(text), text.slice(text.indexOf('latest weight'), text.indexOf('latest weight') + 80))
   assert.ok(/Owner estimate, not a scale reading and not counted above: 5\.00 kg \(11\.0 lb\) on Jun 28, 2026\./.test(text), 'listed, never counted')
 })
+
+Deno.test('CUL-2286 — an estimate saved 30 s after a scale reading never swallows it (adversarial pass 2)', () => {
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'q-1', weightKg: 5.0, occurredAt: at('2026-05-01'), source: 'home_scale' },
+    { eventId: 'q-2', weightKg: 5.0, occurredAt: at('2026-05-05'), source: 'home_scale' },
+    { eventId: 'q-3', weightKg: 4.1, occurredAt: at('2026-06-28', '14:00:00'), source: 'home_scale' },
+    { eventId: 'q-4', weightKg: 4.5, occurredAt: at('2026-06-28', '14:00:30'), source: 'estimate' },
+  ]
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w, weightHistory: w }))
+  assert.equal(snap.weight.change!.latest.kg, 4.1, 'the 4.10 kg scale reading survives')
+  assert.equal(snap.weight.change!.deltaKg, -0.9)
+  assert.equal(snap.signalment.latestWeight!.kg, 4.1)
+  assert.deepEqual(snap.weight.notCounted.map((e) => e.kg), [4.5], 'and the estimate is still listed')
+  const text = readAs(renderReport(snap))
+  assert.ok(!/no change/.test(text), 'never "no change" over an 18% loss')
+  assert.ok(/-0\.90 kg/.test(text))
+})
+
+Deno.test('CUL-2286 — a partial weigh-in pull never carries the noise caveat (adversarial pass 2)', () => {
+  // The newest-first cut lost January's 5.00 kg highs, so the story over the remainder reads a
+  // 14% loss as 4.50 → 4.30, single, inside the band. With the engine key off nothing flags the cut.
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'pp-3', weightKg: 4.5, occurredAt: at('2026-05-01'), source: 'home_scale' },
+    { eventId: 'pp-4', weightKg: 4.3, occurredAt: at('2026-06-28'), source: 'home_scale' },
+  ]
+  const make = (incompletePulls: string[]) => {
+    idSeq = 0
+    return assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w, weightHistory: w, incompletePulls }))
+  }
+  const full = make([])
+  assert.equal(full.weight.change!.withinNoise, true, 'the counterexample is live: the remainder reads within_noise')
+  assert.ok(/moves about that much on its own/.test(readAs(renderReport(full))), 'non-vacuous: the caveat shows on a complete record')
+  const cut = readAs(renderReport(make(['weight_checks'])))
+  assert.ok(!/moves about that much on its own/.test(cut), 'never over a record that did not load in full')
+  assert.ok(!/inside a home scale/.test(cut))
+})

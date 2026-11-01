@@ -4655,19 +4655,25 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // never the "latest weigh-in" on the signalment or the tile, and never decides the empty state.
   // Adversarial pass 1 on CUL-2286: an estimate of 5.00 kg read as the latest weigh-in on the tile
   // and the signalment line over a confirmed 20% loss.
-  const dedupedChecks = dedupeWeighIns(input.weightChecks, droppedEventIds)
-  const allReadings = dedupedChecks.filter((r) => r.source !== 'estimate')
+  // Estimates leave BEFORE the retry collapse, never after (adversarial pass 2, QUIET): the collapse
+  // keeps the later of two rows under a minute apart, so a scale reading of 4.10 kg followed 30 s
+  // later by an estimate was collapsed into the estimate, and dropping the estimate then erased an
+  // 18% loss. A scale reading and an estimate are never one weigh-in; each list collapses its own.
+  const isEstimate = (r: ReportWeightCheckInput): boolean => r.source === 'estimate'
+  const allReadings = dedupeWeighIns(input.weightChecks.filter((r) => !isEstimate(r)), droppedEventIds)
   const latestOverall = allReadings.length > 0 ? allReadings[allReadings.length - 1] : null
   const windowReadings = allReadings.filter((r) => inWindow(r.occurredAt))
   // CUL-2286 (VR2-6) — EVERY weight change on the page comes from `weightStory()` (spec §5.8,
   // WG-1), at the window's end, over the lane's whole read when the shell passed it (its window
   // is 12 months, wider than the lookback) and through the SAME retry collapse: a double-tap
   // pair that differs by a correction must never confirm itself as a level.
-  const storyReadings = input.weightHistory ? dedupeWeighIns(input.weightHistory, droppedEventIds) : allReadings
+  const storyReadings = input.weightHistory
+    ? dedupeWeighIns(input.weightHistory.filter((r) => !isEstimate(r)), droppedEventIds)
+    : allReadings
   const weightChange = weightChangeOf(storyReadings, scope.detectionNowIso, input.pet.dateOfBirth, tz)
   const weight = buildWeightSection(latestOverall, windowReadings, weightChange, tz)
-  weight.notCounted = dedupedChecks
-    .filter((r) => r.source === 'estimate' && inWindow(r.occurredAt))
+  weight.notCounted = dedupeWeighIns(input.weightChecks.filter(isEstimate), droppedEventIds)
+    .filter((r) => inWindow(r.occurredAt))
     .map((r) => ({ kg: r.weightKg, lbs: kgToLbsNum(r.weightKg), day: localDayKey(r.occurredAt, tz) ?? r.occurredAt.slice(0, 10) }))
 
   // ── Medications (§3.8, B-117 §7, §4.4) ───────────────────────────────────────

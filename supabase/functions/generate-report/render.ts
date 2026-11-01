@@ -4993,6 +4993,18 @@ const WEIGHT_WHERE: Record<WeightChangeEnd['source'], string> = { clinic: 'at th
 /** The weight lane's shipped caveat, printed ONLY in the story's `within_noise` state (WG-6, lane §5.4). */
 const WEIGHT_NOISE_CAVEAT = 'a home scale moves about that much on its own'
 
+/**
+ * The ONE gate on the noise caveat, for the Weight block and the tile alike. It discounts a change,
+ * so every condition errs loud: the story's own `within_noise` state, no safety flag anywhere on the
+ * page (WG-6; adversarial pass 1), and a weigh-in record that loaded in full. A partial pull reads
+ * newest-first and loses the oldest rows, which are the highs a loss is measured from, so the story
+ * over it can call a 14% loss 4% and noise (adversarial pass 2; `weight_unchecked` only flags this
+ * with the engine key on). Never the trial-bounded change: `weightDuringTrial` never calls this.
+ */
+function weightNoiseCaveatShows(c: WeightChangeView, snap: ReportSnapshot): boolean {
+  return c.withinNoise && snap.safetyFlags.length === 0 && !(snap.incompletePulls ?? []).includes('weight_checks')
+}
+
 /** One end of a change, named as the flag row names its readings (WG-5): value, day, where, one reading. */
 function weightEndText(e: WeightChangeEnd, snap: ReportSnapshot): string {
   const before = e.day < snap.scope.startDate ? ', before this window' : ''
@@ -5033,7 +5045,7 @@ function weightChangeSentence(c: WeightChangeView, snap: ReportSnapshot): string
   const dir = c.deltaKg < 0 ? 'down from' : c.deltaKg > 0 ? 'up from' : 'level with'
   return `${weightEndText(c.latest, snap)}, ${dir} ${weightEndText(c.highBefore, snap)} &middot; ${num(signedKgText(c.deltaKg))}&nbsp;kg (${signedLbText(
     c,
-  )}), ${weightPctText(c)}${c.withinNoise && snap.safetyFlags.length === 0 ? `; ${WEIGHT_NOISE_CAVEAT}` : ''}`
+  )}), ${weightPctText(c)}${weightNoiseCaveatShows(c, snap) ? `; ${WEIGHT_NOISE_CAVEAT}` : ''}`
 }
 
 /** In-window owner estimates, listed and never counted (weight lane §4.2): the vet sees them, nothing reads them as a weigh-in. */
@@ -6005,7 +6017,7 @@ function weightTile(snap: ReportSnapshot): string {
     // CUL-2286 (VR2-6) / CUL-2326 — the story's change at the stored 2 dp, so a 0.04 kg loss
     // prints "-0.04", never "-0.0"; and its WHOLE percent with no floor, so a 2 kg cat's 0.14 kg
     // loss states its 7% (B-495: `-0.3 kg` is species-blind). Descriptive, never reassuring.
-    const noise = c.withinNoise && snap.safetyFlags.length === 0 ? ' &middot; inside a home scale&rsquo;s noise' : ''
+    const noise = weightNoiseCaveatShows(c, snap) ? ' &middot; inside a home scale&rsquo;s noise' : ''
     const pct =
       c.deltaKg === 0 ? 'no change' : `<b>${c.pct !== null && c.pct >= 1 ? `&asymp;${c.pct}%` : 'under 1%'} of body weight</b>`
     return tile(
