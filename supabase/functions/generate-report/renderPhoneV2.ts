@@ -19,14 +19,15 @@
 // THE KEEP-TOGETHER RULE (PM ruling (a) on CUL-2320, and option 1 on CUL-2295, 2026-11-01). The
 // lead chart's heading, its bars and its confounder line are one unit (`data-keep="lead"`), which
 // never straddles a frame boundary: when it would, a spacer starts it in the next frame. When the
-// unit is taller than a frame (a long confounder at 320pt, any record at AX5), the confounder's
-// opening sentence also prints between the heading and the bars (`data-part`, never a block, so
-// parity holds) and stays pinned to the top of the frame while the bars scroll under it. The
+// unit is taller than a frame (a long confounder at 320pt, any record at AX5), the line's lead
+// sentence (the model's `lead`: its warning) also prints between the heading and the bars
+// (`data-part`, never a block, so parity holds) and stays pinned to the top of the frame while the
+// bars scroll under it; the page's scroll padding equals its height, so a screen-step scroll
+// never lands content under it. The
 // repeat shows by default and the layout script hides it only once it has measured that the unit
 // fits: without the script, the page errs toward the extra warning, never toward bars alone.
 // Frames are known only on the device (its height and text size), so the script measures there.
-import { h, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
-import { notReadCol } from './documentV2.ts'
+import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
 
@@ -198,21 +199,16 @@ export function chartHtml(chart: LeadChart): string {
   return `<div class="chart" aria-hidden="true">${rows.join('')}${axisHtml(chart)}</div>`
 }
 
-/** The confounder's opening sentence: the repeat the over-tall unit prints beside its bars. */
-export function verdictOf(confounder: string): string {
-  const m = confounder.match(/^.*?[.](?=\s|$)/)
-  return (m ? m[0] : confounder).trim()
-}
-
-function block(b: BlockV2, verdict: string | null): string {
+function block(b: BlockV2, lead: string | null): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'masthead':
-      // At font scale 1.6 the signalment, conditions and window fold behind one line (spec
-      // §6.3), so the band still starts in the first frame; the last entry never folds.
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><button class="more" type="button" aria-expanded="false" aria-controls="v2sig">Patient details</button><p class="sig" id="v2sig"><span>${h(b.signalment)}</span>${
-        b.conditions ? `<span class="cond">${h(b.conditions)}</span>` : ''
-      }<span class="win">${h(b.window)}</span></p><p class="last">${b.lastEntryHtml}.</p></header>`
+      // At font scale 1.6 the full signalment, the conditions and the window fold behind one line
+      // (spec §6.3), so the band still starts in the first frame. What decides urgency never folds:
+      // species, sex, age and weight (the model's brief; cold read on CUL-2295), and the last entry.
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
+        b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
+      }<p class="win">${h(b.window)}</p></div><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
       return `${open('div', 'disc')}${b.html}</div>`
     case 'band':
@@ -235,7 +231,7 @@ function block(b: BlockV2, verdict: string | null): string {
       const c = b.chart
       // The repeat is `aria-hidden`: it exists for the eye that sees bars, and a screen reader
       // reaches the full confounder in its own place, in the PDF's order.
-      const rep = verdict ? `<p class="verdict" data-part="confounder-verdict" aria-hidden="true">${h(verdict)}</p>` : ''
+      const rep = lead ? `<p class="verdict" data-part="confounder-verdict" aria-hidden="true">${h(lead)}</p>` : ''
       return `${open('section', c.flagHtml ? 'leadchart flagged' : 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
         c.flagHtml ? `<p class="flagrow">${c.flagHtml}</p>` : ''
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${rep}${chartHtml(c)}<p class="twin">${h(c.twin)}</p></section>`
@@ -244,7 +240,7 @@ function block(b: BlockV2, verdict: string | null): string {
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
       // Line numbers are real text (spec §6.3, GAP-40): a copied or spoken line keeps its number.
-      return `${open('ol', 'lines')}${b.lines.map((l, i) => `<li data-item="${h(l.id)}"><span class="ln">${i + 1}.</span> ${h(l.text)}</li>`).join('')}</ol>`
+      return `${open('ol', 'lines" role="list')}${b.lines.map((l, i) => `<li data-item="${h(l.id)}"><span class="ln">${i + 1}.</span> ${h(l.text)}</li>`).join('')}</ol>`
     case 'gap_lines':
       return `${open('section', 'gaps')}<h2 class="sech">${h(b.heading)}</h2><ul role="list">${b.lines
         .map((g) => `<li data-item="${h(g.id)}">${h(g.text)}.</li>`)
@@ -261,14 +257,15 @@ function block(b: BlockV2, verdict: string | null): string {
 /** The blocks, with the lead chart, the lines under it and the confounder wrapped as one unit. */
 function body(doc: DocumentV2): string {
   const conf = doc.blocks.find((b): b is Extract<BlockV2, { kind: 'confounder' }> => b.kind === 'confounder')
-  const verdict = conf ? verdictOf(conf.text) : null
+  // The model chooses which sentence leads the line as a warning; the phone never re-cuts it.
+  const warning = conf ? conf.lead : null
   const out: string[] = []
   const lead = doc.blocks.findIndex((b) => b.kind === 'lead_chart')
   const confAt = doc.blocks.findIndex((b) => b.kind === 'confounder')
   const last = confAt > lead ? confAt : lead
   doc.blocks.forEach((b, i) => {
     if (i === lead) out.push(`<div class="keep-push" aria-hidden="true"></div><div class="keep" data-keep="lead">`)
-    out.push(block(b, verdict))
+    out.push(block(b, warning))
     if (i === last && lead >= 0) out.push('</div>')
   })
   return out.join('\n')
@@ -287,8 +284,8 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .mast .eyebrow{font-size:0.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:1.6rem;line-height:1.15;margin:0.15rem 0 0.3rem;font-weight:650;}
 .mast p{margin:0 0 0.2rem;}
-.mast .sig span{display:block;}
-.mast .sig .win{color:var(--ink2);}
+.mast .fold .win{color:var(--ink2);}
+.mast .brief{display:none;}
 .mast .last{font-weight:600;margin-top:0.35rem;}
 .disc{margin:0.6rem 0;color:var(--ink2);font-size:0.875rem;}
 section{margin:1rem 0 0;}
@@ -339,9 +336,12 @@ svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linej
 .mast .more{display:none;}
 @media screen{
 [data-compact] .mast .more{display:block;min-height:44px;width:100%;margin:0.1rem 0;padding:0.15rem 0;border:0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);background:none;color:var(--ink2);font:inherit;font-size:0.875rem;text-align:left;}
-[data-compact] .mast .more::after{content:" ›";}
-[data-compact] .mast:not([data-open]) .sig{display:none;}
-[data-compact] .mast[data-open] .more::after{content:" ⌄";}
+[data-compact] .mast .more::after{content:" ›" / "";}
+[data-compact] .mast:not([data-open]) .fold{display:none;}
+[data-compact] .mast .brief{display:block;}
+[data-compact] .mast[data-open] .brief{display:none;}
+[data-compact][data-tight] .mast .brief{display:none;}
+[data-compact] .mast[data-open] .more::after{content:" ⌄" / "";}
 [data-compact] .band li{margin-bottom:0.3rem;}
 [data-compact] .sheet{padding-top:0.4rem;}
 [data-compact] .mast .eyebrow{display:none;}
@@ -377,16 +377,26 @@ const SCRIPT_PHONE = `
   function scale(){ var p = document.getElementById('v2probe'); return p ? p.getBoundingClientRect().height / ${BODY_PX} : 1; }
   function lay(){
     if (scale() >= ${COMPACT_SCALE}) root.setAttribute('data-compact', ''); else root.removeAttribute('data-compact');
+    // The band is the warning, so it outranks the brief for the first frame: the brief folds too
+    // only where it would push the band's heading out of that frame (320pt at large text).
+    root.removeAttribute('data-tight');
+    var bandH = document.querySelector('[data-block=band] h2');
+    var mast = document.querySelector('.mast');
+    if (root.hasAttribute('data-compact') && bandH && mast && !mast.hasAttribute('data-open') && bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) root.setAttribute('data-tight', '');
     var unit = document.querySelector('[data-keep="lead"]');
     var push = document.querySelector('.keep-push');
     if (!unit || !push) return;
     var rep = unit.querySelector('[data-part="confounder-verdict"]');
     push.style.height = '0px';
+    root.style.scrollPaddingTop = '';
     var frame = window.innerHeight;
     if (!frame) { if (rep) rep.hidden = false; return; }
     if (rep) rep.hidden = true;
     var fits = unit.getBoundingClientRect().height <= frame;
     if (rep) rep.hidden = fits;
+    // A page-step scroll (VoiceOver, a keyboard) lands below the pinned repeat, so nothing the
+    // repeat covers is skipped between one screen and the next (cold read on CUL-2295).
+    if (rep && !fits) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';
     if (!fits) return;
     var top = unit.getBoundingClientRect().top + window.pageYOffset;
     var k = Math.floor(top / frame);

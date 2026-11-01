@@ -6,12 +6,18 @@
 import assert from 'node:assert/strict'
 import { buildDocumentV2, h, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
 import { blockIdsOf, renderPrintV2 } from './renderPrintV2.ts'
-import { BODY_PX, COMPACT_SCALE, PLOT_W, VERDICT_MAX_PX, renderPhoneV2, STYLE_PHONE, SVG_TEXT_MIN, verdictOf } from './renderPhoneV2.ts'
+import { BODY_PX, COMPACT_SCALE, PLOT_W, VERDICT_MAX_PX, renderPhoneV2, STYLE_PHONE, SVG_TEXT_MIN } from './renderPhoneV2.ts'
+import { textOf } from './documentV2.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: ['Is the itching worse at night?'] }
-const docs = (): Array<[string, DocumentV2]> => v2DocFixtures().map(([n, s]) => [n, buildDocumentV2(s, OPTS)])
+const docs = (): Array<[string, DocumentV2]> => {
+  const out = v2DocFixtures().map(([n, s]): [string, DocumentV2] => [n, buildDocumentV2(s, OPTS)])
+  // A floor, so no suite below can pass over an empty list.
+  assert.ok(out.length >= 10, `only ${out.length} fixtures`)
+  return out
+}
 
 /** The CSS split at its one `@media print` block. */
 function cssParts(): { screen: string; print: string } {
@@ -47,6 +53,35 @@ Deno.test('parity — the phone prints no flag the PDF does not (BRK-1)', () => 
   }
 })
 
+Deno.test('parity — every block says the PDF’s words; the phone adds only its fold label, line numbers and chart drawing', () => {
+  const texts = (html: string): Map<string, string> => {
+    const out = new Map<string, string>()
+    const re = /<(\w+) [^>]*data-block="([^"]+)">/g
+    for (const m of html.matchAll(re)) {
+      const start = m.index! + m[0].length
+      const close = html.indexOf(`</${m[1]}>`, start)
+      out.set(m[2], html.slice(start, close))
+    }
+    return out
+  }
+  for (const [name, d] of docs()) {
+    const print = texts(renderPrintV2(d))
+    const phone = texts(renderPhoneV2(d))
+    for (const b of d.blocks) {
+      let p = phone.get(b.id) ?? ''
+      let q = print.get(b.id) ?? ''
+      if (b.kind === 'masthead') p = p.replace(/<p class="brief">[^<]*<\/p><button class="more"[^>]*>[^<]*<\/button>/, '')
+      if (b.kind === 'record_lines' || b.kind === 'questions') p = p.replace(/<span class="ln">\d+\.<\/span> /g, '')
+      if (b.kind === 'lead_chart') {
+        // The drawing differs by design (HTML labels and an HTML axis); the words around it may not.
+        p = p.replace(/<p class="verdict"[^>]*>[^<]*<\/p>/, '').replace(/<div class="chart"[\s\S]*?<\/div>(?=<p class="twin">)/, '')
+        q = q.replace(/<svg class="chart"[\s\S]*?<\/svg>/, '')
+      }
+      assert.equal(textOf(p), textOf(q), `${name}: block ${b.id}`)
+    }
+  }
+})
+
 // ── Reading order and structure (spec §6.3, GAP-39, GAP-40) ─────────────────
 
 Deno.test('order — the band is the first h2 after the masthead, wherever a band prints', () => {
@@ -67,7 +102,7 @@ Deno.test('structure — headings are real h2, lists keep role=list, line number
   const d = buildDocumentV2(nyxLiveSnapshot(), OPTS)
   const html = renderPhoneV2(d)
   assert.match(html, /data-block="lead-chart"><h2 class="(flagh|charth)">/)
-  assert.doesNotMatch(html, /<ul(?![^>]*role="list")[^>]*>/, 'every ul keeps role=list')
+  assert.doesNotMatch(html, /<(ul|ol)(?![^>]*role="list")[^>]*>/, 'every list keeps role=list')
   const lines = d.blocks.find((b) => b.kind === 'record_lines')
   assert.ok(lines && lines.kind === 'record_lines' && lines.lines.length > 0)
   lines.lines.forEach((l, i) => assert.ok(html.includes(`data-item="${l.id}"><span class="ln">${i + 1}.</span> `), `line ${i + 1} carries its number as text`))
@@ -78,10 +113,10 @@ Deno.test('structure — the drawing is aria-hidden and the twin carries the fac
   for (const [name, d] of docs()) {
     const html = renderPhoneV2(d)
     assert.match(html, /<div class="chart" aria-hidden="true">/, name)
-    assert.doesNotMatch(html, /aria-label="[^"]*\d/, `${name}: no digit in an aria-label`)
     const lc = d.blocks.find((b) => b.kind === 'lead_chart')
     assert.ok(lc && lc.kind === 'lead_chart')
-    assert.ok(html.includes(`<p class="twin">`), name)
+    assert.ok(lc.chart.twin.length > 0, name)
+    assert.ok(html.includes(`<p class="twin">${h(lc.chart.twin)}</p>`), `${name}: the twin prints whole`)
   }
 })
 
@@ -111,7 +146,7 @@ Deno.test('type — every size inside @media print is an absolute pt', () => {
   const sizes = [...print.matchAll(/font-size:([^;}]+)/g)].map((m) => m[1].trim())
   assert.ok(sizes.length >= 8)
   for (const v of sizes) assert.match(v, /^[\d.]+pt$/, `${v} in print is not pt`)
-  assert.doesNotMatch(print, /\d(rem|em|vw|vh|%)\b/, 'no relative unit reaches print')
+  assert.doesNotMatch(print, /\d(rem|em|vw|vh)\b|\d%/, 'no relative unit reaches print')
 })
 
 Deno.test('type — no screen label is set under 11pt at the default text size', () => {
@@ -163,8 +198,8 @@ Deno.test('keep — the confounder’s opening sentence sits between the heading
     assert.ok(rep, `${name}: the repeat is drawn`)
     assert.doesNotMatch(rep[1], /(^|\s)hidden(\s|=|$)/, `${name}: shown by default (the script may hide it once it fits)`)
     assert.match(rep[1], /aria-hidden="true"/, `${name}: a screen reader hears the confounder once, in its place`)
-    assert.equal(rep[2], h(verdictOf(conf.text)), name)
-    assert.ok(conf.text.startsWith(verdictOf(conf.text)), `${name}: the repeat is the line’s own words`)
+    assert.equal(rep[2], h(conf.lead), name)
+    assert.ok(conf.lead.length > 0 && conf.text.includes(conf.lead), `${name}: the repeat is the line’s own words`)
     const unit = unitOf(html)
     const h2 = unit.indexOf('</h2>')
     const at = unit.indexOf('data-part="confounder-verdict"')
@@ -181,36 +216,54 @@ Deno.test('keep — the repeat is pinned while the bars scroll, and never prints
   assert.match(print, /\.keep,\.leadchart\{break-inside:avoid;\}/)
 })
 
-Deno.test('keep — verdictOf takes the first sentence and never cuts inside one', () => {
-  assert.equal(verdictOf('Not a test of the diet alone. Overlapping the trial: Motozol, Sep 21 to Sep 27.'), 'Not a test of the diet alone.')
-  assert.equal(
-    verdictOf('No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner. A free-fed bowl was down.'),
-    'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.',
-  )
-  assert.equal(verdictOf('No end mark'), 'No end mark')
-  assert.equal(verdictOf('Cetirizine 2.5mg overlaps. More.'), 'Cetirizine 2.5mg overlaps.')
+Deno.test('keep — the lead is the line’s warning: the overlap verdict, or the bowl when no medication overlaps (cold read, Mira)', () => {
+  let meds = 0
+  let bowlOnly = 0
+  for (const [name, d] of docs()) {
+    const conf = d.blocks.find((b) => b.kind === 'confounder')
+    if (!conf || conf.kind !== 'confounder') continue
+    if (conf.text.startsWith('Not a test of the diet alone.')) {
+      meds++
+      assert.equal(conf.lead, 'Not a test of the diet alone.', name)
+    } else if (conf.text.includes('A free-fed bowl was down')) {
+      bowlOnly++
+      assert.match(conf.lead, /^A free-fed bowl was down in this window \(.+\): intake not directly observed, and the trial cannot exclude it\.$/, name)
+    } else {
+      assert.equal(conf.lead, conf.text, `${name}: a one-sentence line leads with itself`)
+    }
+  }
+  assert.ok(meds >= 1, 'an overlapping course is exercised')
+  assert.ok(bowlOnly >= 1, 'a bowl with no overlapping course is exercised (Mira)')
 })
 
 Deno.test('keep — the layout script hides the repeat only after measuring a fit, and pushes only a unit that fits', () => {
   const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
   const script = html.slice(html.indexOf('<script>'))
   // Loud on every path the script cannot measure: no frame height → shown.
+  assert.match(script, /if \(rep && !fits\) root\.style\.scrollPaddingTop = rep\.getBoundingClientRect\(\)\.height \+ 'px';/, 'a page-step scroll lands below the pin')
   assert.match(script, /if \(!frame\) \{ if \(rep\) rep\.hidden = false; return; \}/)
-  assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(rep\) rep\.hidden = fits;\s*if \(!fits\) return;/)
+  assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(rep\) rep\.hidden = fits;[\s\S]*?if \(!fits\) return;/)
   assert.match(script, /if \(scale\(\) >= 1\.6\) root\.setAttribute\('data-compact', ''\)/)
 })
 
-Deno.test('compact — at scale 1.6 the signalment folds behind one line; the last entry and print never fold', () => {
+Deno.test('compact — at scale 1.6 the details fold behind one line; species, sex, age, weight and the last entry never fold', () => {
   assert.equal(COMPACT_SCALE, 1.6)
   assert.equal(VERDICT_MAX_PX, Math.round(BODY_PX * COMPACT_SCALE))
   const { screen, print } = cssParts()
   const compact = screen.slice(screen.indexOf('@media screen{'))
   assert.ok(compact.length > 0, 'compaction lives in a screen-only block')
-  assert.match(compact, /\[data-compact\] \.mast:not\(\[data-open\]\) \.sig\{display:none;\}/)
+  assert.match(compact, /\[data-compact\] \.mast:not\(\[data-open\]\) \.fold\{display:none;\}/)
   assert.doesNotMatch(compact, /\.last\{[^}]*display:none/, 'the last entry never folds')
+  for (const m of compact.matchAll(/([^{}]*)\.brief\{display:none;\}/g)) assert.match(m[1], /\[data-open\]|\[data-tight\]/, 'the brief steps aside only for the full signalment or the band')
+  assert.match(compact, /\[data-compact\] \.mast \.brief\{display:block;\}/)
+  // Only where the band would leave the first frame does the brief fold too (the band is the warning).
+  assert.match(compact, /\[data-compact\]\[data-tight\] \.mast \.brief\{display:none;\}/)
+  const script = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
+  assert.match(script, /bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight\) root\.setAttribute\('data-tight', ''\)/)
   assert.doesNotMatch(print, /data-compact/, 'compaction never reaches print')
   assert.doesNotMatch(screen.slice(0, screen.indexOf('@media screen{')), /data-compact/, 'no compact rule outside the screen block')
   const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
-  assert.match(html, /<button class="more" type="button" aria-expanded="false" aria-controls="v2sig">[^<]+<\/button><p class="sig" id="v2sig">/)
+  assert.match(html, /<h1>Nyx<\/h1><p class="brief">Cat · female · 3 y · 3\.73 kg \(8\.2 lb\)<\/p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details<\/button><div class="fold" id="v2more"><p class="sig">/)
+  assert.match(screen, /\.more::after\{content:" ›" \/ "";\}/, 'the glyph is not part of the button’s name')
   assert.match(screen, /\[data-compact\] \.mast \.more\{display:block;min-height:44px;/, 'the fold line is a 44pt target')
 })

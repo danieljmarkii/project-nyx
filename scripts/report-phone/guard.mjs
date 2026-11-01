@@ -44,6 +44,7 @@ const MIN_PX = 11
 
 const fixtures = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8'))
 const failures = []
+const seenCounts = { fixtures: 0, bandChecked: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0 }
 const fail = (where, what) => failures.push(`${where}: ${what}`)
 
 /** Dynamic Type as iOS applies it: the root's resolved size, and nothing else. */
@@ -93,6 +94,7 @@ async function screenChecks(page, where, s, size) {
   )
   for (const o of r.overflow.slice(0, 5)) fail(where, `clipped: ${o}`)
   for (const o of r.small.slice(0, 5)) fail(where, `under 11pt: ${o}`)
+  if (r.band) seenCounts.bandChecked++
   if (r.band && r.band.bottom > r.band.H) fail(where, `the band's heading ends at ${r.band.bottom.toFixed(0)}pt, past the first frame (${r.band.H}pt)`)
   return r
 }
@@ -122,28 +124,60 @@ async function keepChecks(page, where) {
     fail(where, `the unit is taller than a frame (${unit.height.toFixed(0)} > ${H}) and the opening sentence is hidden`)
   }
   if (!unit.hasConf) return unit
-  // Walk the frames: scroll to each boundary and look, so the pinned repeat is seen where it sits.
-  const frames = Math.ceil((unit.top + unit.height) / H)
-  for (let k = 0; k < frames; k++) {
+  // Walk the frames a screen-step scroll lands on (VoiceOver, a keyboard's page key): each step is
+  // one screen less the page's scroll padding, which the layout sets to the pinned repeat's height.
+  const pad = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0)
+  // Scroll positions land on whole pixels; a fractional step would open sub-pixel gaps no reader sees.
+  const step = Math.max(1, Math.floor(H - pad))
+  const end = unit.top + unit.height
+  // Each frame's uncovered band of the page, in page coordinates; every chart element's span must
+  // lie inside their union. (A row split across two screens is ordinary paging; a row that falls
+  // under the pin in one frame and above the screen in the next is the skip this exists to catch.)
+  const bands = []
+  let elements = []
+  for (let k = 0, y = 0; y < end; k++, y = k * step) {
     const seen = await page.evaluate((y) => {
       window.scrollTo(0, y)
       const H = window.innerHeight
       const lc = document.querySelector('[data-keep="lead"] [data-block="lead-chart"]')
-      const marks = [...lc.querySelectorAll('svg.marks rect.bar, svg.marks rect.hatch, svg.marks rect.cov, svg.marks line.span')]
-      const visible = (r, min) => Math.min(r.bottom, H) - Math.max(r.top, 0) >= min
-      const bars = marks.some((m) => visible(m.getBoundingClientRect(), 2))
       const rep = document.querySelector('[data-part="confounder-verdict"]')
       const repR = rep && getComputedStyle(rep).display !== 'none' ? rep.getBoundingClientRect() : null
+      // What sits under the pin is not seen: the pin is opaque.
+      const pinned = !!repR && repR.top <= 0.5
+      const floor = pinned ? repR.bottom : 0
+      const els = [...lc.querySelectorAll('.crow .rl, svg.marks rect.bar, svg.marks rect.hatch, svg.marks rect.cov, svg.marks line.span, svg.marks text')]
+      const spans = []
+      let bars = false
+      els.forEach((el) => {
+        const r = el.getBoundingClientRect()
+        if (r.width === 0 && r.height === 0) return
+        spans.push([r.top + window.scrollY, r.bottom + window.scrollY, el.textContent?.trim().slice(0, 24) || el.tagName])
+        const isMark = el.matches('rect.bar, rect.hatch, rect.cov, line.span')
+        if (isMark && Math.min(r.bottom, H) - Math.max(r.top, floor) >= 2) bars = true
+      })
       const repSeen = !!repR && repR.top >= -0.5 && repR.bottom <= H + 0.5
       const conf = document.querySelector('[data-keep="lead"] [data-block="confounder"]')
       const cr = conf.getBoundingClientRect()
       const line = parseFloat(getComputedStyle(conf).lineHeight) || parseFloat(getComputedStyle(conf).fontSize) * 1.4
-      const confSeen = cr.top >= -0.5 && cr.top + line <= H + 0.5
-      return { bars, repSeen, confSeen, scrollY: window.scrollY }
-    }, k * H)
-    if (Math.abs(seen.scrollY - k * H) > 1) fail(where, `could not reach frame ${k}`)
-    if (seen.bars && !seen.repSeen && !seen.confSeen) fail(where, `frame ${k} shows bars without the confounder line or its opening sentence`)
+      const confSeen = cr.top >= floor - 0.5 && cr.top + line <= H + 0.5
+      return { bars, repSeen, confSeen, spans, band: [window.scrollY + floor, window.scrollY + H], scrollY: window.scrollY }
+    }, y)
+    elements = seen.spans
+    bands.push(seen.band)
+    if (Math.abs(seen.scrollY - y) > 1) fail(where, `could not reach frame ${k}`)
+    if (seen.bars && !seen.repSeen && !seen.confSeen) fail(where, `frame ${k} shows bars without the confounder line or its lead sentence`)
   }
+  // Every label and mark of the chart is seen whole, uncovered, in at least one frame: the pin
+  // never makes a row (a steroid course, a cough bar) skip from one screen to the next.
+  bands.sort((a, b) => a[0] - b[0])
+  const merged = []
+  for (const b of bands) {
+    const last = merged[merged.length - 1]
+    if (last && b[0] <= last[1] + 1) last[1] = Math.max(last[1], b[1])
+    else merged.push([...b])
+  }
+  const missed = elements.filter(([t, b]) => !merged.some(([s, e]) => t >= s - 0.5 && b <= e + 0.5))
+  if (missed.length > 0) fail(where, `${missed.length} chart label(s) or mark(s) never seen uncovered (e.g. "${missed[0][2]}"; pad ${pad.toFixed(0)}pt)`)
   await page.evaluate(() => window.scrollTo(0, 0))
   return unit
 }
@@ -163,6 +197,7 @@ const browser = await chromium.launch()
 const summary = []
 try {
   for (const name of fixtures) {
+    seenCounts.fixtures++
     const phone = fs.readFileSync(path.join(dir, `${name}.phone.html`), 'utf8')
     for (const size of SIZES) {
       for (const s of SCALES) {
@@ -174,6 +209,12 @@ try {
         await page.evaluate(() => window.__nyxV2Layout && window.__nyxV2Layout())
         await screenChecks(page, where, s, size)
         const unit = await keepChecks(page, where)
+        if (unit) {
+          seenCounts.units++
+          if (unit.hasConf) seenCounts.unitsWithConf++
+          if (unit.repShown === true) seenCounts.repeatShown++
+          if (unit.repShown === false) seenCounts.repeatHidden++
+        }
         if (unit) summary.push(`${where}: unit ${unit.height.toFixed(0)}pt vs frame ${unit.H}pt, repeat ${unit.repShown === null ? 'n/a' : unit.repShown ? 'shown' : 'hidden'}`)
         if (shots && (name === 'nyx-live' || name === 'mira') && (s === 1 || s === 3.1)) {
           await page.screenshot({ path: path.join(shots, `${name}-${size.name}-x${s}.png`), fullPage: false })
@@ -206,7 +247,13 @@ try {
   await browser.close()
 }
 
+// Non-vacuity floors: a guard that checked nothing is red, not green.
+if (seenCounts.fixtures < 10) fail('guard', `only ${seenCounts.fixtures} fixtures ran`)
+if (seenCounts.bandChecked < 1) fail('guard', 'no band was checked against the first frame')
+if (seenCounts.unitsWithConf < 1) fail('guard', 'no keep-together unit with a confounder was walked')
+if (seenCounts.repeatShown < 1 || seenCounts.repeatHidden < 1) fail('guard', `the repeat was not seen both shown (${seenCounts.repeatShown}) and hidden (${seenCounts.repeatHidden})`)
 console.log(summary.join('\n'))
+console.log(JSON.stringify(seenCounts))
 if (failures.length > 0) {
   console.error(`\n${failures.length} failure(s):\n${failures.join('\n')}`)
   process.exit(1)
