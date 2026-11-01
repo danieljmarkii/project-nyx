@@ -2268,6 +2268,10 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
   // quiet course. The tail is named inside the count it qualifies.
   const tail = unloggedTailOf(snap.atAGlance)
   const seenTail = tail === null ? '' : `; ${nothingLoggedFor(tail)}`
+  // CUL-2348: the getting-worse windows run back from the report's `now`, not from the record's
+  // last day, so each names the day it ends on; its numbers are logged days, never episodes.
+  const weekTo = (c: Extract<SafetyCheck, { kind: 'worsening' }>, key: string): string =>
+    `the ${num(c.windowDays)} days to ${h(fmtDayScopedTo(key, snap.scope.endDate))}`
   for (const c of checks) {
     if (c.kind === 'ongoing') {
       const floors = `it triggers at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
@@ -2287,9 +2291,15 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
           ? `none of ${
               c.windowDays < c.lookbackDays ? `this ${num(c.windowDays)}-day report` : `the last ${weeks(c.lookbackDays)}`
             } was logged: ${nothingLoggedFor(tail)}`
-          : (c.windowDays < c.lookbackDays
-              ? `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in this ${num(c.windowDays)}-day report, all the check could see`
-              : `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in the last ${weeks(c.lookbackDays)}`) + seenTail
+          : // CUL-2348: the count names the logged days it covers, so a record that began four
+            // days ago never reads as eight weeks of watching.
+            `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in ${num(c.loggedDays)} logged day${
+              c.loggedDays === 1 ? '' : 's'
+            } of ${
+              c.windowDays < c.lookbackDays
+                ? `this ${num(c.windowDays)}-day report, all the check could see`
+                : `the last ${weeks(c.lookbackDays)}`
+            }` + seenTail
       if (c.state === 'not_triggered') notTriggered.push(`ongoing ${lower(c.symptomType)} (${seen}; ${floors})`)
       else if (c.state === 'window_short')
         rest.push(
@@ -2303,21 +2313,25 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
         )
     } else if (c.state === 'not_flagged') {
       notTriggered.push(
-        `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in the last ${num(
-          c.windowDays,
-        )} days, and more, or on more days, than the ${num(c.windowDays)} before${seenTail})`,
+        `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in ${weekTo(
+          c,
+          c.endDate,
+        )}, and more, or on more days, than the ${num(c.windowDays)} before${seenTail})`,
       )
     } else if (c.state === 'below_card_floor') {
       rest.push(
-        `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over the last ${num(
-          c.windowDays,
-        )} days below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
+        `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over ${weekTo(
+          c,
+          c.endDate,
+        )} below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
       )
     } else if (c.state === 'too_few_days') {
       rest.push(
-        `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(c.currentLoggingDays)} of the last ${num(
-          c.windowDays,
-        )}, ${num(c.priorLoggingDays)} of the ${num(c.windowDays)} before; it needs ${num(c.minLoggingDays)} in each).`,
+        `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(
+          c.currentLoggingDays,
+        )} of ${weekTo(c, c.endDate)} logged, ${num(c.priorLoggingDays)} of ${weekTo(c, c.priorEndDate)}; it needs ${num(
+          c.minLoggingDays,
+        )} logged days in each).`,
       )
     } else {
       rest.push(

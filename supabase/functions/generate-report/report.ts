@@ -1907,6 +1907,12 @@ export type SafetyCheck =
       /** Collapsed episodes the check counted: over its lookback, or the report window when that
        *  is shorter (the engine only sees the window's entries). */
       episodes: number
+      /** CUL-2348: the days with any log (the population and local-day reading of
+       *  `atAGlance.loggedDays`) among entries whose instant falls in the span the check saw,
+       *  `[now − min(lookback, window) days, now)`: the same bounds as `episodes`, so a counted
+       *  episode always sits on a counted day. "2 episodes in the last 8 weeks" on a record that
+       *  began four days ago read as eight weeks of watching. */
+      loggedDays: number
       /** The engine's lookback, and the report window it was handed. */
       lookbackDays: number
       windowDays: number
@@ -1927,6 +1933,12 @@ export type SafetyCheck =
       state: 'not_flagged' | 'too_few_days' | 'not_separate' | 'below_card_floor'
       /** The current-week count the flag needs. */
       minEpisodes: number
+      /** CUL-2348: the owner-local dates the two compared windows end on. The windows are
+       *  `windowDays` × 24h back from the detection `now` (the generation instant on a default
+       *  window), never from the record's last day, so on a record that stopped two weeks ago
+       *  "0 of the last 7" means nothing was logged in the week to the report date. */
+      endDate: string
+      priorEndDate: string
       currentLoggingDays: number
       priorLoggingDays: number
       minLoggingDays: number
@@ -5706,6 +5718,33 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       },
     }).map((f) => f.symptomType as string),
   )
+  // CUL-2348 — the logged days behind each check's numbers, read over the engine's own instants.
+  const checkNowMs = parseMs(scope.detectionNowIso)
+  const ongoingSeenDays = Math.min(windowDays, detConfig.chronicity.windowDays)
+  const ongoingLoggedDays = (() => {
+    if (checkNowMs === null) return 0
+    // The engine's own lookback bound, never `ongoingSeenDays` × 24h: on a short window the window
+    // filter already bounds the start, and a 24h step across a DST fall-back lands an hour inside
+    // the window's first day, dropping a day the engine counted an episode on (adversarial pass 1:
+    // "1 episode in 0 logged days").
+    const fromMs = checkNowMs - detConfig.chronicity.windowDays * MS_PER_DAY
+    const days = new Set<number>()
+    for (const e of windowEvents) {
+      const ms = parseMs(e.occurredAt)
+      if (ms === null || ms < fromMs || ms >= checkNowMs) continue
+      const dn = eventDayNumber(e.occurredAt, tz)
+      if (dn !== null) days.add(dn)
+    }
+    // A span of N × 24h from a mid-day `now` touches N + 1 calendar days; "57 logged days of the
+    // last 8 weeks" is not a sentence. Every one of the N days still held a log.
+    return Math.min(days.size, ongoingSeenDays)
+  })()
+  const localKeyAt = (ms: number | null): string =>
+    ms === null ? dayKeyFromNumber(endDayNum) : dayKeyFromNumber(eventDayNumber(new Date(ms).toISOString(), tz) ?? endDayNum)
+  const worseningEndDate = localKeyAt(checkNowMs)
+  const worseningPriorEndDate = localKeyAt(
+    checkNowMs === null ? null : checkNowMs - detConfig.reflection.windowDays * MS_PER_DAY,
+  )
   for (const s of symptoms) {
     const type = s.type as SymptomType
     const chronicFlag = flagged('chronicity', type)
@@ -5719,6 +5758,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // a window equal to the floor cannot fire either (adversarial pass 2, Q2).
         state: windowDays <= fl.minSpanDays ? 'window_short' : measurable.has(type) ? 'not_triggered' : 'too_few_days',
         episodes: compare ? compare.recentCount + compare.priorCount : 0,
+        loggedDays: ongoingLoggedDays,
         lookbackDays: detConfig.chronicity.windowDays,
         windowDays,
         minEpisodes: fl.minEpisodes,
@@ -5745,8 +5785,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
               ? 'below_card_floor'
               : 'not_flagged',
       minEpisodes: Math.max(detConfig.reflection.worseningMinEpisodes, detConfig.en11?.worseningCardMinEpisodes ?? 0),
-      currentLoggingDays: density?.currentLoggingDays ?? 0,
-      priorLoggingDays: density?.priorLoggingDays ?? 0,
+      endDate: worseningEndDate,
+      priorEndDate: worseningPriorEndDate,
+      // Display only (the state above reads the raw counts): a 7 × 24h window from a mid-day `now`
+      // touches 8 UTC days, and "8 of the 7 days" is not a sentence (adversarial pass 1).
+      currentLoggingDays: Math.min(density?.currentLoggingDays ?? 0, detConfig.reflection.windowDays),
+      priorLoggingDays: Math.min(density?.priorLoggingDays ?? 0, detConfig.reflection.windowDays),
       minLoggingDays,
     })
   }
