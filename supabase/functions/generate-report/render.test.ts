@@ -14,7 +14,7 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE } from './render.ts'
+import { chronicitySpanDaysShown, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
 import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 // CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
 // so this file cannot drift from `trial.ts` without going red.
@@ -5102,7 +5102,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             spanDays: 35,
             activeWeeks: 5,
             symptomDays: 16,
-            daysSinceLastEpisode: 7,
+            daysSinceLastEpisode: 52, // CUL-2357: Apr 6 + 35 days = May 11, which is Jul 2 minus 52
             firstOnsetIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
             firstLoggedIso: '2026-04-06T14:00:00Z',
             tier: 'standard',
@@ -5127,7 +5127,7 @@ Deno.test('B-532 — a chronicity span that starts at the window edge is stated 
             spanDays: 35,
             activeWeeks: 5,
             symptomDays: 16,
-            daysSinceLastEpisode: 7,
+            daysSinceLastEpisode: 8, // CUL-2357: May 20 + 35 days = Jun 24, Jul 2 minus 8
             firstOnsetIso: '2026-05-20T14:00:00Z', // seven weeks into the window — genuinely observed
             firstLoggedIso: '2026-05-20T14:00:00Z',
             tier: 'standard',
@@ -5266,7 +5266,7 @@ Deno.test('CUL-69 — a span the lookback fully covers is unchanged, and states 
             spanDays: 40,
             activeWeeks: 5,
             symptomDays: 8,
-            daysSinceLastEpisode: 2,
+            daysSinceLastEpisode: 3, // CUL-2357: May 20 + 40 days = Jun 29, Jul 2 minus 3
             firstOnsetIso: '2026-05-20T14:00:00Z',
             firstLoggedIso: '2026-05-20T14:00:00Z',
             tier: 'standard',
@@ -5297,7 +5297,7 @@ Deno.test('CUL-69 — the left-censor fires on the RECORD anchor, and states no 
             spanDays: 35,
             activeWeeks: 5,
             symptomDays: 16,
-            daysSinceLastEpisode: 7,
+            daysSinceLastEpisode: 20, // CUL-2357: May 8 + 35 days = Jun 12, Jul 2 minus 20
             firstOnsetIso: '2026-05-08T14:00:00Z', // the lookback edge, mid-window
             firstLoggedIso: '2026-04-06T14:00:00Z', // 3 days into a window opening Apr 3
             tier: 'standard',
@@ -5331,7 +5331,7 @@ Deno.test('CUL-69 — the left-censor fires on the RECORD anchor, and states no 
             spanDays: 35,
             activeWeeks: 5,
             symptomDays: 16,
-            daysSinceLastEpisode: 7,
+            daysSinceLastEpisode: 52, // CUL-2357: Apr 6 + 35 days = May 11, Jul 2 minus 52
             firstOnsetIso: '2026-04-06T14:00:00Z',
             firstLoggedIso: '2026-04-06T14:00:00Z',
             tier: 'standard',
@@ -8800,4 +8800,218 @@ Deno.test('CUL-2286 — the noise caveat never sits beside a weight flag (WG-6, 
   const flagged = plain(renderReport(base({ weight, safetyFlags: [flag] })))
   assert.ok(!/moves about that much on its own/.test(flagged), 'never beside a raised weight row')
   assert.ok(!/inside a home scale/.test(flagged))
+})
+
+// ── CUL-2357 — the flag rows a cold read found understating or blurring ──────────────────────
+
+const cul2357Chronic = (over: Partial<Extract<SafetyFlag, { kind: 'chronicity' }>> = {}): SafetyFlag => ({
+  kind: 'chronicity',
+  symptomType: 'vomit',
+  episodeCount: 9,
+  // The cold read's shape: first onset 18:00 local on Sep 17, last 09:00 local on Oct 31 — 43 days
+  // 15 hours of elapsed time, so the engine's floor says 43 where the calendar says 44.
+  spanDays: 43,
+  activeWeeks: 6,
+  symptomDays: 9,
+  daysSinceLastEpisode: 0,
+  firstOnsetIso: '2026-09-17T22:00:00Z', // 18:00 EDT
+  firstLoggedIso: '2026-09-17T22:00:00Z',
+  tier: 'firm',
+  windowDays: 56,
+  ...over,
+})
+const cul2357Scope = {
+  generatedAt: '2026-10-31T16:00:00Z',
+  scope: { ...base().scope, startDate: '2026-08-03', endDate: '2026-10-31' },
+}
+
+Deno.test('CUL-2357 — the chronicity span is the calendar days between its two onsets, not one short', () => {
+  const t = plain(renderReport(base({ ...cul2357Scope, safetyFlags: [cul2357Chronic()] })))
+  assert.ok(/Vomiting spans 44 days \(first logged Sep 17\)/.test(t), t.slice(t.indexOf('Chronicity'), t.indexOf('Chronicity') + 200))
+  assert.ok(!/spans 43 days/.test(t), 'never the instant floor where the dates make one more')
+})
+
+Deno.test('CUL-2357 — the span never drops below the engine floor, and never reaches past it by more than a day', () => {
+  const snap = base(cul2357Scope)
+  // Consistent record: calendar = floor + 1 (the cold read's case).
+  assert.equal(chronicitySpanDaysShown(cul2357Chronic() as Extract<SafetyFlag, { kind: 'chronicity' }>, snap), 44)
+  // Both onsets at 09:00: the engine already counts 44 whole days, calendar = floor, nothing moves.
+  assert.equal(
+    chronicitySpanDaysShown(
+      cul2357Chronic({ firstOnsetIso: '2026-09-17T13:00:00Z', spanDays: 44 }) as Extract<SafetyFlag, { kind: 'chronicity' }>,
+      snap,
+    ),
+    44,
+  )
+  // A UTC-fallback recency one day too large reads the last onset a day early: calendar 43 - 1 = 42
+  // would be QUIETER than the engine. The floor holds.
+  assert.equal(
+    chronicitySpanDaysShown(cul2357Chronic({ daysSinceLastEpisode: 2 }) as Extract<SafetyFlag, { kind: 'chronicity' }>, snap),
+    43,
+  )
+  // A recency skewed the other way can never widen the span by more than the one calendar day.
+  assert.equal(
+    chronicitySpanDaysShown(
+      cul2357Chronic({ spanDays: 30, daysSinceLastEpisode: 0 }) as Extract<SafetyFlag, { kind: 'chronicity' }>,
+      snap,
+    ),
+    31,
+  )
+})
+
+Deno.test('CUL-2357 — zero days reads "today" only when the window ends today, the date when it does not', () => {
+  const today = plain(renderReport(base({ ...cul2357Scope, safetyFlags: [cul2357Chronic()] })))
+  assert.ok(/most recent today/.test(today), 'a window ending today')
+  assert.ok(!/0 days ago/.test(today), 'never "0 days ago"')
+  const past = plain(
+    renderReport(base({ ...cul2357Scope, generatedAt: '2026-11-20T16:00:00Z', safetyFlags: [cul2357Chronic()] })),
+  )
+  assert.ok(/most recent on Oct 31/.test(past), 'a past window names its last day')
+  assert.ok(!/most recent today/.test(past), 'and never calls a finding weeks old "today"')
+  const older = plain(renderReport(base({ ...cul2357Scope, safetyFlags: [cul2357Chronic({ spanDays: 40, daysSinceLastEpisode: 3 })] })))
+  assert.ok(/most recent 3 days ago/.test(older), 'a nonzero recency is unchanged')
+})
+
+Deno.test('CUL-2357 — the foreign-material note is labelled by who wrote it, never "Owner/AI"', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_foreign',
+    incidents: [{ eventId: 'v1', occurredAt: '2026-05-18T07:09:00Z', note: 'A small blue object is visible' }],
+  }
+  const withLog = (edited: boolean | null) => {
+    const b = base({ safetyFlags: [flag] })
+    const phenotype = edited === null
+      ? null
+      : { kind: 'vomit' as const, status: 'completed', contentsCategory: null, consistency: null, colour: null, bloodPresent: null, foreignPresent: true, foreignNote: 'A small blue object is visible', bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited }
+    return plain(renderReport({
+      ...b,
+      provenance: { ...b.provenance, symptomLog: [logEntry({ eventId: 'v1', type: 'vomit', occurredAt: '2026-05-18T07:09:00Z', phenotype })] },
+    }))
+  }
+  const model = withLog(false)
+  assert.ok(/The photo analysis describes: A small blue object is visible\./.test(model), model)
+  // Adversarial pass 1: the owner can overwrite this note ("What was it?"), which stamps edited_at.
+  // An owner's words must never print with the machine's authority on the safety band.
+  const owner = withLog(true)
+  assert.ok(/The owner['’]s edit of the photo analysis reads: A small blue object is visible\./.test(owner), owner)
+  assert.ok(!/The photo analysis describes/.test(owner))
+  const unknown = withLog(null)
+  assert.ok(/Photo analysis note, which the owner may have edited: /.test(unknown), unknown)
+  for (const t of [model, owner, unknown]) assert.ok(!/Owner\/AI/.test(t), 'never the merged label')
+})
+
+Deno.test('CUL-2357 — the weight flag states the loss as a whole percent of the higher reading', () => {
+  const flag: SafetyFlag = {
+    kind: 'weight_loss', asOf: 'now', tier: 'firm', planned: false, mixedInstruments: false, windowDays: 365,
+    latest: { kg: 3.4, source: 'home_scale', single: false, day: '2026-06-21' },
+    highBefore: { kg: 4.0, source: 'home_scale', single: false, day: '2026-05-02' },
+  }
+  const t = plain(renderReport(base({ safetyFlags: [flag] })))
+  assert.ok(/down from 4\.00 kg \(8\.8 lb\) on May 2, 2026 on a home scale — about 15 ?% of body weight\./.test(t), t)
+  assert.equal(weightLossPct(3.4, 4.0), 15)
+  assert.equal(weightLossPct(4.98, 5.0), 0, 'under a whole percent rounds to 0, which the row words as "under 1%"')
+  const small = plain(renderReport(base({ safetyFlags: [{ ...flag, latest: { ...flag.latest, kg: 4.98 }, highBefore: { ...flag.highBefore, kg: 5.0 } }] })))
+  assert.ok(/under 1% of body weight/.test(small), 'never "no change" or "0%" on a raised row')
+})
+
+const cul2357Refusal = (over: Partial<Extract<SafetyFlag, { kind: 'trial_diet_refusal' }>> = {}): SafetyFlag => ({
+  kind: 'trial_diet_refusal',
+  refusal: {
+    refusedFeedings: 4,
+    ratedFeedings: 4,
+    days: 3,
+    population: 'trial_diet',
+    history: {
+      // Day indexes are days since the epoch of the local calendar date.
+      firstUnfinishedDayIndex: Math.floor(Date.UTC(2026, 5, 2) / 86_400_000),
+      lastUnfinishedDayIndex: Math.floor(Date.UTC(2026, 5, 9) / 86_400_000),
+      ratedSinceLastUnfinished: 0,
+      ratedMealsSinceLastUnfinished: 0,
+      unfinishedInRecentWindow: true,
+      unfinishedSinceElsewhere: false,
+    },
+  },
+  stoppedForRefusal: false,
+  species: 'dog',
+  trialDietLabels: ['Food A', 'Food B', 'Food C', 'Food D', 'Food E', 'Food F'],
+  evidenceStartDate: '2026-05-20',
+  evidenceEndDate: '2026-06-30',
+  ...over,
+})
+
+Deno.test('CUL-2357 — the refusal lead states its finding and its population before any food name', () => {
+  const t = plain(renderReport(base({ safetyFlags: [cul2357Refusal()] })))
+  const row = t.slice(t.indexOf('Diet not eaten'), t.indexOf('Diet not eaten') + 600)
+  assert.ok(
+    /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 3 days between Jun 2 and Jun 9; nothing rated since shows whether that has changed\./.test(row),
+    row,
+  )
+  assert.ok(row.indexOf('left unfinished') < row.indexOf('Food A'), 'the finding comes first')
+  assert.ok(/Trial diet: Food A \/ Food B \/ Food C \/ Food D \/ Food E \/ Food F\./.test(row), 'the names still print, after it')
+  assert.ok(/Dates covered: May 20 – Jun 30, 2026\./.test(row), 'the counted window is still stated')
+})
+
+Deno.test('CUL-2357 — the refusal lead without a history counts its days, and a meal-record lead names no food', () => {
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal' || !r.refusal) throw new Error('fixture')
+  const noHist = plain(renderReport(base({ safetyFlags: [{ ...r, refusal: { ...r.refusal, history: undefined } }] })))
+  assert.ok(/left unfinished \(entries with the diet in them, treats included\) on 3 days\./.test(noHist), noHist)
+  const wide = plain(
+    renderReport(base({ safetyFlags: [{ ...r, refusal: { ...r.refusal, population: 'meal_record', history: undefined } }] })),
+  )
+  assert.ok(/4 of 4 rated meals left unfinished on 3 days\./.test(wide), wide)
+  assert.ok(!/Food A/.test(wide), 'never a food name where the app could not identify the diet (B-530)')
+  assert.ok(!/treats included/.test(wide), 'the meal record excludes treats, and says nothing that claims otherwise')
+})
+
+Deno.test('CUL-2357 — a dated refusal range never reads as ended while food is still going uneaten (S1d)', () => {
+  // Adversarial pass 1, QUIET: trial-diet refusals on two days, then refused bowls of a
+  // re-photographed bag (the meal record, not this population). The range alone read as a refusal
+  // that stopped; the band now says food has been left unfinished again since.
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal' || !r.refusal?.history) throw new Error('fixture')
+  const s1d = plain(renderReport(base({ safetyFlags: [{ ...r, refusal: { ...r.refusal, history: { ...r.refusal.history, unfinishedSinceElsewhere: true } } }] })))
+  assert.ok(/on 3 days between Jun 2 and Jun 9, and food has been left unfinished again since\./.test(s1d), s1d)
+  const ended = plain(renderReport(base({ safetyFlags: [r] })))
+  assert.ok(!/left unfinished again since/.test(ended), 'only where the record holds it')
+})
+
+Deno.test('CUL-2357 — a dated refusal range never reads as ended because the ratings stopped', () => {
+  // Adversarial pass 2, QUIET: refusals Jun 2–9, then three weeks of meals nobody rated. Nothing
+  // else went uneaten, so only the card's "nothing rated since" stops the range reading as ended.
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal' || !r.refusal?.history) throw new Error('fixture')
+  const h0 = r.refusal.history
+  const render = (hist: typeof h0, end = '2026-06-30') =>
+    plain(renderReport(base({ safetyFlags: [{ ...r, evidenceEndDate: end, refusal: { ...r.refusal!, history: hist } }] })))
+  assert.ok(/between Jun 2 and Jun 9; nothing rated since shows whether that has changed\./.test(render(h0)), render(h0))
+  const otherRated = render({ ...h0, ratedMealsSinceLastUnfinished: 2 })
+  assert.ok(/; no trial-diet feeding rated since shows whether that has changed\./.test(otherRated), otherRated)
+  const finished = render({ ...h0, ratedSinceLastUnfinished: 3, ratedMealsSinceLastUnfinished: 3 })
+  assert.ok(!/rated since shows/.test(finished), 'silent where the diet was rated and finished since')
+  const current = render(h0, '2026-06-09')
+  assert.ok(!/rated since shows/.test(current), 'silent where the last refusal IS the end of the evidence')
+})
+
+Deno.test('CUL-2357 — a collapsed bout never labels its foreign note by one member\'s edit state', () => {
+  // Adversarial pass 2, QUIET: `edited` is the best-status member's, the note the first foreign
+  // member's, so a twin log can pair an owner's "just grass" with an unedited analysis.
+  const flag: SafetyFlag = {
+    kind: 'present_foreign',
+    incidents: [{ eventId: 'v1', occurredAt: '2026-05-18T07:09:00Z', note: 'just grass, he is fine' }],
+  }
+  const b = base({ safetyFlags: [flag] })
+  for (const edited of [false, true]) {
+    const t = plain(renderReport({
+      ...b,
+      provenance: {
+        ...b.provenance,
+        symptomLog: [logEntry({
+          eventId: 'v1', type: 'vomit', occurredAt: '2026-05-18T07:09:00Z', dupCount: 2,
+          phenotype: { kind: 'vomit', status: 'completed', contentsCategory: null, consistency: null, colour: null, bloodPresent: null, foreignPresent: true, foreignNote: 'just grass, he is fine', bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited },
+        })],
+      },
+    }))
+    assert.ok(/Photo analysis note, which the owner may have edited: just grass, he is fine\./.test(t), t)
+    assert.ok(!/The photo analysis describes/.test(t))
+  }
 })

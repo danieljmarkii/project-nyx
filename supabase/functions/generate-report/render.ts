@@ -1636,6 +1636,42 @@ function daysBetweenDayKeys(fromKey: string, toKey: string): number {
   return Math.round((b - a) / 86_400_000)
 }
 
+/** `YYYY-MM-DD` shifted by `days` whole days (UTC arithmetic on a calendar key). */
+function shiftDayKey(dayKey: string, days: number): string | null {
+  const ms = Date.parse(`${dayKey}T00:00:00Z`)
+  if (Number.isNaN(ms)) return null
+  return new Date(ms + days * 86_400_000).toISOString().slice(0, 10)
+}
+
+/**
+ * CUL-2357 — the chronicity span IN THE CALENDAR DAYS A READER COUNTS.
+ *
+ * The engine's `spanDays` is `floor((lastOnset − firstOnset) / 24h)` over instants, so an episode at
+ * 18:00 on Sep 17 and one at 09:00 on Oct 31 make 43, while the row's own dates ("first logged
+ * Sep 17 … most recent 0 days ago" on an Oct 31 report) make 44. A vet who checks the arithmetic
+ * finds the band a day short, on the axis the flag exists for.
+ *
+ * SAME TWO ONSETS, NEVER WIDER (CUL-69, §10 #4). This restates the engine's span between its own
+ * first and last onset as local days; it does not reach to the record's earlier entries, which is
+ * the widening the chronicity arm's long note forbids. The last onset's day is read back from the
+ * window end and `daysSinceLastEpisode`, which is a local-day count when the report's episode set
+ * matches the engine's and the engine's UTC count when it does not. So the result is CLAMPED to
+ * [spanDays, spanDays + 1]: the calendar difference of two instants is never below the floor of
+ * their elapsed days, and never more than one above it, so any value outside that band is the
+ * fallback's skew, and the clamp keeps the engine's floor as the minimum (never quieter).
+ */
+export function chronicitySpanDaysShown(
+  f: Extract<SafetyFlag, { kind: 'chronicity' }>,
+  snap: Pick<ReportSnapshot, 'timezone' | 'scope'>,
+): number {
+  const firstKey = localDayKeyOf(f.firstOnsetIso, snap.timezone)
+  const lastKey = shiftDayKey(snap.scope.endDate, -f.daysSinceLastEpisode)
+  if (lastKey === null || !/^\d{4}-\d{2}-\d{2}$/.test(firstKey)) return f.spanDays
+  const calendar = daysBetweenDayKeys(firstKey, lastKey)
+  if (!Number.isFinite(calendar)) return f.spanDays
+  return Math.min(f.spanDays + 1, Math.max(f.spanDays, calendar))
+}
+
 /** The generated-at day, localized (for the letterhead stamp). */
 function localDayKeyOf(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
@@ -2445,7 +2481,29 @@ export function safetyFlagRow(
       // The stored note usually ends with its own terminal punctuation — appending an
       // unconditional "." printed "…is notable.." on the first real artifact.
       const note0 = notes.length ? notes[0].trim() : ''
-      const noteBit = note0 ? ` Owner/AI note: ${h(note0)}${/[.!?\u2026]$/.test(note0) ? '' : '.'}` : ''
+      // CUL-2357 — WHOSE WORDS. `foreign_material_note` is written by `analyze-vomit`, and the
+      // owner can overwrite it from the incident screen ("What was it?", `saveVomitFieldEdits`),
+      // which stamps `edited_at`. "Owner/AI note" left a vet unable to tell which they were reading;
+      // calling every note the model's (this PR's first cut, adversarial pass 1) printed an owner's
+      // "just grass, he's fine" with the machine's authority on the safety band. So the label
+      // follows the incident's own `edited` bit, and where the record cannot say, it says both.
+      const noteIncident = f.incidents.find((i) => !!i.note && i.note.trim() === note0)
+      // A COLLAPSED BOUT IS UNKNOWN (adversarial pass 2, QUIET). `edited` is the best-status
+      // member's (`pickIncidentAnalysis`) while the note is the first member that read foreign
+      // material (`unionPresentFlags`), so on a twin log the two can be different rows: an owner's
+      // "just grass, he is fine" on one twin printed as the photo analysis's. Until the note
+      // carries its own member's provenance, a bout of more than one entry names both.
+      const noteEntry = noteIncident
+        ? snap.provenance.symptomLog.find((e) => e.eventId === noteIncident.eventId)
+        : undefined
+      const noteEdited = noteEntry && noteEntry.dupCount <= 1 ? noteEntry.phenotype?.edited : undefined
+      const noteLabel =
+        noteEdited === false
+          ? 'The photo analysis describes'
+          : noteEdited === true
+            ? 'The owner&rsquo;s edit of the photo analysis reads'
+            : 'Photo analysis note, which the owner may have edited'
+      const noteBit = note0 ? ` ${noteLabel}: ${h(note0)}${/[.!?\u2026]$/.test(note0) ? '' : '.'}` : ''
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
       return row(
         'Foreign material',
@@ -2470,17 +2528,56 @@ export function safetyFlagRow(
         // THE DENOMINATOR IS NOT OPTIONAL. "38 feedings refused" reads the same whether the
         // owner rated 38 or 380, and the vet's first question is how much of the record this is.
         const r = f.refusal
+        // CUL-2357 (cold reads 1–3) — THE FINDING LEADS, AND IT NAMES ITS OWN POPULATION. The lead
+        // used to open on every `primary_diet` label (six food names on Nyx) before its point, and
+        // it counted "rated feedings" of the trial diet, a treat carrying the diet included (Nyx:
+        // 4), one line from a meals count over entries logged as meals (3), with nothing naming
+        // the difference. The narrow lead now says what it counts; the food names follow it.
         const noun = wide ? 'rated meal' : 'rated feeding'
-        const of = wide
-          ? ''
-          : f.trialDietLabels.length > 0
-            ? ` of ${h(f.trialDietLabels.join(' / '))}`
-            : ' of the trial diet'
+        const of = wide ? '' : ' carrying the trial diet'
+        const population = wide ? '' : ' (entries with the diet in them, treats included)'
+        // THE UNFINISHED DAYS, DATED, where the range fact carries them; the evidence range
+        // below stays as the window the counts were taken over, which is a different fact.
+        const hist = r.history
+        const dayKeyOfIndex = (i: number): string => new Date(i * 86_400_000).toISOString().slice(0, 10)
+        // NEVER A RANGE THAT READS AS ENDED WHILE FOOD IS STILL GOING UNEATEN (adversarial pass 1,
+        // QUIET). The dated range is the trial diet's alone; refused bowls of a re-photographed bag
+        // land in the meal record, not here, so "between Jul 1 and Jul 2" over a cat refusing every
+        // bowl since read as a refusal that stopped. The card dates its range only when nothing was
+        // left unfinished after it (`refusalIsPastTense`); the band dates it either way and says so.
+        //
+        // AND NEVER A RANGE THAT READS AS ENDED BECAUSE THE RATINGS STOPPED (adversarial pass 2,
+        // QUIET). Refusals Jun 2–9, then three weeks of one-tap meals nobody rated: no other food
+        // went uneaten, so the clause above stays silent, and the dated range read as a refusal
+        // that ended on Jun 9 — unrated scored as eaten. The card says "Nothing rated since shows
+        // whether that has changed" (`lib/dietTrialCard.ts`); the band says the same, from the same
+        // two fields, whenever the evidence runs past the last unfinished day.
+        const lastUnfinishedKey = hist ? new Date(hist.lastUnfinishedDayIndex * 86_400_000).toISOString().slice(0, 10) : null
+        const evidenceRunsPast = lastUnfinishedKey !== null && lastUnfinishedKey < f.evidenceEndDate
+        const since = hist?.unfinishedSinceElsewhere
+          ? ', and food has been left unfinished again since'
+          : hist && evidenceRunsPast && hist.ratedSinceLastUnfinished === 0
+            ? (hist.ratedMealsSinceLastUnfinished ?? 0) > 0
+              ? `; no ${wide ? 'meal' : 'trial-diet feeding'} rated since shows whether that has changed`
+              : '; nothing rated since shows whether that has changed'
+            : ''
+        const when =
+          hist && Number.isFinite(hist.firstUnfinishedDayIndex) && Number.isFinite(hist.lastUnfinishedDayIndex)
+            ? hist.firstUnfinishedDayIndex === hist.lastUnfinishedDayIndex
+              ? ` on ${h(fmtDay(dayKeyOfIndex(hist.firstUnfinishedDayIndex)))}`
+              : ` on ${num(r.days)} day${r.days === 1 ? '' : 's'} between ${h(
+                  fmtDay(dayKeyOfIndex(hist.firstUnfinishedDayIndex)),
+                )} and ${h(fmtDay(dayKeyOfIndex(hist.lastUnfinishedDayIndex)))}`
+            : ` on ${num(r.days)} day${r.days === 1 ? '' : 's'}`
         bits.push(
           `<b>${num(r.refusedFeedings)} of ${num(r.ratedFeedings)} ${noun}${
             r.ratedFeedings === 1 ? '' : 's'
-          }${of} left unfinished</b> across ${num(r.days)} day${r.days === 1 ? '' : 's'}.`,
+          }${of} left unfinished</b>${population}${when}${since}.`,
         )
+      }
+      // The food names, after the finding, never under a `meal_record` population (B-530).
+      if (!wide && f.trialDietLabels.length > 0) {
+        bits.push(`Trial diet: ${h(f.trialDietLabels.join(' / '))}.`)
       }
       // ⚠️ NO SENTENCE HERE ABOUT WHAT THE RECORD DOES NOT CONTAIN. A repair pass added
       // "The trial ran to this window with no intake ratings logged against it" to this
@@ -2735,6 +2832,7 @@ export function safetyFlagRow(
       //     THAT as a duration is first-pass finding 1 arriving through the censor. The window
       //     fact is stated without attaching any duration to it — which is also the honest
       //     reading, since what the window edge bounds here is the record, not the span.
+      const spanShown = chronicitySpanDaysShown(f, snap)
       const censorBit = !leftCensored
         ? ''
         : hasUncountedRecord
@@ -2745,7 +2843,7 @@ export function safetyFlagRow(
           // where the entry sits; this is that clause with the indefensible number removed, and
           // nothing else added.
           ? ` This window opens ${h(scopeStartDay)}, so the record cannot show how long the sign predates it.`
-          : ` This window opens ${h(scopeStartDay)}, so ${num(f.spanDays)} days is a floor &mdash; the record cannot show how long the sign predates it.`
+          : ` This window opens ${h(scopeStartDay)}, so ${num(spanShown)} days is a floor &mdash; the record cannot show how long the sign predates it.`
       // DISCLOSURE BESIDE THE NUMBER, never a re-derivation (the C5 logging-density precedent).
       // It names the date the counts actually begin at, never a day COUNT: the lookback is measured
       // back from the window END, so "the most recent 56 days" is not a portion of a 43-day span —
@@ -2799,6 +2897,16 @@ export function safetyFlagRow(
       // of the safety band. The day count rides only where it fits inside the recency: on the
       // engine's UTC fallback it can exceed it by a day, and the date alone is then the honest half.
       const tail = unloggedTailOf(snap.atAGlance)
+      // CUL-2357 — "most recent 0 days ago" read as a glitch on the lead line. Zero days is the
+      // window's last day: "today" only when that day IS today; on a past window, the date, since
+      // "today" would put a finding from weeks ago in the present tense.
+      const endsToday = snap.scope.endDate === localDayKeyOf(snap.generatedAt, tz)
+      const recencyText =
+        f.daysSinceLastEpisode > 0
+          ? `most recent ${num(f.daysSinceLastEpisode)} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago`
+          : endsToday
+            ? 'most recent today'
+            : `most recent on ${h(withYear && yearsUsable ? fmtDayYear(snap.scope.endDate) : fmtDay(snap.scope.endDate))}`
       const recencyTail =
         tail === null
           ? ''
@@ -2817,13 +2925,11 @@ export function safetyFlagRow(
         // The "(first logged …)" parenthetical is dropped where the record reaches back past the
         // counts: glued to "spans N days" it reads as the span's start, so it would assert a
         // duration nobody measured. `recordBit` then carries both dates in their own sentence.
-        `<b>${h(symptomLabel(f.symptomType))} spans ${num(f.spanDays)} day${
-          f.spanDays === 1 ? '' : 's'
+        `<b>${h(symptomLabel(f.symptomType))} spans ${num(spanShown)} day${
+          spanShown === 1 ? '' : 's'
         }</b>${hasUncountedRecord ? '' : ` (first logged ${h(onsetDay)})`}: ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
-        } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
-          f.daysSinceLastEpisode,
-        )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago${recencyTail}. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
+        } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; ${recencyText}${recencyTail}. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
     }
     case 'symptom_burden': {
@@ -2840,9 +2946,14 @@ export function safetyFlagRow(
     case 'weight_loss': {
       // CUL-2026 — Home's weight card on the report, in the card's own facts: the latest reading
       // and the highest before it, their days, where each was taken, whether either stands alone,
-      // and the ask. Readings only: no percentage (WG-4), no cause. kg to the column's 2 dp, so a
-      // small pet's loss never prints as "1.9 kg, down from 1.9 kg" (adversarial pass); lb, what
-      // the owner read on Home, rides beside.
+      // and the ask. No cause. kg to the column's 2 dp, so a small pet's loss never prints as
+      // "1.9 kg, down from 1.9 kg" (adversarial pass); lb, what the owner read on Home, rides beside.
+      //
+      // THE PERCENT IS ON THE FLAG (CUL-2357, ruling W, spec v2 §5.8, 2026-10-31). WG-4's "no
+      // percentage" is an APP-screen rule; the report states the change as a whole percent. The
+      // row printed two weights and left the arithmetic to the vet (Nyx: 4.00 → 3.40 kg, 15%),
+      // though the size of a loss is what sets its urgency, and the refusal row beside it already
+      // stated one. Leaving it out softened the louder of the two rows.
       const reading = (r: WeightFlagReading): string =>
         `${weightReadingText(r.kg)} on ${fmtDayYear(r.day)} ${WEIGHT_WHERE[r.source]}${r.single ? ', a single reading' : ''}`
       const plan = f.planned ? ', faster or further than the weight plan allows' : ''
@@ -2865,7 +2976,10 @@ export function safetyFlagRow(
           : `As of this window's end the app's weight check reads it as ${ask}${todayRow ? '' : '; it does not read so today'}.`
       return row(
         'Weight',
-        `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> The latest reading against the highest before it in the last ${num(
+        `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)} &mdash; ${weightLossPctText(
+          f.latest.kg,
+          f.highBefore.kg,
+        )}${plan}.</b> The latest reading against the highest before it in the last ${num(
           f.windowDays,
         )} days, not a diagnosis; body condition was not assessed.${scales}${after} ${told}`,
       )
@@ -5035,6 +5149,25 @@ function signedLbText(c: WeightChangeView): string {
  * The change as a WHOLE percent of the higher end (spec §5.8, GAP-21). Never an interval, never a
  * decimal, never a floor that drops it: a real change under 1% says "under 1%", not nothing.
  */
+/**
+ * CUL-2357 — the weight FLAG's whole percent, from the flag's own two readings. MIRRORS
+ * `weightChangeOf`'s `pct` (report.ts: |latest − highBefore| / highBefore, rounded to the whole
+ * number) because it answers the same question over the same pair: the latest reading against the
+ * highest before it. The flag carries the engine's pair, which can differ from the Weight block's
+ * story window, so the number is computed here rather than read off `snap.weight`.
+ */
+export function weightLossPct(latestKg: number, highBeforeKg: number): number | null {
+  if (!Number.isFinite(latestKg) || !Number.isFinite(highBeforeKg) || highBeforeKg <= 0) return null
+  return Math.round((Math.abs(latestKg - highBeforeKg) / highBeforeKg) * 100)
+}
+
+/** "about 15% of body weight"; "under 1% of body weight" below a whole percent (never "no change"). */
+function weightLossPctText(latestKg: number, highBeforeKg: number): string {
+  const pct = weightLossPct(latestKg, highBeforeKg)
+  if (pct === null) return 'a loss whose percent could not be computed'
+  return pct < 1 ? 'under 1% of body weight' : `about ${num(pct)}% of body weight`
+}
+
 function weightPctText(c: WeightChangeView): string {
   if (c.pct === null || c.deltaKg === null || c.deltaKg === 0) return 'no change'
   return c.pct < 1 ? 'under 1% of body weight' : `about ${num(c.pct)}% of body weight`
