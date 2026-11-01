@@ -64,11 +64,12 @@ Deno.test('consent guard — every file that reaches Anthropic is registered, an
 Deno.test('consent guard — the AI lead: no ticket, no fetch; a ticket only from an allowing gate', async () => {
   const model = await read('generate-report/aiLead/model.ts')
   const send = model.slice(model.indexOf('export async function sendChecked'))
-  const refuse = send.indexOf('if (ticket === null) return')
+  const refuse = send.indexOf('if (ticket === null || !MINTED.has(ticket)) return')
   assert(refuse > 0, 'sendChecked no longer refuses a missing ticket')
   assert(refuse < send.indexOf('fetchWithTimeout('), 'sendChecked fetches before it checks the ticket')
   assert(send.indexOf('assertSendable(role, body)') < send.indexOf('fetchWithTimeout('), 'sendChecked fetches before it checks the payload')
-  assert(/export function ticketFor\(gate: SummaryGate\): GateTicket \| null \{\s*return gate\.allow === true \? /.test(model), 'ticketFor mints on something other than an allowing gate')
+  assert(/export function ticketFor\(gate: SummaryGate\): GateTicket \| null \{\s*return gate\.allow === true \? mint\(\) : null/.test(model), 'ticketFor mints on something other than an allowing gate')
+  assertEquals((model.match(/(?<!function )\bmint\(\)/g) ?? []).length, 1, 'a ticket minted somewhere other than ticketFor')
   assertEquals(model.split('fetchWithTimeout(').length - 1, 1, 'a second fetch in model.ts')
 })
 

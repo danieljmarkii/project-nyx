@@ -2,7 +2,7 @@
 //
 // One run per draft, after the Preview tap, never per composer change and never on Send (spec
 // §9.2: Send never waits; nothing on the send or render path imports this file, see
-// aiLead/model.guard.test.ts). In order:
+// aiLead/storage.guard.test.ts). In order:
 //
 //   1. Read the draft row: the owner's own draft of this pet (id, pet, maker and status all in
 //      the filter). No draft, no run: there is nowhere to keep a lead.
@@ -23,7 +23,7 @@
 // STORAGE (CUL-2331 promise 1). The lead, the verdict and the fact-table hash live only in
 // vet_reports.ai_lead_text / ai_lead_verdict / ai_lead_model on the draft row. They cascade with
 // the row and leave with it in the draft reaper and the account-deletion purge, which delete the
-// row; no Map, no KV and no Storage object holds a lead (aiLead/model.guard.test.ts).
+// row; no Map, no KV and no Storage object holds a lead (aiLead/storage.guard.test.ts).
 
 import { consentDecision, flagDecision, type SummaryGate } from '../../_shared/reportSummaryGate.ts'
 import { factTableHash, type LeadFacts, type LeadFactPayload } from './facts.ts'
@@ -46,6 +46,9 @@ export interface CheckerVerdict {
   takeaway: string
   levels: Record<Hazard, HazardLevel>
   quotes: Partial<Record<Hazard, string>>
+  /** Facts the checker says a vet needs and the lead leaves out. Each one counts (adversarial
+   *  pass 1, break 2: they were asked for and then thrown away). */
+  omissions: string[]
 }
 
 /** What `ai_lead_verdict` holds. Model output and code output only. */
@@ -116,8 +119,18 @@ export function parseSummary(json: unknown): LeadSummary | null {
 
 /** The checker's JSON, validated. Anything missing or unknown is null, and null rejects. */
 export function parseChecker(json: unknown): CheckerVerdict | null {
-  const o = json as { takeaway?: unknown; hazards?: unknown } | null
+  const o = json as { takeaway?: unknown; hazards?: unknown; omissions?: unknown } | null
   if (!o || typeof o.takeaway !== 'string' || !o.hazards || typeof o.hazards !== 'object') return null
+  // The schema requires the list; a missing or malformed one is a checker we cannot read: null.
+  // An item is a string, or the bake-off checker's { fact_id, why } (its recorded verdicts).
+  if (!Array.isArray(o.omissions)) return null
+  const omissions: string[] = []
+  for (const x of o.omissions as unknown[]) {
+    const item = x as { fact_id?: unknown; why?: unknown } | null
+    const text = typeof x === 'string' ? x : item && typeof item.why === 'string' ? `${typeof item.fact_id === 'string' ? `${item.fact_id}: ` : ''}${item.why}` : null
+    if (text === null) return null
+    if (text.trim() !== '') omissions.push(text.trim().slice(0, QUOTE_MAX))
+  }
   const levels = {} as Record<Hazard, HazardLevel>
   const quotes: Partial<Record<Hazard, string>> = {}
   for (const h of HAZARDS) {
@@ -126,16 +139,16 @@ export function parseChecker(json: unknown): CheckerVerdict | null {
     levels[h] = f.level
     if (f.level !== 'none' && typeof f.quote === 'string') quotes[h] = f.quote.slice(0, QUOTE_MAX)
   }
-  return { takeaway: o.takeaway.slice(0, QUOTE_MAX), levels, quotes }
+  return { takeaway: o.takeaway.slice(0, QUOTE_MAX), levels, quotes, omissions }
 }
 
-/** Bake-off spec §5's rule. 'reject': any material, or a minor on the safety direction (H3, H7).
- *  'repair': another minor. 'pass': none at all. */
+/** Bake-off spec §5's rule, plus omissions. 'reject': any material, or a minor on the safety
+ *  direction (H3, H7). 'repair': another minor, or any omission. 'pass': none and no omission. */
 export function checkerDecision(v: CheckerVerdict): 'pass' | 'repair' | 'reject' {
   const ls = HAZARDS.map((h) => [h, v.levels[h]] as const)
   if (ls.some(([, l]) => l === 'material')) return 'reject'
   if (ls.some(([h, l]) => l === 'minor' && (h === 'H3' || h === 'H7'))) return 'reject'
-  if (ls.some(([, l]) => l === 'minor')) return 'repair'
+  if (ls.some(([, l]) => l === 'minor') || v.omissions.length > 0) return 'repair'
   return 'pass'
 }
 
@@ -247,7 +260,10 @@ export async function runAiLead(io: LeadIO, facts: LeadFacts, opts: { leaveOut: 
     if (decision === 'repair') {
       if (repairSpent) return reject('checker')
       repairSpent = true
-      const findings = HAZARDS.filter((h) => cv.levels[h] !== 'none').map((h) => ({ sentence: null, check: h, detail: cv.quotes[h] ?? '' }))
+      const findings = [
+        ...HAZARDS.filter((h) => cv.levels[h] !== 'none').map((h) => ({ sentence: null, check: h, detail: cv.quotes[h] ?? '' })),
+        ...cv.omissions.map((o) => ({ sentence: null, check: 'omission', detail: o })),
+      ]
       const again = await write('repair', repairPayload(facts.payload, summary, findings))
       if (typeof again === 'string') return fail(again)
       const checked = await verifyOrRepair(again)

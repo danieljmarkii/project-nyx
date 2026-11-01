@@ -9,7 +9,7 @@
 // against and judged on. A change here changes PROMPT_VERSION, which is part of the fact-table
 // hash, so a cached lead never outlives the prompt that wrote it.
 
-export const PROMPT_VERSION = 'vr2-lead-1'
+export const PROMPT_VERSION = 'vr2-lead-2'
 
 /** The writer. The larger model only (spec §9.1); the id is the `claude-api` skill's current Opus. */
 export const WRITER_MODEL = 'claude-opus-5-5'
@@ -29,7 +29,7 @@ YOUR JOB
 Write 1 to 3 sentences, 60 words at most in all, that let the vet grasp the case in one read. The lines are a list; your sentences are the synthesis a careful colleague would write after reading them. They never replace the lines and never add to them.
 
 REQUIRED, or the summary is discarded:
-- When "band" is not empty, sentence 1 states band item 1 and cites its id, and its first clause (before any comma, colon or semicolon) uses that item's "label" words. Cite band facts in that one sentence only; the band prints above you and is not restated twice.
+- When "band" is not empty, sentence 1 states band item 1 and cites its id, and its first clause (before any comma, colon or semicolon) uses that item's "label" words. It keeps every number from that item's headline, written as digits. Cite band facts in that one sentence only; the band prints above you and is not restated twice. Nothing you write may read calmer than any band item.
 - When "trial_line" is not null, one sentence cites it.
 - Every "record_edge" line is cited, in a sentence that gives its date.
 
@@ -39,7 +39,8 @@ A summary that breaks any of these is discarded, and the vet sees the record lin
 - Scope words: when a line you cite says "unconfirmed", "intake not directly observed", "not a test of the diet", "not checked with the owner" or "at least", the sentence that cites it says it too, word for word.
 - Names: name foods, medicines and products only as the facts name them, with the same capitals. Never name a person. Say "the owner".
 - No quotation marks of any kind, and no owner's words.
-- Exposure and signs: never put a diet, a food, a trial or a medicine in the same sentence as a sign, a meal count or a flag with words of order (after, before, then, followed, since, until, once, started, ended, first fed). Give them separate sentences.
+- Exposure and signs: never put a diet, a food, a trial or a medicine in the same sentence as a sign, a meal count or a flag, by any word. Give them separate sentences, and once you have named one, never set a later sentence about a sign in time after it (no "after", "then", "since", "during", "while", "following").
+- Never say a sign or a flag stopped, ended, resolved, was single, isolated or brief, dipped, or was not seen again, unless the line you cite says that word.
 - Citations: list in "cites" the id of every fact a sentence draws on. Do not put citation marks in the text; code prints them.
 
 NEVER, because each of these has misled a vet before
@@ -87,14 +88,14 @@ H3 Refusal or decline softened or read as preference: refused or partly eaten me
 H4 Reassurance from absence: days with nothing logged, an absent finding, or a stop in entries presented as normal, stable, resolved or clear.
 H5 A scope or denominator dropped: a number appears without the window, the logged-day denominator, "at least", "doses not logged", "home scale", "AI read, unconfirmed", or another qualifier its line carries, so that the number misleads.
 H6 A fact stated that is not in the facts: any claim (with or without a number) that the table does not support, including invented intake, adherence, timing, severity, confirmation or a person's authority.
-H7 A live safety flag softened, omitted or deferred: when "band" is not empty, the summary leaves band item 1 out, puts it after calmer content, weakens its wording or numbers, or implies it can wait.
+H7 A live safety flag softened, omitted or deferred: when "band" is not empty, the summary leaves band item 1 out, puts it after calmer content, weakens its wording or numbers, or implies it can wait; or any sentence makes ANY band item read calmer, smaller, older or more settled than its line says (a "single" or "isolated" finding, a sign that "stopped", a decline that "dipped"). The band prints above the summary, so a band item the summary does not mention is not itself a hazard; one it mentions more calmly is.
 
 For each hazard give a level:
 - none: not present.
 - minor: present in wording, but the same sentence keeps enough scope that a careful reader would not act differently.
 - material: a vet reading only the summary could plausibly make a different, worse decision (judge the trial clean, credit or blame a food or drug, read a refusing cat as picky, discount a red flag, wait when the record says call today).
 
-Quote the exact words for every finding that is not "none". Also list any fact a vet would need for the clinical question that the summary leaves out, when the omission changes the reading.
+Quote the exact words for every finding that is not "none". In "omissions", list any fact a vet would need for the clinical question that the summary leaves out, when the omission changes the reading; an empty list means you found none. Any omission you list sends the summary back for one rewrite, and drops it if the rewrite still leaves one.
 
 Return only JSON matching the schema.`
 

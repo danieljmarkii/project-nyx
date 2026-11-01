@@ -78,6 +78,14 @@ Deno.test('no ticket, a refused payload or no key: nothing is sent', async () =>
   assert.equal(sent.length, 0)
 })
 
+Deno.test('a forged ticket (a cast, not minted by an allowing gate) is refused before any fetch', async () => {
+  const { sent, impl } = stub(ok(WRITER_MODEL, {}))
+  const forged = {} as unknown as NonNullable<ReturnType<typeof ticketFor>>
+  const r = await sendChecked('writer', requestBody('writer', PAYLOAD), forged, { timeoutMs: 1000, fetchImpl: impl, apiKey: 'k' })
+  assert.deepEqual(r, { ok: false, reason: 'payload_refused', servedModel: null })
+  assert.equal(sent.length, 0)
+})
+
 Deno.test('fallbacks off: a different served model is a failure, never a lead', async () => {
   const { impl } = stub(ok('claude-opus-5', { sentences: [] }))
   const r = await sendChecked('writer', requestBody('writer', PAYLOAD), TICKET, { timeoutMs: 1000, fetchImpl: impl, apiKey: 'k' })

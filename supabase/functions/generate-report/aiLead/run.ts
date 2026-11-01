@@ -8,12 +8,12 @@
 // or model call.
 //
 // The lead is written ONLY to vet_reports.ai_lead_text / ai_lead_verdict / ai_lead_model on that
-// draft row (CUL-2331 promise 1; aiLead/model.guard.test.ts pins it).
+// draft row (CUL-2331 promise 1; aiLead/storage.guard.test.ts pins it).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { runSummaryGate, summaryGateIO } from '../../_shared/reportSummaryGate.ts'
-import type { DocumentV2 } from '../documentV2.ts'
-import { buildLeadFacts, factTableHash } from './facts.ts'
+import type { ReportSnapshot } from '../report.ts'
+import { buildLeadFacts, documentForLead, factTableHash } from './facts.ts'
 import { sendChecked } from './model.ts'
 import { runAiLead, type LeadIO, type LeadResult, type StoredVerdict } from './leadPipeline.ts'
 import { LEAD_VERIFIER_VERSION, type LeadSentence } from './verify.ts'
@@ -61,24 +61,33 @@ export interface LeadContext {
   includeLookNotes: boolean
 }
 
-/** The whole run for one draft. `doc` must be built with `questions: []` from a snapshot with
- *  `includeLookNotes: false`; buildLeadFacts refuses anything else (it throws, so nothing is
- *  gated, sent or written). */
-export function runAiLeadForDraft(io: LeadIO, doc: DocumentV2, ctx: LeadContext, leaveOut: boolean): Promise<LeadResult> {
-  return runAiLead(io, buildLeadFacts(doc, ctx), { leaveOut })
+/** The whole run for one draft, from the report's snapshot. The document is built here, the one
+ *  way the lead allows (`documentForLead`: no incident notes, no questions); a snapshot with look
+ *  notes is refused by buildLeadFacts (it throws, so nothing is gated, sent or written). */
+export function runAiLeadForDraft(io: LeadIO, snap: ReportSnapshot, includeLookNotes: boolean, leaveOut: boolean): Promise<LeadResult> {
+  return runAiLead(io, buildLeadFacts(documentForLead(snap), leadContextOf(snap, includeLookNotes)), { leaveOut })
+}
+
+export function leadContextOf(snap: ReportSnapshot, includeLookNotes: boolean): LeadContext {
+  return {
+    petName: snap.signalment.name,
+    species: snap.signalment.species,
+    recordStart: snap.scope.startDate,
+    recordEnd: snap.scope.endDate,
+    includeLookNotes,
+  }
 }
 
 /** For the send path (VR2-20, CUL-2300): the stored lead's sentences, only when they were written
- *  from the same facts the document being sent prints (the hash matches) and the verdict says
- *  they printed. Anything else, the lines print alone. Pair with `leadAllowedAtSend`. */
-export async function storedLeadForDocument(
-  doc: DocumentV2,
-  ctx: LeadContext,
+ *  from the same facts the report being sent holds (the hash matches) and the verdict says they
+ *  printed. Anything else, the lines print alone. Pair with `leadAllowedAtSend`. */
+export async function storedLeadForSnapshot(
+  snap: ReportSnapshot,
   stored: { text: string | null; verdict: unknown },
 ): Promise<LeadSentence[] | null> {
   const v = stored.verdict as Partial<StoredVerdict> | null
   if (stored.text === null || v?.outcome !== 'printed' || !Array.isArray(v.sentences)) return null
-  const facts = buildLeadFacts(doc, ctx)
+  const facts = buildLeadFacts(documentForLead(snap), leadContextOf(snap, false))
   if (!facts.eligible) return null
   if ((await factTableHash(facts.payload, LEAD_VERIFIER_VERSION)) !== v.fact_hash) return null
   const sentences = v.sentences as LeadSentence[]

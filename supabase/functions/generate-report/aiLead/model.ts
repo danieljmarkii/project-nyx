@@ -1,7 +1,7 @@
 // The AI lead's ONE door to the model (Vet report v2 PR-25, CUL-2305; CUL-2331 promises 2 and 3).
 //
 // Every byte the lead sends to a model leaves through `sendChecked`, and nowhere else in the
-// function names the endpoint (guards: aiLead/model.guard.test.ts, _shared/aiConsent.guard.test.ts).
+// function names the endpoint (guards: aiLead/storage.guard.test.ts, _shared/aiConsent.guard.test.ts).
 //
 // PROMISE 3, THE FINAL PAYLOAD IS THE ONE CHECKED. `sendChecked` takes the serialised request
 // body, the exact string handed to fetch, and before sending it:
@@ -21,7 +21,8 @@
 //
 // THE GATE. `sendChecked` needs a `GateTicket`, which only `ticketFor` mints and only from a
 // `runSummaryGate` result that allowed (consent under both scopes, both flags, the owner's pet,
-// the cap). The brand is a module-private symbol: no other file can construct one.
+// the cap). A ticket is checked at runtime against the set this module minted, so a cast cannot
+// forge one.
 
 import { fetchWithTimeout } from '../../_shared/http.ts'
 import { checkSummaryPayload, type SummaryGate } from '../../_shared/reportSummaryGate.ts'
@@ -114,9 +115,20 @@ export interface GateTicket {
   readonly [TICKET]: true
 }
 
+/** Every ticket this module minted. A ticket is checked at RUNTIME against this set, so `{} as
+ *  GateTicket` from any other file is refused (rls-privacy-reviewer G1 on PR-25: a type-only brand
+ *  can be forged with a cast). Weak, so a ticket lives no longer than the run holding it. */
+const MINTED = new WeakSet<object>()
+
 /** The only way to get a ticket: a gate result that allowed. */
 export function ticketFor(gate: SummaryGate): GateTicket | null {
-  return gate.allow === true ? ({} as GateTicket) : null
+  return gate.allow === true ? mint() : null
+}
+
+function mint(): GateTicket {
+  const t = Object.freeze({}) as GateTicket
+  MINTED.add(t)
+  return t
 }
 
 export type ModelResult =
@@ -137,7 +149,7 @@ export async function sendChecked(
   ticket: GateTicket | null,
   opts: { timeoutMs: number; fetchImpl?: typeof fetch; apiKey?: string | null } ,
 ): Promise<ModelResult> {
-  if (ticket === null) return { ok: false, reason: 'payload_refused', servedModel: null }
+  if (ticket === null || !MINTED.has(ticket)) return { ok: false, reason: 'payload_refused', servedModel: null }
   const sendable = assertSendable(role, body)
   if (!sendable.ok) {
     console.warn(`ai lead: ${role} payload refused at`, sendable.refused.join(', '))

@@ -18,7 +18,11 @@
 //   band-once   at most one sentence cites any band fact (may restate the band once, no more)
 //   period-run  no run of 3 or more period counts ("3 in week 1, 2 in week 2, 0 in week 3")
 //   order       H2 by order with no causal word (the Data Scientist's 2026-10-31 exhibit): an
-//               exposure fact and an observation fact in one sentence with a word of order
+//               exposure and an observation in one sentence, by any word; and an observation
+//               sentence set after an earlier exposure sentence by a word of sequence
+//   absence     an ending, absence or softening word said of a sign or flag ("stopped",
+//               "single", "dipped") unless the cited line itself prints that word
+//   band-numbers band item 1's headline numbers, as digits, in sentence 1
 //   waiver      "not as a cause" only, when a cited fact prints it (waiveSideBySide)
 //   names       every capitalised word past the first is printed in a cited fact (a product the
 //               lexicon does not know is still caught)
@@ -30,7 +34,7 @@ import { norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyRepor
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-1'
+export const LEAD_VERIFIER_VERSION = 'vr2-2'
 export const LEAD_MAX_SENTENCES = 3
 export const LEAD_MAX_WORDS = 60
 export const PERIOD_RUN_MAX = 2
@@ -43,6 +47,12 @@ export interface LeadVerdict {
 }
 
 const QUOTE_MARKS = /["“”‘„«»]/
+/** Words that set an observation in time after something else (adversarial pass 1, 4 and 5). On a
+ *  sentence citing an observation after one that cited an exposure, any of these rejects. */
+const SEQUENCE_WORDS = /\b(?:after|afterwards?|before|then|thereafter|subsequently|since|until|once|following|followed|later|earlier|during|while|throughout|meanwhile|next|from then)\b/i
+/** Absence, ending and softening said of a sign or a flag: reassurance by another word (H4) or a
+ *  flag made smaller (H7) (adversarial pass 1, 6 to 8). The core's lists do not hold these. */
+const ABSENCE_WORDS = /\b(?:stop(?:ped|s|ping)?|ceas\w*|ended|ending|resolv\w*|not (?:seen|logged|recorded) again|not recur\w*|did not recur|has not recurred|none (?:after|since)|no (?:more|further|longer|new)|single|isolated|one-off|one-time|only once|just once|dipp?\w*|brief(?:ly)?|transient\w*|temporar\w*|passing|minor|small)\b/i
 const ORDER_WORDS = /\b(?:after|before|then|followed|following|since|until|once|started|starting|began|begun|ended|ending|first fed|later|earlier|subsequently|thereafter)\b/i
 const PERIOD_COUNT = /\b\d+(?:\s+\w+){0,3}?\s+(?:in|on|during|over)\s+(?:the\s+)?(?:\w+\s+)?(?:weeks?|months?|fortnights?|wk)\b|\b(?:weeks?|months?)\s+\d+\s*[:=]\s*\d+/gi
 const MONTHS_AND_DAYS = new Set([
@@ -107,6 +117,16 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   const bandSentences = sents.filter((s) => s.cites.some((c) => facts.get(c)?.role === 'band')).length
   if (bandSentences > 1) err(null, 'band-once', `${bandSentences} sentences cite band facts (max 1)`)
 
+  // Band item 1's headline numbers, as digits, in sentence 1 (facts.ts `headlineNumbers`).
+  const leadNumbers = (band[0] as { lead_numbers?: unknown } | undefined)?.lead_numbers
+  if (Array.isArray(leadNumbers) && sents[0]) {
+    for (const n of leadNumbers) {
+      if (typeof n === 'string' && !new RegExp(`(?<![\\d.])${n.replace('.', '\\.')}(?![\\d.])`).test(sents[0].text)) {
+        err(1, 'band-numbers', `sentence 1 drops band item 1's number ${n}`)
+      }
+    }
+  }
+
   const periodCounts = sents.reduce((n, s) => n + [...s.text.matchAll(PERIOD_COUNT)].length, 0)
   if (periodCounts > PERIOD_RUN_MAX) err(null, 'period-run', `${periodCounts} period counts (max ${PERIOD_RUN_MAX})`)
 
@@ -116,10 +136,27 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
 
     const exposure = s.cites.some(isExposure)
     const observed = s.cites.some(isObservation)
+    // An exposure and an observation never share a sentence, whatever joins them: "after",
+    // "during", "while" and "with" all set a change beside a count (H2). The one exception is a
+    // cited line that itself states both windows "side by side, not as a cause".
     if (exposure && observed) {
-      const order = s.text.match(ORDER_WORDS)
       const sideBySide = /\bnot as a cause\b/i.test(s.text) && s.cites.some((c) => /\bnot as a cause\b/i.test(facts.get(c)?.text ?? ''))
-      if (order && !sideBySide) err(i, 'order', `an exposure and an observation joined by ${JSON.stringify(order[0])} (H2, cause by order)`)
+      if (!sideBySide) {
+        const order = s.text.match(ORDER_WORDS)
+        err(i, 'order', order ? `an exposure and an observation joined by ${JSON.stringify(order[0])} (H2, cause by order)` : 'an exposure and an observation in one sentence (H2)')
+      }
+    }
+    // Across sentences: once an exposure has been named, an observation sentence may not be set
+    // after it in time ("After it ended, vomiting…", "Vomiting then…").
+    if (observed && !exposure && sents.slice(0, idx).some((p) => p.cites.some(isExposure))) {
+      const seq = s.text.match(SEQUENCE_WORDS)
+      if (seq) err(i, 'order', `${JSON.stringify(seq[0])} sets an observation after an exposure named earlier (H2, cause by order)`)
+    }
+    if (observed) {
+      const soft = s.text.match(ABSENCE_WORDS)
+      if (soft && !s.cites.some((c) => new RegExp(`\\b${soft[0]}\\b`, 'i').test(facts.get(c)?.text ?? ''))) {
+        err(i, 'absence', `${JSON.stringify(soft[0])} said of a sign or a flag (H4, H7)`)
+      }
     }
 
     const cited = s.cites.map((c) => facts.get(c)?.text ?? '').join(' ')
