@@ -398,9 +398,8 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
     'enforce_vet_appointment_link_same_pet',
     'enforce_vet_visit_link_same_pet',
     'enforce_vet_appointment_pet_immutable',
-    'retire_vet_report_id',
-    'guard_vet_report_retired',
-    'vet_report_retired_ids_append_only',
+    'reserve_vet_report_kept_id',
+    'vet_report_kept_ids_append_only',
   ];
   const GUARDED_TRIGGERS = [
     'trg_vet_reports_client_freeze',
@@ -411,10 +410,9 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
     'trg_vet_reports_link_appointment',
     'trg_vet_reports_link_visit',
     'trg_vet_appointments_pet_immutable',
-    'trg_vet_reports_retire_id',
-    'trg_vet_reports_retired_unused',
-    'trg_vet_report_retired_ids_append_only',
-    'trg_vet_report_retired_ids_no_truncate',
+    'trg_vet_reports_reserve_kept_id',
+    'trg_vet_report_kept_ids_append_only',
+    'trg_vet_report_kept_ids_no_truncate',
   ];
 
   it.each(GUARDED_FUNCTIONS)('never drops or alters %s', (fn) => {
@@ -481,83 +479,95 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
 // CUL-2339 (migration 114): a kept copy's id and label are never used again.
 // E4 (rls-privacy-reviewer pass 2 on 113): a server transaction deleted the
 // pet (the cascade passes, as it must), re-created it under the same id and
-// re-inserted the kept copy with a softer snapshot. The behaviour, E3 and E4
-// both, is the probe in the PR (scripts/probes/vet-report-114, 36 cases; with
-// MIGRATION_114=/dev/null every E3 / E4 case lands). This pins the shapes a
-// later file could quietly undo: the ledger closed to every caller role, the
-// service role included (it is E4's actor), the ledger append-only, and both
-// guard arms. Blind spots, stated: a DO block's EXECUTE; a grant through role
-// membership (GRANT postgres TO service_role); a superuser's replica mode.
-// MUTANTS, run 2026-11-01 against 114 (each applied to the real file, the
-// suite run, the file restored), all 10 killed: the depth test restored; the
-// maker arm dropped; the delete guard back to INVOKER; the ledger's
-// service_role REVOKE dropped; a later GRANT on the ledger; the label arm
-// joined by AND (survived the first cut, now pinned whole); the retire trigger
-// dropped later; the retire body keyed to drafts; an early RETURN in the
-// append-only guard; a later GRANT EXECUTE on the re-insert guard.
-describe('vet_reports retired ids (CUL-2339, migration 114)', () => {
+// re-inserted the kept copy with a softer snapshot. 114 reserves a copy's id
+// and (pet, label) the moment it is kept, in a server-only, append-only table,
+// and refuses a second keep under either. The behaviour (E3, E4, the
+// reviewer's pass-1 shapes M1 / M6 / M7 / M14, and the two-session race R1 /
+// R2 in race.sh) is the probe in the PR: scripts/probes/vet-report-114, 42
+// cases and 4 race checks; with MIGRATION_114=/dev/null every E3 / E4 case and
+// the race land. This pins the shapes a later file could quietly undo.
+// Blind spots, stated: a DO block's EXECUTE; a grant through role membership
+// (GRANT postgres TO service_role); a superuser's replica mode; a later
+// BEFORE trigger that rewrites NEW.snapshot on INSERT (the content freeze
+// judges UPDATEs; an INSERT's content is the writer's to choose).
+// MUTANTS, run 2026-11-01 against 114 (each applied to the real file or added
+// as a later migration, the suite run, the file restored), all killed: the
+// depth test restored; the maker arm dropped; the delete guard back to
+// INVOKER; the reservations' service_role REVOKE dropped; a later GRANT on
+// them; the reserve test's OR -> AND; the row-count check dropped; the
+// reserve trigger dropped later; an early RETURN in the append-only guard; a
+// later GRANT EXECUTE on the reserve function; pass 1's M3 (OWNER TO), M6 (a
+// further trigger on the reservations), M13 (the per-pet label UNIQUE
+// dropped), M14 (a rule), and the upper() dropped from the label index (M10).
+describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
   const sql = allMigrations();
-  const LEDGER = String.raw`(?:public\.)?vet_report_retired_ids\b`;
+  const KEPT = String.raw`(?:public\.)?vet_report_kept_ids\b`;
 
-  it('closes the ledger to every caller role, service_role included', () => {
-    const create = lastIndexOf(sql, /CREATE TABLE public\.vet_report_retired_ids\b/);
+  it('closes the reservations to every caller role, service_role included', () => {
+    const create = lastIndexOf(sql, /CREATE TABLE public\.vet_report_kept_ids\b/);
     expect(create).toBeGreaterThan(-1);
     for (const role of ['PUBLIC', 'anon', 'authenticated', 'service_role']) {
-      expect(sql.slice(create)).toMatch(new RegExp(String.raw`REVOKE ALL ON TABLE public\.vet_report_retired_ids FROM ${role};`));
+      expect(sql.slice(create)).toMatch(new RegExp(String.raw`REVOKE ALL ON TABLE public\.vet_report_kept_ids FROM ${role};`));
     }
-    expect(sql.slice(create)).toMatch(/ALTER TABLE public\.vet_report_retired_ids ENABLE ROW LEVEL SECURITY;/);
+    expect(sql.slice(create)).toMatch(/ALTER TABLE public\.vet_report_kept_ids ENABLE ROW LEVEL SECURITY;/);
     // No grant, no policy, no RLS off, ever, and no schema-wide grant after it
-    // (one would reach the ledger as it reaches every table).
-    expect(sql).not.toMatch(new RegExp(String.raw`\bGRANT\s[^;]*\bON\s+(?:TABLE\s+)?${LEDGER}`, 'i'));
-    expect(sql).not.toMatch(new RegExp(String.raw`\bCREATE\s+POLICY\s[^;]*\bON\s+${LEDGER}`, 'i'));
-    expect(sql).not.toMatch(new RegExp(String.raw`ALTER TABLE\s+(?:ONLY\s+)?${LEDGER}[^;]*\b(?:DISABLE|NO FORCE)\s+ROW LEVEL SECURITY`, 'i'));
+    // (one would reach the table as it reaches every table).
+    expect(sql).not.toMatch(new RegExp(String.raw`\bGRANT\s[^;]*\bON\s+(?:TABLE\s+)?${KEPT}`, 'i'));
+    expect(sql).not.toMatch(new RegExp(String.raw`\bCREATE\s+POLICY\s[^;]*\bON\s+${KEPT}`, 'i'));
     expect(sql.slice(create)).not.toMatch(/\bGRANT\s[^;]*\bON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+public\b/i);
-    expect(sql).not.toMatch(new RegExp(String.raw`\b(?:DROP|ALTER)\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${LEDGER}[^;]*\b(?:DROP|RENAME|DISABLE)\b`, 'i'));
-    expect(sql).not.toMatch(new RegExp(String.raw`\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?${LEDGER}`, 'i'));
+    expect(sql).not.toMatch(new RegExp(String.raw`\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?${KEPT}`, 'i'));
+    expect(sql).not.toMatch(new RegExp(String.raw`\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${KEPT}[^;]*\b(?:DROP|RENAME|DISABLE|NO\s+FORCE|SET\s+SCHEMA|OWNER)\b`, 'i'));
   });
 
-  it('keeps the ledger append-only for every role', () => {
-    const { header, body } = lastFunctionIn(sql, 'vet_report_retired_ids_append_only');
+  it('keeps the reservations append-only for every role, with no other trigger or rule on them', () => {
+    const { header, body } = lastFunctionIn(sql, 'vet_report_kept_ids_append_only');
     expect(header).toMatch(/SET search_path = ''/);
-    const flat = body.replace(/\s+/g, ' ').trim();
     // Raises unconditionally: no branch, no RETURN.
-    expect(flat).toBe("BEGIN RAISE EXCEPTION 'vet_report_retired_ids: a retired saved-copy id is never changed or removed' USING ERRCODE = 'check_violation'; END;");
-    expect(sql).toMatch(/CREATE TRIGGER trg_vet_report_retired_ids_append_only\s+BEFORE UPDATE OR DELETE ON public\.vet_report_retired_ids\s+FOR EACH ROW EXECUTE FUNCTION public\.vet_report_retired_ids_append_only\(\);/);
-    expect(sql).toMatch(/CREATE TRIGGER trg_vet_report_retired_ids_no_truncate\s+BEFORE TRUNCATE ON public\.vet_report_retired_ids\s+FOR EACH STATEMENT EXECUTE FUNCTION public\.vet_report_retired_ids_append_only\(\);/);
-    expect(sql).not.toMatch(new RegExp(String.raw`ALTER TABLE\s+(?:ONLY\s+)?${LEDGER}[^;]*\bDISABLE\s+TRIGGER\b`, 'i'));
+    expect(body.replace(/\s+/g, ' ').trim()).toBe(
+      "BEGIN RAISE EXCEPTION 'vet_report_kept_ids: a kept copy''s reservation is never changed or removed' USING ERRCODE = 'check_violation'; END;",
+    );
+    expect(sql).toMatch(/CREATE TRIGGER trg_vet_report_kept_ids_append_only\s+BEFORE UPDATE OR DELETE ON public\.vet_report_kept_ids\s+FOR EACH ROW EXECUTE FUNCTION public\.vet_report_kept_ids_append_only\(\);/);
+    expect(sql).toMatch(/CREATE TRIGGER trg_vet_report_kept_ids_no_truncate\s+BEFORE TRUNCATE ON public\.vet_report_kept_ids\s+FOR EACH STATEMENT EXECUTE FUNCTION public\.vet_report_kept_ids_append_only\(\);/);
+    // Exactly these two: a further BEFORE INSERT ... RETURN NULL swallowed the
+    // reservation in pass 1 (M6). The row count refuses that at runtime too.
+    const triggers = [...sql.matchAll(new RegExp(String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+(\w+)[^;]*?\bON\s+${KEPT}`, 'gi'))].map((m) => m[1]);
+    expect(triggers.sort()).toEqual(['trg_vet_report_kept_ids_append_only', 'trg_vet_report_kept_ids_no_truncate']);
+    expect(sql).not.toMatch(new RegExp(String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?RULE\s[^;]*\bTO\s+${KEPT}`, 'i'));
   });
 
-  it('retires every kept copy that leaves, with no WHEN clause', () => {
-    const { header, body } = lastFunctionIn(sql, 'retire_vet_report_id');
+  it('keeps the label key per pet and case-blind', () => {
+    const at = lastIndexOf(sql, /CREATE UNIQUE INDEX idx_vet_report_kept_ids_label\b/);
+    expect(at).toBeGreaterThan(-1);
+    expect(sql.slice(at, sql.indexOf(';', at)).replace(/\s+/g, ' ')).toBe(
+      'CREATE UNIQUE INDEX idx_vet_report_kept_ids_label ON public.vet_report_kept_ids (pet_id, upper(short_id))',
+    );
+    expect(sql).not.toMatch(/\bDROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?(?:public\.)?idx_vet_report_kept_ids_label\b/i);
+    expect(sql).not.toMatch(/\bALTER\s+INDEX\s+(?:IF\s+EXISTS\s+)?(?:public\.)?idx_vet_report_kept_ids_label\b/i);
+    // The live per-pet UNIQUE on vet_reports stays (pass 1, M13).
+    expect(sql).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_short_id_per_pet\b/i);
+  });
+
+  it('reserves a row as it is kept, judged AFTER the write, and refuses a reservation that did not land (C-31)', () => {
+    const { header, body } = lastFunctionIn(sql, 'reserve_vet_report_kept_id');
     expect(header).toMatch(/SECURITY DEFINER/);
     expect(header).toMatch(/SET search_path = ''/);
     expect(body.replace(/\s+/g, ' ').trim()).toBe(
-      "BEGIN IF OLD.status = 'kept' THEN INSERT INTO public.vet_report_retired_ids (id, pet_id, short_id) VALUES (OLD.id, OLD.pet_id, OLD.short_id) ON CONFLICT (id) DO NOTHING; END IF; RETURN OLD; END;",
+      "DECLARE n bigint := 0; BEGIN IF NEW.status = 'kept' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'kept') THEN BEGIN"
+        + ' INSERT INTO public.vet_report_kept_ids (id, pet_id, short_id) VALUES (NEW.id, NEW.pet_id, NEW.short_id);'
+        + ' GET DIAGNOSTICS n = ROW_COUNT; EXCEPTION WHEN unique_violation OR not_null_violation THEN n := 0; END;'
+        + " IF n <> 1 THEN RAISE EXCEPTION 'vet_reports: a kept copy needs an id and label never kept before'"
+        + " USING ERRCODE = 'check_violation'; END IF; END IF; RETURN NULL; END;",
     );
-    expect(sql).toMatch(/CREATE TRIGGER trg_vet_reports_retire_id\s+AFTER DELETE ON public\.vet_reports\s+FOR EACH ROW EXECUTE FUNCTION public\.retire_vet_report_id\(\);/);
+    expect(sql).toMatch(/CREATE TRIGGER trg_vet_reports_reserve_kept_id\s+AFTER INSERT OR UPDATE ON public\.vet_reports\s+FOR EACH ROW EXECUTE FUNCTION public\.reserve_vet_report_kept_id\(\);/);
   });
 
-  it('refuses a retired id on INSERT and a retired label on INSERT or a label change, naming no value (C-31)', () => {
-    const { header, body } = lastFunctionIn(sql, 'guard_vet_report_retired');
-    expect(header).toMatch(/SECURITY DEFINER/);
-    expect(header).toMatch(/SET search_path = ''/);
-    const flat = body.replace(/\s+/g, ' ').replace(/\( /g, '(').replace(/ \)/g, ')').trim();
-    // The whole condition, connector included: OR -> AND between the arms
-    // survived a pin on each arm alone (mutation run, 2026-11-01).
-    expect(flat).toContain(
-      "BEGIN IF (TG_OP = 'INSERT' AND EXISTS (SELECT 1 FROM public.vet_report_retired_ids r WHERE r.id = NEW.id))"
-        + " OR (NEW.short_id IS NOT NULL AND (TG_OP = 'INSERT' OR NEW.short_id IS DISTINCT FROM OLD.short_id OR NEW.pet_id IS DISTINCT FROM OLD.pet_id)"
-        + " AND EXISTS (SELECT 1 FROM public.vet_report_retired_ids r WHERE r.pet_id = NEW.pet_id AND r.short_id = NEW.short_id)) THEN RAISE EXCEPTION",
-    );
-    expect(flat).not.toMatch(/current_user|current_setting|session_user|auth\.uid\(\)/);
-    expect(flat.match(/RETURN NEW;/g)?.length).toBe(1);
-    const raises = [...flat.matchAll(/RAISE EXCEPTION '(?:[^']|'')*' USING ERRCODE = 'check_violation';/g)];
-    expect(raises.length).toBe(1);
-    expect(flat.match(/RAISE EXCEPTION/g)?.length).toBe(1);
-    expect(sql).toMatch(/CREATE TRIGGER trg_vet_reports_retired_unused\s+BEFORE INSERT OR UPDATE ON public\.vet_reports\s+FOR EACH ROW EXECUTE FUNCTION public\.guard_vet_report_retired\(\);/);
+  it('never changes the owner of vet_reports or adds a rule to it (pass 1, M3)', () => {
+    expect(sql).not.toMatch(/\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:public\.)?vet_reports\b[^;]*\bOWNER\s+TO\b/i);
+    expect(sql).not.toMatch(/\bCREATE\s+(?:OR\s+REPLACE\s+)?RULE\s[^;]*\bTO\s+(?:public\.)?vet_reports\b/i);
+    expect(sql).not.toMatch(/\bREASSIGN\s+OWNED\b/i);
   });
 
-  it.each(['retire_vet_report_id', 'guard_vet_report_retired', 'vet_report_retired_ids_append_only'])(
+  it.each(['reserve_vet_report_kept_id', 'vet_report_kept_ids_append_only'])(
     'revokes EXECUTE on %s from every caller role',
     (fn) => {
       for (const role of ['PUBLIC', 'anon', 'authenticated', 'service_role']) {

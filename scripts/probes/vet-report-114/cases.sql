@@ -4,9 +4,11 @@
 -- seed rows below are the only shared state. Each records the SQLSTATE it got
 -- against the one it wants; the run fails on any mismatch.
 --
--- E3 and E4 are the two ways round 113's depth-1 delete guard (CUL-2339).
--- With MIGRATION_114=/dev/null every E3-* and E4-* case that wants 23514
--- gets 'ok' instead: the probe sees the hole it says is closed.
+-- E3 and E4 are the two ways round 113's depth-1 delete guard (CUL-2339);
+-- M1 / M6 / M7 / M14 are the later-migration shapes rls-privacy-reviewer pass
+-- 1 measured against this file's first cut. With MIGRATION_114=/dev/null every
+-- E3-* and E4-* case that wants 23514 gets 'ok' instead: the probe sees the
+-- hole it says is closed. The two-session race (R1 / R2) is race.sh.
 
 CREATE TABLE probe_results (n serial, label text, who text, want text, got text, msg text, stmt text);
 
@@ -159,28 +161,31 @@ SELECT probe('cascade: migration owner deletes the pet', 'postgres', NULL,
   $$DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001'$$, 'ok');
 SELECT probe('cascade: account deletion (auth user removed)', 'service_role', NULL,
   $$DELETE FROM auth.users WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'$$, 'ok');
-SELECT probe('cascade: the pet deletion retires the kept copy''s id and label', 'postgres', NULL,
+SELECT probe('reserve: keeping reserves the id and label; a draft reserves nothing', 'postgres', NULL,
   $q$DO $b$ BEGIN
-      DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
-      IF NOT EXISTS (SELECT 1 FROM public.vet_report_retired_ids
+      IF NOT EXISTS (SELECT 1 FROM public.vet_report_kept_ids
                       WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a'
                         AND pet_id = 'a1a1a1a1-0000-4000-8000-000000000001'
                         AND short_id = 'K7Q2') THEN
-        RAISE EXCEPTION 'not retired';
+        RAISE EXCEPTION 'not reserved';
       END IF;
-      IF EXISTS (SELECT 1 FROM public.vet_report_retired_ids
+      IF EXISTS (SELECT 1 FROM public.vet_report_kept_ids
                   WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009') THEN
-        RAISE EXCEPTION 'draft retired';
+        RAISE EXCEPTION 'draft reserved';
       END IF;
     END $b$$q$, 'ok');
-SELECT probe('cascade: the account deletion retires it too', 'postgres', NULL,
+SELECT probe('reserve: the reservation outlives the account deletion', 'postgres', NULL,
   $q$DO $b$ BEGIN
       DELETE FROM auth.users WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-      IF NOT EXISTS (SELECT 1 FROM public.vet_report_retired_ids
+      IF NOT EXISTS (SELECT 1 FROM public.vet_report_kept_ids
                       WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a') THEN
-        RAISE EXCEPTION 'not retired';
+        RAISE EXCEPTION 'not reserved';
       END IF;
     END $b$$q$, 'ok');
+SELECT probe('reserve: a draft moved to kept is reserved', 'service_role', NULL,
+  $q$UPDATE public.vet_reports SET status = 'kept', snapshot = '{}', short_id = 'H2J4',
+       shared_via = 'print', shared_at = now(), content_sha256 = repeat('ab', 32)
+     WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$q$, 'ok');
 SELECT probe('draft: service role deletes a draft (the reaper)', 'service_role', NULL,
   $$DELETE FROM public.vet_reports WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, 'ok');
 SELECT probe('draft: a deleted draft''s id can be used again', 'service_role', NULL,
@@ -217,13 +222,22 @@ SELECT probe('E4-c: new id wearing the old label', 'service_role', NULL,
       INSERT INTO public.pets VALUES ('a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
       %s;
     END $b$$q$, kins('f1f1f1f1-0000-4000-8000-00000000000d', 'K7Q2', '{"facts":[]}')), '23514');
-SELECT probe('E4-d: a draft takes the old label by UPDATE', 'service_role', NULL,
+SELECT probe('E4-d: a draft takes the old label and is then kept', 'service_role', NULL,
   format($q$DO $b$ BEGIN
       DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
       INSERT INTO public.pets VALUES ('a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
       %s;
       UPDATE public.vet_reports SET short_id = 'K7Q2' WHERE id = 'f1f1f1f1-0000-4000-8000-00000000000d';
+      UPDATE public.vet_reports SET status = 'kept', snapshot = '{"facts":[]}', shared_via = 'print',
+             shared_at = now(), content_sha256 = repeat('ab', 32)
+       WHERE id = 'f1f1f1f1-0000-4000-8000-00000000000d';
     END $b$$q$, dins('f1f1f1f1-0000-4000-8000-00000000000d')), '23514');
+SELECT probe('draft: a draft may carry a reserved id (never sent, never kept under it)', 'service_role', NULL,
+  format($q$DO $b$ BEGIN
+      DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
+      INSERT INTO public.pets VALUES ('a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      %s;
+    END $b$$q$, dins('d2d2d2d2-0000-4000-8000-00000000000a')), 'ok');
 SELECT probe('E4-e: after account deletion, a re-created account and pet re-insert the id', 'postgres', NULL,
   format($q$DO $b$ BEGIN
       DELETE FROM auth.users WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -244,31 +258,64 @@ SELECT probe('label is per pet: another pet may use K7Q2 after the first is dele
     END $b$$q$, kins('f1f1f1f1-0000-4000-8000-00000000000d', 'K7Q2', '{"facts":[]}',
                     'a2a2a2a2-0000-4000-8000-000000000002')), 'ok');
 
+-- ── Later-migration shapes the reviewer measured (pass 1), now refused ──────
+SELECT probe('M1: a later AFTER DELETE trigger re-inserts the copy, sorting first', 'postgres', NULL,
+  format($q$DO $b$ BEGIN
+      CREATE FUNCTION public.probe_reinsert() RETURNS trigger LANGUAGE plpgsql AS $f$
+      BEGIN
+        IF OLD.status = 'kept' THEN
+          INSERT INTO public.pets VALUES (OLD.pet_id, OLD.generated_by) ON CONFLICT DO NOTHING;
+          EXECUTE %L;
+        END IF;
+        RETURN NULL;
+      END $f$;
+      CREATE TRIGGER trg_vet_reports_audit AFTER DELETE ON public.vet_reports
+        FOR EACH ROW EXECUTE FUNCTION public.probe_reinsert();
+      DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
+    END $b$$q$, kins('d2d2d2d2-0000-4000-8000-00000000000a', 'K7Q2', '{"facts":[]}')), '23514');
+SELECT probe('M6: a later BEFORE INSERT RETURN NULL trigger on the reservations', 'postgres', NULL,
+  format($q$DO $b$ BEGIN
+      CREATE FUNCTION public.probe_swallow() RETURNS trigger LANGUAGE plpgsql AS $f$
+      BEGIN RETURN NULL; END $f$;
+      CREATE TRIGGER trg_vet_report_kept_ids_dedupe BEFORE INSERT ON public.vet_report_kept_ids
+        FOR EACH ROW EXECUTE FUNCTION public.probe_swallow();
+      %s;
+    END $b$$q$, kins('e3e3e3e3-0000-4000-8000-00000000000e', 'N5R6', '{}')), '23514');
+SELECT probe('M14: a later DO INSTEAD NOTHING rule on the reservations', 'postgres', NULL,
+  format($q$DO $b$ BEGIN
+      CREATE RULE probe_nothing AS ON INSERT TO public.vet_report_kept_ids DO INSTEAD NOTHING;
+      %s;
+    END $b$$q$, kins('e3e3e3e3-0000-4000-8000-00000000000e', 'N5R6', '{}')), '23514');
+SELECT probe('M7: a later BEFORE INSERT trigger sets the old label after the guards', 'postgres', NULL,
+  format($q$DO $b$ BEGIN
+      CREATE FUNCTION public.probe_label() RETURNS trigger LANGUAGE plpgsql AS $f$
+      BEGIN NEW.short_id := 'K7Q2'; RETURN NEW; END $f$;
+      CREATE TRIGGER trg_vet_reports_zz_short_id BEFORE INSERT ON public.vet_reports
+        FOR EACH ROW EXECUTE FUNCTION public.probe_label();
+      DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
+      INSERT INTO public.pets VALUES ('a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      %s;
+    END $b$$q$, kins('f1f1f1f1-0000-4000-8000-00000000000d', 'W4X9', '{"facts":[]}')), '23514');
+
 -- ── The ledger: closed to every caller, append-only for its owner ───────────
 SELECT probe('ledger: service role reads', 'service_role', NULL,
-  $$SELECT * FROM public.vet_report_retired_ids$$, '42501');
+  $$SELECT * FROM public.vet_report_kept_ids$$, '42501');
 SELECT probe('ledger: service role deletes', 'service_role', NULL,
-  $$DELETE FROM public.vet_report_retired_ids$$, '42501');
+  $$DELETE FROM public.vet_report_kept_ids$$, '42501');
 SELECT probe('ledger: service role inserts', 'service_role', NULL,
-  $$INSERT INTO public.vet_report_retired_ids (id, pet_id) VALUES (gen_random_uuid(), gen_random_uuid())$$, '42501');
+  $$INSERT INTO public.vet_report_kept_ids (id, pet_id) VALUES (gen_random_uuid(), gen_random_uuid())$$, '42501');
 SELECT probe('ledger: service role truncates', 'service_role', NULL,
-  $$TRUNCATE public.vet_report_retired_ids$$, '42501');
+  $$TRUNCATE public.vet_report_kept_ids$$, '42501');
 SELECT probe('ledger: signed-in client reads', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  $$SELECT * FROM public.vet_report_retired_ids$$, '42501');
+  $$SELECT * FROM public.vet_report_kept_ids$$, '42501');
 SELECT probe('ledger: anon reads', 'anon', NULL,
-  $$SELECT * FROM public.vet_report_retired_ids$$, '42501');
-SELECT probe('ledger: owner deletes a retired id, then E4', 'postgres', NULL,
-  $q$DO $b$ BEGIN
-      DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
-      DELETE FROM public.vet_report_retired_ids;
-    END $b$$q$, '23514');
-SELECT probe('ledger: owner updates a retired id', 'postgres', NULL,
-  $q$DO $b$ BEGIN
-      DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
-      UPDATE public.vet_report_retired_ids SET short_id = NULL;
-    END $b$$q$, '23514');
+  $$SELECT * FROM public.vet_report_kept_ids$$, '42501');
+SELECT probe('ledger: owner deletes a reservation', 'postgres', NULL,
+  $q$DELETE FROM public.vet_report_kept_ids$q$, '23514');
+SELECT probe('ledger: owner updates a reservation', 'postgres', NULL,
+  $q$UPDATE public.vet_report_kept_ids SET short_id = 'ZZZZ'$q$, '23514');
 SELECT probe('ledger: owner truncates', 'postgres', NULL,
-  $$TRUNCATE public.vet_report_retired_ids$$, '23514');
+  $$TRUNCATE public.vet_report_kept_ids$$, '23514');
 
 -- ── Who may call the functions ───────────────────────────────────────────────
 INSERT INTO probe_results (label, who, want, got, msg)
@@ -277,22 +324,22 @@ SELECT 'grants: no caller role executes a 114 function', '-', '0',
   FROM pg_proc p
  CROSS JOIN unnest(ARRAY['anon', 'authenticated', 'service_role']) r
  WHERE p.pronamespace = 'public'::regnamespace
-   AND p.proname IN ('vet_reports_kept_not_deleted', 'retire_vet_report_id',
-                     'guard_vet_report_retired', 'vet_report_retired_ids_append_only')
+   AND p.proname IN ('vet_reports_kept_not_deleted', 'reserve_vet_report_kept_id',
+                     'vet_report_kept_ids_append_only')
    AND has_function_privilege(r, p.oid, 'EXECUTE');
 INSERT INTO probe_results (label, who, want, got, msg)
-SELECT 'definer: the three vet_reports functions are SECURITY DEFINER', '-', '3',
+SELECT 'definer: both vet_reports functions are SECURITY DEFINER', '-', '2',
        count(*) FILTER (WHERE prosecdef)::text, ''
   FROM pg_proc
  WHERE pronamespace = 'public'::regnamespace
-   AND proname IN ('vet_reports_kept_not_deleted', 'retire_vet_report_id', 'guard_vet_report_retired');
+   AND proname IN ('vet_reports_kept_not_deleted', 'reserve_vet_report_kept_id');
 
 -- ── C-31: no refusal names a value ──────────────────────────────────────────
 INSERT INTO probe_results (label, who, want, got, msg)
 SELECT 'C-31: no 23514 message carries an id or a label', '-', 'clean',
        CASE WHEN EXISTS (SELECT 1 FROM probe_results
                           WHERE got = '23514'
-                            AND (msg ~ '[0-9a-f]{8}-[0-9a-f]{4}' OR msg ~ 'K7Q2|W4X9'))
+                            AND (msg ~ '[0-9a-f]{8}-[0-9a-f]{4}' OR msg ~ 'K7Q2|W4X9|N5R6'))
             THEN 'LEAK' ELSE 'clean' END, '';
 
 \o
