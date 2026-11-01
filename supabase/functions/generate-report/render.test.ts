@@ -2219,6 +2219,7 @@ Deno.test('CUL-2101 adv 2 — the trend tile and a below-floor rise name a tail 
     priorEndDate: '2026-06-25',
     endIso: '2026-07-02T12:00:00.000Z',
     priorEndIso: '2026-06-25T12:00:00.000Z',
+    priorStartIso: '2026-06-18T12:00:00.000Z',
     currentLoggingDays: 4,
     priorLoggingDays: 7,
     minLoggingDays: 3,

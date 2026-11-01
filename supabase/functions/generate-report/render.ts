@@ -2270,15 +2270,27 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
   const seenTail = tail === null ? '' : `; ${nothingLoggedFor(tail)}`
   // CUL-2348: the getting-worse windows run back from the report's `now`, not from the record's
   // last day, so each names the day it ends on; its numbers are logged days, never episodes.
-  // CUL-2368: and the clock time. Each window is `windowDays` × 24h back from that instant, so
-  // it starts partway through a day; "the 7 days to Jul 2" alone reads as Jun 26 to Jul 2, and a
+  // CUL-2368: and both instants. Each window is `windowDays` × 24h back from the detection `now`,
+  // so it starts partway through a day; "the 7 days to Jul 2" alone reads as Jun 26 to Jul 2, and a
   // vet counting those calendar days can see a rise the check never measured under "did not
-  // trigger". Each end is formatted on its own, so a week across a clock change names its real
-  // hour. Copy-only stopgap; whether the engine moves to calendar weeks is the PM's ruling.
-  const weekTo = (c: Extract<SafetyCheck, { kind: 'worsening' }>, key: string, iso: string | null): string =>
-    `the ${num(c.windowDays)} days to ${!iso ? '' : `${h(fmtLocalTime(iso, snap.timezone))} on `}${h(
-      fmtDayScopedTo(key, snap.scope.endDate),
-    )}`
+  // trigger". Naming only the end is not enough either: across a clock change the start sits an
+  // hour off the end's wall-clock time (adversarial pass 1), so every window is named start to end,
+  // each instant formatted on its own. Copy-only stopgap; whether the engine moves to owner-local
+  // calendar weeks is the PM's ruling. Null instants (an unparseable `now`) keep the date alone.
+  const at = (iso: string): string =>
+    `${h(fmtLocalTime(iso, snap.timezone))} on ${h(fmtDayScopedTo(localDayKeyOf(iso, snap.timezone), snap.scope.endDate))}`
+  const weekOf = (
+    c: Extract<SafetyCheck, { kind: 'worsening' }>,
+    startIso: string | null,
+    endIso: string | null,
+    endKey: string,
+  ): string =>
+    startIso && endIso
+      ? `the ${num(c.windowDays)} days from ${at(startIso)} to ${at(endIso)}`
+      : `the ${num(c.windowDays)} days to ${h(fmtDayScopedTo(endKey, snap.scope.endDate))}`
+  const current = (c: Extract<SafetyCheck, { kind: 'worsening' }>): string => weekOf(c, c.priorEndIso, c.endIso, c.endDate)
+  const prior = (c: Extract<SafetyCheck, { kind: 'worsening' }>): string =>
+    weekOf(c, c.priorStartIso, c.priorEndIso, c.priorEndDate)
   for (const c of checks) {
     if (c.kind === 'ongoing') {
       const floors = `it triggers at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
@@ -2320,29 +2332,19 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
         )
     } else if (c.state === 'not_flagged') {
       notTriggered.push(
-        `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in ${weekTo(
+        `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in ${current(
           c,
-          c.endDate,
-          c.endIso,
-        )}, and more, or on more days, than the ${num(c.windowDays)} days before that${seenTail})`,
+        )}, and more, or on more days (counted in UTC), than ${prior(c)}${seenTail})`,
       )
     } else if (c.state === 'below_card_floor') {
       rest.push(
-        `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over ${weekTo(
-          c,
-          c.endDate,
-          c.endIso,
-        )} below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
+        `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over ${current(c)} below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
       )
     } else if (c.state === 'too_few_days') {
       rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(
           c.currentLoggingDays,
-        )} of ${weekTo(c, c.endDate, c.endIso)} logged, ${num(c.priorLoggingDays)} of ${weekTo(
-          c,
-          c.priorEndDate,
-          c.priorEndIso,
-        )}; it needs ${num(
+        )} of ${current(c)} logged, ${num(c.priorLoggingDays)} of ${prior(c)}; it needs ${num(
           c.minLoggingDays,
         )} logged days in each).`,
       )

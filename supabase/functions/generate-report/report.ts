@@ -1945,6 +1945,9 @@ export type SafetyCheck =
        *  when the detection `now` does not parse. */
       endIso: string | null
       priorEndIso: string | null
+      /** The prior window's start (`now` − 2 × `windowDays` × 24h): with the two ends above, each
+       *  window is named start to end, so a week across a clock change cannot hide an hour. */
+      priorStartIso: string | null
       currentLoggingDays: number
       priorLoggingDays: number
       minLoggingDays: number
@@ -5796,6 +5799,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       endIso: checkNowMs === null ? null : new Date(checkNowMs).toISOString(),
       priorEndIso:
         checkNowMs === null ? null : new Date(checkNowMs - detConfig.reflection.windowDays * MS_PER_DAY).toISOString(),
+      priorStartIso:
+        checkNowMs === null ? null : new Date(checkNowMs - 2 * detConfig.reflection.windowDays * MS_PER_DAY).toISOString(),
       // Display only (the state above reads the raw counts): a 7 × 24h window from a mid-day `now`
       // touches 8 UTC days, and "8 of the 7 days" is not a sentence (adversarial pass 1).
       currentLoggingDays: Math.min(density?.currentLoggingDays ?? 0, detConfig.reflection.windowDays),
