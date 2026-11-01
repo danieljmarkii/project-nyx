@@ -119,6 +119,25 @@ export async function fetchDisplayName(userId: string): Promise<DisplayNameReadR
   return { status: 'ok', displayName: typeof raw === 'string' && raw.trim() ? raw.trim() : null };
 }
 
+// The owner's surname for the v2 report's filename (CUL-2292, spec §5.7 and §8). ONLY
+// `last_name`: never display_name, never the email fallback the report's v1 "Owner:" line
+// takes. Null when unset, blank, or the read fails: the filename then omits it, which is the
+// spec's "omitted when empty" and costs the vet nothing a wrong name would.
+export async function fetchOwnerSurname(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('last_name')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[profile] last_name read failed:', error.message);
+    return null;
+  }
+  const raw = data?.last_name;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+}
+
 export type DisplayNameWriteResult =
   | { status: 'written'; displayName: string | null }
   | { status: 'error' };

@@ -8,7 +8,7 @@
 // only so importing pdf.ts doesn't drag native code into jest.
 
 import {
-  flushBeforeReport, reportFreshnessLine, reportPdfFilename, generateVetReport,
+  flushBeforeReport, reportFreshnessLine, reportPdfFilename, reportPdfFilenameFor, reportPdfFilenameV2, generateVetReport,
   reportVersionFor, shareReportPdf, type VetReport,
 } from './pdf';
 import { useBetaOptInStore } from './betaFeatures';
@@ -18,14 +18,15 @@ import { clearTransientFiles } from './transientFiles';
 import { waitFor } from '@testing-library/react-native';
 import { syncNow } from './sync';
 import * as Print from 'expo-print';
+import { fetchOwnerSurname } from './profile';
 import * as Sharing from 'expo-sharing';
 
 jest.mock('./supabase', () => ({
-  supabase: { functions: { invoke: jest.fn() } },
+  supabase: { functions: { invoke: jest.fn() }, auth: { getSession: jest.fn() } },
 }));
 // getDeviceTimezone (B-443) rides the report request; pin it so the body assertion is
 // deterministic under any runner clock (the non-UTC CI job runs jest in Kiritimati/Chatham/Honolulu).
-jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicago') }));
+jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicago'), fetchOwnerSurname: jest.fn() }));
 // The freshness gate's two dependencies — mocked at the module edge so the gate's
 // control flow (the part the adversarial pass broke) is what the tests exercise.
 jest.mock('./db', () => ({ getSyncStatus: jest.fn() }));
@@ -112,6 +113,100 @@ describe('reportPdfFilename', () => {
   });
 });
 
+// CUL-2292 (spec §8, §5.7) — the v2 name: "Pet-Surname_owner-home-log_<start>_to_<end>.pdf",
+// the surname only from `last_name`, transliterated, omitted when empty.
+describe('reportPdfFilenameV2', () => {
+  it('names the patient and the owner, then the window', () => {
+    expect(reportPdfFilenameV2('Cooper', 'Reyes', '2026-04-04', '2026-07-03')).toBe(
+      'Cooper-Reyes_owner-home-log_2026-04-04_to_2026-07-03.pdf',
+    );
+  });
+
+  it('transliterates marked and spelled-out Latin letters rather than dropping them', () => {
+    expect(reportPdfFilenameV2('Zoë', 'Müller', '2026-01-01', '2026-02-01')).toBe('Zoe-Muller_owner-home-log_2026-01-01_to_2026-02-01.pdf');
+    expect(reportPdfFilenameV2('Søren', 'Łukasiewicz', '2026-01-01', '2026-02-01')).toBe('Soren-Lukasiewicz_owner-home-log_2026-01-01_to_2026-02-01.pdf');
+    expect(reportPdfFilenameV2('Æsir', 'Straße', '2026-01-01', '2026-02-01')).toBe('AEsir-Strasse_owner-home-log_2026-01-01_to_2026-02-01.pdf');
+    expect(reportPdfFilenameV2('Nyx', 'Peña Núñez', '2026-01-01', '2026-02-01')).toBe('Nyx-Pena-Nunez_owner-home-log_2026-01-01_to_2026-02-01.pdf');
+  });
+
+  it('omits the surname when it is empty, blank, null or has no Latin letter to keep', () => {
+    for (const surname of [null, '', '   ', '李', 'Ωμέγα', '—']) {
+      expect(reportPdfFilenameV2('Cooper', surname, '2026-04-04', '2026-07-03')).toBe('Cooper_owner-home-log_2026-04-04_to_2026-07-03.pdf');
+    }
+  });
+
+  it('keeps every path character out, and falls back to "pet" for a name with nothing to keep', () => {
+    expect(reportPdfFilenameV2('../../etc/passwd', "O'Brien/..", '2026-04-04', '2026-07-03')).toBe(
+      'etc-passwd-O-Brien_owner-home-log_2026-04-04_to_2026-07-03.pdf',
+    );
+    expect(reportPdfFilenameV2('***', 'Reyes', '2026-04-04', '2026-07-03')).toBe('pet-Reyes_owner-home-log_2026-04-04_to_2026-07-03.pdf');
+  });
+
+  it('prints the window only when both ends are real days', () => {
+    expect(reportPdfFilenameV2('Cooper', 'Reyes', '', '')).toBe('Cooper-Reyes_owner-home-log.pdf');
+    expect(reportPdfFilenameV2('Cooper', 'Reyes', '2026-04-04', '../x')).toBe('Cooper-Reyes_owner-home-log.pdf');
+  });
+
+  it('caps each name at 40 characters, never ending on a hyphen', () => {
+    const name = reportPdfFilenameV2('A'.repeat(39) + ' Bcdef', 'Reyes', '2026-04-04', '2026-07-03');
+    expect(name).toBe(`${'A'.repeat(39)}-Reyes_owner-home-log_2026-04-04_to_2026-07-03.pdf`);
+  });
+});
+
+describe('reportPdfFilenameFor', () => {
+  const base: VetReport = {
+    html: '', petName: 'Cooper', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'since_visit', photoCount: 0,
+    trialAllowedListMissing: false, reportVersion: 'v1', ownerSurname: 'Reyes',
+  };
+  it('a v1 report keeps the v1 name, even with a surname on hand', () => {
+    expect(reportPdfFilenameFor(base)).toBe('Cooper-vet-report-2026-04-04-to-2026-07-03.pdf');
+  });
+  it('a v2 report is filed as the owner home log', () => {
+    expect(reportPdfFilenameFor({ ...base, reportVersion: 'v2' })).toBe('Cooper-Reyes_owner-home-log_2026-04-04_to_2026-07-03.pdf');
+  });
+});
+
+describe('generateVetReport — the version and the surname (CUL-2292)', () => {
+  const mockedSession = supabase.auth.getSession as jest.Mock;
+  const mockedSurname = fetchOwnerSurname as jest.Mock;
+  beforeEach(() => {
+    mockedInvoke.mockReset();
+    mockedSession.mockReset().mockResolvedValue({ data: { session: { user: { id: 'user-1' } } } });
+    mockedSurname.mockReset().mockResolvedValue('Reyes');
+  });
+
+  it('a v1 response (or none named) is v1 and reads no surname', async () => {
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', report_version: 'v1' }, error: null });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(r.reportVersion).toBe('v1');
+    expect(r.ownerSurname).toBeNull();
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>' }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).reportVersion).toBe('v1');
+    expect(mockedSurname).not.toHaveBeenCalled();
+  });
+
+  it('a v2 response reads the signed-in owner\'s last_name', async () => {
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', report_version: 'v2' }, error: null });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(r.reportVersion).toBe('v2');
+    expect(r.ownerSurname).toBe('Reyes');
+    expect(mockedSurname).toHaveBeenCalledWith('user-1');
+  });
+
+  it('no session, or a read that throws, leaves the surname out and the report still opens', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', report_version: 'v2' }, error: null });
+    mockedSession.mockResolvedValue({ data: { session: null } });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).ownerSurname).toBeNull();
+    expect(mockedSurname).not.toHaveBeenCalled();
+    mockedSession.mockRejectedValue(new Error('storage'));
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(r.ownerSurname).toBeNull();
+    expect(r.html).toContain('x');
+    warn.mockRestore();
+  });
+});
+
 describe('generateVetReport', () => {
   beforeEach(() => {
     mockedInvoke.mockReset();
@@ -189,7 +284,7 @@ describe('generateVetReport', () => {
 describe('shareReportPdf', () => {
   const report: VetReport = {
     html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d', photoCount: 0,
-    trialAllowedListMissing: false,
+    trialAllowedListMissing: false, reportVersion: 'v1', ownerSurname: null,
   };
   // Where expo-print really writes (ExpoPrintToFile.swift): <Caches>/Print/<uuid>.pdf.
   const PRINT_TEMP = 'file:///cache/Print/print-tmp.pdf';
@@ -234,6 +329,16 @@ describe('shareReportPdf', () => {
     expect(presentAtShare).toBe(true);
     // expo-print's temp is outside every wipe, so it goes once the sheet has closed.
     expect(mockFs.files.has(PRINT_TEMP)).toBe(false);
+  });
+
+  it('a v2 report is shared under the owner-home-log name (CUL-2292)', async () => {
+    mockedIsAvailable.mockResolvedValue(true);
+    await shareReportPdf({ ...report, reportVersion: 'v2', ownerSurname: 'Reyes' });
+    expect(mockedShare).toHaveBeenCalledWith(
+      'file:///cache/transient/Nyx-Reyes_owner-home-log_2026-04-04_to_2026-07-03.pdf',
+      expect.anything(),
+    );
+    expect(presentAtShare).toBe(true);
   });
 
   it('falls back to the raw temp uri (never blocks sharing) when the rename copy fails', async () => {
