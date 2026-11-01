@@ -9,8 +9,9 @@
 
 import {
   flushBeforeReport, reportFreshnessLine, reportPdfFilename, generateVetReport,
-  shareReportPdf, type VetReport,
+  reportVersionFor, shareReportPdf, type VetReport,
 } from './pdf';
+import { useBetaOptInStore } from './betaFeatures';
 import { supabase } from './supabase';
 import { getSyncStatus } from './db';
 import { clearTransientFiles } from './transientFiles';
@@ -28,6 +29,12 @@ jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicag
 // The freshness gate's two dependencies — mocked at the module edge so the gate's
 // control flow (the part the adversarial pass broke) is what the tests exercise.
 jest.mock('./db', () => ({ getSyncStatus: jest.fn() }));
+// CUL-2347 — Gate 1 for the report layout, read through allowlistFlagNow. Only
+// `report_document_v2` is consulted; every test starts with it off (the shipped seed).
+let mockDocumentEligible = false;
+jest.mock('../hooks/useAppConfig', () => ({
+  allowlistFlagNow: (key: string) => key === 'report_document_v2' && mockDocumentEligible,
+}));
 jest.mock('./sync', () => ({ syncNow: jest.fn() }));
 jest.mock('expo-print', () => ({ printToFileAsync: jest.fn() }));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
@@ -106,7 +113,11 @@ describe('reportPdfFilename', () => {
 });
 
 describe('generateVetReport', () => {
-  beforeEach(() => mockedInvoke.mockReset());
+  beforeEach(() => {
+    mockedInvoke.mockReset();
+    mockDocumentEligible = false;
+    useBetaOptInStore.getState().reset();
+  });
 
   it('returns the html + scope metadata on success', async () => {
     mockedInvoke.mockResolvedValue({
@@ -374,5 +385,75 @@ describe('reportFreshnessLine (B-534, the B-398 two-state rule)', () => {
     const line = reportFreshnessLine({ pending: 0, quarantined: 1 })!;
     expect(line).toContain('1 entry');
     expect(line).toContain('may not include it');
+  });
+});
+
+// ── CUL-2347 — the "New report layout" switch asks for v2, and only it ───────────
+// PM ruling (a) on CUL-2290: an opt-in, default off. The server renders v2 only when the
+// request asks AND its own flag read agrees; this pins the asking half. Everyone who is
+// not eligible-and-opted-in sends today's body exactly: no reportVersion key at all.
+describe('reportVersionFor — both gates, never one', () => {
+  it('asks for v2 only when eligible AND opted in', () => {
+    expect(reportVersionFor(true, true)).toBe('v2');
+    expect(reportVersionFor(true, false)).toBeNull();
+    expect(reportVersionFor(false, true)).toBeNull();
+    expect(reportVersionFor(false, false)).toBeNull();
+  });
+});
+
+describe('generateVetReport — reportVersion on the wire (CUL-2347)', () => {
+  const TODAY = { petId: 'p1', includeNotes: true, timezone: 'America/Chicago' };
+  beforeEach(() => {
+    mockedInvoke.mockReset();
+    mockedInvoke.mockResolvedValue({ data: { html: '<html></html>' }, error: null });
+    mockDocumentEligible = false;
+    useBetaOptInStore.getState().reset();
+  });
+
+  it('an allowlisted owner who flips the switch sends reportVersion: v2', async () => {
+    mockDocumentEligible = true;
+    useBetaOptInStore.getState().setOptIn('report_document_v2', true);
+    await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { ...TODAY, reportVersion: 'v2' } });
+  });
+
+  it('an allowlisted owner who has not flipped it sends today\'s body (the switch starts off)', async () => {
+    mockDocumentEligible = true;
+    await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
+  });
+
+  it('a switch left on after the account leaves the allowlist sends today\'s body', async () => {
+    useBetaOptInStore.getState().setOptIn('report_document_v2', true);
+    await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
+  });
+
+  it('a v1 body carries no reportVersion key at all, not an undefined one', async () => {
+    mockDocumentEligible = true;
+    await generateVetReport({ petId: 'p1', includeNotes: true });
+    const sent = mockedInvoke.mock.calls[0][1].body as Record<string, unknown>;
+    expect(Object.keys(sent)).not.toContain('reportVersion');
+  });
+
+  it('a store that throws on read sends today\'s body (fails closed)', async () => {
+    mockDocumentEligible = true;
+    useBetaOptInStore.getState().setOptIn('report_document_v2', true);
+    const spy = jest.spyOn(useBetaOptInStore, 'getState').mockImplementation(() => {
+      throw new Error('store unavailable');
+    });
+    try {
+      await generateVetReport({ petId: 'p1', includeNotes: true });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
+  });
+
+  it('the other report switch (the new flow) never asks for the layout', async () => {
+    mockDocumentEligible = true;
+    useBetaOptInStore.getState().setOptIn('report_composer_v2', true);
+    await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
   });
 });

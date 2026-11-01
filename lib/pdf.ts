@@ -158,13 +158,51 @@ export function reportFreshnessLine(f: ReportFreshness): string | null {
   return null;
 }
 
+// ── CUL-2347 — which layout to ask for ───────────────────────────────────────
+// The "New report layout" switch (`report_document_v2`, PM ruling (a) on CUL-2290). The
+// request carries `reportVersion: 'v2'` only when BOTH gates hold: the account is on the
+// allowlist (Gate 1) AND the owner turned the switch on (Gate 2). Being eligible turns
+// nothing on. Every other caller sends today's body byte for byte, with no key at all, so
+// the server's v1 default is what they get. The server re-checks the flag against the JWT
+// uid either way; this only decides whether to ask.
+//
+// Pure, so the two-gate truth table is unit-tested without the stores.
+export function reportVersionFor(eligible: boolean, optedIn: boolean): 'v2' | null {
+  return eligible && optedIn ? 'v2' : null;
+}
+
+// Read once per request, not reactive: the report is generated on open, so a flip takes
+// effect on the next one. The config store is required LAZILY (the floorOnNow pattern,
+// lib/incidentFloorQueue.ts): it pulls the auth store into every importer of this module.
+// A store that cannot be loaded reads as v1, the fail-closed direction.
+function reportVersionNow(): 'v2' | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { allowlistFlagNow } = require('../hooks/useAppConfig') as typeof import('../hooks/useAppConfig');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useBetaOptInStore } = require('./betaFeatures') as typeof import('./betaFeatures');
+    return reportVersionFor(
+      allowlistFlagNow('report_document_v2'),
+      useBetaOptInStore.getState().optIns.report_document_v2 === true,
+    );
+  } catch {
+    return null;
+  }
+}
+
 export async function generateVetReport(params: VetReportParams): Promise<VetReport> {
   // timezone: the DEVICE zone, so the report's trial "Day N" buckets by the same clock the
   // owner's card does (B-443), rather than a possibly-stale stored `user_profiles.timezone`.
   // Injected here (not in VetReportParams) so every caller sends it without threading it; null
   // when unresolvable → the server falls back to the stored zone. Never guessed.
+  // reportVersion is injected the same way, and only when it is 'v2' (CUL-2347).
+  const reportVersion = reportVersionNow();
   const { data, error } = await supabase.functions.invoke('generate-report', {
-    body: { ...params, timezone: getDeviceTimezone() },
+    body: {
+      ...params,
+      timezone: getDeviceTimezone(),
+      ...(reportVersion === 'v2' ? { reportVersion } : {}),
+    },
   });
   if (error) throw new Error(`Report generation failed: ${error.message}`);
   if (!data || typeof data.html !== 'string' || data.html.length === 0) {
