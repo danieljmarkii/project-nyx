@@ -2481,11 +2481,23 @@ export function safetyFlagRow(
       // The stored note usually ends with its own terminal punctuation — appending an
       // unconditional "." printed "…is notable.." on the first real artifact.
       const note0 = notes.length ? notes[0].trim() : ''
-      // CUL-2357 — the note is the MODEL's (`analyze-vomit` `foreign_material_note`), never the
-      // owner's; "Owner/AI note" left a vet unable to tell whose words they were reading.
-      const noteBit = note0
-        ? ` The photo analysis describes: ${h(note0)}${/[.!?\u2026]$/.test(note0) ? '' : '.'}`
-        : ''
+      // CUL-2357 — WHOSE WORDS. `foreign_material_note` is written by `analyze-vomit`, and the
+      // owner can overwrite it from the incident screen ("What was it?", `saveVomitFieldEdits`),
+      // which stamps `edited_at`. "Owner/AI note" left a vet unable to tell which they were reading;
+      // calling every note the model's (this PR's first cut, adversarial pass 1) printed an owner's
+      // "just grass, he's fine" with the machine's authority on the safety band. So the label
+      // follows the incident's own `edited` bit, and where the record cannot say, it says both.
+      const noteIncident = f.incidents.find((i) => !!i.note && i.note.trim() === note0)
+      const noteEdited = noteIncident
+        ? snap.provenance.symptomLog.find((e) => e.eventId === noteIncident.eventId)?.phenotype?.edited
+        : undefined
+      const noteLabel =
+        noteEdited === false
+          ? 'The photo analysis describes'
+          : noteEdited === true
+            ? 'The owner&rsquo;s edit of the photo analysis reads'
+            : 'Photo analysis note, which the owner may have edited'
+      const noteBit = note0 ? ` ${noteLabel}: ${h(note0)}${/[.!?\u2026]$/.test(note0) ? '' : '.'}` : ''
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
       return row(
         'Foreign material',
@@ -2517,11 +2529,19 @@ export function safetyFlagRow(
         // the difference. The narrow lead now says what it counts; the food names follow it.
         const noun = wide ? 'rated meal' : 'rated feeding'
         const of = wide ? '' : ' carrying the trial diet'
-        const population = wide ? '' : ' (every entry with the diet in it, treats included)'
+        const population = wide ? '' : ' (entries with the diet in them, treats included)'
         // THE UNFINISHED DAYS, DATED, where the range fact carries them; the evidence range
         // below stays as the window the counts were taken over, which is a different fact.
         const hist = r.history
         const dayKeyOfIndex = (i: number): string => new Date(i * 86_400_000).toISOString().slice(0, 10)
+        // NEVER A RANGE THAT READS AS ENDED WHILE FOOD IS STILL GOING UNEATEN (adversarial pass 1,
+        // QUIET). The dated range is the trial diet's alone; refused bowls of a re-photographed bag
+        // land in the meal record, not here, so "between Jul 1 and Jul 2" over a cat refusing every
+        // bowl since read as a refusal that stopped. The card dates its range only when nothing was
+        // left unfinished after it (`refusalIsPastTense`); the band dates it either way and says so.
+        const since = hist?.unfinishedSinceElsewhere
+          ? ', and food has been left unfinished again since'
+          : ''
         const when =
           hist && Number.isFinite(hist.firstUnfinishedDayIndex) && Number.isFinite(hist.lastUnfinishedDayIndex)
             ? hist.firstUnfinishedDayIndex === hist.lastUnfinishedDayIndex
@@ -2533,7 +2553,7 @@ export function safetyFlagRow(
         bits.push(
           `<b>${num(r.refusedFeedings)} of ${num(r.ratedFeedings)} ${noun}${
             r.ratedFeedings === 1 ? '' : 's'
-          }${of} left unfinished</b>${population}${when}.`,
+          }${of} left unfinished</b>${population}${when}${since}.`,
         )
       }
       // The food names, after the finding, never under a `meal_record` population (B-530).

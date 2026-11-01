@@ -8872,14 +8872,31 @@ Deno.test('CUL-2357 — zero days reads "today" only when the window ends today,
   assert.ok(/most recent 3 days ago/.test(older), 'a nonzero recency is unchanged')
 })
 
-Deno.test('CUL-2357 — the foreign-material note is the photo analysis, never "Owner/AI"', () => {
+Deno.test('CUL-2357 — the foreign-material note is labelled by who wrote it, never "Owner/AI"', () => {
   const flag: SafetyFlag = {
     kind: 'present_foreign',
     incidents: [{ eventId: 'v1', occurredAt: '2026-05-18T07:09:00Z', note: 'A small blue object is visible' }],
   }
-  const t = plain(renderReport(base({ safetyFlags: [flag] })))
-  assert.ok(/The photo analysis describes: A small blue object is visible\./.test(t), t)
-  assert.ok(!/Owner\/AI/.test(t), 'the owner wrote none of it')
+  const withLog = (edited: boolean | null) => {
+    const b = base({ safetyFlags: [flag] })
+    const phenotype = edited === null
+      ? null
+      : { kind: 'vomit' as const, status: 'completed', contentsCategory: null, consistency: null, colour: null, bloodPresent: null, foreignPresent: true, foreignNote: 'A small blue object is visible', bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited }
+    return plain(renderReport({
+      ...b,
+      provenance: { ...b.provenance, symptomLog: [logEntry({ eventId: 'v1', type: 'vomit', occurredAt: '2026-05-18T07:09:00Z', phenotype })] },
+    }))
+  }
+  const model = withLog(false)
+  assert.ok(/The photo analysis describes: A small blue object is visible\./.test(model), model)
+  // Adversarial pass 1: the owner can overwrite this note ("What was it?"), which stamps edited_at.
+  // An owner's words must never print with the machine's authority on the safety band.
+  const owner = withLog(true)
+  assert.ok(/The owner['’]s edit of the photo analysis reads: A small blue object is visible\./.test(owner), owner)
+  assert.ok(!/The photo analysis describes/.test(owner))
+  const unknown = withLog(null)
+  assert.ok(/Photo analysis note, which the owner may have edited: /.test(unknown), unknown)
+  for (const t of [model, owner, unknown]) assert.ok(!/Owner\/AI/.test(t), 'never the merged label')
 })
 
 Deno.test('CUL-2357 — the weight flag states the loss as a whole percent of the higher reading', () => {
@@ -8925,7 +8942,7 @@ Deno.test('CUL-2357 — the refusal lead states its finding and its population b
   const t = plain(renderReport(base({ safetyFlags: [cul2357Refusal()] })))
   const row = t.slice(t.indexOf('Diet not eaten'), t.indexOf('Diet not eaten') + 600)
   assert.ok(
-    /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(every entry with the diet in it, treats included\) on 3 days between Jun 2 and Jun 9\./.test(row),
+    /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 3 days between Jun 2 and Jun 9\./.test(row),
     row,
   )
   assert.ok(row.indexOf('left unfinished') < row.indexOf('Food A'), 'the finding comes first')
@@ -8937,11 +8954,23 @@ Deno.test('CUL-2357 — the refusal lead without a history counts its days, and 
   const r = cul2357Refusal()
   if (r.kind !== 'trial_diet_refusal' || !r.refusal) throw new Error('fixture')
   const noHist = plain(renderReport(base({ safetyFlags: [{ ...r, refusal: { ...r.refusal, history: undefined } }] })))
-  assert.ok(/left unfinished \(every entry with the diet in it, treats included\) on 3 days\./.test(noHist), noHist)
+  assert.ok(/left unfinished \(entries with the diet in them, treats included\) on 3 days\./.test(noHist), noHist)
   const wide = plain(
     renderReport(base({ safetyFlags: [{ ...r, refusal: { ...r.refusal, population: 'meal_record', history: undefined } }] })),
   )
   assert.ok(/4 of 4 rated meals left unfinished on 3 days\./.test(wide), wide)
   assert.ok(!/Food A/.test(wide), 'never a food name where the app could not identify the diet (B-530)')
   assert.ok(!/treats included/.test(wide), 'the meal record excludes treats, and says nothing that claims otherwise')
+})
+
+Deno.test('CUL-2357 — a dated refusal range never reads as ended while food is still going uneaten (S1d)', () => {
+  // Adversarial pass 1, QUIET: trial-diet refusals on two days, then refused bowls of a
+  // re-photographed bag (the meal record, not this population). The range alone read as a refusal
+  // that stopped; the band now says food has been left unfinished again since.
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal' || !r.refusal?.history) throw new Error('fixture')
+  const s1d = plain(renderReport(base({ safetyFlags: [{ ...r, refusal: { ...r.refusal, history: { ...r.refusal.history, unfinishedSinceElsewhere: true } } }] })))
+  assert.ok(/on 3 days between Jun 2 and Jun 9, and food has been left unfinished again since\./.test(s1d), s1d)
+  const ended = plain(renderReport(base({ safetyFlags: [r] })))
+  assert.ok(!/left unfinished again since/.test(ended), 'only where the record holds it')
 })
