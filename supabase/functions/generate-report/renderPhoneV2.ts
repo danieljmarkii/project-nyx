@@ -40,10 +40,11 @@ export const SVG_TEXT_MIN = 11
 export const COMPACT_SCALE = 1.6
 /** The root size `-apple-system-body` resolves to at the default text size. */
 export const BODY_PX = 17
-/** The pinned repeat stops growing at the compaction scale, so it never fills the frame it pins
- *  to (at AX5 on a 320pt screen a full-size sentence is taller than the frame). It repeats words
- *  that print at full size in their own place, which still grows with the text. */
-export const VERDICT_MAX_PX = Math.round(BODY_PX * COMPACT_SCALE)
+/** The pinned repeat stops growing at 1.25×, so it never takes more than 40% of even a short
+ *  320pt screen and the bars always show under it (adversarial pass 2 on CUL-2295; the guard's
+ *  PIN_MAX_SHARE). It repeats words that print at full size in their own place below. */
+export const VERDICT_MAX_SCALE = 1.25
+export const VERDICT_MAX_PX = Math.round(BODY_PX * VERDICT_MAX_SCALE)
 
 const SIGN_ROW_H = 34
 const BAR_H = 22
@@ -305,7 +306,7 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .leadchart .flagh{color:var(--concern);}
 .leadchart.flagged{border:1.5px solid var(--ink);padding:0.6rem 10px;}
 .leadchart .why,.flagrow{color:var(--ink2);margin:0 0 0.4rem;}
-.verdict{position:sticky;top:0;z-index:1;margin:0 0 0.4rem;padding:0.3rem 0;background:var(--paper);font-weight:650;border-bottom:1px solid var(--hair);font-size:min(1rem, ${VERDICT_MAX_PX}px);}
+.verdict{position:sticky;top:0;z-index:1;margin:0 0 0.4rem;padding:min(0.3rem, 5px) 0;background:var(--paper);font-weight:650;border-bottom:1px solid var(--hair);font-size:min(1rem, ${VERDICT_MAX_PX}px);}
 .verdict[hidden]{display:none;}
 .chart{margin:0.2rem 0 0;}
 .crow{margin:0 0 0.35rem;}
@@ -382,7 +383,12 @@ const SCRIPT_PHONE = `
     root.removeAttribute('data-tight');
     var bandH = document.querySelector('[data-block=band] h2');
     var mast = document.querySelector('.mast');
-    if (root.hasAttribute('data-compact') && bandH && mast && !mast.hasAttribute('data-open') && bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) root.setAttribute('data-tight', '');
+    if (root.hasAttribute('data-compact') && bandH && mast && !mast.hasAttribute('data-open') && bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) {
+      root.setAttribute('data-tight', '');
+      // Fold the brief only where folding brings the band into the frame; otherwise it costs the
+      // species for nothing (adversarial pass 2 on CUL-2295).
+      if (bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) root.removeAttribute('data-tight');
+    }
     var unit = document.querySelector('[data-keep="lead"]');
     var push = document.querySelector('.keep-push');
     if (!unit || !push) return;

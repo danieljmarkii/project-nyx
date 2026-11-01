@@ -130,7 +130,7 @@ Deno.test('type — the root follows -apple-system-body over a 17px fallback; ev
   for (const { sel, v } of sizes) {
     if (sel === 'html') continue // the fallback, overridden by -apple-system-body
     if (sel === '.verdict') {
-      assert.equal(v, `min(1rem, ${VERDICT_MAX_PX}px)`, 'the pinned repeat grows with the text up to the compaction scale')
+      assert.equal(v, `min(1rem, ${VERDICT_MAX_PX}px)`, 'the pinned repeat grows with the text up to 1.25×')
       continue
     }
     if (sel === 'svg .cnt') {
@@ -227,7 +227,8 @@ Deno.test('keep — the lead is the line’s warning: the overlap verdict, or th
       assert.equal(conf.lead, 'Not a test of the diet alone.', name)
     } else if (conf.text.includes('A free-fed bowl was down')) {
       bowlOnly++
-      assert.match(conf.lead, /^A free-fed bowl was down in this window \(.+\): intake not directly observed, and the trial cannot exclude it\.$/, name)
+      // A fixed sentence: no owner-entered label can lengthen what is pinned (adversarial pass 2).
+      assert.equal(conf.lead, 'A free-fed bowl was down in this window; the trial cannot exclude it.', name)
     } else {
       assert.equal(conf.lead, conf.text, `${name}: a one-sentence line leads with itself`)
     }
@@ -253,7 +254,7 @@ Deno.test('keep — the layout script never hides the repeat, pads page steps be
 
 Deno.test('compact — at scale 1.6 the details fold behind one line; species, sex, age, weight and the last entry never fold', () => {
   assert.equal(COMPACT_SCALE, 1.6)
-  assert.equal(VERDICT_MAX_PX, Math.round(BODY_PX * COMPACT_SCALE))
+  assert.equal(VERDICT_MAX_PX, Math.round(BODY_PX * 1.25))
   const { screen, print } = cssParts()
   const compact = screen.slice(screen.indexOf('@media screen{'))
   assert.ok(compact.length > 0, 'compaction lives in a screen-only block')
@@ -264,7 +265,8 @@ Deno.test('compact — at scale 1.6 the details fold behind one line; species, s
   // Only where the band would leave the first frame does the brief fold too (the band is the warning).
   assert.match(compact, /\[data-compact\]\[data-tight\] \.mast \.brief\{display:none;\}/)
   const script = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
-  assert.match(script, /bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight\) root\.setAttribute\('data-tight', ''\)/)
+  assert.match(script, /bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight\) \{\s*root\.setAttribute\('data-tight', ''\);/)
+  assert.match(script, /if \(bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight\) root\.removeAttribute\('data-tight'\);/, 'no fold that does not bring the band in')
   assert.doesNotMatch(print, /data-compact/, 'compaction never reaches print')
   assert.doesNotMatch(screen.slice(0, screen.indexOf('@media screen{')), /data-compact/, 'no compact rule outside the screen block')
   const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))

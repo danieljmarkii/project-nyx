@@ -797,6 +797,9 @@ function recordLinesOf(snap: ReportSnapshot, lead: Lead | null, edgeHolds: boole
   return out
 }
 
+/** A free-fed bowl beside a trial, as a warning with no owner text in it (it is pinned on the phone). */
+const BOWL_WARNING = 'A free-fed bowl was down in this window; the trial cannot exclude it.'
+
 /** The confounder line: what overlaps a trial, as recorded (spec §5 order, v1 §7.2's caveat). */
 function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | null {
   const t = snap.trial
@@ -804,13 +807,16 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
   // A bowl left down beside a trial is a competing food the trial cannot exclude (cold read on
   // CUL-2290, Mira): named here, beside the trial, not only on the meals line.
   const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named')
-  const bowl = bowls.length > 0 ? ` A free-fed bowl was down in this window (${bowls.join(', ')}): intake not directly observed, and the trial cannot exclude it.` : ''
+  // The warning is a fixed sentence and the owner's labels follow it (adversarial pass 2 on
+  // CUL-2295): a surface that pins the warning beside the chart pins a bounded sentence, never a
+  // list of free-text names that can grow past the screen.
+  const bowl = bowls.length > 0 ? ` ${BOWL_WARNING} Free-fed: ${bowls.join(', ')}; intake not directly observed.` : ''
   if (t.medicationOverlap.length === 0) {
     const none = 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.'
     // With no medication overlapping, a bowl left down is the line's warning, so it leads wherever
     // only one sentence fits (cold read on CUL-2295, Mira): the "no medication" sentence alone
     // reads as a clean trial.
-    return { text: `${none}${bowl}`, lead: bowl ? bowl.trim() : none }
+    return { text: `${none}${bowl}`, lead: bowl ? BOWL_WARNING : none }
   }
   const items = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)

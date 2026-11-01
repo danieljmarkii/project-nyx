@@ -20,5 +20,20 @@ export function v2DocFixtures(): Array<[string, ReportSnapshot]> {
     ['looks-only', assembleReport(olive())],
   ]
   for (const [name, input] of sampleCases()) out.push([name === 'trial-report-refused.html' ? 'mira' : name.replace(/\.html$/, ''), assembleReport(input)])
+  // Mira with three long free-fed bowl labels: owner-entered text a production caller can hand
+  // over, and the case that once grew the phone's pinned warning past the screen (adversarial
+  // pass 2 on CUL-2295).
+  const mira = out.find(([n]) => n === 'mira')
+  if (mira) {
+    const long = structuredClone(mira[1])
+    const base = long.diet.freeFed[0]
+    if (!base) throw new Error('the mira fixture lost its free-fed bowl; the long-label fixture cannot be built')
+    long.diet.freeFed = [
+      { ...base, foodLabel: 'Purina ONE +Plus Indoor Advantage Adult Dry Cat Food with Real Turkey' },
+      { ...base, foodLabel: "Hill's Science Diet Adult Sensitive Stomach & Skin Chicken Recipe Dry" },
+      { ...base, foodLabel: 'Blue Buffalo Wilderness High Protein Grain-Free Indoor Chicken Recipe' },
+    ]
+    out.push(['mira-long-bowls', long])
+  }
   return out
 }

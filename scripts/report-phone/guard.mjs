@@ -37,12 +37,18 @@ if (shots) fs.mkdirSync(shots, { recursive: true })
 
 const BODY_PX = 17
 const SIZES = [
-  { name: '320pt', width: 320, height: 568 },
-  { name: '390pt', width: 390, height: 844 },
+  { name: '320pt', width: 320, height: 568, band: true },
+  // Nearer the in-app view's height once the native header and bottom bar take their share. The
+  // pin, clipping and keep-together checks run here; the band's first-frame check is the spec's,
+  // at the two phone sizes.
+  { name: '320pt-short', width: 320, height: 460, band: false },
+  { name: '390pt', width: 390, height: 844, band: true },
 ]
 const SCALES = [1, 2.35, 3.1]
 const BAND_SCALES = [1, 2.35]
 const MIN_PX = 11
+/** The pinned warning never takes more than this share of the screen: the bars must show under it. */
+const PIN_MAX_SHARE = 0.4
 
 const fixtures = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8'))
 const failures = []
@@ -92,7 +98,7 @@ async function screenChecks(page, where, s, size) {
       }
       return out
     },
-    { MIN_PX, checkBand: BAND_SCALES.includes(s) },
+    { MIN_PX, checkBand: BAND_SCALES.includes(s) && size.band },
   )
   for (const o of r.overflow.slice(0, 5)) fail(where, `clipped: ${o}`)
   for (const o of r.small.slice(0, 5)) fail(where, `under 11pt: ${o}`)
@@ -113,6 +119,7 @@ async function keepChecks(page, where) {
       hasConf: !!u.querySelector('[data-block="confounder"]'),
       repShown: rep ? getComputedStyle(rep).display !== 'none' : null,
       repText: rep ? rep.textContent.trim() : null,
+      repH: rep && getComputedStyle(rep).display !== 'none' ? rep.getBoundingClientRect().height : 0,
       confText: u.querySelector('[data-block="confounder"]')?.textContent.trim() ?? null,
       docH: document.documentElement.scrollHeight,
       H: window.innerHeight,
@@ -125,6 +132,7 @@ async function keepChecks(page, where) {
     if (unit.top + unit.height > (k + 1) * H + 0.5) fail(where, `the unit fits a frame (${unit.height.toFixed(0)}pt) but straddles the boundary at ${(k + 1) * H}pt`)
   }
   if (!unit.hasConf) return unit
+  if (unit.repH > PIN_MAX_SHARE * H) fail(where, `the pinned warning is ${unit.repH.toFixed(0)}pt, over ${Math.round(PIN_MAX_SHARE * 100)}% of the ${H}pt screen`)
   if (unit.repShown !== true) fail(where, 'the lead sentence is hidden (it must show beside the bars on every record with a confounder)')
   // What the repeat says: the line's own warning, never a clause that reads as a clean trial.
   const r = unit.repText ?? ''
