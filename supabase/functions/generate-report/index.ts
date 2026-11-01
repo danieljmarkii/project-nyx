@@ -1139,7 +1139,7 @@ export async function generateReportForPet(
       .select('id, user_id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
       .eq('id', petId)
       .maybeSingle(),
-    supabase.from('user_profiles').select('display_name, first_name, last_name, timezone').maybeSingle(),
+    supabase.from('user_profiles').select('display_name, timezone').maybeSingle(),
     // CUL-899 VV-1 — `.is('deleted_at', null)` is the most consequential member of
     // that PR's reader sweep: these rows ARE the scope cascade's rung 1, so a visit
     // the owner deleted would keep setting the report's window start. It lands on
@@ -1232,12 +1232,7 @@ export async function generateReportForPet(
   // nothing yet, so the report is unchanged; see ReportInput.engineFlags.
   const engineFlags = await readEngineFlags(supabase, petRow.user_id)
 
-  const profile = profileRes.data as {
-    display_name: string | null
-    first_name?: string | null
-    last_name?: string | null
-    timezone: string | null
-  } | null
+  const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null
   const pet = mapPet(petRow)
   let ownerName = profile?.display_name?.trim() || null
   // §7.1 PIMS-filing fallback (PM, 2026-07-03): when no display name is set, fall back to
@@ -1686,7 +1681,7 @@ export async function generateReportForPet(
     ? renderPrintV2(
         buildDocumentV2(snapshot, {
           // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
-          owner: { firstName: profile?.first_name ?? null, lastName: profile?.last_name ?? null },
+          owner: await readOwnerNames(supabase),
           shortId: null,
           questions: [],
         }),
@@ -1818,6 +1813,23 @@ const handler = async (req: Request): Promise<Response> => {
       { error: 'Report generation failed' },
       { status: 500, headers: CORS_HEADERS },
     )
+  }
+}
+
+/**
+ * CUL-2290 — the v2 colophon's owner, read only on the v2 path (a v1 request never reads these
+ * columns). The surname comes ONLY from `last_name` (spec §5.7), never the email fallback v1's
+ * owner line takes. RLS scopes the row to the caller. A failed read prints "Kept by the owner":
+ * the name is omitted, never guessed, and the report still renders.
+ */
+async function readOwnerNames(supabase: SupabaseClient): Promise<{ firstName: string | null; lastName: string | null } | null> {
+  try {
+    const { data, error } = await supabase.from('user_profiles').select('first_name, last_name').maybeSingle()
+    if (error || !data) return null
+    const row = data as { first_name: string | null; last_name: string | null }
+    return { firstName: row.first_name ?? null, lastName: row.last_name ?? null }
+  } catch {
+    return null
   }
 }
 

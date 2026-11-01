@@ -1611,9 +1611,14 @@ Deno.test('CUL-2290: no reportVersion asked → v1, and the flag is not read', a
 })
 
 Deno.test('CUL-2290: v2 asked and the caller allowlisted → the v2 document, stamped v2', async () => {
-  const client = withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['u1'] }) }), 'u1')
+  const profile = { single: { display_name: 'Jordan', first_name: 'Jordan', last_name: 'Rivera', timezone: 'UTC' } }
+  const client = withAuth(
+    fakeClient({ ...PET_TABLES, user_profiles: profile, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['u1'] }) }),
+    'u1',
+  )
   const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', null, null, 'v2')
   assert.equal(res.body.report_version, 'v2')
+  assert.ok(String(res.body.html).includes('Kept by Jordan Rivera · '), 'the colophon reads first_name and last_name')
   assert.deepEqual(res.body.report_flags_read, { report_document_v2: true })
   assert.ok(isV2(res.body.html))
   // The masthead's owner never comes from the email fallback v1's owner line takes (spec §5.7).
