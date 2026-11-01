@@ -1808,8 +1808,11 @@ Deno.test('weight — an in-window series yields a descriptive delta + direction
   assert.equal(snap.weight.isEmpty, false)
   assert.ok(snap.weight.trend)
   assert.equal(snap.weight.trend!.readingCount, 3)
-  assert.equal(snap.weight.trend!.direction, 'down') // 4.8 → 4.4 lbs-rounded
-  assert.ok(snap.weight.trend!.deltaLbs! < 0)
+  // CUL-2286 — the change is weightStory's: the latest against the HIGHEST before it.
+  assert.equal(snap.weight.change!.latest.kg, 4.4)
+  assert.equal(snap.weight.change!.highBefore!.kg, 4.8)
+  assert.equal(snap.weight.change!.deltaKg, -0.4)
+  assert.equal(snap.weight.change!.pct, 8)
   // Signalment shows the latest weigh-in with its date (not the onboarding snapshot).
   assert.ok(snap.signalment.latestWeight)
   assert.equal(snap.signalment.latestWeight!.date, '2026-06-29')
@@ -5992,12 +5995,13 @@ Deno.test('CUL-2026 cold read r2 — with a Weight flag, the tile and the weight
     return readAs(renderReport(assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: inWindow, weightHistory: weighIns, engineFlags }))))
   }
   const on = run(EN8)
-  assert.ok(/-0\.60 kg Weight since Mar \d+, 2026 see the Weight flag/.test(on), on.slice(on.indexOf('At a glance'), on.indexOf('At a glance') + 600))
-  assert.ok(/See the Weight flag above: it compares the latest reading with the highest in the last 365 days \(5\.00 kg on Mar \d+, 2026\), which this block does not plot\./.test(on))
-  assert.ok(!/Weight over 2 weigh-ins/.test(on), 'the flat window delta never stands beside the flag')
+  assert.ok(/-0\.60 kg Weight since Mar \d+, 2026 \(-1\.3 lb\) see the Weight flag/.test(on), on.slice(on.indexOf('At a glance'), on.indexOf('At a glance') + 600))
+  assert.ok(/See the Weight flag above: it compares the latest reading with the highest in the last 365 days \(5\.00 kg \(11\.0 lb\) on Mar \d+, 2026\), which this block does not plot\./.test(on))
   const off = run({ on: [], readOk: true })
   assert.ok(!/see the Weight flag|See the Weight flag/.test(off))
-  assert.ok(/Weight over 2 weigh-ins/.test(off))
+  // CUL-2286 — with the flag off the tile no longer falls back to the window's flat 4.40 → 4.40:
+  // it reads weightStory's change, the latest against the highest before it, with its percent.
+  assert.ok(/-0\.60 kg Weight since Mar \d+, 2026 \(-1\.3 lb\) &asymp;12% of body weight/.test(off), off.slice(off.indexOf('At a glance'), off.indexOf('At a glance') + 600))
 })
 
 // ── CUL-2026 adversarial pass ─────────────────────────────────────────────────────────────────

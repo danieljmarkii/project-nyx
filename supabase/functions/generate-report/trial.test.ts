@@ -1387,7 +1387,8 @@ Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of 
     { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-19', '15:00:00') },
   ]
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/Weight fell 4.4 → 4.1 kg/.test(text))
+  // CUL-2286 — both readings named at the stored 2 dp with lb beside, the story's ends.
+  assert.ok(/Weight fell to 4\.10 kg \(9\.0 lb\) on Jun 19, 2026 on a home scale, a single reading, from 4\.40 kg \(9\.7 lb\) on Jun 1, 2026 on a home scale, a single reading/.test(text), text.slice(text.indexOf('Weight fell'), text.indexOf('Weight fell') + 300))
   // "about 7%", not "6.8%". One 0.1 kg tick is a single scale increment, so a decimal
   // percent claims a resolution an owner's home scale does not have (#10b).
   assert.ok(/about 7% of body weight/.test(text))
@@ -1401,8 +1402,9 @@ Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of 
   assert.ok(/Diet not eaten/.test(aboveTrialBlock), 'and the refusal lane is what fired')
   assert.ok(/about 7% of body weight/.test(aboveTrialBlock), 'composed with the weight, above the fold')
   // NOT TWICE. The same sentence two inches below the band spends attention to say
-  // nothing new, so the trial block yields it once the band has carried it.
-  assert.equal(text.match(/about 7% of body weight/g)?.length, 1)
+  // nothing new, so the trial block yields it once the band has carried it. (The Weight
+  // block states the window's own change, a different sentence, since CUL-2286.)
+  assert.equal(text.match(/Weight fell to/g)?.length, 1)
 })
 
 Deno.test('the trial-scoped logging claim states its scope, so it cannot contradict the chart caveats', () => {
@@ -1693,7 +1695,7 @@ Deno.test('#10a — the weight sentence is dropped when its span is not inside t
   // report asserted a rating the record does not contain about every `some` bowl. The
   // card's own headline was corrected for exactly this; the report had the same defect.
   assert.ok(/were left unfinished/.test(text), 'the refusal still leads')
-  assert.ok(!/of body weight/.test(text), 'but a pre-trial loss is not offered as trial evidence')
+  assert.ok(!/Weight (?:fell|rose)/.test(text), 'but a pre-trial loss is not offered as trial evidence')
 })
 
 // ── Cold-read round 4 ────────────────────────────────────────────────────────
@@ -3863,8 +3865,8 @@ Deno.test('B-530 — the trial-scoped weight fact no longer rides the refusal br
   assert.equal(snap.trial?.rangeRefusal, null, 'no refusal on this record')
   assert.equal(snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length, 0)
   const text = plain(renderReport(snap))
-  assert.ok(/Weight fell 31.0 → 29.5 kg/.test(text), 'the weight fact renders without a refusal')
-  assert.ok(/of body weight/.test(text))
+  assert.ok(/Weight fell to 29\.50 kg \(65\.0 lb\) on Jul 1, 2026[^.]*, from 31\.00 kg \(68\.3 lb\) on Jun 2, 2026/.test(text), 'the weight fact renders without a refusal')
+  assert.ok(/Weight fell to [^—]*— about 5% of body weight/.test(text))
 })
 
 // ── B-531 — the G2 leak on `allowedSetUnavailable`, and R2's rename ───────────
@@ -4263,6 +4265,11 @@ Deno.test('B-613 — widening the pull for the trial changes ONLY the out-of-win
       // `lookbackMs`), so widening the pull widens them too — which is exactly what this
       // test has to reproduce rather than hold constant.
       weightChecks: trim(weightChecks, sinceIso),
+      // UNTRIMMED, exactly as index.ts supplies it (`mapWeightRows(weightPull.rows)`, no
+      // lookback), for the same reason as `lifetimeDoses` below: CUL-2286's weight change reads
+      // `weightStory()` over the lane's 12 months, which the trimmed array cannot see, and
+      // production is insulated only because this separate untrimmed array exists.
+      weightHistory: weightChecks,
       doses: trim(doses, sinceIso),
       // UNTRIMMED, exactly as index.ts supplies it (`mapDoseRows(doseRows)` with no
       // lookback). This is load-bearing, and the enriched fixture proved why: with
