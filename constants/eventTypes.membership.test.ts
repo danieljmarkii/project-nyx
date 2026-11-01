@@ -504,6 +504,14 @@ const WALK: WalkRow[] = [
     check_in: { now: false, decision: 'NO — a look is not a sign a drug moves, and it never reaches a context line (the logging pull excludes it; see the whole-source row).' },
   },
   {
+    list: 'SKIN_TRIAL_SIGNS + GI_TRIAL_SIGNS (supabase/functions/generate-report/v2Predicates.ts, vet report v2)',
+    governs: 'CUL-2289 (VR2-9): R-11 condition 2, the closed list of signs whose chronicity flag may leave the v2 band on a skin trial (itch, scratch, skin_reaction), and the lead ladder\'s step 2 (a trial\'s own signs). Placement only, never a count; vomiting, stool and intake are never on the skin list, so their chronicity always stays in the band',
+    read: () => scan('supabase/functions/generate-report/v2Predicates.ts', 'export const SKIN_TRIAL_SIGNS', 'export type LeadSign'),
+    cough: { now: false, decision: 'NO — a cough is not a skin sign and no trial is run for it; a cough chronicity flag always stays in the band.' },
+    sneeze: { now: false, decision: 'NO — not a skin or GI sign, and no lane flags it.' },
+    check_in: { now: false, decision: 'NO — a look never leads and is never a flag.' },
+  },
+  {
     list: 'SIGN_WORDS (lib/careClaimScreens.ts, Ask\'s zero screen)',
     governs: 'CUL-1429: which sign a zero in an Ask sentence counts ("no coughing … since the prednisone"), so the shared drug table (lib/maskingSpans.ts) decides whether a drug beside it may hide that sign. A sentence naming no sign is a zero of every sign (ALL_SIGNS). Refusal only, never a count',
     read: () => scan('lib/careClaimScreens.ts', 'const SIGN_WORDS', '\n]'),
@@ -685,7 +693,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // v2's type sheet derives from EVENT_TYPES and enumerates no symptom leaf.
     // −1 (CUL-1071 / D2-8): TREND_SYMPTOM_TYPES, deleted with Home's Trend card.
     // +1 (CUL-1429): SIGN_WORDS, Ask's zero screen (lib/careClaimScreens.ts).
-    expect(WALK).toHaveLength(26);
+    // +1 (CUL-2289 / VR2-9): the v2 report's skin and GI trial signs (v2Predicates.ts).
+    expect(WALK).toHaveLength(27);
   });
 });
 

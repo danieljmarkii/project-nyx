@@ -62,6 +62,11 @@ import {
   detectChronicity,
   detectWorsening,
   risingBelowCardFloor,
+  foldedWorsening,
+  chronicitySpanTier,
+  weekComparisonMeasurable,
+  type WorseningOnSign,
+  type ChronicityTier,
   type DetectionConfig,
   CORRELATION_SYMPTOM_TYPES,
   type Species,
@@ -3337,6 +3342,69 @@ export interface ReportSnapshot {
    * denominator of another section, no safety flag, no detector (§10.5).
    */
   noticed: NoticedBlock | null
+  /**
+   * CUL-2289 (VR2-9) — the facts the v2 predicates (`v2Predicates.ts`) need that no v1 field
+   * carries. Computed here, beside every other number, so the predicates only read (v2 spec §3.1:
+   * `assembleReport` stays the only place a number is computed). v1's render never reads it.
+   * Required, not optional: a snapshot without it would let the R-11 exemption read silence as
+   * "no worsening was folded in".
+   */
+  v2: ReportV2Facts
+}
+
+/** CUL-2289 — one row per chronicity flag: what the composed finding set no longer says. */
+export interface ReportV2ChronicityFact {
+  symptomType: SymptomType
+  /** Would ④ flag this sign on its own (`foldedWorsening`)? `not_measured` is never "not rising". */
+  worsening: WorseningOnSign
+  /** The tier the course's span alone earns (`chronicitySpanTier`). A flag whose `tier` differs
+   *  was lent its tier by the composition layer (inheritance or the hold). */
+  spanTier: ChronicityTier
+}
+
+export interface ReportV2Facts {
+  chronicity: ReportV2ChronicityFact[]
+  /** Meals logged in the window (`foodType === 'meal'`, plus a meal event whose child row has not
+   *  synced), rated or not. */
+  loggedMeals: number
+  /** Of those, the meals with a rating. Equal to `diet.mealCompletion.ratedMeals` when that is non-null. */
+  ratedMeals: number
+  /** Distinct local days in the window carrying a rated meal NOT fully eaten (`!== 'all'`, the
+   *  same predicate as `finishedMeals`). The count `changesInWindowOf` reads. */
+  mealNotFinishedDays: number
+  /** The earliest local day with an entry of any kind in the pull, on or before the report date:
+   *  the same population as `recordEdge.lastEntryDate` (deduped, looks excluded). The pull reaches
+   *  at least 90 days before the window, so a date under 14 days before the report is the record's
+   *  own start. null when the pull holds no dateable entry. */
+  firstEntryDate: string | null
+  /**
+   * Could the checks that compare weeks run, read without any symptom (adversarial pass 2,
+   * finding B): `safetyChecks` exists only for a logged sign in an engine lane, so a sparse or short
+   * record with no such entry had nothing to say the checks could not run.
+   *   - `weeksComparable`: ④'s logging floor holds for this week and the last (`weekComparisonMeasurable`).
+   *   - `ongoingWindowShort`: the window is no longer than the ongoing check's base span floor, the
+   *     same test `safetyChecks` applies per sign (`windowDays <= minSpanDays`).
+   */
+  weeksComparable: boolean
+  ongoingWindowShort: boolean
+}
+
+/** CUL-2289 — the record's first entry, read exactly as `recordEdgeOf` reads its last. */
+export function firstEntryDateOf(
+  events: ReadonlyArray<Pick<ReportEventInput, 'occurredAt'>>,
+  nowIso: string,
+  tz: string | null,
+): string | null {
+  const nowMs = parseMs(nowIso) ?? 0
+  const reportKey = localDayKey(nowIso, tz) ?? new Date(nowMs).toISOString().slice(0, 10)
+  const reportDayNum = dayNumber(reportKey) ?? Math.round(nowMs / MS_PER_DAY)
+  let firstDn: number | null = null
+  for (const e of events) {
+    const dn = eventDayNumber(e.occurredAt, tz)
+    if (dn === null || dn > reportDayNum) continue
+    if (firstDn === null || dn < firstDn) firstDn = dn
+  }
+  return firstDn === null ? null : dayKeyFromNumber(firstDn)
 }
 
 // ── Small pure helpers ────────────────────────────────────────────────────────
@@ -6636,6 +6704,24 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     incidentPhotos,
     incidentPhotosRemoved,
     noticed,
+    v2: {
+      chronicity: detection.chronicity.map((f) => ({
+        symptomType: f.symptomType,
+        worsening: foldedWorsening(detInput, detConfig, f.symptomType),
+        spanTier: chronicitySpanTier(f.symptomType, f.spanDays, input.pet.species, detConfig.chronicity),
+      })),
+      // A meal event whose child row has not synced (`meal: null`) is still a meal fed, with no
+      // rating anyone can read: counted here as `recordEdgeOf` counts it (adversarial pass 1 on
+      // CUL-2289, finding 5), so the unrated-meals gap line never undercounts.
+      loggedMeals: windowEvents.filter((e) => e.type === 'meal' && (e.meal === null || e.meal.foodType === 'meal')).length,
+      ratedMeals: ratedMealsInWindow.length,
+      mealNotFinishedDays: new Set(
+        unfinishedRated.map((e) => localDayKey(e.occurredAt, tz) ?? e.occurredAt.slice(0, 10)),
+      ).size,
+      firstEntryDate: firstEntryDateOf(dedupedAll, input.now, tz),
+      weeksComparable: weekComparisonMeasurable(detInput, detConfig),
+      ongoingWindowShort: scope.windowDays <= detConfig.chronicity.minSpanDays,
+    },
   }
 }
 

@@ -5570,9 +5570,25 @@ function resolveChronicityTier(
   species: Species,
   cfg: DetectionConfig['chronicity'],
 ): ChronicityTier {
-  return s.spanDays >= chronicityFloorsFor(s.symptomType, species, cfg).firmSpanDays
-    ? 'firm'
-    : 'standard'
+  return chronicitySpanTier(s.symptomType, s.spanDays, species, cfg)
+}
+
+/**
+ * The tier a course earns from its SPAN alone: the one rule `resolveChronicityTier` applies,
+ * exported so a reader can tell a span-earned tier from one lent by the composition layer
+ * (the §4.5 inheritance in `suppressWorseningWhenChronic`, or the CUL-1272 hold).
+ *
+ * CUL-2289 (vet report v2, R-11 condition 4): a chronicity flag on a skin trial's own sign may
+ * leave the report's band only when its tier "comes from the span alone". Comparing the card's
+ * tier to this answers that without re-deriving the floor anywhere else.
+ */
+export function chronicitySpanTier(
+  symptomType: SymptomType,
+  spanDays: number,
+  species: Species,
+  cfg: DetectionConfig['chronicity'],
+): ChronicityTier {
+  return spanDays >= chronicityFloorsFor(symptomType, species, cfg).firmSpanDays ? 'firm' : 'standard'
 }
 // NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
 // week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
@@ -8034,6 +8050,76 @@ export function repickWorseningPastChronic(
   const folded = findings.some((f) => f.type === 'symptom_worsening' && chronic.has(f.symptomType))
   if (!folded) return findings
   return [...findings, ...detectWorsening(input, config, chronic)]
+}
+
+/**
+ * CUL-2289 (vet report v2, R-11 condition 3) — has this sign been RISING lately, judged on its own?
+ *
+ * `suppressWorseningWhenChronic` drops a same-sign ④ card into its ⑦ card, so once the set is
+ * composed nothing says a chronic course is also rising. The report's skin-trial exemption may
+ * move a chronicity flag out of the band only when no rise sits inside it, so it asks here.
+ *
+ * Three widenings over "was a ④ card folded in", each the loud direction:
+ *   - THE SIGN ALONE. ④ emits one card, the steepest rise, so a second sign rising behind it was
+ *     never folded, yet it is rising. Each sign's own stat is read.
+ *   - ③'S RISE, NOT ④'S CARD. Under EN-11 a rise below ④'s card floor (1 → 2) mutes ③ and is a
+ *     rise by the engine's own test (`isWorsening`), though no card fires (adversarial pass 1 on
+ *     CUL-2289, finding 1). The report's lead ladder already names that state "rose week over
+ *     week", so the exemption may not read it as steady.
+ *   - THE LAST FOUR WEEKS, NOT THIS WEEK. ④ compares this week with the last, so a jump that holds
+ *     (5, then 5) reads flat a week after it happened, and a span-firm course has no CUL-1272 hold
+ *     to remember it (adversarial pass 1, finding 2: BRK-10 at the band). ④'s test is replayed at
+ *     every day back to `FOLDED_WORSENING_LOOKBACK_DAYS`, over the record as it stood then.
+ *
+ * Three answers, never a boolean: when any replayed day's two weeks are not logging-eligible and no
+ * replayed day found a rise, the engine could not say, and "not rising" would be a claim it never made.
+ */
+export type WorseningOnSign = 'rising' | 'not_rising' | 'not_measured'
+
+/**
+ * How far back a rise keeps a skin trial's chronicity flag in the band. Four weeks: two of ④'s
+ * comparisons past the one Home shows, so a jump has to hold for a month before the course reads
+ * as steady. A plateau older than this is the course's level, drawn on the lead chart as a flag.
+ */
+export const FOLDED_WORSENING_LOOKBACK_DAYS = 28
+
+export function foldedWorsening(
+  input: DetectionInput,
+  config: DetectionConfig,
+  symptomType: SymptomType,
+): WorseningOnSign {
+  // A sign outside ④'s lane (cough, at W1) is never measured for a rise at all.
+  if (!LANE_SYMPTOM_TYPES.symptomDelta.includes(symptomType)) return 'not_measured'
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return 'not_measured'
+  const replay = replayInputAsOf(input, config)
+  // Every replayed day must be comparable before "not rising" may be said. A day skipped for thin
+  // logging is a day a rise could have happened unseen: a holiday, then five entries the day the
+  // owner is back, held a second week, reads 5 against 5 today and is dark on every day that could
+  // have compared it with what came before (adversarial pass 2 on CUL-2289, finding A).
+  let everyDayMeasured = true
+  for (let d = 0; d <= FOLDED_WORSENING_LOOKBACK_DAYS; d++) {
+    const asOf = d === 0 ? input : replay(nowMs - d * MS_PER_DAY, 'worsening')
+    const windowed = computeWindowedStats(asOf, config)
+    if (!windowed || !windowed.loggingEligible) {
+      everyDayMeasured = false
+      continue
+    }
+    const stat = windowed.stats.find((x) => x.symptomType === symptomType)
+    if (stat && isWorsening(stat, config.reflection)) return 'rising'
+  }
+  return everyDayMeasured ? 'not_rising' : 'not_measured'
+}
+
+/**
+ * CUL-2289 — could ④ compare this week with the last at all? Its logging floor (each week holds
+ * enough logged days), read for the record as a whole, with no symptom needed. The report's
+ * thin-record line asks this on a sheet with no symptom entry, where no per-sign check exists to
+ * say "too few days" (adversarial pass 2, finding B).
+ */
+export function weekComparisonMeasurable(input: DetectionInput, config: DetectionConfig): boolean {
+  const windowed = computeWindowedStats(input, config)
+  return windowed !== null && windowed.loggingEligible
 }
 
 export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
