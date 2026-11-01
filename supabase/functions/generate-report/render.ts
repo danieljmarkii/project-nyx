@@ -2488,9 +2488,15 @@ export function safetyFlagRow(
       // "just grass, he's fine" with the machine's authority on the safety band. So the label
       // follows the incident's own `edited` bit, and where the record cannot say, it says both.
       const noteIncident = f.incidents.find((i) => !!i.note && i.note.trim() === note0)
-      const noteEdited = noteIncident
-        ? snap.provenance.symptomLog.find((e) => e.eventId === noteIncident.eventId)?.phenotype?.edited
+      // A COLLAPSED BOUT IS UNKNOWN (adversarial pass 2, QUIET). `edited` is the best-status
+      // member's (`pickIncidentAnalysis`) while the note is the first member that read foreign
+      // material (`unionPresentFlags`), so on a twin log the two can be different rows: an owner's
+      // "just grass, he is fine" on one twin printed as the photo analysis's. Until the note
+      // carries its own member's provenance, a bout of more than one entry names both.
+      const noteEntry = noteIncident
+        ? snap.provenance.symptomLog.find((e) => e.eventId === noteIncident.eventId)
         : undefined
+      const noteEdited = noteEntry && noteEntry.dupCount <= 1 ? noteEntry.phenotype?.edited : undefined
       const noteLabel =
         noteEdited === false
           ? 'The photo analysis describes'
@@ -2539,9 +2545,22 @@ export function safetyFlagRow(
         // land in the meal record, not here, so "between Jul 1 and Jul 2" over a cat refusing every
         // bowl since read as a refusal that stopped. The card dates its range only when nothing was
         // left unfinished after it (`refusalIsPastTense`); the band dates it either way and says so.
+        //
+        // AND NEVER A RANGE THAT READS AS ENDED BECAUSE THE RATINGS STOPPED (adversarial pass 2,
+        // QUIET). Refusals Jun 2–9, then three weeks of one-tap meals nobody rated: no other food
+        // went uneaten, so the clause above stays silent, and the dated range read as a refusal
+        // that ended on Jun 9 — unrated scored as eaten. The card says "Nothing rated since shows
+        // whether that has changed" (`lib/dietTrialCard.ts`); the band says the same, from the same
+        // two fields, whenever the evidence runs past the last unfinished day.
+        const lastUnfinishedKey = hist ? new Date(hist.lastUnfinishedDayIndex * 86_400_000).toISOString().slice(0, 10) : null
+        const evidenceRunsPast = lastUnfinishedKey !== null && lastUnfinishedKey < f.evidenceEndDate
         const since = hist?.unfinishedSinceElsewhere
           ? ', and food has been left unfinished again since'
-          : ''
+          : hist && evidenceRunsPast && hist.ratedSinceLastUnfinished === 0
+            ? (hist.ratedMealsSinceLastUnfinished ?? 0) > 0
+              ? `; no ${wide ? 'meal' : 'trial-diet feeding'} rated since shows whether that has changed`
+              : '; nothing rated since shows whether that has changed'
+            : ''
         const when =
           hist && Number.isFinite(hist.firstUnfinishedDayIndex) && Number.isFinite(hist.lastUnfinishedDayIndex)
             ? hist.firstUnfinishedDayIndex === hist.lastUnfinishedDayIndex

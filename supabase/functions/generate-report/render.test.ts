@@ -8942,7 +8942,7 @@ Deno.test('CUL-2357 — the refusal lead states its finding and its population b
   const t = plain(renderReport(base({ safetyFlags: [cul2357Refusal()] })))
   const row = t.slice(t.indexOf('Diet not eaten'), t.indexOf('Diet not eaten') + 600)
   assert.ok(
-    /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 3 days between Jun 2 and Jun 9\./.test(row),
+    /Diet not eaten 4 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 3 days between Jun 2 and Jun 9; nothing rated since shows whether that has changed\./.test(row),
     row,
   )
   assert.ok(row.indexOf('left unfinished') < row.indexOf('Food A'), 'the finding comes first')
@@ -8973,4 +8973,45 @@ Deno.test('CUL-2357 — a dated refusal range never reads as ended while food is
   assert.ok(/on 3 days between Jun 2 and Jun 9, and food has been left unfinished again since\./.test(s1d), s1d)
   const ended = plain(renderReport(base({ safetyFlags: [r] })))
   assert.ok(!/left unfinished again since/.test(ended), 'only where the record holds it')
+})
+
+Deno.test('CUL-2357 — a dated refusal range never reads as ended because the ratings stopped', () => {
+  // Adversarial pass 2, QUIET: refusals Jun 2–9, then three weeks of meals nobody rated. Nothing
+  // else went uneaten, so only the card's "nothing rated since" stops the range reading as ended.
+  const r = cul2357Refusal()
+  if (r.kind !== 'trial_diet_refusal' || !r.refusal?.history) throw new Error('fixture')
+  const h0 = r.refusal.history
+  const render = (hist: typeof h0, end = '2026-06-30') =>
+    plain(renderReport(base({ safetyFlags: [{ ...r, evidenceEndDate: end, refusal: { ...r.refusal!, history: hist } }] })))
+  assert.ok(/between Jun 2 and Jun 9; nothing rated since shows whether that has changed\./.test(render(h0)), render(h0))
+  const otherRated = render({ ...h0, ratedMealsSinceLastUnfinished: 2 })
+  assert.ok(/; no trial-diet feeding rated since shows whether that has changed\./.test(otherRated), otherRated)
+  const finished = render({ ...h0, ratedSinceLastUnfinished: 3, ratedMealsSinceLastUnfinished: 3 })
+  assert.ok(!/rated since shows/.test(finished), 'silent where the diet was rated and finished since')
+  const current = render(h0, '2026-06-09')
+  assert.ok(!/rated since shows/.test(current), 'silent where the last refusal IS the end of the evidence')
+})
+
+Deno.test('CUL-2357 — a collapsed bout never labels its foreign note by one member\'s edit state', () => {
+  // Adversarial pass 2, QUIET: `edited` is the best-status member's, the note the first foreign
+  // member's, so a twin log can pair an owner's "just grass" with an unedited analysis.
+  const flag: SafetyFlag = {
+    kind: 'present_foreign',
+    incidents: [{ eventId: 'v1', occurredAt: '2026-05-18T07:09:00Z', note: 'just grass, he is fine' }],
+  }
+  const b = base({ safetyFlags: [flag] })
+  for (const edited of [false, true]) {
+    const t = plain(renderReport({
+      ...b,
+      provenance: {
+        ...b.provenance,
+        symptomLog: [logEntry({
+          eventId: 'v1', type: 'vomit', occurredAt: '2026-05-18T07:09:00Z', dupCount: 2,
+          phenotype: { kind: 'vomit', status: 'completed', contentsCategory: null, consistency: null, colour: null, bloodPresent: null, foreignPresent: true, foreignNote: 'just grass, he is fine', bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited },
+        })],
+      },
+    }))
+    assert.ok(/Photo analysis note, which the owner may have edited: just grass, he is fine\./.test(t), t)
+    assert.ok(!/The photo analysis describes/.test(t))
+  }
 })
