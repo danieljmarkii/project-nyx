@@ -132,7 +132,7 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], to
   const parts = [rowLabel(r.label, y + 3, 'rl span-l'), `<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
-  if (!r.openEnd) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
+  if (!r.openEnd && r.endDeclared) parts.push(`<line class="${cls}" x1="${xb.toFixed(1)}" x2="${xb.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)
   return parts.join('')
 }
 

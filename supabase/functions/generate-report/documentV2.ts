@@ -119,6 +119,9 @@ export type ChartRow =
       openEnd: boolean
       /** A prescribed course with no dose logged: hollow dashed, never solid (spec §5.4). */
       hollow: boolean
+      /** The owner recorded the end. Otherwise the line stops at the last logged dose with no end
+       *  bracket: a closed bracket would claim an end the record does not hold (cold read 3). */
+      endDeclared: boolean
       /** The twin's words for this span ("Sep 21 to Oct 11", "prescribed, no doses logged"). */
       when: string
     }
@@ -445,6 +448,7 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
       openStart: !startsInChart,
       openEnd: end === null,
       hollow: none,
+      endDeclared: c.endIsDeclared,
       when,
     }
     if (rows.length < SPAN_ROWS_MAX) rows.push(row)
@@ -660,7 +664,11 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more, and not every meal.
   const run = mc?.recentNotFullyEatenRun ?? 0
   const runText = mc && run >= 2 && run < mc.ratedMeals ? `The last ${run} rated meals in a row were not fully eaten. ` : ''
-  if (notFinished !== null && notFinished > 0) parts.push(`${notFinished} not fully eaten, on ${plural(v.mealNotFinishedDays, 'day', 'days')}`)
+  // Refused outright is said apart from "not fully eaten" (cold read 3, Mira: 34 of 38 refused read
+  // as partial intake). Same population as `finishedMeals`, from `intakeBreakdown`.
+  const refused = mc?.intakeBreakdown.find((b) => b.rating === 'refused')?.count ?? 0
+  const refusedText = refused > 0 ? ` (${refused} refused outright)` : ''
+  if (notFinished !== null && notFinished > 0) parts.push(`${notFinished} not fully eaten${refusedText}, on ${plural(v.mealNotFinishedDays, 'day', 'days')}`)
   else if (notFinished === 0 && v.ratedMeals > 0) parts.push('every rated meal recorded as fully eaten')
   // B-040's words, verbatim: a bowl left down means no one watched what was eaten from it.
   const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named').join(', ')

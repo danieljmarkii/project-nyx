@@ -329,7 +329,7 @@ const CUTTABLE_RATCHET: Record<string, number> = {
   'new-account-4-days': 35,
   'looks-only': 57,
   'trial-report-clean.html': 126,
-  'mira': 101,
+  'mira': 104,
   'trial-report-completed.html': 128,
   'trial-report-truncated.html': 72,
   'trial-report-past-window.html': 87,
@@ -528,4 +528,25 @@ Deno.test('adversarial 2.2 — the read floor applies to each week in a 2-week b
   assert.equal(notReadCol(bin, 'two_weeks'), true, '7/7 + 1/7 is not read')
   assert.equal(notReadCol(full, 'two_weeks'), false, 'a full single-week bin is read (pass 2, break 3)')
   assert.ok(twoWeek.columns.length === 2)
+})
+
+// ── Cold read pass 3 fixes (CUL-2290) ───────────────────────────────────────
+
+Deno.test('cold read 3 — refused outright is said apart from "not fully eaten" (Mira: 38 of 38, most refused)', () => {
+  const s = assembleReport(sampleCases().find(([n]) => n === 'trial-report-refused.html')![1])
+  const d = docOf(s)
+  const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
+  assert.ok(all.some((t) => /not fully eaten \(\d+ refused outright\)/.test(t ?? '')), JSON.stringify(all))
+})
+
+Deno.test('cold read 3 — a course with no recorded end draws no end bracket', () => {
+  const s = assembleReport(itchingSkinTrial({ jump: false }))
+  const course = (declared: boolean) =>
+    ({
+      ...s,
+      concurrentChanges: [{ kind: 'medication', label: 'Cetirizine', startDate: dayKey(30), bucketIndex: 3, ongoing: false, endInWindow: dayKey(10), endBucketIndex: 6, endIsDeclared: declared }],
+    }) as unknown as ReportSnapshot
+  const ticks = (html: string) => (html.match(/<line class="span"[^>]*x1="([\d.]+)" x2="\1"/g) ?? []).length
+  assert.equal(ticks(renderPrintV2(docOf(course(true)))), 2, 'a declared end: start and end brackets')
+  assert.equal(ticks(renderPrintV2(docOf(course(false)))), 1, 'a last logged dose: the start bracket only')
 })
