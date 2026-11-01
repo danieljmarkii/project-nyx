@@ -32,7 +32,9 @@
 --               frozen snapshot and the AI lead are columns, never a second
 --               object, so everything a saved copy stores is reachable from a
 --               row delete-account reads (it reads every row of the owner's
---               pets, drafts included). Every path this CHECK accepts is one
+--               pets, drafts included) or from the pet folder it sweeps, while
+--               the pet exists (see the pet hard-delete residual below). id and
+--               storage_path never change. Every path this CHECK accepts is one
 --               scopeVetReportPaths keeps for the owner (CUL-2311 items 1 and
 --               3; guards/vetReportPathShape.test.ts proves it on the CHECK's
 --               own text).
@@ -50,7 +52,10 @@
 --               is frozen, for EVERY writer: the service role, the migration
 --               owner and any SECURITY DEFINER function included (CUL-2318). An
 --               allowlist over to_jsonb, so a column a later migration adds is
---               frozen until that migration names it. kept never returns to
+--               frozen until that migration names it. A kept row is never
+--               deleted directly (only by its pet's or account's cascade), so it
+--               cannot be deleted and re-inserted; TRUNCATE is refused.
+--               content_sha256 pins the stored object's bytes. kept never returns to
 --               draft. 110's client freeze still runs first; §7b lets it pass
 --               a link going to NULL, which only the FKs' SET NULL can do.
 --   Drafts      Writable by the service role. A partial index serves the 24 h
@@ -75,11 +80,18 @@
 --     the old one. No client can move it (pets_owner's USING doubles as its
 --     write check), and no server path does. The guard re-judges a row only
 --     when its maker or pet changes.
---   * A service-role DELETE of a kept row. The owner has none (110); the
---     reaper deletes drafts only by its own predicate. A BEFORE DELETE guard
---     was rejected: auth.users deletion cascades vet_reports through
---     generated_by and pets in an order Postgres does not promise, so a guard
---     that asks "does the pet still exist" could refuse an account deletion.
+--   * A pet hard-deleted by its owner (pets_owner is FOR ALL, 001) cascades
+--     its vet_reports rows away and leaves their objects in nyx-vet-reports
+--     under a pet id account deletion no longer reads or sweeps. The same class
+--     already holds for every pet-keyed bucket; filed as its own issue. No app
+--     path hard-deletes a pet today.
+--   * The object's bytes. Storage cannot be bound by SQL: the service role can
+--     overwrite {pet}/{id}.pdf. content_sha256 makes that detectable; the
+--     writer (VR2-20) uploads with upsert off and stamps the hash.
+--   * session_replication_role = replica skips every trigger. Only the
+--     migration owner or a superuser can set it (the service role is refused).
+--   * shared_at is the writer's claim; nothing bounds it against created_at.
+--   * short_id is 20 bits per pet: a label, never a bearer key for any link.
 --   * A draft that outlives 24 h when the owner never composes again. The
 --     deletion purge still reaches it.
 --   * Visit linking from the app. No client grant is added (PM plan, option
@@ -109,6 +121,9 @@
 --                   -- and its COMMENT (113 §7b replaced the body).
 --                   DROP TRIGGER trg_vet_appointments_pet_immutable ON public.vet_appointments;
 --                   DROP FUNCTION public.enforce_vet_appointment_pet_immutable();
+--                   DROP TRIGGER trg_vet_reports_no_truncate ON public.vet_reports;
+--                   DROP TRIGGER trg_vet_reports_kept_not_deleted ON public.vet_reports;
+--                   DROP FUNCTION public.vet_reports_kept_not_deleted();
 --                   DROP TRIGGER trg_vet_reports_content_freeze ON public.vet_reports;
 --                   DROP FUNCTION public.vet_reports_content_freeze();
 --                   DROP TRIGGER trg_vet_reports_maker_is_owner ON public.vet_reports;
@@ -128,7 +143,7 @@
 --                     DROP COLUMN short_id, DROP COLUMN vet_appointment_id,
 --                     DROP COLUMN vet_visit_id, DROP COLUMN photos_left_out,
 --                     DROP COLUMN ai_lead_text, DROP COLUMN ai_lead_verdict,
---                     DROP COLUMN ai_lead_model;
+--                     DROP COLUMN ai_lead_model, DROP COLUMN content_sha256;
 --                   ALTER TABLE public.vet_reports
 --                     ADD CONSTRAINT vet_reports_storage_path_shape CHECK (
 --                       storage_path ~ ('^' || pet_id::text
@@ -208,7 +223,11 @@ ALTER TABLE public.vet_reports
   -- lead dropped); text never stands without both.
   ADD COLUMN ai_lead_text          text,
   ADD COLUMN ai_lead_verdict       jsonb,
-  ADD COLUMN ai_lead_model         text;
+  ADD COLUMN ai_lead_model         text,
+  -- SHA-256 of the stored object's bytes, lower-case hex. Required once kept
+  -- and frozen with the row, so a copy whose object was overwritten is
+  -- detectable (rls-privacy-reviewer F1, the Storage half).
+  ADD COLUMN content_sha256        text;
 
 ALTER TABLE public.vet_reports
   ADD CONSTRAINT vet_reports_status_known
@@ -239,9 +258,12 @@ ALTER TABLE public.vet_reports
     CHECK (ai_lead_model IS NULL OR length(ai_lead_model) BETWEEN 1 AND 128),
   ADD CONSTRAINT vet_reports_ai_lead_complete
     CHECK (ai_lead_text IS NULL OR (ai_lead_verdict IS NOT NULL AND ai_lead_model IS NOT NULL)),
+  ADD CONSTRAINT vet_reports_content_sha256_hex
+    CHECK (content_sha256 IS NULL OR content_sha256 ~ '^[0-9a-f]{64}$'),
   ADD CONSTRAINT vet_reports_kept_complete
     CHECK (status <> 'kept'
-           OR (snapshot IS NOT NULL AND short_id IS NOT NULL AND shared_at IS NOT NULL));
+           OR (snapshot IS NOT NULL AND short_id IS NOT NULL AND shared_at IS NOT NULL
+               AND content_sha256 IS NOT NULL));
 
 -- FK coverage for the two SET NULL scans, and the reaper's read.
 CREATE INDEX idx_vet_reports_visit
@@ -436,11 +458,24 @@ DECLARE
   ];
 BEGIN
   -- No exemption: the service role, the owner and DEFINER functions included.
+
+  -- Every row, draft or kept: the id and the key are fixed. Re-keying a draft
+  -- would leave its stored object named by no row (rls-privacy-reviewer F6).
+  IF NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.storage_path IS DISTINCT FROM OLD.storage_path THEN
+    RAISE EXCEPTION
+      'vet_reports: id and storage_path never change'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- A kept copy. The expiry may only move from a time to an earlier time:
+  -- NULL never means revoked, so a move to or from NULL is refused (F3).
   IF OLD.status = 'kept' AND (
        (to_jsonb(NEW) - control) IS DISTINCT FROM (to_jsonb(OLD) - control)
-       OR (NEW.token_expires_at IS NOT NULL
-           AND (OLD.token_expires_at IS NULL
-                OR NEW.token_expires_at > OLD.token_expires_at))
+       OR (NEW.token_expires_at IS DISTINCT FROM OLD.token_expires_at
+           AND NOT (OLD.token_expires_at IS NOT NULL
+                    AND NEW.token_expires_at IS NOT NULL
+                    AND NEW.token_expires_at < OLD.token_expires_at))
      ) THEN
     -- Column names only, never a value (C-31).
     RAISE EXCEPTION
@@ -462,8 +497,52 @@ CREATE TRIGGER trg_vet_reports_content_freeze
   BEFORE UPDATE ON public.vet_reports
   FOR EACH ROW EXECUTE FUNCTION public.vet_reports_content_freeze();
 
+-- §7a. A kept copy is not deleted and re-inserted (rls-privacy-reviewer F1)
+-- An UPDATE-only freeze is a freeze on one verb: DELETE the kept row, INSERT
+-- it again under the same id with a softened snapshot, and the copy is
+-- rewritten. A direct DELETE of a kept row is refused for every writer. A
+-- referential cascade (the pet or the auth user deleted) runs at trigger depth
+-- 2 (measured), so account deletion, pet deletion and the draft reaper (drafts
+-- only) all pass. The guard reads no other row. TRUNCATE skips row triggers,
+-- so it is refused outright: nothing legitimate truncates this table.
+CREATE OR REPLACE FUNCTION public.vet_reports_kept_not_deleted()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION
+      'vet_reports: TRUNCATE is refused; saved copies leave only with their pet or account'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.status = 'kept' AND pg_catalog.pg_trigger_depth() = 1 THEN
+    RAISE EXCEPTION
+      'vet_reports: a kept copy is deleted only with its pet or account'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.vet_reports_kept_not_deleted() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.vet_reports_kept_not_deleted() FROM anon;
+REVOKE ALL ON FUNCTION public.vet_reports_kept_not_deleted() FROM authenticated;
+
+CREATE TRIGGER trg_vet_reports_kept_not_deleted
+  BEFORE DELETE ON public.vet_reports
+  FOR EACH ROW EXECUTE FUNCTION public.vet_reports_kept_not_deleted();
+
+CREATE TRIGGER trg_vet_reports_no_truncate
+  BEFORE TRUNCATE ON public.vet_reports
+  FOR EACH STATEMENT EXECUTE FUNCTION public.vet_reports_kept_not_deleted();
+
+COMMENT ON FUNCTION public.vet_reports_kept_not_deleted() IS
+  'CUL-2287 (113), rls-privacy-reviewer F1: a kept vet_reports row is never deleted directly, by any writer, so it cannot be deleted and re-inserted with changed content. Cascades from pets or auth.users run at pg_trigger_depth() 2 and pass; drafts pass. TRUNCATE is refused. SECURITY INVOKER, reads no other row, message names no value (C-31).';
+
 COMMENT ON FUNCTION public.vet_reports_content_freeze() IS
-  'CUL-2287 (113), CUL-2318: once a vet_reports row is kept, every column but vet_visit_id, vet_appointment_id, shared_via, shared_at, token_expires_at (earlier only) and updated_at is frozen for every writer, the service role and SECURITY DEFINER callers included. An allowlist over to_jsonb, so columns added later are frozen until named; status cannot return to draft. Drafts are not frozen. SECURITY INVOKER, reads no other row, message names no value (C-31).';
+  'CUL-2287 (113), CUL-2318: id and storage_path never change on any row. Once a vet_reports row is kept, every column but vet_visit_id, vet_appointment_id, shared_via, shared_at, token_expires_at (from a time to an earlier time only; never to or from NULL) and updated_at is frozen for every writer, the service role and SECURITY DEFINER callers included. An allowlist over to_jsonb, so columns added later are frozen until named; status cannot return to draft. Its DELETE twin is vet_reports_kept_not_deleted. SECURITY INVOKER, reads no other row, message names no value (C-31).';
 
 
 -- ============================================================
@@ -509,8 +588,14 @@ BEGIN
     newj := jsonb_set(newj, '{vet_appointment_id}', coalesce(oldj -> 'vet_appointment_id', 'null'::jsonb));
   END IF;
 
+  -- 113: the expiry moves from a time to an earlier time only. 110's
+  -- `NEW > OLD` was NULL-blind, which a NOT NULL column made safe; 113 made it
+  -- nullable, so a move to or from NULL is refused too (F3).
   IF (newj - control) IS DISTINCT FROM (oldj - control)
-     OR NEW.token_expires_at > OLD.token_expires_at THEN
+     OR (NEW.token_expires_at IS DISTINCT FROM OLD.token_expires_at
+         AND NOT (OLD.token_expires_at IS NOT NULL
+                  AND NEW.token_expires_at IS NOT NULL
+                  AND NEW.token_expires_at < OLD.token_expires_at)) THEN
     -- Column names only, never a value (C-31).
     RAISE EXCEPTION
       'vet_reports: a client may only move token_expires_at earlier'
@@ -558,9 +643,11 @@ COMMENT ON COLUMN public.vet_reports.share_token IS
 --         ORDER BY tgname;
 --      -> trg_vet_reports_client_freeze         vet_reports_client_freeze
 --         trg_vet_reports_content_freeze        vet_reports_content_freeze
+--         trg_vet_reports_kept_not_deleted      vet_reports_kept_not_deleted
 --         trg_vet_reports_link_appointment      enforce_vet_appointment_link_same_pet
 --         trg_vet_reports_link_visit            enforce_vet_visit_link_same_pet
 --         trg_vet_reports_maker_is_owner        enforce_vet_report_maker_is_owner
+--         trg_vet_reports_no_truncate           vet_reports_kept_not_deleted
 --         trg_vet_reports_updated_at            set_updated_at
 --      (The two freezes fire first, so they judge the writer's row; the
 --      guards edit nothing.)
@@ -582,11 +669,16 @@ COMMENT ON COLUMN public.vet_reports.share_token IS
 --           AND p.proname IN ('enforce_vet_report_maker_is_owner',
 --                             'enforce_vet_appointment_link_same_pet',
 --                             'enforce_vet_appointment_pet_immutable',
---                             'vet_reports_content_freeze');
+--                             'vet_reports_content_freeze',
+--                             'vet_reports_kept_not_deleted');
 --      -> f, f on every row.
---   5. The bucket (PM step): nyx-vet-reports exists, public = false, and
---        SELECT policyname FROM pg_policies
+--   5. The bucket (PM step): nyx-vet-reports exists under exactly that name
+--      (delete-account's STORAGE_BUCKETS reads it by name), public = false, and
+--        SELECT policyname, roles FROM pg_policies
 --         WHERE schemaname = 'storage' AND tablename = 'objects'
---           AND (qual ILIKE '%nyx-vet-reports%' OR with_check ILIKE '%nyx-vet-reports%');
---      -> no rows.
---   6. The behaviour: the probe in the PR (scripts/probes/vet-report-113.sh).
+--           AND (coalesce(qual, '') ILIKE '%nyx-vet-reports%'
+--                OR coalesce(with_check, '') ILIKE '%nyx-vet-reports%'
+--                OR (coalesce(qual, '') NOT ILIKE '%bucket_id%'
+--                    AND coalesce(with_check, '') NOT ILIKE '%bucket_id%'));
+--      -> no rows (the last arm catches a bucket-wide policy).
+--   6. The behaviour: the probe in the PR (scripts/probes/vet-report-113/run.sh).

@@ -6,8 +6,9 @@
 --   * roles anon / authenticated / service_role (service_role BYPASSRLS, as in
 --     Supabase). PostgREST's SET ROLE is simulated with SET LOCAL ROLE.
 --   * auth.uid() reads request.jwt.claim.sub, the GUC PostgREST sets.
---   * pets, vet_visits, vet_appointments, vet_reports carry only the columns and
---     policies the guards read. vet_reports is 001 + 029 exactly.
+--   * pets, vet_visits, vet_appointments, vet_reports carry only the columns the
+--     guards read. Their policies are production's (pets 001, vet_visits 001,
+--     vet_appointments 066: no client DELETE). vet_reports is 001 + 029 exactly.
 --   * enforce_vet_visit_link_same_pet is 109's body, copied (109 also rewrites
 --     vet_documents, which this probe has no table for).
 
@@ -54,7 +55,13 @@ CREATE TABLE public.vet_appointments (
   updated_at   timestamptz NOT NULL DEFAULT NOW()
 );
 ALTER TABLE public.vet_appointments ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "vet_appointments_owner" ON public.vet_appointments FOR ALL
+-- 066's three policies: no DELETE (appointments soft-delete). vet_visits keeps
+-- 001's FOR ALL, so a client CAN hard-delete a visit, as in production.
+CREATE POLICY "vet_appointments_owner_select" ON public.vet_appointments FOR SELECT
+  USING (pet_id IN (SELECT id FROM public.pets WHERE user_id = auth.uid()));
+CREATE POLICY "vet_appointments_owner_insert" ON public.vet_appointments FOR INSERT
+  WITH CHECK (pet_id IN (SELECT id FROM public.pets WHERE user_id = auth.uid()));
+CREATE POLICY "vet_appointments_owner_update" ON public.vet_appointments FOR UPDATE
   USING (pet_id IN (SELECT id FROM public.pets WHERE user_id = auth.uid()))
   WITH CHECK (pet_id IN (SELECT id FROM public.pets WHERE user_id = auth.uid()));
 

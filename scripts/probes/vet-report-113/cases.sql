@@ -62,7 +62,7 @@ INSERT INTO public.vet_reports
   (id, pet_id, generated_by, date_range_start, date_range_end, storage_path,
    report_version, renderer_fingerprint, params, scope_basis, status, snapshot,
    short_id, shared_via, shared_at, vet_visit_id, vet_appointment_id,
-   ai_lead_text, ai_lead_verdict, ai_lead_model)
+   ai_lead_text, ai_lead_verdict, ai_lead_model, content_sha256)
 VALUES
   ('d2d2d2d2-0000-4000-8000-00000000000a', 'a1a1a1a1-0000-4000-8000-000000000001',
    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '2026-09-01', '2026-10-30',
@@ -70,7 +70,7 @@ VALUES
    'v2', 'fp-1', '{"window":"60d"}', 'since_last_visit', 'kept', '{"facts":[1]}',
    'K7Q2', 'share_sheet', NOW(), 'a3a3a3a3-0000-4000-8000-000000000004',
    'a4a4a4a4-0000-4000-8000-000000000006',
-   'Cooper vomited 4 times.', '{"pass":true}', 'model-x');
+   'Cooper vomited 4 times.', '{"pass":true}', 'model-x', repeat('ab', 32));
 
 -- A valid draft insert for PA, with one field swappable via replace().
 CREATE FUNCTION ins(over text DEFAULT '') RETURNS text LANGUAGE sql AS $$
@@ -98,7 +98,7 @@ GRANT EXECUTE ON FUNCTION public.probe_definer_edit() TO service_role;
 -- ── Inserts: the shape (service role) ────────────────────────────────────────
 SELECT probe('insert: valid draft', 'service_role', NULL, ins(), 'ok');
 SELECT probe('insert: valid kept', 'service_role', NULL,
-  ins(', status, snapshot, short_id, shared_via, shared_at| , ''kept'', ''{}'', ''ZZ99'', ''print'', now()'), 'ok');
+  ins(', status, snapshot, short_id, shared_via, shared_at, content_sha256| , ''kept'', ''{}'', ''ZZ99'', ''print'', now(), repeat(''ab'', 32)'), 'ok');
 SELECT probe('insert: .html key', 'service_role', NULL,
   replace(ins(), '0000000b.pdf', '0000000b.html'), 'ok');
 SELECT probe('path: another row''s id', 'service_role', NULL,
@@ -119,9 +119,13 @@ SELECT probe('token: expiry set', 'service_role', NULL,
   ins(', token_expires_at| , now() + interval ''1 day'''), '23514');
 SELECT probe('status: unknown', 'service_role', NULL, ins(', status| , ''sent'''), '23514');
 SELECT probe('kept: no snapshot', 'service_role', NULL,
-  ins(', status, short_id, shared_via, shared_at| , ''kept'', ''ZZ98'', ''print'', now()'), '23514');
+  ins(', status, short_id, shared_via, shared_at, content_sha256| , ''kept'', ''ZZ98'', ''print'', now(), repeat(''ab'', 32)'), '23514');
+SELECT probe('kept: no content hash', 'service_role', NULL,
+  ins(', status, snapshot, short_id, shared_via, shared_at| , ''kept'', ''{}'', ''ZZ96'', ''print'', now()'), '23514');
+SELECT probe('content hash: upper-case hex', 'service_role', NULL,
+  ins(', content_sha256| , repeat(''AB'', 32)'), '23514');
 SELECT probe('kept: no departure', 'service_role', NULL,
-  ins(', status, snapshot, short_id| , ''kept'', ''{}'', ''ZZ97'''), '23514');
+  ins(', status, snapshot, short_id, content_sha256| , ''kept'', ''{}'', ''ZZ97'', repeat(''ab'', 32)'), '23514');
 SELECT probe('shared: via without at', 'service_role', NULL, ins(', shared_via| , ''print'''), '23514');
 SELECT probe('short_id: I is not Crockford', 'service_role', NULL, ins(', short_id| , ''ABCI'''), '23514');
 SELECT probe('short_id: lower-case', 'service_role', NULL, ins(', short_id| , ''abcd'''), '23514');
@@ -163,7 +167,7 @@ SELECT probe('appointment: link a draft later', 'service_role', NULL,
 SELECT probe('draft: service edits content', 'service_role', NULL,
   $$UPDATE public.vet_reports SET params = '{"window":"30d"}', snapshot = '{}' WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, 'ok');
 SELECT probe('draft: becomes kept', 'service_role', NULL,
-  $$UPDATE public.vet_reports SET status = 'kept', snapshot = '{}', short_id = 'AB12', shared_via = 'print', shared_at = now() WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, 'ok');
+  $$UPDATE public.vet_reports SET status = 'kept', snapshot = '{}', short_id = 'AB12', shared_via = 'print', shared_at = now(), content_sha256 = repeat('cd', 32) WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, 'ok');
 SELECT probe('kept: service edits params', 'service_role', NULL,
   $$UPDATE public.vet_reports SET params = '{"window":"30d"}' WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a'$$, '23514');
 SELECT probe('kept: migration owner edits snapshot', 'postgres', NULL,
@@ -186,6 +190,64 @@ SELECT probe('kept: no-op update passes', 'service_role', NULL,
   $$UPDATE public.vet_reports SET params = params WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a'$$, 'ok');
 SELECT probe('kept: DEFINER fn called by service role', 'service_role', NULL,
   $$SELECT public.probe_definer_edit()$$, '23514');
+SELECT probe('kept: content hash swapped', 'service_role', NULL,
+  $$UPDATE public.vet_reports SET content_sha256 = repeat('ef', 32) WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a'$$, '23514');
+
+-- ── F1: a kept copy is not deleted and re-inserted ───────────────────────────
+SELECT probe('kept: service deletes it', 'service_role', NULL,
+  $$DELETE FROM public.vet_reports WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a'$$, '23514');
+SELECT probe('kept: migration owner deletes it', 'postgres', NULL,
+  $$DELETE FROM public.vet_reports WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a'$$, '23514');
+SELECT probe('kept: delete and re-insert softened', 'service_role', NULL,
+  $q$DO $d$ BEGIN
+      CREATE TEMP TABLE k ON COMMIT DROP AS SELECT * FROM public.vet_reports WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a';
+      DELETE FROM public.vet_reports WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a';
+      UPDATE k SET snapshot = '{"facts":[]}';
+      INSERT INTO public.vet_reports SELECT * FROM k;
+    END $d$ $q$, '23514');
+SELECT probe('service: TRUNCATE', 'service_role', NULL, $$TRUNCATE public.vet_reports$$, '23514');
+SELECT probe('draft: service deletes it', 'service_role', NULL,
+  $$DELETE FROM public.vet_reports WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, 'ok');
+
+-- ── F6: id and storage_path never change, drafts included ────────────────────
+SELECT probe('draft: re-keyed (id and path)', 'service_role', NULL,
+  $$UPDATE public.vet_reports SET id = 'f1f1f1f1-0000-4000-8000-00000000000c',
+      storage_path = 'a1a1a1a1-0000-4000-8000-000000000001/f1f1f1f1-0000-4000-8000-00000000000c.html'
+    WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, '23514');
+SELECT probe('draft: extension switched', 'service_role', NULL,
+  $$UPDATE public.vet_reports SET storage_path = replace(storage_path, '.html', '.pdf') WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009'$$, '23514');
+
+-- ── F3: with the no-live-token CHECK dropped (the future public-link
+-- migration), the freezes alone decide the expiry. Setup runs as the owner;
+-- the attempt as client A.
+CREATE FUNCTION tok(target text, stmt text) RETURNS text LANGUAGE sql AS $f$
+  SELECT format($s$DO $d$ BEGIN
+      ALTER TABLE public.vet_reports DROP CONSTRAINT vet_reports_no_live_token;
+      %1$s
+      PERFORM set_config('request.jwt.claim.sub', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
+      SET LOCAL ROLE authenticated;
+      %2$s
+    END $d$$s$, target, stmt)
+$f$;
+-- A draft with a live expiry, and a kept copy with one.
+\set draft_tok 'UPDATE public.vet_reports SET share_token = uuid_generate_v4(), token_expires_at = now() + interval ''30 days'' WHERE id = ''d1d1d1d1-0000-4000-8000-000000000009'';'
+\set kept_tok 'INSERT INTO public.vet_reports (id, pet_id, generated_by, date_range_start, date_range_end, storage_path, report_version, renderer_fingerprint, params, scope_basis, status, snapshot, short_id, shared_via, shared_at, content_sha256, share_token, token_expires_at) VALUES (''c1c1c1c1-0000-4000-8000-00000000000d'', ''a1a1a1a1-0000-4000-8000-000000000001'', ''aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'', ''2026-09-01'', ''2026-10-30'', ''a1a1a1a1-0000-4000-8000-000000000001/c1c1c1c1-0000-4000-8000-00000000000d.pdf'', ''v2'', ''fp'', ''{}'', ''s'', ''kept'', ''{}'', ''TK01'', ''link'', now(), repeat(''ab'', 32), uuid_generate_v4(), now() + interval ''30 days'');'
+SELECT probe('token, draft: client clears the expiry (NULL)', 'postgres', NULL,
+  tok(:'draft_tok', $$UPDATE public.vet_reports SET token_expires_at = NULL WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009';$$), '23514');
+SELECT probe('token, draft: client extends the expiry', 'postgres', NULL,
+  tok(:'draft_tok', $$UPDATE public.vet_reports SET token_expires_at = 'infinity' WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009';$$), '23514');
+SELECT probe('token, draft: client sets an expiry where there was none', 'postgres', NULL,
+  tok('', $$UPDATE public.vet_reports SET token_expires_at = '9999-01-01' WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009';$$), '23514');
+SELECT probe('token, draft: client moves it earlier (revoke)', 'postgres', NULL,
+  tok(:'draft_tok', $$UPDATE public.vet_reports SET token_expires_at = now() WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009';$$), 'ok');
+SELECT probe('token, kept: client clears the expiry (NULL)', 'postgres', NULL,
+  tok(:'kept_tok', $$UPDATE public.vet_reports SET token_expires_at = NULL WHERE id = 'c1c1c1c1-0000-4000-8000-00000000000d';$$), '23514');
+SELECT probe('token, kept: client moves it earlier (revoke)', 'postgres', NULL,
+  tok(:'kept_tok', $$UPDATE public.vet_reports SET token_expires_at = now() WHERE id = 'c1c1c1c1-0000-4000-8000-00000000000d';$$), 'ok');
+SELECT probe('token, kept: service clears the expiry (content freeze alone)', 'postgres', NULL,
+  replace(replace(tok(:'kept_tok', $$UPDATE public.vet_reports SET token_expires_at = NULL WHERE id = 'c1c1c1c1-0000-4000-8000-00000000000d';$$),
+    'SET LOCAL ROLE authenticated;', 'SET LOCAL ROLE service_role;'),
+    '''aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'', true)', ''''', true)'), '23514');
 
 -- ── Clients (110's boundary, unchanged by 113) ───────────────────────────────
 SELECT probe('client A: reads own copies', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -210,8 +272,18 @@ SELECT probe('client A: deletes the linked visit (SET NULL)', 'authenticated', '
       IF (SELECT vet_visit_id FROM public.vet_reports WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a') IS NOT NULL
         THEN RAISE EXCEPTION 'not unlinked'; END IF;
     END $d$ $q$, 'ok');
-SELECT probe('client A: deletes the linked appointment (SET NULL)', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  $$DELETE FROM public.vet_appointments WHERE id = 'a4a4a4a4-0000-4000-8000-000000000006'$$, 'ok');
+SELECT probe('client A: cannot hard-delete an appointment (066: no policy)', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  $q$DO $d$ BEGIN
+      DELETE FROM public.vet_appointments WHERE id = 'a4a4a4a4-0000-4000-8000-000000000006';
+      IF EXISTS (SELECT 1 FROM public.vet_reports WHERE vet_appointment_id IS NULL AND id = 'd2d2d2d2-0000-4000-8000-00000000000a')
+        THEN RAISE EXCEPTION 'unlinked'; END IF;
+    END $d$ $q$, 'ok');
+SELECT probe('service: deletes the linked appointment (SET NULL on a kept copy)', 'service_role', NULL,
+  $q$DO $d$ BEGIN
+      DELETE FROM public.vet_appointments WHERE id = 'a4a4a4a4-0000-4000-8000-000000000006';
+      IF (SELECT vet_appointment_id FROM public.vet_reports WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a') IS NOT NULL
+        THEN RAISE EXCEPTION 'not unlinked'; END IF;
+    END $d$ $q$, 'ok');
 SELECT probe('client A: deletes the pet (cascade)', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   $q$DO $d$ BEGIN
       DELETE FROM public.pets WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';

@@ -23,7 +23,10 @@
 //   ✗ 113's item rewritten to three segments (`pet_id::text || '/' || id::text || '/report.pdf'`)
 //   ✗ 113's item rewritten to a user-id prefix (`generated_by::text || '/' || …`)
 //   ✗ a later migration that drops vet_reports_storage_path_is_row_key
-//   ✗ a later migration that adds a second, looser storage_path CHECK
+//   ✗ a later migration that renames the row key (then the name pin reds)
+//   ✗ a quoted DROP CONSTRAINT "vet_reports_storage_path_is_row_key"
+// (A second storage_path CHECK is not a loosening: CHECKs combine with AND. It
+// is refused anyway, because the live set must be exactly the row key.)
 //   ✗ scopeVetReportPaths replaced by a `.pdf`-only filter (an .html copy survives)
 //   ✗ vetReports left out of SWEEP_SCOPE's pet folders
 //
@@ -35,6 +38,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { stripSqlComments } from './sqlComments';
 import {
   STORAGE_BUCKETS,
   buildPrefixSweep,
@@ -44,8 +48,10 @@ import {
 
 const MIGRATIONS = path.resolve(__dirname, '..', 'supabase', 'migrations');
 
+// The shared lexer (respects strings and dollar bodies), then identifier
+// quotes dropped: `"vet_reports_storage_path_is_row_key"` is the same object.
 function stripComments(sql: string): string {
-  return sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '');
+  return stripSqlComments(sql).replace(/"/g, '');
 }
 
 interface LiveCheck {
@@ -62,6 +68,10 @@ function liveStoragePathChecks(): LiveCheck[] {
     const sql = stripComments(fs.readFileSync(path.join(MIGRATIONS, file), 'utf8'));
     for (const stmt of sql.split(';')) {
       if (!/ALTER\s+TABLE\s+(public\.)?vet_reports\b/i.test(stmt)) continue;
+      for (const m of stmt.matchAll(/RENAME\s+CONSTRAINT\s+(\w+)\s+TO\s+(\w+)/gi)) {
+        const c = live.get(m[1]);
+        if (c) { live.delete(m[1]); live.set(m[2], { ...c, name: m[2], file }); }
+      }
       for (const m of stmt.matchAll(/DROP\s+CONSTRAINT\s+(IF\s+EXISTS\s+)?(\w+)/gi)) live.delete(m[2]);
       for (const m of stmt.matchAll(/ADD\s+CONSTRAINT\s+(\w+)\s+CHECK\s*\(([\s\S]*)$/gi)) {
         // One ADD CONSTRAINT per statement is the convention 113 keeps for this
