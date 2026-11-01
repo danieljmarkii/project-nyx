@@ -5621,7 +5621,7 @@ Deno.test('CUL-2003 — Cooper: the band names the checks that ran and did not t
   const fl = chronicityFloorsFor('vomit', 'dog', DEFAULT_CONFIG.chronicity)
   assert.ok(
     band.includes(
-      `Not triggered Ran and did not trigger, which does not rule these out: ongoing vomiting (4 episodes on 22 logged days of this 27-day report, all the check could see; it triggers at ${fl.minEpisodes} or more episodes over ${fl.minSpanDays / 7} or more weeks, in ${fl.minActiveWeeks} separate weeks, the latest within ${fl.ongoingRecencyDays} days); vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the 7 days to Oct 16, and more, or on more days, than the 7 before). Vomiting entries were logged late, so these checks may have counted fewer than happened.`,
+      `Not triggered Ran and did not trigger, which does not rule these out: ongoing vomiting (4 episodes in 22 logged days of this 27-day report, all the check could see; it triggers at ${fl.minEpisodes} or more episodes over ${fl.minSpanDays / 7} or more weeks, in ${fl.minActiveWeeks} separate weeks, the latest within ${fl.ongoingRecencyDays} days); vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the 7 days to Oct 16, and more, or on more days, than the 7 before). Vomiting entries were logged late, so these checks may have counted fewer than happened.`,
     ),
     band,
   )
@@ -5640,7 +5640,7 @@ Deno.test('CUL-2003 — with no flag, the checks still show where the band sits,
   const p = readAs(renderReport(snap))
   assert.ok(!/Safety — flags for review/.test(p), 'still no band and no all-clear (§5.3)')
   assert.ok(!/No safety flag/.test(p), 'and no statement of none: the band shows only what this report renders')
-  assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes on 40 logged days of the last 8 weeks; no event of any kind logged after Jun 15 \(the last 17 days\); it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
+  assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in 40 logged days of the last 8 weeks; no event of any kind logged after Jun 15 \(the last 17 days\); it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
   assert.ok(
     /Vomiting getting worse: not checked, too few days logged to compare \(0 of the 7 days to Jul 2 logged, 0 of the 7 days to Jun 25; it needs 3 logged days in each\)\./.test(p),
   )
@@ -5729,7 +5729,7 @@ Deno.test('CUL-2003 adv 2 — a course the engine could not measure is "not chec
   const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
   assert.ok(c && c.kind === 'ongoing' && c.state === 'too_few_days', JSON.stringify(c))
   const p = readAs(renderReport(snap))
-  assert.ok(/Ongoing vomiting: not checked, too few episodes or logged days to measure a course \(6 episodes on 6 logged days of the last 8 weeks; no event of any kind logged after Jun 30 \(the last 2 days\)\)\./.test(p))
+  assert.ok(/Ongoing vomiting: not checked, too few episodes or logged days to measure a course \(6 episodes in 6 logged days of the last 8 weeks; no event of any kind logged after Jun 30 \(the last 2 days\)\)\./.test(p))
   assert.ok(!/ongoing vomiting \(6 episodes/.test(p))
   // The mutation: the same six with a third first-half day logged are measured, and fire.
   idSeq = 0
@@ -5747,7 +5747,7 @@ Deno.test('CUL-2003 adv 3 — the count printed is the one inside the check\'s l
   const p = readAs(renderReport(snap))
   const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')!
   assert.ok(c.kind === 'ongoing' && c.episodes === 4, JSON.stringify(c))
-  assert.ok(new RegExp(`ongoing vomiting \\(${c.episodes} episodes on 56 logged days of the last 8 weeks;`).test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 200))
+  assert.ok(new RegExp(`ongoing vomiting \\(${c.episodes} episodes in 56 logged days of the last 8 weeks;`).test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 200))
 })
 
 Deno.test('CUL-2003 adv 4 — under EN-11 a rise under the card floor says so, never a bare "did not trigger"', () => {
@@ -5773,7 +5773,7 @@ Deno.test('CUL-2348 — a record that began four days ago names its four logged 
   const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
   assert.ok(c && c.kind === 'ongoing' && c.loggedDays === 4 && c.loggedDays === snap.atAGlance.loggedDays, JSON.stringify(c))
   const p = readAs(renderReport(snap))
-  assert.ok(/\(2 episodes on 4 logged days of the last 8 weeks[;)]/.test(p), p.slice(p.indexOf('vomiting ('), p.indexOf('vomiting (') + 200))
+  assert.ok(/\(2 episodes in 4 logged days of the last 8 weeks[;)]/.test(p), p.slice(p.indexOf('vomiting ('), p.indexOf('vomiting (') + 200))
   assert.ok(!/2 episodes in the last 8 weeks/.test(p), 'the bare eight-week count is gone')
 })
 
@@ -5812,7 +5812,7 @@ Deno.test('CUL-2348 — the logged days never exceed the span the check saw', ()
   const snap = assembleReport(baseInput({ events }))
   const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
   assert.ok(c && c.kind === 'ongoing' && c.loggedDays === 56, JSON.stringify(c))
-  assert.ok(/episodes on 56 logged days of the last 8 weeks/.test(readAs(renderReport(snap))))
+  assert.ok(/episodes in 56 logged days of the last 8 weeks/.test(readAs(renderReport(snap))))
 })
 
 Deno.test('CUL-2003 adv 5 — a report window shorter than the span floor cannot claim the ongoing check ran', () => {

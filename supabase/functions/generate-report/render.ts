@@ -2293,7 +2293,7 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
             } was logged: ${nothingLoggedFor(tail)}`
           : // CUL-2348: the count names the logged days it covers, so a record that began four
             // days ago never reads as eight weeks of watching.
-            `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} on ${num(c.loggedDays)} logged day${
+            `${num(c.episodes)} episode${c.episodes === 1 ? '' : 's'} in ${num(c.loggedDays)} logged day${
               c.loggedDays === 1 ? '' : 's'
             } of ${
               c.windowDays < c.lookbackDays
