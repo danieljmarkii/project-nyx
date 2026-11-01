@@ -477,34 +477,63 @@ export const STORAGE_LIST_MAX_DEPTH = 8
 // A name segment that could change which object a key addresses once joined. The
 // app never writes one, but the raw Storage API accepts `{uid}//x.jpg` and RLS 021
 // passes it (the first folder is still the uid). Such an entry is never joined,
-// walked or emitted: the walk THROWS, because skipping it would leave the object
-// behind under an `ok: true` (rls-privacy-reviewer, PR-05). Production held zero
-// such keys on 2026-10-12, so the throw blocks only a hand-built tree, loudly.
+// walked or emitted. What happens next depends on the caller (CUL-2330):
+//   • listPrefixRecursive, the PRE-delete medication listing, THROWS: the run aborts
+//     with the account intact, because skipping it would leave the object behind
+//     under an `ok: true` (rls-privacy-reviewer, PR-05). Production held zero such
+//     keys on 2026-10-12, so the throw blocks only a hand-built tree, loudly.
+//   • listPrefixForSweep, the POST-delete sweep, records it as a gap and keeps
+//     walking. The account is already gone, so a throw there aborts nothing; it only
+//     skipped every OTHER file in the folder (rls-privacy-reviewer F7 on CUL-2314).
 function isUnsafeSegment(name: string): boolean {
   return name.length === 0 || name === '.' || name === '..' || name.includes('/')
 }
 
-export async function listPrefixRecursive(list: StorageLister, root: string): Promise<string[]> {
+// One walk, two failure modes. `onGap` absent: any listing error, unsafe name or
+// over-deep tree throws. `onGap` present: each is recorded against the folder it
+// sits in, and the walk carries on with everything else it can reach. Keys from
+// pages already read are kept either way, so a folder that fails on page three
+// still hands back pages one and two.
+async function walkPrefix(
+  list: StorageLister,
+  root: string,
+  onGap?: (gap: string) => void,
+): Promise<string[]> {
   // A blank root would list the bucket's top level, i.e. every account's folder.
-  // index.ts always passes the verified-JWT uid; this fails CLOSED anyway.
+  // index.ts always passes an owned id or the verified-JWT uid; this fails CLOSED
+  // in both modes, because a bad root is a bug in the plan, not a bad object.
   if (!root || root.trim().length === 0 || isUnsafeSegment(root)) {
     throw new Error('listPrefixRecursive: a single-segment root is required')
+  }
+  const gap = (message: string) => {
+    if (!onGap) throw new Error(message)
+    onGap(message)
   }
   const keys: string[] = []
   const walk = async (prefix: string, depth: number): Promise<void> => {
     if (depth > STORAGE_LIST_MAX_DEPTH) {
-      throw new Error(`listPrefixRecursive: ${prefix} is deeper than ${STORAGE_LIST_MAX_DEPTH} levels`)
+      gap(`listPrefixRecursive: ${prefix} is deeper than ${STORAGE_LIST_MAX_DEPTH} levels`)
+      return
     }
     const folders: string[] = []
     // Advance by the rows RECEIVED and stop only on an empty page (C-42): sound
     // even if the server caps a page below the size asked for.
     for (let offset = 0; ; ) {
-      const page = await list(prefix, offset, STORAGE_LIST_PAGE)
+      let page: StorageListEntry[]
+      try {
+        page = await list(prefix, offset, STORAGE_LIST_PAGE)
+      } catch (e) {
+        if (!onGap) throw e
+        gap(`listPrefixRecursive: listing ${prefix} failed at offset ${offset}: ${e instanceof Error ? e.message : String(e)}`)
+        break
+      }
       if (page.length === 0) break
       offset += page.length
       for (const entry of page) {
         if (typeof entry?.name !== 'string' || isUnsafeSegment(entry.name)) {
-          throw new Error(`listPrefixRecursive: unsafe object name under ${prefix}`)
+          // The name itself is never echoed: it is attacker-chosen text.
+          gap(`listPrefixRecursive: unsafe object name under ${prefix}`)
+          continue
         }
         const key = `${prefix}/${entry.name}`
         if (entry.id === null) folders.push(key)
@@ -515,6 +544,26 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
   }
   await walk(root, 1)
   return keys
+}
+
+// STRICT: every key under `root`, or a throw. For the pre-delete listing, where a
+// throw is the safe outcome (the account survives and the call retries).
+export function listPrefixRecursive(list: StorageLister, root: string): Promise<string[]> {
+  return walkPrefix(list, root)
+}
+
+export interface PrefixListing {
+  keys: string[]
+  // Each part of the tree the walk could not cover, naming its folder.
+  gaps: string[]
+}
+
+// TOLERANT: every key the walk can reach under `root`, plus what it could not. For
+// the post-delete sweep, where one bad entry must not strand its siblings (CUL-2330).
+export async function listPrefixForSweep(list: StorageLister, root: string): Promise<PrefixListing> {
+  const gaps: string[] = []
+  const keys = await walkPrefix(list, root, (g) => gaps.push(g))
+  return { keys, gaps }
 }
 
 // ── Owned-row path reads (CUL-2312) ───────────────────────────────────────────
@@ -641,9 +690,11 @@ export async function readAllOwnedPaths(
 // (2) a drug-label upload from a device whose access token outlives the delete lands
 // after the sweep (policy 021 has no table lookup); (3) an upload whose permission
 // check passed before the cascade but whose object commits after the listing; (4) a
-// food the account hard-deleted before deletion began has no row, so its leftover
-// photos are not swept (the retired-id ledger that names them is migration 106).
-// The orphan sweep (B-121, CUL-231) is the backstop for all four.
+// food the account hard-deleted before deletion began is swept only when migration
+// 106's retired-id ledger names it with this account (CUL-2329, sweepIds.ts), so one
+// with no ledger row, or a row whose owner was stored NULL, is not; (5) a folder the
+// sweep did not reach before its time budget, named in the `unswept` log line
+// (CUL-2330). The orphan sweep (B-121, CUL-231) is the backstop for all five.
 
 // Which owned id keys each bucket's first folder. A mapped type over every
 // STORAGE_BUCKETS key, so a new bucket fails the build until it says how it is swept.
@@ -700,38 +751,103 @@ export function buildPrefixSweep(ids: SweepIds): PrefixSweep[] {
 
 export interface SweepResult {
   removed: number
+  // One line per problem, each naming its bucket and folder: a gap in a folder's
+  // walk, a rejected remove batch, or a folder the budget left unstarted.
   failures: string[]
+  // The folders never started because the time budget ran out (CUL-2330 F6,
+  // CUL-2334). Each is idempotent to sweep, so re-running these finishes them.
+  unswept: PrefixSweep[]
+  // The folders started but not emptied: a gap in the walk or a rejected remove
+  // batch. Re-running may finish a rejected batch; a gap from an unsafe name recurs
+  // every run, so those need the orphan sweep (B-121, CUL-231) or a hand cleanup.
+  partial: PrefixSweep[]
+}
+
+// Folders swept at once. The sweep is one list call per folder level plus a remove
+// per 100 keys, and most folders are empty, so the run is round-trip bound: eight in
+// flight cuts a 5-pets-plus-foods sweep's wall time by about eight without a burst
+// big enough to trip Storage's rate limit.
+export const SWEEP_CONCURRENCY = 8
+
+// How long after the REQUEST STARTED the sweep may still start a folder. The Edge
+// runtime must answer within 150 s (its request idle timeout; the wall clock is 150 s
+// on the free plan). Stopping new folders at 90 s leaves a minute for the ones in
+// flight and the response, so a large account ends with its leftovers NAMED in
+// `unswept` rather than killed mid-folder with only the pre-sweep log line.
+export const SWEEP_BUDGET_MS = 90_000
+
+export interface SweepOptions {
+  // Epoch ms after which no new folder starts. Absent: no budget.
+  deadline?: number
+  now?: () => number
+  concurrency?: number
 }
 
 // Runs the sweep over injected Storage calls. Best-effort, like the first purge: the
-// account is already gone, so one folder's list or remove failure is recorded (bucket
-// and folder, for a reaper or a hand cleanup) and the rest still run. `remove`
-// returns how many objects it removed and throws on an error.
+// account is already gone, so nothing here throws. A gap in one folder's walk (an
+// unsafe name, a sub-folder whose listing failed) is recorded and the rest of that
+// folder is still removed (CUL-2330 F7); a failed remove batch is recorded and later
+// batches still run; and at the deadline every folder not yet started is returned in
+// `unswept` (CUL-2330 F6). `remove` returns how many objects it removed and throws on
+// an error.
 export async function sweepOwnedPrefixes(
   sweep: ReadonlyArray<PrefixSweep>,
   listerFor: (bucket: string) => StorageLister,
   remove: (bucket: string, keys: string[]) => Promise<number>,
+  opts: SweepOptions = {},
 ): Promise<SweepResult> {
+  const now = opts.now ?? Date.now
+  const concurrency = Math.max(1, Math.floor(opts.concurrency ?? SWEEP_CONCURRENCY))
   let removed = 0
   const failures: string[] = []
   const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
-  for (const { bucket, root } of sweep) {
-    let keys: string[]
+
+  const partial: PrefixSweep[] = []
+  const sweepOne = async (folder: PrefixSweep): Promise<void> => {
+    const { bucket, root } = folder
+    let listing: PrefixListing
     try {
-      keys = await listPrefixRecursive(listerFor(bucket), root)
+      listing = await listPrefixForSweep(listerFor(bucket), root)
     } catch (e) {
+      // Only an unsafe ROOT throws here, and buildPrefixSweep refuses those before
+      // the delete; recorded anyway so a regression is named, not swallowed.
       failures.push(`${bucket}/${root}/ (sweep list): ${message(e)}`)
-      continue
+      partial.push(folder)
+      return
     }
-    for (const batch of chunk(keys, STORAGE_REMOVE_CHUNK)) {
+    // A local flag, not a diff of `failures.length`: that array is shared by the
+    // workers, so another folder's failure would mark this one partial.
+    let left = listing.gaps.length > 0
+    for (const g of listing.gaps) failures.push(`${bucket}/${root}/ (sweep gap): ${g}`)
+    for (const batch of chunk(listing.keys, STORAGE_REMOVE_CHUNK)) {
       try {
-        removed += await remove(bucket, batch)
+        // Await FIRST, then add: `removed += await …` reads `removed` before the await,
+        // so folders in flight together would overwrite each other's counts.
+        const n = await remove(bucket, batch)
+        removed += n
       } catch (e) {
         failures.push(`${bucket}/${root}/ (sweep remove, ${batch.length} objects): ${message(e)}`)
+        left = true
       }
     }
+    if (left) partial.push(folder)
   }
-  return { removed, failures }
+
+  // A shared cursor: JS runs each worker's synchronous step alone, so `next++` hands
+  // every folder to exactly one worker. The deadline is checked BEFORE a folder is
+  // taken, so a folder is either swept whole or left in `unswept`, never both.
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < sweep.length) {
+      if (opts.deadline !== undefined && now() >= opts.deadline) return
+      await sweepOne(sweep[next++])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, sweep.length) }, worker))
+
+  const unswept = sweep.slice(next)
+  for (const { bucket, root } of unswept) failures.push(`${bucket}/${root}/ (sweep not started: time budget)`)
+  return { removed, failures, unswept, partial }
 }
 
 // ── Ordering ──────────────────────────────────────────────────────────────────
