@@ -25,18 +25,22 @@
 //      would refuse every consent write; the logger gaining a read of another row), both
 //      CREATE TRIGGER statements likewise (event list, timing, FOR EACH ROW, no WHEN, no
 //      UPDATE OF), and a later DROP / DISABLE / ALTER FUNCTION reds.
-//   4. THE TABLES' SHAPE. Both CREATE TABLE statements are pinned by equality and no later
-//      ALTER TABLE may touch either (bar re-enabling RLS). That holds the D10 ruling (the
-//      scope CHECK admits 'ai_boundary' alone: PM 2026-10-11), `granted` with no DEFAULT (a
+//   4. THE TABLES' SHAPE. Both CREATE TABLE statements are pinned by equality, and every later
+//      ALTER TABLE of either (bar re-enabling RLS) is pinned as a list, literals intact: today
+//      that list is 112's scope swap alone (CUL-2304: 'report_summary' joins 'ai_boundary'
+//      on both tables, the same set on each, or the history logger would refuse the state's
+//      write). That holds the scope set (D10's 'ai_boundary', PM 2026-10-11, plus 112's
+//      'report_summary'), `granted` with no DEFAULT (a
 //      default would let an insert that forgot the answer record one; absence never reads as
 //      yes) and `decided_at` with no client path, in one rule. A new scope or column is an
 //      explicit migration that updates this file, which is the point.
 //
-// HOW IT READS SQL. Comments are stripped (`stripSqlComments`). For rules 1, 2 and 4's ALTER
-// scan, string literals and dollar-quoted bodies are then blanked line-preservingly in ONE
-// pass, so a `COMMENT ON` or `RAISE` string that quotes a GRANT is not a GRANT, and the text
-// is split into statements at `;`, so no match spans two statements. Rule 3 and rule 4's
-// CREATE pin read the comment-stripped text, because what they pin includes literals. A
+// HOW IT READS SQL. Comments are stripped (`stripSqlComments`). For rules 1 and 2, string
+// literals and dollar-quoted bodies are then blanked line-preservingly in ONE pass, so a
+// `COMMENT ON` or `RAISE` string that quotes a GRANT is not a GRANT, and the text is split
+// into statements at `;`, so no match spans two statements. Rule 4's ALTER pin cuts at the
+// same `;` positions but keeps the literals (`statementsIntactOf`), because a CHECK's values
+// are literals. Rule 3 and rule 4's CREATE pin read the comment-stripped text. A
 // table reference matches with or without `public.` and with or without double quotes.
 //
 // WHAT IT DOES NOT CLAIM (C-38: a blind spot left unstated reads as coverage):
@@ -78,6 +82,9 @@ interface TableSpec {
   writeLocked: RegExp | null;
   /** The REVOKE statements 100 must carry against service_role, verbatim (squashed). */
   serviceRevoke: string;
+  /** Every later ALTER TABLE of this table, in file order, literals intact (squashed). The
+   *  whole list is pinned by equality: one more, one fewer or one changed reds. */
+  alters: readonly string[];
   create: string;
   policies: Readonly<Record<string, string>>;
 }
@@ -88,6 +95,9 @@ const TABLES: readonly TableSpec[] = [
     columnWrites: true,
     writeLocked: null,
     serviceRevoke: 'REVOKE DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.ai_consent FROM service_role',
+    alters: [
+      "ALTER TABLE public.ai_consent DROP CONSTRAINT ai_consent_scope_check, ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
+    ],
     create: squash(`
       CREATE TABLE public.ai_consent (
         user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -112,6 +122,9 @@ const TABLES: readonly TableSpec[] = [
     columnWrites: false,
     writeLocked: /(?:^|[\s,"])service_role(?=$|[\s,"])/i,
     serviceRevoke: 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER, REFERENCES ON public.ai_consent_events FROM service_role',
+    alters: [
+      "ALTER TABLE public.ai_consent_events DROP CONSTRAINT ai_consent_events_scope_check, ADD CONSTRAINT ai_consent_events_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
+    ],
     create: squash(`
       CREATE TABLE public.ai_consent_events (
         id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -231,6 +244,25 @@ export function blankLiterals(sql: string): string {
 /** Literal-blanked statements across the files, in order, squashed. */
 export function statementsOf(sqls: string[]): string[] {
   return sqls.flatMap((sql) => blankLiterals(sql).split(';').map(squash).filter(Boolean));
+}
+
+/** The same statements with their literals INTACT, for pins that must read a CHECK's values.
+ *  Cut at the `;` positions of the blanked text (blankLiterals keeps every offset), so a `;`
+ *  inside a string or a function body never splits a statement here either. */
+export function statementsIntactOf(sqls: string[]): string[] {
+  return sqls.flatMap((sql) => {
+    const blanked = blankLiterals(sql);
+    const out: string[] = [];
+    let start = 0;
+    for (let i = 0; i < blanked.length; i += 1) {
+      if (blanked[i] === ';') {
+        out.push(squash(sql.slice(start, i)));
+        start = i + 1;
+      }
+    }
+    out.push(squash(sql.slice(start)));
+    return out.filter(Boolean);
+  });
 }
 
 /** Split a GRANT target or privilege list on commas outside parentheses. */
@@ -386,7 +418,14 @@ describe("ai_consent + ai_consent_events — the owner's answer and its history 
 
   it.each(TABLES.map((t) => [t.name, t] as const))('rule 4: %s keeps its shape', (_n, spec) => {
     expect(createsOf(sqls, spec.name)).toEqual([spec.create]);
-    expect(findAlters(statements, spec.name)).toEqual([]);
+    expect(findAlters(statementsIntactOf(sqls), spec.name)).toEqual(spec.alters);
+  });
+
+  it('rule 4: the two scope sets are the same set (the history never refuses what the state took)', () => {
+    const values = (spec: TableSpec) =>
+      /CHECK \(scope IN \(([^)]*)\)\)/.exec(spec.alters[spec.alters.length - 1])?.[1] ?? 'none';
+    expect(values(TABLES[0])).toBe("'ai_boundary', 'report_summary'");
+    expect(values(TABLES[1])).toBe(values(TABLES[0]));
   });
 });
 
@@ -520,12 +559,51 @@ describe('ai_consent guard — mutants, each killed', () => {
     expect(createsOf(widened, 'ai_consent')).not.toEqual([STATE.create]);
     const defaulted = mutate(/(CREATE TABLE public\.ai_consent \([\s\S]*?granted {6}BOOLEAN NOT NULL),/, '$1\n    DEFAULT true,');
     expect(createsOf(defaulted, 'ai_consent')).not.toEqual([STATE.create]);
-    const alters = (extra: string, t: string) => findAlters(statementsOf(plus(extra)), t);
-    expect(alters('ALTER TABLE public.ai_consent ALTER COLUMN granted SET DEFAULT true;', 'ai_consent')).toHaveLength(1);
-    expect(alters('ALTER TABLE public.ai_consent DROP CONSTRAINT ai_consent_scope_check;', 'ai_consent')).toHaveLength(1);
-    expect(alters('ALTER TABLE "ai_consent_events" ADD COLUMN note TEXT;', 'ai_consent_events')).toHaveLength(1);
+    // Each extra ALTER makes the pinned list one longer, so the equality in rule 4 reds.
+    const alters = (extra: string, spec: TableSpec) => findAlters(statementsIntactOf(plus(extra)), spec.name);
+    expect(alters('ALTER TABLE public.ai_consent ALTER COLUMN granted SET DEFAULT true;', STATE)).toHaveLength(STATE.alters.length + 1);
+    expect(alters('ALTER TABLE public.ai_consent DROP CONSTRAINT ai_consent_scope_check;', STATE)).toHaveLength(STATE.alters.length + 1);
+    expect(alters('ALTER TABLE "ai_consent_events" ADD COLUMN note TEXT;', EVENTS)).toHaveLength(EVENTS.alters.length + 1);
     // An ALTER of the history table is not an ALTER of the state table.
-    expect(alters('ALTER TABLE public.ai_consent_events ADD COLUMN note TEXT;', 'ai_consent')).toEqual([]);
+    expect(alters('ALTER TABLE public.ai_consent_events ADD COLUMN note TEXT;', STATE)).toEqual([...STATE.alters]);
+  });
+
+  it("rule 4 reds when 112's scope set is widened, narrowed on one table only, or its re-add is dropped", () => {
+    const n112 = base.findIndex((sql) => sql.includes('report_ai_lead'));
+    expect(n112).toBeGreaterThan(0);
+    const in112 = (from: string, to: string) => {
+      const out = [...base];
+      expect(out[n112].includes(from)).toBe(true);
+      out[n112] = out[n112].replace(from, to);
+      return out;
+    };
+    const stateWidened = in112(
+      "ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
+      "ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary', 'photo_analysis'))",
+    );
+    expect(findAlters(statementsIntactOf(stateWidened), 'ai_consent')).not.toEqual(STATE.alters);
+    const historyNarrowed = in112(
+      "ai_consent_events_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'))",
+      "ai_consent_events_scope_check CHECK (scope IN ('ai_boundary'))",
+    );
+    expect(findAlters(statementsIntactOf(historyNarrowed), 'ai_consent_events')).not.toEqual(EVENTS.alters);
+    const reAddDropped = in112(
+      ",\n  ADD CONSTRAINT ai_consent_scope_check CHECK (scope IN ('ai_boundary', 'report_summary'));",
+      ';',
+    );
+    expect(findAlters(statementsIntactOf(reAddDropped), 'ai_consent')).not.toEqual(STATE.alters);
+  });
+
+  it("112 seeds report_ai_lead off for everyone, and a re-apply never resets a live allowlist", () => {
+    const seed = statementsIntactOf(base).filter((st) => /^INSERT INTO app_config\b.*'report_ai_lead'/.test(st));
+    expect(seed).toEqual([
+      `INSERT INTO app_config (key, value) VALUES ('report_ai_lead', '{"enabled": false, "allowlist": []}'::jsonb) ON CONFLICT (key) DO NOTHING`,
+    ]);
+  });
+
+  it('the intact split keeps a literal ; inside its statement', () => {
+    expect(statementsIntactOf(["COMMENT ON TABLE x IS 'a; b'; ALTER TABLE public.ai_consent DROP CONSTRAINT c;"]))
+      .toEqual(["COMMENT ON TABLE x IS 'a; b'", 'ALTER TABLE public.ai_consent DROP CONSTRAINT c']);
   });
 
   it('files are ordered by number, not text', () => {
