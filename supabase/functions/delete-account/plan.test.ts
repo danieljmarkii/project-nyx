@@ -21,6 +21,10 @@ import {
   extractPassword,
   listPrefixRecursive,
   readAllOwnedPaths,
+  buildPrefixSweep,
+  mergeSweepIds,
+  sweepOwnedPrefixes,
+  SWEEP_SCOPE,
   STORAGE_BUCKETS,
   STORAGE_LIST_MAX_DEPTH,
   STORAGE_LIST_PAGE,
@@ -1211,4 +1215,147 @@ Deno.test('readAllOwnedPaths — a stable table is recounted once and passes', a
   const t = cappedTable(1234, 200)
   await readAllOwnedPaths('vet_documents', t.page)
   assertEquals(t.ranges[t.ranges.length - 1], [0, 0])
+})
+
+// ── Post-delete prefix sweep (CUL-2314) ───────────────────────────────────────
+
+const SWEEP_IDS = { petIds: ['pet-a', 'pet-b'], foodItemIds: ['food-1'], userId: 'user-1' }
+
+Deno.test('buildPrefixSweep — every bucket is swept, each under the id that keys it', () => {
+  const sweep = buildPrefixSweep(SWEEP_IDS)
+  const buckets = new Set(sweep.map((s) => s.bucket))
+  assertEquals([...buckets].sort(), Object.values(STORAGE_BUCKETS).sort())
+  for (const bucket of [
+    STORAGE_BUCKETS.petPhotos,
+    STORAGE_BUCKETS.eventAttachments,
+    STORAGE_BUCKETS.vetAttachments,
+    STORAGE_BUCKETS.vetDocuments,
+    STORAGE_BUCKETS.vetReports,
+  ]) {
+    assertEquals(sweep.filter((s) => s.bucket === bucket).map((s) => s.root), ['pet-a', 'pet-b'])
+  }
+  assertEquals(sweep.filter((s) => s.bucket === STORAGE_BUCKETS.foodPhotos).map((s) => s.root), ['food-1'])
+  assertEquals(sweep.filter((s) => s.bucket === STORAGE_BUCKETS.medicationPhotos).map((s) => s.root), ['user-1'])
+})
+
+Deno.test('buildPrefixSweep — SWEEP_SCOPE names every bucket and nothing else', () => {
+  assertEquals(Object.keys(SWEEP_SCOPE).sort(), Object.keys(STORAGE_BUCKETS).sort())
+})
+
+Deno.test('buildPrefixSweep — a zero-pet, zero-food account still sweeps its own label folder', () => {
+  assertEquals(buildPrefixSweep({ petIds: [], foodItemIds: [], userId: 'user-1' }), [
+    { bucket: STORAGE_BUCKETS.medicationPhotos, root: 'user-1' },
+  ])
+})
+
+Deno.test('buildPrefixSweep — a blank or unsafe root THROWS, so no bucket top level is ever listed', () => {
+  for (const bad of ['', '   ', '.', '..', 'a/b', 'pet-a/../victim']) {
+    assertThrows(() => buildPrefixSweep({ ...SWEEP_IDS, petIds: [bad] }))
+    assertThrows(() => buildPrefixSweep({ ...SWEEP_IDS, foodItemIds: [bad] }))
+    assertThrows(() => buildPrefixSweep({ ...SWEEP_IDS, userId: bad }))
+  }
+})
+
+Deno.test('buildPrefixSweep — duplicate ids sweep once', () => {
+  const sweep = buildPrefixSweep({ petIds: ['pet-a', 'pet-a'], foodItemIds: [], userId: 'user-1' })
+  assertEquals(sweep.filter((s) => s.bucket === STORAGE_BUCKETS.petPhotos).length, 1)
+})
+
+Deno.test('mergeSweepIds — a re-read can only add folders, never drop one', () => {
+  const merged = mergeSweepIds(SWEEP_IDS, { petIds: ['pet-b', 'pet-new'], foodItemIds: [], userId: 'user-1' })
+  assertEquals(merged.petIds, ['pet-a', 'pet-b', 'pet-new'])
+  assertEquals(merged.foodItemIds, ['food-1'])
+})
+
+Deno.test('mergeSweepIds — two reads naming different accounts THROW', () => {
+  assertThrows(() => mergeSweepIds(SWEEP_IDS, { ...SWEEP_IDS, userId: 'user-2' }))
+})
+
+// An in-memory bucket set: `${bucket}::${key}` → present. The lister serves one
+// folder level, folders with a null id, as storage-api does.
+function fakeStorage(objects: Record<string, string[]>) {
+  const store = new Map<string, Set<string>>()
+  for (const [bucket, keys] of Object.entries(objects)) store.set(bucket, new Set(keys))
+  const listerFor = (bucket: string): StorageLister => async (prefix, offset, limit) => {
+    const keys = [...(store.get(bucket) ?? [])].filter((k) => k.startsWith(`${prefix}/`))
+    const children = new Map<string, string | null>()
+    for (const k of keys) {
+      const rest = k.slice(prefix.length + 1).split('/')
+      children.set(rest[0], rest.length > 1 ? null : `id:${k}`)
+    }
+    return [...children.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(offset, offset + limit)
+      .map(([name, id]) => ({ name, id }))
+  }
+  const remove = async (bucket: string, keys: string[]) => {
+    let n = 0
+    for (const k of keys) if (store.get(bucket)?.delete(k)) n++
+    return n
+  }
+  return { store, listerFor, remove }
+}
+
+Deno.test('sweepOwnedPrefixes — a file written after the row read (no row) is removed by its folder', async () => {
+  const fs = fakeStorage({
+    [STORAGE_BUCKETS.eventAttachments]: ['pet-a/evt-late/photo.jpg', 'victim-pet/evt/photo.jpg'],
+    [STORAGE_BUCKETS.vetReports]: ['pet-b/report-late.pdf'],
+    [STORAGE_BUCKETS.foodPhotos]: ['food-1/front.jpg', 'food-other/front.jpg'],
+    [STORAGE_BUCKETS.medicationPhotos]: ['user-1/med-9/label.jpg', 'user-2/med-1/label.jpg'],
+  })
+  const res = await sweepOwnedPrefixes(buildPrefixSweep(SWEEP_IDS), fs.listerFor, fs.remove)
+  assertEquals(res, { removed: 4, failures: [] })
+  // Only the other accounts' objects remain.
+  assertEquals([...fs.store.get(STORAGE_BUCKETS.eventAttachments)!], ['victim-pet/evt/photo.jpg'])
+  assertEquals([...fs.store.get(STORAGE_BUCKETS.vetReports)!], [])
+  assertEquals([...fs.store.get(STORAGE_BUCKETS.foodPhotos)!], ['food-other/front.jpg'])
+  assertEquals([...fs.store.get(STORAGE_BUCKETS.medicationPhotos)!], ['user-2/med-1/label.jpg'])
+})
+
+Deno.test('sweepOwnedPrefixes — a sibling id sharing a prefix string is not swept', async () => {
+  const fs = fakeStorage({ [STORAGE_BUCKETS.petPhotos]: ['pet-a/profile.jpg', 'pet-ab/profile.jpg'] })
+  await sweepOwnedPrefixes(buildPrefixSweep(SWEEP_IDS), fs.listerFor, fs.remove)
+  assertEquals([...fs.store.get(STORAGE_BUCKETS.petPhotos)!], ['pet-ab/profile.jpg'])
+})
+
+Deno.test('sweepOwnedPrefixes — one folder failing to list is recorded and the rest still run', async () => {
+  const fs = fakeStorage({ [STORAGE_BUCKETS.vetDocuments]: ['pet-b/doc.pdf'] })
+  const listerFor = (bucket: string): StorageLister =>
+    bucket === STORAGE_BUCKETS.petPhotos
+      ? async () => {
+          throw new Error('boom')
+        }
+      : fs.listerFor(bucket)
+  const res = await sweepOwnedPrefixes(buildPrefixSweep(SWEEP_IDS), listerFor, fs.remove)
+  assertEquals(res.removed, 1)
+  assertEquals(res.failures.length, 2) // pet-a and pet-b in the pet-photo bucket
+  assert(res.failures.every((f) => f.startsWith(`${STORAGE_BUCKETS.petPhotos}/pet-`)))
+})
+
+Deno.test('sweepOwnedPrefixes — a failed remove batch is recorded, later batches still run', async () => {
+  const keys = Array.from({ length: STORAGE_REMOVE_CHUNK + 5 }, (_, i) => `pet-a/evt/${String(i).padStart(4, '0')}.jpg`)
+  const fs = fakeStorage({ [STORAGE_BUCKETS.eventAttachments]: keys })
+  let calls = 0
+  const remove = async (bucket: string, batch: string[]) => {
+    calls++
+    if (calls === 1) throw new Error('rejected')
+    return fs.remove(bucket, batch)
+  }
+  const res = await sweepOwnedPrefixes(buildPrefixSweep(SWEEP_IDS), fs.listerFor, remove)
+  assertEquals(calls, 2)
+  assertEquals(res.removed, 5)
+  assertEquals(res.failures.length, 1)
+  assert(res.failures[0].includes(`${STORAGE_REMOVE_CHUNK} objects`))
+})
+
+Deno.test('sweepOwnedPrefixes — an unsafe listed name fails that folder loud rather than skipping it', async () => {
+  const listerFor = (): StorageLister => async (prefix, offset) =>
+    prefix === 'pet-a' && offset === 0 ? [{ name: '..', id: 'x' }] : []
+  const res = await sweepOwnedPrefixes(
+    [{ bucket: STORAGE_BUCKETS.petPhotos, root: 'pet-a' }],
+    listerFor,
+    async () => 0,
+  )
+  assertEquals(res.removed, 0)
+  assertEquals(res.failures.length, 1)
 })

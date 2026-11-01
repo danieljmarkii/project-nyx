@@ -42,20 +42,27 @@
 // Order is load-bearing (FR-6): collect owned paths → purge Storage (best-effort)
 // → delete the auth user LAST. A failed/partial run leaves the account intact and
 // re-runnable, so health photos are never orphaned with their DB rows already
-// cascaded away. The scoping/ordering logic is the pure ./plan.ts module
+// cascaded away. After the delete, one more step (CUL-2314): every folder keyed by an
+// id the account owned is listed and emptied, which catches a file written after
+// step 1's read (its row is gone, its folder is not). The scoping/ordering logic is the pure ./plan.ts module
 // (unit-tested in plan.test.ts); this file is the I/O shell.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   buildDeletionPlan,
+  buildPrefixSweep,
   chunk,
   extractPassword,
   listPrefixRecursive,
+  mergeSweepIds,
   readAllOwnedPaths,
   STORAGE_BUCKETS,
   STORAGE_REMOVE_CHUNK,
+  sweepOwnedPrefixes,
   type OwnedStoragePaths,
+  type PrefixSweep,
   type StorageLister,
+  type SweepIds,
 } from './plan.ts'
 
 const CORS_HEADERS = {
@@ -120,6 +127,50 @@ function ownedPathPage(adminClient: SupabaseClient, table: string, petIds: strin
       .range(from, to)
 }
 
+// One page of a bucket folder's direct children, for listPrefixRecursive. Every error
+// THROWS, because a listing that came back short would read exactly like a complete
+// one. One exception: `nyx-vet-reports` has no writer yet and may not exist, and a
+// missing bucket holds no objects, so for that bucket alone "Bucket not found" lists as
+// empty. Any other bucket missing is a misnamed constant, and fails loud.
+function bucketLister(adminClient: SupabaseClient, bucket: string): StorageLister {
+  return async (prefix, offset, limit) => {
+    const { data, error } = await adminClient.storage
+      .from(bucket)
+      .list(prefix, { limit, offset, sortBy: { column: 'name', order: 'asc' } })
+    if (error) {
+      if (bucket === STORAGE_BUCKETS.vetReports && /bucket not found/i.test(error.message)) return []
+      throw new Error(`Failed to list ${bucket}: ${error.message}`)
+    }
+    // storage-api returns a folder with a null id; supabase-js types id as string.
+    return (data ?? []).map((e) => ({ name: e.name, id: (e.id as string | null) ?? null }))
+  }
+}
+
+// CUL-2314: the ids whose folders the post-delete sweep lists. Re-read immediately
+// before the auth delete, AFTER the purge loop (the long window), so a pet or food item
+// created while the purge ran still has its folder swept. THROWS on a read error or a
+// short read: this runs before the delete, so the account survives and the call
+// retries. `count: 'exact'` is what proves the read complete (C-42): a PostgREST
+// max-rows below the account's row count would otherwise drop folders silently.
+async function readSweepIds(adminClient: SupabaseClient, userId: string): Promise<SweepIds> {
+  const [petsRes, foodRes] = await Promise.all([
+    adminClient.from('pets').select('id', { count: 'exact' }).eq('user_id', userId),
+    adminClient.from('food_items').select('id', { count: 'exact' }).eq('created_by_user_id', userId),
+  ])
+  if (petsRes.error) throw new Error(`Failed to re-read pets: ${petsRes.error.message}`)
+  if (foodRes.error) throw new Error(`Failed to re-read food_items: ${foodRes.error.message}`)
+  for (const [table, res] of [['pets', petsRes], ['food_items', foodRes]] as const) {
+    if (typeof res.count !== 'number' || (res.data ?? []).length < res.count) {
+      throw new Error(`Failed to re-read every ${table} id (read ${(res.data ?? []).length}, count ${res.count ?? 'absent'})`)
+    }
+  }
+  return {
+    petIds: (petsRes.data ?? []).map((p) => p.id as string),
+    foodItemIds: (foodRes.data ?? []).map((f) => f.id as string),
+    userId,
+  }
+}
+
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
   // Four independent top-level reads, in parallel: the user's pets (their own photos
   // PLUS the ownership scope for the child tables below), the medication_items and
@@ -137,14 +188,7 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   // the account's `{uid}/` folder in the label bucket is listed as well. A list
   // error rejects here and aborts the run (account intact, retryable) rather than
   // reporting a clean deletion over a surviving prescription label.
-  const medicationLister: StorageLister = async (prefix, offset, limit) => {
-    const { data, error } = await adminClient.storage
-      .from(STORAGE_BUCKETS.medicationPhotos)
-      .list(prefix, { limit, offset, sortBy: { column: 'name', order: 'asc' } })
-    if (error) throw new Error(`Failed to list ${STORAGE_BUCKETS.medicationPhotos}: ${error.message}`)
-    // storage-api returns a folder with a null id; supabase-js types id as string.
-    return (data ?? []).map((e) => ({ name: e.name, id: (e.id as string | null) ?? null }))
-  }
+  const medicationLister = bucketLister(adminClient, STORAGE_BUCKETS.medicationPhotos)
   const [petsRes, medItemsRes, foodItemsRes, listedMedicationPaths] = await Promise.all([
     adminClient.from('pets').select('id, photo_path').eq('user_id', userId),
     adminClient.from('medication_items').select('photo_paths').eq('created_by_user_id', userId),
@@ -329,6 +373,7 @@ Deno.serve(async (req: Request) => {
     let removed = 0
     const storageFailures: string[] = []
     let authDeleted = false
+    let sweep: PrefixSweep[] = []
 
     for (const step of plan) {
       if (step.kind === 'purge-bucket') {
@@ -345,6 +390,15 @@ Deno.serve(async (req: Request) => {
           }
         }
       } else if (step.kind === 'delete-auth-user') {
+        // CUL-2314: fix the folders the post-delete sweep will list BEFORE the delete,
+        // so a read error or an unsafe root aborts with the account intact. Step 1's
+        // ids are unioned in, so this re-read can only add folders, never drop one.
+        sweep = buildPrefixSweep(
+          mergeSweepIds(
+            { petIds: ownedPaths.ownedPetIds, foodItemIds: ownedPaths.ownedFoodItemIds, userId },
+            await readSweepIds(adminClient, userId),
+          ),
+        )
         // delete-auth-user — LAST. Fires the FK cascade that erases every DB row.
         const { error } = await adminClient.auth.admin.deleteUser(userId)
         if (error) throw new Error(`auth.admin.deleteUser failed: ${error.message}`)
@@ -358,9 +412,34 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // 4. CUL-2314: the post-delete prefix sweep. Step 1 found files by their rows; a
+    //    file written after that read lost its row to the cascade, so it is found here
+    //    by its owned folder. Best-effort: the account is gone, so a failure is logged
+    //    with its bucket and folder rather than thrown.
+    if (authDeleted) {
+      // Name the folders before touching them: if the function dies mid-sweep (its
+      // wall clock), this line is the only record of what may be left behind.
+      console.log(
+        `delete-account: sweeping ${sweep.length} owned folder(s) for deleted user ${userId}:`,
+        sweep.map((s) => `${s.bucket}/${s.root}/`).join(' '),
+      )
+      const swept = await sweepOwnedPrefixes(
+        sweep,
+        (bucket) => bucketLister(adminClient, bucket),
+        async (bucket, keys) => {
+          const { data, error } = await adminClient.storage.from(bucket).remove(keys)
+          if (error) throw new Error(error.message)
+          return data?.length ?? 0
+        },
+      )
+      removed += swept.removed
+      storageFailures.push(...swept.failures)
+    }
+
     if (storageFailures.length > 0) {
-      // Not fatal: the auth user (and every DB row) is gone; these objects are
-      // orphaned and get reaped by the periodic sweep (B-121). Log so it can.
+      // Not fatal: the auth user (and every DB row) is gone. These objects are
+      // orphaned; the bucket and folder are logged so they can be reaped by hand
+      // until the periodic sweep (B-121, CUL-231) exists.
       console.warn(
         `delete-account: ${storageFailures.length} storage purge failure(s) for user ${userId}:`,
         storageFailures.join('; '),

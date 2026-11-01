@@ -545,7 +545,8 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
 // returns only the overlap row and looks like the end, which (3) catches.
 //
 // What this cannot see, stated: a row written AFTER the recount but before the auth
-// delete (the purge loop's window) is not in the list. That window predates this change.
+// delete (the purge loop's window) is not in the list. The post-delete prefix sweep
+// below (CUL-2314) removes such a row's file by its folder.
 //
 // DEPLOY SCOPE. Importing `_shared/pull.ts` puts it in this function's shipping closure,
 // so an edit there now redeploys delete-account too; pull.ts's own header still names
@@ -610,6 +611,127 @@ export async function readAllOwnedPaths(
   const after = isRangeNotSatisfiable(recount.error) ? 0 : recount.count
   if (typeof after !== 'number' || after !== rows.length) throw fail(`recount ${after ?? 'absent'}`)
   return rows.map((r) => r.storage_path)
+}
+
+// ── Post-delete prefix sweep (CUL-2314) ───────────────────────────────────────
+// The read above sees the rows that exist when it runs. A file written after it (a
+// second phone's upload, a report the server saves) and before the auth delete has
+// no row in that read, and the cascade then erases the row it does have, so nothing
+// is left to find it by. Every bucket keys its objects under an id this account
+// owned: `{petId}/…` for the five pet-health buckets, `{foodItemId}/…` for food
+// labels, `{uid}/…` for drug labels. So once the auth user is gone, index.ts lists
+// each owned folder and removes whatever sits in it, finding the file by its folder
+// rather than by a row that no longer exists.
+//
+// Why AFTER the delete: once the cascade has run, the pet, food, vet-document and
+// vet-attachment upload policies refuse every write under these folders (each looks
+// up a `pets` or `food_items` row the cascade removed), so for those buckets the sweep
+// sees the folders' final contents. Swept before the delete, the same race would
+// reopen behind it. NOT so for `nyx-medication-photos`: its policy (021) checks only
+// that the first folder is `auth.uid()`, so a device still holding an unexpired access
+// token can write a label after the sweep (see below).
+//
+// Safety: the roots are ids the account's own rows named (`pets.user_id`,
+// `food_items.created_by_user_id`) or the verified-JWT uid, never a stored path, so
+// a crafted row cannot steer the sweep into another account's folder. Each root must
+// be one safe segment, so a blank root can never list a bucket's top level.
+//
+// What it cannot see, stated: (1) a pet or food item CREATED after index.ts's last id
+// read (one round trip before the delete) has a folder this sweep does not know;
+// (2) a drug-label upload from a device whose access token outlives the delete lands
+// after the sweep (policy 021 has no table lookup); (3) an upload whose permission
+// check passed before the cascade but whose object commits after the listing; (4) a
+// food the account hard-deleted before deletion began has no row, so its leftover
+// photos are not swept (the retired-id ledger that names them is migration 106).
+// The orphan sweep (B-121, CUL-231) is the backstop for all four.
+
+// Which owned id keys each bucket's first folder. A mapped type over every
+// STORAGE_BUCKETS key, so a new bucket fails the build until it says how it is swept.
+export const SWEEP_SCOPE: { readonly [K in keyof typeof STORAGE_BUCKETS]: 'pet' | 'food' | 'user' } = {
+  petPhotos: 'pet',
+  eventAttachments: 'pet',
+  vetAttachments: 'pet',
+  vetDocuments: 'pet',
+  vetReports: 'pet',
+  medicationPhotos: 'user',
+  foodPhotos: 'food',
+}
+
+export interface SweepIds {
+  petIds: ReadonlyArray<string>
+  foodItemIds: ReadonlyArray<string>
+  userId: string
+}
+
+export interface PrefixSweep {
+  bucket: string
+  root: string
+}
+
+// Union two id reads, so a later read can only ADD folders to the sweep.
+export function mergeSweepIds(a: SweepIds, b: SweepIds): SweepIds {
+  if (a.userId !== b.userId) throw new Error('mergeSweepIds: the two reads name different accounts')
+  return {
+    petIds: [...new Set([...a.petIds, ...b.petIds])],
+    foodItemIds: [...new Set([...a.foodItemIds, ...b.foodItemIds])],
+    userId: a.userId,
+  }
+}
+
+// THROWS on an unsafe root. index.ts builds the sweep BEFORE the auth delete, so a
+// throw aborts the run with the account intact and retryable, never mid-erasure.
+export function buildPrefixSweep(ids: SweepIds): PrefixSweep[] {
+  const roots: Record<'pet' | 'food' | 'user', string[]> = {
+    pet: [...new Set(ids.petIds)],
+    food: [...new Set(ids.foodItemIds)],
+    user: [ids.userId],
+  }
+  for (const root of [...roots.pet, ...roots.food, ...roots.user]) {
+    if (typeof root !== 'string' || root.trim().length === 0 || isUnsafeSegment(root)) {
+      throw new Error('buildPrefixSweep: every root must be one non-blank, safe segment')
+    }
+  }
+  const out: PrefixSweep[] = []
+  for (const key of Object.keys(SWEEP_SCOPE) as Array<keyof typeof STORAGE_BUCKETS>) {
+    for (const root of roots[SWEEP_SCOPE[key]]) out.push({ bucket: STORAGE_BUCKETS[key], root })
+  }
+  return out
+}
+
+export interface SweepResult {
+  removed: number
+  failures: string[]
+}
+
+// Runs the sweep over injected Storage calls. Best-effort, like the first purge: the
+// account is already gone, so one folder's list or remove failure is recorded (bucket
+// and folder, for a reaper or a hand cleanup) and the rest still run. `remove`
+// returns how many objects it removed and throws on an error.
+export async function sweepOwnedPrefixes(
+  sweep: ReadonlyArray<PrefixSweep>,
+  listerFor: (bucket: string) => StorageLister,
+  remove: (bucket: string, keys: string[]) => Promise<number>,
+): Promise<SweepResult> {
+  let removed = 0
+  const failures: string[] = []
+  const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+  for (const { bucket, root } of sweep) {
+    let keys: string[]
+    try {
+      keys = await listPrefixRecursive(listerFor(bucket), root)
+    } catch (e) {
+      failures.push(`${bucket}/${root}/ (sweep list): ${message(e)}`)
+      continue
+    }
+    for (const batch of chunk(keys, STORAGE_REMOVE_CHUNK)) {
+      try {
+        removed += await remove(bucket, batch)
+      } catch (e) {
+        failures.push(`${bucket}/${root}/ (sweep remove, ${batch.length} objects): ${message(e)}`)
+      }
+    }
+  }
+  return { removed, failures }
 }
 
 // ── Ordering ──────────────────────────────────────────────────────────────────
