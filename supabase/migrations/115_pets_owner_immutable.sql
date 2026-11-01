@@ -28,11 +28,18 @@
 -- ------------------------------------------------------------
 -- THE FIX
 -- ------------------------------------------------------------
--- One BEFORE UPDATE trigger on pets that refuses a changed user_id for EVERY
--- role, the service role and the migration owner included (the measured
+-- One AFTER UPDATE row trigger on pets that refuses a changed user_id for
+-- EVERY role, the service role and the migration owner included (the measured
 -- attack is the service role's; a trigger binds it where a policy cannot).
+--   · AFTER, not BEFORE: BEFORE row triggers fire in name order and each may
+--     rewrite NEW, so a BEFORE check is only as good as every trigger that
+--     sorts after it, including one a service-role session creates on a
+--     pg_temp function (rls-privacy-reviewer pass 1, F2 / F3, both measured
+--     on the replay). An AFTER row trigger sees the row as written, after
+--     every BEFORE trigger has run, and its RAISE aborts the statement, so the
+--     order of the other triggers stops mattering.
 --   · A plain UPDATE trigger, not `UPDATE OF user_id`, so it fires whatever
---     the SET list names, an `ON CONFLICT DO UPDATE` included.
+--     the SET list names, an `ON CONFLICT DO UPDATE` and a MERGE included.
 --   · IS DISTINCT FROM (067's form), so a write that re-sends the stored
 --     user_id passes: an upsert that echoes the row is not a move. Every app
 --     UPDATE of pets (EditPetModal, ArchivePetSheet, archived-pets,
@@ -51,8 +58,7 @@
 --
 -- A separate function and trigger, not an edit of 104's
 -- enforce_pet_server_id: 104's text is pinned by guards/petServerId.test.ts,
--- and two triggers roll back independently. Both are BEFORE UPDATE on pets
--- and both only refuse, so their order does not matter.
+-- and two triggers roll back independently.
 --
 -- SECURITY INVOKER: the function reads no other row, so it needs no
 -- privilege the caller lacks. The refusal names no value (C-31). 23514, the
@@ -71,8 +77,11 @@
 --     reds on a later migration that does it.
 --   · Delete-and-reinsert under the same id with a new user_id is not an
 --     UPDATE. A client cannot (104 replaces a client-inserted id); a server
---     transaction can, and the delete cascades the pet's rows away first, so
---     nothing is re-attributed. Same class as 113's stated G2.
+--     transaction can. The delete cascades the pet's ROWS away first, but not
+--     its Storage objects: every pet-keyed Storage policy resolves the
+--     `{pet_id}/` prefix through pets.user_id, so the new owner could read
+--     the old owner's photos and documents. No path does this; filed on
+--     CUL-2337 as its own issue (same class as 113's stated G2).
 --
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT
@@ -96,14 +105,14 @@ BEGIN
     RAISE EXCEPTION 'A pet''s owner cannot change'
       USING ERRCODE = '23514';
   END IF;
-  RETURN NEW;
+  RETURN NULL;
 END;
 $$;
 
 COMMENT ON FUNCTION public.enforce_pet_owner_immutable() IS
-  'CUL-2337: no role can change pets.user_id, so a saved vet report''s maker check (113), every pet-keyed policy and the deletion sweep never read a moved owner. Re-sending the stored value passes (IS DISTINCT FROM).';
+  'CUL-2337: no role can change pets.user_id, so a saved vet report''s maker check (113), every pet-keyed policy and the deletion sweep never read a moved owner. Re-sending the stored value passes (IS DISTINCT FROM). AFTER UPDATE, so no BEFORE trigger can move the owner past it.';
 
 DROP TRIGGER IF EXISTS trg_pets_owner_immutable ON public.pets;
 CREATE TRIGGER trg_pets_owner_immutable
-  BEFORE UPDATE ON public.pets
+  AFTER UPDATE ON public.pets
   FOR EACH ROW EXECUTE FUNCTION public.enforce_pet_owner_immutable();

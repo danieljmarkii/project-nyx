@@ -5,11 +5,12 @@
 -- against the one it wants; the run fails on any mismatch.
 --
 -- M*: moving a pet's owner, every role and every statement shape.
+-- R*: a BEFORE trigger rewriting NEW after the check (review pass 1).
 -- S*: the writes that must still pass (the sync upsert re-sending user_id,
 --     ordinary edits).
 -- X*: the measured attack end to end, and account deletion.
 -- With MIGRATION_115=/dev/null every M* case that wants 23514 gets 'ok' (the
--- client's M5 gets 42501 from pets_owner's check, M7 23502) and X1 finds the pet
+-- client's M5 is pets_owner's 42501 either way) and X1 finds the pet
 -- B's with its kept copy gone: the probe sees the hole 115 closes.
 
 CREATE TABLE probe_results (n serial, label text, who text, want text, got text, msg text, stmt text);
@@ -92,14 +93,14 @@ SELECT probe('M3: service role moves it inside an upsert (ON CONFLICT DO UPDATE)
 SELECT probe('M4: service role moves it in a multi-column UPDATE', 'service_role', NULL,
   $$UPDATE public.pets SET weight_kg = 12.3, user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
      WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001'$$, '23514');
-SELECT probe('M5: owner (client) gives the pet to B', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+SELECT probe('M5: owner (client) gives the pet to B (pets_owner''s check answers first)', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   $$UPDATE public.pets SET user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-     WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001'$$, '23514');
+     WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001'$$, '42501');
 SELECT probe('M6: a DEFINER function moves it, called by the service role', 'service_role', NULL,
   $$SELECT public.probe_move()$$, '23514');
-SELECT probe('M7: moving it to NULL (the BEFORE trigger answers ahead of NOT NULL)', 'service_role', NULL,
+SELECT probe('M7: moving it to NULL (NOT NULL answers ahead of the AFTER trigger)', 'service_role', NULL,
   $$UPDATE public.pets SET user_id = NULL
-     WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001'$$, '23514');
+     WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001'$$, '23502');
 SELECT probe('M8: the refusal names no value (C-31)', 'service_role', NULL,
   $q$DO $b$ BEGIN
       BEGIN
@@ -111,6 +112,33 @@ SELECT probe('M8: the refusal names no value (C-31)', 'service_role', NULL,
       END;
       RAISE EXCEPTION 'not refused';
     END $b$$q$, 'ok');
+
+-- ── R: rls-privacy-reviewer pass 1 (F2 / F3): a BEFORE trigger that rewrites
+-- NEW after the owner check ran. Against 115's first cut (a BEFORE trigger)
+-- R1 and R2 moved the owner; the AFTER check sees the row as written.
+SELECT probe('R1: a later-named BEFORE trigger returns a copy of NEW with a new owner', 'postgres', NULL,
+  $q$DO $b$ BEGIN
+      CREATE FUNCTION public.probe_zz_move() RETURNS trigger LANGUAGE plpgsql AS $f$
+      DECLARE r public.pets;
+      BEGIN
+        r := NEW; r.user_id := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; RETURN r;
+      END $f$;
+      CREATE TRIGGER trg_pets_zz BEFORE UPDATE ON public.pets
+        FOR EACH ROW EXECUTE FUNCTION public.probe_zz_move();
+      UPDATE public.pets SET weight_kg = 1 WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
+    END $b$$q$, '23514');
+SELECT probe('R2: service role installs a pg_temp BEFORE trigger that moves the owner', 'service_role', NULL,
+  $q$DO $b$ BEGIN
+      CREATE FUNCTION pg_temp.zz_mv() RETURNS trigger LANGUAGE plpgsql AS $f$
+      BEGIN NEW.user_id := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; RETURN NEW; END $f$;
+      CREATE TRIGGER zz_mv BEFORE UPDATE ON public.pets
+        FOR EACH ROW EXECUTE FUNCTION pg_temp.zz_mv();
+      UPDATE public.pets SET user_id = user_id WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
+    END $b$$q$, '23514');
+SELECT probe('R3: service role moves it with MERGE', 'service_role', NULL,
+  $$MERGE INTO public.pets p
+     USING (SELECT 'a1a1a1a1-0000-4000-8000-000000000001'::uuid AS id) s ON p.id = s.id
+     WHEN MATCHED THEN UPDATE SET user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'$$, '23514');
 
 -- ── S: the writes that must still pass ───────────────────────────────────────
 SELECT probe('S1: sync-shaped upsert re-sending the same user_id', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
