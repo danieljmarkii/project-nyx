@@ -26,6 +26,8 @@
 //   number-binding each digit keeps the word its cited line prints after it
 //   numbers     no spelled-out counts
 //   classes     exposure and observation are read from the cites AND the words
+//   one-observation, recency, window  pass 3: one sign per sentence; "N days ago" exactly as a
+//               line prints it; a risk window only verbatim, once
 //   intake-positive "fully eaten", "eating well" print only when a cited line says so, unnegated
 //   waiver      "not as a cause" only, when a cited fact prints it (waiveSideBySide)
 //   names       every capitalised word past the first is printed in a cited fact (a product the
@@ -38,7 +40,7 @@ import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type F
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-3'
+export const LEAD_VERIFIER_VERSION = 'vr2-4'
 export const LEAD_MAX_SENTENCES = 3
 export const LEAD_MAX_WORDS = 60
 export const PERIOD_RUN_MAX = 2
@@ -58,15 +60,17 @@ const SEQUENCE_WORDS = /\b(?:after|afterwards?|before|then|thereafter|subsequent
  *  another word (H4), or a flag made smaller, older or not yet due (H7). Every match is checked, and
  *  no cited line excuses one: "not a single incident" in a line is not licence for "single"
  *  (adversarial passes 1 and 2). Errs loud: a lead that needs one of these words is dropped. */
-const ABSENCE_WORDS = /\b(?:stop(?:ped|s|ping)?|ceas\w*|ended|ending|resolv\w*|recover\w*|not (?:been )?(?:seen|logged|recorded|noted)(?: again| since)?|not recur\w*|did not recur|has not recurred|none (?:after|since)|no (?:more|further|longer|new)|single|isolated|one-off|one-time|only once|just once|dipp?\w*|brief(?:ly)?|transient\w*|temporar\w*|passing|minor|small|taper\w*|fad(?:ed|ing|es)|wan(?:ed|ing|es)|absent|absence|rare\w*|infrequent\w*|in the past|behind (?:her|him|them|it)|short(?:-lived)?|shy of|not yet|yet to|within|inside|under|less|fewer|lower|gone|over now)\b/gi
+const ABSENCE_WORDS = /\b(?:stop(?:ped|s|ping)?|ceas\w*|ended|ending|resolv\w*|recover\w*|not (?:been )?(?:seen|logged|recorded|noted)(?: again| since)?|not recur\w*|did not recur|has not recurred|none (?:after|since)|no (?:more|further|longer|new)|single|isolated|one-off|one-time|only once|just once|dipp?\w*|brief(?:ly)?|transient\w*|temporar\w*|passing|minor|small|taper\w*|fad(?:ed|ing|es)|wan(?:ed|ing|es)|absent|absence|rare\w*|infrequent\w*|in the past|behind (?:her|him|them|it)|short(?:-lived)?|shy of|not yet|yet to|within|inside|under|less|fewer|lower|gone|over now|approach\w*|nearing|close to|ruled? out|rules out|ruling out|histor\w*|previous\w*|prior|perhaps|maybe|artefact\w*|artifact\w*|modest\w*|shortfall\w*|let up|died down|calm\w*|settl\w*|subsid\w*|intact|reassur\w*)\b/gi
 /** Signs and flags named in words, whatever the sentence cites (adversarial pass 2, break 2: a
  *  sentence citing only the trial said "the coughing stopped"). */
-const SIGN_WORDS = /\b(?:vomit\w*|cough\w*|itch\w*|scratch\w*|sneez\w*|diarrh\w*|stools?|loose|intake|meals?|eat\w*|ate|appetite|weight|weigh\w*|letharg\w*|lick\w*|chew\w*|flags?|symptoms?|signs?|episodes?|incidents?|entr(?:y|ies)|refus\w*|foreign|blood\w*|hairballs?|gag\w*|retch\w*|hunched|hiding|scoot\w*|limp\w*|pain\w*|drink\w*|thirst\w*|urin\w*|seizures?|breath\w*|wheez\w*)\b/i
+const SIGN_WORDS = /\b(?:flare\w*|prurit\w*|vomit\w*|cough\w*|itch\w*|scratch\w*|sneez\w*|diarrh\w*|stools?|loose|intake|meals?|eat\w*|ate|appetite|weight|weigh\w*|letharg\w*|lick\w*|chew\w*|flags?|symptoms?|signs?|episodes?|incidents?|entr(?:y|ies)|refus\w*|foreign|blood\w*|hairballs?|gag\w*|retch\w*|hunched|hiding|scoot\w*|limp\w*|pain\w*|drink\w*|thirst\w*|urin\w*|seizures?|breath\w*|wheez\w*)\b/i
 /** Exposures named in words: a diet, a food, a medicine, a dose. */
 const EXPOSURE_WORDS = /\b(?:trials?|diets?|foods?|fed|feed\w*|treats?|doses?|dosing|given|gave|courses?|medications?|medicines?|drugs?|supplements?|tablets?|pills?|injections?)\b/i
 /** Intake said to be adequate. Prints only when a cited line says it the same way, not negated
  *  (adversarial pass 2: "22 recent rated meals fully eaten" read a baseline count as adequacy). */
-const POSITIVE_INTAKE = /(?<!\bnot )\b(?:fully eaten|finished|ate (?:all|everything|well|normally)|eat(?:s|ing)? (?:well|normally|fine)|eaten well|cleared (?:the|her|his|their) bowl|good appetite|normal appetite)\b/i
+const POSITIVE_INTAKE = /(?<!\bnot (?:fully )?)(?<!\bpartly )\b(?:fully eaten|eaten|ate|eats|finished|eat(?:s|ing)? (?:well|normally|fine)|cleared (?:the|her|his|their) bowl|good appetite|normal appetite)\b(?! some\b)/i
+
+const POSITIVE_ALL = new RegExp(POSITIVE_INTAKE.source, 'gi')
 
 /** Spelled-out counts escape the number checks; digits only. */
 const SPELLED_NUMBERS = /\b(?:zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twice|thrice|once|dozen|several|couple)\b/i
@@ -100,16 +104,25 @@ function numbersOf(text: string, year: string): number[] {
 
 /** "<number>|<the word after it>" for every digit count in the text, lower-cased. */
 function numberBindings(text: string, year: string): string[] {
-  const tokens = countText(text, year).split(/\s+/).map((t) => t.replace(/^[(\[]+/, ''))
+  // Any symbol before a digit (≥, <, ~, +, #) is stripped, so "<48 h" is bound like "48 h"
+  // (adversarial pass 3, B3: a prefixed number skipped the binding entirely).
+  const tokens = countText(text, year).split(/\s+/).map((t) => t.replace(/^[^\p{L}\p{N}]+(?=\p{N})/u, '').replace(/^[(\[]+/, ''))
+  const word = (t: string | undefined) => (t ?? '').toLowerCase().replace(/[^a-z0-9%]/g, '')
   const out: string[] = []
   tokens.forEach((t, k) => {
     const m = t.match(/^(\d+(?:\.\d+)?)(%?)([,.;:)\]]*)$/)
     if (!m) return
-    // A number that ends its phrase ("day 61 of 84.", "84, from") binds to the phrase's end.
-    const next = m[2] === '%' ? '%' : m[3] !== '' ? '' : (tokens[k + 1] ?? '').toLowerCase().replace(/[^a-z0-9%]/g, '')
-    out.push(`${m[1]}|${next}`)
+    // A number that ends its phrase ("day 61 of 84.", "84, from") binds to the phrase's end AND
+    // to the word before it, so "day 84" cannot stand for "day 61 of 84" (pass 3, B7).
+    if (m[2] !== '%' && m[3] !== '') out.push(`${word(tokens[k - 1])}<${m[1]}|`)
+    else out.push(`${m[1]}|${m[2] === '%' ? '%' : word(tokens[k + 1])}`)
   })
   return out
+}
+
+/** The clauses of a line that name a risk window, normalised and lower-cased, without their stop. */
+function windowClauses(text: string): string[] {
+  return norm(text).split(/(?<=[.!?])\s+/).filter((c) => /\brisk window\b/i.test(c)).map((c) => c.replace(/[.!?]+$/, '').toLowerCase())
 }
 
 function words(text: string): number {
@@ -170,6 +183,9 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     }
   }
 
+  const windows = sents.reduce((n, s) => n + (s.text.match(/\bwindow\b/gi) ?? []).length, 0)
+  if (windows > 1) err(null, 'window', `"window" ${windows} times (max 1)`)
+
   const periodCounts = sents.reduce((n, s) => n + [...s.text.matchAll(PERIOD_COUNT)].length, 0)
   if (periodCounts > PERIOD_RUN_MAX) err(null, 'period-run', `${periodCounts} period counts (max ${PERIOD_RUN_MAX})`)
 
@@ -197,12 +213,32 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       const seq = s.text.match(SEQUENCE_WORDS)
       if (seq) err(i, 'order', `${JSON.stringify(seq[0])} sets an observation after an exposure named earlier (H2, cause by order)`)
     }
-    if (observed) {
-      for (const m of s.text.matchAll(ABSENCE_WORDS)) err(i, 'absence', `${JSON.stringify(m[0])} said of a sign or a flag (H4, H7)`)
+    // On EVERY sentence: a pronoun ("…day 61 of 84, and it has stopped") names a sign no word
+    // list can see (adversarial pass 3, B1). A trial or a course may not "end" in the lead either.
+    for (const m of s.text.matchAll(ABSENCE_WORDS)) err(i, 'absence', `${JSON.stringify(m[0])}: an ending, absence or softening word (H4, H7)`)
+    // One observation per sentence, so a number or date cannot move from one sign to another
+    // (pass 3, B4: the cough's "10 days ago" set on vomiting).
+    const observations = s.cites.filter(isObservation)
+    if (observations.length > 1) err(i, 'one-observation', `${observations.length} signs or flags cited in one sentence (max 1)`)
+    // "N <unit> ago" is a recency: it must be printed in a cited line exactly (pass 3, B4).
+    for (const m of countText(s.text, year).matchAll(/\b(\d+(?:\.\d+)?)\s+(days?|h|hours?|weeks?)\s+ago\b/gi)) {
+      const phrase = `${m[1]} ${m[2]} ago`.toLowerCase()
+      if (!s.cites.some((c) => countText(facts.get(c)?.text ?? '', year).toLowerCase().includes(phrase))) err(i, 'recency', `${JSON.stringify(phrase)} is not how a cited line dates it`)
     }
-    const positive = s.text.match(POSITIVE_INTAKE)
-    if (positive && !s.cites.some((c) => POSITIVE_INTAKE.test(facts.get(c)?.text ?? ''))) {
-      err(i, 'intake-positive', `${JSON.stringify(positive[0])}: no cited line says intake was adequate (H3)`)
+    // A risk window prints only as its line prints it, and only once (pass 3, B2: "below",
+    // "approaching" and "before the ≥48–72 h window" on a cat already at about 50 h).
+    for (const c of s.cites) {
+      for (const clause of windowClauses(facts.get(c)?.text ?? '')) {
+        const nums = numbersOf(clause, year)
+        const touches = /\bwindow\b/i.test(s.text) || numbersOf(s.text, year).some((n) => nums.includes(n))
+        if (touches && !norm(s.text).toLowerCase().includes(clause)) err(i, 'window', `a risk window restated other than as its line prints it: ${JSON.stringify(clause)}`)
+      }
+    }
+    // Each adequacy phrase is excused only by the SAME phrase, unnegated, in a cited line: the
+    // band's "fully-eaten meal was Oct 14" excuses nothing (pass 3, B6).
+    const allowed = new Set(s.cites.flatMap((c) => [...norm(facts.get(c)?.text ?? '').matchAll(POSITIVE_ALL)].map((m) => m[0].toLowerCase())))
+    for (const m of norm(s.text).matchAll(POSITIVE_ALL)) {
+      if (!allowed.has(m[0].toLowerCase())) err(i, 'intake-positive', `${JSON.stringify(m[0])}: no cited line says intake was adequate in these words (H3)`)
     }
     const spelled = s.text.match(SPELLED_NUMBERS)
     if (spelled) err(i, 'numbers', `${JSON.stringify(spelled[0])}: counts are written as digits`)
@@ -212,10 +248,11 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // (adversarial pass 2, break 5; pass 1, break 9).
     const bound = new Set(s.cites.flatMap((c) => numberBindings(facts.get(c)?.text ?? '', year)))
     for (const pair of numberBindings(s.text, year)) {
-      if (!bound.has(pair)) err(i, 'number-binding', `"${pair.replace('|', ' ')}" is not how a cited line prints that number`)
+      if (!bound.has(pair)) err(i, 'number-binding', `"${pair.replace('<', ' ').replace('|', ' ').trim()}" is not how a cited line prints that number`)
     }
 
-    const cited = s.cites.map((c) => facts.get(c)?.text ?? '').join(' ')
+    // The cited lines normalised as the lead is (curly apostrophes), so "Hill's" matches.
+    const cited = s.cites.map((c) => norm(facts.get(c)?.text ?? '')).join(' ')
     const tokens = s.text.match(/(?<![\w'’])[A-Z][\w'’-]*/g) ?? []
     for (const t of tokens.slice(1)) {
       if (MONTHS_AND_DAYS.has(t.replace(/\.$/, ''))) continue

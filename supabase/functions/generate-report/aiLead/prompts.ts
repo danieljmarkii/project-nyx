@@ -9,7 +9,7 @@
 // against and judged on. A change here changes PROMPT_VERSION, which is part of the fact-table
 // hash, so a cached lead never outlives the prompt that wrote it.
 
-export const PROMPT_VERSION = 'vr2-lead-3'
+export const PROMPT_VERSION = 'vr2-lead-4'
 
 /** The writer. The larger model only (spec §9.1); the id is the `claude-api` skill's current Opus. */
 export const WRITER_MODEL = 'claude-opus-5-5'
@@ -41,6 +41,8 @@ A summary that breaks any of these is discarded, and the vet sees the record lin
 - No quotation marks of any kind, and no owner's words.
 - Exposure and signs: never put a diet, a food, a trial or a medicine in the same sentence as a sign, a meal count or a flag, by any word. Give them separate sentences, and once you have named one, never set a later sentence about a sign in time after it (no "after", "then", "since", "during", "while", "following").
 - Never say a sign or a flag stopped, ended, resolved, faded, tapered, was single, isolated, rare or brief, dipped, was not seen again or not logged since, or is short of, under or within any window, even when a line you cite uses the word.
+- Never use an ending, absence or softening word in any sentence, even of a trial or a course: no "stopped", "ended", "ruled out", "previous", "historic", "perhaps", "approaching", "intact". Name one sign or flag per sentence.
+- A risk window is restated only word for word as its line prints it, at most once. A recency ("1 day ago") only as its line prints it.
 - Write every count as digits, and keep the word its line prints after it: "16 entries", "12 of 45 logged days", "about 50 h", never "16 times" or "4 of 44".
 - Citations: list in "cites" the id of every fact a sentence draws on. Do not put citation marks in the text; code prints them.
 
