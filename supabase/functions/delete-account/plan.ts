@@ -785,6 +785,9 @@ export const SWEEP_BUDGET_MS = 90_000
 // response under the 150 s limit.
 export const SWEEP_CUTOFF_MS = 130_000
 
+// The request's own limit: the Edge runtime's request idle timeout (a 504 past it).
+export const SWEEP_REQUEST_LIMIT_MS = 150_000
+
 // One Storage call's ceiling. Generous for one page of 100 names or one 100-key
 // remove; short enough that a hang costs a folder, not the request.
 export const SWEEP_CALL_TIMEOUT_MS = 15_000
@@ -804,10 +807,30 @@ export interface SweepOptions {
   concurrency?: number
 }
 
-// The two clock edges index.ts hands the sweep, both counted from the request's
-// start. Pure so the wiring is tested, not only the sweep (CUL-2343).
-export function sweepBudget(startedAt: number): { deadline: number; cutoff: number } {
-  return { deadline: startedAt + SWEEP_BUDGET_MS, cutoff: startedAt + SWEEP_CUTOFF_MS }
+// The Edge worker's own wall clock (CUL-2345). Supabase counts it from the WORKER's
+// boot, and one worker serves several requests in a row, so a request on a warm worker
+// can be killed long before its own 150 s idle timeout. 400 s is the paid-plan limit
+// (https://supabase.com/docs/guides/functions/limits); the org is on Pro (read
+// 2026-11-01). On the Free plan it is 150 s: a downgrade must change this constant.
+export const EDGE_WORKER_WALL_CLOCK_MS = 400_000
+
+// The two clock edges index.ts hands the sweep. Each is the EARLIER of the request's
+// edge and the worker's, with the same spacing on both clocks: the last folder starts
+// 40 s before the last call must end, and the last call ends 20 s before the kill, so
+// the leftovers line is written whichever clock runs out first. A worker already past
+// its edge gets a cutoff in the past, which names every folder in `unswept` and makes
+// no Storage call: loud, never silent. Pure so the wiring is tested (CUL-2343, CUL-2345).
+export function sweepBudget(
+  startedAt: number,
+  workerStartedAt: number = startedAt,
+): { deadline: number; cutoff: number } {
+  const workerKill = workerStartedAt + EDGE_WORKER_WALL_CLOCK_MS
+  const requestKill = startedAt + SWEEP_REQUEST_LIMIT_MS
+  const kill = Math.min(workerKill, requestKill)
+  return {
+    deadline: Math.min(startedAt + SWEEP_BUDGET_MS, kill - (SWEEP_REQUEST_LIMIT_MS - SWEEP_BUDGET_MS)),
+    cutoff: Math.min(startedAt + SWEEP_CUTOFF_MS, kill - (SWEEP_REQUEST_LIMIT_MS - SWEEP_CUTOFF_MS)),
+  }
 }
 
 // Race one Storage call against the time left. The call is not cancelled (supabase-js

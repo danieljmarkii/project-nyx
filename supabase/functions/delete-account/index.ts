@@ -67,6 +67,11 @@ import {
 } from './plan.ts'
 import { readSweepIds, type SweepIdReader } from './sweepIds.ts'
 
+// CUL-2345: module scope runs once, when the worker boots. Supabase's wall clock
+// counts from then and spans every request this worker serves, so the sweep's budget
+// takes the earlier of this and the request's own start (sweepBudget).
+const WORKER_STARTED_AT = Date.now()
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -441,7 +446,7 @@ Deno.serve(async (req: Request) => {
         },
         // CUL-2343: the deadline stops new folders; the cutoff ends every call still
         // in flight, so a folder cut mid-walk is named in `partial` below.
-        sweepBudget(startedAt),
+        sweepBudget(startedAt, WORKER_STARTED_AT),
       )
       removed += swept.removed
       storageFailures.push(...swept.failures)
