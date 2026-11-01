@@ -280,7 +280,9 @@ export interface ThinRecordLine {
  *   - an ongoing check the engine marked `window_short` (a 14-day window over a 52-day course);
  *   - a check the engine marked `too_few_days` (17 days logged at two a week over eight weeks).
  * Adversarial pass 1 on CUL-2289 (finding 3): the logged-day count alone missed the last two, so a
- * chronic course in a short or sparse window printed neither a flag nor this line. The line prints
+ * chronic course in a short or sparse window printed neither a flag nor this line. Pass 2 (finding B):
+ * the per-sign checks exist only for a logged sign in an engine lane, so the window and logging tests
+ * are also read off the record itself (`snap.v2.ongoingWindowShort`, `snap.v2.weeksComparable`). The line prints
  * whether or not a flag fired: a flag on one sign does not mean the checks ran on the others.
  */
 export function thinRecordLineOf(snap: ReportSnapshot): ThinRecordLine | null {
@@ -291,10 +293,10 @@ export function thinRecordLineOf(snap: ReportSnapshot): ThinRecordLine | null {
     const lead = n === 0 ? 'No days logged' : `${plural(n, 'day', 'days')} logged`
     return { reason: 'few_days', loggedDays: n, windowDays: w, text: `${lead}: ${tail}` }
   }
-  if (snap.safetyChecks.some((c) => c.kind === 'ongoing' && c.state === 'window_short')) {
+  if (snap.v2.ongoingWindowShort || snap.safetyChecks.some((c) => c.kind === 'ongoing' && c.state === 'window_short')) {
     return { reason: 'short_window', loggedDays: n, windowDays: w, text: `A ${w}-day window: too short for the checks that compare weeks.` }
   }
-  if (snap.safetyChecks.some((c) => c.state === 'too_few_days')) {
+  if (!snap.v2.weeksComparable || snap.safetyChecks.some((c) => c.state === 'too_few_days')) {
     return { reason: 'sparse_days', loggedDays: n, windowDays: w, text: `${n} of ${plural(w, 'day', 'days')} logged: ${tail}` }
   }
   return null

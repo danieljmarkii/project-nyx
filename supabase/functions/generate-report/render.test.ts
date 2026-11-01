@@ -311,7 +311,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     // pre-N-6 fixture. The Noticed cases build their own block.
     noticed: null,
     // CUL-2289 — the v2 predicates' inputs; v1's render never reads them.
-    v2: { chronicity: [], loggedMeals: 0, ratedMeals: 0, mealNotFinishedDays: 0, firstEntryDate: null },
+    v2: { chronicity: [], loggedMeals: 0, ratedMeals: 0, mealNotFinishedDays: 0, firstEntryDate: null, weeksComparable: true, ongoingWindowShort: false },
     ...overrides,
   }
 }

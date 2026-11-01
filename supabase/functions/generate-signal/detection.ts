@@ -8071,8 +8071,8 @@ export function repickWorseningPastChronic(
  *     to remember it (adversarial pass 1, finding 2: BRK-10 at the band). ④'s test is replayed at
  *     every day back to `FOLDED_WORSENING_LOOKBACK_DAYS`, over the record as it stood then.
  *
- * Three answers, never a boolean: when today's two weeks are not logging-eligible and no replayed
- * day found a rise, the engine could not say, and "not rising" would be a claim it never made.
+ * Three answers, never a boolean: when any replayed day's two weeks are not logging-eligible and no
+ * replayed day found a rise, the engine could not say, and "not rising" would be a claim it never made.
  */
 export type WorseningOnSign = 'rising' | 'not_rising' | 'not_measured'
 
@@ -8093,16 +8093,33 @@ export function foldedWorsening(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return 'not_measured'
   const replay = replayInputAsOf(input, config)
-  let measuredToday = false
+  // Every replayed day must be comparable before "not rising" may be said. A day skipped for thin
+  // logging is a day a rise could have happened unseen: a holiday, then five entries the day the
+  // owner is back, held a second week, reads 5 against 5 today and is dark on every day that could
+  // have compared it with what came before (adversarial pass 2 on CUL-2289, finding A).
+  let everyDayMeasured = true
   for (let d = 0; d <= FOLDED_WORSENING_LOOKBACK_DAYS; d++) {
     const asOf = d === 0 ? input : replay(nowMs - d * MS_PER_DAY, 'worsening')
     const windowed = computeWindowedStats(asOf, config)
-    if (!windowed || !windowed.loggingEligible) continue
-    if (d === 0) measuredToday = true
+    if (!windowed || !windowed.loggingEligible) {
+      everyDayMeasured = false
+      continue
+    }
     const stat = windowed.stats.find((x) => x.symptomType === symptomType)
     if (stat && isWorsening(stat, config.reflection)) return 'rising'
   }
-  return measuredToday ? 'not_rising' : 'not_measured'
+  return everyDayMeasured ? 'not_rising' : 'not_measured'
+}
+
+/**
+ * CUL-2289 — could ④ compare this week with the last at all? Its logging floor (each week holds
+ * enough logged days), read for the record as a whole, with no symptom needed. The report's
+ * thin-record line asks this on a sheet with no symptom entry, where no per-sign check exists to
+ * say "too few days" (adversarial pass 2, finding B).
+ */
+export function weekComparisonMeasurable(input: DetectionInput, config: DetectionConfig): boolean {
+  const windowed = computeWindowedStats(input, config)
+  return windowed !== null && windowed.loggingEligible
 }
 
 export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {

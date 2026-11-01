@@ -64,6 +64,7 @@ import {
   risingBelowCardFloor,
   foldedWorsening,
   chronicitySpanTier,
+  weekComparisonMeasurable,
   type WorseningOnSign,
   type ChronicityTier,
   type DetectionConfig,
@@ -3376,6 +3377,16 @@ export interface ReportV2Facts {
    *  at least 90 days before the window, so a date under 14 days before the report is the record's
    *  own start. null when the pull holds no dateable entry. */
   firstEntryDate: string | null
+  /**
+   * Could the checks that compare weeks run, read without any symptom (adversarial pass 2,
+   * finding B): `safetyChecks` exists only for a logged sign in an engine lane, so a sparse or short
+   * record with no such entry had nothing to say the checks could not run.
+   *   - `weeksComparable`: ④'s logging floor holds for this week and the last (`weekComparisonMeasurable`).
+   *   - `ongoingWindowShort`: the window is no longer than the ongoing check's base span floor, the
+   *     same test `safetyChecks` applies per sign (`windowDays <= minSpanDays`).
+   */
+  weeksComparable: boolean
+  ongoingWindowShort: boolean
 }
 
 /** CUL-2289 — the record's first entry, read exactly as `recordEdgeOf` reads its last. */
@@ -6708,6 +6719,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         unfinishedRated.map((e) => localDayKey(e.occurredAt, tz) ?? e.occurredAt.slice(0, 10)),
       ).size,
       firstEntryDate: firstEntryDateOf(dedupedAll, input.now, tz),
+      weeksComparable: weekComparisonMeasurable(detInput, detConfig),
+      ongoingWindowShort: scope.windowDays <= detConfig.chronicity.minSpanDays,
     },
   }
 }

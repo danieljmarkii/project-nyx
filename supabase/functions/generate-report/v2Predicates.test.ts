@@ -29,7 +29,7 @@ import {
   THIN_RECORD_DAYS,
   thinRecordLineOf,
 } from './v2Predicates.ts'
-import { at, baseInput, dailyMeals, dayKey, itchingSkinTrial, juniper, meal, olive, symptom, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
+import { at, baseInput, dailyMeals, dayKey, itchingSkinTrial, juniper, meal, olive, skinTrial, steadyInstants, symptom, symptomAt, V2_NOW, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 
 type Chronicity = Extract<SafetyFlag, { kind: 'chronicity' }>
@@ -455,4 +455,46 @@ Deno.test('pass 1, finding 5 — a meal whose child row has not synced counts as
   assert.equal(s.v2.loggedMeals, 57)
   assert.equal(s.v2.ratedMeals, 56)
   assert.deepEqual(gapLinesOf(s).map((g) => g.text), ['How much was eaten at 1 of 57 logged meals'])
+})
+
+// ── Adversarial pass 2: each finding, reproduced end to end ─────────────────
+
+Deno.test('pass 2, finding A — a rise across a logging gap is never read as steady', () => {
+  // Itch twice a week, a 13-day holiday with nothing logged, five entries within 32 hours of return,
+  // the same five a week later. Today compares 5 with 5; every day that could have seen the jump
+  // against what came before is dark.
+  const D = 86_400_000
+  const H = 3_600_000
+  const now = Date.parse(V2_NOW)
+  const events = [...dailyMeals(55, 28), ...dailyMeals(14, 0)]
+  for (const ms of steadyInstants(52, 28)) events.push(symptomAt('itch', ms))
+  for (const h of [1, 6, 12, 26, 32]) {
+    events.push(symptomAt('itch', now - 14 * D + h * H), symptomAt('itch', now - 7 * D + h * H))
+  }
+  const s = snap(baseInput({ events, dietTrials: [skinTrial('skin')] }))
+  const fact = s.v2.chronicity.find((c) => c.symptomType === 'itch')
+  assert.ok(fact, 'the course fires')
+  assert.notEqual(fact.worsening, 'not_rising')
+  assert.equal(bandMembersOf(s).leadFlag, null, 'the flag stays in the band')
+})
+
+Deno.test('pass 2, finding B — a sparse record with no symptom entry still prints the scope line', () => {
+  const events = []
+  for (let w = 0; w < 8; w++) events.push(meal(w * 7 + 1, 'all'), meal(w * 7 + 4, 'all'))
+  events.push(meal(0, 'all'))
+  const s = snap(baseInput({ events }))
+  assert.equal(s.safetyChecks.length, 0, 'no per-sign check exists to say so')
+  assert.equal(s.atAGlance.loggedDays, 17)
+  assert.equal(thinRecordLineOf(s)?.reason, 'sparse_days')
+  // The same with only signs outside the engine's lanes.
+  const lethargy = snap(baseInput({ events: [...events, symptom('lethargy', 1), symptom('lethargy', 4), symptom('sneeze', 8)] }))
+  assert.equal(thinRecordLineOf(lethargy)?.reason, 'sparse_days')
+})
+
+Deno.test('pass 2, finding B — a 20-day window with no symptom entry prints the scope line', () => {
+  const s = snap(baseInput({ events: dailyMeals(19, 0), requestedWindow: { startDate: dayKey(19), endDate: dayKey(0) } }))
+  assert.equal(s.atAGlance.loggedDays, 20)
+  assert.deepEqual(thinRecordLineOf(s), { reason: 'short_window', loggedDays: 20, windowDays: 20, text: 'A 20-day window: too short for the checks that compare weeks.' })
+  // A dense 56-day record with no symptom entry prints nothing: the checks could run.
+  assert.equal(thinRecordLineOf(snap(baseInput({ events: dailyMeals(55, 0) }))), null)
 })
