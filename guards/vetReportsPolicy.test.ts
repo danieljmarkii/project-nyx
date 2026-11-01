@@ -49,12 +49,15 @@ import { stripSqlComments } from './sqlComments';
 //     (rls-privacy-reviewer, second pass, measured): a replacement freeze
 //     written with a named dollar tag (`$function$`), which freezeBody skips;
 //     a trigger declared `BEFORE INSERT OR UPDATE` that sorts ahead of the
-//     freeze; `GRANT authenticated TO anon`; renaming the CHECK and dropping it
+//     freeze (closed by 113's edit below); `GRANT authenticated TO anon`; renaming the CHECK and dropping it
 //     under its new name; renaming the table. ALTER POLICY, ALTER / DROP
 //     FUNCTION on the freeze and ENABLE REPLICA / ALWAYS on its trigger ARE
 //     refused, by the test that says so.
-//   * VR2-7 (CUL-2287) adds columns and its own content freeze; when it names a
-//     new control column it edits CONTROL below, which is the point.
+//   * VR2-7 (CUL-2287, migration 113) edited this file: the storage_path CHECK
+//     is now 113's row key, the freeze compares through oldj / newj so an FK's
+//     ON DELETE SET NULL passes, and the trigger-order test reads INSERT OR
+//     UPDATE triggers too (closing the blind spot named above). CONTROL is
+//     unchanged: clients still move token_expires_at only.
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'supabase', 'migrations');
 const TABLE = String.raw`(?:public\.)?vet_reports\b`;
@@ -173,14 +176,22 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     expect(sql).not.toMatch(/\bENABLE\s+(?:REPLICA|ALWAYS)\s+TRIGGER\s+trg_vet_reports_client_freeze\b/i);
   });
 
-  it('keeps the whole-shape storage_path CHECK, anchored at the row\'s pet', () => {
-    const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_storage_path_shape CHECK/);
+  it('keeps a whole-shape storage_path CHECK: 113\'s row key, which replaced 110\'s pattern', () => {
+    // 113 (CUL-2287) replaced 110's `{pet_id}/{any uuid}.(html|pdf)` with the
+    // row's own key, strictly narrower. 110's may only go in the statement
+    // before the one that adds the row key.
+    const drop = lastIndexOf(sql, /DROP CONSTRAINT vet_reports_storage_path_shape\b/);
+    const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_storage_path_is_row_key CHECK/);
     expect(add).toBeGreaterThan(-1);
-    expect(sql.slice(add)).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_storage_path_shape\b/);
+    expect(drop).toBeGreaterThan(-1);
+    expect(drop).toBeLessThan(add);
+    expect(sql.slice(drop, add)).toMatch(/^DROP CONSTRAINT vet_reports_storage_path_shape;\s*ALTER TABLE public\.vet_reports\s*$/);
+    expect(sql.slice(add)).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_storage_path_is_row_key\b/);
     const check = sql.slice(add, sql.indexOf(';', add));
-    // The whole pattern, verbatim: a looser middle (`-.*`) brings traversal back.
-    expect(check.replace(/\s+/g, ' ')).toContain(
-      "storage_path ~ ( '^' || pet_id::text || '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(html|pdf)$' )",
+    // Verbatim: any looser form (a pattern, another prefix, a third segment)
+    // is a key the deletion purge may not reach (guards/vetReportPathShape.test.ts).
+    expect(check.replace(/\s+/g, ' ')).toBe(
+      "ADD CONSTRAINT vet_reports_storage_path_is_row_key CHECK ( storage_path IN ( pet_id::text || '/' || id::text || '.html', pet_id::text || '/' || id::text || '.pdf' ) )",
     );
   });
 
@@ -200,8 +211,23 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     expect(body.match(/RETURN NEW;/g)?.length).toBe(2);
     // The whole condition through THEN: a weakened bound (`> OLD + interval`)
     // must not pass as a prefix match.
-    expect(body.replace(/\s+/g, ' ')).toContain(
-      'IF (to_jsonb(NEW) - control) IS DISTINCT FROM (to_jsonb(OLD) - control) OR NEW.token_expires_at > OLD.token_expires_at THEN',
+    // 113 (CUL-2287) compares through oldj / newj so a link going to NULL (the
+    // FKs' ON DELETE SET NULL; a client holds no grant on either link) reads as
+    // unchanged. Both arms verbatim: flipping IS NULL lets a client re-point a
+    // link the day it is granted.
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).toContain('oldj jsonb := to_jsonb(OLD); newj jsonb := to_jsonb(NEW);');
+    expect(flat).toContain(
+      "IF NEW.vet_visit_id IS NULL THEN newj := jsonb_set(newj, '{vet_visit_id}', coalesce(oldj -> 'vet_visit_id', 'null'::jsonb)); END IF;",
+    );
+    expect(flat).toContain(
+      "IF NEW.vet_appointment_id IS NULL THEN newj := jsonb_set(newj, '{vet_appointment_id}', coalesce(oldj -> 'vet_appointment_id', 'null'::jsonb)); END IF;",
+    );
+    expect(flat.match(/jsonb_set\(/g)?.length).toBe(2);
+    // The whole condition through THEN: a weakened bound (`> OLD + interval`)
+    // must not pass as a prefix match.
+    expect(flat).toContain(
+      'IF (newj - control) IS DISTINCT FROM (oldj - control) OR NEW.token_expires_at > OLD.token_expires_at THEN',
     );
   });
 
@@ -219,10 +245,101 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
     expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_reports_client_freeze\b/);
     // Same-event triggers fire in name order: the freeze sorts before every
     // other BEFORE UPDATE trigger on the table, so it judges the client's row.
-    const others = [...sql.matchAll(/CREATE TRIGGER (\w+)\s+BEFORE UPDATE ON (?:public\.)?vet_reports\b/g)]
+    // INSERT OR UPDATE triggers fire on UPDATE too (113 adds three).
+    const others = [...sql.matchAll(/CREATE TRIGGER (\w+)\s+BEFORE (?:INSERT OR )?UPDATE(?: OR INSERT)? ON (?:public\.)?vet_reports\b/g)]
       .map((m) => m[1])
       .filter((n) => n !== 'trg_vet_reports_client_freeze');
     expect(others).toContain('trg_vet_reports_updated_at');
     for (const name of others) expect('trg_vet_reports_client_freeze' < name).toBe(true);
+  });
+});
+
+// CUL-2287 (migration 113): the saved copy. The behaviour is the probe in the
+// PR (scripts/probes/vet-report-113, 67 cases); this pins the shapes a later
+// file could quietly undo. MUTANTS, run 2026-11-01, all killed: an auth.uid()
+// exemption in the content freeze; a pets.user_id read formatted into the
+// maker RAISE; the client freeze's unlink arm flipped to IS NOT NULL; the
+// appointment pet trigger removed; a later bucket INSERT; snapshot added to the
+// kept-copy control list; the no-live-token CHECK dropped later.
+describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
+  const sql = allMigrations();
+
+  function lastFunction(name: string): { header: string; body: string } {
+    const defs = [...sql.matchAll(new RegExp(String.raw`CREATE OR REPLACE FUNCTION public\.${name}\(\)([\s\S]*?)\$\$([\s\S]*?)\$\$;`, 'g'))];
+    expect(defs.length).toBeGreaterThan(0);
+    const last = defs[defs.length - 1];
+    return { header: last[1], body: last[2].replace(/--[^\n]*/g, '') };
+  }
+
+  it('holds every token NULL: no row carries a live share link (R-7)', () => {
+    const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_no_live_token\b/);
+    expect(add).toBeGreaterThan(-1);
+    expect(sql.slice(add)).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_no_live_token\b/);
+    expect(sql.slice(add, sql.indexOf(';', add)).replace(/\s+/g, ' ')).toBe(
+      'ADD CONSTRAINT vet_reports_no_live_token CHECK (share_token IS NULL AND token_expires_at IS NULL)',
+    );
+  });
+
+  it('freezes a kept copy for every writer, with no exemption branch', () => {
+    const { header, body } = lastFunction('vet_reports_content_freeze');
+    expect(header).toMatch(/SECURITY INVOKER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const control = /control text\[\] := ARRAY\[([^\]]*)\];/.exec(body);
+    expect((control?.[1] ?? '').split(',').map((c) => c.trim().replace(/'/g, ''))).toEqual([
+      'vet_visit_id', 'vet_appointment_id', 'shared_via', 'shared_at', 'token_expires_at', 'updated_at',
+    ]);
+    // One RETURN NEW, at the end: any early return is an exemption (CUL-2318).
+    expect(body.match(/RETURN NEW;/g)?.length).toBe(1);
+    expect(body).not.toMatch(/auth\.uid\(\)|current_user|current_setting/);
+    expect(body.replace(/\s+/g, ' ')).toContain(
+      "IF OLD.status = 'kept' AND ( (to_jsonb(NEW) - control) IS DISTINCT FROM (to_jsonb(OLD) - control) OR (NEW.token_expires_at IS NOT NULL AND (OLD.token_expires_at IS NULL OR NEW.token_expires_at > OLD.token_expires_at)) ) THEN",
+    );
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_content_freeze\s+BEFORE UPDATE ON public\.vet_reports\s+FOR EACH ROW EXECUTE FUNCTION public\.vet_reports_content_freeze\(\);/);
+    expect(create).toBeGreaterThan(-1);
+    const after = sql.slice(create);
+    expect(after).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_reports_content_freeze\b/);
+    expect(after).not.toMatch(/DISABLE\s+TRIGGER\s+(?:ALL|USER|trg_vet_reports_content_freeze)\b/i);
+  });
+
+  it.each([
+    ['enforce_vet_report_maker_is_owner', 'trg_vet_reports_maker_is_owner', 'vet_reports'],
+    ['enforce_vet_appointment_link_same_pet', 'trg_vet_reports_link_appointment', 'vet_reports'],
+    ['enforce_vet_visit_link_same_pet', 'trg_vet_reports_link_visit', 'vet_reports'],
+  ])('%s guards vet_reports as a pinned, client-uncallable DEFINER naming only NEW.* (C-31)', (fn, trigger, table) => {
+    const { header, body } = lastFunction(fn);
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const raises = [...body.matchAll(/RAISE EXCEPTION\s*('(?:[^']|'')*')\s*,?\s*([^;]*);/g)];
+    expect(raises.length).toBe(1);
+    // Every format argument is a NEW.* column; the USING clause is the errcode.
+    const args = raises[0][2].replace(/\s+/g, ' ').split(/ USING /)[0].split(',').map((a) => a.trim()).filter(Boolean);
+    for (const a of args) expect(a).toMatch(/^NEW\.\w+$/);
+    for (const role of ['PUBLIC', 'anon', 'authenticated']) {
+      expect(sql).toMatch(new RegExp(String.raw`REVOKE ALL ON FUNCTION public\.${fn}\(\) FROM ${role};`));
+    }
+    expect(sql).toMatch(new RegExp(String.raw`CREATE TRIGGER ${trigger}\s+BEFORE INSERT OR UPDATE ON public\.${table}\s+FOR EACH ROW EXECUTE FUNCTION public\.${fn}\(\);`));
+    expect(sql.slice(lastIndexOf(sql, new RegExp(String.raw`CREATE TRIGGER ${trigger}\b`)))).not.toMatch(
+      new RegExp(String.raw`DROP TRIGGER (?:IF EXISTS )?${trigger}\b`),
+    );
+  });
+
+  it('binds generated_by to the pet\'s owner, re-judged only when it or the pet moves (C-38)', () => {
+    const flat = lastFunction('enforce_vet_report_maker_is_owner').body.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "IF ( TG_OP = 'INSERT' OR NEW.generated_by IS DISTINCT FROM OLD.generated_by OR NEW.pet_id IS DISTINCT FROM OLD.pet_id ) AND NOT EXISTS ( SELECT 1 FROM public.pets p WHERE p.id = NEW.pet_id AND p.user_id = NEW.generated_by ) THEN",
+    );
+  });
+
+  it('makes vet_appointments.pet_id immutable, the parent half of the link (C-38)', () => {
+    const flat = lastFunction('enforce_vet_appointment_pet_immutable').body.replace(/\s+/g, ' ');
+    expect(flat).toContain('IF NEW.pet_id IS DISTINCT FROM OLD.pet_id THEN');
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_appointments_pet_immutable\s+BEFORE UPDATE ON public\.vet_appointments\b/);
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_appointments_pet_immutable\b/);
+  });
+
+  it('creates no bucket and no Storage policy for nyx-vet-reports (CUL-2313)', () => {
+    expect(sql).not.toMatch(/INSERT\s+INTO\s+storage\.buckets[^;]*nyx-vet-reports/i);
+    expect(sql).not.toMatch(/CREATE\s+POLICY[^;]*ON\s+storage\.objects[^;]*nyx-vet-reports/i);
   });
 });

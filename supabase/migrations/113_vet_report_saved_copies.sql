@@ -113,8 +113,8 @@
 --                   DROP FUNCTION public.vet_reports_content_freeze();
 --                   DROP TRIGGER trg_vet_reports_maker_is_owner ON public.vet_reports;
 --                   DROP FUNCTION public.enforce_vet_report_maker_is_owner();
---                   DROP TRIGGER trg_vet_reports_visit_same_pet ON public.vet_reports;
---                   DROP TRIGGER trg_vet_reports_appointment_same_pet ON public.vet_reports;
+--                   DROP TRIGGER trg_vet_reports_link_visit ON public.vet_reports;
+--                   DROP TRIGGER trg_vet_reports_link_appointment ON public.vet_reports;
 --                   DROP FUNCTION public.enforce_vet_appointment_link_same_pet();
 --                   DROP INDEX public.idx_vet_reports_drafts;
 --                   DROP INDEX public.idx_vet_reports_visit;
@@ -321,7 +321,7 @@ COMMENT ON FUNCTION public.enforce_vet_report_maker_is_owner() IS
 -- §5. Visit links, same pet
 -- ============================================================
 -- vet_visit_id: 109's guard is generic over NEW.vet_visit_id / NEW.pet_id.
-CREATE TRIGGER trg_vet_reports_visit_same_pet
+CREATE TRIGGER trg_vet_reports_link_visit
   BEFORE INSERT OR UPDATE ON public.vet_reports
   FOR EACH ROW EXECUTE FUNCTION public.enforce_vet_visit_link_same_pet();
 
@@ -369,7 +369,7 @@ REVOKE ALL ON FUNCTION public.enforce_vet_appointment_link_same_pet() FROM PUBLI
 REVOKE ALL ON FUNCTION public.enforce_vet_appointment_link_same_pet() FROM anon;
 REVOKE ALL ON FUNCTION public.enforce_vet_appointment_link_same_pet() FROM authenticated;
 
-CREATE TRIGGER trg_vet_reports_appointment_same_pet
+CREATE TRIGGER trg_vet_reports_link_appointment
   BEFORE INSERT OR UPDATE ON public.vet_reports
   FOR EACH ROW EXECUTE FUNCTION public.enforce_vet_appointment_link_same_pet();
 
@@ -556,12 +556,14 @@ COMMENT ON COLUMN public.vet_reports.share_token IS
 --        SELECT tgname, tgfoid::regproc FROM pg_trigger
 --         WHERE tgrelid = 'public.vet_reports'::regclass AND NOT tgisinternal
 --         ORDER BY tgname;
---      -> trg_vet_reports_appointment_same_pet  enforce_vet_appointment_link_same_pet
---         trg_vet_reports_client_freeze         vet_reports_client_freeze
+--      -> trg_vet_reports_client_freeze         vet_reports_client_freeze
 --         trg_vet_reports_content_freeze        vet_reports_content_freeze
+--         trg_vet_reports_link_appointment      enforce_vet_appointment_link_same_pet
+--         trg_vet_reports_link_visit            enforce_vet_visit_link_same_pet
 --         trg_vet_reports_maker_is_owner        enforce_vet_report_maker_is_owner
 --         trg_vet_reports_updated_at            set_updated_at
---         trg_vet_reports_visit_same_pet        enforce_vet_visit_link_same_pet
+--      (The two freezes fire first, so they judge the writer's row; the
+--      guards edit nothing.)
 --        SELECT tgname FROM pg_trigger
 --         WHERE tgrelid = 'public.vet_appointments'::regclass AND NOT tgisinternal
 --           AND tgname = 'trg_vet_appointments_pet_immutable';
