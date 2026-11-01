@@ -231,7 +231,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     clinicalQuestion: { question: 'symptom_monitoring', primarySymptom: null },
     safetyFlags: [],
     safetyChecks: [],
-    weight: { change: null, trialChange: null, isEmpty: true, latest: null, trend: null },
+    weight: { change: null, trialChange: null, notCounted: [], isEmpty: true, latest: null, trend: null },
     atAGlance: {
       primarySymptom: null,
       totalSymptomIncidents: 0,
@@ -1005,7 +1005,7 @@ Deno.test('empty weight → designed logging-nudge, never a fabricated value', (
 Deno.test('weight trend → sparkline + descriptive framing, never a loss flag', () => {
   const html = renderReport(
     base({
-      weight: { change: null, trialChange: null,
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 3.8, lbs: 8.4, date: '2026-06-19' },
         trend: {
@@ -1068,6 +1068,7 @@ function weightTileHtml(seriesKg: number[], opts: { withinNoise?: boolean } = {}
         },
         change: changeFixture(Math.max(...seriesKg.slice(0, -1)), last, opts),
         trialChange: null,
+        notCounted: [],
       },
     }),
   )
@@ -1455,7 +1456,7 @@ Deno.test('owner free text is HTML-escaped (no injection through pet name / note
 // ── Regression: never fabricate a weight value (code-reviewer BUG) ─────────────────
 
 Deno.test('isEmpty=false but no latest/trend → empty state, never a fabricated "0.0 kg"', () => {
-  const html = renderReport(base({ weight: { change: null, trialChange: null, isEmpty: false, latest: null, trend: null } }))
+  const html = renderReport(base({ weight: { change: null, trialChange: null, notCounted: [], isEmpty: false, latest: null, trend: null } }))
   assert.ok(/No home weigh-ins recorded/i.test(html), 'falls back to the honest empty state')
   assert.ok(!/0\.0&nbsp;kg|0\.0 kg/.test(html), 'no fabricated zero weight')
 })
@@ -1964,7 +1965,7 @@ Deno.test('foreign-material note keeps its own terminal punctuation — never ".
 Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading', () => {
   const html = renderReport(
     base({
-      weight: { change: null, trialChange: null,
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 4.2, lbs: 9.3, date: '2025-11-01' }, // months before the window
         trend: null, // nothing in-window
@@ -1982,7 +1983,7 @@ Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading'
   const after = renderReport(
     base({
       scope: { ...base().scope, isCustomOverride: true, endDate: '2026-06-01', endDayNum: 20605 },
-      weight: { change: null, trialChange: null,
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 4.2, lbs: 9.3, date: '2026-06-20' },
         trend: null,
@@ -5718,7 +5719,7 @@ Deno.test('B-532/B-502 — with no photographed incident, the block collapses to
 Deno.test('B-532 — the weight sparkline states the range it is drawn over', () => {
   const html = renderReport(
     base({
-      weight: { change: null, trialChange: null,
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 31.8, lbs: 70.1, date: '2026-06-29' },
         trend: {
@@ -8722,7 +8723,7 @@ Deno.test('CUL-2284 — a 1.95 → 1.86 kg cat prints both readings at 2 dp, nev
   const t = weightBlockText(
     renderReport(
       base({
-        weight: { trialChange: null,
+        weight: { trialChange: null, notCounted: [],
           isEmpty: false,
           latest: { kg: 1.86, lbs: 4.1, date: '2026-06-29' },
           trend: {
@@ -8750,7 +8751,7 @@ Deno.test('CUL-2284 — a single in-window reading prints at 2 dp', () => {
   const t = weightBlockText(
     renderReport(
       base({
-        weight: { change: null, trialChange: null,
+        weight: { change: null, trialChange: null, notCounted: [],
           isEmpty: false,
           latest: { kg: 2.1, lbs: 4.6, date: '2026-06-29' },
           trend: {
@@ -8772,8 +8773,29 @@ Deno.test('CUL-2284 — a single in-window reading prints at 2 dp', () => {
 
 Deno.test('CUL-2284 — the out-of-window latest reading prints at 2 dp', () => {
   const t = weightBlockText(
-    renderReport(base({ weight: { change: null, trialChange: null, isEmpty: false, latest: { kg: 1.86, lbs: 4.1, date: '2026-01-02' }, trend: null } })),
+    renderReport(base({ weight: { change: null, trialChange: null, notCounted: [], isEmpty: false, latest: { kg: 1.86, lbs: 4.1, date: '2026-01-02' }, trend: null } })),
   )
   assert.ok(/1\.86 kg/.test(t), `the stored reading prints as recorded: ${t}`)
   assert.ok(!ONE_DP.test(t), `no kilogram in the block prints at 1 dp: ${t}`)
+})
+
+Deno.test('CUL-2286 — the noise caveat never sits beside a weight flag (WG-6, adversarial pass 1)', () => {
+  const weight = {
+    isEmpty: false,
+    latest: { kg: 4.85, lbs: kgToLbsNum(4.85), date: '2026-05-30' },
+    trend: { readingCount: 2, seriesLbs: [kgToLbsNum(5.02), kgToLbsNum(4.85)], seriesKg: [5.02, 4.85], latestLbs: kgToLbsNum(4.85), latestKg: 4.85, earliestDate: '2026-05-02', latestDate: '2026-05-30' },
+    change: changeFixture(5.02, 4.85, { highDay: '2026-05-02', latestDay: '2026-05-30', withinNoise: true, single: true }),
+    trialChange: null,
+    notCounted: [],
+  }
+  const flag: SafetyFlag = {
+    kind: 'weight_loss', asOf: 'now', tier: 'firm', planned: false, mixedInstruments: false, windowDays: 365,
+    latest: { kg: 4.42, source: 'home_scale', single: false, day: '2026-06-21' },
+    highBefore: { kg: 5.02, source: 'home_scale', single: false, day: '2026-05-02' },
+  }
+  const quiet = plain(renderReport(base({ weight })))
+  assert.ok(/moves about that much on its own/.test(quiet), 'the caveat is live in its own state, with no flag (non-vacuous)')
+  const flagged = plain(renderReport(base({ weight, safetyFlags: [flag] })))
+  assert.ok(!/moves about that much on its own/.test(flagged), 'never beside a raised weight row')
+  assert.ok(!/inside a home scale/.test(flagged))
 })

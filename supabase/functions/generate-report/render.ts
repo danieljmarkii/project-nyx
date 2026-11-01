@@ -4056,13 +4056,19 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   // CUL-2286 (VR2-6) — and it is `weightStory()`'s change (spec §5.8): the latest reading against
   // the HIGHEST before it, both named with day and source, as a whole percent. No 0.15 kg floor:
   // on a 2 kg cat that floor hid a 7% loss (BRK-12), and the lane's noise state carries the caveat
-  // instead (WG-6).
+  // instead (WG-6) in the Weight block only.
+  //
+  // NEVER THE NOISE CAVEAT HERE (adversarial pass 1, QUIET). `trialChange` runs the story over the
+  // trial's days only, so its noise state is not the lane's: a refusing cat whose record held a
+  // firm 4.80 → 4.12 kg loss read 4.30 → 4.12 inside the trial as "a home scale moves about that
+  // much on its own", in the safety band's refusal row, above the firm Weight flag. A day-bounded
+  // subset can only ever discount a loss the whole record supports, so it says nothing of noise.
   const c = snap.weight.trialChange
   if (!t || !c || !c.highBefore || c.deltaKg === null || c.deltaKg === 0) return null
   const dir = c.deltaKg < 0 ? 'fell' : 'rose'
   return `Weight ${dir} to ${weightEndText(c.latest, snap)}, from ${weightEndText(c.highBefore, snap)} &mdash; <b>${weightPctText(
     c,
-  )}</b> (the latest reading against the highest before it in the trial${c.withinNoise ? `; ${WEIGHT_NOISE_CAVEAT}` : ''}).`
+  )}</b> (the latest reading against the highest before it in the trial).`
 }
 
 /** "a 56-day" but "an 84-day" — English takes the article from how the number is
@@ -5014,13 +5020,27 @@ function weightPctText(c: WeightChangeView): string {
   return c.pct < 1 ? 'under 1% of body weight' : `about ${num(c.pct)}% of body weight`
 }
 
-/** The change line every surface but the flag reads (weight lane §6.5): latest, from the highest before it, the change. */
+/**
+ * The change line every surface but the flag reads (weight lane §6.5): latest, from the highest
+ * before it, the change. The lane's noise caveat rides it only in the story's `within_noise` state
+ * AND only when the page carries no safety flag at all (WG-6: the caveat and a raised row never
+ * render together; beside a refusal or any other flag, a line discounting a weight change only
+ * ever softens the page, so it errs loud and stays off). Adversarial pass 1: on a past window the block's story read 5.02 → 4.85 as noise
+ * while the flag as of today read the same loss, continued to 4.42, as firm.
+ */
 function weightChangeSentence(c: WeightChangeView, snap: ReportSnapshot): string {
   if (!c.highBefore || c.deltaKg === null) return `${weightEndText(c.latest, snap)}`
   const dir = c.deltaKg < 0 ? 'down from' : c.deltaKg > 0 ? 'up from' : 'level with'
   return `${weightEndText(c.latest, snap)}, ${dir} ${weightEndText(c.highBefore, snap)} &middot; ${num(signedKgText(c.deltaKg))}&nbsp;kg (${signedLbText(
     c,
-  )}), ${weightPctText(c)}${c.withinNoise ? `; ${WEIGHT_NOISE_CAVEAT}` : ''}`
+  )}), ${weightPctText(c)}${c.withinNoise && snap.safetyFlags.length === 0 ? `; ${WEIGHT_NOISE_CAVEAT}` : ''}`
+}
+
+/** In-window owner estimates, listed and never counted (weight lane §4.2): the vet sees them, nothing reads them as a weigh-in. */
+function weightEstimatesNote(w: WeightSection): string {
+  if (w.notCounted.length === 0) return ''
+  const list = w.notCounted.map((e) => `${weightReadingText(e.kg)} on ${fmtDayYear(e.day)}`).join('; ')
+  return `<br/><span class="l">Owner estimate${w.notCounted.length === 1 ? '' : 's'}, not a scale reading and not counted above: ${list}.</span>`
 }
 
 function weightBlock(snap: ReportSnapshot): string {
@@ -5036,7 +5056,7 @@ function weightBlock(snap: ReportSnapshot): string {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
-    <span class="l">No weight trend can be shown; body condition not assessed.${flagNote}</span></div>
+    <span class="l">No weight trend can be shown; body condition not assessed.${flagNote}</span>${weightEstimatesNote(w)}</div>
   </div>`
   }
   const t = w.trend
@@ -5061,7 +5081,7 @@ function weightBlock(snap: ReportSnapshot): string {
     <div class="wt-read"><span class="v num">${weightReadingText(latest.kg)}</span> <span class="l">&middot; latest weigh-in ${h(
       fmtDay(latest.date),
     )} (${latestSide})</span><br/>
-    <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.${flagNote}</span></div>
+    <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.${flagNote}</span>${weightEstimatesNote(w)}</div>
   </div>`
   }
   const last = t.latestKg ?? t.seriesKg[t.seriesKg.length - 1]
@@ -5100,10 +5120,10 @@ function weightBlock(snap: ReportSnapshot): string {
   <div class="weight">
     ${weightSpark(t.seriesKg)}
     <div class="wt-read">
-      <span class="v num">${weightReadingText(last)}</span> <span class="l">&middot; latest of ${num(t.readingCount)} owner weigh-in${
+      <span class="v num">${weightReadingText(last)}</span> <span class="l">&middot; latest of ${num(t.readingCount)} weigh-in${
         t.readingCount === 1 ? '' : 's'
       } in this window, ${dateSpan}</span>${scaleBit}${changeLine}<br/>
-      <span class="l">A home-scale weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.${flagNote}</span>
+      <span class="l">A weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.${flagNote}</span>${weightEstimatesNote(w)}
     </div>
   </div>`
 }
@@ -5985,12 +6005,13 @@ function weightTile(snap: ReportSnapshot): string {
     // CUL-2286 (VR2-6) / CUL-2326 — the story's change at the stored 2 dp, so a 0.04 kg loss
     // prints "-0.04", never "-0.0"; and its WHOLE percent with no floor, so a 2 kg cat's 0.14 kg
     // loss states its 7% (B-495: `-0.3 kg` is species-blind). Descriptive, never reassuring.
+    const noise = c.withinNoise && snap.safetyFlags.length === 0 ? ' &middot; inside a home scale&rsquo;s noise' : ''
     const pct =
       c.deltaKg === 0 ? 'no change' : `<b>${c.pct !== null && c.pct >= 1 ? `&asymp;${c.pct}%` : 'under 1%'} of body weight</b>`
     return tile(
       signedKgText(c.deltaKg),
       `<small>&nbsp;kg</small>`,
-      `Weight since ${fmtDayYear(c.highBefore.day)} (${signedLbText(c)})<br/>${pct}${c.withinNoise ? ' &middot; inside a home scale&rsquo;s noise' : ''} &middot; descriptive`,
+      `Weight since ${fmtDayYear(c.highBefore.day)} (${signedLbText(c)})<br/>${pct}${noise} &middot; descriptive`,
     )
   }
   const kg = inWindow ? c.latest.kg : tr?.latestKg ?? null

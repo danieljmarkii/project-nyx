@@ -5599,3 +5599,39 @@ Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identica
   }
   assert.deepEqual(digests, CUL_2094_GOLDEN)
 })
+
+// ── CUL-2286 adversarial pass 1 — the noise caveat never rides a bounded subset or a flagged page ──
+function refusingCatTrialInput(weights: Array<[number, string]>, engineFlags: ReportInput['engineFlags']): ReportInput {
+  const input = wellLoggedTrialInput({ events: [], engineFlags })
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].completedAt = null
+  input.dietTrials[0].endedAt = '2026-06-19'
+  for (const d of days('2026-06-01', '2026-06-19')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+    input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  input.weightChecks = weights.map(([kg, d], i) => ({ eventId: `rw-${i}`, weightKg: kg, occurredAt: at(d, '15:00:00'), source: 'home_scale' as const }))
+  input.weightHistory = input.weightChecks
+  return input
+}
+
+Deno.test('CUL-2286 — a refusing cat with a firm weight flag never reads "a home scale moves about that much" (adversarial pass 1)', () => {
+  // The whole record: 4.80, 4.78 before the trial, then 4.30 and 4.12 inside it. The trial-day
+  // subset alone is a single-reading 0.18 kg drop, inside the band; the lane fires firm (14%).
+  const input = refusingCatTrialInput([[4.8, '2026-05-01'], [4.78, '2026-05-10'], [4.3, '2026-06-02'], [4.12, '2026-06-18']], { on: ['engines_v3_en8'], readOk: true })
+  const snap = assembleReport(input)
+  assert.equal(snap.weight.trialChange!.withinNoise, true, 'the counterexample is live: the subset reads within_noise')
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'weight_loss'), 'and the lane raised the weight flag')
+  const text = plain(renderReport(snap))
+  assert.ok(/Weight fell to 4\.12 kg/.test(text), 'the trial sentence still states the fall')
+  assert.ok(!/moves about that much on its own/.test(text), 'and nothing on the page calls it scale noise')
+})
+
+Deno.test('CUL-2286 — two single readings on a refusing cat, no weight flag: the band row carries no noise caveat', () => {
+  const input = refusingCatTrialInput([[4.4, '2026-06-01'], [4.25, '2026-06-19']], { on: [], readOk: true })
+  const snap = assembleReport(input)
+  const text = plain(renderReport(snap))
+  const band = text.slice(0, text.indexOf('Diet trial'))
+  assert.ok(/Weight fell to 4\.25 kg/.test(band), 'the weight fact composes with the refusal, above the fold')
+  assert.ok(!/moves about that much on its own/.test(text), 'never a discount beside a live refusal flag')
+})

@@ -2125,7 +2125,8 @@ export interface WeightChangeView {
   /** The difference of the two ends' pounds, to 0.1 (what an owner reading Home subtracts). */
   deltaLbs: number | null
   /**
-   * |deltaKg| as a whole percent of `highBefore`, unrounded beyond the whole number: 0 means
+   * |deltaKg| as a whole percent of `highBefore`, the EARLIER end the change is measured from
+   * (the higher one on a loss, the lower one on a gain), rounded to the whole number: 0 means
    * under 1%, never "no change" (the renderer says which). No floor: the 0.15 kg floor it
    * replaces hid a 7% loss on a 2 kg cat (BRK-12). Null without `highBefore`.
    */
@@ -2142,8 +2143,14 @@ export interface WeightSection {
   trend: WeightTrendView | null
   /** The change as of the window's end, over the story's 12-month window. Null when nothing counted. */
   change: WeightChangeView | null
-  /** The change over the diet trial's evidence range only. Null without a trial or two counted readings in it. */
+  /**
+   * The change over the diet trial's evidence range only. Null without a trial or two counted
+   * readings in it. Its `withinNoise` is NOT the lane's state (a day-bounded subset), so the
+   * renderer never prints the noise caveat from it (adversarial pass 1).
+   */
   trialChange: WeightChangeView | null
+  /** In-window owner estimates: listed beside the block, never counted, plotted or used as the latest. */
+  notCounted: Array<{ kg: number; lbs: number; day: string }>
 }
 
 /**
@@ -4644,7 +4651,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // de-dup (only reachable if the I/O shell also placed the weight_check event in input.events
   // — weight_check is in DEDUP_OBSERVATION_TYPES; a no-op when weightChecks is a standalone
   // pull), then apply the near-simultaneous collapse below for the standalone-array case.
-  const allReadings = dedupeWeighIns(input.weightChecks, droppedEventIds)
+  // An owner's ESTIMATE is listed, never counted (weight lane §4.2, §6.5): it is never plotted,
+  // never the "latest weigh-in" on the signalment or the tile, and never decides the empty state.
+  // Adversarial pass 1 on CUL-2286: an estimate of 5.00 kg read as the latest weigh-in on the tile
+  // and the signalment line over a confirmed 20% loss.
+  const dedupedChecks = dedupeWeighIns(input.weightChecks, droppedEventIds)
+  const allReadings = dedupedChecks.filter((r) => r.source !== 'estimate')
   const latestOverall = allReadings.length > 0 ? allReadings[allReadings.length - 1] : null
   const windowReadings = allReadings.filter((r) => inWindow(r.occurredAt))
   // CUL-2286 (VR2-6) — EVERY weight change on the page comes from `weightStory()` (spec §5.8,
@@ -4654,6 +4666,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const storyReadings = input.weightHistory ? dedupeWeighIns(input.weightHistory, droppedEventIds) : allReadings
   const weightChange = weightChangeOf(storyReadings, scope.detectionNowIso, input.pet.dateOfBirth, tz)
   const weight = buildWeightSection(latestOverall, windowReadings, weightChange, tz)
+  weight.notCounted = dedupedChecks
+    .filter((r) => r.source === 'estimate' && inWindow(r.occurredAt))
+    .map((r) => ({ kg: r.weightKg, lbs: kgToLbsNum(r.weightKg), day: localDayKey(r.occurredAt, tz) ?? r.occurredAt.slice(0, 10) }))
 
   // ── Medications (§3.8, B-117 §7, §4.4) ───────────────────────────────────────
   // ONE attribution pass feeds every medication surface on the document (CUL-976) — page 1,
@@ -6733,7 +6748,7 @@ function buildWeightSection(
     }
   }
   // `trialChange` needs the trial's evidence range, which is assembled later; the snapshot sets it.
-  return { isEmpty, latest, trend, change, trialChange: null }
+  return { isEmpty, latest, trend, change, trialChange: null, notCounted: [] }
 }
 
 /**

@@ -6239,3 +6239,21 @@ Deno.test('CUL-2286 — without the weight flag, no weight line enters the safet
   assert.ok(!/Weight/.test(band), `the band carries no weight line: ${band}`)
   assert.ok(/of body weight/.test(text), 'the change still prints, in the block and the tile')
 })
+
+Deno.test('CUL-2286 — an owner estimate is listed, never the latest weigh-in on the tile or the signalment (adversarial pass 1)', () => {
+  // Confirmed 5.00/4.98 kg in Feb and 4.00/4.02 kg in Mar, then an estimate of 5.00 kg on Jun 28.
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'x-1', weightKg: 5.0, occurredAt: at('2026-02-01'), source: 'home_scale' },
+    { eventId: 'x-2', weightKg: 4.98, occurredAt: at('2026-02-08'), source: 'home_scale' },
+    { eventId: 'x-3', weightKg: 4.0, occurredAt: at('2026-03-01'), source: 'home_scale' },
+    { eventId: 'x-4', weightKg: 4.02, occurredAt: at('2026-03-08'), source: 'home_scale' },
+    { eventId: 'x-5', weightKg: 5.0, occurredAt: at('2026-06-28'), source: 'estimate' },
+  ]
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w, weightHistory: w }))
+  assert.equal(snap.signalment.latestWeight!.kg, 4.02, 'the signalment names the latest scale reading')
+  const text = readAs(renderReport(snap))
+  assert.ok(!/Latest weigh-in \(11\.0 lb\)/.test(text), 'the estimate is never the tile\'s latest weigh-in')
+  assert.ok(/latest weight 4\.02 kg \(8\.9 lb\) on Mar 8/.test(text), text.slice(text.indexOf('latest weight'), text.indexOf('latest weight') + 80))
+  assert.ok(/Owner estimate, not a scale reading and not counted above: 5\.00 kg \(11\.0 lb\) on Jun 28, 2026\./.test(text), 'listed, never counted')
+})
