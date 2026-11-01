@@ -11,6 +11,8 @@ import {
   detectSignals,
   foldedWorsening,
   DEFAULT_CONFIG,
+  EN11_CONFIG,
+  FOLDED_WORSENING_LOOKBACK_DAYS,
   type DetectionInput,
   type MealEvent,
   type SymptomEvent,
@@ -42,8 +44,14 @@ const input = (symptomEvents: SymptomEvent[], mealEvents = meals(56, 0)): Detect
   now: iso(NOW),
 })
 
-/** Itching about every five days for seven weeks. */
-const steadyItch = (): SymptomEvent[] => signs('itch', [50, 45, 40, 35, 30, 25, 20, 15, 10, 3])
+/** Itching exactly every 84 hours for seven weeks: two a week in every 7-day window. */
+const steadyItch = (): SymptomEvent[] => {
+  const out: SymptomEvent[] = []
+  for (let ms = NOW - 50 * DAY; ms <= NOW - DAY / 2; ms += 84 * HOUR) out.push({ id: `s-${++seq}`, type: 'itch', occurredAt: iso(ms) })
+  return out
+}
+/** Itching about every five days: the weekly count wobbles between 1 and 2. */
+const wobblingItch = (): SymptomEvent[] => signs('itch', [50, 45, 40, 35, 30, 25, 20, 15, 10, 3])
 
 Deno.test('foldedWorsening — a steady course reads not_rising; a jump to 5 in 7 days reads rising', () => {
   assert.equal(foldedWorsening(input(steadyItch()), DEFAULT_CONFIG, 'itch'), 'not_rising')
@@ -68,7 +76,8 @@ Deno.test('foldedWorsening — judged on the sign alone: a steeper rise elsewher
 Deno.test('foldedWorsening — a dark prior week, or a sign outside ④’s lane, is not_measured', () => {
   const darkPrior = input(
     [...steadyItch().filter((e) => Date.parse(e.occurredAt) < ago(14)), ...signs('itch', [6, 5, 4, 2, 1])],
-    [...meals(56, 15), ...meals(6, 0)],
+    // Nothing logged from 21 days back to 7: no replayed day has two eligible weeks that see the jump.
+    [...meals(56, 22), ...meals(6, 0)],
   )
   assert.equal(foldedWorsening(darkPrior, DEFAULT_CONFIG, 'itch'), 'not_measured')
   assert.equal(foldedWorsening(input(signs('cough', [20, 14, 9, 5, 2, 1])), DEFAULT_CONFIG, 'cough'), 'not_measured')
@@ -82,4 +91,27 @@ Deno.test('chronicitySpanTier — the span-only rule the tier resolver applies',
   const f = detectChronicity(input(steadyItch()), DEFAULT_CONFIG).find((x) => x.symptomType === 'itch')
   assert.ok(f)
   assert.equal(chronicitySpanTier('itch', f.spanDays, 'dog', DEFAULT_CONFIG.chronicity), f.tier)
+})
+
+// ── Adversarial pass 1 on CUL-2289: each finding, reproduced ─────────────────
+
+Deno.test('pass 1, finding 1 — under EN-11, a rise below ④’s card floor (1 → 2) is still rising', () => {
+  // Steady twice a week, then the last week holds 3 entries against the prior week's 1... built as
+  // prior week 1, current week 2: below EN-11's card floor of 3, a rise by ③'s own test.
+  const base = steadyItch().filter((e) => Date.parse(e.occurredAt) < ago(14))
+  const events = [...base, ...signs('itch', [10]), ...signs('itch', [5, 2])]
+  assert.equal(foldedWorsening(input(events), EN11_CONFIG, 'itch'), 'rising')
+  assert.equal(foldedWorsening(input(events), DEFAULT_CONFIG, 'itch'), 'rising', 'flag off: the same answer')
+})
+
+Deno.test('pass 1, finding 2 — a jump that holds (5, then 5) is still rising a week after it', () => {
+  const base = steadyItch().filter((e) => Date.parse(e.occurredAt) < ago(14))
+  const events = [...base, ...signs('itch', [13, 12, 11, 9, 8]), ...signs('itch', [6, 5, 4, 2, 1])]
+  // Today's ④ compares 5 with 5 and sees no rise; the replay a week back saw 5 against 2.
+  assert.equal(foldedWorsening(input(events), DEFAULT_CONFIG, 'itch'), 'rising')
+  assert.equal(FOLDED_WORSENING_LOOKBACK_DAYS, 28)
+})
+
+Deno.test('pass 2 residual, stated — a course wobbling between 1 and 2 a week reads rising (the loud cost)', () => {
+  assert.equal(foldedWorsening(input(wobblingItch()), DEFAULT_CONFIG, 'itch'), 'rising')
 })

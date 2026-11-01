@@ -12,6 +12,7 @@ import { assembleReport, type ReportInput, type ReportSnapshot, type SafetyFlag 
 import {
   bandMembersOf,
   changesInWindowOf,
+  isZeroSignSheet,
   CHANGES_MEALS_NOT_FINISHED_MIN_DAYS,
   CHANGES_NOTICED_MIN_DAYS,
   CHANGES_WEIGHT_STALE_DAYS,
@@ -28,7 +29,7 @@ import {
   THIN_RECORD_DAYS,
   thinRecordLineOf,
 } from './v2Predicates.ts'
-import { at, baseInput, dailyMeals, dayKey, itchingSkinTrial, juniper, meal, olive, symptom } from './v2Fixtures.testutil.ts'
+import { at, baseInput, dailyMeals, dayKey, itchingSkinTrial, juniper, meal, olive, symptom, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 
 type Chronicity = Extract<SafetyFlag, { kind: 'chronicity' }>
@@ -134,7 +135,9 @@ Deno.test('R-11 condition 3 — a dark prior week reads not_measured, end to end
   const s = snap({ ...base, events })
   const fact = s.v2.chronicity.find((c) => c.symptomType === 'itch')
   assert.ok(fact, 'the course still fires: the dark week does not end it')
-  assert.equal(fact.worsening, 'not_measured', 'an unmeasurable week is never reported as no rise')
+  // Today's comparison is dark. A replayed day whose two weeks straddle the gap may still see the
+  // jump ('rising'); either way the answer is never "not rising".
+  assert.notEqual(fact.worsening, 'not_rising', 'an unmeasurable week is never reported as no rise')
   assert.equal(bandMembersOf(s).leadFlag, null)
 })
 
@@ -254,7 +257,7 @@ Deno.test('lead — Noticed looks never lead; intake leads Olive’s zero-sign s
 Deno.test('thin record — Juniper, four days: one scope line naming what could not run, never a result', () => {
   const s = snap(juniper())
   const t = thinRecordLineOf(s)
-  assert.deepEqual(t, { loggedDays: 4, text: '4 days logged: too few for the checks that compare weeks.' })
+  assert.deepEqual(t, { reason: 'few_days', loggedDays: 4, windowDays: s.atAGlance.windowDays, text: '4 days logged: too few for the checks that compare weeks.' })
   assert.ok(!/flag|trigger|clear|normal|no sign/i.test(t!.text), 'nothing that reads as a result')
 })
 
@@ -404,4 +407,52 @@ Deno.test('changes — null on a sheet with a symptom entry, and when nothing ho
   assert.equal(changesInWindowOf(snap(olive({ sleepingDays: 0, unfinishedDays: 0, weighedDaysAgo: 1 }))), null)
   const young = baseInput({ events: [...dailyMeals(30, 0), meal(2, 'some')] })
   assert.equal(changesInWindowOf(snap(young)), null)
+})
+
+// ── Adversarial pass 1: each finding, reproduced end to end ─────────────────
+
+Deno.test('pass 1, findings 1 and 2 — Cooper as an owner logs him (weekly counts wobbling) keeps the flag in the band', () => {
+  const s = snap(wobblingSkinTrial())
+  const f = itchFlag(s)
+  assert.equal(s.v2.chronicity.find((c) => c.symptomType === 'itch')?.worsening, 'rising')
+  assert.equal(bandMembersOf(s).leadFlag, null)
+  assert.deepEqual(bandMembersOf(s).band, [f])
+})
+
+Deno.test('pass 1, finding 3 — a 14-day window over a 52-day vomiting course prints the scope line', () => {
+  const events = [...dailyMeals(55, 0)]
+  for (let d = 52; d >= 1; d -= 3) events.push(symptom('vomit', d))
+  const s = snap(baseInput({ events, requestedWindow: { startDate: dayKey(13), endDate: dayKey(0) } }))
+  assert.equal(s.atAGlance.loggedDays, 14, 'every window day is logged, so the day count alone says nothing')
+  assert.ok(s.safetyChecks.some((c) => c.kind === 'ongoing' && c.state === 'window_short'))
+  assert.deepEqual(thinRecordLineOf(s), { reason: 'short_window', loggedDays: 14, windowDays: 14, text: 'A 14-day window: too short for the checks that compare weeks.' })
+})
+
+Deno.test('pass 1, finding 3 — 17 days logged at two a week over eight weeks prints the scope line', () => {
+  // The reviewer's probe D2: meals two days a week, three recent vomits; both checks too_few_days.
+  const events = []
+  for (let w = 0; w < 8; w++) events.push(meal(w * 7 + 1, 'all'), meal(w * 7 + 4, 'all'))
+  events.push(meal(0, 'all'), symptom('vomit', 1, 9), symptom('vomit', 4, 9), symptom('vomit', 4, 15))
+  const s = snap(baseInput({ events }))
+  assert.equal(s.safetyFlags.length, 0, 'no flag: without this line the band slot is empty')
+  assert.ok(s.atAGlance.loggedDays >= THIN_RECORD_DAYS, `logged ${s.atAGlance.loggedDays} days`)
+  const t = thinRecordLineOf(s)
+  assert.equal(t?.reason, 'sparse_days')
+  assert.equal(t?.text, `${s.atAGlance.loggedDays} of ${s.atAGlance.windowDays} days logged: too few for the checks that compare weeks.`)
+})
+
+Deno.test('pass 1, finding 4 — one zero-sign definition: Olive is zero-sign though intake leads her sheet', () => {
+  const s = snap(olive())
+  assert.equal(isZeroSignSheet(s), true)
+  assert.equal(leadSignOf(s)?.sign, 'intake', 'leadSignOf is not the zero-sign test')
+  assert.ok(changesInWindowOf(s))
+})
+
+Deno.test('pass 1, finding 5 — a meal whose child row has not synced counts as an unrated meal', () => {
+  const base = itchingSkinTrial({ jump: false })
+  const unsynced = { ...meal(2, null), meal: null }
+  const s = snap({ ...base, events: [...base.events, unsynced] })
+  assert.equal(s.v2.loggedMeals, 57)
+  assert.equal(s.v2.ratedMeals, 56)
+  assert.deepEqual(gapLinesOf(s).map((g) => g.text), ['How much was eaten at 1 of 57 logged meals'])
 })

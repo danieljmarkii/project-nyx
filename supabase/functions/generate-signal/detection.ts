@@ -8053,22 +8053,35 @@ export function repickWorseningPastChronic(
 }
 
 /**
- * CUL-2289 (vet report v2, R-11 condition 3) — would ④ flag THIS sign, judged on its own?
+ * CUL-2289 (vet report v2, R-11 condition 3) — has this sign been RISING lately, judged on its own?
  *
  * `suppressWorseningWhenChronic` drops a same-sign ④ card into its ⑦ card, so once the set is
- * composed nothing says a chronic course is also rising. A reader that must know (the report's
- * skin-trial exemption may move a chronicity flag out of the band only when no worsening was
- * folded into it) asks here.
+ * composed nothing says a chronic course is also rising. The report's skin-trial exemption may
+ * move a chronicity flag out of the band only when no rise sits inside it, so it asks here.
  *
- * Judged on the sign ALONE, not on whether it was ④'s single pick: ④ emits one card, the
- * steepest rise, so a second sign rising behind it is never the pick and was never folded, yet
- * it IS rising. Every other sign is excluded, so this is "would the card fire on this sign".
- * That reads more signs as rising than the composed set folds, which is the loud direction.
+ * Three widenings over "was a ④ card folded in", each the loud direction:
+ *   - THE SIGN ALONE. ④ emits one card, the steepest rise, so a second sign rising behind it was
+ *     never folded, yet it is rising. Each sign's own stat is read.
+ *   - ③'S RISE, NOT ④'S CARD. Under EN-11 a rise below ④'s card floor (1 → 2) mutes ③ and is a
+ *     rise by the engine's own test (`isWorsening`), though no card fires (adversarial pass 1 on
+ *     CUL-2289, finding 1). The report's lead ladder already names that state "rose week over
+ *     week", so the exemption may not read it as steady.
+ *   - THE LAST FOUR WEEKS, NOT THIS WEEK. ④ compares this week with the last, so a jump that holds
+ *     (5, then 5) reads flat a week after it happened, and a span-firm course has no CUL-1272 hold
+ *     to remember it (adversarial pass 1, finding 2: BRK-10 at the band). ④'s test is replayed at
+ *     every day back to `FOLDED_WORSENING_LOOKBACK_DAYS`, over the record as it stood then.
  *
- * Three answers, never a boolean: when ④'s two weeks are not logging-eligible the rise could not
- * be measured, and "not rising" would be a claim the engine never made.
+ * Three answers, never a boolean: when today's two weeks are not logging-eligible and no replayed
+ * day found a rise, the engine could not say, and "not rising" would be a claim it never made.
  */
 export type WorseningOnSign = 'rising' | 'not_rising' | 'not_measured'
+
+/**
+ * How far back a rise keeps a skin trial's chronicity flag in the band. Four weeks: two of ④'s
+ * comparisons past the one Home shows, so a jump has to hold for a month before the course reads
+ * as steady. A plateau older than this is the course's level, drawn on the lead chart as a flag.
+ */
+export const FOLDED_WORSENING_LOOKBACK_DAYS = 28
 
 export function foldedWorsening(
   input: DetectionInput,
@@ -8077,12 +8090,19 @@ export function foldedWorsening(
 ): WorseningOnSign {
   // A sign outside ④'s lane (cough, at W1) is never measured for a rise at all.
   if (!LANE_SYMPTOM_TYPES.symptomDelta.includes(symptomType)) return 'not_measured'
-  const windowed = computeWindowedStats(input, config)
-  if (!windowed || !windowed.loggingEligible) return 'not_measured'
-  const others = new Set<SymptomType>(LANE_SYMPTOM_TYPES.symptomDelta.filter((t) => t !== symptomType))
-  return detectWorsening(input, config, others).some((f) => f.symptomType === symptomType)
-    ? 'rising'
-    : 'not_rising'
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return 'not_measured'
+  const replay = replayInputAsOf(input, config)
+  let measuredToday = false
+  for (let d = 0; d <= FOLDED_WORSENING_LOOKBACK_DAYS; d++) {
+    const asOf = d === 0 ? input : replay(nowMs - d * MS_PER_DAY, 'worsening')
+    const windowed = computeWindowedStats(asOf, config)
+    if (!windowed || !windowed.loggingEligible) continue
+    if (d === 0) measuredToday = true
+    const stat = windowed.stats.find((x) => x.symptomType === symptomType)
+    if (stat && isWorsening(stat, config.reflection)) return 'rising'
+  }
+  return measuredToday ? 'not_rising' : 'not_measured'
 }
 
 export function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {

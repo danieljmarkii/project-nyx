@@ -3363,7 +3363,8 @@ export interface ReportV2ChronicityFact {
 
 export interface ReportV2Facts {
   chronicity: ReportV2ChronicityFact[]
-  /** Meals logged in the window (`foodType === 'meal'`), rated or not: `mealCompletion`'s population. */
+  /** Meals logged in the window (`foodType === 'meal'`, plus a meal event whose child row has not
+   *  synced), rated or not. */
   loggedMeals: number
   /** Of those, the meals with a rating. Equal to `diet.mealCompletion.ratedMeals` when that is non-null. */
   ratedMeals: number
@@ -6698,7 +6699,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         worsening: foldedWorsening(detInput, detConfig, f.symptomType),
         spanTier: chronicitySpanTier(f.symptomType, f.spanDays, input.pet.species, detConfig.chronicity),
       })),
-      loggedMeals: windowMeals.filter((e) => e.meal!.foodType === 'meal').length,
+      // A meal event whose child row has not synced (`meal: null`) is still a meal fed, with no
+      // rating anyone can read: counted here as `recordEdgeOf` counts it (adversarial pass 1 on
+      // CUL-2289, finding 5), so the unrated-meals gap line never undercounts.
+      loggedMeals: windowEvents.filter((e) => e.type === 'meal' && (e.meal === null || e.meal.foodType === 'meal')).length,
       ratedMeals: ratedMealsInWindow.length,
       mealNotFinishedDays: new Set(
         unfinishedRated.map((e) => localDayKey(e.occurredAt, tz) ?? e.occurredAt.slice(0, 10)),

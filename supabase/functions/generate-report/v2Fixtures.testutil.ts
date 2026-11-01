@@ -123,10 +123,37 @@ export function skinTrial(indication: 'skin' | 'gi' | 'other' = 'skin'): ReportI
  */
 export function itchingSkinTrial(opts: { jump: boolean; indication?: 'skin' | 'gi' | 'other' }): ReportInput {
   const events: ReportEventInput[] = [...dailyMeals(55, 0)]
-  for (let d = 50; d >= 8; d -= 5) events.push(symptom('itch', d))
-  if (opts.jump) for (const d of [6, 5, 4, 2, 1]) events.push(symptom('itch', d))
-  else events.push(symptom('itch', 3))
+  if (opts.jump) {
+    for (const ms of steadyInstants(50, 8)) events.push(symptomAt('itch', ms))
+    for (const d of [6, 5, 4, 2, 1]) events.push(symptom('itch', d))
+  } else {
+    for (const ms of steadyInstants(50, 0.5)) events.push(symptomAt('itch', ms))
+  }
   return baseInput({ events, dietTrials: [skinTrial(opts.indication ?? 'skin')] })
+}
+
+/**
+ * Exactly every 84 hours (twice a week) from `fromDays` back to `toDays` back. Any 7-day window
+ * holds exactly two entries on two days, so no replayed week-over-week comparison ever reads a rise:
+ * the only shape `foldedWorsening`'s four-week replay calls steady (CUL-2289 pass 2).
+ */
+export function steadyInstants(fromDays: number, toDays: number): number[] {
+  const out: number[] = []
+  for (let ms = NOW_MS - fromDays * DAY; ms <= NOW_MS - toDays * DAY; ms += 84 * 3_600_000) out.push(ms)
+  return out
+}
+
+export function symptomAt(type: string, ms: number): ReportEventInput {
+  const t = new Date(ms).toISOString()
+  return { id: id(type), type, occurredAt: t, occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: t, meal: null }
+}
+
+/** Cooper as an owner really logs him: itching about every five days, the weekly counts wobbling
+ *  between 1 and 2. The four-week replay reads that wobble as a rise, so the flag stays in the band. */
+export function wobblingSkinTrial(): ReportInput {
+  const events: ReportEventInput[] = [...dailyMeals(55, 0)]
+  for (let d = 50; d >= 3; d -= 5) events.push(symptom('itch', d))
+  return baseInput({ events, dietTrials: [skinTrial('skin')] })
 }
 
 /**

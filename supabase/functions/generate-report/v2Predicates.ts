@@ -223,7 +223,8 @@ function lead(sign: LeadSign, reason: LeadReason): Lead {
  *   2. else the trial's indication sign (its member with the most entry days);
  *   3. else a sign the engine measured rising (④'s check stood below its card floor);
  *   4. else the sign with the most days with an entry, GI and intake breaking ties.
- * Null only on a sheet with no entry of any eligible sign (the zero-sign sheet).
+ * Null only on a sheet with no entry of any eligible sign. That is NOT `isZeroSignSheet`: a sheet
+ * with no symptom entry but unfinished meals leads with intake.
  *
  * Step 2 and 3 skip a sign with no entry in the window: an empty lead chart over a trial's sign
  * reads as a clean result, which the record has not shown. Step 3 reads only a rise the engine
@@ -262,17 +263,41 @@ export function leadSignOf(snap: ReportSnapshot): Lead | null {
 export const THIN_RECORD_DAYS = 14
 
 export interface ThinRecordLine {
+  /** Why the checks could not run: too few days logged, a window too short for the ongoing check,
+   *  or logged days too sparse for a check that needs a floor of them in each week. */
+  reason: 'few_days' | 'short_window' | 'sparse_days'
   loggedDays: number
+  windowDays: number
   /** Printed where the band sits, never styled as the band. Names only what could not run; never
    *  "no flags", "not triggered" or anything that reads as a result. */
   text: string
 }
 
+/**
+ * Ruling T: "when a check that needs weeks of data could not run (a new account, a short window)".
+ * Three causes, each read from what the snapshot already holds, the first that applies:
+ *   - fewer than 14 logged days;
+ *   - an ongoing check the engine marked `window_short` (a 14-day window over a 52-day course);
+ *   - a check the engine marked `too_few_days` (17 days logged at two a week over eight weeks).
+ * Adversarial pass 1 on CUL-2289 (finding 3): the logged-day count alone missed the last two, so a
+ * chronic course in a short or sparse window printed neither a flag nor this line. The line prints
+ * whether or not a flag fired: a flag on one sign does not mean the checks ran on the others.
+ */
 export function thinRecordLineOf(snap: ReportSnapshot): ThinRecordLine | null {
   const n = snap.atAGlance.loggedDays
-  if (n >= THIN_RECORD_DAYS) return null
-  const lead = n === 0 ? 'No days logged' : `${plural(n, 'day', 'days')} logged`
-  return { loggedDays: n, text: `${lead}: too few for the checks that compare weeks.` }
+  const w = snap.atAGlance.windowDays
+  const tail = 'too few for the checks that compare weeks.'
+  if (n < THIN_RECORD_DAYS) {
+    const lead = n === 0 ? 'No days logged' : `${plural(n, 'day', 'days')} logged`
+    return { reason: 'few_days', loggedDays: n, windowDays: w, text: `${lead}: ${tail}` }
+  }
+  if (snap.safetyChecks.some((c) => c.kind === 'ongoing' && c.state === 'window_short')) {
+    return { reason: 'short_window', loggedDays: n, windowDays: w, text: `A ${w}-day window: too short for the checks that compare weeks.` }
+  }
+  if (snap.safetyChecks.some((c) => c.state === 'too_few_days')) {
+    return { reason: 'sparse_days', loggedDays: n, windowDays: w, text: `${n} of ${plural(w, 'day', 'days')} logged: ${tail}` }
+  }
+  return null
 }
 
 // ── The record edge (v2 spec §5.3) ──────────────────────────────────────────
@@ -405,8 +430,18 @@ export interface ChangeLine {
  * entry holds. It does not read the band: an intake flag on a zero-sign sheet does not withhold
  * a Noticed line, and where the two sit together is the render's call.
  */
+/**
+ * THE one definition of a zero-sign sheet (adversarial pass 1, finding 4): no symptom entry in the
+ * window. Intake is not a sign here even though it can lead (`leadSignOf` returns `intake` on a
+ * zero-sign sheet with unfinished meals), so a caller gates the changes line on this, never on
+ * `leadSignOf(snap) === null`.
+ */
+export function isZeroSignSheet(snap: ReportSnapshot): boolean {
+  return !snap.symptoms.some((s) => s.count > 0)
+}
+
 export function changesInWindowOf(snap: ReportSnapshot): ChangeLine[] | null {
-  if (snap.symptoms.some((s) => s.count > 0)) return null
+  if (!isZeroSignSheet(snap)) return null
   const out: ChangeLine[] = []
   const n = snap.noticed
   if (n) {
