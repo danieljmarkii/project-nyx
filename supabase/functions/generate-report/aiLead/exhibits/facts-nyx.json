@@ -1,0 +1,133 @@
+{
+  "fixture": "nyx-safety-cat",
+  "fact_table_version": "bakeoff-1",
+  "source": "render/_data/nyx-safety-cat.snapshot.json. No round-3 sheet exists for Nyx; these lines are derived from the snapshot in round 3's register (scope first, one claim per line). Derivations are noted per fact.",
+  "report_date": "2026-07-02",
+  "year": 2026,
+  "timezone": "America/New_York",
+  "pet": {"name": "Nyx", "species": "cat", "sex": "female", "pronoun": "she"},
+  "clinical_question": "Symptom monitoring: vomiting. Three safety flags are live (possible foreign material on an AI photo read, recent burden, chronicity).",
+  "safety_live": true,
+  "intake_not_directly_observed": true,
+  "forbidden_names": ["Daniel Mark", "Daniel"],
+  "lexicon": {
+    "foods": {
+      "Nature's Variety Duck": ["Nature's Variety Duck", "Nature's Variety"],
+      "Royal Canin Weight Care": ["Royal Canin Weight Care", "Royal Canin"],
+      "Temptations Chicken": ["Temptations Chicken treats", "Temptations Chicken", "Temptations"],
+      "Fancy Feast Tuna": ["Fancy Feast Tuna", "Fancy Feast"]
+    },
+    "drugs": {}
+  },
+  "facts": [
+    {
+      "id": "P", "line": "masthead", "role": "header", "kind": "signalment",
+      "text": "Cat · Domestic Shorthair · female, neuter status not recorded · 7 y (born Apr 1, 2019) · no weigh-ins recorded",
+      "fields": {"species": "cat", "breed": "Domestic Shorthair", "sex": "female", "neuter": "not_recorded", "age_years": 7, "dob": "2019-04-01", "weight": null},
+      "must_say": [["neuter status not recorded", "neuter not recorded"]],
+      "derivation": "signalment; neuterStatus not_recorded; weight.isEmpty"
+    },
+    {
+      "id": "W", "line": "masthead", "role": "header", "kind": "window",
+      "text": "Apr 4 to Jul 2, 2026 · the last 90 days (no vet visit or diet trial recorded) · logged on 43 of 90 days: 4 of the first 45 and 39 of the last 45 · her first entry of any kind is May 14 · nothing logged Jul 1 to 2",
+      "fields": {"start": "2026-04-04", "end": "2026-07-02", "basis": "fallback_90d", "window_days": 90, "logged_days": 43, "first_half_logged": 4, "second_half_logged": 39, "first_entry": "2026-05-14", "last_logged": "2026-06-30", "unlogged_tail_days": 2},
+      "hazards": ["H5"],
+      "derivation": "scope.basis fallback_90d; atAGlance loggedDays 43, firstHalfLoggedDays 4, secondHalfLoggedDays 39, lastLoggedDate 2026-06-30, unloggedTailDays 2; first log date from symptomLog and loggedDaysByBucket"
+    },
+    {
+      "id": "S1", "line": "band", "role": "band", "live": true, "kind": "safety_present_foreign",
+      "text": "Possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment · AI PHOTO READ · UNCONFIRMED · photo not retained.",
+      "fields": {"event_date": "2026-05-23", "ai_note": "possible plastic fragment", "source": "AI photo read", "confirmed": false, "photo_retained": false},
+      "required": true,
+      "must_say": [["possible"], ["foreign material", "plastic fragment"], ["unconfirmed"], ["ai"]],
+      "hazards": ["H6", "H7"],
+      "derivation": "safetyFlags present_foreign; vomitPhenotype.foreignPresent; incidentPhotosRemoved"
+    },
+    {
+      "id": "S2", "line": "band", "role": "band", "live": true, "kind": "safety_burden",
+      "text": "Vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag).",
+      "fields": {"count": 4, "days": 4, "window_days": 7, "window_end": "2026-06-30", "tier": "soon"},
+      "required": true,
+      "must_say": [["4 of the 7 days", "4 of the last 7 days", "4 of 7 days"]],
+      "hazards": ["H7"],
+      "derivation": "safetyFlags symptom_burden {count 4, days 4, windowDays 7}; entries Jun 25, 27, 29, 30 fall in Jun 24 to Jun 30"
+    },
+    {
+      "id": "S3", "line": "band", "role": "band", "live": true, "kind": "safety_chronicity",
+      "text": "Vomiting for at least 47 days: 23 entries on 23 of 43 logged days, first logged May 14 (her first entry of any kind, so onset is unknown), most recent Jun 30 (chronicity flag).",
+      "fields": {"entries": 23, "sign_days": 23, "logged_days": 43, "span_days_at_least": 47, "first_logged": "2026-05-14", "last": "2026-06-30", "onset": "unknown", "active_weeks": 7},
+      "required": true,
+      "must_say": [["23 of 43 logged days", "23 of the 43 logged days", "23 of 43 days logged"], ["at least 47 days", "onset is unknown", "onset unknown"]],
+      "hazards": ["H5"],
+      "derivation": "safetyFlags chronicity {episodeCount 23, spanDays 47, firstLoggedIso 2026-05-14}; symptoms[0].lastOnset 2026-06-30"
+    },
+    {
+      "id": "L1", "line": 1, "role": "record", "kind": "ai_photo_reads",
+      "text": "AI photo reads, 18 legible of 23 entries: undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21); 5 without a usable read (2 uncertain, 2 not legible, 1 pending) · AI PHOTO READ · UNCONFIRMED · no photos retained.",
+      "fields": {"assessed": 18, "total": 23, "food": 12, "food_last": "2026-06-06", "bile_foam": 5, "bile_first": "2026-06-09", "bile_last": "2026-06-18", "hairball": 1, "hairball_date": "2026-06-21", "uncertain": 2, "failed": 2, "pending": 1, "owner_reviewed": 1},
+      "must_say": [["ai"], ["unconfirmed"], ["18 legible of 23", "18 of 23"]],
+      "hazards": ["H2", "H4", "H6"],
+      "derivation": "vomitPhenotype; per-event contentsCategory dates from provenance.symptomLog"
+    },
+    {
+      "id": "L2", "line": 2, "role": "record", "kind": "diet_free_fed",
+      "text": "Free-fed all day, start not recorded: Nature's Variety Duck and Royal Canin Weight Care (lists chicken). Intake not directly observed.",
+      "fields": {"free_fed": ["Nature's Variety Duck", "Royal Canin Weight Care"], "proteins": ["duck", "chicken"], "start": null, "intake_not_directly_observed": true},
+      "required": true,
+      "must_say": [["intake not directly observed"]],
+      "hazards": ["H3", "H4"],
+      "derivation": "diet.freeFed (activeFrom 2026-03-01 is the first-log date, not the diet's start, so 'start not recorded'); diet.intakeNotDirectlyObserved"
+    },
+    {
+      "id": "L3", "line": 3, "role": "record", "kind": "other_food",
+      "text": "Also logged: Temptations Chicken treats, at least 20 feedings May 15 to Jun 28 (ingredient panel not captured); Fancy Feast Tuna wet food, 3 meals May 18 to Jun 20.",
+      "fields": {"treat": "Temptations Chicken", "treat_feedings_at_least": 20, "treat_first": "2026-05-15", "treat_last": "2026-06-28", "panel_captured": false, "wet": "Fancy Feast Tuna", "wet_meals": 3, "wet_first": "2026-05-18", "wet_last": "2026-06-20"},
+      "must_say": [["at least 20"]],
+      "hazards": ["H1", "H5"],
+      "derivation": "diet.treats 20, proteinTimeline incompleteFeedings 20; confounders dates; diet.mealItems"
+    },
+    {
+      "id": "L4", "line": 4, "role": "record", "kind": "association_limit",
+      "text": "No food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it.",
+      "fields": {"established": [], "no_threshold": true, "staple_protein": "chicken"},
+      "must_say": [["no food could be isolated", "cannot be tested", "could not be isolated"]],
+      "hazards": ["H2", "H4"],
+      "derivation": "correlation {established [], noThreshold true, stapleProtein chicken}"
+    },
+    {
+      "id": "L5", "line": 5, "role": "record", "kind": "timing",
+      "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00 (timing only, not an association).",
+      "fields": {"cluster_start_hour": 10, "window_hours": 4, "cluster_count": 23, "eligible": 23, "timezone": "America/New_York"},
+      "must_say": [["timing only", "not an association"]],
+      "hazards": ["H2"],
+      "derivation": "correlation.timing timeofday_clustering {clusterStartLocalHour 10, clusterWindowHours 4, clusterCount 23}"
+    },
+    {
+      "id": "L6", "line": 6, "role": "record", "kind": "not_recorded",
+      "text": "Not recorded: weight, body condition, medication, medical conditions, neuter status.",
+      "fields": {"weight": null, "medications": [], "conditions": []},
+      "must_say": [["not recorded"]],
+      "hazards": ["H4"]
+    },
+    {
+      "id": "U1", "line": "unknowns", "role": "unknown", "kind": "unknown",
+      "text": "Unknown: anything before May 14."
+    },
+    {
+      "id": "U2", "line": "unknowns", "role": "unknown", "kind": "unknown",
+      "text": "Unknown: what she ate from the free-fed bowls."
+    },
+    {
+      "id": "U3", "line": "unknowns", "role": "unknown", "kind": "unknown",
+      "text": "Unknown: what the 5 unread vomits contained."
+    }
+  ],
+  "conditional": [
+    {"when": "mentions_any", "terms": ["Temptations", "Fancy Feast", "Nature's Variety", "Royal Canin", "treat", "treats", "chicken", "duck", "tuna"], "cite": "L4", "why": "naming a food requires the association limit (no food could be isolated)"}
+  ],
+  "excluded_from_model": [
+    "owner name (forbidden_names)",
+    "photos (none retained)",
+    "the owner's edit flag on the May 14 read"
+  ]
+}

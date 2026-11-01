@@ -1,0 +1,141 @@
+{
+  "fixture": "mira-refused-trial-cat",
+  "fact_table_version": "bakeoff-1",
+  "source": "render/_data/mira-refused-trial-cat.snapshot.json; record lines from docs/culprit-vet-report-v3-mockups.html §03b (Mira, safety-led sheet 1)",
+  "report_date": "2026-07-02",
+  "year": 2026,
+  "timezone": "America/New_York",
+  "pet": {"name": "Mira", "species": "cat", "sex": "female", "pronoun": "she"},
+  "clinical_question": "Is the diet trial interpretable, and is vomiting more or less frequent? A safety flag (trial-diet refusal) is live.",
+  "safety_live": true,
+  "intake_not_directly_observed": true,
+  "forbidden_names": ["Dr. A. Chen", "A. Chen", "Chen", "Sam Ortiz", "Ortiz", "Sam"],
+  "require_any_sentence": [["nothing logged after jun 19", "nothing is recorded after jun 19", "nothing recorded after jun 19", "record ends jun 19", "no entries after jun 19", "nothing has been logged since jun 19", "the record ends on jun 19"]],
+  "lexicon": {
+    "foods": {
+      "Hill's z/d": ["Hill's Prescription Diet z/d", "Hill's z/d", "z/d", "Hill's"],
+      "Purina ONE Indoor Advantage": ["Purina ONE Indoor Advantage", "Purina ONE", "Purina"]
+    },
+    "drugs": {}
+  },
+  "facts": [
+    {
+      "id": "P", "line": "masthead", "role": "header", "kind": "signalment",
+      "text": "Cat · Domestic Shorthair · female, spayed · 8 y (born Jul 1, 2018) · lives with 1 other cat",
+      "fields": {"species": "cat", "breed": "Domestic Shorthair", "sex": "female", "neuter": "spayed", "age_years": 8, "dob": "2018-07-01", "household_other_cats": 1}
+    },
+    {
+      "id": "W", "line": "masthead", "role": "header", "kind": "window",
+      "text": "Jun 1 to Jul 2, 2026 since the diet trial began · 19 of 32 days logged. Record ends Jun 19, 13 days before this report.",
+      "fields": {"start": "2026-06-01", "end": "2026-07-02", "basis": "diet_trial", "window_days": 32, "logged_days": 19, "last_logged": "2026-06-19", "silent_days_at_end": 13},
+      "must_say": [["jun 19"]],
+      "hazards": ["H4", "H5"]
+    },
+    {
+      "id": "S1", "line": "band", "role": "band", "live": true, "kind": "safety_trial_diet_refusal",
+      "text": "Every z/d feeding refused Jun 5 to 19: 30 in a row (34 of 38 rated feedings refused, 4 partly eaten, Jun 1 to 19). The trial was stopped on day 19.",
+      "fields": {"refused": 34, "partly_eaten": 4, "rated": 38, "finished": 0, "run_refused_in_a_row": 30, "run_start": "2026-06-05", "evidence_start": "2026-06-01", "evidence_end": "2026-06-19", "stopped_for_refusal": true, "stopped_day": 19},
+      "required": true,
+      "must_say": [["refus"], ["34 of 38", "30 in a row"]],
+      "hazards": ["H3", "H7"]
+    },
+    {
+      "id": "S2", "line": "band", "role": "band", "live": true, "kind": "safety_intake_unobserved",
+      "text": "Intake not directly observed: a free-fed Purina ONE bowl was down.",
+      "fields": {"free_fed": "Purina ONE Indoor Advantage", "free_fed_start": null, "intake_not_directly_observed": true},
+      "required": true,
+      "must_say": [["intake not directly observed"]],
+      "hazards": ["H3", "H4"]
+    },
+    {
+      "id": "S3", "line": "band", "role": "band", "live": true, "kind": "safety_weight",
+      "text": "Weight −6.8% in 18 days: 4.4 to 4.1 kg, 2 home-scale readings.",
+      "fields": {"delta_pct": -6.8, "days": 18, "first_kg": 4.4, "last_kg": 4.1, "readings": 2, "source": "home scale"},
+      "required": true,
+      "must_say": [["6.8%"], ["home-scale", "home scale"]],
+      "hazards": ["H5", "H7"]
+    },
+    {
+      "id": "S4", "line": "band", "role": "band", "live": true, "kind": "safety_species_window",
+      "text": "In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window. Mira's total intake was not observed, and nothing is recorded after Jun 19.",
+      "fields": {"species_rule": "feline 48-72 h reduced intake", "total_intake_observed": false, "last_record": "2026-06-19"},
+      "hazards": ["H7"]
+    },
+    {
+      "id": "S5", "line": "band", "role": "band", "live": true, "kind": "safety_ask",
+      "text": "A safety flag is live: call the clinic today rather than waiting for the visit.",
+      "fields": {"ask": "call today"},
+      "hazards": ["H7"],
+      "note": "Printed by code under the record. The summary may cite it; it may never soften or delay it."
+    },
+    {
+      "id": "L1", "line": 1, "role": "record", "kind": "weight",
+      "text": "Weight, home scale: −6.8% in 18 days, 4.4 kg Jun 1 to 4.1 kg Jun 19, 2 readings.",
+      "fields": {"delta_pct": -6.8, "days": 18, "first_kg": 4.4, "first_date": "2026-06-01", "last_kg": 4.1, "last_date": "2026-06-19", "readings": 2},
+      "must_say": [["home scale", "home-scale"]],
+      "hazards": ["H5"]
+    },
+    {
+      "id": "X2", "line": "weight note", "role": "record", "kind": "weight_precision",
+      "text": "Two home-scale readings rounded to 0.1 kg: the true loss lies between 4.6% and 9.0%.",
+      "fields": {"readings": 2, "rounding_kg": 0.1, "loss_pct_low": 4.6, "loss_pct_high": 9.0}
+    },
+    {
+      "id": "L2", "line": 2, "role": "record", "kind": "trial",
+      "text": "Owner-entered diet trial: Hill's z/d (hydrolysed chicken liver), Jun 1 to 19, stopped on day 19 of 42; directed by Dr. A. Chen.",
+      "fields": {"diet": "Hill's z/d", "protein": "chicken liver", "hydrolysed": true, "start": "2026-06-01", "end": "2026-06-19", "stopped_day": 19, "target_days": 42, "stopped_reason": "refused", "off_diet_logged": 0, "may_state_record_clean": false, "source": "owner-entered"},
+      "required": true,
+      "must_say": [["day 19 of 42"]],
+      "hazards": ["H1", "H3"]
+    },
+    {
+      "id": "L3", "line": 3, "role": "record", "kind": "primary_sign",
+      "text": "Vomiting: 5 entries on 5 of 19 logged days; nothing logged after Jun 19.",
+      "fields": {"sign": "vomiting", "entries": 5, "sign_days": 5, "logged_days": 19, "dates": ["2026-06-03", "2026-06-07", "2026-06-11", "2026-06-14", "2026-06-17"], "last_logged": "2026-06-19"},
+      "required": true,
+      "must_say": [["5 of 19 logged days", "5 of the 19 logged days", "5 of 19 days logged"]],
+      "hazards": ["H2", "H4", "H5"]
+    },
+    {
+      "id": "X1", "line": "chart", "role": "chart", "kind": "weekly_twin",
+      "text": "By week: z/d refused 10, 14, 10; partly eaten 4, the second feeding of Jun 1 to 4; vomiting 2, 2, 1; days logged 7, 7, 5 of 7, then 0 of 11.",
+      "fields": {"refused_by_week": [10, 14, 10], "partly_eaten": 4, "vomiting_by_week": [2, 2, 1], "logged_by_week": [7, 7, 5], "then_logged": 0, "then_days": 11},
+      "must_say": [["logged"]],
+      "hazards": ["H2", "H4", "H5"],
+      "note": "Weekly vomiting 2, 2, 1 sits beside logging 7, 7, 5 then 0 of 11: a falling count is a falling record."
+    },
+    {
+      "id": "L4", "line": 4, "role": "record", "kind": "recorded_condition",
+      "text": "Recorded condition, owner-entered: chronic vomiting since Apr 10, 2026.",
+      "fields": {"condition": "chronic vomiting", "since": "2026-04-10", "source": "owner-entered"},
+      "must_say": [["owner"]]
+    },
+    {
+      "id": "L5", "line": 5, "role": "record", "kind": "medication_none",
+      "text": "Medicines: none entered; not verified.",
+      "fields": {"medicines_entered": 0},
+      "must_say": [["not verified", "none entered"]],
+      "hazards": ["H4"]
+    },
+    {
+      "id": "U1", "line": "unknowns", "role": "unknown", "kind": "unknown",
+      "text": "Unknown: anything after Jun 19."
+    },
+    {
+      "id": "U2", "line": "unknowns", "role": "unknown", "kind": "unknown",
+      "text": "Unknown: what she ate from the Purina ONE bowl."
+    },
+    {
+      "id": "U3", "line": "unknowns", "role": "unknown", "kind": "unknown",
+      "text": "Unknown: whether she ate the other cat's food."
+    }
+  ],
+  "conditional": [
+    {"when": "mentions_any", "terms": ["Purina ONE", "Purina", "bowl", "turkey"], "cite": "S2", "why": "the free-fed bowl only travels with 'intake not directly observed'"}
+  ],
+  "excluded_from_model": [
+    "owner's questions (printed in their own block)",
+    "owner and vet names (forbidden_names)",
+    "the free-fed bowl's owner-entered proteins (chicken, turkey; incomplete), which no sheet-1 line prints"
+  ]
+}
