@@ -1,6 +1,6 @@
 # Nyx Vet Report v2 — The Front Page, the AI Lead, Clinic AI and the Flow After "Vet report" — Requirements (CUL-2275)
 
-**Version:** 1.1 — **RULED, NOT YET BUILD-READY** (every PM ruling is in; the build-ready mock round, row VR2-4, gates the render and flow rows) | **Date:** 2026-10-31 | **Status:** R-1 to R-12 ruled (PM, 2026-10-30 and 2026-10-31), the weight boundary, the thin record and the paywall trigger ruled 2026-10-31 | **Owner:** the Vet report v2 project (Linear, team Culprit)
+**Version:** 1.2 — **RULED, NOT YET BUILD-READY** (every PM ruling is in; the build-ready mock round, row VR2-4, gates the render and flow rows) | **Date:** 2026-11-01 | **Status:** R-1 to R-12 ruled (PM, 2026-10-30 and 2026-10-31), the weight boundary, the thin record and the paywall trigger ruled 2026-10-31 | **Owner:** the Vet report v2 project (Linear, team Culprit)
 
 **Read with:** `docs/nyx-vet-report-requirements.md` (v1; its §3 to §8 still bind v2 except where this spec or its v3.0 amendments say otherwise), `docs/nyx-design-principles-v1_0.md` Principles 6 (rewritten 2026-10-31), 8 and 9, `docs/nyx-chart-standard.md`, `docs/nyx-care-state-requirements.md` §3, `docs/nyx-weight-lane-requirements.md` §5, `docs/nyx-beta-features-requirements.md`, `docs/monetization-and-throttling-requirements.md`.
 
@@ -353,7 +353,7 @@ Each flow row owns its state table with copy: building, build failed, offline, A
 ## 12. v1 and v2 side by side (R-8)
 
 - Two server-checked allowlist flags, seeded off: `report_composer_v2` (the new flow) and `report_document_v2` (the new document). One switch each on the Beta features shelf, no nested inverse.
-- **No per-send choice.** The cohort gets the new layout by default, with "Use the current layout" on the shelf. Round 4's §11 preview switch and `flow-and-features.md` §5.7's segment are struck.
+- **No per-send choice.** One opt-in switch on the Beta features shelf, "New report layout", default off (beta-features D4; PM ruling (a) on CUL-2290, 2026-11-01). The server renders v2 only when the account is allowlisted **and** the request asks for it (`reportVersion: 'v2'`), and anything else, a failed flag read included, renders v1. Round 4's §11 preview switch and `flow-and-features.md` §5.7's segment are struck.
 - The server stamps the version on every saved copy; no version prints on paper or shows to owners.
 - **Superset invariant:** every v1 page-1 band finding appears on v2 sheet 1 (as a band item or, under R-11, as the flagged lead chart). A test runs it over every fixture.
 - Flag off is byte-identical to today for accounts with no saved copies (a named AC-0 exception for the library).
@@ -493,5 +493,6 @@ The flow rows carry a browser-driven motion demo in the round 5 mock (VR2-4) and
 
 | Version | Date | Summary |
 |---|---|---|
+| 1.2 | 2026-11-01 | Ruling (a) on CUL-2290: §12's document switch is an opt-in, default off; the server needs the allowlist and the request. |
 | 1.1 | 2026-10-31 | Rulings B, H and X after the live Nyx render: §5.7's budget counts only cuttable prose; row VR2-27 (forecast 27); a de-identified real-record fixture. |
 | 1.0 | 2026-10-31 | First draft from round 4, the full-depth critique and the PM's rulings R-1 to R-12, W, T, P and F (CUL-2275). Tier-2 edits applied the same day: design principles v2.3 (Principle 6) and the vet report spec's v3.0 amendments (§5, rules 3 and 9, §7.1). |

@@ -776,11 +776,83 @@ export const SWEEP_CONCURRENCY = 8
 // `unswept` rather than killed mid-folder with only the pre-sweep log line.
 export const SWEEP_BUDGET_MS = 90_000
 
+// How long after the REQUEST STARTED any sweep Storage call may still be running
+// (CUL-2343). The budget above stops new folders; it cannot stop a folder already in
+// flight, and a hung `list` or `remove`, or a huge folder started at 89 s, would run
+// into the 150 s kill with only the pre-sweep log line naming it. So every call is
+// raced against min(SWEEP_CALL_TIMEOUT_MS, cutoff − now), and past the cutoff a call
+// throws without touching Storage. 130 s leaves 20 s for the leftovers line and the
+// response under the 150 s limit.
+export const SWEEP_CUTOFF_MS = 130_000
+
+// The request's own limit: the Edge runtime's request idle timeout (a 504 past it).
+export const SWEEP_REQUEST_LIMIT_MS = 150_000
+
+// One Storage call's ceiling. Generous for one page of 100 names or one 100-key
+// remove; short enough that a hang costs a folder, not the request.
+export const SWEEP_CALL_TIMEOUT_MS = 15_000
+
+// The text every timed-out or cut call throws, so the leftovers' failure lines say
+// which folders the clock cut rather than which Storage refused.
+export const SWEEP_TIME_LIMIT = 'sweep time limit'
+
 export interface SweepOptions {
   // Epoch ms after which no new folder starts. Absent: no budget.
   deadline?: number
+  // Epoch ms by which every Storage call must have ended (CUL-2343). Absent: calls
+  // are bounded only by callTimeoutMs.
+  cutoff?: number
+  callTimeoutMs?: number
   now?: () => number
   concurrency?: number
+}
+
+// The Edge worker's own wall clock (CUL-2345). Supabase counts it from the WORKER's
+// boot, and one worker serves several requests in a row, so a request on a warm worker
+// can be killed long before its own 150 s idle timeout. 400 s is the paid-plan limit
+// (https://supabase.com/docs/guides/functions/limits); the org is on Pro (read
+// 2026-11-01). On the Free plan it is 150 s: a downgrade must change this constant.
+export const EDGE_WORKER_WALL_CLOCK_MS = 400_000
+
+// The two clock edges index.ts hands the sweep. Each is the EARLIER of the request's
+// edge and the worker's, with the same spacing on both clocks: the last folder starts
+// 40 s before the last call must end, and the last call ends 20 s before the kill, so
+// the leftovers line is written whichever clock runs out first. A worker already past
+// its edge gets a cutoff in the past, which names every folder in `unswept` and makes
+// no Storage call: loud, never silent. Pure so the wiring is tested (CUL-2343, CUL-2345).
+export function sweepBudget(
+  startedAt: number,
+  workerStartedAt: number = startedAt,
+): { deadline: number; cutoff: number } {
+  const workerKill = workerStartedAt + EDGE_WORKER_WALL_CLOCK_MS
+  const requestKill = startedAt + SWEEP_REQUEST_LIMIT_MS
+  const kill = Math.min(workerKill, requestKill)
+  return {
+    deadline: Math.min(startedAt + SWEEP_BUDGET_MS, kill - (SWEEP_REQUEST_LIMIT_MS - SWEEP_BUDGET_MS)),
+    cutoff: Math.min(startedAt + SWEEP_CUTOFF_MS, kill - (SWEEP_REQUEST_LIMIT_MS - SWEEP_CUTOFF_MS)),
+  }
+}
+
+// Race one Storage call against the time left. The call is not cancelled (supabase-js
+// `remove()` takes no signal), only abandoned: a list that lands late is discarded,
+// and a remove that lands late has still deleted, which is what the sweep wanted.
+// Past the cutoff the call is never made. The timer is always cleared, so a fast call
+// leaves nothing pending.
+async function withinTime<T>(
+  call: () => Promise<T>,
+  opts: { cutoff?: number; callTimeoutMs: number; now: () => number },
+): Promise<T> {
+  const left = opts.cutoff === undefined ? opts.callTimeoutMs : Math.min(opts.callTimeoutMs, opts.cutoff - opts.now())
+  if (left <= 0) throw new Error(`${SWEEP_TIME_LIMIT}: not started, past the cutoff`)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${SWEEP_TIME_LIMIT}: no answer in ${left} ms`)), left)
+  })
+  try {
+    return await Promise.race([call(), timeout])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // Runs the sweep over injected Storage calls. Best-effort, like the first purge: the
@@ -802,12 +874,20 @@ export async function sweepOwnedPrefixes(
   const failures: string[] = []
   const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
+  const callTimeoutMs = opts.callTimeoutMs ?? SWEEP_CALL_TIMEOUT_MS
+  const timed = { cutoff: opts.cutoff, callTimeoutMs, now }
+
   const partial: PrefixSweep[] = []
   const sweepOne = async (folder: PrefixSweep): Promise<void> => {
     const { bucket, root } = folder
+    // Every page goes through the clock, so a hung or cut list throws into the walk's
+    // own gap path: the pages already read are still removed and the folder lands in
+    // `partial` (CUL-2343). Each later page and sub-folder is checked the same way.
+    const list = listerFor(bucket)
+    const timedList: StorageLister = (prefix, offset, limit) => withinTime(() => list(prefix, offset, limit), timed)
     let listing: PrefixListing
     try {
-      listing = await listPrefixForSweep(listerFor(bucket), root)
+      listing = await listPrefixForSweep(timedList, root)
     } catch (e) {
       // Only an unsafe ROOT throws here, and buildPrefixSweep refuses those before
       // the delete; recorded anyway so a regression is named, not swallowed.
@@ -823,7 +903,7 @@ export async function sweepOwnedPrefixes(
       try {
         // Await FIRST, then add: `removed += await …` reads `removed` before the await,
         // so folders in flight together would overwrite each other's counts.
-        const n = await remove(bucket, batch)
+        const n = await withinTime(() => remove(bucket, batch), timed)
         removed += n
       } catch (e) {
         failures.push(`${bucket}/${root}/ (sweep remove, ${batch.length} objects): ${message(e)}`)
@@ -848,6 +928,19 @@ export async function sweepOwnedPrefixes(
   const unswept = sweep.slice(next)
   for (const { bucket, root } of unswept) failures.push(`${bucket}/${root}/ (sweep not started: time budget)`)
   return { removed, failures, unswept, partial }
+}
+
+// The `delete-account.sweep.leftovers` line: every folder the sweep did not empty, as
+// one machine-readable JSON string, or null when it emptied them all. Pure so a test
+// can show a folder cut mid-walk reaches it (CUL-2343).
+export function sweepLeftoversLine(userId: string, result: SweepResult): string | null {
+  if (result.unswept.length === 0 && result.partial.length === 0) return null
+  return JSON.stringify({
+    event: 'delete-account.sweep.leftovers',
+    userId,
+    unswept: result.unswept.map((f) => ({ bucket: f.bucket, root: f.root })),
+    partial: result.partial.map((f) => ({ bucket: f.bucket, root: f.root })),
+  })
 }
 
 // ── Ordering ──────────────────────────────────────────────────────────────────

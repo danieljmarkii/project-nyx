@@ -1583,3 +1583,62 @@ Deno.test('generateReportForPet: a FAILED capture_changes read still renders, an
   assert.ok(/Logging change not checked:<\/b>/.test(html))
   assert.ok(!/Partial record/.test(html), 'the counts are complete; the banner would call them minimums')
 })
+
+// ── CUL-2290: the v2 document behind `report_document_v2` (PM ruling (a)) ───────────────────
+//
+// v2 renders only when the request asks for it AND the flag resolves on for the JWT-verified
+// caller. Every other path, a failed read included, is the v1 document every owner gets today.
+
+function withAuth(client: ReturnType<typeof fakeClient>, uid: string | null, email = 'owner@example.com') {
+  return Object.assign(client, {
+    auth: {
+      getUser: (_jwt: string) =>
+        Promise.resolve(uid === null ? { data: { user: null }, error: { message: 'bad jwt' } } : { data: { user: { id: uid, email } }, error: null }),
+    },
+  })
+}
+
+const DOC_FLAG = (value: unknown) => ({ app_config: { list: [{ key: 'report_document_v2', value }] } })
+const isV2 = (html: unknown) => typeof html === 'string' && html.includes('<meta name="report-version" content="v2" />')
+
+Deno.test('CUL-2290: no reportVersion asked → v1, and the flag is not read', async () => {
+  const client = withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: true }) }), 'u1')
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt')
+  assert.equal(res.status, 200)
+  assert.equal(res.body.report_version, 'v1')
+  assert.deepEqual(res.body.report_flags_read, { report_document_v2: null })
+  assert.ok(!isV2(res.body.html))
+})
+
+Deno.test('CUL-2290: v2 asked and the caller allowlisted → the v2 document, stamped v2', async () => {
+  const profile = { single: { display_name: 'Jordan', first_name: 'Jordan', last_name: 'Rivera', timezone: 'UTC' } }
+  const client = withAuth(
+    fakeClient({ ...PET_TABLES, user_profiles: profile, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['u1'] }) }),
+    'u1',
+  )
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', null, null, 'v2')
+  assert.equal(res.body.report_version, 'v2')
+  assert.ok(String(res.body.html).includes('Kept by Jordan Rivera · '), 'the colophon reads first_name and last_name')
+  assert.deepEqual(res.body.report_flags_read, { report_document_v2: true })
+  assert.ok(isV2(res.body.html))
+  // The masthead's owner never comes from the email fallback v1's owner line takes (spec §5.7).
+  assert.ok(!String(res.body.html).includes('owner@example.com'))
+})
+
+Deno.test('CUL-2290: v2 asked but the flag fails closed → v1 (not allowlisted, no JWT, auth error, read error, malformed)', async () => {
+  const cases: Array<[string, ReturnType<typeof fakeClient>, string | null]> = [
+    ['not on the allowlist', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['someone-else'] }) }), 'u1'), 'jwt'],
+    ['no JWT', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: true }) }), 'u1'), null],
+    ['auth error', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: true }) }), null), 'jwt'],
+    ['config read error', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, app_config: { error: { message: 'down' } } }), 'u1'), 'jwt'],
+    ['no row', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] } }), 'u1'), 'jwt'],
+    ['malformed value', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ allowlist: ['u1'] }) }), 'u1'), 'jwt'],
+    ['a client with no auth at all', fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: true }) }), 'jwt'],
+  ]
+  for (const [name, client, jwt] of cases) {
+    const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, jwt, null, null, 'v2')
+    assert.equal(res.body.report_version, 'v1', name)
+    assert.deepEqual(res.body.report_flags_read, { report_document_v2: false }, name)
+    assert.ok(!isV2(res.body.html), name)
+  }
+})

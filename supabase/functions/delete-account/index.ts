@@ -58,13 +58,19 @@ import {
   readAllOwnedPaths,
   STORAGE_BUCKETS,
   STORAGE_REMOVE_CHUNK,
-  SWEEP_BUDGET_MS,
+  sweepBudget,
+  sweepLeftoversLine,
   sweepOwnedPrefixes,
   type OwnedStoragePaths,
   type PrefixSweep,
   type StorageLister,
 } from './plan.ts'
 import { readSweepIds, type SweepIdReader } from './sweepIds.ts'
+
+// CUL-2345: module scope runs once, when the worker boots. Supabase's wall clock
+// counts from then and spans every request this worker serves, so the sweep's budget
+// takes the earlier of this and the request's own start (sweepBudget).
+const WORKER_STARTED_AT = Date.now()
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -423,9 +429,9 @@ Deno.serve(async (req: Request) => {
     //    by its owned folder. Best-effort: the account is gone, so a failure is logged
     //    with its bucket and folder rather than thrown.
     if (authDeleted) {
-      // Name the folders before touching them: if the function still dies mid-sweep
-      // (a folder in flight past the budget), this line is the record of what may be
-      // left behind. The budget below makes the usual case the `unswept` line instead.
+      // Name the folders before touching them: if the function still dies mid-sweep,
+      // this line is the record of what may be left behind. The budget and the per-call
+      // cutoff below make the usual case the leftovers line instead (CUL-2330, CUL-2343).
       console.log(
         `delete-account: sweeping ${sweep.length} owned folder(s) for deleted user ${userId}:`,
         sweep.map((s) => `${s.bucket}/${s.root}/`).join(' '),
@@ -438,11 +444,14 @@ Deno.serve(async (req: Request) => {
           if (error) throw new Error(error.message)
           return data?.length ?? 0
         },
-        { deadline: startedAt + SWEEP_BUDGET_MS },
+        // CUL-2343: the deadline stops new folders; the cutoff ends every call still
+        // in flight, so a folder cut mid-walk is named in `partial` below.
+        sweepBudget(startedAt, WORKER_STARTED_AT),
       )
       removed += swept.removed
       storageFailures.push(...swept.failures)
-      if (swept.unswept.length > 0 || swept.partial.length > 0) {
+      const leftovers = sweepLeftoversLine(userId, swept)
+      if (leftovers !== null) {
         // CUL-2330: every folder the sweep did not empty, as one machine-readable line.
         // `unswept`: never started (the time budget); sweeping a folder is idempotent,
         // so re-running these finishes them. `partial`: started but left something (a
@@ -450,14 +459,7 @@ Deno.serve(async (req: Request) => {
         // unsafe-name gap recurs on every run, so those need the orphan sweep (B-121,
         // CUL-231) or a hand cleanup. Every folder here is also in storageFailures, so
         // the client's `failed` count is never zero over them.
-        console.warn(
-          JSON.stringify({
-            event: 'delete-account.sweep.leftovers',
-            userId,
-            unswept: swept.unswept.map((f) => ({ bucket: f.bucket, root: f.root })),
-            partial: swept.partial.map((f) => ({ bucket: f.bucket, root: f.root })),
-          }),
-        )
+        console.warn(leftovers)
       }
     }
 

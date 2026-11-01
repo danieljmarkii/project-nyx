@@ -82,6 +82,9 @@ import {
   validWindow,
   type ComposerPart,
 } from './composer.ts'
+import { buildDocumentV2 } from './documentV2.ts'
+import { renderPrintV2 } from './renderPrintV2.ts'
+import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
 // copies of this test are what once anchored a window on an abandoned trial.
@@ -1127,6 +1130,10 @@ export async function generateReportForPet(
   // report's trial "Day N" buckets by the same clock the owner's card does. Default null ⇒
   // stored zone (the pre-B-443 behaviour), so every existing call site is unaffected.
   requestTimezone: string | null = null,
+  // CUL-2290 (PM ruling (a)): the layout the caller ASKED for. v2 renders only when this is 'v2'
+  // AND `report_document_v2` resolves on for the JWT-verified caller; anything else is v1. The
+  // default is v1, the layout every caller already gets, so omitting it changes nothing.
+  documentRequest: 'v1' | 'v2' = 'v1',
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const built = await buildReportSnapshotForPet(supabase, petId, nowMs, requestedWindow, audience, callerJwt, requestTimezone)
   if (built.kind === 'response') return { status: built.status, body: built.body }
@@ -1140,12 +1147,27 @@ export async function generateReportForPet(
   if (adminClient && snapshot.incidentPhotos.length > 0) {
     photoStats = await embedIncidentPhotos(adminClient, snapshot.incidentPhotos)
   }
-  const html = renderReport(snapshot)
+  // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read last and
+  // only when v2 was asked for, so a v1 request costs no extra read.
+  const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
+  const html = documentV2On === true
+    ? renderPrintV2(
+        buildDocumentV2(snapshot, {
+          // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
+          owner: await readOwnerNames(supabase),
+          shortId: null,
+          questions: [],
+        }),
+      )
+    : renderReport(snapshot)
 
   return {
     status: 200,
     body: {
       html,
+      // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
+      report_version: documentV2On === true ? 'v2' : 'v1',
+      report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },
       pet_name: snapshot.signalment.name,
       start_date: snapshot.scope.startDate,
       end_date: snapshot.scope.endDate,
@@ -1856,6 +1878,7 @@ const handler = async (req: Request): Promise<Response> => {
   let requestTimezone: string | null = null
   let includeNotes = false
   let composer: { part: ComposerPart } | null = null
+  let documentRequest: 'v1' | 'v2' = 'v1'
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1875,6 +1898,8 @@ const handler = async (req: Request): Promise<Response> => {
       // VR2-16 — the composer's outline instead of a report (`composer.ts`).
       mode?: string
       part?: string
+      // CUL-2290 — 'v2' asks for the v2 document; the server still checks the flag.
+      reportVersion?: string
     }
     composer = parseComposerRequest(body)
     petId = body.petId ?? ''
@@ -1885,6 +1910,7 @@ const handler = async (req: Request): Promise<Response> => {
     includeNotes = parseIncludeNotes(body)
     // The composer prints nothing, so it never pulls the owner's notes, whatever the body says.
     if (composer !== null) includeNotes = false
+    documentRequest = body.reportVersion === 'v2' ? 'v2' : 'v1'
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1931,6 +1957,7 @@ const handler = async (req: Request): Promise<Response> => {
       callerJwt,
       adminClient,
       requestTimezone,
+      documentRequest,
     )
     return Response.json(body, {
       status,
@@ -1947,6 +1974,23 @@ const handler = async (req: Request): Promise<Response> => {
       { error: 'Report generation failed' },
       { status: 500, headers: CORS_HEADERS },
     )
+  }
+}
+
+/**
+ * CUL-2290 — the v2 colophon's owner, read only on the v2 path (a v1 request never reads these
+ * columns). The surname comes ONLY from `last_name` (spec §5.7), never the email fallback v1's
+ * owner line takes. RLS scopes the row to the caller. A failed read prints "Kept by the owner":
+ * the name is omitted, never guessed, and the report still renders.
+ */
+async function readOwnerNames(supabase: SupabaseClient): Promise<{ firstName: string | null; lastName: string | null } | null> {
+  try {
+    const { data, error } = await supabase.from('user_profiles').select('first_name, last_name').maybeSingle()
+    if (error || !data) return null
+    const row = data as { first_name: string | null; last_name: string | null }
+    return { firstName: row.first_name ?? null, lastName: row.last_name ?? null }
+  } catch {
+    return null
   }
 }
 
