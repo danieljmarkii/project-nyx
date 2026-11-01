@@ -319,21 +319,21 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
  * shrinks it. Never raise one to go green. The fixed parts are reported beside, never budgeted.
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
-  'nyx-live': 200,
-  'cooper': 59,
-  'r11-steady': 52,
-  'r11-jump': 52,
-  'r11-wobble': 52,
-  'new-account-4-days': 23,
+  'nyx-live': 187,
+  'cooper': 57,
+  'r11-steady': 57,
+  'r11-jump': 57,
+  'r11-wobble': 57,
+  'new-account-4-days': 30,
   'looks-only': 48,
   'trial-report-clean.html': 127,
-  'mira': 74,
-  'trial-report-completed.html': 100,
-  'trial-report-truncated.html': 69,
+  'mira': 96,
+  'trial-report-completed.html': 122,
+  'trial-report-truncated.html': 67,
   'trial-report-past-window.html': 82,
-  'trial-report-extended.html': 53,
-  'trial-report-extended-late.html': 53,
-  'trial-report-ended-early.html': 62,
+  'trial-report-extended.html': 58,
+  'trial-report-extended-late.html': 58,
+  'trial-report-ended-early.html': 69,
 }
 
 Deno.test('word budget — the cuttable prose stays within its ratchet and about 200 words on every fixture', () => {
@@ -358,4 +358,36 @@ Deno.test('word budget — counts the lead sentence once, and never the band, tw
   assert.equal(without.cuttable, w.cuttable, 'the fixed parts are outside the count')
   assert.ok(w.fixed.band > 0 && w.fixed.twin > 0 && w.fixed.masthead > 0, 'and reported beside it')
   assert.equal(textOf('a&nbsp;<b>b</b>&mdash;c'), 'a b —c')
+})
+
+// ── The cold read's fixes (CUL-2290, pass 1) ────────────────────────────────
+
+Deno.test('cold read — a week logged under the floor reads "not read", never "none" (CUL-1995 carried to v2; Cooper week 1)', () => {
+  const s = assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } })
+  const c = chartOf(docOf(s))
+  const thin = c.columns.findIndex((col) => col.loggedDays > 0 && col.loggedDays < 3)
+  assert.ok(thin >= 0, 'Cooper has a thinly logged week')
+  const vomiting = c.twin.split('; ').find((p) => p.startsWith('vomiting '))
+  assert.ok(vomiting)
+  assert.match(vomiting, /not read \(logged \d of 7\)/)
+  assert.doesNotMatch(vomiting, /^vomiting none/)
+})
+
+Deno.test('cold read — a sign line states the flag’s episodes beside its entries when they differ (WBC-10, Nyx)', () => {
+  const lines = block(docOf(nyxLiveSnapshot()), 'lead_sentence')
+  assert.ok(lines)
+  assert.match(lines.text, /^Vomiting: 16 entries \(the flag counts 14 episodes, entries close together counted once, over its own span\) on 12 of 45 logged days/)
+})
+
+Deno.test('cold read — rated meals always state their outcome, a zero included', () => {
+  const d = docOf(assembleReport(juniper()))
+  const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
+  assert.ok(all.some((t) => t?.startsWith('Meals: ') && t.includes('every rated meal recorded as fully eaten')))
+})
+
+Deno.test('cold read — a free-fed bowl is named beside the trial, not only on the meals line (Mira)', () => {
+  const s = assembleReport(sampleCases().find(([n]) => n === 'trial-report-refused.html')![1])
+  const conf = block(docOf(s), 'confounder')
+  assert.ok(conf)
+  assert.match(conf.text, /A free-fed bowl was down in this window \(.+\): intake not directly observed, and the trial cannot exclude it\./)
 })

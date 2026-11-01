@@ -23,6 +23,7 @@ import {
   type ReportSymptomType,
   type SafetyFlag,
   type SymptomAggregate,
+  SYMPTOM_WEEK_MIN_LOGGED_DAYS,
 } from './report.ts'
 import {
   cherryPickDisclosure,
@@ -447,10 +448,21 @@ function colLabel(c: ChartColumn, unit: LeadChart['unit']): string | null {
   return null
 }
 
-/** One word per cell, in the twin's register. */
-function cellWord(count: number, col: ChartColumn): string {
+/**
+ * The fewest logged days a column needs before an empty cell may read "none" (CUL-1995, mirrored:
+ * the same question as v1's symptom chart, "is this week logged densely enough that an absence may
+ * be read?"). Scaled by the column's weeks; a day column is read whenever it was logged.
+ */
+function readFloor(unit: LeadChart['unit']): number {
+  return unit === 'day' ? 1 : unit === 'week' ? SYMPTOM_WEEK_MIN_LOGGED_DAYS : SYMPTOM_WEEK_MIN_LOGGED_DAYS * 2
+}
+
+/** One word per cell, in the twin's register. An empty cell under the floor is "not read", never
+ *  "none": two logged days of seven cannot say a sign was absent that week (cold read, CUL-2290). */
+function cellWord(count: number, col: ChartColumn, unit: LeadChart['unit']): string {
   if (count > 0) return String(count)
-  return col.loggedDays === 0 ? 'nothing logged' : 'none'
+  if (col.loggedDays === 0) return 'nothing logged'
+  return col.loggedDays < readFloor(unit) ? `not read (logged ${col.loggedDays} of ${col.days})` : 'none'
 }
 
 function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extract<SafetyFlag, { kind: 'chronicity' }> | null): LeadChart {
@@ -531,8 +543,9 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
       const counts = perCol(s.weeklyBuckets, s.type)
       rows.push({ kind: 'sign', sign: s.type, label: symptomLabel(s.type), lead: lead?.sign === s.type, counts })
       if (counts.some((n) => n > 0)) marks.add('bar')
-      if (counts.some((n, i) => n === 0 && columns[i].loggedDays > 0)) marks.add('empty')
-      twinParts.push(`${symptomLabel(s.type).toLowerCase()} ${counts.map((n, i) => cellWord(n, columns[i])).join(', ')}`)
+      if (counts.some((n, i) => n === 0 && columns[i].loggedDays >= readFloor(unit))) marks.add('empty')
+      if (counts.some((n, i) => n === 0 && columns[i].loggedDays > 0 && columns[i].loggedDays < readFloor(unit))) marks.add('partial')
+      twinParts.push(`${symptomLabel(s.type).toLowerCase()} ${counts.map((n, i) => cellWord(n, columns[i], unit)).join(', ')}`)
     }
     if (overflow.length > 0) {
       overflowParts.push(`also logged: ${overflow.map((s) => `${symptomLabel(s.type).toLowerCase()} ${plural(s.count, 'entry', 'entries')}`).join('; ')}`)
@@ -597,9 +610,16 @@ const ABSENCE_SENTENCE = 'No symptom events were logged in this window. Absence 
 
 function signLine(snap: ReportSnapshot, s: SymptomAggregate): RecordLine {
   const last = s.lastOnset ? textOf(fmtLocalDay(s.lastOnset, snap.timezone)) : null
+  // WBC-10: bars count entries, a flag states episodes. Where a chronicity flag on this sign states
+  // a different number, both print here, so the two never sit unexplained on one sheet.
+  const chronic = snap.safetyFlags.find((f) => f.kind === 'chronicity' && f.symptomType === s.type)
+  const episodes =
+    chronic && chronic.kind === 'chronicity' && chronic.episodeCount !== s.count
+      ? ` (the flag counts ${plural(chronic.episodeCount, 'episode', 'episodes')}, entries close together counted once, over its own span)`
+      : ''
   return {
     id: `sign-${s.type}`,
-    text: `${symptomLabel(s.type)}: ${plural(s.count, 'entry', 'entries')} on ${s.symptomDays} of ${plural(s.loggedDays, 'logged day', 'logged days')}${last ? `, the last ${last}` : ''}.`,
+    text: `${symptomLabel(s.type)}: ${plural(s.count, 'entry', 'entries')}${episodes} on ${s.symptomDays} of ${plural(s.loggedDays, 'logged day', 'logged days')}${last ? `, the last ${last}` : ''}.`,
   }
 }
 
@@ -611,6 +631,7 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   const notFinished = mc ? mc.ratedMeals - mc.finishedMeals : null
   const parts = [`${v.loggedMeals} logged`, `${v.ratedMeals} rated`]
   if (notFinished !== null && notFinished > 0) parts.push(`${notFinished} not fully eaten, on ${plural(v.mealNotFinishedDays, 'day', 'days')}`)
+  else if (notFinished === 0 && v.ratedMeals > 0) parts.push('every rated meal recorded as fully eaten')
   // B-040's words, verbatim: a bowl left down means no one watched what was eaten from it.
   const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named').join(', ')
   return { id: 'intake', text: `Meals: ${parts.join('; ')}.${freeFed ? ` Free-fed: ${bowls}. Intake not directly observed.` : ''}` }
@@ -619,10 +640,17 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
 function trialLine(snap: ReportSnapshot): RecordLine | null {
   const t = snap.trial
   if (!t) return null
-  const foods = t.trialDietLabels.length > 0 ? t.trialDietLabels.join(' and ') : 'a diet trial'
+  const labels = t.trialDietLabels
+  const foods =
+    labels.length === 0 ? 'a diet trial' : labels.length <= 2 ? labels.join(' and ') : `${labels[0]} and ${labels.length - 1} other trial foods`
   const start = textOf(fmtDayYear(t.startedAt.slice(0, 10)))
-  const ended = t.endedAt ? `, ${t.status === 'abandoned' ? 'stopped' : 'ended'} ${textOf(fmtDayYear(t.endedAt.slice(0, 10)))}` : ', still running'
-  return { id: 'trial', text: `Diet trial (owner-entered): ${foods}, from ${start}${ended}; planned for ${t.targetDurationDays} days.` }
+  const ended = t.endedAt
+    ? `, ${t.status === 'abandoned' ? 'stopped' : 'ended'} ${textOf(fmtDayYear(t.endedAt.slice(0, 10)))}`
+    : t.daysPastTarget > 0
+      ? `, day ${t.dayCounter}, ${plural(t.daysPastTarget, 'day', 'days')} past its planned ${t.targetDurationDays}`
+      : `, day ${t.dayCounter} of ${t.targetDurationDays}`
+  const planned = t.endedAt ? `; planned for ${t.targetDurationDays} days` : ''
+  return { id: 'trial', text: `Diet trial (owner-entered): ${foods}, from ${start}${ended}${planned}.` }
 }
 
 function medicationLines(snap: ReportSnapshot): RecordLine[] {
@@ -686,18 +714,22 @@ function recordLinesOf(snap: ReportSnapshot, lead: Lead | null, edgeHolds: boole
 function confounderOf(snap: ReportSnapshot): string | null {
   const t = snap.trial
   if (!t) return null
+  // A bowl left down beside a trial is a competing food the trial cannot exclude (cold read on
+  // CUL-2290, Mira): named here, beside the trial, not only on the meals line.
+  const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named')
+  const bowl = bowls.length > 0 ? ` A free-fed bowl was down in this window (${bowls.join(', ')}): intake not directly observed, and the trial cannot exclude it.` : ''
   if (t.medicationOverlap.length === 0) {
-    return 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.'
+    return `No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.${bowl}`
   }
   const items = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)
     const to = plainDay(m.toDate)
-    return `${m.drugName}${m.isSupplement ? ' (supplement)' : ''} ${from} to ${to}${m.activeAtWindowEnd ? ', still running at the window’s end' : ''}`
+    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''} from ${from} to ${to}${m.activeAtWindowEnd ? ', its course recorded as still running' : ''}`
   })
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
     : ''
-  return `Not a test of the diet alone: ${items.join('; ')} overlap the trial. Spans are the courses as recorded, not evidence of administration.${abx}`
+  return `Not a test of the diet alone. Overlapping the trial: ${items.join('; ')}. Spans are the courses as recorded, not evidence of administration.${abx}${bowl}`
 }
 
 // ── The document ─────────────────────────────────────────────────────────────

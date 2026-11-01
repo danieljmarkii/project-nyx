@@ -103,7 +103,8 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
 
 function coverageRow(r: Extract<ChartRow, { kind: 'coverage' }>, cols: ChartColumn[], top: number): string {
   const n = cols.length
-  const parts: string[] = [rowLabel(r.label, top + SIGN_ROW_H / 2 + 3, 'rl lead')]
+  // Logging is not a concern: the coverage row draws in ink-2, never the concern ink (cold read).
+  const parts: string[] = [rowLabel(r.label, top + SIGN_ROW_H / 2 + 3, 'rl')]
   cols.forEach((c, i) => {
     if (c.loggedDays === 0) {
       parts.push(hatchCol(i, n, top + 6, SIGN_ROW_H - 12))
