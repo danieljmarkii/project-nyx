@@ -110,7 +110,7 @@ import { dateTimeFormat } from '../../../lib/utils.ts'
 // The snapshot carries owner-entered free text (pet name, food labels, notes, drug
 // names). Unescaped, a `<` breaks the markup and a token-served page becomes an XSS
 // sink. `h()` escapes text nodes AND attribute values (quotes included).
-function h(v: string | number | null | undefined): string {
+export function h(v: string | number | null | undefined): string {
   if (v === null || v === undefined) return ''
   return String(v)
     .replace(/&/g, '&amp;')
@@ -153,14 +153,14 @@ function dayParts(dayKey: string): { y: number; m: number; d: number } | null {
 }
 
 /** 'YYYY-MM-DD' → "Mon D" (no year). */
-function fmtDay(dayKey: string | null): string {
+export function fmtDay(dayKey: string | null): string {
   if (!dayKey) return '—'
   const p = dayParts(dayKey)
   return p ? `${MONTHS[p.m - 1]} ${p.d}` : h(dayKey)
 }
 
 /** 'YYYY-MM-DD' → "Mon D, YYYY". */
-function fmtDayYear(dayKey: string | null): string {
+export function fmtDayYear(dayKey: string | null): string {
   if (!dayKey) return '—'
   const p = dayParts(dayKey)
   return p ? `${MONTHS[p.m - 1]} ${p.d}, ${p.y}` : h(dayKey)
@@ -174,7 +174,7 @@ function fmtMonthYear(dayKey: string | null): string {
 }
 
 /** Inclusive window "Mon D – Mon D, YYYY" (single year) or full both-years form. */
-function fmtRange(start: string, end: string): string {
+export function fmtRange(start: string, end: string): string {
   const s = dayParts(start)
   const e = dayParts(end)
   if (!s || !e) return `${h(start)} – ${h(end)}`
@@ -219,7 +219,7 @@ function fmtLocalDayScoped(iso: string, tz: string | null, windowEndDayKey: stri
 }
 
 /** An ISO instant → the owner-local "Mon D" (falls back to UTC slice on a bad tz). */
-function fmtLocalDay(iso: string, tz: string | null): string {
+export function fmtLocalDay(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
   if (Number.isNaN(ms)) return h(iso)
   if (tz) {
@@ -293,7 +293,7 @@ function intakeLabel(rating: string): string {
   }
 }
 
-function symptomLabel(type: string): string {
+export function symptomLabel(type: string): string {
   switch (type) {
     case 'vomit':
       return 'Vomiting'
@@ -1652,7 +1652,7 @@ function localDayKeyOf(iso: string, tz: string | null): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
-function scopeBasisLabel(scope: ScopeInfo): string {
+export function scopeBasisLabel(scope: ScopeInfo): string {
   switch (scope.basis) {
     case 'since_visit':
       return 'Since last vet visit'
@@ -1811,7 +1811,7 @@ function signalmentBlock(snap: ReportSnapshot): string {
  * never "the full record was read". A clean bill of health nobody asked for is the
  * B-494 / G2 failure, and here it would also be the one sentence a reader would trust.
  */
-function truncationDisclosure(snap: ReportSnapshot): string {
+export function truncationDisclosure(snap: ReportSnapshot): string {
   if (snap.incompletePulls.length === 0) return ''
   // Table names are OUR vocabulary, not a clinician's. An unmapped table falls back to
   // its own name rather than being dropped: a disclosure that silently omits what it
@@ -1859,7 +1859,7 @@ function joinList(items: string[]): string {
  * Present on every report on purpose: a line that appears only when something is wrong teaches the
  * reader that its absence means all is well, and a record with no entry at all says so in words.
  */
-function lastEntryLine(snap: ReportSnapshot): string {
+export function lastEntryLine(snap: ReportSnapshot): string {
   const e = snap.atAGlance.recordEdge
   if (e.lastEntryDate === null || e.lastEntryDaysBeforeReport === null) return `No entry in the record read${futureNote(e)}`
   const d = e.lastEntryDaysBeforeReport
@@ -2002,7 +2002,7 @@ function cherry(body: string): string {
 }
 
 /** §6 cherry-pick guard — only on a custom window with out-of-window events. */
-function cherryPickDisclosure(snap: ReportSnapshot): string {
+export function cherryPickDisclosure(snap: ReportSnapshot): string {
   const sc = snap.scope
   if (!sc.isCustomOverride || sc.outOfWindowSymptomCount <= 0) return ''
   // B-613 — THE TYPE, NOT JUST THE DATE. Two cold reads ranked its absence top of the
@@ -2219,7 +2219,7 @@ function trialCropDensitySentence(snap: ReportSnapshot): string {
  * with the floor it applies, and every one carries "not ruled out" in the same sentence:
  * absence ≠ wellness (§5.3), so this line is never a clearance. Null when nothing ran.
  */
-function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: string[] } | null {
+export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; rest: string[] } | null {
   const checks = snap.safetyChecks
   if (checks.length === 0) return null
   const lower = (t: string): string => h(symptomLabel(t).toLowerCase())
@@ -2387,7 +2387,15 @@ function chronicityRecordPrecedesCounts(snap: ReportSnapshot): boolean {
   )
 }
 
-function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
+// CUL-2290 — exported for v2 sheet 1 (`documentV2.ts`), which prints every band finding through
+// THIS function so the v2 band can never word a flag differently from v1 (the superset invariant,
+// spec v2 §12). `row` lays the (tag, body) pair out; v1 passes its own `flagRow`, so v1's bytes are
+// unchanged.
+export function safetyFlagRow(
+  f: SafetyFlag,
+  snap: ReportSnapshot,
+  row: (tag: string, body: string) => string = flagRow,
+): string {
   const tz = snap.timezone
   switch (f.kind) {
     case 'present_blood': {
@@ -2417,7 +2425,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             : 'possible blood (fresh and/or digested)'
           : 'possible coffee-ground (digested) blood'
       }
-      return flagRow(
+      return row(
         'Possible blood',
         // R2-6 — attribute to the mechanism ("automated photo analysis"), never the brand ("a photo
         // Culprit flagged"). This originally guarded an app-name/patient-name collision (both "Nyx");
@@ -2439,7 +2447,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const note0 = notes.length ? notes[0].trim() : ''
       const noteBit = note0 ? ` Owner/AI note: ${h(note0)}${/[.!?\u2026]$/.test(note0) ? '' : '.'}` : ''
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
-      return flagRow(
+      return row(
         'Foreign material',
         // R2-6 mechanism-not-brand + R2-4 badge (see present_blood above). PR 7 — thumbnail leads the band.
         `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — possible foreign material on automated photo analysis.${noteBit} ${aiBadge()}${safetyBandThumbs(
@@ -2536,7 +2544,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           mealsAppendixVisible(snap) ? ' Intake ratings in appendix&nbsp;E.' : ''
         }`,
       )
-      return flagRow('Diet not eaten', bits.join(' '))
+      return row('Diet not eaten', bits.join(' '))
     }
     case 'intake_decline': {
       const feline =
@@ -2611,7 +2619,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           : `Intake has been <b>below this pet's baseline for ${num(f.daysBelowBaseline)} consecutive day${
               f.daysBelowBaseline === 1 ? '' : 's'
             }</b>.${baselineBit}`
-      return flagRow(
+      return row(
         'Intake',
         `<b>Reduced intake.</b> ${detail}${trajectoryBit}${durationBit}${freeFedBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
       )
@@ -2795,7 +2803,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         tail === null
           ? ''
           : `; ${nothingLoggedAfter(tail)}${tail.days <= f.daysSinceLastEpisode ? ` (${tailSpan(tail)})` : ''}`
-      return flagRow(
+      return row(
         'Chronicity',
         // "SPANS", not "has been ongoing" (CUL-687, adversarial pass 2026-08-28). This is the
         // BOLD LEAD of the safety band — the zone the legend teaches a vet to scan first — and
@@ -2824,7 +2832,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const label = h(symptomLabel(f.symptomType).toLowerCase())
       const run = f.runDays >= 2 ? `, on ${num(f.runDays)} days in a row` : ''
       const told = f.tier === 'today' ? 'to call the vet today' : 'to call the vet soon'
-      return flagRow(
+      return row(
         'Burden',
         `<b>${num(f.count)} ${label} ${f.count === 1 ? 'entry' : 'entries'} in the last ${num(f.windowDays)} days${run}.</b> A high count on its own, with no earlier week needed to compare. The owner was told ${told}.`,
       )
@@ -2855,7 +2863,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         f.asOf === 'now'
           ? `The owner was told it is ${ask}.`
           : `As of this window's end the app's weight check reads it as ${ask}${todayRow ? '' : '; it does not read so today'}.`
-      return flagRow(
+      return row(
         'Weight',
         `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)}${plan}.</b> The latest reading against the highest before it in the last ${num(
           f.windowDays,
@@ -2863,7 +2871,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       )
     }
     case 'weight_unchecked':
-      return flagRow(
+      return row(
         'Weight',
         `<b>The weigh-in record did not load in full</b>, so the app&rsquo;s weight-loss check ran on part of it and may have missed a loss. Weigh the patient.`,
       )
@@ -2872,7 +2880,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         incident_red_flag: 'a red flag on a photographed incident (see the incident appendix)',
       }
       const named = f.findingTypes.map((t) => h(words[t] ?? t.replace(/_/g, ' ')))
-      return flagRow('Also flagged', `The app's checks also flagged ${named.join('; ')}. This report does not detail ${f.findingTypes.length === 1 ? 'it' : 'them'} here.`)
+      return row('Also flagged', `The app's checks also flagged ${named.join('; ')}. This report does not detail ${f.findingTypes.length === 1 ? 'it' : 'them'} here.`)
     }
     case 'symptom_worsening': {
       // windowDays is the comparison-window LENGTH (7 = week-over-week); priorDays/
@@ -2892,7 +2900,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
           : `${sym} rose from ${num(f.priorCount)} episode${f.priorCount === 1 ? '' : 's'} in the prior ${num(
               w,
             )} days to ${num(f.currentCount)} in the recent ${num(w)} days.`
-      return flagRow('Worsening', `<b>Rising frequency.</b> ${detail}`)
+      return row('Worsening', `<b>Rising frequency.</b> ${detail}`)
     }
     case 'protein_mismatch': {
       // B-704 §6 — the wrong-primary trial food, made a lead safety line rather than a
@@ -2904,7 +2912,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const labels = f.trialDietLabels.length ? h(f.trialDietLabels.join(' / ')) : 'the trial food'
       const recorded = h(capProtein(f.recordedProtein))
       const food = h(capProtein(f.foodProtein))
-      return flagRow(
+      return row(
         'Trial protein',
         `<b>The recorded trial protein is not the protein on the trial food&rsquo;s label.</b> The owner recorded <b>${recorded}</b> as this trial&rsquo;s protein; ${labels} lists <b>${food}</b> as its main protein. This record cannot resolve which is the elimination antigen. The exposure figures on this report are measured against ${food} (the food&rsquo;s label); <b>if ${recorded} is the intended antigen, every feeding of the trial diet is itself off-target and the elimination cannot be confirmed from this record.</b> Worth confirming the bag against the prescription.`,
       )

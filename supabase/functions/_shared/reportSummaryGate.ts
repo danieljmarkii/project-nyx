@@ -1,8 +1,8 @@
 // Supabase Edge Functions shared module: the gate in front of the vet report's AI summary
 // (Vet report v2 PR-24, CUL-2304; spec docs/nyx-vet-report-v2-requirements.md §9.3, §13).
 //
-// Nothing imports this yet. VR2-25 (CUL-2305) calls it from the summary pipeline; until
-// then it ships no function and changes nothing an owner sees.
+// VR2-25 (CUL-2305) calls the gate from the summary pipeline. Until then the only import is
+// `REPORT_DOCUMENT_FLAG`, by generate-report's document check (CUL-2290, `documentFlag.ts`).
 //
 // THE ORDER IS THE CONTRACT (pinned by reportSummaryGate.test.ts):
 //   1. Consent. BOTH scopes in `ai_consent` must say `granted = true`: 'ai_boundary' (D10,

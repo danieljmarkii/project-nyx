@@ -69,6 +69,9 @@ import {
   FAB_STOOL_SPLIT_KEY,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import { buildDocumentV2 } from './documentV2.ts'
+import { renderPrintV2 } from './renderPrintV2.ts'
+import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
 // copies of this test are what once anchored a window on an abandoned trial.
@@ -1114,6 +1117,10 @@ export async function generateReportForPet(
   // report's trial "Day N" buckets by the same clock the owner's card does. Default null ⇒
   // stored zone (the pre-B-443 behaviour), so every existing call site is unaffected.
   requestTimezone: string | null = null,
+  // CUL-2290 (PM ruling (a)): the layout the caller ASKED for. v2 renders only when this is 'v2'
+  // AND `report_document_v2` resolves on for the JWT-verified caller; anything else is v1. The
+  // default is v1, the layout every caller already gets, so omitting it changes nothing.
+  documentRequest: 'v1' | 'v2' = 'v1',
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const nowIso = new Date(nowMs).toISOString()
 
@@ -1132,7 +1139,7 @@ export async function generateReportForPet(
       .select('id, user_id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
       .eq('id', petId)
       .maybeSingle(),
-    supabase.from('user_profiles').select('display_name, timezone').maybeSingle(),
+    supabase.from('user_profiles').select('display_name, first_name, last_name, timezone').maybeSingle(),
     // CUL-899 VV-1 — `.is('deleted_at', null)` is the most consequential member of
     // that PR's reader sweep: these rows ARE the scope cascade's rung 1, so a visit
     // the owner deleted would keep setting the report's window start. It lands on
@@ -1225,7 +1232,12 @@ export async function generateReportForPet(
   // nothing yet, so the report is unchanged; see ReportInput.engineFlags.
   const engineFlags = await readEngineFlags(supabase, petRow.user_id)
 
-  const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null
+  const profile = profileRes.data as {
+    display_name: string | null
+    first_name?: string | null
+    last_name?: string | null
+    timezone: string | null
+  } | null
   const pet = mapPet(petRow)
   let ownerName = profile?.display_name?.trim() || null
   // §7.1 PIMS-filing fallback (PM, 2026-07-03): when no display name is set, fall back to
@@ -1667,12 +1679,27 @@ export async function generateReportForPet(
   if (adminClient && snapshot.incidentPhotos.length > 0) {
     photoStats = await embedIncidentPhotos(adminClient, snapshot.incidentPhotos)
   }
-  const html = renderReport(snapshot)
+  // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read last and
+  // only when v2 was asked for, so a v1 request costs no extra read.
+  const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
+  const html = documentV2On === true
+    ? renderPrintV2(
+        buildDocumentV2(snapshot, {
+          // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
+          owner: { firstName: profile?.first_name ?? null, lastName: profile?.last_name ?? null },
+          shortId: null,
+          questions: [],
+        }),
+      )
+    : renderReport(snapshot)
 
   return {
     status: 200,
     body: {
       html,
+      // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
+      report_version: documentV2On === true ? 'v2' : 'v1',
+      report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },
       pet_name: snapshot.signalment.name,
       start_date: snapshot.scope.startDate,
       end_date: snapshot.scope.endDate,
@@ -1710,6 +1737,7 @@ const handler = async (req: Request): Promise<Response> => {
   let requestedWindow: { startDate: string; endDate: string } | null = null
   let requestTimezone: string | null = null
   let includeNotes = false
+  let documentRequest: 'v1' | 'v2' = 'v1'
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1726,6 +1754,8 @@ const handler = async (req: Request): Promise<Response> => {
       // look notes appear in the report's Noticed appendix. Read by `parseIncludeNotes`.
       includeNotes?: boolean
       include_notes?: boolean
+      // CUL-2290 — 'v2' asks for the v2 document; the server still checks the flag.
+      reportVersion?: string
     }
     petId = body.petId ?? ''
     const start = body.startDate ?? body.start_date
@@ -1733,6 +1763,7 @@ const handler = async (req: Request): Promise<Response> => {
     if (start && end) requestedWindow = { startDate: start, endDate: end }
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
     includeNotes = parseIncludeNotes(body)
+    documentRequest = body.reportVersion === 'v2' ? 'v2' : 'v1'
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1770,6 +1801,7 @@ const handler = async (req: Request): Promise<Response> => {
       callerJwt,
       adminClient,
       requestTimezone,
+      documentRequest,
     )
     return Response.json(body, {
       status,

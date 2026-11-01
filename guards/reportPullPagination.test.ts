@@ -163,6 +163,9 @@ const BOUNDED_BY_KEY: Record<string, string> = {
   'generate-signal/app_config':
     'The phrasing flag and the caps: `.in(\'key\', [FLAG_KEY, \'ai_caps\'])`, two rows at most — ' +
     'app_config is keyed by `key`, so the filter bounds the result at the length of the list.',
+  'generate-report/app_config':
+    'CUL-2290: the v2 document flag, `.eq(\'key\', REPORT_DOCUMENT_FLAG)`: one row at most, ' +
+    'because app_config is keyed by `key`. Read only when the caller asked for v2.',
   'ask/app_config':
     'The Ask flags and caps: `.in(\'key\', [ASK_FLAG, GENERAL_FLAG, \'ai_caps\'])`, three rows at ' +
     'most, by the same primary-key argument.',
