@@ -5903,10 +5903,12 @@ Deno.test('CUL-2026 — Home\'s weight card leads the band, in the card\'s own r
     const expected = `${m[1]} lb) on ${m[2]} ${m[3]} ${m[4]}${m[5] ?? ''}`
     assert.ok(row.includes(expected), `${expected} missing from: ${row}`)
   }
-  assert.ok(/Weighed 4\.40 kg \(9\.7 lb\) on Jun 27, 2026 on a home scale(, a single reading)?, down from 5\.00 kg \(11\.0 lb\) on Mar \d+, 2026 on a home scale(, a single reading)?\./.test(row), row)
+  // CUL-2357 (ruling W, spec v2 §5.8): the report states the change as a whole percent; WG-4's
+  // "no percentage" binds the app screens, never the report. 5.00 → 4.40 kg is 12%.
+  assert.ok(/Weighed 4\.40 kg \(9\.7 lb\) on Jun 27, 2026 on a home scale(, a single reading)?, down from 5\.00 kg \(11\.0 lb\) on Mar \d+, 2026 on a home scale(, a single reading)? — about 12 ?% of body weight\./.test(row), row)
   const ask = home[0].tier === 'firm' ? 'it is worth booking a vet visit' : 'it is worth raising with the vet'
   assert.ok(row.includes(`The owner was told ${ask}.`), row)
-  assert.ok(!/% of body weight/.test(row), 'no percentage on the flag (WG-4)')
+  assert.equal((row.match(/% of body weight/g) ?? []).length, 1, 'the percent prints once on the flag')
 })
 
 Deno.test('CUL-2026 — the weight flag sits where Home ranks it: below burden, above chronicity', () => {

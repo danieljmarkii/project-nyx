@@ -27,6 +27,7 @@ import {
 } from './report.ts'
 import {
   cherryPickDisclosure,
+  chronicitySpanDaysShown,
   fmtDay,
   fmtDayYear,
   fmtLocalDay,
@@ -616,7 +617,7 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
   const byWord = unit === 'day' ? 'by day' : unit === 'week' ? 'by week' : 'by 2 weeks'
   const flag = leadFlag ? flagRowOf(leadFlag, snap) : null
   const heading = leadFlag
-    ? `Flag: ${symptomLabel(leadFlag.symptomType).toLowerCase()} over at least ${leadFlag.spanDays} days, the trial’s own sign`
+    ? `Flag: ${symptomLabel(leadFlag.symptomType).toLowerCase()} over at least ${chronicitySpanDaysShown(leadFlag, snap)} days, the trial’s own sign`
     : zeroSign
       ? `${leadLabel}, from ${startLabel}`
       : `${leadLabel} ${byWord}, from ${startLabel}`
