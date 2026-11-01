@@ -66,6 +66,9 @@ jest.mock('../store/petStore', () => {
     ),
   };
 });
+// The composer's flag read (CUL-2296) reaches app_config through the Supabase client; unset, the
+// flag fails closed and this screen is the pre-composer one these tests pin.
+jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() }, from: jest.fn() } }));
 jest.mock('../lib/pdf', () => ({
   flushBeforeReport: jest.fn(async () => ({ pending: 0, quarantined: 0 })),
   reportFreshnessLine: () => null,

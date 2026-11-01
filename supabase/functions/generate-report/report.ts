@@ -3390,7 +3390,8 @@ export interface ReportV2Facts {
   /**
    * CUL-2290 (VR2-10): the in-window local days carrying any log, ascending. The SAME
    * `loggedDayNums` as `atAGlance.loggedDays` (its length, always), so the sheet's day row and
-   * coverage row hatch exactly the days "N of M days logged" leaves out.
+   * coverage row hatch exactly the days "N of M days logged" leaves out. The composer's coverage
+   * strip and calendar dots read it too (VR2-16).
    */
   loggedDayKeys: string[]
   /**

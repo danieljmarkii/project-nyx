@@ -65,10 +65,23 @@ import {
   type ReportAudience,
   type ReportLookInput,
   type Household,
+  type ReportSnapshot,
   TRIAL_ANCHOR_GRACE_DAYS,
   FAB_STOOL_SPLIT_KEY,
 } from './report.ts'
 import { renderReport } from './render.ts'
+import {
+  addDays,
+  afterOf,
+  composerWindowsOf,
+  countsOf,
+  liveOf,
+  liveWindowOf,
+  localDayOf,
+  parseComposerRequest,
+  validWindow,
+  type ComposerPart,
+} from './composer.ts'
 import { buildDocumentV2 } from './documentV2.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
@@ -1122,6 +1135,89 @@ export async function generateReportForPet(
   // default is v1, the layout every caller already gets, so omitting it changes nothing.
   documentRequest: 'v1' | 'v2' = 'v1',
 ): Promise<{ status: number; body: Record<string, unknown> }> {
+  const built = await buildReportSnapshotForPet(supabase, petId, nowMs, requestedWindow, audience, callerJwt, requestTimezone)
+  if (built.kind === 'response') return { status: built.status, body: built.body }
+  const { snapshot, timezone } = built
+
+  // 4. (PR 7) embed the incident-photo bytes → pure render.
+  //    assembleReport built the photo MANIFEST (which incidents, order, safety class); the ONE I/O
+  //    step is fetching each photo through the EXIF-stripping/downscaling transform (never the raw
+  //    original) and setting its data: URI in place; renderReport then bakes them into the HTML/PDF.
+  let photoStats = { total: snapshot.incidentPhotos.length, embedded: 0, omitted: snapshot.incidentPhotos.length }
+  if (adminClient && snapshot.incidentPhotos.length > 0) {
+    photoStats = await embedIncidentPhotos(adminClient, snapshot.incidentPhotos)
+  }
+  // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read last and
+  // only when v2 was asked for, so a v1 request costs no extra read.
+  const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
+  const html = documentV2On === true
+    ? renderPrintV2(
+        buildDocumentV2(snapshot, {
+          // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
+          owner: await readOwnerNames(supabase),
+          shortId: null,
+          questions: [],
+        }),
+      )
+    : renderReport(snapshot)
+
+  return {
+    status: 200,
+    body: {
+      html,
+      // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
+      report_version: documentV2On === true ? 'v2' : 'v1',
+      report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },
+      pet_name: snapshot.signalment.name,
+      start_date: snapshot.scope.startDate,
+      end_date: snapshot.scope.endDate,
+      scope_basis: snapshot.scope.basis,
+      // Owner-visibility (spec §8 "the mitigation is owner visibility"): the app surfaces the count
+      // so the owner knows how many of their photos this report hands to the vet. The interactive
+      // "tap to exclude any" review is the deferred fast-follow (B-243) that builds on this count.
+      photo_count: photoStats.total,
+      photo_embedded: photoStats.embedded,
+      photo_omitted: photoStats.omitted,
+      // R-16 (CUL-998 / CUL-861) — the report's own verdict that its trial has no
+      // allowed-food list, returned so the owner hears it on the report screen BEFORE
+      // Send, with a door to set the list up, rather than reading it in front of the vet.
+      // Scoped to a running trial and to the list's absence (never the unhydrated-set
+      // heuristic) — the reasons are on `trialAllowedListMissing`. The app treats an
+      // absent field as false, so a client built before this deploys shows nothing.
+      trial_allowed_list_missing: trialAllowedListMissing(snapshot.trial, nowMs, timezone),
+    },
+  }
+}
+
+/** What `buildReportSnapshotForPet` hands back: the assembled snapshot, or the response to send. */
+export type BuiltReportSnapshot =
+  | {
+      kind: 'snapshot'
+      snapshot: ReportSnapshot
+      timezone: string | null
+      vetVisits: ReportVetVisitInput[]
+      dietTrials: ReportDietTrialInput[]
+      /** The §6 cascade's own window, resolved when no window was requested; null otherwise. */
+      defaultScope: ReportScope | null
+    }
+  | { kind: 'response'; status: number; body: Record<string, unknown> }
+
+/**
+ * Steps 1 to 4 of the report: the ownership re-check, the window, the pulls and the pure assembly,
+ * stopping before any photo byte is fetched or any HTML is written. `generateReportForPet` renders
+ * from it; the composer (VR2-16, `composer.ts`) reads its counts and flags. One build, so the
+ * composer's numbers are the report's numbers (spec §3.1).
+ */
+export async function buildReportSnapshotForPet(
+  supabase: SupabaseClient,
+  petId: string,
+  nowMs: number,
+  requestedWindow: { startDate: string; endDate: string } | null,
+  /** Required, no default: the same rule as `generateReportForPet`'s (CUL-875). */
+  audience: ReportAudience,
+  callerJwt: string | null,
+  requestTimezone: string | null,
+): Promise<BuiltReportSnapshot> {
   const nowIso = new Date(nowMs).toISOString()
 
   // 1. Ownership re-check (confused-deputy guard) + signalment + the window-
@@ -1223,7 +1319,7 @@ export async function generateReportForPet(
   const petRow = petRes.data as PetRow | null
   if (!petRow) {
     // Not found OR not owned — indistinguishable by design (no ownership oracle).
-    return { status: 404, body: { error: 'Pet not found' } }
+    return { kind: 'response', status: 404, body: { error: 'Pet not found' } }
   }
   if (profileRes.error) throw new Error(`user_profiles read failed: ${profileRes.error.message}`)
 
@@ -1607,6 +1703,7 @@ export async function generateReportForPet(
     // that can say more than "something went wrong" — today's client renders its own line
     // for any non-2xx, so nothing here is owner-facing.
     return {
+      kind: 'response',
       status: 503,
       body: {
         error: 'record_incomplete',
@@ -1665,53 +1762,101 @@ export async function generateReportForPet(
     engineFlags,
   }
 
-  // 4. Pure assembly → (PR 7) embed the incident-photo bytes → pure render.
-  //    assembleReport builds the photo MANIFEST (which incidents, order, safety class); the ONE I/O
-  //    step is fetching each photo through the EXIF-stripping/downscaling transform (never the raw
-  //    original) and setting its data: URI in place; renderReport then bakes them into the HTML/PDF.
-  const snapshot = assembleReport(input)
-  let photoStats = { total: snapshot.incidentPhotos.length, embedded: 0, omitted: snapshot.incidentPhotos.length }
-  if (adminClient && snapshot.incidentPhotos.length > 0) {
-    photoStats = await embedIncidentPhotos(adminClient, snapshot.incidentPhotos)
+  // 4. Pure assembly. The I/O after it (photo bytes, the render) is the caller's: the report
+  //    route embeds and renders; the composer (VR2-16) reads counts and flags and renders nothing.
+  return {
+    kind: 'snapshot',
+    snapshot: assembleReport(input),
+    timezone,
+    vetVisits,
+    dietTrials,
+    defaultScope: requestedWindow ? null : scope,
   }
-  // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read last and
-  // only when v2 was asked for, so a v1 request costs no extra read.
-  const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
-  const html = documentV2On === true
-    ? renderPrintV2(
-        buildDocumentV2(snapshot, {
-          // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
-          owner: await readOwnerNames(supabase),
-          shortId: null,
-          questions: [],
-        }),
-      )
-    : renderReport(snapshot)
+}
 
+
+
+// ── The composer (VR2-16, CUL-2296) ─────────────────────────────────────────
+
+/**
+ * The composer's outline, built from the report's own snapshots (`composer.ts` explains each).
+ * `open`: the 56-day live-flag set first, then the windows it offers, then the first window's
+ * counts. `window`: one window's counts, and the days after it when it ends before today.
+ */
+export async function composeForPet(
+  supabase: SupabaseClient,
+  petId: string,
+  nowMs: number,
+  part: ComposerPart,
+  requestedWindow: { startDate: string; endDate: string } | null,
+  /** The handler's one owner arm (§9 rule 4): the composer prints nothing, so it is handed one
+   *  that pulls no notes. */
+  audience: ReportAudience,
+  callerJwt: string | null,
+  requestTimezone: string | null,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const build = (w: { startDate: string; endDate: string }) =>
+    buildReportSnapshotForPet(supabase, petId, nowMs, w, audience, callerJwt, requestTimezone)
+
+  // The window first, then the days after it: "today" is the window build's own report date, the
+  // zone the build resolved, so a window and its tail can never disagree about where today is
+  // (adversarial pass 1, F7).
+  const countsFor = async (w: { startDate: string; endDate: string }) => {
+    const inWindow = await build(w)
+    if (inWindow.kind === 'response') return inWindow
+    const today = inWindow.snapshot.atAGlance.recordEdge.reportDate
+    const end = inWindow.snapshot.scope.endDate
+    if (end >= today) return { kind: 'counts' as const, counts: countsOf(inWindow.snapshot), after: null }
+    const after = await build({ startDate: addDays(end, 1), endDate: today })
+    if (after.kind === 'response') return after
+    return { kind: 'counts' as const, counts: countsOf(inWindow.snapshot), after: afterOf(after.snapshot, inWindow.snapshot) }
+  }
+
+  if (part === 'window') {
+    if (!requestedWindow || !validWindow(requestedWindow)) {
+      return { status: 400, body: { error: 'window required' } }
+    }
+    const r = await countsFor(requestedWindow)
+    if (r.kind === 'response') return { status: r.status, body: r.body }
+    return { status: 200, body: { composer: { counts: r.counts, after: r.after } } }
+  }
+
+  // Today in the device zone the request names, only to place the live window; the live build's
+  // own report date then anchors every window offered.
+  const guessToday = localDayOf(new Date(nowMs).toISOString(), resolveIanaZone(requestTimezone, null)) ??
+    new Date(nowMs).toISOString().slice(0, 10)
+  const live = await build(liveWindowOf(guessToday))
+  if (live.kind === 'response') return { status: live.status, body: live.body }
+  const today = live.snapshot.atAGlance.recordEdge.reportDate
+  const windows = composerWindowsOf({
+    today,
+    timezone: live.timezone,
+    vetVisits: live.vetVisits,
+    dietTrials: live.dietTrials,
+    firstEntryDate: live.snapshot.v2.firstEntryDate,
+    // The cascade exactly as the report resolves it with no override: same rows, same zone, same now.
+    defaultScope: resolveScope({
+      now: new Date(nowMs).toISOString(),
+      timezone: live.timezone,
+      requestedWindow: null,
+      dietTrials: live.dietTrials,
+      vetVisits: live.vetVisits,
+    }),
+  })
+  const first = windows[0]
+  const r = await countsFor({ startDate: first.startDate, endDate: first.endDate })
+  if (r.kind === 'response') return { status: r.status, body: r.body }
   return {
     status: 200,
     body: {
-      html,
-      // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
-      report_version: documentV2On === true ? 'v2' : 'v1',
-      report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },
-      pet_name: snapshot.signalment.name,
-      start_date: snapshot.scope.startDate,
-      end_date: snapshot.scope.endDate,
-      scope_basis: snapshot.scope.basis,
-      // Owner-visibility (spec §8 "the mitigation is owner visibility"): the app surfaces the count
-      // so the owner knows how many of their photos this report hands to the vet. The interactive
-      // "tap to exclude any" review is the deferred fast-follow (B-243) that builds on this count.
-      photo_count: photoStats.total,
-      photo_embedded: photoStats.embedded,
-      photo_omitted: photoStats.omitted,
-      // R-16 (CUL-998 / CUL-861) — the report's own verdict that its trial has no
-      // allowed-food list, returned so the owner hears it on the report screen BEFORE
-      // Send, with a door to set the list up, rather than reading it in front of the vet.
-      // Scoped to a running trial and to the list's absence (never the unhydrated-set
-      // heuristic) — the reasons are on `trialAllowedListMissing`. The app treats an
-      // absent field as false, so a client built before this deploys shows nothing.
-      trial_allowed_list_missing: trialAllowedListMissing(snapshot.trial, nowMs, timezone),
+      composer: {
+        today,
+        petName: live.snapshot.signalment.name,
+        live: liveOf(live.snapshot),
+        windows,
+        counts: r.counts,
+        after: r.after,
+      },
     },
   }
 }
@@ -1732,6 +1877,7 @@ const handler = async (req: Request): Promise<Response> => {
   let requestedWindow: { startDate: string; endDate: string } | null = null
   let requestTimezone: string | null = null
   let includeNotes = false
+  let composer: { part: ComposerPart } | null = null
   let documentRequest: 'v1' | 'v2' = 'v1'
   try {
     const body = (await req.json()) as {
@@ -1749,15 +1895,21 @@ const handler = async (req: Request): Promise<Response> => {
       // look notes appear in the report's Noticed appendix. Read by `parseIncludeNotes`.
       includeNotes?: boolean
       include_notes?: boolean
+      // VR2-16 — the composer's outline instead of a report (`composer.ts`).
+      mode?: string
+      part?: string
       // CUL-2290 — 'v2' asks for the v2 document; the server still checks the flag.
       reportVersion?: string
     }
+    composer = parseComposerRequest(body)
     petId = body.petId ?? ''
     const start = body.startDate ?? body.start_date
     const end = body.endDate ?? body.end_date
     if (start && end) requestedWindow = { startDate: start, endDate: end }
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
     includeNotes = parseIncludeNotes(body)
+    // The composer prints nothing, so it never pulls the owner's notes, whatever the body says.
+    if (composer !== null) includeNotes = false
     documentRequest = body.reportVersion === 'v2' ? 'v2' : 'v1'
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
@@ -1784,15 +1936,24 @@ const handler = async (req: Request): Promise<Response> => {
 
   try {
     const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
+    // This route is authenticated and owner-facing; PR 6's public `view-report` route is a
+    // different entry point and must construct the `shared_link` arm, which has no notes field to
+    // carry (§9 rule 4).
+    const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: includeNotes }
+    if (composer !== null) {
+      // No photo bytes and no render: the composer never needs the service-role client.
+      const outline = await composeForPet(supabase, petId, Date.now(), composer.part, requestedWindow, ownerArm, callerJwt, requestTimezone)
+      return Response.json(outline.body, {
+        status: outline.status,
+        headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' },
+      })
+    }
     const { status, body } = await generateReportForPet(
       supabase,
       petId,
       Date.now(),
       requestedWindow,
-      // This route is authenticated and owner-facing; PR 6's public `view-report` route
-      // is a different entry point and must construct the `shared_link` arm, which has no
-      // notes field to carry (§9 rule 4).
-      { kind: 'owner', includeLookNotes: includeNotes },
+      ownerArm,
       callerJwt,
       adminClient,
       requestTimezone,
