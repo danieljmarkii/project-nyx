@@ -442,16 +442,20 @@ Deno.serve(async (req: Request) => {
       )
       removed += swept.removed
       storageFailures.push(...swept.failures)
-      if (swept.unswept.length > 0) {
-        // CUL-2330 F6: the folders the budget left unstarted, as one machine-readable
-        // line. Sweeping a folder is idempotent, so this is the retry list for a hand
-        // cleanup or the orphan sweep (B-121, CUL-231). Each is also in storageFailures,
-        // so the client's `failed` count is never zero over them.
+      if (swept.unswept.length > 0 || swept.partial.length > 0) {
+        // CUL-2330: every folder the sweep did not empty, as one machine-readable line.
+        // `unswept`: never started (the time budget); sweeping a folder is idempotent,
+        // so re-running these finishes them. `partial`: started but left something (a
+        // walk gap or a rejected remove; the reasons are in the failure line below). An
+        // unsafe-name gap recurs on every run, so those need the orphan sweep (B-121,
+        // CUL-231) or a hand cleanup. Every folder here is also in storageFailures, so
+        // the client's `failed` count is never zero over them.
         console.warn(
           JSON.stringify({
-            event: 'delete-account.sweep.unswept',
+            event: 'delete-account.sweep.leftovers',
             userId,
-            folders: swept.unswept.map((s) => ({ bucket: s.bucket, root: s.root })),
+            unswept: swept.unswept.map((f) => ({ bucket: f.bucket, root: f.root })),
+            partial: swept.partial.map((f) => ({ bucket: f.bucket, root: f.root })),
           }),
         )
       }

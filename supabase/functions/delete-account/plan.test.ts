@@ -1307,7 +1307,7 @@ Deno.test('sweepOwnedPrefixes — a file written after the row read (no row) is 
     [STORAGE_BUCKETS.medicationPhotos]: ['user-1/med-9/label.jpg', 'user-2/med-1/label.jpg'],
   })
   const res = await sweepOwnedPrefixes(buildPrefixSweep(SWEEP_IDS), fs.listerFor, fs.remove)
-  assertEquals(res, { removed: 4, failures: [], unswept: [] })
+  assertEquals(res, { removed: 4, failures: [], unswept: [], partial: [] })
   // Only the other accounts' objects remain.
   assertEquals([...fs.store.get(STORAGE_BUCKETS.eventAttachments)!], ['victim-pet/evt/photo.jpg'])
   assertEquals([...fs.store.get(STORAGE_BUCKETS.vetReports)!], [])
@@ -1517,4 +1517,34 @@ Deno.test('sweepOwnedPrefixes — a deadline already past sweeps nothing and nam
 
 Deno.test('SWEEP_BUDGET_MS — leaves headroom under the 150 s Edge request limit', () => {
   assert(SWEEP_BUDGET_MS > 0 && SWEEP_BUDGET_MS <= 120_000)
+})
+
+Deno.test('listPrefixForSweep — a non-string or missing name is a gap, not a thrown folder', async () => {
+  const lister = treeLister({
+    'pet-a': [
+      { name: undefined as unknown as string, id: 'x' },
+      null as unknown as StorageListEntry,
+      { name: 'ok.jpg', id: '1' },
+    ],
+  })
+  const { keys, gaps } = await listPrefixForSweep(lister, 'pet-a')
+  assertEquals(keys, ['pet-a/ok.jpg'])
+  assertEquals(gaps.length, 2)
+})
+
+Deno.test('sweepOwnedPrefixes — partial names exactly the folders left with something, never a clean neighbour', async () => {
+  const tree: Record<string, StorageListEntry[]> = {
+    'pet-gap': [{ name: '..', id: 'x' }, { name: 'a.jpg', id: '1' }],
+    'pet-rej': [{ name: 'b.jpg', id: '2' }],
+  }
+  for (let i = 0; i < 12; i++) tree[`pet-ok-${i}`] = [{ name: 'c.jpg', id: `c${i}` }]
+  const sweep = Object.keys(tree).map((root) => ({ bucket: STORAGE_BUCKETS.petPhotos, root }))
+  const res = await sweepOwnedPrefixes(sweep, () => treeLister(tree), async (_b, keys) => {
+    await new Promise((r) => setTimeout(r, 1)) // interleave the workers
+    if (keys[0].startsWith('pet-rej/')) throw new Error('rejected')
+    return keys.length
+  })
+  assertEquals(res.partial.map((p) => p.root).sort(), ['pet-gap', 'pet-rej'])
+  assertEquals(res.removed, 13)
+  assertEquals(res.unswept, [])
 })

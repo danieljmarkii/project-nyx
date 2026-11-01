@@ -755,8 +755,12 @@ export interface SweepResult {
   // walk, a rejected remove batch, or a folder the budget left unstarted.
   failures: string[]
   // The folders never started because the time budget ran out (CUL-2330 F6,
-  // CUL-2334). Each is idempotent to sweep, so this is the retry list.
+  // CUL-2334). Each is idempotent to sweep, so re-running these finishes them.
   unswept: PrefixSweep[]
+  // The folders started but not emptied: a gap in the walk or a rejected remove
+  // batch. Re-running may finish a rejected batch; a gap from an unsafe name recurs
+  // every run, so those need the orphan sweep (B-121, CUL-231) or a hand cleanup.
+  partial: PrefixSweep[]
 }
 
 // Folders swept at once. The sweep is one list call per folder level plus a remove
@@ -798,7 +802,9 @@ export async function sweepOwnedPrefixes(
   const failures: string[] = []
   const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-  const sweepOne = async ({ bucket, root }: PrefixSweep): Promise<void> => {
+  const partial: PrefixSweep[] = []
+  const sweepOne = async (folder: PrefixSweep): Promise<void> => {
+    const { bucket, root } = folder
     let listing: PrefixListing
     try {
       listing = await listPrefixForSweep(listerFor(bucket), root)
@@ -806,8 +812,12 @@ export async function sweepOwnedPrefixes(
       // Only an unsafe ROOT throws here, and buildPrefixSweep refuses those before
       // the delete; recorded anyway so a regression is named, not swallowed.
       failures.push(`${bucket}/${root}/ (sweep list): ${message(e)}`)
+      partial.push(folder)
       return
     }
+    // A local flag, not a diff of `failures.length`: that array is shared by the
+    // workers, so another folder's failure would mark this one partial.
+    let left = listing.gaps.length > 0
     for (const g of listing.gaps) failures.push(`${bucket}/${root}/ (sweep gap): ${g}`)
     for (const batch of chunk(listing.keys, STORAGE_REMOVE_CHUNK)) {
       try {
@@ -817,8 +827,10 @@ export async function sweepOwnedPrefixes(
         removed += n
       } catch (e) {
         failures.push(`${bucket}/${root}/ (sweep remove, ${batch.length} objects): ${message(e)}`)
+        left = true
       }
     }
+    if (left) partial.push(folder)
   }
 
   // A shared cursor: JS runs each worker's synchronous step alone, so `next++` hands
@@ -835,7 +847,7 @@ export async function sweepOwnedPrefixes(
 
   const unswept = sweep.slice(next)
   for (const { bucket, root } of unswept) failures.push(`${bucket}/${root}/ (sweep not started: time budget)`)
-  return { removed, failures, unswept }
+  return { removed, failures, unswept, partial }
 }
 
 // ── Ordering ──────────────────────────────────────────────────────────────────
