@@ -400,10 +400,12 @@ Deno.test('changes — each catalogue entry fires at its threshold and not one u
   assert.deepEqual(ids(olive({ sleepingDays: 0, unfinishedDays: 0, weighedDaysAgo: 45, dateOfBirth: '2016-04-16' })), ['weight_stale_senior'], 'ten and a half is')
 })
 
-Deno.test('changes — null on a sheet with a symptom entry, and when nothing holds', () => {
+Deno.test('changes — one sneeze never erases the lines; the zero-sign scope is the render’s, via isZeroSignSheet', () => {
   const i = olive()
-  const withVomit = { ...i, events: [...i.events, symptom('vomit', 5)] }
-  assert.equal(changesInWindowOf(snap(withVomit)), null, 'scoped to zero-sign sheets')
+  const withSneeze = snap({ ...i, events: [...i.events, symptom('sneeze', 5)] })
+  assert.equal(isZeroSignSheet(withSneeze), false, 'the sheet is no longer zero-sign')
+  assert.deepEqual((changesInWindowOf(withSneeze) ?? []).map((c) => c.id), ['noticed_concern', 'meals_not_finished', 'weight_stale_senior'], 'the predicate still answers')
+  assert.equal(isZeroSignSheet(snap(i)), true)
   assert.equal(changesInWindowOf(snap(olive({ sleepingDays: 0, unfinishedDays: 0, weighedDaysAgo: 1 }))), null)
   const young = baseInput({ events: [...dailyMeals(30, 0), meal(2, 'some')] })
   assert.equal(changesInWindowOf(snap(young)), null)

@@ -423,16 +423,6 @@ export interface ChangeLine {
 }
 
 /**
- * The "Changes in this window" line on a zero-sign sheet: a window with no symptom entry can still
- * hold the change a vet needs, and without this the sheet reads calm (CUL-2323). From a closed
- * catalogue, code-written, never a band member and never called a flag; the render (VR2-10) sits
- * it where the band would sit, unframed.
- *
- * Null on a sheet with any symptom entry (the ruling scopes it to zero-sign sheets) and when no
- * entry holds. It does not read the band: an intake flag on a zero-sign sheet does not withhold
- * a Noticed line, and where the two sit together is the render's call.
- */
-/**
  * THE one definition of a zero-sign sheet (adversarial pass 1, finding 4): no symptom entry in the
  * window. Intake is not a sign here even though it can lead (`leadSignOf` returns `intake` on a
  * zero-sign sheet with unfinished meals), so a caller gates the changes line on this, never on
@@ -442,8 +432,21 @@ export function isZeroSignSheet(snap: ReportSnapshot): boolean {
   return !snap.symptoms.some((s) => s.count > 0)
 }
 
+/**
+ * The "Changes in this window" line on a zero-sign sheet: a window with no symptom entry can still
+ * hold the change a vet needs, and without this the sheet reads calm (CUL-2323). From a closed
+ * catalogue, code-written, never a band member and never called a flag; the render (VR2-10) sits
+ * it where the band would sit, unframed.
+ *
+ * Null when no entry holds. NOT gated on the sheet: PM ruling (a) scopes the PRINTED line to
+ * zero-sign sheets, and the render applies that scope with `isZeroSignSheet`. Gating here made one
+ * sneeze erase the stale-weight and unfinished-meal lines (adversarial passes 1 and 2 on CUL-2289);
+ * whether a sheet with a sign also prints them is a question for the PM, filed against this row.
+ * Until it is ruled, the predicate answers on every sheet (the louder stopgap) and the scope lives
+ * in one place a later ruling can widen. It does not read the band either: where the line sits
+ * beside one is the render's call.
+ */
 export function changesInWindowOf(snap: ReportSnapshot): ChangeLine[] | null {
-  if (!isZeroSignSheet(snap)) return null
   const out: ChangeLine[] = []
   const n = snap.noticed
   if (n) {
