@@ -429,6 +429,27 @@ describe('generateVetReport — reportVersion on the wire (CUL-2347)', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
   });
 
+  it('a v1 body carries no reportVersion key at all, not an undefined one', async () => {
+    mockDocumentEligible = true;
+    await generateVetReport({ petId: 'p1', includeNotes: true });
+    const sent = mockedInvoke.mock.calls[0][1].body as Record<string, unknown>;
+    expect(Object.keys(sent)).not.toContain('reportVersion');
+  });
+
+  it('a store that throws on read sends today\'s body (fails closed)', async () => {
+    mockDocumentEligible = true;
+    useBetaOptInStore.getState().setOptIn('report_document_v2', true);
+    const spy = jest.spyOn(useBetaOptInStore, 'getState').mockImplementation(() => {
+      throw new Error('store unavailable');
+    });
+    try {
+      await generateVetReport({ petId: 'p1', includeNotes: true });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
+  });
+
   it('the other report switch (the new flow) never asks for the layout', async () => {
     mockDocumentEligible = true;
     useBetaOptInStore.getState().setOptIn('report_composer_v2', true);
