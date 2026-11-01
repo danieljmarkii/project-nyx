@@ -5723,7 +5723,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const ongoingSeenDays = Math.min(windowDays, detConfig.chronicity.windowDays)
   const ongoingLoggedDays = (() => {
     if (checkNowMs === null) return 0
-    const fromMs = checkNowMs - ongoingSeenDays * MS_PER_DAY
+    // The engine's own lookback bound, never `ongoingSeenDays` × 24h: on a short window the window
+    // filter already bounds the start, and a 24h step across a DST fall-back lands an hour inside
+    // the window's first day, dropping a day the engine counted an episode on (adversarial pass 1:
+    // "1 episode in 0 logged days").
+    const fromMs = checkNowMs - detConfig.chronicity.windowDays * MS_PER_DAY
     const days = new Set<number>()
     for (const e of windowEvents) {
       const ms = parseMs(e.occurredAt)
@@ -5783,8 +5787,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       minEpisodes: Math.max(detConfig.reflection.worseningMinEpisodes, detConfig.en11?.worseningCardMinEpisodes ?? 0),
       endDate: worseningEndDate,
       priorEndDate: worseningPriorEndDate,
-      currentLoggingDays: density?.currentLoggingDays ?? 0,
-      priorLoggingDays: density?.priorLoggingDays ?? 0,
+      // Display only (the state above reads the raw counts): a 7 × 24h window from a mid-day `now`
+      // touches 8 UTC days, and "8 of the 7 days" is not a sentence (adversarial pass 1).
+      currentLoggingDays: Math.min(density?.currentLoggingDays ?? 0, detConfig.reflection.windowDays),
+      priorLoggingDays: Math.min(density?.priorLoggingDays ?? 0, detConfig.reflection.windowDays),
       minLoggingDays,
     })
   }

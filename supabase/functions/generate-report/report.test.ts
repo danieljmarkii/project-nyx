@@ -5815,6 +5815,37 @@ Deno.test('CUL-2348 — the logged days never exceed the span the check saw', ()
   assert.ok(/episodes in 56 logged days of the last 8 weeks/.test(readAs(renderReport(snap))))
 })
 
+Deno.test('CUL-2348 adv 1 — a DST fall-back inside a short window never prints an episode on no logged day', () => {
+  idSeq = 0
+  // New York, a custom window Oct 20 – Nov 12 run Nov 20: 24 × 24h back from Nov 12's last instant
+  // lands an hour into Oct 20, past a 00:30 vomit the engine still counts.
+  const snap = assembleReport(
+    baseInput({
+      now: '2026-11-20T17:00:00Z',
+      timezone: 'America/New_York',
+      requestedWindow: { startDate: '2026-10-20', endDate: '2026-11-12' },
+      events: [makeEvent({ type: 'vomit', occurredAt: '2026-10-20T04:30:00Z' })],
+    }),
+  )
+  const c = snap.safetyChecks.find((x) => x.kind === 'ongoing')
+  assert.ok(c && c.kind === 'ongoing' && c.episodes === 1 && c.loggedDays === 1, JSON.stringify(c))
+  assert.ok(!/in 0 logged days/.test(readAs(renderReport(snap))))
+})
+
+Deno.test('CUL-2348 adv 1 — a 7 × 24h week touching 8 days never prints "8 of the 7 days"', () => {
+  idSeq = 0
+  const events = [
+    ...dayKeys('2026-06-25', '2026-07-01').map((d) => ({ ...mealEvent(d), occurredAt: at(d, '13:00:00') })),
+    { ...mealEvent('2026-07-02'), occurredAt: at('2026-07-02', '09:00:00') },
+    makeEvent({ type: 'vomit', occurredAt: at('2026-06-30') }),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  const w = snap.safetyChecks.find((x) => x.kind === 'worsening')
+  assert.ok(w && w.kind === 'worsening' && w.state === 'too_few_days' && w.currentLoggingDays === 7, JSON.stringify(w))
+  const p = readAs(renderReport(snap))
+  assert.ok(p.includes('(7 of the 7 days to Jul 2 logged, 0 of the 7 days to Jun 25;'), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
+})
+
 Deno.test('CUL-2003 adv 5 — a report window shorter than the span floor cannot claim the ongoing check ran', () => {
   idSeq = 0
   const events = [...mealsOn(dayKeys('2026-06-19', '2026-07-02')), makeEvent({ type: 'vomit', occurredAt: at('2026-06-25') })]
