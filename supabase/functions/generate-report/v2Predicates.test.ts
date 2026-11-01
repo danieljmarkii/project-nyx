@@ -218,7 +218,7 @@ Deno.test('lead — the ladder: band flag, trial sign, rising, most days', () =>
   const noTrial: ReportSnapshot = {
     ...withVomit,
     trial: null,
-    safetyChecks: [{ kind: 'worsening', symptomType: 'itch', windowDays: 7, state: 'below_card_floor', minEpisodes: 2, currentLoggingDays: 7, priorLoggingDays: 7, minLoggingDays: 3 } as never],
+    safetyChecks: [{ kind: 'worsening', symptomType: 'itch', windowDays: 7, state: 'below_card_floor', minEpisodes: 2, endDate: '2026-07-02', priorEndDate: '2026-06-25', currentLoggingDays: 7, priorLoggingDays: 7, minLoggingDays: 3 } as never],
   }
   assert.deepEqual(leadSignOf(noTrial), { sign: 'itch', reason: 'rising', line: LEAD_REASON_LINE.rising })
   // Step 4: nothing else, the most days with an entry.

@@ -2215,6 +2215,8 @@ Deno.test('CUL-2101 adv 2 — the trend tile and a below-floor rise name a tail 
     windowDays: 7,
     state: 'below_card_floor' as const,
     minEpisodes: 3,
+    endDate: '2026-07-02',
+    priorEndDate: '2026-06-25',
     currentLoggingDays: 4,
     priorLoggingDays: 7,
     minLoggingDays: 3,
