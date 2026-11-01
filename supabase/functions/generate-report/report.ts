@@ -3377,6 +3377,12 @@ export interface ReportV2Facts {
    *  at least 90 days before the window, so a date under 14 days before the report is the record's
    *  own start. null when the pull holds no dateable entry. */
   firstEntryDate: string | null
+  /** VR2-16 — the window's logged days as local 'YYYY-MM-DD' keys, ascending: the same
+   *  `loggedDayNums` as `atAGlance.loggedDays`, so the composer's coverage strip and calendar dots
+   *  can never disagree with "N of M days logged". Optional only so a hand-built fixture written
+   *  before it existed still compiles; `assembleReport` always sets it, and the composer reads an
+   *  absent list as "not read", never as a record with no entries (C-12). */
+  loggedDayKeys?: string[]
   /**
    * Could the checks that compare weeks run, read without any symptom (adversarial pass 2,
    * finding B): `safetyChecks` exists only for a logged sign in an engine lane, so a sparse or short
@@ -6719,6 +6725,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         unfinishedRated.map((e) => localDayKey(e.occurredAt, tz) ?? e.occurredAt.slice(0, 10)),
       ).size,
       firstEntryDate: firstEntryDateOf(dedupedAll, input.now, tz),
+      loggedDayKeys: [...loggedDayNums].sort((a, b) => a - b).map(dayKeyFromNumber),
       weeksComparable: weekComparisonMeasurable(detInput, detConfig),
       ongoingWindowShort: scope.windowDays <= detConfig.chronicity.minSpanDays,
     },
