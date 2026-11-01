@@ -3,6 +3,7 @@
 // the window, a new account, two pets, the largest text size (AX5) and the VoiceOver order.
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ScrollView, Text } from 'react-native';
+type ReactTestInstance = ReturnType<typeof render>['UNSAFE_root'];
 import { ReportComposer } from './ReportComposer';
 import type { ComposerOpen, ComposerWindowCounts, ComposerCounts } from '../../lib/reportComposer';
 
@@ -241,8 +242,12 @@ describe('the composer state table', () => {
   it('VoiceOver order: the card is read first, then the question, then the windows', async () => {
     const r = await renderReady(nyx());
     const order = ['composer-live-card', 'composer-window-since_visit', 'composer-covers'];
-    const all = r.UNSAFE_root.findAll((n) => typeof n.props.testID === 'string' && order.includes(n.props.testID) && typeof n.type === 'string');
-    const ids = all.map((n) => n.props.testID).filter((id, i, a) => a.indexOf(id) === i);
+    const all = r.UNSAFE_root.findAll(
+      (n: ReactTestInstance) => typeof n.props.testID === 'string' && order.includes(n.props.testID) && typeof n.type === 'string',
+    );
+    const ids = all
+      .map((n: ReactTestInstance) => n.props.testID as string)
+      .filter((id: string, i: number, a: string[]) => a.indexOf(id) === i);
     expect(ids).toEqual(order);
     expect(r.getByTestId('composer-live-card').props.accessibilityLabel).toMatch(/^Nyx’s report has flags/);
   });
