@@ -23,7 +23,7 @@ import { blockIdsOf, COUNT_AXIS_MIN_MAX, renderPrintV2 } from './renderPrintV2.t
 import { bandMembersOf, isZeroSignSheet } from './v2Predicates.ts'
 import { cooperInput } from './cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
-import { itchingSkinTrial, juniper, olive, symptom, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
+import { baseInput, dayKey, itchingSkinTrial, juniper, meal, olive, symptom, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
@@ -320,13 +320,13 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
   'nyx-live': 187,
-  'cooper': 57,
+  'cooper': 69,
   'r11-steady': 57,
   'r11-jump': 57,
   'r11-wobble': 57,
   'new-account-4-days': 30,
   'looks-only': 48,
-  'trial-report-clean.html': 127,
+  'trial-report-clean.html': 119,
   'mira': 96,
   'trial-report-completed.html': 122,
   'trial-report-truncated.html': 67,
@@ -390,4 +390,89 @@ Deno.test('cold read — a free-fed bowl is named beside the trial, not only on 
   const conf = block(docOf(s), 'confounder')
   assert.ok(conf)
   assert.match(conf.text, /A free-fed bowl was down in this window \(.+\): intake not directly observed, and the trial cannot exclude it\./)
+})
+
+// ── Adversarial pass 1 fixes (CUL-2290) ─────────────────────────────────────
+
+/** Break 2's cat: 28 days of two full meals, then six refused over the last three days. */
+function refusingCat(withVomit = false): ReportSnapshot {
+  const events = []
+  for (let d = 30; d >= 3; d--) events.push(meal(d, 'all', 8), meal(d, 'all', 18))
+  for (const d of [2, 1, 0]) events.push(meal(d, 'refused', 8), meal(d, 'refused', 18))
+  if (withVomit) events.push(symptom('vomit', 1))
+  return assembleReport(
+    baseInput({
+      pet: { id: 'pet-cat', name: 'Fixture', species: 'cat', breed: null, sex: 'female', dateOfBirth: '2018-01-01', weightKg: 4 },
+      requestedWindow: { startDate: dayKey(30), endDate: dayKey(0) },
+      events,
+    }),
+  )
+}
+
+Deno.test('adversarial 2 — an intake flag on a zero-sign sheet draws the intake row, never a row of logged days', () => {
+  const s = refusingCat()
+  assert.ok(s.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the fixture fires the intake flag')
+  assert.ok(isZeroSignSheet(s))
+  const c = chartOf(docOf(s))
+  assert.equal(c.rows[0].kind, 'intake', 'the flagged measure leads')
+  assert.ok(!c.rows.some((r) => r.kind === 'coverage'))
+  assert.match(c.heading, /^Meals not finished by week/)
+  assert.equal(c.reasonLine, 'Leads because it is flagged.')
+  assert.ok(c.marks.includes('intake_refused'))
+})
+
+Deno.test('adversarial 3 — v1’s run of unfinished meals prints on the meals line (CUL-1978)', () => {
+  const events = []
+  for (let d = 40; d >= 2; d--) events.push(meal(d, 'all', 8), meal(d, 'all', 18))
+  for (const d of [1, 0]) events.push(meal(d, 'most', 8), meal(d, 'most', 18))
+  events.push(symptom('vomit', 20), symptom('vomit', 10))
+  const s = assembleReport(baseInput({ requestedWindow: { startDate: dayKey(40), endDate: dayKey(0) }, events }))
+  const d = docOf(s)
+  const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
+  assert.ok(all.some((t) => t?.startsWith('Meals: The last 4 rated meals in a row were not fully eaten.')), JSON.stringify(all))
+})
+
+Deno.test('adversarial 4 — bowl ratings the intake check never reads are disclosed beside the intake row', () => {
+  const s = refusingCat()
+  const bowl = { ...s, v2: { ...s.v2, intakeWeeksBowlExcluded: 12 } }
+  assert.match(chartOf(docOf(bowl)).twin, /not counting 12 ratings of a free-fed bowl, which the intake check does not read/)
+  assert.doesNotMatch(chartOf(docOf(s)).twin, /free-fed bowl/, 'silent when none were left out')
+})
+
+Deno.test('adversarial 5 — a hollow course keeps its dates in the twin; "given on 0" never prints, the gap line carries it', () => {
+  const s = assembleReport(itchingSkinTrial({ jump: false }))
+  const start = s.scope.startDate
+  const withCourse = {
+    ...s,
+    concurrentChanges: [
+      ...s.concurrentChanges,
+      { kind: 'medication', label: 'Prednisolone', startDate: dayKey(30), bucketIndex: 3, ongoing: false, endInWindow: dayKey(10), endBucketIndex: 6, endIsDeclared: true },
+    ],
+    medications: [
+      ...s.medications,
+      { regimenId: 'r-pred', drugName: 'Prednisolone', isSupplement: false, overlapsWindow: true, courseDays: { given: 0, loggedNotGiven: 0, nothingLogged: 21 } },
+    ],
+  } as unknown as ReportSnapshot
+  assert.ok(start < dayKey(30))
+  const d = docOf(withCourse)
+  const c = chartOf(d)
+  assert.ok(c.marks.includes('hollow_span'))
+  assert.match(c.twin, /Hollow dashed line: Prednisolone, prescribed from \w+ \d+ to \w+ \d+, no doses logged/)
+  const lines = block(d, 'record_lines')?.lines.map((l) => l.text) ?? []
+  assert.ok(!lines.some((l) => l.startsWith('Prednisolone')), 'no "given on 0 of 21" line')
+  assert.ok(block(d, 'gap_lines')?.lines.some((g) => g.text === 'Doses of Prednisolone on 21 of 21 days not logged'))
+})
+
+Deno.test('adversarial 6 — a course that ended before the day row starts is not drawn over its first day', () => {
+  const s = assembleReport(juniper())
+  const before = {
+    ...s,
+    concurrentChanges: [
+      { kind: 'medication', label: 'Metronidazole', startDate: dayKey(60), bucketIndex: null, ongoing: true, endInWindow: dayKey(20), endBucketIndex: 5, endIsDeclared: true },
+    ],
+  } as unknown as ReportSnapshot
+  const c = chartOf(docOf(before))
+  assert.equal(c.unit, 'day')
+  assert.ok(!c.rows.some((r) => r.kind === 'span'), 'not drawn')
+  assert.match(c.overflow ?? '', /Metronidazole .*before the first day drawn/)
 })

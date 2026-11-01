@@ -3399,6 +3399,9 @@ export interface ReportV2Facts {
    * the ones refused outright. The intake row's part-of-whole bars (spec v2 §5.4) read only this.
    */
   intakeWeeks: Array<{ rated: number; notFinished: number; refused: number }>
+  /** Ratings of a free-fed bowl left out of `intakeWeeks`: the intake detector never reads them
+   *  (CUL-1086, §11 #6), so the bar a flag is drawn on counts what the flag counted. Disclosed. */
+  intakeWeeksBowlExcluded: number
   /** CUL-2290: in-window symptom incidents per local day, for the day row under a 14-day window.
    *  The same deduped incidents as `SymptomAggregate.count` (they sum to it, per type). */
   symptomDayCounts: Array<{ type: ReportSymptomType; day: string; count: number }>
@@ -6737,7 +6740,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       weeksComparable: weekComparisonMeasurable(detInput, detConfig),
       ongoingWindowShort: scope.windowDays <= detConfig.chronicity.minSpanDays,
       loggedDayKeys: [...loggedDayNums].sort((a, b) => a - b).map(dayKeyFromNumber),
-      intakeWeeks: intakeWeeksOf(ratedMealsInWindow, (iso) => eventDayNumber(iso, tz), bucketIndexOfDay, numBuckets),
+      intakeWeeks: intakeWeeksOf(
+        ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+        (iso) => eventDayNumber(iso, tz),
+        bucketIndexOfDay,
+        numBuckets,
+      ),
+      intakeWeeksBowlExcluded: ratedMealsInWindow.filter((e) =>
+        isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans),
+      ).length,
       symptomDayCounts: symptomDayCountsOf(windowEvents, (iso) => eventDayNumber(iso, tz)),
     },
   }

@@ -422,13 +422,22 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
     const none = med !== null && med.courseDays.given === 0 && med.courseDays.loggedNotGiven === 0
     const from = start === null ? (c.startDate ? `from ${plainDay(c.startDate.slice(0, 10))} (before this window)` : 'start not recorded') : `from ${plainDay(start)}`
     const to = end === null ? 'through the window' : c.endIsDeclared ? `to ${plainDay(end)}` : `to ${plainDay(end)} (last dose logged)`
-    const when = none ? `${from}, prescribed, no doses logged` : `${from}${start === null && !c.startDate ? ',' : ''} ${to}`
+    const span = `${from}${start === null && !c.startDate ? ',' : ''} ${to}`
+    const when = none ? `prescribed ${span}, no doses logged` : span
+    const first = cols[0]?.start ?? windowStart
+    // A course that ended before the first drawn column (a day row starting at the first entry)
+    // is not drawn over that column; it is named under the chart instead (adversarial pass 1, 6).
+    if (end !== null && end < first) {
+      overflow.push(`${c.label} ${when}, before the first day drawn`)
+      continue
+    }
+    const startsInChart = start !== null && start >= first
     const row: Extract<ChartRow, { kind: 'span' }> = {
       kind: 'span',
       label: c.label,
-      fromCol: start === null ? 0 : colOf(cols, start),
+      fromCol: startsInChart ? colOf(cols, start) : 0,
       toCol: end === null ? cols.length - 1 : colOf(cols, end),
-      openStart: start === null,
+      openStart: !startsInChart,
       openEnd: end === null,
       hollow: none,
       when,
@@ -466,7 +475,10 @@ function cellWord(count: number, col: ChartColumn, unit: LeadChart['unit']): str
 }
 
 function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extract<SafetyFlag, { kind: 'chronicity' }> | null): LeadChart {
-  const zeroSign = isZeroSignSheet(snap)
+  // A zero-sign sheet leads with coverage (round 5's c′), EXCEPT when intake leads because it is
+  // flagged: then the chart is the measure the flag fired on, never a row of logged days
+  // (adversarial pass 1 on CUL-2290, break 2: the 48-hour refusal cat drew 31 solid bars).
+  const zeroSign = isZeroSignSheet(snap) && !(lead?.sign === 'intake' && lead.reason === 'flag')
   const windowDays = snap.atAGlance.windowDays
   const marks = new Set<MarkKind>()
 
@@ -536,7 +548,9 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
         ...(marks.has('intake_refused') ? ['refused drawn solid'] : []),
         ...(marks.has('intake_partly') ? ['partly eaten drawn light'] : []),
       ]
-      twinParts.push(`meals not finished, of those rated${fills.length > 0 ? ` (${fills.join(', ')})` : ''}: ${words.join(', ')}`)
+      const bowl = snap.v2.intakeWeeksBowlExcluded
+      const bowlNote = bowl > 0 ? `, not counting ${plural(bowl, 'rating', 'ratings')} of a free-fed bowl, which the intake check does not read` : ''
+      twinParts.push(`meals not finished, of those rated${fills.length > 0 ? ` (${fills.join(', ')})` : ''}${bowlNote}: ${words.join(', ')}`)
     }
     const { rows: signRows, overflow } = chartSigns(snap, lead)
     for (const s of signRows) {
@@ -563,7 +577,7 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
   const solid = spans.rows.filter((r) => !r.hollow)
   const hollow = spans.rows.filter((r) => r.hollow)
   if (solid.length > 0) twinParts.push(`Bracketed lines, courses and foods: ${solid.map((r) => `${r.label} ${r.when}`).join('; ')}`)
-  if (hollow.length > 0) twinParts.push(`Hollow dashed line: ${hollow.map((r) => `${r.label}, ${r.when.replace(/^.*?, prescribed/, 'prescribed')}`).join('; ')}`)
+  if (hollow.length > 0) twinParts.push(`Hollow dashed line: ${hollow.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
 
   const partials = columns
     .map((c, i) => ({ c, i, l: colLabel(c, unit) }))
@@ -630,11 +644,15 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   const mc = snap.diet.mealCompletion
   const notFinished = mc ? mc.ratedMeals - mc.finishedMeals : null
   const parts = [`${v.loggedMeals} logged`, `${v.ratedMeals} rated`]
+  // v1's run (CUL-1978): "40 of 44 fully eaten" read as a dog who eats fine while the last four
+  // were not. The same floor as v1's `recentNotFullyEatenRun`: 2 or more, and not every meal.
+  const run = mc?.recentNotFullyEatenRun ?? 0
+  const runText = mc && run >= 2 && run < mc.ratedMeals ? `The last ${run} rated meals in a row were not fully eaten. ` : ''
   if (notFinished !== null && notFinished > 0) parts.push(`${notFinished} not fully eaten, on ${plural(v.mealNotFinishedDays, 'day', 'days')}`)
   else if (notFinished === 0 && v.ratedMeals > 0) parts.push('every rated meal recorded as fully eaten')
   // B-040's words, verbatim: a bowl left down means no one watched what was eaten from it.
   const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named').join(', ')
-  return { id: 'intake', text: `Meals: ${parts.join('; ')}.${freeFed ? ` Free-fed: ${bowls}. Intake not directly observed.` : ''}` }
+  return { id: 'intake', text: `Meals: ${runText}${parts.join('; ')}.${freeFed ? ` Free-fed: ${bowls}. Intake not directly observed.` : ''}` }
 }
 
 function trialLine(snap: ReportSnapshot): RecordLine | null {
@@ -654,8 +672,11 @@ function trialLine(snap: ReportSnapshot): RecordLine | null {
 }
 
 function medicationLines(snap: ReportSnapshot): RecordLine[] {
+  // A course with nothing logged as given prints no line here: "given on 0 of 21" reads as "not
+  // given" where the record says "not logged", and the gap line already states the unlogged days
+  // (spec §5.7, a fact prints once).
   return snap.medications
-    .filter((m) => m.overlapsWindow)
+    .filter((m) => m.overlapsWindow && (m.courseDays.given > 0 || m.courseDays.loggedNotGiven > 0))
     .map((m) => {
       const c = m.courseDays
       const total = c.given + c.loggedNotGiven + c.nothingLogged
@@ -818,8 +839,20 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
 export interface WordCount {
   /** The prose that can be cut: the lead sentence, the record lines, the confounder, the gap lines. */
   cuttable: number
-  /** Reported beside it, never trimmed: masthead, band (and checks), scope line, twin, colophon. */
-  fixed: { masthead: number; band: number; scopeLine: number; twin: number; colophon: number }
+  /** Reported beside it, never trimmed: masthead, band (checks and an R-11 flag included), scope
+   *  line, twin, colophon, and the other required lines (changes, record edge, disclosures, the
+   *  owner's questions) so their growth stays visible too. */
+  fixed: {
+    masthead: number
+    band: number
+    scopeLine: number
+    twin: number
+    colophon: number
+    changes: number
+    recordEdge: number
+    disclosure: number
+    questions: number
+  }
 }
 
 function words(text: string): number {
@@ -829,7 +862,7 @@ function words(text: string): number {
 
 export function wordCountOf(doc: DocumentV2): WordCount {
   let cuttable = 0
-  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0 }
+  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0 }
   for (const b of doc.blocks) {
     switch (b.kind) {
       case 'lead_sentence':
@@ -856,6 +889,19 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         break
       case 'lead_chart':
         fixed.twin += words(b.chart.twin)
+        if (b.chart.flagHtml) fixed.band += words(`${b.chart.heading} ${textOf(b.chart.flagHtml)}`)
+        break
+      case 'changes':
+        fixed.changes += words([b.heading, ...b.lines.map((l) => l.text)].join(' '))
+        break
+      case 'record_edge':
+        fixed.recordEdge += words(b.lines.join(' '))
+        break
+      case 'disclosure':
+        fixed.disclosure += words(textOf(b.html))
+        break
+      case 'questions':
+        fixed.questions += words(b.items.map((q) => q.text).join(' '))
         break
       case 'colophon':
         fixed.colophon += words(b.text)

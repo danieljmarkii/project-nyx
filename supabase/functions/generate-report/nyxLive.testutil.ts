@@ -92,6 +92,7 @@ export function nyxLiveSnapshot(): ReportSnapshot {
       ongoingWindowShort: s.safetyChecks.some((c) => c.kind === 'ongoing' && c.state === 'window_short'),
       loggedDayKeys: [],
       intakeWeeks,
+      intakeWeeksBowlExcluded: 0,
       symptomDayCounts: [...counts.entries()].map(([k, count]) => {
         const [type, day] = k.split('|')
         return { type: type as ReportSnapshot['symptoms'][number]['type'], day, count }
