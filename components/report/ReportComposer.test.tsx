@@ -216,17 +216,21 @@ describe('the composer state table', () => {
     expect(r.getByTestId('composer-after')).toHaveTextContent(
       'Left out by these dates: 8 symptom entries (6 vomiting, 2 coughing), 2 refused meals after Oct 20, and everything else logged after it, up to today.',
     );
-    // The window's own report prints both live flags here, so no warning.
-    expect(r.queryByTestId('composer-dropped-flags')).toBeNull();
+    // A window ending before today confirms no live flag by kind alone (pass 2, B2).
+    expect(r.getByTestId('composer-dropped-flags')).toHaveTextContent(/^These dates end before today/);
   });
 
-  it('a failed window read says so beside the counts and offers Try again; the card stays', async () => {
+  it('a failed window read says so, confirms no live flag, and holds Preview (pass 2, B1)', async () => {
     const r = await renderReady(nyx());
     mockWindow.mockRejectedValueOnce(new Error('offline'));
     fireEvent.press(r.getByTestId('composer-window-last_30'));
     await act(async () => {});
     expect(r.getByTestId('composer-counts-failed')).toBeTruthy();
     expect(r.getByTestId('composer-live-card')).toBeTruthy();
+    expect(r.getByTestId('composer-dropped-flags')).toHaveTextContent(/^Couldn’t confirm the report for these dates shows the flags above/);
+    expect(r.getByTestId('composer-preview').props.accessibilityState).toMatchObject({ disabled: true });
+    fireEvent.press(r.getByTestId('composer-preview'));
+    expect(r.onPreview).not.toHaveBeenCalled();
   });
 
   it('no events in the window: the warm note, never a result', async () => {

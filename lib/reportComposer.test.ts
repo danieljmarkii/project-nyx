@@ -110,20 +110,39 @@ describe('the words (round 5 frames b1 to b4)', () => {
 
   it('the dropped-flag line names every live flag the window’s report would not print', () => {
     const l = live();
-    const printedBoth = counts({ flags: l.flags });
-    expect(droppedFlagsLine(missingFlagsOf(l, printedBoth), printedBoth)).toBeNull();
-    const printedOne = counts({ flags: [l.flags[0]] });
-    expect(droppedFlagsLine(missingFlagsOf(l, printedOne), printedOne)).toBe(
+    const line = (c: ReturnType<typeof counts>) => droppedFlagsLine(missingFlagsOf(l, c, TODAY));
+    expect(line(counts({ flags: l.flags }))).toBeNull();
+    expect(line(counts({ flags: [l.flags[0]] }))).toBe(
       `The report for these dates won’t show the flag for a lot of vomiting this week. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`,
     );
-    const printedNone = counts({ flags: [] });
-    expect(missingFlagsOf(l, printedNone)).toHaveLength(2);
+    expect(missingFlagsOf(l, counts({ flags: [] }), TODAY).missing).toHaveLength(2);
     // The server did not say: every live flag is unconfirmed, never assumed printed.
-    const unknown = counts({ flags: null });
-    expect(missingFlagsOf(l, unknown)).toHaveLength(2);
-    expect(droppedFlagsLine(missingFlagsOf(l, unknown), unknown)).toMatch(/^Couldn’t confirm/);
+    const unknown = missingFlagsOf(l, counts({ flags: null }), TODAY);
+    expect(unknown).toEqual({ missing: l.flags, reason: 'unconfirmed' });
+    expect(droppedFlagsLine(unknown)).toMatch(/^Couldn’t confirm/);
     // No live flag, nothing to drop.
-    expect(missingFlagsOf(live({ state: 'none', flags: [] }), printedNone)).toEqual([]);
+    expect(missingFlagsOf(live({ state: 'none', flags: [] }), counts({ flags: [] }), TODAY).missing).toEqual([]);
+  });
+
+  it('a window ending before today confirms no live flag by kind alone (pass 2, B2)', () => {
+    // An older blood-in-vomit inside a past window is not today's: same kind and sign, different finding.
+    const l = live();
+    const past = counts({ endDate: '2026-10-10', flags: l.flags });
+    const m = missingFlagsOf(l, past, TODAY);
+    expect(m.reason).toBe('ended');
+    expect(m.missing).toEqual(l.flags);
+    expect(droppedFlagsLine(m)).toBe(
+      'These dates end before today, so the report may not show possible foreign material in vomit and a lot of vomiting this week as it stands now. Tell your vet, or choose dates that run to today.',
+    );
+    // The weight flag runs as of today whatever the window, so a past window's copy of it is today's.
+    const weight = { kind: 'weight_loss', sign: null, trigger: null };
+    expect(missingFlagsOf(live({ flags: [weight] }), counts({ endDate: '2026-10-10', flags: [weight] }), TODAY).missing).toEqual([]);
+  });
+
+  it('an intake flag with another trigger is another flag (pass 2, B2)', () => {
+    const now = { kind: 'intake_decline', sign: null, trigger: 'refused_then_vomited' };
+    const then = { kind: 'intake_decline', sign: null, trigger: 'consecutive_low' };
+    expect(missingFlagsOf(live({ flags: [now] }), counts({ flags: [then] }), TODAY).missing).toEqual([now]);
   });
 
   it('no owner string carries an exclamation mark or a percentage', () => {

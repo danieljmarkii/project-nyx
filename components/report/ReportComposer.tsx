@@ -121,7 +121,12 @@ export function ReportComposer({ petId, petName, state: c, onPreview, onFallback
   const counting = c.countsState === 'counting';
   const isCustom = selected.kind === 'custom';
   const shown: ComposerCounts | null = counting ? null : counts;
-  const dropped = shown ? droppedFlagsLine(missingFlagsOf(open.live, shown), shown) : null;
+  // A failed read of the chosen dates confirms nothing: every live flag reads as unconfirmed and
+  // Preview waits, so a report the owner cannot see the flags of is never one tap away (pass 2, B1).
+  const failed = c.countsState === 'failed';
+  const dropped = shown
+    ? droppedFlagsLine(missingFlagsOf(open.live, failed ? { ...shown, flags: null } : shown, today))
+    : null;
   const preview = () => {
     // The windows on offer were today's. A composer left open past midnight reads again rather
     // than build a window whose meaning moved overnight (adversarial pass 1, F5).
@@ -248,11 +253,16 @@ export function ReportComposer({ petId, petName, state: c, onPreview, onFallback
               appActive={appActive}
             />
           )}
-          {c.countsState === 'failed' ? (
+          {failed ? (
             <View>
               <ThemedText style={styles.line} testID="composer-counts-failed">
                 {COUNTS_FAILED_LINE}
               </ThemedText>
+              {dropped && (
+                <ThemedText style={styles.dropped} testID="composer-dropped-flags">
+                  {dropped}
+                </ThemedText>
+              )}
               <PrimaryButton label="Try again" onPress={c.retry} variant="secondary" style={styles.retry} />
             </View>
           ) : shown ? (
@@ -297,8 +307,9 @@ export function ReportComposer({ petId, petName, state: c, onPreview, onFallback
       <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
         <PrimaryButton
           label="Preview report"
-          // Never a preview of counts still in flight: the window on screen is the one previewed.
-          disabled={counting}
+          // Never a preview of counts still in flight or failed: the window on screen, with its flags
+          // read, is the one previewed.
+          disabled={counting || failed}
           onPress={preview}
           testID="composer-preview"
         />

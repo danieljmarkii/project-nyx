@@ -7,7 +7,9 @@
 //
 // THE LIVE-FLAG CARD reads one 56-day set, fetched once when the composer opens. A window change
 // never re-reads it and never moves it (GAP-14): a flag the owner's dates leave out still sits on
-// top of the screen, because the report prints it whatever the dates.
+// top of the screen. The report built today does NOT print the 56-day set whatever the dates (that
+// is the v2 document, VR2-10), so the card speaks about the record, and a line under the counts
+// says when the chosen dates' report may not show a live flag (`droppedFlagsLine`).
 //
 // ABSENCE IS NOT WELLNESS (Principle 3, `clinical-guardrails`). A record with no live flag gets no
 // card at all, never an "all clear"; a read that came back short gets a line saying it could not
@@ -363,29 +365,52 @@ export function afterDisclosure(after: ComposerAfter, windowEnd: string, today: 
   return after.incomplete ? `${lead} Part of those days didn’t load, so there may be more.` : lead;
 }
 
-const flagKey = (f: ComposerFlag): string => `${f.kind}:${f.sign ?? ''}`;
+/** A flag's identity across two snapshots. An intake flag's trigger is part of it: a September
+ *  "eating less" is not today's "refusing food, then vomiting" (adversarial pass 2, B2). */
+const flagKey = (f: ComposerFlag): string => `${f.kind}:${f.sign ?? ''}:${f.kind === 'intake_decline' ? f.trigger ?? '' : ''}`;
+
+/** The one flag the report computes as of TODAY whatever the window (the weight lane runs on the
+ *  whole weight history at the report date), so a past window's copy of it is today's. */
+const AS_OF_TODAY_KINDS: ReadonlySet<string> = new Set(['weight_loss']);
+
+export type DroppedReason = 'unconfirmed' | 'ended' | 'dropped';
 
 /**
- * The live flags the report for this window would NOT print. A short or cropped window can lose a
- * flag the 56-day set holds (adversarial pass 1 on CUL-2296, F1/F2); until the v2 report prints
- * the 56-day band whatever the window (VR2-10), the composer says so out loud. `null` ⇒ the server
- * did not say which flags the window prints: every live flag counts as unconfirmed.
+ * The live flags the report for this window may NOT print, and why. Until the v2 report prints the
+ * 56-day band whatever the window (VR2-10), the composer says so out loud, and every doubt reads as
+ * a flag that may be missing, never as one that is there:
+ *   - `unconfirmed`: the server did not say which flags the window prints (`counts.flags` null), or
+ *     the window's read failed. Every live flag.
+ *   - `ended`: the window ends before today. Its report runs detection as of its own end, so a flag
+ *     of the same kind there can be an older, different finding (adversarial pass 2, B2): every live
+ *     flag but the as-of-today kinds the window also holds.
+ *   - `dropped`: the window runs to today and its report lacks a live flag (pass 1, F1/F2).
  */
-export function missingFlagsOf(live: ComposerLive, counts: ComposerCounts): ComposerFlag[] {
-  if (live.state !== 'flags') return [];
-  if (counts.flags === null) return live.flags;
+export function missingFlagsOf(
+  live: ComposerLive,
+  counts: ComposerCounts,
+  today: string,
+): { missing: ComposerFlag[]; reason: DroppedReason } {
+  if (live.state !== 'flags') return { missing: [], reason: 'dropped' };
+  if (counts.flags === null) return { missing: live.flags, reason: 'unconfirmed' };
   const printed = new Set(counts.flags.map(flagKey));
-  return live.flags.filter((f) => !printed.has(flagKey(f)));
+  if (counts.endDate < today) {
+    return { missing: live.flags.filter((f) => !(AS_OF_TODAY_KINDS.has(f.kind) && printed.has(flagKey(f)))), reason: 'ended' };
+  }
+  return { missing: live.flags.filter((f) => !printed.has(flagKey(f))), reason: 'dropped' };
 }
 
-/** The warning under the counts when the chosen dates drop a live flag. Null when none is dropped. */
-export function droppedFlagsLine(missing: ComposerFlag[], counts: ComposerCounts): string | null {
-  if (missing.length === 0) return null;
-  if (counts.flags === null) {
+/** The warning under the counts when the chosen dates' report may not show a live flag. */
+export function droppedFlagsLine(m: { missing: ComposerFlag[]; reason: DroppedReason }): string | null {
+  if (m.missing.length === 0) return null;
+  if (m.reason === 'unconfirmed') {
     return 'Couldn’t confirm the report for these dates shows the flags above. Tell your vet about them.';
   }
-  const words = joinWords([...new Set(missing.map(flagWords))]);
-  return `The report for these dates won’t show ${missing.length === 1 ? 'the flag' : 'the flags'} for ${words}. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`;
+  const words = joinWords([...new Set(m.missing.map(flagWords))]);
+  if (m.reason === 'ended') {
+    return `These dates end before today, so the report may not show ${words} as it stands now. Tell your vet, or choose dates that run to today.`;
+  }
+  return `The report for these dates won’t show ${m.missing.length === 1 ? 'the flag' : 'the flags'} for ${words}. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`;
 }
 
 // The live-flag card. Each flag is named in a few plain words, never a number: the number is the
