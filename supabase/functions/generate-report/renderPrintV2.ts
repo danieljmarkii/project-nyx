@@ -19,7 +19,7 @@
 //   - every label over a mark wears the paper halo (`paint-order: stroke`).
 //
 // Fonts and the QR are VR2-11 (CUL-2291); this file names the families and draws no QR.
-import { h, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
+import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
 
 /** Never fewer than this many counts on the axis, so a single entry draws at a quarter height. */
@@ -57,7 +57,7 @@ function haloText(x: number, y: number, text: string, cls = 'cnt'): string {
   return `<text class="${cls} halo" x="${x.toFixed(1)}" y="${y}" text-anchor="middle">${h(text)}</text>`
 }
 
-function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], top: number, axisMax: number): string {
+function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], top: number, axisMax: number, unit: LeadChart['unit']): string {
   const n = cols.length
   const base = top + SIGN_ROW_H - 4
   const parts: string[] = [rowLabel(r.label, base - 2, r.lead ? 'rl lead' : 'rl')]
@@ -68,10 +68,17 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], to
       return
     }
     const count = r.counts[i]
-    if (count <= 0) return // an empty cell: nothing drawn, never a 0
+    if (count <= 0) {
+      // Under the floor, v1's "–" ("not read"), never a 0; a read empty cell draws nothing.
+      if (notReadCol(c, unit)) parts.push(haloText(x0(i, n) + colW(n) / 2, base - 3, '–', 'cnt nr'))
+      return
+    }
     const bh = Math.max(2, (count / axisMax) * BAR_H)
-    const w = Math.max(2, colW(n) * 0.62)
-    const x = x0(i, n) + (colW(n) - w) / 2
+    // A part column draws at its days' share of the width (spec §5.4), so a 4-day week's bar
+    // never reads as a full week's fall.
+    const full = unit === 'day' ? 1 : unit === 'week' ? 7 : 14
+    const w = Math.max(2, colW(n) * 0.62 * Math.min(1, c.days / full))
+    const x = x0(i, n) + colW(n) * 0.19 // a part bar starts where a full one does
     parts.push(`<rect class="${r.lead ? 'bar lead' : 'bar'}" x="${x.toFixed(1)}" y="${(base - bh).toFixed(1)}" width="${w.toFixed(1)}" height="${bh.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, Math.max(top + 8, base - bh - 2), String(count)))
   })
@@ -143,7 +150,7 @@ function axis(chart: LeadChart, top: number): string {
     const full = chart.unit === 'week' ? 7 : chart.unit === 'two_weeks' ? 14 : 1
     let label: string | null = null
     if (chart.unit !== 'day') {
-      if (c.days < full) label = `${c.days}-day ${chart.unit === 'week' ? 'week' : 'bin'}`
+      if (c.days < full) label = `${c.days}-day ${chart.unit === 'week' ? 'week' : 'bin'}${i === n - 1 ? ', so far' : ''}`
       else if (c.loggedDays > 0 && c.loggedDays < c.days) label = `logged ${c.loggedDays} of ${c.days}`
     }
     if (label) parts.push(`<text class="ax part" x="${(x0(i, n) + 1).toFixed(1)}" y="${top + 21}">${h(label)}</text>`)
@@ -160,7 +167,7 @@ export function chartSvg(chart: LeadChart): string {
   let y = 0
   const body: string[] = []
   for (const r of signish) {
-    if (r.kind === 'sign') body.push(signRow(r, chart.columns, y, axisMax))
+    if (r.kind === 'sign') body.push(signRow(r, chart.columns, y, axisMax, chart.unit))
     else if (r.kind === 'intake') body.push(intakeRow(r, chart.columns, y))
     else if (r.kind === 'coverage') body.push(coverageRow(r, chart.columns, y))
     y += SIGN_ROW_H
@@ -203,7 +210,7 @@ function block(b: BlockV2): string {
       return `${open('p', 'lede serif')}${h(b.text)}</p>`
     case 'lead_chart': {
       const c = b.chart
-      return `${open('section', 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
+      return `${open('section', c.flagHtml ? 'leadchart flagged' : 'leadchart')}<h2 class="${c.flagHtml ? 'flagh' : 'charth'}">${h(c.heading)}</h2>${
         c.flagHtml ? `<p class="flagrow">${c.flagHtml}</p>` : ''
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${chartSvg(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
@@ -258,6 +265,8 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .edge p{font-size:10.5pt;font-weight:600;margin:8pt 0 0;}
 .lede{font-size:13pt;line-height:1.3;margin:10pt 0 0;}
 .leadchart .flagh{color:var(--concern);}
+.leadchart.flagged{border:1.25pt solid var(--ink);padding:7pt 9pt;}
+svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 .leadchart .why,.flagrow{color:var(--ink2);margin:0 0 4pt;}
 .twin{font-size:8.5pt;color:var(--ink);margin:3pt 0 0;}
 .conf{margin:6pt 0 0;}

@@ -81,6 +81,9 @@ export interface ChartColumn {
   days: number
   /** Of those, days with any log. 0 → the column is hatched (nothing logged). */
   loggedDays: number
+  /** The weeks inside the column (one, or two in a 2-week bin; a day column is its own part).
+   *  The read floor applies to each, never to the bin's sum (adversarial pass 2, break 2). */
+  parts: Array<{ days: number; loggedDays: number }>
 }
 
 export type ChartRow =
@@ -121,7 +124,7 @@ export type ChartRow =
     }
 
 /** Every mark kind the chart can draw. The twin must name each one it draws (spec §5.4). */
-export type MarkKind = 'bar' | 'empty' | 'hatch' | 'partial' | 'span' | 'hollow_span' | 'intake_refused' | 'intake_partly'
+export type MarkKind = 'bar' | 'empty' | 'not_read' | 'hatch' | 'partial' | 'span' | 'hollow_span' | 'intake_refused' | 'intake_partly'
 
 export interface LeadChart {
   unit: 'week' | 'two_weeks' | 'day'
@@ -346,6 +349,7 @@ function weekColumns(snap: ReportSnapshot): ChartColumn[] {
       end: addDays(start, a.bucketDays[i] - 1),
       days: a.bucketDays[i],
       loggedDays: a.loggedDaysByBucket[i],
+      parts: [{ days: a.bucketDays[i], loggedDays: a.loggedDaysByBucket[i] }],
     }))
   }
   // No aggregate (no symptom type in the window): the same 7-day anchoring from the window start.
@@ -353,7 +357,8 @@ function weekColumns(snap: ReportSnapshot): ChartColumn[] {
   const out: ChartColumn[] = []
   for (let i = 0; i < days.length; i += 7) {
     const slice = days.slice(i, i + 7)
-    out.push({ start: slice[0], end: slice[slice.length - 1], days: slice.length, loggedDays: slice.filter((d) => logged.has(d)).length })
+    const l = slice.filter((d) => logged.has(d)).length
+    out.push({ start: slice[0], end: slice[slice.length - 1], days: slice.length, loggedDays: l, parts: [{ days: slice.length, loggedDays: l }] })
   }
   return out
 }
@@ -363,7 +368,7 @@ function binPairs(cols: ChartColumn[]): ChartColumn[] {
   for (let i = 0; i < cols.length; i += 2) {
     const a = cols[i]
     const b = cols[i + 1]
-    out.push(b ? { start: a.start, end: b.end, days: a.days + b.days, loggedDays: a.loggedDays + b.loggedDays } : a)
+    out.push(b ? { start: a.start, end: b.end, days: a.days + b.days, loggedDays: a.loggedDays + b.loggedDays, parts: [...a.parts, ...b.parts] } : a)
   }
   return out
 }
@@ -462,8 +467,14 @@ function colLabel(c: ChartColumn, unit: LeadChart['unit']): string | null {
  * the same question as v1's symptom chart, "is this week logged densely enough that an absence may
  * be read?"). Scaled by the column's weeks; a day column is read whenever it was logged.
  */
-function readFloor(unit: LeadChart['unit']): number {
-  return unit === 'day' ? 1 : unit === 'week' ? SYMPTOM_WEEK_MIN_LOGGED_DAYS : SYMPTOM_WEEK_MIN_LOGGED_DAYS * 2
+export function readFloor(unit: LeadChart['unit']): number {
+  return unit === 'day' ? 1 : SYMPTOM_WEEK_MIN_LOGGED_DAYS
+}
+
+/** An empty cell may read "none" only when EVERY week in its column clears the floor. v1 holds
+ *  the floor absolute, so a short part week is never read either (render.ts, CUL-1995). */
+export function notReadCol(col: ChartColumn, unit: LeadChart['unit']): boolean {
+  return col.loggedDays > 0 && col.parts.some((p) => p.loggedDays < readFloor(unit))
 }
 
 /** One word per cell, in the twin's register. An empty cell under the floor is "not read", never
@@ -471,7 +482,8 @@ function readFloor(unit: LeadChart['unit']): number {
 function cellWord(count: number, col: ChartColumn, unit: LeadChart['unit']): string {
   if (count > 0) return String(count)
   if (col.loggedDays === 0) return 'nothing logged'
-  return col.loggedDays < readFloor(unit) ? `not read (logged ${col.loggedDays} of ${col.days})` : 'none'
+  if (!notReadCol(col, unit)) return 'none'
+  return col.loggedDays === col.days ? `not read (a ${col.days}-day ${unit === 'two_weeks' ? 'bin' : 'week'})` : `not read (logged ${col.loggedDays} of ${col.days})`
 }
 
 function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extract<SafetyFlag, { kind: 'chronicity' }> | null): LeadChart {
@@ -499,7 +511,7 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
     dayRowFrom = first !== null && first > snap.scope.startDate ? first : null
     columns = days
       .filter((d) => dayRowFrom === null || d >= dayRowFrom)
-      .map((d) => ({ start: d, end: d, days: 1, loggedDays: logged.has(d) ? 1 : 0 }))
+      .map((d) => ({ start: d, end: d, days: 1, loggedDays: logged.has(d) ? 1 : 0, parts: [{ days: 1, loggedDays: logged.has(d) ? 1 : 0 }] }))
   } else if (columns.length > WEEKS_BEFORE_BINNING) {
     unit = 'two_weeks'
     columns = binPairs(columns)
@@ -557,8 +569,8 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
       const counts = perCol(s.weeklyBuckets, s.type)
       rows.push({ kind: 'sign', sign: s.type, label: symptomLabel(s.type), lead: lead?.sign === s.type, counts })
       if (counts.some((n) => n > 0)) marks.add('bar')
-      if (counts.some((n, i) => n === 0 && columns[i].loggedDays >= readFloor(unit))) marks.add('empty')
-      if (counts.some((n, i) => n === 0 && columns[i].loggedDays > 0 && columns[i].loggedDays < readFloor(unit))) marks.add('partial')
+      if (counts.some((n, i) => n === 0 && columns[i].loggedDays > 0 && !notReadCol(columns[i], unit))) marks.add('empty')
+      if (counts.some((n, i) => n === 0 && notReadCol(columns[i], unit))) marks.add('not_read')
       twinParts.push(`${symptomLabel(s.type).toLowerCase()} ${counts.map((n, i) => cellWord(n, columns[i], unit)).join(', ')}`)
     }
     if (overflow.length > 0) {
@@ -585,7 +597,7 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
   if (partials.length > 0) marks.add('partial')
   const fromNote = dayRowFrom !== null ? `, the first day with an entry in this window` : ''
   const head = `By ${unitWord} from ${startLabel}${fromNote}${
-    partials.length > 0 ? ` (${partials.map((x) => `${unit === 'day' ? 'day' : unit === 'week' ? 'week' : 'bin'} ${x.i + 1} ${x.l}`).join('; ')})` : ''
+    partials.length > 0 ? ` (${partials.map((x) => `${unit === 'day' ? 'day' : unit === 'week' ? 'week' : 'bin'} ${x.i + 1} ${x.l}${x.i === columns.length - 1 && x.c.days < (unit === 'week' ? 7 : 14) ? ', so far' : ''}`).join('; ')})` : ''
   }`
   const hatchNote =
     !zeroSign && columns.some((c) => c.loggedDays === 0)
@@ -629,7 +641,7 @@ function signLine(snap: ReportSnapshot, s: SymptomAggregate): RecordLine {
   const chronic = snap.safetyFlags.find((f) => f.kind === 'chronicity' && f.symptomType === s.type)
   const episodes =
     chronic && chronic.kind === 'chronicity' && chronic.episodeCount !== s.count
-      ? ` (the flag counts ${plural(chronic.episodeCount, 'episode', 'episodes')}, entries close together counted once, over its own span)`
+      ? ` (${plural(chronic.episodeCount, 'episode', 'episodes')} as the flag counts them)`
       : ''
   return {
     id: `sign-${s.type}`,
@@ -652,7 +664,7 @@ function intakeLine(snap: ReportSnapshot): RecordLine | null {
   else if (notFinished === 0 && v.ratedMeals > 0) parts.push('every rated meal recorded as fully eaten')
   // B-040's words, verbatim: a bowl left down means no one watched what was eaten from it.
   const bowls = snap.diet.freeFed.map((b) => b.foodLabel ?? 'a food not named').join(', ')
-  return { id: 'intake', text: `Meals: ${runText}${parts.join('; ')}.${freeFed ? ` Free-fed: ${bowls}. Intake not directly observed.` : ''}` }
+  return { id: 'intake', text: `Meals (logged as meals, not treats): ${runText}${parts.join('; ')}.${freeFed ? ` Free-fed: ${bowls}. Intake not directly observed.` : ''}` }
 }
 
 function trialLine(snap: ReportSnapshot): RecordLine | null {
@@ -695,7 +707,16 @@ function noticedLine(snap: ReportSnapshot): RecordLine | null {
   const words = [...n.concernWords]
     .filter((w) => w.dayCount > 0)
     .sort((a, b) => b.dayCount - a.dayCount || a.key.localeCompare(b.key))
-    .map((w) => `“${w.label}” on ${w.dayCount}`)
+    .map((w) => {
+      const first = plainDay(w.firstDay)
+      const when =
+        w.dayCount === 1 && w.firstDayInWindow
+          ? ` (${first})`
+          : w.firstDayInWindow
+            ? `, the first ${first}`
+            : `, first marked ${textOf(fmtDayYear(w.firstDay))}, before this window`
+      return `“${w.label}” on ${w.dayCount}${when}`
+    })
   return {
     id: 'noticed',
     text: `Noticed: answered on ${n.answeredDays} of ${plural(snap.atAGlance.windowDays, 'day', 'days')}${words.length > 0 ? `; ${words.join(', ')}` : ''}.`,
@@ -714,13 +735,18 @@ function coverageLine(snap: ReportSnapshot, zeroSign: boolean): RecordLine {
  */
 function recordLinesOf(snap: ReportSnapshot, lead: Lead | null, edgeHolds: boolean): RecordLine[] {
   const zeroSign = isZeroSignSheet(snap)
+  // When intake leads because it is flagged, the meals line is the sheet's sentence, never the
+  // absence sentence (adversarial pass 2, break 1: the 48-hour refusal cat opened on "No symptom
+  // events were logged"). The coverage line, absence sentence included, still prints, second.
+  const intakeFlagLead = lead?.sign === 'intake' && lead.reason === 'flag'
   const out: RecordLine[] = []
-  if (zeroSign || edgeHolds) out.push(coverageLine(snap, zeroSign))
+  if ((zeroSign || edgeHolds) && !intakeFlagLead) out.push(coverageLine(snap, zeroSign))
   const signs = snap.symptoms.filter((s) => s.count > 0)
   const leadAgg = signs.find((s) => s.type === lead?.sign)
   if (leadAgg) out.push(signLine(snap, leadAgg))
   const intake = intakeLine(snap)
-  if (intake) out.splice(Math.min(out.length, 2), 0, intake)
+  if (intake) out.splice(intakeFlagLead ? 0 : Math.min(out.length, 2), 0, intake)
+  if (intakeFlagLead && (zeroSign || edgeHolds)) out.splice(intake ? 1 : 0, 0, coverageLine(snap, zeroSign))
   const { rows, overflow } = chartSigns(snap, lead)
   for (const s of [...rows, ...overflow]) if (s !== leadAgg) out.push(signLine(snap, s))
   const trial = trialLine(snap)
@@ -745,7 +771,7 @@ function confounderOf(snap: ReportSnapshot): string | null {
   const items = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)
     const to = plainDay(m.toDate)
-    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''} from ${from} to ${to}${m.activeAtWindowEnd ? ', its course recorded as still running' : ''}`
+    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${m.activeAtWindowEnd ? ' (its course has no recorded end)' : ''}`
   })
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'

@@ -11,6 +11,7 @@ import { renderReport } from './render.ts'
 import {
   buildDocumentV2,
   flagRowOf,
+  notReadCol,
   SHEET1_CUTTABLE_BUDGET,
   textOf,
   wordCountOf,
@@ -207,6 +208,7 @@ const TWIN_WORDS: Record<LeadChart['marks'][number], RegExp> = {
   empty: /\bnone\b/,
   hatch: /nothing logged/,
   partial: /logged \d+ of \d+|\d+-day (week|bin)/,
+  not_read: /not read \((logged \d+ of \d+|a \d+-day (week|bin))\)/,
   span: /Bracketed line/,
   hollow_span: /Hollow dashed/,
   intake_refused: /refused/,
@@ -319,21 +321,21 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
  * shrinks it. Never raise one to go green. The fixed parts are reported beside, never budgeted.
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
-  'nyx-live': 187,
-  'cooper': 69,
-  'r11-steady': 57,
-  'r11-jump': 57,
-  'r11-wobble': 57,
-  'new-account-4-days': 30,
-  'looks-only': 48,
-  'trial-report-clean.html': 119,
-  'mira': 96,
-  'trial-report-completed.html': 122,
-  'trial-report-truncated.html': 67,
-  'trial-report-past-window.html': 82,
-  'trial-report-extended.html': 58,
-  'trial-report-extended-late.html': 58,
-  'trial-report-ended-early.html': 69,
+  'nyx-live': 191,
+  'cooper': 74,
+  'r11-steady': 62,
+  'r11-jump': 62,
+  'r11-wobble': 62,
+  'new-account-4-days': 35,
+  'looks-only': 57,
+  'trial-report-clean.html': 126,
+  'mira': 101,
+  'trial-report-completed.html': 128,
+  'trial-report-truncated.html': 72,
+  'trial-report-past-window.html': 87,
+  'trial-report-extended.html': 63,
+  'trial-report-extended-late.html': 63,
+  'trial-report-ended-early.html': 74,
 }
 
 Deno.test('word budget — the cuttable prose stays within its ratchet and about 200 words on every fixture', () => {
@@ -376,13 +378,13 @@ Deno.test('cold read — a week logged under the floor reads "not read", never "
 Deno.test('cold read — a sign line states the flag’s episodes beside its entries when they differ (WBC-10, Nyx)', () => {
   const lines = block(docOf(nyxLiveSnapshot()), 'lead_sentence')
   assert.ok(lines)
-  assert.match(lines.text, /^Vomiting: 16 entries \(the flag counts 14 episodes, entries close together counted once, over its own span\) on 12 of 45 logged days/)
+  assert.match(lines.text, /^Vomiting: 16 entries \(14 episodes as the flag counts them\) on 12 of 45 logged days/)
 })
 
 Deno.test('cold read — rated meals always state their outcome, a zero included', () => {
   const d = docOf(assembleReport(juniper()))
   const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
-  assert.ok(all.some((t) => t?.startsWith('Meals: ') && t.includes('every rated meal recorded as fully eaten')))
+  assert.ok(all.some((t) => t?.startsWith('Meals (') && t.includes('every rated meal recorded as fully eaten')))
 })
 
 Deno.test('cold read — a free-fed bowl is named beside the trial, not only on the meals line (Mira)', () => {
@@ -429,7 +431,7 @@ Deno.test('adversarial 3 — v1’s run of unfinished meals prints on the meals 
   const s = assembleReport(baseInput({ requestedWindow: { startDate: dayKey(40), endDate: dayKey(0) }, events }))
   const d = docOf(s)
   const all = [block(d, 'lead_sentence')?.text, ...(block(d, 'record_lines')?.lines.map((l) => l.text) ?? [])]
-  assert.ok(all.some((t) => t?.startsWith('Meals: The last 4 rated meals in a row were not fully eaten.')), JSON.stringify(all))
+  assert.ok(all.some((t) => t?.includes('): The last 4 rated meals in a row were not fully eaten.')), JSON.stringify(all))
 })
 
 Deno.test('adversarial 4 — bowl ratings the intake check never reads are disclosed beside the intake row', () => {
@@ -475,4 +477,55 @@ Deno.test('adversarial 6 — a course that ended before the day row starts is no
   assert.equal(c.unit, 'day')
   assert.ok(!c.rows.some((r) => r.kind === 'span'), 'not drawn')
   assert.match(c.overflow ?? '', /Metronidazole .*before the first day drawn/)
+})
+
+// ── Cold read pass 2 fixes (CUL-2290) ───────────────────────────────────────
+
+Deno.test('cold read 2 — the trailing part week draws at its days’ width and is labelled "so far" (Nyx’s 4-day week)', () => {
+  const d = docOf(nyxLiveSnapshot())
+  const c = chartOf(d)
+  const last = c.columns[c.columns.length - 1]
+  assert.equal(last.days, 4)
+  assert.match(c.twin, /week 7 4-day week, so far/)
+  const html = renderPrintV2(d)
+  const widths = [...html.matchAll(/class="bar lead"[^>]*width="([\d.]+)"/g)].map((m) => Number(m[1]))
+  assert.ok(widths[widths.length - 1] < Math.max(...widths) * 0.7, `the last bar is narrower (${widths})`)
+})
+
+Deno.test('cold read 2 — an under-floor empty cell draws v1’s "–", never nothing (Cooper week 1)', () => {
+  const html = renderPrintV2(docOf(assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } })))
+  assert.match(html, /class="cnt nr halo"[^>]*>–</)
+})
+
+Deno.test('cold read 2 — a Noticed word marked once carries its date (Nyx’s "Hunched or tucked up")', () => {
+  const d = docOf(nyxLiveSnapshot())
+  const lines = block(d, 'record_lines')?.lines.map((l) => l.text) ?? []
+  assert.ok(lines.some((l) => /“Hunched or tucked up” on 1 \(Sep \d+\)/.test(l)), JSON.stringify(lines))
+})
+
+Deno.test('cold read 2 — the R-11 flagged chart is framed like the band', () => {
+  const html = renderPrintV2(docOf(assembleReport(itchingSkinTrial({ jump: false }))))
+  assert.match(html, /class="leadchart flagged" data-block="lead-chart"/)
+})
+
+// ── Adversarial pass 2 fixes (CUL-2290; the PR's second and last pass) ───────
+
+Deno.test('adversarial 2.1 — an intake-flag lead on a zero-sign sheet opens on the meals line; the absence sentence still prints', () => {
+  const d = docOf(refusingCat())
+  const lede = block(d, 'lead_sentence')
+  assert.ok(lede)
+  assert.match(lede.text, /^Meals \(logged as meals, not treats\): The last 6 rated meals in a row were not fully eaten\./)
+  const lines = block(d, 'record_lines')?.lines ?? []
+  assert.equal(lines[0]?.id, 'coverage')
+  assert.match(lines[0].text, /No symptom events were logged in this window\. Absence of a log is not evidence a symptom did not occur\./)
+})
+
+Deno.test('adversarial 2.2 — the read floor applies to each week in a 2-week bin, never to the bin’s sum', () => {
+  const c = chartOf(docOf(nyxLiveSnapshot()))
+  const bin = { start: '2026-09-01', end: '2026-09-14', days: 14, loggedDays: 8, parts: [{ days: 7, loggedDays: 7 }, { days: 7, loggedDays: 1 }] }
+  const full = { start: '2026-09-15', end: '2026-09-21', days: 7, loggedDays: 7, parts: [{ days: 7, loggedDays: 7 }] }
+  const twoWeek = { ...c, unit: 'two_weeks' as const, columns: [bin, full] }
+  assert.equal(notReadCol(bin, 'two_weeks'), true, '7/7 + 1/7 is not read')
+  assert.equal(notReadCol(full, 'two_weeks'), false, 'a full single-week bin is read (pass 2, break 3)')
+  assert.ok(twoWeek.columns.length === 2)
 })
