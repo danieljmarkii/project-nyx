@@ -1666,10 +1666,35 @@ Deno.test('sweepOwnedPrefixes — CUL-2343: the per-call timeout shrinks to the 
   assert(res.failures[0].includes('no answer in 30 ms'))
 })
 
-Deno.test('sweepOwnedPrefixes — CUL-2343: a fast run leaves no timer pending and no leftovers line', async () => {
+Deno.test('sweepOwnedPrefixes — CUL-2343: a fast run clears every race timer it sets and has no leftovers line', async () => {
   const fs = fakeStorage({ [STORAGE_BUCKETS.eventAttachments]: ['pet-a/evt/photo.jpg'] })
-  // Deno's test sanitizer fails this test if a race timer outlives the sweep.
-  const res = await sweepOwnedPrefixes(ONE_FOLDER, fs.listerFor, fs.remove, { cutoff: Date.now() + 60_000 })
+  // Deno 2.9's sanitizer does not flag a pending timer (rls-privacy-reviewer F1), so
+  // count them: every timer the race sets must be cleared before the sweep returns.
+  const realSet = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  const live = new Set<unknown>()
+  let set = 0
+  globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+    const id = realSet(fn, ms)
+    live.add(id)
+    set++
+    return id
+  }) as typeof setTimeout
+  globalThis.clearTimeout = ((id?: number) => {
+    live.delete(id)
+    realClear(id)
+  }) as typeof clearTimeout
+  let res
+  try {
+    res = await sweepOwnedPrefixes(ONE_FOLDER, fs.listerFor, fs.remove, { cutoff: Date.now() + 60_000 })
+  } finally {
+    globalThis.setTimeout = realSet
+    globalThis.clearTimeout = realClear
+    for (const id of live) realClear(id as number)
+  }
+  // Every list page (each folder ends on an empty-page probe) and the remove ran through the race.
+  assert(set >= 4)
+  assertEquals(live.size, 0)
   assertEquals(res, { removed: 1, failures: [], unswept: [], partial: [] })
   assertEquals(sweepLeftoversLine('user-1', res), null)
 })
