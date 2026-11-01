@@ -1939,6 +1939,12 @@ export type SafetyCheck =
        *  "0 of the last 7" means nothing was logged in the week to the report date. */
       endDate: string
       priorEndDate: string
+      /** CUL-2368: the instants the two windows end on (`now`, and `now` − `windowDays` × 24h).
+       *  Each window starts partway through a day, so a sentence naming only the date reads as a
+       *  calendar week the check did not measure; the page names the clock time too. Null only
+       *  when the detection `now` does not parse. */
+      endIso: string | null
+      priorEndIso: string | null
       currentLoggingDays: number
       priorLoggingDays: number
       minLoggingDays: number
@@ -5787,6 +5793,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       minEpisodes: Math.max(detConfig.reflection.worseningMinEpisodes, detConfig.en11?.worseningCardMinEpisodes ?? 0),
       endDate: worseningEndDate,
       priorEndDate: worseningPriorEndDate,
+      endIso: checkNowMs === null ? null : new Date(checkNowMs).toISOString(),
+      priorEndIso:
+        checkNowMs === null ? null : new Date(checkNowMs - detConfig.reflection.windowDays * MS_PER_DAY).toISOString(),
       // Display only (the state above reads the raw counts): a 7 × 24h window from a mid-day `now`
       // touches 8 UTC days, and "8 of the 7 days" is not a sentence (adversarial pass 1).
       currentLoggingDays: Math.min(density?.currentLoggingDays ?? 0, detConfig.reflection.windowDays),

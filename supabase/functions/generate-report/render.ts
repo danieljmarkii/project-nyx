@@ -2270,8 +2270,15 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
   const seenTail = tail === null ? '' : `; ${nothingLoggedFor(tail)}`
   // CUL-2348: the getting-worse windows run back from the report's `now`, not from the record's
   // last day, so each names the day it ends on; its numbers are logged days, never episodes.
-  const weekTo = (c: Extract<SafetyCheck, { kind: 'worsening' }>, key: string): string =>
-    `the ${num(c.windowDays)} days to ${h(fmtDayScopedTo(key, snap.scope.endDate))}`
+  // CUL-2368: and the clock time. Each window is `windowDays` × 24h back from that instant, so
+  // it starts partway through a day; "the 7 days to Jul 2" alone reads as Jun 26 to Jul 2, and a
+  // vet counting those calendar days can see a rise the check never measured under "did not
+  // trigger". Each end is formatted on its own, so a week across a clock change names its real
+  // hour. Copy-only stopgap; whether the engine moves to calendar weeks is the PM's ruling.
+  const weekTo = (c: Extract<SafetyCheck, { kind: 'worsening' }>, key: string, iso: string | null): string =>
+    `the ${num(c.windowDays)} days to ${!iso ? '' : `${h(fmtLocalTime(iso, snap.timezone))} on `}${h(
+      fmtDayScopedTo(key, snap.scope.endDate),
+    )}`
   for (const c of checks) {
     if (c.kind === 'ongoing') {
       const floors = `it triggers at ${num(c.minEpisodes)} or more episodes over ${span(c.minSpanDays)}, in ${num(
@@ -2316,20 +2323,26 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
         `${lower(c.symptomType)} getting worse (it triggers at ${num(c.minEpisodes)} or more in ${weekTo(
           c,
           c.endDate,
-        )}, and more, or on more days, than the ${num(c.windowDays)} before${seenTail})`,
+          c.endIso,
+        )}, and more, or on more days, than the ${num(c.windowDays)} days before that${seenTail})`,
       )
     } else if (c.state === 'below_card_floor') {
       rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: did not trigger, but a sign on this record rose over ${weekTo(
           c,
           c.endDate,
+          c.endIso,
         )} below the ${num(c.minEpisodes)} the flag needs${seenTail}.`,
       )
     } else if (c.state === 'too_few_days') {
       rest.push(
         `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(
           c.currentLoggingDays,
-        )} of ${weekTo(c, c.endDate)} logged, ${num(c.priorLoggingDays)} of ${weekTo(c, c.priorEndDate)}; it needs ${num(
+        )} of ${weekTo(c, c.endDate, c.endIso)} logged, ${num(c.priorLoggingDays)} of ${weekTo(
+          c,
+          c.priorEndDate,
+          c.priorEndIso,
+        )}; it needs ${num(
           c.minLoggingDays,
         )} logged days in each).`,
       )

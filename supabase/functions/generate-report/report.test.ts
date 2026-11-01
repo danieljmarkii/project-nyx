@@ -5621,7 +5621,7 @@ Deno.test('CUL-2003 — Cooper: the band names the checks that ran and did not t
   const fl = chronicityFloorsFor('vomit', 'dog', DEFAULT_CONFIG.chronicity)
   assert.ok(
     band.includes(
-      `Not triggered Ran and did not trigger, which does not rule these out: ongoing vomiting (4 episodes in 22 logged days of this 27-day report, all the check could see; it triggers at ${fl.minEpisodes} or more episodes over ${fl.minSpanDays / 7} or more weeks, in ${fl.minActiveWeeks} separate weeks, the latest within ${fl.ongoingRecencyDays} days); vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the 7 days to Oct 16, and more, or on more days, than the 7 before). Vomiting entries were logged late, so these checks may have counted fewer than happened.`,
+      `Not triggered Ran and did not trigger, which does not rule these out: ongoing vomiting (4 episodes in 22 logged days of this 27-day report, all the check could see; it triggers at ${fl.minEpisodes} or more episodes over ${fl.minSpanDays / 7} or more weeks, in ${fl.minActiveWeeks} separate weeks, the latest within ${fl.ongoingRecencyDays} days); vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the 7 days to 15:00 on Oct 16, and more, or on more days, than the 7 days before that). Vomiting entries were logged late, so these checks may have counted fewer than happened.`,
     ),
     band,
   )
@@ -5642,7 +5642,7 @@ Deno.test('CUL-2003 — with no flag, the checks still show where the band sits,
   assert.ok(!/No safety flag/.test(p), 'and no statement of none: the band shows only what this report renders')
   assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in 40 logged days of the last 8 weeks; no event of any kind logged after Jun 15 \(the last 17 days\); it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
   assert.ok(
-    /Vomiting getting worse: not checked, too few days logged to compare \(0 of the 7 days to Jul 2 logged, 0 of the 7 days to Jun 25; it needs 3 logged days in each\)\./.test(p),
+    /Vomiting getting worse: not checked, too few days logged to compare \(0 of the 7 days to 08:00 on Jul 2 logged, 0 of the 7 days to 08:00 on Jun 25; it needs 3 logged days in each\)\./.test(p),
   )
   // The mutation: a record with no symptom in it has no check to name.
   idSeq = 0
@@ -5754,7 +5754,7 @@ Deno.test('CUL-2003 adv 4 — under EN-11 a rise under the card floor says so, n
   idSeq = 0
   const events = [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...['2026-06-28', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))]
   const p = readAs(renderReport(assembleReport(baseInput({ events, engineFlags: { on: ['engines_v3_en11'], readOk: true } }))))
-  assert.ok(/Vomiting getting worse: did not trigger, but a sign on this record rose over the 7 days to Jul 2 below the 3 the flag needs\./.test(p), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
+  assert.ok(/Vomiting getting worse: did not trigger, but a sign on this record rose over the 7 days to 08:00 on Jul 2 below the 3 the flag needs\./.test(p), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
   // The mutation: flag off, the same rise is a worsening flag.
   idSeq = 0
   const off = assembleReport(baseInput({ events: [...mealsOn(dayKeys('2026-04-04', '2026-07-02')), ...['2026-06-28', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))] }))
@@ -5794,7 +5794,7 @@ Deno.test('CUL-2348 — the getting-worse windows end on the report date, and sa
   assert.equal(w.priorLoggingDays, 2)
   const p = readAs(renderReport(snap))
   assert.ok(
-    p.includes('Vomiting getting worse: not checked, too few days logged to compare (0 of the 7 days to Jul 2 logged, 2 of the 7 days to Jun 25; it needs 3 logged days in each).'),
+    p.includes('Vomiting getting worse: not checked, too few days logged to compare (0 of the 7 days to 08:00 on Jul 2 logged, 2 of the 7 days to 08:00 on Jun 25; it needs 3 logged days in each).'),
     p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300),
   )
   // The unit is days: never the bare "0 of the last 7" a vet reads as "no vomiting last week".
@@ -5832,6 +5832,57 @@ Deno.test('CUL-2348 adv 1 — a DST fall-back inside a short window never prints
   assert.ok(!/in 0 logged days/.test(readAs(renderReport(snap))))
 })
 
+Deno.test('CUL-2368 — a calendar-week rise under "did not trigger" names the hour the measured weeks end', () => {
+  idSeq = 0
+  // The issue's counterexample: meals daily; vomits Jun 18 15:00 EDT, then Jun 22, 24, 27, 29 and
+  // Jul 1; run Jul 2 08:00 EDT. By calendar days (Jun 26–Jul 2 vs Jun 19–25) it rises 3 vs 2, which
+  // meets the printed rule. The engine's prior week is Jun 18 08:00 to Jun 25 08:00: it takes in the
+  // Jun 18 afternoon vomit, compares 3 vs 3, and does not fire. The sentence must name 08:00, so a
+  // vet counting calendar days can see the weeks the check measured are not the ones they counted.
+  const events = [
+    ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
+    makeEvent({ type: 'vomit', occurredAt: '2026-06-18T19:00:00Z' }),
+    ...['2026-06-22', '2026-06-24', '2026-06-27', '2026-06-29', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'symptom_worsening'), 'the engine does not fire: 3 vs 3 over its own weeks')
+  const w = snap.safetyChecks.find((x) => x.kind === 'worsening')
+  assert.ok(w && w.kind === 'worsening' && w.state === 'not_flagged', JSON.stringify(w))
+  assert.equal(w.endIso, new Date(NOW).toISOString())
+  assert.equal(w.priorEndIso, '2026-06-25T12:00:00.000Z')
+  const p = readAs(renderReport(snap))
+  const at0 = p.indexOf('vomiting getting worse (')
+  assert.ok(at0 >= 0, p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 600))
+  const clause = p.slice(at0, p.indexOf(')', at0) + 1)
+  assert.ok(
+    clause.startsWith(
+      `vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the 7 days to 08:00 on Jul 2, and more, or on more days, than the 7 days before that`,
+    ),
+    clause,
+  )
+  // The mutation: the bare calendar label is exactly the reading this issue is about.
+  assert.ok(!/in the 7 days to Jul 2/.test(p), 'never the date alone')
+})
+
+Deno.test('CUL-2368 — a week across a clock change names its own end hour', () => {
+  idSeq = 0
+  // New York, run Nov 3 08:00 EST (13:00Z): the prior week ends 7 × 24h earlier, Oct 27 13:00Z,
+  // which is 09:00 EDT. "08:00" on both would misplace the prior week by an hour.
+  const events = [
+    // Logging stops Oct 26, so the recent week cannot be compared and the sentence names both ends.
+    ...mealsOn(dayKeys('2026-08-10', '2026-10-26')),
+    makeEvent({ type: 'vomit', occurredAt: '2026-10-25T16:00:00Z' }),
+  ]
+  const snap = assembleReport(baseInput({ now: '2026-11-03T13:00:00Z', events }))
+  const w = snap.safetyChecks.find((x) => x.kind === 'worsening')
+  assert.ok(w && w.kind === 'worsening' && w.state === 'too_few_days', JSON.stringify(snap.safetyChecks))
+  assert.equal(w.priorEndIso, '2026-10-27T13:00:00.000Z')
+  const p = readAs(renderReport(snap))
+  const s = p.slice(p.indexOf('getting worse'), p.indexOf('getting worse') + 400)
+  assert.ok(/08:00 on Nov 3/.test(s), s)
+  assert.ok(/of the 7 days to 09:00 on Oct 27;/.test(s), s)
+})
+
 Deno.test('CUL-2348 adv 1 — a 7 × 24h week touching 8 days never prints "8 of the 7 days"', () => {
   idSeq = 0
   const events = [
@@ -5843,7 +5894,7 @@ Deno.test('CUL-2348 adv 1 — a 7 × 24h week touching 8 days never prints "8 of
   const w = snap.safetyChecks.find((x) => x.kind === 'worsening')
   assert.ok(w && w.kind === 'worsening' && w.state === 'too_few_days' && w.currentLoggingDays === 7, JSON.stringify(w))
   const p = readAs(renderReport(snap))
-  assert.ok(p.includes('(7 of the 7 days to Jul 2 logged, 0 of the 7 days to Jun 25;'), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
+  assert.ok(p.includes('(7 of the 7 days to 08:00 on Jul 2 logged, 0 of the 7 days to 08:00 on Jun 25;'), p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300))
 })
 
 Deno.test('CUL-2003 adv 5 — a report window shorter than the span floor cannot claim the ongoing check ran', () => {
