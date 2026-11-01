@@ -15,6 +15,10 @@ import { readVetLibrary } from '../lib/vetDocumentLibrary';
 import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
 import { CUSTOM_RANGE_SETTLE_MS, isCustomWindowEdit, reportScopeLine } from '../lib/reportRange';
 import { REPORT_PET_GONE, resolveReportSubject } from '../lib/reportRoute';
+import { useAllowlistFlag } from '../hooks/useAppConfig';
+import { useBetaOptIn } from '../lib/betaFeatures';
+import { ReportComposer } from '../components/report/ReportComposer';
+import type { ComposerWindow } from '../lib/reportComposer';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -69,6 +73,14 @@ import {
 // id, the vet-documents read, the name in the build wait — takes THAT pet, never the
 // active one (C-9). A `?pet=` the account does not hold renders the pet-gone line and
 // builds nothing: it never falls back to the active pet's report.
+
+// THE COMPOSER (Vet report v2 PR-16, CUL-2296). Behind `report_composer_v2` (an allowlisted beta
+// the owner opts into on the shelf), the screen opens on the composer: which days the vet should
+// see, with counts and the live-flag card, before anything is built. "Preview report" then builds
+// THIS screen's report for the chosen window; the v2 preview replaces that body in VR2-17. A
+// window the app chose by the §6 cascade's own rule ("since the last visit") is sent as no
+// override, so the report keeps its principled label; any other is sent as dates. Flag off, or
+// not opted in: this screen is exactly what it was.
 
 type Status = 'loading' | 'ready' | 'error';
 type RangeMode = 'default' | 'custom';
@@ -125,6 +137,25 @@ export default function ReportScreen() {
 
   const petId = subject.kind === 'pet' ? subject.petId : undefined;
   const petName = subject.kind === 'pet' ? subject.petName : null;
+
+  const composerEligible = useAllowlistFlag('report_composer_v2');
+  const composerOptedIn = useBetaOptIn('report_composer_v2');
+  const composerOn = composerEligible && composerOptedIn;
+  // Set by "Preview report"; cleared by Back from the report, which returns to the composer.
+  const [previewed, setPreviewed] = useState(false);
+  const composing = composerOn && !previewed && petId !== undefined;
+  const onComposerPreview = useCallback((w: ComposerWindow) => {
+    if (w.kind === 'since_visit') {
+      setRangeMode('default');
+    } else {
+      const [sy, sm, sd] = w.startDate.split('-').map(Number);
+      const [ey, em, ed] = w.endDate.split('-').map(Number);
+      setCustomStart(new Date(sy, sm - 1, sd));
+      setCustomEnd(new Date(ey, em - 1, ed));
+      setRangeMode('custom');
+    }
+    setPreviewed(true);
+  }, []);
   const customStartKey = toLocalDayKey(customStart);
   const customEndKey = toLocalDayKey(customEnd);
 
@@ -215,12 +246,14 @@ export default function ReportScreen() {
   // edit has settled — above). The report is a snapshot; changing the range
   // re-generates against the latest data.
   useEffect(() => {
+    // Nothing builds while the owner is still choosing the window in the composer.
+    if (composing) return undefined;
     const token = { cancelled: false };
     load(token);
     return () => {
       token.cancelled = true;
     };
-  }, [load]);
+  }, [load, composing]);
 
   // R-16 (CUL-457) — does this pet have any saved vet document? Read locally, the same
   // read the profile's Vet Files card makes. Three states on purpose (C-12): `null`
@@ -303,9 +336,26 @@ export default function ReportScreen() {
     );
   }
 
+  if (composing && petId !== undefined) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <Header
+          title={petName ? `Vet report for ${petName}` : 'Vet report'}
+          leading="back"
+          onLeadingPress={() => router.back()}
+        />
+        <ReportComposer petId={petId} petName={petName ?? ''} onPreview={onComposerPreview} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
+      <Header
+        title="Vet report"
+        leading="back"
+        onLeadingPress={() => (composerOn && previewed ? setPreviewed(false) : router.back())}
+      />
 
       {petId !== undefined && (
         <View style={styles.rangeBar}>

@@ -1756,9 +1756,6 @@ export async function buildReportSnapshotForPet(
 
 // ── The composer (VR2-16, CUL-2296) ─────────────────────────────────────────
 
-/** The composer reads counts and flags; it prints nothing, so no notes are pulled for it. */
-const COMPOSER_AUDIENCE: ReportAudience = { kind: 'owner', includeLookNotes: false }
-
 /**
  * The composer's outline, built from the report's own snapshots (`composer.ts` explains each).
  * `open`: the 56-day live-flag set first, then the windows it offers, then the first window's
@@ -1770,11 +1767,14 @@ export async function composeForPet(
   nowMs: number,
   part: ComposerPart,
   requestedWindow: { startDate: string; endDate: string } | null,
+  /** The handler's one owner arm (§9 rule 4): the composer prints nothing, so it is handed one
+   *  that pulls no notes. */
+  audience: ReportAudience,
   callerJwt: string | null,
   requestTimezone: string | null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const build = (w: { startDate: string; endDate: string }) =>
-    buildReportSnapshotForPet(supabase, petId, nowMs, w, COMPOSER_AUDIENCE, callerJwt, requestTimezone)
+    buildReportSnapshotForPet(supabase, petId, nowMs, w, audience, callerJwt, requestTimezone)
 
   const countsFor = async (w: { startDate: string; endDate: string }, today: string) => {
     const tail = w.endDate < today ? { startDate: addDays(w.endDate, 1), endDate: today } : null
@@ -1897,9 +1897,13 @@ const handler = async (req: Request): Promise<Response> => {
 
   try {
     const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
+    // This route is authenticated and owner-facing; PR 6's public `view-report` route is a
+    // different entry point and must construct the `shared_link` arm, which has no notes field to
+    // carry (§9 rule 4). The composer prints nothing, so it reads with notes off.
+    const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: composer === null && includeNotes }
     if (composer !== null) {
       // No photo bytes and no render: the composer never needs the service-role client.
-      const outline = await composeForPet(supabase, petId, Date.now(), composer.part, requestedWindow, callerJwt, requestTimezone)
+      const outline = await composeForPet(supabase, petId, Date.now(), composer.part, requestedWindow, ownerArm, callerJwt, requestTimezone)
       return Response.json(outline.body, {
         status: outline.status,
         headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' },
@@ -1910,10 +1914,7 @@ const handler = async (req: Request): Promise<Response> => {
       petId,
       Date.now(),
       requestedWindow,
-      // This route is authenticated and owner-facing; PR 6's public `view-report` route
-      // is a different entry point and must construct the `shared_link` arm, which has no
-      // notes field to carry (§9 rule 4).
-      { kind: 'owner', includeLookNotes: includeNotes },
+      ownerArm,
       callerJwt,
       adminClient,
       requestTimezone,
