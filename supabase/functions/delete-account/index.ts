@@ -62,8 +62,8 @@ import {
   type OwnedStoragePaths,
   type PrefixSweep,
   type StorageLister,
-  type SweepIds,
 } from './plan.ts'
+import { readSweepIds, type SweepIdReader } from './sweepIds.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -146,28 +146,30 @@ function bucketLister(adminClient: SupabaseClient, bucket: string): StorageListe
   }
 }
 
-// CUL-2314: the ids whose folders the post-delete sweep lists. Re-read immediately
-// before the auth delete, AFTER the purge loop (the long window), so a pet or food item
-// created while the purge ran still has its folder swept. THROWS on a read error or a
-// short read: this runs before the delete, so the account survives and the call
-// retries. `count: 'exact'` is what proves the read complete (C-42): a PostgREST
-// max-rows below the account's row count would otherwise drop folders silently.
-async function readSweepIds(adminClient: SupabaseClient, userId: string): Promise<SweepIds> {
-  const [petsRes, foodRes] = await Promise.all([
-    adminClient.from('pets').select('id', { count: 'exact' }).eq('user_id', userId),
-    adminClient.from('food_items').select('id', { count: 'exact' }).eq('created_by_user_id', userId),
-  ])
-  if (petsRes.error) throw new Error(`Failed to re-read pets: ${petsRes.error.message}`)
-  if (foodRes.error) throw new Error(`Failed to re-read food_items: ${foodRes.error.message}`)
-  for (const [table, res] of [['pets', petsRes], ['food_items', foodRes]] as const) {
-    if (typeof res.count !== 'number' || (res.data ?? []).length < res.count) {
-      throw new Error(`Failed to re-read every ${table} id (read ${(res.data ?? []).length}, count ${res.count ?? 'absent'})`)
-    }
-  }
+// CUL-2314 / CUL-2329: the real reader behind ./sweepIds.ts's readSweepIds, which
+// re-reads the swept ids (pets, food_items, and the retired-food ledger) just before
+// the auth delete. Every read asks for an exact count; readSweepIds throws on a short
+// one, before the delete, so the account survives and the call retries.
+function sweepIdReader(adminClient: SupabaseClient): SweepIdReader {
   return {
-    petIds: (petsRes.data ?? []).map((p) => p.id as string),
-    foodItemIds: (foodRes.data ?? []).map((f) => f.id as string),
-    userId,
+    async ownedIds(table, ownerColumn, userId) {
+      const { data, count, error } = await adminClient
+        .from(table)
+        .select('id', { count: 'exact' })
+        .eq(ownerColumn, userId)
+      return { ids: (data ?? []).map((r) => r.id as string), count: count ?? null, error: error?.message ?? null }
+    },
+    async liveFoodOwners(ids) {
+      const { data, count, error } = await adminClient
+        .from('food_items')
+        .select('id, created_by_user_id', { count: 'exact' })
+        .in('id', ids)
+      return {
+        rows: (data ?? []).map((r) => ({ id: r.id as string, owner: (r.created_by_user_id as string | null) ?? null })),
+        count: count ?? null,
+        error: error?.message ?? null,
+      }
+    },
   }
 }
 
@@ -396,7 +398,7 @@ Deno.serve(async (req: Request) => {
         sweep = buildPrefixSweep(
           mergeSweepIds(
             { petIds: ownedPaths.ownedPetIds, foodItemIds: ownedPaths.ownedFoodItemIds, userId },
-            await readSweepIds(adminClient, userId),
+            await readSweepIds(sweepIdReader(adminClient), userId),
           ),
         )
         // delete-auth-user — LAST. Fires the FK cascade that erases every DB row.
