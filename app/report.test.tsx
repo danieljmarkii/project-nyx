@@ -97,6 +97,8 @@ const report = (over: Partial<VetReport> = {}): VetReport => ({
   scopeBasis: 'diet_trial',
   photoCount: 0,
   trialAllowedListMissing: false,
+  reportVersion: 'v1',
+  ownerSurname: null,
   ...over,
 });
 

@@ -10590,7 +10590,7 @@ const STYLE = `
        single line is left alone at a fold. */
     orphans:3;widows:3;
   }
-  .num{font-variant-numeric:tabular-nums;}
+  /* No font-variant-numeric on the sheet: its tnum glyphs drop out of the PDF text layer (CUL-2385). */
   .serif{font-family:"Newsreader",Georgia,"Iowan Old Style","Palatino Linotype",serif;}
 
   /* The page's radius and shadow are the IN-APP PREVIEW's, not the sheet's: they draw a

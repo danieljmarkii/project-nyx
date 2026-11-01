@@ -67,6 +67,8 @@ const report: VetReport = {
   scopeBasis: 'diet_trial',
   photoCount: 0,
   trialAllowedListMissing: false,
+  reportVersion: 'v1',
+  ownerSurname: null,
 };
 
 const settle = () => new Promise<void>((r) => setTimeout(r, CUSTOM_RANGE_SETTLE_MS + 100));

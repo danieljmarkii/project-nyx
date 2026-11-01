@@ -1,6 +1,7 @@
 import {
   deriveDisplayName,
   fetchDisplayName,
+  fetchOwnerSurname,
   getDeviceTimezone,
   markOnboardingComplete,
   syncUserTimezone,
@@ -210,6 +211,33 @@ describe('fetchDisplayName', () => {
     mockNameTable({ read: { data: null, error: { message: 'boom' } } });
     expect(await fetchDisplayName(USER_ID)).toEqual({ status: 'error' });
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+// CUL-2292 — the v2 filename's surname: `last_name` only, and nothing on a failed read.
+describe('fetchOwnerSurname', () => {
+  it('reads last_name alone, trimmed', async () => {
+    const t = mockNameTable({ read: { data: { last_name: '  Reyes ' } as never, error: null } });
+    expect(await fetchOwnerSurname(USER_ID)).toBe('Reyes');
+    expect(t.select).toHaveBeenCalledWith('last_name');
+    expect(t.eq).toHaveBeenCalledWith('id', USER_ID);
+  });
+
+  it('missing row / blank / non-string → null, so the filename omits it', async () => {
+    mockNameTable({ read: { data: null, error: null } });
+    expect(await fetchOwnerSurname(USER_ID)).toBeNull();
+    mockNameTable({ read: { data: { last_name: '   ' } as never, error: null } });
+    expect(await fetchOwnerSurname(USER_ID)).toBeNull();
+    mockNameTable({ read: { data: { last_name: null } as never, error: null } });
+    expect(await fetchOwnerSurname(USER_ID)).toBeNull();
+  });
+
+  it('a read failure is warned and reads as no surname, never a throw', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockNameTable({ read: { data: null, error: { message: 'boom' } } });
+    expect(await fetchOwnerSurname(USER_ID)).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

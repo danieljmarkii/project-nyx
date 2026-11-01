@@ -5,7 +5,7 @@ import { getSyncStatus } from './db';
 import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
-import { getDeviceTimezone } from './profile';
+import { fetchOwnerSurname, getDeviceTimezone } from './profile';
 
 // Vet report client (Step 9, Phase 2 PR 5 — the owner-facing MVP).
 //
@@ -65,6 +65,14 @@ export interface VetReport {
    * the pre-R-16 state — never a false "no list" over a report that did not say so.
    */
   trialAllowedListMissing: boolean;
+  /**
+   * Which renderer the function ran (spec §3.6), read off its `report_version`. It decides the
+   * PDF's name only: v2 is filed as the owner's home log, v1 keeps its name. Anything but 'v2'
+   * reads as v1, the shape every build before CUL-2292 shared.
+   */
+  reportVersion: 'v1' | 'v2';
+  /** `user_profiles.last_name`, read only for a v2 report (CUL-2292). Null: unset or unreadable. */
+  ownerSurname: string | null;
 }
 
 // ── B-534 — the report's freshness gate ─────────────────────────────────────
@@ -210,8 +218,11 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
     // HTML). A blank body means the call itself failed — surface, never show blank.
     throw new Error('The report came back empty. Please try again.');
   }
+  const version: 'v1' | 'v2' = data.report_version === 'v2' ? 'v2' : 'v1';
   return {
     html: data.html,
+    reportVersion: version,
+    ownerSurname: version === 'v2' ? await ownerSurnameNow() : null,
     petName: typeof data.pet_name === 'string' ? data.pet_name : '',
     startDate: typeof data.start_date === 'string' ? data.start_date : '',
     endDate: typeof data.end_date === 'string' ? data.end_date : '',
@@ -232,6 +243,59 @@ export function reportPdfFilename(petName: string, startDate: string, endDate: s
       .replace(/^-+|-+$/g, '') || 'pet';
   const range = startDate && endDate ? `-${startDate}-to-${endDate}` : '';
   return `${safeName}-vet-report${range}.pdf`;
+}
+
+// The signed-in owner's surname, or null. Never throws: a name the filename cannot read is a
+// name it leaves out, and the report itself must still open.
+async function ownerSurnameNow(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user.id;
+    return userId ? await fetchOwnerSurname(userId) : null;
+  } catch (e) {
+    console.warn('[pdf] owner surname read skipped:', e);
+    return null;
+  }
+}
+
+// One letter set for a filename every PIMS and mail client accepts: Latin letters with their
+// marks dropped ("Zoë" → "Zoe", "Müller" → "Muller"), the few Latin letters that do not
+// decompose spelled out, and every other run collapsed to one hyphen. A name with no Latin
+// letter left (李, Ωμέγα's Greek) comes back empty and is omitted, never guessed at.
+const LATIN_SPELLED: Record<string, string> = {
+  ß: 'ss', æ: 'ae', Æ: 'AE', œ: 'oe', Œ: 'OE', ø: 'o', Ø: 'O', ł: 'l', Ł: 'L',
+  đ: 'd', Đ: 'D', ð: 'd', Ð: 'D', þ: 'th', Þ: 'Th', ı: 'i', ĸ: 'k',
+};
+const NAME_PART_MAX = 40;
+
+export function filenamePart(raw: string | null): string {
+  if (!raw) return '';
+  const latin = raw
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[ßæÆœŒøØłŁđĐðÐþÞıĸ]/g, (c) => LATIN_SPELLED[c] ?? '');
+  return latin
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, NAME_PART_MAX)
+    .replace(/-+$/, '');
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// The v2 name (spec §8): "Cooper-Reyes_owner-home-log_2026-04-04_to_2026-07-03.pdf". The
+// surname comes only from `last_name` (§5.7) and is omitted when empty; the dates only when
+// both are real days, so nothing the server sends can put a path character in the name.
+export function reportPdfFilenameV2(petName: string, surname: string | null, startDate: string, endDate: string): string {
+  const who = [filenamePart(petName) || 'pet', filenamePart(surname)].filter((x) => x !== '').join('-');
+  const range = ISO_DAY.test(startDate) && ISO_DAY.test(endDate) ? `_${startDate}_to_${endDate}` : '';
+  return `${who}_owner-home-log${range}.pdf`;
+}
+
+export function reportPdfFilenameFor(report: VetReport): string {
+  return report.reportVersion === 'v2'
+    ? reportPdfFilenameV2(report.petName, report.ownerSurname, report.startDate, report.endDate)
+    : reportPdfFilename(report.petName, report.startDate, report.endDate);
 }
 
 // Render the report HTML to a PDF on-device and open the native share sheet
@@ -257,7 +321,7 @@ export async function shareReportPdf(report: VetReport): Promise<boolean> {
   try {
     const dir = transientDirectory();
     dir.create({ intermediates: true, idempotent: true });
-    const dest = new File(dir, reportPdfFilename(report.petName, report.startDate, report.endDate));
+    const dest = new File(dir, reportPdfFilenameFor(report));
     if (dest.exists) dest.delete();
     new File(uri).copy(dest);
     shareUri = dest.uri;

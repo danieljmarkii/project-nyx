@@ -72,6 +72,8 @@ const report: VetReport = {
   scopeBasis: 'since_visit',
   photoCount: 0,
   trialAllowedListMissing: false,
+  reportVersion: 'v1',
+  ownerSurname: null,
 };
 
 beforeEach(() => {
