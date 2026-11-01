@@ -278,7 +278,7 @@ const STYLE_PHONE = `
 html{font-size:${BODY_PX}px;font:-apple-system-body;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
-body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:1rem;line-height:1.4;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:1rem;line-height:1.4;overflow-wrap:anywhere;}
 .sheet{padding:1rem 16px 2rem;max-width:40rem;margin:0 auto;}
 #v2probe{position:absolute;left:-999rem;top:0;display:block;font-size:1rem;line-height:1;visibility:hidden;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
@@ -320,7 +320,7 @@ svg.marks{display:block;width:100%;height:auto;overflow:visible;}
 .conf{margin:0.6rem 0 0;}
 .lines{margin:0.8rem 0 0;}
 .lines li,.qs li{margin:0 0 0.3rem;}
-.ln{font-variant-numeric:tabular-nums;color:var(--ink2);}
+.ln{color:var(--ink2);}
 .qs .ptr{color:var(--ink2);font-size:0.8125rem;}
 .colo{margin-top:1.4rem;padding-top:0.5rem;border-top:1px solid var(--hair);font-size:0.75rem;color:var(--ink2);}
 svg .base{stroke:var(--hair);stroke-width:.75;}
