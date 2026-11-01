@@ -1,6 +1,6 @@
 # Nyx chart standard
 
-🌱 **Living.** **Version:** 1.2 · **Last Updated:** 2026-10-26 · **Issue:** CUL-1899
+🌱 **Living.** **Version:** 1.3 · **Last Updated:** 2026-11-01 · **Issue:** CUL-1899
 
 Every chart Nyx ships, in the app or in the vet report, is evidence a reader can check without a legend (Principle 8). This page is the table a chart joins **before it ships**, and the table every shipped chart is held to. It replaces the Design v2 round 4 §05 table (`docs/culprit-design-v4-mockups.html`, frozen 2026-09-19), which stopped being edited before `WeekStrip` shipped.
 
@@ -78,6 +78,7 @@ Found by the first adversarial pass after the table was written; each gets its r
 |---|---|---|---|---|---|
 | **Symptom frequency** (`symptomChart`, the hero) | yes: a bar per week; a zero week a visible nub | yes: the count on every bar, `0` included | **partial:** "N/7 d" under every week up to 14 weeks, under every other week past 14 (the axis stride). [CUL-2153](https://linear.app/projectnyx/issue/CUL-2153) | yes: a week under the logged-day floor prints "–", never `0`, and the key says why (the "not read (N of 7 days logged)" wording is the alt text) | yes: week-start dates on the axis; the range box and caption carry the exact bounds |
 | **Off-diet feedings** (`proteinTimelineChart`) | yes: a column per week | yes: a bar's count, a floor never a total; a measured `0` only above the coverage floor | **partial:** the diet-observed day count under every in-scope column up to 14 weeks, every other column past 14. [CUL-2153](https://linear.app/projectnyx/issue/CUL-2153) | yes: a week too thin to read is drawn NOT OBSERVED, never `0` | yes: the shared week axis |
+| **v2 sheet 1: the lead chart and its stacked rows** (`renderPrintV2.ts` `leadChart`, behind `report_document_v2`; spec v2 §5.4) | yes: a bar per week (a 2-week bin past 13 weeks; a bar per day when the window is under 14 days); a bracketed line per course, trial or bowl, drawn from its start to its end or the window's edge | **exception:** a count prints over every bar with one, and an empty cell prints nothing, because these signs are logged only when they happen and a `0` would claim a watched absence (spec v2 §5.4, v1 spec rule 9's v2 amendment). The text twin names every week, "none" included | yes: under every week "logged n of 7", or "n-day week" for a part week, wherever logging is short of the week; one count scale across every stacked row, never written as "scale" | yes: hatch marks a week or day with nothing logged, and only that; at most 3 sign rows, the rest named with their counts ("also logged: …"); safety-flagged signs never overflow; the twin is the only carrier of the chart's facts (the SVG is `aria-hidden`) and names every mark kind drawn | yes: the heading names the window start ("by week, from Sep 16"); week-start dates on the axis |
 
 ## 5. What this table found on its first pass
 
@@ -87,6 +88,7 @@ The rows above marked **no** or **exception** that had no issue are filed as one
 
 | Version | Date | Change |
 |---|---|---|
+| 1.3 | 2026-11-01 | CUL-2290: v2 sheet 1's lead chart joins §4.3 before it ships, built from spec v2 §5.4's mark lexicon. |
 | 1.2 | 2026-10-26 | CUL-2160: §2 names the line colour for a light ground (the glyph teal, 3.27:1 on white); Ask's sparkline and the onboarding preview line move onto it. |
 | 1.1 | 2026-10-25 | CUL-1499: Home's timing row draws the stacked compare and a denominator line naming the window; the dot lane leaves Home and its row is marked retired. |
 | 1.0 | 2026-10-23 | Moved out of round 4 §05 into a living doc (CUL-1899, D5 (a)). Every shipped chart audited against the code; the week strip, the timing distribution, the dot lane, the stacked compare, the sparkline and the two report charts join the table. |

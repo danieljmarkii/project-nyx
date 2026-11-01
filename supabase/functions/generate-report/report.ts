@@ -3387,6 +3387,24 @@ export interface ReportV2Facts {
    */
   weeksComparable: boolean
   ongoingWindowShort: boolean
+  /**
+   * CUL-2290 (VR2-10): the in-window local days carrying any log, ascending. The SAME
+   * `loggedDayNums` as `atAGlance.loggedDays` (its length, always), so the sheet's day row and
+   * coverage row hatch exactly the days "N of M days logged" leaves out.
+   */
+  loggedDayKeys: string[]
+  /**
+   * CUL-2290: per symptom chart week (the same buckets as `SymptomAggregate.weeklyBuckets`), the
+   * rated meals, those not fully eaten (`!== 'all'`, the `finishedMeals` predicate) and, of those,
+   * the ones refused outright. The intake row's part-of-whole bars (spec v2 §5.4) read only this.
+   */
+  intakeWeeks: Array<{ rated: number; notFinished: number; refused: number }>
+  /** Ratings of a free-fed bowl left out of `intakeWeeks`: the intake detector never reads them
+   *  (CUL-1086, §11 #6), so the bar a flag is drawn on counts what the flag counted. Disclosed. */
+  intakeWeeksBowlExcluded: number
+  /** CUL-2290: in-window symptom incidents per local day, for the day row under a 14-day window.
+   *  The same deduped incidents as `SymptomAggregate.count` (they sum to it, per type). */
+  symptomDayCounts: Array<{ type: ReportSymptomType; day: string; count: number }>
 }
 
 /** CUL-2289 — the record's first entry, read exactly as `recordEdgeOf` reads its last. */
@@ -6721,8 +6739,60 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       firstEntryDate: firstEntryDateOf(dedupedAll, input.now, tz),
       weeksComparable: weekComparisonMeasurable(detInput, detConfig),
       ongoingWindowShort: scope.windowDays <= detConfig.chronicity.minSpanDays,
+      loggedDayKeys: [...loggedDayNums].sort((a, b) => a - b).map(dayKeyFromNumber),
+      intakeWeeks: intakeWeeksOf(
+        ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+        (iso) => eventDayNumber(iso, tz),
+        bucketIndexOfDay,
+        numBuckets,
+      ),
+      intakeWeeksBowlExcluded: ratedMealsInWindow.filter((e) =>
+        isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans),
+      ).length,
+      symptomDayCounts: symptomDayCountsOf(windowEvents, (iso) => eventDayNumber(iso, tz)),
     },
   }
+}
+
+/** CUL-2290 — `ReportV2Facts.intakeWeeks`, bucketed by the symptom chart's own closure. */
+function intakeWeeksOf(
+  rated: ReadonlyArray<ReportEventInput>,
+  dayOf: (iso: string) => number | null,
+  bucketOf: (dn: number) => number,
+  n: number,
+): ReportV2Facts['intakeWeeks'] {
+  const out = Array.from({ length: n }, () => ({ rated: 0, notFinished: 0, refused: 0 }))
+  for (const e of rated) {
+    const dn = dayOf(e.occurredAt)
+    const r = e.meal?.intakeRating ?? null
+    if (dn === null || r === null) continue
+    const w = out[bucketOf(dn)]
+    w.rated++
+    if (r !== 'all') w.notFinished++
+    if (r === 'refused') w.refused++
+  }
+  return out
+}
+
+/** CUL-2290 — `ReportV2Facts.symptomDayCounts`, over the window's deduped incidents. */
+function symptomDayCountsOf(
+  events: ReadonlyArray<ReportEventInput>,
+  dayOf: (iso: string) => number | null,
+): ReportV2Facts['symptomDayCounts'] {
+  const counts = new Map<string, number>()
+  for (const e of events) {
+    if (!REPORT_SYMPTOM_SET.has(e.type)) continue
+    const dn = dayOf(e.occurredAt)
+    if (dn === null) continue
+    const k = `${e.type}|${dayKeyFromNumber(dn)}`
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([k, count]) => {
+      const [type, day] = k.split('|')
+      return { type: type as ReportSymptomType, day, count }
+    })
+    .sort((a, b) => a.day.localeCompare(b.day) || a.type.localeCompare(b.type))
 }
 
 // ── Assembly sub-helpers ──────────────────────────────────────────────────────
