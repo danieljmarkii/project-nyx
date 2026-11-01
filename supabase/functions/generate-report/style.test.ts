@@ -599,8 +599,8 @@ Deno.test('R-17 item 5 — a heading never sits alone at the foot of a sheet', (
 // `font-variant-numeric:tabular-nums` (or a `tnum` feature setting) makes Chromium and
 // WebKit draw alternate digit glyphs. The PDF's font subset gives those glyphs no
 // ToUnicode entry, so every extractor (pypdf, pdfminer, a clinic's AI tool, copy-paste)
-// drops them: measured on the clean trial sample, 978 digits in the HTML and 374 in the
-// PDF's text layer. Aligned figures come back only with an embedded subset whose default
+// drops them: measured on the Cooper fixture through Chromium page.pdf(), pypdf and
+// pdfminer read 277 digits with the rule and 805 without it. Aligned figures come back only with an embedded subset whose default
 // cmap holds them (CUL-2291), never by re-adding the declaration.
 
 const DIGIT_DROPPERS = /font-variant-numeric|font-variant\s*:[^;}]*tabular|font-feature-settings\s*:[^;}]*tnum/i

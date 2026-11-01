@@ -22,8 +22,8 @@ import {
 
 /** The rendered page as a VET READS IT: tags stripped, entities decoded.
  *
- *  Every number on this report is wrapped in a tabular-figures `<span class="num">`
- *  for alignment, so a raw-HTML regex over "31 of 32 days" silently never matches
+ *  Every number on this report is wrapped in a `<span class="num">` styling hook,
+ *  so a raw-HTML regex over "31 of 32 days" silently never matches
  *  and the assertion passes vacuously in the wrong direction. Asserting on the text
  *  is also the honest oracle: the span is cosmetic, the sentence is the datum. */
 function plain(html: string): string {
