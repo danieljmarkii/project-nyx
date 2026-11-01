@@ -5642,7 +5642,7 @@ Deno.test('CUL-2003 — with no flag, the checks still show where the band sits,
   assert.ok(!/No safety flag/.test(p), 'and no statement of none: the band shows only what this report renders')
   assert.ok(/Ran and did not trigger, which does not rule these out: ongoing vomiting \(2 episodes in 40 logged days of the last 8 weeks; no event of any kind logged after Jun 15 \(the last 17 days\); it triggers at/.test(p), p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 300))
   assert.ok(
-    /Vomiting getting worse: not checked, too few days logged to compare \(0 of the 7 days from 08:00 on Jun 25 to 08:00 on Jul 2 logged, 0 of the 7 days from 08:00 on Jun 18 to 08:00 on Jun 25; it needs 3 logged days in each\)\./.test(p),
+    /Vomiting getting worse: not checked, too few days logged to compare, counted in UTC \(0 of the 7 days from 08:00 on Jun 25 to 08:00 on Jul 2 logged, 0 of the 7 days from 08:00 on Jun 18 to 08:00 on Jun 25; it needs 3 logged days in each\)\./.test(p),
   )
   // The mutation: a record with no symptom in it has no check to name.
   idSeq = 0
@@ -5794,7 +5794,7 @@ Deno.test('CUL-2348 — the getting-worse windows end on the report date, and sa
   assert.equal(w.priorLoggingDays, 2)
   const p = readAs(renderReport(snap))
   assert.ok(
-    p.includes('Vomiting getting worse: not checked, too few days logged to compare (0 of the 7 days from 08:00 on Jun 25 to 08:00 on Jul 2 logged, 2 of the 7 days from 08:00 on Jun 18 to 08:00 on Jun 25; it needs 3 logged days in each).'),
+    p.includes('Vomiting getting worse: not checked, too few days logged to compare, counted in UTC (0 of the 7 days from 08:00 on Jun 25 to 08:00 on Jul 2 logged, 2 of the 7 days from 08:00 on Jun 18 to 08:00 on Jun 25; it needs 3 logged days in each).'),
     p.slice(p.indexOf('Vomiting getting'), p.indexOf('Vomiting getting') + 300),
   )
   // The unit is days: never the bare "0 of the last 7" a vet reads as "no vomiting last week".

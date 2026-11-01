@@ -2342,7 +2342,9 @@ export function safetyChecksText(snap: ReportSnapshot): { lead: string | null; r
       )
     } else if (c.state === 'too_few_days') {
       rest.push(
-        `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare (${num(
+        // Logged days here are the engine's UTC days too (`loggingDaysInWindow`), and the ongoing
+        // clause beside it counts local days: the unit is said (adversarial pass 2).
+        `${h(symptomLabel(c.symptomType))} getting worse: not checked, too few days logged to compare, counted in UTC (${num(
           c.currentLoggingDays,
         )} of ${current(c)} logged, ${num(c.priorLoggingDays)} of ${prior(c)}; it needs ${num(
           c.minLoggingDays,
