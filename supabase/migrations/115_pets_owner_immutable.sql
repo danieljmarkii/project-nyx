@@ -47,6 +47,14 @@
 --     not an UPDATE.
 --   · Account deletion is a DELETE: auth.users -> pets is ON DELETE CASCADE
 --     (001), which never fires an UPDATE trigger. Unaffected.
+--   · TRIGGER is revoked on pets from anon, authenticated and service_role
+--     (100's shape for ai_consent). CREATE OR REPLACE TRIGGER needs only the
+--     TRIGGER privilege, not ownership, and Supabase grants ALL on public
+--     tables to all three: so any of them could replace this trigger with a
+--     narrowed or no-op one, move the owner, and put it back in the same
+--     transaction (rls-privacy-reviewer pass 2, R1, measured on the replay).
+--     No app path or Edge Function creates a trigger; only migrations do, as
+--     the table's owner, which the revoke does not touch.
 --
 -- WHY FREEZE, NOT DROP THE CASCADE ON generated_by: the other repair the
 -- issue names would save 113's rows and leave them naming a dead account,
@@ -80,18 +88,21 @@
 --     transaction can. The delete cascades the pet's ROWS away first, but not
 --     its Storage objects: every pet-keyed Storage policy resolves the
 --     `{pet_id}/` prefix through pets.user_id, so the new owner could read
---     the old owner's photos and documents. No path does this; filed on
---     CUL-2337 as its own issue (same class as 113's stated G2).
+--     the old owner's photos and documents. No path does this; filed as
+--     CUL-2375 (same class as 113's stated G2).
 --
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT
 -- ------------------------------------------------------------
 --   Destructive: n. No column, row or policy changes; one function, one
---                trigger. pets_owner and trg_pets_server_id untouched.
+--                trigger, and the TRIGGER privilege on pets revoked from the
+--                three API roles (no code uses it). pets_owner and
+--                trg_pets_server_id untouched.
 --   Backfill:    N/A. The trigger judges only future changes.
 --   Rollback:
 --     DROP TRIGGER IF EXISTS trg_pets_owner_immutable ON public.pets;
 --     DROP FUNCTION IF EXISTS public.enforce_pet_owner_immutable();
+--     GRANT TRIGGER ON public.pets TO anon, authenticated, service_role;
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.enforce_pet_owner_immutable()
@@ -116,3 +127,5 @@ DROP TRIGGER IF EXISTS trg_pets_owner_immutable ON public.pets;
 CREATE TRIGGER trg_pets_owner_immutable
   AFTER UPDATE ON public.pets
   FOR EACH ROW EXECUTE FUNCTION public.enforce_pet_owner_immutable();
+
+REVOKE TRIGGER ON public.pets FROM anon, authenticated, service_role;

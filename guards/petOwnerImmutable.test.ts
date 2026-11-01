@@ -29,11 +29,22 @@ import { stripSqlComments } from './sqlComments';
 //     the pinned shape is AFTER, and why a BEFORE replacement reds below.
 //   · A superuser can disable the trigger or set session_replication_role;
 //     that is the server, not a client.
+//   · Owner-only DDL this file does not read (rls-privacy-reviewer pass 2):
+//     `ALTER TABLE pets RENAME`, a `CREATE RULE … ON UPDATE TO pets`, and a
+//     DISABLE split by an inline block comment (`DISABLE /* x */ TRIGGER`).
+//     Each needs the table owner, i.e. a migration a reviewer reads.
+//   · The TRIGGER revoke is read as text: a later GRANT is caught when it names
+//     pets (or ALL TABLES IN SCHEMA public) and an API role or PUBLIC; a grant
+//     through a role those roles are members of is not read.
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'supabase', 'migrations');
 const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 const ID = String.raw`(?:"?\w+"?\s*\.\s*)?"?(\w+)"?`;
 const QUAL = (name: string): string => String.raw`(?:"?\w+"?\s*\.\s*)?"?${name}"?`;
+// public or unqualified only: a trigger on `archive.pets`, or one running a
+// same-named function in another schema, is not this one (pass 2, G2 / G4).
+const PUB = (name: string): string => String.raw`(?:"?public"?\s*\.\s*)?"?${name}"?`;
+const API_ROLES = ['anon', 'authenticated', 'service_role'];
 
 const LIVE_DEFINITION = squash(`
 CREATE OR REPLACE FUNCTION public.enforce_pet_owner_immutable()
@@ -72,10 +83,6 @@ export function ownerTriggerProblems(sql: string): string[] {
   if (new RegExp(String.raw`ALTER\s+(?:FUNCTION|ROUTINE|PROCEDURE)\s+${fn}`, 'i').test(sql)) {
     problems.push('an ALTER FUNCTION/ROUTINE changes enforce_pet_owner_immutable');
   }
-  if (new RegExp(String.raw`DROP\s+(?:FUNCTION|ROUTINE|PROCEDURE)\s[^;]*\benforce_pet_owner_immutable\b`, 'i').test(sql.slice(live.index))) {
-    problems.push('the function is dropped after its live definition');
-  }
-
   // Every creation of the trigger, `OR REPLACE` included (review pass 1, F1:
   // a later `CREATE OR REPLACE TRIGGER … UPDATE OF weight_kg` was invisible).
   // The LAST must be the pinned shape: AFTER UPDATE (so it sees the row after
@@ -91,7 +98,7 @@ export function ownerTriggerProblems(sql: string): string[] {
   }
   const lastCreate = creates[creates.length - 1];
   const pinnedTrigger = new RegExp(
-    String.raw`^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+"?trg_pets_owner_immutable"?\s+AFTER\s+UPDATE\s+ON\s+${QUAL('pets')}\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+${fn}\s*\(\s*\)\s*;$`,
+    String.raw`^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+"?trg_pets_owner_immutable"?\s+AFTER\s+UPDATE\s+ON\s+${PUB('pets')}\s+FOR\s+EACH\s+ROW\s+EXECUTE\s+FUNCTION\s+${PUB('enforce_pet_owner_immutable')}\s*\(\s*\)\s*;$`,
     'i',
   );
   if (!pinnedTrigger.test(lastCreate[0])) {
@@ -99,6 +106,13 @@ export function ownerTriggerProblems(sql: string): string[] {
     return problems;
   }
   const after = sql.slice(lastCreate.index ?? 0);
+  // A DROP FUNCTION … CASCADE takes the trigger with it, so a drop after the
+  // last trigger creation reds even when the function is then recreated
+  // (pass 2, G1), as does one after the live definition.
+  const dropFrom = Math.min(live.index, lastCreate.index ?? 0);
+  if (new RegExp(String.raw`DROP\s+(?:FUNCTION|ROUTINE|PROCEDURE)\s[^;]*\benforce_pet_owner_immutable\b`, 'i').test(sql.slice(dropFrom))) {
+    problems.push('the function is dropped after its live definition or the trigger\'s last creation');
+  }
   if (/DROP\s+TRIGGER[^;]*\btrg_pets_owner_immutable\b/i.test(after)) problems.push('the trigger is dropped after its last creation');
   if (/ALTER\s+TRIGGER\s+"?trg_pets_owner_immutable"?/i.test(after)) problems.push('the trigger is renamed or altered after its last creation');
   const toggles: string[] = [];
@@ -110,6 +124,27 @@ export function ownerTriggerProblems(sql: string): string[] {
   }
   const last = toggles.length ? toggles[toggles.length - 1] : 'ENABLE';
   if (last === 'DISABLE' || last === 'ENABLE REPLICA') problems.push('a trigger on pets is disabled after the last creation');
+
+  // TRIGGER on pets is revoked from every API role (pass 2, R1): CREATE OR
+  // REPLACE TRIGGER needs only that privilege, so a holder could swap this
+  // trigger out, move the owner and swap it back. The last revoke must name
+  // all three roles, and nothing after it may grant TRIGGER (or ALL) back.
+  const revokes = [
+    ...sql.matchAll(new RegExp(String.raw`REVOKE\s+[^;]*?\b(?:TRIGGER|ALL)\b[^;]*?\bON\s+(?:TABLE\s+)?${PUB('pets')}\s+FROM\s+([^;]*);`, 'gi')),
+  ];
+  const lastRevoke = revokes[revokes.length - 1];
+  const revoked = lastRevoke ? lastRevoke[1].toLowerCase() : '';
+  const missing = API_ROLES.filter((r) => !new RegExp(String.raw`(?:^|[\s,"])${r}(?:$|[\s,"])`).test(revoked));
+  if (!lastRevoke || missing.length > 0) {
+    problems.push(`TRIGGER on pets is not revoked from ${(lastRevoke ? missing : API_ROLES).join(', ')}`);
+  } else {
+    const later = sql.slice((lastRevoke.index ?? 0) + lastRevoke[0].length);
+    const grants = new RegExp(
+      String.raw`GRANT\s+[^;]*?\b(?:TRIGGER|ALL)\b[^;]*?\bON\s+(?:(?:TABLE\s+)?${PUB('pets')}|ALL\s+TABLES\s+IN\s+SCHEMA\s+"?public"?)\s+TO\s+[^;]*\b(?:anon|authenticated|service_role|PUBLIC)\b`,
+      'i',
+    );
+    if (grants.test(later)) problems.push('a later GRANT gives TRIGGER on pets back to an API role');
+  }
 
   return problems;
 }
@@ -158,6 +193,9 @@ describe("a pet's owner never changes (CUL-2337, migration 115)", () => {
     ]) {
       expect(add(later)).toEqual(shape);
     }
+    // Pass 2, G2 / G4: another schema's table or function is not this trigger.
+    expect(add('CREATE OR REPLACE TRIGGER trg_pets_owner_immutable AFTER UPDATE ON archive.pets FOR EACH ROW EXECUTE FUNCTION public.enforce_pet_owner_immutable();')).toEqual(shape);
+    expect(add('CREATE OR REPLACE TRIGGER trg_pets_owner_immutable AFTER UPDATE ON public.pets FOR EACH ROW EXECUTE FUNCTION scratch.enforce_pet_owner_immutable();')).toEqual(shape);
     // Re-creating the pinned shape is fine.
     expect(add('CREATE OR REPLACE TRIGGER trg_pets_owner_immutable AFTER UPDATE ON public.pets FOR EACH ROW EXECUTE FUNCTION public.enforce_pet_owner_immutable();')).toEqual([]);
   });
@@ -170,6 +208,9 @@ describe("a pet's owner never changes (CUL-2337, migration 115)", () => {
       expect(add(alter)).toEqual([expect.stringMatching(/ALTER FUNCTION\/ROUTINE/)]);
     }
     expect(add('DROP FUNCTION public.enforce_pet_owner_immutable() CASCADE;')).toEqual([expect.stringMatching(/function is dropped/)]);
+    // Pass 2, G1: drop with CASCADE (the trigger goes too), then recreate the pinned text.
+    const pinnedFn = body115.slice(body115.indexOf('CREATE OR REPLACE FUNCTION'), body115.indexOf('COMMENT ON FUNCTION'));
+    expect(add(`DROP FUNCTION public.enforce_pet_owner_immutable() CASCADE;\n${pinnedFn}`)).toEqual([expect.stringMatching(/function is dropped/)]);
     expect(add('DROP TRIGGER IF EXISTS trg_pets_owner_immutable ON public.pets;')).toEqual([expect.stringMatching(/trigger is dropped/)]);
     expect(add('ALTER TRIGGER trg_pets_owner_immutable ON public.pets RENAME TO x;')).toEqual([expect.stringMatching(/renamed/)]);
     for (const off of [
@@ -183,4 +224,24 @@ describe("a pet's owner never changes (CUL-2337, migration 115)", () => {
     expect(add('ALTER TABLE pets DISABLE TRIGGER ALL; ALTER TABLE pets ENABLE TRIGGER ALL;')).toEqual([]);
   });
 
+
+  it('reds unless TRIGGER on pets stays revoked from every API role (pass 2, R1)', () => {
+    const without = body115.replace(/REVOKE TRIGGER ON public\.pets FROM anon, authenticated, service_role;/, '');
+    expect(without).not.toBe(body115);
+    expect(ownerTriggerProblems(without)).toEqual([expect.stringMatching(/not revoked from anon, authenticated, service_role/)]);
+    const partial = body115.replace('FROM anon, authenticated, service_role;', 'FROM anon, authenticated;');
+    expect(ownerTriggerProblems(partial)).toEqual([expect.stringMatching(/not revoked from service_role$/)]);
+    const back = [expect.stringMatching(/later GRANT gives TRIGGER/)];
+    for (const grant of [
+      'GRANT TRIGGER ON public.pets TO service_role;',
+      'grant all on table pets to authenticated;',
+      'GRANT SELECT, TRIGGER ON "public"."pets" TO anon;',
+      'GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;',
+      'GRANT TRIGGER ON public.pets TO PUBLIC;',
+    ]) {
+      expect(add(grant)).toEqual(back);
+    }
+    expect(add('GRANT SELECT, UPDATE ON public.pets TO authenticated;')).toEqual([]);
+    expect(add('GRANT TRIGGER ON public.pets TO service_role; REVOKE TRIGGER ON public.pets FROM anon, authenticated, service_role;')).toEqual([]);
+  });
 });

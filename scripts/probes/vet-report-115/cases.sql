@@ -6,6 +6,7 @@
 --
 -- M*: moving a pet's owner, every role and every statement shape.
 -- R*: a BEFORE trigger rewriting NEW after the check (review pass 1).
+-- T*: replacing the check itself (review pass 2).
 -- S*: the writes that must still pass (the sync upsert re-sending user_id,
 --     ordinary edits).
 -- X*: the measured attack end to end, and account deletion.
@@ -115,7 +116,8 @@ SELECT probe('M8: the refusal names no value (C-31)', 'service_role', NULL,
 
 -- ── R: rls-privacy-reviewer pass 1 (F2 / F3): a BEFORE trigger that rewrites
 -- NEW after the owner check ran. Against 115's first cut (a BEFORE trigger)
--- R1 and R2 moved the owner; the AFTER check sees the row as written.
+-- R1 and R2 moved the owner; the AFTER check sees the row as written, and the
+-- TRIGGER revoke stops R2 before it starts.
 SELECT probe('R1: a later-named BEFORE trigger returns a copy of NEW with a new owner', 'postgres', NULL,
   $q$DO $b$ BEGIN
       CREATE FUNCTION public.probe_zz_move() RETURNS trigger LANGUAGE plpgsql AS $f$
@@ -127,18 +129,43 @@ SELECT probe('R1: a later-named BEFORE trigger returns a copy of NEW with a new 
         FOR EACH ROW EXECUTE FUNCTION public.probe_zz_move();
       UPDATE public.pets SET weight_kg = 1 WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
     END $b$$q$, '23514');
-SELECT probe('R2: service role installs a pg_temp BEFORE trigger that moves the owner', 'service_role', NULL,
+SELECT probe('R2: service role installs a pg_temp BEFORE trigger (no TRIGGER privilege since pass 2)', 'service_role', NULL,
   $q$DO $b$ BEGIN
       CREATE FUNCTION pg_temp.zz_mv() RETURNS trigger LANGUAGE plpgsql AS $f$
       BEGIN NEW.user_id := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'; RETURN NEW; END $f$;
       CREATE TRIGGER zz_mv BEFORE UPDATE ON public.pets
         FOR EACH ROW EXECUTE FUNCTION pg_temp.zz_mv();
       UPDATE public.pets SET user_id = user_id WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
-    END $b$$q$, '23514');
+    END $b$$q$, '42501');
 SELECT probe('R3: service role moves it with MERGE', 'service_role', NULL,
   $$MERGE INTO public.pets p
      USING (SELECT 'a1a1a1a1-0000-4000-8000-000000000001'::uuid AS id) s ON p.id = s.id
      WHEN MATCHED THEN UPDATE SET user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'$$, '23514');
+
+-- ── T: replacing the owner trigger itself (rls-privacy-reviewer pass 2, R1).
+-- CREATE OR REPLACE TRIGGER needs only the TRIGGER privilege. Against 115
+-- without its REVOKE, T1-T3 moved the owner and restored the trigger.
+SELECT probe('T1: service role narrows the owner trigger, moves the pet, restores it', 'service_role', NULL,
+  $q$DO $b$ BEGIN
+      CREATE OR REPLACE TRIGGER trg_pets_owner_immutable AFTER UPDATE OF weight_kg ON public.pets
+        FOR EACH ROW EXECUTE FUNCTION public.enforce_pet_owner_immutable();
+      UPDATE public.pets SET user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+       WHERE id = 'a1a1a1a1-0000-4000-8000-000000000001';
+    END $b$$q$, '42501');
+SELECT probe('T2: owner (client) replaces the owner trigger', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  $$CREATE OR REPLACE TRIGGER trg_pets_owner_immutable AFTER UPDATE OF weight_kg ON public.pets
+     FOR EACH ROW EXECUTE FUNCTION public.enforce_pet_owner_immutable()$$, '42501');
+SELECT probe('T3: anon replaces 104''s id trigger', 'anon', NULL,
+  $$CREATE OR REPLACE TRIGGER trg_pets_server_id BEFORE UPDATE ON public.pets
+     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at()$$, '42501');
+SELECT probe('T4: no API role holds TRIGGER on pets', 'postgres', NULL,
+  $q$DO $b$ BEGIN
+      IF has_table_privilege('service_role', 'public.pets', 'TRIGGER')
+         OR has_table_privilege('authenticated', 'public.pets', 'TRIGGER')
+         OR has_table_privilege('anon', 'public.pets', 'TRIGGER') THEN
+        RAISE EXCEPTION 'TRIGGER still granted';
+      END IF;
+    END $b$$q$, 'ok');
 
 -- ── S: the writes that must still pass ───────────────────────────────────────
 SELECT probe('S1: sync-shaped upsert re-sending the same user_id', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
