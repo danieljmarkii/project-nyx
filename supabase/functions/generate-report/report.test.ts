@@ -13,8 +13,10 @@
 // B-040; present-only blood/foreign; severity blank.
 
 import { strict as assert } from 'node:assert'
+import { kgToLbsNum, lbsToKg } from '../../../lib/weightUnits.ts'
 import {
   assembleReport,
+  weightChangeOf,
   weightLaneFor,
   partitionCourseDays,
   type PartitionRow,
@@ -6100,4 +6102,140 @@ Deno.test('CUL-2026 adv 2 — a weigh-in record that did not load in full says s
   idSeq = 0
   const off = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), incompletePulls: ['weight_checks'] }))
   assert.ok(!off.safetyFlags.some((f) => f.kind === 'weight_unchecked'), 'key off: Home has no weight check to speak of')
+})
+
+// ── CUL-2286 (VR2-6) / CUL-2326 — every weight figure through weightStory, kg at 2 dp with lb ──
+// Fixtures through `lbsToKg`, the app's one entry rule: owners type pounds, storage is 2 dp kg.
+
+/** Every kilogram the rendered page prints, with its sign and the pounds beside it, if any. */
+function kgPrints(text: string): Array<{ signed: boolean; kg: string; lb: string | null }> {
+  return [...text.matchAll(/([+-]?)(\d+(?:\.\d+)?) kg(?: \((-?\d+(?:\.\d+)?) lb\))?/g)].map((m) => ({
+    signed: m[1] !== '',
+    kg: m[2],
+    lb: m[3] ?? null,
+  }))
+}
+
+/**
+ * CUL-2326's acceptance test: every kilogram on the page prints the stored 2 dp; every READING
+ * carries its pounds at 0.1 beside it and is a reading the record holds; every signed CHANGE is
+ * the Weight block's own change. Run against the flag on and off, so neither branch keeps a 1 dp.
+ */
+function assertEveryKgMatchesTheBlock(snap: ReturnType<typeof assembleReport>, stored: number[]): string {
+  const text = readAs(renderReport(snap))
+  const prints = kgPrints(text)
+  assert.ok(prints.length >= 4, `the page prints its weights: ${JSON.stringify(prints)}`)
+  const storedKg = new Set(stored.map((k) => k.toFixed(2)))
+  const changes = new Set<string>()
+  if (snap.weight.change?.deltaKg != null) changes.add(Math.abs(snap.weight.change.deltaKg).toFixed(2))
+  for (const f of snap.safetyFlags) {
+    if (f.kind === 'weight_loss') changes.add(Math.abs(Math.round((f.latest.kg - f.highBefore.kg) * 100) / 100).toFixed(2))
+  }
+  for (const p of prints) {
+    assert.ok(/^\d+\.\d\d$/.test(p.kg), `a kilogram at the stored 2 dp: ${p.kg} kg in ${text}`)
+    if (p.signed) {
+      assert.ok(changes.has(p.kg), `a change on the page is the block's change: ${p.kg} not in ${[...changes]}`)
+    } else {
+      assert.ok(storedKg.has(p.kg), `a reading on the page is a stored reading: ${p.kg}`)
+      assert.equal(p.lb, kgToLbsNum(Number(p.kg)).toFixed(1), `${p.kg} kg carries its pounds at 0.1 beside it`)
+    }
+  }
+  return text
+}
+
+function smallCatWeighIns(): ReportWeightCheckInput[] {
+  // 4.3 lb twice then 4.1 lb twice: stored 1.95 and 1.86 kg, a 4.6% loss that 1 dp printed as steady.
+  return [
+    { eventId: 'sc-1', weightKg: lbsToKg(4.3), occurredAt: at('2026-04-20'), source: 'home_scale' },
+    { eventId: 'sc-2', weightKg: lbsToKg(4.3), occurredAt: at('2026-05-04'), source: 'home_scale' },
+    { eventId: 'sc-3', weightKg: lbsToKg(4.1), occurredAt: at('2026-06-15'), source: 'home_scale' },
+    { eventId: 'sc-4', weightKg: lbsToKg(4.1), occurredAt: at('2026-06-29'), source: 'home_scale' },
+  ]
+}
+
+Deno.test('CUL-2326 — every kg on the page is 2 dp, carries its lb, and matches the Weight block (flag on and off)', () => {
+  const w = smallCatWeighIns()
+  assert.deepEqual(w.map((r) => r.weightKg), [1.95, 1.95, 1.86, 1.86], 'the fixture is what a pound entry stores')
+  for (const engineFlags of [EN8, { on: [], readOk: true }] as ReportInput['engineFlags'][]) {
+    idSeq = 0
+    const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w, weightHistory: w, engineFlags }))
+    const text = assertEveryKgMatchesTheBlock(snap, w.map((r) => r.weightKg))
+    assert.ok(!/\b1\.9 kg|\b1\.9 →/.test(text), 'the loss never reads as steady')
+    assert.ok(/latest weight 1\.86 kg \(4\.1 lb\) on Jun 29/.test(text), 'the signalment line: 2 dp with lb (CUL-2326 item 2)')
+    assert.ok(/1\.86 kg \(4\.1 lb\) on Jun 29, 2026 on a home scale(, a single reading)?, down from 1\.95 kg \(4\.3 lb\) on (Apr 20|May 4), 2026 on a home scale(, a single reading)? · -0\.09 kg \(-0\.2 lb\), about 5 ?% of body weight/.test(text), text.slice(text.indexOf('owner weigh-in') - 200, text.indexOf('owner weigh-in') + 500))
+    assert.ok(/-0\.09 kg/.test(text), 'the tile prints the change at 2 dp (CUL-2326 item 1)')
+  }
+})
+
+Deno.test('CUL-2326 — a 0.04 kg loss prints "-0.04 kg" on the tile, never "-0.0 kg"', () => {
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'z-1', weightKg: 1.9, occurredAt: at('2026-06-01'), source: 'home_scale' },
+    { eventId: 'z-2', weightKg: 1.86, occurredAt: at('2026-06-20'), source: 'home_scale' },
+  ]
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w }))
+  const html = renderReport(snap)
+  assert.ok(/-0\.04<small>&nbsp;kg<\/small>/.test(html), html.slice(html.indexOf('Weight since') - 200, html.indexOf('Weight since') + 200))
+  assert.ok(!/-0\.0<small>/.test(html), 'a real loss never reads as no change')
+  assert.ok(/&asymp;2% of body weight/.test(html), 'and its whole percent is stated, with no floor')
+  assertEveryKgMatchesTheBlock(snap, [1.9, 1.86])
+})
+
+Deno.test('CUL-2286 — a kitten that grew then fell reads as a loss from its highest, never a gain from its earliest', () => {
+  // Weight lane attack 10b: 1.0 → 2.0 → 1.7 kg. First-to-last read +0.70 kg; the story reads
+  // the latest against the highest before it: -0.30 kg, 15%.
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'k-1', weightKg: 1.0, occurredAt: at('2026-04-10'), source: 'home_scale' },
+    { eventId: 'k-2', weightKg: 2.0, occurredAt: at('2026-05-20'), source: 'clinic' },
+    { eventId: 'k-3', weightKg: 1.7, occurredAt: at('2026-06-25'), source: 'clinic' },
+  ]
+  const input = baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w })
+  input.pet.dateOfBirth = '2026-01-15'
+  const snap = assembleReport(input)
+  assert.equal(snap.weight.change!.highBefore!.kg, 2.0)
+  assert.equal(snap.weight.change!.deltaKg, -0.3)
+  assert.equal(snap.weight.change!.pct, 15)
+  const text = readAs(renderReport(snap))
+  assert.ok(/1\.70 kg \(3\.7 lb\) on Jun 25, 2026 at the vet, down from 2\.00 kg \(4\.4 lb\) on May 20, 2026 at the vet · -0\.30 kg \(-0\.7 lb\), about 15 ?% of body weight/.test(text), text.slice(text.indexOf('owner weigh-in') - 100, text.indexOf('owner weigh-in') + 500))
+  assert.ok(!/\+0\.70/.test(text), 'never the first-to-last gain')
+})
+
+Deno.test('CUL-2286 — an estimate is never counted as a change end', () => {
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'e-1', weightKg: 4.4, occurredAt: at('2026-05-01'), source: 'home_scale' },
+    { eventId: 'e-2', weightKg: 3.5, occurredAt: at('2026-06-28'), source: 'estimate' },
+  ]
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w }))
+  assert.equal(snap.weight.change!.latest.kg, 4.4)
+  assert.equal(snap.weight.change!.highBefore, null, 'one counted reading: no change to state')
+  assert.ok(!/of body weight/.test(readAs(renderReport(snap))), 'no change is invented from the estimate')
+})
+
+Deno.test('CUL-2286 — a reading after a past window\'s end is not the window\'s change', () => {
+  // The story's own 10-minute future slack must not pull a later reading in, and a window that
+  // ends in the past reads the change as of its end (the same cut `weightLaneFor` makes).
+  idSeq = 0
+  const w: ReportWeightCheckInput[] = [
+    { eventId: 'p-1', weightKg: 5.0, occurredAt: at('2026-04-10'), source: 'clinic' },
+    { eventId: 'p-2', weightKg: 4.8, occurredAt: at('2026-05-10'), source: 'clinic' },
+    { eventId: 'p-3', weightKg: 4.0, occurredAt: at('2026-06-30'), source: 'clinic' },
+  ]
+  const nowMs = Date.parse('2026-05-31T23:59:00Z')
+  const change = weightChangeOf(w, new Date(nowMs).toISOString(), '2019-04-01', TZ)
+  assert.equal(change!.latest.kg, 4.8)
+  assert.equal(change!.highBefore!.kg, 5.0)
+})
+
+Deno.test('CUL-2286 — without the weight flag, no weight line enters the safety band (BRK-13)', () => {
+  idSeq = 0
+  const w = losingWeighIns()
+  const snap = assembleReport(baseInput({ events: mealsOn(dayKeys('2026-04-04', '2026-07-02')), weightChecks: w, weightHistory: w }))
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'weight_loss'), 'the key is off: no flag')
+  const text = readAs(renderReport(snap))
+  const bandStart = text.indexOf('Safety — flags for review')
+  const band = bandStart === -1 ? '' : text.slice(bandStart, text.indexOf('At a glance'))
+  assert.ok(!/Weight/.test(band), `the band carries no weight line: ${band}`)
+  assert.ok(/of body weight/.test(text), 'the change still prints, in the block and the tile')
 })
