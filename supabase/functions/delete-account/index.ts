@@ -58,6 +58,7 @@ import {
   readAllOwnedPaths,
   STORAGE_BUCKETS,
   STORAGE_REMOVE_CHUNK,
+  SWEEP_BUDGET_MS,
   sweepOwnedPrefixes,
   type OwnedStoragePaths,
   type PrefixSweep,
@@ -278,6 +279,9 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
 }
 
 Deno.serve(async (req: Request) => {
+  // CUL-2330: the post-delete sweep's time budget counts from here, not from the sweep's
+  // own start, because the runtime's limit counts from the request.
+  const startedAt = Date.now()
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
   }
@@ -419,8 +423,9 @@ Deno.serve(async (req: Request) => {
     //    by its owned folder. Best-effort: the account is gone, so a failure is logged
     //    with its bucket and folder rather than thrown.
     if (authDeleted) {
-      // Name the folders before touching them: if the function dies mid-sweep (its
-      // wall clock), this line is the only record of what may be left behind.
+      // Name the folders before touching them: if the function still dies mid-sweep
+      // (a folder in flight past the budget), this line is the record of what may be
+      // left behind. The budget below makes the usual case the `unswept` line instead.
       console.log(
         `delete-account: sweeping ${sweep.length} owned folder(s) for deleted user ${userId}:`,
         sweep.map((s) => `${s.bucket}/${s.root}/`).join(' '),
@@ -433,9 +438,23 @@ Deno.serve(async (req: Request) => {
           if (error) throw new Error(error.message)
           return data?.length ?? 0
         },
+        { deadline: startedAt + SWEEP_BUDGET_MS },
       )
       removed += swept.removed
       storageFailures.push(...swept.failures)
+      if (swept.unswept.length > 0) {
+        // CUL-2330 F6: the folders the budget left unstarted, as one machine-readable
+        // line. Sweeping a folder is idempotent, so this is the retry list for a hand
+        // cleanup or the orphan sweep (B-121, CUL-231). Each is also in storageFailures,
+        // so the client's `failed` count is never zero over them.
+        console.warn(
+          JSON.stringify({
+            event: 'delete-account.sweep.unswept',
+            userId,
+            folders: swept.unswept.map((s) => ({ bucket: s.bucket, root: s.root })),
+          }),
+        )
+      }
     }
 
     if (storageFailures.length > 0) {

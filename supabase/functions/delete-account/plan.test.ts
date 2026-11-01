@@ -19,10 +19,13 @@ import {
   buildDeletionPlan,
   chunk,
   extractPassword,
+  listPrefixForSweep,
   listPrefixRecursive,
   readAllOwnedPaths,
   buildPrefixSweep,
   mergeSweepIds,
+  SWEEP_BUDGET_MS,
+  SWEEP_CONCURRENCY,
   sweepOwnedPrefixes,
   SWEEP_SCOPE,
   STORAGE_BUCKETS,
@@ -1304,7 +1307,7 @@ Deno.test('sweepOwnedPrefixes — a file written after the row read (no row) is 
     [STORAGE_BUCKETS.medicationPhotos]: ['user-1/med-9/label.jpg', 'user-2/med-1/label.jpg'],
   })
   const res = await sweepOwnedPrefixes(buildPrefixSweep(SWEEP_IDS), fs.listerFor, fs.remove)
-  assertEquals(res, { removed: 4, failures: [] })
+  assertEquals(res, { removed: 4, failures: [], unswept: [] })
   // Only the other accounts' objects remain.
   assertEquals([...fs.store.get(STORAGE_BUCKETS.eventAttachments)!], ['victim-pet/evt/photo.jpg'])
   assertEquals([...fs.store.get(STORAGE_BUCKETS.vetReports)!], [])
@@ -1348,14 +1351,170 @@ Deno.test('sweepOwnedPrefixes — a failed remove batch is recorded, later batch
   assert(res.failures[0].includes(`${STORAGE_REMOVE_CHUNK} objects`))
 })
 
-Deno.test('sweepOwnedPrefixes — an unsafe listed name fails that folder loud rather than skipping it', async () => {
-  const listerFor = (): StorageLister => async (prefix, offset) =>
-    prefix === 'pet-a' && offset === 0 ? [{ name: '..', id: 'x' }] : []
-  const res = await sweepOwnedPrefixes(
-    [{ bucket: STORAGE_BUCKETS.petPhotos, root: 'pet-a' }],
-    listerFor,
-    async () => 0,
+// ── CUL-2330: the sweep finishes what it can reach ───────────────────────────
+//
+// A lister over a literal tree (prefix → direct children), so a test can serve
+// names a real key split could never produce: '', '.', '..', 'a/b'.
+function treeLister(tree: Record<string, StorageListEntry[]>, failOn: string[] = []): StorageLister {
+  return async (prefix, offset, limit) => {
+    if (failOn.includes(prefix)) throw new Error(`list failed at ${prefix}`)
+    return (tree[prefix] ?? []).slice(offset, offset + limit)
+  }
+}
+
+Deno.test('listPrefixForSweep — one unsafe name is skipped and reported, its siblings and sub-folders are still listed', async () => {
+  const lister = treeLister({
+    'pet-a': [
+      { name: '', id: 'blank' },
+      { name: 'a.jpg', id: '1' },
+      { name: 'evt', id: null },
+      { name: 'x/y', id: 'slash' },
+    ],
+    'pet-a/evt': [
+      { name: '..', id: 'dotdot' },
+      { name: 'b.jpg', id: '2' },
+    ],
+  })
+  const { keys, gaps } = await listPrefixForSweep(lister, 'pet-a')
+  assertEquals(keys.sort(), ['pet-a/a.jpg', 'pet-a/evt/b.jpg'])
+  assertEquals(gaps.length, 3)
+  assertEquals(gaps.filter((g) => g.includes('unsafe object name under pet-a/evt')).length, 1)
+  // The attacker-chosen name is never echoed into the log.
+  assert(gaps.every((g) => !g.includes('x/y')))
+})
+
+Deno.test('listPrefixForSweep — a sub-folder whose listing fails is reported, its siblings are still listed', async () => {
+  const lister = treeLister(
+    {
+      'pet-a': [
+        { name: 'bad', id: null },
+        { name: 'good', id: null },
+        { name: 'top.jpg', id: '1' },
+      ],
+      'pet-a/good': [{ name: 'g.jpg', id: '2' }],
+    },
+    ['pet-a/bad'],
   )
-  assertEquals(res.removed, 0)
+  const { keys, gaps } = await listPrefixForSweep(lister, 'pet-a')
+  assertEquals(keys.sort(), ['pet-a/good/g.jpg', 'pet-a/top.jpg'])
+  assertEquals(gaps.length, 1)
+  assert(gaps[0].includes('listing pet-a/bad failed'))
+})
+
+Deno.test('listPrefixForSweep — a listing that fails on a later page keeps the pages already read', async () => {
+  const first = Array.from({ length: STORAGE_LIST_PAGE }, (_, i) => ({ name: `${String(i).padStart(3, '0')}.jpg`, id: `${i}` }))
+  const lister: StorageLister = async (_prefix, offset) => {
+    if (offset === 0) return first
+    throw new Error('page two failed')
+  }
+  const { keys, gaps } = await listPrefixForSweep(lister, 'pet-a')
+  assertEquals(keys.length, STORAGE_LIST_PAGE)
+  assertEquals(gaps.length, 1)
+  assert(gaps[0].includes(`offset ${STORAGE_LIST_PAGE}`))
+})
+
+Deno.test('listPrefixForSweep — a too-deep branch is reported, the shallow files are still listed', async () => {
+  const tree: Record<string, StorageListEntry[]> = { 'pet-a': [{ name: 'top.jpg', id: 't' }, { name: 'd', id: null }] }
+  let prefix = 'pet-a/d'
+  for (let i = 0; i < STORAGE_LIST_MAX_DEPTH + 2; i++) {
+    tree[prefix] = [{ name: 'd', id: null }]
+    prefix = `${prefix}/d`
+  }
+  const { keys, gaps } = await listPrefixForSweep(treeLister(tree), 'pet-a')
+  assertEquals(keys, ['pet-a/top.jpg'])
+  assertEquals(gaps.length, 1)
+  assert(gaps[0].includes('deeper than'))
+})
+
+Deno.test('listPrefixForSweep — a blank or unsafe root still THROWS (never a bucket top level)', async () => {
+  for (const root of ['', '  ', '.', '..', 'a/b']) {
+    await assertRejects(() => listPrefixForSweep(treeLister({}), root), Error, 'single-segment root')
+  }
+})
+
+Deno.test('listPrefixRecursive — stays strict: an unsafe name among good ones still rejects (pre-delete, account intact)', async () => {
+  const lister = treeLister({ 'user-1': [{ name: 'a.jpg', id: '1' }, { name: '..', id: 'x' }] })
+  await assertRejects(() => listPrefixRecursive(lister, 'user-1'), Error, 'unsafe object name')
+})
+
+Deno.test('sweepOwnedPrefixes — one unsafe name no longer strands its folder: the other files are removed, the name is reported', async () => {
+  const removedKeys: string[] = []
+  const lister = treeLister({
+    'pet-a': [
+      { name: '', id: 'blank' },
+      { name: 'late.jpg', id: '1' },
+      { name: 'evt', id: null },
+    ],
+    'pet-a/evt': [{ name: 'photo.jpg', id: '2' }],
+  })
+  const res = await sweepOwnedPrefixes([{ bucket: STORAGE_BUCKETS.petPhotos, root: 'pet-a' }], () => lister, async (_b, keys) => {
+    removedKeys.push(...keys)
+    return keys.length
+  })
+  assertEquals(removedKeys.sort(), ['pet-a/evt/photo.jpg', 'pet-a/late.jpg'])
+  assertEquals(res.removed, 2)
   assertEquals(res.failures.length, 1)
+  assert(res.failures[0].startsWith(`${STORAGE_BUCKETS.petPhotos}/pet-a/ (sweep gap)`))
+  assertEquals(res.unswept, [])
+})
+
+Deno.test('sweepOwnedPrefixes — every folder is swept exactly once with folders in flight together', async () => {
+  const sweep = Array.from({ length: 37 }, (_, i) => ({ bucket: STORAGE_BUCKETS.petPhotos, root: `pet-${i}` }))
+  const listed: string[] = []
+  let inFlight = 0
+  let peak = 0
+  const lister: StorageLister = async (prefix, offset) => {
+    if (offset > 0) return []
+    listed.push(prefix)
+    inFlight++
+    peak = Math.max(peak, inFlight)
+    await new Promise((r) => setTimeout(r, 1))
+    inFlight--
+    return [{ name: 'f.jpg', id: prefix }]
+  }
+  const res = await sweepOwnedPrefixes(sweep, () => lister, async (_b, keys) => keys.length)
+  assertEquals(listed.sort(), sweep.map((s) => s.root).sort())
+  assertEquals(res.removed, 37)
+  assertEquals(res.unswept, [])
+  assert(peak > 1 && peak <= SWEEP_CONCURRENCY, `peak ${peak}`)
+})
+
+Deno.test('sweepOwnedPrefixes — a sweep cut short by its budget names every unstarted folder, and sweeps none twice', async () => {
+  const sweep = Array.from({ length: 30 }, (_, i) => ({ bucket: STORAGE_BUCKETS.vetDocuments, root: `pet-${i}` }))
+  let clock = 0
+  const started: string[] = []
+  const lister: StorageLister = async (prefix, offset) => {
+    if (offset > 0) return []
+    started.push(prefix)
+    clock += 10 // each folder's first listing costs 10 ms of budget
+    await Promise.resolve()
+    return [{ name: 'doc.pdf', id: prefix }]
+  }
+  const res = await sweepOwnedPrefixes(sweep, () => lister, async (_b, keys) => keys.length, {
+    deadline: 100,
+    now: () => clock,
+    concurrency: 3,
+  })
+  // Started + unswept partition the plan: nothing lost, nothing done twice.
+  assertEquals(new Set(started).size, started.length)
+  assertEquals([...started, ...res.unswept.map((u) => u.root)].sort(), sweep.map((s) => s.root).sort())
+  assert(res.unswept.length > 0 && started.length > 0)
+  assertEquals(res.removed, started.length)
+  // Each unswept folder is a named failure, so the client's `failed` count is never zero over them.
+  for (const u of res.unswept) {
+    assert(res.failures.includes(`${u.bucket}/${u.root}/ (sweep not started: time budget)`))
+  }
+  // And the retry list is the plan's own entries, in order: re-running it finishes the job.
+  assertEquals(res.unswept, sweep.slice(sweep.length - res.unswept.length))
+})
+
+Deno.test('sweepOwnedPrefixes — a deadline already past sweeps nothing and names everything', async () => {
+  const sweep = buildPrefixSweep(SWEEP_IDS)
+  const res = await sweepOwnedPrefixes(sweep, () => treeLister({}), async () => 0, { deadline: 0, now: () => 1 })
+  assertEquals(res.unswept, sweep)
+  assertEquals(res.failures.length, sweep.length)
+})
+
+Deno.test('SWEEP_BUDGET_MS — leaves headroom under the 150 s Edge request limit', () => {
+  assert(SWEEP_BUDGET_MS > 0 && SWEEP_BUDGET_MS <= 120_000)
 })
