@@ -88,6 +88,14 @@
 --   * The object's bytes. Storage cannot be bound by SQL: the service role can
 --     overwrite {pet}/{id}.pdf. content_sha256 makes that detectable; the
 --     writer (VR2-20) uploads with upsert off and stamps the hash.
+--   * The delete guard reads trigger depth, not "is this a cascade": a DELETE
+--     issued from inside another trigger runs at depth 2 and passes it. No
+--     function in the schema deletes from vet_reports, and
+--     guards/vetReportsPolicy.test.ts refuses one. And a service-role
+--     transaction can delete the pet (a cascade, allowed), re-insert it under
+--     the same id with its record, and re-insert the kept copy changed. Both
+--     are filed against the saved-copy go-live (rls-privacy-reviewer pass 2,
+--     G2); the fixes are a parent-exists test and a retired-id ledger.
 --   * session_replication_role = replica skips every trigger. Only the
 --     migration owner or a superuser can set it (the service role is refused).
 --   * shared_at is the writer's claim; nothing bounds it against created_at.

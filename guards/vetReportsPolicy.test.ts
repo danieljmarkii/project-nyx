@@ -275,7 +275,12 @@ describe('vet_reports policy rewrite (CUL-283, migration 110)', () => {
 // exemption; ENABLE REPLICA TRIGGER; RENAME then DROP of the row key; a quoted
 // "storage"."buckets" INSERT; a bucket-wide anon policy on storage.objects; a
 // policy naming 'nyx-' || 'vet-reports'. Plus DISABLE TRIGGER on the delete
-// guard.
+// guard. Pass 2's survivors, all killed now: DROP TRIGGER on the delete and
+// truncate guards; CREATE OR REPLACE TRIGGER with WHEN (false) or another
+// function; kept_complete re-added without the hash; DROP COLUMN
+// content_sha256; a migration trigger whose function DELETEs saved copies.
+// Still not caught, stated: renaming the table (110's line above), dropping
+// the pet FK, and a DELETE built by EXECUTE inside a function body.
 describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
   const sql = allMigrations();
 
@@ -395,6 +400,15 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
     expect(sql).not.toMatch(new RegExp(String.raw`\b(?:DROP|ALTER)\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:public\.)?${fn}\b`, 'i'));
   });
 
+  it.each(GUARDED_TRIGGERS)('never drops %s after creating it, and never replaces it in place', (tg) => {
+    const create = lastIndexOf(sql, new RegExp(String.raw`\bCREATE TRIGGER ${tg}\b`));
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create)).not.toMatch(new RegExp(String.raw`\bDROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?${tg}\b`, 'i'));
+    // CREATE OR REPLACE TRIGGER (PG14+) can swap the function or add WHEN (false)
+    // while every CREATE TRIGGER pin above still reads the original.
+    expect(sql).not.toMatch(new RegExp(String.raw`\bCREATE\s+OR\s+REPLACE\s+(?:CONSTRAINT\s+)?TRIGGER\s+${tg}\b`, 'i'));
+  });
+
   it.each(GUARDED_TRIGGERS)('never disables, re-modes or renames %s', (tg) => {
     expect(sql).not.toMatch(new RegExp(String.raw`\b(?:DISABLE|ENABLE\s+(?:REPLICA|ALWAYS))\s+TRIGGER\s+${tg}\b`, 'i'));
     expect(sql).not.toMatch(new RegExp(String.raw`\bALTER\s+TRIGGER\s+${tg}\b`, 'i'));
@@ -404,6 +418,26 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
     const at = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_kept_not_deleted\b/);
     expect(at).toBeGreaterThan(-1);
     expect(sql.slice(at)).not.toMatch(/ALTER TABLE\s+(?:ONLY\s+)?(?:public\.)?vet_(?:reports|appointments)\b[^;]*\bDISABLE\s+TRIGGER\s+(?:ALL|USER)\b/i);
+  });
+
+  it('requires the content hash on a kept copy, and keeps the column', () => {
+    const add = lastIndexOf(sql, /ADD CONSTRAINT vet_reports_kept_complete\b/);
+    expect(add).toBeGreaterThan(-1);
+    expect(sql.slice(add)).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_kept_complete\b/i);
+    expect(sql.slice(add, sql.indexOf(';', add)).replace(/\s+/g, ' ')).toContain(
+      "ADD CONSTRAINT vet_reports_kept_complete CHECK (status <> 'kept' OR (snapshot IS NOT NULL AND short_id IS NOT NULL AND shared_at IS NOT NULL AND content_sha256 IS NOT NULL))",
+    );
+    expect(sql).not.toMatch(/ALTER TABLE\s+(?:ONLY\s+)?(?:public\.)?vet_reports\b[^;]*\bDROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?(?:content_sha256|status|snapshot)\b/i);
+  });
+
+  it('has no function that deletes saved copies (a nested DELETE passes the depth-1 guard)', () => {
+    // The delete guard tells a cascade from a direct DELETE by trigger depth,
+    // so a trigger or function that issues its own DELETE on vet_reports is a
+    // way round it (rls-privacy-reviewer pass 2, G2). None exists; this keeps
+    // it that way until a later file argues for one here.
+    const bodies = [...sql.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION[\s\S]*?\$(\w*)\$([\s\S]*?)\$\1\$/g)].map((m) => m[2]);
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const b of bodies) expect(b).not.toMatch(/\bDELETE\s+FROM\s+(?:ONLY\s+)?(?:public\.)?vet_reports\b/i);
   });
 
   it('never renames a vet_reports constraint (a rename then a drop evades every pin)', () => {
