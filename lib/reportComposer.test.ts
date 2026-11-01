@@ -5,6 +5,9 @@ import {
   afterDisclosure,
   composerDate,
   composerNoteOf,
+  droppedFlagsLine,
+  missingFlagsOf,
+  thinNote,
   coverageLine,
   createRequestLatch,
   leadLine,
@@ -33,6 +36,7 @@ const counts = (over: Partial<ComposerCounts> = {}): ComposerCounts => ({
   lead: { sign: 'vomit', reason: 'flag' },
   loggedDayKeys: ['2026-09-16'],
   incomplete: false,
+  flags: [],
   ...over,
 });
 
@@ -41,8 +45,8 @@ const live = (over: Partial<ComposerLive> = {}): ComposerLive => ({
   startDate: '2026-09-06',
   endDate: TODAY,
   flags: [
-    { kind: 'present_foreign', sign: 'vomit' },
-    { kind: 'symptom_burden', sign: 'vomit' },
+    { kind: 'present_foreign', sign: 'vomit', trigger: null },
+    { kind: 'symptom_burden', sign: 'vomit', trigger: null },
   ],
   ...over,
 });
@@ -55,9 +59,9 @@ describe('the words (round 5 frames b1 to b4)', () => {
   });
 
   it('coverage names the logged days against the window', () => {
-    expect(coverageLine(counts())).toBe('45 of 46 days have an entry.');
-    expect(coverageLine(counts({ loggedDays: 46 }))).toBe('All 46 days have an entry.');
-    expect(coverageLine(counts({ windowDays: 1, loggedDays: 0 }))).toBe('0 of 1 day has an entry.');
+    expect(coverageLine(counts())).toBe('45 of 46 days logged.');
+    expect(coverageLine(counts({ loggedDays: 46 }))).toBe('All 46 days logged.');
+    expect(coverageLine(counts({ windowDays: 1, loggedDays: 0 }))).toBe('0 of 1 day logged.');
   });
 
   it('weight reads lb with no percentage (ruling W): "3 weigh-ins · 70.1 lb on Oct 27"', () => {
@@ -70,8 +74,8 @@ describe('the words (round 5 frames b1 to b4)', () => {
   });
 
   it('the lead line names the sign in the owner word and why it leads', () => {
-    expect(leadLine(counts())).toBe('Leads the report: vomiting, the first flag’s sign.');
-    expect(leadLine(counts({ lead: { sign: 'intake', reason: 'flag' } }))).toBe('Leads the report: eating, the first flag’s sign.');
+    expect(leadLine(counts())).toBe('Leads the report: vomiting, because it’s flagged.');
+    expect(leadLine(counts({ lead: { sign: 'intake', reason: 'flag' } }))).toBe('Leads the report: eating, because it’s flagged.');
     expect(leadLine(counts({ lead: null }))).toBeNull();
   });
 
@@ -80,18 +84,46 @@ describe('the words (round 5 frames b1 to b4)', () => {
     expect(composerNoteOf(counts({ windowDays: THIN_RECORD_DAYS - 1 }))).toBe('thin');
     expect(composerNoteOf(counts({ windowDays: THIN_RECORD_DAYS }))).toBeNull();
     expect(composerNoteOf(counts({ symptomEntries: 0, windowDays: 4 }))).toBe('empty');
+    // "record" only when the window IS the record; a short window on a long record says window.
+    expect(thinNote('since_first')).toMatch(/^A short record\./);
+    expect(thinNote('custom')).toMatch(/^A short window\./);
   });
 
-  it('b4 names what the dates leave out, and that the flags still print', () => {
-    const after = { startDate: '2026-10-21', endDate: TODAY, symptomEntries: 8, byType: [
+  it('b4 names what the dates leave out: symptoms by type, refused meals, then everything else', () => {
+    const after = { startDate: '2026-10-21', endDate: TODAY, symptomEntries: 8, mealsRefused: 0, incomplete: false, byType: [
       { type: 'vomit', count: 6 }, { type: 'cough', count: 1 }, { type: 'sneeze', count: 1 },
     ] };
-    expect(afterDisclosure(after, '2026-10-20', TODAY, true)).toBe(
-      'Left out by these dates: 8 symptom entries after Oct 20 (6 vomiting, 1 coughing, 1 sneezing), and everything ' +
-        `logged after Oct 20, up to today. The flags above still print: they come from the last ${LIVE_FLAG_DAYS} days, whatever the dates.`,
+    expect(afterDisclosure(after, '2026-10-20', TODAY)).toBe(
+      'Left out by these dates: 8 symptom entries (6 vomiting, 1 coughing, 1 sneezing) after Oct 20, and everything else logged after it, up to today.',
+    );
+    // A refusing cat with no symptom after the window: the refusals are named (intake is not preference).
+    const refusing = { ...after, symptomEntries: 0, byType: [], mealsRefused: 8 };
+    expect(afterDisclosure(refusing, '2026-10-20', TODAY)).toBe(
+      'Left out by these dates: 8 refused meals after Oct 20, and everything else logged after it, up to today.',
     );
     const none = { ...after, symptomEntries: 0, byType: [] };
-    expect(afterDisclosure(none, '2026-10-20', TODAY, false)).toBe('Left out by these dates: everything logged after Oct 20, up to today.');
+    expect(afterDisclosure(none, '2026-10-20', TODAY)).toBe('Left out by these dates: everything logged after Oct 20, up to today.');
+    expect(afterDisclosure({ ...none, incomplete: true }, '2026-10-20', TODAY)).toMatch(/there may be more\.$/);
+    // It never promises the flags print: whether they do is the dropped-flag line's to say.
+    expect(afterDisclosure(after, '2026-10-20', TODAY)).not.toMatch(/still print/);
+  });
+
+  it('the dropped-flag line names every live flag the window’s report would not print', () => {
+    const l = live();
+    const printedBoth = counts({ flags: l.flags });
+    expect(droppedFlagsLine(missingFlagsOf(l, printedBoth), printedBoth)).toBeNull();
+    const printedOne = counts({ flags: [l.flags[0]] });
+    expect(droppedFlagsLine(missingFlagsOf(l, printedOne), printedOne)).toBe(
+      `The report for these dates won’t show the flag for a lot of vomiting this week. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`,
+    );
+    const printedNone = counts({ flags: [] });
+    expect(missingFlagsOf(l, printedNone)).toHaveLength(2);
+    // The server did not say: every live flag is unconfirmed, never assumed printed.
+    const unknown = counts({ flags: null });
+    expect(missingFlagsOf(l, unknown)).toHaveLength(2);
+    expect(droppedFlagsLine(missingFlagsOf(l, unknown), unknown)).toMatch(/^Couldn’t confirm/);
+    // No live flag, nothing to drop.
+    expect(missingFlagsOf(live({ state: 'none', flags: [] }), printedNone)).toEqual([]);
   });
 
   it('no owner string carries an exclamation mark or a percentage', () => {
@@ -111,18 +143,26 @@ describe('the words (round 5 frames b1 to b4)', () => {
 describe('the live-flag card', () => {
   it('names the record’s pet and each flag once, in plain words', () => {
     const c = liveCardCopy(live(), 'Nyx');
-    expect(c?.title).toBe('Nyx’s report has flags worth a call to your vet');
-    expect(c?.body).toBe(`Possible foreign material in vomit and a lot of vomiting this week, in the last ${LIVE_FLAG_DAYS} days.`);
+    expect(c?.title).toBe('Nyx’s record has flags worth a call to your vet');
+    expect(c?.body).toBe('Possible foreign material in vomit and a lot of vomiting this week.');
+  });
+
+  it('an intake flag says refusing when it was a refusal, never "less" (F3)', () => {
+    const one = (trigger: string) =>
+      liveCardCopy(live({ flags: [{ kind: 'intake_decline', sign: null, trigger }] }), 'Nyx')?.body;
+    expect(one('refused_normal_food')).toBe('Refusing a usual food.');
+    expect(one('refused_then_vomited')).toBe('Refusing food, then vomiting.');
+    expect(one('consecutive_low')).toBe('Eating less than usual.');
   });
 
   it('one flag reads singular', () => {
-    expect(liveCardCopy(live({ flags: [{ kind: 'weight_loss', sign: null }] }), 'Nyx')?.title).toBe(
-      'Nyx’s report has a flag worth a call to your vet',
+    expect(liveCardCopy(live({ flags: [{ kind: 'weight_loss', sign: null, trigger: null }] }), 'Nyx')?.title).toBe(
+      'Nyx’s record has a flag worth a call to your vet',
     );
   });
 
   it('a flag kind this build has never heard of is still a flag on the card', () => {
-    expect(liveCardCopy(live({ flags: [{ kind: 'something_new', sign: null }] }), 'Nyx')?.body).toMatch(/^Another finding/);
+    expect(liveCardCopy(live({ flags: [{ kind: 'something_new', sign: null, trigger: null }] }), 'Nyx')?.body).toMatch(/^Another finding/);
   });
 
   it('no flag is no card, never an all clear', () => {
@@ -136,7 +176,7 @@ describe('the live-flag card', () => {
   });
 
   it('a blank name falls back to "your pet"', () => {
-    expect(liveCardCopy(live(), '  ')?.title).toBe('Your pet’s report has flags worth a call to your vet');
+    expect(liveCardCopy(live(), '  ')?.title).toBe('Your pet’s record has flags worth a call to your vet');
   });
 });
 
@@ -147,7 +187,7 @@ describe('parsing the server payload', () => {
       petName: 'Nyx',
       live: live(),
       windows: [
-        { kind: 'since_visit', startDate: '2026-09-16', endDate: TODAY, days: 46 },
+        { kind: 'since_visit', startDate: '2026-09-16', endDate: TODAY, days: 46, isDefault: true },
         { kind: 'nonsense', startDate: '2026-09-16', endDate: TODAY, days: 46 },
       ],
       counts: counts(),

@@ -24,13 +24,16 @@ export const LIVE_FLAG_DAYS = 56;
  *  THIN_RECORD_DAYS, mirrored for the same question (does the record hold weeks to compare?). */
 export const THIN_RECORD_DAYS = 14;
 
-export type ComposerWindowKind = 'since_visit' | 'diet_trial' | 'last_30' | 'since_first' | 'custom';
+export type ComposerWindowKind = 'since_visit' | 'diet_trial' | 'last_90' | 'last_30' | 'since_first' | 'custom';
 
 export interface ComposerWindow {
   kind: ComposerWindowKind;
   startDate: string;
   endDate: string;
   days: number;
+  /** The report's own default window (the server's §6 cascade): previewed with NO override, so
+   *  the report keeps its own label and floors. Every other window is sent as dates. */
+  isDefault: boolean;
 }
 
 export type LeadReason = 'flag' | 'trial_sign' | 'rising' | 'most_days';
@@ -46,6 +49,9 @@ export interface ComposerCounts {
   lead: { sign: string; reason: LeadReason } | null;
   loggedDayKeys: string[] | null;
   incomplete: boolean;
+  /** The flags the report for THIS window prints; null when the server did not say (an older
+   *  deploy), which the screen reads as "can't confirm", never as "all of them". */
+  flags: ComposerFlag[] | null;
 }
 
 export interface ComposerAfter {
@@ -53,11 +59,14 @@ export interface ComposerAfter {
   endDate: string;
   symptomEntries: number;
   byType: Array<{ type: string; count: number }>;
+  mealsRefused: number;
+  incomplete: boolean;
 }
 
 export interface ComposerFlag {
   kind: string;
   sign: string | null;
+  trigger: string | null;
 }
 
 export interface ComposerLive {
@@ -89,10 +98,22 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 const obj = (v: unknown): Record<string, unknown> | null =>
   typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
-const WINDOW_KINDS: readonly ComposerWindowKind[] = ['since_visit', 'diet_trial', 'last_30', 'since_first'];
+const WINDOW_KINDS: readonly ComposerWindowKind[] = ['since_visit', 'diet_trial', 'last_90', 'last_30', 'since_first'];
 const LEAD_REASONS: readonly LeadReason[] = ['flag', 'trial_sign', 'rising', 'most_days'];
 
 export class ComposerPayloadError extends Error {}
+
+function parseFlags(raw: unknown): ComposerFlag[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((f) => obj(f))
+    .filter((f): f is Record<string, unknown> => f !== null && typeof f.kind === 'string')
+    .map((f) => ({
+      kind: f.kind as string,
+      sign: typeof f.sign === 'string' ? f.sign : null,
+      trigger: typeof f.trigger === 'string' ? f.trigger : null,
+    }));
+}
 
 function parseCounts(raw: unknown): ComposerCounts {
   const c = obj(raw);
@@ -119,6 +140,7 @@ function parseCounts(raw: unknown): ComposerCounts {
     loggedDayKeys: Array.isArray(c.loggedDayKeys) && c.loggedDayKeys.every(isDay) ? c.loggedDayKeys : null,
     // Absent reads as short: a count the server did not vouch for is never presented as whole.
     incomplete: c.incomplete !== false,
+    flags: Array.isArray(c.flags) ? parseFlags(c.flags) : null,
   };
 }
 
@@ -131,16 +153,20 @@ function parseAfter(raw: unknown): ComposerAfter | null {
     .filter((t): t is Record<string, unknown> => t !== null && typeof t.type === 'string' && isNum(t.count))
     .map((t) => ({ type: t.type as string, count: t.count as number }));
   // The total is the breakdown's sum, here as on the server, so the line can never disagree with itself.
-  return { startDate: a.startDate, endDate: a.endDate, byType, symptomEntries: byType.reduce((n, t) => n + t.count, 0) };
+  return {
+    startDate: a.startDate,
+    endDate: a.endDate,
+    byType,
+    symptomEntries: byType.reduce((n, t) => n + t.count, 0),
+    mealsRefused: isNum(a.mealsRefused) ? a.mealsRefused : 0,
+    incomplete: a.incomplete !== false,
+  };
 }
 
 function parseLive(raw: unknown): ComposerLive {
   const l = obj(raw);
   if (!l || !isDay(l.startDate) || !isDay(l.endDate) || !Array.isArray(l.flags)) throw new ComposerPayloadError('live');
-  const flags = l.flags
-    .map((f) => obj(f))
-    .filter((f): f is Record<string, unknown> => f !== null && typeof f.kind === 'string')
-    .map((f) => ({ kind: f.kind as string, sign: typeof f.sign === 'string' ? f.sign : null }));
+  const flags = parseFlags(l.flags);
   // Any flag wins over whatever state was claimed; an unknown state with none reads as unchecked,
   // never as "none": the louder reading is the safe one.
   const state: ComposerLive['state'] = flags.length > 0 ? 'flags' : l.state === 'none' ? 'none' : 'incomplete';
@@ -156,7 +182,15 @@ export function parseComposerOpen(data: unknown): ComposerOpen {
       (w): w is Record<string, unknown> =>
         w !== null && WINDOW_KINDS.includes(w.kind as ComposerWindowKind) && isDay(w.startDate) && isDay(w.endDate) && isNum(w.days),
     )
-    .map((w) => ({ kind: w.kind as ComposerWindowKind, startDate: w.startDate as string, endDate: w.endDate as string, days: w.days as number }));
+    .map((w) => ({
+      kind: w.kind as ComposerWindowKind,
+      startDate: w.startDate as string,
+      endDate: w.endDate as string,
+      days: w.days as number,
+      // Only an explicit true is the default: a guess here would send no override for a window
+      // the report would not resolve.
+      isDefault: w.isDefault === true,
+    }));
   if (windows.length === 0) throw new ComposerPayloadError('windows');
   return {
     today: c.today,
@@ -240,6 +274,7 @@ export function monthTitle(year: number, monthIndex: number): string {
 export const WINDOW_LABEL: Record<ComposerWindowKind, string> = {
   since_visit: 'Since the last visit',
   diet_trial: 'The diet trial',
+  last_90: 'Last 90 days',
   last_30: 'Last 30 days',
   since_first: 'Since the first entry',
   custom: 'Your dates',
@@ -258,12 +293,12 @@ export function loggedDaysWords(n: number): string {
   return `${plural(n, 'day', 'days')} logged`;
 }
 
-/** "45 of 46 days have an entry." The coverage strip's twin. */
+/** "45 of 46 days logged." The coverage strip's twin, in the row's own words ("45 days logged"). */
 export function coverageLine(c: ComposerCounts): string {
   if (c.loggedDays === c.windowDays) {
-    return c.windowDays === 1 ? 'The one day has an entry.' : `All ${c.windowDays} days have an entry.`;
+    return c.windowDays === 1 ? 'The one day is logged.' : `All ${c.windowDays} days logged.`;
   }
-  return `${c.loggedDays} of ${plural(c.windowDays, 'day has', 'days have')} an entry.`;
+  return `${c.loggedDays} of ${plural(c.windowDays, 'day', 'days')} logged.`;
 }
 
 /** The coverage strip read aloud: which days hold no entry, never a list of the days that do. */
@@ -272,8 +307,8 @@ export function coverageA11yLabel(c: ComposerCounts, today: string): string {
 }
 
 const LEAD_WHY: Record<LeadReason, string> = {
-  flag: 'the first flag’s sign',
-  trial_sign: 'the trial’s sign',
+  flag: 'because it’s flagged',
+  trial_sign: 'the sign the trial is watching',
   rising: 'logged more this week than the week before',
   most_days: 'logged on the most days',
 };
@@ -304,23 +339,53 @@ export function emptyNote(): string {
   return 'Nothing logged as a symptom in these days. The report will say so plainly, and that a quiet record can’t rule anything out.';
 }
 
-export function thinNote(): string {
-  return 'A short record. The report will say which checks need more weeks than this.';
+/** A short window: "record" only when the window is the whole record (since the first entry). */
+export function thinNote(kind: ComposerWindowKind): string {
+  return kind === 'since_first'
+    ? 'A short record. The report will say which checks need more weeks than this.'
+    : 'A short window. The report will say which checks need more weeks than this.';
 }
 
-/** b4: what the dates leave out after their end, and that the flags print anyway. */
-export function afterDisclosure(after: ComposerAfter, windowEnd: string, today: string, liveHasFlags: boolean): string {
+/** b4: what the dates leave out after their end. Symptoms by type, and refused meals (a refusal
+ *  is not a symptom entry, and intake is not preference), then everything else. */
+export function afterDisclosure(after: ComposerAfter, windowEnd: string, today: string): string {
   const end = composerDate(windowEnd, today);
-  const entries =
-    after.symptomEntries === 0
-      ? ''
-      : `${symptomEntriesWords(after.symptomEntries)} after ${end} (${after.byType
-          .map((t) => `${t.count} ${signWord(t.type)}`)
-          .join(', ')}), and `;
-  const lead = `Left out by these dates: ${entries}everything logged after ${end}, up to today.`;
-  return liveHasFlags
-    ? `${lead} The flags above still print: they come from the last ${LIVE_FLAG_DAYS} days, whatever the dates.`
-    : lead;
+  const parts: string[] = [];
+  if (after.symptomEntries > 0) {
+    parts.push(
+      `${symptomEntriesWords(after.symptomEntries)} (${after.byType.map((t) => `${t.count} ${signWord(t.type)}`).join(', ')})`,
+    );
+  }
+  if (after.mealsRefused > 0) parts.push(plural(after.mealsRefused, 'refused meal', 'refused meals'));
+  const named = parts.length === 0 ? '' : `${parts.join(', ')} after ${end}, and `;
+  const tail = parts.length === 0 ? `everything logged after ${end}, up to today.` : 'everything else logged after it, up to today.';
+  const lead = `Left out by these dates: ${named}${tail}`;
+  return after.incomplete ? `${lead} Part of those days didn’t load, so there may be more.` : lead;
+}
+
+const flagKey = (f: ComposerFlag): string => `${f.kind}:${f.sign ?? ''}`;
+
+/**
+ * The live flags the report for this window would NOT print. A short or cropped window can lose a
+ * flag the 56-day set holds (adversarial pass 1 on CUL-2296, F1/F2); until the v2 report prints
+ * the 56-day band whatever the window (VR2-10), the composer says so out loud. `null` ⇒ the server
+ * did not say which flags the window prints: every live flag counts as unconfirmed.
+ */
+export function missingFlagsOf(live: ComposerLive, counts: ComposerCounts): ComposerFlag[] {
+  if (live.state !== 'flags') return [];
+  if (counts.flags === null) return live.flags;
+  const printed = new Set(counts.flags.map(flagKey));
+  return live.flags.filter((f) => !printed.has(flagKey(f)));
+}
+
+/** The warning under the counts when the chosen dates drop a live flag. Null when none is dropped. */
+export function droppedFlagsLine(missing: ComposerFlag[], counts: ComposerCounts): string | null {
+  if (missing.length === 0) return null;
+  if (counts.flags === null) {
+    return 'Couldn’t confirm the report for these dates shows the flags above. Tell your vet about them.';
+  }
+  const words = joinWords([...new Set(missing.map(flagWords))]);
+  return `The report for these dates won’t show ${missing.length === 1 ? 'the flag' : 'the flags'} for ${words}. Tell your vet, or choose dates that cover more of the last ${LIVE_FLAG_DAYS} days.`;
 }
 
 // The live-flag card. Each flag is named in a few plain words, never a number: the number is the
@@ -334,6 +399,9 @@ function flagWords(f: ComposerFlag): string {
     case 'present_foreign':
       return 'possible foreign material in vomit';
     case 'intake_decline':
+      // Worded by what happened: a refusal reads as one, never as "less" (intake is not preference).
+      if (f.trigger === 'refused_then_vomited') return 'refusing food, then vomiting';
+      if (f.trigger === 'refused_normal_food') return 'refusing a usual food';
       return 'eating less than usual';
     case 'trial_diet_refusal':
       return 'the trial diet not finished';
@@ -381,8 +449,10 @@ export function liveCardCopy(live: ComposerLive, petName: string): LiveCardCopy 
   const names = [...new Set(live.flags.map(flagWords))];
   const sentence = joinWords(names);
   return {
-    title: `${possessive} report has ${live.flags.length === 1 ? 'a flag' : 'flags'} worth a call to your vet`,
-    body: `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}, in the last ${LIVE_FLAG_DAYS} days.`,
+    // About the RECORD, not the report: whether a given window's report prints each flag is said
+    // under the counts (`droppedFlagsLine`), so the card never promises what a window drops.
+    title: `${possessive} record has ${live.flags.length === 1 ? 'a flag' : 'flags'} worth a call to your vet`,
+    body: `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`,
   };
 }
 

@@ -40,20 +40,21 @@ jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
 // The composer's namespace stands in as a probe: the screen's gate is what is under test here;
 // the composer's own states are pinned in components/report/ReportComposer.test.tsx.
 const mockWindows = {
-  since_visit: { kind: 'since_visit', startDate: '2026-06-01', endDate: '2026-07-02', days: 32 },
-  last_30: { kind: 'last_30', startDate: '2026-06-03', endDate: '2026-07-02', days: 30 },
+  since_visit: { kind: 'since_visit', startDate: '2026-06-01', endDate: '2026-07-02', days: 32, isDefault: true },
+  last_30: { kind: 'last_30', startDate: '2026-06-03', endDate: '2026-07-02', days: 30, isDefault: false },
 };
 jest.mock('../components/report/ReportComposer', () => {
   const { Pressable, Text, View } = require('react-native');
   const React = require('react');
   return {
-    ReportComposer: (p: { petName: string; onPreview: (w: unknown) => void }) =>
+    ReportComposer: (p: { petName: string; onPreview: (w: unknown) => void; onFallback: () => void }) =>
       React.createElement(
         View,
         { testID: 'composer' },
         React.createElement(Text, null, `composer for ${p.petName}`),
         React.createElement(Pressable, { testID: 'preview-visit', onPress: () => p.onPreview(mockWindows.since_visit) }),
         React.createElement(Pressable, { testID: 'preview-30', onPress: () => p.onPreview(mockWindows.last_30) }),
+        React.createElement(Pressable, { testID: 'fallback', onPress: () => p.onFallback() }),
       ),
   };
 });
@@ -89,7 +90,7 @@ describe('the composer gate (CUL-2296)', () => {
     expect(mockedGenerate).not.toHaveBeenCalled();
   });
 
-  it('"since the last visit" builds with no override, so the report keeps its own label', async () => {
+  it('the report’s own default window builds with no override, so the report keeps its own label', async () => {
     const r = render(<ReportScreen />);
     fireEvent.press(r.getByTestId('preview-visit'));
     await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(1));
@@ -109,6 +110,22 @@ describe('the composer gate (CUL-2296)', () => {
     await r.findByText('Send to vet');
     fireEvent.press(r.getByLabelText('Back'));
     expect(r.getByTestId('composer')).toBeTruthy();
+  });
+
+  it('arriving from the composer, the report names the chosen window once and offers no second range control', async () => {
+    const r = render(<ReportScreen />);
+    fireEvent.press(r.getByTestId('preview-30'));
+    await r.findByText('Send to vet');
+    expect(r.getByTestId('report-chosen-window')).toHaveTextContent(/^Last 30 days · Jun 3 to Jul 2/);
+    expect(r.queryByText('Custom…')).toBeNull();
+    expect(r.queryByLabelText(/^Start date,/)).toBeNull();
+  });
+
+  it('the fallback builds the report’s own window, no dates sent', async () => {
+    const r = render(<ReportScreen />);
+    fireEvent.press(r.getByTestId('fallback'));
+    await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(1));
+    expect(mockedGenerate.mock.calls[0][0]).toEqual({ petId: 'p1', includeNotes: true });
   });
 
   it.each([

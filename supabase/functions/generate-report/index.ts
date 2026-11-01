@@ -1776,30 +1776,33 @@ export async function composeForPet(
   const build = (w: { startDate: string; endDate: string }) =>
     buildReportSnapshotForPet(supabase, petId, nowMs, w, audience, callerJwt, requestTimezone)
 
-  const countsFor = async (w: { startDate: string; endDate: string }, today: string) => {
-    const tail = w.endDate < today ? { startDate: addDays(w.endDate, 1), endDate: today } : null
-    const [inWindow, after] = await Promise.all([build(w), tail ? build(tail) : Promise.resolve(null)])
+  // The window first, then the days after it: "today" is the window build's own report date, the
+  // zone the build resolved, so a window and its tail can never disagree about where today is
+  // (adversarial pass 1, F7).
+  const countsFor = async (w: { startDate: string; endDate: string }) => {
+    const inWindow = await build(w)
     if (inWindow.kind === 'response') return inWindow
-    if (after !== null && after.kind === 'response') return after
-    return { kind: 'counts' as const, counts: countsOf(inWindow.snapshot), after: after === null ? null : afterOf(after.snapshot) }
+    const today = inWindow.snapshot.atAGlance.recordEdge.reportDate
+    const end = inWindow.snapshot.scope.endDate
+    if (end >= today) return { kind: 'counts' as const, counts: countsOf(inWindow.snapshot), after: null }
+    const after = await build({ startDate: addDays(end, 1), endDate: today })
+    if (after.kind === 'response') return after
+    return { kind: 'counts' as const, counts: countsOf(inWindow.snapshot), after: afterOf(after.snapshot, inWindow.snapshot) }
   }
-
-  // Today in the device zone the request names (the zone the build itself prefers, B-443). The
-  // live build's own report date then anchors every window, so a zone the build resolves
-  // differently can never leave a window ending on a different today than the flags.
-  const guessToday = localDayOf(new Date(nowMs).toISOString(), resolveIanaZone(requestTimezone, null)) ??
-    new Date(nowMs).toISOString().slice(0, 10)
 
   if (part === 'window') {
     if (!requestedWindow || !validWindow(requestedWindow)) {
       return { status: 400, body: { error: 'window required' } }
     }
-    const end = requestedWindow.endDate > guessToday ? guessToday : requestedWindow.endDate
-    const r = await countsFor({ startDate: requestedWindow.startDate, endDate: end }, guessToday)
+    const r = await countsFor(requestedWindow)
     if (r.kind === 'response') return { status: r.status, body: r.body }
     return { status: 200, body: { composer: { counts: r.counts, after: r.after } } }
   }
 
+  // Today in the device zone the request names, only to place the live window; the live build's
+  // own report date then anchors every window offered.
+  const guessToday = localDayOf(new Date(nowMs).toISOString(), resolveIanaZone(requestTimezone, null)) ??
+    new Date(nowMs).toISOString().slice(0, 10)
   const live = await build(liveWindowOf(guessToday))
   if (live.kind === 'response') return { status: live.status, body: live.body }
   const today = live.snapshot.atAGlance.recordEdge.reportDate
@@ -1809,9 +1812,17 @@ export async function composeForPet(
     vetVisits: live.vetVisits,
     dietTrials: live.dietTrials,
     firstEntryDate: live.snapshot.v2.firstEntryDate,
+    // The cascade exactly as the report resolves it with no override: same rows, same zone, same now.
+    defaultScope: resolveScope({
+      now: new Date(nowMs).toISOString(),
+      timezone: live.timezone,
+      requestedWindow: null,
+      dietTrials: live.dietTrials,
+      vetVisits: live.vetVisits,
+    }),
   })
   const first = windows[0]
-  const r = await countsFor({ startDate: first.startDate, endDate: first.endDate }, today)
+  const r = await countsFor({ startDate: first.startDate, endDate: first.endDate })
   if (r.kind === 'response') return { status: r.status, body: r.body }
   return {
     status: 200,
@@ -1872,6 +1883,8 @@ const handler = async (req: Request): Promise<Response> => {
     if (start && end) requestedWindow = { startDate: start, endDate: end }
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
     includeNotes = parseIncludeNotes(body)
+    // The composer prints nothing, so it never pulls the owner's notes, whatever the body says.
+    if (composer !== null) includeNotes = false
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1899,8 +1912,8 @@ const handler = async (req: Request): Promise<Response> => {
     const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
     // This route is authenticated and owner-facing; PR 6's public `view-report` route is a
     // different entry point and must construct the `shared_link` arm, which has no notes field to
-    // carry (§9 rule 4). The composer prints nothing, so it reads with notes off.
-    const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: composer === null && includeNotes }
+    // carry (§9 rule 4).
+    const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: includeNotes }
     if (composer !== null) {
       // No photo bytes and no render: the composer never needs the service-role client.
       const outline = await composeForPet(supabase, petId, Date.now(), composer.part, requestedWindow, ownerArm, callerJwt, requestTimezone)

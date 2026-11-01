@@ -18,7 +18,8 @@ import { REPORT_PET_GONE, resolveReportSubject } from '../lib/reportRoute';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { ReportComposer } from '../components/report/ReportComposer';
-import type { ComposerWindow } from '../lib/reportComposer';
+import { useReportComposer } from '../hooks/useReportComposer';
+import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
   flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
   type VetReport, type VetReportParams,
@@ -81,6 +82,11 @@ import {
 // window the app chose by the §6 cascade's own rule ("since the last visit") is sent as no
 // override, so the report keeps its principled label; any other is sent as dates. Flag off, or
 // not opted in: this screen is exactly what it was.
+//
+// The composer's state lives HERE, so Back from the report returns to the window the owner chose.
+// Arriving from the composer, the report's own range chips give way to one read-only line naming
+// that window: two range controls that disagree ("I said the diet trial, why does it say
+// Custom?") were the pm-feature-review's blocking finding.
 
 type Status = 'loading' | 'ready' | 'error';
 type RangeMode = 'default' | 'custom';
@@ -143,9 +149,18 @@ export default function ReportScreen() {
   const composerOn = composerEligible && composerOptedIn;
   // Set by "Preview report"; cleared by Back from the report, which returns to the composer.
   const [previewed, setPreviewed] = useState(false);
+  // The window the composer handed over; null for the fallback (the report's own default).
+  const [chosen, setChosen] = useState<ComposerWindow | null>(null);
   const composing = composerOn && !previewed && petId !== undefined;
+  const composer = useReportComposer(composerOn ? petId : undefined);
+  const onComposerFallback = useCallback(() => {
+    setChosen(null);
+    setRangeMode('default');
+    setPreviewed(true);
+  }, []);
   const onComposerPreview = useCallback((w: ComposerWindow) => {
-    if (w.kind === 'since_visit') {
+    setChosen(w);
+    if (w.isDefault) {
       setRangeMode('default');
     } else {
       const [sy, sm, sd] = w.startDate.split('-').map(Number);
@@ -344,7 +359,13 @@ export default function ReportScreen() {
           leading="back"
           onLeadingPress={() => router.back()}
         />
-        <ReportComposer petId={petId} petName={petName ?? ''} onPreview={onComposerPreview} />
+        <ReportComposer
+          petId={petId}
+          petName={petName ?? ''}
+          state={composer}
+          onPreview={onComposerPreview}
+          onFallback={onComposerFallback}
+        />
       </SafeAreaView>
     );
   }
@@ -360,6 +381,13 @@ export default function ReportScreen() {
       {petId !== undefined && (
         <View style={styles.rangeBar}>
           <SectionLabel label="Report range" />
+          {composerOn && previewed ? (
+            <ThemedText style={styles.rangeChosen} testID="report-chosen-window">
+              {chosen
+                ? `${WINDOW_LABEL[chosen.kind]} · ${composerRange(chosen.startDate, chosen.endDate, toLocalDayKey(new Date()))}`
+                : 'The report’s usual window'}
+            </ThemedText>
+          ) : (
           <ChipGroup
             options={RANGE_OPTIONS}
             value={rangeMode}
@@ -370,8 +398,9 @@ export default function ReportScreen() {
             variant="default"
             accessibilityLabel="Report range"
           />
+          )}
 
-          {rangeMode === 'custom' && (
+          {rangeMode === 'custom' && !(composerOn && previewed) && (
             <View style={styles.customFields}>
               <View style={styles.customField}>
                 <Text style={styles.customFieldLabel}>From</Text>
@@ -415,7 +444,7 @@ export default function ReportScreen() {
               date already applies live (the report re-generates once the edit
               settles), so "Done" just collapses the calendar to reveal the updated
               report. */}
-          {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && (
+          {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && !(composerOn && previewed) && (
             <View style={styles.pickerToolbar}>
               <TouchableOpacity
                 style={styles.pickerDone}
@@ -707,6 +736,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: colorRoles.action.onLight,
+  },
+  rangeChosen: {
+    fontFamily: theme.fontBodyMedium,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   rangeResolved: {
     fontFamily: theme.fontBody,

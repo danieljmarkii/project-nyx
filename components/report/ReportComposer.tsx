@@ -5,7 +5,9 @@ import { theme } from '../../constants/theme';
 import { PrimaryButton, Skeleton, ThemedText } from '../ui';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
-import { useReportComposer } from '../../hooks/useReportComposer';
+import type { ReportComposerState } from '../../hooks/useReportComposer';
+import { toLocalDayKey } from '../../lib/utils';
+import { Tick } from '../surfaces/waits/Tick';
 import { DRAW_IN_ORIGIN, useDrawIn } from '../motion/drawInMotion';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { RangeCalendarSheet } from './RangeCalendarSheet';
@@ -16,6 +18,8 @@ import {
   afterDisclosure,
   composerNoteOf,
   countsUpdatedAnnouncement,
+  droppedFlagsLine,
+  missingFlagsOf,
   coverageA11yLabel,
   coverageLine,
   emptyNote,
@@ -51,13 +55,16 @@ interface Props {
   petId: string;
   /** The record's pet (C-9): the screen and every line name this pet, never the active one. */
   petName: string;
-  /** Preview the report for the chosen window. `kind` says whether it is one the app chose. */
+  /** The composer's reads and selection, held by the report screen (`useReportComposer`). */
+  state: ReportComposerState;
+  /** Preview the report for the chosen window. `isDefault` says it is the report's own window. */
   onPreview: (w: ComposerWindow) => void;
+  /** The first read failed: build the report's own default window without choosing. */
+  onFallback: () => void;
 }
 
-export function ReportComposer({ petId, petName, onPreview }: Props) {
+export function ReportComposer({ petId, petName, state: c, onPreview, onFallback }: Props) {
   const insets = useSafeAreaInsets();
-  const c = useReportComposer(petId);
   const [sheetOpen, setSheetOpen] = useState(false);
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
@@ -77,8 +84,14 @@ export function ReportComposer({ petId, petName, onPreview }: Props) {
 
   if (c.screen === 'loading') {
     return (
-      <View style={styles.body} testID="composer-loading" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-        <View style={styles.pad}>
+      <View style={styles.body} testID="composer-loading">
+        {/* The open read builds two or three snapshots and can run past a second: the tick says
+            a request is in flight (the loader rule), the skeleton holds the screen's shape. */}
+        <View style={styles.waitRow}>
+          <Tick working />
+          <ThemedText style={styles.waitText}>Reading {petName.trim() || 'your pet'}’s record…</ThemedText>
+        </View>
+        <View style={styles.pad} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           <Skeleton height={20} width="70%" />
           <Skeleton height={56} style={styles.skelGap} />
           <Skeleton height={56} style={styles.skelGap} />
@@ -96,6 +109,8 @@ export function ReportComposer({ petId, petName, onPreview }: Props) {
         <ThemedText style={styles.failedTitle}>{copy.title}</ThemedText>
         <ThemedText style={styles.muted}>{copy.body}</ThemedText>
         <PrimaryButton label="Try again" onPress={c.retry} variant="secondary" style={styles.retry} />
+        {/* The way through when the composer's read is down: the report's own window, unchosen. */}
+        <PrimaryButton label="Build the usual report" onPress={onFallback} variant="secondary" testID="composer-fallback" />
       </View>
     );
   }
@@ -103,10 +118,19 @@ export function ReportComposer({ petId, petName, onPreview }: Props) {
   const { open, selected, counts } = c;
   const today = open.today;
   const card = liveCardCopy(open.live, petName);
-  const liveHasFlags = open.live.state === 'flags';
   const counting = c.countsState === 'counting';
   const isCustom = selected.kind === 'custom';
   const shown: ComposerCounts | null = counting ? null : counts;
+  const dropped = shown ? droppedFlagsLine(missingFlagsOf(open.live, shown), shown) : null;
+  const preview = () => {
+    // The windows on offer were today's. A composer left open past midnight reads again rather
+    // than build a window whose meaning moved overnight (adversarial pass 1, F5).
+    if (toLocalDayKey(new Date()) !== today) {
+      c.reload();
+      return;
+    }
+    onPreview(selected);
+  };
 
   return (
     <View style={styles.body}>
@@ -244,12 +268,19 @@ export function ReportComposer({ petId, petName, onPreview }: Props) {
               )}
               {composerNoteOf(shown) === 'thin' && (
                 <ThemedText style={styles.note} testID="composer-note-thin">
-                  {thinNote()}
+                  {thinNote(selected.kind)}
                 </ThemedText>
               )}
               {c.after && (
                 <ThemedText style={styles.note} testID="composer-after">
-                  {afterDisclosure(c.after, shown.endDate, today, liveHasFlags)}
+                  {afterDisclosure(c.after, shown.endDate, today)}
+                </ThemedText>
+              )}
+              {dropped && (
+                // The chosen dates drop a live flag from the report they build: said in the
+                // concern ink, never hidden, never in place of the card above.
+                <ThemedText style={styles.dropped} testID="composer-dropped-flags">
+                  {dropped}
                 </ThemedText>
               )}
             </Animated.View>
@@ -268,7 +299,7 @@ export function ReportComposer({ petId, petName, onPreview }: Props) {
           label="Preview report"
           // Never a preview of counts still in flight: the window on screen is the one previewed.
           disabled={counting}
-          onPress={() => onPreview(selected)}
+          onPress={preview}
           testID="composer-preview"
         />
       </View>
@@ -281,7 +312,7 @@ export function ReportComposer({ petId, petName, onPreview }: Props) {
         onClose={() => setSheetOpen(false)}
         onUse={(start, end, days) => {
           setSheetOpen(false);
-          c.select({ kind: 'custom', startDate: start, endDate: end, days });
+          c.select({ kind: 'custom', startDate: start, endDate: end, days, isDefault: false });
         }}
       />
     </View>
@@ -419,6 +450,9 @@ const styles = StyleSheet.create({
   cellOff: { backgroundColor: theme.colorChartEmpty },
   line: { fontSize: theme.textMD, color: theme.colorTextPrimary },
   note: { fontSize: theme.textSM, color: theme.colorTextSecondary, marginTop: theme.space1 },
+  dropped: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorEventSymptomInk, marginTop: theme.space1 },
+  waitRow: { flexDirection: 'row', alignItems: 'center', gap: theme.space1, paddingHorizontal: theme.space2, paddingTop: theme.space2 },
+  waitText: { fontSize: theme.textSM, color: theme.colorTextSecondary },
 
   bar: {
     paddingHorizontal: theme.space2,

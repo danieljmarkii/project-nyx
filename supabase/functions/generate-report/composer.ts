@@ -17,7 +17,7 @@
 // over exactly those days, so the "left out" line (b4) and the window's counts partition the
 // record rather than estimate it (C-4).
 
-import type { ReportDietTrialInput, ReportSnapshot, ReportVetVisitInput, SafetyFlag } from './report.ts'
+import type { ReportDietTrialInput, ReportScope, ReportSnapshot, ReportVetVisitInput, SafetyFlag } from './report.ts'
 import { leadSignOf, type LeadReason, type LeadSign } from './v2Predicates.ts'
 
 /** The live-flag set's span, in local days ending today (spec §10.1). */
@@ -25,7 +25,7 @@ export const LIVE_FLAG_DAYS = 56
 /** The rolling window every composer offers. */
 export const LAST_DAYS = 30
 
-export type ComposerWindowKind = 'since_visit' | 'diet_trial' | 'last_30' | 'since_first'
+export type ComposerWindowKind = 'since_visit' | 'diet_trial' | 'last_90' | 'last_30' | 'since_first'
 
 export interface ComposerWindow {
   kind: ComposerWindowKind
@@ -34,6 +34,13 @@ export interface ComposerWindow {
   endDate: string
   /** Inclusive day count. */
   days: number
+  /**
+   * The §6 cascade's own window (`resolveScope` with no override): the window the report builds
+   * today when nobody chooses. Offered first, and sent back as NO override, so the report keeps
+   * its own label and floors and nothing regresses from the pre-composer default (adversarial
+   * pass 1 on CUL-2296, F2/F6).
+   */
+  isDefault: boolean
 }
 
 export interface ComposerCounts {
@@ -50,6 +57,12 @@ export interface ComposerCounts {
   loggedDayKeys: string[] | null
   /** A pull behind these counts came back short: the counts may be low. */
   incomplete: boolean
+  /**
+   * The safety flags the report for THIS window prints (its own snapshot's band). The composer
+   * compares them with the 56-day live set and warns when the window drops one: a short or cropped
+   * window can lose a flag the live set holds (adversarial pass 1, F1/F2).
+   */
+  flags: ComposerFlag[]
 }
 
 export interface ComposerAfter {
@@ -60,12 +73,19 @@ export interface ComposerAfter {
   symptomEntries: number
   /** Symptom entries after the window by type, most first. */
   byType: Array<{ type: string; count: number }>
+  /** Meals refused after the window, through today: the report's own record-edge count, read off
+   *  the window's snapshot (a refusal is not a symptom entry, and intake is not preference). */
+  mealsRefused: number
+  /** A pull behind the after-window counts came back short. */
+  incomplete: boolean
 }
 
 export interface ComposerFlag {
   kind: SafetyFlag['kind']
   /** The symptom the flag is about, when it names one; null otherwise. */
   sign: string | null
+  /** An intake flag's trigger, so the card can say "refusing" rather than "less" when it was. */
+  trigger: string | null
 }
 
 export interface ComposerLive {
@@ -118,10 +138,12 @@ export function liveWindowOf(today: string): { startDate: string; endDate: strin
 
 /**
  * The windows the composer offers, each with its reason and dates, the first one selected:
- *   1. since the last visit (the most recent visit strictly before today, as the §6 cascade reads it);
- *   2. the diet trial (the most recent one started on or before today, to its end or today);
- *   3. the last 30 days, or, for a record that began inside them, since the first entry (a new
- *      account: 30 days would count weeks no one could have logged).
+ *   0. the §6 cascade's own window (`defaultScope`): since the last visit, the diet trial the
+ *      report anchors on (with its floors), or the last 90 days. Sent back as no override.
+ *   1. since the last visit (the most recent visit strictly before today, as the cascade reads it);
+ *   2. the diet trial (the running one first, else the latest started on or before today), to its
+ *      end or today;
+ *   3. the last 30 days, or, for a record that began inside them, since the first entry.
  * A window identical to an earlier one is not offered twice.
  */
 export function composerWindowsOf(input: {
@@ -130,33 +152,42 @@ export function composerWindowsOf(input: {
   vetVisits: readonly ReportVetVisitInput[]
   dietTrials: readonly ReportDietTrialInput[]
   firstEntryDate: string | null
+  defaultScope: Pick<ReportScope, 'basis' | 'startDate' | 'endDate'>
 }): ComposerWindow[] {
   const { today, timezone } = input
   const todayN = dayNum(today)
   const out: ComposerWindow[] = []
-  const push = (kind: ComposerWindowKind, startDate: string, endDate: string) => {
+  const push = (kind: ComposerWindowKind, startDate: string, endDate: string, isDefault = false) => {
     if (dayNum(startDate) > dayNum(endDate)) return
     if (out.some((w) => w.startDate === startDate && w.endDate === endDate)) return
-    out.push({ kind, startDate, endDate, days: daysInclusive(startDate, endDate) })
+    out.push({ kind, startDate, endDate, days: daysInclusive(startDate, endDate), isDefault })
+  }
+
+  const d = input.defaultScope
+  if (d.basis !== 'custom') {
+    push(d.basis === 'fallback_90d' ? 'last_90' : d.basis, d.startDate, d.endDate, true)
   }
 
   let lastVisit: string | null = null
   for (const v of input.vetVisits) {
-    const d = localDayOf(v.visitedAt, timezone)
-    if (d === null || dayNum(d) >= todayN) continue
-    if (lastVisit === null || dayNum(d) > dayNum(lastVisit)) lastVisit = d
+    const day = localDayOf(v.visitedAt, timezone)
+    if (day === null || dayNum(day) >= todayN) continue
+    if (lastVisit === null || dayNum(day) > dayNum(lastVisit)) lastVisit = day
   }
   if (lastVisit !== null) push('since_visit', lastVisit, today)
 
-  let trial: { start: string; end: string } | null = null
+  // The running trial outranks an ended one, then the latest start (the order `selectReportTrial`
+  // ranks by), so an abandoned short trial never stands in for the one under way (B-613's input).
+  let trial: { start: string; end: string; active: boolean } | null = null
   for (const t of input.dietTrials) {
     const start = localDayOf(t.startedAt, timezone)
     if (start === null || dayNum(start) > todayN) continue
-    if (trial !== null && dayNum(start) <= dayNum(trial.start)) continue
-    const endRaw = t.endedAt ?? t.completedAt ?? null
-    const endDay = endRaw === null ? null : localDayOf(endRaw, timezone)
-    const end = endDay === null || dayNum(endDay) > todayN ? today : endDay
-    trial = { start, end: dayNum(end) < dayNum(start) ? start : end }
+    const active = t.status === 'active'
+    if (trial !== null && (trial.active && !active || (trial.active === active && dayNum(start) <= dayNum(trial.start)))) continue
+    const endRaw: string | null = active ? null : t.endedAt ?? t.completedAt ?? null
+    const endDay: string | null = endRaw === null ? null : localDayOf(endRaw, timezone)
+    const end: string = endDay === null || dayNum(endDay) > todayN ? today : endDay
+    trial = { start, end: dayNum(end) < dayNum(start) ? start : end, active }
   }
   if (trial !== null) push('diet_trial', trial.start, trial.end)
 
@@ -186,11 +217,13 @@ export function countsOf(snap: ReportSnapshot): ComposerCounts {
     lead: lead === null ? null : { sign: lead.sign, reason: lead.reason },
     loggedDayKeys: snap.v2.loggedDayKeys ?? null,
     incomplete: snap.incompletePulls.length > 0,
+    flags: snap.safetyFlags.map(flagOf),
   }
 }
 
-/** The symptom entries in a snapshot over the days AFTER the chosen window. */
-export function afterOf(snap: ReportSnapshot): ComposerAfter {
+/** The symptom entries over the days AFTER the chosen window (`snap`), and the refused meals the
+ *  window's own snapshot counts after its end (`windowSnap`). */
+export function afterOf(snap: ReportSnapshot, windowSnap: ReportSnapshot): ComposerAfter {
   const byType = snap.symptoms
     .filter((s) => s.count > 0)
     .map((s) => ({ type: s.type as string, count: s.count }))
@@ -200,6 +233,8 @@ export function afterOf(snap: ReportSnapshot): ComposerAfter {
     endDate: snap.scope.endDate,
     symptomEntries: byType.reduce((n, t) => n + t.count, 0),
     byType,
+    mealsRefused: windowSnap.atAGlance.recordEdge.afterWindowMealsRefused,
+    incomplete: snap.incompletePulls.length > 0,
   }
 }
 
@@ -222,8 +257,12 @@ function flagSymptomOf(f: SafetyFlag): string | null {
  * The live-flag card's set: every safety flag of the 56-day snapshot, in the snapshot's safety
  * order. R-11's exempt chronicity flag stays in it: it moves to lead the sheet, it is still live.
  */
+function flagOf(f: SafetyFlag): ComposerFlag {
+  return { kind: f.kind, sign: flagSymptomOf(f), trigger: f.kind === 'intake_decline' ? f.trigger : null }
+}
+
 export function liveOf(snap: ReportSnapshot): ComposerLive {
-  const flags = snap.safetyFlags.map((f) => ({ kind: f.kind, sign: flagSymptomOf(f) }))
+  const flags = snap.safetyFlags.map(flagOf)
   const state = flags.length > 0 ? 'flags' : snap.incompletePulls.length > 0 ? 'incomplete' : 'none'
   return { state, startDate: snap.scope.startDate, endDate: snap.scope.endDate, flags }
 }

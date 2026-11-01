@@ -12,6 +12,9 @@ import {
 
 // The composer's reads and its selection (Vet report v2 PR-16, CUL-2296; spec §10.1, §14).
 //
+// HELD BY THE REPORT SCREEN, not by the composer view: Back from the preview remounts the view,
+// and the owner's chosen window (custom dates included) must still be there (pm-feature-review).
+//
 // THE FIRST FRAME (GAP-13). Nothing paints until the open read answers: the live flags and the
 // first window's counts arrive together, so the call card is in the screen's first painted frame
 // or it is not on the screen at all. A failed open read is the `failed` state, which says nothing
@@ -32,6 +35,8 @@ export interface ReportComposerState {
   landed: number;
   select: (w: ComposerWindow) => void;
   retry: () => void;
+  /** Read everything again from the top (a new day: the windows on offer were today's). */
+  reload: () => void;
 }
 
 export function useReportComposer(petId: string | undefined): ReportComposerState {
@@ -105,7 +110,9 @@ export function useReportComposer(petId: string | undefined): ReportComposerStat
     if (selected) select(selected);
   }, [screen, selected, select]);
 
-  return { screen, open, selected, counts, after, countsState, landed, select, retry };
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+
+  return { screen, open, selected, counts, after, countsState, landed, select, retry, reload };
 }
 
 /** The calendar's dots, a month at a time: each month's logged days, read once and kept. */
