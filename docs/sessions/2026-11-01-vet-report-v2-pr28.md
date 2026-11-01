@@ -16,7 +16,7 @@ A config flag is a row on the server that changes what the app does without a ne
 
 **Like:** a members-only gym class. The front desk keeps the member list (the allowlist), you still have to sign up for the class yourself (the switch), and the instructor checks the list at the door anyway, so a forged sign-up sheet gets nobody in.
 
-**In today's work:** `lib/pdf.ts:170`
+**In today's work:** `lib/pdf.ts:171`
 `return eligible && optedIn ? 'v2' : null;`
 `eligible` is the server's list, read on the phone; `optedIn` is the owner's switch. Both must be true, or the request asks for nothing new. Changing `&&` (and) to `||` (or) turned four tests red, which is how we know the tests watch this line.
 
