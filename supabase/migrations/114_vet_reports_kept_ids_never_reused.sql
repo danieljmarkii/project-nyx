@@ -91,10 +91,21 @@
 --     that once held a kept copy belongs to pets (104), not here.
 --   · A draft may carry a reserved id or label (it is never sent and can
 --     never be kept under it).
---   · A later migration can still add a trigger that rewrites NEW on
---     vet_reports, change a table's owner, or add a rule; the guard test
---     refuses each spelling it names, and a DO block's EXECUTE is invisible
---     to it.
+--   · A same-statement parent-key swap removes a kept copy while a parent
+--     with the same key stands at statement end: UPDATE the parent's id
+--     away, INSERT a parent under the old id, DELETE the copy, one statement
+--     (rls-privacy-reviewer pass 2, A8c / A8d, measured on the stub). For
+--     pets, 104 refuses the id change; for auth.users nothing in this repo
+--     does, and only the server can write that table. It removes, never
+--     softens: the id and label stay reserved, so a vet holding them finds
+--     nothing. LOUD; filed on CUL-2339.
+--   · A later status value beyond 'draft' / 'kept' (113's status CHECK)
+--     would never be reserved; widening it must extend the reserve test.
+--   · A later migration can still reshape these guards in a spelling the
+--     guard test does not name (it names: single-quoted or spaced function
+--     bodies, overloads, ALTER ROUTINE, INHERITS / PARTITION OF, DROP INDEX
+--     CONCURRENTLY, replica mode, OWNER TO, rules, extra triggers on the
+--     reservations), and a DO block's EXECUTE is invisible to it.
 --   · A kept copy whose pet and maker both exist can never be removed except
 --     with one of them. That is the rule, not a gap: no path removes one
 --     singly (spec §11.3).

@@ -111,6 +111,13 @@ function lastFunctionIn(sql: string, name: string): { header: string; body: stri
   // Any dollar tag: a `$function$` redefinition is the same redefinition.
   const defs = [...sql.matchAll(new RegExp(String.raw`CREATE (?:OR REPLACE )?FUNCTION (?:public\.)?${name}\(\)([\s\S]*?)\$(\w*)\$([\s\S]*?)\$\2\$;`, 'g'))];
   expect(defs.length).toBeGreaterThan(0);
+  // Every redefinition must be one this reader can see. A single-quoted body
+  // (AS 'BEGIN RETURN NULL; END') or a space before the parentheses slipped
+  // past the pattern above and replaced the live body unread (CUL-2339,
+  // rls-privacy-reviewer pass 2, M1 to M4); so does an overload that a
+  // later CREATE TRIGGER could name instead.
+  const any = sql.match(new RegExp(String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?${name}\s*\(`, 'gi')) ?? [];
+  expect(any.length).toBe(defs.length);
   const last = defs[defs.length - 1];
   return { header: last[1], body: last[3].replace(/--[^\n]*/g, '') };
 }
@@ -416,7 +423,7 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
   ];
 
   it.each(GUARDED_FUNCTIONS)('never drops or alters %s', (fn) => {
-    expect(sql).not.toMatch(new RegExp(String.raw`\b(?:DROP|ALTER)\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:public\.)?${fn}\b`, 'i'));
+    expect(sql).not.toMatch(new RegExp(String.raw`\b(?:DROP|ALTER)\s+(?:FUNCTION|ROUTINE)\s+(?:IF\s+EXISTS\s+)?(?:public\.)?${fn}\b`, 'i'));
   });
 
   it.each(GUARDED_TRIGGERS)('never drops %s after creating it, and never replaces it in place', (tg) => {
@@ -499,6 +506,12 @@ describe('vet_reports saved copy (CUL-2287, migration 113)', () => {
 // later GRANT EXECUTE on the reserve function; pass 1's M3 (OWNER TO), M6 (a
 // further trigger on the reservations), M13 (the per-pet label UNIQUE
 // dropped), M14 (a rule), and the upper() dropped from the label index (M10).
+// Pass 2's 13 later-migration survivors, now killed but for M13: a
+// single-quoted or spaced redefinition of each guard (M1 to M4), INHERITS and
+// PARTITION OF (M5), DROP INDEX CONCURRENTLY (M6), replica mode (M7), ALTER
+// ROUTINE (M8), the Crockford CHECK dropped (M9), ALTER COLUMN on the
+// reservations (M11), an overload (M12). M13, a widened status CHECK, is
+// stated in the migration's blind spots.
 describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
   const sql = allMigrations();
   const KEPT = String.raw`(?:public\.)?vet_report_kept_ids\b`;
@@ -516,7 +529,7 @@ describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
     expect(sql).not.toMatch(new RegExp(String.raw`\bCREATE\s+POLICY\s[^;]*\bON\s+${KEPT}`, 'i'));
     expect(sql.slice(create)).not.toMatch(/\bGRANT\s[^;]*\bON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+public\b/i);
     expect(sql).not.toMatch(new RegExp(String.raw`\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?${KEPT}`, 'i'));
-    expect(sql).not.toMatch(new RegExp(String.raw`\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${KEPT}[^;]*\b(?:DROP|RENAME|DISABLE|NO\s+FORCE|SET\s+SCHEMA|OWNER)\b`, 'i'));
+    expect(sql).not.toMatch(new RegExp(String.raw`\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${KEPT}[^;]*\b(?:DROP|RENAME|DISABLE|NO\s+FORCE|SET\s+SCHEMA|OWNER|ALTER\s+COLUMN|ADD|INHERIT|ATTACH|DETACH)\b`, 'i'));
   });
 
   it('keeps the reservations append-only for every role, with no other trigger or rule on them', () => {
@@ -541,10 +554,12 @@ describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
     expect(sql.slice(at, sql.indexOf(';', at)).replace(/\s+/g, ' ')).toBe(
       'CREATE UNIQUE INDEX idx_vet_report_kept_ids_label ON public.vet_report_kept_ids (pet_id, upper(short_id))',
     );
-    expect(sql).not.toMatch(/\bDROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?(?:public\.)?idx_vet_report_kept_ids_label\b/i);
+    expect(sql).not.toMatch(/\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?(?:public\.)?idx_vet_report_kept_ids_label\b/i);
     expect(sql).not.toMatch(/\bALTER\s+INDEX\s+(?:IF\s+EXISTS\s+)?(?:public\.)?idx_vet_report_kept_ids_label\b/i);
-    // The live per-pet UNIQUE on vet_reports stays (pass 1, M13).
-    expect(sql).not.toMatch(/DROP CONSTRAINT (?:IF EXISTS )?vet_reports_short_id_per_pet\b/i);
+    // The live per-pet UNIQUE on vet_reports stays (pass 1, M13), and so does
+    // the label's alphabet: without it a look-alike label (a trailing
+    // zero-width space) is a different key that prints the same (pass 2, M9).
+    expect(sql).not.toMatch(/DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?vet_reports_short_id_(?:per_pet|crockford)\b/i);
   });
 
   it('reserves a row as it is kept, judged AFTER the write, and refuses a reservation that did not land (C-31)', () => {
@@ -559,6 +574,24 @@ describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
         + " USING ERRCODE = 'check_violation'; END IF; END IF; RETURN NULL; END;",
     );
     expect(sql).toMatch(/CREATE TRIGGER trg_vet_reports_reserve_kept_id\s+AFTER INSERT OR UPDATE ON public\.vet_reports\s+FOR EACH ROW EXECUTE FUNCTION public\.reserve_vet_report_kept_id\(\);/);
+  });
+
+  it('never lets a child or partition of vet_reports hold rows the reservations cannot see (pass 2, M5)', () => {
+    // A table that INHERITS vet_reports shares none of its keys or triggers,
+    // and its rows are read by every SELECT on the parent: a second copy under
+    // a kept id and label, softer, with no reservation and no PK clash.
+    expect(sql).not.toMatch(/\bINHERITS\s*\([^)]*\bvet_reports\b/i);
+    expect(sql).not.toMatch(/\bPARTITION\s+OF\s+(?:public\.)?vet_reports\b/i);
+    expect(sql).not.toMatch(/\bALTER\s+TABLE\s+[^;]*\bINHERIT\s+(?:public\.)?vet_reports\b/i);
+    expect(sql).not.toMatch(/\bATTACH\s+PARTITION\b[^;]*\bvet_reports\b|\bvet_reports\b[^;]*\bATTACH\s+PARTITION\b/i);
+  });
+
+  it('never turns triggers off for a session after 114 (pass 2, M7)', () => {
+    // Replica mode skips every guard on both tables. A later file that sets it
+    // (a statement, set_config, or a function's SET clause) must argue here.
+    const at = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_reserve_kept_id\b/);
+    expect(at).toBeGreaterThan(-1);
+    expect(sql.slice(at)).not.toMatch(/session_replication_role/i);
   });
 
   it('never changes the owner of vet_reports or adds a rule to it (pass 1, M3)', () => {
