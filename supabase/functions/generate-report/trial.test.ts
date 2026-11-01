@@ -4312,8 +4312,13 @@ Deno.test('B-613 — widening the pull for the trial changes ONLY the out-of-win
       scope: { ...s.scope, trialCropSymptoms: null, outOfWindowSymptomCount: 0,
         outOfWindowMostRecent: null, outOfWindowMostRecentType: null,
         outOfWindowBefore: 0, outOfWindowAfter: 0 },
+      // CUL-2289 — the record's first entry is read across the pull BY DESIGN (a record date, not a
+      // windowed count). It is printed only when it falls under 14 days before the report, and every
+      // pull reaches at least 90 days before the window, so no pull can move a printed one.
+      v2: { ...s.v2, firstEntryDate: null },
     })
   assert.equal(blank(wide), blank(narrow), 'a wider pull must not move any windowed count')
+  assert.notEqual(wide.v2.firstEntryDate, narrow.v2.firstEntryDate, 'the blanked field really is pull-sensitive (non-vacuous)')
 })
 
 
