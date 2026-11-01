@@ -156,6 +156,7 @@ import {
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
 import { carriesTrialDiet, COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
+import { weightStory, type WeightPoint, type WeightReading } from '../../../lib/weightStory.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
   TrialBlock,
@@ -2082,6 +2083,11 @@ export interface IncidentPhoto {
   dataUri: string | null
 }
 
+/**
+ * The in-window readings, for the sparkline and its stated scale ONLY. It carries no change:
+ * the first-to-last delta it used to carry was the anchor the weight lane retired (spec §5.2,
+ * GAP-21), so every change on the page reads `WeightSection.change` instead.
+ */
 export interface WeightTrendView {
   readingCount: number
   seriesLbs: number[]
@@ -2090,18 +2096,61 @@ export interface WeightTrendView {
   latestKg: number | null
   earliestDate: string | null
   latestDate: string | null
-  deltaLbs: number | null
+}
+
+/** One end of a weight change, as the sentence names it (WG-5): value, day, source, one reading or not. */
+export interface WeightChangeEnd {
+  /** The stored NUMERIC(5,2) kilograms. */
+  kg: number
+  /** Pounds to 0.1, the app's one rounding rule (`lib/weightUnits.ts`). */
+  lbs: number
+  /** The owner's local 'YYYY-MM-DD'. */
+  day: string
+  source: 'clinic' | 'home_scale'
+  /** The story's "one reading" flag (`WeightPoint.confirmed === false`). */
+  single: boolean
+}
+
+/**
+ * CUL-2286 (VR2-6) — a weight change, from `weightStory()` and nothing else (spec §5.8, WG-1):
+ * the latest counted reading and the highest counted reading before it, never the earliest
+ * (a kitten that grew then fell has lost weight, attack 10b).
+ */
+export interface WeightChangeView {
+  latest: WeightChangeEnd
+  /** Null when only one counted reading is in the story's window. */
+  highBefore: WeightChangeEnd | null
+  /** latest − highBefore, at the stored 2 dp. Null without `highBefore`. */
   deltaKg: number | null
-  /** Descriptive direction only — NEVER a verdict/colour/reassurance (guardrail travels from migration 024). */
-  direction: 'up' | 'down' | 'flat' | null
+  /** The difference of the two ends' pounds, to 0.1 (what an owner reading Home subtracts). */
+  deltaLbs: number | null
+  /**
+   * |deltaKg| as a whole percent of `highBefore`, the EARLIER end the change is measured from
+   * (the higher one on a loss, the lower one on a gain), rounded to the whole number: 0 means
+   * under 1%, never "no change" (the renderer says which). No floor: the 0.15 kg floor it
+   * replaces hid a 7% loss on a 2 kg cat (BRK-12). Null without `highBefore`.
+   */
+  pct: number | null
+  /** The story's `within_noise` state: the ONLY state that carries the lane's noise caveat (WG-6). */
+  withinNoise: boolean
 }
 
 export interface WeightSection {
   /** No weigh-ins anywhere ⇒ a designed logging-nudge empty state (spec §7.1), never a fabricated value. */
   isEmpty: boolean
   latest: { kg: number; lbs: number; date: string } | null
-  /** Trajectory over IN-WINDOW readings; null when the window has none. */
+  /** In-window readings for the sparkline; null when the window has none. */
   trend: WeightTrendView | null
+  /** The change as of the window's end, over the story's 12-month window. Null when nothing counted. */
+  change: WeightChangeView | null
+  /**
+   * The change over the diet trial's evidence range only. Null without a trial or two counted
+   * readings in it. Its `withinNoise` is NOT the lane's state (a day-bounded subset), so the
+   * renderer never prints the noise caveat from it (adversarial pass 1).
+   */
+  trialChange: WeightChangeView | null
+  /** In-window owner estimates: listed beside the block, never counted, plotted or used as the latest. */
+  notCounted: Array<{ kg: number; lbs: number; day: string }>
 }
 
 /**
@@ -4602,23 +4651,30 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // de-dup (only reachable if the I/O shell also placed the weight_check event in input.events
   // — weight_check is in DEDUP_OBSERVATION_TYPES; a no-op when weightChecks is a standalone
   // pull), then apply the near-simultaneous collapse below for the standalone-array case.
-  const sortedReadings = [...input.weightChecks]
-    .filter((r) => !droppedEventIds.has(r.eventId))
-    .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
-  const allReadings: ReportWeightCheckInput[] = []
-  for (const r of sortedReadings) {
-    const prev = allReadings[allReadings.length - 1]
-    const prevMs = prev ? parseMs(prev.occurredAt) : null
-    const curMs = parseMs(r.occurredAt)
-    if (prev && prevMs !== null && curMs !== null && curMs - prevMs < DEDUP_WINDOW_MS) {
-      allReadings[allReadings.length - 1] = r // collapse the retry/correction pair, keep the later
-    } else {
-      allReadings.push(r)
-    }
-  }
+  // An owner's ESTIMATE is listed, never counted (weight lane §4.2, §6.5): it is never plotted,
+  // never the "latest weigh-in" on the signalment or the tile, and never decides the empty state.
+  // Adversarial pass 1 on CUL-2286: an estimate of 5.00 kg read as the latest weigh-in on the tile
+  // and the signalment line over a confirmed 20% loss.
+  // Estimates leave BEFORE the retry collapse, never after (adversarial pass 2, QUIET): the collapse
+  // keeps the later of two rows under a minute apart, so a scale reading of 4.10 kg followed 30 s
+  // later by an estimate was collapsed into the estimate, and dropping the estimate then erased an
+  // 18% loss. A scale reading and an estimate are never one weigh-in; each list collapses its own.
+  const isEstimate = (r: ReportWeightCheckInput): boolean => r.source === 'estimate'
+  const allReadings = dedupeWeighIns(input.weightChecks.filter((r) => !isEstimate(r)), droppedEventIds)
   const latestOverall = allReadings.length > 0 ? allReadings[allReadings.length - 1] : null
   const windowReadings = allReadings.filter((r) => inWindow(r.occurredAt))
-  const weight = buildWeightSection(latestOverall, windowReadings, tz)
+  // CUL-2286 (VR2-6) — EVERY weight change on the page comes from `weightStory()` (spec §5.8,
+  // WG-1), at the window's end, over the lane's whole read when the shell passed it (its window
+  // is 12 months, wider than the lookback) and through the SAME retry collapse: a double-tap
+  // pair that differs by a correction must never confirm itself as a level.
+  const storyReadings = input.weightHistory
+    ? dedupeWeighIns(input.weightHistory.filter((r) => !isEstimate(r)), droppedEventIds)
+    : allReadings
+  const weightChange = weightChangeOf(storyReadings, scope.detectionNowIso, input.pet.dateOfBirth, tz)
+  const weight = buildWeightSection(latestOverall, windowReadings, weightChange, tz)
+  weight.notCounted = dedupeWeighIns(input.weightChecks.filter(isEstimate), droppedEventIds)
+    .filter((r) => inWindow(r.occurredAt))
+    .map((r) => ({ kg: r.weightKg, lbs: kgToLbsNum(r.weightKg), day: localDayKey(r.occurredAt, tz) ?? r.occurredAt.slice(0, 10) }))
 
   // ── Medications (§3.8, B-117 §7, §4.4) ───────────────────────────────────────
   // ONE attribution pass feeds every medication surface on the document (CUL-976) — page 1,
@@ -6548,7 +6604,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     clinicalQuestion,
     safetyFlags,
     safetyChecks,
-    weight,
+    weight: {
+      ...weight,
+      // CUL-2286 — the trial sentence's change, measured over the trial's own evidence range
+      // (#10a: a number offered as evidence about the trial is measured over the trial).
+      trialChange: trialBlock
+        ? weightChangeOf(
+          storyReadings,
+          scope.detectionNowIso,
+          input.pet.dateOfBirth,
+          tz,
+          trialBlock.evidenceStartDate,
+          trialBlock.evidenceEndDate,
+        )
+        : null,
+    },
     atAGlance,
     symptoms,
     vomitPhenotype,
@@ -6571,9 +6641,90 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 
 // ── Assembly sub-helpers ──────────────────────────────────────────────────────
 
+/**
+ * Weigh-ins in time order, minus any whose parent event the event de-dup dropped, with a
+ * near-simultaneous pair (a double-tap or a sync retry, < DEDUP_WINDOW_MS apart) collapsed to
+ * its LATER row (last-write-wins): a correction 5 s later wins, a retry of the same value is
+ * idempotent, and distinct readings minutes apart are always kept (adversarial finding A5).
+ */
+function dedupeWeighIns(rows: readonly ReportWeightCheckInput[], droppedEventIds: Set<string>): ReportWeightCheckInput[] {
+  const sorted = rows.filter((r) => !droppedEventIds.has(r.eventId)).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
+  const out: ReportWeightCheckInput[] = []
+  for (const r of sorted) {
+    const prev = out[out.length - 1]
+    const prevMs = prev ? parseMs(prev.occurredAt) : null
+    const curMs = parseMs(r.occurredAt)
+    if (prev && prevMs !== null && curMs !== null && curMs - prevMs < DEDUP_WINDOW_MS) {
+      out[out.length - 1] = r
+    } else {
+      out.push(r)
+    }
+  }
+  return out
+}
+
+/**
+ * CUL-2286 (VR2-6) — the one way this file states a weight change: `weightStory()` over the
+ * readings at or before `nowIso` (a reading after a past window's end is not the window's;
+ * the lane's 10-minute future slack would otherwise let one in), optionally bounded to local
+ * days [fromDay, toDay]. The story picks both ends and the noise state; this only converts.
+ *
+ * A row with no `source` reads `home_scale`: `weight_checks.source` is NOT NULL DEFAULT
+ * 'home_scale' since migration 081, so only a pre-081 fixture can lack one, and reading it as
+ * the default is what the database itself would have stored. (The lane's own input skips such
+ * a row instead, since its finding must match Home's read exactly; the change here describes
+ * readings and raises nothing.)
+ */
+export function weightChangeOf(
+  rows: readonly ReportWeightCheckInput[],
+  nowIso: string,
+  dateOfBirth: string | null,
+  tz: string | null,
+  fromDay?: string,
+  toDay?: string,
+): WeightChangeView | null {
+  const nowMs = parseMs(nowIso)
+  if (nowMs === null) return null
+  const readings: WeightReading[] = []
+  for (const r of rows) {
+    const ms = parseMs(r.occurredAt)
+    if (ms === null || ms > nowMs) continue
+    if (fromDay !== undefined || toDay !== undefined) {
+      const d = localDayKey(r.occurredAt, tz)
+      if (d === null || (fromDay !== undefined && d < fromDay) || (toDay !== undefined && d > toDay)) continue
+    }
+    readings.push({
+      kg: r.weightKg,
+      occurredAt: r.occurredAt,
+      source: r.source ?? 'home_scale',
+      ...(r.sourceBasis !== undefined ? { sourceBasis: r.sourceBasis } : {}),
+    })
+  }
+  const story = weightStory({ readings, nowMs, dateOfBirth })
+  if (!story.latest) return null
+  const end = (p: WeightPoint): WeightChangeEnd => ({
+    kg: p.kg,
+    lbs: kgToLbsNum(p.kg),
+    day: localDayKey(p.occurredAt, tz) ?? p.occurredAt.slice(0, 10),
+    source: p.source,
+    single: !p.confirmed,
+  })
+  const latest = end(story.latest)
+  const highBefore = story.highBefore ? end(story.highBefore) : null
+  return {
+    latest,
+    highBefore,
+    deltaKg: highBefore ? Math.round((latest.kg - highBefore.kg) * 100) / 100 : null,
+    deltaLbs: highBefore ? Math.round((latest.lbs - highBefore.lbs) * 10) / 10 : null,
+    pct: highBefore ? Math.round((Math.abs(latest.kg - highBefore.kg) / highBefore.kg) * 100) : null,
+    withinNoise: story.state === 'within_noise',
+  }
+}
+
 function buildWeightSection(
   latestOverall: ReportWeightCheckInput | null,
   windowReadings: ReportWeightCheckInput[],
+  change: WeightChangeView | null,
   tz: string | null,
 ): WeightSection {
   const isEmpty = latestOverall === null
@@ -6592,8 +6743,6 @@ function buildWeightSection(
     const count = seriesLbs.length
     const latestLbs = seriesLbs[count - 1]
     const latestKg = seriesKg[count - 1]
-    const deltaLbs = count >= 2 ? Math.round((latestLbs - seriesLbs[0]) * 10) / 10 : null
-    const deltaKg = count >= 2 ? Math.round((latestKg - seriesKg[0]) * 100) / 100 : null
     trend = {
       readingCount: count,
       seriesLbs,
@@ -6602,13 +6751,10 @@ function buildWeightSection(
       latestKg,
       earliestDate: localDayKey(windowReadings[0].occurredAt, tz),
       latestDate: localDayKey(windowReadings[count - 1].occurredAt, tz),
-      deltaLbs,
-      deltaKg,
-      // Descriptive direction only — never a verdict (guardrail from lib/weight.ts / migration 024).
-      direction: deltaLbs == null ? null : deltaLbs > 0 ? 'up' : deltaLbs < 0 ? 'down' : 'flat',
     }
   }
-  return { isEmpty, latest, trend }
+  // `trialChange` needs the trial's evidence range, which is assembled later; the snapshot sets it.
+  return { isEmpty, latest, trend, change, trialChange: null, notCounted: [] }
 }
 
 /**

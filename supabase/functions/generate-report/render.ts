@@ -58,6 +58,8 @@ import type {
   StoolPeriodCounts,
   StoolShortcutSplit,
   WeightSection,
+  WeightChangeEnd,
+  WeightChangeView,
   DietSummary,
   MedicationAdherence,
   UnlinkedMedicationGroup,
@@ -80,6 +82,7 @@ import type {
   WeightFlagReading,
 } from './report.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
+import { WEIGHT_RULES } from '../../../lib/weightStory.ts'
 // The ONE intake predicate (CUL-497) — a value import, because both surfaces on this page
 // have to reach the same verdict about the same ratings.
 import { summariseIntake } from './report.ts'
@@ -1734,7 +1737,7 @@ function signalmentBlock(snap: ReportSnapshot): string {
   ].join(' &middot; ')
   const ownerBit = s.ownerName ? `Owner: ${h(s.ownerName)}` : 'Owner: not recorded'
   const weightBit = s.latestWeight
-    ? ` &middot; latest weight ${num(s.latestWeight.kg.toFixed(1))}&nbsp;kg (${h(fmtDay(s.latestWeight.date))})`
+    ? ` &middot; latest weight ${weightReadingText(s.latestWeight.kg)} on ${h(fmtDay(s.latestWeight.date))}`
     : ' &middot; no weigh-in recorded'
 
   // THE ACTIVE PROBLEM LIST BELONGS WITH THE SIGNALMENT (B-532, cold-read blocking).
@@ -2832,11 +2835,8 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       // and the ask. Readings only: no percentage (WG-4), no cause. kg to the column's 2 dp, so a
       // small pet's loss never prints as "1.9 kg, down from 1.9 kg" (adversarial pass); lb, what
       // the owner read on Home, rides beside.
-      const where: Record<WeightFlagReading['source'], string> = { clinic: 'at the vet', home_scale: 'on a home scale' }
       const reading = (r: WeightFlagReading): string =>
-        `${weightKgText(r.kg)}&nbsp;kg (${num(kgToLbsNum(r.kg).toFixed(1))}&nbsp;lb) on ${fmtDayYear(r.day)} ${where[r.source]}${
-          r.single ? ', a single reading' : ''
-        }`
+        `${weightReadingText(r.kg)} on ${fmtDayYear(r.day)} ${WEIGHT_WHERE[r.source]}${r.single ? ', a single reading' : ''}`
       const plan = f.planned ? ', faster or further than the weight plan allows' : ''
       // Home's lane already widened its noise band for a clinic-vs-home pair; the vet is told the
       // scales differ so the drop is not read at a single scale's precision (cold read, CUL-2026).
@@ -4047,61 +4047,28 @@ function dietTrialSection(snap: ReportSnapshot): string {
  */
 function weightDuringTrial(snap: ReportSnapshot): string | null {
   const t = snap.trial
-  const tr = snap.weight.trend
-  if (!t || !tr || tr.deltaKg === null || tr.readingCount < 2) return null
-  // #10a — THE SERIES IS WINDOW-SCOPED AND THIS SENTENCE IS TRIAL-SCOPED. The
-  // adversarial pass rendered "Weight fell 4.6 → 4.1 kg over May 21 – Jun 19 — 10.9%
-  // of body weight" as the refusal's companion fact on a trial that ran 10–19 Jun,
-  // with 20 of the 29 days of loss predating it entirely. A number offered as evidence
-  // about the trial has to be measured over the trial. If the span is not inside the
-  // trial's range, say nothing here — the weight tile and its trend still render the
-  // window-scoped figure, correctly labelled.
-  if (
-    !tr.earliestDate ||
-    !tr.latestDate ||
-    tr.earliestDate < t.evidenceStartDate ||
-    tr.latestDate > t.evidenceEndDate
-  ) {
-    return null
-  }
-  const first = tr.seriesKg[0]
-  if (!first || first <= 0) return null
-  const dir = tr.deltaKg < 0 ? 'fell' : tr.deltaKg > 0 ? 'rose' : 'flat'
-  if (dir === 'flat') return null
-  // #10b — PRECISION THE INSTRUMENT SUPPORTS, via the shared `weightDeltaPct`: it drops a
-  // sub-0.15 kg delta (one 0.1 kg tick on a 2.0 kg cat is a single scale increment, and
-  // "5.0% of body weight" would claim a resolution the reading does not have) and a sub-1%
-  // result, and rounds to a whole percent. The tile reads the same helper, so the figure
-  // can never differ between two renderings of the same fall.
-  const pct = weightDeltaPct(tr.deltaKg, first)
-  if (pct === null) return null
-  return `Weight ${dir} ${num(first.toFixed(1))}&nbsp;&rarr;&nbsp;${num(
-    (first + tr.deltaKg).toFixed(1),
-  )}&nbsp;kg over ${h(fmtRange(tr.earliestDate, tr.latestDate))} &mdash; <b>about ${num(
-    pct,
-  )}% of body weight</b> (owner home-scale readings; ${num(tr.readingCount)} weigh-ins).`
-}
-
-/**
- * The weight change as a percent of body weight — ONE derivation, shared by the trial
- * sentence (`weightDuringTrial`) and the page-1 At-a-glance weight tile (`weightTile`), so
- * a Labrador's −0.3 kg and a cat's −0.3 kg can never render the same magnitude on one
- * surface and a different one on another (B-495; the diet-trial §5.3 one-predicate rule,
- * applied to weight).
- *
- * `firstKg` is the EARLIEST reading of whatever series the caller scoped — the window for
- * the tile, the trial range for the sentence — and the percent is the change relative to
- * it. The guardrails are the instrument's, not a clinical threshold: a home scale resolves
- * ~0.1 kg, so a sub-0.15 kg delta is one tick of noise and yields no percent, and the
- * figure rounds to a whole number because a decimal would claim a resolution the reading
- * does not have. The species sets what magnitude reads as notable; this invents no
- * threshold and states no verdict. Returns null when no honest percent can be stated.
- */
-function weightDeltaPct(deltaKg: number | null, firstKg: number | null): number | null {
-  if (deltaKg === null || firstKg === null || firstKg <= 0) return null
-  if (Math.abs(deltaKg) < 0.15) return null
-  const pct = Math.round(Math.abs(deltaKg / firstKg) * 100)
-  return pct < 1 ? null : pct
+  // #10a — THE SENTENCE IS TRIAL-SCOPED. The adversarial pass rendered "Weight fell 4.6 → 4.1 kg
+  // over May 21 – Jun 19 — 10.9% of body weight" as the refusal's companion fact on a trial that
+  // ran 10–19 Jun, with 20 of the 29 days of loss predating it entirely. So `trialChange` is the
+  // story over the trial's evidence range only (report.ts `weightChangeOf`), and a loss before the
+  // trial is not offered as trial evidence.
+  //
+  // CUL-2286 (VR2-6) — and it is `weightStory()`'s change (spec §5.8): the latest reading against
+  // the HIGHEST before it, both named with day and source, as a whole percent. No 0.15 kg floor:
+  // on a 2 kg cat that floor hid a 7% loss (BRK-12), and the lane's noise state carries the caveat
+  // instead (WG-6) in the Weight block only.
+  //
+  // NEVER THE NOISE CAVEAT HERE (adversarial pass 1, QUIET). `trialChange` runs the story over the
+  // trial's days only, so its noise state is not the lane's: a refusing cat whose record held a
+  // firm 4.80 → 4.12 kg loss read 4.30 → 4.12 inside the trial as "a home scale moves about that
+  // much on its own", in the safety band's refusal row, above the firm Weight flag. A day-bounded
+  // subset can only ever discount a loss the whole record supports, so it says nothing of noise.
+  const c = snap.weight.trialChange
+  if (!t || !c || !c.highBefore || c.deltaKg === null || c.deltaKg === 0) return null
+  const dir = c.deltaKg < 0 ? 'fell' : 'rose'
+  return `Weight ${dir} to ${weightEndText(c.latest, snap)}, from ${weightEndText(c.highBefore, snap)} &mdash; <b>${weightPctText(
+    c,
+  )}</b> (the latest reading against the highest before it in the trial).`
 }
 
 /** "a 56-day" but "an 84-day" — English takes the article from how the number is
@@ -5004,12 +4971,88 @@ function weightFlagNote(snap: ReportSnapshot): string {
     f.highBefore.day >= t.earliestDate && f.highBefore.day <= t.latestDate
   return ` <b>See the Weight flag above:</b> it compares the latest reading with the highest in the last ${num(
     f.windowDays,
-  )} days (${weightKgText(f.highBefore.kg)}&nbsp;kg on ${fmtDayYear(f.highBefore.day)})${plotted ? '.' : ', which this block does not plot.'}`
+  )} days (${weightReadingText(f.highBefore.kg)} on ${fmtDayYear(f.highBefore.day)})${plotted ? '.' : ', which this block does not plot.'}`
 }
 
 /** A weight-flag kilogram: the column's 2 dp (NUMERIC(5,2)), so two readings that differ never print alike. */
 function weightKgText(kg: number): string {
   return num(kg.toFixed(2))
+}
+
+/**
+ * EVERY weight reading on the report prints through this (ruling W, spec §5.8, CUL-2326): kg first
+ * at the stored 2 dp, lb at 0.1 beside it (what the owner read on Home). No template calls
+ * `toFixed(1)` on a kilogram: at 1 dp a 1.95 → 1.86 kg cat printed "1.9 → 1.9" (BRK-11).
+ */
+function weightReadingText(kg: number): string {
+  return `${weightKgText(kg)}&nbsp;kg (${num(kgToLbsNum(kg).toFixed(1))}&nbsp;lb)`
+}
+
+const WEIGHT_WHERE: Record<WeightChangeEnd['source'], string> = { clinic: 'at the vet', home_scale: 'on a home scale' }
+
+/** The weight lane's shipped caveat, printed ONLY in the story's `within_noise` state (WG-6, lane §5.4). */
+const WEIGHT_NOISE_CAVEAT = 'a home scale moves about that much on its own'
+
+/**
+ * The ONE gate on the noise caveat, for the Weight block and the tile alike. It discounts a change,
+ * so every condition errs loud: the story's own `within_noise` state, no safety flag anywhere on the
+ * page (WG-6; adversarial pass 1), and a weigh-in record that loaded in full. A partial pull reads
+ * newest-first and loses the oldest rows, which are the highs a loss is measured from, so the story
+ * over it can call a 14% loss 4% and noise (adversarial pass 2; `weight_unchecked` only flags this
+ * with the engine key on). Never the trial-bounded change: `weightDuringTrial` never calls this.
+ */
+function weightNoiseCaveatShows(c: WeightChangeView, snap: ReportSnapshot): boolean {
+  return c.withinNoise && snap.safetyFlags.length === 0 && !(snap.incompletePulls ?? []).includes('weight_checks')
+}
+
+/** One end of a change, named as the flag row names its readings (WG-5): value, day, where, one reading. */
+function weightEndText(e: WeightChangeEnd, snap: ReportSnapshot): string {
+  const before = e.day < snap.scope.startDate ? ', before this window' : ''
+  return `${weightReadingText(e.kg)} on ${fmtDayYear(e.day)} ${WEIGHT_WHERE[e.source]}${e.single ? ', a single reading' : ''}${before}`
+}
+
+/** A change in kg at the stored 2 dp. Both ends are 2 dp, so a real change is at least 0.01 and never prints "±0.00". */
+function signedKgText(d: number): string {
+  return `${d > 0 ? '+' : ''}${(d === 0 ? 0 : d).toFixed(2)}`
+}
+
+/** A change in lb, the difference of the two ends' 0.1 lb values; a kg change the lb rounding swallows says so. */
+function signedLbText(c: WeightChangeView): string {
+  const d = c.deltaLbs ?? 0
+  if (d === 0) return c.deltaKg !== null && c.deltaKg !== 0 ? 'under 0.1&nbsp;lb' : '0.0&nbsp;lb'
+  return `${d > 0 ? '+' : ''}${num(d.toFixed(1))}&nbsp;lb`
+}
+
+/**
+ * The change as a WHOLE percent of the higher end (spec §5.8, GAP-21). Never an interval, never a
+ * decimal, never a floor that drops it: a real change under 1% says "under 1%", not nothing.
+ */
+function weightPctText(c: WeightChangeView): string {
+  if (c.pct === null || c.deltaKg === null || c.deltaKg === 0) return 'no change'
+  return c.pct < 1 ? 'under 1% of body weight' : `about ${num(c.pct)}% of body weight`
+}
+
+/**
+ * The change line every surface but the flag reads (weight lane §6.5): latest, from the highest
+ * before it, the change. The lane's noise caveat rides it only in the story's `within_noise` state
+ * AND only when the page carries no safety flag at all (WG-6: the caveat and a raised row never
+ * render together; beside a refusal or any other flag, a line discounting a weight change only
+ * ever softens the page, so it errs loud and stays off). Adversarial pass 1: on a past window the block's story read 5.02 → 4.85 as noise
+ * while the flag as of today read the same loss, continued to 4.42, as firm.
+ */
+function weightChangeSentence(c: WeightChangeView, snap: ReportSnapshot): string {
+  if (!c.highBefore || c.deltaKg === null) return `${weightEndText(c.latest, snap)}`
+  const dir = c.deltaKg < 0 ? 'down from' : c.deltaKg > 0 ? 'up from' : 'level with'
+  return `${weightEndText(c.latest, snap)}, ${dir} ${weightEndText(c.highBefore, snap)} &middot; ${num(signedKgText(c.deltaKg))}&nbsp;kg (${signedLbText(
+    c,
+  )}), ${weightPctText(c)}${weightNoiseCaveatShows(c, snap) ? `; ${WEIGHT_NOISE_CAVEAT}` : ''}`
+}
+
+/** In-window owner estimates, listed and never counted (weight lane §4.2): the vet sees them, nothing reads them as a weigh-in. */
+function weightEstimatesNote(w: WeightSection): string {
+  if (w.notCounted.length === 0) return ''
+  const list = w.notCounted.map((e) => `${weightReadingText(e.kg)} on ${fmtDayYear(e.day)}`).join('; ')
+  return `<br/><span class="l">Owner estimate${w.notCounted.length === 1 ? '' : 's'}, not a scale reading and not counted above: ${list}.</span>`
 }
 
 function weightBlock(snap: ReportSnapshot): string {
@@ -5025,7 +5068,7 @@ function weightBlock(snap: ReportSnapshot): string {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
-    <span class="l">No weight trend can be shown; body condition not assessed.${flagNote}</span></div>
+    <span class="l">No weight trend can be shown; body condition not assessed.${flagNote}</span>${weightEstimatesNote(w)}</div>
   </div>`
   }
   const t = w.trend
@@ -5047,22 +5090,27 @@ function weightBlock(snap: ReportSnapshot): string {
         : 'before this window'
     return `
   <div class="weight">
-    <div class="wt-read"><span class="v num">${weightKgText(latest.kg)}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
+    <div class="wt-read"><span class="v num">${weightReadingText(latest.kg)}</span> <span class="l">&middot; latest weigh-in ${h(
       fmtDay(latest.date),
     )} (${latestSide})</span><br/>
-    <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.${flagNote}</span></div>
+    <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.${flagNote}</span>${weightEstimatesNote(w)}</div>
   </div>`
   }
-  const first = t.seriesKg[0]
   const last = t.latestKg ?? t.seriesKg[t.seriesKg.length - 1]
-  // EVERY KILOGRAM HERE PRINTS AT THE COLUMN'S 2 DP (CUL-2284). At 1 dp a small cat going
-  // 1.95 → 1.86 kg printed "1.9 → 1.9 kg": a 4.6% loss read as steady, on the block a vet
-  // reads for exactly that question. The stored value is NUMERIC(5,2); rounding it further
-  // here only ever hides a change, so the block prints what was recorded.
-  const trajectory =
-    t.readingCount >= 2
-      ? `${weightKgText(first)} &rarr; ${weightKgText(last)}&nbsp;kg`
-      : `${weightKgText(last)}&nbsp;kg`
+  // EVERY KILOGRAM HERE PRINTS AT THE COLUMN'S 2 DP WITH LB BESIDE IT (CUL-2284, ruling W). At
+  // 1 dp a small cat going 1.95 → 1.86 kg printed "1.9 → 1.9 kg": a 4.6% loss read as steady.
+  //
+  // THE CHANGE IS THE STORY'S, NOT THE SERIES' (CUL-2286, VR2-6). The block used to state
+  // first → last in the window, the anchor the weight lane retired (§5.2): a kitten that grew
+  // then fell read as a gain. It now prints `weightStory()`'s latest reading against the highest
+  // before it in the lane's 12 months, both named (WG-5); the sparkline still draws the window.
+  const c = w.change
+  const changeLine =
+    c && c.highBefore
+      ? `<br/><span class="l">The latest reading against the highest before it in the last ${num(
+        WEIGHT_RULES.windowDays,
+      )} days: ${weightChangeSentence(c, snap)}.</span>`
+      : ''
   const dateSpan =
     t.earliestDate && t.latestDate && t.readingCount >= 2
       ? `${h(fmtDay(t.earliestDate))} &ndash; ${h(fmtDay(t.latestDate))}`
@@ -5078,16 +5126,16 @@ function weightBlock(snap: ReportSnapshot): string {
   const hi = Math.max(...t.seriesKg)
   const scaleBit =
     t.readingCount >= 2 && hi > lo
-      ? ` <span class="l">&middot; chart spans ${weightKgText(lo)}&ndash;${weightKgText(hi)}&nbsp;kg</span>`
+      ? ` <span class="l">&middot; chart spans ${weightReadingText(lo)} to ${weightReadingText(hi)}</span>`
       : ''
   return `
   <div class="weight">
     ${weightSpark(t.seriesKg)}
     <div class="wt-read">
-      <span class="v num">${trajectory}</span> <span class="l">&middot; ${num(t.readingCount)} owner weigh-in${
+      <span class="v num">${weightReadingText(last)}</span> <span class="l">&middot; latest of ${num(t.readingCount)} weigh-in${
         t.readingCount === 1 ? '' : 's'
-      }, ${dateSpan}</span>${scaleBit}<br/>
-      <span class="l">A home-scale weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.${flagNote}</span>
+      } in this window, ${dateSpan}</span>${scaleBit}${changeLine}<br/>
+      <span class="l">A weight trend, read as a trajectory rather than a single point. Descriptive — not a diagnosis, and body condition was not assessed.${flagNote}</span>${weightEstimatesNote(w)}
     </div>
   </div>`
 }
@@ -5941,52 +5989,47 @@ function tileHtml(valueHtml: string, label: string): string {
   return `<div class="tile"><div class="v num">${valueHtml}</div><div class="l">${label}</div></div>`
 }
 
-/** §3.4 weight tile (trend delta / single reading / empty) — shared by both tile sets. */
+/** §3.4 weight tile (the story's change / single reading / empty) — shared by both tile sets. */
 function weightTile(snap: ReportSnapshot): string {
-  // CUL-2026 cold read: with a Weight flag the tile states the flag's change, never the window's
-  // own delta, which can read flat beside the loss on the line a vet scans first.
+  // CUL-2026 cold read: with a Weight flag the tile states the flag's change, never a calmer one
+  // of its own, on the line a vet scans first.
   const flag = weightFlagOf(snap)
   if (flag) {
-    const d = flag.latest.kg - flag.highBefore.kg
+    const d = Math.round((flag.latest.kg - flag.highBefore.kg) * 100) / 100
+    const lb = Math.round((kgToLbsNum(flag.latest.kg) - kgToLbsNum(flag.highBefore.kg)) * 10) / 10
     return tile(
-      `${d > 0 ? '+' : ''}${d.toFixed(2)}`,
+      signedKgText(d),
       `<small>&nbsp;kg</small>`,
-      `Weight since ${fmtDayYear(flag.highBefore.day)}<br/><b>see the Weight flag</b>`,
+      `Weight since ${fmtDayYear(flag.highBefore.day)} (${lb > 0 ? '+' : ''}${num(lb.toFixed(1))}&nbsp;lb)<br/><b>see the Weight flag</b>`,
     )
   }
   if (snap.weight.isEmpty) {
     return tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`)
   }
+  // IN-WINDOW only: the tile speaks for this window, so its LATEST end must be a reading inside it.
+  // weight.latest may be a stale, out-of-window reading — the Weight block discloses it as "(before
+  // this window)", but a bare tile cannot carry that caveat (code-review find). The HIGHER end may
+  // sit before the window: it is a date, named on the tile (C-37), never a count.
   const tr = snap.weight.trend
-  if (tr && tr.readingCount >= 2 && tr.deltaKg !== null) {
-    const d = tr.deltaKg
-    const sign = d > 0 ? '+' : ''
-    // % OF BODY WEIGHT, ALONGSIDE THE ABSOLUTE (B-495). `-0.3 kg` is species-blind — ~1% on
-    // a Labrador, ~7% on a cat, where on a refusing animal it is the most action-forcing
-    // number on the page and no percentage appeared anywhere in the report. Computed against
-    // the earliest in-window weigh-in by the shared `weightDeltaPct` (the same helper the
-    // trial sentence uses), and stated ONLY when the home scale supports one: a one-tick
-    // wobble leaves `pct` null and the tile falls back to the absolute-only label rather
-    // than manufacturing precision. Descriptive, never reassuring — a loss is the danger
-    // direction (B-186 guardrail), so the percent is never softened by magnitude.
-    const pct = weightDeltaPct(d, tr.seriesKg[0] ?? null)
-    const trend =
-      pct === null
-        ? `home-scale trajectory (descriptive)`
-        : `<b>&asymp;${pct}% of body weight</b> &middot; home-scale (descriptive)`
+  const c = snap.weight.change
+  const inWindow = tr !== null && c !== null && c.latest.day >= snap.scope.startDate && c.latest.day <= snap.scope.endDate
+  if (inWindow && c.highBefore && c.deltaKg !== null) {
+    // CUL-2286 (VR2-6) / CUL-2326 — the story's change at the stored 2 dp, so a 0.04 kg loss
+    // prints "-0.04", never "-0.0"; and its WHOLE percent with no floor, so a 2 kg cat's 0.14 kg
+    // loss states its 7% (B-495: `-0.3 kg` is species-blind). Descriptive, never reassuring.
+    const noise = weightNoiseCaveatShows(c, snap) ? ' &middot; inside a home scale&rsquo;s noise' : ''
+    const pct =
+      c.deltaKg === 0 ? 'no change' : `<b>${c.pct !== null && c.pct >= 1 ? `&asymp;${c.pct}%` : 'under 1%'} of body weight</b>`
     return tile(
-      `${sign}${d.toFixed(1)}`,
+      signedKgText(c.deltaKg),
       `<small>&nbsp;kg</small>`,
-      `Weight over ${tr.readingCount} weigh-ins<br/>${trend}`,
+      `Weight since ${fmtDayYear(c.highBefore.day)} (${signedLbText(c)})<br/>${pct}${noise} &middot; descriptive`,
     )
   }
-  // IN-WINDOW readings only (weight.trend). weight.latest may be a stale, out-of-window reading —
-  // the Weight block discloses it as "(before this window)", but a bare tile cannot carry that
-  // caveat, so a months-old weight would read as current in the 60-second scan (code-review find).
-  const kg = tr?.latestKg ?? null
+  const kg = inWindow ? c.latest.kg : tr?.latestKg ?? null
   return kg === null
     ? tile('—', '', `Weight<br/>no reading in this window`)
-    : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`)
+    : tile(kg.toFixed(2), `<small>&nbsp;kg</small>`, `Latest weigh-in (${num(kgToLbsNum(kg).toFixed(1))}&nbsp;lb)<br/>single reading — no trend yet`)
 }
 
 /** §3.4 logging-coverage tile — shared by both tile sets. */

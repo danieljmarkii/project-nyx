@@ -22,7 +22,9 @@ import { deriveWindowChange } from './trial.ts'
 import { expectedFailure } from './expectedFailure.testutil.ts'
 import { LANE_SYMPTOM_TYPES } from '../generate-signal/detection.ts'
 import { REPORT_SYMPTOM_TYPES, UNLOGGED_TAIL_MIN_DAYS } from './report.ts'
+import { kgToLbsNum, lbsToKg } from '../../../lib/weightUnits.ts'
 import type {
+  WeightChangeView,
   ReportSnapshot,
   SafetyFlag,
   SymptomAggregate,
@@ -229,7 +231,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     clinicalQuestion: { question: 'symptom_monitoring', primarySymptom: null },
     safetyFlags: [],
     safetyChecks: [],
-    weight: { isEmpty: true, latest: null, trend: null },
+    weight: { change: null, trialChange: null, notCounted: [], isEmpty: true, latest: null, trend: null },
     atAGlance: {
       primarySymptom: null,
       totalSymptomIncidents: 0,
@@ -1003,7 +1005,7 @@ Deno.test('empty weight → designed logging-nudge, never a fabricated value', (
 Deno.test('weight trend → sparkline + descriptive framing, never a loss flag', () => {
   const html = renderReport(
     base({
-      weight: {
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 3.8, lbs: 8.4, date: '2026-06-19' },
         trend: {
@@ -1014,9 +1016,6 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           latestKg: 3.8,
           earliestDate: '2026-06-02',
           latestDate: '2026-06-19',
-          deltaLbs: -0.9,
-          deltaKg: -0.4,
-          direction: 'down',
         },
       },
       atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8, unloggedTailDays: 0, lastLoggedDate: null, recordEdge: { reportDate: '2026-07-02', lastEntryDate: '2026-07-02', lastEntryDaysBeforeReport: 0, windowEndDaysBeforeReport: 0, afterWindowEntries: 0, afterWindowSymptomEntries: 0, afterWindowMeals: 0, afterWindowMealsNotFinished: 0, afterWindowMealsRefused: 0, afterWindowMealsUnrated: 0, afterWindowObservations: 0, afterWindowDosesNotGiven: 0, afterWindowLastDate: null, futureDatedEntries: 0, futureDatedSymptomEntries: 0, futureDatedLastDate: null, lastLookDate: null, afterWindowLookDays: 0, afterWindowLookDaysMarked: 0, afterWindowLookDaysUnread: 0 } },
@@ -1033,49 +1032,74 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
 // A `base()` snapshot is a no-trial (symptom-monitoring) report, so `weightDuringTrial`
 // never fires and the tile is the SOLE source of "% of body weight" — which is the point
 // of B-495: on that shape the percentage appeared nowhere in the whole report.
-function weightTileHtml(seriesKg: number[], deltaKg: number): string {
+// CUL-2286 — a hand-built `weightStory()` change, for render-only tests: the higher end first.
+// The real derivation is report.ts `weightChangeOf`, driven end to end in report.test.ts.
+function changeFixture(
+  highKg: number,
+  latestKg: number,
+  opts: { highDay?: string; latestDay?: string; withinNoise?: boolean; single?: boolean } = {},
+): WeightChangeView {
+  const d = Math.round((latestKg - highKg) * 100) / 100
+  return {
+    latest: { kg: latestKg, lbs: kgToLbsNum(latestKg), day: opts.latestDay ?? '2026-06-19', source: 'home_scale', single: opts.single ?? false },
+    highBefore: { kg: highKg, lbs: kgToLbsNum(highKg), day: opts.highDay ?? '2026-06-02', source: 'home_scale', single: opts.single ?? false },
+    deltaKg: d,
+    deltaLbs: Math.round((kgToLbsNum(latestKg) - kgToLbsNum(highKg)) * 10) / 10,
+    pct: Math.round((Math.abs(d) / highKg) * 100),
+    withinNoise: opts.withinNoise ?? false,
+  }
+}
+
+function weightTileHtml(seriesKg: number[], opts: { withinNoise?: boolean } = {}): string {
   const last = seriesKg[seriesKg.length - 1]
   return renderReport(
     base({
       weight: {
         isEmpty: false,
-        latest: { kg: last, lbs: Math.round(last * 2.2046 * 10) / 10, date: '2026-06-19' },
+        latest: { kg: last, lbs: kgToLbsNum(last), date: '2026-06-19' },
         trend: {
           readingCount: seriesKg.length,
-          seriesLbs: seriesKg.map((k) => Math.round(k * 2.2046 * 10) / 10),
+          seriesLbs: seriesKg.map(kgToLbsNum),
           seriesKg,
-          latestLbs: Math.round(last * 2.2046 * 10) / 10,
+          latestLbs: kgToLbsNum(last),
           latestKg: last,
           earliestDate: '2026-06-02',
           latestDate: '2026-06-19',
-          deltaLbs: Math.round(deltaKg * 2.2046 * 10) / 10,
-          deltaKg,
-          direction: deltaKg < 0 ? 'down' : 'up',
         },
+        change: changeFixture(Math.max(...seriesKg.slice(0, -1)), last, opts),
+        trialChange: null,
+        notCounted: [],
       },
     }),
   )
 }
 
-Deno.test('B-495 — the weight tile states % of body weight, against the earliest in-window reading', () => {
-  // `-0.3 kg` renders identically for a cat and a Labrador; the percent is what makes it
+Deno.test('B-495 — the weight tile states % of body weight, and the block states the same figure', () => {
+  // `-0.30 kg` renders identically for a cat and a Labrador; the percent is what makes it
   // legible. Same absolute, different body mass, different reading — species-blind no more.
-  const cat = weightTileHtml([4.4, 4.1], -0.3)
-  assert.ok(/-0\.3<small>&nbsp;kg<\/small>/.test(cat), 'the absolute stays the headline value')
+  const cat = weightTileHtml([4.4, 4.1])
+  assert.ok(/-0\.30<small>&nbsp;kg<\/small>/.test(cat), 'the absolute stays the headline value, at the stored 2 dp')
   assert.ok(/&asymp;7% of body weight/.test(cat), '-0.3 kg on a 4.4 kg cat is ~7%')
 
-  const dog = weightTileHtml([32.4, 32.1], -0.3)
+  const dog = weightTileHtml([32.4, 32.1])
   assert.ok(/&asymp;1% of body weight/.test(dog), 'the SAME -0.3 kg on a 32 kg dog is ~1%')
-  // The single source on a no-trial report: exactly one "% of body weight" on the page.
-  assert.equal(dog.match(/% of body weight/g)?.length, 1, 'stated once — the tile, not a caveat repeated')
+  // One change, two places (the tile and the Weight block), one figure: both read the story.
+  const figures = [...plain(dog).matchAll(/(\d+)% of body weight/g)].map((m) => m[1])
+  assert.equal(figures.length, 2, plain(dog))
+  assert.equal(new Set(figures).size, 1, `the tile and the block agree: ${figures}`)
 })
 
-Deno.test('B-495 — a one-tick weight wobble states NO percent (no manufactured precision)', () => {
-  // A home scale resolves ~0.1 kg, so a 0.1 kg delta is one increment and supports no honest
-  // percent; the tile falls back to the absolute-only label rather than inventing a figure.
-  const t = weightTileHtml([4.4, 4.3], -0.1)
-  assert.ok(!/% of body weight/.test(t), 'no percent for a sub-0.15 kg (one-tick) delta')
-  assert.ok(/home-scale trajectory \(descriptive\)/.test(t), 'the tile keeps its absolute-only label')
+Deno.test('CUL-2286 — the 0.15 kg floor is gone: a small pet\'s small loss states its percent', () => {
+  // BRK-12's counterexample: a 0.14 kg drop on a 2 kg cat is 7%, and the old floor printed no
+  // percent for it while a Labrador's 2% printed. The weight lane's noise model replaces it.
+  const cat = weightTileHtml([lbsToKg(4.6), lbsToKg(4.3)]) // 2.09 → 1.95 kg
+  assert.ok(/-0\.14<small>&nbsp;kg<\/small>/.test(cat), cat.slice(cat.indexOf('Weight since') - 200, cat.indexOf('Weight since') + 200))
+  assert.ok(/&asymp;7% of body weight/.test(cat), 'the 7% is stated')
+  // A one-tick wobble keeps its percent too, and inside the story's noise state says so.
+  const t = weightTileHtml([4.4, 4.3], { withinNoise: true })
+  assert.ok(/&asymp;2% of body weight/.test(t), 'a real 2% is stated, never dropped')
+  assert.ok(/inside a home scale&rsquo;s noise/.test(t), 'and the lane\'s noise state is named beside it')
+  assert.ok(/a home scale moves about that much on its own/.test(plain(t)), 'the block carries the lane\'s shipped caveat')
 })
 
 // ── §6 cherry-pick guard ────────────────────────────────────────────────────────────
@@ -1432,7 +1456,7 @@ Deno.test('owner free text is HTML-escaped (no injection through pet name / note
 // ── Regression: never fabricate a weight value (code-reviewer BUG) ─────────────────
 
 Deno.test('isEmpty=false but no latest/trend → empty state, never a fabricated "0.0 kg"', () => {
-  const html = renderReport(base({ weight: { isEmpty: false, latest: null, trend: null } }))
+  const html = renderReport(base({ weight: { change: null, trialChange: null, notCounted: [], isEmpty: false, latest: null, trend: null } }))
   assert.ok(/No home weigh-ins recorded/i.test(html), 'falls back to the honest empty state')
   assert.ok(!/0\.0&nbsp;kg|0\.0 kg/.test(html), 'no fabricated zero weight')
 })
@@ -1941,7 +1965,7 @@ Deno.test('foreign-material note keeps its own terminal punctuation — never ".
 Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading', () => {
   const html = renderReport(
     base({
-      weight: {
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 4.2, lbs: 9.3, date: '2025-11-01' }, // months before the window
         trend: null, // nothing in-window
@@ -1959,7 +1983,7 @@ Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading'
   const after = renderReport(
     base({
       scope: { ...base().scope, isCustomOverride: true, endDate: '2026-06-01', endDayNum: 20605 },
-      weight: {
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 4.2, lbs: 9.3, date: '2026-06-20' },
         trend: null,
@@ -5695,7 +5719,7 @@ Deno.test('B-532/B-502 — with no photographed incident, the block collapses to
 Deno.test('B-532 — the weight sparkline states the range it is drawn over', () => {
   const html = renderReport(
     base({
-      weight: {
+      weight: { change: null, trialChange: null, notCounted: [],
         isEmpty: false,
         latest: { kg: 31.8, lbs: 70.1, date: '2026-06-29' },
         trend: {
@@ -5706,15 +5730,12 @@ Deno.test('B-532 — the weight sparkline states the range it is drawn over', ()
           latestKg: 31.8,
           earliestDate: '2026-05-18',
           latestDate: '2026-06-29',
-          deltaLbs: -1.3,
-          deltaKg: -0.6,
-          direction: 'down',
         },
       },
     }),
   )
   assert.ok(
-    /chart spans 31.80–32.40 kg/.test(plain(html)),
+    /chart spans 31\.80 kg \(70\.1 lb\) to 32\.40 kg \(71\.4 lb\)/.test(plain(html)),
     'a 0.6 kg fall and a 6 kg fall draw the identical cliff, so the vertical is named',
   )
 })
@@ -8695,13 +8716,14 @@ function weightBlockText(html: string): string {
   assert.ok(m, 'the Weight block renders')
   return plain(m[0])
 }
-const ONE_DP = /(?<![\d.])\d+\.\d(?![\d.])/
+// A KILOGRAM at 1 dp; pounds print at 0.1 lb by the same ruling, so they are not matched.
+const ONE_DP = /(?<![\d.])\d+\.\d(?![\d.])\s*kg/
 
 Deno.test('CUL-2284 — a 1.95 → 1.86 kg cat prints both readings at 2 dp, never "1.9 → 1.9"', () => {
   const t = weightBlockText(
     renderReport(
       base({
-        weight: {
+        weight: { trialChange: null, notCounted: [],
           isEmpty: false,
           latest: { kg: 1.86, lbs: 4.1, date: '2026-06-29' },
           trend: {
@@ -8712,17 +8734,16 @@ Deno.test('CUL-2284 — a 1.95 → 1.86 kg cat prints both readings at 2 dp, nev
             latestKg: 1.86,
             earliestDate: '2026-06-01',
             latestDate: '2026-06-29',
-            deltaLbs: -0.2,
-            deltaKg: -0.09,
-            direction: 'down',
           },
+          change: changeFixture(1.95, 1.86, { highDay: '2026-06-01', latestDay: '2026-06-29' }),
         },
       }),
     ),
   )
-  assert.ok(/1\.95 → 1\.86 kg/.test(t), `the trajectory carries both stored readings: ${t}`)
-  assert.ok(/chart spans 1\.86–1\.95 kg/.test(t), 'the stated chart range is at 2 dp too')
-  assert.ok(!/1\.9 → 1\.9/.test(t), 'the loss never reads as steady')
+  assert.ok(/1\.86 kg \(4\.1 lb\) on Jun 29, 2026 on a home scale, down from 1\.95 kg \(4\.3 lb\) on Jun 1, 2026/.test(t), `both stored readings, named: ${t}`)
+  assert.ok(/-0\.09 kg \(-0\.2 lb\), about 5% of body weight/.test(t), `the change and its whole percent: ${t}`)
+  assert.ok(/chart spans 1\.86 kg \(4\.1 lb\) to 1\.95 kg \(4\.3 lb\)/.test(t), 'the stated chart range is at 2 dp too')
+  assert.ok(!/1\.9 kg/.test(t), 'the loss never reads as steady')
   assert.ok(!ONE_DP.test(t), `no kilogram in the block prints at 1 dp: ${t}`)
 })
 
@@ -8730,7 +8751,7 @@ Deno.test('CUL-2284 — a single in-window reading prints at 2 dp', () => {
   const t = weightBlockText(
     renderReport(
       base({
-        weight: {
+        weight: { change: null, trialChange: null, notCounted: [],
           isEmpty: false,
           latest: { kg: 2.1, lbs: 4.6, date: '2026-06-29' },
           trend: {
@@ -8741,9 +8762,6 @@ Deno.test('CUL-2284 — a single in-window reading prints at 2 dp', () => {
             latestKg: 2.1,
             earliestDate: '2026-06-29',
             latestDate: '2026-06-29',
-            deltaLbs: null,
-            deltaKg: null,
-            direction: null,
           },
         },
       }),
@@ -8755,8 +8773,29 @@ Deno.test('CUL-2284 — a single in-window reading prints at 2 dp', () => {
 
 Deno.test('CUL-2284 — the out-of-window latest reading prints at 2 dp', () => {
   const t = weightBlockText(
-    renderReport(base({ weight: { isEmpty: false, latest: { kg: 1.86, lbs: 4.1, date: '2026-01-02' }, trend: null } })),
+    renderReport(base({ weight: { change: null, trialChange: null, notCounted: [], isEmpty: false, latest: { kg: 1.86, lbs: 4.1, date: '2026-01-02' }, trend: null } })),
   )
   assert.ok(/1\.86 kg/.test(t), `the stored reading prints as recorded: ${t}`)
   assert.ok(!ONE_DP.test(t), `no kilogram in the block prints at 1 dp: ${t}`)
+})
+
+Deno.test('CUL-2286 — the noise caveat never sits beside a weight flag (WG-6, adversarial pass 1)', () => {
+  const weight = {
+    isEmpty: false,
+    latest: { kg: 4.85, lbs: kgToLbsNum(4.85), date: '2026-05-30' },
+    trend: { readingCount: 2, seriesLbs: [kgToLbsNum(5.02), kgToLbsNum(4.85)], seriesKg: [5.02, 4.85], latestLbs: kgToLbsNum(4.85), latestKg: 4.85, earliestDate: '2026-05-02', latestDate: '2026-05-30' },
+    change: changeFixture(5.02, 4.85, { highDay: '2026-05-02', latestDay: '2026-05-30', withinNoise: true, single: true }),
+    trialChange: null,
+    notCounted: [],
+  }
+  const flag: SafetyFlag = {
+    kind: 'weight_loss', asOf: 'now', tier: 'firm', planned: false, mixedInstruments: false, windowDays: 365,
+    latest: { kg: 4.42, source: 'home_scale', single: false, day: '2026-06-21' },
+    highBefore: { kg: 5.02, source: 'home_scale', single: false, day: '2026-05-02' },
+  }
+  const quiet = plain(renderReport(base({ weight })))
+  assert.ok(/moves about that much on its own/.test(quiet), 'the caveat is live in its own state, with no flag (non-vacuous)')
+  const flagged = plain(renderReport(base({ weight, safetyFlags: [flag] })))
+  assert.ok(!/moves about that much on its own/.test(flagged), 'never beside a raised weight row')
+  assert.ok(!/inside a home scale/.test(flagged))
 })
