@@ -4953,15 +4953,27 @@ const QUARTER_HOUR_MS = 900_000
  * day when no valid zone is known (a stated fallback; see `computeCalendarWeekStats`). Memoized per
  * quarter hour, since `localDayIndex` runs Intl on every call.
  */
+const CALENDAR_DAY_MEMO = new Map<string, Map<number, number>>()
+/** Quarter hours kept per zone (~2.7 years); past it the zone's memo is cleared and refills. */
+const CALENDAR_DAY_MEMO_CAP = 100_000
+
 function calendarDayOf(timezone: string | undefined): (ms: number) => number {
   if (!isValidTimeZone(timezone)) return (ms) => Math.floor(ms / MS_PER_DAY)
-  const memo = new Map<number, number>()
+  // One memo per zone for the module's life, not per call: the hold walk replays this reading
+  // hundreds of times over the same instants (adversarial pass 1 on CUL-2439, B4).
+  let memo = CALENDAR_DAY_MEMO.get(timezone)
+  if (memo === undefined) {
+    memo = new Map<number, number>()
+    CALENDAR_DAY_MEMO.set(timezone, memo)
+  }
+  const m = memo
   return (ms) => {
+    if (m.size > CALENDAR_DAY_MEMO_CAP) m.clear()
     const key = Math.floor(ms / QUARTER_HOUR_MS)
-    let d = memo.get(key)
+    let d = m.get(key)
     if (d === undefined) {
       d = localDayIndex(ms, timezone)
-      memo.set(key, d)
+      m.set(key, d)
     }
     return d
   }
@@ -5115,8 +5127,12 @@ export function risingBelowCardFloor(input: DetectionInput, config: DetectionCon
   if (!readings) return false
   // CUL-2439: per sign, rising in EITHER eligible reading and carded in NEITHER. A sign the other
   // reading cards is on Home already; a rise only one reading sees still withholds the clause.
+  // Today's rule (the rolling reading alone) still answers true wherever it did, so the
+  // caveat is never dropped where it showed before (adversarial pass 1 on CUL-2439).
   const eligible = eligibleReadings(readings)
   return LANE_SYMPTOM_TYPES.symptomDelta.some((t) => {
+    const r = statOf(readings.rolling, t)
+    if (readings.rolling.loggingEligible && r && isWorsening(r, config.reflection) && !isWorseningCard(r, config)) return true
     const stats = eligible.map((w) => statOf(w, t)).filter((s): s is SymptomStat => s !== undefined)
     return stats.some((s) => isWorsening(s, config.reflection)) && !stats.some((s) => isWorseningCard(s, config))
   })
@@ -5133,7 +5149,6 @@ export function detectReflections(
   const readings = computeWeekReadings(input, config)
   if (!readings || !readings.rolling.loggingEligible || !readings.calendar.loggingEligible) return []
   const both = [readings.calendar, readings.rolling]
-  const stats = readings.calendar.stats
 
   // GLOBAL worsening gate: if ANY tracked symptom is worsening, the WHOLE reflection
   // layer stays silent and yields to the safety lane — detector ④ owns that case now
@@ -5194,18 +5209,9 @@ export function detectReflections(
     s.currentCount <= s.priorCount && // flat or falling episode count
     s.currentDays <= s.priorDays && // flat or falling spread (closes the meal-padding gap)
     Math.max(s.currentCount, s.priorCount) >= cfg.minEpisodesEitherWindow
-  const candidates: ReflectionFinding[] = stats
-    .filter((s) => calm(s) && calm(statOf(readings.rolling, s.symptomType)))
-    .map((s) => ({
-      type: 'reflection' as const,
-      priorityClass: 'insight' as const,
-      symptomType: s.symptomType,
-      currentCount: s.currentCount,
-      priorCount: s.priorCount,
-      direction: (s.currentCount === s.priorCount ? 'flat' : 'improving') as ReflectionDirection,
-      windowDays: cfg.windowDays,
-    }))
-
+  // The pick is today's: candidates and order from the rolling reading, exactly as before
+  // CUL-2439, so the calm card can only be the one it was or silence (adversarial pass 1, B3).
+  const candidates = readings.rolling.stats.filter(calm)
   if (candidates.length === 0) return []
 
   // One reflection only — the symptom most present in the pet's life right now
@@ -5215,7 +5221,24 @@ export function detectReflections(
     if (b.currentCount !== a.currentCount) return b.currentCount - a.currentCount
     return b.priorCount - b.currentCount - (a.priorCount - a.currentCount)
   })
-  return [candidates[0]]
+  const rolling = candidates[0]
+  const calendar = statOf(readings.calendar, rolling.symptomType)
+  // It speaks only if the owner's calendar week is calm too, and it states the reading with the
+  // SMALLER fall (flat beats improving), so it is never calmer than either: the calendar week
+  // when they tie, since that is the week its words name.
+  if (!calendar || !calm(calendar)) return []
+  const s = rolling.priorCount - rolling.currentCount < calendar.priorCount - calendar.currentCount ? rolling : calendar
+  return [
+    {
+      type: 'reflection' as const,
+      priorityClass: 'insight' as const,
+      symptomType: s.symptomType,
+      currentCount: s.currentCount,
+      priorCount: s.priorCount,
+      direction: (s.currentCount === s.priorCount ? 'flat' : 'improving') as ReflectionDirection,
+      windowDays: cfg.windowDays,
+    },
+  ]
 }
 
 /**
@@ -5369,6 +5392,33 @@ export function computeChronicityCompare(
 // calm; co-firing with an intake-decline flag is intentional (both kept by curation —
 // that two-signal gestalt is exactly what the re-run brief found MISSING).
 
+/** By isWorsening, at least one arm is true. A strict count rise → 'more_episodes'; otherwise the
+ *  counts are flat and the day-spread arm carried it → 'more_days'. */
+function triggerOf(s: SymptomStat): WorseningTrigger {
+  return s.currentCount > s.priorCount ? 'more_episodes' : 'more_days'
+}
+
+/** ④'s one-card order: largest episode rise, then larger current count, then symptom-type order.
+ *  Calm safety surface over completeness. */
+function byMostWorsening(a: SymptomStat, b: SymptomStat): number {
+  const riseDiff = b.currentCount - b.priorCount - (a.currentCount - a.priorCount)
+  if (riseDiff !== 0) return riseDiff
+  if (b.currentCount !== a.currentCount) return b.currentCount - a.currentCount
+  return LANE_SYMPTOM_TYPES.symptomDelta.indexOf(a.symptomType) - LANE_SYMPTOM_TYPES.symptomDelta.indexOf(b.symptomType)
+}
+
+const WORSENING_TIER_RANK: Record<WorseningTier, number> = { soft: 0, standard: 1, firm: 2 }
+
+/** CUL-2439: two readings of ONE sign, louder first (tier, rise, count). A stable sort keeps the
+ *  calendar reading first on a full tie (`eligibleReadings` lists it first). */
+function louderFirst(a: SymptomStat, b: SymptomStat, cfg: DetectionConfig['reflection']): number {
+  const tier = WORSENING_TIER_RANK[resolveWorseningTier(b, triggerOf(b), cfg)] - WORSENING_TIER_RANK[resolveWorseningTier(a, triggerOf(a), cfg)]
+  if (tier !== 0) return tier
+  const rise = b.currentCount - b.priorCount - (a.currentCount - a.priorCount)
+  if (rise !== 0) return rise
+  return b.currentCount - a.currentCount
+}
+
 /**
  * Resolve the copy-urgency tier for a worsening symptom. Density first (a dense current
  * week is 'firm' regardless of which arm fired — persistent daily symptoms are the
@@ -5406,31 +5456,29 @@ export function detectWorsening(
   // fires less often than it did; the calendar reading adds the rise a vet counting calendar days
   // sees. The card carries the calendar week's numbers when that reading fires ("on N of the last
   // 7 days" is then literally true), else today's.
-  const eligible = eligibleReadings(readings)
-  const worsening: SymptomStat[] = []
-  for (const t of LANE_SYMPTOM_TYPES.symptomDelta) {
-    if (exclude.has(t)) continue
-    const fired = eligible.map((w) => statOf(w, t)).find((s) => s !== undefined && isWorseningCard(s, config))
-    if (fired) worsening.push(fired)
-  }
-  if (worsening.length === 0) return []
+  const carding = (w: WindowedStats): SymptomStat[] =>
+    w.loggingEligible ? w.stats.filter((s) => !exclude.has(s.symptomType) && isWorseningCard(s, config)) : []
 
-  // One card only — the most-worsening symptom: largest episode rise, then larger
-  // current count, then symptom-type order. Calm safety surface over completeness.
-  worsening.sort((a, b) => {
-    const riseDiff = b.currentCount - b.priorCount - (a.currentCount - a.priorCount)
-    if (riseDiff !== 0) return riseDiff
-    if (b.currentCount !== a.currentCount) return b.currentCount - a.currentCount
-    return (
-      LANE_SYMPTOM_TYPES.symptomDelta.indexOf(a.symptomType) -
-      LANE_SYMPTOM_TYPES.symptomDelta.indexOf(b.symptomType)
-    )
-  })
+  // WHICH sign (adversarial pass 1 on CUL-2439, B2): when the rolling reading cards anything, the
+  // card goes to the sign it picked before this change, ranked on its own numbers, so a rise only
+  // the calendar week holds can never displace the card an owner was already shown (or the
+  // chronic sign's inherited firm tier, `suppressWorseningWhenChronic`). Only when the rolling
+  // reading cards nothing does the calendar reading pick.
+  const rollingCards = carding(readings.rolling)
+  const pool = rollingCards.length > 0 ? rollingCards : carding(readings.calendar)
+  if (pool.length === 0) return []
+  pool.sort(byMostWorsening)
+  const symptomType = pool[0].symptomType
 
-  const s = worsening[0]
-  // By isWorsening, at least one arm is true. A strict count rise → 'more_episodes';
-  // otherwise the counts are flat and the day-spread arm carried it → 'more_days'.
-  const trigger: WorseningTrigger = s.currentCount > s.priorCount ? 'more_episodes' : 'more_days'
+  // WHICH numbers (B1): of the readings that card this sign, the LOUDER one (tier, then the
+  // larger rise, then the larger count; the calendar week on a tie, the week its words name), so
+  // the card is never softer than either reading would make it.
+  const fired = eligibleReadings(readings)
+    .map((w) => statOf(w, symptomType))
+    .filter((x): x is SymptomStat => x !== undefined && isWorseningCard(x, config))
+  fired.sort((a, b) => louderFirst(a, b, cfg))
+  const s = fired[0]
+  const trigger = triggerOf(s)
   return [
     {
       type: 'symptom_worsening',
@@ -8544,7 +8592,7 @@ export function holdChangeInstants(
   config: DetectionConfig,
   nowMs: number,
   pending: ReadonlySet<SymptomType>,
-): { all: number[]; chronicity: number[] } {
+): { all: number[]; chronicity: number[]; calendarOnly: ReadonlySet<number> } {
   const W = config.reflection.windowDays * MS_PER_DAY
   const L = config.chronicity.windowDays * MS_PER_DAY
   const floorMs = nowMs - CHRONICITY_HOLD_MAX_DAYS * MS_PER_DAY
@@ -8613,13 +8661,22 @@ export function holdChangeInstants(
     const ms = Date.parse(m.occurredAt)
     if (Number.isFinite(ms)) noteLocal(ms)
   }
-  for (const first of localFirst.values()) add(first)
+  // Kept apart so the walk's step cap counts only the instants it counted before CUL-2439: the
+  // calendar's ~2 a day are extra steps, never a shorter reach (adversarial pass 1, B4).
+  const calendarOnly = new Set<number>()
+  const addCalendar = (ms: number): void => {
+    if (ms > floorMs && ms < nowMs && !out.has(ms)) {
+      out.add(ms)
+      calendarOnly.add(ms)
+    }
+  }
+  for (const first of localFirst.values()) addCalendar(first)
   const scanFrom = Math.floor(floorMs / QUARTER_HOUR_MS) * QUARTER_HOUR_MS
   for (let ms = scanFrom + QUARTER_HOUR_MS; ms < nowMs; ms += QUARTER_HOUR_MS) {
-    if (dayOf(ms) !== dayOf(ms - 1)) add(ms)
+    if (dayOf(ms) !== dayOf(ms - 1)) addCalendar(ms)
   }
   const newestFirst = (xs: Set<number>): number[] => [...xs].sort((a, b) => b - a)
-  return { all: newestFirst(out), chronicity: newestFirst(chronicityOut) }
+  return { all: newestFirst(out), chronicity: newestFirst(chronicityOut), calendarOnly }
 }
 
 /**
@@ -8719,7 +8776,8 @@ export function replayInputAsOf(
  *     is never followed by a standard one at the same or a higher count.
  * Stated blind spots (not coverage):
  *   - The walk reaches back CHRONICITY_HOLD_MAX_DAYS and steps through at most
- *     CHRONICITY_HOLD_MAX_STEPS instants (a reach of 13 to 115 days, by how much is logged).
+ *     CHRONICITY_HOLD_MAX_STEPS instants (a reach of 13 to 115 days, by how much is logged). The
+ *     calendar reading's instants (local midnights, CUL-2439) are walked but not counted.
  *     Past either, no hold: today's behaviour.
  *   - It replays whatever the live read returned; a read the database capped (CUL-989) is
  *     replayed capped.
@@ -8745,7 +8803,7 @@ export function holdChronicityTier(
   if (pending.size === 0) return findings
 
   const asOf = replayInputAsOf(input, config)
-  const { all, chronicity } = holdChangeInstants(input, config, nowMs, new Set(pending.keys()))
+  const { all, chronicity, calendarOnly } = holdChangeInstants(input, config, nowMs, new Set(pending.keys()))
   const held = new Set<SymptomType>()
   // ⑦ as of the newest ⑦ instant at or before the one being replayed; `chronicityIdx` walks
   // down `chronicity` in step with the main walk, so each ⑦ stretch is replayed once. Within a
@@ -8760,7 +8818,7 @@ export function holdChronicityTier(
     // Just after the instant: every window boundary is closed on one side, and 1ms inside the
     // next stretch reads the state that holds until the following instant.
     const t = instant + 1
-    steps++
+    if (!calendarOnly.has(instant)) steps++
     while (chronicityIdx < chronicity.length && chronicity[chronicityIdx] > instant) chronicityIdx++
     // The ⑦ stretch this instant sits in starts at `chronicity[chronicityIdx]`, or (below every
     // ⑦ instant in reach) at the walk's floor: either way one replay serves the whole stretch.

@@ -169,7 +169,7 @@ Deno.test('CUL-2439 — a calm card needs both readings calm, and then names the
 
   // The readings disagree on numbers but agree it is calm: two vomits on Jun 25 after 08:00 EDT are
   // in the rolling CURRENT week (it starts Jun 25 08:00) and in the calendar PRIOR week (local day
-  // Jun 25). Rolling: 3 vs 3, flat. Calendar: 1 vs 5, falling.
+  // Jun 25). Rolling: 3 vs 3, flat. Calendar: 1 vs 5, falling. The card states the SMALLER fall.
   const split = input(
     RUN,
     [
@@ -185,10 +185,61 @@ Deno.test('CUL-2439 — a calm card needs both readings calm, and then names the
   const cal = r.calendar.stats.find((s) => s.symptomType === 'vomit')!
   assert.deepEqual([roll.currentCount, roll.priorCount], [3, 3])
   assert.deepEqual([cal.currentCount, cal.priorCount], [1, 5])
-  // Both readings are calm here, so ③ speaks, and it speaks in the calendar week's numbers.
+  // Both readings are calm, so ③ speaks, and never calmer than either: flat 3 vs 3, not "down from 5".
   const out = detectReflections(split, DEFAULT_CONFIG)
   assert.equal(out.length, 1)
-  assert.deepEqual([out[0].currentCount, out[0].priorCount], [1, 5])
+  assert.deepEqual([out[0].currentCount, out[0].priorCount, out[0].direction], [3, 3, 'flat'])
+})
+
+// ── Adversarial pass 1 on CUL-2439: the slice between the two readings (Jun 25 08:00 to midnight
+// EDT is the rolling CURRENT week and the calendar PRIOR week) must never soften a card. ──
+
+const MEALS = [...mealsNy(6, 1, 30, [7, 18]), ...mealsNy(7, 1, 2, [7])]
+const at8 = (days: number[]): SymptomEvent[] => days.map((d) => vomit(ny(6, d, 8)))
+
+Deno.test('adv 1 B1 — a rise straddling the slice keeps the louder tier on the same sign', () => {
+  // Rolling 4 vs 1 on 4 days (firm); calendar 3 vs 2 (standard). The card is firm, 4 vs 1.
+  const a1 = input(RUN, [vomit(ny(6, 20, 8)), vomit(ny(6, 25, 10)), ...at8([27, 29]), vomit(ny(7, 1, 8))], MEALS)
+  const f1 = detectWorsening(a1, DEFAULT_CONFIG)
+  assert.deepEqual(f1.map((f) => [f.currentCount, f.priorCount, f.tier]), [[4, 1, 'firm']])
+  // Rolling 4 vs 2 (firm); calendar 3 vs 3, more days (soft). Firm, never soft.
+  const a2 = input(RUN, [vomit(ny(6, 20, 8)), vomit(ny(6, 20, 14)), vomit(ny(6, 25, 10)), ...at8([27, 29]), vomit(ny(7, 1, 8))], MEALS)
+  assert.deepEqual(detectWorsening(a2, DEFAULT_CONFIG).map((f) => [f.currentCount, f.priorCount, f.tier]), [[4, 2, 'firm']])
+})
+
+Deno.test('adv 1 B2 — a calendar-only rise never displaces the card the rolling weeks pick', () => {
+  // Vomit firm in both readings; diarrhea rises 3 vs 0 only by the calendar (its prior episodes sit
+  // in Jun 18's afternoon, the rolling prior week alone), a steeper rise than vomit's.
+  const events = [
+    ...at8([20, 21, 26, 27, 28, 29]),
+    ...[10, 14, 18].map((h): SymptomEvent => ({ ...vomit(ny(6, 18, h)), type: 'diarrhea' })),
+    ...[ny(6, 27, 9), ny(6, 29, 9), ny(7, 1, 9)].map((t): SymptomEvent => ({ ...vomit(t), type: 'diarrhea' })),
+  ]
+  const f = detectWorsening(input(RUN, events, MEALS), DEFAULT_CONFIG)
+  assert.deepEqual(f.map((x) => [x.symptomType, x.tier]), [['vomit', 'firm']])
+})
+
+Deno.test('adv 1 B3 — the calm card is never calmer than the rolling read it replaced', () => {
+  // Rolling 3 vs 3, flat; calendar 2 vs 4. Before the fix it said "2, down from 4".
+  const a5 = input(RUN, [...at8([19, 21, 23]), vomit(ny(6, 25, 12)), ...at8([28, 30])], MEALS)
+  const out = detectReflections(a5, DEFAULT_CONFIG)
+  assert.deepEqual(out.map((r) => [r.currentCount, r.priorCount, r.direction]), [[3, 3, 'flat']])
+})
+
+Deno.test('adv 1 B4 — the hold walk counts the same instants in every zone (its reach is unchanged)', () => {
+  const rand = mulberry32(24391)
+  const { symptomEvents, mealEvents } = randomPet(rand, 50)
+  const nowMs = START + 50 * DAY
+  const counted = (tz: string | null): number[] => {
+    const r = holdChangeInstants(input(new Date(nowMs).toISOString(), symptomEvents, mealEvents, tz), DEFAULT_CONFIG, nowMs, new Set(['vomit']))
+    return r.all.filter((ms) => !r.calendarOnly.has(ms))
+  }
+  const utc = counted(null)
+  assert.ok(utc.length > 100, `non-vacuity: ${utc.length} counted instants`)
+  for (const tz of ['America/Los_Angeles', 'Asia/Kathmandu', 'Pacific/Kiritimati']) {
+    // The counted instants are today's, which read no zone: the calendar's extras ride uncounted.
+    assert.deepEqual(new Set(counted(tz)), new Set(utc), tz)
+  }
 })
 
 // ── The never-quieter property, over random histories in three zones ──
