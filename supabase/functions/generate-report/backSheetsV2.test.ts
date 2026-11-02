@@ -575,7 +575,7 @@ Deno.test('VR2-14 kept — the absence rules in clinical words: no flag is not a
   assert.equal(e[0].term, 'No flag is not an all-clear')
   assert.match(e[0].text, /When no flag prints, no check fired; that is not the same as nothing being wrong\./)
   // B-494: every lane the checks watch is named, so a lane's silence is never read as a result.
-  for (const lane of ['chronicity', 'reduced intake', 'a prescribed diet going uneaten', 'weight loss', 'possible blood or foreign material', 'worsening']) assert.ok(e[0].text.includes(lane), lane)
+  for (const lane of ['chronicity', 'symptom burden', 'reduced intake', 'a prescribed diet going uneaten', 'weight loss', 'weight left unchecked', 'possible blood or foreign material', 'a protein the trial diet does not list', 'worsening', 'other patterns the detection engine raises']) assert.ok(e[0].text.includes(lane), lane)
   assert.match(text, /Blood, foreign material and mucus are reported only when seen in an incident/)
   assert.match(text, /A read that was uncertain, failed or still processing is named as such and is never counted as clear\./)
   assert.match(text, /A day with nothing logged is not a day without signs\./)

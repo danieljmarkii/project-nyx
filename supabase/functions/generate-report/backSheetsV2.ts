@@ -778,7 +778,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
   const entries: KeptEntry[] = [
     {
       term: 'No flag is not an all-clear',
-      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, reduced intake, a prescribed diet going uneaten, weight loss, possible blood or foreign material, and worsening. When no flag prints, no check fired; that is not the same as nothing being wrong.',
+      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, symptom burden, worsening, reduced intake, a prescribed diet going uneaten, weight loss or a weight left unchecked, possible blood or foreign material, a protein the trial diet does not list, and other patterns the detection engine raises. When no flag prints, no check fired; that is not the same as nothing being wrong.',
     },
     {
       term: 'Owner-reported',
@@ -845,7 +845,9 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
             term: 'Incident photos',
             // Never promises an image (cold read round 3): a card whose image could not be embedded
             // says so on the card, and its read and date stay.
-            text: `Every photographed incident has a card on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first, with the owner’s photo where it could be embedded and its read either way. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
+            // A photo the owner removed has no card; the sheet discloses it and its read stays in the
+            // event log (cold read round 4), so the grid is never offered as the complete set.
+            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each retained photo has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
           },
         ]
       : []),
@@ -853,7 +855,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
       ? [
           {
             term: 'Noticed',
-            text: `A once-a-day check the owner answers from a fixed list of plain-language words. The unit is a day she answered, not an episode. “Marked nothing unusual” is her claim about a day, not an examination and not an all-clear. These observations are counted nowhere else on this record: no symptom count, chart or flag reads them. The day each answer belongs to is the day the owner’s phone recorded; every other entry is placed by this record’s timezone, so an answer and a same-day event can sit a day apart if she was in another timezone. Every answer is on the sheet headed “${NOTICED_SHEET_TITLE}”.`,
+            text: `A once-a-day check the owner answers from a fixed list of plain-language words. The unit is a day she answered, not an episode. “Marked nothing unusual” is her claim about a day, not an examination and not an all-clear. They print beside the record, never in it: no symptom count, chart or flag reads them. The day each answer belongs to is the day the owner’s phone recorded; every other entry is placed by this record’s timezone, so an answer and a same-day event can sit a day apart if she was in another timezone. Every answer is on the sheet headed “${NOTICED_SHEET_TITLE}”.`,
           },
         ]
       : []),
