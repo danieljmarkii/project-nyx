@@ -10,6 +10,7 @@ import { strict as assert } from 'node:assert'
 import {
   CROCKFORD,
   DRAFT_TTL_MS,
+  KEEP_WINDOW_MS,
   keepCopy,
   newShortId,
   parseKeepRequest,
@@ -87,7 +88,7 @@ function fakeIO(opts: { failInsert?: boolean; failUpload?: boolean; failStamp?: 
     },
     readRow: async (id) => {
       const r = rows.get(id)
-      return r ? { status: r.status, storage_path: r.storage_path, content_sha256: r.content_sha256 } : null
+      return r ? { status: r.status, storage_path: r.storage_path, content_sha256: r.content_sha256, created_at: r.created_at } : null
     },
     download: async (path) => objects.get(path) ?? null,
     markKept: async (id, via, at, sha) => {
@@ -330,4 +331,27 @@ Deno.test('a lead the stored copy prints is left as it is', async () => {
 Deno.test('an unreadable draft fails the settle, so the keep is refused', async () => {
   const io = { readDraft: async () => ({ found: false, text: null, verdict: null }), writeDraft: async () => true } as unknown as Parameters<typeof settleLeadForKeep>[0]
   assert.equal(await settleLeadForKeep(io, '<html></html>'), false)
+})
+
+Deno.test('a failed undo leaves the row for the reaper: never an object no row names (F1)', async () => {
+  const f = fakeIO({ failStamp: true })
+  f.io.removeObjects = async (paths) => {
+    f.log.push(`remove-failed ${paths.join(',')}`)
+    return false
+  }
+  const out = await saveDraft(f.io, input, render, () => ID)
+  assert.equal(out.saved, false)
+  assert.ok(f.rows.has(ID), 'the row stays while its object does')
+  assert.ok(!f.log.includes(`delete-row ${ID}`))
+})
+
+Deno.test('a draft past the keep window is never kept, so keep cannot race the reaper (F2)', async () => {
+  const f = await savedOne()
+  assert.ok(KEEP_WINDOW_MS < DRAFT_TTL_MS)
+  f.rows.get(ID)!.created_at = new Date(NOW - KEEP_WINDOW_MS - 1).toISOString()
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, async () => true)
+  assert.deepEqual(out, { status: 409, body: { error: 'Saved copy expired' } })
+  assert.equal(f.rows.get(ID)!.status, 'draft')
+  f.rows.get(ID)!.created_at = new Date(NOW - KEEP_WINDOW_MS + 60_000).toISOString()
+  assert.equal((await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, async () => true)).status, 200)
 })

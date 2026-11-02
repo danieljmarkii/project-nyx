@@ -1974,10 +1974,13 @@ const handler = async (req: Request): Promise<Response> => {
     Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: authHeader } } },
   )
-  // PR 7 — service-role client, used SOLELY to download incident-photo bytes from the private
-  // nyx-event-attachments bucket for the paths RLS already scoped to the verified owner's pet (the
-  // enumeration above runs on the user-scoped client; ownership is re-checked before any pull). It
-  // never issues a data query — it only reads the exact object paths the RLS-scoped rows named.
+  // Service-role client, for three things only, each scoped without RLS's help:
+  //   · PR 7: incident-photo bytes from nyx-event-attachments, at the exact paths the RLS-scoped
+  //     rows named (ownership is re-checked before any pull);
+  //   · VR2-25 (CUL-2305): the AI lead's read and write of one draft (aiLead/run.ts);
+  //   · VR2-20 (CUL-2300): the saved copy's rows and its nyx-vet-reports object (savedCopy.ts).
+  // Every vet_reports query names its row by id PAIRED WITH its pet and the uid auth.getUser()
+  // verified on the request JWT (C-27); 113's trigger refuses a maker who does not own the pet.
   const adminClient: SupabaseClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,

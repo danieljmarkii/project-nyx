@@ -33,6 +33,10 @@ export const RENDERER_FINGERPRINT = 'renderPrintV2@1'
 /** A draft not kept within this long is removed by the reaper (spec §11.1). */
 export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000
 
+/** A draft older than this is no longer kept: an hour inside the reaper's 24 h, so a keep can
+ *  never race the reaper removing the same draft's file (rls-privacy-reviewer F2, PR-20). */
+export const KEEP_WINDOW_MS = DRAFT_TTL_MS - 60 * 60 * 1000
+
 /** Rows the reaper takes per pass: one Storage remove call, one row delete. */
 export const REAP_BATCH = 50
 
@@ -115,6 +119,7 @@ export interface StoredRow {
   status: 'draft' | 'kept'
   storage_path: string
   content_sha256: string | null
+  created_at: string
 }
 
 export interface SavedCopyIO {
@@ -197,7 +202,7 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
       return !error
     },
     readRow: async (id) => {
-      const { data, error } = await admin.from('vet_reports').select('status, storage_path, content_sha256')
+      const { data, error } = await admin.from('vet_reports').select('status, storage_path, content_sha256, created_at')
         .eq('id', id).eq('pet_id', key.petId).eq('generated_by', key.uid).maybeSingle()
       if (error) {
         warn('row read failed', error)
@@ -300,15 +305,18 @@ export async function saveDraft<D>(
 
   const rendered = render(shortId)
   const bytes = new TextEncoder().encode(rendered.html)
+  // Undo object first, and the row only once the object is gone: if the remove fails the row
+  // stays, a draft the reaper lists and retries, so no object is ever left that no row names.
+  const undo = async () => {
+    if (await io.removeObjects([path])) await io.deleteDraft(id)
+  }
   if (!(await io.upload(path, bytes))) {
     // The upload may have landed before its error came back: remove the key either way.
-    await io.removeObjects([path])
-    await io.deleteDraft(id)
+    await undo()
     return unsaved()
   }
   if (!(await io.stampHash(id, await sha256Hex(bytes)))) {
-    await io.removeObjects([path])
-    await io.deleteDraft(id)
+    await undo()
     return unsaved()
   }
   return { saved: true, reportId: id, shortId, rendered }
@@ -348,6 +356,10 @@ export async function keepCopy(
       : { status: 500, body: { error: 'Saved copy could not be updated' } }
   }
   if (row.content_sha256 === null) return { status: 409, body: { error: 'Saved copy unavailable' } }
+  // Past the keep window the reaper may already be removing this draft's file: refuse rather than
+  // freeze a kept row over a file that is about to go.
+  const created = Date.parse(row.created_at)
+  if (!Number.isFinite(created) || io.now() - created > KEEP_WINDOW_MS) return { status: 409, body: { error: 'Saved copy expired' } }
   const bytes = await io.download(row.storage_path)
   if (bytes === null || (await sha256Hex(bytes)) !== row.content_sha256) {
     return { status: 409, body: { error: 'Saved copy unavailable' } }
