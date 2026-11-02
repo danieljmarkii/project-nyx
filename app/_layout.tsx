@@ -476,6 +476,12 @@ function RootLayoutTree() {
           <Stack.Screen name="day-summary" />
           <Stack.Screen name="ask" />
           <Stack.Screen name="report" />
+          {/* CUL-2299: the exam room fades the report screen to black itself (instant under
+              Reduce Motion), so the route is transparent with no native transition. */}
+          <Stack.Screen
+            name="exam-room"
+            options={{ presentation: 'transparentModal', animation: 'none', gestureEnabled: false }}
+          />
           <Stack.Screen name="rundown" />
           <Stack.Screen name="settings" />
           <Stack.Screen name="settings/notifications" />

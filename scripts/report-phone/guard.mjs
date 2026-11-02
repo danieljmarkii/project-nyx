@@ -11,7 +11,13 @@
 //      the pinned lead sentence; every chart label and mark is seen uncovered by some page step;
 //      and all of it again after the text size changes with the report open;
 //   4. every fixture's PDF, print and phone documents both, at scale 1.0 and 3.1: the same page
-//      count, the same text layer, the same sheet 1 word count.
+//      count, the same text layer, the same sheet 1 word count;
+//   5. the exam room (CUL-2299, spec §10.6; the keep-together rule extended to its pages by PM
+//      ruling (a) on CUL-2320): the app's exact exam document at its real frames, 320×488,
+//      390×737 and 844×330 landscape, at 1.0, 2.35 and 3.1, every page in sheet order: one sheet shows at a time,
+//      the type is at least the arm's-length size, nothing clips or falls under 11pt, the band
+//      reaches page 1's first frame, every band flag shows with the reflow's own words (and the
+//      confounder line too), and every check in 3 holds on the page the unit is on.
 //
 // Dynamic Type is simulated the way iOS applies it: the root's resolved size changes and nothing
 // else does. The phone sheet's `html{font-size:17px;font:-apple-system-body}` keeps its 17px in
@@ -57,6 +63,15 @@ if (sizesAt > 0) {
   }
 }
 const SCALES = [1, 2.35, 3.1]
+// The room's real frames: the screen less its pager row (the top inset, 8 + 44 + 8), portrait
+// and landscape, the band's first-frame check on in every one (adversarial pass 2 on PR-19).
+const EXAM_SIZES = [
+  { name: 'exam-320', width: 320, height: 488, band: true },
+  { name: 'exam-390', width: 390, height: 737, band: true },
+  { name: 'exam-landscape', width: 844, height: 330, band: true },
+]
+/** lib/examRoom.ts ARM_LENGTH_PX: the exam type never draws smaller. */
+const ARM_LENGTH_PX = 22
 // 3.1 joined with PR-17 (adversarial pass 1 on CUL-2297): AX5 had no first-frame check at all.
 const BAND_SCALES = [1, 2.35, 3.1]
 const MIN_PX = 11
@@ -65,7 +80,7 @@ const PIN_MAX_SHARE = 0.4
 
 const fixtures = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8'))
 const failures = []
-const seenCounts = { fixtures: 0, bandChecked: 0, pointerShown: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0 }
+const seenCounts = { fixtures: 0, bandChecked: 0, pointerShown: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0, examPages: 0, examUnits: 0, examParity: 0 }
 const fail = (where, what) => failures.push(`${where}: ${what}`)
 
 /** Dynamic Type as iOS applies it: the root's resolved size, and nothing else. */
@@ -81,14 +96,14 @@ function printAtScale(html, s) {
   return html.replace('<style>', `<style>html{font-size:${(16 * s).toFixed(2)}px;}`)
 }
 
-async function screenChecks(page, where, s, size) {
+async function screenChecks(page, where, s, size, scope = 'main *') {
   const r = await page.evaluate(
-    ({ MIN_PX, checkBand }) => {
+    ({ MIN_PX, checkBand, scope }) => {
       const out = { overflow: [], small: [], band: null }
       const W = window.innerWidth
       const H = window.innerHeight
       if (document.documentElement.scrollWidth > W + 0.5) out.overflow.push(`page scrolls sideways (${document.documentElement.scrollWidth} > ${W})`)
-      for (const el of document.querySelectorAll('main *')) {
+      for (const el of document.querySelectorAll(scope)) {
         const cs = getComputedStyle(el)
         if (cs.display === 'none' || cs.visibility === 'hidden') continue
         const rect = el.getBoundingClientRect()
@@ -125,7 +140,7 @@ async function screenChecks(page, where, s, size) {
       }
       return out
     },
-    { MIN_PX, checkBand: BAND_SCALES.includes(s) && size.band },
+    { MIN_PX, checkBand: BAND_SCALES.includes(s) && size.band, scope },
   )
   for (const o of r.overflow.slice(0, 5)) fail(where, `clipped: ${o}`)
   for (const o of r.small.slice(0, 5)) fail(where, `under 11pt: ${o}`)
@@ -326,6 +341,95 @@ try {
         await page.close()
       }
     }
+    const exam = fs.readFileSync(path.join(dir, `${name}.exam.html`), 'utf8')
+    for (const size of EXAM_SIZES) {
+      for (const s of SCALES) {
+        const where0 = `${name} exam @ ${size.name} × ${s}`
+        const page = await browser.newPage({ viewport: { width: size.width, height: size.height } })
+        // The app's bridge, stood in for in the page itself: an init script does not reach a
+        // document set with setContent.
+        const shim = '<script>window.ReactNativeWebView={postMessage:function(m){(window.__posts=window.__posts||[]).push(JSON.parse(m))}}</script>'
+        await page.setContent(atScale(exam, s).replace('<head>', `<head>${shim}`), { waitUntil: 'load' })
+        await page.addStyleTag({ content: 'body{padding-bottom:100vh}' })
+        const of = await page.evaluate(() => document.querySelectorAll('[data-sheet]').length)
+        const posted = await page.evaluate(() => window.__posts || [])
+        const first = posted.find((m) => m.type === 'exam-page')
+        if (!first || first.page !== 1 || first.of !== of) fail(where0, `the room did not announce sheet 1 of ${of} (got ${JSON.stringify(first)})`)
+        // PARITY (adversarial pass on PR-19): the room may hide whole sheets and nothing else.
+        // Every band flag takes up space, and the band's and the confounder line's laid-out words
+        // (innerText, and words drawn by ::before / ::after) are the phone reflow's own. What it
+        // CANNOT see is paint: a flag or the pin made invisible by opacity, a ground-coloured
+        // text colour, clip-path or transform passes (adversarial pass 2 on PR-19; filed). And
+        // nothing runs this guard in CI yet: it is run by hand (filed with the paint check).
+        const phoneView = await browser.newPage({ viewport: { width: size.width, height: size.height } })
+        await phoneView.setContent(atScale(fs.readFileSync(path.join(dir, `${name}.phone.html`), 'utf8'), s), { waitUntil: 'load' })
+        const words = (pg) => pg.evaluate(() => {
+          // Case is folded: the compact layout drops the band heading's text-transform.
+          const norm = (t) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase()
+          const pick = (sel) => [...document.querySelectorAll(sel)].map((el) => norm(el.innerText))
+          const lis = [...document.querySelectorAll('[data-block="band"] li')]
+          // Words drawn by CSS (::before / ::after) are invisible to innerText: list them too.
+          const drawn = []
+          // Scoped to where flags and warnings live; the fold and pointer arrows follow compaction.
+          const scope = ['band', 'lead-chart', 'confounder'].map((b) => `[data-block="${b}"], [data-block="${b}"] *`).join(', ')
+          for (const el of document.querySelectorAll(scope)) {
+            for (const ps of ['::before', '::after']) {
+              const c = getComputedStyle(el, ps).content
+              if (c && c !== 'none' && c !== 'normal') drawn.push(`${el.tagName}${ps}${c}`)
+            }
+          }
+          return {
+            drawn: drawn.sort(),
+            band: pick('[data-block="band"]'),
+            conf: pick('[data-block="confounder"]'),
+            lis: lis.length,
+            lisShown: lis.filter((li) => li.getBoundingClientRect().height > 0 && getComputedStyle(li).visibility !== 'hidden').length,
+          }
+        })
+        const phoneWords = await words(phoneView)
+        await phoneView.close()
+        let unitPage = null
+        for (let n = 1; n <= of; n++) {
+          const where = `${where0} sheet ${n}/${of}`
+          const facts = await page.evaluate((n) => {
+            window.__nyxExamGo(n)
+            const shown = [...document.querySelectorAll('[data-sheet]')].filter((el) => getComputedStyle(el).display !== 'none')
+            const probe = document.getElementById('v2probe').getBoundingClientRect().height
+            const u = document.querySelector('[data-keep="lead"]')
+            const unitShown = !!u && u.getBoundingClientRect().height > 0
+            return { shown: shown.map((el) => el.getAttribute('data-sheet')), probe, scrollY: window.scrollY, unitShown }
+          }, n)
+          seenCounts.examPages++
+          if (facts.shown.length !== 1) fail(where, `${facts.shown.length} sheets show at once (${facts.shown.join(', ')})`)
+          if (facts.probe < ARM_LENGTH_PX - 0.5) fail(where, `the type draws at ${facts.probe.toFixed(1)}px, under the arm's-length ${ARM_LENGTH_PX}px`)
+          if (facts.scrollY !== 0) fail(where, `the page opened scrolled to ${facts.scrollY}, not its top`)
+          // Every sheet the room shows is checked, the back sheets included, not only sheet 1's main.
+          await screenChecks(page, where, s, { ...size, band: size.band && n === 1 }, '[data-sheet]:not([data-exam-off]) *')
+          if (n === 1) {
+            const w = await words(page)
+            if (w.lis !== phoneWords.lis || w.lisShown !== w.lis) fail(where, `the band shows ${w.lisShown} of ${w.lis} flags (the reflow has ${phoneWords.lis})`)
+            if (JSON.stringify(w.band) !== JSON.stringify(phoneWords.band)) fail(where, 'the band does not say the reflow\'s words')
+            if (JSON.stringify(w.conf) !== JSON.stringify(phoneWords.conf)) fail(where, 'the confounder line does not say the reflow\'s words')
+            if (JSON.stringify(w.drawn) !== JSON.stringify(phoneWords.drawn)) fail(where, 'the room draws words with CSS that the reflow does not')
+            seenCounts.examParity++
+          }
+          if (facts.unitShown) {
+            if (unitPage !== null) fail(where, `the lead chart's unit shows on sheet ${unitPage} and again here`)
+            unitPage = n
+            const unit = await keepChecks(page, where)
+            if (unit) seenCounts.examUnits++
+            // A text-size change with the room open reloads it (app/exam-room.tsx keys the
+            // WebView on the scale), so the fresh loads at 2.35 and 3.1 are that case.
+          }
+        }
+        if (unitPage !== null && unitPage !== 1) fail(where0, `the lead chart's unit is on sheet ${unitPage}, not sheet 1`)
+        if (shots && (name === 'nyx-live' || name === 'mira') && (s === 1 || s === 3.1)) {
+          await page.evaluate(() => { window.__nyxExamGo(1); window.scrollTo(0, 0) })
+          await page.screenshot({ path: path.join(shots, `${name}-${size.name}-x${s}.png`), fullPage: false })
+        }
+        await page.close()
+      }
+    }
     for (const kind of ['print', 'phone']) {
       const html = fs.readFileSync(path.join(dir, `${name}.${kind}.html`), 'utf8')
       const facts = []
@@ -355,10 +459,13 @@ if (seenCounts.fixtures < 10) fail('guard', `only ${seenCounts.fixtures} fixture
 if (seenCounts.bandChecked < 1) fail('guard', 'no band was checked against the first frame')
 if (seenCounts.unitsWithConf < 1) fail('guard', 'no keep-together unit with a confounder was walked')
 if (seenCounts.repeatShown < 1) fail('guard', 'no repeat was seen')
+if (seenCounts.examPages < seenCounts.fixtures * EXAM_SIZES.length * SCALES.length) fail('guard', `only ${seenCounts.examPages} exam pages were walked`)
+if (seenCounts.examUnits < 1) fail('guard', 'no exam page carried the keep-together unit')
+if (seenCounts.examParity < seenCounts.fixtures * EXAM_SIZES.length * SCALES.length) fail('guard', 'the exam parity check did not run on every room')
 console.log(summary.join('\n'))
 console.log(JSON.stringify(seenCounts))
 if (failures.length > 0) {
   console.error(`\n${failures.length} failure(s):\n${failures.join('\n')}`)
   process.exit(1)
 }
-console.log(`\nphone guard: ${fixtures.length} fixtures × ${SIZES.length} widths × ${SCALES.length} scales, and both PDFs at 1.0 and 3.1: all clear`)
+console.log(`\nphone guard: ${fixtures.length} fixtures × ${SIZES.length} widths × ${SCALES.length} scales, the exam room's ${seenCounts.examPages} pages, and both PDFs at 1.0 and 3.1: all clear`)

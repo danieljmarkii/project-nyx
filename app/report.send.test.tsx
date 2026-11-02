@@ -70,12 +70,15 @@ jest.mock('../components/reportV2/SendSheet', () => {
       card: { title: string } | null;
       onAction: (a: unknown) => void;
       onClose: () => void;
+      canShowOnPhone?: boolean;
     }) =>
       p.visible
         ? React.createElement(
             View,
             { testID: 'sheet' },
             React.createElement(Text, { testID: 'sheet-card' }, p.card ? p.card.title : 'no card'),
+            React.createElement(Text, { testID: 'sheet-phone' }, p.canShowOnPhone ? 'phone' : 'no phone'),
+            React.createElement(Pressable, { testID: 'pick-phone', onPress: () => { p.onClose(); p.onAction({ target: 'phone' }); } }),
             React.createElement(Pressable, { testID: 'pick-share', onPress: () => { p.onClose(); p.onAction({ target: 'share' }); } }),
             React.createElement(Pressable, {
               testID: 'pick-email',
@@ -85,6 +88,12 @@ jest.mock('../components/reportV2/SendSheet', () => {
         : null,
   };
 });
+
+const mockOpenExamRoom = jest.fn((_copy: unknown, push: (r: string) => void) => {
+  push('/exam-room');
+  return true;
+});
+jest.mock('../lib/examRoomCopy', () => ({ openExamRoom: (c: unknown, p: (r: string) => void) => mockOpenExamRoom(c, p) }));
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
@@ -253,5 +262,45 @@ describe('off the composer path, nothing changed', () => {
     await waitFor(() => expect(shareReportPdf).toHaveBeenCalledWith(report));
     expect(mockedOpen).not.toHaveBeenCalled();
     expect(r.queryByTestId('sheet')).toBeNull();
+  });
+});
+
+describe('Show on this phone opens the exam room (CUL-2299)', () => {
+  const v2 = { ...report, phoneHtml: '<html>Nyx phone</html>' };
+
+  it('is offered only when the report has its phone layout', async () => {
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    await r.findByTestId('sheet');
+    expect(r.getByTestId('sheet-phone').props.children).toBe('no phone');
+  });
+
+  it('stages the phone layout and opens the room over the report; no confirmation, it is not a send', async () => {
+    mockedGenerate.mockResolvedValue(v2);
+    mockedOpen.mockResolvedValue({ live: FLAGGED });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    await r.findByTestId('sheet');
+    expect(r.getByTestId('sheet-phone').props.children).toBe('phone');
+    fireEvent.press(r.getByTestId('pick-phone'));
+    await waitFor(() => expect(mockOpenExamRoom).toHaveBeenCalledTimes(1));
+    expect(mockOpenExamRoom.mock.calls[0][0]).toEqual({ phoneHtml: '<html>Nyx phone</html>', printHtml: '<html>Nyx</html>' });
+    const { router } = jest.requireMock('expo-router') as { router: { push: jest.Mock } };
+    expect(router.push).toHaveBeenCalledWith('/exam-room');
+    expect(r.queryByTestId('send-confirmation')).toBeNull();
+  });
+
+  it('says so when the copy could not be staged, and never opens an empty room', async () => {
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => undefined);
+    mockedGenerate.mockResolvedValue(v2);
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    mockOpenExamRoom.mockImplementationOnce(() => false);
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    fireEvent.press(await r.findByTestId('pick-phone'));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('Couldn’t show the report here', 'Please try again.'));
+    const { router } = jest.requireMock('expo-router') as { router: { push: jest.Mock } };
+    expect(router.push).not.toHaveBeenCalledWith('/exam-room');
   });
 });
