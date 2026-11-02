@@ -189,3 +189,91 @@ export function juniper(days = 4): ReportInput {
     events,
   })
 }
+
+// ── Sheet 2's canonical fixtures (CUL-2293, VR2-13; docs/vet-report-v3-discovery/fixtures/canonical-fixtures.json) ──
+
+type Analysis = ReportInput['aiAnalyses'][number]
+
+function analysis(eventId: string, over: Partial<Analysis>): Analysis {
+  return {
+    eventId,
+    status: 'completed',
+    colour: null,
+    contents: null,
+    consistency: null,
+    bloodPresent: null,
+    bilePresent: null,
+    foreignMaterialPresent: null,
+    foreignMaterialNote: null,
+    stoolConsistency: null,
+    stoolColour: null,
+    stoolBloodPresent: null,
+    stoolBloodType: null,
+    stoolMucusPresent: null,
+    editedAt: null,
+    ...over,
+  }
+}
+
+function photo(eventId: string, sortOrder = 0): NonNullable<ReportInput['attachments']>[number] {
+  return { eventId, storagePath: `pet-v2/${eventId}.jpg`, mimeType: 'image/jpeg', sortOrder }
+}
+
+/**
+ * `nyx-safety-cat`: Nyx's July record, reconstructed (round 4's d5). One sign (vomiting), a vomit
+ * photo read as possible foreign material, no trial and no medication. Every read state appears
+ * once beside the completed ones (uncertain, failed, pending, and one incident with no photo), so
+ * "What each episode looked like" has to name the non-completed states and print the foreign
+ * material only because it is present.
+ */
+export function nyxSafetyCat(): ReportInput {
+  const v = [symptom('vomit', 27, 7), symptom('vomit', 21, 22), symptom('vomit', 14, 1), symptom('vomit', 9, 6), symptom('vomit', 6, 23), symptom('vomit', 3, 2), symptom('vomit', 1, 5)]
+  v[2].notes = 'Found it on the rug, something grey in it'
+  const meals = dailyMeals(29, 0).map((m) => ({ ...m, meal: { ...m.meal!, foodItemId: 'food-cat', primaryProtein: 'chicken', brand: 'Purina', productName: 'Pro Plan Adult' } }))
+  return baseInput({
+    pet: { id: 'pet-nyx-safety', name: 'Nyx', species: 'cat', breed: 'American Shorthair', sex: 'female', dateOfBirth: '2023-09-01', weightKg: 3.7 } as never,
+    ownerName: 'Fixture Owner',
+    requestedWindow: { startDate: dayKey(29), endDate: dayKey(0) },
+    events: [...v, ...meals],
+    aiAnalyses: [
+      analysis(v[0].id, { colour: 'tan', contents: ['undigested_food'], consistency: 'chunky', bloodPresent: 'none_visible', bilePresent: 'no', foreignMaterialPresent: 'no' }),
+      analysis(v[1].id, { colour: 'yellow', contents: ['bile'], consistency: 'foamy', bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no' }),
+      analysis(v[2].id, {
+        colour: 'mixed',
+        contents: ['partially_digested_food'],
+        consistency: 'chunky',
+        bloodPresent: 'none_visible',
+        bilePresent: 'no',
+        foreignMaterialPresent: 'yes',
+        foreignMaterialNote: 'a dark grey, irregularly shaped piece of material that does not appear to be food',
+      }),
+      analysis(v[3].id, { status: 'uncertain' }),
+      analysis(v[4].id, { status: 'failed' }),
+      analysis(v[5].id, { status: 'pending' }),
+    ],
+    attachments: [photo(v[0].id), photo(v[1].id), photo(v[2].id), photo(v[3].id), photo(v[4].id), photo(v[5].id)],
+  })
+}
+
+/**
+ * `stool-photo-dog`: Rufus, loose stool with photos, one read showing fresh blood present. Blood
+ * leads the band; "What each episode looked like" names it as present and never prints "0 of"
+ * beside blood or mucus; normal stools are counted beside the loose ones.
+ */
+export function stoolPhotoDog(): ReportInput {
+  const loose = [symptom('diarrhea', 20, 8), symptom('diarrhea', 12, 7), symptom('diarrhea', 8, 19), symptom('diarrhea', 5, 7), symptom('diarrhea', 2, 18)]
+  const normal = [25, 23, 18, 16, 10, 6, 3].map((d) => ({ ...symptom('stool_normal', d, 8) }))
+  const meals = dailyMeals(29, 0).map((m) => ({ ...m, meal: { ...m.meal!, foodItemId: 'food-dog', primaryProtein: 'lamb', brand: 'Acana', productName: 'Lamb & Apple' } }))
+  return baseInput({
+    pet: { id: 'pet-rufus', name: 'Rufus', species: 'dog', breed: 'Border Collie', sex: 'male', dateOfBirth: '2019-05-12', weightKg: 19.4 } as never,
+    requestedWindow: { startDate: dayKey(29), endDate: dayKey(0) },
+    events: [...loose, ...normal, ...meals],
+    aiAnalyses: [
+      analysis(loose[0].id, { stoolConsistency: 'type_6_mushy', stoolColour: 'brown', stoolBloodPresent: 'no', stoolMucusPresent: 'no' }),
+      analysis(loose[1].id, { stoolConsistency: 'type_6_mushy', stoolColour: 'brown', stoolBloodPresent: 'no', stoolMucusPresent: 'yes' }),
+      analysis(loose[2].id, { stoolConsistency: 'type_7_watery', stoolColour: 'red_streaked', stoolBloodPresent: 'yes', stoolBloodType: 'fresh_red', stoolMucusPresent: 'no' }),
+      analysis(loose[3].id, { status: 'uncertain' }),
+    ],
+    attachments: [photo(loose[0].id), photo(loose[1].id), photo(loose[2].id), photo(loose[3].id)],
+  })
+}

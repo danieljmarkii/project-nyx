@@ -119,6 +119,7 @@ import {
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
 import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
+import { isKnownIntakeRating, isRefusedOrPickedRating } from '../../../lib/intakeEvidence.ts'
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 // CUL-226 — the SHARED vomit-contents presence leaves: the SAME food/hair/bile atoms L3's
@@ -3424,6 +3425,24 @@ export interface ReportV2Facts {
   /** Ratings of a free-fed bowl left out of `intakeWeeks`: the intake detector never reads them
    *  (CUL-1086, §11 #6), so the bar a flag is drawn on counts what the flag counted. Disclosed. */
   intakeWeeksBowlExcluded: number
+  /**
+   * CUL-2293 (spec v2 §6.1, GAP-35): the most recent WATCHED rated meal in the window that was not
+   * in the refusal class (`lib/intakeEvidence.ts` `isRefusedOrPickedRating`: refused or picked at),
+   * so the intake sheet can say when a refusing pet last ate something, for the feline 48 to 72 hour
+   * window. Read over every rated meal, never a capped list; a free-fed bowl's ratings are left out
+   * (not observed, CUL-1086). Null when no watched rated meal reached "ate some".
+   */
+  lastMealAboveRefusal: { occurredAt: string; rating: IntakeRating; foodLabel: string | null } | null
+  /** The watched rated meals that line reads over (0: the line has nothing to say). */
+  watchedRatedMeals: number
+  /** A free-fed bowl was down at some point after that meal (or, with none, after the first watched
+   *  rated meal), by the same spans the intake detector reads: only then may the sheet say the pet
+   *  may have eaten since (adversarial pass 2 on CUL-2293: a bowl taken up 14 days before the last
+   *  full meal still softened six days without one). */
+  freeFedDownSinceLastMeal: boolean
+  /** CUL-2293: per local day, the watched rated meals not fully eaten (`!== 'all'`, the predicate
+   *  `intakeWeeks` counts), so the sheet 2 ledger can draw intake on its days when intake leads. */
+  mealNotFinishedDayCounts: Array<{ day: string; count: number; refused: number; rated: number }>
   /** CUL-2290: in-window symptom incidents per local day, for the day row under a 14-day window.
    *  The same deduped incidents as `SymptomAggregate.count` (they sum to it, per type). */
   symptomDayCounts: Array<{ type: ReportSymptomType; day: string; count: number }>
@@ -6808,9 +6827,64 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       intakeWeeksBowlExcluded: ratedMealsInWindow.filter((e) =>
         isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans),
       ).length,
+      mealNotFinishedDayCounts: mealNotFinishedDayCountsOf(
+        ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+        (iso) => eventDayNumber(iso, tz),
+      ),
+      ...lastMealAboveRefusalOf(
+        ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+        intakeFreeFedSpans,
+        nowMs,
+      ),
       symptomDayCounts: symptomDayCountsOf(windowEvents, (iso) => eventDayNumber(iso, tz)),
     },
   }
+}
+
+/** CUL-2293 — the last watched rated meal out of the refusal class, by instant (parsed, C-40). */
+function lastMealAboveRefusalOf(
+  watched: ReadonlyArray<ReportEventInput>,
+  spans: ReadonlyArray<{ fromMs: number; untilMs: number }>,
+  nowMs: number,
+): Pick<ReportV2Facts, 'lastMealAboveRefusal' | 'watchedRatedMeals' | 'freeFedDownSinceLastMeal'> {
+  let best: ReportEventInput | null = null
+  for (const e of watched) {
+    const r = e.meal!.intakeRating
+    if (!isKnownIntakeRating(r) || isRefusedOrPickedRating(r)) continue
+    if (best === null || Date.parse(e.occurredAt) > Date.parse(best.occurredAt)) best = e
+  }
+  const firstRated = watched.reduce((m, e) => Math.min(m, Date.parse(e.occurredAt)), Infinity)
+  const anchorMs = best ? Date.parse(best.occurredAt) : firstRated
+  return {
+    lastMealAboveRefusal: best ? { occurredAt: best.occurredAt, rating: best.meal!.intakeRating as IntakeRating, foodLabel: mealFoodLabel(best.meal!) } : null,
+    watchedRatedMeals: watched.filter((e) => isKnownIntakeRating(e.meal!.intakeRating)).length,
+    freeFedDownSinceLastMeal: Number.isFinite(anchorMs) && spans.some((sp) => sp.untilMs > anchorMs && sp.fromMs <= nowMs),
+  }
+}
+
+/** CUL-2293 — `ReportV2Facts.mealNotFinishedDayCounts`, the same population and predicate as `intakeWeeksOf`. */
+function mealNotFinishedDayCountsOf(
+  rated: ReadonlyArray<ReportEventInput>,
+  dayOf: (iso: string) => number | null,
+): ReportV2Facts['mealNotFinishedDayCounts'] {
+  // Per day: the rated meals, those not fully eaten, and of those the ones refused outright, so the
+  // ledger can draw refusal apart from a partly eaten meal, as the lead chart's two fills do.
+  const days = new Map<string, { count: number; refused: number; rated: number }>()
+  for (const e of rated) {
+    const dn = dayOf(e.occurredAt)
+    const r = e.meal?.intakeRating ?? null
+    if (dn === null || r === null) continue
+    const k = dayKeyFromNumber(dn)
+    const d = days.get(k) ?? { count: 0, refused: 0, rated: 0 }
+    d.rated++
+    if (r !== 'all') d.count++
+    if (r === 'refused') d.refused++
+    days.set(k, d)
+  }
+  return [...days.entries()]
+    .filter(([, d]) => d.count > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([day, d]) => ({ day, ...d }))
 }
 
 /** CUL-2290 — `ReportV2Facts.intakeWeeks`, bucketed by the symptom chart's own closure. */

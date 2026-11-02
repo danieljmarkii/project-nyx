@@ -6,7 +6,7 @@
 import { assembleReport, type ReportSnapshot } from '../../supabase/functions/generate-report/report.ts'
 import { cooperInput } from '../../supabase/functions/generate-report/cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from '../../supabase/functions/generate-report/nyxLive.testutil.ts'
-import { itchingSkinTrial, juniper, olive, wobblingSkinTrial } from '../../supabase/functions/generate-report/v2Fixtures.testutil.ts'
+import { itchingSkinTrial, juniper, nyxSafetyCat, olive, stoolPhotoDog, wobblingSkinTrial } from '../../supabase/functions/generate-report/v2Fixtures.testutil.ts'
 import { sampleCases } from '../render-trial-report-sample.deno.ts'
 
 export function v2DocFixtures(): Array<[string, ReportSnapshot]> {
@@ -18,6 +18,8 @@ export function v2DocFixtures(): Array<[string, ReportSnapshot]> {
     ['r11-wobble', assembleReport(wobblingSkinTrial())],
     ['new-account-4-days', assembleReport(juniper())],
     ['looks-only', assembleReport(olive())],
+    ['nyx-safety-cat', assembleReport(nyxSafetyCat())],
+    ['stool-photo-dog', assembleReport(stoolPhotoDog())],
   ]
   for (const [name, input] of sampleCases()) out.push([name === 'trial-report-refused.html' ? 'mira' : name.replace(/\.html$/, ''), assembleReport(input)])
   // Mira with three long free-fed bowl labels: owner-entered text a production caller can hand
