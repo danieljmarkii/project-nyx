@@ -275,6 +275,17 @@ describe('readDepartures', () => {
     expect(await readDepartures(PET, REPORT, client)).toEqual({ kind: 'failed' });
   });
 
+  it('a row that arrives on two pages (a send landed between them) is listed once', async () => {
+    const rows = Array.from({ length: DEPARTURES_PAGE + 1 }, (_, i) => dep(i));
+    // Page two starts one row early: the newest send pushed every offset down by one.
+    const shifted = [...rows.slice(0, DEPARTURES_PAGE), rows[DEPARTURES_PAGE - 1], rows[DEPARTURES_PAGE]];
+    const { client } = depClient(shifted, { count: rows.length });
+    const out = await readDepartures(PET, REPORT, client);
+    expect(out.kind).toBe('ok');
+    const ids = out.kind === 'ok' ? out.departures.map((d) => d.id) : [];
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it('fewer rows than the count promised is a failure, not a shorter history', async () => {
     const { client } = depClient([dep(1)], { count: 2 });
     expect(await readDepartures(PET, REPORT, client)).toEqual({ kind: 'failed' });

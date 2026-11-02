@@ -173,6 +173,9 @@ type RawDeparture = { id: string; shared_via: string | null; shared_at: string |
  */
 export async function readDepartures(petId: string, reportId: string, client: Client = supabase): Promise<DeparturesRead> {
   const out: Departure[] = [];
+  // A send committed between two pages shifts the offsets, so a row can arrive twice: one row per
+  // id, never a duplicate counted into the heading.
+  const seen = new Set<string>();
   try {
     let total: number | null = null;
     for (let from = 0; total === null || from < total; ) {
@@ -190,6 +193,8 @@ export async function readDepartures(petId: string, reportId: string, client: Cl
       for (const r of data as unknown as RawDeparture[]) {
         // 119's columns are NOT NULL; a row without them is skipped, never guessed.
         if (!r.shared_via || !r.shared_at) continue;
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
         out.push({ id: r.id, sharedVia: r.shared_via, sharedAt: r.shared_at });
       }
       from += data.length;
