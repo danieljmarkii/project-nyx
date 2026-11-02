@@ -462,7 +462,7 @@ export function renderPhoneV2(doc: DocumentV2): string {
 <main class="sheet" data-sheet="1">
 ${body(doc)}
 </main>
-${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}
+${doc.backSheets.map((sh) => backSheetHtml(doc, sh, true)).join('\n')}
 <script>${SCRIPT_PHONE}</script>
 </body>
 </html>`

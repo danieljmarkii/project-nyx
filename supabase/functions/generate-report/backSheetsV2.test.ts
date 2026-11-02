@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { assembleReport, type ReportSnapshot } from './report.ts'
 import { buildDocumentV2, incidentTimeWords, textOf, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
-import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PRINT, pageHeadCss } from './renderBackV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PRINT, labelTableCells, pageHeadCss } from './renderBackV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import {
   backSheetsOf,
@@ -487,3 +487,30 @@ Deno.test('pages — every printed page after the first names the patient; owner
   assert.match(out, /content:"Mi\\"ra\\3C \/style>\\3C script>x\\3C \/script>\\\\ · /)
 })
 
+
+Deno.test('CUL-2401 — the phone labels every intake cell with its own column heading; a spanning cell and the ledger take none', () => {
+  const html = labelTableCells(
+    '<table><thead><tr><th>Date</th><th style="width:58px">Time</th><th>Food</th><th>Intake</th></tr></thead><tbody>' +
+      '<tr><td class="num">Oct 16</td><td class="num">13:00</td><td>Kibble</td><td><b>Refused</b></td></tr>' +
+      '<tr><td class="omit" colspan="3">4 earlier meals not shown</td><td>Ate some</td></tr></tbody></table>' +
+      '<table class="lg" aria-hidden="true"><tbody><tr><th>Jun 1</th><td class="lg-sign">2</td></tr></tbody></table>',
+  )
+  assert.match(html, /<td class="num" data-label="Date">Oct 16<\/td><td class="num" data-label="Time">13:00<\/td><td data-label="Food">Kibble<\/td><td data-label="Intake"><b>Refused<\/b><\/td>/)
+  // The spanning cell is unlabelled, and the cell after it takes the column it actually sits in.
+  assert.match(html, /<td class="omit" colspan="3">4 earlier meals not shown<\/td><td data-label="Intake">Ate some<\/td>/)
+  assert.match(html, /<td class="lg-sign">2<\/td>/, 'the ledger grid is untouched')
+})
+
+Deno.test('CUL-2401 — intake labels ride the phone document only: the print document carries none, and every phone body cell has one', () => {
+  const d = docOf(fixture('mira'))
+  assert.doesNotMatch(renderPrintV2(d), /data-label=/)
+  const phone = renderPhoneV2(d)
+  const intake = phone.slice(phone.indexOf('data-block="intake"'))
+  const tables = intake.slice(0, intake.indexOf('</section>')).match(/<table>[\s\S]*?<\/table>/g) ?? []
+  assert.ok(tables.length > 0, 'the fixture has intake tables')
+  for (const t of tables) {
+    const body = t.slice(t.indexOf('<tbody'))
+    for (const td of body.match(/<td\b[^>]*>/g) ?? []) if (!/colspan=/.test(td)) assert.match(td, /data-label="[^"]+"/, `${td} has no label`)
+  }
+  assert.match(phone, /data-label="Intake recorded"/)
+})
