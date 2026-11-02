@@ -606,6 +606,14 @@ export interface TrialBlock {
    */
   evidenceStartDate: string
   evidenceEndDate: string
+  /**
+   * CUL-2441 — the in-window local days carrying a meal-type event, ascending: the SAME series as
+   * `loggingDensity` (C5), so the record line under the owner's read names the un-logged days by
+   * the predicate the "Symptoms vs logging" row beside it uses. A day holding only a dose is not a
+   * day the owner was watching meals, and counting it as logged read a dose-only week as attended.
+   * Optional: a stored copy assembled before it lacks it, and the line then says so.
+   */
+  mealLoggedDayKeys?: string[]
   /** §10 S3 — days between `started_at` and the first log, reported as UNTRACKED
    *  rather than counted as failure. Only ever non-zero when the range opens on
    *  the trial's own first day (B-600): a scope that opens the range mid-trial has
@@ -1434,6 +1442,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     rangeEndDate: dayKeyFromIndex(endDayIndex),
     evidenceStartDate: dayKeyFromIndex(evidence.startDayIndex),
     evidenceEndDate: dayKeyFromIndex(evidence.endDayIndex),
+    mealLoggedDayKeys: [...new Set(args.mealLoggedDayIndices)].sort((a, b) => a - b).map(dayKeyFromIndex),
     rangeClipped: facts.range.clipped,
     // R2 — the RENDER CONDITION, not the trial-state fact. `closedByOverrun` is
     // true even where the clip did nothing, which made the first cut of the
