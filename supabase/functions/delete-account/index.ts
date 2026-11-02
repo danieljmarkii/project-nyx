@@ -480,11 +480,11 @@ Deno.serve(async (req: Request) => {
             ),
           )
           if (probe !== 'gone') {
-            if (probe === 'unknown') {
-              // The account may be gone with nothing left to find its folders by, so
-              // name them now; a retry that finds the account intact sweeps them anyway.
-              console.error(killedLeftoversLine(inFlight, `deleteUser error, account state unknown: ${error.message}`))
-            }
+            // The account may be gone (or about to be: `present` can be a read of a
+            // delete still committing) with nothing left to find its folders by, so
+            // name them now. Naming an intact account's folders costs nothing; a retry
+            // sweeps them anyway.
+            console.error(killedLeftoversLine(inFlight, `deleteUser error, probe ${probe}: ${error.message}`))
             IN_FLIGHT.delete(inFlight)
             inFlight = null
             throw new Error(`auth.admin.deleteUser failed: ${error.message}`)

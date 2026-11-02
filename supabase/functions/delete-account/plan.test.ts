@@ -1866,12 +1866,13 @@ Deno.test('wallClockMismatchLine — CUL-2362: an early wall-clock kill is loud,
   assertEquals(wallClockMismatchLine(null, 1_000), null)
 })
 
-Deno.test('userProbeOf — CUL-2362 A4: only an explicit not-found is gone, only a returned user is present', () => {
+Deno.test('userProbeOf — CUL-2362 A4: only GoTrue\'s user_not_found is gone, only a returned user is present', () => {
   assertEquals(userProbeOf({ user: { id: 'u' }, error: null }), 'present')
-  assertEquals(userProbeOf({ user: null, error: { status: 404 } }), 'gone')
   assertEquals(userProbeOf({ user: null, error: { code: 'user_not_found' } }), 'gone')
+  // A bare 404 may be a gateway's, not GoTrue's: never read as an erased account.
+  assertEquals(userProbeOf({ user: null, error: { status: 404 } as { code?: string } }), 'unknown')
   // A failed probe never reads as intact: the caller names the folders.
-  assertEquals(userProbeOf({ user: null, error: { status: 500 } }), 'unknown')
+  assertEquals(userProbeOf({ user: null, error: { status: 500 } as { code?: string } }), 'unknown')
   assertEquals(userProbeOf({ user: null, error: {} }), 'unknown')
   assertEquals(userProbeOf({ user: null, error: null }), 'unknown')
 })
