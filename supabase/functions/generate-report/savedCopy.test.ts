@@ -406,7 +406,8 @@ Deno.test('a stored file that no longer matches its frozen hash is refused, neve
 Deno.test('a missing object, a failed read or a bad request shows nothing', async () => {
   const f = await keptCopy()
   f.objects.clear()
-  assert.equal((await openCopy(f.io, { reportId: ID })).status, 409)
+  // A download that fails is retryable (500); only a changed file is 409.
+  assert.equal((await openCopy(f.io, { reportId: ID })).status, 500)
   assert.equal((await openCopy({ ...f.io, readRow: async () => 'error' as const }, { reportId: ID })).status, 500)
   assert.equal((await openCopy(f.io, { reportId: null })).status, 400)
 })

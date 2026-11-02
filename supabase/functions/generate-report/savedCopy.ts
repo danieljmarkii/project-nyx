@@ -412,8 +412,9 @@ export async function openCopy(io: Pick<SavedCopyIO, 'readRow' | 'download'>, re
   if (row === null || row.status !== 'kept') return { status: 404, body: { error: 'Saved copy not found' } }
   if (row.content_sha256 === null) return { status: 409, body: { error: 'Saved copy unavailable' } }
   const bytes = await io.download(row.storage_path)
-  if (bytes === null || (await sha256Hex(bytes)) !== row.content_sha256) {
-    return { status: 409, body: { error: 'Saved copy unavailable' } }
-  }
+  // A failed download may be a passing Storage error: 500, which the app offers to retry. Only a
+  // file that is no longer the one sent is 409, which it does not.
+  if (bytes === null) return { status: 500, body: { error: 'Saved copy could not be read' } }
+  if ((await sha256Hex(bytes)) !== row.content_sha256) return { status: 409, body: { error: 'Saved copy unavailable' } }
   return { status: 200, body: { html: new TextDecoder().decode(bytes) } }
 }

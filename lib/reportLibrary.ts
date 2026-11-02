@@ -166,8 +166,10 @@ export async function openSavedReport(petId: string, reportId: string, invoke: I
     }
     const html = (data as { html?: unknown } | null)?.html;
     return typeof html === 'string' && html.length > 0 ? { kind: 'ok', html } : { kind: 'failed' };
-  } catch {
-    return { kind: 'offline' };
+  } catch (e) {
+    // Network loss arrives as `error` with no status (above); a throw is something else.
+    console.warn('[reportLibrary] the saved copy could not be opened:', e);
+    return { kind: 'failed' };
   }
 }
 
@@ -217,8 +219,6 @@ export function departureWords(sharedVia: string): string {
       return 'Shared by email';
     case 'print':
       return 'Printed';
-    case 'share':
-      return 'Shared';
     default:
       return 'Shared';
   }
@@ -291,3 +291,5 @@ export const LIBRARY_FAILED = 'Couldn’t load your saved reports. Check your co
 export const COPY_OFFLINE = 'You’re offline. Saved reports open when you’re back online.';
 export const COPY_UNAVAILABLE = 'This copy can’t be shown right now. Your vet’s copy isn’t affected.';
 export const COPY_FAILED = 'Couldn’t open this report. Try again in a moment.';
+/** The detail's title until its row answers. */
+export const COPY_TITLE_PENDING = 'Saved report';

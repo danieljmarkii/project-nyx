@@ -2134,7 +2134,7 @@ async function keepForPet(
  * missing id does); and the service-role row read pairs the id with that pet AND that maker (C-27).
  * Only a kept copy opens, and only bytes that still match its frozen hash (savedCopy.ts).
  */
-async function openForPet(
+export async function openForPet(
   supabase: SupabaseClient,
   adminClient: SupabaseClient,
   petId: string,

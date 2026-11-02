@@ -136,7 +136,7 @@ describe('openSavedReport', () => {
     expect(await openSavedReport(PET, 'x', jest.fn().mockResolvedValue(statusError(409)))).toEqual({ kind: 'unavailable' });
     expect(await openSavedReport(PET, 'x', jest.fn().mockResolvedValue(statusError(500)))).toEqual({ kind: 'failed' });
     expect(await openSavedReport(PET, 'x', jest.fn().mockResolvedValue({ error: new Error('Network request failed'), data: null }))).toEqual({ kind: 'offline' });
-    expect(await openSavedReport(PET, 'x', jest.fn().mockRejectedValue(new Error('down')))).toEqual({ kind: 'offline' });
+    expect(await openSavedReport(PET, 'x', jest.fn().mockRejectedValue(new Error('down')))).toEqual({ kind: 'failed' });
     expect(await openSavedReport(PET, 'x', jest.fn().mockResolvedValue({ data: { html: '' }, error: null }))).toEqual({ kind: 'failed' });
   });
 });

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { PixelRatio, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SkeletonCard, ThemedText } from '../../components/ui';
 import { ANONYMOUS_PET_NAME, resolveRecordPetName, usePetStore } from '../../store/petStore';
-import { isPreviewLoadAllowed } from '../../lib/reportPreviewV2';
+import { androidTextZoom, isPreviewLoadAllowed } from '../../lib/reportPreviewV2';
 import {
   asSentLine,
   COPY_FAILED,
+  COPY_TITLE_PENDING,
   COPY_OFFLINE,
   COPY_UNAVAILABLE,
   copyTitle,
@@ -64,7 +65,7 @@ export default function SavedReportScreen() {
 
   const currentYear = new Date().getFullYear();
   const petName = resolveRecordPetName(pets, row?.petId ?? null);
-  const title = row ? copyTitle(petName, ANONYMOUS_PET_NAME, row.sharedAt, currentYear) : 'Saved report';
+  const title = row ? copyTitle(petName, ANONYMOUS_PET_NAME, row.sharedAt, currentYear) : COPY_TITLE_PENDING;
   const message = copy.kind === 'offline' ? COPY_OFFLINE : copy.kind === 'unavailable' ? COPY_UNAVAILABLE : copy.kind === 'failed' ? COPY_FAILED : null;
 
   return (
@@ -86,6 +87,8 @@ export default function SavedReportScreen() {
             // The stored print page carries no script; nothing on paper runs or loads.
             javaScriptEnabled={false}
             onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+            // The owner's text size reaches the page on Android, as in the preview.
+            textZoom={Platform.OS === 'android' ? androidTextZoom(PixelRatio.getFontScale()) : undefined}
             showsVerticalScrollIndicator
           />
         )}

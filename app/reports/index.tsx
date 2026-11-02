@@ -48,9 +48,11 @@ export default function ReportsLibraryScreen() {
 
   const load = useCallback(async () => {
     if (!petId) return;
-    setState({ kind: 'loading' });
+    // The list is still (spec §14): a re-read on return refreshes in place, never back to skeletons.
+    // A failed re-read over a list already shown keeps that list rather than blanking it.
+    setState((s) => (s.kind === 'ok' ? s : { kind: 'loading' }));
     const out = await readSavedReports(petId);
-    setState(out.kind === 'ok' ? { kind: 'ok', reports: out.reports } : { kind: 'failed' });
+    setState((s) => (out.kind === 'ok' ? { kind: 'ok', reports: out.reports } : s.kind === 'ok' ? s : { kind: 'failed' }));
   }, [petId]);
 
   // Re-read on focus: a copy kept since the last visit is simply there.
