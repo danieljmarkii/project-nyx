@@ -7,8 +7,9 @@ import { Header } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { VisitDetailBody } from '../../components/vetvisits/VisitDetailBody';
+import { VisitReports } from '../../components/vetvisits/VisitReports';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
-import { readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
+import { readAppointmentForVisit, readVetVisitDetail, type VetVisitDetail } from '../../lib/vetVisits';
 
 // One visit as written (CUL-900 VV-2; mock D3). *Edit* landed in VV-4 (CUL-902).
 //
@@ -20,6 +21,12 @@ export default function VetVisitScreen() {
   const pets = usePetStore((s) => s.pets);
 
   const [detail, setDetail] = useState<VetVisitDetail | null>(null);
+  // The booking this visit was logged from: a report filed under it before the day is this
+  // visit's report too (PR-22, CUL-2302).
+  const [bookingId, setBookingId] = useState<string | null>(null);
+  // Bumped on every focus read, so the reports section re-reads too: a report filed under this
+  // visit, or taken off it, from the report screen shows on the way back.
+  const [readTick, setReadTick] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -31,7 +38,17 @@ export default function VetVisitScreen() {
       return;
     }
     try {
-      setDetail(await readVetVisitDetail(id));
+      // The booking only widens the optional reports section, so its failure never blanks the visit.
+      const [read, booking] = await Promise.all([
+        readVetVisitDetail(id),
+        readAppointmentForVisit(id).catch((err) => {
+          console.warn('[vet-visit] booking read failed:', err);
+          return null;
+        }),
+      ]);
+      setDetail(read);
+      setBookingId(booking?.id ?? null);
+      setReadTick((n) => n + 1);
       setFailed(false);
       setLoaded(true);
     } catch (err) {
@@ -97,6 +114,13 @@ export default function VetVisitScreen() {
             detail={detail}
             petName={petName}
             onOpenDocument={(groupId) => router.push(`/vet-document/${groupId}`)}
+          />
+          <VisitReports
+            petId={detail.visit.pet_id}
+            visitId={detail.visit.id}
+            appointmentId={bookingId}
+            refreshKey={readTick}
+            onOpenReport={(r) => router.push({ pathname: '/reports/[id]', params: { id: r.id, pet: r.petId } })}
           />
         </ScrollView>
       ) : failed ? (
