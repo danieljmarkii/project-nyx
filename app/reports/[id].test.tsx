@@ -36,6 +36,20 @@ jest.mock('../../lib/reportLibrary', () => ({
 }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 
+// PR-22 (CUL-2302): the copy's visit link and the picker's choices.
+const mockReadLink = jest.fn();
+const mockLink = jest.fn();
+jest.mock('../../lib/reportVisitLink', () => ({
+  ...jest.requireActual('../../lib/reportVisitLink'),
+  readReportLink: (...a: unknown[]) => mockReadLink(...a),
+  linkSavedReport: (...a: unknown[]) => mockLink(...a),
+}));
+const mockHome = jest.fn();
+jest.mock('../../lib/vetVisits', () => ({
+  formatVisitDate: () => 'Oct 30',
+  readVetVisitsHome: (...a: unknown[]) => mockHome(...a),
+}));
+
 import SavedReportScreen from './[id]';
 
 const COOPER = { id: 'pet-cooper', name: 'Cooper' };
@@ -51,6 +65,12 @@ beforeEach(() => {
   mockParams = { id: 'r1', pet: COOPER.id };
   mockReadOne.mockResolvedValue(ROW);
   mockOpen.mockResolvedValue({ kind: 'ok', html: '<html>as sent</html>' });
+  mockReadLink.mockResolvedValue(null);
+  mockLink.mockResolvedValue({ kind: 'ok' });
+  mockHome.mockResolvedValue({
+    next: null, later: [], awaiting: [],
+    visits: [{ id: 'v1', petId: COOPER.id, visitedAt: '2026-10-30', stamp: null, title: 'Recheck', where: 'Riverside', tags: [] }],
+  });
 });
 
 it('draws the stored copy as sent, locked, under its pet and date', async () => {
@@ -107,4 +127,56 @@ it('bytes for an id whose row the owner cannot read are never drawn', async () =
   const view = render(<SavedReportScreen />);
   await waitFor(() => expect(view.getByTestId('report-unavailable')).toBeTruthy());
   expect(view.queryByTestId('report-copy')).toBeNull();
+});
+
+describe('its visit (PR-22, CUL-2302)', () => {
+  it('a copy filed under nothing offers to attach it, and one tap files it', async () => {
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-visit-attach')).toBeTruthy());
+    expect(mockReadLink).toHaveBeenCalledWith(COOPER.id, 'r1');
+    expect(mockHome).toHaveBeenCalledWith(COOPER.id);
+    fireEvent.press(view.getByTestId('report-visit-attach'));
+    expect(view.getByText('This only files the report. The copy stays exactly as sent.')).toBeTruthy();
+    fireEvent.press(view.getByTestId('visit-link-visit-v1'));
+    await waitFor(() => expect(view.getByTestId('report-visit-line')).toBeTruthy());
+    expect(mockLink).toHaveBeenCalledWith(COOPER.id, 'r1', { kind: 'visit', id: 'v1' });
+    expect(view.getByText('For the Oct 30 visit')).toBeTruthy();
+  });
+
+  it('a filed copy names its visit and can be taken off it', async () => {
+    mockReadLink.mockResolvedValue({ kind: 'visit', id: 'v1' });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByText('For the Oct 30 visit')).toBeTruthy());
+    fireEvent.press(view.getByTestId('report-visit-change'));
+    fireEvent.press(view.getByTestId('visit-link-none'));
+    await waitFor(() => expect(view.getByTestId('report-visit-attach')).toBeTruthy());
+    expect(mockLink).toHaveBeenCalledWith(COOPER.id, 'r1', null);
+  });
+
+  it('a refused write says so and keeps the copy as it was', async () => {
+    mockLink.mockResolvedValue({ kind: 'refused' });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-visit-attach')).toBeTruthy());
+    fireEvent.press(view.getByTestId('report-visit-attach'));
+    fireEvent.press(view.getByTestId('visit-link-visit-v1'));
+    await waitFor(() => expect(view.getByTestId('report-visit-error')).toBeTruthy());
+    expect(view.getByTestId('report-visit-attach')).toBeTruthy();
+    expect(view.queryByTestId('report-visit-line')).toBeNull();
+  });
+
+  it('a link read that failed offers nothing, never "Attach" over a copy that may be filed', async () => {
+    mockReadLink.mockResolvedValue('failed');
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-new')).toBeTruthy());
+    await waitFor(() => expect(mockReadLink).toHaveBeenCalled());
+    expect(view.queryByTestId('report-visit')).toBeNull();
+  });
+
+  it('a pet this account does not hold reads no link', async () => {
+    mockParams = { id: 'r1', pet: 'someone-elses-pet' };
+    render(<SavedReportScreen />);
+    await waitFor(() => expect(mockOpen).not.toHaveBeenCalled());
+    expect(mockReadLink).not.toHaveBeenCalled();
+    expect(mockHome).not.toHaveBeenCalled();
+  });
 });
