@@ -344,6 +344,9 @@ svg .cnt{font-size:${SVG_TEXT_MIN}px;fill:var(--ink);font-weight:600;}
 svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
 .mast .more{display:none;}
+.firstwarn{display:block;width:100%;min-height:44px;margin:0 0 0.4rem;padding:0.2rem 0;border:0;border-bottom:1.5px solid var(--ink);background:none;color:var(--concern);font:inherit;font-weight:650;font-size:min(1rem, ${VERDICT_MAX_PX}px);text-align:left;}
+.firstwarn::after{content:" ↓" / "";}
+.firstwarn[hidden]{display:none;}
 ${BACK_STYLE_PHONE_SCREEN}
 @media screen{
 [data-compact] .mast .more{display:block;min-height:44px;width:100%;margin:0.1rem 0;padding:0.15rem 0;border:0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);background:none;color:var(--ink2);font:inherit;font-size:0.875rem;text-align:left;}
@@ -374,6 +377,7 @@ h2{font-size:9pt;}
 .rl,.axis,.parts,.qs .ptr{font-size:8pt;}
 .rl.sub{font-size:7pt;}
 .verdict{display:none;}
+.firstwarn{display:none;}
 .keep-push{display:none;}
 .keep,.leadchart{break-inside:avoid;}
 ${BACK_STYLE_PHONE_PRINT}}
@@ -389,8 +393,10 @@ const SCRIPT_PHONE = `
   function scale(){ var p = document.getElementById('v2probe'); return p ? p.getBoundingClientRect().height / ${BODY_PX} : 1; }
   function bandPast(bandH){ return bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight; }
   function firstLineIn(el){ var cs = getComputedStyle(el); var line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3; return el.getBoundingClientRect().top + window.pageYOffset + line <= window.innerHeight; }
+  var first = document.querySelector('[data-part=first-warning]');
   function lay(){
     root.removeAttribute('data-tight');
+    if (first) first.hidden = true;
     // The first warning on the page: the band's heading, or, where the only flag is drawn on the
     // lead chart itself (a sole chronicity flag, \`bandMembersOf\`), that chart's flag heading
     // (adversarial pass 1 on PR-17, CUL-2297: r11-steady carried its flag below the fold).
@@ -418,6 +424,15 @@ const SCRIPT_PHONE = `
       // The fold must buy the first LINE of the warning's heading, never a sliver of its border
       // (adversarial pass 1 on PR-17: 6pt of the box cost the species for no words).
       if (bandPast(bandH) && !firstLineIn(bandH)) root.removeAttribute('data-tight');
+    }
+    // THE FIRST WARNING'S POINTER (PM ruling (a) on CUL-2297, CUL-2400). Where compaction cannot
+    // bring the first warning's heading into the first frame (320pt at large text, AX5, a flag
+    // drawn only on the lead chart), its own words print as one line at the top of the sheet, and a
+    // tap takes the reader to it. It repeats the heading verbatim (never a flag the PDF lacks,
+    // BRK-1), is a part and not a block (parity, spec §3.4), and never prints.
+    if (first && bandH && bandPast(bandH)) {
+      first.textContent = bandH.textContent;
+      first.hidden = false;
     }
     var unit = document.querySelector('[data-keep="lead"]');
     var push = document.querySelector('.keep-push');
@@ -453,6 +468,13 @@ const SCRIPT_PHONE = `
     var end = top + unit.getBoundingClientRect().height;
     if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
   }
+  if (first) first.addEventListener('click', function(){
+    var target = document.querySelector('[data-block=band] h2') || document.querySelector('[data-block=lead-chart].flagged > h2.flagh');
+    if (!target) return;
+    target.setAttribute('tabindex', '-1');
+    target.scrollIntoView({ block: 'start' });
+    target.focus({ preventScroll: true });
+  });
   var more = document.querySelector('.mast .more');
   if (more) more.addEventListener('click', function(){
     var mast = more.parentNode;
@@ -495,6 +517,7 @@ export function renderPhoneV2(doc: DocumentV2): string {
 <body>
 <span id="v2probe" aria-hidden="true">M</span>
 <main class="sheet" data-sheet="1">
+<button class="firstwarn" type="button" data-part="first-warning" hidden></button>
 ${body(doc)}
 </main>
 ${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}

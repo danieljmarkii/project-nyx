@@ -136,8 +136,9 @@ Deno.test('type — the root follows -apple-system-body over a 17px fallback; ev
   assert.ok(sizes.length > 10)
   for (const { sel, v } of sizes) {
     if (sel === 'html') continue // the fallback, overridden by -apple-system-body
-    if (sel === '.verdict') {
-      assert.equal(v, `min(1rem, ${VERDICT_MAX_PX}px)`, 'the pinned repeat grows with the text up to 1.25×')
+    if (sel === '.verdict' || sel === '.firstwarn') {
+      // Both repeat words printed at full size in their own place below (PR-17 for the pointer).
+      assert.equal(v, `min(1rem, ${VERDICT_MAX_PX}px)`, `${sel} grows with the text up to 1.25×`)
       continue
     }
     if (sel === 'svg .cnt') {
@@ -290,4 +291,23 @@ Deno.test('compact — at scale 1.6 the details fold behind one line; species, s
   assert.match(html, /<h1>Nyx<\/h1><p class="brief">Cat · female · 3 y · 3\.73 kg \(8\.2 lb\)<\/p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details<\/button><div class="fold" id="v2more"><p class="sig">/)
   assert.match(screen, /\.more::after\{content:" ›" \/ "";\}/, 'the glyph is not part of the button’s name')
   assert.match(screen, /\[data-compact\] \.mast \.more\{display:block;min-height:44px;/, 'the fold line is a 44pt target')
+})
+
+Deno.test('first warning — where the heading cannot reach the first frame, its own words print at the top, hidden until needed, never in print (PM ruling (a) on CUL-2297)', () => {
+  const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
+  // The line sits first in the sheet, hidden, empty: it says nothing the script did not copy.
+  assert.match(html, /<main class="sheet" data-sheet="1">\n<button class="firstwarn" type="button" data-part="first-warning" hidden><\/button>/)
+  // A part, never a block: parity with the print document holds.
+  assert.doesNotMatch(html, /data-block="first-warning"/)
+  const script = html.slice(html.indexOf('<script>'))
+  // It is hidden again at the start of every layout, so the compaction is decided without it.
+  assert.match(script, /root\.removeAttribute\('data-tight'\);\s*if \(first\) first\.hidden = true;/)
+  // Shown only where the heading is still past the frame, and only ever with the heading's own words.
+  assert.match(script, /if \(first && bandH && bandPast\(bandH\)\) \{\s*first\.textContent = bandH\.textContent;\s*first\.hidden = false;\s*\}/)
+  assert.ok(script.indexOf('first.hidden = false') < script.indexOf('var unit = document.querySelector'), 'shown before the keep-together spacer measures')
+  // The print sheet never carries it.
+  const print = html.slice(html.indexOf('@media print{'))
+  assert.match(print, /\.firstwarn\{display:none;\}/)
+  // The tap lands the reader on the warning.
+  assert.match(script, /target\.scrollIntoView\(\{ block: 'start' \}\);\s*target\.focus\(\{ preventScroll: true \}\);/)
 })
