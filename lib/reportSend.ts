@@ -158,35 +158,16 @@ export function sendCallCard(live: ComposerLive, petName: string, localHour: num
 
 // ── The subject (BRK-12) ─────────────────────────────────────────────────────────────────────
 
-/** Short, digit-free nouns for the subject line. A closed catalogue: nothing here is computed. */
+/**
+ * Each flag in the composer card's own words, one flag at a time: the subject can never name a
+ * flag differently from the card the owner just read. A second catalogue here drifted twice in
+ * one day (a refusal trigger and a new `sustained_refusal` fell through to "eating less"), so
+ * there is no second catalogue. The card's words are digit-free by construction; the subject
+ * guard below checks the result anyway.
+ */
 function subjectNoun(f: ComposerFlag): string {
-  switch (f.kind) {
-    case 'present_blood':
-      return f.sign === 'vomit' ? 'blood in vomit' : 'blood in stool';
-    case 'present_foreign':
-      return 'possible foreign material in vomit';
-    case 'intake_decline':
-      // A refusal reads as one, never as "less" (intake is not preference); the composer's words.
-      if (f.trigger === 'refused_then_vomited') return 'refusing food, then vomiting';
-      if (f.trigger === 'refused_normal_food') return 'refusing a usual food';
-      return 'eating less';
-    case 'trial_diet_refusal':
-      return 'trial diet not finished';
-    case 'chronicity':
-      return 'long-running signs';
-    case 'symptom_burden':
-      return 'frequent signs this week';
-    case 'symptom_worsening':
-      return 'signs getting more frequent';
-    case 'weight_loss':
-      return 'weight down';
-    case 'weight_unchecked':
-      return 'weight unchecked';
-    case 'protein_mismatch':
-      return 'trial food protein mismatch';
-    default:
-      return 'another finding';
-  }
+  const body = liveCardCopy({ state: 'flags', startDate: '', endDate: '', flags: [f] }, 'x')?.body ?? 'Another finding.';
+  return `${body.charAt(0).toLowerCase()}${body.slice(1)}`.replace(/\.$/, '');
 }
 
 /** A digit beside a percent sign or a weight unit: the shape the subject must never carry. */

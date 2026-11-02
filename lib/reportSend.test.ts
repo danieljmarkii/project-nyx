@@ -171,7 +171,7 @@ describe('the subject (BRK-12): a template with no counts, percentages or weight
 
   it('names the pet with surname, each flag in words, the window and the visit', () => {
     expect(emailSubject(input)).toBe(
-      'Nyx (Reyes) · owner’s home log · flags: possible foreign material in vomit, frequent signs this week, weight down, trial diet not finished, long-running signs · Sep 16 to Oct 31 · visit Nov 3',
+      'Nyx (Reyes) · owner’s home log · flags: possible foreign material in vomit, a lot of vomiting this week, weight down, the trial diet not finished, vomiting that has gone on for weeks · Sep 16 to Oct 31 · visit Nov 3',
     );
   });
 
@@ -185,7 +185,7 @@ describe('the subject (BRK-12): a template with no counts, percentages or weight
       'symptom_worsening', 'weight_loss', 'weight_unchecked', 'protein_mismatch', 'unknown_future_kind'];
     for (const kind of kinds) {
       const s = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind, sign: 'vomit', trigger: null }] } });
-      expect(s.split(' · ')[2]).toMatch(/^flags: [a-z ,-]+$/);
+      expect(s.split(' · ')[2]).toMatch(/^flags: [a-z ,’-]+$/);
     }
   });
 
@@ -195,6 +195,26 @@ describe('the subject (BRK-12): a template with no counts, percentages or weight
     expect(usual).not.toContain('eating less');
     const vomited = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind: 'intake_decline', sign: null, trigger: 'refused_then_vomited' }] } });
     expect(vomited).toContain('refusing food, then vomiting');
+  });
+
+  it('every flag reads in the card’s own words, so the subject and the card never drift apart', () => {
+    const kinds: Array<[string, string | null, string | null]> = [
+      ['present_blood', 'vomit', null], ['present_foreign', 'vomit', null], ['intake_decline', null, 'sustained_refusal'],
+      ['intake_decline', null, 'refused_normal_food'], ['intake_decline', null, 'consecutive_low'], ['trial_diet_refusal', null, null],
+      ['chronicity', 'itch', null], ['symptom_burden', 'vomit', null], ['symptom_worsening', 'diarrhea', null],
+      ['weight_loss', null, null], ['weight_unchecked', null, null], ['protein_mismatch', null, null], ['unknown_future_kind', null, null],
+    ];
+    for (const [kind, sign, trigger] of kinds) {
+      const flag = { kind, sign, trigger };
+      const cardBody = liveCardCopy({ ...FLAGGED, flags: [flag] }, 'Nyx')?.body ?? '';
+      const noun = emailSubject({ ...input, live: { ...FLAGGED, flags: [flag] } }).split(' · ')[2].replace(/^flags: /, '');
+      expect(noun).toBe(`${cardBody.charAt(0).toLowerCase()}${cardBody.slice(1)}`.replace(/\.$/, ''));
+    }
+  });
+
+  it('a cat refusing every meal for days never reads as eating less (sustained_refusal, #1400)', () => {
+    const s = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind: 'intake_decline', sign: null, trigger: 'sustained_refusal' }] } });
+    expect(s).not.toContain('eating less');
   });
 
   it('the guard rejects a digit beside %, kg or lb', () => {
