@@ -32,6 +32,13 @@
 //   waiver      "not as a cause" only, when a cited fact prints it (waiveSideBySide)
 //   names       every capitalised word past the first is printed in a cited fact (a product the
 //               lexicon does not know is still caught)
+//   vocabulary  CUL-2380: every word is printed in a line the sentence cites, is the pet's name, or
+//               is in LEAD_FRAME. Softening, deferral and reassurance in a word no list has seen
+//               ("largely eased", "settling", "nothing to worry about") is refused because the word
+//               is new, not because a list names it. The class this cannot close: a lead built only
+//               from its cited lines' own words, reordered (measured by the bake-off's set).
+//   negation    CUL-2380: a negating word prints only with the word a cited line prints after it,
+//               so true words cannot be flipped ("possible foreign material, not unconfirmed")
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -40,7 +47,7 @@ import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type F
 export type LeadSentence = { text: string; cites: string[] }
 export type LeadSummary = { sentences: LeadSentence[] }
 
-export const LEAD_VERIFIER_VERSION = 'vr2-4'
+export const LEAD_VERIFIER_VERSION = 'vr2-5'
 export const LEAD_MAX_SENTENCES = 3
 export const LEAD_MAX_WORDS = 60
 export const PERIOD_RUN_MAX = 2
@@ -74,6 +81,32 @@ const POSITIVE_ALL = new RegExp(POSITIVE_INTAKE.source, 'gi')
 
 /** Spelled-out counts escape the number checks; digits only. */
 const SPELLED_NUMBERS = /\b(?:zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twice|thrice|once|dozen|several|couple)\b/i
+/** The words a lead may print that no cited line need carry (CUL-2380). Function words and the
+ *  lead's own frame ("is a live flag", "the owner-entered diet trial ... is at day"). Deliberately
+ *  short and deliberately inert: no word here may degrade, time, reassure, defer or judge
+ *  (verify.test.ts pins that each one passes none of the absence, sequence, positive-intake or
+ *  negation patterns, and pins the list itself, so a word added here shows in review). A word a
+ *  careful lead needs and this list lacks drops that lead, which is the loud failure. */
+export const LEAD_FRAME: readonly string[] = [
+  // articles, prepositions, conjunctions and the copula
+  'a', 'an', 'the', 'and', 'of', 'to', 'at', 'on', 'in', 'by', 'for', 'from', 'as', 'with', 'over',
+  'is', 'are', 'was', 'were', 'be', 'been', 'has', 'have', 'had',
+  // the lead's own frame: "Foreign material is a live flag: 1 incident showed ...", "the trial ran"
+  'live', 'flag', 'showed', 'ran',
+  // the H2 waiver's own frame: "... is set side by side, not as a cause"
+  'set',
+]
+/** Negating words: never in the frame, and bound to the word a cited line prints after them. */
+const NEGATIONS = new Set(['not', 'no', 'never', 'without', 'nothing', 'none', 'neither', 'nor', 'nobody', 'nowhere', 'cannot'])
+const NEGATED_CONTRACTION = /n't$/
+const FRAME = new Set(LEAD_FRAME)
+
+/** A sentence's words, lower-cased, apostrophes straightened; digits, dates and symbols are the
+ *  number rules' business and are skipped here. */
+export function leadWords(text: string): string[] {
+  return norm(text).toLowerCase().match(/[a-z][a-z']*(?:-[a-z][a-z']*)*/g) ?? []
+}
+
 const ORDER_WORDS = /\b(?:after|before|then|followed|following|since|until|once|started|starting|began|begun|ended|ending|first fed|later|earlier|subsequently|thereafter)\b/i
 const PERIOD_COUNT = /\b\d+(?:\s+\w+){0,3}?\s+(?:in|on|during|over)\s+(?:the\s+)?(?:\w+\s+)?(?:weeks?|months?|fortnights?|wk)\b|\b(?:weeks?|months?)\s+\d+\s*[:=]\s*\d+/gi
 const MONTHS_AND_DAYS = new Set([
@@ -250,6 +283,33 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     for (const pair of numberBindings(s.text, year)) {
       if (!bound.has(pair)) err(i, 'number-binding', `"${pair.replace('<', ' ').replace('|', ' ').trim()}" is not how a cited line prints that number`)
     }
+
+    // Closed vocabulary (CUL-2380): a word the cited lines never print, that is not the pet's name
+    // and not in the frame, is a word the verifier cannot read, so the lead drops. A hyphenated
+    // compound passes whole, or when every part would pass alone.
+    const citedWords = s.cites.flatMap((c) => leadWords(facts.get(c)?.text ?? ''))
+    const vocab = new Set(citedWords)
+    const pet = new Set(leadWords(String(table.pet_name ?? '')))
+    const known = (w: string): boolean => {
+      const base = w.replace(/'s$/, '')
+      if (vocab.has(w) || vocab.has(base) || pet.has(base)) return true
+      if (NEGATIONS.has(w) || NEGATED_CONTRACTION.test(w)) return false
+      return FRAME.has(w)
+    }
+    const sentenceWords = leadWords(s.text)
+    for (const w of new Set(sentenceWords)) {
+      if (known(w)) continue
+      if (w.includes('-') && w.split('-').every(known)) continue
+      err(i, 'vocabulary', `${JSON.stringify(w)} is printed in no cited line and is not in the lead's frame`)
+    }
+    // Negation is bound (CUL-2380): each negating word prints only with the word a cited line
+    // prints right after it, so a true word cannot be flipped by a negation the line never makes.
+    const citedPairs = new Set(citedWords.slice(0, -1).map((w, k) => `${w} ${citedWords[k + 1]}`))
+    sentenceWords.forEach((w, k) => {
+      if (!NEGATIONS.has(w) && !NEGATED_CONTRACTION.test(w)) return
+      const pair = `${w} ${sentenceWords[k + 1] ?? ''}`
+      if (!citedPairs.has(pair)) err(i, 'negation', `${JSON.stringify(pair.trim())} is not a negation a cited line prints`)
+    })
 
     // The cited lines normalised as the lead is (curly apostrophes), so "Hill's" matches.
     const cited = s.cites.map((c) => norm(facts.get(c)?.text ?? '')).join(' ')

@@ -156,6 +156,9 @@ export function tableFromPayload(payload: LeadFactPayload): FactTable {
   ]
   return {
     fixture: `${payload.pet_name}-${payload.record_end}`,
+    // The pet's name is the one word a lead may print that no cited line need carry (verify.ts,
+    // the closed vocabulary).
+    pet_name: payload.pet_name,
     year: Number(payload.record_end.slice(0, 4)),
     facts,
     lexicon: { foods: {}, drugs: {} },
