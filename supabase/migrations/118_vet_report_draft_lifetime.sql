@@ -108,6 +108,11 @@
 -- deploy's boot check sends `{}` with this same key and needs a 4xx that does
 -- nothing), so only this job's call reaps.
 --
+-- The URL is production's. Replayed on a branch database or a local reset that
+-- has pg_cron, this job calls production's sweep every 15 minutes, which is
+-- harmless (it only removes drafts already due) but surprising; unschedule it
+-- there (rls-privacy-reviewer pass 1, F5).
+--
 -- If the function is not deployed yet when this applies, each call answers
 -- 404 into net._http_response and nothing else happens.
 --
