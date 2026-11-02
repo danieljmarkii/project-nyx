@@ -1625,6 +1625,31 @@ Deno.test('CUL-2290: v2 asked and the caller allowlisted → the v2 document, st
   assert.ok(!String(res.body.html).includes('owner@example.com'))
 })
 
+Deno.test('CUL-2297: v2 returns the phone reflow of the SAME document — same blocks, same order, same flag count', async () => {
+  const profile = { single: { display_name: 'Jordan', first_name: 'Jordan', last_name: 'Rivera', timezone: 'UTC' } }
+  const client = withAuth(
+    fakeClient({ ...PET_TABLES, user_profiles: profile, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['u1'] }) }),
+    'u1',
+  )
+  const res = await generateReportForPet(client, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', null, null, 'v2')
+  assert.equal(res.body.report_version, 'v2')
+  const print = String(res.body.html)
+  const phone = res.body.phone_html
+  assert.equal(typeof phone, 'string')
+  const blocks = (html: string) => [...html.matchAll(/data-block="([^"]+)"/g)].map((m) => m[1])
+  assert.ok(blocks(print).length > 3, 'non-vacuous: the print document carries blocks')
+  assert.deepEqual(blocks(String(phone)), blocks(print))
+  assert.ok(String(phone).includes('Kept by Jordan Rivera · '), 'the phone carries the same colophon owner')
+  assert.ok(String(phone).includes('<script'), 'the phone document carries its layout script (CUL-2383)')
+})
+
+Deno.test('CUL-2297: v1 carries no phone layout (phone_html null), asked or failed closed', async () => {
+  const asked = withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['other'] }) }), 'u1')
+  const unasked = withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: true }) }), 'u1')
+  assert.equal((await generateReportForPet(asked, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt', null, null, 'v2')).body.phone_html, null)
+  assert.equal((await generateReportForPet(unasked, 'p1', NOW_MS, null, OWNER_AUDIENCE, 'jwt')).body.phone_html, null)
+})
+
 Deno.test('CUL-2290: v2 asked but the flag fails closed → v1 (not allowlisted, no JWT, auth error, read error, malformed)', async () => {
   const cases: Array<[string, ReturnType<typeof fakeClient>, string | null]> = [
     ['not on the allowlist', withAuth(fakeClient({ ...PET_TABLES, events: { list: [] }, ...DOC_FLAG({ enabled: false, allowlist: ['someone-else'] }) }), 'u1'), 'jwt'],
