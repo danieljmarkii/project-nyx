@@ -26,6 +26,8 @@ Mid-session the PM ruled in the dispatcher session (CUL-2394's newest comment) a
 
 Pass 3 broke the anchor: ending the window at the last rating reached a good meal older than 72 hours and silenced a floor the 72 hours to now had raised, at breakfast on the morning after a 23:59 refusal. The anchored window is now a fallback, tried only when the now-window does not qualify. The demo story's intake card is now held by the floor two days after its seeded dip and decays at four. Residuals: the report now shares the Signal's baseline drag (noted on CUL-1797, labelled Live harm), and a cat rated "ate some" at every meal stays silent (an input for the threshold ruling, on CUL-2394).
 
+The dispatcher then re-sorted CUL-2406's free-fed mix as Live harm (a mix's food id is null, so its kibble was invisible to the free-fed check and its "ate it all" cleared the floor). Fixed before merge: only a certainly watched rating clears the floor, never a mix with an unknown or possibly free-fed part.
+
 ## Teach
 
 **D3 · Reading a test: two answers that agree can both be wrong** (L1)
