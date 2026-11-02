@@ -35,6 +35,7 @@ import {
   type ConfirmationCopy, type SendCallCard as SendCallCardModel, type SendDocumentChoice, type SendResult,
 } from '../lib/reportSend';
 import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
+import { openExamRoom } from '../lib/examRoomCopy';
 import type { ComposerLive } from '../lib/reportComposer';
 import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } from '../lib/reportPreviewV2';
 
@@ -411,9 +412,15 @@ export default function ReportScreen() {
   const onSendAction = useCallback(
     async (action: SendAction) => {
       if (!report || !sendCtx) return;
-      // Exam-room mode (PR-19, CUL-2299) is not on main yet, so the sheet never lists it here;
-      // whichever of PR-18 and PR-19 merges second calls `openExamRoom` in this branch.
-      if (action.target === 'phone') return;
+      // Exam-room mode (CUL-2299): the sheet has dismissed (C-14), so the room presents over this
+      // screen. Staging the copy can fail (a full disk); then the room never opens empty. Showing
+      // the report is not a send, so it makes no confirmation card.
+      if (action.target === 'phone') {
+        if (report.phoneHtml === null || !openExamRoom({ phoneHtml: report.phoneHtml }, (r) => router.push(r))) {
+          Alert.alert('Couldn’t show the report here', 'Please try again.');
+        }
+        return;
+      }
       setSharing(true);
       let result: SendResult;
       try {
@@ -830,6 +837,7 @@ export default function ReportScreen() {
           visitDay={sendCtx.visitDay}
           documents={sendCtx.documents}
           mailReady={sendCtx.mailReady}
+          canShowOnPhone={hasPhonePreview(report)}
           onClose={() => setSendOpen(false)}
           onAction={onSendAction}
         />
