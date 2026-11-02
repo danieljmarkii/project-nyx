@@ -308,6 +308,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     },
     incidentPhotos: [],
     incidentPhotosRemoved: [],
+    incidentPhotosLeftOut: [],
     // CUL-875 — null is the shape of "this account never answered", which is every
     // pre-N-6 fixture. The Noticed cases build their own block.
     noticed: null,

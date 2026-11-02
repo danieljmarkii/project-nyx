@@ -20,9 +20,11 @@ export function documentBlockIds(doc: DocumentV2): string[] {
 }
 
 /** R-10: the dated photos beside a band line. Empty when the line cites no photographed event. */
-export function bandPhotosHtml(photos: readonly BandPhoto[]): string {
-  if (photos.length === 0) return ''
-  return `<span class="bphotos">${photos
+export function bandPhotosHtml(photos: readonly BandPhoto[], leftOutLine: string | null = null): string {
+  // R-10 (PR-23): a photo the owner left out is dated here, beside the line it would have sat by.
+  const left = leftOutLine === null ? '' : `<span class="bleft">${h(leftOutLine)}</span>`
+  if (photos.length === 0) return left
+  return `${left}<span class="bphotos">${photos
     .map(
       (p) =>
         `<span class="bphoto">${p.src ? `<img src="${p.src}" alt="${h(p.alt)}" />` : ''}<span class="bcap">${h(p.caption)}</span></span>`,
@@ -47,7 +49,9 @@ function backBlock(b: BackBlockV2, phone: boolean): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'photo_strip':
-      return `${open('section', 'photos')}<h2>${h(b.heading)}</h2><p class="bnote">${b.introHtml}</p><div class="phstrip">${b.cardsHtml.join('')}</div></section>`
+      return `${open('section', 'photos')}<h2>${h(b.heading)}</h2><p class="bnote">${b.introHtml}</p>${
+        b.leftOutLine === null ? '' : `<p class="bnote">${h(b.leftOutLine)}</p>`
+      }<div class="phstrip">${b.cardsHtml.join('')}</div></section>`
     case 'no_photos':
       return `${open('p', 'nophotos')}${h(b.text)}</p>`
     case 'ledger':
@@ -183,6 +187,7 @@ const BACK_SHARED = `
 .back .phhead .phtype{color:var(--ink2);}
 .back .phtag{font-weight:700;text-transform:uppercase;letter-spacing:.05em;border:.75pt solid var(--ink);padding:0 3pt;}
 .bphotos{display:flex;gap:6pt;flex-wrap:wrap;margin-top:3pt;}
+.bleft{display:block;margin-top:2pt;font-style:italic;}
 .bphoto{display:inline-flex;flex-direction:column;}
 .bphoto img{object-fit:cover;border:1pt solid var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .bcap{color:var(--ink2);}

@@ -2078,6 +2078,15 @@ export interface StoolAiReads {
 /** Present-only safety class carried by a photographed incident — also LEADS the safety band. */
 export type IncidentPhotoSafety = 'blood' | 'foreign'
 
+/** A photo the owner left out of one report (PR-23, R-10): which, when, and its safety class. */
+export interface IncidentPhotoLeftOut {
+  attachmentId: string
+  eventId: string
+  type: string
+  occurredAt: string
+  safety: IncidentPhotoSafety | null
+}
+
 /**
  * One photographed incident, for Appendix E (PR 7). Built PURELY here (which incidents, order,
  * per-photo metadata + the present-only safety class); the actual image bytes are fetched,
@@ -3362,6 +3371,14 @@ export interface ReportSnapshot {
    * disclosure names dates rather than relying on the marker alone.
    */
   incidentPhotosRemoved: Array<{ eventId: string; type: string; occurredAt: string }>
+  /**
+   * Vet report v2 PR-23 (CUL-2303, R-10) — the photos the owner left out of THIS report before
+   * sending. Assembly always returns none; only index.ts, after it splits the manifest on the
+   * owner's choice, moves a photo here from `incidentPhotos`. Each still exists (unlike
+   * `incidentPhotosRemoved`), so the v2 document dates a flagged one beside its band line and
+   * counts every one on the record sheet. No storage path, note, read or bytes.
+   */
+  incidentPhotosLeftOut: IncidentPhotoLeftOut[]
   /**
    * CUL-875 — the owner's daily looks: the page-1 line, the graph and the appendix.
    * NULL when no look falls in the window (no designed empty state, deliberately — a
@@ -6843,6 +6860,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     incompletePulls: input.incompletePulls ?? [],
     incidentPhotos,
     incidentPhotosRemoved,
+    incidentPhotosLeftOut: [],
     noticed,
     v2: {
       chronicity: detection.chronicity.map((f) => ({
