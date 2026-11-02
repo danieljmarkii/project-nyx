@@ -4414,17 +4414,21 @@ export function withEn5Config(config: DetectionConfig): DetectionConfig {
  * meals with the pet's own normal, so a record with no good meals has no normal to fall from and
  * they stay silent: a cat whose every rated meal for a month was picked at or refused raised no
  * flag (adversarial-reviewer, VR2-13, P2b). The floor closes that by itself, without a baseline.
- * It yields to `consecutive_low` (one "is she eating" card, and that one already names the fall),
- * and sits beside `refused_normal_food`, which names a food.
+ *
+ * When the floor holds it REPLACES `consecutive_low` (one "is she eating" card, and the louder,
+ * truer one): a cat that ate well for two weeks and then refused every meal for three days met the
+ * floor, yet the first draft yielded and she got "eaten less than usual today … if it carries on"
+ * instead of a call today (adversarial pass 1, B1). It sits beside `refused_normal_food`, which
+ * names a food, and leads it.
  */
 function detectIntakeDeclineCore(
   input: DetectionInput,
   config: DetectionConfig,
 ): IntakeDeclineFinding[] {
   const relative = detectIntakeDeclineRelative(input, config)
-  if (relative.some((f) => f.trigger === 'consecutive_low')) return relative
   const floor = sustainedRefusalFinding(input, config)
-  return floor ? [floor, ...relative] : relative
+  if (!floor) return relative
+  return [floor, ...relative.filter((f) => f.trigger !== 'consecutive_low')]
 }
 
 /**

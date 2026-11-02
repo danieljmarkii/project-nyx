@@ -46,7 +46,7 @@ describe('the sustained-refusal card on the phone', () => {
     const all = [sampleLine(f), evidenceText(f, 'Miso'), stripNameLine(f), signalHomeAsk(f)].join(' | ');
     expect(all).not.toMatch(/less than usual|below the usual|picky|fussy|!/i);
     expect(sampleLine(f)).toBe('6 rated meals on 3 days, none eaten well');
-    expect(evidenceText(f, 'Miso')).toMatch(/^Miso has picked at or refused every meal you rated in the last three days, 6 meals on 3 days\. That's worth a call to your vet today\./);
+    expect(evidenceText(f, 'Miso')).toMatch(/^Miso has picked at or refused every meal you watched and rated in the last 72 hours, 6 meals on 3 days\. That's worth a call to your vet today\./);
     expect(signalHomeAsk(f)).toBe('worth a call to your vet today');
     expect(stripAskLine(f)).toBe('Call your vet');
     expect(stripNameLine(f)).toBe('No meal eaten well');
@@ -77,7 +77,7 @@ describe('the phone twin of the floor', () => {
     expect(res.status).toBe('watch');
     if (res.status !== 'watch') return;
     expect(res.flags[0].trigger).toBe('sustained_refusal');
-    expect(declineHeadline(res.flags[0], 'Miso')).toBe('Miso has picked at or refused every meal you rated in the last 3 days, 3 meals on 2 days.');
+    expect(declineHeadline(res.flags[0], 'Miso')).toBe('Miso has picked at or refused every meal you watched and rated in the last 72 hours, 3 meals on 2 days.');
   });
 
   it('one meal rated Some stands it down, and the old "not enough data" stays', () => {

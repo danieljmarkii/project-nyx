@@ -2790,7 +2790,7 @@ export function safetyFlagRow(
       // baseline". The counts are the engine's, over the window it names.
       const sr = f.trigger === 'sustained_refusal' ? f.sustainedRefusal : null
       const detail = sr
-        ? `<b>Every watched meal rated in the last ${num(Math.round(sr.windowHours / 24))} days was picked at or refused</b>: ${num(
+        ? `<b>Every watched meal rated in the ${num(sr.windowHours)}&nbsp;h before this window ends was picked at or refused</b>: ${num(
             sr.meals,
           )} meal${sr.meals === 1 ? '' : 's'} (${num(sr.refused)} refused, ${num(sr.picked)} picked at) on ${num(sr.days)} day${
             sr.days === 1 ? '' : 's'
@@ -5987,7 +5987,7 @@ function trialTiles(snap: ReportSnapshot): string[] {
       tile(
         `${sr.meals}`,
         `<small>&nbsp;/&nbsp;${sr.meals}</small>`,
-        `Rated meals picked at or refused, last ${Math.round(sr.windowHours / 24)} days<br/>a health signal, not preference`,
+        `Rated meals picked at or refused, ${sr.windowHours}&nbsp;h to window end<br/>a health signal, not preference`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline') {

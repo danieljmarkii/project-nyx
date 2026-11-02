@@ -168,14 +168,26 @@ Deno.test('dogs fire too (the louder side, pending the ruling)', () => {
   assert.equal(out[0].species, 'dog')
 })
 
-Deno.test('a cat with a good baseline that stops eating gets the relative card, not two', () => {
+Deno.test('adversarial pass 1, B1: two weeks eaten well, then 72 hours refused, gets the floor\'s call, not "less than usual today"', () => {
   const meals: MealEvent[] = []
-  for (let d = 4; d < 14; d++) meals.push(meal(d * 24 + 4, 'all'), meal(d * 24 + 14, 'all'))
-  meals.push(meal(2, 'refused'), meal(12, 'refused'), meal(26, 'picked'), meal(36, 'refused'), meal(50, 'refused'), meal(60, 'picked'))
-  const out = detectIntakeDecline(input('cat', meals))
-  const triggers = out.map((f) => f.trigger)
-  assert.ok(triggers.includes('consecutive_low'), 'the relative check names the fall')
-  assert.ok(!triggers.includes('sustained_refusal'), 'the floor yields to it')
+  for (let d = 3; d <= 16; d++) meals.push(meal(d * 24 + 4, 'all'), meal(d * 24 + 14, 'all'))
+  meals.push(meal(2, 'refused'), meal(12, 'refused'), meal(26, 'refused'), meal(36, 'refused'), meal(50, 'refused'), meal(60, 'refused'))
+  for (const species of ['cat', 'dog'] as const) {
+    const out = detectIntakeDecline(input(species, meals))
+    const triggers = out.map((f) => f.trigger)
+    assert.equal(triggers[0], 'sustained_refusal', `${species}: the floor leads`)
+    assert.ok(!triggers.includes('consecutive_low'), `${species}: one "is she eating" card, the louder one`)
+    assert.match(templateIntakeDecline(out[0], 'Nyx'), /worth a call to your vet today/)
+  }
+})
+
+Deno.test('a good baseline and one bad day keeps the relative card (the floor needs two days)', () => {
+  const meals: MealEvent[] = []
+  for (let d = 2; d < 14; d++) meals.push(meal(d * 24 + 4, 'all'), meal(d * 24 + 14, 'all'))
+  meals.push(meal(2, 'refused'), meal(6, 'refused'), meal(10, 'refused'))
+  const triggers = detectIntakeDecline(input('cat', meals)).map((f) => f.trigger)
+  assert.ok(triggers.includes('consecutive_low'))
+  assert.ok(!triggers.includes('sustained_refusal'))
 })
 
 Deno.test('the floor sits beside a refusal of a normally-eaten food, and leads it', () => {
@@ -194,7 +206,7 @@ Deno.test('the sentence: counts over the named window, a call today, never "less
   const f = detectIntakeDecline(input('cat', p2bCat()))[0]
   const text = templateIntakeDecline(f, 'Nyx')
   assert.equal(text, sustainedRefusalSentence(f.sustainedRefusal!, 'Nyx'))
-  assert.equal(text, "Nyx has picked at or refused every meal you rated in the last three days, 6 meals on 3 days. That's worth a call to your vet today.")
+  assert.equal(text, "Nyx has picked at or refused every meal you watched and rated in the last 72 hours, 6 meals on 3 days. That's worth a call to your vet today.")
   assert.doesNotMatch(text, /less than usual|picky|fussy|!/i)
   const allRefused = sustainedRefusalSentence({ meals: 3, refused: 3, picked: 0, days: 2, windowHours: 72, firstIso: NOW }, 'Nyx')
   assert.match(allRefused, /^Nyx has refused every meal/)

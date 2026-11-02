@@ -1140,15 +1140,15 @@ function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeF
  * ②'s two relative triggers plus the sustained-refusal floor, the mirror of detection.ts
  * `detectIntakeDeclineCore`: a record with no good meals has no normal to fall from, so the
  * relative triggers stay silent on exactly the cat that is not eating. The floor needs no
- * baseline, runs below the coverage floor, yields to `consecutive_low` and sits beside a refusal.
+ * baseline, runs below the coverage floor, REPLACES `consecutive_low` when both hold (the louder,
+ * truer card; adversarial pass 1, B1) and sits beside a refusal.
  */
 export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineResult {
   const relative = detectIntakeDeclineRelative(input);
   const flags = relative.status === 'watch' ? relative.flags : [];
-  if (flags.some((f) => f.trigger === 'consecutive_low')) return relative;
   const floor = sustainedRefusalFlag(input);
   if (!floor) return relative;
-  return { status: 'watch', flags: [floor, ...flags] };
+  return { status: 'watch', flags: [floor, ...flags.filter((f) => f.trigger !== 'consecutive_low')] };
 }
 
 /** The floor, a byte mirror of detection.ts `sustainedRefusalFinding`: every watched rated meal

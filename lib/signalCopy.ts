@@ -1192,7 +1192,7 @@ export function evidenceText(
     const r = sustainedRefusalOf(finding);
     return r
       ? `${sustainedRefusalSentence(r, petName)} Only meals you watched and rated are counted, and none in that time was rated better than picked at, so there's no recent normal to compare with.${i5Tail}`
-      : `${petName} has picked at or refused every meal you rated in the last few days. That's worth a call to your vet today.${i5Tail}`;
+      : `${petName} has picked at or refused every meal you watched and rated lately. That's worth a call to your vet today.${i5Tail}`;
   }
   if (finding.trigger === 'refused_then_vomited') {
     // Only witnessed vomits count (a found pile's time is a guess), and nothing is said of the
@@ -1914,16 +1914,10 @@ function sustainedRefusalVerb(r: SustainedRefusalFacts): string {
   return r.refused === r.meals ? 'refused' : r.picked === r.meals ? 'picked at' : 'picked at or refused';
 }
 
-const SMALL_NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
-function numWordOf(n: number): string {
-  return SMALL_NUMBER_WORDS[n] ?? String(n);
-}
-
 /** The mirror of `sustainedRefusalSentence` in generate-signal/phrasing.ts (keep the two in sync;
  *  signalCopy.sustainedRefusal.test.ts pins them). Counts over the named window and the call. */
 export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
-  const daysWindow = Math.round(r.windowHours / 24);
-  return `${petName} has ${sustainedRefusalVerb(r)} every meal you rated in the last ${numWordOf(daysWindow)} days, ${r.meals} meals on ${r.days} days. That's worth a call to your vet today.`;
+  return `${petName} has ${sustainedRefusalVerb(r)} every meal you watched and rated in the last ${r.windowHours} hours, ${r.meals} meals on ${r.days} days. That's worth a call to your vet today.`;
 }
 
 function refusalCountOf(f: TimingStoryLike): number {
@@ -2431,7 +2425,7 @@ function phoneScriptFacts(
         ...(sr
           ? [
               { label: 'Meals', value: `${sr.refused} refused, ${sr.picked} picked at` },
-              { label: 'Over', value: `${count(sr.days, 'day', 'days')} in the last ${Math.round(sr.windowHours / 24)} days` },
+              { label: 'Over', value: `${count(sr.days, 'day', 'days')} in the last ${sr.windowHours} hours` },
             ]
           : []),
         ...i5Rows,
@@ -2691,7 +2685,7 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
   if (finding.type === 'intake_decline') {
     if (finding.trigger === 'sustained_refusal') {
       // The floor: what was rated, never "less than usual" (there is no usual to fall from).
-      return ` has picked at or refused every meal you rated in the last few days — worth a look.`;
+      return ` has picked at or refused every meal you watched and rated lately — worth a look.`;
     }
     if (finding.trigger === 'refused_then_vomited') {
       // I5 (PR-30s): the sequence, never a cause; the banner's own calm ask.

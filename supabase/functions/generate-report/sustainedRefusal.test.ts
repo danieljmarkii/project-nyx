@@ -44,8 +44,8 @@ Deno.test('the P2b cat: an intake flag in the band, on the floor, with its count
 Deno.test('the band row states the counts and why no baseline is compared; never "below baseline" or "picky" as a verdict', () => {
   const s = assembleReport(p2bCat())
   const f = s.safetyFlags.find((x) => x.kind === 'intake_decline')!
-  const html = safetyFlagRow(f, s).replace(/<[^>]+>/g, '')
-  assert.match(html, /Every watched meal rated in the last 3 days was picked at or refused/)
+  const html = safetyFlagRow(f, s).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.match(html, /Every watched meal rated in the 72\s?h before this window ends was picked at or refused/)
   assert.match(html, /no recent baseline to compare against/)
   assert.match(html, /hepatic-lipidosis/, 'the feline window is named')
   assert.match(html, /No fully-eaten meal is recorded in this window/)

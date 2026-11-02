@@ -315,7 +315,10 @@ describe('CUL-94 property: an evening refusal on the buffer day never quiets the
       const after = { ...rec, meals: [...rec.meals, { ms: t, foodItemId: 'f1', foodType: 'meal', rating: 'refused' as const }] };
       const phone = phoneVerdict(after);
       expect(serverVerdict(after, true)).toEqual(phone);
-      expect({ seed, triggers: phone.map((v) => v.trigger) }).toEqual({ seed, triggers: expect.arrayContaining(['consecutive_low']) });
+      // The day-count card, or the sustained-refusal floor that replaces it when every rated meal in
+      // 72 hours was refused or picked at: the louder card, so the property still holds.
+      const card = phone.some((v) => v.trigger === 'consecutive_low' || v.trigger === 'sustained_refusal');
+      expect({ seed, card }).toEqual({ seed, card: true });
       checked++;
     }
     // Non-vacuity (C-36). Reverting to whole-day readings of the buffer reds this test (measured).

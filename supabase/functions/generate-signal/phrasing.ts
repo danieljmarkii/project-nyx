@@ -137,9 +137,11 @@ export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: 
  * client (`sustainedRefusalSentence`, lib/signalCopy.ts); keep the two in sync.
  */
 export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
+  // The window is named in HOURS: 72 hours can touch four of the owner's days, so "the last three
+  // days … on 4 days" contradicted itself (adversarial pass 1, B6). "Watched and rated": a free-fed
+  // bowl rated "ate it all" is not counted, and "every meal you rated" was false beside it (B7).
   const verb = r.refused === r.meals ? 'refused' : r.picked === r.meals ? 'picked at' : 'picked at or refused'
-  const daysWindow = Math.round(r.windowHours / 24)
-  return `${petName} has ${verb} every meal you rated in the last ${numWord(daysWindow)} days, ${r.meals} meals on ${r.days} days. That's worth a call to your vet today.`
+  return `${petName} has ${verb} every meal you watched and rated in the last ${r.windowHours} hours, ${r.meals} meals on ${r.days} days. That's worth a call to your vet today.`
 }
 
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {

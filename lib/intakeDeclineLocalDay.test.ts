@@ -218,7 +218,10 @@ describe('CUL-94 — a refusal day never dilutes the normal the next day is judg
       { iso: `${day(11)}T08:00:00-04:00`, rating: 'picked' },
       { iso: `${day(11)}T15:00:00-04:00`, rating: 'picked' },
     ];
-    expect(verdict('cat', thin, `${day(11)}T20:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+    // Every rated meal in the last 72 hours here is picked at (three, on two days), so the
+    // sustained-refusal floor holds and REPLACES the day-count card with its louder one. Either is
+    // the card this test protects; neither may go silent.
+    expect(verdict('cat', thin, `${day(11)}T20:00:00-04:00`, NY)).toEqual(['sustained_refusal']);
   });
 });
 
