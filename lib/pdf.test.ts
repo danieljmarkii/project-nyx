@@ -203,6 +203,9 @@ describe('generateVetReport — the version and the surname (CUL-2292)', () => {
     expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
     mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', phone_html: '', report_version: 'v2' }, error: null });
     expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
+    // CUL-2458: whitespace is no layout either.
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', phone_html: ' \n ', report_version: 'v2' }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
     mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', phone_html: '<html>phone</html>', report_version: 'v1' }, error: null });
     expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
   });

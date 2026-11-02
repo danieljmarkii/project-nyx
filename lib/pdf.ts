@@ -252,7 +252,9 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
   return {
     html: data.html,
     phoneHtml:
-      version === 'v2' && typeof data.phone_html === 'string' && data.phone_html.length > 0 ? data.phone_html : null,
+      // A whitespace-only layout is no layout (CUL-2458 adversarial pass): null here, so the
+      // screen refuses the response and the exam room is never offered an empty frame.
+      version === 'v2' && typeof data.phone_html === 'string' && data.phone_html.trim().length > 0 ? data.phone_html : null,
     reportVersion: version,
     ownerSurname: version === 'v2' ? await ownerSurnameNow() : null,
     petName: typeof data.pet_name === 'string' ? data.pet_name : '',

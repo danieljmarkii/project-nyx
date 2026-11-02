@@ -105,6 +105,7 @@ const printedOnScreen = (s: ReturnType<typeof render>) =>
 it.each([
   ['missing', null],
   ['empty', ''],
+  ['whitespace only', '  \n  '],
 ])('a v2 report whose phone layout is %s is refused: the error and retry, never the printed page bare', async (_w, phoneHtml) => {
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   mockedGenerate.mockResolvedValue(report({ phoneHtml }));

@@ -13,7 +13,7 @@ export type PreviewView = 'phone' | 'printed';
  * owner meets neither an empty preview frame nor the printed page on its own.
  */
 export function hasPhonePreview(report: Pick<VetReport, 'reportVersion' | 'phoneHtml'>): boolean {
-  return report.reportVersion === 'v2' && typeof report.phoneHtml === 'string' && report.phoneHtml.length > 0;
+  return report.reportVersion === 'v2' && typeof report.phoneHtml === 'string' && report.phoneHtml.trim().length > 0;
 }
 
 /**
