@@ -155,7 +155,7 @@ describe('reportPdfFilenameV2', () => {
 
 describe('reportPdfFilenameFor', () => {
   const base: VetReport = {
-    html: '', petName: 'Cooper', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'since_visit', photoCount: 0,
+    html: '', phoneHtml: null, petName: 'Cooper', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'since_visit', photoCount: 0,
     trialAllowedListMissing: false, reportVersion: 'v1', ownerSurname: 'Reyes',
   };
   it('a v1 report keeps the v1 name, even with a surname on hand', () => {
@@ -191,6 +191,20 @@ describe('generateVetReport — the version and the surname (CUL-2292)', () => {
     expect(r.reportVersion).toBe('v2');
     expect(r.ownerSurname).toBe('Reyes');
     expect(mockedSurname).toHaveBeenCalledWith('user-1');
+  });
+
+  it('VR2-17: a v2 response carries its phone layout; v1, or a v2 without one, carries none', async () => {
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>print</html>', phone_html: '<html>phone</html>', report_version: 'v2' }, error: null });
+    const v2 = await generateVetReport({ petId: 'p1', includeNotes: true });
+    expect(v2.phoneHtml).toBe('<html>phone</html>');
+    // The PDF is always the printed page.
+    expect(v2.html).toBe('<html>print</html>');
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', report_version: 'v2' }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', phone_html: '', report_version: 'v2' }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
+    mockedInvoke.mockResolvedValue({ data: { html: '<html>x</html>', phone_html: '<html>phone</html>', report_version: 'v1' }, error: null });
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).phoneHtml).toBeNull();
   });
 
   it('no session, or a read that throws, leaves the surname out and the report still opens', async () => {
@@ -283,7 +297,7 @@ describe('generateVetReport', () => {
 
 describe('shareReportPdf', () => {
   const report: VetReport = {
-    html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d', photoCount: 0,
+    html: '<html>Nyx</html>', phoneHtml: null, petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d', photoCount: 0,
     trialAllowedListMissing: false, reportVersion: 'v1', ownerSurname: null,
   };
   // Where expo-print really writes (ExpoPrintToFile.swift): <Caches>/Print/<uuid>.pdf.

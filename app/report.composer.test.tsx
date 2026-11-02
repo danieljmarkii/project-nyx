@@ -13,6 +13,8 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() }, 
 jest.mock('react-native-webview', () => ({ WebView: () => null }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
 jest.mock('../components/surfaces/waits/ReportSilhouette', () => ({ ReportSilhouette: () => null }));
+// The v2 layout flag rides the same allowlist mock, so the first build's wait is the v2 Front Page.
+jest.mock('../components/surfaces/waits/ReportFrontSilhouette', () => ({ ReportFrontSilhouette: () => null }));
 jest.mock('../components/surfaces/waits/Tick', () => ({ Tick: () => null }));
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi' };
@@ -28,6 +30,7 @@ jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn()
 jest.mock('../lib/pdf', () => ({
   flushBeforeReport: jest.fn(async () => ({ pending: 0, quarantined: 0 })),
   reportFreshnessLine: () => null,
+  reportVersionFor: (eligible: boolean, optedIn: boolean) => (eligible && optedIn ? 'v2' : null),
   generateVetReport: jest.fn(),
   shareReportPdf: jest.fn(async () => true),
 }));
@@ -66,6 +69,7 @@ import ReportScreen from './report';
 const mockedGenerate = generateVetReport as jest.Mock;
 const report: VetReport = {
   html: '<html>Mochi</html>',
+  phoneHtml: null,
   petName: 'Mochi',
   startDate: '2026-06-01',
   endDate: '2026-07-02',
