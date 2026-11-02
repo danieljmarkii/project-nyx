@@ -534,7 +534,7 @@ export function renderPhoneV2(doc: DocumentV2): string {
 <button class="firstwarn" type="button" data-part="first-warning" hidden></button>
 ${body(doc)}
 </main>
-${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}
+${doc.backSheets.map((sh) => backSheetHtml(doc, sh, true)).join('\n')}
 <script>${SCRIPT_PHONE}</script>
 </body>
 </html>`

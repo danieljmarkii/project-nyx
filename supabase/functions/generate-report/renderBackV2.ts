@@ -43,7 +43,7 @@ function cell(c: LedgerCell): string {
   }
 }
 
-function backBlock(b: BackBlockV2): string {
+function backBlock(b: BackBlockV2, phone: boolean): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'photo_strip':
@@ -60,7 +60,7 @@ function backBlock(b: BackBlockV2): string {
       // The predicate sits above the tables it reconciles, so "the dated list below" is true.
       return `${open('section', 'intake')}<h2>${h(b.heading)}</h2><p class="bnote">${b.introHtml}</p>${
         b.lastAboveRefused ? `<p class="lastmeal">${h(b.lastAboveRefused)}</p>` : ''
-      }${b.predicate ? `<p class="predicate">${h(b.predicate)}</p>` : ''}${b.tablesHtml}</section>`
+      }${b.predicate ? `<p class="predicate">${h(b.predicate)}</p>` : ''}${phone ? labelTableCells(b.tablesHtml) : b.tablesHtml}</section>`
   }
 }
 
@@ -86,14 +86,46 @@ export function pageHeadCss(doc: DocumentV2): string {
   return `@page{@top-left{content:${head};${box}}@bottom-right{content:"page " counter(page) " of " counter(pages);${box}}}@page :first{@top-left{content:none;}}`
 }
 
-/** One back sheet: its running head (pet, sheet n of N, title) and its blocks. */
-export function backSheetHtml(doc: DocumentV2, sheet: BackSheetV2): string {
+/**
+ * The phone's intake tables, each body cell labelled with its column's heading (CUL-2401). At large
+ * text the table stacks one cell to a line and each line prints its own label, so no value is read
+ * by its position against a key: a cell's own " · " (a protein's "list not read", the intake
+ * ratings) once made a key-by-position reading put the dates under Meals. Phone only, so the print
+ * document's bytes never move. A spanning cell (the "earlier meals not shown" row) takes no label.
+ */
+export function labelTableCells(tablesHtml: string): string {
+  const span = (attrs: string) => Math.max(1, Number(/\bcolspan="(\d+)"/.exec(attrs)?.[1] ?? 1))
+  return tablesHtml.replace(/<table\b([^>]*)>[\s\S]*?<\/table>/g, (table, tattrs: string) => {
+    if ((/\bclass="([^"]*)"/.exec(tattrs)?.[1] ?? '').split(/\s+/).includes('lg')) return table
+    const thead = /<thead\b[^>]*>([\s\S]*?)<\/thead>/.exec(table)?.[1] ?? ''
+    // One label per column a heading covers, so a spanning heading never shifts the ones after it.
+    const heads = [...thead.matchAll(/<th\b([^>]*)>([\s\S]*?)<\/th>/g)].flatMap((m) => {
+      const label = m[2].replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/"/g, '&quot;').replace(/\s+/g, ' ').trim()
+      return Array<string>(span(m[1])).fill(label)
+    })
+    if (heads.length === 0) return table
+    return table.replace(/<tbody\b[^>]*>[\s\S]*?<\/tbody>/, (tbody) =>
+      tbody.replace(/<tr\b[^>]*>[\s\S]*?<\/tr>/g, (tr) => {
+        // Every cell, header or data, takes its columns; only a single-column data cell is labelled.
+        let col = 0
+        return tr.replace(/<(td|th)\b([^>]*)>/g, (cell, tag: string, attrs: string) => {
+          const n = span(attrs)
+          const label = heads[col]
+          col += n
+          return tag === 'td' && n === 1 && label ? `<td${attrs} data-label="${label}">` : cell
+        })
+      }))
+  })
+}
+
+/** One back sheet: its running head (pet, sheet n of N, title) and its blocks. `phone` labels the intake cells. */
+export function backSheetHtml(doc: DocumentV2, sheet: BackSheetV2, phone = false): string {
   const mast = doc.blocks.find((b) => b.kind === 'masthead')
   const name = mast && mast.kind === 'masthead' ? mast.name : ''
   const total = 1 + doc.backSheets.length
   return `<section class="sheet back" data-sheet="${sheet.n}">
 <header class="runhead"><span class="rn">${h(name)}</span> · sheet ${sheet.n} of ${total} · <span class="rt">${h(sheet.title)}</span></header>
-${sheet.blocks.map(backBlock).join('\n')}
+${sheet.blocks.map((b) => backBlock(b, phone)).join('\n')}
 </section>`
 }
 
@@ -171,6 +203,38 @@ export const BACK_STYLE_PRINT = `${BACK_SHARED}
 .bcap{font-size:7.5pt;}
 `
 
+// Nothing on the phone's back sheets may run past the screen's edge (CUL-2401): a photo's AI read
+// sat off-screen at 320pt. Grid columns size to their content by default, so a nowrap tag or a 46px
+// word at AX5 pushed the whole page sideways. Screen only, so neither PDF moves.
+// - The ledger: at compact text (`data-compact`, scale >= 1.6) its week label goes above its days.
+// - The intake tables stack wherever their column is under 24rem: every phone at every text size
+//   (five columns in a phone's column starved Food to a letter a line), side by side only on a wide
+//   screen, measured in text sizes so no script is needed. Each cell takes its own line under its
+//   own column heading (`labelTableCells`), never a position against a key (a cell's own " · " made
+//   that misread). A number never breaks inside itself: side by side, `.num` stays whole (a split
+//   once read "×117" as "×11").
+const BACK_FIT_PHONE_SCREEN = `@media screen{
+.back .phstrip{grid-template-columns:repeat(auto-fill,minmax(min(100%,8rem),1fr));}
+.back .phcard,.back .pheno>*{min-width:0;}
+.back .pheno{grid-template-columns:minmax(0,1fr);}
+.back .phcard,.back .pheno{overflow-wrap:anywhere;}
+.back .aitag,.back .aibadge,.back .conf{white-space:normal;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+[data-compact] .back .lg,[data-compact] .back .lg tbody{display:block;}
+[data-compact] .back .lg tr{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2pt;margin-bottom:2pt;}
+[data-compact] .back .lg th{grid-column:1/-1;text-align:left;padding:0;}
+[data-compact] .back .lg td{width:auto;}
+.back .intake{container-type:inline-size;}
+.back table:not(.lg) .num{white-space:nowrap;}
+}
+@container (max-width:24rem){
+.back table:not(.lg),.back table:not(.lg) caption,.back table:not(.lg) tbody,.back table:not(.lg) tr,.back table:not(.lg) td{display:block;}
+.back table:not(.lg) thead{display:none;}
+.back table:not(.lg) tr{padding:0.3rem 0;border-bottom:.5pt solid var(--hair);}
+.back table:not(.lg) td{width:auto!important;padding:0;border:0;text-align:left;overflow-wrap:break-word;}
+.back table:not(.lg) td.num{white-space:normal;}
+.back table:not(.lg) td[data-label]::before{content:attr(data-label) ": ";font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink2);}
+}`
+
 /** The phone's back-sheet rules for the screen: rem only, nothing under 11pt (spec §6.2, §6.3). */
 export const BACK_STYLE_PHONE_SCREEN = `${BACK_SHARED}
 .sheet.back{padding-top:1rem;border-top:1px solid var(--hair);}
@@ -189,6 +253,7 @@ export const BACK_STYLE_PHONE_SCREEN = `${BACK_SHARED}
 .back .barmix .seg{font-size:0.875rem;}
 .back .mixkey .sw{width:0.6rem;height:0.6rem;}
 .bphoto img{width:4.5rem;height:4.5rem;}
+${BACK_FIT_PHONE_SCREEN}
 `
 
 /** The phone's back-sheet rules inside its `@media print` block: absolute pt, like the print sheet. */
