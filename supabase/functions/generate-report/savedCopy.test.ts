@@ -16,6 +16,9 @@ import {
   openCopy,
   parseOpenRequest,
   parseKeepRequest,
+  globalDraftReaperIO,
+  reapAllStaleDrafts,
+  REAP_BATCH,
   reapStaleDrafts,
   saveDraft,
   savedCopyIO,
@@ -230,6 +233,90 @@ Deno.test('the reaper removes stale drafts objects-first and never touches a kep
   assert.ok(f.log.indexOf(`remove ${PET}/d-old.html`) < f.log.indexOf('delete-rows d-old'))
 })
 
+// ── The scheduled sweep (CUL-2437) ───────────────────────────────────────────
+
+function staleDrafts(f: ReturnType<typeof fakeIO>, n: number, created_at = '2000-01-01T00:00:00Z') {
+  for (let i = 0; i < n; i++) {
+    const id = `s-${String(i).padStart(4, '0')}`
+    f.rows.set(id, { id, status: 'draft', storage_path: `${PET}/${id}.html`, content_sha256: null, shared_via: null, shared_at: null, created_at })
+    f.objects.set(`${PET}/${id}.html`, new Uint8Array([1]))
+  }
+}
+
+Deno.test('the sweep batches until the stale drafts run out, objects before rows in every batch', async () => {
+  const f = fakeIO()
+  staleDrafts(f, REAP_BATCH * 2 + 7)
+  f.rows.set('k', { id: 'k', status: 'kept', storage_path: `${PET}/k.html`, content_sha256: 'x', shared_via: 'share', shared_at: null, created_at: '2000-01-01T00:00:00Z' })
+  f.rows.set('fresh', { id: 'fresh', status: 'draft', storage_path: `${PET}/fresh.html`, content_sha256: null, shared_via: null, shared_at: null, created_at: new Date(NOW - 60_000).toISOString() })
+  const out = await reapAllStaleDrafts(f.io)
+  assert.deepEqual(out, { reaped: REAP_BATCH * 2 + 7, passes: 3, ok: true, capped: false })
+  assert.deepEqual([...f.rows.keys()].sort(), ['fresh', 'k'])
+  assert.equal([...f.objects.keys()].length, 0)
+  // Every batch removes its objects before it deletes its rows.
+  const steps = f.log.filter((l) => l.startsWith('remove') || l.startsWith('delete-rows')).map((l) => l.split(' ')[0])
+  assert.deepEqual(steps, ['remove', 'delete-rows', 'remove', 'delete-rows', 'remove', 'delete-rows'])
+})
+
+Deno.test('the sweep stops at its pass cap and says so', async () => {
+  const f = fakeIO()
+  staleDrafts(f, REAP_BATCH * 3)
+  const out = await reapAllStaleDrafts(f.io, 2)
+  assert.deepEqual(out, { reaped: REAP_BATCH * 2, passes: 2, ok: true, capped: true })
+  assert.equal(f.rows.size, REAP_BATCH)
+})
+
+Deno.test('a sweep whose remove fails deletes no row, stops, and reports it', async () => {
+  const f = fakeIO()
+  staleDrafts(f, 3)
+  f.io.removeObjects = async () => false
+  assert.deepEqual(await reapAllStaleDrafts(f.io), { reaped: 0, passes: 1, ok: false, capped: false })
+  assert.equal(f.rows.size, 3)
+})
+
+Deno.test('a sweep whose read or delete fails reports it rather than ending clean', async () => {
+  const f = fakeIO()
+  staleDrafts(f, 3)
+  assert.equal((await reapAllStaleDrafts({ ...f.io, listStaleDrafts: async () => null })).ok, false)
+  assert.equal((await reapAllStaleDrafts({ ...f.io, deleteDrafts: async () => false })).ok, false)
+  assert.deepEqual(await reapAllStaleDrafts(fakeIO().io), { reaped: 0, passes: 1, ok: true, capped: false })
+})
+
+Deno.test('the global sweep reads and deletes only DRAFTS PAST THEIR DAY, oldest first (CUL-2437)', async () => {
+  // Driven through the real globalDraftReaperIO against a recording client: the two filters are
+  // what stands in for C-27's owner pairing, so deleting either from the read or the delete reds here.
+  const calls: string[] = []
+  const chain = (verb: string) => {
+    const q: Record<string, unknown> = {}
+    for (const m of ['select', 'eq', 'lt', 'in', 'order', 'limit', 'delete']) {
+      q[m] = (...args: unknown[]) => {
+        calls.push(`${verb}.${m}(${JSON.stringify(args)})`)
+        return m === 'limit' || (verb === 'delete' && m === 'lt') ? Promise.resolve({ data: [{ id: 'd', storage_path: `${PET}/d.html` }], error: null }) : q
+      }
+    }
+    return q
+  }
+  let verb = 'read'
+  const removed: string[][] = []
+  const admin = {
+    from: (t: string) => { assert.equal(t, 'vet_reports'); return chain(verb) },
+    storage: { from: (b: string) => { assert.equal(b, 'nyx-vet-reports'); return { remove: async (p: string[]) => { removed.push(p); return { error: null } } } } },
+  }
+  const io = globalDraftReaperIO(admin as never, () => NOW)
+  const cutoff = new Date(NOW - DRAFT_TTL_MS).toISOString()
+  assert.deepEqual(await io.listStaleDrafts(cutoff, 50), [{ id: 'd', storage_path: `${PET}/d.html` }])
+  assert.ok(calls.includes(`read.eq(["status","draft"])`))
+  assert.ok(calls.includes(`read.lt(["created_at","${cutoff}"])`))
+  assert.ok(calls.includes(`read.order(["created_at",{"ascending":true}])`))
+  calls.length = 0
+  verb = 'delete'
+  assert.equal(await io.removeObjects([`${PET}/d.html`]), true)
+  assert.deepEqual(removed, [[`${PET}/d.html`]])
+  assert.equal(await io.deleteDrafts(['d']), true)
+  assert.ok(calls.includes(`delete.in(["id",["d"]])`))
+  assert.ok(calls.includes(`delete.eq(["status","draft"])`))
+  assert.ok(calls.includes(`delete.lt(["created_at","${cutoff}"])`))
+})
+
 Deno.test('a reaper whose object remove fails deletes no row', async () => {
   const f = fakeIO()
   f.rows.set('d', { id: 'd', status: 'draft', storage_path: `${PET}/d.html`, content_sha256: null, shared_via: null, shared_at: null, created_at: '2000-01-01T00:00:00Z' })
@@ -314,6 +401,24 @@ Deno.test('a lead the sent copy does not print is cleared, and the verdict says 
   const l = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', fact_hash: 'h' })
   assert.equal(await settleLeadForKeep(l.io, '<html>no lead</html>'), true)
   assert.deepEqual(l.writes, [{ text: null, verdict: { outcome: 'printed', fact_hash: 'h', at_send: { printed: false, reason: 'not_on_sent_copy' } }, model: null }])
+})
+
+Deno.test('a cleared lead leaves no model output in the verdict it freezes (CUL-2377, pass 2)', async () => {
+  // A verdict whose sentences and checker quotes are model text: none of it may ride into the
+  // kept row, and migration 118 refuses a draft write that still carries it after a "no".
+  const l = leadIO('Cooper vomited on 3 days.', {
+    outcome: 'printed', fact_hash: 'h', sentences: [{ text: 'Cooper vomited on 3 days.' }],
+    checker: { takeaway: 'x', quotes: { H1: 'Cooper vomited' } }, verifier_errors: [],
+  })
+  assert.equal(await settleLeadForKeep(l.io, '<html>no lead</html>'), true)
+  assert.deepEqual(l.writes, [{
+    text: null,
+    verdict: { outcome: 'printed', fact_hash: 'h', verifier_errors: [], at_send: { printed: false, reason: 'not_on_sent_copy' } },
+    model: null,
+  }])
+  const rejected = leadIO(null, { outcome: 'rejected', sentences: [{ text: 'x' }], checker: { quotes: {} } })
+  await settleLeadForKeep(rejected.io, '<html></html>')
+  assert.deepEqual(rejected.writes[0].verdict, { outcome: 'rejected', at_send: { printed: false, reason: 'not_printed' } })
 })
 
 Deno.test('no lead yet is recorded as not ready; a declined one keeps its verdict', async () => {
