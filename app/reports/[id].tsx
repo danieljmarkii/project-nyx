@@ -5,6 +5,7 @@ import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SkeletonCard, ThemedText } from '../../components/ui';
+import { VisitLinkSheet } from '../../components/reportV2/VisitLinkSheet';
 import { ANONYMOUS_PET_NAME, resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { androidTextZoom, isPreviewLoadAllowed } from '../../lib/reportPreviewV2';
 import {
@@ -20,6 +21,21 @@ import {
   readSavedReport,
   type SavedReport,
 } from '../../lib/reportLibrary';
+import {
+  ATTACH_LABEL,
+  CHANGE_LABEL,
+  LINK_FAILED,
+  LINK_OFFLINE,
+  LINK_REFUSED,
+  linkedLine,
+  linkOptions,
+  linkSavedReport,
+  pickerEmpty,
+  readReportLink,
+  type VisitLinkOption,
+  type VisitLinkTarget,
+} from '../../lib/reportVisitLink';
+import { readVetVisitsHome } from '../../lib/vetVisits';
 
 // One saved report, exactly as it was sent (Vet report v2 PR-21, CUL-2301; spec §11.1, §11.3).
 //
@@ -30,6 +46,11 @@ import {
 //
 // ONE ACTION, AND IT NEVER READS AS UPDATING THIS COPY (WBC-4): "New report through today" opens
 // the composer for a NEW report, and its sub-line says this copy stays exactly as sent.
+//
+// ITS VISIT (PR-22, CUL-2302): a copy can be filed under the visit or booking it was for, now or
+// later, or under none. Provenance only: filing it changes nothing in the copy, so the line sits
+// with the footer, never on the paper. The link row shows only once its read answered; a failed
+// read hides it rather than offering "Attach" over a copy that may already be filed (C-12).
 //
 // WHOSE RECORD (C-9): the title names the pet the ROW belongs to, never the active pet. A `pet`
 // param this account does not hold opens nothing.
@@ -47,6 +68,11 @@ export default function SavedReportScreen() {
   const held = typeof pet === 'string' && pets.some((p) => p.id === pet);
   const [row, setRow] = useState<SavedReport | null>(null);
   const [copy, setCopy] = useState<Copy>({ kind: 'loading' });
+  const [link, setLink] = useState<VisitLinkTarget | null | 'unknown'>('unknown');
+  const [options, setOptions] = useState<VisitLinkOption[]>([]);
+  const [picking, setPicking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (typeof id !== 'string' || typeof pet !== 'string' || !held) {
@@ -62,6 +88,36 @@ export default function SavedReportScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadLink = useCallback(async () => {
+    if (typeof id !== 'string' || typeof pet !== 'string' || !held) return;
+    try {
+      const [current, home] = await Promise.all([readReportLink(pet, id), readVetVisitsHome(pet)]);
+      setOptions(linkOptions(home));
+      setLink(current === 'failed' ? 'unknown' : current);
+    } catch (e) {
+      console.warn('[saved-report] the visit link could not be read:', e);
+      setLink('unknown');
+    }
+  }, [id, pet, held]);
+
+  useEffect(() => {
+    void loadLink();
+  }, [loadLink]);
+
+  const pick = useCallback(
+    async (target: VisitLinkTarget | null) => {
+      if (typeof id !== 'string' || typeof pet !== 'string') return;
+      setPicking(false);
+      setSaving(true);
+      setLinkError(null);
+      const out = await linkSavedReport(pet, id, target);
+      setSaving(false);
+      if (out.kind === 'ok') setLink(target);
+      else setLinkError(out.kind === 'offline' ? LINK_OFFLINE : out.kind === 'refused' ? LINK_REFUSED : LINK_FAILED);
+    },
+    [id, pet],
+  );
 
   const currentYear = new Date().getFullYear();
   const petName = resolveRecordPetName(pets, row?.petId ?? null);
@@ -105,9 +161,47 @@ export default function SavedReportScreen() {
       </View>
       {row && (
         <View style={styles.footer}>
+          {link !== 'unknown' && (
+            <View style={styles.visit} testID="report-visit">
+              {link === null ? (
+                <PrimaryButton
+                  label={ATTACH_LABEL}
+                  variant="secondary"
+                  loading={saving}
+                  onPress={() => setPicking(true)}
+                  testID="report-visit-attach"
+                />
+              ) : (
+                <View style={styles.visitLine}>
+                  <ThemedText variant="caption" style={styles.visitText} testID="report-visit-line">
+                    {linkedLine(link, options)}
+                  </ThemedText>
+                  <PrimaryButton
+                    label={CHANGE_LABEL}
+                    variant="secondary"
+                    loading={saving}
+                    onPress={() => setPicking(true)}
+                    testID="report-visit-change"
+                  />
+                </View>
+              )}
+              {linkError !== null && (
+                <ThemedText variant="caption" style={styles.visitError} testID="report-visit-error">{linkError}</ThemedText>
+              )}
+            </View>
+          )}
           <PrimaryButton label={NEW_REPORT_LABEL} onPress={() => router.push('/report')} testID="report-new" />
           <ThemedText variant="note" style={styles.subline}>{newReportSubline(row.sharedAt, currentYear)}</ThemedText>
         </View>
+      )}
+      {picking && link !== 'unknown' && (
+        <VisitLinkSheet
+          options={options}
+          current={link}
+          emptyText={pickerEmpty(petName, ANONYMOUS_PET_NAME)}
+          onPick={(t) => void pick(t)}
+          onClose={() => setPicking(false)}
+        />
       )}
     </SafeAreaView>
   );
@@ -123,4 +217,8 @@ const styles = StyleSheet.create({
   messageText: { color: theme.colorTextSecondary },
   footer: { padding: theme.space3, gap: theme.space1 },
   subline: { color: theme.colorTextSecondary, textAlign: 'center' },
+  visit: { gap: theme.space1, paddingBottom: theme.space1 },
+  visitLine: { flexDirection: 'row', alignItems: 'center', gap: theme.space2 },
+  visitText: { flex: 1, color: theme.colorTextSecondary },
+  visitError: { color: theme.colorTextSecondary },
 });

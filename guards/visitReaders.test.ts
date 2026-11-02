@@ -298,6 +298,30 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'BOUNDARY rather than a count, and CUL-899 gave the pull `deleted_at IS NULL`. ' +
       'No visit is ever counted as a logged day.',
   },
+
+  // ── A saved report filed under its visit (Vet report v2 PR-22, CUL-2302; spec §11.3) ──
+  'lib/reportVisitLink.ts': {
+    kinds: ['column'],
+    why:
+      'Reads vet_reports.vet_visit_id (and vet_appointment_id) for ONE kept copy, and lists ' +
+      'the kept copies a visit names, for the visit screen and the report screen. A REPORT ' +
+      'column read as provenance: the rows it returns are reports, never a number about a ' +
+      'visit, and it queries no visit table (the picker shapes readVetVisitsHome\'s rows).',
+  },
+  'supabase/functions/report-visit-link/handler.ts': {
+    kinds: ['column'],
+    why:
+      'Builds the one write of vet_reports.vet_visit_id / vet_appointment_id, after the pet, ' +
+      'the kept copy and the target are each checked to be the caller\'s and the same pet\'s. ' +
+      'Provenance only (113\'s freeze lets nothing else move); it counts nothing.',
+  },
+  'supabase/functions/report-visit-link/index.ts': {
+    kinds: ['table'],
+    why:
+      'The same-pet check before that write: `vet_visits` / `vet_appointments` by id paired with ' +
+      'the caller\'s pet and `deleted_at IS NULL`, selecting `id` alone. It answers a BOOLEAN ' +
+      '(lib/vetVisitLink.ts\'s shape, server side) and returns no visit field to anyone.',
+  },
 };
 
 /**
