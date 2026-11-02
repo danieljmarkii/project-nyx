@@ -63,6 +63,7 @@ import {
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { backSheetsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -924,7 +925,16 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
   const items = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)
     const to = plainDay(m.toDate)
-    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${m.activeAtWindowEnd ? ' (its course has no recorded end)' : ''}`
+    // An ad-hoc drug is dated from its earliest dose on record (CUL-2440), and says it has no
+    // regimen: "its course has no recorded end" read as a prescribed course still running.
+    const tail = m.recordStart
+      ? ` (doses on record since ${plainDay(m.recordStart.firstDoseDay)}${
+          m.recordStart.atHistoryFloor ? ', the earliest day this report reads' : ''
+        }; no regimen or end recorded)`
+      : m.activeAtWindowEnd
+        ? ' (its course has no recorded end)'
+        : ''
+    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${tail}`
   })
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
@@ -937,7 +947,9 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
 
 // ── The document ─────────────────────────────────────────────────────────────
 
-export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): DocumentV2 {
+export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options): DocumentV2 {
+  // One medication fact per drug, read the same way by sheet 1 and every back sheet (CUL-2440).
+  const snap = withRecordOverlaps(input)
   const blocks: BlockV2[] = []
   const zeroSign = isZeroSignSheet(snap)
   // The back sheets first: sheet 1's flag rows point at them by number (CUL-2350).

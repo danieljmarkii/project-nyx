@@ -105,6 +105,7 @@ import { proteinList } from '../../../lib/trialProtein.ts'
 // question ("is this record dense enough to read an absence of off-diet food?"), one constant.
 import { CHALLENGE_WINDOW_DAYS, COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
+import { adHocRecordStartOf, withRecordOverlaps, type AdHocRecordStart } from './medicationFacts.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
 // The snapshot carries owner-entered free text (pet name, food labels, notes, drug
@@ -164,6 +165,37 @@ export function fmtDayYear(dayKey: string | null): string {
   if (!dayKey) return '—'
   const p = dayParts(dayKey)
   return p ? `${MONTHS[p.m - 1]} ${p.d}, ${p.y}` : h(dayKey)
+}
+
+/**
+ * "doses on record since Jul 1, 2026" for an ad-hoc drug whose record reaches before its window
+ * (CUL-2440). Record-scoped, so the year is stamped (C-19). When the date is the medication
+ * history read's own floor it says so: dosing may predate it (C-37).
+ */
+function recordSinceBit(rec: AdHocRecordStart, brief = false): string {
+  const floor = brief
+    ? ', the earliest day this report reads'
+    : ', the earliest day this report&rsquo;s medication history reads, so dosing may have begun earlier'
+  return `doses on record since ${h(fmtDayYear(rec.firstDoseDay))}${rec.atHistoryFloor ? floor : ''}`
+}
+
+/** Doses the trial's oral-route detector read as given inside a food (CUL-2440). */
+function vehicleDosesOf(snap: ReportSnapshot): number {
+  return snap.trial?.oralRoute.filter((o) => o.trigger === 'food_vehicle').length ?? 0
+}
+
+/**
+ * The partial doses behind a course's count (CUL-2440): every section that counts a course's
+ * doses says how many were partial, or a vet reads the bare count as full dosing. The window's
+ * count is exact for the whole course only when every dose on record falls inside the window;
+ * otherwise the figure is scoped to the window, never stretched over the course.
+ */
+function partialOf(m: Pick<MedicationAdherence, 'partialDoses' | 'windowDosesLogged' | 'lifetimeDosesLogged'>): {
+  n: number
+  wholeCourse: boolean
+} | null {
+  if (!m.partialDoses) return null
+  return { n: m.partialDoses, wholeCourse: m.windowDosesLogged >= m.lifetimeDosesLogged }
 }
 
 /** 'YYYY-MM-DD' → "Mon YYYY" — month + year, for the lifetime-coverage note (§4.4). */
@@ -3846,9 +3878,13 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       // sentence exists to disclose an antigen channel the tally CANNOT hold, so
       // halving it and labelling it "during the trial" halves the one disclosure that
       // has no other home.
-      `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> carried a flavour into ${pet} (${drugs
-        .map((d) => h(d))
-        .join(', ')}) &mdash; a chewable, or a dose given inside food. <b>The flavouring&rsquo;s protein is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them. Dosing should continue exactly as prescribed.`,
+      //
+      // CUL-2443: EACH DOSE BY ITS OWN TRIGGER, AND NO INSTRUCTION. The sentence said "a chewable,
+      // or a dose given inside food" over 18 doses that were all food-vehicle pairs, and closed on
+      // "Dosing should continue exactly as prescribed", a treatment instruction in a document that
+      // states it makes none. The instruction is removed, not softened: §6.8's rule (never a
+      // reason to skip a dose) is kept by saying nothing about the next dose at all.
+      oralRouteSentence(t.oralRoute, pet, drugs),
     )
   }
   if (t.arrangementExposures.length > 0) {
@@ -3960,11 +3996,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     rows.push(
       kv(
         'Symptoms vs logging',
-        `Days a meal was logged: ${num(m.firstHalf.daysLogged)} of ${num(
-          m.firstHalf.days,
-        )} in the first half of ${h(
-          fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
-        )}, ${num(m.lastHalf.daysLogged)} of ${num(m.lastHalf.days)} in the second.${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
+        `Days a meal was logged: ${halvesLine(snap.trial!, m, rangeDays)}${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
       ),
     )
   }
@@ -4102,8 +4134,14 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       : total
         ? `Not one rated ${noun} was finished (${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)})`
         : `${num(refusalFact.refusedFeedings)} of ${num(refusalFact.ratedFeedings)} rated ${nouns} were not finished`
-    refusalCaveat =
-      `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
+    // CUL-2443: "DOCUMENTS A REFUSAL" ONLY WHERE THE RATINGS CAN CARRY IT. On 4 rated feedings
+    // among ~167 the record cannot document a refusal, but it cannot show the diet was eaten
+    // either, and that is the reading that stays (intake is not preference: the unfinished
+    // feedings are never softened). A total refusal, or no fact at all, keeps the old sentence.
+    const partialRefusal = !!refusalFact && !total
+    refusalCaveat = partialRefusal
+      ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
+      : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
   }
   if (t.arrangementExposures.length > 0) {
     caveats.push(
@@ -4128,9 +4166,22 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // about whether the RECORD can be read, and a drug that suppresses the trial's only
   // endpoint belongs in it. The cold read's residual: §7.2 named the exposure caveat and
   // left the continuous oclacitinib out of the one line a reader lifts.
-  const drugs = t.medicationOverlap.filter((m) => !m.isSupplement)
+  // CUL-2440: SUPPLEMENTS INCLUDED. This line filtered them out, so on the live record the
+  // antihistamine the trial block lists as overlapping was the one drug the line a reader lifts
+  // left out: the quieter of two sections. Each drug is named once, with its course count.
+  const drugs = t.medicationOverlap
   if (drugs.length > 0) {
-    const names = drugs.map((m) => h(m.drugName)).join(', ')
+    const byName = new Map<string, { courses: number; supplement: boolean }>()
+    for (const m of drugs) {
+      const g = byName.get(m.drugName)
+      if (g) g.courses++
+      else byName.set(m.drugName, { courses: 1, supplement: m.isSupplement })
+    }
+    const named = [...byName.entries()].map(
+      ([name, g]) =>
+        `${h(name)}${g.courses > 1 ? ` (${num(g.courses)} courses)` : ''}${g.supplement ? ' (entered as a supplement)' : ''}`,
+    )
+    const names = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
     caveats.push(
       `${names} overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
     )
@@ -5173,6 +5224,66 @@ function withheldClaimReason(t: NonNullable<ReportSnapshot['trial']>): string {
 
 /** §7's first element. Descriptive throughout; the ONE additive judgement is the
  *  GI-trial antibacterial note, and it is presence-only. */
+/**
+ * The two halves, by their own dates, and the middle day an odd span leaves in neither
+ * (CUL-2443). "16 of 17 in the first half … 17 of 17 in the second" on a 35-day range did not
+ * reconcile with "34 of 35 days" two rows up, because the middle day went unsaid. Its logged
+ * state is derived only when the coverage count spans the same range; otherwise only its date is
+ * named, never a guess.
+ */
+function halvesLine(
+  t: NonNullable<ReportSnapshot['trial']>,
+  m: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } },
+  rangeDays: number,
+): string {
+  const start = t.evidenceStartDate
+  const end = t.evidenceEndDate
+  const firstEnd = shiftDayKey(start, m.firstHalf.days - 1)
+  const lastStart = shiftDayKey(end, -(m.lastHalf.days - 1))
+  const halfRange = (a: string | null, b: string | null): string => (a && b ? ` (${h(fmtRange(a, b))})` : '')
+  const halves = `${num(m.firstHalf.daysLogged)} of ${num(m.firstHalf.days)} in the first half${halfRange(start, firstEnd)}, ${num(
+    m.lastHalf.daysLogged,
+  )} of ${num(m.lastHalf.days)} in the second${halfRange(lastStart, end)}`
+  const middleDays = rangeDays - m.firstHalf.days - m.lastHalf.days
+  if (middleDays !== 1) return `${halves}.`
+  const middle = shiftDayKey(start, m.firstHalf.days)
+  if (!middle) return `${halves}.`
+  const cov = t.coverage
+  const middleLogged =
+    cov && cov.daysElapsed === rangeDays ? cov.daysLogged - m.firstHalf.daysLogged - m.lastHalf.daysLogged : null
+  const state =
+    middleLogged === 1
+      ? ' and had a meal logged'
+      : middleLogged === 0
+        ? ' and had no meal logged'
+        : ''
+  const total = middleLogged === 0 || middleLogged === 1 ? ` (${num(cov!.daysLogged)} of ${num(rangeDays)} in all)` : ''
+  return `${halves}; the middle day, ${h(fmtDay(middle))}, is in neither half${state}${total}.`
+}
+
+/** The oral-route disclosure (C3), each trigger in its own words (CUL-2443). */
+function oralRouteSentence(
+  oral: NonNullable<ReportSnapshot['trial']>['oralRoute'],
+  pet: string,
+  drugs: readonly string[],
+): string {
+  const chew = oral.filter((o) => o.trigger === 'chewable').length
+  const food = oral.length - chew
+  const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
+  const how =
+    chew > 0 && food > 0
+      ? `${doses(chew)} ${chew === 1 ? 'was a chewable' : 'were chewables'}, which carry a flavour, and ${doses(food)} ${
+          food === 1 ? 'was' : 'were'
+        } logged as given inside a food off the allowed list or not identified`
+      : chew > 0
+        ? `${chew === 1 ? 'was a chewable' : 'were chewables'}, which carry a flavour`
+        : `${food === 1 ? 'was' : 'were'} logged as given inside a food off the allowed list or not identified`
+  const lead = chew > 0 && food > 0 ? `<b>${doses(oral.length)} by mouth</b> reached ${pet}: ${how}` : `<b>${doses(oral.length)} by mouth</b> ${how}`
+  return `${lead} (${drugs.map((d) => h(d)).join(', ')}). <b>The protein ${
+    oral.length === 1 ? 'it' : 'they'
+  } carried is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them.`
+}
+
 function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string {
   if (t.medicationOverlap.length === 0) {
     // NOT "no medications were given" — the report knows only what was logged, and
@@ -5201,7 +5312,10 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
     // the clipped date silently picked the confounded reading.
     const startedBefore =
       m.startedAt !== null && m.startedAt.slice(0, 10) < m.fromDate ? m.startedAt.slice(0, 10) : null
-    const span = startedBefore
+    const rec = m.recordStart
+    const span = rec
+      ? `${recordSinceBit(rec)}, overlapping ${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
+      : startedBefore
       ? `since ${h(fmtDay(startedBefore))}, overlapping ${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
       : `${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
     const still = m.activeAtWindowEnd
@@ -5212,9 +5326,14 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
     const abx = m.antibacterialInGiTrial
       ? ' <b>An antibacterial course overlaps a GI trial:</b> a steroid&rsquo;s effect withdraws when it stops, a course&rsquo;s effect on the microbiome does not.'
       : ''
+    // An ad-hoc drug re-dated from the record (CUL-2440) is not a continuous course: say what
+    // the span is made of, so the louder date is not read as a prescription.
+    const adHoc = rec
+      ? ' Ad-hoc doses, no regimen recorded: the span runs from the first logged dose, not a continuous course.'
+      : ''
     return `${h(m.drugName)}${m.isSupplement ? ' (supplement)' : ''} &middot; ${span} &middot; ${num(
       m.daysOverlapping,
-    )}&nbsp;d${still}.${abx}`
+    )}&nbsp;d${still}.${adHoc}${abx}`
   })
   // EXPLICITLY NOT JUDGED, and the sentence saying so is not optional: antipruritics
   // are permitted throughout a trial and a 2–3 week prednisolone course is a
@@ -6855,6 +6974,12 @@ function changeTiming(c: ConcurrentChange): string {
   // recorded, not one still under way"). This is the sentence that has to agree with it.
   const stopClause = (d: string): string => (c.endIsDeclared ? `stopped ${d}` : `last dose logged ${d}`)
   if (!c.ongoing) {
+    // An ad-hoc drug whose record reaches before this window (CUL-2440) did not START here: its
+    // first dose in the window did. Saying "started" dated it eleven weeks late on the live record.
+    if (c.recordStart && start) {
+      const first = `first dose in this window ${start}; ${recordSinceBit(c.recordStart, true)}`
+      return end ? `${first}; ${stopClause(end)}` : first
+    }
     // Started in-window.
     return end ? `started ${start}, ${stopClause(end)}` : `started ${start}`
   }
@@ -6913,8 +7038,11 @@ function markedSpan(c: ConcurrentChange): string {
     if (start) return `, permitted from ${start}`
     return stop ? `, permit ended ${stop}` : ''
   }
-  if (start && stop) return ` from ${start} to ${stop}`
-  if (start) return ` on ${start}`
+  // The marker sits on the first dose IN this window; an ad-hoc drug's record can reach further
+  // back (CUL-2440), and the legend must not read the marker as its start.
+  const firstHere = c.recordStart ? ` (its first dose in this window; ${recordSinceBit(c.recordStart, true)})` : ''
+  if (start && stop) return ` from ${start}${firstHere} to ${stop}`
+  if (start) return ` on ${start}${firstHere}`
   return stop ? `, stopped ${stop}` : ''
 }
 
@@ -7963,12 +8091,28 @@ function dosingSpan(m: MedicationAdherence): string {
       : `(${num(n)} prescribed dose${n === 1 ? '' : 's'} at ${rate}×/day take${n === 1 ? 's' : ''} ${num(need)} day${
           need === 1 ? '' : 's'
         })`
-  if (given === 1) return ` That dose was administered on ${h(fmtDayYear(first))} ${needBit}.`
+  // CUL-2443: A PACE THE SCHEDULE NOTE CONTRADICTS IS NOT THE YARDSTICK. "15 prescribed doses at
+  // 1×/day take 15 days" beside a note reading "every 24 hours for 10 days, then every 48 hours"
+  // made the course's undosed days read as missed. The arithmetic stays; the note is quoted
+  // beside it so the vet can read the gaps against the schedule the owner actually entered.
+  const notes = m.scheduleNotes?.trim()
+  const schedule = notes ? ` ${scheduleNoteBit(notes)}` : ''
+  if (given === 1) return ` That dose was administered on ${h(fmtDayYear(first))} ${needBit}.${schedule}`
   const subject = `The ${num(given)} administered doses`
-  if (days === 1) return ` ${subject} all fell on ${h(fmtDayYear(first))} ${needBit}.`
+  if (days === 1) return ` ${subject} all fell on ${h(fmtDayYear(first))} ${needBit}.${schedule}`
   const span = daysBetweenDayKeys(first, last) + 1
-  if (days >= span) return ` ${subject} fell on all ${num(days)} days, ${h(fmtRange(first, last))} ${needBit}.`
-  return ` ${subject} fell on ${num(days)} of the ${num(span)} days ${h(fmtSpanFromTo(first, last))} ${needBit}.`
+  if (days >= span) return ` ${subject} fell on all ${num(days)} days, ${h(fmtRange(first, last))} ${needBit}.${schedule}`
+  // CUL-2443: THE DENOMINATOR NAMES ITSELF. This span runs first dose to last dose, while the
+  // window clause beside it counts the course's recorded days ("15 of 21 days of the course"), so
+  // a bare "15 of the 20 days" read as a second, irreconcilable count of the same course.
+  return ` ${subject} fell on ${num(days)} of the ${num(span)} days from the first dose to the last, ${h(
+    fmtRange(first, last),
+  )} ${needBit}.${schedule}`
+}
+
+/** The owner's schedule note, quoted as theirs, beside a count of undosed days (CUL-2443). */
+function scheduleNoteBit(notes: string): string {
+  return `The schedule note reads &ldquo;${h(notes)}&rdquo;, so a day with no dose may be the schedule rather than a missed dose.`
 }
 
 /** "from Mon D to Mon D, YYYY" (one year) or "from Mon D, YYYY to Mon D, YYYY" — the year once per pair (C-19). */
@@ -8165,7 +8309,7 @@ function adherenceClaim(m: MedicationAdherence): string {
     const planned = m.prescribedDoses!
     return `Adherence: ${n} of ${num(planned)} prescribed dose${
       planned === 1 ? '' : 's'
-    } administered across the whole course.`
+    } administered across the whole course${partialClause(m)}.`
   }
   // No ratio is available, so the count is stated with the REASON the frame is absent — an empty
   // return with several causes makes the reader guess, and they guess "undertreated" (C-37).
@@ -8178,7 +8322,16 @@ function adherenceClaim(m: MedicationAdherence): string {
       : m.lifetimeDosesLogged > m.prescribedDoses
         ? `more than the ${num(m.prescribedDoses)} prescribed`
         : `course under way, ${num(m.prescribedDoses)} prescribed`
-  return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} administered across the whole course; ${why}.`
+  return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} administered across the whole course${partialClause(
+    m,
+  )}; ${why}.`
+}
+
+/** ", 11 of them partial" / "; 3 partial in this window" (CUL-2440, `partialOf`). */
+function partialClause(m: MedicationAdherence): string {
+  const p = partialOf(m)
+  if (!p) return ''
+  return p.wholeCourse ? `, ${num(p.n)} of them partial` : ` (${num(p.n)} partial in this window)`
 }
 
 /** Date range for an unlinked-dose group — "on Jul 10" for a single day, else "Jul 2 – Jul 10". */
@@ -8263,11 +8416,15 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     // Each count names its denominator and its window (cold read: "0 controls" alone could
     // not be read). A matched pair is one episode and its time-matched control window; each
     // arm counts the pairs where the protein fell in the window before it.
-    `${h(capProtein(e.protein))} ${e.proteins && e.proteins.length > 1 ? 'show' : 'shows'} an early association with ${h(
+    // CUL-2443: THE COUNTS, NOT A VERDICT. "Beef shows an early association with vomiting" led
+    // in bold as if it were a finding; the clause now states only what the record shows, and the
+    // status that governs it ("Not confirmed") is the one thing in bold, ahead of it.
+    `${h(capProtein(e.protein))} ${e.proteins && e.proteins.length > 1 ? 'were' : 'was'} in the ${num(
+      e.correlationWindowHours,
+    )}&nbsp;h before ${num(e.caseExposed)} of ${num(e.matchedPairs)} ${h(
       symptomLabel(e.symptomType).toLowerCase(),
-    )} (${h(capProtein(e.protein))} in the ${num(e.correlationWindowHours)}&nbsp;h before ${num(e.caseExposed)} of ${num(
-      e.matchedPairs,
-    )} episodes, vs ${num(e.controlExposed)} of ${num(e.matchedPairs)} matched control windows)`
+    )} episodes, vs ${num(e.controlExposed)} of ${num(e.matchedPairs)} matched control windows`
+  const EARLY_LEAD = '<b>Not confirmed, an early signal short of the established threshold:</b>'
   // A joint candidate caps at Early (§7 #4), so this is where it actually lands: the clause the
   // established branch keeps for it applies here first.
   const earlyJoint = earlies.some((e) => e.proteins && e.proteins.length > 1)
@@ -8283,7 +8440,7 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     )
     const earlyTail =
       earlies.length > 0
-        ? ` <b>${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed.</b>${earlyJoint}`
+        ? ` ${EARLY_LEAD} ${earlies.map(earlyClause).join('; and ')}.${earlyJoint}`
         : ''
     return `${established.map((e) => establishedSentence(e)).join(' ')}${earlyTail}`
   }
@@ -8335,7 +8492,7 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   // negative clause where a scan stops, ahead of the association it then names.
   const lead =
     earlies.length > 0
-      ? `<b>${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed; no food or protein reached that threshold over this window. Not a negative result.</b>`
+      ? `${EARLY_LEAD} ${earlies.map(earlyClause).join('; and ')}; no food or protein reached that threshold over this window. <b>Not a negative result.</b>`
       : `<b>No food or protein reached the established association threshold over this window</b> &mdash; not a negative result: a record this size cannot rule a food out.`
   return `${lead}${staple}${earlyJoint}${timingBit}`
 }
@@ -10107,9 +10264,9 @@ export function offDietAppendix(snap: ReportSnapshot): string {
     trialDerived && daggerRows > 0
       ? `<p class="note"><b>&dagger;</b> a symptom was logged in the ${num(
           snap.trial!.challengeWindowDays,
-        )} days after this feeding — the published time-to-flare window in ${h(
+        )} days after this feeding — the published time-to-flare window for skin signs in ${h(
           speciesPlural(snap.signalment.species),
-        )} (Olivry &amp; Mueller). <b>Timing only.</b> It is not an attribution, and not the association test on page&nbsp;1: an unlogged exposure is always possible, so no pairing here can be exclusive, and this marker deliberately excludes same-day pairs. It marks ${num(
+        )} (Olivry &amp; Mueller); this marker counts any logged symptom, including signs that window was not measured on. <b>Timing only.</b> It is not an attribution, and not the association test on page&nbsp;1: an unlogged exposure is always possible, so no pairing here can be exclusive, and this marker deliberately excludes same-day pairs. It marks ${num(
           daggerRows,
         )} of ${num(grouped.length)} row${grouped.length === 1 ? '' : 's'} here &mdash; but on this record <b>${num(
           markerBaseRate,
@@ -10278,7 +10435,16 @@ function supplementsNamedOnReport(snap: ReportSnapshot): string[] {
   for (const u of snap.unlinkedMedications) {
     // No regimen means no start date to state — the honest anchor is the first dose logged,
     // and saying which it is stops the date reading as a prescribed start.
-    if (u.isSupplement) push(u.drugName, ` (no regimen recorded; doses logged from ${h(fmtDay(u.firstDate))})`)
+    if (!u.isSupplement) continue
+    // CUL-2440: the window's first dose is not the record's. Where the record reaches further
+    // back, that earlier date leads and the window's count follows.
+    const rec = adHocRecordStartOf(snap, u, u.firstDate)
+    push(
+      u.drugName,
+      rec
+        ? ` (no regimen recorded; ${recordSinceBit(rec, true)}; ${num(u.totalDoses)} logged in this window, from ${h(fmtDay(u.firstDate))})`
+        : ` (no regimen recorded; doses logged from ${h(fmtDay(u.firstDate))})`,
+    )
   }
   for (const c of snap.concurrentChanges) {
     if (c.kind === 'supplement') push(c.label, ' (named among the concurrent changes on page&nbsp;1)')
@@ -10476,7 +10642,15 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
       }`
     : // An absence here means different things depending on whether there was anything to
       // give, and the vet is reading this row to decide whether a pill vehicle is in play.
-      snap.medications.length > 0 || snap.unlinkedMedications.length > 0
+      // CUL-2440: NOT WHILE THE TRIAL BLOCK COUNTS ONE. The oral-route detector reads each dose's
+      // paired food directly, including a pairing to a meal this row cannot resolve, so on the
+      // live record page 1 counted 18 doses given inside a food while this row said none was.
+      // The louder of the two stands.
+      vehicleDosesOf(snap) > 0
+      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged during the trial as given inside a food that does not resolve to a meal logged in this window, so the food is not identified (the trial block on page&nbsp;1 counts ${
+          vehicleDosesOf(snap) === 1 ? 'it' : 'them'
+        }).`
+      : snap.medications.length > 0 || snap.unlinkedMedications.length > 0
       ? 'Not recorded &mdash; no dose in this window was logged as given in food.'
       : 'Not recorded.'
 
@@ -10538,7 +10712,12 @@ export function medicationAppendix(snap: ReportSnapshot): string {
       // which made it the document's THIRD adherence figure and its second basis. The table is
       // the windowed dose-level detail; the one adherence claim is stated on page 1 against the
       // prescription, and this column now says how many of those doses landed in the window.
-      const logged = m.adherenceState === 'not_tracked' ? '0' : num(m.windowDosesLogged)
+      // The partial count rides beside the count it is part of (CUL-2440): the column says
+      // "incl. partial", and a bare 15 beside an ad-hoc row's "2 partial" read as full dosing.
+      const logged =
+        m.adherenceState === 'not_tracked'
+          ? '0'
+          : `${num(m.windowDosesLogged)}${m.partialDoses ? ` (${num(m.partialDoses)} partial)` : ''}`
       // THE SAME THREE REGISTERS PAGE 1 CARRIES (CUL-976 pass 3). This cell had two, and the
       // missing one was the empty window — where every extra it prints is a count of zero over a
       // population the window does not contain. On a course refused in its entirety BEFORE the
@@ -10571,7 +10750,9 @@ export function medicationAppendix(snap: ReportSnapshot): string {
                   : `No dose given against this course on ${
                       m.elapsedDaysInWindow === 1 ? 'its 1 day' : `any of its ${num(m.elapsedDaysInWindow)} days`
                     } in this window`
-              }${courseDaysTail(m)}.${outsideCourseNote(m)} Other doses against this course in this window: ${doseCounts.join(', ')}.`
+              }${courseDaysTail(m)}.${
+                m.scheduleNotes?.trim() && m.courseDays.nothingLogged > 0 ? ` ${scheduleNoteBit(m.scheduleNotes.trim())}` : ''
+              }${outsideCourseNote(m)} Other doses against this course in this window: ${doseCounts.join(', ')}.`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(
@@ -10753,14 +10934,33 @@ function statesPrescriptionRatio(x: {
 }
 
 /** The Doses-given cell. H4: the count is `dosesLogged` (given + partial), never re-summed. */
-function medHistoryDoses(e: MedicationHistoryEntry): string {
-  return statesPrescriptionRatio({
+function medHistoryDoses(e: MedicationHistoryEntry, snap: ReportSnapshot): string {
+  const count = statesPrescriptionRatio({
     courseEnded: e.ended,
     plannedDoses: e.plannedDoses,
     dosesLogged: e.dosesLogged,
   })
     ? `${num(e.dosesLogged)} of ${num(e.plannedDoses!)}`
     : num(e.dosesLogged)
+  return `${count}${medHistoryPartial(e, snap)}`
+}
+
+/**
+ * The partial count beside a lifetime row (CUL-2440). The history entry carries no partial
+ * count, so it is read from the window's view of the same course: exact over the course when
+ * every dose on record falls in the window, otherwise scoped to the window in words. A course
+ * with no doses in the window says nothing, as before: the header still reads "incl. partial".
+ */
+function medHistoryPartial(e: MedicationHistoryEntry, snap: ReportSnapshot): string {
+  if (e.source === 'regimen') {
+    const m = snap.medications.find((x) => x.regimenId === e.key)
+    const p = m ? partialOf(m) : null
+    if (!p) return ''
+    return p.wholeCourse ? ` (${num(p.n)} partial)` : ` (${num(p.n)} partial in this window)`
+  }
+  const u = snap.unlinkedMedications.find((x) => x.itemId !== null && e.key === `item:${x.itemId}`)
+  if (!u || !u.partialDoses) return ''
+  return u.administeredDoses >= e.dosesLogged ? ` (${num(u.partialDoses)} partial)` : ` (${num(u.partialDoses)} partial in this window)`
 }
 
 /**
@@ -10778,7 +10978,7 @@ export function medicationHistoryTable(snap: ReportSnapshot): string {
       (e) =>
         `<tr><td>${h(e.drugName)}</td><td>${medHistoryDates(e)}</td><td>${medHistoryCourse(
           e,
-        )}</td><td class="c num">${medHistoryDoses(e)}</td></tr>`,
+        )}</td><td class="c num">${medHistoryDoses(e, snap)}</td></tr>`,
     )
     .join('')
   const since = mh.sinceDay ? ` (since ${h(fmtMonthYear(mh.sinceDay))})` : ''
@@ -10895,7 +11095,9 @@ function appendixF(snap: ReportSnapshot): string {
  * deterministic — the ONLY entry point. Emits a complete standalone document (the
  * served/printed report), self-contained (zero third-party subresources).
  */
-export function renderReport(snap: ReportSnapshot): string {
+export function renderReport(input: ReportSnapshot): string {
+  // One medication fact per drug, read the same way by every section below (CUL-2440).
+  const snap = withRecordOverlaps(input)
   const title = `Owner-reported summary — ${h(snap.signalment.name)} · ${h(
     fmtRange(snap.scope.startDate, snap.scope.endDate),
   )}`
