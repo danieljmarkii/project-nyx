@@ -1,0 +1,298 @@
+// The send sheet's words (Vet report v2 PR-18, CUL-2298; spec §10.3 to §10.5, R-12).
+//
+// PURE. Everything the send sheet, the email draft and the confirmation SAY is decided here,
+// so every sentence can be pinned to its source by a test and the subject can be checked by a
+// guard before anything reaches the owner's Mail app.
+//
+// R-12, THE EMAIL IS A CODE TEMPLATE. Every body sentence is one of three things, and carries
+// which in `source`: a FIXED string (slots for the pet's name, the dates and the visit date
+// only), a RECORD line (the call card's own words for the live flags, verbatim), or the
+// OWNER's text, verbatim, inside quotation marks and labelled ("My note: …"). Code never
+// resolves a pronoun, never names a drug, a food or a dose, never rewrites what the owner
+// typed. Owner notes and questions never reach a model (R-12; spec §10.4).
+//
+// THE SUBJECT CARRIES NO NUMBER BUT A DATE (BRK-12, ruling W). The pet with surname, each live
+// flag named in words, the window and the visit. No counts, no percentages, no weight. The
+// flag nouns are a closed catalogue below, digit-free by construction; `subjectIsClean` is the
+// guard, and anything the owner typed into a name that trips it is cut before it can print.
+//
+// THE CALL ROWS ARE WORDED, NOT DIALLED. No clinic phone, opening hours or emergency vet is
+// stored anywhere in the app today, so the rows say who to call and never pretend to know a
+// number or that the clinic is closed. d5's after-hours preset (the emergency clinic first)
+// keys on the local clock against assumed clinic hours: it only changes which row leads, both
+// rows always print, and outside the assumed day the louder row leads.
+
+import { liveCardCopy, composerDate, composerRange, LIVE_FLAG_DAYS, type ComposerFlag, type ComposerLive } from './reportComposer';
+
+// ── Targets and the status words (WBC-5) ─────────────────────────────────────────────────────
+
+export type SendTarget = 'email' | 'print' | 'share' | 'copy';
+
+/**
+ * What the platform told us. Mail's four results are its own (`MailComposerStatus`); the other
+ * targets report only that their call returned (`done`) or threw (`failed`).
+ */
+export type SendResult = 'sent' | 'saved' | 'cancelled' | 'undetermined' | 'done' | 'failed';
+
+/**
+ * The words on the confirmation for one (target, platform, result), or null for no card.
+ *
+ * Only an iOS Mail `sent` is a fact the app knows, so only it reads as one. Android's Mail
+ * intent always comes back `undetermined`, and a share or print sheet never says what the owner
+ * did in it, so those are worded as what the app handed over. A cancelled or saved draft is no
+ * send at all: no card (WBC-5).
+ */
+export function sendStatusWords(target: SendTarget, platform: string, result: SendResult): string | null {
+  if (result === 'failed' || result === 'cancelled' || result === 'saved') return null;
+  switch (target) {
+    case 'email':
+      return platform === 'ios' && result === 'sent' ? 'Sent from your Mail app' : 'Handed to your Mail app';
+    case 'print':
+      return 'Sent to print';
+    case 'share':
+      return 'Shared';
+    case 'copy':
+      return 'Copied';
+    default:
+      return null;
+  }
+}
+
+/** The target rows, in the mock's order (d1). "Show on this phone" is exam-room mode's (VR2-19). */
+export const TARGET_LABEL: Record<SendTarget, string> = {
+  email: 'Email to the clinic, from your Mail app',
+  print: 'Print',
+  share: 'Share the PDF',
+  copy: 'Copy the email text',
+};
+
+export const SEND_TARGETS: SendTarget[] = ['email', 'print', 'share', 'copy'];
+
+// ── The live flag read (GAP-13) ──────────────────────────────────────────────────────────────
+
+/**
+ * The live set when the read failed: nothing was checked, and every surface reads the louder
+ * "couldn't check" state, never "none".
+ */
+export function uncheckedLive(today: string): ComposerLive {
+  return { state: 'incomplete', startDate: today, endDate: today, flags: [] };
+}
+
+/** True only when the 56-day set was read and held no flag: the one case a check may show. */
+export function sendIsQuiet(live: ComposerLive): boolean {
+  return live.state === 'none';
+}
+
+// ── The call card and its rows (d1, d5) ──────────────────────────────────────────────────────
+
+/**
+ * The hours the after-hours preset assumes. No clinic hours are stored, so these are the
+ * common day clinic; outside them the emergency clinic leads. Erring this way only reorders
+ * two rows that both always print.
+ */
+export const ASSUMED_CLINIC_OPEN_HOUR = 8;
+export const ASSUMED_CLINIC_CLOSE_HOUR = 18;
+
+export interface CallRow {
+  id: 'clinic' | 'emergency';
+  text: string;
+}
+
+export function isAfterHours(localHour: number): boolean {
+  return localHour < ASSUMED_CLINIC_OPEN_HOUR || localHour >= ASSUMED_CLINIC_CLOSE_HOUR;
+}
+
+/** The call rows, the emergency clinic first after hours (d5). */
+export function callRowsFor(localHour: number, petName: string): CallRow[] {
+  const name = petName.trim() || 'your pet';
+  if (isAfterHours(localHour)) {
+    return [
+      { id: 'emergency', text: `If your vet is closed now, an emergency clinic can see ${name} tonight.` },
+      { id: 'clinic', text: 'Or call your vet when they open.' },
+    ];
+  }
+  return [
+    { id: 'clinic', text: 'Call your vet today.' },
+    { id: 'emergency', text: 'If they’re closed, call an emergency clinic.' },
+  ];
+}
+
+export interface SendCallCard {
+  title: string;
+  body: string;
+  /** Empty when the read failed: the card then says it could not check, with no rows to act on. */
+  rows: CallRow[];
+}
+
+/**
+ * The card at the top of the sheet and repeated on a flagged confirmation, or null when the
+ * 56-day set held no flag. Its title and body are the composer's own card (one set, one
+ * wording); the rows are the sheet's.
+ */
+export function sendCallCard(live: ComposerLive, petName: string, localHour: number): SendCallCard | null {
+  const copy = liveCardCopy(live, petName);
+  if (!copy) return null;
+  return { ...copy, rows: live.state === 'flags' ? callRowsFor(localHour, petName) : [] };
+}
+
+// ── The subject (BRK-12) ─────────────────────────────────────────────────────────────────────
+
+/** Short, digit-free nouns for the subject line. A closed catalogue: nothing here is computed. */
+function subjectNoun(f: ComposerFlag): string {
+  switch (f.kind) {
+    case 'present_blood':
+      return f.sign === 'vomit' ? 'blood in vomit' : 'blood in stool';
+    case 'present_foreign':
+      return 'possible foreign material';
+    case 'intake_decline':
+      // A refusal reads as one, never as "less" (intake is not preference).
+      return f.trigger === 'refused_then_vomited' || f.trigger === 'refused_normal_food' ? 'refusing food' : 'eating less';
+    case 'trial_diet_refusal':
+      return 'trial diet not finished';
+    case 'chronicity':
+      return 'long-running signs';
+    case 'symptom_burden':
+      return 'frequent signs this week';
+    case 'symptom_worsening':
+      return 'signs getting more frequent';
+    case 'weight_loss':
+      return 'weight down';
+    case 'weight_unchecked':
+      return 'weight unchecked';
+    case 'protein_mismatch':
+      return 'trial food protein mismatch';
+    default:
+      return 'another finding';
+  }
+}
+
+/** A digit beside a percent sign or a weight unit: the shape the subject must never carry. */
+const SUBJECT_FORBIDDEN = /\d+(?:[.,]\d+)?\s*(?:%|percent\b|kgs?\b|kilos?\b|lbs?\b|pounds?\b)/gi;
+
+export function subjectIsClean(subject: string): boolean {
+  SUBJECT_FORBIDDEN.lastIndex = 0;
+  return !SUBJECT_FORBIDDEN.test(subject);
+}
+
+function cleanOwnerPart(raw: string): string {
+  return raw.replace(SUBJECT_FORBIDDEN, '').replace(/\s+/g, ' ').trim();
+}
+
+export interface SubjectInput {
+  petName: string;
+  ownerSurname: string | null;
+  live: ComposerLive;
+  startDate: string;
+  endDate: string;
+  today: string;
+  /** The visit day (YYYY-MM-DD) when the owner keeps it in, else null. */
+  visitDay: string | null;
+}
+
+export function emailSubject(i: SubjectInput): string {
+  const pet = cleanOwnerPart(i.petName) || 'My pet';
+  const surname = i.ownerSurname ? cleanOwnerPart(i.ownerSurname) : '';
+  const parts = [surname ? `${pet} (${surname})` : pet, 'owner’s home log'];
+  if (i.live.state === 'flags' && i.live.flags.length > 0) {
+    parts.push(`flags: ${[...new Set(i.live.flags.map(subjectNoun))].join(', ')}`);
+  } else if (i.live.state === 'incomplete') {
+    parts.push('flags not checked');
+  }
+  parts.push(composerRange(i.startDate, i.endDate, i.today));
+  if (i.visitDay) parts.push(`visit ${composerDate(i.visitDay, i.today)}`);
+  const subject = parts.join(' · ');
+  // The guard, run on what will actually go out. Every template part is digit-free but the
+  // dates, so a trip here can only come from a name the owner typed; cut it, never send it.
+  return subjectIsClean(subject) ? subject : subject.replace(SUBJECT_FORBIDDEN, '').replace(/\s+/g, ' ');
+}
+
+// ── The body (BRK-5) ─────────────────────────────────────────────────────────────────────────
+
+export type EmailSource = 'fixed' | 'record' | 'owner';
+
+export interface EmailSentence {
+  id: string;
+  source: EmailSource;
+  text: string;
+}
+
+/** At most five questions travel (R-5a's cap, mirrored by meaning: the owner's questions). */
+export const EMAIL_QUESTION_MAX = 5;
+
+export interface EmailBodyInput {
+  petName: string;
+  live: ComposerLive;
+  startDate: string;
+  endDate: string;
+  today: string;
+  visitDay: string | null;
+  /** The owner's note, exactly as typed. */
+  note: string;
+  /** The owner's questions, exactly as typed. Blank ones are dropped; at most five travel. */
+  questions: string[];
+}
+
+/** The owner's words, untouched but for the whitespace at either end. */
+function quoted(raw: string): string {
+  return `“${raw.trim()}”`;
+}
+
+export function ownerQuestionsOf(questions: string[]): string[] {
+  return questions.filter((q) => q.trim() !== '').slice(0, EMAIL_QUESTION_MAX);
+}
+
+export function emailBody(i: EmailBodyInput): EmailSentence[] {
+  const pet = i.petName.trim() || 'my pet';
+  const range = composerRange(i.startDate, i.endDate, i.today);
+  const out: EmailSentence[] = [{ id: 'greeting', source: 'fixed', text: 'Hello,' }];
+  out.push({
+    id: 'attached',
+    source: 'fixed',
+    text: i.visitDay
+      ? `Attached is ${pet}’s home log for ${range}, for the visit on ${composerDate(i.visitDay, i.today)}.`
+      : `Attached is ${pet}’s home log for ${range}.`,
+  });
+  const card = liveCardCopy(i.live, i.petName);
+  if (i.live.state === 'flags' && card) {
+    // The call card's own record line, verbatim: the same words the owner just read.
+    out.push({ id: 'flags', source: 'record', text: `Flags from the last ${LIVE_FLAG_DAYS} days: ${card.body}` });
+  } else if (i.live.state === 'incomplete') {
+    out.push({ id: 'unchecked', source: 'fixed', text: 'The app couldn’t check the record for flags before I sent this.' });
+  }
+  if (i.note.trim() !== '') out.push({ id: 'note', source: 'owner', text: `My note: ${quoted(i.note)}` });
+  const questions = ownerQuestionsOf(i.questions);
+  if (questions.length > 0) {
+    out.push({ id: 'questions', source: 'fixed', text: questions.length === 1 ? 'My question:' : 'My questions:' });
+    questions.forEach((q, n) => out.push({ id: `question-${n + 1}`, source: 'owner', text: `${n + 1}. ${quoted(q)}` }));
+  }
+  out.push({ id: 'kept', source: 'fixed', text: 'It was kept in the Culprit app, owner-reported, not a diagnosis.' });
+  return out;
+}
+
+/** The plain-text body the Mail app receives: one sentence a paragraph, questions as a list. */
+export function emailBodyText(sentences: EmailSentence[]): string {
+  return sentences
+    .map((s, n) => {
+      const prev = sentences[n - 1];
+      const inList = s.id.startsWith('question-') && prev && (prev.id === 'questions' || prev.id.startsWith('question-'));
+      return `${n === 0 ? '' : inList ? '\n' : '\n\n'}${s.text}`;
+    })
+    .join('');
+}
+
+// ── The confirmation (e1, e2) ────────────────────────────────────────────────────────────────
+
+export interface ConfirmationCopy {
+  title: string;
+  line: string;
+}
+
+/** "Nyx’s report" over "Sep 16 to Oct 31 · sent from your Mail app". It names the pet, the
+ *  window and how it left; it never says "saved" until saved copies exist (VR2-20). */
+export function confirmationCopy(petName: string, startDate: string, endDate: string, today: string, status: string): ConfirmationCopy {
+  const name = petName.trim();
+  return {
+    title: name ? `${name}’s report` : 'Your pet’s report',
+    line: `${composerRange(startDate, endDate, today)} · ${status.charAt(0).toLowerCase()}${status.slice(1)}`,
+  };
+}
