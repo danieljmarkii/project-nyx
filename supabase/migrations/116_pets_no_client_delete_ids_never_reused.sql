@@ -107,8 +107,11 @@
 --     does it; the orphan sweep is CUL-231, noted there.
 --   · A superuser or the migration owner can disable these triggers, drop
 --     the policies or set session_replication_role = replica. That is the
---     server's owner; guards/petIdsNeverReused.test.ts reds on a later
---     migration that does it.
+--     server's owner. guards/petIdsNeverReused.test.ts reds on a later
+--     migration that disables or drops them, adds a DELETE-capable policy,
+--     a view or function that deletes pets, or a foreign key to pets; it
+--     does not read session_replication_role or dynamic SQL (its stated
+--     blind spots).
 --   · The backfill sees only folders that exist at apply time. A pet deleted
 --     before 116 whose objects are already gone needs no reservation; one
 --     whose objects are added later under a dead id cannot be (only the
