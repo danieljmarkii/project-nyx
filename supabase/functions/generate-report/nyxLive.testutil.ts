@@ -115,6 +115,12 @@ export function nyxLiveSnapshot(): ReportSnapshot {
       loggedDayKeys,
       intakeWeeks,
       intakeWeeksBowlExcluded: 0,
+      // A floor: the capture's capped intake log, newest first (CUL-2293).
+      lastMealAboveRefusal: (() => {
+        const r = intake.find((x) => x.intakeRating !== 'refused' && x.intakeRating !== 'picked' && !x.notCountedFreeFed)
+        return r ? { occurredAt: r.occurredAt, rating: r.intakeRating, foodLabel: r.foodLabel } : null
+      })(),
+      watchedRatedMeals: intake.filter((x) => !x.notCountedFreeFed).length,
       symptomDayCounts: [...counts.entries()].map(([k, count]) => {
         const [type, day] = k.split('|')
         return { type: type as ReportSnapshot['symptoms'][number]['type'], day, count }

@@ -119,6 +119,7 @@ import {
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
 import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
+import { isKnownIntakeRating, isRefusedOrPickedRating } from '../../../lib/intakeEvidence.ts'
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 // CUL-226 — the SHARED vomit-contents presence leaves: the SAME food/hair/bile atoms L3's
@@ -3424,6 +3425,16 @@ export interface ReportV2Facts {
   /** Ratings of a free-fed bowl left out of `intakeWeeks`: the intake detector never reads them
    *  (CUL-1086, §11 #6), so the bar a flag is drawn on counts what the flag counted. Disclosed. */
   intakeWeeksBowlExcluded: number
+  /**
+   * CUL-2293 (spec v2 §6.1, GAP-35): the most recent WATCHED rated meal in the window that was not
+   * in the refusal class (`lib/intakeEvidence.ts` `isRefusedOrPickedRating`: refused or picked at),
+   * so the intake sheet can say when a refusing pet last ate something, for the feline 48 to 72 hour
+   * window. Read over every rated meal, never a capped list; a free-fed bowl's ratings are left out
+   * (not observed, CUL-1086). Null when no watched rated meal reached "ate some".
+   */
+  lastMealAboveRefusal: { occurredAt: string; rating: IntakeRating; foodLabel: string | null } | null
+  /** The watched rated meals that line reads over (0: the line has nothing to say). */
+  watchedRatedMeals: number
   /** CUL-2290: in-window symptom incidents per local day, for the day row under a 14-day window.
    *  The same deduped incidents as `SymptomAggregate.count` (they sum to it, per type). */
   symptomDayCounts: Array<{ type: ReportSymptomType; day: string; count: number }>
@@ -6808,8 +6819,27 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       intakeWeeksBowlExcluded: ratedMealsInWindow.filter((e) =>
         isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans),
       ).length,
+      ...lastMealAboveRefusalOf(
+        ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+      ),
       symptomDayCounts: symptomDayCountsOf(windowEvents, (iso) => eventDayNumber(iso, tz)),
     },
+  }
+}
+
+/** CUL-2293 — the last watched rated meal out of the refusal class, by instant (parsed, C-40). */
+function lastMealAboveRefusalOf(
+  watched: ReadonlyArray<ReportEventInput>,
+): Pick<ReportV2Facts, 'lastMealAboveRefusal' | 'watchedRatedMeals'> {
+  let best: ReportEventInput | null = null
+  for (const e of watched) {
+    const r = e.meal!.intakeRating
+    if (!isKnownIntakeRating(r) || isRefusedOrPickedRating(r)) continue
+    if (best === null || Date.parse(e.occurredAt) > Date.parse(best.occurredAt)) best = e
+  }
+  return {
+    lastMealAboveRefusal: best ? { occurredAt: best.occurredAt, rating: best.meal!.intakeRating as IntakeRating, foodLabel: mealFoodLabel(best.meal!) } : null,
+    watchedRatedMeals: watched.filter((e) => isKnownIntakeRating(e.meal!.intakeRating)).length,
   }
 }
 

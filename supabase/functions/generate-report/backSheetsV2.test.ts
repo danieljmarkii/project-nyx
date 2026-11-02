@@ -206,7 +206,9 @@ Deno.test('ledger — a refusing cat whose lead is intake still has her vomiting
 // ── What each episode looked like (spec §6.1, GAP-31, AC 5) ──────────────────
 
 /** "0 of" (or "×0") within a clause of blood, foreign material or mucus, either side. */
-export function zeroBesidePresentOnly(text: string): string[] {
+export function zeroBesidePresentOnly(raw: string): string[] {
+  // `textOf` leaves `&times;` encoded; decoded here so the ×0 branch can match v1's entity.
+  const text = raw.replace(/&times;/g, '×')
   const out: string[] = []
   for (const sentence of text.split(/(?<=[.;:])\s+/)) {
     if (/\b(blood|bleeding|foreign|mucus)\b/i.test(sentence) && /(\b0 of\b|×0\b|\bnone of\b|\bzero\b)/i.test(sentence)) out.push(sentence)
@@ -218,6 +220,7 @@ Deno.test('present-only — the detector finds a zero beside blood, foreign mate
   assert.equal(zeroBesidePresentOnly('Blood 0 of 18.').length, 1)
   assert.equal(zeroBesidePresentOnly('Possible foreign material — 0 of 6 incidents.').length, 1)
   assert.equal(zeroBesidePresentOnly('Mucus ×0 · blood ×1.').length, 1)
+  assert.equal(zeroBesidePresentOnly('Mucus &times;0 · blood &times;1.').length, 1, 'the entity v1 prints')
   assert.equal(zeroBesidePresentOnly('Across all 7 vomiting incidents; 3 have a legible AI read. Not seen in the legible photos.').length, 0)
 })
 
@@ -309,7 +312,7 @@ Deno.test('intake — Mira: the last meal rated above “refused”, from the ne
   assert.ok(intake)
   assert.equal(
     intake.lastAboveRefused,
-    'The last meal rated above “refused”: Jun 4 at 14:00 (ate some). No meal in this window was rated “ate most” or “ate it all”. ' +
+    'The last meal rated “ate some” or better: Jun 4 at 14:00 (ate some). No meal in this window was rated “ate most” or “ate it all”. ' +
       'Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.',
   )
   // Every rated meal after it is a refusal, read off the list itself (newest first).
@@ -319,28 +322,59 @@ Deno.test('intake — Mira: the last meal rated above “refused”, from the ne
   assert.equal(s.provenance.intakeLogHiddenOlder, 0, 'nothing newer is hidden')
 })
 
-Deno.test('intake — the last-above-refused line is left out wherever the list cannot answer it', () => {
-  // A meal rated "ate it all" after the last listed row would be the true answer, and an
-  // `unfinished` list never shows it: the line must not print.
-  const withAll = assembleReport(
+const cat = (events: ReturnType<typeof meal>[], over: Record<string, unknown> = {}) =>
+  assembleReport(
     baseInput({
       pet: { id: 'pet-c', name: 'Cat', species: 'cat', breed: null, sex: 'female', dateOfBirth: '2020-01-01', weightKg: 4 } as never,
-      requestedWindow: { startDate: dayKey(20), endDate: dayKey(0) },
-      events: [...dailyMeals(20, 3, 'all'), meal(2, 'refused'), meal(1, 'some'), meal(0, 'all')],
+      requestedWindow: { startDate: dayKey(30), endDate: dayKey(0) },
+      events,
+      ...over,
     }),
   )
-  const a = blockIn(backSheetsOf(withAll), 'intake')
-  assert.ok(a)
-  if (withAll.provenance.intakeLogScope === 'unfinished') assert.equal(a.lastAboveRefused, null)
-  // Under a reduced-intake flag the list holds every counted rated meal: the line prints, from the
-  // newest rows.
-  const cooper = fixture('cooper')
-  assert.equal(cooper.provenance.intakeLogScope, 'intake_flag')
-  const c = blockIn(backSheetsOf(cooper), 'intake')
-  assert.ok(c && c.lastAboveRefused !== null)
-  const newest = cooper.provenance.intakeLog.filter((e) => !e.notCountedFreeFed && !e.pinned).find((e) => e.intakeRating !== 'refused')
-  assert.ok(newest)
-  assert.ok(c.lastAboveRefused.includes(`(${newest.intakeRating === 'all' ? 'ate it all' : newest.intakeRating === 'most' ? 'ate most' : newest.intakeRating === 'some' ? 'ate some' : 'picked at it'})`))
+
+Deno.test('intake — the line reads every rated meal, not the capped list: a refusal run after earlier full meals (Mira’s canonical shape, adversarial case 20)', () => {
+  const s = cat([...dailyMeals(30, 13, 'all'), ...Array.from({ length: 12 }, (_, i) => meal(12 - i, 'refused'))])
+  const intake = blockIn(backSheetsOf(s), 'intake')
+  assert.ok(intake)
+  assert.match(intake.lastAboveRefused ?? '', new RegExp(`^The last meal rated “ate some” or better: ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(dayKey(13).slice(5, 7)) - 1]} ${Number(dayKey(13).slice(8))} at 18:00 \\(ate it all\\)\\.`))
+})
+
+Deno.test('intake — “picked at it” is the refusal class, never the last meal eaten (adversarial case 1)', () => {
+  const picking = Array.from({ length: 12 }, (_, i) => meal(4 - Math.floor(i / 3), 'picked' as never, 7 + (i % 3) * 3))
+  const s = cat([...dailyMeals(13, 5, 'all'), meal(4, 'some', 6), ...picking.slice(1)])
+  const intake = blockIn(backSheetsOf(s), 'intake')
+  assert.ok(intake && intake.lastAboveRefused)
+  assert.match(intake.lastAboveRefused, /\(ate some\)\./, 'the last “ate some”, not a later “picked at it”')
+  assert.doesNotMatch(intake.lastAboveRefused, /picked at it\)/)
+  // Every rated meal in the refusal class: said, with its count.
+  const none = cat(Array.from({ length: 6 }, (_, i) => meal(5 - i, i % 2 ? 'refused' : ('picked' as never))))
+  assert.equal(blockIn(backSheetsOf(none), 'intake')?.lastAboveRefused, 'No meal in this window was rated “ate some” or better: every one of the 6 rated was “picked at it” or “refused”.')
+  // Nothing rated, nothing to say.
+  assert.equal(blockIn(backSheetsOf(cat(dailyMeals(5, 0, null))), 'intake')?.lastAboveRefused ?? null, null)
+})
+
+Deno.test('intake — a time printed without a usable zone says UTC (adversarial case 3)', () => {
+  const s = cat([meal(2, 'some', 9), meal(1, 'refused', 9)], { timezone: null })
+  assert.match(blockIn(backSheetsOf(s), 'intake')?.lastAboveRefused ?? '', /at 09:00 \(UTC\) \(ate some\)/)
+  const t = cat([meal(2, 'some', 9), meal(1, 'refused', 9)])
+  assert.doesNotMatch(blockIn(backSheetsOf(t), 'intake')?.lastAboveRefused ?? '', /UTC/)
+})
+
+Deno.test('ledger — a lead sign with no entry in the window never leaves a flagged sign drawn plain (adversarial case 13)', () => {
+  const dog = stoolPhotoDog()
+  // No loose stool at all: the blood is on a normal stool; the dog vomits on seven days.
+  dog.events = dog.events.filter((e) => e.type !== 'diarrhea')
+  const normal = dog.events.find((e) => e.type === 'stool_normal')
+  assert.ok(normal)
+  dog.aiAnalyses = [{ ...dog.aiAnalyses[2], eventId: normal.id }]
+  dog.attachments = [{ eventId: normal.id, storagePath: 'x.jpg', mimeType: 'image/jpeg', sortOrder: 0 }]
+  dog.events.push(...[24, 20, 16, 12, 8, 5, 2].map((d) => symptom('vomit', d, 9)))
+  const s = assembleReport(dog)
+  assert.ok(s.safetyFlags.some((f) => f.kind === 'present_blood'))
+  const lg = blockIn(backSheetsOf(s), 'ledger')
+  assert.ok(lg)
+  assert.equal(lg.fills, 'Vomiting')
+  assert.equal(lg.rows.flatMap((r) => r.cells).filter((c) => c.state === 'sign').length, 7)
 })
 
 Deno.test('intake — the band names this sheet, and the sheet prints under that name (GAP-35, CUL-2350)', () => {

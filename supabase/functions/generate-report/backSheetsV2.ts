@@ -229,7 +229,10 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
   const busiest = [...snap.symptoms]
     .filter((x) => x.count > 0)
     .sort((a, b) => b.symptomDays - a.symptomDays || b.count - a.count || REPORT_SYMPTOM_TYPES.indexOf(a.type) - REPORT_SYMPTOM_TYPES.indexOf(b.type))[0]
-  const fill: ReportSymptomType | null = lead && lead.sign !== 'intake' ? lead.sign : busiest?.type ?? null
+  // A lead sign with no entry in the window (a stool blood flag on a dog that logged no loose stool)
+  // would fill nothing and leave a flagged chronic sign drawn plain; the busiest sign fills instead.
+  const leadHasDays = lead !== null && lead.sign !== 'intake' && snap.v2.symptomDayCounts.some((x) => x.type === lead.sign && x.count > 0 && x.day >= snap.scope.startDate && x.day <= snap.scope.endDate)
+  const fill: ReportSymptomType | null = leadHasDays ? (lead!.sign as ReportSymptomType) : busiest?.type ?? null
   const reportSigns = new Set<string>(REPORT_SYMPTOM_TYPES)
   const byType = new Map<ReportSymptomType, Map<string, number>>()
   for (const x of snap.v2.symptomDayCounts) {
@@ -320,7 +323,8 @@ const RATING_ORDER = ['all', 'most', 'some', 'picked', 'refused'] as const
 /** The refusal flag's own split of the ratings, read off the predicate it counts with. */
 function predicateLineOf(snap: ReportSnapshot): string | null {
   const flag = snap.safetyFlags.find((f) => f.kind === 'trial_diet_refusal')
-  if (!flag) return null
+  // A refusal the owner reported by ending the trial, with no counts behind it, has no split to state.
+  if (!flag || flag.kind !== 'trial_diet_refusal' || flag.refusal === null) return null
   let tag = ''
   safetyFlagRow(flag, snap, (t) => {
     tag = t
@@ -338,52 +342,54 @@ function predicateLineOf(snap: ReportSnapshot): string | null {
   // it can carry meals this flag counts as finished; said, so the two counts never look like one.
   const listedFinished = finished.filter((r) => r !== 'all' && snap.provenance.intakeLog.some((e) => e.intakeRating === r))
   if (snap.provenance.intakeLogScope === 'unfinished' && listedFinished.length > 0) {
-    line += ` The dated list below holds every meal rated below “ate it all”, so it also lists ${or(listedFinished)} meals, which the flag counts as finished.`
+    const holds = snap.provenance.intakeLogHiddenOlder > 0 ? 'lists the most recent meals' : 'holds every meal'
+    line += ` The dated list below ${holds} rated below “ate it all”, so it also lists ${or(listedFinished)} meals, which the flag counts as finished.`
   }
   return line
 }
 
+/** " (UTC)" when the record carries no usable zone: fmtLocalTime then prints UTC, and an
+ *  unlabelled UTC minute reads as local (adversarial pass 1 on CUL-2293). */
+function utcMark(tz: string | null): string {
+  if (!tz) return ' (UTC)'
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz })
+    return ''
+  } catch {
+    return ' (UTC)'
+  }
+}
+
 /**
- * GAP-35's line: the last meal rated above "refused", the time a vet phoning about a refusing cat
- * needs (the 48 to 72 hour window). Printed only where the dated list below can say it truthfully,
- * read from the list's most recent rows and never from the pinned last full meal (rows can be
- * omitted between the two, so an older pinned row never stands in for a later meal):
- *   - `intake_flag`: the list holds every rated meal the reduced-intake check counted, newest
- *     first, with a free-fed bowl's rows marked and skipped here (a bowl is not watched);
- *   - `unfinished`: the list holds only meals rated below "ate it all", so it can answer only when
- *     no meal in the window was rated "ate it all" and no rated meal was a free-fed bowl's (this
- *     list does not mark bowl rows).
- * Anywhere else the line is left out rather than guessed.
+ * GAP-35's line: when a refusing pet last ate something, the time a vet phoning about the feline
+ * 48 to 72 hour window needs. Read off the snapshot (`lastMealAboveRefusal`), which `assembleReport`
+ * computes over every watched rated meal in the window, never the capped dated list below.
+ *
+ * THE THRESHOLD IS THE REFUSAL CLASS, NOT "REFUSED" ALONE (adversarial pass 1): "picked at it" is in
+ * the codebase's refusal class (`lib/intakeEvidence.ts`), and anchoring on it made four days of
+ * picking read as a meal seven hours ago beside a band saying five days without a full meal. The
+ * spec's words are "above refused"; this is the louder reading, shipped while that ruling is open.
  */
 function lastAboveRefusedOf(snap: ReportSnapshot): string | null {
-  const p = snap.provenance
-  // A rated meal of a free-fed food is a bowl rating, counted window-wide whatever the list's scope.
-  const bowl = snap.v2.intakeWeeksBowlExcluded > 0 || p.intakeLogFreeFedExcluded > 0
-  const anyAll = snap.diet.mealItems.some((i) => i.intakeBreakdown.some((b) => b.rating === 'all' && b.count > 0))
-  const listAnswers = p.intakeLogScope === 'intake_flag' || (p.intakeLogScope === 'unfinished' && !anyAll && !bowl)
-  if (!listAnswers) return null
+  const v = snap.v2
+  if (v.watchedRatedMeals === 0) return null
+  const bowl = v.intakeWeeksBowlExcluded > 0 || snap.provenance.intakeLogFreeFedExcluded > 0
   const noun = bowl ? 'watched meal' : 'meal'
-  const recent = p.intakeLog.filter((e) => !e.notCountedFreeFed && !e.pinned)
-  const hit = recent.find((e) => e.intakeRating !== 'refused')
   // A free-fed bowl down in the window was not watched, so the last RATED meal is not the last
   // intake; said beside the line, never left to the paragraph above (cold read, Mira).
-  const bowlDown = snap.diet.freeFed.length > 0
-  const caveat = bowlDown
-    ? ' Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.'
-    : ''
+  const caveat =
+    snap.diet.freeFed.length > 0
+      ? ' Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.'
+      : ''
   const anyMostOrAll = snap.diet.mealItems.some((i) => i.intakeBreakdown.some((b) => (b.rating === 'all' || b.rating === 'most') && b.count > 0))
-  const none = anyMostOrAll ? '' : ' No meal in this window was rated “ate most” or “ate it all”.'
-  if (hit) {
-    return `The last ${noun} rated above “refused”: ${plain(fmtLocalDay(hit.occurredAt, snap.timezone))} at ${plain(
-      fmtLocalTime(hit.occurredAt, snap.timezone),
-    )} (${intakeLabel(hit.intakeRating).toLowerCase()}).${none}${caveat}`
+  const hit = v.lastMealAboveRefusal
+  if (!hit) {
+    return `No ${noun} in this window was rated “ate some” or better: every one of the ${v.watchedRatedMeals} rated was “picked at it” or “refused”.${caveat}`
   }
-  if (recent.length === 0) return null
-  return (p.intakeLogHiddenOlder > 0
-    ? `None of the ${recent.length} most recent ${noun}s listed below is rated above “refused”; ${p.intakeLogHiddenOlder} earlier rated meal${
-        p.intakeLogHiddenOlder === 1 ? ' is' : 's are'
-      } not listed.`
-    : `No ${noun} in this window is rated above “refused”.`) + caveat
+  const none = anyMostOrAll ? '' : ' No meal in this window was rated “ate most” or “ate it all”.'
+  return `The last ${noun} rated “ate some” or better: ${plain(fmtLocalDay(hit.occurredAt, snap.timezone))} at ${plain(
+    fmtLocalTime(hit.occurredAt, snap.timezone),
+  )}${utcMark(snap.timezone)} (${intakeLabel(hit.rating).toLowerCase()}).${none}${caveat}`
 }
 
 function intakeBlock(snap: ReportSnapshot): BackBlockV2 {
