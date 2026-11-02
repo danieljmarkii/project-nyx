@@ -4,8 +4,9 @@
 // docs/vet-report-v3-discovery/fixtures/canonical-fixtures.json.
 import assert from 'node:assert/strict'
 import { assembleReport, type ReportSnapshot } from './report.ts'
-import { buildDocumentV2, textOf, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
+import { buildDocumentV2, incidentTimeWords, textOf, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PRINT, pageHeadCss } from './renderBackV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import {
   backSheetsOf,
@@ -111,7 +112,7 @@ Deno.test('R-10 — a photo on an event a band line cites prints dated beside th
   const foreign = band.items.find((i) => i.id.includes('present_foreign'))
   assert.ok(foreign, 'the foreign-material flag is in the band')
   assert.equal(foreign.photos.length, 1, 'its one photographed incident')
-  assert.match(foreign.photos[0].caption, /^photo [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2}/)
+  assert.match(foreign.photos[0].caption, /^Photo of the [A-Z][a-z]{2} \d{1,2} incident, seen at \d{1,2}:\d{2}; the photo could not be embedded$/)
   const html = renderPrintV2(d)
   const li = html.slice(html.indexOf(`data-item="${foreign.id}"`), html.indexOf('</li>', html.indexOf(`data-item="${foreign.id}"`)))
   assert.ok(li.includes(`<span class="bcap">${foreign.photos[0].caption}</span>`), 'dated inside the band line')
@@ -125,7 +126,7 @@ Deno.test('R-10 — a photo that could not be embedded still prints its date, an
   const band = docOf(s).blocks.find((b) => b.kind === 'band')
   assert.ok(band && band.kind === 'band')
   const p = band.items.flatMap((i) => i.photos)[0]
-  assert.ok(p && p.src === null && /could not be embedded$/.test(p.caption))
+  assert.ok(p && p.src === null && /the photo could not be embedded$/.test(p.caption))
   const withPhoto = { ...s, incidentPhotos: s.incidentPhotos.map((x) => ({ ...x, dataUri: 'data:image/jpeg;base64,AAAA' })) }
   const band2 = docOf(withPhoto).blocks.find((b) => b.kind === 'band')
   assert.ok(band2 && band2.kind === 'band')
@@ -257,7 +258,13 @@ Deno.test('episodes — v1’s sections word for word (with v2’s pointers), un
   assert.doesNotMatch(text, /Possible blood/, 'blood prints only when present')
   assert.doesNotMatch(text, /appendix/i, 'no pointer to a sheet v2 does not print')
   // The same words as v1's section, but the dropped pointer sentence.
-  assert.equal(text, textOf(vomitCharacteristics(cat, { eventLog: null, freeFedAndTreats: null })).replace(/page 1/g, 'sheet 1'))
+  assert.equal(
+    text,
+    textOf(vomitCharacteristics(cat, { eventLog: null, freeFedAndTreats: null }))
+      .replace(/page 1/g, 'sheet 1')
+      .replace('These lead the flags for review above.', 'These lead the flags for review on sheet 1.'),
+  )
+  assert.match(text, /These lead the flags for review on sheet 1\./, 'the band is a sheet away, never "above"')
   const dog = assembleReport(stoolPhotoDog())
   const dt = textOf(blockIn(backSheetsOf(dog), 'episodes')?.html ?? '')
   assert.match(dt, /Possible blood — 1 incident:/)
@@ -282,7 +289,15 @@ Deno.test('intake — the refusal flag’s predicate is read off feedingWasFinis
   for (const r of notFinished) assert.ok(before.includes(`“${label[r]}”`), `${r} is named not finished`)
   for (const r of finished) assert.ok(!before.includes(`“${label[r]}”`) && afterSemi.includes(`“${label[r]}”`), `${r} is named finished`)
   assert.match(intake.predicate, /^The “Diet not eaten” flag on sheet 1 counts/)
-  assert.match(intake.predicate, /The dated list below holds every meal rated below “ate it all”, so it also lists “ate most” meals/)
+  // Mira's list holds no "ate most" meal, so the reconciling sentence would describe nothing.
+  assert.doesNotMatch(intake.predicate, /also lists/)
+  // Nyx's does (Oct 2), and the sentence names it.
+  const nyx = blockIn(backSheetsOf(fixture('nyx-live')), 'intake')
+  assert.ok(nyx && nyx.predicate)
+  assert.match(nyx.predicate, /The dated list below holds every meal rated below “ate it all”, so it also lists “ate most” meals, which the flag counts as finished\./)
+  // And it is printed above the list it points down to.
+  const html = renderPrintV2(docOf(fixture('nyx-live')))
+  assert.ok(html.indexOf('class="predicate"') < html.indexOf('<table', html.indexOf('data-block="intake"')))
   // No refusal flag, no predicate.
   const clean = fixture('cooper')
   assert.equal(blockIn(backSheetsOf(clean), 'intake')?.predicate ?? null, null)
@@ -292,7 +307,11 @@ Deno.test('intake — Mira: the last meal rated above “refused”, from the ne
   const s = fixture('mira')
   const intake = blockIn(backSheetsOf(s), 'intake')
   assert.ok(intake)
-  assert.equal(intake.lastAboveRefused, 'The last meal rated above “refused”: Jun 4 at 14:00 (ate some).')
+  assert.equal(
+    intake.lastAboveRefused,
+    'The last meal rated above “refused”: Jun 4 at 14:00 (ate some). No meal in this window was rated “ate most” or “ate it all”. ' +
+      'Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.',
+  )
   // Every rated meal after it is a refusal, read off the list itself (newest first).
   const rows = s.provenance.intakeLog
   const at = rows.findIndex((e) => e.intakeRating !== 'refused')
@@ -352,3 +371,41 @@ Deno.test('sheets — every back sheet prints its running head with the computed
   }
   assert.match(renderPrintV2(docOf(fixture('mira'))), /\.sheet\.back\{break-before:page;\}/)
 })
+
+Deno.test('R-10 — the band photo prints the incident’s time with how sure it is, never a bare minute', () => {
+  const base = { occurredAt: '2026-10-02T06:00:00Z', occurredAtEarliest: null, occurredAtLatest: null }
+  assert.equal(incidentTimeWords({ ...base, occurredAtConfidence: 'witnessed' }, 'UTC'), 'seen at 06:00')
+  assert.equal(incidentTimeWords({ ...base, occurredAtConfidence: 'estimated' }, 'UTC'), 'about 06:00 (an estimate)')
+  assert.equal(incidentTimeWords({ ...base, occurredAtConfidence: null }, 'UTC'), 'about 06:00 (not recorded as seen)')
+  assert.equal(
+    incidentTimeWords({ ...base, occurredAtConfidence: 'window', occurredAtEarliest: '2026-10-02T01:00:00Z', occurredAtLatest: '2026-10-02T06:00:00Z' }, 'UTC'),
+    'sometime 01:00–06:00',
+  )
+  assert.equal(incidentTimeWords({ ...base, occurredAtConfidence: 'window', occurredAtLatest: '2026-10-02T06:00:00Z' }, 'UTC'), 'sometime before 06:00')
+})
+
+Deno.test('styles — no back-sheet rule reaches a sheet 1 element (cold read: v1’s .conf chip unwrapped the confounder line)', () => {
+  for (const css of [BACK_STYLE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PHONE_PRINT]) {
+    for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(^|\})\s*([^{}@]+)\{/g)) {
+      for (const sel of m[2].split(',').map((x) => x.trim())) {
+        assert.ok(/^(\.sheet\.back|\.back|\.bphotos?|\.bcap)\b/.test(sel), `"${sel}" is not scoped to the back sheets or the band photo`)
+      }
+    }
+  }
+  // The regression itself: sheet 1's confounder line can wrap.
+  const html = renderPrintV2(docOf(fixture('mira')))
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'))
+  assert.doesNotMatch(css, /(^|[},])\s*\.conf\s*[{,][^}]*nowrap/, 'no unscoped .conf rule')
+})
+
+Deno.test('pages — every printed page after the first names the patient; owner-entered text cannot break out of the stylesheet', () => {
+  const d = docOf(fixture('mira'))
+  const css = pageHeadCss(d)
+  assert.match(css, /@page\{@top-left\{content:"Mira · owner’s home log · [^"]+"/)
+  assert.match(css, /@page :first\{@top-left\{content:none;\}\}/)
+  const hostile = { ...d, blocks: d.blocks.map((b) => (b.kind === 'masthead' ? { ...b, name: 'Mi"ra</style><script>x</script>\\' } : b)) }
+  const out = pageHeadCss(hostile)
+  assert.doesNotMatch(out, /<\/style>|<script>/i)
+  assert.match(out, /content:"Mi\\"ra\\3C \/style>\\3C script>x\\3C \/script>\\\\ · /)
+})
+

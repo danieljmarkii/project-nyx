@@ -8666,7 +8666,9 @@ function loggedCell(e: SymptomLogEntry, tz: string | null): string {
  *                cell already said (CUL-634)
  *   unspecified  logged before B-010, no confidence recorded
  */
-function timeConfidence(e: SymptomLogEntry): 'seen' | 'est' | 'range' | 'bound' | 'unspecified' {
+export function timeConfidence(
+  e: Pick<SymptomLogEntry, 'occurredAtConfidence' | 'occurredAtEarliest' | 'occurredAtLatest'>,
+): 'seen' | 'est' | 'range' | 'bound' | 'unspecified' {
   const conf = e.occurredAtConfidence
   if (conf === 'window') {
     if (e.occurredAtEarliest && e.occurredAtLatest) return 'range'

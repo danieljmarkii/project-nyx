@@ -191,7 +191,10 @@ function dayRanges(days: readonly string[]): string[] {
 
 /** v1's fragments name the front page "page 1"; v2 calls it sheet 1. Only that phrase changes. */
 function onSheets(html: string): string {
-  return html.replace(/page&nbsp;1/g, 'sheet&nbsp;1')
+  return html
+    .replace(/page&nbsp;1/g, 'sheet&nbsp;1')
+    // v1's characteristics sit on page 1 under the band; on v2 they are a sheet away from it.
+    .replace(/These lead the flags for review above\./g, 'These lead the flags for review on sheet&nbsp;1.')
 }
 
 const INTAKE_FLAGS: ReadonlySet<SafetyFlag['kind']> = new Set(['intake_decline', 'trial_diet_refusal'])
@@ -256,10 +259,16 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
   // The caption names only the marks this grid draws (AC 4, the chart standard's twin rule).
   const legend = [
     ...(drawsSign && lower ? [`Filled: ${lower} that day, with its count.`] : []),
-    ...(drawsLogged ? [lower && drawsSign ? `Plain: an entry that day, no ${lower} entry.` : 'Plain: an entry that day.'] : []),
+    // "Plain" is a day something else was logged, never a day the sign was seen not to happen
+    // (cold read: a plain square read as a normal-stool day on a record of 12 stools in 30 days).
+    ...(drawsLogged
+      ? [lower && drawsSign ? `Plain: something else was logged that day, but no ${lower}; not a sign it did not happen.` : 'Plain: something was logged that day.']
+      : []),
     ...(hatched.length > 0 ? ['Hatched: nothing logged.'] : []),
   ]
-  const caption = `Every day of the ${days.length}, as logged. One square is one day. ${legend.join(' ')}`.trim()
+  // When intake leads, the grid draws the busiest sign, and says outright that refusals are not on it.
+  const notDrawn = lead?.sign === 'intake' && intakeSheet ? [`Meals not finished are not drawn on this grid.`] : []
+  const caption = `Every day of the ${days.length}, as logged. One square is one day. ${[...legend, ...notDrawn].join(' ')}`.trim()
 
   const dayWithCount = (day: string, n: number): string => (n > 1 ? `${dayLabel(day)} ×${n}` : dayLabel(day))
   const lines: string[] = []
@@ -327,8 +336,9 @@ function predicateLineOf(snap: ReportSnapshot): string | null {
   } as finished.`
   // The dated list below holds every meal below "ate it all" when no reduced-intake flag fired, so
   // it can carry meals this flag counts as finished; said, so the two counts never look like one.
-  if (snap.provenance.intakeLogScope === 'unfinished' && finished.some((r) => r !== 'all')) {
-    line += ` The dated list below holds every meal rated below “ate it all”, so it also lists ${or(finished.filter((r) => r !== 'all'))} meals, which the flag counts as finished.`
+  const listedFinished = finished.filter((r) => r !== 'all' && snap.provenance.intakeLog.some((e) => e.intakeRating === r))
+  if (snap.provenance.intakeLogScope === 'unfinished' && listedFinished.length > 0) {
+    line += ` The dated list below holds every meal rated below “ate it all”, so it also lists ${or(listedFinished)} meals, which the flag counts as finished.`
   }
   return line
 }
@@ -355,17 +365,25 @@ function lastAboveRefusedOf(snap: ReportSnapshot): string | null {
   const noun = bowl ? 'watched meal' : 'meal'
   const recent = p.intakeLog.filter((e) => !e.notCountedFreeFed && !e.pinned)
   const hit = recent.find((e) => e.intakeRating !== 'refused')
+  // A free-fed bowl down in the window was not watched, so the last RATED meal is not the last
+  // intake; said beside the line, never left to the paragraph above (cold read, Mira).
+  const bowlDown = snap.diet.freeFed.length > 0
+  const caveat = bowlDown
+    ? ' Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.'
+    : ''
+  const anyMostOrAll = snap.diet.mealItems.some((i) => i.intakeBreakdown.some((b) => (b.rating === 'all' || b.rating === 'most') && b.count > 0))
+  const none = anyMostOrAll ? '' : ' No meal in this window was rated “ate most” or “ate it all”.'
   if (hit) {
     return `The last ${noun} rated above “refused”: ${plain(fmtLocalDay(hit.occurredAt, snap.timezone))} at ${plain(
       fmtLocalTime(hit.occurredAt, snap.timezone),
-    )} (${intakeLabel(hit.intakeRating).toLowerCase()}).`
+    )} (${intakeLabel(hit.intakeRating).toLowerCase()}).${none}${caveat}`
   }
   if (recent.length === 0) return null
-  return p.intakeLogHiddenOlder > 0
+  return (p.intakeLogHiddenOlder > 0
     ? `None of the ${recent.length} most recent ${noun}s listed below is rated above “refused”; ${p.intakeLogHiddenOlder} earlier rated meal${
         p.intakeLogHiddenOlder === 1 ? ' is' : 's are'
       } not listed.`
-    : `No ${noun} in this window is rated above “refused”.`
+    : `No ${noun} in this window is rated above “refused”.`) + caveat
 }
 
 function intakeBlock(snap: ReportSnapshot): BackBlockV2 {

@@ -26,7 +26,7 @@
 // say). Everything above that slot, the band included, renders byte-for-byte as without a lead.
 // The sentences print exactly as stored and verified (`aiLeadSlot` adds markup, never words);
 // each is followed by its citations, named by the lines' own nouns.
-import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml } from './renderBackV2.ts'
+import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
@@ -361,7 +361,7 @@ export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] |
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="report-version" content="v2" />
 <title>${h(title)}</title>
-<style>${STYLE_V2}</style>
+<style>${STYLE_V2}${pageHeadCss(doc)}</style>
 </head>
 <body>
 <main class="sheet" data-sheet="1">

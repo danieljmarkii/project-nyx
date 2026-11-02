@@ -23,6 +23,7 @@ import {
   type ReportSymptomType,
   type SafetyFlag,
   type SymptomAggregate,
+  type SymptomLogEntry as SymptomLogTimeFields,
   SYMPTOM_WEEK_MIN_LOGGED_DAYS,
 } from './report.ts'
 import {
@@ -37,6 +38,7 @@ import {
   safetyChecksText,
   fmtLocalTime,
   safetyFlagRow,
+  timeConfidence,
   scopeBasisLabel,
   V1_FLAG_POINTERS,
   type FlagPointers,
@@ -400,13 +402,37 @@ export function bandPhotosOf(f: SafetyFlag, snap: ReportSnapshot): BandPhoto[] {
   return snap.incidentPhotos
     .filter((p) => ids.has(p.eventId))
     .map((p) => {
-      const when = `${textOf(fmtLocalDay(p.occurredAt, snap.timezone))}, ${textOf(fmtLocalTime(p.occurredAt, snap.timezone))}`
+      const day = textOf(fmtLocalDay(p.occurredAt, snap.timezone))
+      const when = `${day}, ${incidentTimeWords(p, snap.timezone)}`
       return {
         src: p.dataUri,
-        caption: p.dataUri ? `photo ${when}` : `photo ${when}, could not be embedded`,
+        // The time is the INCIDENT's, as the owner recorded it, never the photo's (capture time is
+        // stripped); said with how sure it is, so a found vomit never prints as a witnessed minute
+        // (cold read, CUL-2293: the time since ingestion sets the urgency of imaging).
+        caption: `Photo of the ${day} incident, ${incidentTimeWords(p, snap.timezone)}${p.dataUri ? '' : '; the photo could not be embedded'}`,
         alt: `Owner photo of the ${symptomLabel(p.type).toLowerCase()} incident on ${when}`,
       }
     })
+}
+
+/** An incident's time in words with its confidence (v1's classes, `timeConfidence`). */
+export function incidentTimeWords(
+  p: { occurredAt: string; occurredAtConfidence: SymptomLogTimeFields['occurredAtConfidence']; occurredAtEarliest: string | null; occurredAtLatest: string | null },
+  tz: string | null,
+): string {
+  const t = (iso: string): string => textOf(fmtLocalTime(iso, tz))
+  switch (timeConfidence(p)) {
+    case 'seen':
+      return `seen at ${t(p.occurredAt)}`
+    case 'est':
+      return `about ${t(p.occurredAt)} (an estimate)`
+    case 'range':
+      return `sometime ${t(p.occurredAtEarliest as string)}–${t(p.occurredAtLatest as string)}`
+    case 'bound':
+      return p.occurredAtLatest ? `sometime before ${t(p.occurredAtLatest)}` : `sometime after ${t(p.occurredAtEarliest as string)}`
+    case 'unspecified':
+      return `about ${t(p.occurredAt)} (not recorded as seen)`
+  }
 }
 
 function flagId(f: SafetyFlag, i: number): string {
