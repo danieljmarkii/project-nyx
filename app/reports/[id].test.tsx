@@ -59,6 +59,8 @@ it('draws the stored copy as sent, locked, under its pet and date', async () => 
   const web = view.getByTestId('report-copy');
   expect(web.props.source).toEqual({ html: '<html>as sent</html>' });
   expect(web.props.javaScriptEnabled).toBe(false);
+  expect(web.props.incognito).toBe(true);
+  expect(web.props.cacheEnabled).toBe(false);
   expect(web.props.onShouldStartLoadWithRequest({ url: 'https://example.com/x' })).toBe(false);
   expect(view.getByText('Cooper · Oct 30 report')).toBeTruthy();
   expect(view.getByText('The report as you sent it on Oct 30. Anything logged or changed since isn’t in it.')).toBeTruthy();

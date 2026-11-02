@@ -18,6 +18,7 @@ import {
   parseKeepRequest,
   reapStaleDrafts,
   saveDraft,
+  savedCopyIO,
   savedCopyPath,
   sha256Hex,
   snapshotForCopy,
@@ -410,4 +411,22 @@ Deno.test('a missing object, a failed read or a bad request shows nothing', asyn
   assert.equal((await openCopy(f.io, { reportId: ID })).status, 500)
   assert.equal((await openCopy({ ...f.io, readRow: async () => 'error' as const }, { reportId: ID })).status, 500)
   assert.equal((await openCopy(f.io, { reportId: null })).status, 400)
+})
+
+Deno.test('the real row read names its row by id PAIRED WITH pet and verified maker (C-27; rls-privacy-reviewer F1)', async () => {
+  // The one lock between "my own pet + someone else's report id" and their report. Driven through
+  // the real savedCopyIO against a recording client, so deleting either filter reds here.
+  const eqs: Array<[string, unknown]> = []
+  const q = {
+    select: () => q,
+    eq: (c: string, v: unknown) => {
+      eqs.push([c, v])
+      return q
+    },
+    maybeSingle: async () => ({ data: null, error: null }),
+  }
+  const admin = { from: (t: string) => { assert.equal(t, 'vet_reports'); return q }, storage: { from: () => ({}) } }
+  const io = savedCopyIO(admin as never, { petId: PET, uid: 'verified-uid' })
+  assert.equal(await io.readRow(ID), null)
+  assert.deepEqual(eqs, [['id', ID], ['pet_id', PET], ['generated_by', 'verified-uid']])
 })

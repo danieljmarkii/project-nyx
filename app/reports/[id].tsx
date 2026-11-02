@@ -86,6 +86,10 @@ export default function SavedReportScreen() {
             source={{ html: copy.html }}
             // The stored print page carries no script; nothing on paper runs or loads.
             javaScriptEnabled={false}
+            // Health bytes never land in the WebView's own storage, outside every wipe path
+            // (DocumentPdfViewer's precedent; rls-privacy-reviewer F2).
+            incognito
+            cacheEnabled={false}
             onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
             // The owner's text size reaches the page on Android, as in the preview.
             textZoom={Platform.OS === 'android' ? androidTextZoom(PixelRatio.getFontScale()) : undefined}
