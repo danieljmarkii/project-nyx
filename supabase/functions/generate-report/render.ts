@@ -4001,6 +4001,8 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       ),
     )
   }
+  // CUL-2441 (PM ruling (a)): the record, under the owner's words, wherever they print.
+  if (t.outcome || t.outcomeNotes) rows.push(kv('From the record', trialRecordLine(snap)))
 
   // ── Element 2: the interpretability statement (§7.2) ────────────────────────
   //
@@ -4283,6 +4285,128 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   return `Weight ${dir} to ${weightEndText(c.latest, snap)}, from ${weightEndText(c.highBefore, snap)} &mdash; <b>${weightPctText(
     c,
   )}</b> (the latest reading against the highest before it in the trial).`
+}
+
+/**
+ * CUL-2441 (PM ruling (a), 2026-11-02) — the record, printed under the owner's trial read.
+ *
+ * The owner's "better at the end of the trial" sat with nothing from the record beside it, on a
+ * page whose record held vomiting through the trial's last week and after it. This line prints
+ * whenever the owner's words print, whatever they said, and never refers to them: it states counts
+ * and weights, and leaves the comparison to the vet. "Better" and "worse" never appear in it.
+ *
+ * ONLY FACTS THE REPORT ALREADY PRINTS. The signs are appendix A's log (every in-window symptom
+ * incident), the logged days are the set behind "N of M days logged", and the weight is
+ * `weightDuringTrial`'s change and the Weight flag.
+ *
+ * Three readings the PM's go covered, each the louder one:
+ *   1. EVERY SIGN, not the indication's. Nothing maps an indication to its signs, and a GI trial
+ *      that drops the cough the vet would want is the quieter page.
+ *   2. AFTER THE TRIAL, TOO. The owner's read is given at the end; when the window runs past it,
+ *      what followed is counted. On Nyx's record every one of the last week's vomits came after.
+ *   3. THE TRIAL'S OWN WEIGHT CHANGE, never "since it began", which nothing measures. A trial with
+ *      one weigh-in says so, and the Weight flag's loss is restated beside it: on Nyx's record the
+ *      trial measures no change and the flag reads 15%.
+ *
+ * AN EMPTY COUNT ALWAYS CARRIES ITS UN-LOGGED DAYS (C-3): stated whenever any day of the span holds
+ * no log, whatever the count, and never when every day does. An unknown is said, never dropped.
+ */
+function trialRecordLine(snap: ReportSnapshot): string {
+  const t = snap.trial!
+  const end = t.evidenceEndDate
+  const start = maxDayKey(t.evidenceStartDate, shiftDayKey(end, -6) ?? end)
+  const spanDays = Math.max(1, daysBetweenDayKeys(start, end) + 1)
+  const endedOn = t.endedAt ? t.endedAt.slice(0, 10) : null
+  const endsWithTrial = endedOn !== null && endedOn === end
+  const span =
+    endsWithTrial && spanDays === 7
+      ? `the trial&rsquo;s last 7 days`
+      : endsWithTrial
+        ? `the trial&rsquo;s last ${num(spanDays)} day${spanDays === 1 ? '' : 's'} this report covers`
+        : `the last ${num(spanDays)} trial day${spanDays === 1 ? '' : 's'} this report covers`
+  const parts = [`${signsClause(snap, start, end, span)}.`]
+  // The window runs on past the trial's end: what the record holds after it.
+  const afterStart = endsWithTrial ? shiftDayKey(end, 1) : null
+  if (afterStart !== null && afterStart <= snap.scope.endDate) {
+    parts.push(`${signsClause(snap, afterStart, snap.scope.endDate, 'the days after the trial ended')}.`)
+  }
+  parts.push(trialWeightClause(snap))
+  return parts.join(' ')
+}
+
+/** Later of two day keys. */
+function maxDayKey(a: string, b: string): string {
+  return a > b ? a : b
+}
+
+/** "4 symptom events logged in <span>, Oct 14 – Oct 20, 2026 (3 vomiting, 1 sneezing)", with its un-logged days. */
+function signsClause(snap: ReportSnapshot, start: string, end: string, span: string): string {
+  const byType = new Map<string, number>()
+  let total = 0
+  for (const e of snap.provenance.symptomLog) {
+    const d = localDayKeyOf(e.occurredAt, snap.timezone)
+    if (d < start || d > end) continue
+    total += 1
+    byType.set(e.type, (byType.get(e.type) ?? 0) + 1)
+  }
+  // A short events pull makes every count a floor (the page's partial-record banner says why).
+  const atLeast = (snap.incompletePulls ?? []).includes('events') ? 'At least ' : ''
+  const dates = h(start === end ? fmtDayYear(start) : fmtRange(start, end))
+  const mix = [...byType.entries()]
+    .sort((a, b) => b[1] - a[1] || symptomLabel(a[0]).localeCompare(symptomLabel(b[0])))
+    .map(([type, n]) => `${num(n)} ${h(symptomLabel(type).toLowerCase())}`)
+    .join(', ')
+  const counted =
+    total === 0 && atLeast === ''
+      ? `No symptom event logged in ${span}, ${dates}`
+      : `<b>${atLeast}${num(total)} symptom event${total === 1 ? '' : 's'}</b> logged in ${span}, ${dates}${
+          mix ? ` (${mix})` : ''
+        }`
+  return `${counted}${unloggedDaysClause(snap, start, end)}`
+}
+
+/** "; nothing was logged on 2 of those days", or "" when every day holds a log. */
+function unloggedDaysClause(snap: ReportSnapshot, start: string, end: string): string {
+  const keys = snap.v2?.loggedDayKeys
+  // An older stored snapshot can lack the set: say the coverage is unknown, never imply it was full.
+  if (!Array.isArray(keys)) return '; which of those days were logged is not recorded in this copy'
+  const logged = new Set(keys)
+  const days = daysBetweenDayKeys(start, end) + 1
+  let unlogged = 0
+  for (let i = 0; i < days; i++) {
+    const d = shiftDayKey(start, i)
+    if (d !== null && !logged.has(d)) unlogged += 1
+  }
+  if (unlogged === 0) return ''
+  return unlogged === days
+    ? `; nothing was logged on ${days === 1 ? 'that day' : `any of those ${num(days)} days`}`
+    : `; nothing was logged on ${num(unlogged)} of those ${num(days)} days`
+}
+
+/** The trial's weight, as counts and readings: a change, one weigh-in, or none, then the Weight flag's loss. */
+function trialWeightClause(snap: ReportSnapshot): string {
+  const c = snap.weight.trialChange
+  const at = (e: WeightChangeEnd): string => `${weightReadingText(e.kg)} on ${h(fmtDayYear(e.day))}`
+  let s: string
+  // `undefined` is a stored copy assembled before the field existed: unknown, never "none".
+  if (c === undefined) s = 'The weight over the trial is not recorded in this copy.'
+  else if (c === null) s = 'No weight recorded in the trial.'
+  else if (!c.highBefore || c.deltaKg === null)
+    s = `Weight: one weigh-in in the trial, ${at(c.latest)}, so no change over the trial is measured.`
+  else if (c.deltaKg === 0) s = `Weight unchanged over the trial: ${at(c.highBefore)}; ${at(c.latest)}.`
+  else
+    s = `Weight ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b> over the trial: ${at(
+      c.highBefore,
+    )} &rarr; ${at(c.latest)}.`
+  if ((snap.incompletePulls ?? []).includes('weight_checks')) s += ' The weigh-in record did not load in full.'
+  const f = weightFlagOf(snap)
+  if (f) {
+    s += ` The report&rsquo;s Weight flag reads a loss of <b>${weightLossPctText(
+      f.latest.kg,
+      f.highBefore.kg,
+    )}</b> against the highest reading in the last ${num(f.windowDays)} days.`
+  }
+  return s
 }
 
 /** "a 56-day" but "an 84-day" — English takes the article from how the number is
