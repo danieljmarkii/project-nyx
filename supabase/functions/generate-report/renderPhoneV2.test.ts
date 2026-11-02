@@ -256,7 +256,7 @@ Deno.test('keep — the layout script never hides the repeat, pads page steps be
   assert.match(script, /new ResizeObserver\(/, 'a Dynamic Type change with no resize event re-lays the page')
   assert.match(script, /ro\.observe\(probe\)/)
   // The spacer pushes only a unit that fits a frame.
-  assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(!fits\) return;/)
+  assert.match(script, /if \(unit\.getBoundingClientRect\(\)\.height > frame\) return;/)
   // Compaction: at scale 1.6, or at ANY scale where the full masthead pushes the band past the
   // first frame (PM ruling (a) on CUL-2297), and it stays on while the owner has the details open.
   assert.match(script, /var compact = scale\(\) >= 1\.6 \|\| !!\(mast && mast\.hasAttribute\('data-open'\)\);/)
@@ -303,8 +303,14 @@ Deno.test('first warning — where the heading cannot reach the first frame, its
   // It is hidden again at the start of every layout, so the compaction is decided without it.
   assert.match(script, /root\.removeAttribute\('data-tight'\);\s*if \(first\) first\.hidden = true;/)
   // Shown only where the heading is still past the frame, and only ever with the heading's own words.
-  assert.match(script, /if \(first && bandH && bandPast\(bandH\)\) \{\s*first\.textContent = bandH\.textContent;\s*first\.hidden = false;\s*\}/)
-  assert.ok(script.indexOf('first.hidden = false') < script.indexOf('var unit = document.querySelector'), 'shown before the keep-together spacer measures')
+  assert.match(script, /if \(first && bandH && bandPast\(bandH\)\) \{\s*first\.textContent = bandH\.textContent;\s*first\.hidden = false;/)
+  // Decided AFTER the spacer has been laid (adversarial pass 2 on PR-17), which is laid again once
+  // the pointer shows; and with the pointer showing the brief is never folded for nothing.
+  const firstSpacer = script.indexOf('if (unit && push) pushUnit(unit, push);')
+  assert.ok(firstSpacer > 0 && firstSpacer < script.indexOf('first.hidden = false'), 'the pointer is decided after the spacer')
+  assert.match(script, /first\.hidden = false;[\s\S]*?root\.removeAttribute\('data-tight'\);[\s\S]*?if \(unit && push\) pushUnit\(unit, push\);\s*\}/)
+  // Every layout starts from the same page, so a second call cannot flip the first's answer.
+  assert.match(script, /root\.removeAttribute\('data-tight'\);\s*if \(first\) first\.hidden = true;\s*var push0 = document\.querySelector\('\.keep-push'\);\s*if \(push0\) push0\.style\.height = '0px';/)
   // The print sheet never carries it.
   const print = html.slice(html.indexOf('@media print{'))
   assert.match(print, /\.firstwarn\{display:none;\}/)

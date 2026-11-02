@@ -394,9 +394,25 @@ const SCRIPT_PHONE = `
   function bandPast(bandH){ return bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight; }
   function firstLineIn(el){ var cs = getComputedStyle(el); var line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3; return el.getBoundingClientRect().top + window.pageYOffset + line <= window.innerHeight; }
   var first = document.querySelector('[data-part=first-warning]');
+  // The keep-together spacer for a unit that fits a frame: from zero, so every call measures the
+  // same page (adversarial pass 2 on PR-17: a spacer left from the last call flipped the pointer).
+  function pushUnit(unit, push){
+    push.style.height = '0px';
+    var frame = window.innerHeight;
+    if (!frame) return;
+    if (unit.getBoundingClientRect().height > frame) return;
+    var top = unit.getBoundingClientRect().top + window.pageYOffset;
+    var k = Math.floor(top / frame);
+    var end = top + unit.getBoundingClientRect().height;
+    if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
+  }
   function lay(){
+    // Every layout starts from the same page: no fold, no pointer, no spacer, no padding.
     root.removeAttribute('data-tight');
     if (first) first.hidden = true;
+    var push0 = document.querySelector('.keep-push');
+    if (push0) push0.style.height = '0px';
+    root.style.scrollPaddingTop = '';
     // The first warning on the page: the band's heading, or, where the only flag is drawn on the
     // lead chart itself (a sole chronicity flag, \`bandMembersOf\`), that chart's flag heading
     // (adversarial pass 1 on PR-17, CUL-2297: r11-steady carried its flag below the fold).
@@ -425,21 +441,9 @@ const SCRIPT_PHONE = `
       // (adversarial pass 1 on PR-17: 6pt of the box cost the species for no words).
       if (bandPast(bandH) && !firstLineIn(bandH)) root.removeAttribute('data-tight');
     }
-    // THE FIRST WARNING'S POINTER (PM ruling (a) on CUL-2297, CUL-2400). Where compaction cannot
-    // bring the first warning's heading into the first frame (320pt at large text, AX5, a flag
-    // drawn only on the lead chart), its own words print as one line at the top of the sheet, and a
-    // tap takes the reader to it. It repeats the heading verbatim (never a flag the PDF lacks,
-    // BRK-1), is a part and not a block (parity, spec §3.4), and never prints.
-    if (first && bandH && bandPast(bandH)) {
-      first.textContent = bandH.textContent;
-      first.hidden = false;
-    }
     var unit = document.querySelector('[data-keep="lead"]');
     var push = document.querySelector('.keep-push');
-    if (!unit || !push) return;
-    var rep = unit.querySelector('[data-part="confounder-verdict"]');
-    push.style.height = '0px';
-    root.style.scrollPaddingTop = '';
+    var rep = unit ? unit.querySelector('[data-part="confounder-verdict"]') : null;
     // The repeat always shows. Hiding it when the unit fits a frame left 220 to 440pt of resting
     // scroll positions with the bars on screen and the confounder below it (adversarial pass on
     // CUL-2295): a free scroll has no frames, so only a sentence pinned beside the bars holds.
@@ -459,14 +463,24 @@ const SCRIPT_PHONE = `
     // A page-step scroll (VoiceOver, a keyboard) lands below the pinned repeat, so nothing the
     // repeat covers is skipped between one screen and the next (cold read on CUL-2295).
     if (rep) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';
-    var frame = window.innerHeight;
-    if (!frame) return;
-    var fits = unit.getBoundingClientRect().height <= frame;
-    if (!fits) return;
-    var top = unit.getBoundingClientRect().top + window.pageYOffset;
-    var k = Math.floor(top / frame);
-    var end = top + unit.getBoundingClientRect().height;
-    if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
+    if (unit && push) pushUnit(unit, push);
+    // THE FIRST WARNING'S POINTER (PM ruling (a) on CUL-2297, CUL-2400). Where the page as laid,
+    // spacer included, still leaves the first warning's heading past the first frame (320pt at
+    // large text, AX5, a flag drawn only on the lead chart that the spacer carries down), its own
+    // words print as one line at the top of the sheet, and a tap takes the reader to it. It
+    // repeats the heading verbatim (never a flag the PDF lacks, BRK-1), is a part and not a block
+    // (parity, spec §3.4), and never prints. Decided LAST, after the spacer (adversarial pass 2 on
+    // PR-17: decided before it, a chart-only flag fell below the fold with no pointer).
+    if (first && bandH && bandPast(bandH)) {
+      first.textContent = bandH.textContent;
+      first.hidden = false;
+      // The pointer carries the words now, so a fold that bought only the heading's first line
+      // gives the species back (adversarial pass 2: the pointer pushed that line out again).
+      root.removeAttribute('data-tight');
+      // Both changes move the page: lay the spacer again from zero. The pointer stays: nothing
+      // after this moves the heading up.
+      if (unit && push) pushUnit(unit, push);
+    }
   }
   if (first) first.addEventListener('click', function(){
     var target = document.querySelector('[data-block=band] h2') || document.querySelector('[data-block=lead-chart].flagged > h2.flagh');

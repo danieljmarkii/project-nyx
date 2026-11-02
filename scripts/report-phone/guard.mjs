@@ -292,6 +292,18 @@ try {
         // Room past the last block so every frame can be scrolled to its top.
         await page.addStyleTag({ content: 'body{padding-bottom:100vh}' })
         await page.evaluate(() => window.__nyxV2Layout && window.__nyxV2Layout())
+        // A layout call is idempotent: a second call lays the same page (adversarial pass 2 on PR-17:
+        // a spacer left from the last call flipped the pointer on every call, and the guard's own
+        // extra call landed on the "shown" half, hiding the miss).
+        const state = () => page.evaluate(() => {
+          const fw = document.querySelector('[data-part="first-warning"]')
+          const push = document.querySelector('.keep-push')
+          const r = document.documentElement
+          return JSON.stringify([fw ? fw.hidden : null, push ? push.style.height : null, r.hasAttribute('data-compact'), r.hasAttribute('data-tight')])
+        })
+        const once = await state()
+        await page.evaluate(() => window.__nyxV2Layout && window.__nyxV2Layout())
+        if ((await state()) !== once) fail(where, `a second layout call changed the page (${once} → ${await state()})`)
         await screenChecks(page, where, s, size)
         const unit = await keepChecks(page, where)
         if (s === 1) {
