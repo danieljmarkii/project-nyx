@@ -37,7 +37,9 @@
 // Content-Security-Policy (`withExamCsp`): the document may run its own inline script and draw its
 // own inline styles, fonts and images, and may load or send nothing. `onShouldStartLoadWithRequest`
 // governs navigation only, so without it an escaping miss upstream would be live script with the
-// network open. `onOpenWindow` is passed (a no-op) on both, because Android otherwise opens
+// network open. `originWhitelist` is `*` (REPORT_WEBVIEW_ORIGINS) so every navigation reaches that
+// predicate: the library hands a URL failing the whitelist to the system browser, unasked.
+// `onOpenWindow` is passed (a no-op) on both, because Android otherwise opens
 // `target=_blank` / `window.open` in a fresh WebView that skips the load predicate entirely.
 //
 // PHONE ↔ PRINTED (spec §14). The swap happens in place, in this frame: no push, no flight. The
@@ -51,6 +53,7 @@ import { useReducedMotion } from '../../hooks/useReducedMotion';
 import {
   EXAM_CSP,
   EXAM_VIEWPORT,
+  REPORT_WEBVIEW_ORIGINS,
   lockedViewportHtml,
   printedViewAllowed,
   printedWarningOf,
@@ -90,8 +93,12 @@ export function lockedPreviewHtml(phoneHtml: string): string {
  * standards mode), where the parser places it in the implied head. Never shown without it.
  */
 export function boxedPreviewHtml(html: string): string {
-  const withCsp = withExamCsp(html);
-  if (withCsp !== null) return withCsp;
+  // A real `<head>` only: withExamCsp's match also takes `<header>`, which would put the policy in
+  // the body, where the browser ignores it (CUL-2470).
+  if (/<head(\s[^>]*)?>/i.test(html)) {
+    const withCsp = withExamCsp(html);
+    if (withCsp !== null) return withCsp;
+  }
   const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
   const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
   if (doctype === null) return `${meta}${html}`;
@@ -210,7 +217,7 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             key={docKey}
             testID={PREVIEW_PHONE_TEST_ID}
             style={styles.web}
-            originWhitelist={['about:*', 'data:*']}
+            originWhitelist={REPORT_WEBVIEW_ORIGINS}
             source={{ html: lockedPhoneHtml }}
             // CUL-2383: the reflow's layout script must run (header above).
             javaScriptEnabled
@@ -248,7 +255,7 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             key={printKey}
             testID={PREVIEW_PRINTED_TEST_ID}
             style={styles.web}
-            originWhitelist={['about:*', 'data:*']}
+            originWhitelist={REPORT_WEBVIEW_ORIGINS}
             source={{ html: boxedPrintHtml }}
             // The printed page carries no script; the surface stays minimal.
             javaScriptEnabled={false}

@@ -231,6 +231,9 @@ it('CUL-2428: both frames load or send nothing (the room\'s CSP, first in the he
     // Android's onCreateWindow path is taken (a handler is passed) and opens nothing.
     expect(typeof frame.props.onOpenWindow).toBe('function');
     expect((frame.props.onOpenWindow as () => unknown)()).toBeUndefined();
+    // Every URL reaches the predicate: a URL failing the library's whitelist goes to the system
+    // browser unasked (react-native-webview 14, WebViewShared.tsx), so the whitelist is `*`.
+    expect(frame.props.originWhitelist).toEqual(['*']);
     // The load predicate still refuses every navigation off the inline document.
     const guard = frame.props.onShouldStartLoadWithRequest as (r: { url: string }) => boolean;
     expect(guard({ url: 'https://attacker.example/x' })).toBe(false);
@@ -242,6 +245,10 @@ it('CUL-2428: a document with no <head> is still boxed (the preview cannot refus
   // After a leading doctype, so the page keeps its standards mode.
   expect(boxedPreviewHtml('<!DOCTYPE html><html><body>x</body></html>')).toBe(
     `<!DOCTYPE html>${CSP_META}<html><body>x</body></html>`,
+  );
+  // A <header> is not a head: the policy still goes at the top, never into the body.
+  expect(boxedPreviewHtml('<html><body><header>x</header></body></html>')).toBe(
+    `${CSP_META}<html><body><header>x</header></body></html>`,
   );
   // With a head, exactly the room's placement.
   expect(boxedPreviewHtml('<html><head><title>t</title></head></html>')).toBe(
