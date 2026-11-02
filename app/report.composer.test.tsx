@@ -50,7 +50,7 @@ jest.mock('../components/report/ReportComposer', () => {
   const { Pressable, Text, View } = require('react-native');
   const React = require('react');
   return {
-    ReportComposer: (p: { petName: string; onPreview: (w: unknown) => void; onFallback: () => void }) =>
+    ReportComposer: (p: { petName: string; onPreview: (w: unknown) => void; onFallback: () => void; includeNotes: boolean; onIncludeNotesChange: (v: boolean) => void }) =>
       React.createElement(
         View,
         { testID: 'composer' },
@@ -58,6 +58,8 @@ jest.mock('../components/report/ReportComposer', () => {
         React.createElement(Pressable, { testID: 'preview-visit', onPress: () => p.onPreview(mockWindows.since_visit) }),
         React.createElement(Pressable, { testID: 'preview-30', onPress: () => p.onPreview(mockWindows.last_30) }),
         React.createElement(Pressable, { testID: 'fallback', onPress: () => p.onFallback() }),
+        React.createElement(Pressable, { testID: 'notes-off', onPress: () => p.onIncludeNotesChange(false) }),
+        React.createElement(Text, { testID: 'notes-value' }, String(p.includeNotes)),
       ),
   };
 });
@@ -125,6 +127,32 @@ describe('the composer gate (CUL-2296)', () => {
     expect(r.getByTestId('report-chosen-window')).toHaveTextContent(/^Last 30 days · Jun 3 to Jul 2/);
     expect(r.queryByText('Custom…')).toBeNull();
     expect(r.queryByLabelText(/^Start date,/)).toBeNull();
+  });
+
+  it('PR-17 (a): the notes switch lives on the composer, and its answer is the one built', async () => {
+    const r = render(<ReportScreen />);
+    expect(r.getByTestId('notes-value')).toHaveTextContent('true');
+    fireEvent.press(r.getByTestId('notes-off'));
+    expect(r.getByTestId('notes-value')).toHaveTextContent('false');
+    fireEvent.press(r.getByTestId('preview-visit'));
+    await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(1));
+    expect(mockedGenerate.mock.calls[0][0]).toEqual({ petId: 'p1', includeNotes: false });
+    // ...and not a second time on the report screen.
+    await r.findByText('Send to vet');
+    expect(r.queryByTestId('report-notes-option')).toBeNull();
+  });
+
+  it('PR-17 (a): the v2 preview from the composer has no panel above it; the frame is the report’s', async () => {
+    mockedGenerate.mockResolvedValue({ ...report, reportVersion: 'v2', phoneHtml: '<html>phone</html>' });
+    const r = render(<ReportScreen />);
+    fireEvent.press(r.getByTestId('preview-30'));
+    await r.findByText('Send to vet');
+    expect(r.queryByText('Report range')).toBeNull();
+    expect(r.queryByTestId('report-chosen-window')).toBeNull();
+    expect(r.queryByTestId('report-notes-option')).toBeNull();
+    // Back still returns to the composer, where the window and the switch live.
+    fireEvent.press(r.getByLabelText('Back'));
+    expect(r.getByTestId('composer')).toBeTruthy();
   });
 
   it('the fallback builds the report’s own window, no dates sent', async () => {

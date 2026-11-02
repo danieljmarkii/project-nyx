@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -18,6 +18,7 @@ import { REPORT_PET_GONE, resolveReportSubject } from '../lib/reportRoute';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { ReportComposer } from '../components/report/ReportComposer';
+import { ReportNotesOption } from '../components/report/ReportNotesOption';
 import { useReportComposer } from '../hooks/useReportComposer';
 import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
@@ -385,6 +386,8 @@ export default function ReportScreen() {
           state={composer}
           onPreview={onComposerPreview}
           onFallback={onComposerFallback}
+          includeNotes={includeNotes}
+          onIncludeNotesChange={setIncludeNotes}
         />
       </SafeAreaView>
     );
@@ -411,7 +414,11 @@ export default function ReportScreen() {
         }
       />
 
-      {petId !== undefined && (
+      {/* PM ruling (a) on CUL-2297 (CUL-2400): arriving from the composer, the v2 preview has no
+          panel at all. The masthead's scope line names the window and the notes switch lives on
+          the composer, so the whole frame between the header and the send bar is the report's
+          and the band reaches the first screen. Every other path keeps its panel. */}
+      {petId !== undefined && !(composerOn && previewed && previewV2) && (
         <View style={styles.rangeBar}>
           <SectionLabel label="Report range" />
           {composerOn && previewed ? (
@@ -522,26 +529,8 @@ export default function ReportScreen() {
             />
           )}
 
-          <View style={styles.notesOption}>
-            <View style={styles.notesOptionText}>
-              <Text style={styles.notesOptionLabel}>Include your Noticed notes</Text>
-              {/* Two facts, and the second one is CUL-848's gap said out loud rather
-                  than left for the owner to discover on the document. A control named
-                  "your notes" that governs one of two note fields has to say which, or
-                  turning it off reads as a promise the report does not keep. */}
-              <Text style={styles.notesOptionHint}>
-                What you wrote on your daily looks, printed in the report’s Noticed appendix. Notes you
-                add to a meal or a symptom are always included.
-              </Text>
-            </View>
-            <Switch
-              value={includeNotes}
-              onValueChange={setIncludeNotes}
-              trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
-              ios_backgroundColor={theme.colorBorderStrong}
-              accessibilityLabel="Include your Noticed notes in the report"
-            />
-          </View>
+          {/* With the composer on, the switch lives on the composer (PM ruling (a) on CUL-2297). */}
+          {!composerOn && <ReportNotesOption value={includeNotes} onChange={setIncludeNotes} />}
 
           {resolvedLabel && <Text style={styles.rangeResolved}>{resolvedLabel}</Text>}
         </View>
@@ -728,32 +717,6 @@ const styles = StyleSheet.create({
   customField: {
     flex: 1,
     gap: theme.space1,
-  },
-  // The notes option. A row, not a chip group: it is a two-state property of the
-  // document that carries a sentence of explanation, and a chip pair would put the
-  // explanation somewhere other than beside the control it explains.
-  notesOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    marginTop: theme.space2,
-    paddingTop: theme.space2,
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
-  },
-  notesOptionText: {
-    flex: 1,
-  },
-  notesOptionLabel: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-  },
-  notesOptionHint: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
   },
   customFieldLabel: {
     fontFamily: theme.fontBody,

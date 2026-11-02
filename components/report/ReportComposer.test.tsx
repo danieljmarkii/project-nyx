@@ -1,6 +1,7 @@
 // The composer's state table (Vet report v2 PR-16, CUL-2296; spec §10.7), one fixture per row:
 // loading, failed, a live flag, no flag, a short read, a window change (newest wins), no events in
 // the window, a new account, two pets, the largest text size (AX5) and the VoiceOver order.
+import { useState } from 'react';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ScrollView, Text } from 'react-native';
 type ReactTestInstance = ReturnType<typeof render>['UNSAFE_root'];
@@ -84,7 +85,18 @@ function Host({ petName = 'Nyx', onPreview = jest.fn(), onFallback = jest.fn() }
   onFallback?: jest.Mock;
 }) {
   const state = useReportComposer('pet-1');
-  return <ReportComposer petId="pet-1" petName={petName} state={state} onPreview={onPreview} onFallback={onFallback} />;
+  const [notes, setNotes] = useState(true);
+  return (
+    <ReportComposer
+      petId="pet-1"
+      petName={petName}
+      state={state}
+      onPreview={onPreview}
+      onFallback={onFallback}
+      includeNotes={notes}
+      onIncludeNotesChange={setNotes}
+    />
+  );
 }
 
 async function renderReady(open: ComposerOpen, petName = 'Nyx') {
@@ -330,5 +342,17 @@ describe('the composer state table', () => {
       .filter((id: string, i: number, a: string[]) => a.indexOf(id) === i);
     expect(ids).toEqual(order);
     expect(r.getByTestId('composer-live-card').props.accessibilityLabel).toMatch(/^Nyx’s record has flags/);
+  });
+});
+
+describe('PR-17 (a): the notes switch on the composer (CUL-2297)', () => {
+  it('shows the switch with its hint, on, and flips it', async () => {
+    const r = await renderReady(nyx());
+    const sw = r.getByTestId('report-notes-option');
+    expect(sw.props.value).toBe(true);
+    expect(r.getByText('Include your Noticed notes')).toBeTruthy();
+    expect(r.getByText(/Notes you add to a meal or a symptom are always included\./)).toBeTruthy();
+    fireEvent(sw, 'valueChange', false);
+    expect(r.getByTestId('report-notes-option').props.value).toBe(false);
   });
 });

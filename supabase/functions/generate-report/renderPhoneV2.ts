@@ -46,6 +46,9 @@ export const BODY_PX = 17
  *  PIN_MAX_SHARE). It repeats words that print at full size in their own place below. */
 export const VERDICT_MAX_SCALE = 1.25
 export const VERDICT_MAX_PX = Math.round(BODY_PX * VERDICT_MAX_SCALE)
+/** The most of the frame the pinned repeat may take before its type steps down (PM ruling (a) on
+ *  CUL-2297): under the guard's 40%, so the bars always show beneath it. */
+export const PIN_SHARE = 0.38
 
 const SIGN_ROW_H = 34
 const BAR_H = 22
@@ -376,25 +379,40 @@ h2{font-size:9pt;}
 ${BACK_STYLE_PHONE_PRINT}}
 `
 
-// The layout script: compaction at font scale 1.6 and the keep-together rule. It measures a
+// The layout script: compaction at font scale 1.6 (or wherever the band would miss the first
+// frame), the pin's cap against the frame, and the keep-together rule. It measures a
 // 1rem probe rather than reading `font-size`, because Android's `textZoom` scales the text it
 // draws without changing the computed style.
 const SCRIPT_PHONE = `
 (function(){
   var root = document.documentElement;
   function scale(){ var p = document.getElementById('v2probe'); return p ? p.getBoundingClientRect().height / ${BODY_PX} : 1; }
+  function bandPast(bandH){ return bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight; }
   function lay(){
-    if (scale() >= ${COMPACT_SCALE}) root.setAttribute('data-compact', ''); else root.removeAttribute('data-compact');
-    // The band is the warning, so it outranks the brief for the first frame: the brief folds too
-    // only where it would push the band's heading out of that frame (320pt at large text).
     root.removeAttribute('data-tight');
     var bandH = document.querySelector('[data-block=band] h2');
     var mast = document.querySelector('.mast');
-    if (root.hasAttribute('data-compact') && bandH && mast && !mast.hasAttribute('data-open') && bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) {
+    // Compact at font scale 1.6, and ALSO at any scale where the full masthead would push the
+    // band's heading out of the first frame (PM ruling (a) on CUL-2297, CUL-2400): the app's
+    // header and send bar leave a 320pt phone about 394pt, and the full signalment alone runs to
+    // 446pt. An owner who opened the details keeps the compact layout, so the fold control stays.
+    var compact = scale() >= ${COMPACT_SCALE} || !!(mast && mast.hasAttribute('data-open'));
+    if (!compact && bandH) {
+      root.removeAttribute('data-compact');
+      compact = bandPast(bandH);
+    }
+    if (compact) root.setAttribute('data-compact', ''); else root.removeAttribute('data-compact');
+    // The band is the warning, so it outranks the brief for the first frame: the brief folds too
+    // only where it would push the band's heading out of that frame (320pt at large text).
+    if (compact && bandH && mast && !mast.hasAttribute('data-open') && bandPast(bandH)) {
       root.setAttribute('data-tight', '');
       // Fold the brief only where folding brings the band into the frame; otherwise it costs the
-      // species for nothing (adversarial pass 2 on CUL-2295).
-      if (bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) root.removeAttribute('data-tight');
+      // species for nothing (adversarial pass 2 on CUL-2295). "Into the frame" is the band's own
+      // box, not its whole heading (PM ruling (a) on CUL-2297): on a 320pt phone at large text the
+      // heading wraps to three lines, and the box's top on the first screen is still the warning
+      // arriving a screen sooner than with the brief open.
+      var bandBox = bandH.closest('[data-block=band]');
+      if (bandPast(bandH) && (!bandBox || bandBox.getBoundingClientRect().top + window.pageYOffset >= window.innerHeight)) root.removeAttribute('data-tight');
     }
     var unit = document.querySelector('[data-keep="lead"]');
     var push = document.querySelector('.keep-push');
@@ -406,6 +424,17 @@ const SCRIPT_PHONE = `
     // scroll positions with the bars on screen and the confounder below it (adversarial pass on
     // CUL-2295): a free scroll has no frames, so only a sentence pinned beside the bars holds.
     if (rep) rep.hidden = false;
+    // The pin is capped against THIS frame, not a fixed scale (PM ruling (a) on CUL-2297): it
+    // repeats words printed at full size below, so where it would take more than PIN_SHARE of the
+    // frame its type steps down, never under 11px, and the bars always show beneath it.
+    if (rep) {
+      rep.style.fontSize = '';
+      var px = parseFloat(getComputedStyle(rep).fontSize);
+      while (window.innerHeight && rep.getBoundingClientRect().height > ${PIN_SHARE} * window.innerHeight && px > ${SVG_TEXT_MIN}) {
+        px = Math.max(${SVG_TEXT_MIN}, px - 1);
+        rep.style.fontSize = px + 'px';
+      }
+    }
     // A page-step scroll (VoiceOver, a keyboard) lands below the pinned repeat, so nothing the
     // repeat covers is skipped between one screen and the next (cold read on CUL-2295).
     if (rep) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';

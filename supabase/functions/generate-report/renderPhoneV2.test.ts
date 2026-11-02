@@ -256,7 +256,14 @@ Deno.test('keep — the layout script never hides the repeat, pads page steps be
   assert.match(script, /ro\.observe\(probe\)/)
   // The spacer pushes only a unit that fits a frame.
   assert.match(script, /var fits = unit\.getBoundingClientRect\(\)\.height <= frame;\s*if \(!fits\) return;/)
-  assert.match(script, /if \(scale\(\) >= 1\.6\) root\.setAttribute\('data-compact', ''\)/)
+  // Compaction: at scale 1.6, or at ANY scale where the full masthead pushes the band past the
+  // first frame (PM ruling (a) on CUL-2297), and it stays on while the owner has the details open.
+  assert.match(script, /var compact = scale\(\) >= 1\.6 \|\| !!\(mast && mast\.hasAttribute\('data-open'\)\);/)
+  assert.match(script, /if \(!compact && bandH\) \{\s*root\.removeAttribute\('data-compact'\);\s*compact = bandPast\(bandH\);/)
+  // The pin steps its type down against THIS frame, never under 11px, and before the scroll
+  // padding is read off its height.
+  assert.match(script, /rep\.getBoundingClientRect\(\)\.height > 0\.38 \* window\.innerHeight && px > 11/)
+  assert.ok(script.indexOf('> 0.38 * window.innerHeight') < script.indexOf('root.style.scrollPaddingTop = rep'), 'the pin is sized before the padding reads it')
 })
 
 Deno.test('compact — at scale 1.6 the details fold behind one line; species, sex, age, weight and the last entry never fold', () => {
@@ -272,8 +279,9 @@ Deno.test('compact — at scale 1.6 the details fold behind one line; species, s
   // Only where the band would leave the first frame does the brief fold too (the band is the warning).
   assert.match(compact, /\[data-compact\]\[data-tight\] \.mast \.brief\{display:none;\}/)
   const script = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
-  assert.match(script, /bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight\) \{\s*root\.setAttribute\('data-tight', ''\);/)
-  assert.match(script, /if \(bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight\) root\.removeAttribute\('data-tight'\);/, 'no fold that does not bring the band in')
+  assert.match(script, /function bandPast\(bandH\)\{ return bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight; \}/)
+  assert.match(script, /bandPast\(bandH\)\) \{\s*root\.setAttribute\('data-tight', ''\);/)
+  assert.match(script, /if \(bandPast\(bandH\) && \(!bandBox \|\| bandBox\.getBoundingClientRect\(\)\.top \+ window\.pageYOffset >= window\.innerHeight\)\) root\.removeAttribute\('data-tight'\);/, 'no fold that does not bring the band box in')
   assert.doesNotMatch(print, /data-compact/, 'compaction never reaches print')
   assert.doesNotMatch(screen.slice(0, screen.indexOf('@media screen{')), /data-compact/, 'no compact rule outside the screen block')
   const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
