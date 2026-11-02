@@ -2078,13 +2078,6 @@ export interface StoolAiReads {
 /** Present-only safety class carried by a photographed incident — also LEADS the safety band. */
 export type IncidentPhotoSafety = 'blood' | 'foreign'
 
-/**
- * One photographed incident, for Appendix E (PR 7). Built PURELY here (which incidents, order,
- * per-photo metadata + the present-only safety class); the actual image bytes are fetched,
- * EXIF/GPS-stripped, downscaled and base64-embedded by the index.ts I/O shell into `dataUri`
- * AFTER assembly, so report.ts stays I/O-free and unit-testable. One entry per attachment (an
- * incident with two photos yields two entries sharing the incident's date/type/phenotype/safety).
- */
 /** A photo the owner left out of one report (PR-23, R-10): which, when, and its safety class. */
 export interface IncidentPhotoLeftOut {
   attachmentId: string
@@ -2094,6 +2087,13 @@ export interface IncidentPhotoLeftOut {
   safety: IncidentPhotoSafety | null
 }
 
+/**
+ * One photographed incident, for Appendix E (PR 7). Built PURELY here (which incidents, order,
+ * per-photo metadata + the present-only safety class); the actual image bytes are fetched,
+ * EXIF/GPS-stripped, downscaled and base64-embedded by the index.ts I/O shell into `dataUri`
+ * AFTER assembly, so report.ts stays I/O-free and unit-testable. One entry per attachment (an
+ * incident with two photos yields two entries sharing the incident's date/type/phenotype/safety).
+ */
 export interface IncidentPhoto {
   eventId: string
   /** Storage object path (nyx-event-attachments). Consumed only by index.ts for the signed fetch — NEVER rendered. */
