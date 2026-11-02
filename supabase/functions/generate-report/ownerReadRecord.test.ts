@@ -70,6 +70,10 @@ function symptom(date: string, type = 'vomit'): ReportEventInput {
   }
 }
 
+function observation(date: string, type: 'medication' | 'other', notes: string | null = null): ReportEventInput {
+  return { ...symptom(date, type), notes }
+}
+
 function weigh(date: string, kg: number): ReportWeightCheckInput {
   return { eventId: nextId('wt'), weightKg: kg, occurredAt: `${date}T14:00:00Z`, source: 'home_scale' }
 }
@@ -83,6 +87,7 @@ function endedTrial(o: {
   weights?: ReportWeightCheckInput[]
   outcome?: Outcome
   notes?: string | null
+  stoppedReason?: string | null
 }): ReportInput {
   return {
     now: NOW,
@@ -102,8 +107,8 @@ function endedTrial(o: {
         foodItemId: 'f-hp',
         startedAt: '2026-06-01',
         targetDurationDays: 28,
-        status: 'completed',
-        completedAt: '2026-06-28',
+        status: o.stoppedReason ? 'abandoned' : 'completed',
+        completedAt: o.stoppedReason ? null : '2026-06-28',
         endedAt: '2026-06-28',
         indication: 'gi',
         vetName: 'Dr. Chen',
@@ -112,6 +117,7 @@ function endedTrial(o: {
         proteins: ['soy'],
         outcome: o.outcome === undefined ? 'improved' : o.outcome,
         outcomeNotes: o.notes ?? null,
+        stoppedReason: o.stoppedReason ?? null,
         allowedFoods: [
           {
             foodItemId: 'f-hp',
@@ -165,17 +171,17 @@ Deno.test('CUL-2441 — signs in the trial’s last 7 days, signs after it, and 
   const row = recordRow(trialHtml(input))!
   assert.ok(row, 'the row prints under the owner’s read')
   assert.ok(
-    row.startsWith('3 symptom events logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026 (2 vomiting, 1 coughing).'),
+    row.startsWith('Logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026: 2 vomiting, 1 coughing.'),
     row,
   )
-  assert.ok(row.includes(' 2 symptom events logged in the days after the trial ended, Jun 29 – Jul 2, 2026 (2 vomiting).'), row)
+  assert.ok(row.includes(' Logged in the 4 days after the trial ended, Jun 29 – Jul 2, 2026: 2 vomiting.'), row)
   assert.ok(/Weight down about 8% of body weight over the trial: 31\.00 kg \(68\.3 lb\) on Jun 2, 2026 → 28\.50 kg \(62\.8 lb\) on Jun 27, 2026\./.test(row), row)
 })
 
 Deno.test('CUL-2441 — a sign the indication would not name is still counted (every sign, ruling fork 1)', () => {
   // A GI trial: a cough logged in its last week is on the row, never filtered out as off-indication.
   const row = recordRow(trialHtml(endedTrial({ events: [symptom('2026-06-26', 'cough')] })))
-  assert.ok(row?.startsWith('1 symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026 (1 coughing).'), row ?? '')
+  assert.ok(row?.startsWith('Logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026: 1 coughing.'), row ?? '')
 })
 
 Deno.test('CUL-2441 — no signs: the count says none and names its un-logged days; no weight is said', () => {
@@ -184,19 +190,19 @@ Deno.test('CUL-2441 — no signs: the count says none and names its un-logged da
   const row = recordRow(trialHtml(endedTrial({ mealDays })))!
   assert.ok(row)
   assert.ok(
-    row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; nothing was logged on 2 of those 7 days.'),
+    row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; no meal was logged on 2 of those 7 days.'),
     row,
   )
-  assert.ok(row.includes('No symptom event logged in the days after the trial ended, Jun 29 – Jul 2, 2026.'), row)
+  assert.ok(row.includes('No symptom event logged in the 4 days after the trial ended, Jun 29 – Jul 2, 2026.'), row)
   assert.ok(row.endsWith('No weight recorded in the trial.'), row)
 })
 
 Deno.test('CUL-2441 — the un-logged days are stated whatever the count, and never when every day is logged', () => {
   const mealDays = days('2026-06-01', '2026-07-02').filter((d) => d !== '2026-06-24')
   const withSigns = recordRow(trialHtml(endedTrial({ mealDays, events: [symptom('2026-06-22')] })))!
-  assert.ok(withSigns.includes('(1 vomiting); nothing was logged on 1 of those 7 days.'), withSigns)
+  assert.ok(withSigns.includes(': 1 vomiting; no meal was logged on 1 of those 7 days.'), withSigns)
   const full = recordRow(trialHtml(endedTrial({ events: [symptom('2026-06-22')] })))!
-  assert.ok(!/nothing was logged/.test(full), full)
+  assert.ok(!/no meal was logged/.test(full), full)
 })
 
 Deno.test('CUL-2441 — a weight rise, and a trial with one weigh-in', () => {
@@ -204,7 +210,11 @@ Deno.test('CUL-2441 — a weight rise, and a trial with one weigh-in', () => {
   assert.ok(/Weight up about 4% of body weight over the trial: 30\.00 kg .* on Jun 2, 2026 → 31\.20 kg \(68\.8 lb\) on Jun 27, 2026\./.test(rise), rise)
   // A weigh-in before the trial is not trial evidence (#10a): the trial holds one, so no change is measured.
   const one = recordRow(trialHtml(endedTrial({ weights: [weigh('2026-05-20', 33), weigh('2026-06-10', 30)] })))!
-  assert.ok(one.includes('Weight: one weigh-in in the trial, 30.00 kg (66.1 lb) on Jun 10, 2026, so no change over the trial is measured.'), one)
+  assert.ok(
+    one.includes('Weight change over the trial cannot be measured: one weigh-in in the trial, 30.00 kg (66.1 lb) on Jun 10, 2026. None is recorded after it.'),
+    one,
+  )
+  assert.ok(!/no change/i.test(one), one)
 })
 
 Deno.test('CUL-2441 — the row prints whatever the owner said, and never says better or worse', () => {
@@ -239,8 +249,10 @@ Deno.test('CUL-2441 — Nyx: the week after the trial and the Weight flag reach 
   // the Weight flag's 15% straddles the trial start. Both are on the row.
   const snap = nyxLiveSnapshot()
   const row = recordRow(dietTrialSection(snap))!
-  assert.ok(row.startsWith('4 symptom events logged in the trial’s last 7 days, Oct 14 – Oct 20, 2026 (3 vomiting, 1 sneezing).'), row)
-  assert.ok(row.includes('8 symptom events logged in the days after the trial ended, Oct 21 – Oct 31, 2026 (6 vomiting, 1 coughing, 1 sneezing).'), row)
+  assert.ok(row.startsWith('Logged in the trial’s last 7 days, Oct 14 – Oct 20, 2026: 3 vomiting, 1 sneezing;'), row)
+  assert.ok(row.includes('Logged in the 11 days after the trial ended, Oct 21 – Oct 31, 2026: 6 vomiting, 1 coughing, 1 sneezing;'), row)
+  // The capture predates the trial's meal days: unknown, said as unknown, never read as full.
+  assert.ok(row.includes('; which of those days had a meal logged is not recorded in this copy.'), row)
   assert.ok(row.includes('The report’s Weight flag reads a loss of about 15% of body weight against the highest reading in the last 365 days.'), row)
   // The capture predates `weight.trialChange`: unknown, said as unknown, never "no weight".
   assert.ok(row.includes('The weight over the trial is not recorded in this copy.'), row)
@@ -251,10 +263,51 @@ Deno.test('CUL-2441 — a short events pull makes the counts floors', () => {
   const input = endedTrial({ events: [symptom('2026-06-27')] })
   input.incompletePulls = ['events']
   const row = recordRow(trialHtml(input))!
-  assert.ok(row.startsWith('At least 1 symptom event logged in the trial’s last 7 days'), row)
+  assert.ok(row.startsWith('Logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026 (at least: part of the event record could not be read): 1 vomiting.'), row)
 })
 
 Deno.test('CUL-2441 — the row reaches the full report', () => {
   const text = plain(renderReport(assembleReport(endedTrial({ events: [symptom('2026-06-27')] }))))
-  assert.ok(text.includes('From the record1 symptom event logged in the trial’s last 7 days'))
+  assert.ok(text.includes('From the recordLogged in the trial’s last 7 days, Jun 22 – Jun 28, 2026: 1 vomiting.'))
+})
+
+// ── Adversarial pass 1's counterexamples, each a QUIET break before its fix ─────────────────────
+
+Deno.test('CUL-2441 — a trial stopped because the symptoms "cleared up" gets the row too', () => {
+  // The stop collects no verdict by construction, so the owner's claim printed alone (pass 1, #1).
+  const html = trialHtml(
+    endedTrial({ outcome: null, notes: null, stoppedReason: 'symptoms_resolved', events: [symptom('2026-06-23'), symptom('2026-06-27'), symptom('2026-06-30')] }),
+  )
+  const row = recordRow(html)!
+  assert.ok(row, 'the row prints under a symptoms_resolved stop')
+  assert.ok(row.startsWith('Logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026: 2 vomiting.'), row)
+  assert.ok(row.includes('Logged in the 4 days after the trial ended, Jun 29 – Jul 2, 2026: 1 vomiting.'), row)
+})
+
+Deno.test('CUL-2441 — a week holding only doses is a week with no meal logged', () => {
+  // Pass 1, #2: under the any-log set a dose a day read as a fully logged quiet week, beside the
+  // section's own meal-day row. The clause reads the trial's meal days.
+  const mealDays = days('2026-06-01', '2026-07-02').filter((d) => d < '2026-06-22' || d > '2026-06-28')
+  const events = days('2026-06-22', '2026-06-28').map((d) => observation(d, 'medication'))
+  const row = recordRow(trialHtml(endedTrial({ mealDays, events })))!
+  assert.ok(row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; no meal was logged on any of those 7 days.'), row)
+})
+
+Deno.test('CUL-2441 — observations logged as "other" are said to be outside the counts', () => {
+  // Pass 1, #3: "vomited bile" logged as `other` reaches no symptom count; the row says so.
+  const events = days('2026-06-22', '2026-06-28').map((d) => observation(d, 'other', 'vomited bile, hiding'))
+  const row = recordRow(trialHtml(endedTrial({ events })))!
+  assert.ok(row.includes('7 further observations in this window were logged as “other” and are in neither count.'), row)
+  const none = recordRow(trialHtml(endedTrial({})))!
+  assert.ok(!/logged as “other”/.test(none), none)
+})
+
+Deno.test('CUL-2441 — the milestone tap ("completed") is not the owner’s account: no row without their words', () => {
+  // Every owner stop reason prints the row; `completed` only says when the trial ended. Pinned so the
+  // stop gate cannot widen to every ended trial (CUL-2094's byte-identical renders hold on it).
+  const html = trialHtml(endedTrial({ outcome: null, notes: null, stoppedReason: 'completed' }))
+  assert.equal(recordRow(html), null)
+  for (const reason of ['refused', 'cost', 'too_hard', 'vet_advised', 'other']) {
+    assert.ok(recordRow(trialHtml(endedTrial({ outcome: null, notes: null, stoppedReason: reason }))), reason)
+  }
 })
