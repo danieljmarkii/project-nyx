@@ -9,11 +9,22 @@ export type PreviewView = 'phone' | 'printed';
 
 /**
  * The v2 preview runs only when the server built the v2 document AND returned its phone layout.
- * A v2 response with no `phone_html` (a server older than PR-17) keeps the screen that reads
- * `html`, so an owner never meets an empty preview frame.
+ * A v2 response with no `phone_html` is refused by the screen (`isBareV2Report`, CUL-2458), so an
+ * owner meets neither an empty preview frame nor the printed page on its own.
  */
 export function hasPhonePreview(report: Pick<VetReport, 'reportVersion' | 'phoneHtml'>): boolean {
-  return report.reportVersion === 'v2' && typeof report.phoneHtml === 'string' && report.phoneHtml.length > 0;
+  return report.reportVersion === 'v2' && typeof report.phoneHtml === 'string' && report.phoneHtml.trim().length > 0;
+}
+
+/**
+ * CUL-2458: a v2 response that came back without its phone layout. Its `html` is the PRINTED
+ * page, and on a phone the printed page's lead chart can sit apart from its "not a test of the
+ * diet alone" line, with zoom on and no pinned warning (the CUL-2430 class). The screen refuses
+ * it as a failed build (error and retry) rather than showing the printed page bare: the pin
+ * (`printedWarningOf`) needs the phone layout, so refusing is the louder fix and the simpler one.
+ */
+export function isBareV2Report(report: Pick<VetReport, 'reportVersion' | 'phoneHtml'>): boolean {
+  return report.reportVersion === 'v2' && !hasPhonePreview(report);
 }
 
 /**

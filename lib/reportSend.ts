@@ -103,6 +103,17 @@ export function sendIsQuiet(live: ComposerLive): boolean {
   return live.state === 'none';
 }
 
+/**
+ * CUL-2457: the server's "none" covers only what has reached it. An entry still on this phone
+ * (waiting for a connection, or refused by the queue) is outside the read, so the check is
+ * withheld until the count after the send's flush says nothing is left. A count that could not
+ * be read (`null`) is unknown, and unknown never earns the check. The count is the whole phone's,
+ * not one pet's: another pet's unsent row also withholds it, which errs on the louder side.
+ */
+export function sendRecordAllSent(unsent: { pending: number; quarantined: number } | null): boolean {
+  return unsent !== null && unsent.pending === 0 && unsent.quarantined === 0;
+}
+
 // ── The call card and its rows (d1, d5) ──────────────────────────────────────────────────────
 
 /**

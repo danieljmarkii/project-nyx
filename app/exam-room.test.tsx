@@ -227,6 +227,15 @@ describe('"Printed page" carries its warning (PM ruling (a) on CUL-2430)', () =>
     expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
   });
 
+  it('withholds "Printed page" when the printed page carries the line but the reflow lost it (CUL-2458 pass 1)', () => {
+    mockCopy = {
+      phoneHtml: PHONE.replace(/<div class="keep">.*?<\/div>/, ''),
+      printHtml: PRINT.replace('printed', '<p class="conf" data-block="confounder">Not a test of the diet alone.</p>'),
+    };
+    const s = render(<ExamRoomScreen />);
+    expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
+  });
+
   it('offers no "Printed page" when the copy has no printed layout', () => {
     mockCopy = { phoneHtml: PHONE, printHtml: null };
     const s = render(<ExamRoomScreen />);

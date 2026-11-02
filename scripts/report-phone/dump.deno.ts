@@ -14,7 +14,8 @@ Deno.mkdirSync(out, { recursive: true })
 const names: string[] = []
 for (const [name, snap] of v2DocFixtures()) {
   const doc = buildDocumentV2(snap, { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] })
-  Deno.writeTextFileSync(`${out}/${name}.print.html`, renderPrintV2(doc))
+  const print = renderPrintV2(doc)
+  Deno.writeTextFileSync(`${out}/${name}.print.html`, print)
   const phone = renderPhoneV2(doc)
   Deno.writeTextFileSync(`${out}/${name}.phone.html`, phone)
   const exam = examRoomHtml(phone, theme.colorNeutralDark)
@@ -26,7 +27,7 @@ for (const [name, snap] of v2DocFixtures()) {
   const warn = printedWarningOf(phone)
   if (conf && conf.kind === 'confounder' && warn !== conf.lead) throw new Error(`${name}: the printed page would pin "${warn}", not the line's lead "${conf.lead}"`)
   if (!conf && warn !== null) throw new Error(`${name}: a printed-page warning with no confounder line`)
-  if (!printedViewAllowed(phone)) throw new Error(`${name}: the room would withhold Printed page for today's renderer`)
+  if (!printedViewAllowed(phone, print)) throw new Error(`${name}: the room would withhold Printed page for today's renderer`)
   names.push(name)
 }
 Deno.writeTextFileSync(`${out}/fixtures.json`, JSON.stringify(names))
