@@ -561,3 +561,79 @@ describe('no Storage bucket is public', () => {
     expect([...isPublic].filter(([, open]) => open).map(([b]) => b)).toEqual([]);
   });
 });
+
+// ── A deleted account can no longer write (CUL-2327, CUL-2397, migration 117) ─
+// `auth.admin.deleteUser` does not revoke an access token already issued: it
+// stays valid until its `exp` (1 h by default), and `storage.objects.owner` has
+// no foreign key to `auth.users` (measured 2026-11-02). So a write policy that
+// keys on the path alone (`foldername[1] = auth.uid()::text`) admits an upload
+// from a still-signed-in second phone AFTER delete-account's post-delete sweep
+// listed the folder, and the file outlives its account. 021's label bucket was
+// that shape until 117.
+//
+// The rule: every clause of every INSERT / UPDATE / ALL policy on
+// storage.objects reads a row the deletion cascade removes, keyed on the
+// caller: `pets` (user_id), `food_items` (created_by_user_id) or
+// `user_profiles` (id), each `REFERENCES auth.users ON DELETE CASCADE`. And no
+// clause may OR around that lookup, which would leave a path-only branch open.
+//
+// Mutants, run against this block 2026-11-02, every one killed:
+//   ✗ 117 deleted (021's path-only label policies are live again)
+//   ✗ 117's EXISTS dropped from the INSERT only
+//   ✗ 117's EXISTS dropped from the UPDATE's USING and WITH CHECK
+//   ✗ the EXISTS reads `public.medication_items` (a row that is not the caller's
+//     account) instead of `user_profiles`
+//   ✗ the lookup kept but OR'd with the path-only test
+//   ✗ the lookup keyed on a literal uuid instead of `auth.uid()`
+//
+// STATED BLIND SPOTS: this reads the repo, not the database (117's VERIFY
+// queries read the live policies). It does not re-check that the three anchor
+// tables still cascade from auth.users; that was measured live on 2026-11-02 and
+// a migration that weakened one would be its own schema PR. SELECT and DELETE
+// are deliberately out of scope: a stale token reading or removing its own
+// leftovers writes nothing new.
+
+const CASCADE_ANCHOR_RE =
+  /\bFROM\s+(?:public\.)?(?:pets|food_items|user_profiles)\b(?:\s+\w+)?\s+WHERE\s+[\w.]*(?:user_id|created_by_user_id|id)\s*=\s*auth\.uid\(\)/i;
+
+describe('a deleted account can no longer write to Storage (CUL-2327, 117)', () => {
+  const writes = policies.filter((p) => p.cmd === 'INSERT' || p.cmd === 'UPDATE' || p.cmd === 'ALL');
+
+  it('sees every bucket uploadPhoto writes among the write policies', () => {
+    // Non-vacuity: a parser that matched nothing would pass the checks below.
+    const buckets = new Set(writes.flatMap((p) => p.clauses.flatMap((c) => c.buckets)));
+    expect(KNOWN_BUCKETS.filter((b) => !buckets.has(b))).toEqual([]);
+  });
+
+  it('keys every write clause on a row the deletion cascade removes', () => {
+    const open = writes.flatMap((p) =>
+      p.clauses
+        .filter((c) => !CASCADE_ANCHOR_RE.test(c.body))
+        .map((c) => `${p.file}: ${p.name} [${c.kind}]`),
+    );
+    expect(open).toEqual([]);
+  });
+
+  it('never ORs around the lookup', () => {
+    const ored = writes.flatMap((p) =>
+      p.clauses.filter((c) => /\bOR\b/i.test(c.body)).map((c) => `${p.file}: ${p.name} [${c.kind}]`),
+    );
+    expect(ored).toEqual([]);
+  });
+
+  it('closes the label bucket in 117, on both write commands', () => {
+    for (const name of ['nyx-medication-photos: owner insert', 'nyx-medication-photos: owner update']) {
+      const p = policies.find((x) => x.name === name);
+      expect(p?.file).toBe('117_medication_photos_live_account_only.sql');
+      for (const c of p?.clauses ?? []) {
+        expect(c.body).toMatch(/EXISTS \(SELECT 1 FROM public\.user_profiles p WHERE p\.id = auth\.uid\(\)\)/);
+      }
+    }
+  });
+
+  it('proves the detector on the shape 117 replaced', () => {
+    // 021's predicate, verbatim: the path alone.
+    expect(CASCADE_ANCHOR_RE.test("bucket_id = 'nyx-medication-photos' AND (storage.foldername(name))[1] = auth.uid()::text")).toBe(false);
+    expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND (storage.foldername(name))[1] IN ( SELECT id::text FROM pets WHERE user_id = auth.uid() )")).toBe(true);
+  });
+});
