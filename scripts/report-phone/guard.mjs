@@ -13,8 +13,8 @@
 //   4. every fixture's PDF, print and phone documents both, at scale 1.0 and 3.1: the same page
 //      count, the same text layer, the same sheet 1 word count;
 //   5. the exam room (CUL-2299, spec §10.6; the keep-together rule extended to its pages by PM
-//      ruling (a) on CUL-2320): the app's exact exam document at 320×568, 390×844 and 844×390
-//      landscape, at 1.0, 2.35 and 3.1, every page in sheet order: one sheet shows at a time,
+//      ruling (a) on CUL-2320): the app's exact exam document at its real frames, 320×488,
+//      390×737 and 844×330 landscape, at 1.0, 2.35 and 3.1, every page in sheet order: one sheet shows at a time,
 //      the type is at least the arm's-length size, nothing clips or falls under 11pt, the band
 //      reaches page 1's first frame, every band flag shows with the reflow's own words (and the
 //      confounder line too), and every check in 3 holds on the page the unit is on.
@@ -63,11 +63,12 @@ if (sizesAt > 0) {
   }
 }
 const SCALES = [1, 2.35, 3.1]
-// The exam room fills the whole screen (no app header or send bar), portrait and landscape.
+// The room's real frames: the screen less its pager row (the top inset, 8 + 44 + 8), portrait
+// and landscape, the band's first-frame check on in every one (adversarial pass 2 on PR-19).
 const EXAM_SIZES = [
-  { name: 'exam-320', width: 320, height: 568, band: true },
-  { name: 'exam-390', width: 390, height: 844, band: true },
-  { name: 'exam-landscape', width: 844, height: 390, band: false },
+  { name: 'exam-320', width: 320, height: 488, band: true },
+  { name: 'exam-390', width: 390, height: 737, band: true },
+  { name: 'exam-landscape', width: 844, height: 330, band: true },
 ]
 /** lib/examRoom.ts ARM_LENGTH_PX: the exam type never draws smaller. */
 const ARM_LENGTH_PX = 22
@@ -355,8 +356,11 @@ try {
         const first = posted.find((m) => m.type === 'exam-page')
         if (!first || first.page !== 1 || first.of !== of) fail(where0, `the room did not announce sheet 1 of ${of} (got ${JSON.stringify(first)})`)
         // PARITY (adversarial pass on PR-19): the room may hide whole sheets and nothing else.
-        // Every band flag shows, and the band's and the confounder line's visible words are the
-        // phone reflow's own, so CSS that hid a flag or added words would red here.
+        // Every band flag takes up space, and the band's and the confounder line's laid-out words
+        // (innerText, and words drawn by ::before / ::after) are the phone reflow's own. What it
+        // CANNOT see is paint: a flag or the pin made invisible by opacity, a ground-coloured
+        // text colour, clip-path or transform passes (adversarial pass 2 on PR-19; filed). And
+        // nothing runs this guard in CI yet: it is run by hand (filed with the paint check).
         const phoneView = await browser.newPage({ viewport: { width: size.width, height: size.height } })
         await phoneView.setContent(atScale(fs.readFileSync(path.join(dir, `${name}.phone.html`), 'utf8'), s), { waitUntil: 'load' })
         const words = (pg) => pg.evaluate(() => {
