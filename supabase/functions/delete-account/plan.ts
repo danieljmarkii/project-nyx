@@ -1001,6 +1001,25 @@ export function killedLeftoversLine(entry: InFlightDeletion, reason: string | nu
   })
 }
 
+// What a `deleteUser` error leaves behind (rls-privacy-reviewer A4). GoTrue can commit
+// the delete and still hand back `{ error }` (a lost response, a gateway 5xx), so an
+// error alone never proves the account intact. A follow-up `getUserById` decides:
+// `present`, the account survives and the run fails retryably; `gone`, the delete
+// landed and the sweep must still run; `unknown`, the probe itself failed, so the
+// folders are named before the run fails. Only an explicit not-found counts as gone,
+// and only a returned user counts as present.
+export type UserProbe = 'present' | 'gone' | 'unknown'
+
+export function userProbeOf(res: {
+  user: unknown
+  error: { status?: number; code?: string } | null
+}): UserProbe {
+  if (res.error) {
+    return res.error.status === 404 || res.error.code === 'user_not_found' ? 'gone' : 'unknown'
+  }
+  return res.user ? 'present' : 'unknown'
+}
+
 // Slack between the plan constant and an observed wall-clock kill: the runtime's
 // timer and boot are not exact, and a kill this close to the constant is the plan
 // working as written.

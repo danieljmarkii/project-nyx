@@ -37,6 +37,7 @@ import {
   canStartDeletion,
   folderKey,
   killedLeftoversLine,
+  userProbeOf,
   wallClockMismatchLine,
   workerTimeLeft,
   sweepLeftoversLine,
@@ -1863,4 +1864,14 @@ Deno.test('wallClockMismatchLine — CUL-2362: an early wall-clock kill is loud,
   assert(wallClockMismatchLine('WallClockTime', EDGE_WORKER_WALL_CLOCK_MS - WALL_CLOCK_MISMATCH_SLACK_MS - 1) !== null)
   assertEquals(wallClockMismatchLine('CPUTime', 1_000), null)
   assertEquals(wallClockMismatchLine(null, 1_000), null)
+})
+
+Deno.test('userProbeOf — CUL-2362 A4: only an explicit not-found is gone, only a returned user is present', () => {
+  assertEquals(userProbeOf({ user: { id: 'u' }, error: null }), 'present')
+  assertEquals(userProbeOf({ user: null, error: { status: 404 } }), 'gone')
+  assertEquals(userProbeOf({ user: null, error: { code: 'user_not_found' } }), 'gone')
+  // A failed probe never reads as intact: the caller names the folders.
+  assertEquals(userProbeOf({ user: null, error: { status: 500 } }), 'unknown')
+  assertEquals(userProbeOf({ user: null, error: {} }), 'unknown')
+  assertEquals(userProbeOf({ user: null, error: null }), 'unknown')
 })

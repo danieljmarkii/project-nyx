@@ -64,6 +64,7 @@ import {
   sweepBudget,
   sweepLeftoversLine,
   sweepOwnedPrefixes,
+  userProbeOf,
   wallClockMismatchLine,
   workerTimeLeft,
   type InFlightDeletion,
@@ -470,10 +471,26 @@ Deno.serve(async (req: Request) => {
         // delete-auth-user — LAST. Fires the FK cascade that erases every DB row.
         const { error } = await adminClient.auth.admin.deleteUser(userId)
         if (error) {
-          // The account is intact, so there is nothing for a shutdown to name.
-          IN_FLIGHT.delete(inFlight)
-          inFlight = null
-          throw new Error(`auth.admin.deleteUser failed: ${error.message}`)
+          // An error does not prove the account intact: GoTrue may have committed the
+          // delete and lost the response. Ask it, and let the answer decide.
+          const probe = userProbeOf(
+            await adminClient.auth.admin.getUserById(userId).then(
+              ({ data, error: probeErr }) => ({ user: data?.user ?? null, error: probeErr }),
+              () => ({ user: null, error: {} }),
+            ),
+          )
+          if (probe !== 'gone') {
+            if (probe === 'unknown') {
+              // The account may be gone with nothing left to find its folders by, so
+              // name them now; a retry that finds the account intact sweeps them anyway.
+              console.error(killedLeftoversLine(inFlight, `deleteUser error, account state unknown: ${error.message}`))
+            }
+            IN_FLIGHT.delete(inFlight)
+            inFlight = null
+            throw new Error(`auth.admin.deleteUser failed: ${error.message}`)
+          }
+          // The delete landed: carry on to the sweep, as on a clean return.
+          console.warn(`delete-account: deleteUser returned an error but the user is gone; sweeping: ${error.message}`)
         }
         inFlight.phase = 'sweeping'
         authDeleted = true
