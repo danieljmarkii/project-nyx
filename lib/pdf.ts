@@ -44,6 +44,12 @@ export interface VetReportParams {
 
 export interface VetReport {
   html: string;
+  /**
+   * VR2-17 (CUL-2297): the v2 document's phone reflow (`renderPhoneV2`), built from the same
+   * document as `html`. Null for v1, and for a v2 response from a server older than PR-17; the
+   * screen then reads `html` as before. Never sent anywhere: the PDF is always `html`.
+   */
+  phoneHtml: string | null;
   petName: string;
   startDate: string;
   endDate: string;
@@ -221,6 +227,8 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
   const version: 'v1' | 'v2' = data.report_version === 'v2' ? 'v2' : 'v1';
   return {
     html: data.html,
+    phoneHtml:
+      version === 'v2' && typeof data.phone_html === 'string' && data.phone_html.length > 0 ? data.phone_html : null,
     reportVersion: version,
     ownerSurname: version === 'v2' ? await ownerSurnameNow() : null,
     petName: typeof data.pet_name === 'string' ? data.pet_name : '',

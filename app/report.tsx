@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, Alert, Switch, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -18,12 +18,15 @@ import { REPORT_PET_GONE, resolveReportSubject } from '../lib/reportRoute';
 import { useAllowlistFlag } from '../hooks/useAppConfig';
 import { useBetaOptIn } from '../lib/betaFeatures';
 import { ReportComposer } from '../components/report/ReportComposer';
+import { ReportNotesOption } from '../components/report/ReportNotesOption';
 import { useReportComposer } from '../hooks/useReportComposer';
 import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
-  flushBeforeReport, generateVetReport, reportFreshnessLine, shareReportPdf,
+  flushBeforeReport, generateVetReport, reportFreshnessLine, reportVersionFor, shareReportPdf,
   type VetReport, type VetReportParams,
 } from '../lib/pdf';
+import { ReportPreviewV2 } from '../components/reportV2/ReportPreviewV2';
+import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } from '../lib/reportPreviewV2';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -87,6 +90,13 @@ import {
 // Arriving from the composer, the report's own range chips give way to one read-only line naming
 // that window: two range controls that disagree ("I said the diet trial, why does it say
 // Custom?") were the pm-feature-review's blocking finding.
+
+// THE V2 PREVIEW (PR-17, CUL-2297 + CUL-2383). When the server returns the v2 document with its
+// phone layout, the body is `ReportPreviewV2`: the phone reflow, with "View as printed" in the
+// header swapping in the printed page in place. The wait is the v2 Front Page silhouette (with
+// the band's slot when the composer's outline reported a live flag) from the first request; the
+// ready preview mounts with the same silhouette on top and lifts it only at `onLoadEnd`, so the
+// hand-over is the same frame. Every other response, v1 included, renders exactly as before.
 
 type Status = 'loading' | 'ready' | 'error';
 type RangeMode = 'default' | 'custom';
@@ -153,6 +163,10 @@ export default function ReportScreen() {
   const [chosen, setChosen] = useState<ComposerWindow | null>(null);
   const composing = composerOn && !previewed && petId !== undefined;
   const composer = useReportComposer(composerOn ? petId : undefined);
+  // Which layout this screen will ask for, read the way `generateVetReport` reads it, so the first
+  // build's wait can already be the v2 page's own shape.
+  const askingV2 = reportVersionFor(useAllowlistFlag('report_document_v2'), useBetaOptIn('report_document_v2')) === 'v2';
+  const [previewView, setPreviewView] = useState<PreviewView>('phone');
   const onComposerFallback = useCallback(() => {
     setChosen(null);
     setRangeMode('default');
@@ -334,6 +348,13 @@ export default function ReportScreen() {
   // silhouette with the tick beside "Writing {pet}'s report…", and the soft-refresh
   // pill carries the tick.
   const building = status === 'loading' && !report;
+  // The v2 preview spans the first build (when v2 is being asked for) and every ready v2 report
+  // that carries its phone layout. A v2 response without one falls back to the plain WebView.
+  const previewV2 = report ? hasPhonePreview(report) : askingV2 && building;
+  // A new document opens on its phone layout; "View as printed" is a look, not a mode.
+  useEffect(() => {
+    setPreviewView('phone');
+  }, [report]);
 
   // A `?pet=` naming a pet the account does not hold (a stale link, an archived pet):
   // say so, and build nothing. `requestParams` is null here, so no generate call and no
@@ -365,6 +386,8 @@ export default function ReportScreen() {
           state={composer}
           onPreview={onComposerPreview}
           onFallback={onComposerFallback}
+          includeNotes={includeNotes}
+          onIncludeNotesChange={setIncludeNotes}
         />
       </SafeAreaView>
     );
@@ -376,9 +399,26 @@ export default function ReportScreen() {
         title="Vet report"
         leading="back"
         onLeadingPress={() => (composerOn && previewed ? setPreviewed(false) : router.back())}
+        right={
+          previewV2 && status === 'ready' && report ? (
+            <TouchableOpacity
+              onPress={() => setPreviewView((v) => (v === 'phone' ? 'printed' : 'phone'))}
+              accessibilityRole="button"
+              accessibilityLabel={PREVIEW_TOGGLE_LABEL[previewView]}
+              style={styles.viewToggle}
+              testID="report-v2-view-toggle"
+            >
+              <ThemedText style={styles.viewToggleText}>{PREVIEW_TOGGLE_LABEL[previewView]}</ThemedText>
+            </TouchableOpacity>
+          ) : undefined
+        }
       />
 
-      {petId !== undefined && (
+      {/* PM ruling (a) on CUL-2297 (CUL-2400): arriving from the composer, the v2 preview has no
+          panel at all. The masthead's scope line names the window and the notes switch lives on
+          the composer, so the whole frame between the header and the send bar is the report's
+          and the band reaches the first screen. Every other path keeps its panel. */}
+      {petId !== undefined && !(composerOn && previewed && previewV2) && (
         <View style={styles.rangeBar}>
           <SectionLabel label="Report range" />
           {composerOn && previewed ? (
@@ -489,26 +529,8 @@ export default function ReportScreen() {
             />
           )}
 
-          <View style={styles.notesOption}>
-            <View style={styles.notesOptionText}>
-              <Text style={styles.notesOptionLabel}>Include your Noticed notes</Text>
-              {/* Two facts, and the second one is CUL-848's gap said out loud rather
-                  than left for the owner to discover on the document. A control named
-                  "your notes" that governs one of two note fields has to say which, or
-                  turning it off reads as a promise the report does not keep. */}
-              <Text style={styles.notesOptionHint}>
-                What you wrote on your daily looks, printed in the report’s Noticed appendix. Notes you
-                add to a meal or a symptom are always included.
-              </Text>
-            </View>
-            <Switch
-              value={includeNotes}
-              onValueChange={setIncludeNotes}
-              trackColor={{ true: colorRoles.action.onLight, false: theme.colorBorderStrong }}
-              ios_backgroundColor={theme.colorBorderStrong}
-              accessibilityLabel="Include your Noticed notes in the report"
-            />
-          </View>
+          {/* With the composer on, the switch lives on the composer (PM ruling (a) on CUL-2297). */}
+          {!composerOn && <ReportNotesOption value={includeNotes} onChange={setIncludeNotes} />}
 
           {resolvedLabel && <Text style={styles.rangeResolved}>{resolvedLabel}</Text>}
         </View>
@@ -529,15 +551,26 @@ export default function ReportScreen() {
       {(status === 'ready' || regenerating) && report && (
         <>
           <View style={styles.reportBody}>
+            {previewV2 ? (
+              <ReportPreviewV2
+                phoneHtml={report.phoneHtml}
+                printHtml={report.html}
+                view={previewView}
+                petName={petName}
+                working={status === 'loading'}
+                bandSlot={bandSlotFor(composer.open?.live)}
+              />
+            ) : (
             <WebView
               style={styles.web}
               originWhitelist={['*']}
               source={{ html: report.html }}
-              // The report is static, self-contained clinical HTML — no scripts, no
+              // The v1 report is static, self-contained clinical HTML — no scripts, no
               // third-party subresources (§8). Disabling JS keeps the surface minimal.
               javaScriptEnabled={false}
               showsVerticalScrollIndicator
             />
+            )}
             {regenerating && (
               // Quiet "we're refreshing" pill over the still-visible prior report —
               // pointerEvents=none so the report stays scrollable underneath.
@@ -615,7 +648,17 @@ export default function ReportScreen() {
       )}
       {/* First build: the report's own silhouette, mounted only while building, since it
           has no dissolve of its own — the report's blocks become the page. */}
-      {building && <ReportSilhouette petName={petName} working={building} />}
+      {building && previewV2 && (
+        <ReportPreviewV2
+          phoneHtml={null}
+          printHtml={null}
+          view="phone"
+          petName={petName}
+          working={building}
+          bandSlot={bandSlotFor(composer.open?.live)}
+        />
+      )}
+      {building && !previewV2 && <ReportSilhouette petName={petName} working={building} />}
       </View>
     </SafeAreaView>
   );
@@ -625,6 +668,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colorSurface },
   reportBody: { flex: 1 },
   web: { flex: 1, backgroundColor: theme.colorSurface },
+  viewToggle: { minHeight: theme.hitTarget, justifyContent: 'center' },
+  viewToggleText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: colorRoles.action.onLight,
+  },
 
   // ── Soft-refresh pill ──
   updatingOverlay: {
@@ -668,32 +717,6 @@ const styles = StyleSheet.create({
   customField: {
     flex: 1,
     gap: theme.space1,
-  },
-  // The notes option. A row, not a chip group: it is a two-state property of the
-  // document that carries a sentence of explanation, and a chip pair would put the
-  // explanation somewhere other than beside the control it explains.
-  notesOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    marginTop: theme.space2,
-    paddingTop: theme.space2,
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
-  },
-  notesOptionText: {
-    flex: 1,
-  },
-  notesOptionLabel: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-  },
-  notesOptionHint: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    marginTop: 2,
   },
   customFieldLabel: {
     fontFamily: theme.fontBody,

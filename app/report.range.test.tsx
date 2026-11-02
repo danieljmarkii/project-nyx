@@ -46,6 +46,7 @@ jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn()
 jest.mock('../lib/pdf', () => ({
   flushBeforeReport: jest.fn(async () => ({ pending: 0, quarantined: 0 })),
   reportFreshnessLine: () => null,
+  reportVersionFor: (eligible: boolean, optedIn: boolean) => (eligible && optedIn ? 'v2' : null),
   generateVetReport: jest.fn(),
   shareReportPdf: jest.fn(async () => true),
 }));
@@ -61,6 +62,7 @@ const mockedGenerate = generateVetReport as jest.Mock;
 
 const report: VetReport = {
   html: '<html>Mochi</html>',
+  phoneHtml: null,
   petName: 'Mochi',
   startDate: '2026-06-22',
   endDate: '2026-07-02',

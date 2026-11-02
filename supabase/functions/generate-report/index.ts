@@ -85,6 +85,7 @@ import {
 import { buildDocumentV2 } from './documentV2.ts'
 import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft } from './aiLead/run.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
+import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
 // re-implemented so the pull is stretched for exactly the trial the block describes; two
@@ -1151,21 +1152,26 @@ export async function generateReportForPet(
   // CUL-2290 — which document. v2 needs BOTH the request and the flag; the flag is read last and
   // only when v2 was asked for, so a v1 request costs no extra read.
   const documentV2On = documentRequest === 'v2' ? await reportDocumentV2On(supabase, callerJwt) : null
-  const html = documentV2On === true
-    ? renderPrintV2(
-        buildDocumentV2(snapshot, {
-          // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
-          owner: await readOwnerNames(supabase),
-          shortId: null,
-          questions: [],
-        }),
-      )
-    : renderReport(snapshot)
+  // VR2-17 (CUL-2297): the v2 path builds ONE document and lays it out twice, the printed page
+  // (`html`, what the PDF and every caller before the preview read) and the phone reflow
+  // (`phone_html`, the preview's main frame). One build, so the two can never disagree on a word,
+  // a flag or an order (spec §3.4, §10.2). v1 has no phone layout: `phone_html` is null there.
+  const doc = documentV2On === true
+    ? buildDocumentV2(snapshot, {
+        // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
+        owner: await readOwnerNames(supabase),
+        shortId: null,
+        questions: [],
+      })
+    : null
+  const html = doc !== null ? renderPrintV2(doc) : renderReport(snapshot)
+  const phoneHtml = doc !== null ? renderPhoneV2(doc) : null
 
   return {
     status: 200,
     body: {
       html,
+      phone_html: phoneHtml,
       // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
       report_version: documentV2On === true ? 'v2' : 'v1',
       report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },

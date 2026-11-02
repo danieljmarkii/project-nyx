@@ -19,7 +19,7 @@
 //
 // Usage:
 //   deno run --allow-read --allow-write --allow-env scripts/report-phone/dump.deno.ts <dir>
-//   node scripts/report-phone/guard.mjs <dir> [--shots <dir>]
+//   node scripts/report-phone/guard.mjs <dir> [--shots <dir>] [--sizes WxH,WxH]
 // Needs Playwright's Chromium and Python's pypdf (the text layer). Exits 1 on any failure.
 import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
@@ -44,15 +44,28 @@ const SIZES = [
   { name: '320pt-short', width: 320, height: 460, band: false },
   { name: '390pt', width: 390, height: 844, band: true },
 ]
+// CUL-2383 — `--sizes 320x394,390x609` replaces the sizes above with the host's real frames: the
+// WebView's height once the app's header and send bar take theirs (the preview's bars inset the
+// frame, never overlay it, so `innerHeight` is this number). Every host size checks the band.
+const sizesAt = process.argv.indexOf('--sizes')
+if (sizesAt > 0) {
+  SIZES.length = 0
+  for (const spec of process.argv[sizesAt + 1].split(',')) {
+    const m = /^(\d+)x(\d+)$/.exec(spec.trim())
+    if (!m) throw new Error(`--sizes takes WxH,WxH (got "${spec}")`)
+    SIZES.push({ name: `host-${m[1]}x${m[2]}`, width: Number(m[1]), height: Number(m[2]), band: true })
+  }
+}
 const SCALES = [1, 2.35, 3.1]
-const BAND_SCALES = [1, 2.35]
+// 3.1 joined with PR-17 (adversarial pass 1 on CUL-2297): AX5 had no first-frame check at all.
+const BAND_SCALES = [1, 2.35, 3.1]
 const MIN_PX = 11
 /** The pinned warning never takes more than this share of the screen: the bars must show under it. */
 const PIN_MAX_SHARE = 0.4
 
 const fixtures = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8'))
 const failures = []
-const seenCounts = { fixtures: 0, bandChecked: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0 }
+const seenCounts = { fixtures: 0, bandChecked: 0, pointerShown: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0 }
 const fail = (where, what) => failures.push(`${where}: ${what}`)
 
 /** Dynamic Type as iOS applies it: the root's resolved size, and nothing else. */
@@ -93,8 +106,22 @@ async function screenChecks(page, where, s, size) {
         }
       }
       if (checkBand) {
-        const h2 = document.querySelector('[data-block="band"] h2')
-        if (h2) out.band = { bottom: h2.getBoundingClientRect().bottom, H }
+        // The first warning: the band's heading, or the flagged lead chart's where no band prints
+        // (a sole chronicity flag; adversarial pass 1 on PR-17).
+        const h2 = document.querySelector('[data-block="band"] h2') || document.querySelector('[data-block="lead-chart"].flagged > h2.flagh')
+        if (h2) {
+          // Where the heading itself cannot reach the first frame, the sheet's first-warning line
+          // carries its words there (PM ruling (a) on CUL-2297): shown, whole inside the frame, and
+          // the heading's own text, never other words.
+          const fw = document.querySelector('[data-part="first-warning"]')
+          const fwShown = !!fw && !fw.hidden && getComputedStyle(fw).display !== 'none'
+          const fr = fwShown ? fw.getBoundingClientRect() : null
+          out.band = {
+            bottom: h2.getBoundingClientRect().bottom,
+            H,
+            pointer: fwShown ? { top: fr.top, bottom: fr.bottom, same: fw.textContent.trim() === h2.textContent.trim() } : null,
+          }
+        }
       }
       return out
     },
@@ -103,7 +130,25 @@ async function screenChecks(page, where, s, size) {
   for (const o of r.overflow.slice(0, 5)) fail(where, `clipped: ${o}`)
   for (const o of r.small.slice(0, 5)) fail(where, `under 11pt: ${o}`)
   if (r.band) seenCounts.bandChecked++
-  if (r.band && r.band.bottom > r.band.H) fail(where, `the band's heading ends at ${r.band.bottom.toFixed(0)}pt, past the first frame (${r.band.H}pt)`)
+  if (r.band && r.band.bottom > r.band.H) {
+    const p = r.band.pointer
+    if (!p) fail(where, `the band's heading ends at ${r.band.bottom.toFixed(0)}pt, past the first frame (${r.band.H}pt), and no first-warning line shows`)
+    else if (!p.same) fail(where, 'the first-warning line does not say the heading\'s own words')
+    else if (p.top < -0.5 || p.bottom > r.band.H + 0.5) fail(where, `the first-warning line sits at ${p.top.toFixed(0)}..${p.bottom.toFixed(0)}pt, outside the first frame`)
+    else {
+      seenCounts.pointerShown++
+      // A tap takes the reader to the warning: its heading's top lands inside the frame.
+      const landed = await page.evaluate(() => {
+        document.querySelector('[data-part="first-warning"]').click()
+        const h2 = document.querySelector('[data-block="band"] h2') || document.querySelector('[data-block="lead-chart"].flagged > h2.flagh')
+        const t = h2.getBoundingClientRect().top
+        const ok = t >= -0.5 && t < window.innerHeight
+        window.scrollTo(0, 0)
+        return ok
+      })
+      if (!landed) fail(where, 'tapping the first-warning line does not bring the heading on screen')
+    }
+  }
   return r
 }
 
@@ -247,6 +292,18 @@ try {
         // Room past the last block so every frame can be scrolled to its top.
         await page.addStyleTag({ content: 'body{padding-bottom:100vh}' })
         await page.evaluate(() => window.__nyxV2Layout && window.__nyxV2Layout())
+        // A layout call is idempotent: a second call lays the same page (adversarial pass 2 on PR-17:
+        // a spacer left from the last call flipped the pointer on every call, and the guard's own
+        // extra call landed on the "shown" half, hiding the miss).
+        const state = () => page.evaluate(() => {
+          const fw = document.querySelector('[data-part="first-warning"]')
+          const push = document.querySelector('.keep-push')
+          const r = document.documentElement
+          return JSON.stringify([fw ? fw.hidden : null, push ? push.style.height : null, r.hasAttribute('data-compact'), r.hasAttribute('data-tight')])
+        })
+        const once = await state()
+        await page.evaluate(() => window.__nyxV2Layout && window.__nyxV2Layout())
+        if ((await state()) !== once) fail(where, `a second layout call changed the page (${once} → ${await state()})`)
         await screenChecks(page, where, s, size)
         const unit = await keepChecks(page, where)
         if (s === 1) {

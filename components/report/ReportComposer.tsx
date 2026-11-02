@@ -3,6 +3,7 @@ import { AccessibilityInfo, Animated, Pressable, ScrollView, StyleSheet, View } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { PrimaryButton, Skeleton, ThemedText } from '../ui';
+import { ReportNotesOption } from './ReportNotesOption';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import type { ReportComposerState } from '../../hooks/useReportComposer';
@@ -61,9 +62,12 @@ interface Props {
   onPreview: (w: ComposerWindow) => void;
   /** The first read failed: build the report's own default window without choosing. */
   onFallback: () => void;
+  /** "Include your Noticed notes" lives here with the composer on (PM ruling (a) on CUL-2297). */
+  includeNotes: boolean;
+  onIncludeNotesChange: (v: boolean) => void;
 }
 
-export function ReportComposer({ petId, petName, state: c, onPreview, onFallback }: Props) {
+export function ReportComposer({ petId, petName, state: c, onPreview, onFallback, includeNotes, onIncludeNotesChange }: Props) {
   const insets = useSafeAreaInsets();
   const [sheetOpen, setSheetOpen] = useState(false);
   const reducedMotion = useReducedMotion();
@@ -302,6 +306,7 @@ export function ReportComposer({ petId, petName, state: c, onPreview, onFallback
             </View>
           )}
         </View>
+        <ReportNotesOption value={includeNotes} onChange={onIncludeNotesChange} />
       </ScrollView>
 
       <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>

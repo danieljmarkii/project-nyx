@@ -46,6 +46,9 @@ export const BODY_PX = 17
  *  PIN_MAX_SHARE). It repeats words that print at full size in their own place below. */
 export const VERDICT_MAX_SCALE = 1.25
 export const VERDICT_MAX_PX = Math.round(BODY_PX * VERDICT_MAX_SCALE)
+/** The most of the frame the pinned repeat may take before its type steps down (PM ruling (a) on
+ *  CUL-2297): under the guard's 40%, so the bars always show beneath it. */
+export const PIN_SHARE = 0.38
 
 const SIGN_ROW_H = 34
 const BAR_H = 22
@@ -341,6 +344,9 @@ svg .cnt{font-size:${SVG_TEXT_MIN}px;fill:var(--ink);font-weight:600;}
 svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
 .mast .more{display:none;}
+.firstwarn{display:block;width:100%;min-height:44px;margin:0 0 0.4rem;padding:0.2rem 0;border:0;border-bottom:1.5px solid var(--ink);background:none;color:var(--concern);font:inherit;font-weight:650;font-size:min(1rem, ${VERDICT_MAX_PX}px);text-align:left;}
+.firstwarn::after{content:" ↓" / "";}
+.firstwarn[hidden]{display:none;}
 ${BACK_STYLE_PHONE_SCREEN}
 @media screen{
 [data-compact] .mast .more{display:block;min-height:44px;width:100%;margin:0.1rem 0;padding:0.15rem 0;border:0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);background:none;color:var(--ink2);font:inherit;font-size:0.875rem;text-align:left;}
@@ -371,53 +377,118 @@ h2{font-size:9pt;}
 .rl,.axis,.parts,.qs .ptr{font-size:8pt;}
 .rl.sub{font-size:7pt;}
 .verdict{display:none;}
+.firstwarn{display:none;}
 .keep-push{display:none;}
 .keep,.leadchart{break-inside:avoid;}
 ${BACK_STYLE_PHONE_PRINT}}
 `
 
-// The layout script: compaction at font scale 1.6 and the keep-together rule. It measures a
+// The layout script: compaction at font scale 1.6 (or wherever the band would miss the first
+// frame), the pin's cap against the frame, and the keep-together rule. It measures a
 // 1rem probe rather than reading `font-size`, because Android's `textZoom` scales the text it
 // draws without changing the computed style.
 const SCRIPT_PHONE = `
 (function(){
   var root = document.documentElement;
   function scale(){ var p = document.getElementById('v2probe'); return p ? p.getBoundingClientRect().height / ${BODY_PX} : 1; }
-  function lay(){
-    if (scale() >= ${COMPACT_SCALE}) root.setAttribute('data-compact', ''); else root.removeAttribute('data-compact');
-    // The band is the warning, so it outranks the brief for the first frame: the brief folds too
-    // only where it would push the band's heading out of that frame (320pt at large text).
-    root.removeAttribute('data-tight');
-    var bandH = document.querySelector('[data-block=band] h2');
-    var mast = document.querySelector('.mast');
-    if (root.hasAttribute('data-compact') && bandH && mast && !mast.hasAttribute('data-open') && bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) {
-      root.setAttribute('data-tight', '');
-      // Fold the brief only where folding brings the band into the frame; otherwise it costs the
-      // species for nothing (adversarial pass 2 on CUL-2295).
-      if (bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight) root.removeAttribute('data-tight');
-    }
-    var unit = document.querySelector('[data-keep="lead"]');
-    var push = document.querySelector('.keep-push');
-    if (!unit || !push) return;
-    var rep = unit.querySelector('[data-part="confounder-verdict"]');
+  function bandPast(bandH){ return bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight; }
+  function firstLineIn(el){ var cs = getComputedStyle(el); var line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3; return el.getBoundingClientRect().top + window.pageYOffset + line <= window.innerHeight; }
+  var first = document.querySelector('[data-part=first-warning]');
+  // The keep-together spacer for a unit that fits a frame: from zero, so every call measures the
+  // same page (adversarial pass 2 on PR-17: a spacer left from the last call flipped the pointer).
+  function pushUnit(unit, push){
     push.style.height = '0px';
-    root.style.scrollPaddingTop = '';
-    // The repeat always shows. Hiding it when the unit fits a frame left 220 to 440pt of resting
-    // scroll positions with the bars on screen and the confounder below it (adversarial pass on
-    // CUL-2295): a free scroll has no frames, so only a sentence pinned beside the bars holds.
-    if (rep) rep.hidden = false;
-    // A page-step scroll (VoiceOver, a keyboard) lands below the pinned repeat, so nothing the
-    // repeat covers is skipped between one screen and the next (cold read on CUL-2295).
-    if (rep) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';
     var frame = window.innerHeight;
     if (!frame) return;
-    var fits = unit.getBoundingClientRect().height <= frame;
-    if (!fits) return;
+    if (unit.getBoundingClientRect().height > frame) return;
     var top = unit.getBoundingClientRect().top + window.pageYOffset;
     var k = Math.floor(top / frame);
     var end = top + unit.getBoundingClientRect().height;
     if (end > (k + 1) * frame) push.style.height = ((k + 1) * frame - top) + 'px';
   }
+  function lay(){
+    // Every layout starts from the same page: no fold, no pointer, no spacer, no padding.
+    root.removeAttribute('data-tight');
+    if (first) first.hidden = true;
+    var push0 = document.querySelector('.keep-push');
+    if (push0) push0.style.height = '0px';
+    root.style.scrollPaddingTop = '';
+    // The first warning on the page: the band's heading, or, where the only flag is drawn on the
+    // lead chart itself (a sole chronicity flag, \`bandMembersOf\`), that chart's flag heading
+    // (adversarial pass 1 on PR-17, CUL-2297: r11-steady carried its flag below the fold).
+    var bandH = document.querySelector('[data-block=band] h2') || document.querySelector('[data-block=lead-chart].flagged > h2.flagh');
+    var mast = document.querySelector('.mast');
+    // Compact at font scale 1.6, and ALSO at any scale where the full masthead would push the
+    // band's heading out of the first frame (PM ruling (a) on CUL-2297, CUL-2400): the app's
+    // header and send bar leave a 320pt phone about 394pt, and the full signalment alone runs to
+    // 446pt. An owner who opened the details keeps the compact layout, so the fold control stays.
+    var compact = scale() >= ${COMPACT_SCALE} || !!(mast && mast.hasAttribute('data-open'));
+    if (!compact && bandH) {
+      root.removeAttribute('data-compact');
+      compact = bandPast(bandH);
+    }
+    if (compact) root.setAttribute('data-compact', ''); else root.removeAttribute('data-compact');
+    // The band is the warning, so it outranks the brief for the first frame: the brief folds too
+    // only where it would push the band's heading out of that frame (320pt at large text).
+    if (compact && bandH && mast && !mast.hasAttribute('data-open') && bandPast(bandH)) {
+      root.setAttribute('data-tight', '');
+      // Fold the brief only where folding brings the band into the frame; otherwise it costs the
+      // species for nothing (adversarial pass 2 on CUL-2295). "Into the frame" is the band's own
+      // box, not its whole heading (PM ruling (a) on CUL-2297): on a 320pt phone at large text the
+      // heading wraps to three lines, and its first line on the first screen is still the warning
+      // arriving a screen sooner than with the brief open.
+      // The fold must buy the first LINE of the warning's heading, never a sliver of its border
+      // (adversarial pass 1 on PR-17: 6pt of the box cost the species for no words).
+      if (bandPast(bandH) && !firstLineIn(bandH)) root.removeAttribute('data-tight');
+    }
+    var unit = document.querySelector('[data-keep="lead"]');
+    var push = document.querySelector('.keep-push');
+    var rep = unit ? unit.querySelector('[data-part="confounder-verdict"]') : null;
+    // The repeat always shows. Hiding it when the unit fits a frame left 220 to 440pt of resting
+    // scroll positions with the bars on screen and the confounder below it (adversarial pass on
+    // CUL-2295): a free scroll has no frames, so only a sentence pinned beside the bars holds.
+    if (rep) rep.hidden = false;
+    // The pin is capped against THIS frame, not a fixed scale (PM ruling (a) on CUL-2297): it
+    // repeats words printed at full size below, so where it would take more than PIN_SHARE of the
+    // frame its type steps down. The 11px floor wins over the share: a very long confounder at
+    // 320pt can still take more (adversarial pass 1 measured 57%), which errs toward the warning.
+    if (rep) {
+      rep.style.fontSize = '';
+      var px = parseFloat(getComputedStyle(rep).fontSize);
+      while (window.innerHeight && rep.getBoundingClientRect().height > ${PIN_SHARE} * window.innerHeight && px > ${SVG_TEXT_MIN}) {
+        px = Math.max(${SVG_TEXT_MIN}, px - 1);
+        rep.style.fontSize = px + 'px';
+      }
+    }
+    // A page-step scroll (VoiceOver, a keyboard) lands below the pinned repeat, so nothing the
+    // repeat covers is skipped between one screen and the next (cold read on CUL-2295).
+    if (rep) root.style.scrollPaddingTop = rep.getBoundingClientRect().height + 'px';
+    if (unit && push) pushUnit(unit, push);
+    // THE FIRST WARNING'S POINTER (PM ruling (a) on CUL-2297, CUL-2400). Where the page as laid,
+    // spacer included, still leaves the first warning's heading past the first frame (320pt at
+    // large text, AX5, a flag drawn only on the lead chart that the spacer carries down), its own
+    // words print as one line at the top of the sheet, and a tap takes the reader to it. It
+    // repeats the heading verbatim (never a flag the PDF lacks, BRK-1), is a part and not a block
+    // (parity, spec §3.4), and never prints. Decided LAST, after the spacer (adversarial pass 2 on
+    // PR-17: decided before it, a chart-only flag fell below the fold with no pointer).
+    if (first && bandH && bandPast(bandH)) {
+      first.textContent = bandH.textContent;
+      first.hidden = false;
+      // The pointer carries the words now, so a fold that bought only the heading's first line
+      // gives the species back (adversarial pass 2: the pointer pushed that line out again).
+      root.removeAttribute('data-tight');
+      // Both changes move the page: lay the spacer again from zero. The pointer stays: nothing
+      // after this moves the heading up.
+      if (unit && push) pushUnit(unit, push);
+    }
+  }
+  if (first) first.addEventListener('click', function(){
+    var target = document.querySelector('[data-block=band] h2') || document.querySelector('[data-block=lead-chart].flagged > h2.flagh');
+    if (!target) return;
+    target.setAttribute('tabindex', '-1');
+    target.scrollIntoView({ block: 'start' });
+    target.focus({ preventScroll: true });
+  });
   var more = document.querySelector('.mast .more');
   if (more) more.addEventListener('click', function(){
     var mast = more.parentNode;
@@ -460,6 +531,7 @@ export function renderPhoneV2(doc: DocumentV2): string {
 <body>
 <span id="v2probe" aria-hidden="true">M</span>
 <main class="sheet" data-sheet="1">
+<button class="firstwarn" type="button" data-part="first-warning" hidden></button>
 ${body(doc)}
 </main>
 ${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}
