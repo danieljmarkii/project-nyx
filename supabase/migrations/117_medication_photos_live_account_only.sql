@@ -12,7 +12,7 @@
 -- post-delete sweep had listed that folder and returned ok: true. The file then
 -- outlived its account with nothing recording it.
 --
--- THE CLASS (closed here; guards/storageWritePolicies.test.ts keeps it closed).
+-- THE CLASS (closed here; lib/storagePolicies.test.ts keeps it closed).
 -- Every other bucket's INSERT and UPDATE policies key on a row the deletion
 -- cascade removes: the pet buckets (event / vet attachments, vet documents, pet
 -- photos) join pets (user_id ON DELETE CASCADE), and nyx-food-photos joins
@@ -33,10 +33,13 @@
 -- remove its own leftovers, which only helps the sweep. UPDATE gets the check
 -- in USING and in WITH CHECK, so an upsert overwrite is refused as well.
 --
--- What this does NOT cover: a write that commits before deleteUser commits.
--- That file exists when the post-delete sweep lists the folder, so the sweep
--- removes it (CUL-2314). The orphan sweep (CUL-231) stays the backstop for any
--- path the policies cannot see.
+-- What this does NOT cover: storage-api checks an upload's policy as
+-- `authenticated` and then writes the row as superuser once the bytes are
+-- stored. So an upload whose check passed BEFORE the delete and whose row lands
+-- AFTER the post-delete sweep listed the folder is outside any policy; the
+-- window is as long as the upload body takes (delete-account plan.ts's blind
+-- spot (3)). The orphan sweep (CUL-231) is the backstop for that and for any
+-- other path the policies cannot see.
 --
 -- Migration Safety Pre-flight:
 --   Rollback plan — re-create 021's two policies (the ROLLBACK block below).

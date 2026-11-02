@@ -577,7 +577,9 @@ describe('no Storage bucket is public', () => {
 // `user_profiles` (id), each `REFERENCES auth.users ON DELETE CASCADE`. And no
 // clause may OR around that lookup, which would leave a path-only branch open.
 //
-// Mutants, run against this block 2026-11-02, every one killed:
+// Mutants, run against this block 2026-11-02, every one killed. The first six
+// are the author's; R1 to R7 are the rls-privacy-reviewer's survivors of the
+// first cut (each passed 21/21 there):
 //   ✗ 117 deleted (021's path-only label policies are live again)
 //   ✗ 117's EXISTS dropped from the INSERT only
 //   ✗ 117's EXISTS dropped from the UPDATE's USING and WITH CHECK
@@ -585,16 +587,47 @@ describe('no Storage bucket is public', () => {
 //     account) instead of `user_profiles`
 //   ✗ the lookup kept but OR'd with the path-only test
 //   ✗ the lookup keyed on a literal uuid instead of `auth.uid()`
+//   ✗ R1 117 rewritten to `NOT EXISTS (…)` (true once the row is gone)
+//   ✗ R2 a later file adds `NOT EXISTS (… AND p.deletion_requested_at IS NOT NULL)`
+//   ✗ R3 `(SELECT count(*) FROM user_profiles p WHERE p.id = auth.uid()) >= 0`
+//   ✗ R4 `ALTER POLICY "…: owner insert" ON storage.objects WITH CHECK (<path only>)`
+//   ✗ R5 a CREATE POLICY with an unquoted name
+//   ✗ R6 a CREATE POLICY on `"storage"."objects"`
+//   ✗ R7 a DROP POLICY on `"storage"."objects"`
+//
+// So the anchor is a SHAPE, not a substring: the lookup is the whole of an
+// `IN ( SELECT … )` or an `EXISTS (SELECT 1 …)` whose subquery ends at the
+// caller's key, never under a NOT. A lookup that needs another condition (a
+// deletion flag, a status) fails here on purpose, and is a review, not a pass.
+// And every POLICY statement that names storage.objects in any spelling must be
+// one the replay above parsed; ALTER POLICY on it is refused outright.
 //
 // STATED BLIND SPOTS: this reads the repo, not the database (117's VERIFY
 // queries read the live policies). It does not re-check that the three anchor
 // tables still cascade from auth.users; that was measured live on 2026-11-02 and
-// a migration that weakened one would be its own schema PR. SELECT and DELETE
-// are deliberately out of scope: a stale token reading or removing its own
-// leftovers writes nothing new.
+// a migration that weakened one would be its own schema PR. A policy made
+// through a DO block's EXECUTE is invisible. SELECT and DELETE are deliberately
+// out of scope: a stale token reading or removing its own leftovers writes
+// nothing new. Storage-api checks an upload as `authenticated` and then writes
+// the row as superuser, so an upload checked just before the delete and
+// committed after the sweep is outside any policy (delete-account plan.ts's
+// blind spot (3); the orphan sweep, CUL-231, is the backstop).
 
-const CASCADE_ANCHOR_RE =
-  /\bFROM\s+(?:public\.)?(?:pets|food_items|user_profiles)\b(?:\s+\w+)?\s+WHERE\s+[\w.]*(?:user_id|created_by_user_id|id)\s*=\s*auth\.uid\(\)/i;
+// One subquery, ending at the caller's key: `IN ( SELECT <col> FROM <anchor>
+// WHERE <key> = auth.uid() )` or `EXISTS (SELECT 1 FROM <anchor> [alias] WHERE
+// [alias.]<key> = auth.uid())`. The closing paren right after auth.uid() is the
+// point: nothing may be ANDed into the subquery.
+const CASCADE_ANCHOR_RE = new RegExp(
+  String.raw`(?:\bIN\s*\(\s*SELECT\s+[\w.:]+(?:\s+AS\s+\w+)?|\bEXISTS\s*\(\s*SELECT\s+1)` +
+    String.raw`\s+FROM\s+(?:public\.)?(?:pets\s+WHERE\s+(?:\w+\.)?user_id|food_items\s+WHERE\s+(?:\w+\.)?created_by_user_id|user_profiles(?:\s+\w+)?\s+WHERE\s+(?:\w+\.)?id)` +
+    String.raw`\s*=\s*auth\.uid\(\)\s*\)`,
+  'i',
+);
+
+// Every POLICY statement naming storage.objects, in any spelling: quoted or
+// bare schema and table, quoted or bare policy name.
+const ANY_STORAGE_POLICY_RE =
+  /\b(CREATE|DROP|ALTER)\s+POLICY\b[^;]*?\bON\s+"?storage"?\s*\.\s*"?objects"?(?=[\s;]|$)/gi;
 
 describe('a deleted account can no longer write to Storage (CUL-2327, 117)', () => {
   const writes = policies.filter((p) => p.cmd === 'INSERT' || p.cmd === 'UPDATE' || p.cmd === 'ALL');
@@ -614,19 +647,39 @@ describe('a deleted account can no longer write to Storage (CUL-2327, 117)', () 
     expect(open).toEqual([]);
   });
 
-  it('never ORs around the lookup', () => {
-    const ored = writes.flatMap((p) =>
-      p.clauses.filter((c) => /\bOR\b/i.test(c.body)).map((c) => `${p.file}: ${p.name} [${c.kind}]`),
+  it('never ORs around the lookup, and never negates it', () => {
+    // NOT EXISTS over a row the cascade removed is TRUE once the account is
+    // gone: the door re-opens for exactly the token this block exists to stop.
+    const bent = writes.flatMap((p) =>
+      p.clauses.filter((c) => /\b(?:OR|NOT)\b/i.test(c.body)).map((c) => `${p.file}: ${p.name} [${c.kind}]`),
     );
-    expect(ored).toEqual([]);
+    expect(bent).toEqual([]);
+  });
+
+  it('parses every policy statement on storage.objects, and none alters one in place', () => {
+    // The replay reads `CREATE|DROP POLICY "<name>" ON storage.objects` only.
+    // A spelling it cannot read would change the live set unseen, so each
+    // migration's loose count must equal its parsed count; ALTER POLICY is
+    // never parsed, so any one on storage.objects fails here.
+    const unread: string[] = [];
+    for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()) {
+      const sql = stripSqlComments(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
+      const loose = [...sql.matchAll(ANY_STORAGE_POLICY_RE)];
+      const parsed = [...sql.matchAll(CREATE_POLICY_RE)].length + [...sql.matchAll(DROP_POLICY_RE)].length;
+      for (const m of loose) if (m[1].toUpperCase() === 'ALTER') unread.push(`${file}: ALTER POLICY`);
+      if (loose.length !== parsed) unread.push(`${file}: ${loose.length} policy statements, ${parsed} parsed`);
+    }
+    expect(unread).toEqual([]);
   });
 
   it('closes the label bucket in 117, on both write commands', () => {
     for (const name of ['nyx-medication-photos: owner insert', 'nyx-medication-photos: owner update']) {
       const p = policies.find((x) => x.name === name);
       expect(p?.file).toBe('117_medication_photos_live_account_only.sql');
+      expect(p?.clauses.length).toBe(name.endsWith('update') ? 2 : 1);
       for (const c of p?.clauses ?? []) {
-        expect(c.body).toMatch(/EXISTS \(SELECT 1 FROM public\.user_profiles p WHERE p\.id = auth\.uid\(\)\)/);
+        expect(c.body).toMatch(/ AND EXISTS \(SELECT 1 FROM public\.user_profiles p WHERE p\.id = auth\.uid\(\)\)$/);
+        expect(c.body).not.toMatch(/\bNOT\b/i);
       }
     }
   });
@@ -635,5 +688,18 @@ describe('a deleted account can no longer write to Storage (CUL-2327, 117)', () 
     // 021's predicate, verbatim: the path alone.
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'nyx-medication-photos' AND (storage.foldername(name))[1] = auth.uid()::text")).toBe(false);
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND (storage.foldername(name))[1] IN ( SELECT id::text FROM pets WHERE user_id = auth.uid() )")).toBe(true);
+    expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid())")).toBe(true);
+    // R2 and R3: a subquery with a condition ANDed in, or a count, is not the anchor.
+    expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.deleted)")).toBe(false);
+    expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND (SELECT count(*) FROM user_profiles p WHERE p.id = auth.uid()) >= 0")).toBe(false);
+    // R4 to R7: the loose statement reader sees every spelling.
+    for (const stmt of [
+      'ALTER POLICY "a" ON storage.objects WITH CHECK (true);',
+      'CREATE POLICY med_insert_v2 ON storage.objects FOR INSERT TO authenticated WITH CHECK (true);',
+      'CREATE POLICY "a" ON "storage"."objects" FOR INSERT TO authenticated WITH CHECK (true);',
+      'DROP POLICY IF EXISTS "a" ON "storage"."objects";',
+    ]) {
+      expect([...stmt.matchAll(ANY_STORAGE_POLICY_RE)].length).toBe(1);
+    }
   });
 });
