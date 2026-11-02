@@ -278,6 +278,21 @@ SELECT probe('L6: no consent row at all (B''s rows gone): refused', 'postgres', 
     UPDATE public.vet_reports SET ai_lead_text = 'Again.' WHERE id = 'd3d3d3d3-0000-4000-8000-000000000003'$$,
   w('23514', 'DA1=set DA2=set DB=set KA=set | A:ai_boundary=true,report_summary=true', '23514'));
 
+SELECT probe('L7: after a "no", a draft kept in the same write with a summary: refused (pass 2, F3)', 'postgres', NULL,
+  $$UPDATE public.ai_consent SET granted = false WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND scope = 'report_summary';
+    SET LOCAL ROLE service_role;
+    UPDATE public.vet_reports SET status = 'kept', shared_via = 'share', shared_at = now(), content_sha256 = repeat('ef', 32),
+           ai_lead_text = 'Late.', ai_lead_model = 'model-x',
+           ai_lead_verdict = '{"outcome":"printed","sentences":[{"text":"Late."}]}'
+     WHERE id = 'd5d5d5d5-0000-4000-8000-000000000005'$$,
+  w('23514', 'DA1=set DA2=set DB=set KA=set | A:ai_boundary=true,report_summary=false', '23514'));
+
+SELECT probe('L8: after a "no", a kept copy inserted with a summary: refused (pass 2, F3)', 'postgres', NULL,
+  $$UPDATE public.ai_consent SET granted = false WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND scope = 'report_summary';
+    SET LOCAL ROLE service_role;
+    SELECT seed_report('d6d6d6d6-0000-4000-8000-000000000006', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true)$$,
+  w('23514', 'DA1=set DA2=set DB=set KA=set KA=set | A:ai_boundary=true,report_summary=false', '23514'));
+
 \o
 \echo
 SELECT n, CASE WHEN want = got THEN 'PASS' ELSE 'FAIL' END AS r, label, who, want, got,

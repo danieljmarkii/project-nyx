@@ -53,10 +53,20 @@
 -- maker holds a yes to BOTH scopes. The pipeline reads a refused write as
 -- `draft_not_found` and returns no summary (aiLead/leadPipeline.ts record).
 -- Verdicts with no model output (declined, left out, the keep's settle) pass.
--- It reads the two consent rows FOR SHARE: a "no" being written holds those
--- rows until it commits, so the write waits and then sees it; and a write
--- that read them first makes the "no" wait, after which §1's clear finds the
--- summary and removes it. Either order ends with no summary on the draft.
+-- It reads the two consent rows FOR SHARE SKIP LOCKED, so the write NEVER
+-- waits on a consent row:
+--   * a "no" being written holds its row, which the write skips; a skipped
+--     row is not a yes, so the write is refused (fail closed);
+--   * a write that read them first holds them FOR SHARE, so the "no" waits
+--     for it, and §1's clear then finds the summary and removes it.
+-- A plain FOR SHARE deadlocked with §1 (rls-privacy-reviewer pass 2, F1:
+-- §1b holds the draft row and waits on consent, §1 holds consent and waits on
+-- the draft row; measured, 94 of 300 races left a summary behind a "no").
+-- With SKIP LOCKED the cycle cannot form. The cost is that a write landing
+-- during ANY consent write by the same owner (a yes re-given) is refused too,
+-- which the pipeline reads as no summary this time.
+-- It judges every INSERT and every UPDATE of a row that WAS a draft (pass 2,
+-- F3: a draft-to-kept write in one statement must not carry a summary past it).
 -- The wording version of a yes is not checked here (it lives in code,
 -- REPORT_SUMMARY_COPY_VERSION); the pipeline's gate checks it.
 --
@@ -177,8 +187,12 @@ AS $$
 DECLARE
   granted_both boolean;
 BEGIN
-  IF NEW.status = 'draft'
-     AND (NEW.ai_lead_text IS NOT NULL
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.status <> 'draft' THEN
+      RETURN NEW;  -- a kept row: 113's content freeze holds it
+    END IF;
+  END IF;
+  IF (NEW.ai_lead_text IS NOT NULL
           OR NEW.ai_lead_model IS NOT NULL
           OR jsonb_typeof(NEW.ai_lead_verdict -> 'sentences') = 'array'
           OR jsonb_typeof(NEW.ai_lead_verdict -> 'checker') = 'object')
@@ -186,13 +200,14 @@ BEGIN
           OR NEW.ai_lead_text IS DISTINCT FROM OLD.ai_lead_text
           OR NEW.ai_lead_verdict IS DISTINCT FROM OLD.ai_lead_verdict
           OR NEW.ai_lead_model IS DISTINCT FROM OLD.ai_lead_model) THEN
-    -- FOR SHARE waits on a "no" being written, then reads it (header §1b).
+    -- SKIP LOCKED: never wait on a consent row; a row being written is not a
+    -- yes (header §1b).
     SELECT count(*) = 2 INTO granted_both
       FROM (SELECT 1 FROM public.ai_consent c
              WHERE c.user_id = NEW.generated_by
                AND c.scope IN ('ai_boundary', 'report_summary')
                AND c.granted
-               FOR SHARE) yes;
+               FOR SHARE SKIP LOCKED) yes;
     IF NOT granted_both THEN
       -- Names no value (C-31).
       RAISE EXCEPTION
@@ -216,7 +231,7 @@ CREATE TRIGGER trg_vet_reports_summary_needs_consent
   FOR EACH ROW EXECUTE FUNCTION public.vet_reports_summary_needs_consent();
 
 COMMENT ON FUNCTION public.vet_reports_summary_needs_consent() IS
-  'CUL-2377 (118): a draft write that puts model output in the AI summary columns (ai_lead_text, ai_lead_model, or a verdict carrying sentences or checker) is refused unless the maker holds a yes to both ai_boundary and report_summary, read FOR SHARE so a concurrent "no" is waited for. Verdicts with no model output pass; kept rows are not judged here (113''s content freeze holds them). SECURITY DEFINER (reads ai_consent for the service role''s writes), search_path empty, message names no value (C-31).';
+  'CUL-2377 (118): an INSERT, or an UPDATE of a row that was a draft, that puts model output in the AI summary columns (ai_lead_text, ai_lead_model, or a verdict carrying sentences or checker) is refused unless the maker holds a yes to both ai_boundary and report_summary, read FOR SHARE SKIP LOCKED (never waits; a consent row being written counts as no yes, which avoids a lock cycle with clear_draft_summary_on_withdrawal). Verdicts with no model output pass; rows already kept are not judged here (113''s content freeze holds them). SECURITY DEFINER (reads ai_consent for the service role''s writes), search_path empty, message names no value (C-31).';
 
 
 -- ============================================================

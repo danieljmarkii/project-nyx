@@ -624,7 +624,9 @@ describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
 // WHEN; the function made SECURITY INVOKER. Pass 1's fixes (§1b, lock_timeout),
 // run the same way: FOR SHARE dropped; the scope list narrowed to one; the
 // count bound loosened to >= 1; the checker test dropped; the RAISE turned to
-// a WARNING; the trigger made UPDATE-only; lock_timeout dropped.
+// a WARNING; the trigger made UPDATE-only; lock_timeout dropped. Pass 2's
+// fixes: SKIP LOCKED dropped (the deadlock that left a summary behind a "no");
+// the former-draft test turned back into NEW.status = 'draft' (F3).
 // Blind spots, stated: a DO block's EXECUTE; a trigger disabled in the
 // dashboard (VERIFY covers it); a later CREATE OR REPLACE TRIGGER under
 // another name that calls the same function with a wider WHEN.
@@ -666,16 +668,19 @@ describe('vet_reports draft summary withdrawal clear (CUL-2377, migration 118)',
     expect(header).toMatch(/SET lock_timeout = '2s'/);
   });
 
-  it('refuses a draft write carrying model output unless the maker holds both yeses, read FOR SHARE', () => {
+  it('refuses a draft write carrying model output unless the maker holds both yeses, read FOR SHARE SKIP LOCKED', () => {
     const { header, body } = lastFunctionIn(sql, 'vet_reports_summary_needs_consent');
     expect(header).toMatch(/SECURITY DEFINER/);
     expect(header).toMatch(/SET search_path = ''/);
     const flat = body.replace(/\s+/g, ' ');
+    expect(flat).not.toMatch(/NEW\.status/);
+    expect(flat.match(/RETURN NEW;/g)?.length).toBe(2);
     expect(flat).toContain(
-      "IF NEW.status = 'draft' AND (NEW.ai_lead_text IS NOT NULL OR NEW.ai_lead_model IS NOT NULL OR jsonb_typeof(NEW.ai_lead_verdict -> 'sentences') = 'array' OR jsonb_typeof(NEW.ai_lead_verdict -> 'checker') = 'object')",
+      // Every INSERT, and every UPDATE of a row that WAS a draft (pass 2, F3).
+      "IF TG_OP = 'UPDATE' THEN IF OLD.status <> 'draft' THEN RETURN NEW; END IF; END IF; IF (NEW.ai_lead_text IS NOT NULL OR NEW.ai_lead_model IS NOT NULL OR jsonb_typeof(NEW.ai_lead_verdict -> 'sentences') = 'array' OR jsonb_typeof(NEW.ai_lead_verdict -> 'checker') = 'object')",
     );
     expect(flat).toContain(
-      "SELECT count(*) = 2 INTO granted_both FROM (SELECT 1 FROM public.ai_consent c WHERE c.user_id = NEW.generated_by AND c.scope IN ('ai_boundary', 'report_summary') AND c.granted FOR SHARE) yes; IF NOT granted_both THEN RAISE EXCEPTION 'vet_reports: an AI summary needs the maker''s consent' USING ERRCODE = 'check_violation';",
+      "SELECT count(*) = 2 INTO granted_both FROM (SELECT 1 FROM public.ai_consent c WHERE c.user_id = NEW.generated_by AND c.scope IN ('ai_boundary', 'report_summary') AND c.granted FOR SHARE SKIP LOCKED) yes; IF NOT granted_both THEN RAISE EXCEPTION 'vet_reports: an AI summary needs the maker''s consent' USING ERRCODE = 'check_violation';",
     );
     const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_summary_needs_consent\b/);
     expect(create).toBeGreaterThan(-1);
