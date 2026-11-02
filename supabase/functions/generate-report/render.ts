@@ -6757,6 +6757,17 @@ function legibleReadCount(n: number): string {
 }
 
 /** Vomit characteristics (§3.6) — assessed denominators + present-only blood/foreign. */
+/**
+ * CUL-2390 instance 2 — the not-a-clearance caveat beside a PRESENT finding. One finding shown
+ * (foreign material, say) used to drop the caveat for the other (blood), even with most incidents
+ * unread. The sentence is scoped to what is not listed, so it never asserts an absence and never
+ * becomes a "0 of N"; its reasons are the nothing-seen branch's, word for word.
+ */
+const VOMIT_NOT_LISTED_CAVEAT =
+  'What is not listed here is <b>not</b> a clearance &mdash; a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads.'
+const STOOL_NOT_LISTED_CAVEAT =
+  'What is not listed here is <b>not</b> a clearance &mdash; a photo cannot exclude bleeding, digested (melena) blood darkens the whole stool rather than showing as red, and these are AI reads.'
+
 export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers = V1_SECTION_POINTERS): string {
   const p = snap.vomitPhenotype
   if (!p) return ''
@@ -6869,7 +6880,7 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
         <span class="h">Present findings</span>
         ${lines.join('<br/>')}<br/>Shown because present. ${aiBadge()} ${
       blood.length > 0 || foreign.length > 0 ? 'These lead the flags for review above.' : ''
-    }
+    }<br/>${VOMIT_NOT_LISTED_CAVEAT}
       </div>`
   }
 
@@ -6954,7 +6965,14 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // with no second part, which three cold-read lenses each named. One category prints as its
   // count line; the swatch goes with the bar it keyed.
   const single = cats.length === 1
-  const barHtml = single
+  // CUL-2390 instance 3 — A SHARE NEEDS A COUNTED DENOMINATOR. Normal stools are logged now and
+  // then, so "Normal ×7 · Loose ×5" from 12 logs in 30 days drew a bar that read as "mostly
+  // formed" when it is a share of LOGS, not of stools passed. Below one normal stool a day across
+  // the window the bar goes and the two numbers print as counts, with the reason beside them. A
+  // proportion is drawn only when the normal logs could plausibly cover the bowel.
+  const countsOnly = st.normalCount < st.windowDays
+  const noBar = single || countsOnly
+  const barHtml = noBar
     ? ''
     : `<div class="barmix">${cats
         .map((c) => `<div class="seg" style="flex:${c.n};background:${c.bg}">${c.n}</div>`)
@@ -6975,8 +6993,11 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     thinLead +
     allCats
       .filter((c) => !(thinStool && c.n === 0))
-      .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
-      .join('&nbsp;&middot;&nbsp; ')
+      .map((c) => `${noBar ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
+      .join('&nbsp;&middot;&nbsp; ') +
+    (countsOnly && st.total > 0
+      ? '<br/>Normal stools are logged now and then, so these are counts of logs, not a share of stools passed.'
+      : '')
 
   // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
   // it reaches into the window. Easier logging moves what gets RECORDED, not what the pet did, so
@@ -7067,17 +7088,24 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     }
     if (ai.mucusPresent.length > 0) {
       const dates = ai.mucusPresent.map((m) => fmtLocalDay(m.occurredAt, snap.timezone)).join(', ')
-      // D5: mucus alone is monitor-tier — surfaced, never dropped, never framed as an escalation.
+      // Surfaced, never dropped, present-only, and never glossed (CUL-2390, PM ruling (a),
+      // 2026-11-02, superseding D5's "common and often benign" framing for this sentence): one
+      // unconfirmed AI read cannot carry a reassurance, and the mucus can sit days before a
+      // fresh-blood read in a large-bowel picture. Not bolded as a red flag either; the line
+      // says only what the record shows.
       lines.push(
         `<b>Mucus — ${num(ai.mucusPresent.length)} incident${
           ai.mucusPresent.length === 1 ? '' : 's'
-        }:</b> ${h(dates)}. Common and often benign on its own; shown because present.`,
+        }:</b> ${h(dates)}. Shown because present.`,
       )
     }
+    // CUL-2390 instance 2: a present finding is not a clearance for the rest. With mucus shown
+    // and most photos unread, nothing said blood was not excluded; the nothing-seen branch's
+    // caveat now prints here too, scoped to what is not listed (never "not seen", never "0 of N").
     sideHtml = `
       <div class="present">
         <span class="h">Present findings</span>
-        ${lines.join('<br/>')}<br/>${aiBadge()}
+        ${lines.join('<br/>')}<br/>${aiBadge()}<br/>${STOOL_NOT_LISTED_CAVEAT}
       </div>`
   }
 
@@ -8562,7 +8590,8 @@ function appendixA(snap: ReportSnapshot): string {
  * The owner-reviewable, PRESENT-only photo-analysis fields as one inline string — shared by
  * Appendix A's symptom log AND Appendix E's incident-photo caption, so the two can never phrase the
  * same read differently. Completed → colour · contents · consistency · (present-only) blood/foreign;
- * a non-completed state → the honest "not clear enough to read" (never a positive "no", §5.9).
+ * a failed / uncertain read → "not clear enough to read"; a pending one → "not read yet" (never a
+ * positive "no", §5.9).
  * Returns '' when there is no phenotype. NEVER an n=1 verdict/recommendation.
  */
 function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
@@ -8595,9 +8624,12 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
           ].filter(Boolean)
     return bits.join(' &middot; ')
   }
-  const stateWord =
-    ph.status === 'failed' ? 'present but not legible' : ph.status === 'uncertain' ? 'read uncertain' : 'still processing'
-  return `${h(stateWord)} — not clear enough to read`
+  // CUL-2390 instance 4: a pending read was never read, so "not clear enough to read" told a vet
+  // there was nothing worth asking to see. Pending says pending; failed and uncertain were read
+  // and keep the legibility wording.
+  if (ph.status === 'failed') return 'present but not legible — not clear enough to read'
+  if (ph.status === 'uncertain') return 'read uncertain — not clear enough to read'
+  return 'still processing — not read yet'
 }
 
 function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
