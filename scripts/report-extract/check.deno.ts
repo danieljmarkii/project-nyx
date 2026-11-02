@@ -39,7 +39,7 @@ for (const { name, snap, doc, aiLead } of docs) {
       const whole = read(name, paper, tool)
       for (const f of missing(s1, want.flags)) failures.push(`${at}: fired flag lost (${f.block}): ${divergence(s1, f.text)}`)
       for (const l of missing(s1, want.lines)) failures.push(`${at}: sheet 1 line lost (${l.block}): ${divergence(s1, l.text)}`)
-      for (const s of declineSentences(whole, want.trialSigns)) failures.push(`${at}: states a decline for the trial's own sign: "${s}"`)
+      for (const s of declineSentences(whole, want.trialSigns, want.lineLabels)) failures.push(`${at}: states a decline for the trial's own sign: "${s}"`)
       for (const k of missing(whole, want.kept)) failures.push(`${at}: "How this record was kept" sentence lost: "${k.text}"`)
       const pua = [...whole].filter((c) => { const cp = c.codePointAt(0) ?? 0; return (cp >= 0xe000 && cp <= 0xf8ff) || cp === 0xfffd })
       if (pua.length > 0) failures.push(`${at}: ${pua.length} private-use or replacement code points in the text layer`)

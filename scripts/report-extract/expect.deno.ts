@@ -41,6 +41,8 @@ export interface Expectations {
   lines: ExpectedLine[]
   /** The trial's own signs as symptom keys ("itch"), empty without a gi or skin trial. */
   trialSigns: string[]
+  /** The labels the document's own lines open with ("Diet trial (owner-entered)"), for the window. */
+  lineLabels: string[]
   /** "How this record was kept" (VR2-14). Empty until those sentences exist; see `KEPT_STUB`. */
   kept: ExpectedLine[]
 }
@@ -180,10 +182,10 @@ export function trialSignsOf(snap: ReportSnapshot): string[] {
  * pass 1). An unknown key falls back to its label, so a new sign is never silently unmatched.
  */
 const SIGN_STEMS: Record<string, RegExp> = {
-  vomit: /\bvomit\w*/i,
+  vomit: /\b(?:vomit\w*|threw up|throw(?:s|ing)? up|emesis)\b/i,
   diarrhea: /\b(?:diarrh\w*|loose\s+stool\w*|stools?)\b/i,
-  itch: /\bitch\w*/i,
-  scratch: /\bscratch\w*/i,
+  itch: /\b(?:itch\w*|prurit\w*)/i,
+  scratch: /\b(?:scratch\w*|lick\w*|paw[- ]lick\w*|chew\w*)/i,
   skin_reaction: /\bskin\b/i,
 }
 
@@ -211,7 +213,9 @@ export function aiLeadLines(aiLead: readonly LeadSentence[] | null): ExpectedLin
 }
 
 export function expectationsOf(doc: DocumentV2, snap: ReportSnapshot, aiLead: readonly LeadSentence[] | null = null): Expectations {
-  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...sheet1Lines(doc)], trialSigns: trialSignsOf(snap), kept: keptSentences(doc) }
+  const lines = sheet1Lines(doc)
+  const lineLabels = [...new Set(lines.map((l) => /^([^.:]{1,60}):\s/.exec(l.text)?.[1] ?? '').filter((x) => x !== ''))]
+  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...lines], trialSigns: trialSignsOf(snap), lineLabels, kept: keptSentences(doc) }
 }
 
 /** The expected lines whose folded text is not a run inside the folded haystack. */
@@ -234,6 +238,10 @@ export const DECLINE_WORDS = new RegExp(
       'no longer', 'stop(?:ped|s|ping)?', 'ceas\\w*', 'settl\\w*', 'clear(?:ed|ing|s)?', 'halv\\w*', 'half as',
       'rare\\w*', 'abat\\w*', 'respond\\w*', 'under control', 'taper\\w*', 'fad(?:ed|es|ing)', 'wan(?:ed|es|ing)',
       'let up', 'died down', 'calm\\w*', 'gone', 'recover\\w*', 'went from', 'quiet\\w*', 'only once', 'no more',
+      // Pass 2, and the absence words `aiLead/verify.ts` already bans in a lead:
+      'disappear\\w*', 'went away', 'controlled', 'remission', 'absent', 'absence', 'none (?:in|since|after)',
+      'no \\w+ since', 'minimal', 'lessen\\w*', 'diminish\\w*', 'milder', 'trend\\w* down\\w*', 'dwindl\\w*',
+      'only (?:twice|once|a few)', 'occasional\\w*', 'peak\\w*', 'highest', '(?:itch|scratch|vomit|symptom|sign)\\w*-free',
     ].join('|') +
     ')\\b',
   'i',
@@ -243,14 +251,28 @@ export const DECLINE_WORDS = new RegExp(
  * A count that goes down in so many words: "9 → 2", "9 -> 2", "from 9 to 2", "9, then 2". Digits on
  * both sides, so a date range ("Jun 1 – Jun 19") and a rising window ("48–72 h") never match.
  */
-const DESCENT = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:${String.fromCodePoint(0x2192)}|->|to|then|,\\s*then)\\s*(\\d+(?:\\.\\d+)?)\\b`, 'g')
+const ARROWS = [0x2192, 0x27f6, 0x21d2, 0x2014, 0x2013].map((c) => String.fromCodePoint(c)).join('|')
+const NUM = '(\\d+(?:\\.\\d+)?)'
+const GAP = '(?:\\s+\\S+){0,6}?' // up to six words between the two counts (pass 2: "from 9 on week 1 to 2")
+const DESCENT = new RegExp(
+  [
+    `${NUM}\\s*(?:${ARROWS}|->|=>)\\s*${NUM}\\b`,
+    `\\bfrom\\s+${NUM}\\b${GAP}\\s+to\\s+${NUM}\\b`,
+    `${NUM}\\b${GAP}[,;]?\\s+(?:then|vs\\.?|versus|by week \\d+ it was|it was)\\s+${NUM}\\b`,
+    `${NUM}\\b(?:\\s+\\S+){0,3}?\\s+in week \\d+,\\s+${NUM}\\b`,
+  ].join('|'),
+  'g',
+)
 
 /** Dates ("Jun 25", "Jun 25, 2026") and clock times ("14:00"), cut before the descent test: "from
  *  14:00 on Jun 25 to 14:00 on Jul 2" is a window, not a count going from 25 to 14. */
 const DATES_AND_TIMES = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:, \d{4})?\b|\b\d{1,2}:\d{2}\b/g
 
 function hasDescent(s: string): boolean {
-  for (const m of s.replace(DATES_AND_TIMES, ' ; ').matchAll(DESCENT)) if (Number(m[2]) < Number(m[1])) return true
+  for (const m of s.replace(DATES_AND_TIMES, ' ; ').matchAll(DESCENT)) {
+    const nums = m.slice(1).filter((x) => x !== undefined).map(Number)
+    if (nums.length === 2 && nums[1] < nums[0]) return true
+  }
   return false
 }
 
@@ -267,6 +289,7 @@ const NOT_A_COURSE = [
   /\blower-GI\b/gi, // anatomy: "a lower-GI (large-bowel) sign"
   /\bnot clear enough to read\b/gi, // a photo's quality, not a sign's course
   /\ba declined or barely-\s?touched meal\b/gi, // the intake sheet: a refused meal, the opposite of reassurance
+  /\bnot a single incident\b/gi, // beside every chronicity flag: a course, not one event
 ]
 
 /**
@@ -274,7 +297,7 @@ const NOT_A_COURSE = [
  * that says "Itching on 9 days in week 1. By week 6 it was 2." splits the claim across two), unless
  * the next one is a labelled line of its own.
  */
-export function declineSentences(text: string, signs: readonly string[]): string[] {
+export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = []): string[] {
   if (signs.length === 0) return []
   const pats = signs.map(signPattern)
   const flat = text.normalize('NFKC').replace(/\s+/g, ' ')
@@ -282,10 +305,11 @@ export function declineSentences(text: string, signs: readonly string[]): string
   const out: string[] = []
   sentences.forEach((sent, i) => {
     if (!pats.some((p) => p.test(sent))) return
-    // The next sentence joins only when it opens no subject of its own: a labelled line ("Diet trial
-    // (owner-entered): ... stopped Jun 19") is the next record line, not a follow-on to this one.
+    // The next sentence joins unless it opens one of the document's own labelled lines ("Diet trial
+    // (owner-entered): ... stopped Jun 19"), which is the next record line, not a follow-on. Only
+    // the document's labels count: any early colon did, and hid "By week 6 it had settled: 2" (pass 2).
     const next = sentences[i + 1] ?? ''
-    const follows = !/^[^.:]{1,60}:\s/.test(next)
+    const follows = !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
     const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), x)).join(' ')
     if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
   })

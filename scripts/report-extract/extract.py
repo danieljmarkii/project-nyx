@@ -18,7 +18,18 @@ from pdfminer.high_level import extract_text as pdfminer_text
 from pypdf import PdfReader
 
 
-SANS_FALLBACKS = ("DejaVuSans", "LiberationSans", "Arimo", "Helvetica", "Arial", "Roboto", "Geist")
+# An allowlist, not a denylist: pass 2 printed the regular weight in FreeSans with the bold still
+# Inter, and a list of known fallbacks let it through. Every embedded face must be Inter or the one
+# serif slot (Newsreader in production, Liberation Serif on the runner), and Inter-Regular, the body
+# face, must be among them.
+SERIFS = ("Newsreader", "LiberationSerif")
+
+
+def face_problem(fonts: set) -> str | None:
+    if "Inter-Regular" not in fonts:
+        return "no Inter-Regular (the body face)"
+    stray = sorted(f for f in fonts if not f.startswith("Inter") and not f.startswith(SERIFS))
+    return f"faces outside Inter and the serif: {stray}" if stray else None
 
 
 def embedded_fonts(reader: PdfReader) -> set:
@@ -50,8 +61,9 @@ def main() -> int:
                 return 1
             reader = PdfReader(str(pdf))
             fonts = embedded_fonts(reader)
-            if not any(f.startswith("Inter") for f in fonts) or any(f.startswith(SANS_FALLBACKS) for f in fonts):
-                print(f"{pdf.name}: the sans is not Inter (embedded: {sorted(fonts)}); see fonts.conf", file=sys.stderr)
+            problem = face_problem(fonts)
+            if problem:
+                print(f"{pdf.name}: {problem} (embedded: {sorted(fonts)}); see fonts.conf", file=sys.stderr)
                 return 1
             pages = [p.extract_text() or "" for p in reader.pages]
             (d / f"{name}.{paper}.pypdf.txt").write_text("\f".join(pages))

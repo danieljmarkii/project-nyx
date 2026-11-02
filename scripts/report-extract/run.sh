@@ -28,4 +28,11 @@ if deno run --allow-read --allow-env "$here/check.deno.ts" "$canary" --only coop
   echo "canary: re-adding tabular-nums stayed GREEN, so this run measures nothing (wrong face?)" >&2
   exit 1
 fi
-echo "canary: re-adding tabular-nums turns the check red ($(grep -m1 -o '^[0-9]* extraction failures' "$canary/check.log"))"
+# Red for the right reason: lost text in the body (the band or the record lines), not a crash and
+# not only a bold heading (adversarial pass 2).
+if ! grep -qE 'lost \((band|record-lines)\)' "$canary/check.log"; then
+  echo "canary: the check failed, but not on lost body text; its log:" >&2
+  cat "$canary/check.log" >&2
+  exit 1
+fi
+echo "canary: re-adding tabular-nums turns the check red ($(grep -m1 -o '^[0-9]* extraction failures' "$canary/check.log" || true))"

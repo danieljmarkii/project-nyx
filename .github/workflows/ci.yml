@@ -363,7 +363,8 @@ jobs:
   # Inter is installed and made the sans (fonts.conf) because it is the face those measurements
   # were taken with (the report names Geist first, which the runner does not have; VR2-11 embeds
   # the real faces). Every run ends with a canary: tabular-nums re-added to one fixture must turn
-  # the check red, or the job fails for measuring nothing. WebKit, the engine
+  # the check red on lost body text, or the job fails for measuring nothing. Not covered: the
+  # serif slot's real face (Newsreader; the runner prints Liberation Serif) until VR2-11. WebKit, the engine
   # iOS prints in, is not covered here (CUL-1771's on-device probe).
   #
   # Separate job so a Chromium or apt hiccup never reds the type check, and one stable check name

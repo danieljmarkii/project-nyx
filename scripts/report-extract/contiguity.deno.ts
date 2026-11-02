@@ -20,7 +20,10 @@
 //
 // BLIND SPOTS, stated so they never read as coverage: fonts (tnum, calt; guards/reportNoTnum.test.ts
 // holds the declarations, the Chromium job the behaviour); the page head in `@page` margin boxes,
-// which repeats the masthead; and WebKit, the engine iOS prints in (CUL-1771's device probe).
+// which repeats the masthead and is cut before matching, not asserted; the serif slot (line 1 and
+// the AI lead), which the runner prints in Liberation Serif, not Newsreader, until VR2-11 embeds
+// it; WebKit, the engine iOS prints in (CUL-1771's device probe); and the decline detector, which
+// is a word and count list over today's copy, not a reader: `aiLead/verify.ts` is the lead's gate.
 //
 // Usage: deno test --allow-read=supabase/functions,scripts scripts/report-extract/contiguity.deno.ts
 import { strict as nodeAssert } from 'node:assert'
@@ -141,9 +144,9 @@ for (const { name, snap, doc, aiLead } of docs) {
 
 for (const { name, snap, doc, aiLead } of docs) {
   Deno.test(`contiguity — ${name}: no sentence states a decline for the trial's own sign`, () => {
-    const signs = expectationsOf(doc, snap, aiLead).trialSigns
+    const want = expectationsOf(doc, snap, aiLead)
     const html = renderPrintV2(doc, aiLead).replace(/<style>[\s\S]*?<\/style>/g, ' ').replace(/<svg[\s\S]*?<\/svg>/g, ' ')
-    assertEquals(declineSentences(textRuns(html).join(' '), signs), [])
+    assertEquals(declineSentences(textRuns(html).join(' '), want.trialSigns, want.lineLabels), [])
   })
 }
 
@@ -210,7 +213,9 @@ Deno.test('declineSentences — a decline beside the trial sign is caught; scope
   assertEquals(declineSentences('Itching fell from 9 to 2 entries a week.', signs).length, 1)
   assertEquals(declineSentences('Fewer itching entries in week 6. Vomiting: none.', signs).length, 1)
   assertEquals(declineSentences('Itching on 12 of 14 days. Weight 4.10 kg. Vomiting fell to 1.', signs), [])
-  assertEquals(declineSentences('Vomiting: 5 entries, the last Jun 17. Diet trial: z/d, stopped Jun 19.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting: 5 entries, the last Jun 17. Diet trial: z/d, stopped Jun 19.', ['vomit'], ['Diet trial']), [])
+  // Only the document's own labels end the window: an early colon in a follow-on does not (pass 2).
+  assertEquals(declineSentences('Itching on 9 days in week 1. By week 6 it had settled: 2 entries.', ['itch'], ['Diet trial']).length, 1)
   assertEquals(declineSentences('3 itching entries fall outside this window.', signs), [])
   assertEquals(declineSentences('Itching fell to 1.', []), [])
 })
@@ -235,7 +240,37 @@ Deno.test('declineSentences — every decline adversarial pass 1 planted is caug
     ['Itching was at its lowest in week 6.', ['itch']],
     ['Scratched less in week 6.', ['scratch']],
     ['Itching vs. week 1 fell.', ['itch']],
-    ['Itching on 9 days in week 1. By week 6 it was 2, then 1.', ['itch']],
+    ['Itching on 9 days in week 1. By week 6 it was 2.', ['itch']],
+    // Pass 2's planted misses:
+    ['Itching from 9 on week 1 to 2 on week 6.', ['itch']],
+    ['Itching on 9 days in week 1, then 2.', ['itch']],
+    ['Itching 9 vs 2 entries a week.', ['itch']],
+    ['Itching entries: 9 in week 1, 2 in week 6.', ['itch']],
+    ['Itching 9 \u2014 2.', ['itch']],
+    ['Itching 9 \u27f6 2.', ['itch']],
+    ['Itching 9 \u21d2 2.', ['itch']],
+    ['Itching on 9 days in week 1. Week 6: fewer.', ['itch']],
+    ['Pruritus decreased.', ['itch']],
+    ['Paw licking dropped.', ['scratch']],
+    ['Threw up less in week 6.', ['vomit']],
+    ['Emesis decreased.', ['vomit']],
+    ['No itching since week 3.', ['itch']],
+    ['Itching disappeared.', ['itch']],
+    ['Itching went away.', ['itch']],
+    ['Itching is controlled.', ['itch']],
+    ['Itching in remission.', ['itch']],
+    ['Itch-free by week 6.', ['itch']],
+    ['Itching was absent in week 6.', ['itch']],
+    ['Itching: none in week 6.', ['itch']],
+    ['Itching was minimal.', ['itch']],
+    ['Itching lessened.', ['itch']],
+    ['Itching diminished.', ['itch']],
+    ['Itching was milder.', ['itch']],
+    ['Itching trended downward.', ['itch']],
+    ['Itching dwindled.', ['itch']],
+    ['Itching only twice in week 6.', ['itch']],
+    ['Itching is occasional.', ['itch']],
+    ['Itching peaked in week 1.', ['itch']],
   ]
   for (const [text, signs] of planted) assertEquals(declineSentences(text, signs).length > 0, true, text)
 })

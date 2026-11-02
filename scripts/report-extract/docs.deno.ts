@@ -23,12 +23,18 @@ export interface ExtractionDoc {
   aiLead: LeadSentence[] | null
 }
 
-/** A lead of the document's own words: line 1, then the first record line, each citing itself. */
+/**
+ * A lead of the document's own words: line 1, then the first record line, each citing itself and
+ * each opened with `LEAD_MARK`. The mark matters: a lead copied verbatim matched its source line
+ * elsewhere on sheet 1, so a lead printed with every digit gone stayed green (adversarial pass 2).
+ * With it, a lead sentence can match only the lead's own text.
+ */
+export const LEAD_MARK = 'In the owner\u2019s log,'
 export function leadFromLines(doc: DocumentV2): LeadSentence[] {
   const out: LeadSentence[] = []
   for (const b of doc.blocks) {
-    if (b.kind === 'lead_sentence') out.push({ text: b.text, cites: ['line-1'] })
-    if (b.kind === 'record_lines' && b.lines[0]) out.push({ text: b.lines[0].text, cites: [b.lines[0].id] })
+    if (b.kind === 'lead_sentence') out.push({ text: `${LEAD_MARK} ${b.text}`, cites: ['line-1'] })
+    if (b.kind === 'record_lines' && b.lines[0]) out.push({ text: `${LEAD_MARK} ${b.lines[0].text}`, cites: [b.lines[0].id] })
   }
   return out
 }
