@@ -29,10 +29,12 @@ jest.mock('../../store/petStore', () => ({
 
 const mockReadOne = jest.fn();
 const mockOpen = jest.fn();
+const mockSends = jest.fn();
 jest.mock('../../lib/reportLibrary', () => ({
   ...jest.requireActual('../../lib/reportLibrary'),
   readSavedReport: (...a: unknown[]) => mockReadOne(...a),
   openSavedReport: (...a: unknown[]) => mockOpen(...a),
+  readDepartures: (...a: unknown[]) => mockSends(...a),
 }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 
@@ -66,6 +68,7 @@ beforeEach(() => {
   mockReadOne.mockResolvedValue(ROW);
   mockOpen.mockResolvedValue({ kind: 'ok', html: '<html>as sent</html>' });
   mockReadLink.mockResolvedValue(null);
+  mockSends.mockResolvedValue({ kind: 'ok', departures: [] });
   mockLink.mockResolvedValue({ kind: 'ok' });
   mockHome.mockResolvedValue({
     next: null, later: [], awaiting: [],
@@ -178,5 +181,53 @@ describe('its visit (PR-22, CUL-2302)', () => {
     await waitFor(() => expect(mockOpen).not.toHaveBeenCalled());
     expect(mockReadLink).not.toHaveBeenCalled();
     expect(mockHome).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-2445 (migration 119): every time this copy was sent.
+describe('the send history', () => {
+  const send = (i: number, via: string, hour: number) => ({
+    id: `d${i}`, sharedVia: via, sharedAt: new Date(thisYear, 10, 3, hour, 0).toISOString(),
+  });
+
+  it('lists each send of this copy, newest first, under a count of the whole history', async () => {
+    mockSends.mockResolvedValue({ kind: 'ok', departures: [send(1, 'print', 16), send(2, 'email', 9)] });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-sends')).toBeTruthy());
+    expect(mockSends).toHaveBeenCalledWith(COOPER.id, 'r1');
+    expect(view.getByTestId('report-sends-heading').props.children).toBe('Sent 2 times');
+    expect(view.getAllByTestId('report-send').map((n) => n.props.children)).toEqual([
+      'Printed · Nov 3, 4:00 PM',
+      'Shared by email · Nov 3, 9:00 AM',
+    ]);
+    expect(view.queryByTestId('report-sends-all')).toBeNull();
+  });
+
+  it('shows the newest three, and the rest on a tap', async () => {
+    mockSends.mockResolvedValue({ kind: 'ok', departures: [1, 2, 3, 4, 5].map((i) => send(i, 'email', 8 + i)) });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-sends')).toBeTruthy());
+    expect(view.getByTestId('report-sends-heading').props.children).toBe('Sent 5 times');
+    expect(view.getAllByTestId('report-send')).toHaveLength(3);
+    fireEvent.press(view.getByTestId('report-sends-all'));
+    expect(view.getAllByTestId('report-send')).toHaveLength(5);
+    expect(view.queryByTestId('report-sends-all')).toBeNull();
+  });
+
+  it('a failed read shows nothing, never a shorter history', async () => {
+    mockSends.mockResolvedValue({ kind: 'failed' });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
+    await waitFor(() => expect(mockSends).toHaveBeenCalled());
+    expect(view.queryByTestId('report-sends')).toBeNull();
+    expect(view.getByTestId('report-new')).toBeTruthy();
+  });
+
+  it('a pet this account does not hold reads no history', async () => {
+    mockParams = { id: 'r1', pet: 'pet-someone-else' };
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-unavailable')).toBeTruthy());
+    expect(mockSends).not.toHaveBeenCalled();
+    expect(view.queryByTestId('report-sends')).toBeNull();
   });
 });
