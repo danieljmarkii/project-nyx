@@ -93,7 +93,9 @@ CREATE POLICY "nyx-medication-photos: owner update"
 --   WHERE schemaname = 'storage' AND tablename = 'objects'
 --     AND cmd IN ('INSERT', 'UPDATE', 'ALL')
 --     AND coalesce(with_check, '') || coalesce(qual, '')
---         !~ '(FROM pets|FROM food_items|FROM public\.user_profiles)';
+--         !~ 'FROM (public\.)?(pets|food_items|user_profiles)\M';
+--   (pg_policies prints the table unqualified, `FROM user_profiles p`, so the
+--   schema is optional here. Comment-only fix after apply, 2026-11-02.)
 --
 -- 3. Every account still has the row the check reads (expect 0):
 --   SELECT count(*) FROM auth.users u
