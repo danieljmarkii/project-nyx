@@ -81,6 +81,7 @@ import {
   type DetectionInput,
   type CorrelationFinding,
   type IntakeDeclineFinding,
+  type SustainedRefusalFacts,
   type SymptomChronicityFinding,
   type SymptomWorseningFinding,
   type SymptomBurdenFinding,
@@ -1628,6 +1629,12 @@ export type SafetyFlag =
        * window-relative arithmetic. Never negative (clamped).
        */
       hoursSinceLastFullMeal: number | null
+      /**
+       * The sustained-refusal floor's counts (the stopgap for a record with no good meals), or
+       * null on every other trigger. That trigger has no baseline, so `baselineScore` and
+       * `ratedMealsConsidered` describe the window itself and the band row reads these instead.
+       */
+      sustainedRefusal?: SustainedRefusalFacts | null
     }
   | {
       /**
@@ -3914,6 +3921,13 @@ export function buildDetectionInput(
   scope: ReportScope,
   windowEvents: Array<ReportEventInput & { dupCount: number }>,
   droppedEventIds: Set<string>,
+  /**
+   * CUL-2403 — the deduped pull up to the window's end, for the intake lane only. The window's
+   * meals feed the correlation and timing lanes, which are window-scoped on purpose; the intake
+   * question needs the 14-day normal and the floor's 72 hours behind the window's end, so a short
+   * custom range never quiets a flag the record holds. Absent, the intake lane reads the window.
+   */
+  intakeEvents?: Array<ReportEventInput & { dupCount: number }>,
 ): DetectionInput {
   const tz = input.timezone
 
@@ -3935,10 +3949,7 @@ export function buildDetectionInput(
 
   const mealEvents: MealEvent[] = []
   const mealIntakeById = new Map<string, IntakeRating | null>()
-  for (const e of windowEvents) {
-    if (e.type !== 'meal' || !e.meal) continue
-    mealIntakeById.set(e.id, e.meal.intakeRating)
-    mealEvents.push({
+  const toMealEvent = (e: ReportEventInput & { meal: NonNullable<ReportEventInput['meal']> }): MealEvent => ({
       id: e.id,
       occurredAt: e.occurredAt,
       isMedicationVehicle: pairedEventIds.has(e.id),
@@ -3975,7 +3986,14 @@ export function buildDetectionInput(
       format: e.meal.format,
       foodLabel: mealFoodLabel(e.meal),
     })
+  for (const e of windowEvents) {
+    if (e.type !== 'meal' || !e.meal) continue
+    mealIntakeById.set(e.id, e.meal.intakeRating)
+    mealEvents.push(toMealEvent(e as ReportEventInput & { meal: NonNullable<ReportEventInput['meal']> }))
   }
+  const intakeMealEvents: MealEvent[] | undefined = intakeEvents
+    ?.filter((e) => e.type === 'meal' && e.meal)
+    .map((e) => toMealEvent(e as ReportEventInput & { meal: NonNullable<ReportEventInput['meal']> }))
 
   // Free-fed standing exposures overlapping the window (B-040). meal_fed rows are
   // vet-report metadata, never standing exposures (detection contract).
@@ -4055,6 +4073,25 @@ export function buildDetectionInput(
     symptomEvents,
     mealEvents,
     feedingArrangements,
+    ...(intakeMealEvents
+      ? {
+          intakeMealEvents,
+          // Every free-fed row: the intake lane sets a rating aside only inside its food's span,
+          // by instant, so a row outside the meals' reach excludes nothing.
+          intakeFeedingArrangements: input.feedingArrangements
+            .filter((a) => a.method === 'free_choice')
+            .map((a) => ({
+              id: a.id,
+              primaryProtein: a.primaryProtein,
+              activeFrom: a.activeFrom,
+              activeUntil: a.activeUntil,
+              attributionConfidence: a.isShared ? ('low' as const) : ('high' as const),
+              foodItemId: a.foodItemId,
+              createdAt: a.createdAt ?? null,
+              endedAt: a.endedAt ?? null,
+            })),
+        }
+      : {}),
     medicationWindows,
     ...weightLaneFor(input, droppedEventIds, scope.detectionNowIso === input.now ? undefined : scope.detectionNowIso),
     timezone: input.timezone ?? undefined,
@@ -5379,7 +5416,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 
 
   // ── Detection reuse (§7 / §8.5) ──────────────────────────────────────────────
-  const detInput = buildDetectionInput(input, scope, windowEvents, droppedEventIds)
+  // CUL-2403 — the intake lane reads the deduped pull up to the window's end (its own day
+  // included), not the window alone.
+  const intakeEvents = dedupedAll.filter((e) => {
+    const dn = eventDayNumber(e.occurredAt, tz)
+    return dn !== null && dn <= endDayNum
+  })
+  const detInput = buildDetectionInput(input, scope, windowEvents, droppedEventIds, intakeEvents)
   // EN-11 (Engines v3 PR-32, CUL-1141): the report's detection takes the Signal's EN-11 config
   // under the same key, so the report and Home cannot disagree about which worsening and which
   // food lines exist. Under it the report loses ④'s rows below the card floor and any
@@ -5443,6 +5486,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ratedMealsConsidered: f.ratedMealsConsidered,
       lastFullMealIso: f.lastFullMealIso,
       hoursSinceLastFullMeal,
+      sustainedRefusal: f.sustainedRefusal ?? null,
     })
   }
   // B-494 — THE REFUSED PRESCRIBED DIET REACHES THE BAND. Ordered immediately after

@@ -218,7 +218,10 @@ describe('CUL-94 — a refusal day never dilutes the normal the next day is judg
       { iso: `${day(11)}T08:00:00-04:00`, rating: 'picked' },
       { iso: `${day(11)}T15:00:00-04:00`, rating: 'picked' },
     ];
-    expect(verdict('cat', thin, `${day(11)}T20:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+    // Every rated meal in the last 72 hours here is picked at (three, on two days), so the
+    // sustained-refusal floor holds and REPLACES the day-count card with its louder one. Either is
+    // the card this test protects; neither may go silent.
+    expect(verdict('cat', thin, `${day(11)}T20:00:00-04:00`, NY)).toEqual(['sustained_refusal']);
   });
 });
 
@@ -253,8 +256,11 @@ describe('CUL-94 — the buffer day holds the onset: a good morning, then the re
       { iso: `${day(10)}T22:00:00+00:00`, rating: 'refused' },
       { iso: `${day(11)}T08:00:00+00:00`, rating: 'some' },
     ];
+    // Since CUL-2404 (a) the two refusals and the "ate some" also meet the sustained-refusal floor,
+    // which replaces the day-count card with its louder one. Either is the card this protects.
     for (const at of ['19:00', '21:00', '23:30']) {
-      expect(verdict('cat', meals, `${day(11)}T${at}:00+00:00`, 'UTC')).toContain('consecutive_low');
+      const v = verdict('cat', meals, `${day(11)}T${at}:00+00:00`, 'UTC');
+      expect({ at, card: v.includes('consecutive_low') || v.includes('sustained_refusal') }).toEqual({ at, card: true });
     }
   });
 });

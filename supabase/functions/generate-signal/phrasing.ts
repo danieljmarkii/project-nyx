@@ -20,6 +20,7 @@ import type {
   CorrelationFinding,
   IntakeDeclineFinding,
   RefusedThenVomitedFacts,
+  SustainedRefusalFacts,
   ReflectionFinding,
   SymptomWorseningFinding,
   SymptomBurdenFinding,
@@ -128,11 +129,44 @@ export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: 
   return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${onsetDay(r.firstLocalDay)}. That's worth mentioning to your vet.`
 }
 
+/**
+ * The sustained-refusal floor's sentence (the stopgap for a record with no good meals). It says
+ * what the owner rated, as counts over a named window, and asks for the call: three days of no
+ * meal eaten is the feline liver window's far edge, so this is not a "keep an eye on it" card.
+ * Never "less than usual" (there is no usual to compare with), never "picky". Mirrored on the
+ * client (`sustainedRefusalSentence`, lib/signalCopy.ts); keep the two in sync.
+ */
+export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
+  // The window is named in HOURS: 72 hours can touch four of the owner's days (adversarial pass 1,
+  // B6). "Watched and rated": a free-fed bowl is not counted (B7). "Hasn't eaten well": since
+  // CUL-2404 (a) an "ate some" no longer clears the floor, so "picked at or refused every meal"
+  // could be false; the counts say which. A window anchored to an earlier day's last rating names it.
+  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}. That's worth a call to your vet today.`
+}
+
+/** "the last 72 hours", or "the 72 hours to July 30" when the window ends at an earlier day's rating. */
+function sustainedRefusalSpan(r: SustainedRefusalFacts): string {
+  return r.anchoredToLastRating ? `the ${r.windowHours} hours to ${onsetDay(r.endLocalDay)}` : `the last ${r.windowHours} hours`
+}
+
+/** "6 meals on 3 days (4 refused, 2 picked at)": every non-zero part, in the scale's order. */
+function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
+  const parts = [
+    r.refused > 0 ? `${r.refused} refused` : null,
+    r.picked > 0 ? `${r.picked} picked at` : null,
+    r.some > 0 ? `${r.some} ate some` : null,
+  ].filter((p): p is string => p !== null)
+  return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`
+}
+
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
   // Safety finding: calm, clear, points toward keeping an eye on it + the vet.
   // Never reassures, never frames reduced eating as fussiness.
   if (f.trigger === 'refused_then_vomited' && f.refusedThenVomited) {
     return refusedThenVomitedSentence(f.refusedThenVomited, petName)
+  }
+  if (f.trigger === 'sustained_refusal' && f.sustainedRefusal) {
+    return sustainedRefusalSentence(f.sustainedRefusal, petName)
   }
   if (f.trigger === 'refused_normal_food') {
     const food = f.refusedFoodLabel ?? 'a food they usually finish'
@@ -659,7 +693,9 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
             ? 'turning down a food they usually eat'
             : f.trigger === 'refused_then_vomited'
               ? 'vomiting soon after turning down a meal'
-              : 'eating less than usual'
+              : f.trigger === 'sustained_refusal'
+                ? 'no rated meal eaten in the last few days'
+                : 'eating less than usual'
           : f.type === 'incident_red_flag'
             ? isCallOnly(f)
               ? `a ${INCIDENT_READ_NOUN[f.incidentType]} read that called for your vet`
@@ -678,6 +714,8 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
             : 'worth raising with your vet'
         : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
           ? 'worth booking a vet visit'
+        : f.type === 'intake_decline' && f.trigger === 'sustained_refusal'
+          ? 'worth a call to your vet'
           : 'worth a word with your vet'
   return `An earlier read of ${petName}'s record, on ${onsetDay(carriedFromIso)}, showed ${what} — ${ask}. Part of the record didn't load for this update, so it hasn't been checked again yet.`
 }
@@ -831,6 +869,12 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
+  }
+  if (finding.type === 'intake_decline' && finding.trigger === 'sustained_refusal') {
+    // The sustained-refusal floor: NO MODEL SENTENCE IS EVER ACCEPTED. Its load is counts and a
+    // call; a free sentence has no baseline to anchor and slides to "less than usual" or "picky".
+    // index.ts routes the card to its template; this is the backstop.
+    return false
   }
   if (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined) {
     // Engines v3 PR-30s (I5): NO MODEL SENTENCE IS EVER ACCEPTED while the card carries the
@@ -1188,7 +1232,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
   return {
     insight_type: 'intake_decline',
     pet_name: petName,
-    // 'refused_then_vomited' (I5) never reaches the model: it is template-only (index.ts).
+    // 'refused_then_vomited' (I5) and 'sustained_refusal' never reach the model: template-only (index.ts).
     trigger: finding.trigger, // 'consecutive_low' | 'refused_normal_food'
     species: finding.species,
     days_eating_less: finding.daysBelowBaseline,

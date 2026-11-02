@@ -2737,7 +2737,7 @@ export function safetyFlagRow(
       const recent = snap.provenance.intakeLog.filter((e) => !e.notCountedFreeFed).slice(0, 4).reverse() // chronological, up to 4
       const trajectoryBit =
         recent.length >= 2
-          ? ` Recent rated meals declined: ${h(recent.map((e) => intakeLabel(e.intakeRating).toLowerCase()).join(' → '))}.`
+          ? ` Recent rated meals${f.trigger === 'sustained_refusal' ? '' : ' declined'}: ${h(recent.map((e) => intakeLabel(e.intakeRating).toLowerCase()).join(' → '))}.`
           : ''
       // "How long off food?" — time since the last FULLY-eaten meal, the number that places a pet
       // in (or before) the feline window above. Worded "without a full meal" (NOT "of reduced
@@ -2785,8 +2785,23 @@ export function safetyFlagRow(
           : ''
       const appendixBit =
         snap.provenance.intakeLog.length > 0 ? ` Meal-by-meal detail ${ptr.mealsDetailIn}.` : ''
-      const detail =
-        f.trigger === 'refused_normal_food'
+      // The sustained-refusal floor (the stopgap for a record with no good meals): no baseline was
+      // read, so the row states the counts and says why no comparison is offered, never "below
+      // baseline". The counts are the engine's, over the window it names.
+      const sr = f.trigger === 'sustained_refusal' ? f.sustainedRefusal : null
+      const detail = sr
+        ? `<b>No watched meal rated in the ${num(sr.windowHours)}&nbsp;h to ${
+            sr.endIso ? h(fmtLocalDay(sr.endIso, tz)) : 'the end of this window'
+          } was eaten well</b>: ${num(sr.meals)} meal${sr.meals === 1 ? '' : 's'} (${[
+            sr.refused > 0 ? `${num(sr.refused)} refused` : null,
+            sr.picked > 0 ? `${num(sr.picked)} picked at` : null,
+            (sr.some ?? 0) > 0 ? `${num(sr.some ?? 0)} ate some` : null,
+          ]
+            .filter((p): p is string => p !== null)
+            .join(', ')}) on ${num(sr.days)} day${sr.days === 1 ? '' : 's'}. None was rated &ldquo;ate most&rdquo; or better, so there is no recent baseline to compare against; the flag is raised on these ratings alone.${
+            sr.anchoredToLastRating ? ' The window ends at the last rated meal; no watched meal has been rated since.' : ''
+          }`
+        : f.trigger === 'refused_normal_food'
           ? `This pet <b>refused a food it normally eats</b>${
               f.refusedFoodLabel ? ` (${h(f.refusedFoodLabel)})` : ''
             }.${baselineBit}`
@@ -5948,6 +5963,15 @@ function trialTiles(snap: ReportSnapshot): string[] {
         `${snap.trial.coverage.daysLogged}`,
         `<small>&nbsp;/&nbsp;${snap.trial.coverage.daysElapsed}</small>`,
         `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count${overrunNote}`,
+      ),
+    )
+  } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'sustained_refusal' && intake.sustainedRefusal) {
+    const sr = intake.sustainedRefusal
+    tiles.push(
+      tile(
+        `${sr.meals}`,
+        `<small>&nbsp;/&nbsp;${sr.meals}</small>`,
+        `Rated meals not eaten well, ${sr.windowHours}&nbsp;h to ${sr.endIso ? h(fmtLocalDay(sr.endIso, snap.timezone)) : 'window end'}<br/>a health signal, not preference`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {

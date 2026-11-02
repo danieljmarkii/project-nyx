@@ -23,6 +23,7 @@ import type {
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
   RefusedThenVomitedFacts,
+  SustainedRefusalFacts,
   MedOnBoardContext,
   PhotoComposition,
   PostprandialTimingFinding,
@@ -679,11 +680,20 @@ export function sampleLine(finding: SignalFinding): string {
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
       : 'Compared with what you usually log';
   }
+  if (finding.trigger === 'sustained_refusal') {
+    // The floor: no baseline is compared, so the line says what was counted.
+    const r = sustainedRefusalOf(finding);
+    return r
+      ? `${count(r.meals, 'rated meal', 'rated meals')} on ${count(r.days, 'day', 'days')}, none eaten well`
+      : 'Rated meals, none eaten well';
+  }
   if (finding.trigger === 'refused_then_vomited') {
     // I5: no baseline is compared, so the line says what was counted and where it came from.
     const r = refusedThenVomitedOf(finding);
     return r ? `${count(r.episodeCount, 'episode', 'episodes')} you saw, each soon after a refused meal` : 'Episodes you saw, soon after a refused meal';
   }
+  // CUL-2405: only the consecutive-low card compares with a usual; an unknown trigger never does.
+  if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
   return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, across ${count(
     finding.ratedMealsConsidered,
     'recent meal',
@@ -1178,6 +1188,14 @@ export function evidenceText(
   // reason, as a sentence of their own (empty when the cache carries none).
   const i5 = refusedThenVomitedLine(finding, petName);
   const i5Tail = i5 ? ` ${i5}` : '';
+  if (finding.trigger === 'sustained_refusal') {
+    // The floor's whole claim: the counts, what is counted, and why there is no comparison. A
+    // free-fed bowl and an unrated meal are not counted; neither is said to be eaten.
+    const r = sustainedRefusalOf(finding);
+    return r
+      ? `${sustainedRefusalSentence(r, petName)} Only meals you watched and rated are counted, and none in that time was rated "ate most" or better, so there's no recent normal to compare with.${i5Tail}`
+      : `${petName} hasn't eaten well at any meal you watched and rated lately. That's worth a call to your vet today.${i5Tail}`;
+  }
   if (finding.trigger === 'refused_then_vomited') {
     // Only witnessed vomits count (a found pile's time is a guess), and nothing is said of the
     // nights she refused and did not vomit: ratings are exception-only, so no rate is honest.
@@ -1192,6 +1210,8 @@ export function evidenceText(
       `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
     );
   }
+  // CUL-2405: an unknown trigger reads at its most cautious, never as the consecutive-low card.
+  if (finding.trigger !== 'consecutive_low') return `${unknownIntakeSentence(petName)}${i5Tail}`;
   return (
     `${petName} has eaten less than usual for ${count(finding.daysBelowBaseline, 'day', 'days')}, ` +
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
@@ -1851,6 +1871,31 @@ export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | nu
 // the Patterns panel cannot drift; the terse Home row omits it because it opens the card.
 export const REFUSAL_VET_TAIL = "That's worth mentioning to your vet.";
 
+// CUL-2405: an intake trigger this build does not know. The server can ship a new trigger before
+// the app build that names it, and every switch below once fell through to the consecutive-low
+// copy: "eaten less than usual … compared with 6 recent meals … if it carries on" on a card
+// whose own claim may be "call your vet today". So the consecutive-low copy is named, never
+// defaulted to, and the default is the most cautious intake wording this build has: no baseline
+// ("less than usual", "below the usual", "compared with"), no "if it carries on", and the
+// loudest vet ask any intake card carries (the sustained-refusal floor's call today). It can
+// out-ask the unknown card's own sentence; that residual errs loud, by design (clinical-guardrails).
+// A client default protects only builds that carry it.
+export const UNKNOWN_INTAKE_COPY = {
+  /** The strip's name line, and so Home's headline (`signalTitle`). */
+  name: 'Something in recent meals',
+  /** The sample line and the strip's count line: where the facts came from, no count it cannot back. */
+  sample: 'From the meals you logged',
+  /** The ask, verbatim, as Home and the evidence text say it. */
+  ask: 'worth a call to your vet today',
+  /** The evidence row's concern. */
+  concern: 'something in recent meals',
+} as const;
+
+/** The cautious evidence sentence for an unknown intake trigger. */
+export function unknownIntakeSentence(petName: string): string {
+  return `Something in ${petName}'s recent meals stood out in what you logged. That's ${UNKNOWN_INTAKE_COPY.ask}.`;
+}
+
 /** I5 (Engines v3 PR-30s): the refused-then-vomited facts on an intake card, or null. Present only
  *  on caches written under `engines_v3_en5`; a malformed count reads as absent, never as a zero. */
 export function refusedThenVomitedOf(finding: SignalFinding): RefusedThenVomitedFacts | null {
@@ -1880,6 +1925,41 @@ export function refusedThenVomitedLine(finding: SignalFinding, petName: string):
 export function intakeRefusedThenVomitedFaceLine(finding: SignalFinding, petName: string): string | null {
   if (finding.type !== 'intake_decline' || finding.trigger === 'refused_then_vomited') return null;
   return refusedThenVomitedLine(finding, petName);
+}
+
+/** The sustained-refusal floor's facts off a cached card, or null when the card is another trigger
+ *  or the cache is malformed (a malformed cache never prints "NaN meals"). */
+export function sustainedRefusalOf(finding: SignalFinding): SustainedRefusalFacts | null {
+  if (finding.type !== 'intake_decline' || finding.trigger !== 'sustained_refusal') return null;
+  const r = finding.sustainedRefusal;
+  if (!r) return null;
+  const ok = (n: number) => Number.isFinite(n) && n >= 1;
+  const okZero = (n: number) => Number.isFinite(n) && n >= 0;
+  return ok(r.meals) && ok(r.days) && ok(r.windowHours) && okZero(r.refused) && okZero(r.picked) && (r.some === undefined || okZero(r.some)) ? r : null;
+}
+
+/** The window, the mirror of phrasing.ts `sustainedRefusalSpan`. */
+function sustainedRefusalSpan(r: SustainedRefusalFacts): string {
+  return r.anchoredToLastRating && r.endLocalDay
+    ? `the ${r.windowHours} hours to ${shortDateUTC(r.endLocalDay)}`
+    : `the last ${r.windowHours} hours`;
+}
+
+/** The counts, the mirror of phrasing.ts `sustainedRefusalCounts`. */
+function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
+  const some = r.some ?? 0;
+  const parts = [
+    r.refused > 0 ? `${r.refused} refused` : null,
+    r.picked > 0 ? `${r.picked} picked at` : null,
+    some > 0 ? `${some} ate some` : null,
+  ].filter((p): p is string => p !== null);
+  return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`;
+}
+
+/** The mirror of `sustainedRefusalSentence` in generate-signal/phrasing.ts (keep the two in sync;
+ *  signalCopy.sustainedRefusal.test.ts pins them). Counts over the named window and the call. */
+export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
+  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}. That's worth a call to your vet today.`;
 }
 
 function refusalCountOf(f: TimingStoryLike): number {
@@ -2380,6 +2460,19 @@ function phoneScriptFacts(
     if (finding.trigger === 'refused_then_vomited') {
       return [{ label: 'Concern', value: 'vomited soon after a refused meal' }, ...i5Rows];
     }
+    if (finding.trigger === 'sustained_refusal') {
+      const sr = sustainedRefusalOf(finding);
+      return [
+        { label: 'Concern', value: 'no meal eaten well' },
+        ...(sr
+          ? [
+              { label: 'Meals', value: sustainedRefusalCounts(sr) },
+              { label: 'Over', value: sustainedRefusalSpan(sr) },
+            ]
+          : []),
+        ...i5Rows,
+      ];
+    }
     if (finding.trigger === 'refused_normal_food') {
       const food = truncateFoodLabel(finding.refusedFoodLabel);
       return [
@@ -2394,6 +2487,10 @@ function phoneScriptFacts(
         },
         ...i5Rows,
       ];
+    }
+    if (finding.trigger !== 'consecutive_low') {
+      // CUL-2405: an unknown trigger states no duration and no comparison it cannot back.
+      return [{ label: 'Concern', value: UNKNOWN_INTAKE_COPY.concern }, ...i5Rows];
     }
     return [
       { label: 'Concern', value: 'eating less than usual' },
@@ -2632,6 +2729,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
     return ` has ${noun} showing ${phrase} — worth a look.`;
   }
   if (finding.type === 'intake_decline') {
+    if (finding.trigger === 'sustained_refusal') {
+      // The floor: what was rated, never "less than usual" (there is no usual to fall from).
+      return ` hasn't eaten well at any meal you watched and rated lately — worth a look.`;
+    }
     if (finding.trigger === 'refused_then_vomited') {
       // I5 (PR-30s): the sequence, never a cause; the banner's own calm ask.
       return ` vomited soon after turning down a meal on more than one day — worth a look.`;
@@ -2644,6 +2745,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
       return food
         ? ` turned down ${food}, which they usually finish — worth a look.`
         : ` turned down a meal they usually finish — worth a look.`;
+    }
+    if (finding.trigger !== 'consecutive_low') {
+      // CUL-2405: an unknown trigger; no "less than usual", and the ask kept on the banner.
+      return `: something in recent meals stood out — ${UNKNOWN_INTAKE_COPY.ask}.`;
     }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
@@ -2857,7 +2962,11 @@ export function stripNameLine(finding: SignalFinding): string | null {
         ? 'Refused the usual food'
         : finding.trigger === 'refused_then_vomited'
           ? 'Vomited after a refused meal'
-          : 'Eating less than usual';
+          : finding.trigger === 'sustained_refusal'
+            ? 'No meal eaten well'
+            : finding.trigger === 'consecutive_low'
+              ? 'Eating less than usual'
+              : UNKNOWN_INTAKE_COPY.name;
     case 'incident_red_flag':
       // Blood leads when both flags are set (the engine's own stable order, and the more
       // urgent read); the sentence and the expand still name both. The noun is the family
@@ -2914,7 +3023,11 @@ export function stripAskLine(finding: SignalFinding): string | null {
     case 'intake_decline':
       // templateIntakeDecline: ② ends "a word with your vet if it carries on"; I5 (PR-30s) ends
       // "That's worth mentioning to your vet.", an unconditional tell.
-      return finding.trigger === 'refused_then_vomited' ? STRIP_ASKS.tell : STRIP_ASKS.check;
+      // The sustained-refusal floor ends "worth a call to your vet today", an unconditional call.
+      if (finding.trigger === 'sustained_refusal') return STRIP_ASKS.call;
+      if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
+      // CUL-2405: the two conditional cards are named; a trigger this build does not know calls.
+      return finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food' ? STRIP_ASKS.check : STRIP_ASKS.call;
     case 'incident_red_flag':
       // templateIncidentRedFlag: "worth a call to your vet".
       return STRIP_ASKS.call;
@@ -2958,6 +3071,10 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
           ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
           : 'Compared with what you usually log';
       }
+      if (finding.trigger === 'sustained_refusal') {
+        const r = sustainedRefusalOf(finding);
+        return r ? `${count(r.meals, 'rated meal', 'rated meals')} on ${count(r.days, 'day', 'days')}, none eaten well` : 'None eaten well';
+      }
       if (finding.trigger === 'refused_then_vomited') {
         // I5 (PR-30s): the count and the days, with the first one's date as the recency.
         const r = refusedThenVomitedOf(finding);
@@ -2968,6 +3085,7 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
         const body = r.episodeCount === r.dayCount ? `On ${days}` : `${count(r.episodeCount, 'time', 'times')}, on ${days}`;
         return `${body}${since}`;
       }
+      if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
       return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
     case 'incident_red_flag':
       // "AI read" keeps it an unconfirmed read (the detail-screen register); the date is the

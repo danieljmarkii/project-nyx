@@ -1,0 +1,11 @@
+# The extraction job's Python (CUL-2292). Exact versions with hashes (`pip install --require-hashes`),
+# for the runner's CPython 3.12 on x86_64 Linux: the job pins `runs-on: ubuntu-24.04` so a new
+# runner image cannot silently change the interpreter under these wheels. To bump: pip download the
+# new versions with `--python-version 3.12 --platform manylinux_2_28_x86_64 --only-binary=:all:`,
+# then `pip hash` each wheel.
+pypdf==6.17.0 --hash=sha256:5bd827266a21553b74d910e350131a6227b72f2ab4209bf372814b8195fa11c5
+pdfminer.six==20260107 --hash=sha256:366585ba97e80dffa8f00cebe303d2f381884d8637af4ce422f1df3ef38111a9
+charset-normalizer==3.5.2 --hash=sha256:3d31298449090ab8d47b7b1b2a555ff73cac7ed438a08b7ac160980c7ebed649
+cryptography==50.0.2 --hash=sha256:4061c0079120205fb760c58acab6443e217307dcf05e3702cf970e0689972856
+cffi==2.1.1 --hash=sha256:c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf
+pycparser==3.12 --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e

@@ -44,12 +44,13 @@
 
 import { getDb } from './db';
 import { bowlFoodType, bowlProteins, componentDisplayName, loadMealBowls, type AppBowl } from './mealBowls';
-import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
+import { isFreeFedIntakeMeal, mayBeFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
 import {
   FINISHED_SCORE,
   INTAKE_SCORE,
   isQualifyingIntakeMeal,
   isRefusedOrPickedRating,
+  PICKED_SCORE,
 } from './intakeEvidence';
 import { canonicalizeProtein, proteinsFromCacheText, readProteinSet } from './protein';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
@@ -57,6 +58,7 @@ import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 // ── Shared constants ─────────────────────────────────────────────────────────
 
 const MS_PER_DAY = 86_400_000;
+const MS_PER_HOUR = 3_600_000;
 
 /** Adverse/health symptom event types surfaced by the dashboard. Mirrors the app's
  *  existing Trend-zone set (hooks/useTrend.ts) for cross-surface consistency:
@@ -113,6 +115,8 @@ const DECLINE = {
   normallyEatenMinSamples: 3,
   refusalRecencyDays: 2,
   cat: { consecutiveDaysBelowBaseline: 1, singleDayConcernCeiling: 2 },
+  // The sustained-refusal floor, byte for byte detection.ts DEFAULT_CONFIG.intakeDecline's.
+  sustainedRefusal: { windowHours: 72, minMeals: 3, minDays: 2 },
 } as const;
 
 // ── The notEnoughData sentinel (§11 #5) ─────────────────────────────────────────
@@ -1058,7 +1062,7 @@ export function getDietTrialProgress(
 /** A single decline trigger, structured for the card to phrase downstream. Carries
  *  NO "picky"/"preference" framing — `class` is always the health-watch route. */
 export interface IntakeDeclineFlag {
-  trigger: 'consecutive_low' | 'refused_normal_food';
+  trigger: 'consecutive_low' | 'refused_normal_food' | 'sustained_refusal';
   /** Routing marker: a decline is a health concern, never a preference. */
   class: 'health_watch';
   species: Species;
@@ -1067,6 +1071,17 @@ export interface IntakeDeclineFlag {
   daysBelowBaseline: number;
   refusedFoodLabel: string | null;
   ratedMealsConsidered: number;
+  /** The sustained-refusal floor's counts; present on that trigger only (detection.ts's mirror). */
+  sustainedRefusal?: {
+    meals: number;
+    refused: number;
+    picked: number;
+    some: number;
+    days: number;
+    windowHours: number;
+    /** The window ends at an earlier day's last rating, not now. */
+    anchoredToLastRating: boolean;
+  };
 }
 
 export type IntakeDeclineResult =
@@ -1124,7 +1139,85 @@ function classifyRatedMeals(meals: AnalyticsMeal[], freeFedSpans: readonly FreeF
     .sort((a, b) => a.ms - b.ms);
 }
 
+/**
+ * ②'s two relative triggers plus the sustained-refusal floor, the mirror of detection.ts
+ * `detectIntakeDeclineCore`: a record with no good meals has no normal to fall from, so the
+ * relative triggers stay silent on exactly the cat that is not eating. The floor needs no
+ * baseline, runs below the coverage floor, REPLACES `consecutive_low` when both hold (the louder,
+ * truer card; adversarial pass 1, B1) and sits beside a refusal.
+ */
 export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineResult {
+  const relative = detectIntakeDeclineRelative(input);
+  const flags = relative.status === 'watch' ? relative.flags : [];
+  const floor = sustainedRefusalFlag(input);
+  if (!floor) return relative;
+  return { status: 'watch', flags: [floor, ...flags.filter((f) => f.trigger !== 'consecutive_low')] };
+}
+
+/** The floor, a byte mirror of detection.ts `sustainedRefusalFinding` (CUL-2404 (a)): no watched
+ *  rated meal eaten well in the `windowHours` to the anchor (the last rated meal when it is within
+ *  the window of now, else now); at least `minMeals` refused, picked at or ate some on `minDays`
+ *  local days, at least one refused or picked at; only a certainly watched most/all clears it. */
+function sustainedRefusalFlag(input: IntakeDeclineInput): IntakeDeclineFlag | null {
+  const rule = DECLINE.sustainedRefusal;
+  const nowMs = input.nowMs;
+  if (!Number.isFinite(nowMs)) return null;
+  const rated = classifyRatedMeals(input.meals, input.freeFedSpans).filter((m) => m.ms <= nowMs);
+  if (rated.length === 0) return null;
+  const windowMs = rule.windowHours * MS_PER_HOUR;
+  const latestMs = rated[rated.length - 1].ms;
+  const ateWell = INTAKE_SCORE.most;
+  // Only a CERTAINLY watched rating clears the floor: never a possible bowl, never a mix with an
+  // unknown or possibly free-fed part (detection.ts, CUL-2406 instance 2).
+  const certainlyWatched = (m: RatedMeal): boolean => {
+    if (mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, input.freeFedSpans)) return false;
+    if (!m.bowl) return true;
+    return (
+      m.bowl.status === 'mix' &&
+      m.bowl.components.every((c) => c.foodItemId !== null && !mayBeFreeFedIntakeMeal(c.foodItemId, m.ms, input.freeFedSpans))
+    );
+  };
+  const qualifying = (endMs: number): RatedMeal[] | null => {
+    const inWindow = rated.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs);
+    if (inWindow.some((m) => m.score >= ateWell && certainlyWatched(m))) return null;
+    const meals = inWindow.filter((m) => m.score < ateWell);
+    if (meals.length < rule.minMeals) return null;
+    if (!meals.some((m) => m.score <= PICKED_SCORE)) return null;
+    if (new Set(meals.map((m) => intakeDayOf(m.ms, input.timeZone))).size < rule.minDays) return null;
+    return meals;
+  };
+  // The 72 hours to now first; the anchored window is a fallback only (detection.ts, pass 3).
+  const canAnchor = nowMs - latestMs <= windowMs && intakeDayOf(latestMs, input.timeZone) < intakeDayOf(nowMs, input.timeZone);
+  const atNow = qualifying(nowMs);
+  const recent = atNow ?? (canAnchor ? qualifying(latestMs) : null);
+  if (recent === null) return null;
+  const anchored = atNow === null;
+  const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timeZone)));
+  const refused = recent.filter((m) => m.score === INTAKE_SCORE.refused).length;
+  const picked = recent.filter((m) => m.score === PICKED_SCORE).length;
+  const mean = recent.reduce((s, m) => s + m.score, 0) / recent.length;
+  return {
+    trigger: 'sustained_refusal',
+    class: 'health_watch',
+    species: input.species,
+    baselineScore: mean,
+    recentScore: mean,
+    daysBelowBaseline: days.size,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: recent.length,
+    sustainedRefusal: {
+      meals: recent.length,
+      refused,
+      picked,
+      some: recent.length - refused - picked,
+      days: days.size,
+      windowHours: rule.windowHours,
+      anchoredToLastRating: anchored,
+    },
+  };
+}
+
+function detectIntakeDeclineRelative(input: IntakeDeclineInput): IntakeDeclineResult {
   const nowMs = input.nowMs;
   if (!Number.isFinite(nowMs)) return notEnoughData(0, DECLINE.minRatedMealsForBaseline);
 

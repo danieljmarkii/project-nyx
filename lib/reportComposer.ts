@@ -427,6 +427,7 @@ function flagWords(f: ComposerFlag): string {
       // Worded by what happened: a refusal reads as one, never as "less" (intake is not preference).
       if (f.trigger === 'refused_then_vomited') return 'refusing food, then vomiting';
       if (f.trigger === 'refused_normal_food') return 'refusing a usual food';
+      if (f.trigger === 'sustained_refusal') return 'no meal eaten well for days';
       return 'eating less than usual';
     case 'trial_diet_refusal':
       return 'the trial diet not finished';
