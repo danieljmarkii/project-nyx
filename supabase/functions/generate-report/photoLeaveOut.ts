@@ -15,6 +15,7 @@
 //      photos.
 
 import { fmtLocalDay } from './render.ts'
+import type { IncidentPhotoLeftOut, IncidentPhotoSafety } from './report.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -48,23 +49,16 @@ export function partitionPhotos<P extends { attachmentId: string }>(
   return { kept, leftOut }
 }
 
-/** What the saved copy keeps about a photo left out: which one, when, and whether it sat behind a
- *  flag. No storage path, no note, no AI read, no bytes. */
-export interface LeftOutPhotoRecord {
-  attachmentId: string
-  eventId: string
-  type: string
-  occurredAt: string
-  safety: string | null
-}
-
+/** What the saved copy keeps about a photo left out (`ReportSnapshot.incidentPhotosLeftOut`):
+ *  which one, when, and whether it sat behind a flag. No storage path, no note, no AI read, no
+ *  bytes. */
 export function leftOutRecord(p: {
   attachmentId: string
   eventId: string
   type: string
   occurredAt: string
-  safety: string | null
-}): LeftOutPhotoRecord {
+  safety: IncidentPhotoSafety | null
+}): IncidentPhotoLeftOut {
   return { attachmentId: p.attachmentId, eventId: p.eventId, type: p.type, occurredAt: p.occurredAt, safety: p.safety }
 }
 

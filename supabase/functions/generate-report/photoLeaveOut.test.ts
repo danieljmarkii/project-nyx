@@ -30,7 +30,7 @@ Deno.test('parse: a list past the cap is cut, never refused', () => {
   assert.equal(parsePhotosLeftOut({ photosLeftOut: many }).length, PHOTOS_LEFT_OUT_MAX)
 })
 
-const photo = (attachmentId: string, eventId: string, occurredAt: string, safety: string | null = null) => ({
+const photo = (attachmentId: string, eventId: string, occurredAt: string, safety: 'blood' | 'foreign' | null = null) => ({
   attachmentId,
   eventId,
   occurredAt,

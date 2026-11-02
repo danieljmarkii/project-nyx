@@ -8,6 +8,7 @@ import { buildDocumentV2, incidentTimeWords, textOf, type DocumentV2, type Docum
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PRINT, labelTableCells, pageHeadCss } from './renderBackV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
+import { leftOutRecord, partitionPhotos } from './photoLeaveOut.ts'
 import {
   backSheetsOf,
   EPISODES_HEADING,
@@ -28,7 +29,7 @@ import {
   type BackBlockV2,
   type BackSheetV2,
 } from './backSheetsV2.ts'
-import { cherryPickDisclosure, chronicityRecordPrecedesCounts, hasIncidentPhotos, timeConfidence, hasNoticed, mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
+import { cherryPickDisclosure, chronicityRecordPrecedesCounts, fmtLocalDay, hasIncidentPhotos, timeConfidence, hasNoticed, mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
 import { documentBlockIds } from './renderBackV2.ts'
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
@@ -145,6 +146,98 @@ Deno.test('R-10 — a photo that could not be embedded still prints its date, an
   assert.ok(band2 && band2.kind === 'band')
   const p2 = band2.items.flatMap((i) => i.photos)[0]
   assert.ok(p2.src !== null && !/could not/.test(p2.caption))
+})
+
+// ── Photos left out (PR-23, R-10, PM option A 2026-11-02) ───────────────────
+
+/** What index.ts does with the owner's choice: the chosen photos leave `incidentPhotos` for
+ *  `incidentPhotosLeftOut`. The storage path stands in for the attachment id here; the document
+ *  never reads either. */
+function leaveOut(s: ReportSnapshot, pick: (p: ReportSnapshot['incidentPhotos'][number]) => boolean): ReportSnapshot {
+  const { kept, leftOut } = partitionPhotos(
+    s.incidentPhotos.map((p) => ({ ...p, attachmentId: p.storagePath })),
+    s.incidentPhotos.filter(pick).map((p) => p.storagePath),
+  )
+  return {
+    ...s,
+    incidentPhotos: kept.map(({ attachmentId: _a, ...p }) => p),
+    incidentPhotosLeftOut: [...(s.incidentPhotosLeftOut ?? []), ...leftOut.map(leftOutRecord)],
+  }
+}
+
+function bandOf(d: DocumentV2) {
+  const band = d.blocks.find((b) => b.kind === 'band')
+  assert.ok(band && band.kind === 'band')
+  return band
+}
+
+const itemHtml = (html: string, id: string) => {
+  const at = html.indexOf(`data-item="${id}"`)
+  return html.slice(at, html.indexOf('</li>', at))
+}
+
+Deno.test('R-10 — a flagged photo left out: its flag prints word for word, dated "left out by the owner" beside it', () => {
+  const s = assembleReport(nyxSafetyCat())
+  const flagged = s.incidentPhotos.filter((p) => p.safety !== null)
+  assert.equal(flagged.length, 1, 'the fixture has one flagged photo')
+  const left = leaveOut(s, (p) => p.safety !== null)
+  const before = bandOf(docOf(s))
+  const after = bandOf(docOf(left))
+  // The same flags, in the same order, with the same text: leaving a photo out removes no warning.
+  assert.deepEqual(after.items.map((i) => [i.id, i.tag, i.html]), before.items.map((i) => [i.id, i.tag, i.html]))
+  const foreign = after.items.find((i) => i.id.includes('present_foreign'))
+  assert.ok(foreign)
+  assert.equal(foreign.photos.length, 0, 'the photo itself is gone')
+  const day = fmtLocalDay(flagged[0].occurredAt, s.timezone)
+  assert.equal(foreign.photosLeftOutLine, `Photo left out by the owner (${day}).`, 'dated with the incident’s day')
+  for (const html of [renderPrintV2(docOf(left)), renderPhoneV2(docOf(left))]) {
+    const li = itemHtml(html, foreign.id)
+    assert.ok(li.includes(`<span class="bleft">Photo left out by the owner (${day}).</span>`), 'inside its band line, print and phone')
+    assert.ok(!li.includes('class="bphoto"'), 'no image beside it')
+  }
+  for (const i of after.items.filter((x) => x !== foreign)) assert.equal(i.photosLeftOutLine, null, i.id)
+})
+
+Deno.test('R-10 — nothing left out: no line beside any flag and no count on the strip, on every fixture', () => {
+  for (const [name, s] of all()) {
+    const d = docOf(s)
+    const band = d.blocks.find((b) => b.kind === 'band')
+    for (const i of band && band.kind === 'band' ? band.items : []) assert.equal(i.photosLeftOutLine, null, `${name}: ${i.id}`)
+    const strip = blockIn(backSheetsOf(s), 'photo_strip')
+    if (strip) assert.equal(strip.leftOutLine, null, name)
+    assert.doesNotMatch(renderPrintV2(d), /left out by the owner/, name)
+  }
+})
+
+Deno.test('R-10 option A — every photo left out is counted on the record sheet, flagged or not', () => {
+  const s = assembleReport(stoolPhotoDog())
+  assert.ok(s.incidentPhotos.length >= 2, 'the fixture has photos to choose from')
+  const unflagged = s.incidentPhotos.find((p) => p.safety === null)
+  assert.ok(unflagged)
+  const one = leaveOut(s, (p) => p === unflagged)
+  const strip = blockIn(backSheetsOf(one), 'photo_strip')
+  assert.ok(strip)
+  assert.equal(strip.leftOutLine, '1 photo left out by the owner.')
+  assert.equal(strip.cardsHtml.length, s.incidentPhotos.length - 1, 'the kept photos only')
+  assert.ok(renderPrintV2(docOf(one)).includes('<p class="bnote">1 photo left out by the owner.</p>'))
+})
+
+Deno.test('R-10 option A — with every photo left out, the sheet never says the window had none', () => {
+  for (const [name, s] of all()) {
+    if (s.incidentPhotos.length === 0) continue
+    const left = leaveOut(s, () => true)
+    const sheets = backSheetsOf(left)
+    const n = s.incidentPhotos.length
+    const line = `${n} ${n === 1 ? 'photo' : 'photos'} left out by the owner.`
+    if (left.incidentPhotosRemoved.length > 0) {
+      assert.equal(blockIn(sheets, 'photo_strip')?.leftOutLine, line, name)
+    } else {
+      const none = blockIn(sheets, 'no_photos')
+      assert.ok(none, name)
+      assert.equal(none.text, line, `${name}: the count, never NO_PHOTOS_LINE`)
+    }
+    assert.doesNotMatch(renderPrintV2(docOf(left)), new RegExp(NO_PHOTOS_LINE.replace('.', '\\.')), name)
+  }
 })
 
 // ── The ledger (spec §6.1, AC 4, AC 5) ──────────────────────────────────────
@@ -481,7 +574,7 @@ Deno.test('styles — no back-sheet rule reaches a sheet 1 element (cold read: v
     for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(^|\})\s*([^{}@]+)\{/g)) {
       for (const sel of m[2].split(',').map((x) => x.trim())) {
         // `[data-compact] ` only narrows a back-sheet rule to large text (CUL-2401); the scope that follows is still checked.
-        assert.ok(/^(\[data-compact\] )?(\.sheet\.back|\.back|\.bphotos?|\.bcap)\b/.test(sel), `"${sel}" is not scoped to the back sheets or the band photo`)
+        assert.ok(/^(\[data-compact\] )?(\.sheet\.back|\.back|\.bphotos?|\.bcap|\.bleft)\b/.test(sel), `"${sel}" is not scoped to the back sheets or the band photo`)
       }
     }
   }

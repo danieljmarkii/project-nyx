@@ -236,7 +236,7 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       return `${open('div', 'disc')}${b.html}</div>`
     case 'band':
       return `${open('section', 'band')}<h2>${h(b.heading)}</h2><ul>${b.items
-        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}${bandPhotosHtml(i.photos)}</li>`)
+        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}${bandPhotosHtml(i.photos, i.photosLeftOutLine)}</li>`)
         .join('')}</ul>${b.checksHtml ? `<p class="checks">${b.checksHtml}</p>` : ''}</section>`
     case 'checks':
       return `${open('p', 'checks unframed')}${b.html}</p>`

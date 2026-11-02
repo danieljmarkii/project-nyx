@@ -16,6 +16,7 @@
 //
 // Nothing here is reached unless the server resolved `report_document_v2` on for the caller AND
 // the request asked for v2 (PM ruling (a) on CUL-2290); v1's `renderReport` is untouched.
+import { leftOutBandLine } from './photoLeaveOut.ts'
 import {
   REPORT_SYMPTOM_TYPES,
   type ConcurrentChange,
@@ -213,6 +214,9 @@ export interface BandItem {
   tag: string
   html: string
   photos: BandPhoto[]
+  /** R-10 (PR-23): "Photo left out by the owner (Jul 2)." when a photo on an event this line cites
+   *  was left out before sending; null otherwise. The flag text above it prints either way. */
+  photosLeftOutLine: string | null
 }
 
 export interface DocumentV2 {
@@ -418,6 +422,15 @@ export function bandPhotosOf(f: SafetyFlag, snap: ReportSnapshot): BandPhoto[] {
         alt: `Owner photo of the ${symptomLabel(p.type).toLowerCase()} incident on ${when}`,
       }
     })
+}
+
+/** R-10 (PR-23): the dated line for photos the owner left out on the events this band line cites.
+ *  The same events `bandPhotosOf` reads, so a photo is either beside its line or dated there. */
+export function bandLeftOutLineOf(f: SafetyFlag, snap: ReportSnapshot): string | null {
+  if (f.kind !== 'present_blood' && f.kind !== 'present_foreign') return null
+  // Absent on a snapshot frozen before PR-23 (a saved copy, a recorded fixture): nothing was left
+  // out then, because nothing could be.
+  return leftOutBandLine(new Set(f.incidents.map((i) => i.eventId)), snap.incidentPhotosLeftOut ?? [], snap.timezone)
 }
 
 /** An incident's time in words with its confidence (v1's classes, `timeConfidence`). */
@@ -955,7 +968,7 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
       kind: 'band',
       id: 'band',
       heading: `Flags for the vet · ${band.length}`,
-      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(f, snap, ptr), photos: bandPhotosOf(f, snap) })),
+      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(f, snap, ptr), photos: bandPhotosOf(f, snap), photosLeftOutLine: bandLeftOutLineOf(f, snap) })),
       checksHtml: checks,
     })
   } else if (checks !== null) {

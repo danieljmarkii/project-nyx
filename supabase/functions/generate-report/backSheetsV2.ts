@@ -35,6 +35,7 @@
 //      points at an appendix v2 does not print yet, the sentence that pointed is left out whole
 //      (`V2_SECTION_POINTERS`); it is never re-pointed at a page that is not in the document.
 //   3. `html` fields are already-escaped fragments; every other text field is plain text.
+import { leftOutCountLine } from './photoLeaveOut.ts'
 import {
   REPORT_SYMPTOM_TYPES,
   type ReportSnapshot,
@@ -107,7 +108,7 @@ export interface LedgerRow {
 }
 
 export type BackBlockV2 =
-  | { kind: 'photo_strip'; id: 'photo-strip'; heading: string; introHtml: string; cardsHtml: string[] }
+  | { kind: 'photo_strip'; id: 'photo-strip'; heading: string; introHtml: string; leftOutLine: string | null; cardsHtml: string[] }
   | { kind: 'no_photos'; id: 'photo-strip'; text: string }
   | {
       kind: 'ledger'
@@ -287,12 +288,17 @@ export function intakeFlagFired(snap: ReportSnapshot): boolean {
 function photoBlock(snap: ReportSnapshot): BackBlockV2 {
   // v1's predicate: a retained photo, or a photographed and read incident whose photo the owner
   // removed (which must be disclosed, never dropped).
-  if (!hasIncidentPhotos(snap)) return { kind: 'no_photos', id: 'photo-strip', text: NO_PHOTOS_LINE }
+  // R-10, PM option A (PR-23): every photo the owner left out is counted, flagged or not, so
+  // "No incident photos in this window." never prints over a window that had them.
+  // Absent on a snapshot frozen before PR-23: nothing could be left out then.
+  const leftOutLine = leftOutCountLine(snap.incidentPhotosLeftOut?.length ?? 0)
+  if (!hasIncidentPhotos(snap)) return { kind: 'no_photos', id: 'photo-strip', text: leftOutLine ?? NO_PHOTOS_LINE }
   return {
     kind: 'photo_strip',
     id: 'photo-strip',
     heading: 'Incident photos',
     introHtml: onSheets(incidentPhotosIntroHtml(snap, V2_SECTION_POINTERS)),
+    leftOutLine,
     cardsHtml: snap.incidentPhotos.map((p) => incidentPhotoCard(p, snap.timezone)),
   }
 }
@@ -847,7 +853,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
             // says so on the card, and its read and date stay.
             // A photo the owner removed has no card; the sheet discloses it and its read stays in the
             // event log (cold read round 4), so the grid is never offered as the complete set.
-            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each retained photo has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
+            text: `The owner’s incident photos are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first: each retained photo has a card with its read, and the image where it could be embedded. A photo the owner removed has no card; that sheet says so, and its read stays in the event log. A photo the owner left out of this report has no card either; that sheet counts it, and one flagged for blood or foreign material is dated beside its flag on sheet 1. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
           },
         ]
       : []),
