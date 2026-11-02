@@ -8523,7 +8523,7 @@ function appendixDivider(snap: ReportSnapshot): string {
  * of them, including the witnessed ones: there the tag on a `seen` row is what makes the one
  * `est` row visible by contrast, which is what the July cold read valued about the column.
  */
-function allTimesWitnessed(snap: ReportSnapshot): boolean {
+export function allTimesWitnessed(snap: ReportSnapshot): boolean {
   const log = snap.provenance.symptomLog
   return log.length > 0 && log.every((e) => timeConfidence(e) === 'seen')
 }

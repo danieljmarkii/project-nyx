@@ -46,6 +46,7 @@ import {
   dietMeds,
   dietTrialSection,
   eventLogParts,
+  allTimesWitnessed,
   fmtDay,
   fmtLocalDay,
   fmtLocalTime,
@@ -759,7 +760,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
     },
     {
       term: 'Range',
-      text: `This record covers ${plain(scopeBasisLabel(snap.scope).toLowerCase())}, ${plain(fmtRange(snap.scope.startDate, snap.scope.endDate))}. A hand-picked window states how many symptom events fall outside it, so nothing is cropped to a good week.${
+      text: `The window is ${plain(fmtRange(snap.scope.startDate, snap.scope.endDate))} (${plain(scopeBasisLabel(snap.scope).toLowerCase())}). A hand-picked window states how many symptom events fall outside it, so nothing is cropped to a good week.${
         trialCropDisclosureRenders(snap)
           ? ' Where the range covers only part of a diet trial, the trial section names the symptom events logged in the trial days it leaves out; neither count reports an absence of symptoms.'
           : ''
@@ -771,7 +772,13 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
     },
     {
       term: 'Time confidence',
-      text: 'In the event log, seen means a witnessed time, est an estimated time, and range a window the event occurred in, found later. A bare “before” or “after” time is one known bound. Unspecified means no confidence was recorded; treat that time as approximate.',
+      // Only the tags the event log prints: v1 drops them when every time was witnessed (cold read:
+      // a key to tags the page does not carry sends a reader hunting).
+      text: allTimesWitnessed(snap)
+        ? 'Every time in the event log was witnessed by the owner, so its times carry no tag. “Occurred” is when it happened; “logged” is when the owner recorded it.'
+        : snap.provenance.symptomLog.length === 0
+          ? 'The event log lists no symptom event in this window, so no time needs a tag.'
+          : 'In the event log, seen means a witnessed time, est an estimated time, and range a window the event occurred in, found later. A bare “before” or “after” time is one known bound. Unspecified means no confidence was recorded; treat that time as approximate.',
     },
     {
       term: 'Duplicate logs',
@@ -816,7 +823,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
     {
       // Last, as v1 ends its legend: what the record is computed over.
       term: 'Deleted entries',
-      text: `Entries the owner deleted are excluded. Every symptom count traces line by line to the event log, and the off-diet exposures to the exposures table on the sheet headed “${DIET_SHEET_TITLE}”; medication, diet, weight and normal-stool figures summarise the owner’s logs for those items rather than itemising each one. Nothing is counted that the owner did not log.`,
+      text: `Entries the owner deleted are excluded. Every symptom count traces line by line to the event log, and the treats, table food and other off-diet feedings to their table on the sheet headed “${DIET_SHEET_TITLE}”; medication, diet, weight and normal-stool figures summarise the owner’s logs for those items rather than itemising each one. Nothing is counted that the owner did not log.`,
     },
   ]
   return entries

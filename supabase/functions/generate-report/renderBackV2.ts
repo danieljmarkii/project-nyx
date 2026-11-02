@@ -239,6 +239,10 @@ const BACK_SHARED = `
 .back .kentry dt{font-weight:700;}
 .back .kentry dd{margin:0;}
 .back .kv,.back .callout,.back .weight,.back .noticed-line,.back .nb-row,.back .ns-row{break-inside:avoid;}
+/* A day heading never ends a page apart from its entries; a note or footnote never starts one apart
+   from the table it reads (cold read: a stranded "Oct 16" header, a footnote cut from its table). */
+.back tr.ng-day{break-after:avoid;}
+.back .v1sec table + p,.back .v1sec table + .note,.back .v1sec table + div,.back .v1sec .tbl + p{break-before:avoid;}
 `
 
 /** VR2-14's reprinted v1 sections, in absolute pt: shared by the print sheet and the phone's print block. */
