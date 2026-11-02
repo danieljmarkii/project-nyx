@@ -19,22 +19,23 @@ interface Props {
   visitId: string;
   /** The booking this visit was logged from, whose filed reports belong to the visit too. */
   appointmentId: string | null;
+  /** Changes whenever the host re-reads, so this section re-reads with it. */
+  refreshKey?: number;
   onOpenReport: (report: SavedReport) => void;
 }
 
-export function VisitReports({ petId, visitId, appointmentId, onOpenReport }: Props) {
+export function VisitReports({ petId, visitId, appointmentId, refreshKey = 0, onOpenReport }: Props) {
   const [reports, setReports] = useState<SavedReport[] | 'failed' | null>(null);
 
   useEffect(() => {
     let live = true;
-    setReports(null);
     void readReportsForVisit(petId, visitId, appointmentId).then((r) => {
       if (live) setReports(r);
     });
     return () => {
       live = false;
     };
-  }, [petId, visitId, appointmentId]);
+  }, [petId, visitId, appointmentId, refreshKey]);
 
   if (reports === null || (Array.isArray(reports) && reports.length === 0)) return null;
   if (reports === 'failed') {

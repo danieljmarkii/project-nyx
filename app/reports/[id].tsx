@@ -89,26 +89,32 @@ export default function SavedReportScreen() {
     void load();
   }, [load]);
 
-  const loadLink = useCallback(async () => {
-    if (typeof id !== 'string' || typeof pet !== 'string' || !held) return;
-    try {
-      const [current, home] = await Promise.all([readReportLink(pet, id), readVetVisitsHome(pet)]);
-      setOptions(linkOptions(home));
-      setLink(current === 'failed' ? 'unknown' : current);
-    } catch (e) {
-      console.warn('[saved-report] the visit link could not be read:', e);
-      setLink('unknown');
-    }
-  }, [id, pet, held]);
-
+  // The copy's link and the picker's choices. A read for an earlier copy never lands on this one.
   useEffect(() => {
-    void loadLink();
-  }, [loadLink]);
+    let live = true;
+    setLink('unknown');
+    setLinkError(null);
+    if (typeof id !== 'string' || typeof pet !== 'string' || !held) return;
+    void (async () => {
+      try {
+        const [current, home] = await Promise.all([readReportLink(pet, id), readVetVisitsHome(pet)]);
+        if (!live) return;
+        setOptions(linkOptions(home));
+        setLink(current === 'failed' ? 'unknown' : current);
+      } catch (e) {
+        console.warn('[saved-report] the visit link could not be read:', e);
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [id, pet, held]);
 
   const pick = useCallback(
     async (target: VisitLinkTarget | null) => {
-      if (typeof id !== 'string' || typeof pet !== 'string') return;
       setPicking(false);
+      // One write at a time: a second tap while one is in flight does nothing.
+      if (saving || typeof id !== 'string' || typeof pet !== 'string') return;
       setSaving(true);
       setLinkError(null);
       const out = await linkSavedReport(pet, id, target);
@@ -116,7 +122,7 @@ export default function SavedReportScreen() {
       if (out.kind === 'ok') setLink(target);
       else setLinkError(out.kind === 'offline' ? LINK_OFFLINE : out.kind === 'refused' ? LINK_REFUSED : LINK_FAILED);
     },
-    [id, pet],
+    [id, pet, saving],
   );
 
   const currentYear = new Date().getFullYear();

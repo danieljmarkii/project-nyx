@@ -34,7 +34,7 @@ export function VisitLinkSheet({ options, current, emptyText, onPick, onClose }:
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.container} accessibilityViewIsModal>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} hitSlop={8} accessibilityRole="button" testID="visit-link-cancel">
+          <TouchableOpacity onPress={onClose} style={styles.cancel} accessibilityRole="button" testID="visit-link-cancel">
             <ThemedText style={styles.cancelText}>Cancel</ThemedText>
           </TouchableOpacity>
           <ThemedText style={styles.headerTitle}>Visit</ThemedText>
@@ -116,6 +116,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: theme.textLG, fontWeight: theme.weightMedium, color: theme.colorNeutralDark },
   headerSpacer: { width: 56 },
+  // Pinned at the 44pt floor rather than reached by slop (C-5).
+  cancel: { minHeight: theme.hitTarget, minWidth: theme.hitTarget, justifyContent: 'center' },
   cancelText: { fontSize: theme.textMD, color: theme.colorTextSecondary },
   body: { padding: theme.space3, paddingBottom: theme.space6, gap: theme.space1 },
   title: { fontSize: theme.textXL, fontWeight: theme.weightSemibold, color: theme.colorNeutralDark },

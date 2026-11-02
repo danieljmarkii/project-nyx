@@ -315,7 +315,7 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'the kept copy and the target are each checked to be the caller\'s and the same pet\'s. ' +
       'Provenance only (113\'s freeze lets nothing else move); it counts nothing.',
   },
-  'supabase/functions/report-visit-link/index.ts': {
+  'supabase/functions/report-visit-link/io.ts': {
     kinds: ['table'],
     why:
       'The same-pet check before that write: `vet_visits` / `vet_appointments` by id paired with ' +
