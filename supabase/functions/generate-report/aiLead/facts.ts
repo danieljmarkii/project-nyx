@@ -151,7 +151,8 @@ export function tableFromPayload(payload: LeadFactPayload): FactTable {
   const facts: Fact[] = [
     ...band.map((b, i) => ({ id: b.id, text: b.text, label: b.label, role: 'band', live: true, required: i === 0, must_say: mustSayOf(b.text) })),
     ...recordLines.map((l) => ({ id: l.id, text: l.text, role: l.kind, must_say: mustSayOf(l.text) })),
-    ...(trial ? [{ id: 'trial', text: trial.text, role: 'record', required: true, must_say: mustSayOf(trial.text) }] : []),
+    // An ended trial is said to have ended, or to have run (CUL-2380 pass 2: "is at Oct 20").
+    ...(trial ? [{ id: 'trial', text: trial.text, role: 'record', required: true, must_say: [...mustSayOf(trial.text), ...(/\bended\b/i.test(trial.text) ? [['ended', ' ran ', ' to ']] : [])] }] : []),
     ...edge.map((e) => ({ id: e.id, text: e.text, role: 'edge', required: true, must_say: [...mustSayOf(e.text), ...edgeDate(e.text)] })),
   ]
   return {

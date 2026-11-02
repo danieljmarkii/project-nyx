@@ -41,8 +41,10 @@
 //               after it, so true words cannot be flipped ("possible foreign material, not
 //               unconfirmed"); never inside a compound ("not-a-health-signal")
 //   script      CUL-2380: no letter outside A to Z a cited line does not print, no format character
-//   tense       CUL-2380: a band sentence's first clause is never past ("had been a live flag"), and
+//   tense       CUL-2380: a sentence that touches a flag is never past ("had been a live flag"), and
 //               "over" is followed by a count, never left as an ending ("the flag is over")
+//   date-anchor CUL-2380: a date after "first", "last", "from", "to"... keeps the anchor its line
+//               prints, so dates cannot swap between a count and its silence
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -79,7 +81,7 @@ const SIGN_WORDS = /\b(?:flare\w*|prurit\w*|vomit\w*|cough\w*|itch\w*|scratch\w*
 const EXPOSURE_WORDS = /\b(?:trials?|diets?|foods?|fed|feed\w*|treats?|doses?|dosing|given|gave|courses?|medications?|medicines?|drugs?|supplements?|tablets?|pills?|injections?)\b/i
 /** Intake said to be adequate. Prints only when a cited line says it the same way, not negated
  *  (adversarial pass 2: "22 recent rated meals fully eaten" read a baseline count as adequacy). */
-const POSITIVE_INTAKE = /(?<!\bnot (?:fully )?)(?<!\bpartly )\b(?:fully eaten|eaten|ate|eats|finished|eat(?:s|ing)? (?:well|normally|fine)|cleared (?:the|her|his|their) bowl|good appetite|normal appetite)\b(?! some\b)/i
+const POSITIVE_INTAKE = /(?<!\bnot (?:fully )?)(?<!\bpartly )\b(?:fully eaten|eaten|ate|eats|finished|eat(?:s|ing)? (?:well|normally|fine)|cleared (?:the|her|his|their) bowl|good appetite|normal appetite|(?<!\bwithout (?:a )?)full meals?)\b(?! some\b)/i
 
 const POSITIVE_ALL = new RegExp(POSITIVE_INTAKE.source, 'gi')
 
@@ -116,6 +118,14 @@ const NEGATED_CONTRACTION = /n't$/
 /** The negating word and the two words after it must be printed together in a cited line. */
 export const NEGATION_SPAN = 3
 const FRAME = new Set(LEAD_FRAME)
+
+const MONTH_DAY = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}\b/gi
+/** A date after the word that says which end of a count it marks. */
+const DATE_AFTER_ANCHOR = /\b(first|last|recent|latest|from|to|since|until|through|logged|ended|began|started)\s+((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? \d{1,2})\b/gi
+/** The text with its month-day dates blanked. */
+function withoutDates(text: string): string {
+  return norm(text).replace(MONTH_DAY, ' ')
+}
 
 /** Lower-cased words joined by single spaces, hyphens as spaces: for checking a phrase in place. */
 function flatWords(text: string): string {
@@ -206,6 +216,12 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   const err = (sentence: number | null, check: string, detail: string) => errors.push({ sentence, check, detail })
   const facts = new Map(table.facts.map((f) => [f.id, f]))
   const sents = printed.sentences
+  // Any band fact is an observation, whatever its id (CUL-2380 pass 2: the bake-off table's S1 and S3
+  // escaped one-observation).
+  // A band label's content words ("intake", "chronicity", "foreign", "material", "burden", "weight").
+  const bandLabelWords = [...new Set(table.facts.filter((f) => f.role === 'band').flatMap((f) => leadWords(String((f as { label?: unknown }).label ?? ''))))]
+    .filter((w) => w.length > 3 && !FRAME.has(w))
+  const observes = (c: string) => isObservation(c) || facts.get(c)?.role === 'band'
 
   const total = sents.reduce((n, s) => n + words(s.text), 0)
   if (total > LEAD_MAX_WORDS) err(null, 'structure', `the lead has ${total} words (max ${LEAD_MAX_WORDS})`)
@@ -249,7 +265,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
 
     // Classes from the cites AND the words: citing only the trial does not license naming a sign.
     const exposure = s.cites.some(isExposure) || EXPOSURE_WORDS.test(s.text)
-    const observed = s.cites.some(isObservation) || SIGN_WORDS.test(s.text)
+    const observed = s.cites.some(observes) || SIGN_WORDS.test(s.text)
     // An exposure and an observation never share a sentence, whatever joins them: "after",
     // "during", "while" and "with" all set a change beside a count (H2). The one exception is a
     // cited line that itself states both windows "side by side, not as a cause".
@@ -272,7 +288,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     for (const m of s.text.matchAll(ABSENCE_WORDS)) err(i, 'absence', `${JSON.stringify(m[0])}: an ending, absence or softening word (H4, H7)`)
     // One observation per sentence, so a number or date cannot move from one sign to another
     // (pass 3, B4: the cough's "10 days ago" set on vomiting).
-    const observations = s.cites.filter(isObservation)
+    const observations = s.cites.filter(observes)
     if (observations.length > 1) err(i, 'one-observation', `${observations.length} signs or flags cited in one sentence (max 1)`)
     // "N <unit> ago" is a recency: it must be printed in a cited line exactly (pass 3, B4).
     for (const m of countText(s.text, year).matchAll(/\b(\d+(?:\.\d+)?)\s+(days?|h|hours?|weeks?)\s+ago\b/gi)) {
@@ -316,7 +332,8 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // Closed vocabulary (CUL-2380): a word the cited lines never print, that is not the pet's name
     // and not in the frame, is a word the verifier cannot read, so the lead drops. A hyphenated
     // compound passes whole, or when every part would pass alone.
-    const citedWords = s.cites.flatMap((c) => leadWords(facts.get(c)?.text ?? ''))
+    // Dates are the date rules' business: "May 23" in a line must not license the modal "may".
+    const citedWords = s.cites.flatMap((c) => leadWords(withoutDates(facts.get(c)?.text ?? '')))
     // A band item's label prints on the band as its tag, and band-first requires it in sentence 1.
     const labels = s.cites.flatMap((c) => leadWords(String((facts.get(c) as { label?: unknown } | undefined)?.label ?? '')))
     const vocab = new Set([...citedWords, ...labels])
@@ -335,7 +352,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       if (/[A-Za-z0-9]/.test(ch)) continue
       if (/\p{Cf}/u.test(ch) || !citedText.includes(ch)) err(i, 'script', `${JSON.stringify(ch)} (U+${ch.codePointAt(0)!.toString(16).toUpperCase()}) is a character no cited line prints`)
     }
-    const sentenceWords = leadWords(s.text)
+    const sentenceWords = leadWords(withoutDates(s.text))
     const negating = (w: string) => NEGATIONS.has(w) || NEGATED_CONTRACTION.test(w)
     for (const w of new Set(sentenceWords)) {
       if (known(w)) continue
@@ -346,9 +363,12 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // A band item is live: its sentence never puts it in the past in its first clause ("had been a
     // live flag", "was a flag"), and "over" is a count's span, never an ending ("the flag is over")
     // unless a cited line prints the same two words (CUL-2380 pass 1).
-    if (s.cites.some((c) => facts.get(c)?.role === 'band')) {
-      const past = firstClause(s.text).match(/\b(?:was|were|had|been|used to|formerly|once)\b/)
-      if (past) err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
+    // Anywhere in a sentence that cites a band item, names a flag, or uses a band label's word
+    // (CUL-2380 pass 2: "…had been recorded as a health signal", "Coughing had been a flag").
+    const touchesFlag = s.cites.some((c) => facts.get(c)?.role === 'band') || /\bflags?\b/i.test(s.text) ||
+      bandLabelWords.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(s.text))
+    if (touchesFlag) {
+      for (const past of norm(s.text).matchAll(/\b(?:was|were|had|been|used to|formerly|once)\b/gi)) err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
     }
     for (const m of norm(s.text).matchAll(/\bover\b\s*([^\s,.;:]*)/gi)) {
       const follower = m[1].toLowerCase()
@@ -369,6 +389,18 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       const bound = citedRuns.has(run) || (run.split(' ').length < NEGATION_SPAN && [...citedRuns].some((r) => r.startsWith(`${run} `) || r === run))
       if (!bound) err(i, 'negation', `${JSON.stringify(run)} is not a negation a cited line prints`)
     })
+
+    // A date after an anchor word ("first", "last", "most recent", "from", "to") keeps the anchor its
+    // cited line prints before it, so dates cannot swap between a count and its silence, or between
+    // a sign's first and latest entry (CUL-2380 pass 2). A trial-only sentence is exempt: its dates
+    // are the trial's span.
+    if (s.cites.some(observes)) {
+      const citedLower = ` ${s.cites.map((c) => norm(facts.get(c)?.text ?? '').toLowerCase().replace(/[(),]/g, ' ').replace(/\s+/g, ' ')).join(' | ')} `
+      const lead = norm(s.text).toLowerCase().replace(/[(),]/g, ' ').replace(/\s+/g, ' ')
+      for (const m of lead.matchAll(DATE_AFTER_ANCHOR)) {
+        if (!citedLower.includes(` ${m[1]} ${m[2]}`)) err(i, 'date-anchor', `${JSON.stringify(`${m[1]} ${m[2]}`)} is not how a cited line dates it`)
+      }
+    }
 
     // The cited lines normalised as the lead is (curly apostrophes), so "Hill's" matches.
     const cited = s.cites.map((c) => norm(facts.get(c)?.text ?? '')).join(' ')

@@ -1817,7 +1817,7 @@
    "source": "CUL-2380 adversarial pass 1 (true words reordered into adequacy)",
    "sentences": [
     {
-     "text": "Intake: the most recent rated meal was fully-eaten, about 50 h, below baseline for 2 consecutive days over 22 recent rated meals.",
+     "text": "Intake: the most recent rated meal fully-eaten, about 50 h, below baseline for 2 consecutive days over 22 recent rated meals.",
      "cites": [
       "band-1-intake_decline"
      ]
@@ -1863,8 +1863,256 @@
     "checker": "reject"
    },
    "closed_by": [
+    "intake-positive",
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-fullmeal-a",
+   "fixture": "cooper-cat",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (\"with a full meal\" on a cat inside its window)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h with a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
     "intake-positive"
    ]
+  },
+  {
+   "id": "rv2-fullmeal-b",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (\"a full meal\")",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h, the most recent rated meal a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "rv2-dates-a",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (dates swapped so the latest week reads 0)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 6 entries on 4 days from Oct 19 to Oct 25, and 0 entries Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv2-dates-b",
+   "fixture": "bakeoff-nyx",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (first and most recent swapped, the latest vomit 7 weeks old)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed; vomiting for at least 47 days, first logged Jun 30, most recent May 14.",
+     "cites": [
+      "S1",
+      "S3"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "rv2-modal-a",
+   "fixture": "bakeoff-nyx",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (\"may\" licensed by the month name)",
+   "sentences": [
+    {
+     "text": "Foreign material may be a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "rv2-tense-a",
+   "fixture": "cooper",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (past tense outside the first clause)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, had been recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-tense-b",
+   "fixture": "r11",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (past tense outside the first clause)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, was a sustained pattern.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-tense-c",
+   "fixture": "nyx-v2",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (a band flag named in the past from a record line)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing had been a flag: 5 entries on 5 of 45 logged days, the last Oct 21.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-trial-a",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H6",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (an ended trial set as running)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, is at Oct 20, 2026, planned for 84 days.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
   },
   {
    "id": "res-omit-a",
