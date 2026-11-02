@@ -105,6 +105,12 @@ export const LEAD_SLOT_MARK = 'data-block="ai-lead"'
  * clears every lead; when a send path renders the lead into the sent HTML, that path checks
  * withdrawal (`leadAllowedAtSend`) before it renders, and this step then keeps the text.
  * False on any failed read or write: the caller refuses the keep rather than freeze a misrecord.
+ *
+ * A lead not on the sent copy leaves no model output behind in the verdict either: `sentences` and
+ * `checker` are dropped, the reason and the hash kept (rls-privacy-reviewer pass 2 on CUL-2377).
+ * The kept row's verdict is frozen, so text the vet never got must not ride into it; and after a
+ * withdrawal whose clear was skipped, migration 118's guard refuses any draft write that still
+ * carries model output, which would otherwise refuse the Send itself on every retry.
  */
 export async function settleLeadForKeep(io: Pick<LeadIO, 'readDraft' | 'writeDraft'>, storedHtml: string): Promise<boolean> {
   const draft = await io.readDraft()
@@ -114,7 +120,8 @@ export async function settleLeadForKeep(io: Pick<LeadIO, 'readDraft' | 'writeDra
     ? (draft.verdict as Record<string, unknown>)
     : null
   const reason = draft.text !== null ? 'not_on_sent_copy' : prior === null ? 'not_ready' : 'not_printed'
-  return io.writeDraft(null, { ...(prior ?? {}), at_send: { printed: false, reason } } as unknown as StoredVerdict, null)
+  const { sentences: _sentences, checker: _checker, ...record } = prior ?? {}
+  return io.writeDraft(null, { ...record, at_send: { printed: false, reason } } as unknown as StoredVerdict, null)
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

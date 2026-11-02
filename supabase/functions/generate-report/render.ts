@@ -4001,6 +4001,13 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       ),
     )
   }
+  // CUL-2441 (PM ruling (a)): the record, under the owner's words, wherever they print. A stop
+  // reason is the owner's words too (adversarial pass 1): "stopped because the symptoms had
+  // resolved" collects no verdict by construction (`lib/dietTrialCompletion.ts`), so gating on the
+  // verdict alone printed that claim with nothing beside it. Every owner reason counts; `completed`
+  // is the milestone tap, a fact about when the trial ended rather than the owner's account of it.
+  const ownerStopReason = t.stoppedReason !== null && t.stoppedReason !== undefined && t.stoppedReason !== 'completed'
+  if (t.outcome || t.outcomeNotes || ownerStopReason) rows.push(kv('From the record', trialRecordLine(snap)))
 
   // ── Element 2: the interpretability statement (§7.2) ────────────────────────
   //
@@ -4283,6 +4290,184 @@ function weightDuringTrial(snap: ReportSnapshot): string | null {
   return `Weight ${dir} to ${weightEndText(c.latest, snap)}, from ${weightEndText(c.highBefore, snap)} &mdash; <b>${weightPctText(
     c,
   )}</b> (the latest reading against the highest before it in the trial).`
+}
+
+/**
+ * CUL-2441 (PM ruling (a), 2026-11-02) — the record, printed under the owner's trial read.
+ *
+ * The owner's "better at the end of the trial" sat with nothing from the record beside it, on a
+ * page whose record held vomiting through the trial's last week and after it. This line prints
+ * whenever the owner's words print, whatever they said, and never refers to them: it states counts
+ * and weights, and leaves the comparison to the vet. "Better" and "worse" never appear in it.
+ *
+ * ONLY FACTS THE REPORT ALREADY PRINTS. The signs are appendix A's log (every in-window symptom
+ * incident), the logged days are the trial's meal days (the "Symptoms vs logging" row's series), and the weight is
+ * `weightDuringTrial`'s change and the Weight flag.
+ *
+ * Three readings the PM's go covered, each the louder one:
+ *   1. EVERY SIGN, not the indication's. Nothing maps an indication to its signs, and a GI trial
+ *      that drops the cough the vet would want is the quieter page.
+ *   2. AFTER THE TRIAL, TOO. The owner's read is given at the end; when the window runs past it,
+ *      what followed is counted. On Nyx's record every one of the last week's vomits came after.
+ *   3. THE TRIAL'S OWN WEIGHT CHANGE, never "since it began", which nothing measures. A trial with
+ *      one weigh-in says so, and the Weight flag's loss is restated beside it: on Nyx's record the
+ *      trial measures no change and the flag reads 15%.
+ *
+ * A COUNT ALWAYS CARRIES ITS MEAL-LESS DAYS (C-3): stated whenever any day of the span holds no
+ * meal log, whatever the count, and never when every day does. An unknown is said, never dropped.
+ */
+function trialRecordLine(snap: ReportSnapshot): string {
+  const t = snap.trial!
+  const end = t.evidenceEndDate
+  const start = maxDayKey(t.evidenceStartDate, shiftDayKey(end, -6) ?? end)
+  const spanDays = Math.max(1, daysBetweenDayKeys(start, end) + 1)
+  const endedOn = t.endedAt ? t.endedAt.slice(0, 10) : null
+  const endsWithTrial = endedOn !== null && endedOn === end
+  const dayWord = (n: number): string => (n === 1 ? 'day' : `${num(n)} days`)
+  const span =
+    endsWithTrial && spanDays === 7
+      ? `the trial&rsquo;s last 7 days`
+      : endsWithTrial
+        ? `the trial&rsquo;s last ${dayWord(spanDays)} this report covers`
+        : `the last ${dayWord(spanDays)} of the trial this report covers`
+  const parts = [`${signsClause(snap, start, end, span)}.`]
+  // The window runs on past the trial's end: what the record holds after it, its length said, so
+  // two spans of different lengths are never read as one scale (cold read, finding 7).
+  const afterStart = endsWithTrial ? shiftDayKey(end, 1) : null
+  if (afterStart !== null && afterStart <= snap.scope.endDate) {
+    const afterDays = daysBetweenDayKeys(afterStart, snap.scope.endDate) + 1
+    const after = afterDays === 1 ? 'the day after the trial ended' : `the ${num(afterDays)} days after the trial ended`
+    parts.push(`${signsClause(snap, afterStart, snap.scope.endDate, after)}.`)
+  }
+  // `other` is outside the report's symptom allow-list, so it is in neither count above. The
+  // snapshot carries only the window's total, so the line says how many and where, never a date.
+  const uncat = snap.provenance.uncategorisedObservations
+  if (uncat > 0) {
+    parts.push(
+      `${uncat === 1 ? 'One further observation' : `${num(uncat)} further observations`} in this window ${
+        uncat === 1 ? 'was' : 'were'
+      } logged as &ldquo;other&rdquo; and ${uncat === 1 ? 'is' : 'are'} in neither count.`,
+    )
+  }
+  // The weight sentence names its scope as the signs do (adversarial pass 2): `trialChange` is
+  // bounded to the evidence span, so where that span is not the whole trial it says so.
+  const wholeTrial = endsWithTrial && t.evidenceStartDate === t.startedAt.slice(0, 10)
+  parts.push(trialWeightClause(snap, wholeTrial ? 'the trial' : 'the trial days this report covers'))
+  return parts.join(' ')
+}
+
+/** Later of two day keys. */
+function maxDayKey(a: string, b: string): string {
+  return a > b ? a : b
+}
+
+/**
+ * "Logged in <span>, Oct 14 – Oct 20, 2026: 3 vomiting, 1 sneezing", with its meal-less days. The
+ * signs lead, by type (cold read, finding 7): a lumped total mixes a sneeze into a GI trial's count.
+ */
+function signsClause(snap: ReportSnapshot, start: string, end: string, span: string): string {
+  const byType = new Map<string, number>()
+  for (const e of snap.provenance.symptomLog) {
+    const d = localDayKeyOf(e.occurredAt, snap.timezone)
+    if (d < start || d > end) continue
+    byType.set(e.type, (byType.get(e.type) ?? 0) + 1)
+  }
+  // A short events pull makes every count a floor (the page's partial-record banner says why).
+  const floor = (snap.incompletePulls ?? []).includes('events')
+    ? ' (at least: part of the event record could not be read)'
+    : ''
+  const dates = h(start === end ? fmtDayYear(start) : fmtRange(start, end))
+  const mix = [...byType.entries()]
+    .sort((a, b) => b[1] - a[1] || symptomLabel(a[0]).localeCompare(symptomLabel(b[0])))
+    .map(([type, n]) => `${num(n)} ${h(symptomLabel(type).toLowerCase())}`)
+    .join(', ')
+  const counted = mix
+    ? `Logged in ${span}, ${dates}${floor}: <b>${mix}</b>`
+    : `No symptom event logged in ${span}, ${dates}${floor}`
+  return `${counted}${mealLessDaysClause(snap, start, end)}`
+}
+
+/**
+ * "; no meal was logged on 2 of those 7 days", or "" when every day holds one. MEAL days, the
+ * predicate of the "Symptoms vs logging" row beside it (C-3; adversarial pass 1: a dose-only week
+ * read as fully logged under the any-log set, beside a row saying meals stopped).
+ */
+function mealLessDaysClause(snap: ReportSnapshot, start: string, end: string): string {
+  const keys = snap.trial?.mealLoggedDayKeys
+  // An older stored snapshot lacks the set: say the coverage is unknown, never imply it was full.
+  if (!Array.isArray(keys)) return '; which of those days had a meal logged is not recorded in this copy'
+  const logged = new Set(keys)
+  const days = daysBetweenDayKeys(start, end) + 1
+  let without = 0
+  for (let i = 0; i < days; i++) {
+    const d = shiftDayKey(start, i)
+    if (d !== null && !logged.has(d)) without += 1
+  }
+  if (without === 0) return ''
+  const meals =
+    without === days
+      ? `; no meal was logged on ${days === 1 ? 'that day' : `any of those ${num(days)} days`}`
+      : `; no meal was logged on ${num(without)} of those ${num(days)} days`
+  // And how many held no log of ANY kind (cold read 2): a count over days nobody logged is a floor,
+  // and the meal predicate alone does not say that. Never stated without the any-log set.
+  const anyKeys = snap.v2?.loggedDayKeys
+  if (!Array.isArray(anyKeys)) return meals
+  const anyLogged = new Set(anyKeys)
+  let silent = 0
+  for (let i = 0; i < days; i++) {
+    const d = shiftDayKey(start, i)
+    if (d !== null && !anyLogged.has(d)) silent += 1
+  }
+  if (silent === 0) return meals
+  return `${meals}, and nothing at all on ${silent === without ? (without === 1 ? 'it' : 'them') : `${num(silent)} of them`}`
+}
+
+/**
+ * The trial's weight, as readings: a change, one weigh-in, or none; then any later weigh-in on the
+ * report, read as the Weight block reads it; then the Weight flag's loss.
+ *
+ * A LATER WEIGH-IN IS NEVER LEFT OUT (adversarial pass 2, QUIET): the row reaches past the trial for
+ * signs, so it does for weight. "Up about 2% over the trial" printed under "better" while the Weight
+ * block read a reading four days later as down about 8%, because only the flag (which a single new
+ * reading does not fire) carried it.
+ */
+function trialWeightClause(snap: ReportSnapshot, scope: string): string {
+  const c = snap.weight.trialChange
+  const at = (e: WeightChangeEnd): string => `${weightReadingText(e.kg)} on ${h(fmtDayYear(e.day))}`
+  const latest = snap.weight.latest
+  let s: string
+  // `undefined` is a stored copy assembled before the field existed: unknown, never "none".
+  if (c === undefined) s = 'The weight over the trial is not recorded in this copy.'
+  else if (c === null) s = `No weight recorded in ${scope}.`
+  else if (!c.highBefore || c.deltaKg === null)
+    // NOT "so no change is measured", which reads aloud as "no change" (cold read, finding 8).
+    s = `Weight change over ${scope} cannot be measured: one weigh-in in ${scope}, ${at(c.latest)}.${
+      latest && latest.date === c.latest.day ? ' None is recorded after it.' : ''
+    }`
+  else if (c.deltaKg === 0) s = `Weight unchanged over ${scope}: ${at(c.highBefore)}; ${at(c.latest)}.`
+  else
+    s = `Weight ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b> over ${scope}: ${at(
+      c.highBefore,
+    )} &rarr; ${at(c.latest)}.`
+  // The report's latest weigh-in, when it falls after every reading named above.
+  const namedUpTo = c ? c.latest.day : null
+  if (latest && c !== undefined && (namedUpTo === null || latest.date > namedUpTo)) {
+    const ch = snap.weight.change
+    const read =
+      ch && ch.latest.day === latest.date && ch.highBefore && ch.deltaKg !== null && ch.deltaKg !== 0
+        ? `: ${ch.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(ch)}</b> from ${at(ch.highBefore)}`
+        : ''
+    s += ` The latest weigh-in on this report is ${weightReadingText(latest.kg)} on ${h(fmtDayYear(latest.date))}${read}.`
+  }
+  if ((snap.incompletePulls ?? []).includes('weight_checks')) s += ' The weigh-in record did not load in full.'
+  const f = weightFlagOf(snap)
+  if (f) {
+    s += ` The report&rsquo;s Weight flag reads a loss of <b>${weightLossPctText(
+      f.latest.kg,
+      f.highBefore.kg,
+    )}</b> against the highest reading in the last ${num(f.windowDays)} days.`
+  }
+  return s
 }
 
 /** "a 56-day" but "an 84-day" — English takes the article from how the number is
