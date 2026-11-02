@@ -559,7 +559,10 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
     const end = c.endInWindow ? c.endInWindow.slice(0, 10) : null
     const med = medicationFor(snap, c)
     const none = med !== null && med.courseDays.given === 0 && med.courseDays.loggedNotGiven === 0
-    const from = start === null ? (c.startDate ? `from ${plainDay(c.startDate.slice(0, 10))} (before this window)` : 'start not recorded') : `from ${plainDay(start)}`
+    // CUL-2440: an ad-hoc drug whose record reaches before this window is not drawn as starting
+    // here. Its bar begins at the first dose in the window, so the label says so.
+    const recordBit = c.recordStart ? ` (first dose here; on record from ${plainDay(c.recordStart.firstDoseDay)})` : ''
+    const from = start === null ? (c.startDate ? `from ${plainDay(c.startDate.slice(0, 10))} (before this window)` : 'start not recorded') : `from ${plainDay(start)}${recordBit}`
     const to = end === null ? 'through the window' : c.endIsDeclared ? `to ${plainDay(end)}` : `to ${plainDay(end)} (last dose logged)`
     const span = `${from}${start === null && !c.startDate ? ',' : ''} ${to}`
     const when = none ? `prescribed ${span}, no doses logged` : span
@@ -840,7 +843,10 @@ function medicationLines(snap: ReportSnapshot): RecordLine[] {
       const body =
         total === 0
           ? 'no course days in this window'
-          : `given on ${c.given} of ${plural(total, 'course day', 'course days')}${c.loggedNotGiven > 0 ? `, logged as not given on ${c.loggedNotGiven}` : ''}`
+          : `given on ${c.given} of ${plural(total, 'course day', 'course days')}${
+              // CUL-2440: the partial doses ride with the count, as on every back sheet.
+              m.partialDoses > 0 ? ` (${m.partialDoses} partial)` : ''
+            }${c.loggedNotGiven > 0 ? `, logged as not given on ${c.loggedNotGiven}` : ''}`
       return { id: `medication-${m.regimenId}`, text: `${m.drugName}${kind}: ${body}.` }
     })
 }
@@ -930,7 +936,7 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     // Sheet 1 is word-budgeted, so this is the short form; the back sheets carry the full one.
     const tail = m.recordStart
       ? m.recordStart.atHistoryFloor
-        ? ` (ad-hoc, from ${plainDay(m.recordStart.firstDoseDay)} or earlier)`
+        ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
         : ` (ad-hoc, first logged ${plainDay(m.recordStart.firstDoseDay)})`
       : m.activeAtWindowEnd
         ? ' (its course has no recorded end)'

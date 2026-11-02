@@ -89,7 +89,9 @@ Deno.test('CUL-2440 — cetirizine is dated from Jul 1 in every section, and nam
   const t = v1('nyx-live')
   assert.match(
     t,
-    /Cetirizine HCl \(Zyrtec\) \(supplement\) · doses on record since Jul 1, 2026, the earliest day this report’s medication history reads, so dosing may have begun earlier, overlapping Jul 26–Oct 20 · 87 d still running at the end of this window\. Ad-hoc doses, no regimen recorded/,
+    /Cetirizine HCl \(Zyrtec\) \(supplement\) · doses on record since Jul 1, 2026, the earliest day this report’s medication history reads, so dosing may have begun earlier, overlapping Jul 26–Oct 20 · 87 d \(last dose logged Oct 24, after the trial ended\)\. Ad-hoc doses, no regimen recorded/,
+  )
+  assert.doesNotMatch(t, /Cetirizine[^.]*still running/, 'an ad-hoc drug is never "still running": the lifetime table says an unrecorded end is not one still under way'
   )
   assert.match(t, /Motozol \(2 courses\), Prednisolone and Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) overlapped the trial/)
   assert.match(t, /Cetirizine HCl \(Zyrtec\) \(no regimen recorded; doses on record since Jul 1, 2026, the earliest day this report reads; 5 logged in this window, from Oct 3\)/)
@@ -107,9 +109,11 @@ Deno.test('CUL-2440 — the diet history no longer says no dose was given in foo
 
 Deno.test('CUL-2440 — v2 carries the same facts: sheet 1 and the back sheets (nyx-live)', () => {
   const t = v2('nyx-live')
-  assert.match(t, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\), overlapping it Jul 26 to Oct 20 \(ad-hoc, from Jul 1 or earlier\)/, 'sheet 1')
+  assert.match(t, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\), overlapping it Jul 26 to Oct 20 \(ad-hoc, by Jul 1\)/, 'sheet 1')
   assert.doesNotMatch(t, /overlapping it Oct 3 to Oct 20/)
   assert.match(t, /15 of 15 \(11 partial\)/, 'the lifetime table on the back sheets')
+  assert.match(t, /Prednisolone: given on 15 of 21 course days \(11 partial\)/, 'sheet 1 carries the partial count')
+  assert.match(t, /from Oct 3 \(first dose here; on record from Jul 1\)/, 'sheet 1’s chart label does not start cetirizine in the window')
   assert.match(t, /Motozol \(2 courses\), Prednisolone and Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) overlapped the trial/)
 })
 
@@ -154,4 +158,38 @@ Deno.test('CUL-2443 — an unconfirmed early signal leads with its status, and t
   assert.match(html, /<b>Not confirmed, an early signal short of the established threshold:<\/b> Beef was/)
   assert.doesNotMatch(html, /<b>Beef/)
   assert.match(plain(html), /the published time-to-flare window for skin signs in dogs \(Olivry & Mueller\); this marker counts any logged symptom/)
+})
+
+// ── Adversarial pass 1's two QUIET breaks, held ───────────────────────────────
+
+Deno.test('adversarial 1 — a prescribed course is never relabelled ad-hoc by a same-name item first dosed on its start day', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  // A second "Prednisolone" item: ad-hoc doses from Sep 21 in the window, history from Jun 1.
+  s.unlinkedMedications.push({ ...s.unlinkedMedications[0], itemId: 'pred-2', drugName: 'Prednisolone', firstDate: '2026-09-21' })
+  s.medicationHistory!.entries.push({ ...s.medicationHistory!.entries[0], key: 'item:pred-2', drugName: 'Prednisolone', firstDoseDay: '2026-06-01' })
+  const pred = s.trial!.medicationOverlap.find((m) => m.drugName === 'Prednisolone')!
+  pred.endedAt = null
+  pred.activeAtWindowEnd = true
+  const out = withRecordOverlaps(s)
+  assert.deepEqual(out.trial!.medicationOverlap.find((m) => m.drugName === 'Prednisolone'), pred, 'the regimen row is left exactly as built')
+  const cc = out.concurrentChanges.find((c) => c.label === 'Prednisolone')!
+  assert.equal(cc.recordStart, undefined)
+  const t = plain(renderReport(s))
+  assert.match(t, /Prednisolone · Sep 21–Oct 11 · 21 d still running at the end of this window/)
+  assert.doesNotMatch(t, /Prednisolone · doses on record/)
+})
+
+Deno.test('adversarial 2 — a near-total or owner-recorded refusal still "documents a refusal"', () => {
+  const base = fixture('nyx-live')
+  const withFact = (refused: number, rated: number, stoppedReason: string | null): string => {
+    const s = structuredClone(base)
+    s.trial!.rangeRefusal = { ...s.trial!.rangeRefusal!, refusedFeedings: refused, ratedFeedings: rated }
+    s.trial!.stoppedReason = stoppedReason as never
+    return plain(renderReport(s))
+  }
+  assert.match(withFact(37, 38, null), /37 of 38 rated feedings of the trial diet were not finished, so this record documents a refusal/)
+  assert.match(withFact(2, 4, 'refused'), /so this record documents a refusal/, 'the owner’s own stop reason is never hedged')
+  assert.match(withFact(3, 4, null), /so this record documents a refusal/, 'more than half unfinished keeps the claim')
+  assert.match(withFact(10, 20, null), /so this record documents a refusal/, 'ratings that are a real share of the feedings keep the claim')
+  assert.match(withFact(2, 4, null), /cannot show the diet was eaten as fed/, 'only the thin case is reworded')
 })

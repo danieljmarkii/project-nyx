@@ -4138,7 +4138,16 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // among ~167 the record cannot document a refusal, but it cannot show the diet was eaten
     // either, and that is the reading that stays (intake is not preference: the unfinished
     // feedings are never softened). A total refusal, or no fact at all, keeps the old sentence.
-    const partialRefusal = !!refusalFact && !total
+    // ADVERSARIAL PASS 1 (QUIET): any non-total refusal took this branch, so 37 of 38 refused, with
+    // the owner's own stop reason "refused", read "cannot show the diet was eaten". It applies
+    // only where the ratings are too thin to carry the claim: at most half the rated feedings
+    // unfinished, the ratings under a tenth of the feedings, and no owner-recorded refusal.
+    const partialRefusal =
+      !!refusalFact &&
+      !total &&
+      t.stoppedReason !== 'refused' &&
+      refusalFact.refusedFeedings * 2 <= refusalFact.ratedFeedings &&
+      refusalFact.ratedFeedings * 10 < t.exposures.totalFeedings
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
@@ -5247,8 +5256,10 @@ function halvesLine(
   const cov = t.coverage
   const middleLogged =
     cov && cov.daysElapsed === rangeDays ? cov.daysLogged - m.firstHalf.daysLogged - m.lastHalf.daysLogged : null
-  const known = middleLogged === 0 || middleLogged === 1
-  const state = !known ? '' : middleLogged === 1 ? ' and had a meal logged' : ' and had no meal logged'
+  // Only the positive state is derivable: coverage leaves treat-only days out while the halves
+  // count them, so a difference of 0 can hide a meal on the middle day (adversarial pass 1).
+  const known = middleLogged === 1
+  const state = known ? ' and had a meal logged' : ''
   const total = known ? ` (${num(cov!.daysLogged)} of ${num(rangeDays)} in all)` : ''
   return `${halves}; the middle day, ${h(fmtDay(middle))}, is in neither half${state}${total}.`
 }
@@ -5310,7 +5321,13 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
       : startedBefore
       ? `since ${h(fmtDay(startedBefore))}, overlapping ${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
       : `${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
-    const still = m.activeAtWindowEnd
+    // CUL-2440: an ad-hoc drug has no course to be "still running"; its last logged dose is the
+    // fact, and when it falls after the trial ended the sentence says so.
+    const still = rec && m.endedAt
+      ? m.endedAt.slice(0, 10) > m.toDate
+        ? ` (<b>last dose logged ${h(fmtDay(m.endedAt.slice(0, 10)))}, after the trial ended</b>)`
+        : ` (last dose logged ${h(fmtDay(m.endedAt.slice(0, 10)))})`
+      : m.activeAtWindowEnd
       ? ' <b>still running at the end of this window</b>'
       : m.overlapsLast7Days
         ? ' (ran into the last 7 days)'
@@ -10641,7 +10658,7 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
       // live record page 1 counted 18 doses given inside a food while this row said none was.
       // The louder of the two stands.
       vehicleDosesOf(snap) > 0
-      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged during the trial as given inside a food that does not resolve to a meal logged in this window, so the food is not identified (counted among the trial&rsquo;s doses by mouth).`
+      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged during the trial as given inside a food that does not resolve to a meal logged in this window, so the food is not named here (counted among the trial&rsquo;s doses by mouth).`
       : snap.medications.length > 0 || snap.unlinkedMedications.length > 0
       ? 'Not recorded &mdash; no dose in this window was logged as given in food.'
       : 'Not recorded.'

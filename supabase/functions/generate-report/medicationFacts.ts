@@ -68,6 +68,17 @@ export function withRecordOverlaps(snap: ReportSnapshot): ReportSnapshot {
 }
 
 /**
+ * True when a regimen of the same name starts on `day` (ADVERSARIAL PASS 1, QUIET). The snapshot
+ * carries no provenance on an overlap or change row, so a row is read as ad-hoc only when no
+ * prescribed course could have produced it: a regimen and a second same-name item first dosed on
+ * the regimen's start day otherwise relabelled the prescribed steroid "ad-hoc, not a continuous
+ * course" and dropped its "no recorded end". When in doubt the row is left exactly as built.
+ */
+function regimenCouldBe(snap: ReportSnapshot, drugName: string, day: string): boolean {
+  return snap.medications.some((r) => r.drugName === drugName && r.startedAt !== null && r.startedAt.slice(0, 10) === day)
+}
+
+/**
  * The concurrent-changes rows for an ad-hoc drug, annotated with its earliest dose on record.
  * `startDate` stays the window's first dose (the chart's marker is drawn there); the sentence
  * that names the row says the record reaches further back.
@@ -77,7 +88,7 @@ function withRecordChanges(snap: ReportSnapshot): ReportSnapshot {
   const concurrentChanges = snap.concurrentChanges.map((c) => {
     if ((c.kind !== 'medication' && c.kind !== 'supplement') || c.startDate === null || c.recordStart) return c
     const group = snap.unlinkedMedications.find((u) => u.drugName === c.label && u.firstDate === c.startDate)
-    if (!group) return c
+    if (!group || regimenCouldBe(snap, c.label, c.startDate.slice(0, 10))) return c
     const rec = adHocRecordStartOf(snap, group, c.startDate)
     if (!rec) return c
     changed = true
@@ -95,7 +106,7 @@ function withTrialRecordOverlaps(snap: ReportSnapshot): ReportSnapshot {
     if (m.startedAt === null || m.recordStart) return m
     const started = m.startedAt.slice(0, 10)
     const group = snap.unlinkedMedications.find((u) => u.drugName === m.drugName && u.firstDate === started)
-    if (!group) return m
+    if (!group || regimenCouldBe(snap, m.drugName, started)) return m
     const rec = adHocRecordStartOf(snap, group, started)
     if (!rec) return m
     const from = rec.firstDoseDay > trialStart ? rec.firstDoseDay : trialStart
