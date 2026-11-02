@@ -346,3 +346,36 @@ Deno.test('CUL-2439 — the hold walk sees every local midnight: between two cha
   assert.ok(stretches >= 300, `non-vacuity: ${stretches} stretches`)
   assert.ok(changed >= 20, `non-vacuity: ${changed} changes across instants`)
 })
+
+// ── Adversarial pass 2 on CUL-2439: a card an owner was already shown prints the numbers it printed. ──
+
+Deno.test('adv 2 Q1 — the calm card states the rolling numbers, never a lower count from the calendar week', () => {
+  // A New York cat read Jul 15 06:00 EDT: five vomits on Jul 1, then Jul 5, two on Jul 8, Jul 12.
+  // Rolling 3 vs 6; calendar 1 vs 3 (a smaller fall from a much lower count). Both calm.
+  const events = [
+    ...[6, 10, 14, 18, 22].map((h) => vomit(ny(7, 1, h, 30))),
+    vomit(ny(7, 5, 8)),
+    vomit(ny(7, 8, 10)),
+    vomit(ny(7, 8, 18)),
+    vomit(ny(7, 12, 8)),
+  ]
+  const inp = { ...input(ny(7, 15, 6), events, mealsNy(6, 20, 30, [7, 18]).concat(mealsNy(7, 1, 15, [7, 18]).filter((m) => m.occurredAt < ny(7, 15, 6)))), pet: { name: 'Mochi', species: 'cat' as const, dietTrialActive: false } }
+  const r = computeWeekReadings(inp, DEFAULT_CONFIG)!
+  const cal = r.calendar.stats.find((s) => s.symptomType === 'vomit')!
+  assert.deepEqual([cal.currentCount, cal.priorCount], [1, 3], 'the counterexample holds')
+  const out = detectReflections(inp, DEFAULT_CONFIG)
+  assert.deepEqual(out.map((x) => [x.currentCount, x.priorCount]), [[3, 6]])
+})
+
+Deno.test('adv 2 Q2 — a tie in tier keeps the rolling days: "6 of the last 7", never 5', () => {
+  // A Los Angeles dog read Jul 15 10:00 PDT. Diarrhea Jul 2–6 at 10:00; then Jul 9 at 14:00 and 19:00
+  // (two UTC dates, one local) and Jul 11–14 at 10:00. Rolling 6 vs 5 on 6 days; calendar 6 vs 5 on 5.
+  const LA = 'America/Los_Angeles'
+  const la = (d: number, h: number): string => new Date(Date.UTC(2026, 6, d, h + 7)).toISOString()
+  const dz = (t: string): SymptomEvent => ({ ...vomit(t), type: 'diarrhea' })
+  const events = [...[2, 3, 4, 5, 6].map((d) => dz(la(d, 10))), dz(la(9, 14)), dz(la(9, 19)), ...[11, 12, 13, 14].map((d) => dz(la(d, 10)))]
+  const meals: MealEvent[] = []
+  for (let d = 1; d <= 15; d++) for (const h of [7, 18]) if (la(d, h) < la(15, 10)) meals.push(meal(la(d, h)))
+  const f = detectWorsening(input(la(15, 10), events, meals, LA), DEFAULT_CONFIG)
+  assert.deepEqual(f.map((x) => [x.symptomType, x.currentCount, x.priorCount, x.currentDays, x.tier]), [['diarrhea', 6, 5, 6, 'firm']])
+})

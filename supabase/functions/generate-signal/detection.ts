@@ -4956,13 +4956,20 @@ const QUARTER_HOUR_MS = 900_000
 const CALENDAR_DAY_MEMO = new Map<string, Map<number, number>>()
 /** Quarter hours kept per zone (~2.7 years); past it the zone's memo is cleared and refills. */
 const CALENDAR_DAY_MEMO_CAP = 100_000
+/** Zones memoized at once; past it every memo is cleared. */
+const CALENDAR_DAY_MEMO_ZONES = 16
 
 function calendarDayOf(timezone: string | undefined): (ms: number) => number {
   if (!isValidTimeZone(timezone)) return (ms) => Math.floor(ms / MS_PER_DAY)
+  // An offset string ("+05:37") need not change day on a quarter hour, so it is never memoized
+  // (adversarial pass 2): its day is computed per call, exactly.
+  if (!/^[A-Za-z]/.test(timezone)) return (ms) => localDayIndex(ms, timezone)
   // One memo per zone for the module's life, not per call: the hold walk replays this reading
-  // hundreds of times over the same instants (adversarial pass 1 on CUL-2439, B4).
+  // hundreds of times over the same instants (adversarial pass 1 on CUL-2439, B4). Bounded in zones
+  // as well as entries, so no run of odd zone strings can grow it without limit.
   let memo = CALENDAR_DAY_MEMO.get(timezone)
   if (memo === undefined) {
+    if (CALENDAR_DAY_MEMO.size >= CALENDAR_DAY_MEMO_ZONES) CALENDAR_DAY_MEMO.clear()
     memo = new Map<number, number>()
     CALENDAR_DAY_MEMO.set(timezone, memo)
   }
@@ -5223,11 +5230,11 @@ export function detectReflections(
   })
   const rolling = candidates[0]
   const calendar = statOf(readings.calendar, rolling.symptomType)
-  // It speaks only if the owner's calendar week is calm too, and it states the reading with the
-  // SMALLER fall (flat beats improving), so it is never calmer than either: the calendar week
-  // when they tie, since that is the week its words name.
+  // It speaks only if the owner's calendar week is calm too, and it states the ROLLING numbers, the
+  // ones it stated before: a calendar week can show a smaller fall from a much lower count ("1, down
+  // from 3" over "3, down from 6", adversarial pass 2, Q1), and no mix of the two is never calmer.
   if (!calendar || !calm(calendar)) return []
-  const s = rolling.priorCount - rolling.currentCount < calendar.priorCount - calendar.currentCount ? rolling : calendar
+  const s = rolling
   return [
     {
       type: 'reflection' as const,
@@ -5409,16 +5416,6 @@ function byMostWorsening(a: SymptomStat, b: SymptomStat): number {
 
 const WORSENING_TIER_RANK: Record<WorseningTier, number> = { soft: 0, standard: 1, firm: 2 }
 
-/** CUL-2439: two readings of ONE sign, louder first (tier, rise, count). A stable sort keeps the
- *  calendar reading first on a full tie (`eligibleReadings` lists it first). */
-function louderFirst(a: SymptomStat, b: SymptomStat, cfg: DetectionConfig['reflection']): number {
-  const tier = WORSENING_TIER_RANK[resolveWorseningTier(b, triggerOf(b), cfg)] - WORSENING_TIER_RANK[resolveWorseningTier(a, triggerOf(a), cfg)]
-  if (tier !== 0) return tier
-  const rise = b.currentCount - b.priorCount - (a.currentCount - a.priorCount)
-  if (rise !== 0) return rise
-  return b.currentCount - a.currentCount
-}
-
 /**
  * Resolve the copy-urgency tier for a worsening symptom. Density first (a dense current
  * week is 'firm' regardless of which arm fired — persistent daily symptoms are the
@@ -5470,14 +5467,24 @@ export function detectWorsening(
   pool.sort(byMostWorsening)
   const symptomType = pool[0].symptomType
 
-  // WHICH numbers (B1): of the readings that card this sign, the LOUDER one (tier, then the
-  // larger rise, then the larger count; the calendar week on a tie, the week its words name), so
-  // the card is never softer than either reading would make it.
-  const fired = eligibleReadings(readings)
-    .map((w) => statOf(w, symptomType))
-    .filter((x): x is SymptomStat => x !== undefined && isWorseningCard(x, config))
-  fired.sort((a, b) => louderFirst(a, b, cfg))
-  const s = fired[0]
+  // WHICH numbers (adversarial passes 1 and 2, B1/Q2/Q3): when the rolling reading cards this sign,
+  // its numbers are the card's, exactly as before CUL-2439, unless the calendar week carries a
+  // strictly LOUDER tier. Then the ask is louder and the calendar's numbers come with it. So no
+  // card an owner was shown can print fewer days, a lower count or a softer tier than before.
+  // Only a sign the rolling reading does not card takes the calendar's numbers outright.
+  const cardOf = (w: WindowedStats): SymptomStat | undefined => {
+    const x = w.loggingEligible ? statOf(w, symptomType) : undefined
+    return x !== undefined && isWorseningCard(x, config) ? x : undefined
+  }
+  const rollingStat = cardOf(readings.rolling)
+  const calendarStat = cardOf(readings.calendar)
+  const tierOf = (x: SymptomStat): number => WORSENING_TIER_RANK[resolveWorseningTier(x, triggerOf(x), cfg)]
+  const s =
+    rollingStat === undefined
+      ? calendarStat!
+      : calendarStat !== undefined && tierOf(calendarStat) > tierOf(rollingStat)
+        ? calendarStat
+        : rollingStat
   const trigger = triggerOf(s)
   return [
     {
@@ -8549,7 +8556,7 @@ export const CHRONICITY_HOLD_MAX_DAYS = 120
  *   | 24 a day                                 | 56          | 2.9 s             |  13 days         |
  *
  * Supabase allows 2 s of CPU per request, and `generate-report` runs this beside its render, so
- * the cap holds the walk near 0.3 s at the heaviest logging. Past it: no hold, today's
+ * the cap holds the walk near 0.6 s at the heaviest logging (0.3 s before CUL-2439's calendar reading). Past it: no hold, today's
  * behaviour, never below it (a stated blind spot).
  */
 export const CHRONICITY_HOLD_MAX_STEPS = 700
