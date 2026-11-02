@@ -115,7 +115,7 @@ describe('the composer gate (CUL-2296)', () => {
   it('Back from the report returns to the composer, not out of the screen', async () => {
     const r = render(<ReportScreen />);
     fireEvent.press(r.getByTestId('preview-30'));
-    await r.findByText('Send to vet');
+    await r.findByText('Send…');
     fireEvent.press(r.getByLabelText('Back'));
     expect(r.getByTestId('composer')).toBeTruthy();
   });
@@ -123,7 +123,7 @@ describe('the composer gate (CUL-2296)', () => {
   it('arriving from the composer, the report names the chosen window once and offers no second range control', async () => {
     const r = render(<ReportScreen />);
     fireEvent.press(r.getByTestId('preview-30'));
-    await r.findByText('Send to vet');
+    await r.findByText('Send…');
     expect(r.getByTestId('report-chosen-window')).toHaveTextContent(/^Last 30 days · Jun 3 to Jul 2/);
     expect(r.queryByText('Custom…')).toBeNull();
     expect(r.queryByLabelText(/^Start date,/)).toBeNull();
@@ -138,7 +138,7 @@ describe('the composer gate (CUL-2296)', () => {
     await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(1));
     expect(mockedGenerate.mock.calls[0][0]).toEqual({ petId: 'p1', includeNotes: false });
     // ...and not a second time on the report screen.
-    await r.findByText('Send to vet');
+    await r.findByText('Send…');
     expect(r.queryByTestId('report-notes-option')).toBeNull();
   });
 
@@ -146,7 +146,7 @@ describe('the composer gate (CUL-2296)', () => {
     mockedGenerate.mockResolvedValue({ ...report, reportVersion: 'v2', phoneHtml: '<html>phone</html>' });
     const r = render(<ReportScreen />);
     fireEvent.press(r.getByTestId('preview-30'));
-    await r.findByText('Send to vet');
+    await r.findByText('Send…');
     expect(r.queryByText('Report range')).toBeNull();
     expect(r.queryByTestId('report-chosen-window')).toBeNull();
     expect(r.queryByTestId('report-notes-option')).toBeNull();

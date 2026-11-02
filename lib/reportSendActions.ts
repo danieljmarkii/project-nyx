@@ -1,0 +1,95 @@
+// The send sheet's native hand-offs (Vet report v2 PR-18, CUL-2298; spec §10.3). Each returns
+// what the platform told us, as a `SendResult`, and nothing else: the words on the
+// confirmation are `sendStatusWords`' (lib/reportSend.ts), never decided here.
+//
+// EVERY ONE RUNS AFTER THE SHEET HAS GONE (C-14). The screen calls these from the sheet's
+// `onExited`, so no native sheet is ever presented over a Modal that is still up.
+//
+// `expo-mail-composer` IS REQUIRED LAZILY, the `lib/vetDocumentPickers.ts` precedent. Its entry
+// calls `requireNativeModule('ExpoMailComposer')` at import, which THROWS on any binary built
+// before this dependency landed (the PM's dev client and the TestFlight build until the next
+// native cut). A static import would take down the whole report route; required here, the
+// Email row says Mail isn't available and Share still works.
+
+import * as Clipboard from 'expo-clipboard';
+import * as Print from 'expo-print';
+import { renderReportPdf, shareReportPdf, type VetReport } from './pdf';
+import type { SendResult } from './reportSend';
+
+type MailModule = typeof import('expo-mail-composer');
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const requireMail = (): unknown => require('expo-mail-composer');
+
+/** The module, or null on a binary built without it. Injected in tests. */
+export function loadMailComposer(load: () => unknown = requireMail): MailModule | null {
+  try {
+    return load() as MailModule;
+  } catch (e) {
+    console.warn('[reportSend] mail composer unavailable on this build:', e);
+    return null;
+  }
+}
+
+/** Can this phone open a Mail draft? False on an old binary or with no mail account set up. */
+export async function mailAvailable(mail: MailModule | null = loadMailComposer()): Promise<boolean> {
+  if (!mail) return false;
+  try {
+    return await mail.isAvailableAsync();
+  } catch (e) {
+    console.warn('[reportSend] mail availability check failed:', e);
+    return false;
+  }
+}
+
+export interface EmailDraft {
+  subject: string;
+  body: string;
+  /** Local file URIs of the vet documents the owner switched on, beside the report. */
+  documentUris: string[];
+}
+
+/**
+ * Open a Mail draft from the owner's own address with the report attached (R-4: from the
+ * owner's own address; the To line is theirs to fill, the clinic's address is not stored).
+ */
+export async function emailReport(report: VetReport, draft: EmailDraft, mail: MailModule | null = loadMailComposer()): Promise<SendResult> {
+  if (!mail) return 'failed';
+  const pdf = await renderReportPdf(report);
+  try {
+    const { status } = await mail.composeAsync({
+      subject: draft.subject,
+      body: draft.body,
+      isHtml: false,
+      attachments: [pdf.uri, ...draft.documentUris],
+    });
+    return status === 'sent' || status === 'saved' || status === 'cancelled' ? status : 'undetermined';
+  } finally {
+    pdf.release();
+  }
+}
+
+/**
+ * The system print sheet over the report's own HTML. A rejection is read as the owner backing
+ * out (iOS rejects on a dismissed print sheet), so it makes no card and no alert.
+ */
+export async function printReport(report: VetReport): Promise<SendResult> {
+  try {
+    await Print.printAsync({ html: report.html });
+    return 'done';
+  } catch (e) {
+    console.warn('[reportSend] print did not complete:', e);
+    return 'cancelled';
+  }
+}
+
+/** The share sheet with the named PDF. `failed` when the platform has no share sheet. */
+export async function shareReport(report: VetReport): Promise<SendResult> {
+  return (await shareReportPdf(report)) ? 'done' : 'failed';
+}
+
+/** The email's subject and body as text, for an owner who sends from somewhere else. */
+export async function copyEmailText(subject: string, body: string): Promise<SendResult> {
+  await Clipboard.setStringAsync(`${subject}\n\n${body}`);
+  return 'done';
+}

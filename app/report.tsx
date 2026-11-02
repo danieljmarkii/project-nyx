@@ -26,6 +26,16 @@ import {
   type VetReport, type VetReportParams,
 } from '../lib/pdf';
 import { ReportPreviewV2 } from '../components/reportV2/ReportPreviewV2';
+import { SendSheet, type SendAction } from '../components/reportV2/SendSheet';
+import { SendConfirmation } from '../components/reportV2/SendConfirmation';
+import { fetchComposerOpen } from '../lib/reportComposerApi';
+import { readHomeAppointment } from '../lib/vetVisits';
+import {
+  confirmationCopy, sendCallCard, sendDocumentsOf, sendIsQuiet, sendStatusWords, uncheckedLive,
+  type ConfirmationCopy, type SendCallCard as SendCallCardModel, type SendDocumentChoice, type SendResult,
+} from '../lib/reportSend';
+import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
+import type { ComposerLive } from '../lib/reportComposer';
 import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } from '../lib/reportPreviewV2';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
@@ -97,6 +107,23 @@ import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } 
 // the band's slot when the composer's outline reported a live flag) from the first request; the
 // ready preview mounts with the same silhouette on top and lifts it only at `onLoadEnd`, so the
 // hand-over is the same frame. Every other response, v1 included, renders exactly as before.
+
+// THE SEND SHEET (PR-18, CUL-2298; spec §10.3 to §10.5). Arriving from the composer, "Send…"
+// first reads the live flags (the button's loading state covers the read), then presents one
+// sheet: the call card in its first frame, then Email, Print, Share and Copy. The sheet closes
+// itself before any native sheet presents and hands the choice back here; the confirmation's
+// words are what the platform reported. A failed flag read sends the sheet the "couldn't check"
+// card, never no card. Off the composer path the old "Send to vet" share is untouched.
+
+/** What the sheet needs that the report does not carry, read at the moment Send is tapped. */
+interface SendContext {
+  live: ComposerLive;
+  today: string;
+  hour: number;
+  visitDay: string | null;
+  documents: SendDocumentChoice[];
+  mailReady: boolean;
+}
 
 type Status = 'loading' | 'ready' | 'error';
 type RangeMode = 'default' | 'custom';
@@ -308,6 +335,87 @@ export default function ReportScreen() {
       cancelled = true;
     };
   }, [petId]);
+
+  // ── The send sheet (PR-18) ──
+  const sendFlow = composerOn && previewed;
+  const [sendReading, setSendReading] = useState(false);
+  const [sendCtx, setSendCtx] = useState<SendContext | null>(null);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ copy: ConfirmationCopy; card: SendCallCardModel | null } | null>(null);
+
+  const onOpenSend = useCallback(async () => {
+    if (!petId) return;
+    const now = new Date();
+    const today = toLocalDayKey(now);
+    setSendReading(true);
+    try {
+      const [live, appointment, rows, mailReady] = await Promise.all([
+        // GAP-13: the sheet never presents before this answers, and a failure is the louder card.
+        fetchComposerOpen(petId)
+          .then((o) => o.live)
+          .catch((e) => {
+            console.warn('[Report] send flag read failed:', e);
+            return uncheckedLive(today);
+          }),
+        readHomeAppointment(petId, now).catch((e) => {
+          console.warn('[Report] send appointment read failed:', e);
+          return null;
+        }),
+        VET_FILES_ENTRY_ENABLED
+          ? readVetLibrary(petId).catch((e) => {
+              console.warn('[Report] send vet-library read failed:', e);
+              return [];
+            })
+          : Promise.resolve([]),
+        mailAvailable(),
+      ]);
+      setSendCtx({
+        live,
+        today,
+        hour: now.getHours(),
+        visitDay: appointment?.phase === 'upcoming' ? toLocalDayKey(new Date(appointment.view.scheduledAt)) : null,
+        documents: sendDocumentsOf(rows),
+        mailReady,
+      });
+      setSendOpen(true);
+    } finally {
+      setSendReading(false);
+    }
+  }, [petId]);
+
+  const onSendAction = useCallback(
+    async (action: SendAction) => {
+      if (!report || !sendCtx) return;
+      setSharing(true);
+      let result: SendResult;
+      try {
+        if (action.target === 'email') {
+          result = await emailReport(report, { subject: action.subject, body: action.body, documentUris: action.documentUris });
+          if (result === 'failed') Alert.alert('Mail isn’t available', 'Share the PDF instead, or copy the email text.');
+        } else if (action.target === 'print') {
+          result = await printReport(report);
+        } else if (action.target === 'share') {
+          result = await shareReport(report);
+          if (result === 'failed') Alert.alert('Sharing isn’t available', 'This device can’t open a share sheet.');
+        } else {
+          result = await copyEmailText(action.subject, action.body);
+        }
+      } catch (e) {
+        console.error('[Report] send failed:', e);
+        Alert.alert("Couldn't create the PDF", 'Please try again.');
+        result = 'failed';
+      } finally {
+        setSharing(false);
+      }
+      const words = sendStatusWords(action.target, Platform.OS, result);
+      if (words === null) return;
+      setConfirmation({
+        copy: confirmationCopy(report.petName || petName || '', report.startDate, report.endDate, sendCtx.today, words),
+        card: sendIsQuiet(sendCtx.live) ? null : sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour),
+      });
+    },
+    [report, sendCtx, petName],
+  );
 
   const onShare = useCallback(async () => {
     if (!report) return;
@@ -626,23 +734,29 @@ export default function ReportScreen() {
                   check feedings against it.
                 </ThemedText>
                 <PrimaryButton
-                  label={sharing ? 'Preparing PDF…' : 'Send anyway'}
-                  onPress={onShare}
-                  disabled={sharing || regenerating}
+                  label={sharing ? 'Preparing PDF…' : sendFlow ? 'Send anyway…' : 'Send anyway'}
+                  onPress={sendFlow ? onOpenSend : onShare}
+                  loading={sendFlow && sendReading}
+                  disabled={sharing || regenerating || sendReading}
+                  testID="report-send"
                 />
               </>
             ) : (
               <PrimaryButton
                 // Disabled while regenerating — the visible report is the PREVIOUS
                 // window; never let the owner share a stale range to the vet.
-                label={sharing ? 'Preparing PDF…' : 'Send to vet'}
-                onPress={onShare}
-                disabled={sharing || regenerating}
+                label={sharing ? 'Preparing PDF…' : sendFlow ? 'Send…' : 'Send to vet'}
+                onPress={sendFlow ? onOpenSend : onShare}
+                loading={sendFlow && sendReading}
+                disabled={sharing || regenerating || sendReading}
+                testID="report-send"
               />
             )}
-            <Text style={styles.barHint}>
-              Creates a PDF you can email, message, or AirDrop to your vet.
-            </Text>
+            {!sendFlow && (
+              <Text style={styles.barHint}>
+                Creates a PDF you can email, message, or AirDrop to your vet.
+              </Text>
+            )}
           </View>
         </>
       )}
@@ -659,7 +773,34 @@ export default function ReportScreen() {
         />
       )}
       {building && !previewV2 && <ReportSilhouette petName={petName} working={building} />}
+      {confirmation && (
+        <SendConfirmation
+          copy={confirmation.copy}
+          card={confirmation.card}
+          onDone={() => {
+            setConfirmation(null);
+            router.back();
+          }}
+        />
+      )}
       </View>
+      {sendFlow && report && sendCtx && (
+        <SendSheet
+          visible={sendOpen}
+          petName={report.petName || petName || ''}
+          ownerSurname={report.ownerSurname}
+          live={sendCtx.live}
+          card={sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour)}
+          startDate={report.startDate}
+          endDate={report.endDate}
+          today={sendCtx.today}
+          visitDay={sendCtx.visitDay}
+          documents={sendCtx.documents}
+          mailReady={sendCtx.mailReady}
+          onClose={() => setSendOpen(false)}
+          onAction={onSendAction}
+        />
+      )}
     </SafeAreaView>
   );
 }

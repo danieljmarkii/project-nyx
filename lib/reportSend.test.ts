@@ -8,6 +8,7 @@ import {
   emailBodyText,
   emailSubject,
   sendCallCard,
+  sendDocumentsOf,
   sendIsQuiet,
   sendStatusWords,
   subjectIsClean,
@@ -252,5 +253,22 @@ describe('the confirmation names the pet, the window and how it left (e1, e2)', 
       line: 'Sep 20 to Oct 31 · sent from your Mail app',
     });
     expect(JSON.stringify(confirmationCopy('Olive', '2026-09-20', TODAY, TODAY, 'Shared'))).not.toMatch(/saved/i);
+  });
+});
+
+describe('vet documents are listed one by one, and only a whole file on this phone can attach (GAP-25)', () => {
+  it('names where to send the rest from', () => {
+    const rows = [
+      { id: 'a', title: 'Bloodwork', kindLabel: 'Lab results', dateLabel: 'Oct 2', isPdf: true, pageCount: 3, localUri: 'file:///a.pdf' },
+      { id: 'b', title: 'Invoice', kindLabel: 'Invoice or estimate', dateLabel: 'Sep 30', isPdf: false, pageCount: 1, localUri: 'file:///b.jpg' },
+      { id: 'c', title: 'Discharge', kindLabel: null, dateLabel: 'Sep 1', isPdf: false, pageCount: 2, localUri: 'file:///c.jpg' },
+      { id: 'd', title: 'Vaccines', kindLabel: null, dateLabel: 'Aug 1', isPdf: true, pageCount: 1, localUri: '' },
+    ];
+    expect(sendDocumentsOf(rows)).toEqual([
+      { id: 'a', title: 'Bloodwork', detail: 'Lab results · Oct 2', uri: 'file:///a.pdf', why: null },
+      { id: 'b', title: 'Invoice', detail: 'Invoice or estimate · Sep 30', uri: 'file:///b.jpg', why: null },
+      { id: 'c', title: 'Discharge', detail: 'Sep 1', uri: null, why: 'Several pages. Send it from Vet Files.' },
+      { id: 'd', title: 'Vaccines', detail: 'Aug 1', uri: null, why: 'Not on this phone. Send it from Vet Files.' },
+    ]);
   });
 });

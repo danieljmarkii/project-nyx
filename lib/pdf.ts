@@ -306,45 +306,51 @@ export function reportPdfFilenameFor(report: VetReport): string {
     : reportPdfFilename(report.petName, report.startDate, report.endDate);
 }
 
-// Render the report HTML to a PDF on-device and open the native share sheet
-// (Mail / Messages / AirDrop) — the primary "give it to the vet" path (§8.2).
-// Returns false when the platform has no share sheet, so the caller can message it.
-export async function shareReportPdf(report: VetReport): Promise<boolean> {
-  if (!(await Sharing.isAvailableAsync())) return false;
-
+/**
+ * The report as a named PDF on this phone, plus `release` to delete both files' temp halves.
+ * `uri` is the clinic-friendly named copy (in the transient directory the sign-out wipe
+ * clears), or expo-print's own temp when the copy fails, so a send is never blocked.
+ *
+ * CUL-1045: neither file may outlive the account. The named copy is the whole clinical record
+ * under the pet's name, so it goes in the transient directory the sign-out wipe clears
+ * (lib/transientFiles.ts, the stageForShare precedent). expo-print's own temp
+ * (<Caches>/Print/<uuid>.pdf) is deleted by `release` once the native sheet has closed, and
+ * the wipe also clears that folder, because a process that dies with the sheet open never
+ * reaches the caller's `finally`.
+ *
+ * PR-18 (CUL-2298) lifted this out of `shareReportPdf` so the Email target attaches exactly
+ * the file Share sends: one render, one name.
+ */
+export async function renderReportPdf(report: VetReport): Promise<{ uri: string; release: () => void }> {
   const { uri } = await Print.printToFileAsync({ html: report.html });
-
-  // Rename the temp print output to a clinic-friendly name for the share sheet and
-  // the vet's filing. Best-effort — a copy failure falls back to the raw uri so
-  // sharing is never blocked (mirrors persistCapture's never-throw-on-copy rule).
-  //
-  // CUL-1045: neither file may outlive the account. The named copy is the whole
-  // clinical record under the pet's name, so it goes in the transient directory the
-  // sign-out wipe clears (lib/transientFiles.ts, the stageForShare precedent). It sat
-  // in the cache root, past sign-out AND account deletion. expo-print's own temp
-  // (<Caches>/Print/<uuid>.pdf) is deleted once the share sheet has closed, and the
-  // wipe also clears that folder, because a process that dies with the sheet open
-  // never reaches the `finally`.
-  let shareUri = uri;
+  let named = uri;
   try {
     const dir = transientDirectory();
     dir.create({ intermediates: true, idempotent: true });
     const dest = new File(dir, reportPdfFilenameFor(report));
     if (dest.exists) dest.delete();
     new File(uri).copy(dest);
-    shareUri = dest.uri;
+    named = dest.uri;
   } catch {
-    shareUri = uri;
+    named = uri;
   }
+  return { uri: named, release: () => deletePrintTemp(uri) };
+}
 
+// Render the report HTML to a PDF on-device and open the native share sheet
+// (Mail / Messages / AirDrop) — the primary "give it to the vet" path (§8.2).
+// Returns false when the platform has no share sheet, so the caller can message it.
+export async function shareReportPdf(report: VetReport): Promise<boolean> {
+  if (!(await Sharing.isAvailableAsync())) return false;
+  const pdf = await renderReportPdf(report);
   try {
-    await Sharing.shareAsync(shareUri, {
+    await Sharing.shareAsync(pdf.uri, {
       mimeType: 'application/pdf',
       UTI: 'com.adobe.pdf',
       dialogTitle: 'Send vet report',
     });
   } finally {
-    deletePrintTemp(uri);
+    pdf.release();
   }
   return true;
 }

@@ -296,3 +296,40 @@ export function confirmationCopy(petName: string, startDate: string, endDate: st
     line: `${composerRange(startDate, endDate, today)} · ${status.charAt(0).toLowerCase()}${status.slice(1)}`,
   };
 }
+
+// ── Vet documents (GAP-25) ───────────────────────────────────────────────────────────────────
+
+export interface SendDocumentRow {
+  id: string;
+  title: string;
+  kindLabel: string | null;
+  dateLabel: string;
+  isPdf: boolean;
+  pageCount: number;
+  /** '' when the bytes live only in the account's storage. */
+  localUri: string;
+}
+
+export interface SendDocumentChoice {
+  id: string;
+  title: string;
+  detail: string;
+  /** The file to attach, or null with `why` saying where to send it from instead. */
+  uri: string | null;
+  why: string | null;
+}
+
+/**
+ * The saved vet documents, listed one by one, in the library's order. Each is attachable only
+ * when its bytes are on this phone as one file; anything else says where to send it from rather
+ * than going half-attached (a multi-page photo document is several files). Never preselected:
+ * the sheet starts every one off, invoices included.
+ */
+export function sendDocumentsOf(rows: SendDocumentRow[]): SendDocumentChoice[] {
+  return rows.map((r) => {
+    const detail = [r.kindLabel, r.dateLabel].filter((x): x is string => !!x).join(' · ');
+    if (r.localUri === '') return { id: r.id, title: r.title, detail, uri: null, why: 'Not on this phone. Send it from Vet Files.' };
+    if (!r.isPdf && r.pageCount > 1) return { id: r.id, title: r.title, detail, uri: null, why: 'Several pages. Send it from Vet Files.' };
+    return { id: r.id, title: r.title, detail, uri: r.localUri, why: null };
+  });
+}
