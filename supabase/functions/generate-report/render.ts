@@ -4401,9 +4401,22 @@ function mealLessDaysClause(snap: ReportSnapshot, start: string, end: string): s
     if (d !== null && !logged.has(d)) without += 1
   }
   if (without === 0) return ''
-  return without === days
-    ? `; no meal was logged on ${days === 1 ? 'that day' : `any of those ${num(days)} days`}`
-    : `; no meal was logged on ${num(without)} of those ${num(days)} days`
+  const meals =
+    without === days
+      ? `; no meal was logged on ${days === 1 ? 'that day' : `any of those ${num(days)} days`}`
+      : `; no meal was logged on ${num(without)} of those ${num(days)} days`
+  // And how many held no log of ANY kind (cold read 2): a count over days nobody logged is a floor,
+  // and the meal predicate alone does not say that. Never stated without the any-log set.
+  const anyKeys = snap.v2?.loggedDayKeys
+  if (!Array.isArray(anyKeys)) return meals
+  const anyLogged = new Set(anyKeys)
+  let silent = 0
+  for (let i = 0; i < days; i++) {
+    const d = shiftDayKey(start, i)
+    if (d !== null && !anyLogged.has(d)) silent += 1
+  }
+  if (silent === 0) return meals
+  return `${meals}, and nothing at all on ${silent === without ? (without === 1 ? 'it' : 'them') : `${num(silent)} of them`}`
 }
 
 /** The trial's weight, as readings: a change, one weigh-in, or none, then the Weight flag's loss. */

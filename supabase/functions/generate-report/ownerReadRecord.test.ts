@@ -190,7 +190,7 @@ Deno.test('CUL-2441 — no signs: the count says none and names its un-logged da
   const row = recordRow(trialHtml(endedTrial({ mealDays })))!
   assert.ok(row)
   assert.ok(
-    row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; no meal was logged on 2 of those 7 days.'),
+    row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; no meal was logged on 2 of those 7 days, and nothing at all on them.'),
     row,
   )
   assert.ok(row.includes('No symptom event logged in the 4 days after the trial ended, Jun 29 – Jul 2, 2026.'), row)
@@ -200,7 +200,7 @@ Deno.test('CUL-2441 — no signs: the count says none and names its un-logged da
 Deno.test('CUL-2441 — the un-logged days are stated whatever the count, and never when every day is logged', () => {
   const mealDays = days('2026-06-01', '2026-07-02').filter((d) => d !== '2026-06-24')
   const withSigns = recordRow(trialHtml(endedTrial({ mealDays, events: [symptom('2026-06-22')] })))!
-  assert.ok(withSigns.includes(': 1 vomiting; no meal was logged on 1 of those 7 days.'), withSigns)
+  assert.ok(withSigns.includes(': 1 vomiting; no meal was logged on 1 of those 7 days, and nothing at all on it.'), withSigns)
   const full = recordRow(trialHtml(endedTrial({ events: [symptom('2026-06-22')] })))!
   assert.ok(!/no meal was logged/.test(full), full)
 })
@@ -291,6 +291,8 @@ Deno.test('CUL-2441 — a week holding only doses is a week with no meal logged'
   const events = days('2026-06-22', '2026-06-28').map((d) => observation(d, 'medication'))
   const row = recordRow(trialHtml(endedTrial({ mealDays, events })))!
   assert.ok(row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; no meal was logged on any of those 7 days.'), row)
+  // Each of those days holds a dose, so "nothing at all" is not said: the two predicates stay apart.
+  assert.ok(!row.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026; no meal was logged on any of those 7 days, and nothing'), row)
 })
 
 Deno.test('CUL-2441 — observations logged as "other" are said to be outside the counts', () => {
