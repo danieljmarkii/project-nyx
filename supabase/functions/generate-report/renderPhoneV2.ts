@@ -27,6 +27,7 @@
 // scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
 // (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml } from './renderBackV2.ts'
 import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
@@ -214,7 +215,7 @@ function block(b: BlockV2, lead: string | null): string {
       return `${open('div', 'disc')}${b.html}</div>`
     case 'band':
       return `${open('section', 'band')}<h2>${h(b.heading)}</h2><ul role="list">${b.items
-        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}</li>`)
+        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}${bandPhotosHtml(i.photos)}</li>`)
         .join('')}</ul>${b.checksHtml ? `<p class="checks">${b.checksHtml}</p>` : ''}</section>`
     case 'checks':
       return `${open('p', 'checks unframed')}${b.html}</p>`
@@ -340,6 +341,7 @@ svg .cnt{font-size:${SVG_TEXT_MIN}px;fill:var(--ink);font-weight:600;}
 svg .cnt.nr{fill:var(--ink2);font-weight:400;}
 svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linejoin:round;}
 .mast .more{display:none;}
+${BACK_STYLE_PHONE_SCREEN}
 @media screen{
 [data-compact] .mast .more{display:block;min-height:44px;width:100%;margin:0.1rem 0;padding:0.15rem 0;border:0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);background:none;color:var(--ink2);font:inherit;font-size:0.875rem;text-align:left;}
 [data-compact] .mast .more::after{content:" ›" / "";}
@@ -371,7 +373,7 @@ h2{font-size:9pt;}
 .verdict{display:none;}
 .keep-push{display:none;}
 .keep,.leadchart{break-inside:avoid;}
-}
+${BACK_STYLE_PHONE_PRINT}}
 `
 
 // The layout script: compaction at font scale 1.6 and the keep-together rule. It measures a
@@ -460,6 +462,7 @@ export function renderPhoneV2(doc: DocumentV2): string {
 <main class="sheet" data-sheet="1">
 ${body(doc)}
 </main>
+${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}
 <script>${SCRIPT_PHONE}</script>
 </body>
 </html>`

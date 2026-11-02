@@ -10,8 +10,14 @@
 //     unrated meals, so the unrated-meals gap line cannot fire here (a fixture limit, not a rule).
 //   - `mealNotFinishedDays`, `intakeWeeks`: from appendix E's capped intake log, a floor.
 //   - `symptomDayCounts`: from appendix A's symptom log, which lists every in-window incident.
-//   - `loggedDayKeys: []`, `firstEntryDate: null`: not recoverable; nothing on Nyx's sheet reads
-//     them (her window is 46 days, so the chart is weekly, and her record began long before it).
+//   - `firstEntryDate: null`: not recoverable; nothing on Nyx's sheet reads it (her record began
+//     long before the window).
+//   - `loggedDayKeys`, A FLOOR (CUL-2293: the sheet 2 ledger reads it). The capture keeps each
+//     week's logged-day COUNT, not the days: every day of a week the count says was fully logged,
+//     plus, in a week short of full, only the days an incident or rated meal dates. Nyx's
+//     Sep 16–22 was logged on 6 of 7 days and three of them are dated, so her ledger hatches
+//     four days where one is true. Her render is not one the ledger is judged on; the ledger's
+//     own tests build fixtures through `assembleReport`.
 //   - `weeksComparable` and `ongoingWindowShort` from the checks the snapshot carries.
 // It also predates `atAGlance.recordEdge` (CUL-2283). Nyx's window ends on the report date, so the
 // edge is filled from `atAGlance.lastLoggedDate` with nothing after the window and nothing dated
@@ -52,6 +58,22 @@ export function nyxLiveSnapshot(): ReportSnapshot {
       refused: rows.filter((r) => r.intakeRating === 'refused').length,
     }
   })
+  const dated = new Set<string>([
+    ...s.provenance.symptomLog.map((e) => localDay(e.occurredAt, tz)),
+    ...intake.map((r) => localDay(r.occurredAt, tz)),
+  ])
+  const sym0 = s.symptoms[0]
+  const loggedDayKeys: string[] = []
+  buckets.forEach((start, i) => {
+    const n = sym0.bucketDays[i]
+    const full = sym0.loggedDaysByBucket[i] === n
+    for (let k = 0; k < n; k++) {
+      const d = new Date(`${start}T00:00:00Z`)
+      d.setUTCDate(d.getUTCDate() + k)
+      const key = d.toISOString().slice(0, 10)
+      if (full || dated.has(key)) loggedDayKeys.push(key)
+    }
+  })
   const reportDate = s.scope.endDate
   const last = s.atAGlance.lastLoggedDate
   const atAGlance = {
@@ -90,7 +112,7 @@ export function nyxLiveSnapshot(): ReportSnapshot {
       firstEntryDate: null,
       weeksComparable: !s.safetyChecks.some((c) => c.state === 'too_few_days'),
       ongoingWindowShort: s.safetyChecks.some((c) => c.kind === 'ongoing' && c.state === 'window_short'),
-      loggedDayKeys: [],
+      loggedDayKeys,
       intakeWeeks,
       intakeWeeksBowlExcluded: 0,
       symptomDayCounts: [...counts.entries()].map(([k, count]) => {

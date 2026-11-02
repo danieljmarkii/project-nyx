@@ -26,6 +26,7 @@
 // say). Everything above that slot, the band included, renders byte-for-byte as without a lead.
 // The sentences print exactly as stored and verified (`aiLeadSlot` adds markup, never words);
 // each is followed by its citations, named by the lines' own nouns.
+import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
@@ -235,7 +236,7 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       return `${open('div', 'disc')}${b.html}</div>`
     case 'band':
       return `${open('section', 'band')}<h2>${h(b.heading)}</h2><ul>${b.items
-        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}</li>`)
+        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}${bandPhotosHtml(i.photos)}</li>`)
         .join('')}</ul>${b.checksHtml ? `<p class="checks">${b.checksHtml}</p>` : ''}</section>`
     case 'checks':
       return `${open('p', 'checks unframed')}${b.html}</p>`
@@ -345,7 +346,7 @@ svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linej
 svg .ax{font-size:7.5px;fill:var(--ink2);}
 svg .ax.part{fill:var(--ink);}
 @media print{.sheet{width:auto;}}
-`
+${BACK_STYLE_PRINT}`
 
 /** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). `aiLead`
  *  is a lead the send path read back with `storedLeadForDocument` (verified, same facts) or null. */
@@ -366,6 +367,7 @@ export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] |
 <main class="sheet" data-sheet="1">
 ${doc.blocks.map((b) => block(b, slot)).join('\n')}
 </main>
+${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}
 </body>
 </html>`
 }

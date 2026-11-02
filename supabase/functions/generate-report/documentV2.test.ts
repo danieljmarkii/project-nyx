@@ -6,8 +6,8 @@
 // from a `ReportInput`, or (nyx-live) the real snapshot, with the facts it predates filled as
 // `nyxLive.testutil.ts` documents.
 import assert from 'node:assert/strict'
-import { assembleReport, type ReportInput, type ReportSnapshot } from './report.ts'
-import { renderReport } from './render.ts'
+import { assembleReport, type ReportInput, type ReportSnapshot, type SafetyFlag } from './report.ts'
+import { renderReport, safetyFlagRow } from './render.ts'
 import {
   buildDocumentV2,
   flagRowOf,
@@ -21,10 +21,13 @@ import {
   type LeadChart,
 } from './documentV2.ts'
 import { blockIdsOf, COUNT_AXIS_MIN_MAX, renderPrintV2 } from './renderPrintV2.ts'
+import { documentBlockIds } from './renderBackV2.ts'
+import { V1_FLAG_POINTERS, type FlagPointers } from './render.ts'
+import { v2FlagPointersOf } from './backSheetsV2.ts'
 import { bandMembersOf, isZeroSignSheet } from './v2Predicates.ts'
 import { cooperInput } from './cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
-import { baseInput, dayKey, itchingSkinTrial, juniper, meal, olive, symptom, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
+import { baseInput, dayKey, itchingSkinTrial, juniper, meal, nyxSafetyCat, olive, stoolPhotoDog, symptom, wobblingSkinTrial } from './v2Fixtures.testutil.ts'
 import { sampleCases } from '../../../scripts/render-trial-report-sample.deno.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
@@ -39,6 +42,8 @@ function fixtures(): Array<[string, ReportSnapshot]> {
     ['r11-wobble', assembleReport(wobblingSkinTrial())],
     ['new-account-4-days', assembleReport(juniper())],
     ['looks-only', assembleReport(olive())],
+    ['nyx-safety-cat', assembleReport(nyxSafetyCat())],
+    ['stool-photo-dog', assembleReport(stoolPhotoDog())],
   ]
   for (const [name, input] of sampleCases()) out.push([name === 'trial-report-refused.html' ? 'mira' : name, assembleReport(input)])
   return out
@@ -91,10 +96,12 @@ Deno.test('order — every fixture prints its blocks in spec §5 order, each id 
   }
 })
 
-Deno.test('parity — the print render emits exactly the model’s block ids, in the model’s order', () => {
+Deno.test('parity — the print render emits exactly the model’s block ids, in the model’s order, every sheet', () => {
   for (const [name, s] of fixtures()) {
     const d = docOf(s)
-    assert.deepEqual(blockIdsOf(renderPrintV2(d)), d.blocks.map((b) => b.id), name)
+    const ids = documentBlockIds(d)
+    assert.deepEqual(blockIdsOf(renderPrintV2(d)), ids, name)
+    assert.equal(new Set(ids).size, ids.length, `${name}: every id once across the document`)
   }
 })
 
@@ -111,17 +118,62 @@ Deno.test('band — the first heading after the masthead, "Flag:" written as tex
 
 // ── The superset invariant (spec §12, AC 2) ─────────────────────────────────
 
-Deno.test('superset — every v1 page-1 band finding prints on v2 sheet 1, word for word, on every fixture', () => {
+/** v1's row for a flag, its body captured, with v1's photo thumbnails left out (v2 dates the photo
+ *  beside the line instead, R-10). The pointers are v1's own. */
+function v1RowOf(f: SafetyFlag, s: ReportSnapshot): string {
+  let body = ''
+  safetyFlagRow(f, { ...s, incidentPhotos: [] }, (_t, b) => {
+    body = b
+    return ''
+  })
+  return body
+}
+
+/** v1's row with ONLY its pointer phrases swapped for v2's (CUL-2350), and nothing else. */
+function swapPointers(html: string, from: FlagPointers, to: FlagPointers): string {
+  let out = html
+  for (const k of ['mealsDetailIn', 'mealsIn', 'logLists', 'incidents'] as const) {
+    const a = from[k]
+    const b = to[k]
+    if (a === null) continue
+    out = b === null ? out.replaceAll(` (${a})`, '') : out.replaceAll(a, b)
+  }
+  return out
+}
+
+Deno.test('superset — every v1 page-1 band finding prints on v2 sheet 1, word for word but its pointers, on every fixture', () => {
   let flags = 0
+  let swapped = 0
   for (const [name, s] of fixtures()) {
-    const html = renderPrintV2(docOf(s))
+    const d = docOf(s)
+    const html = renderPrintV2(d)
+    const ptr = v2FlagPointersOf(d.backSheets, s)
     for (const f of s.safetyFlags) {
-      const row = flagRowOf(f, s)
-      assert.ok(html.includes(row.html), `${name}: the ${f.kind} finding prints on sheet 1`)
+      const v1 = v1RowOf(f, s)
+      const want = swapPointers(v1, V1_FLAG_POINTERS, ptr)
+      if (want !== v1) swapped++
+      assert.ok(html.includes(want), `${name}: the ${f.kind} finding prints on sheet 1`)
       flags++
     }
   }
   assert.ok(flags >= 10, `the fixtures carry real findings (${flags})`)
+  assert.ok(swapped >= 2, `the fixtures exercise the pointer swap (${swapped})`)
+})
+
+Deno.test('pointers — no band line on sheet 1 points at an appendix; every "sheet headed" names a sheet the document prints (CUL-2350)', () => {
+  let pointed = 0
+  for (const [name, s] of fixtures()) {
+    const d = docOf(s)
+    const html = renderPrintV2(d)
+    const sheet1 = html.slice(0, html.indexOf('</main>'))
+    assert.doesNotMatch(textOf(sheet1), /\bappendix\b/i, `${name}: sheet 1 names no appendix`)
+    const titles = new Set(d.backSheets.map((b) => b.title))
+    for (const m of textOf(sheet1).matchAll(/sheet headed “([^”]+)”/g)) {
+      assert.ok(titles.has(m[1]), `${name}: “${m[1]}” is a sheet this document prints`)
+      pointed++
+    }
+  }
+  assert.ok(pointed >= 2, `the fixtures carry pointers (${pointed})`)
 })
 
 Deno.test('superset — v1 page 1 still carries the same rows (the band body v2 reuses is v1’s own)', () => {
@@ -298,7 +350,18 @@ Deno.test('colophon — the surname only from last_name, never the email; no id 
   assert.doesNotMatch(none.text, /@|report [0-9A-Z]{4}/)
   const named = block(docOf(s, { owner: { firstName: 'Zoë', lastName: 'Müller-Ñúñez' }, shortId: 'N3XR', questions: [] }), 'colophon')
   assert.ok(named)
-  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 1')
+  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 3')
+})
+
+Deno.test('colophon — the sheet count is the sheets printed, on every fixture (computed, never typed: WBC-11)', () => {
+  for (const [name, s] of fixtures()) {
+    const d = docOf(s)
+    const c = block(d, 'colophon')
+    assert.ok(c, name)
+    assert.ok(c.text.endsWith(`sheet 1 of ${1 + d.backSheets.length}`), `${name}: ${c.text}`)
+    const html = renderPrintV2(d)
+    assert.equal([...html.matchAll(/data-sheet="(\d+)"/g)].length, 1 + d.backSheets.length, `${name}: every sheet is printed`)
+  }
 })
 
 Deno.test('questions — verbatim, at most 5, each at most 200 characters, pointing at the band when one prints', () => {
@@ -336,6 +399,8 @@ const CUTTABLE_RATCHET: Record<string, number> = {
   'trial-report-extended.html': 63,
   'trial-report-extended-late.html': 63,
   'trial-report-ended-early.html': 74,
+  'nyx-safety-cat': 30,
+  'stool-photo-dog': 31,
 }
 
 Deno.test('word budget — the cuttable prose stays within its ratchet and about 200 words on every fixture', () => {
