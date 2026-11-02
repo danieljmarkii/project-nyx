@@ -53,6 +53,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { generateVetReport, type VetReport } from '../lib/pdf';
 import { REPORT_FRONT_SILHOUETTE_TEST_ID } from '../components/surfaces/waits/ReportFrontSilhouette';
 import ReportScreen from './report';
+import { boxedPreviewHtml } from '../components/reportV2/ReportPreviewV2';
 
 const mockedGenerate = generateVetReport as jest.Mock;
 const report = (over: Partial<VetReport> = {}): VetReport => ({
@@ -79,12 +80,12 @@ it('a v2 report with its phone layout: the preview, and "View as printed" swaps 
   mockedGenerate.mockResolvedValue(report());
   const s = render(<ReportScreen />);
   const toggle = await s.findByTestId('report-v2-view-toggle');
-  expect(s.getByTestId('report-v2-phone', hidden).props.source).toEqual({ html: '<html>phone</html>' });
+  expect(s.getByTestId('report-v2-phone', hidden).props.source).toEqual({ html: boxedPreviewHtml('<html>phone</html>') });
   expect(s.getByTestId('report-v2-phone', hidden).props.javaScriptEnabled).toBe(true);
   expect(s.getByText('View as printed')).toBeTruthy();
   fireEvent.press(toggle);
   expect(s.getByText('View on phone')).toBeTruthy();
-  expect(s.getByTestId('report-v2-printed').props.source).toEqual({ html: '<html>print</html>' });
+  expect(s.getByTestId('report-v2-printed').props.source).toEqual({ html: boxedPreviewHtml('<html>print</html>') });
   // Send still sends the printed page: nothing about the PDF moved.
   expect(s.getByText('Send to vet')).toBeTruthy();
 });

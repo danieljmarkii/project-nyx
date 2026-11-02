@@ -4,6 +4,7 @@
 // AX5) and may load nothing but its own document; the printed frame stays script-free; the wait
 // covers the frame until the phone document's onLoadEnd and returns for a new document (MOT-2);
 // the band slot draws only when asked. Each was proven by breaking the component.
+// CUL-2428: both frames carry the exam room's CSP and refuse Android's new-window path.
 // CUL-2430: the printed view carries the line's lead sentence pinned above it (or is withheld
 // when the line cannot be read back), and the phone frame cannot be pinched.
 jest.mock('react-native-webview', () => {
@@ -22,10 +23,19 @@ import {
   PREVIEW_PRINTED_TEST_ID,
   PREVIEW_PRINTED_WARNING_TEST_ID,
   ReportPreviewV2,
+  boxedPreviewHtml,
   lockedPreviewHtml,
   type ReportPreviewV2Props,
 } from './ReportPreviewV2';
-import { EXAM_VIEWPORT } from '../../lib/examRoom';
+import { EXAM_CSP, EXAM_VIEWPORT } from '../../lib/examRoom';
+
+const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+/** The document a frame shows, with the CSP checked and taken back out: the rest is the server's. */
+function unboxed(source: unknown): string {
+  const html = (source as { html: string }).html;
+  expect(html.split(CSP_META)).toHaveLength(2);
+  return html.replace(CSP_META, '');
+}
 import { REPORT_FRONT_BAND_SLOT_TEST_ID, REPORT_FRONT_SILHOUETTE_TEST_ID } from '../surfaces/waits/ReportFrontSilhouette';
 
 const base: ReportPreviewV2Props = {
@@ -49,7 +59,7 @@ it('CUL-2383: the phone frame runs its layout script, and loads nothing but its 
   const s = render(<ReportPreviewV2 {...base} />);
   const phone = s.getByTestId(PREVIEW_PHONE_TEST_ID);
   expect(phone.props.javaScriptEnabled).toBe(true);
-  expect(phone.props.source).toEqual({ html: '<html>phone</html>' });
+  expect(unboxed(phone.props.source)).toBe('<html>phone</html>');
   const guard = phone.props.onShouldStartLoadWithRequest as (r: { url: string }) => boolean;
   expect(guard({ url: 'about:blank' })).toBe(true);
   expect(guard({ url: 'https://example.com' })).toBe(false);
@@ -62,7 +72,7 @@ it('the printed frame mounts on first ask, script-free, the printed page', () =>
   s.rerender(<ReportPreviewV2 {...base} view="printed" />);
   const printed = s.getByTestId(PREVIEW_PRINTED_TEST_ID);
   expect(printed.props.javaScriptEnabled).toBe(false);
-  expect(printed.props.source).toEqual({ html: '<html>print</html>' });
+  expect(unboxed(printed.props.source)).toBe('<html>print</html>');
   // Back to the phone: the printed frame stays mounted (no reload on the next swap).
   s.rerender(<ReportPreviewV2 {...base} view="phone" />);
   expect(s.getByTestId(PREVIEW_PRINTED_TEST_ID, { includeHiddenElements: true })).toBeTruthy();
@@ -129,7 +139,7 @@ const PRINT = '<!DOCTYPE html><html><head></head><body><main>printed bars, line 
 it('CUL-2430: the phone frame cannot be pinched (iOS viewport lock, Android zoom controls off)', () => {
   const s = render(<ReportPreviewV2 {...base} phoneHtml={PHONE_WITH_LINE} printHtml={PRINT} />);
   const phone = s.getByTestId(PREVIEW_PHONE_TEST_ID);
-  const html = (phone.props.source as { html: string }).html;
+  const html = unboxed(phone.props.source);
   expect(html).toContain(EXAM_VIEWPORT);
   expect(html).not.toContain(ZOOMABLE);
   expect(html).toContain('user-scalable=no');
@@ -168,7 +178,7 @@ it('CUL-2430: "View as printed" pins the line\'s own lead sentence above the pri
   expect(comesBefore(pin, printed)).toBe(true);
   expect(StyleSheet.flatten(pin.props.style).position).not.toBe('absolute');
   // The printed page itself is untouched: the pin never prints.
-  expect(printed.props.source).toEqual({ html: PRINT });
+  expect(unboxed(printed.props.source)).toBe(PRINT);
   // For the eye only: the page below carries the line itself for VoiceOver.
   expect(pin.props.accessibilityElementsHidden).toBe(true);
 });
@@ -206,5 +216,42 @@ it('CUL-2430 (adversarial pass 1): a window change while printed shows gets a fr
   expect(s.queryByTestId(PREVIEW_PRINTED_WARNING_TEST_ID, { includeHiddenElements: true })).toBeNull();
   // Not the same native view handed a new source (which would keep painting A's bars): a new one.
   expect(after).not.toBe(before);
-  expect(after.props.source).toEqual({ html: PRINT_B });
+  expect(unboxed(after.props.source)).toBe(PRINT_B);
+});
+
+it('CUL-2428: both frames load or send nothing (the room\'s CSP, first in the head) and open no new window', () => {
+  const s = render(<ReportPreviewV2 {...base} phoneHtml={PHONE_WITH_LINE} printHtml={PRINT} view="printed" />);
+  for (const id of [PREVIEW_PHONE_TEST_ID, PREVIEW_PRINTED_TEST_ID]) {
+    const frame = s.getByTestId(id, { includeHiddenElements: true });
+    const html = (frame.props.source as { html: string }).html;
+    // First in the head, so it governs everything the document goes on to load.
+    expect(html).toMatch(new RegExp(`<head>${CSP_META.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(EXAM_CSP).toContain("default-src 'none'");
+    expect(EXAM_CSP).toContain("connect-src 'none'");
+    // Android's onCreateWindow path is taken (a handler is passed) and opens nothing.
+    expect(typeof frame.props.onOpenWindow).toBe('function');
+    expect((frame.props.onOpenWindow as () => unknown)()).toBeUndefined();
+    // Every URL reaches the predicate: a URL failing the library's whitelist goes to the system
+    // browser unasked (react-native-webview 14, WebViewShared.tsx), so the whitelist is `*`.
+    expect(frame.props.originWhitelist).toEqual(['*']);
+    // The load predicate still refuses every navigation off the inline document.
+    const guard = frame.props.onShouldStartLoadWithRequest as (r: { url: string }) => boolean;
+    expect(guard({ url: 'https://attacker.example/x' })).toBe(false);
+  }
+});
+
+it('CUL-2428: a document with no <head> is still boxed (the preview cannot refuse it the way the room does)', () => {
+  expect(boxedPreviewHtml('<html><body>x</body></html>')).toBe(`${CSP_META}<html><body>x</body></html>`);
+  // After a leading doctype, so the page keeps its standards mode.
+  expect(boxedPreviewHtml('<!DOCTYPE html><html><body>x</body></html>')).toBe(
+    `<!DOCTYPE html>${CSP_META}<html><body>x</body></html>`,
+  );
+  // A <header> is not a head: the policy still goes at the top, never into the body.
+  expect(boxedPreviewHtml('<html><body><header>x</header></body></html>')).toBe(
+    `${CSP_META}<html><body><header>x</header></body></html>`,
+  );
+  // With a head, exactly the room's placement.
+  expect(boxedPreviewHtml('<html><head><title>t</title></head></html>')).toBe(
+    `<html><head>${CSP_META}<title>t</title></head></html>`,
+  );
 });

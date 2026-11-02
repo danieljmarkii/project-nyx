@@ -42,6 +42,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useRotationUnlocked } from '../lib/screenOrientation';
 import {
   EXAM_IDLE_MS,
+  REPORT_WEBVIEW_ORIGINS,
   clampPage,
   examGoScript,
   examRoomHtml,
@@ -242,7 +243,7 @@ export default function ExamRoomScreen() {
                 ref={web}
                 testID={EXAM_PAGES_TEST_ID}
                 style={styles.web}
-                originWhitelist={['about:*', 'data:*']}
+                originWhitelist={REPORT_WEBVIEW_ORIGINS}
                 source={{ html }}
                 // The reflow's layout script and the paging script must run (lib/examRoom.ts).
                 javaScriptEnabled
@@ -280,7 +281,7 @@ export default function ExamRoomScreen() {
                 <WebView
                   testID={EXAM_PRINTED_TEST_ID}
                   style={styles.web}
-                  originWhitelist={['about:*', 'data:*']}
+                  originWhitelist={REPORT_WEBVIEW_ORIGINS}
                   source={{ html: printHtml }}
                   // The printed page carries no script.
                   javaScriptEnabled={false}

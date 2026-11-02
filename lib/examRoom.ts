@@ -134,6 +134,16 @@ const EXAM_SCRIPT = `<script id="nyx-exam-script">
 export const EXAM_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'";
 
+/**
+ * The `originWhitelist` every report WebView passes (privacy review of CUL-2428). It lets EVERY
+ * URL through to `onShouldStartLoadWithRequest`, which is the real gate. react-native-webview 14
+ * checks the whitelist first and hands any URL that fails it to `Linking.openURL`, never to the
+ * predicate: with `['about:*', 'data:*']` an injected `location='https://…?d=<record>'` opened the
+ * system browser with the record in the query string (and a `nyx://` URL reached the app's own
+ * routes). With `*` the predicate sees it and refuses it, and nothing leaves the frame.
+ */
+export const REPORT_WEBVIEW_ORIGINS: string[] = ['*'];
+
 /** The document with the room's CSP as the first thing in its head; null when it has no head. */
 export function withExamCsp(html: string): string | null {
   const m = /<head[^>]*>/i.exec(html);
