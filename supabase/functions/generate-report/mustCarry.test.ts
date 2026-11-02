@@ -52,7 +52,7 @@ export const MUST_CARRY: readonly MustCarryRow[] = [
   { v1: '§3.8 trial', what: 'The diet trial block', inV1: v1Has('<h2>Diet trial <span class="aside">'), all: ['diet-trial'] },
   {
     v1: '§3.8 protein',
-    what: 'Off-diet protein exposure over time: the chart is not reprinted (v2 floor, chart-standard row first); every feeding it draws is dated in the exposures table',
+    what: 'Off-diet protein exposure over time: the chart is not reprinted (v2 floor, chart-standard row first); the exposures table keeps each food with its count and date span, not the weekly shape (filed)',
     inV1: v1Has('<h2>Off-diet protein exposure over time</h2>'),
     all: ['exposures'],
   },
@@ -121,6 +121,12 @@ const V1_POINTER = /\b(?:(?:in|on) )?(?:appendix [a-g]|page 1)\b/g
 const V2_POINTER = /\b(?:(?:in|on) )?(?:the sheet headed "[^"]+"|this sheet|sheet 1)/g
 const pointerToken = (t: string, re: RegExp): string => t.replace(re, '@')
 
+function occurrences(hay: string, needle: string): number {
+  let n = 0
+  for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + 1)) n++
+  return n
+}
+
 interface Checked {
   missingHomes: string[]
   missingRows: string[]
@@ -145,10 +151,20 @@ function check(name: string, snap: ReportSnapshot, doc: DocumentV2): Checked {
   // "read completed" is v2's state word for a completed read (GAP-32); every other word is v1's.
   const v2Rows = v2Text.replace(/photo: read completed · /g, 'photo: ')
   const v2Tokened = pointerToken(v2Rows, V2_POINTER)
-  for (const row of v1AppendixRows(v1Html)) {
+  // Repeats count: a row v1 prints three times must print at least three times on v2, so a dropped
+  // repeat is caught (adversarial pass 1: substring presence let one go).
+  const rows = v1AppendixRows(v1Html)
+  const want = new Map<string, number>()
+  for (const r of rows) want.set(r, (want.get(r) ?? 0) + 1)
+  for (const [row, n] of want) {
+    const pointer = POINTER_ROW.test(row)
+    const hay = pointer ? v2Tokened : v2Rows
+    const needle = pointer ? pointerToken(row, V1_POINTER) : row
+    if (occurrences(hay, needle) < n) out.missingRows.push(`${name}${pointer ? ' (pointer row)' : ''}: ×${n} "${row.slice(0, 160)}"`)
+  }
+  for (const row of rows) {
     if (POINTER_ROW.test(row)) {
       out.pointerRows++
-      if (!v2Tokened.includes(pointerToken(row, V1_POINTER))) out.missingRows.push(`${name} (pointer row): "${row.slice(0, 160)}"`)
       continue
     }
     out.rows++
@@ -218,4 +234,14 @@ Deno.test('must-carry — mutation: a dropped back block or a dropped table row 
     })),
   }
   assert.ok(check(name, s, cut).missingRows.length >= 1, 'a lost row is caught')
+  // A repeated row (Noticed's "Nothing unusual" lines) losing one copy is caught too.
+  const once: DocumentV2 = {
+    ...doc,
+    backSheets: doc.backSheets.map((sh) => ({
+      ...sh,
+      blocks: sh.blocks.map((b) => (b.kind === 'section' && b.id === 'noticed-log' ? { ...b, html: b.html.replace(/<tr>\s*<td class="ng-hour num">[^<]*<\/td>\s*<td class="ng-words"><span class="ng-abs">Nothing unusual<\/span><\/td>\s*<\/tr>/, '') } : b)),
+    })),
+  }
+  assert.notEqual(JSON.stringify(once), JSON.stringify(doc), 'the mutation removed a row')
+  assert.ok(check(name, s, once).missingRows.some((m) => /×\d+/.test(m)), 'a dropped repeat is caught')
 })

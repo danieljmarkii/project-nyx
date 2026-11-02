@@ -17,8 +17,9 @@
 //   - "Diet, weight and food exposure": v1 page 1's weight trend, diet trial section and diet,
 //     feeding and medication block, then v1's diet history and off-diet exposures (appendices
 //     B and C). v1's protein-over-time chart is not reprinted: its labels are SVG text under v2's
-//     11pt floor, every feeding it draws is dated in the exposures table, and a chart enters v2 only
-//     with its own row in docs/nyx-chart-standard.md;
+//     11pt floor, and a chart enters v2 only with its own row in docs/nyx-chart-standard.md. The
+//     exposures table keeps each off-diet food with its count and date span, not the week-by-week
+//     shape or the chart's per-week meal-day notes (adversarial pass 1; the gap is filed);
 //   - "Noticed (owner’s observations)" when the owner answered: v1's graph, then every look by day;
 //   - "How this record was kept", always last: the fixed absence rules (spec §6.1, GAP-33).
 // Every one of them is v1's own section (rule 2 below); `v2Pointers` swaps v1's letters and "page 1"
@@ -570,6 +571,12 @@ const RELATIVE: ReadonlyArray<readonly [string, string]> = [
   ['the charts below span the report&rsquo;s', 'the chart on sheet&nbsp;1 spans the report&rsquo;s'],
   ['read the symptom counts below with it in view', 'read the symptom counts on sheet&nbsp;1 with it in view'],
   ['in none of the counts above and none of the rows below', 'in none of the counts on sheet&nbsp;1 and none of the rows below'],
+  // The Noticed graph's withheld-bars note: on v2 the graph opens the Noticed sheet and its counts
+  // are the answered-day line under the ledger (adversarial pass 1).
+  ['The counts above are over the', `The counts under the day ledger on ${sheetHeaded(RECORD_SHEET_TITLE)} are over the`],
+  // The diet history's supplement row pointed at page 1's concurrent changes; v2's sheet 1 "Changes
+  // in this window" does not list them (adversarial pass 1), so the pointer is left out whole.
+  [' (named among the concurrent changes on page&nbsp;1)', ''],
   ["The whole window's count is above.", `The whole window's count is under the day ledger on ${sheetHeaded(RECORD_SHEET_TITLE)}.`],
 ]
 
@@ -583,7 +590,6 @@ const SHEET_ONE_TRUE = [
   /safety flags? on sheet&nbsp;1/,
   /flag(?:s for review)? on sheet&nbsp;1/,
   /reduced-intake flag on sheet&nbsp;1/,
-  /named among the concurrent changes on sheet&nbsp;1/,
   /These lead the flags for review on sheet&nbsp;1/,
   /the Weight flag on sheet&nbsp;1/,
   /the &ldquo;last fully-eaten meal&rdquo; on sheet&nbsp;1/,
@@ -762,9 +768,9 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
       term: 'Range',
       text: `The window is ${plain(fmtRange(snap.scope.startDate, snap.scope.endDate))} (${plain(scopeBasisLabel(snap.scope).toLowerCase())}). A hand-picked window states how many symptom events fall outside it, so nothing is cropped to a good week.${
         trialCropDisclosureRenders(snap)
-          ? ' Where the range covers only part of a diet trial, the trial section names the symptom events logged in the trial days it leaves out; neither count reports an absence of symptoms.'
+          ? ' Where the range covers only part of a diet trial, the trial section names the symptom events logged in the trial days it leaves out, and how many of those days hold no meal log. What those meals were (the foods, the doses, the intake) is counted nowhere on this record; neither count reports an absence of symptoms.'
           : ''
-      }`,
+      } A range can include days the record never covered.`,
     },
     {
       term: 'Entries and episodes',
@@ -804,13 +810,13 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
       ? [
           {
             term: 'Noticed',
-            text: `A once-a-day check the owner answers from a fixed list of plain-language words. The unit is a day she answered, not an episode. “Marked nothing unusual” is her claim about a day, not an examination and not an all-clear. These observations are counted nowhere else on this record: no symptom count, chart or flag reads them. Every answer is on the sheet headed “${NOTICED_SHEET_TITLE}”.`,
+            text: `A once-a-day check the owner answers from a fixed list of plain-language words. The unit is a day she answered, not an episode. “Marked nothing unusual” is her claim about a day, not an examination and not an all-clear. These observations are counted nowhere else on this record: no symptom count, chart or flag reads them. The day each answer belongs to is the day the owner’s phone recorded; every other entry is placed by this record’s timezone, so an answer and a same-day event can sit a day apart if she was in another timezone. Every answer is on the sheet headed “${NOTICED_SHEET_TITLE}”.`,
           },
         ]
       : []),
     {
       term: 'Intake',
-      text: 'A declined or barely touched meal is recorded as a possible health signal, never as picky. Free-fed food is not directly observed, so the absence of a meal log is not read as a meal not eaten.',
+      text: 'A declined or barely touched meal is recorded as a possible health signal, never as picky. No reduced-intake flag means no flag fired, not that intake was normal. Free-fed food is not directly observed, so the absence of a meal log is not read as a meal not eaten.',
     },
     {
       term: 'Weight',

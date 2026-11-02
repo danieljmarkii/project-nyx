@@ -295,7 +295,11 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('35 days of a trial that has run 87 \u2014 52 trial days fall before it (10 vomiting).', ['vomit']), [])
   assertEquals(declineSentences('Vomiting 87 \u2014 52 over the trial.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting entries fall before the diet change.', ['vomit']).length, 1)
-  assertEquals(declineSentences('Vomiting falls entirely before this span.', ['vomit']), [])
+  // The strip's span sentence is cut only when the words it names are not the trial's signs.
+  assertEquals(declineSentences('▲ a vomit logged that day Hunched or tucked up falls entirely before this span.', ['vomit']), [])
+  assertEquals(declineSentences('Scratching more falls entirely before this span.', ['itch', 'scratch']).length, 1)
+  assertEquals(declineSentences('Off, Scratching more fall entirely before this span.', ['itch', 'scratch']).length, 1)
+  assertEquals(declineSentences('Vomiting falls entirely before this span.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting falls entirely after the switch.', ['vomit']).length, 1)
   assertEquals(declineSentences('9 of 14 timed vomiting episodes fell within ~30 min of eating.', ['vomit']), [])
   assertEquals(declineSentences('Vomiting fell within two weeks of the switch.', ['vomit']).length, 1)

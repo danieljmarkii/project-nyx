@@ -300,7 +300,6 @@ const NOT_A_COURSE = [
   /\bphoto no longer retained\b/gi, // the event log's tag beside a read whose photo was removed
   /\btrial days fall (?:before and after|before|after) it\b/gi, // the trial's scope beside this window
   /\bof a trial that has run \d+ \u2014/gi, // "35 days of a trial that has run 87 — 52 trial days…": a dash, not an arrow
-  /\bfalls entirely before this span\b/gi, // the Noticed strip: a word first marked before its 28 days
   /\bfell within ~?\d+ min of eating\b/gi, // the timing line: when episodes happened, not how many
   /\bweigh-in falls inside this window\b/gi, // the diet history's nutritional status
   /\bvs \d+ of \d+ matched control windows\b/gi, // an association's control count, not a course
@@ -313,6 +312,19 @@ const NOT_A_COURSE = [
   /\bno flag is not an all-clear\b/gi,
   /\bnever counted as clear\b/gi,
 ]
+
+/**
+ * The Noticed strip's "<words> falls entirely before this span" (VR2-14 reprints it on v2's Noticed
+ * sheet). Cut only when none of the words it names is one of the trial's signs: "Hunched or tucked up
+ * falls entirely before this span" says nothing about a gi trial's vomiting, while "Scratching more
+ * falls entirely before this span" on a skin trial reads to a summariser as "scratching resolved"
+ * from absence over answered days (adversarial pass 1), so it stays a hit. The words are the
+ * capitalised list straight before the phrase, never the legend text an extractor runs into it.
+ */
+const SPAN_WORDS = /\b([A-Z][a-z]+(?: [a-z]+)*(?:, [A-Z][a-z]+(?: [a-z]+)*)*) (?:falls|fall) entirely before this span\b/g
+function cutSpanWords(s: string, pats: readonly RegExp[]): string {
+  return s.replace(SPAN_WORDS, (m, words: string) => (pats.some((p) => new RegExp(p.source, p.flags.replace('g', '')).test(words)) ? m : ' '))
+}
 
 /**
  * Sentences that name one of `signs` with a decline in the same sentence or the next one (a summary
@@ -332,7 +344,7 @@ export function declineSentences(text: string, signs: readonly string[], lineLab
     // the document's labels count: any early colon did, and hid "By week 6 it had settled: 2" (pass 2).
     const next = sentences[i + 1] ?? ''
     const follows = !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
-    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), x)).join(' ')
+    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), cutSpanWords(x, pats))).join(' ')
     if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
   })
   return out
