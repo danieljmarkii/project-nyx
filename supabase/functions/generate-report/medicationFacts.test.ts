@@ -193,3 +193,25 @@ Deno.test('adversarial 2 — a near-total or owner-recorded refusal still "docum
   assert.match(withFact(10, 20, null), /so this record documents a refusal/, 'ratings that are a real share of the feedings keep the claim')
   assert.match(withFact(2, 4, null), /cannot show the diet was eaten as fed/, 'only the thin case is reworded')
 })
+
+// ── Adversarial pass 2's two QUIET breaks, held ───────────────────────────────
+
+Deno.test('adversarial 2.1 — a recent-onset decline (the 14-day fallback fact) still "documents a refusal"', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  s.trial!.trialDietRefusal = { ...s.trial!.rangeRefusal!, refusedFeedings: 3, ratedFeedings: 6 }
+  s.trial!.rangeRefusal = null
+  const t = plain(renderReport(s))
+  assert.match(t, /so this record documents a refusal/)
+  assert.doesNotMatch(t, /carry a rating, so this record cannot show/)
+})
+
+Deno.test('adversarial 2.2 — an ad-hoc drug last dosed on or before the trial end keeps "still running" and "no recorded end"', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  const cet = s.trial!.medicationOverlap.find((m) => m.drugName.startsWith('Cetirizine'))!
+  cet.endedAt = '2026-10-20'
+  const t1 = plain(renderReport(s))
+  assert.match(t1, /Cetirizine HCl \(Zyrtec\) \(supplement\) · doses on record since Jul 1[^·]*· 87 d still running at the end of this window/)
+  assert.doesNotMatch(t1, /87 d \(last dose logged/)
+  const t2 = plain(renderPrintV2(buildDocumentV2(s, OPTS)))
+  assert.match(t2, /overlapping it Jul 26 to Oct 20 \(ad-hoc, by Jul 1; its course has no recorded end\)/)
+})

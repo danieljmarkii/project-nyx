@@ -934,7 +934,11 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     // An ad-hoc drug is dated from its earliest dose on record (CUL-2440), and says it has no
     // regimen: "its course has no recorded end" read as a prescribed course still running.
     // Sheet 1 is word-budgeted, so this is the short form; the back sheets carry the full one.
-    const tail = m.recordStart
+    // ADVERSARIAL PASS 2 (QUIET): "no recorded end" stays unless the last dose fell after the trial.
+    const afterTrial = !!m.endedAt && m.endedAt.slice(0, 10) > m.toDate
+    const tail = m.recordStart && !afterTrial
+      ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)}${m.activeAtWindowEnd ? '; its course has no recorded end' : ''})`
+      : m.recordStart
       ? m.recordStart.atHistoryFloor
         ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
         : ` (ad-hoc, first logged ${plainDay(m.recordStart.firstDoseDay)})`

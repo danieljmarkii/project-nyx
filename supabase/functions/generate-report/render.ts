@@ -4142,12 +4142,18 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // the owner's own stop reason "refused", read "cannot show the diet was eaten". It applies
     // only where the ratings are too thin to carry the claim: at most half the rated feedings
     // unfinished, the ratings under a tenth of the feedings, and no owner-recorded refusal.
+    // ADVERSARIAL PASS 2 (QUIET): only the whole-range fact. The 14-day `trialDietRefusal`
+    // fallback is the RECENT-ONSET decline (weeks of eating, then half the recent bowls left), and
+    // its count is not "the feedings that carry a rating": 3 of 6 printed "only 6 carry a rating"
+    // over 23 rated, softening exactly the case that must stay loud.
     const partialRefusal =
       !!refusalFact &&
+      refusalFact === t.rangeRefusal &&
       !total &&
       t.stoppedReason !== 'refused' &&
       refusalFact.refusedFeedings * 2 <= refusalFact.ratedFeedings &&
-      refusalFact.ratedFeedings * 10 < t.exposures.totalFeedings
+      // Off-diet feedings out of the denominator (pass 2: treats diluted it); stricter, so louder.
+      refusalFact.ratedFeedings * 10 < t.exposures.totalFeedings - t.exposures.offDiet
     refusalCaveat = partialRefusal
       ? `${eaten}; only ${num(refusalFact!.ratedFeedings)} ${nouns} carry a rating, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
       : `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
@@ -5323,10 +5329,10 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
       : `${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
     // CUL-2440: an ad-hoc drug has no course to be "still running"; its last logged dose is the
     // fact, and when it falls after the trial ended the sentence says so.
-    const still = rec && m.endedAt
-      ? m.endedAt.slice(0, 10) > m.toDate
-        ? ` (<b>last dose logged ${h(fmtDay(m.endedAt.slice(0, 10)))}, after the trial ended</b>)`
-        : ` (last dose logged ${h(fmtDay(m.endedAt.slice(0, 10)))})`
+    // ADVERSARIAL PASS 2 (QUIET): only when the last dose falls AFTER the trial does that louder
+    // fact replace "still running"; otherwise the row keeps the builder's own warnings.
+    const still = rec && m.endedAt && m.endedAt.slice(0, 10) > m.toDate
+      ? ` (<b>last dose logged ${h(fmtDay(m.endedAt.slice(0, 10)))}, after the trial ended</b>)`
       : m.activeAtWindowEnd
       ? ' <b>still running at the end of this window</b>'
       : m.overlapsLast7Days
