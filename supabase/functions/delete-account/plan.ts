@@ -805,6 +805,9 @@ export interface SweepOptions {
   callTimeoutMs?: number
   now?: () => number
   concurrency?: number
+  // Called once for each folder the sweep EMPTIED (not a partial one), so the
+  // shutdown record (CUL-2362) can name only what is still left.
+  onFolderDone?: (folder: PrefixSweep) => void
 }
 
 // The Edge worker's own wall clock (CUL-2345). Supabase counts it from the WORKER's
@@ -911,6 +914,7 @@ export async function sweepOwnedPrefixes(
       }
     }
     if (left) partial.push(folder)
+    else opts.onFolderDone?.(folder)
   }
 
   // A shared cursor: JS runs each worker's synchronous step alone, so `next++` hands
@@ -940,6 +944,81 @@ export function sweepLeftoversLine(userId: string, result: SweepResult): string 
     userId,
     unswept: result.unswept.map((f) => ({ bucket: f.bucket, root: f.root })),
     partial: result.partial.map((f) => ({ bucket: f.bucket, root: f.root })),
+  })
+}
+
+// ── CUL-2362: the kills the budget cannot see ──────────────────────────────────
+
+// The least worker time a deletion may start with. Checked on arrival and again just
+// before the auth delete; below it the call is refused (503) with the account intact,
+// and the app's generic "couldn't finish, try again" path retries it. Why 120 s and not
+// 60 s: sweepBudget puts the sweep's last folder start 60 s before the worker's kill,
+// so at 60 s left the sweep would start nothing. 120 s leaves it about a minute.
+export const DELETE_START_FLOOR_MS = 120_000
+
+// Milliseconds the worker has left before its wall-clock kill, by the plan constant.
+export function workerTimeLeft(now: number, workerStartedAt: number): number {
+  return workerStartedAt + EDGE_WORKER_WALL_CLOCK_MS - now
+}
+
+// True when a deletion may start (or reach its auth delete) on this worker.
+export function canStartDeletion(now: number, workerStartedAt: number): boolean {
+  return workerTimeLeft(now, workerStartedAt) >= DELETE_START_FLOOR_MS
+}
+
+// A folder's identity in the in-flight record. Bucket names hold no '/', so the
+// first '/' splits the pair unambiguously.
+export function folderKey(f: PrefixSweep): string {
+  return `${f.bucket}/${f.root}`
+}
+
+// One deletion that has reached its auth delete and not yet written its own
+// leftovers line. `deleting`: deleteUser was called and may or may not have landed.
+// `sweeping`: the account is gone and the sweep is running. `done` holds the folders
+// the sweep emptied.
+export interface InFlightDeletion {
+  userId: string
+  phase: 'deleting' | 'sweeping'
+  sweep: ReadonlyArray<PrefixSweep>
+  done: Set<string>
+}
+
+// The `delete-account.killed.leftovers` line, written from the worker's
+// `beforeunload` handler: every folder of an in-flight deletion not yet emptied, and
+// why the worker is going down. One synchronous string, so it needs no awaited time
+// from the handler. Pure so a test pins that an unfinished folder always reaches it.
+export function killedLeftoversLine(entry: InFlightDeletion, reason: string | null): string {
+  return JSON.stringify({
+    event: 'delete-account.killed.leftovers',
+    userId: entry.userId,
+    reason: reason ?? 'unknown',
+    phase: entry.phase,
+    // In `deleting`, the account may still exist; these are the folders a finished
+    // delete would leave. Sweeping a folder is idempotent, so re-running these is safe.
+    unfinished: entry.sweep
+      .filter((f) => !entry.done.has(folderKey(f)))
+      .map((f) => ({ bucket: f.bucket, root: f.root })),
+  })
+}
+
+// Slack between the plan constant and an observed wall-clock kill: the runtime's
+// timer and boot are not exact, and a kill this close to the constant is the plan
+// working as written.
+export const WALL_CLOCK_MISMATCH_SLACK_MS = 10_000
+
+// The `delete-account.wall-clock-mismatch` line, or null. A wall-clock kill well
+// before EDGE_WORKER_WALL_CLOCK_MS means the plan's limit is lower than the constant
+// (a downgrade to Free, 150 s): every budget above is then too generous, so the logs
+// must say so on the first early kill. Any other reason (CPU, memory) says nothing
+// about the wall clock and returns null.
+export function wallClockMismatchLine(reason: string | null, workerAgeMs: number): string | null {
+  if (!reason || !/wall\s*clock/i.test(reason)) return null
+  if (workerAgeMs >= EDGE_WORKER_WALL_CLOCK_MS - WALL_CLOCK_MISMATCH_SLACK_MS) return null
+  return JSON.stringify({
+    event: 'delete-account.wall-clock-mismatch',
+    reason,
+    workerAgeMs,
+    expectedMs: EDGE_WORKER_WALL_CLOCK_MS,
   })
 }
 

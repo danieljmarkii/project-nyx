@@ -51,8 +51,11 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import {
   buildDeletionPlan,
   buildPrefixSweep,
+  canStartDeletion,
   chunk,
   extractPassword,
+  folderKey,
+  killedLeftoversLine,
   listPrefixRecursive,
   mergeSweepIds,
   readAllOwnedPaths,
@@ -61,6 +64,9 @@ import {
   sweepBudget,
   sweepLeftoversLine,
   sweepOwnedPrefixes,
+  wallClockMismatchLine,
+  workerTimeLeft,
+  type InFlightDeletion,
   type OwnedStoragePaths,
   type PrefixSweep,
   type StorageLister,
@@ -71,6 +77,40 @@ import { readSweepIds, type SweepIdReader } from './sweepIds.ts'
 // counts from then and spans every request this worker serves, so the sweep's budget
 // takes the earlier of this and the request's own start (sweepBudget).
 const WORKER_STARTED_AT = Date.now()
+
+// CUL-2362: the deletions on this worker that have reached their auth delete and not
+// yet written their own leftovers line. A kill the budget cannot see (a plan with a
+// shorter wall clock than EDGE_WORKER_WALL_CLOCK_MS, a CPU or memory limit) fires
+// `beforeunload`, and the handler names every folder each of these has not emptied.
+// The folders are fixed before deleteUser, so a kill between the delete and the
+// pre-sweep log line is named too. The handler is synchronous: one console line per
+// deletion, nothing awaited, since how long the runtime waits for it is unverified.
+const IN_FLIGHT = new Set<InFlightDeletion>()
+
+addEventListener('beforeunload', (ev: Event) => {
+  const reason = ((ev as CustomEvent<{ reason?: unknown }>).detail?.reason ?? null)
+  const reasonText = reason === null ? null : String(reason)
+  const mismatch = wallClockMismatchLine(reasonText, Date.now() - WORKER_STARTED_AT)
+  if (mismatch !== null) console.error(mismatch)
+  for (const entry of IN_FLIGHT) console.error(killedLeftoversLine(entry, reasonText))
+})
+
+// Thrown when the worker has too little wall clock left to finish a deletion. Caught
+// below into a 503 with the account intact; the app retries it as any failure.
+class WorkerRetiringError extends Error {
+  constructor(readonly leftMs: number) {
+    super(`worker_retiring: ${leftMs} ms left`)
+  }
+}
+
+function retiringResponse(leftMs: number): Response {
+  // Past the worker's kill a retry lands on a fresh worker.
+  const retryAfter = Math.max(1, Math.ceil(leftMs / 1000) + 1)
+  return Response.json(
+    { error: 'worker_retiring' },
+    { status: 503, headers: { ...CORS_HEADERS, 'Retry-After': String(retryAfter) } },
+  )
+}
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -294,6 +334,12 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return Response.json({ error: 'Method not allowed' }, { status: 405, headers: CORS_HEADERS })
   }
+  // CUL-2362: refuse on arrival, before any work, when this worker cannot finish.
+  if (!canStartDeletion(startedAt, WORKER_STARTED_AT)) {
+    const left = workerTimeLeft(startedAt, WORKER_STARTED_AT)
+    console.warn(`delete-account: refused on arrival, worker has ${left} ms left`)
+    return retiringResponse(left)
+  }
 
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) {
@@ -386,6 +432,7 @@ Deno.serve(async (req: Request) => {
     const storageFailures: string[] = []
     let authDeleted = false
     let sweep: PrefixSweep[] = []
+    let inFlight: InFlightDeletion | null = null
 
     for (const step of plan) {
       if (step.kind === 'purge-bucket') {
@@ -411,9 +458,24 @@ Deno.serve(async (req: Request) => {
             await readSweepIds(sweepIdReader(adminClient), userId),
           ),
         )
+        // CUL-2362: the step-1 purges and the re-read above take real time, so the
+        // worker's clock is read again here, the last moment the account is intact.
+        const now = Date.now()
+        if (!canStartDeletion(now, WORKER_STARTED_AT)) {
+          throw new WorkerRetiringError(workerTimeLeft(now, WORKER_STARTED_AT))
+        }
+        // Registered BEFORE the call: a kill while deleteUser is in flight is named.
+        inFlight = { userId, phase: 'deleting', sweep, done: new Set() }
+        IN_FLIGHT.add(inFlight)
         // delete-auth-user — LAST. Fires the FK cascade that erases every DB row.
         const { error } = await adminClient.auth.admin.deleteUser(userId)
-        if (error) throw new Error(`auth.admin.deleteUser failed: ${error.message}`)
+        if (error) {
+          // The account is intact, so there is nothing for a shutdown to name.
+          IN_FLIGHT.delete(inFlight)
+          inFlight = null
+          throw new Error(`auth.admin.deleteUser failed: ${error.message}`)
+        }
+        inFlight.phase = 'sweeping'
         authDeleted = true
       } else {
         // Exhaustiveness guard: a future DeletionStep kind must never silently fall
@@ -446,7 +508,10 @@ Deno.serve(async (req: Request) => {
         },
         // CUL-2343: the deadline stops new folders; the cutoff ends every call still
         // in flight, so a folder cut mid-walk is named in `partial` below.
-        sweepBudget(startedAt, WORKER_STARTED_AT),
+        {
+          ...sweepBudget(startedAt, WORKER_STARTED_AT),
+          onFolderDone: (folder) => inFlight?.done.add(folderKey(folder)),
+        },
       )
       removed += swept.removed
       storageFailures.push(...swept.failures)
@@ -461,6 +526,9 @@ Deno.serve(async (req: Request) => {
         // the client's `failed` count is never zero over them.
         console.warn(leftovers)
       }
+      // The sweep's own line now names what is left; the shutdown record stands down.
+      if (inFlight) IN_FLIGHT.delete(inFlight)
+      inFlight = null
     }
 
     if (storageFailures.length > 0) {
@@ -483,6 +551,10 @@ Deno.serve(async (req: Request) => {
     // already cleared the objects. The health signal is `failed`, logged above.
     return Response.json({ ok: true, storage: { removed, failed: storageFailures.length } }, { headers: CORS_HEADERS })
   } catch (err) {
+    if (err instanceof WorkerRetiringError) {
+      console.warn(`delete-account: refused before the auth delete, worker has ${err.leftMs} ms left`)
+      return retiringResponse(err.leftMs)
+    }
     const message = err instanceof Error ? err.message : String(err)
     console.error('delete-account error:', message)
     // FR-7: honest failure. The account is intact (the auth delete is last) and
