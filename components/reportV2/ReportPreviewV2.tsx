@@ -33,6 +33,13 @@
 //    (`lockedViewportHtml` → EXAM_VIEWPORT on iOS, `setBuiltInZoomControls={false}` on Android).
 //    The system's own Zoom and Magnification stay outside any app (acknowledged by the PM).
 //
+// BOXED IN LIKE THE EXAM ROOM (CUL-2428, privacy review on PR-19). Both frames carry the room's
+// Content-Security-Policy (`withExamCsp`): the document may run its own inline script and draw its
+// own inline styles, fonts and images, and may load or send nothing. `onShouldStartLoadWithRequest`
+// governs navigation only, so without it an escaping miss upstream would be live script with the
+// network open. `onOpenWindow` is passed (a no-op) on both, because Android otherwise opens
+// `target=_blank` / `window.open` in a fresh WebView that skips the load predicate entirely.
+//
 // PHONE ↔ PRINTED (spec §14). The swap happens in place, in this frame: no push, no flight. The
 // printed frame mounts on first ask and then stays mounted, so a second swap is a crossfade with
 // nothing to load. Under Reduce Motion it is instant.
@@ -41,7 +48,14 @@ import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View, useWin
 import { WebView } from 'react-native-webview';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { EXAM_VIEWPORT, lockedViewportHtml, printedViewAllowed, printedWarningOf } from '../../lib/examRoom';
+import {
+  EXAM_CSP,
+  EXAM_VIEWPORT,
+  lockedViewportHtml,
+  printedViewAllowed,
+  printedWarningOf,
+  withExamCsp,
+} from '../../lib/examRoom';
 import { ReportFrontSilhouette } from '../surfaces/waits/ReportFrontSilhouette';
 import { ThemedText } from '../ui/ThemedText';
 import {
@@ -68,6 +82,25 @@ export function lockedPreviewHtml(phoneHtml: string): string {
   const head = phoneHtml.indexOf('</head>');
   return head < 0 ? phoneHtml : `${phoneHtml.slice(0, head)}${EXAM_VIEWPORT}${phoneHtml.slice(head)}`;
 }
+
+/**
+ * A report document with the exam room's CSP (CUL-2428). The room refuses a document with no
+ * `<head>`; the preview cannot refuse (the send flow runs through it), so it boxes louder: the
+ * policy goes at the very top of the document (after a leading doctype, so the page keeps its
+ * standards mode), where the parser places it in the implied head. Never shown without it.
+ */
+export function boxedPreviewHtml(html: string): string {
+  const withCsp = withExamCsp(html);
+  if (withCsp !== null) return withCsp;
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+  if (doctype === null) return `${meta}${html}`;
+  const at = doctype.index + doctype[0].length;
+  return `${html.slice(0, at)}${meta}${html.slice(at)}`;
+}
+
+/** Android's new-window path, refused (CUL-2428): the window never opens. */
+function refuseWindow(): void {}
 
 export interface ReportPreviewV2Props {
   /** Null while the first build is in flight: only the silhouette shows. */
@@ -132,7 +165,11 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
     return () => anim.stop();
   }, [waiting, reduced, silhouetteOpacity]);
 
-  const lockedPhoneHtml = useMemo(() => (phoneHtml === null ? null : lockedPreviewHtml(phoneHtml)), [phoneHtml]);
+  const lockedPhoneHtml = useMemo(
+    () => (phoneHtml === null ? null : boxedPreviewHtml(lockedPreviewHtml(phoneHtml))),
+    [phoneHtml],
+  );
+  const boxedPrintHtml = useMemo(() => (printHtml === null ? null : boxedPreviewHtml(printHtml)), [printHtml]);
   // The printed page shows only where its warning can be pinned (lib/examRoom.ts).
   const printedAllowed = phoneHtml !== null && printHtml !== null && printedViewAllowed(phoneHtml);
   const printedWarning = useMemo(() => (phoneHtml === null ? null : printedWarningOf(phoneHtml)), [phoneHtml]);
@@ -178,6 +215,8 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             // CUL-2383: the reflow's layout script must run (header above).
             javaScriptEnabled
             onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+            // Android would open a new window in a fresh WebView that skips the predicate (CUL-2428).
+            onOpenWindow={refuseWindow}
             // No pinch on Android either (CUL-2430; EXAM_VIEWPORT locks it on iOS).
             setBuiltInZoomControls={false}
             textZoom={Platform.OS === 'android' ? androidTextZoom(fontScale) : undefined}
@@ -186,7 +225,7 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
           />
         </View>
       )}
-      {printedMounted && printedAllowed && printHtml !== null && (
+      {printedMounted && printedAllowed && boxedPrintHtml !== null && (
         <Animated.View
           style={[StyleSheet.absoluteFill, styles.printed, { opacity: printedOpacity }]}
           importantForAccessibility={showingPrinted ? 'auto' : 'no-hide-descendants'}
@@ -210,10 +249,11 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             testID={PREVIEW_PRINTED_TEST_ID}
             style={styles.web}
             originWhitelist={['about:*', 'data:*']}
-            source={{ html: printHtml }}
+            source={{ html: boxedPrintHtml }}
             // The printed page carries no script; the surface stays minimal.
             javaScriptEnabled={false}
             onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+            onOpenWindow={refuseWindow}
             showsVerticalScrollIndicator
           />
         </Animated.View>
