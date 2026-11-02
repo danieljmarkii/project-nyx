@@ -70,6 +70,13 @@
 --     band the service role can still log a send that did not happen, and the
 --     list keeps it: append only means no one can remove it while the copy
 --     exists. generate-report stamps server time; nothing else writes it.
+--     The lower bound reads created_at, which 113 freezes only once kept: a
+--     server writer that back-dates a DRAFT's created_at can then keep it with
+--     an old stamp (pass 2, P2-1). No code path writes created_at.
+--   * A later-named BEFORE INSERT trigger on vet_report_departures could
+--     rewrite NEW after §4 has judged it (pass 2, P2-2). Owner DDL, the same
+--     class as DISABLE TRIGGER below; guards/vetReportsPolicy.test.ts pins the
+--     four triggers this file creates.
 --   * "Latest" is the latest WRITTEN stamp, not the latest instant (pass 1,
 --     F2): two sends racing can commit out of order, so vet_reports.shared_at
 --     may trail the newest departure by the race's width. The detail screen
@@ -220,7 +227,7 @@ CREATE TRIGGER trg_vet_report_departures_is_stamp
   FOR EACH ROW EXECUTE FUNCTION public.vet_report_departure_is_stamp();
 
 COMMENT ON FUNCTION public.vet_report_departure_is_stamp() IS
-  'CUL-2445 (119): a vet_report_departures row is admitted only when its report is kept, is the same pet, and carries exactly this shared_via and shared_at now, and that time falls between the report''s creation and now (5 minutes of clock slack each way), so no writer, the owner included, can log a send the report never stamped or a time it invented. SECURITY DEFINER (reads vet_reports for any writer), search_path pinned, EXECUTE revoked from every caller role; one RAISE naming only NEW.* (C-31).';
+  'CUL-2445 (119): a vet_report_departures row is admitted only when its report is kept, is the same pet, and carries exactly this shared_via and shared_at now, and that time falls between the report''s created_at and now (5 minutes of clock slack each way), so no writer, the owner included, can log a send the report never stamped. The time bound is only as strong as created_at, which a server writer can still move on a DRAFT (113 freezes it once kept; rls-privacy-reviewer pass 2, P2-1). SECURITY DEFINER (reads vet_reports for any writer), search_path pinned, EXECUTE revoked from every caller role; one RAISE naming only NEW.* (C-31).';
 
 CREATE OR REPLACE FUNCTION public.vet_report_departures_append_only()
 RETURNS TRIGGER
