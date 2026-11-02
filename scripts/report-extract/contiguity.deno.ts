@@ -15,8 +15,8 @@
 //      own signs, and both small-cat weights; the decline detector fires on a decline.
 //   4. NO DECLINE. No sentence in the whole document (sheet 1 and the back sheets, as text) names
 //      one of the trial's own signs and states a decline in it.
-//   5. THE STUB. "How this record was kept" is asserted by nothing until VR2-14 (CUL-2294). The
-//      day a renderer prints that heading while `KEPT_STUB` is still true, this goes red.
+//   5. HOW THIS RECORD WAS KEPT (VR2-14, CUL-2294; GAP-33). Every fixture prints the block, last,
+//      and each of its sentences is one run in one block, so an extractor gets it whole.
 //
 // BLIND SPOTS, stated so they never read as coverage: fonts (tnum, calt; guards/reportNoTnum.test.ts
 // holds the declarations, the Chromium job the behaviour); the page head in `@page` margin boxes,
@@ -30,7 +30,7 @@ import { strict as nodeAssert } from 'node:assert'
 import { buildDocumentV2 } from '../../supabase/functions/generate-report/documentV2.ts'
 import { renderPrintV2 } from '../../supabase/functions/generate-report/renderPrintV2.ts'
 import { extractionDocs } from './docs.deno.ts'
-import { declineSentences, divergence, expectationsOf, fold, KEPT_HEADING, KEPT_STUB, missing, withoutFurniture, type ExpectedLine } from './expect.deno.ts'
+import { declineSentences, divergence, expectationsOf, fold, KEPT_HEADING, keptSentences, missing, withoutFurniture, type ExpectedLine } from './expect.deno.ts'
 import { SMALL_CAT_WEIGHTS } from './fixtures.deno.ts'
 
 // node:assert is bundled, so this suite fetches nothing (the CI step runs it --cached-only).
@@ -131,6 +131,15 @@ for (const { name, snap, doc, aiLead } of docs) {
     )
   })
 
+  Deno.test(`contiguity — ${name}: every "How this record was kept" sentence is one run in one block`, () => {
+    const html = renderPrintV2(doc, aiLead)
+    const want = expectationsOf(doc, snap, aiLead)
+    assert(want.kept.length >= 30, `${name}: ${want.kept.length} kept sentences`)
+    const kept = html.slice(html.indexOf('data-block="kept"'))
+    const runs = textRuns(kept)
+    assertEquals(brokenLines(runs, want.kept).map((l) => divergence(runs.join(' | '), decode(l.text))), [], `${name}: kept sentences an extractor could split`)
+  })
+
   Deno.test(`contiguity — ${name}: no stylesheet draws a digit outside the page head`, () => {
     assertEquals(generatedDigits(renderPrintV2(doc, aiLead)), [])
   })
@@ -162,16 +171,15 @@ Deno.test('contiguity — the fixtures carry every class the extraction job is f
   }
 })
 
-Deno.test('contiguity — "How this record was kept" is a stub only while no renderer prints it (VR2-14)', () => {
+Deno.test('contiguity — "How this record was kept" prints on every fixture, and a document without it cannot pass (VR2-14)', () => {
   // Read on the folded text, so markup or a spacing change inside the heading cannot slip past.
   const prints = (d: (typeof docs)[number]): boolean => fold(textRuns(renderPrintV2(d.doc, d.aiLead)).join(' ')).includes(fold(KEPT_HEADING))
-  const printed = docs.filter(prints).map((d) => d.name)
-  if (KEPT_STUB) {
-    assertEquals(printed, [], `the "${KEPT_HEADING}" block now prints; write keptSentences() in expect.deno.ts and set KEPT_STUB to false`)
-  } else {
-    assert(printed.length === docs.length, 'KEPT_STUB is off but not every fixture prints the block')
-    for (const d of docs) assert(expectationsOf(d.doc, d.snap, d.aiLead).kept.length > 0, `${d.name}: no kept sentences`)
-  }
+  assertEquals(docs.filter((d) => !prints(d)).map((d) => d.name), [])
+  for (const d of docs) assert(expectationsOf(d.doc, d.snap, d.aiLead).kept.length > 0, `${d.name}: no kept sentences`)
+  // Mutation: the block cut out of a document makes the expectations throw, never assert nothing.
+  const d = docs[0]
+  const cut = { ...d.doc, backSheets: d.doc.backSheets.map((s) => ({ ...s, blocks: s.blocks.filter((b) => b.kind !== 'kept') })) }
+  nodeAssert.throws(() => keptSentences(cut), /no "How this record was kept" block/)
 })
 
 Deno.test('contiguity — the AI lead variants print the lead (never a lead-shaped fixture with no lead)', () => {
@@ -281,6 +289,25 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('Vomiting Oct 31: its photo is no longer retained.', ['vomit']), [])
   // A carve-out never covers a looser phrase:
   assertEquals(declineSentences('Itching entries fall in the last two weeks.', ['itch']).length, 1)
+  // VR2-14's back-sheet carve-outs, each beside the near phrase that must still count.
+  assertEquals(declineSentences('Vomiting Oct 31: read uncertain, photo no longer retained.', ['vomit']), [])
+  assertEquals(declineSentences('42 trial days fall before it (10 vomiting).', ['vomit']), [])
+  assertEquals(declineSentences('35 days of a trial that has run 87 \u2014 52 trial days fall before it (10 vomiting).', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting 87 \u2014 52 over the trial.', ['vomit']).length, 1)
+  assertEquals(declineSentences('Vomiting entries fall before the diet change.', ['vomit']).length, 1)
+  assertEquals(declineSentences('Vomiting falls entirely before this span.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting falls entirely after the switch.', ['vomit']).length, 1)
+  assertEquals(declineSentences('9 of 14 timed vomiting episodes fell within ~30 min of eating.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting fell within two weeks of the switch.', ['vomit']).length, 1)
+  assertEquals(declineSentences('Diarrhoea (active). No weigh-in falls inside this window.', ['diarrhea']), [])
+  assertEquals(declineSentences('Vomiting in 4 of 4 episodes, vs 0 of 4 matched control windows.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting went from 4 of 4 days to 0 of 4.', ['vomit']).length, 1)
+  assertEquals(declineSentences('For pruritus. The highest before it in the last 365 days: 31.80 kg, down from 32.40 kg.', ['itch']), [])
+  assertEquals(declineSentences('Pruritus is down from last month.', ['itch']).length, 1)
+  assertEquals(declineSentences('Oct 28 vomit logged. No flag is not an all-clear. A clear photo is never an all-clear; never counted as clear.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting has cleared.', ['vomit']).length, 1)
+  assertEquals(declineSentences('Vomiting 6 days. The denser the symptom record, the less this marker means.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting: less this week.', ['vomit']).length, 1)
 })
 
 Deno.test('fold — whitespace between digits is never dropped', () => {

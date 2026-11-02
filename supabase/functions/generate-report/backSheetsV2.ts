@@ -14,8 +14,8 @@
 // VR2-14 (CUL-2294) prints the rest, after those two, in this order:
 //   - "Event log" (v1 appendix A), every read's state in words;
 //   - "Medications": the lifetime table first, then the dose log for this window (v1 D2 and D);
-//   - "Diet, weight and food exposure": v1 page 1's diet, feeding and medication block, its weight
-//     trend and the diet trial section, then v1's diet history and off-diet exposures (appendices
+//   - "Diet, weight and food exposure": v1 page 1's weight trend, diet trial section and diet,
+//     feeding and medication block, then v1's diet history and off-diet exposures (appendices
 //     B and C). v1's protein-over-time chart is not reprinted: its labels are SVG text under v2's
 //     11pt floor, every feeding it draws is dated in the exposures table, and a chart enters v2 only
 //     with its own row in docs/nyx-chart-standard.md;
@@ -553,14 +553,23 @@ function letterTitles(snap: ReportSnapshot): Map<string, string> {
  * they share a sheet, so each phrase says "this sheet"; read one by one, so a "page 1" this table
  * does not know falls through to "sheet 1" only where `assertNoV1Pointer` lets it.
  */
-const SAME_SHEET: ReadonlyArray<readonly [string, string]> = [
+const RELATIVE: ReadonlyArray<readonly [string, string]> = [
   ['Weight trend on page&nbsp;1', 'Weight trend on this sheet'],
   ['so page&nbsp;1 shows no weight trend', 'so this sheet shows no weight trend'],
   ['on page&nbsp;1 under Timing vs symptoms', 'on this sheet under Timing vs symptoms'],
   ['not the association test on page&nbsp;1', 'not the association test on this sheet'],
-  ['the diet-trial block on page&nbsp;1', 'the diet-trial section on this sheet'],
+  ['the diet-trial block on page&nbsp;1', 'the diet-trial block on this sheet'],
   // The Noticed line prints under the ledger on v2, and lists symptom-class words only, as v1's did.
   ['only an activity word, which page 1 never lists', 'only an activity word, which this line never lists'],
+  // "Above" and "below" that meant a v1 page-1 neighbour v2 prints elsewhere. Each lands where its
+  // target is on v2: the band and the window's counts and chart on sheet 1, the Noticed counts
+  // under the ledger. The ones that point inside their own section are true as they stand.
+  ['<b>See the Weight flag above:</b>', '<b>See the Weight flag on sheet&nbsp;1:</b>'],
+  ['<b>No count below is measured over the trial as a whole.</b>', '<b>No count on sheet&nbsp;1 is measured over the trial as a whole.</b>'],
+  ['the charts below span the report&rsquo;s', 'the chart on sheet&nbsp;1 spans the report&rsquo;s'],
+  ['read the symptom counts below with it in view', 'read the symptom counts on sheet&nbsp;1 with it in view'],
+  ['in none of the counts above and none of the rows below', 'in none of the counts on sheet&nbsp;1 and none of the rows below'],
+  ["The whole window's count is above.", `The whole window's count is under the day ledger on ${sheetHeaded(RECORD_SHEET_TITLE)}.`],
 ]
 
 /**
@@ -579,6 +588,10 @@ const SHEET_ONE_TRUE = [
   /the &ldquo;last fully-eaten meal&rdquo; on sheet&nbsp;1/,
   /so sheet&nbsp;1 shows no &ldquo;last full meal&rdquo;/,
   /\(sheet&nbsp;1 anchor\)/,
+  /No count on sheet&nbsp;1 is measured over the trial as a whole/,
+  /the chart on sheet&nbsp;1 spans the report/,
+  /the symptom counts on sheet&nbsp;1 with it in view/,
+  /in none of the counts on sheet&nbsp;1/,
 ]
 
 /** v1's whole-course adherence line is the diet sheet's; the dose log on the medication sheet says so. */
@@ -591,8 +604,15 @@ function medicationPointers(html: string): string {
  * only the pointer changes, never the sentence around it). An appendix title becomes the block's
  * own heading, without its letter.
  */
-export function v2Pointers(html: string, snap: ReportSnapshot): string {
+export function v2Pointers(html: string, snap: ReportSnapshot, here: string | null = null): string {
   const titles = letterTitles(snap)
+  // A pointer at the sheet it prints on says "this sheet": naming its own title sends a reader
+  // to the running head they are already under (the diet sheet holds v1's B and C together).
+  const at = (l: string, onForm: boolean): string => {
+    const t = title(l)
+    if (t === here) return onForm ? 'on this sheet' : 'this sheet'
+    return onForm ? `on ${sheetHeaded(t)}` : sheetHeaded(t)
+  }
   const title = (letter: string): string => {
     const t = titles.get(letter)
     if (!t) throw new Error(`appendix ${letter} has no v2 sheet on this record`)
@@ -607,11 +627,11 @@ export function v2Pointers(html: string, snap: ReportSnapshot): string {
     // navigation only, and v2's sheets carry their titles, so it is left out whole.
     .replace(/\s*<p class="ref">Full event log, [\s\S]*?<\/p>/g, '')
   // v1 spells "page 1" both with a no-break space and without; each phrase matches either.
-  for (const [from, to] of SAME_SHEET) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
+  for (const [from, to] of RELATIVE) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
   out = medicationPointers(out)
-    .replace(/\(appendix(?:&nbsp;| )([A-G])\)/g, (_m, l: string) => `(${sheetHeaded(title(l))})`)
-    .replace(/\bin appendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => `on ${sheetHeaded(title(l))}`)
-    .replace(/\bappendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => sheetHeaded(title(l)))
+    .replace(/\(appendix(?:&nbsp;| )([A-G])\)/g, (_m, l: string) => `(${at(l, true)})`)
+    .replace(/\bin appendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => at(l, true))
+    .replace(/\bappendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => at(l, false))
   return onSheets(out)
 }
 
@@ -633,9 +653,9 @@ export function assertNoV1Pointer(html: string, where: string): void {
 }
 
 /** A v1 section as a v2 block: pointers swapped, then held to the guard. Null when v1 prints nothing. */
-function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot): BackBlockV2 | null {
+function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot, here: string): BackBlockV2 | null {
   if (v1Html.trim() === '') return null
-  const html = v2Pointers(v1Html, snap).trim()
+  const html = v2Pointers(v1Html, snap, here).trim()
   assertNoV1Pointer(html, id)
   return { kind: 'section', id, heading, html }
 }
@@ -645,13 +665,16 @@ function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string
 function eventLogBlock(snap: ReportSnapshot): BackBlockV2 {
   const p = eventLogParts(snap, true)
   const html = `<p class="bnote">${p.subHtml}</p>${p.tableHtml}<p class="note">${p.noteHtml}</p>`
-  return sectionBlock('event-log', 'Symptom event log', html, snap) as BackBlockV2
+  return sectionBlock('event-log', 'Symptom event log', html, snap, LOG_SHEET_TITLE) as BackBlockV2
 }
 
 function medicationBlocks(snap: ReportSnapshot): BackBlockV2[] {
   // The lifetime table first (spec §6.1): its coverage note and H1 disclosure lead the data, and it
   // answers "has she ever been on steroids?" before the window's dose detail narrows the view.
-  return [sectionBlock('medication-history', null, medicationHistoryTable(snap), snap), sectionBlock('medication-log', null, medicationAppendix(snap), snap)].filter(
+  return [
+    sectionBlock('medication-history', null, medicationHistoryTable(snap), snap, MEDICATION_SHEET_TITLE),
+    sectionBlock('medication-log', null, medicationAppendix(snap), snap, MEDICATION_SHEET_TITLE),
+  ].filter(
     (b): b is BackBlockV2 => b !== null,
   )
 }
@@ -666,12 +689,15 @@ function dietBlocks(snap: ReportSnapshot): BackBlockV2[] {
       snap.diet.mealItems.some((m) => m.proteinSet.offTrial.length > 0))
   const markedC = hasTrial && snap.provenance.confounders.some((c) => c.proteinSet.offTrial.length > 0)
   const key = offTrialFootnote(snap.diet.trialTargetProtein)
+  const here = DIET_SHEET_TITLE
+  // v1 page 1's order: the weight trend, the diet trial, then the diet and medication block, whose
+  // "see the diet-trial block above" stays true only in that order.
   return [
-    sectionBlock('diet-meds', null, dietMeds(snap), snap),
-    sectionBlock('weight', 'Weight', weightBlock(snap), snap),
-    sectionBlock('diet-trial', null, dietTrialSection(snap), snap),
-    sectionBlock('diet-history', null, `${dietHistoryAppendix(snap)}${markedB ? key : ''}`, snap),
-    sectionBlock('exposures', null, `${offDietAppendix(snap)}${!markedB && markedC ? key : ''}`, snap),
+    sectionBlock('weight', 'Weight', weightBlock(snap), snap, here),
+    sectionBlock('diet-trial', null, dietTrialSection(snap), snap, here),
+    sectionBlock('diet-meds', null, dietMeds(snap), snap, here),
+    sectionBlock('diet-history', null, `${dietHistoryAppendix(snap)}${markedB ? key : ''}`, snap, here),
+    sectionBlock('exposures', null, `${offDietAppendix(snap)}${!markedB && markedC ? key : ''}`, snap, here),
   ].filter((b): b is BackBlockV2 => b !== null)
 }
 
@@ -679,7 +705,10 @@ function noticedBlocks(snap: ReportSnapshot): BackBlockV2[] {
   const parts = noticedAppendixParts(snap, 'the four-week strip above')
   if (!parts) return []
   const log = `<p class="bnote">${parts.subHtml}</p>${parts.tableHtml}<p class="note">${parts.footHtml}</p>`
-  return [sectionBlock('noticed-graph', null, noticedGraph(snap), snap), sectionBlock('noticed-log', 'Every answer, by day', log, snap)].filter(
+  return [
+    sectionBlock('noticed-graph', null, noticedGraph(snap), snap, NOTICED_SHEET_TITLE),
+    sectionBlock('noticed-log', 'Every answer, by day', log, snap, NOTICED_SHEET_TITLE),
+  ].filter(
     (b): b is BackBlockV2 => b !== null,
   )
 }
@@ -687,7 +716,7 @@ function noticedBlocks(snap: ReportSnapshot): BackBlockV2[] {
 /** Spec §6.1's Noticed row: the answered-day line under the sheet 2 ledger, pointing at the Noticed sheet. */
 function noticedLineBlock(snap: ReportSnapshot): BackBlockV2 | null {
   if (!hasNoticed(snap)) return null
-  return sectionBlock('noticed-line', null, noticedLine(snap), snap)
+  return sectionBlock('noticed-line', null, noticedLine(snap), snap, RECORD_SHEET_TITLE)
 }
 
 // ── How this record was kept (spec §6.1, GAP-33) ─────────────────────────────
