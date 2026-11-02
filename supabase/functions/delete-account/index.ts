@@ -88,8 +88,10 @@ const WORKER_STARTED_AT = Date.now()
 // deletion, nothing awaited, since how long the runtime waits for it is unverified.
 const IN_FLIGHT = new Set<InFlightDeletion>()
 
-addEventListener('beforeunload', (ev: Event) => {
-  const reason = ((ev as CustomEvent<{ reason?: unknown }>).detail?.reason ?? null)
+// The listener's parameter is left to inference: Deno's lib and the DOM lib both
+// declare `Event`, and an explicit annotation picks one the overload rejects.
+addEventListener('beforeunload', (ev) => {
+  const reason = (ev as unknown as { detail?: { reason?: unknown } }).detail?.reason ?? null
   const reasonText = reason === null ? null : String(reason)
   const mismatch = wallClockMismatchLine(reasonText, Date.now() - WORKER_STARTED_AT)
   if (mismatch !== null) console.error(mismatch)
