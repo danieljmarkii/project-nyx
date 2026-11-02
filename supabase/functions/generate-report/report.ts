@@ -3435,6 +3435,11 @@ export interface ReportV2Facts {
   lastMealAboveRefusal: { occurredAt: string; rating: IntakeRating; foodLabel: string | null } | null
   /** The watched rated meals that line reads over (0: the line has nothing to say). */
   watchedRatedMeals: number
+  /** A free-fed bowl was down at some point after that meal (or, with none, after the first watched
+   *  rated meal), by the same spans the intake detector reads: only then may the sheet say the pet
+   *  may have eaten since (adversarial pass 2 on CUL-2293: a bowl taken up 14 days before the last
+   *  full meal still softened six days without one). */
+  freeFedDownSinceLastMeal: boolean
   /** CUL-2293: per local day, the watched rated meals not fully eaten (`!== 'all'`, the predicate
    *  `intakeWeeks` counts), so the sheet 2 ledger can draw intake on its days when intake leads. */
   mealNotFinishedDayCounts: Array<{ day: string; count: number }>
@@ -6828,6 +6833,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ),
       ...lastMealAboveRefusalOf(
         ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+        intakeFreeFedSpans,
+        nowMs,
       ),
       symptomDayCounts: symptomDayCountsOf(windowEvents, (iso) => eventDayNumber(iso, tz)),
     },
@@ -6837,16 +6844,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 /** CUL-2293 — the last watched rated meal out of the refusal class, by instant (parsed, C-40). */
 function lastMealAboveRefusalOf(
   watched: ReadonlyArray<ReportEventInput>,
-): Pick<ReportV2Facts, 'lastMealAboveRefusal' | 'watchedRatedMeals'> {
+  spans: ReadonlyArray<{ fromMs: number; untilMs: number }>,
+  nowMs: number,
+): Pick<ReportV2Facts, 'lastMealAboveRefusal' | 'watchedRatedMeals' | 'freeFedDownSinceLastMeal'> {
   let best: ReportEventInput | null = null
   for (const e of watched) {
     const r = e.meal!.intakeRating
     if (!isKnownIntakeRating(r) || isRefusedOrPickedRating(r)) continue
     if (best === null || Date.parse(e.occurredAt) > Date.parse(best.occurredAt)) best = e
   }
+  const firstRated = watched.reduce((m, e) => Math.min(m, Date.parse(e.occurredAt)), Infinity)
+  const anchorMs = best ? Date.parse(best.occurredAt) : firstRated
   return {
     lastMealAboveRefusal: best ? { occurredAt: best.occurredAt, rating: best.meal!.intakeRating as IntakeRating, foodLabel: mealFoodLabel(best.meal!) } : null,
     watchedRatedMeals: watched.filter((e) => isKnownIntakeRating(e.meal!.intakeRating)).length,
+    freeFedDownSinceLastMeal: Number.isFinite(anchorMs) && spans.some((sp) => sp.untilMs > anchorMs && sp.fromMs <= nowMs),
   }
 }
 

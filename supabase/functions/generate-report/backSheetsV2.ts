@@ -392,10 +392,16 @@ function lastAboveRefusedOf(snap: ReportSnapshot): string | null {
   const noun = bowl ? 'watched meal' : 'meal'
   // A free-fed bowl down in the window was not watched, so the last RATED meal is not the last
   // intake; said beside the line, never left to the paragraph above (cold read, Mira).
-  const caveat =
-    snap.diet.freeFed.length > 0
-      ? ' Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.'
-      : ''
+  // Only a bowl still down AFTER the meal can have been eaten from since (adversarial pass 2).
+  // A bowl with no end date is still down, so it was down after every meal, even where its start is
+  // unreadable and the detector's spans drop it (Mira's bowl has no recorded start).
+  const bowlSince = v.freeFedDownSinceLastMeal || snap.diet.freeFed.some((f) => f.activeUntil === null)
+  const hit0 = v.lastMealAboveRefusal
+  const caveat = !bowlSince
+    ? ''
+    : hit0
+      ? ' A free-fed bowl was down after it and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.'
+      : ' A free-fed bowl was down in this window and its intake is not directly observed, so these ratings are not everything eaten.'
   const anyMostOrAll = snap.diet.mealItems.some((i) => i.intakeBreakdown.some((b) => (b.rating === 'all' || b.rating === 'most') && b.count > 0))
   const hit = v.lastMealAboveRefusal
   if (!hit) {

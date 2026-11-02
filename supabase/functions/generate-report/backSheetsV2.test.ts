@@ -21,7 +21,7 @@ import {
 import { mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
-import { baseInput, dailyMeals, dayKey, meal, nyxSafetyCat, stoolPhotoDog, symptom } from './v2Fixtures.testutil.ts'
+import { at, baseInput, dailyMeals, dayKey, meal, nyxSafetyCat, stoolPhotoDog, symptom } from './v2Fixtures.testutil.ts'
 
 const OPTS: DocumentV2Options = { owner: { firstName: 'Ada', lastName: null }, shortId: null, questions: [] }
 const docOf = (s: ReportSnapshot): DocumentV2 => buildDocumentV2(s, OPTS)
@@ -321,7 +321,7 @@ Deno.test('intake — Mira: the last meal rated above “refused”, from the ne
   assert.equal(
     intake.lastAboveRefused,
     'The last meal rated “ate some” or better: Jun 4 at 14:00 (ate some). No meal in this window was rated “ate most” or “ate it all”. ' +
-      'Free-fed food was also down in this window and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.',
+      'A free-fed bowl was down after it and its intake is not directly observed, so this is the last rated meal, not the last time food was eaten.',
   )
   // Every rated meal after it is a refusal, read off the list itself (newest first).
   const rows = s.provenance.intakeLog
@@ -359,6 +359,21 @@ Deno.test('intake — “picked at it” is the refusal class, never the last me
   assert.equal(blockIn(backSheetsOf(none), 'intake')?.lastAboveRefused, 'No meal in this window was rated “ate some” or better: every one of the 6 rated was “picked at it” or “refused”.')
   // Nothing rated, nothing to say.
   assert.equal(blockIn(backSheetsOf(cat(dailyMeals(5, 0, null))), 'intake')?.lastAboveRefused ?? null, null)
+})
+
+Deno.test('intake — the free-fed caveat prints only when a bowl was down after the last meal (adversarial pass 2, P10)', () => {
+  const bowl = (activeUntil: string | null, endedAt: string | null) => [
+    { id: 'arr-bowl', foodItemId: 'food-bowl', method: 'free_choice', createdAt: at(40), activeFrom: dayKey(40), activeUntil, endedAt, isShared: false, primaryProtein: 'chicken', foodLabel: 'Kibble' },
+  ]
+  const events = [...dailyMeals(30, 6, 'all'), ...Array.from({ length: 6 }, (_, i) => meal(5 - i, 'refused'))]
+  // Taken up 14 days before the last full meal: it cannot have been eaten from since.
+  const early = cat(events, { feedingArrangements: bowl(dayKey(20), at(20, 9)) })
+  const e = blockIn(backSheetsOf(early), 'intake')?.lastAboveRefused ?? ''
+  assert.match(e, /^The last meal rated “ate some” or better:/)
+  assert.doesNotMatch(e, /free-fed/i, 'a bowl taken up before the meal never softens the line')
+  // Still down after it: the caveat prints.
+  const late = cat(events, { feedingArrangements: bowl(null, null) })
+  assert.match(blockIn(backSheetsOf(late), 'intake')?.lastAboveRefused ?? '', /A free-fed bowl was down after it/)
 })
 
 Deno.test('intake — a time printed without a usable zone says UTC (adversarial case 3)', () => {
@@ -424,6 +439,11 @@ Deno.test('R-10 — the band photo prints the incident’s time with how sure it
     'sometime 01:00–06:00',
   )
   assert.equal(incidentTimeWords({ ...base, occurredAtConfidence: 'window', occurredAtLatest: '2026-10-02T06:00:00Z' }, 'UTC'), 'sometime before 06:00')
+  // Across midnight both days are named, so the first edge never reads a day late.
+  assert.equal(
+    incidentTimeWords({ ...base, occurredAt: '2026-10-09T06:00:00Z', occurredAtConfidence: 'window', occurredAtEarliest: '2026-10-08T22:00:00Z', occurredAtLatest: '2026-10-09T06:00:00Z' }, 'UTC'),
+    'sometime between Oct 8 22:00 and Oct 9 06:00',
+  )
 })
 
 Deno.test('styles — no back-sheet rule reaches a sheet 1 element (cold read: v1’s .conf chip unwrapped the confounder line)', () => {

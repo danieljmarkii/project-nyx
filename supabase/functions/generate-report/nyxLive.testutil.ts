@@ -121,6 +121,8 @@ export function nyxLiveSnapshot(): ReportSnapshot {
         return r ? { occurredAt: r.occurredAt, rating: r.intakeRating, foodLabel: r.foodLabel } : null
       })(),
       watchedRatedMeals: intake.filter((x) => !x.notCountedFreeFed).length,
+      // The capture has no bowl spans; Nyx's snapshot lists her free-fed food, so the caveat stays on.
+      freeFedDownSinceLastMeal: s.diet.freeFed.length > 0,
       mealNotFinishedDayCounts: [...notFinished.reduce((m, r) => m.set(localDay(r.occurredAt, tz), (m.get(localDay(r.occurredAt, tz)) ?? 0) + 1), new Map<string, number>())].map(([day, count]) => ({ day, count })),
       symptomDayCounts: [...counts.entries()].map(([k, count]) => {
         const [type, day] = k.split('|')

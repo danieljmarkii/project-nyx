@@ -411,7 +411,10 @@ export function bandPhotosOf(f: SafetyFlag, snap: ReportSnapshot): BandPhoto[] {
         // The time is the INCIDENT's, as the owner recorded it, never the photo's (capture time is
         // stripped); said with how sure it is, so a found vomit never prints as a witnessed minute
         // (cold read, CUL-2293: the time since ingestion sets the urgency of imaging).
-        caption: `Photo of the ${day} incident, ${incidentTimeWords(p, snap.timezone)}${p.dataUri ? '' : '; the photo could not be embedded'}`,
+        caption: `${/^sometime between /.test(incidentTimeWords(p, snap.timezone)) ? 'Photo of the incident' : `Photo of the ${day} incident`}, ${incidentTimeWords(
+          p,
+          snap.timezone,
+        )}${p.dataUri ? '' : '; the photo could not be embedded'}`,
         alt: `Owner photo of the ${symptomLabel(p.type).toLowerCase()} incident on ${when}`,
       }
     })
@@ -428,8 +431,15 @@ export function incidentTimeWords(
       return `seen at ${t(p.occurredAt)}`
     case 'est':
       return `about ${t(p.occurredAt)} (an estimate)`
-    case 'range':
-      return `sometime ${t(p.occurredAtEarliest as string)}–${t(p.occurredAtLatest as string)}`
+    case 'range': {
+      // A range across midnight names both days, or "Oct 9, 22:00–06:00" reads a day late on the
+      // first edge (adversarial pass 2: time since ingestion, understated by 24 hours).
+      const a = p.occurredAtEarliest as string
+      const b = p.occurredAtLatest as string
+      const dayA = textOf(fmtLocalDay(a, tz))
+      const dayB = textOf(fmtLocalDay(b, tz))
+      return dayA === dayB ? `sometime ${t(a)}–${t(b)}` : `sometime between ${dayA} ${t(a)} and ${dayB} ${t(b)}`
+    }
     case 'bound':
       return p.occurredAtLatest ? `sometime before ${t(p.occurredAtLatest)}` : `sometime after ${t(p.occurredAtEarliest as string)}`
     case 'unspecified':
