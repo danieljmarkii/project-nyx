@@ -403,6 +403,24 @@ Deno.test('a lead the sent copy does not print is cleared, and the verdict says 
   assert.deepEqual(l.writes, [{ text: null, verdict: { outcome: 'printed', fact_hash: 'h', at_send: { printed: false, reason: 'not_on_sent_copy' } }, model: null }])
 })
 
+Deno.test('a cleared lead leaves no model output in the verdict it freezes (CUL-2377, pass 2)', async () => {
+  // A verdict whose sentences and checker quotes are model text: none of it may ride into the
+  // kept row, and migration 118 refuses a draft write that still carries it after a "no".
+  const l = leadIO('Cooper vomited on 3 days.', {
+    outcome: 'printed', fact_hash: 'h', sentences: [{ text: 'Cooper vomited on 3 days.' }],
+    checker: { takeaway: 'x', quotes: { H1: 'Cooper vomited' } }, verifier_errors: [],
+  })
+  assert.equal(await settleLeadForKeep(l.io, '<html>no lead</html>'), true)
+  assert.deepEqual(l.writes, [{
+    text: null,
+    verdict: { outcome: 'printed', fact_hash: 'h', verifier_errors: [], at_send: { printed: false, reason: 'not_on_sent_copy' } },
+    model: null,
+  }])
+  const rejected = leadIO(null, { outcome: 'rejected', sentences: [{ text: 'x' }], checker: { quotes: {} } })
+  await settleLeadForKeep(rejected.io, '<html></html>')
+  assert.deepEqual(rejected.writes[0].verdict, { outcome: 'rejected', at_send: { printed: false, reason: 'not_printed' } })
+})
+
 Deno.test('no lead yet is recorded as not ready; a declined one keeps its verdict', async () => {
   const none = leadIO(null, null)
   await settleLeadForKeep(none.io, '<html></html>')
