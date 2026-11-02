@@ -610,3 +610,84 @@ describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
     },
   );
 });
+
+// CUL-2377 (migration 118): a "no" to ai_boundary or report_summary clears the
+// AI summary on the owner's DRAFT rows at once, and 110's client freeze gains
+// one arm so that clear can pass. The behaviour is the probe in the PR
+// (scripts/probes/vet-report-118). This pins the shapes a later file could
+// quietly undo. MUTANTS, run 2026-11-02 against 118 (each applied to the real
+// file, this suite run, the file restored), all killed: the depth test
+// dropped; the current_user test dropped; OLD.status = 'draft' dropped; one of
+// the three IS NULL tests dropped; a fourth column (snapshot) stripped with the
+// summary; the UPDATE's status = 'draft' filter dropped; the WARNING turned
+// into EXCEPTION; the WHEN widened to every answer; a third scope added to the
+// WHEN; the function made SECURITY INVOKER. Pass 1's fixes (§1b, lock_timeout),
+// run the same way: FOR SHARE dropped; the scope list narrowed to one; the
+// count bound loosened to >= 1; the checker test dropped; the RAISE turned to
+// a WARNING; the trigger made UPDATE-only; lock_timeout dropped. Pass 2's
+// fixes: SKIP LOCKED dropped (the deadlock that left a summary behind a "no");
+// the former-draft test turned back into NEW.status = 'draft' (F3).
+// Blind spots, stated: a DO block's EXECUTE; a trigger disabled in the
+// dashboard (VERIFY covers it); a later CREATE OR REPLACE TRIGGER under
+// another name that calls the same function with a wider WHEN.
+describe('vet_reports draft summary withdrawal clear (CUL-2377, migration 118)', () => {
+  const sql = allMigrations();
+
+  it('lets the freeze pass only a draft\'s three summary columns going to NULL, inside a DEFINER trigger', () => {
+    const flat = freezeBody(sql).body.replace(/\s+/g, ' ');
+    // Verbatim: each test is load-bearing (header §2 of 118).
+    expect(flat).toContain(
+      "IF pg_trigger_depth() > 1 AND current_user NOT IN ('anon', 'authenticated') AND OLD.status = 'draft' AND NEW.ai_lead_text IS NULL AND NEW.ai_lead_verdict IS NULL AND NEW.ai_lead_model IS NULL THEN newj := newj - ARRAY['ai_lead_text', 'ai_lead_verdict', 'ai_lead_model']; oldj := oldj - ARRAY['ai_lead_text', 'ai_lead_verdict', 'ai_lead_model']; END IF;",
+    );
+    // One such arm, and nothing else strips columns from the comparison.
+    expect(flat.match(/pg_trigger_depth\(\)/g)?.length).toBe(1);
+    expect(flat.match(/:= (?:newj|oldj) - /g)?.length).toBe(2);
+    // The arm sits before the comparison it relaxes.
+    expect(flat.indexOf('pg_trigger_depth()')).toBeLessThan(flat.indexOf('IF (newj - control) IS DISTINCT FROM (oldj - control)'));
+  });
+
+  it('clears draft rows only, never refuses the withdrawal, and fires on a "no" to the two scopes only', () => {
+    const { header, body } = lastFunctionIn(sql, 'clear_draft_summary_on_withdrawal');
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "UPDATE public.vet_reports SET ai_lead_text = NULL, ai_lead_verdict = NULL, ai_lead_model = NULL WHERE generated_by = NEW.user_id AND status = 'draft' AND (ai_lead_text IS NOT NULL OR ai_lead_verdict IS NOT NULL OR ai_lead_model IS NOT NULL);",
+    );
+    expect(flat).toMatch(/EXCEPTION WHEN OTHERS THEN RAISE WARNING '[^'%]*%[^'%]*', SQLSTATE; END;/);
+    expect(flat).not.toMatch(/RAISE EXCEPTION/);
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_ai_consent_clear_draft_summary\b/);
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create, sql.indexOf(';', create)).replace(/\s+/g, ' ')).toBe(
+      "CREATE TRIGGER trg_ai_consent_clear_draft_summary AFTER INSERT OR UPDATE ON public.ai_consent FOR EACH ROW WHEN (NEW.granted = false AND NEW.scope IN ('ai_boundary', 'report_summary')) EXECUTE FUNCTION public.clear_draft_summary_on_withdrawal()",
+    );
+    expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_ai_consent_clear_draft_summary\b/);
+    expect(sql).not.toMatch(/\bGRANT\s[^;]*\bON\s+FUNCTION\s+(?:public\.)?clear_draft_summary_on_withdrawal\b/i);
+    // A locked draft must become a caught 55P03, never the statement timeout
+    // that would refuse the "no" (pass 1, F4).
+    expect(header).toMatch(/SET lock_timeout = '2s'/);
+  });
+
+  it('refuses a draft write carrying model output unless the maker holds both yeses, read FOR SHARE SKIP LOCKED', () => {
+    const { header, body } = lastFunctionIn(sql, 'vet_reports_summary_needs_consent');
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).not.toMatch(/NEW\.status/);
+    expect(flat.match(/RETURN NEW;/g)?.length).toBe(2);
+    expect(flat).toContain(
+      // Every INSERT, and every UPDATE of a row that WAS a draft (pass 2, F3).
+      "IF TG_OP = 'UPDATE' THEN IF OLD.status <> 'draft' THEN RETURN NEW; END IF; END IF; IF (NEW.ai_lead_text IS NOT NULL OR NEW.ai_lead_model IS NOT NULL OR jsonb_typeof(NEW.ai_lead_verdict -> 'sentences') = 'array' OR jsonb_typeof(NEW.ai_lead_verdict -> 'checker') = 'object')",
+    );
+    expect(flat).toContain(
+      "SELECT count(*) = 2 INTO granted_both FROM (SELECT 1 FROM public.ai_consent c WHERE c.user_id = NEW.generated_by AND c.scope IN ('ai_boundary', 'report_summary') AND c.granted FOR SHARE SKIP LOCKED) yes; IF NOT granted_both THEN RAISE EXCEPTION 'vet_reports: an AI summary needs the maker''s consent' USING ERRCODE = 'check_violation';",
+    );
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_summary_needs_consent\b/);
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create, sql.indexOf(';', create)).replace(/\s+/g, ' ')).toBe(
+      'CREATE TRIGGER trg_vet_reports_summary_needs_consent BEFORE INSERT OR UPDATE ON public.vet_reports FOR EACH ROW EXECUTE FUNCTION public.vet_reports_summary_needs_consent()',
+    );
+    expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_reports_summary_needs_consent\b/);
+    expect(sql).not.toMatch(/\bGRANT\s[^;]*\bON\s+FUNCTION\s+(?:public\.)?vet_reports_summary_needs_consent\b/i);
+  });
+});
