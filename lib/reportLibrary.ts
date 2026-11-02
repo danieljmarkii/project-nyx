@@ -3,8 +3,9 @@
 //
 // EVERY REPORT AN OWNER SENT, EACH OPENING EXACTLY AS IT WAS SENT. A kept `vet_reports` row is one
 // snapshot: PR-20's keep restamps the same row on every later departure, so the library is one row
-// per copy by construction. A row shows only its LATEST departure: the row keeps no history of
-// earlier ones (the departures log is CUL-2445, a migration).
+// per copy by construction. A list row shows its LATEST departure; the detail screen lists every
+// one, read from `vet_report_departures` (migration 119, CUL-2445): one row per send, written by
+// the database in the same transaction that moved the copy's stamp.
 //
 // TWO READS, TWO DOORS.
 //   · The list reads `vet_reports` with the owner's own JWT. Migration 110's
@@ -143,6 +144,65 @@ export async function hasSavedReports(petId: string, client: Client = supabase):
   }
 }
 
+// ── Every time a copy was sent (CUL-2445, migration 119) ──────────────────────
+
+/** One send of a kept copy. */
+export interface Departure {
+  id: string;
+  /** Free text in 119 (≤ 32), the writer's set: email | print | share. */
+  sharedVia: string;
+  /** UTC instant of the send. */
+  sharedAt: string;
+}
+
+export type DeparturesRead = { kind: 'ok'; departures: Departure[] } | { kind: 'failed' };
+
+/** Rows per page of the departures read. Paged to the count, as the list is (C-42). */
+export const DEPARTURES_PAGE = 100;
+
+/** The columns the departures read may ask for. */
+export const DEPARTURE_COLUMNS = 'id, shared_via, shared_at';
+
+type RawDeparture = { id: string; shared_via: string | null; shared_at: string | null };
+
+/**
+ * Every send of one kept copy, newest first. Read with the owner's JWT: 119's policy returns only
+ * departures of pets the caller owns, and the query names the report PAIRED WITH its pet (C-9).
+ * A failed page fails the whole read, so the screen never shows a short history as the whole one.
+ * Never throws.
+ */
+export async function readDepartures(petId: string, reportId: string, client: Client = supabase): Promise<DeparturesRead> {
+  const out: Departure[] = [];
+  try {
+    let total: number | null = null;
+    for (let from = 0; total === null || from < total; ) {
+      const { data, error, count } = await client
+        .from('vet_report_departures')
+        .select(DEPARTURE_COLUMNS, { count: 'exact' })
+        .eq('report_id', reportId)
+        .eq('pet_id', petId)
+        .order('shared_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, from + DEPARTURES_PAGE - 1);
+      if (error || !Array.isArray(data) || typeof count !== 'number') return { kind: 'failed' };
+      total = count;
+      if (data.length === 0) break;
+      for (const r of data as unknown as RawDeparture[]) {
+        // 119's columns are NOT NULL; a row without them is skipped, never guessed.
+        if (!r.shared_via || !r.shared_at) continue;
+        out.push({ id: r.id, sharedVia: r.shared_via, sharedAt: r.shared_at });
+      }
+      from += data.length;
+    }
+    // Fewer rows than the count promised: incomplete, said as a failure.
+    if (total !== null && out.length < total) return { kind: 'failed' };
+    return { kind: 'ok', departures: out };
+  } catch (e) {
+    console.warn('[reportLibrary] the send history could not be read:', e);
+    return { kind: 'failed' };
+  }
+}
+
 export type OpenedCopy =
   | { kind: 'ok'; html: string }
   /** The server answered that this copy cannot be shown (missing, or no longer the file it was). */
@@ -249,6 +309,32 @@ export const NEW_REPORT_LABEL = 'New report through today';
 
 export function newReportSubline(sharedAt: string, currentYear: number): string {
   return `The ${sentDateLabel(sharedAt, currentYear)} copy stays exactly as sent`;
+}
+
+/** "Sent once", "Sent 3 times": the whole history's size, from the read's count (C-3). */
+export function departuresHeading(n: number): string {
+  return n === 1 ? 'Sent once' : `Sent ${n} times`;
+}
+
+/** The detail lists this many sends before "Show all": the paper keeps the screen (Principle 9). */
+export const SENDS_SHOWN = 3;
+
+/** "Show all 5 sends". */
+export function showAllSendsLabel(n: number): string {
+  return `Show all ${n} sends`;
+}
+
+/** The local clock time of a UTC instant, "4:10 PM" (C-10: converted at the app layer). */
+function clockLabel(iso: string): string {
+  const t = new Date(iso);
+  const h = t.getHours();
+  const m = String(t.getMinutes()).padStart(2, '0');
+  return `${h % 12 === 0 ? 12 : h % 12}:${m} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/** One send: "Printed · Nov 3, 4:10 PM". The time tells two sends on one day apart. */
+export function departureLine(d: Departure, currentYear: number): string {
+  return `${departureWords(d.sharedVia)} · ${sentDateLabel(d.sharedAt, currentYear)}, ${clockLabel(d.sharedAt)}`;
 }
 
 export interface LibraryGroup {

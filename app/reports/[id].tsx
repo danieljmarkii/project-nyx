@@ -15,10 +15,16 @@ import {
   COPY_OFFLINE,
   COPY_UNAVAILABLE,
   copyTitle,
+  departureLine,
+  departuresHeading,
+  SENDS_SHOWN,
+  showAllSendsLabel,
   NEW_REPORT_LABEL,
   newReportSubline,
   openSavedReport,
+  readDepartures,
   readSavedReport,
+  type Departure,
   type SavedReport,
 } from '../../lib/reportLibrary';
 import {
@@ -52,6 +58,11 @@ import { readVetVisitsHome } from '../../lib/vetVisits';
 // with the footer, never on the paper. The link row shows only once its read answered; a failed
 // read hides it rather than offering "Attach" over a copy that may already be filed (C-12).
 //
+// EVERY SEND (CUL-2445, migration 119): the footer lists each time this copy left the phone,
+// newest first. The paper is the same every time, so the list sits with the provenance, never on
+// the paper. It shows only once its read answered in full; a failed read shows nothing rather than
+// a shorter history that would read as the whole one (C-12).
+//
 // WHOSE RECORD (C-9): the title names the pet the ROW belongs to, never the active pet. A `pet`
 // param this account does not hold opens nothing.
 
@@ -73,6 +84,8 @@ export default function SavedReportScreen() {
   const [picking, setPicking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [sends, setSends] = useState<Departure[] | null>(null);
+  const [allSends, setAllSends] = useState(false);
 
   const load = useCallback(async () => {
     if (typeof id !== 'string' || typeof pet !== 'string' || !held) {
@@ -105,6 +118,20 @@ export default function SavedReportScreen() {
         console.warn('[saved-report] the visit link could not be read:', e);
       }
     })();
+    return () => {
+      live = false;
+    };
+  }, [id, pet, held]);
+
+  // The copy's send history. A read for an earlier copy never lands on this one.
+  useEffect(() => {
+    let live = true;
+    setSends(null);
+    setAllSends(false);
+    if (typeof id !== 'string' || typeof pet !== 'string' || !held) return;
+    void readDepartures(pet, id).then((out) => {
+      if (live && out.kind === 'ok' && out.departures.length > 0) setSends(out.departures);
+    });
     return () => {
       live = false;
     };
@@ -167,6 +194,26 @@ export default function SavedReportScreen() {
       </View>
       {row && (
         <View style={styles.footer}>
+          {sends !== null && (
+            <View style={styles.sends} testID="report-sends">
+              <ThemedText variant="caption" style={styles.sendsHeading} testID="report-sends-heading">
+                {departuresHeading(sends.length)}
+              </ThemedText>
+              {(allSends ? sends : sends.slice(0, SENDS_SHOWN)).map((d) => (
+                <ThemedText key={d.id} variant="caption" style={styles.sendLine} testID="report-send">
+                  {departureLine(d, currentYear)}
+                </ThemedText>
+              ))}
+              {!allSends && sends.length > SENDS_SHOWN && (
+                <PrimaryButton
+                  label={showAllSendsLabel(sends.length)}
+                  variant="secondary"
+                  onPress={() => setAllSends(true)}
+                  testID="report-sends-all"
+                />
+              )}
+            </View>
+          )}
           {link !== 'unknown' && (
             <View style={styles.visit} testID="report-visit">
               {link === null ? (
@@ -223,6 +270,9 @@ const styles = StyleSheet.create({
   messageText: { color: theme.colorTextSecondary },
   footer: { padding: theme.space3, gap: theme.space1 },
   subline: { color: theme.colorTextSecondary, textAlign: 'center' },
+  sends: { gap: theme.space0_5, paddingBottom: theme.space1 },
+  sendsHeading: { color: theme.colorTextPrimary },
+  sendLine: { color: theme.colorTextSecondary },
   visit: { gap: theme.space1, paddingBottom: theme.space1 },
   visitLine: { flexDirection: 'row', alignItems: 'center', gap: theme.space2 },
   visitText: { flex: 1, color: theme.colorTextSecondary },

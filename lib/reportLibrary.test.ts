@@ -7,6 +7,10 @@ jest.mock('./supabase', () => ({ supabase: { functions: { invoke: jest.fn() }, f
 import {
   asSentLine,
   copyTitle,
+  DEPARTURE_COLUMNS,
+  departureLine,
+  DEPARTURES_PAGE,
+  departuresHeading,
   departureWords,
   foldedGroupLabel,
   groupByYear,
@@ -17,7 +21,10 @@ import {
   newReportSubline,
   NEW_REPORT_LABEL,
   openSavedReport,
+  readDepartures,
   readSavedReports,
+  SENDS_SHOWN,
+  showAllSendsLabel,
   windowLabel,
   type SavedReport,
 } from './reportLibrary';
@@ -28,6 +35,7 @@ const ANON = 'your pet';
 const at = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12).toISOString();
 const OCT30 = at(2026, 10, 30);
 const OCT30_2025 = at(2025, 10, 30);
+const thisYearForWords = 2026;
 
 beforeEach(() => jest.spyOn(console, 'warn').mockImplementation(() => undefined));
 afterEach(() => jest.restoreAllMocks());
@@ -195,5 +203,112 @@ describe('groupByYear: 50 copies fold to one open year and one line per older ye
 
   it('one report is singular', () => {
     expect(foldedGroupLabel({ year: 2024, reports: [fifty[0]], folded: true })).toBe('2024 · 1 report');
+  });
+});
+
+// CUL-2445 (migration 119): every send of a kept copy.
+describe('readDepartures', () => {
+  const REPORT = 'aaaaaaaa-0000-4000-8000-000000000001';
+  function depClient(rows: Array<Record<string, unknown>>, opts: { failAt?: number; count?: number } = {}) {
+    const calls: Array<{ table: string; select: string; eq: Array<[string, unknown]>; order: Array<[string, unknown]>; range?: [number, number] }> = [];
+    const from = jest.fn((table: string) => {
+      const call: (typeof calls)[number] = { table, select: '', eq: [], order: [] };
+      calls.push(call);
+      const q: Record<string, unknown> = {
+        select: (cols: string) => {
+          call.select = cols;
+          return q;
+        },
+        eq: (c: string, v: unknown) => {
+          call.eq.push([c, v]);
+          return q;
+        },
+        order: (c: string, o: unknown) => {
+          call.order.push([c, o]);
+          return q;
+        },
+        range: (a: number, b: number) => {
+          call.range = [a, b];
+          if (opts.failAt !== undefined && calls.length - 1 === opts.failAt) {
+            return Promise.resolve({ data: null, error: { message: 'boom' }, count: null });
+          }
+          return Promise.resolve({ data: rows.slice(a, b + 1), error: null, count: opts.count ?? rows.length });
+        },
+      };
+      return q;
+    });
+    return { client: { from } as never, calls };
+  }
+  const dep = (i: number, via = 'email') => ({ id: `d-${i}`, shared_via: via, shared_at: at(2026, 10, 30 - (i % 20)) });
+
+  it('reads one copy of one pet, newest first on a total key, and only its three columns', async () => {
+    const { client, calls } = depClient([dep(1, 'print'), dep(2)]);
+    const out = await readDepartures(PET, REPORT, client);
+    expect(out).toEqual({
+      kind: 'ok',
+      departures: [
+        { id: 'd-1', sharedVia: 'print', sharedAt: dep(1).shared_at },
+        { id: 'd-2', sharedVia: 'email', sharedAt: dep(2).shared_at },
+      ],
+    });
+    expect(calls[0].table).toBe('vet_report_departures');
+    expect(calls[0].select).toBe(DEPARTURE_COLUMNS);
+    expect(DEPARTURE_COLUMNS).toBe('id, shared_via, shared_at');
+    expect(calls[0].eq).toEqual([['report_id', REPORT], ['pet_id', PET]]);
+    expect(calls[0].order).toEqual([['shared_at', { ascending: false }], ['id', { ascending: false }]]);
+  });
+
+  it('pages to the count: a long history loses nothing', async () => {
+    const rows = Array.from({ length: DEPARTURES_PAGE + 3 }, (_, i) => dep(i));
+    const { client, calls } = depClient(rows);
+    const out = await readDepartures(PET, REPORT, client);
+    expect(out.kind === 'ok' && out.departures.length).toBe(rows.length);
+    expect(calls.map((c) => c.range)).toEqual([
+      [0, DEPARTURES_PAGE - 1],
+      [DEPARTURES_PAGE, DEPARTURES_PAGE * 2 - 1],
+    ]);
+  });
+
+  it('a failed page fails the whole read: never a short history that reads as complete', async () => {
+    const rows = Array.from({ length: DEPARTURES_PAGE + 1 }, (_, i) => dep(i));
+    const { client } = depClient(rows, { failAt: 1 });
+    expect(await readDepartures(PET, REPORT, client)).toEqual({ kind: 'failed' });
+  });
+
+  it('fewer rows than the count promised is a failure, not a shorter history', async () => {
+    const { client } = depClient([dep(1)], { count: 2 });
+    expect(await readDepartures(PET, REPORT, client)).toEqual({ kind: 'failed' });
+  });
+
+  it('a missing table (119 not applied) or a throw is a failure, never an empty history', async () => {
+    const missing = { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ order: () => ({ order: () => ({
+      range: () => Promise.resolve({ data: null, error: { code: '42P01', message: 'relation does not exist' }, count: null }),
+    }) }) }) }) }) }) } as never;
+    expect(await readDepartures(PET, REPORT, missing)).toEqual({ kind: 'failed' });
+    const throwing = { from: () => { throw new Error('boom'); } } as never;
+    expect(await readDepartures(PET, REPORT, throwing)).toEqual({ kind: 'failed' });
+  });
+});
+
+describe('send history words', () => {
+  it('counts the whole history in the heading', () => {
+    expect(departuresHeading(1)).toBe('Sent once');
+    expect(departuresHeading(3)).toBe('Sent 3 times');
+  });
+
+  it('names the route, the local date and the local time, so two sends on one day read apart', () => {
+    const morning = new Date(thisYearForWords, 10, 3, 9, 5).toISOString();
+    const evening = new Date(thisYearForWords, 10, 3, 16, 10).toISOString();
+    expect(departureLine({ id: 'a', sharedVia: 'print', sharedAt: evening }, thisYearForWords)).toBe('Printed · Nov 3, 4:10 PM');
+    expect(departureLine({ id: 'b', sharedVia: 'email', sharedAt: morning }, thisYearForWords)).toBe('Shared by email · Nov 3, 9:05 AM');
+    const midnight = new Date(thisYearForWords, 10, 3, 0, 0).toISOString();
+    expect(departureLine({ id: 'c', sharedVia: 'share', sharedAt: midnight }, thisYearForWords)).toBe('Shared · Nov 3, 12:00 AM');
+    const noon = new Date(thisYearForWords - 1, 10, 3, 12, 0).toISOString();
+    expect(departureLine({ id: 'd', sharedVia: 'share', sharedAt: noon }, thisYearForWords)).toBe(`Shared · Nov 3, ${thisYearForWords - 1}, 12:00 PM`);
+  });
+
+  it('offers the rest past the first few', () => {
+    expect(SENDS_SHOWN).toBe(3);
+    expect(showAllSendsLabel(5)).toBe('Show all 5 sends');
   });
 });
