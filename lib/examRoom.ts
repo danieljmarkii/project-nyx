@@ -164,6 +164,17 @@ export function printedWarningOf(phoneHtml: string): string | null {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * May the room offer "Printed page"? Only when it can pin the warning. A record whose reflow
+ * carries a confounder line but whose lead sentence cannot be read back (a server render that
+ * changed the markup) would show the printed bars with nothing pinned, so the view is withheld
+ * rather than shown quieter.
+ */
+export function printedViewAllowed(phoneHtml: string): boolean {
+  const hasLine = /<[a-z]+[^>]*\sdata-block="confounder"/.test(phoneHtml);
+  return !hasLine || printedWarningOf(phoneHtml) !== null;
+}
+
 /** The reflow's viewport, as renderPhoneV2 writes it. */
 const PHONE_VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />';
 

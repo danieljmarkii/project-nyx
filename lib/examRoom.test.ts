@@ -11,6 +11,7 @@ import {
   examRoomHtml,
   keepAwakeWanted,
   parseExamMessage,
+  printedViewAllowed,
   printedWarningOf,
   sheetLabel,
   withExamCsp,
@@ -117,5 +118,20 @@ describe('printedWarningOf (PM ruling (a) on CUL-2430)', () => {
   it('is null where the record has no confounder line (the layout script names the part, but no element carries it)', () => {
     expect(printedWarningOf('<script>var rep = unit.querySelector(\'[data-part="confounder-verdict"]\');</script>')).toBeNull();
     expect(printedWarningOf('')).toBeNull();
+  });
+});
+
+describe('printedViewAllowed: the printed page is offered only when it can carry its warning', () => {
+  const line = '<p class="conf" data-block="confounder">Not a test of the diet alone. Apoquel overlaps.</p>';
+  const pin = '<p class="verdict" data-part="confounder-verdict" aria-hidden="true">Not a test of the diet alone.</p>';
+  it('a confounder line with its pin: allowed', () => {
+    expect(printedViewAllowed(`${pin}${line}`)).toBe(true);
+  });
+  it('a confounder line whose pin cannot be read (changed markup): withheld, never shown quieter', () => {
+    expect(printedViewAllowed(line)).toBe(false);
+    expect(printedViewAllowed(`<p class="verdict v2" data-part="confounder-verdict">x</p>${line}`)).toBe(false);
+  });
+  it('no confounder line: allowed, and nothing to pin', () => {
+    expect(printedViewAllowed('<main data-sheet="1">a</main><script>q(\'[data-block="confounder"]\')</script>')).toBe(true);
   });
 });

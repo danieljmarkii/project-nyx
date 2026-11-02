@@ -47,6 +47,7 @@ import {
   examRoomHtml,
   keepAwakeWanted,
   parseExamMessage,
+  printedViewAllowed,
   printedWarningOf,
   sheetLabel,
   withExamCsp,
@@ -84,7 +85,11 @@ export default function ExamRoomScreen() {
   // Read once: the copy is fixed for the life of the room.
   const [copy] = useState(() => readExamCopy());
   const html = useMemo(() => (copy ? examRoomHtml(copy.phoneHtml, theme.colorNeutralDark) : null), [copy]);
-  const printHtml = useMemo(() => (copy?.printHtml != null ? withExamCsp(copy.printHtml) : null), [copy]);
+  // Withheld when the record has a confounder line whose pin cannot be read back (fails loud).
+  const printHtml = useMemo(
+    () => (copy?.printHtml != null && printedViewAllowed(copy.phoneHtml) ? withExamCsp(copy.printHtml) : null),
+    [copy],
+  );
   const printedWarning = useMemo(() => (copy ? printedWarningOf(copy.phoneHtml) : null), [copy]);
   // The copy goes when the room closes, however it closes (Done, Android back, a dismissal).
   useEffect(() => () => clearExamCopy(), []);

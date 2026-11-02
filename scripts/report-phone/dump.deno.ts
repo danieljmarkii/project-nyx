@@ -5,7 +5,7 @@ import { buildDocumentV2 } from '../../supabase/functions/generate-report/docume
 import { renderPrintV2 } from '../../supabase/functions/generate-report/renderPrintV2.ts'
 import { renderPhoneV2 } from '../../supabase/functions/generate-report/renderPhoneV2.ts'
 import { v2DocFixtures } from './fixtures.deno.ts'
-import { examRoomHtml, printedWarningOf } from '../../lib/examRoom.ts'
+import { examRoomHtml, printedViewAllowed, printedWarningOf } from '../../lib/examRoom.ts'
 import { theme } from '../../constants/theme.ts'
 
 const out = Deno.args[0]
@@ -26,6 +26,7 @@ for (const [name, snap] of v2DocFixtures()) {
   const warn = printedWarningOf(phone)
   if (conf && conf.kind === 'confounder' && warn !== conf.lead) throw new Error(`${name}: the printed page would pin "${warn}", not the line's lead "${conf.lead}"`)
   if (!conf && warn !== null) throw new Error(`${name}: a printed-page warning with no confounder line`)
+  if (!printedViewAllowed(phone)) throw new Error(`${name}: the room would withhold Printed page for today's renderer`)
   names.push(name)
 }
 Deno.writeTextFileSync(`${out}/fixtures.json`, JSON.stringify(names))

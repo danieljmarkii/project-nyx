@@ -217,6 +217,15 @@ describe('"Printed page" carries its warning (PM ruling (a) on CUL-2430)', () =>
     expect(s.queryByTestId(EXAM_PRINTED_WARNING_TEST_ID, { includeHiddenElements: true })).toBeNull();
   });
 
+  it('withholds "Printed page" when the record has a confounder line but no readable pin', () => {
+    mockCopy = {
+      phoneHtml: PHONE.replace(/<div class="keep">.*?<\/div>/, '<p class="conf" data-block="confounder">Not a test of the diet alone.</p>'),
+      printHtml: PRINT,
+    };
+    const s = render(<ExamRoomScreen />);
+    expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
+  });
+
   it('offers no "Printed page" when the copy has no printed layout', () => {
     mockCopy = { phoneHtml: PHONE, printHtml: null };
     const s = render(<ExamRoomScreen />);
