@@ -96,9 +96,21 @@ export const LEAD_FRAME: readonly string[] = [
   // the H2 waiver's own frame: "... is set side by side, not as a cause"
   'set',
 ]
+/** The patterns no frame word may match (verify.test.ts reads them). */
+export function framePatternHits(word: string): string[] {
+  const hits: Array<[string, RegExp]> = [
+    ['absence', new RegExp(ABSENCE_WORDS.source, 'i')], ['sequence', SEQUENCE_WORDS], ['order', ORDER_WORDS],
+    ['positive-intake', POSITIVE_INTAKE], ['spelled', SPELLED_NUMBERS],
+  ]
+  const out = hits.filter(([, re]) => re.test(word)).map(([k]) => k)
+  if (NEGATIONS.has(word) || NEGATED_CONTRACTION.test(word)) out.push('negation')
+  return out
+}
 /** Negating words: never in the frame, and bound to the word a cited line prints after them. */
 const NEGATIONS = new Set(['not', 'no', 'never', 'without', 'nothing', 'none', 'neither', 'nor', 'nobody', 'nowhere', 'cannot'])
 const NEGATED_CONTRACTION = /n't$/
+/** The negating word and the two words after it must be printed together in a cited line. */
+export const NEGATION_SPAN = 3
 const FRAME = new Set(LEAD_FRAME)
 
 /** A sentence's words, lower-cased, apostrophes straightened; digits, dates and symbols are the
@@ -288,7 +300,9 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // and not in the frame, is a word the verifier cannot read, so the lead drops. A hyphenated
     // compound passes whole, or when every part would pass alone.
     const citedWords = s.cites.flatMap((c) => leadWords(facts.get(c)?.text ?? ''))
-    const vocab = new Set(citedWords)
+    // A band item's label prints on the band as its tag, and band-first requires it in sentence 1.
+    const labels = s.cites.flatMap((c) => leadWords(String((facts.get(c) as { label?: unknown } | undefined)?.label ?? '')))
+    const vocab = new Set([...citedWords, ...labels])
     const pet = new Set(leadWords(String(table.pet_name ?? '')))
     const known = (w: string): boolean => {
       const base = w.replace(/'s$/, '')
@@ -302,13 +316,16 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       if (w.includes('-') && w.split('-').every(known)) continue
       err(i, 'vocabulary', `${JSON.stringify(w)} is printed in no cited line and is not in the lead's frame`)
     }
-    // Negation is bound (CUL-2380): each negating word prints only with the word a cited line
+    // Negation is bound (CUL-2380): each negating word prints only with the two words a cited line
     // prints right after it, so a true word cannot be flipped by a negation the line never makes.
-    const citedPairs = new Set(citedWords.slice(0, -1).map((w, k) => `${w} ${citedWords[k + 1]}`))
+    // Two, not one: the band's "not a single incident" must not license "not a sustained pattern".
+    const citedRuns = new Set(citedWords.map((_, k) => citedWords.slice(k, k + NEGATION_SPAN).join(' ')))
     sentenceWords.forEach((w, k) => {
       if (!NEGATIONS.has(w) && !NEGATED_CONTRACTION.test(w)) return
-      const pair = `${w} ${sentenceWords[k + 1] ?? ''}`
-      if (!citedPairs.has(pair)) err(i, 'negation', `${JSON.stringify(pair.trim())} is not a negation a cited line prints`)
+      const run = sentenceWords.slice(k, k + NEGATION_SPAN).join(' ')
+      // A negation that ends the sentence matches a cited line's run that starts the same way.
+      const bound = citedRuns.has(run) || (run.split(' ').length < NEGATION_SPAN && [...citedRuns].some((r) => r.startsWith(`${run} `) || r === run))
+      if (!bound) err(i, 'negation', `${JSON.stringify(run)} is not a negation a cited line prints`)
     })
 
     // The cited lines normalised as the lead is (curly apostrophes), so "Hill's" matches.

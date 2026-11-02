@@ -1,0 +1,82 @@
+{
+ "pet_name": "Nyx",
+ "species": "cat",
+ "record_start": "2026-05-14",
+ "record_end": "2026-07-02",
+ "band": [
+  {
+   "id": "S1",
+   "label": "Foreign material",
+   "text": "Possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment · AI PHOTO READ · UNCONFIRMED · photo not retained."
+  },
+  {
+   "id": "S2",
+   "label": "S2",
+   "text": "Vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag)."
+  },
+  {
+   "id": "S3",
+   "label": "S3",
+   "text": "Vomiting for at least 47 days: 23 entries on 23 of 43 logged days, first logged May 14 (her first entry of any kind, so onset is unknown), most recent Jun 30 (chronicity flag)."
+  }
+ ],
+ "record_lines": [
+  {
+   "id": "P",
+   "kind": "record",
+   "text": "Cat · Domestic Shorthair · female, neuter status not recorded · 7 y (born Apr 1, 2019) · no weigh-ins recorded"
+  },
+  {
+   "id": "W",
+   "kind": "record",
+   "text": "Apr 4 to Jul 2, 2026 · the last 90 days (no vet visit or diet trial recorded) · logged on 43 of 90 days: 4 of the first 45 and 39 of the last 45 · her first entry of any kind is May 14 · nothing logged Jul 1 to 2"
+  },
+  {
+   "id": "L1",
+   "kind": "record",
+   "text": "AI photo reads, 18 legible of 23 entries: undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21); 5 without a usable read (2 uncertain, 2 not legible, 1 pending) · AI PHOTO READ · UNCONFIRMED · no photos retained."
+  },
+  {
+   "id": "L2",
+   "kind": "record",
+   "text": "Free-fed all day, start not recorded: Nature's Variety Duck and Royal Canin Weight Care (lists chicken). Intake not directly observed."
+  },
+  {
+   "id": "L3",
+   "kind": "record",
+   "text": "Also logged: Temptations Chicken treats, at least 20 feedings May 15 to Jun 28 (ingredient panel not captured); Fancy Feast Tuna wet food, 3 meals May 18 to Jun 20."
+  },
+  {
+   "id": "L4",
+   "kind": "record",
+   "text": "No food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it."
+  },
+  {
+   "id": "L5",
+   "kind": "record",
+   "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00 (timing only, not an association)."
+  },
+  {
+   "id": "L6",
+   "kind": "record",
+   "text": "Not recorded: weight, body condition, medication, medical conditions, neuter status."
+  },
+  {
+   "id": "U1",
+   "kind": "record",
+   "text": "Unknown: anything before May 14."
+  },
+  {
+   "id": "U2",
+   "kind": "record",
+   "text": "Unknown: what she ate from the free-fed bowls."
+  },
+  {
+   "id": "U3",
+   "kind": "record",
+   "text": "Unknown: what the 5 unread vomits contained."
+  }
+ ],
+ "trial_line": null,
+ "record_edge": []
+}

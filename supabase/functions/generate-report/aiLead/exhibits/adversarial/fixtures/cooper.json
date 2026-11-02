@@ -1,0 +1,35 @@
+{
+ "pet_name": "Cooper",
+ "species": "dog",
+ "record_start": "2026-09-20",
+ "record_end": "2026-10-16",
+ "band": [
+  {
+   "id": "band-1-intake_decline",
+   "label": "Intake",
+   "text": "Reduced intake. Intake has been below this pet's baseline for 2 consecutive days . Baseline read over 22 recent rated meals. Recent rated meals declined: ate some → picked at it → ate some → picked at it. The most recent fully-eaten meal was Oct 14 — about 50 h without a full meal. Recorded as a health signal — not “picky.” Meal-by-meal detail on the sheet headed “Intake per feeding”."
+  }
+ ],
+ "record_lines": [
+  {
+   "id": "line-1",
+   "kind": "lead",
+   "text": "Meals (logged as meals, not treats): The last 4 rated meals in a row were not fully eaten. 44 logged; 44 rated; 4 not fully eaten, on 2 days."
+  },
+  {
+   "id": "sign-vomit",
+   "kind": "record",
+   "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13."
+  },
+  {
+   "id": "confounder",
+   "kind": "confounder",
+   "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+  }
+ ],
+ "trial_line": {
+  "id": "trial",
+  "text": "Diet trial (owner-entered): Cooper's Venison LID, from Sep 28, 2026, day 19 of 42."
+ },
+ "record_edge": []
+}
