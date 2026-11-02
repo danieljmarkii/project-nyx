@@ -2799,7 +2799,7 @@ export function safetyFlagRow(
           ]
             .filter((p): p is string => p !== null)
             .join(', ')}) on ${num(sr.days)} day${sr.days === 1 ? '' : 's'}. None was rated &ldquo;ate most&rdquo; or better, so there is no recent baseline to compare against; the flag is raised on these ratings alone.${
-            sr.anchoredToLastRating ? ' The window ends at the last rated meal; nothing has been rated since.' : ''
+            sr.anchoredToLastRating ? ' The window ends at the last rated meal; no watched meal has been rated since.' : ''
           }`
         : f.trigger === 'refused_normal_food'
           ? `This pet <b>refused a food it normally eats</b>${

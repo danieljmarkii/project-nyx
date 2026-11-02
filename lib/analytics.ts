@@ -1166,16 +1166,23 @@ function sustainedRefusalFlag(input: IntakeDeclineInput): IntakeDeclineFlag | nu
   if (rated.length === 0) return null;
   const windowMs = rule.windowHours * MS_PER_HOUR;
   const latestMs = rated[rated.length - 1].ms;
-  const anchored = nowMs - latestMs <= windowMs && intakeDayOf(latestMs, input.timeZone) < intakeDayOf(nowMs, input.timeZone);
-  const endMs = anchored ? latestMs : nowMs;
-  const inWindow = rated.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs);
   const ateWell = INTAKE_SCORE.most;
-  if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, input.freeFedSpans))) return null;
-  const recent = inWindow.filter((m) => m.score < ateWell);
-  if (recent.length < rule.minMeals) return null;
-  if (!recent.some((m) => m.score <= PICKED_SCORE)) return null;
+  const qualifying = (endMs: number): RatedMeal[] | null => {
+    const inWindow = rated.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs);
+    if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, input.freeFedSpans))) return null;
+    const meals = inWindow.filter((m) => m.score < ateWell);
+    if (meals.length < rule.minMeals) return null;
+    if (!meals.some((m) => m.score <= PICKED_SCORE)) return null;
+    if (new Set(meals.map((m) => intakeDayOf(m.ms, input.timeZone))).size < rule.minDays) return null;
+    return meals;
+  };
+  // The 72 hours to now first; the anchored window is a fallback only (detection.ts, pass 3).
+  const canAnchor = nowMs - latestMs <= windowMs && intakeDayOf(latestMs, input.timeZone) < intakeDayOf(nowMs, input.timeZone);
+  const atNow = qualifying(nowMs);
+  const recent = atNow ?? (canAnchor ? qualifying(latestMs) : null);
+  if (recent === null) return null;
+  const anchored = atNow === null;
   const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timeZone)));
-  if (days.size < rule.minDays) return null;
   const refused = recent.filter((m) => m.score === INTAKE_SCORE.refused).length;
   const picked = recent.filter((m) => m.score === PICKED_SCORE).length;
   const mean = recent.reduce((s, m) => s + m.score, 0) / recent.length;

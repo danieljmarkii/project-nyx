@@ -100,6 +100,21 @@ describe('the phone twin of the floor', () => {
     expect(res.flags[0].sustainedRefusal?.meals).toBe(6);
   });
 
+  it('adversarial pass 3: record B1 fires on the phone too (the anchored window is a fallback only)', () => {
+    const at = (iso: string, rating: string): AnalyticsMeal => ({
+      ms: Date.parse(iso), foodItemId: 'f1', foodLabel: null, foodType: 'meal', primaryProtein: null, intakeRating: rating,
+    });
+    const meals = [
+      at('2026-07-27T00:30:00.000Z', 'all'),
+      at('2026-07-27T12:00:00.000Z', 'refused'), at('2026-07-28T12:00:00.000Z', 'refused'),
+      at('2026-07-29T12:00:00.000Z', 'picked'), at('2026-07-29T23:59:00.000Z', 'refused'),
+    ];
+    const res = detectIntakeDecline({ species: 'cat', nowMs: Date.parse('2026-07-30T06:00:00.000Z'), meals, freeFedSpans: [], timeZone: 'UTC' });
+    expect(res.status).toBe('watch');
+    if (res.status !== 'watch') return;
+    expect(res.flags[0].trigger).toBe('sustained_refusal');
+  });
+
   it('one meal rated "ate most" stands it down, and the old "not enough data" stays', () => {
     const res = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals: [m(2, 'refused'), m(20, 'most'), m(30, 'refused')], freeFedSpans: [], timeZone: 'UTC' });
     expect(res.status).not.toBe('watch');

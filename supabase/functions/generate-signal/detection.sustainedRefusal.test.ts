@@ -282,3 +282,28 @@ Deno.test('adversarial pass 2: an old build\'s take-up day cannot let a bowl\'s 
   assert.equal(pre076[0].sustainedRefusal?.meals, 6, 'the uncertain rating is not counted as a refusal either')
   assert.equal(pre076[0].lastFullMealIso, null, 'nor named as the last full meal')
 })
+
+Deno.test('adversarial pass 3: the anchored window is a fallback, so an old good meal it reaches never silences the floor', () => {
+  const at = (iso: string, rating: IntakeRating): MealEvent => ({
+    id: `p3-${iso}`, occurredAt: iso, foodItemId: WET, primaryProtein: 'chicken', intakeRating: rating, foodType: 'meal', foodLabel: 'Wet food',
+  })
+  const run = (meals: MealEvent[], now: string) => detectIntakeDecline({ ...input('cat', meals), now })
+  // Record A: a good meal, then five refusals, then nothing rated.
+  const a = [
+    at('2026-07-27T08:00:00.000Z', 'all'),
+    at('2026-07-27T18:00:00.000Z', 'refused'), at('2026-07-28T08:00:00.000Z', 'refused'), at('2026-07-28T18:00:00.000Z', 'refused'),
+    at('2026-07-29T08:00:00.000Z', 'refused'), at('2026-07-29T20:00:00.000Z', 'refused'),
+  ]
+  for (const now of ['2026-07-30T10:00:00.000Z', '2026-07-31T10:00:00.000Z']) {
+    const f = run(a, now)[0]
+    assert.equal(f?.trigger, 'sustained_refusal', `record A at ${now}`)
+    assert.equal(f.sustainedRefusal?.anchoredToLastRating, false, 'the now-window qualified, so it is the one stated')
+  }
+  // Record B1: the last refusal at 23:59 yesterday, a good meal 77 hours before breakfast.
+  const b1 = [
+    at('2026-07-27T00:30:00.000Z', 'all'),
+    at('2026-07-27T12:00:00.000Z', 'refused'), at('2026-07-28T12:00:00.000Z', 'refused'),
+    at('2026-07-29T12:00:00.000Z', 'picked'), at('2026-07-29T23:59:00.000Z', 'refused'),
+  ]
+  assert.equal(run(b1, '2026-07-30T06:00:00.000Z')[0]?.trigger, 'sustained_refusal')
+})

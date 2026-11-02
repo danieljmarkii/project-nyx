@@ -4465,9 +4465,9 @@ function detectIntakeDeclineCore(
  * watched meal rated most or all stands it down (adversarial pass 2: a pre-076 take-up day's bowl
  * may be the bowl, and its "ate it all" must neither clear the floor nor count).
  *
- * THE ANCHOR. The window ends at the most recent rated meal when that meal is within
- * `windowHours` of now and on an earlier owner-local day than today (the copy then names that
- * day), otherwise at now: an owner who stops rating after days of refusals keeps
+ * THE ANCHOR. The window ends at now; when that window does not qualify, a second window ending
+ * at the most recent rated meal is tried, if that meal is within `windowHours` of now and on an
+ * earlier owner-local day than today (the copy then names that day): an owner who stops rating after days of refusals keeps
  * the card for up to 72 hours past the last rating instead of losing it the hour the window empties
  * (CUL-2404, B3). Runs below ②'s coverage floor; absence is silence, never an all-clear.
  * Mirrored in lib/analytics.ts detectIntakeDecline; the parity suite drives both.
@@ -4481,20 +4481,33 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
   if (ratedMeals.length === 0) return null
   const windowMs = rule.windowHours * MS_PER_HOUR
   const latestMs = ratedMeals[ratedMeals.length - 1].ms
+  const ateWell = intakeScore('most')
+  const picked = intakeScore('picked')
+  // The qualifying meals of the window ending at `endMs`, or null when it does not qualify.
+  const qualifying = (endMs: number): RatedMeal[] | null => {
+    const inWindow = ratedMeals.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs)
+    if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))) return null
+    const meals = inWindow.filter((m) => m.score < ateWell)
+    if (meals.length < rule.minMeals) return null
+    if (!meals.some((m) => m.score <= picked)) return null
+    if (new Set(meals.map((m) => intakeDayOf(m.ms, input.timezone))).size < rule.minDays) return null
+    return meals
+  }
+  // The 72 hours to now first. The window anchored at the last rating is a FALLBACK, never a
+  // replacement: it reaches back past now − 72h, and a good meal in that extra slice cleared a
+  // floor the now-window raised (adversarial pass 3: a good meal 77 h ago, refusals since, the last
+  // at 23:59 yesterday, went silent at breakfast). Either window qualifying raises the floor.
   // Anchored only when the last rating is on an EARLIER owner-local day than today and within the
   // window of now: a same-day anchor would reach past the "last 72 hours" the copy states.
-  const anchoredToLastRating =
+  const canAnchor =
     nowMs - latestMs <= windowMs && intakeDayOf(latestMs, input.timezone) < intakeDayOf(nowMs, input.timezone)
+  const atNow = qualifying(nowMs)
+  const atLast = atNow === null && canAnchor ? qualifying(latestMs) : null
+  const recent = atNow ?? atLast
+  if (recent === null) return null
+  const anchoredToLastRating = atNow === null
   const endMs = anchoredToLastRating ? latestMs : nowMs
-  const inWindow = ratedMeals.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs)
-  const ateWell = intakeScore('most')
-  if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))) return null
-  const recent = inWindow.filter((m) => m.score < ateWell)
-  if (recent.length < rule.minMeals) return null
-  const picked = intakeScore('picked')
-  if (!recent.some((m) => m.score <= picked)) return null
   const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timezone)))
-  if (days.size < rule.minDays) return null
   const refused = recent.filter((m) => m.score === intakeScore('refused')).length
   const pickedCount = recent.filter((m) => m.score === picked).length
   const mean = recent.reduce((sum, m) => sum + m.score, 0) / recent.length
