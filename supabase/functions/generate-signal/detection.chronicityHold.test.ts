@@ -15,8 +15,9 @@
 // on a 24h grid from `now`: each was true by construction at the time of day the other used.
 // Fixtures here read at more than one time of day, and the property reads at random times.
 //
-// TIMEZONE NOTE (B-514): ⑦ and ④ bucket by UTC day and read durations, so UTC literals are the
-// honest fixture here; there is no `timezone` field to pin.
+// TIMEZONE NOTE (B-514): ⑦ buckets by UTC day and reads durations, and these pets carry no
+// `timezone`, so ④'s calendar reading (CUL-2439) falls back to UTC days and UTC literals stay the
+// honest fixture. The zoned walk (local midnights) is pinned in detection.calendarWeek.test.ts.
 
 import { strict as assert } from 'node:assert'
 import {
