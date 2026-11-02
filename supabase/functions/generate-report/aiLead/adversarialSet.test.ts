@@ -9,8 +9,8 @@
 //   3. Every item marked `verifier: pass` still passes: those are the residual, the items only the
 //      checker can catch. A rule that closes one reds here, and the set is updated to say so.
 //   4. The mutation proof: each `closed_by` item is refused by those checks and no other, so the
-//      rule's removal would print it. Both CUL-2380 rules, `vocabulary` and `negation`, close at
-//      least one item alone.
+//      rule's removal would print it. Each CUL-2380 rule (`vocabulary`, `negation`, `script`,
+//      `tense`, and the bound `intake-positive`) closes at least one item alone.
 // No model is called here. The checker's half of each item (`expect.checker`) is the bake-off's.
 import assert from 'node:assert/strict'
 import { adversarialFixtures } from './adversarialFixtures.testutil.ts'
@@ -97,7 +97,7 @@ Deno.test('mutation proof: each closed_by item is refused by those rules alone',
     const checks = checksOf(it)
     assert.ok(checks.length > 0 && checks.every((c) => it.closed_by!.includes(c)), `${it.id}: refused by ${checks}, not only ${it.closed_by}`)
   }
-  for (const rule of ['vocabulary', 'negation']) {
+  for (const rule of ['vocabulary', 'negation', 'script', 'tense', 'intake-positive']) {
     assert.ok(closed.some((i) => i.closed_by!.length === 1 && i.closed_by![0] === rule), `no item that ${rule} alone refuses`)
   }
 })

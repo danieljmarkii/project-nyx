@@ -31,7 +31,7 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
 | `bakeoff-nyx` | the October bake-off's Nyx table in the v2 payload's shape |
 | `h2` | the H2-by-order exhibit (a new-foods window as its own line) |
 
-**Items (59).** Each item is one counterexample from PR-25's adversarial passes 1 to 3, or the checker regression's known miss, rephrased in words its source did not use. Every item carries:
+**Items (71).** Each item is one counterexample, rephrased in words its source did not use. The sources are PR-25's adversarial passes 1 to 3, the checker regression's known miss, and every lead that printed through CUL-2380's own first adversarial pass. Every item carries:
 - `class`: `softening`, `deferral`, `reassurance`, `recombined` or `calm-band`;
 - `hazard` (H2 to H7) and the judge `level` it is written to carry;
 - `source`, the counterexample it rephrases;
@@ -41,17 +41,17 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
   - `checker: reject` on every item.
 - `closed_by`, where the CUL-2380 rules alone refuse the item. This is the mutation proof: deleting those rules would print it.
 
-**Controls (10).** Careful leads that must print. The checker must pass them, and the verifier does.
+**Controls (11).** Careful leads that must print. The checker must pass them, and the verifier does.
 
 **What the verifier at `vr2-5` does with the set:**
-- 56 items are refused.
+- 68 items are refused.
 - 3 are the residual: `res-omit-a`, `res-order-a`, `res-order-b`.
-- All 10 controls print.
-- The verifier before CUL-2380 (`vr2-4`) would have printed 14 of the 56: each softened, deferred, dismissed or flipped a flag in a word no list named.
+- All 11 controls print.
+- The verifier before CUL-2380 (`vr2-4`) would have printed 26 of the 68. Each one softened, deferred, dismissed, flipped or back-dated a flag in a word, a script or a tense that no rule read.
 
 ## What only the checker can catch (the residual)
 
-The closed vocabulary means a lead's words come from the lines it cites, the pet's name, and a pinned 29-word frame. What is left is meaning built from those words alone:
+The closed vocabulary means a lead's words come from the lines it cites, the pet's name, and a pinned 29-word frame. Letters outside A to Z, a band sentence put in the past, and an adequacy phrase moved from its place are refused too. What is left is meaning built from those words alone:
 
 - **A later band item left out.** Band-once and one-observation let a lead cite one band item. On a record with several live flags, the rest are left to the band printed directly above it. The rubric scores Nyx's burden flag missing as material H7 (`res-omit-a`). Whether a lead may print on such a record is the open fork on CUL-2380.
 - **Order and emphasis inside a line's own words:** the calm clauses first (`res-order-a`), or the silent week before the count (`res-order-b`).

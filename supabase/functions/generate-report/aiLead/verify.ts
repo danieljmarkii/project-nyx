@@ -37,8 +37,12 @@
 //               ("largely eased", "settling", "nothing to worry about") is refused because the word
 //               is new, not because a list names it. The class this cannot close: a lead built only
 //               from its cited lines' own words, reordered (measured by the bake-off's set).
-//   negation    CUL-2380: a negating word prints only with the word a cited line prints after it,
-//               so true words cannot be flipped ("possible foreign material, not unconfirmed")
+//   negation    CUL-2380: a negating word prints only with the two words a cited line prints
+//               after it, so true words cannot be flipped ("possible foreign material, not
+//               unconfirmed"); never inside a compound ("not-a-health-signal")
+//   script      CUL-2380: no letter outside A to Z a cited line does not print, no format character
+//   tense       CUL-2380: a band sentence's first clause is never past ("had been a live flag"), and
+//               "over" is followed by a count, never left as an ending ("the flag is over")
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -112,6 +116,11 @@ const NEGATED_CONTRACTION = /n't$/
 /** The negating word and the two words after it must be printed together in a cited line. */
 export const NEGATION_SPAN = 3
 const FRAME = new Set(LEAD_FRAME)
+
+/** Lower-cased words joined by single spaces, hyphens as spaces: for checking a phrase in place. */
+function flatWords(text: string): string {
+  return (norm(text).toLowerCase().match(/[a-z0-9][a-z0-9']*/g) ?? []).join(' ')
+}
 
 /** A sentence's words, lower-cased, apostrophes straightened; digits, dates and symbols are the
  *  number rules' business and are skipped here. */
@@ -281,9 +290,17 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     }
     // Each adequacy phrase is excused only by the SAME phrase, unnegated, in a cited line: the
     // band's "fully-eaten meal was Oct 14" excuses nothing (pass 3, B6).
+    // And each one keeps the word before and after it that its line prints, so true words cannot be
+    // reordered into adequacy ("the most recent rated meal was fully-eaten", CUL-2380 pass 1).
     const allowed = new Set(s.cites.flatMap((c) => [...norm(facts.get(c)?.text ?? '').matchAll(POSITIVE_ALL)].map((m) => m[0].toLowerCase())))
+    const citedFlat = ` ${s.cites.map((c) => flatWords(facts.get(c)?.text ?? '')).join(' | ')} `
     for (const m of norm(s.text).matchAll(POSITIVE_ALL)) {
+      const at = m.index ?? 0
+      const before = flatWords(norm(s.text).slice(0, at)).split(' ').filter(Boolean).pop() ?? ''
+      const after = flatWords(norm(s.text).slice(at + m[0].length)).split(' ').filter(Boolean)[0] ?? ''
+      const ctx = ` ${[before, flatWords(m[0]), after].filter(Boolean).join(' ')} `
       if (!allowed.has(m[0].toLowerCase())) err(i, 'intake-positive', `${JSON.stringify(m[0])}: no cited line says intake was adequate in these words (H3)`)
+      else if (!citedFlat.includes(ctx)) err(i, 'intake-positive', `${JSON.stringify(ctx.trim())}: an adequacy phrase moved from where its line prints it (H3)`)
     }
     const spelled = s.text.match(SPELLED_NUMBERS)
     if (spelled) err(i, 'numbers', `${JSON.stringify(spelled[0])}: counts are written as digits`)
@@ -310,16 +327,41 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       if (NEGATIONS.has(w) || NEGATED_CONTRACTION.test(w)) return false
       return FRAME.has(w)
     }
+    // A letter outside A to Z that no cited line prints, or any invisible format character, is a
+    // word no rule here can read ("ｒｅｓｏｌｖｅｄ", "𝐫𝐞𝐬𝐨𝐥𝐯𝐞𝐝", a zero-width space): refused
+    // (CUL-2380 pass 1).
+    const citedText = s.cites.map((c) => norm(facts.get(c)?.text ?? '')).join(' ')
+    for (const ch of new Set(norm(s.text).match(/[\p{L}\p{M}\p{N}\p{Cf}]/gu) ?? [])) {
+      if (/[A-Za-z0-9]/.test(ch)) continue
+      if (/\p{Cf}/u.test(ch) || !citedText.includes(ch)) err(i, 'script', `${JSON.stringify(ch)} (U+${ch.codePointAt(0)!.toString(16).toUpperCase()}) is a character no cited line prints`)
+    }
     const sentenceWords = leadWords(s.text)
+    const negating = (w: string) => NEGATIONS.has(w) || NEGATED_CONTRACTION.test(w)
     for (const w of new Set(sentenceWords)) {
       if (known(w)) continue
-      if (w.includes('-') && w.split('-').every(known)) continue
+      // A compound passes by its parts only when no part negates ("not-a-health-signal").
+      if (w.includes('-') && w.split('-').every((p) => !negating(p) && known(p))) continue
       err(i, 'vocabulary', `${JSON.stringify(w)} is printed in no cited line and is not in the lead's frame`)
+    }
+    // A band item is live: its sentence never puts it in the past in its first clause ("had been a
+    // live flag", "was a flag"), and "over" is a count's span, never an ending ("the flag is over")
+    // unless a cited line prints the same two words (CUL-2380 pass 1).
+    if (s.cites.some((c) => facts.get(c)?.role === 'band')) {
+      const past = firstClause(s.text).match(/\b(?:was|were|had|been|used to|formerly|once)\b/)
+      if (past) err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
+    }
+    for (const m of norm(s.text).matchAll(/\bover\b\s*([^\s,.;:]*)/gi)) {
+      const follower = m[1].toLowerCase()
+      if (/^(?:\d|[≥<>~])/.test(follower) || /^\s*at least\b/i.test(norm(s.text).slice((m.index ?? 0) + 4))) continue
+      if (!citedWords.some((cw, j) => cw === 'over' && citedWords[j + 1] === follower && follower !== '')) {
+        err(i, 'tense', `${JSON.stringify(m[0].trim())}: "over" not followed by a count`)
+      }
     }
     // Negation is bound (CUL-2380): each negating word prints only with the two words a cited line
     // prints right after it, so a true word cannot be flipped by a negation the line never makes.
     // Two, not one: the band's "not a single incident" must not license "not a sustained pattern".
-    const citedRuns = new Set(citedWords.map((_, k) => citedWords.slice(k, k + NEGATION_SPAN).join(' ')))
+    const runWords = [...citedWords, '|', ...labels]
+    const citedRuns = new Set(runWords.map((_, k) => runWords.slice(k, k + NEGATION_SPAN).join(' ')))
     sentenceWords.forEach((w, k) => {
       if (!NEGATIONS.has(w) && !NEGATED_CONTRACTION.test(w)) return
       const run = sentenceWords.slice(k, k + NEGATION_SPAN).join(' ')
@@ -331,8 +373,10 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // The cited lines normalised as the lead is (curly apostrophes), so "Hill's" matches.
     const cited = s.cites.map((c) => norm(facts.get(c)?.text ?? '')).join(' ')
     const tokens = s.text.match(/(?<![\w'’])[A-Z][\w'’-]*/g) ?? []
+    const petNames = new Set(leadWords(String(table.pet_name ?? '')))
     for (const t of tokens.slice(1)) {
       if (MONTHS_AND_DAYS.has(t.replace(/\.$/, ''))) continue
+      if (petNames.has(t.toLowerCase().replace(/'s$/, ''))) continue
       if (!new RegExp(`(?<![\\w])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`).test(cited)) {
         err(i, 'names', `${JSON.stringify(t)} is not printed in a cited fact`)
       }
