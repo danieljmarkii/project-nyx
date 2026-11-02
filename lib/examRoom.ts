@@ -35,9 +35,10 @@ export function clampPage(page: number, of: number): number {
   return Math.min(of, Math.max(1, Math.round(page)));
 }
 
-/** Keep the screen awake only while the room is open, the app is in front and someone is using it. */
-export function keepAwakeWanted(s: { open: boolean; appActive: boolean; lastTouchAt: number; now: number }): boolean {
-  return s.open && s.appActive && s.now - s.lastTouchAt < EXAM_IDLE_MS;
+/** Keep the screen awake only while the room is open, the app is in front and someone is using
+ *  it (`idle` is set once EXAM_IDLE_MS passes with no touch or scroll). */
+export function keepAwakeWanted(s: { open: boolean; appActive: boolean; idle: boolean }): boolean {
+  return s.open && s.appActive && !s.idle;
 }
 
 export type ExamMessage = { kind: 'page'; page: number; of: number } | { kind: 'touch' };
@@ -64,8 +65,6 @@ export function examGoScript(page: number): string {
   return `window.__nyxExamGo && window.__nyxExamGo(${Math.round(page)}); true;`;
 }
 
-/** Re-measure the type after the owner changes their text size with the room open. */
-export const EXAM_RETYPE_SCRIPT = 'window.__nyxExamType && window.__nyxExamType(); true;';
 
 function examStyle(ground: string): string {
   return `<style id="nyx-exam-style">
@@ -127,6 +126,23 @@ const EXAM_SCRIPT = `<script id="nyx-exam-script">
 </script>`;
 
 /**
+ * A Content-Security-Policy for a report document shown in the room (privacy review on PR-19):
+ * the document may run its own inline script and draw its own inline styles, fonts and images,
+ * and may load or send nothing at all. The WebView's load predicate governs navigation only, so
+ * without this an escaping miss upstream would be live script with the network open.
+ */
+export const EXAM_CSP =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'";
+
+/** The document with the room's CSP as the first thing in its head; null when it has no head. */
+export function withExamCsp(html: string): string | null {
+  const m = /<head[^>]*>/i.exec(html);
+  if (!m) return null;
+  const at = m.index + m[0].length;
+  return `${html.slice(0, at)}<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">${html.slice(at)}`;
+}
+
+/**
  * The phone document as the exam room shows it, or null when the document is not a v2 phone
  * reflow (no sheets, or no place to put the mode): the caller then refuses to open the room
  * rather than show a page that cannot page.
@@ -136,5 +152,5 @@ export function examRoomHtml(phoneHtml: string, ground: string): string | null {
   const at = phoneHtml.lastIndexOf('</body>');
   const withScript = `${phoneHtml.slice(0, at)}${EXAM_SCRIPT}\n${phoneHtml.slice(at)}`;
   const head = withScript.indexOf('</head>');
-  return `${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`;
+  return withExamCsp(`${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`);
 }

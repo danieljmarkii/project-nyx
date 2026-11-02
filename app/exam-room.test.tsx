@@ -30,6 +30,11 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 let mockActive = true;
 jest.mock('../hooks/useAppActive', () => ({ useAppActive: () => mockActive }));
 jest.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: () => true }));
+let mockFontScale = 1;
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => ({ width: 390, height: 844, scale: 3, fontScale: mockFontScale }),
+}));
 let mockCopy: { phoneHtml: string; printHtml: string | null } | null = null;
 const mockClear = jest.fn();
 jest.mock('../lib/examRoomCopy', () => ({ readExamCopy: () => mockCopy, clearExamCopy: () => mockClear() }));
@@ -44,7 +49,8 @@ const PHONE = '<!DOCTYPE html><html><head></head><body><main class="sheet" data-
 beforeEach(() => {
   jest.useFakeTimers();
   mockActive = true;
-  mockCopy = { phoneHtml: PHONE, printHtml: '<html>printed</html>' };
+  mockFontScale = 1;
+  mockCopy = { phoneHtml: PHONE, printHtml: '<html><head></head><body>printed</body></html>' };
   [mockInject, mockBack, mockActivate, mockDeactivate, mockClear].forEach((m) => m.mockClear());
 });
 afterEach(() => jest.useRealTimers());
@@ -63,24 +69,36 @@ it('shows the staged copy as the exam document, runs its scripts, and loads noth
   expect(web.props.source.html).toContain('Mochi');
   expect(web.props.onShouldStartLoadWithRequest({ url: 'https://example.com' })).toBe(false);
   expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
+  expect(web.props.originWhitelist).toEqual(['about:*', 'data:*']);
+  expect(web.props.onOpenWindow).toBeDefined();
+  expect(web.props.source.html).toContain('http-equiv="Content-Security-Policy"');
 });
 
-it('the pager says and announces "Sheet N of M", and VoiceOver turns it', () => {
+it('the pager says and announces "Sheet N of M", and VoiceOver turns it without hearing it twice', () => {
   const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
   const s = render(<ExamRoomScreen />);
+  // Entry: the document's first message is announced.
   post(s, { type: 'exam-page', page: 1, of: 2 });
   expect(s.getByText('Sheet 1 of 2')).toBeTruthy();
   expect(announce).toHaveBeenLastCalledWith('Sheet 1 of 2');
   const pager = s.getByTestId(EXAM_PAGER_TEST_ID);
   expect(pager.props.accessibilityRole).toBe('adjustable');
-  expect(pager.props.accessibilityLabel).toBe('Sheet 1 of 2');
+  expect(pager.props.accessibilityLabel).toBe(EXAM_COPY.pagerLabel);
+  expect(pager.props.accessibilityValue).toEqual({ text: 'Sheet 1 of 2' });
+  // A pager turn: VoiceOver speaks the new value itself, so no second announcement.
+  announce.mockClear();
   act(() => pager.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
   expect(mockInject).toHaveBeenLastCalledWith(expect.stringContaining('__nyxExamGo(2)'));
   post(s, { type: 'exam-page', page: 2, of: 2 });
-  expect(announce).toHaveBeenLastCalledWith('Sheet 2 of 2');
-  // Past the last sheet clamps; it never asks for sheet 3.
+  expect(announce).not.toHaveBeenCalled();
+  expect(s.getByTestId(EXAM_PAGER_TEST_ID).props.accessibilityValue).toEqual({ text: 'Sheet 2 of 2' });
+  // Past the last sheet: nothing is asked for.
+  mockInject.mockClear();
   act(() => s.getByTestId(EXAM_PAGER_TEST_ID).props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-  expect(mockInject).toHaveBeenLastCalledWith(expect.stringContaining('__nyxExamGo(2)'));
+  expect(mockInject).not.toHaveBeenCalled();
+  // A swipe on the page turns it from the document's side: announced.
+  post(s, { type: 'exam-page', page: 1, of: 2 });
+  expect(announce).toHaveBeenLastCalledWith('Sheet 1 of 2');
 });
 
 it('keeps the screen awake while open and foregrounded, and lets go on background', () => {
@@ -91,16 +109,50 @@ it('keeps the screen awake while open and foregrounded, and lets go on backgroun
   expect(mockDeactivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
 });
 
-it('lets go after the idle window with no touch, and holds again on a touch', () => {
+it('lets go when the idle timer fires, whatever the clock says, and holds again on a touch or a scroll', () => {
   const s = render(<ExamRoomScreen />);
   mockActivate.mockClear();
   act(() => {
-    jest.advanceTimersByTime(EXAM_IDLE_MS + 1);
+    jest.advanceTimersByTime(EXAM_IDLE_MS - 1);
   });
+  expect(mockDeactivate).not.toHaveBeenCalled();
+  // The timer's firing is the release: idle is state, never re-derived from Date.now() (a timer
+  // that fires a few ms early must still let go).
+  jest.spyOn(Date, 'now').mockReturnValue(0);
+  act(() => {
+    jest.advanceTimersByTime(1);
+  });
+  (Date.now as jest.Mock).mockRestore();
   expect(mockDeactivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
   expect(mockActivate).not.toHaveBeenCalled();
   post(s, { type: 'exam-touch' });
   expect(mockActivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
+  // The printed page has no script: its scroll is what counts as use.
+  fireEvent.press(s.getByText(EXAM_COPY.printed));
+  mockActivate.mockClear();
+  act(() => {
+    jest.advanceTimersByTime(EXAM_IDLE_MS + 1);
+  });
+  expect(s.getByTestId(EXAM_PRINTED_TEST_ID).props.onScroll).toBeDefined();
+  act(() => {
+    jest.advanceTimersByTime(2000);
+    s.getByTestId(EXAM_PRINTED_TEST_ID).props.onScroll();
+  });
+  expect(mockActivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
+});
+
+it('a text-size change with the room open reloads the pages at the new size', () => {
+  const s = render(<ExamRoomScreen />);
+  const before = s.getByTestId(EXAM_PAGES_TEST_ID);
+  mockFontScale = 2;
+  s.rerender(<ExamRoomScreen />);
+  expect(s.getByTestId(EXAM_PAGES_TEST_ID)).not.toBe(before);
+});
+
+it('offers no "Printed page" when the copy has no printed layout', () => {
+  mockCopy = { phoneHtml: PHONE, printHtml: null };
+  const s = render(<ExamRoomScreen />);
+  expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
 });
 
 it('Done lets go of keep-awake and closes; closing deletes the copy', () => {
@@ -120,7 +172,12 @@ it('"Printed page" swaps to the printed layout in place, script-free', () => {
   fireEvent.press(s.getByText(EXAM_COPY.printed));
   const printed = s.getByTestId(EXAM_PRINTED_TEST_ID);
   expect(printed.props.javaScriptEnabled).toBe(false);
-  expect(printed.props.source.html).toBe('<html>printed</html>');
+  expect(printed.props.source.html).toContain('printed');
+  // The printed page is boxed in the same way: no navigation, no new window, nothing loaded.
+  expect(printed.props.source.html).toContain('http-equiv="Content-Security-Policy"');
+  expect(printed.props.onShouldStartLoadWithRequest({ url: 'https://example.com' })).toBe(false);
+  expect(printed.props.originWhitelist).toEqual(['about:*', 'data:*']);
+  expect(printed.props.onOpenWindow).toBeDefined();
   expect(s.getByText(EXAM_COPY.pages)).toBeTruthy();
 });
 

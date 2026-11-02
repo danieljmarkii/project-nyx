@@ -48,6 +48,10 @@ export function stageExamCopy(copy: ExamCopy): boolean {
   clearExamCopy();
   try {
     const dir = examCopyDirectory();
+    // FAIL CLOSED on a clear that did not take (privacy review on PR-19): a leftover printed page
+    // would pair with the new phone page, so "Printed page" showed the last report, possibly
+    // another pet's. Nothing is staged over an old copy.
+    if (dir.exists) throw new Error('the previous copy could not be removed');
     dir.create({ intermediates: true, idempotent: true });
     new File(dir, PHONE_FILE).writeSync(copy.phoneHtml);
     if (copy.printHtml !== null) new File(dir, PRINT_FILE).writeSync(copy.printHtml);

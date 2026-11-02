@@ -5,6 +5,7 @@
 // it, so "the sign-out sweep removes the copy" is the sweep's own behaviour, not a restatement.
 const mockFiles = new Map<string, string>();
 let mockFailWrite = false;
+let mockFailDelete = false;
 
 jest.mock('expo-file-system', () => {
   const join = (parent: unknown, name?: string): string => {
@@ -21,6 +22,7 @@ jest.mock('expo-file-system', () => {
     }
     create() {}
     delete() {
+      if (mockFailDelete) throw new Error('busy');
       for (const k of [...mockFiles.keys()]) if (k.startsWith(`${this.uri}/`)) mockFiles.delete(k);
     }
     list() {
@@ -57,6 +59,7 @@ import { TRANSIENT_DIR, clearTransientFiles, transientDirectory } from './transi
 beforeEach(() => {
   mockFiles.clear();
   mockFailWrite = false;
+  mockFailDelete = false;
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -106,4 +109,14 @@ it('opens the room only after the copy is staged', () => {
   });
   expect(openExamRoom(copy, push)).toBe(true);
   expect(push).toHaveBeenCalledWith(EXAM_ROOM_ROUTE);
+});
+
+it('never pairs a new report with the last one’s printed page when the old copy cannot be removed', () => {
+  stageExamCopy(copy);
+  mockFailDelete = true;
+  const push = jest.fn();
+  expect(openExamRoom({ phoneHtml: '<html>Cooper phone</html>', printHtml: null }, push)).toBe(false);
+  expect(push).not.toHaveBeenCalled();
+  // The old pair is untouched and still whole; nothing of Cooper's was written beside it.
+  expect([...mockFiles.values()].some((v) => v.includes('Cooper'))).toBe(false);
 });

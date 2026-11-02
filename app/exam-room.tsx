@@ -33,10 +33,10 @@ import { useAppActive } from '../hooks/useAppActive';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
   EXAM_IDLE_MS,
-  EXAM_RETYPE_SCRIPT,
   clampPage,
   examGoScript,
   examRoomHtml,
+  withExamCsp,
   keepAwakeWanted,
   parseExamMessage,
   sheetLabel,
@@ -54,7 +54,11 @@ export const EXAM_COPY = {
   pages: 'Large type',
   done: 'Done',
   missing: 'This report is no longer on this phone. Open it again from the preview.',
+  pagerLabel: 'Report sheets',
 } as const;
+
+/** The room opens no window: a link or `window.open` goes nowhere. */
+function refuseWindow(): void {}
 
 export default function ExamRoomScreen() {
   const router = useRouter();
@@ -66,6 +70,7 @@ export default function ExamRoomScreen() {
   // Read once: the copy is fixed for the life of the room.
   const [copy] = useState(() => readExamCopy());
   const html = useMemo(() => (copy ? examRoomHtml(copy.phoneHtml, theme.colorNeutralDark) : null), [copy]);
+  const printHtml = useMemo(() => (copy?.printHtml != null ? withExamCsp(copy.printHtml) : null), [copy]);
   // The copy goes when the room closes, however it closes (Done, Android back, a dismissal).
   useEffect(() => () => clearExamCopy(), []);
 
@@ -74,18 +79,32 @@ export default function ExamRoomScreen() {
   const [printed, setPrinted] = useState(false);
   const [printedMounted, setPrintedMounted] = useState(false);
 
-  // Keep-awake: open, foregrounded, touched within the idle window.
-  const [lastTouchAt, setLastTouchAt] = useState(() => Date.now());
-  const [, setIdleTick] = useState(0);
+  // Keep-awake: open, foregrounded, touched within the idle window. `idle` is STATE the timer
+  // sets unconditionally (code review on PR-19): re-deriving it from the clock at render let a
+  // timer that fired a few ms early, or one iOS suspended in the background, leave the screen
+  // awake until the next touch. A touch, a scroll of either page, or coming back to the front
+  // starts the window again.
+  const [idle, setIdle] = useState(false);
+  const [touchTick, setTouchTick] = useState(0);
+  const lastTouch = useRef(0);
   const touch = () => {
     const now = Date.now();
-    if (now - lastTouchAt > 1000) setLastTouchAt(now);
+    if (now - lastTouch.current < 1000) return;
+    lastTouch.current = now;
+    setIdle(false);
+    setTouchTick((n) => n + 1);
   };
   useEffect(() => {
-    const t = setTimeout(() => setIdleTick((n) => n + 1), EXAM_IDLE_MS);
+    if (appActive) {
+      setIdle(false);
+      setTouchTick((n) => n + 1);
+    }
+  }, [appActive]);
+  useEffect(() => {
+    const t = setTimeout(() => setIdle(true), EXAM_IDLE_MS);
     return () => clearTimeout(t);
-  }, [lastTouchAt]);
-  const awake = keepAwakeWanted({ open: true, appActive, lastTouchAt, now: Date.now() });
+  }, [touchTick]);
+  const awake = keepAwakeWanted({ open: true, appActive, idle });
   useEffect(() => {
     if (!awake) {
       deactivateKeepAwake(EXAM_KEEP_AWAKE_TAG).catch(() => undefined);
@@ -114,32 +133,35 @@ export default function ExamRoomScreen() {
     return () => anim.stop();
   }, [reduced, fade]);
 
-  // A text-size change with the room open: the document re-measures (iOS); Android's textZoom
-  // follows the prop.
-  const firstScale = useRef(fontScale);
-  useEffect(() => {
-    if (fontScale === firstScale.current) return;
-    firstScale.current = fontScale;
-    web.current?.injectJavaScript(EXAM_RETYPE_SCRIPT);
-  }, [fontScale]);
+  // A text-size change with the room open reloads the pages (the document's key carries the
+  // scale): WKWebView does not re-resolve `-apple-system-body` live, and an injected re-measure
+  // could run before Android applied the new textZoom (code review on PR-19). The reload lands on
+  // sheet 1 and announces it.
+  const docKey = `exam-${Math.round(fontScale * 100)}`;
 
-  const announced = useRef<string | null>(null);
+  // The pager is an adjustable element whose VALUE is "Sheet N of M": VoiceOver speaks a value
+  // change it caused itself, so a turn from the pager is not announced a second time. A turn
+  // from anywhere else (entry, a swipe, a reload) is.
+  const pagerTurn = useRef(false);
   const onMessage = (e: WebViewMessageEvent) => {
     const m = parseExamMessage(e.nativeEvent.data);
     if (!m) return;
     touch();
     if (m.kind !== 'page') return;
     setPager({ page: m.page, of: m.of });
-    const words = sheetLabel(m.page, m.of);
-    if (announced.current !== words) {
-      announced.current = words;
-      AccessibilityInfo.announceForAccessibility(words);
+    if (pagerTurn.current) {
+      pagerTurn.current = false;
+      return;
     }
+    AccessibilityInfo.announceForAccessibility(sheetLabel(m.page, m.of));
   };
 
   const go = (page: number) => {
     touch();
-    web.current?.injectJavaScript(examGoScript(clampPage(page, pager.of)));
+    const to = clampPage(page, pager.of);
+    if (to === pager.page) return;
+    pagerTurn.current = true;
+    web.current?.injectJavaScript(examGoScript(to));
   };
 
   const togglePrinted = () => {
@@ -165,14 +187,15 @@ export default function ExamRoomScreen() {
             style={styles.label}
             accessible
             accessibilityRole="adjustable"
-            accessibilityLabel={sheetLabel(pager.page, pager.of)}
+            accessibilityLabel={EXAM_COPY.pagerLabel}
+            accessibilityValue={{ text: sheetLabel(pager.page, pager.of) }}
             accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
             onAccessibilityAction={(ev) => go(pager.page + (ev.nativeEvent.actionName === 'increment' ? 1 : -1))}
           >
             <ThemedText style={styles.labelText}>{sheetLabel(pager.page, pager.of)}</ThemedText>
           </View>
         )}
-        {html !== null && (
+        {html !== null && printHtml !== null && (
           <Pressable style={styles.pill} onPress={togglePrinted} accessibilityRole="button">
             <ThemedText style={styles.pillText}>{printed ? EXAM_COPY.pages : EXAM_COPY.printed}</ThemedText>
           </Pressable>
@@ -195,6 +218,7 @@ export default function ExamRoomScreen() {
               pointerEvents={printed ? 'none' : 'auto'}
             >
               <WebView
+                key={docKey}
                 ref={web}
                 testID={EXAM_PAGES_TEST_ID}
                 style={styles.web}
@@ -203,12 +227,16 @@ export default function ExamRoomScreen() {
                 // The reflow's layout script and the paging script must run (lib/examRoom.ts).
                 javaScriptEnabled
                 onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+                // Android opens a new window in a fresh WebView that skips the load predicate
+                // (privacy review on PR-19): the room opens none.
+                onOpenWindow={refuseWindow}
                 textZoom={Platform.OS === 'android' ? androidTextZoom(fontScale) : undefined}
                 onMessage={onMessage}
+                onScroll={touch}
                 showsVerticalScrollIndicator
               />
             </View>
-            {printedMounted && copy?.printHtml != null && (
+            {printedMounted && printHtml !== null && (
               <View
                 style={[StyleSheet.absoluteFill, printed ? styles.shown : styles.hidden]}
                 importantForAccessibility={printed ? 'auto' : 'no-hide-descendants'}
@@ -219,10 +247,13 @@ export default function ExamRoomScreen() {
                   testID={EXAM_PRINTED_TEST_ID}
                   style={styles.web}
                   originWhitelist={['about:*', 'data:*']}
-                  source={{ html: copy.printHtml }}
+                  source={{ html: printHtml }}
+                  // No script to report a touch, so its scroll keeps the screen awake.
+                  onScroll={touch}
                   // The printed page carries no script.
                   javaScriptEnabled={false}
                   onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+                  onOpenWindow={refuseWindow}
                 />
               </View>
             )}
