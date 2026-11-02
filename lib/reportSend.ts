@@ -26,7 +26,7 @@ import { liveCardCopy, composerDate, composerRange, LIVE_FLAG_DAYS, type Compose
 
 // ── Targets and the status words (WBC-5) ─────────────────────────────────────────────────────
 
-export type SendTarget = 'email' | 'print' | 'share' | 'copy';
+export type SendTarget = 'email' | 'print' | 'phone' | 'share' | 'copy';
 
 /**
  * What the platform told us. Mail's four results are its own (`MailComposerStatus`); the other
@@ -53,20 +53,28 @@ export function sendStatusWords(target: SendTarget, platform: string, result: Se
       return 'Shared';
     case 'copy':
       return 'Copied';
+    case 'phone':
+      // Exam-room mode is a way of showing, not a send: it makes no card.
+      return null;
     default:
       return null;
   }
 }
 
-/** The target rows, in the mock's order (d1). "Show on this phone" is exam-room mode's (VR2-19). */
+/**
+ * The target rows, in the mock's order (d1). "Show on this phone" opens exam-room mode (VR2-19,
+ * CUL-2299); the sheet lists it only when the screen hands it a way to open it (PM ruling (b),
+ * CUL-2298 2026-11-02: whichever of PR-18 and PR-19 merges second wires the call).
+ */
 export const TARGET_LABEL: Record<SendTarget, string> = {
   email: 'Email to the clinic, from your Mail app',
   print: 'Print',
+  phone: 'Show on this phone for the exam room',
   share: 'Share the PDF',
   copy: 'Copy the email text',
 };
 
-export const SEND_TARGETS: SendTarget[] = ['email', 'print', 'share', 'copy'];
+export const SEND_TARGETS: SendTarget[] = ['email', 'print', 'phone', 'share', 'copy'];
 
 // ── The live flag read (GAP-13) ──────────────────────────────────────────────────────────────
 
@@ -76,6 +84,18 @@ export const SEND_TARGETS: SendTarget[] = ['email', 'print', 'share', 'copy'];
  */
 export function uncheckedLive(today: string): ComposerLive {
   return { state: 'incomplete', startDate: today, endDate: today, flags: [] };
+}
+
+/**
+ * The live set the send uses. A fresh read that answered (flags or none) is the truth. A read
+ * that failed, or came back incomplete, never downgrades flags this screen already read: "couldn't
+ * check" is louder than "none" but quieter than a known flag, and it carries no call rows
+ * (adversarial pass on CUL-2298). With nothing better known, the read stays unchecked.
+ */
+export function liveForSend(fresh: ComposerLive | null, known: ComposerLive | null, today: string): ComposerLive {
+  if (fresh && (fresh.state === 'flags' || fresh.state === 'none')) return fresh;
+  if (known && known.state === 'flags' && known.flags.length > 0) return known;
+  return fresh ?? uncheckedLive(today);
 }
 
 /** True only when the 56-day set was read and held no flag: the one case a check may show. */
@@ -107,7 +127,8 @@ export function callRowsFor(localHour: number, petName: string): CallRow[] {
   const name = petName.trim() || 'your pet';
   if (isAfterHours(localHour)) {
     return [
-      { id: 'emergency', text: `If your vet is closed now, an emergency clinic can see ${name} tonight.` },
+      // "Now", never "tonight": before opening time, tonight reads as leave to wait.
+      { id: 'emergency', text: `If your vet is closed, an emergency clinic can see ${name} now.` },
       { id: 'clinic', text: 'Or call your vet when they open.' },
     ];
   }
@@ -143,10 +164,12 @@ function subjectNoun(f: ComposerFlag): string {
     case 'present_blood':
       return f.sign === 'vomit' ? 'blood in vomit' : 'blood in stool';
     case 'present_foreign':
-      return 'possible foreign material';
+      return 'possible foreign material in vomit';
     case 'intake_decline':
-      // A refusal reads as one, never as "less" (intake is not preference).
-      return f.trigger === 'refused_then_vomited' || f.trigger === 'refused_normal_food' ? 'refusing food' : 'eating less';
+      // A refusal reads as one, never as "less" (intake is not preference); the composer's words.
+      if (f.trigger === 'refused_then_vomited') return 'refusing food, then vomiting';
+      if (f.trigger === 'refused_normal_food') return 'refusing a usual food';
+      return 'eating less';
     case 'trial_diet_refusal':
       return 'trial diet not finished';
     case 'chronicity':
@@ -201,8 +224,9 @@ export function emailSubject(i: SubjectInput): string {
   parts.push(composerRange(i.startDate, i.endDate, i.today));
   if (i.visitDay) parts.push(`visit ${composerDate(i.visitDay, i.today)}`);
   const subject = parts.join(' · ');
-  // The guard, run on what will actually go out. Every template part is digit-free but the
-  // dates, so a trip here can only come from a name the owner typed; cut it, never send it.
+  // The guard, run on what will actually go out. Every template part is digit-free but the dates
+  // and both owner parts were cleaned above, so this never fires today: it is the backstop for a
+  // template part someone adds later. Cut, never send.
   return subjectIsClean(subject) ? subject : subject.replace(SUBJECT_FORBIDDEN, '').replace(/\s+/g, ' ');
 }
 
@@ -230,6 +254,11 @@ export interface EmailBodyInput {
   note: string;
   /** The owner's questions, exactly as typed. Blank ones are dropped; at most five travel. */
   questions: string[];
+  /**
+   * False for the Copy target: pasted text travels without the PDF, so it must not say
+   * "Attached is". Defaults to the email, which always carries the report.
+   */
+  attached?: boolean;
 }
 
 /** The owner's words, untouched but for the whitespace at either end. */
@@ -245,13 +274,12 @@ export function emailBody(i: EmailBodyInput): EmailSentence[] {
   const pet = i.petName.trim() || 'my pet';
   const range = composerRange(i.startDate, i.endDate, i.today);
   const out: EmailSentence[] = [{ id: 'greeting', source: 'fixed', text: 'Hello,' }];
-  out.push({
-    id: 'attached',
-    source: 'fixed',
-    text: i.visitDay
-      ? `Attached is ${pet}’s home log for ${range}, for the visit on ${composerDate(i.visitDay, i.today)}.`
-      : `Attached is ${pet}’s home log for ${range}.`,
-  });
+  const forVisit = i.visitDay ? `, for the visit on ${composerDate(i.visitDay, i.today)}` : '';
+  out.push(
+    i.attached === false
+      ? { id: 'covers', source: 'fixed', text: `${pet.charAt(0).toUpperCase()}${pet.slice(1)}’s home log covers ${range}${forVisit}.` }
+      : { id: 'attached', source: 'fixed', text: `Attached is ${pet}’s home log for ${range}${forVisit}.` },
+  );
   const card = liveCardCopy(i.live, i.petName);
   if (i.live.state === 'flags' && card) {
     // The call card's own record line, verbatim: the same words the owner just read.

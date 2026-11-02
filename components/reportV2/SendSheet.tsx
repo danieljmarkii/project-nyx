@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -52,6 +54,7 @@ import { composerDate, type ComposerLive } from '../../lib/reportComposer';
 export type SendAction =
   | { target: 'email'; subject: string; body: string; documentUris: string[] }
   | { target: 'print' }
+  | { target: 'phone' }
   | { target: 'share' }
   | { target: 'copy'; subject: string; body: string };
 
@@ -69,6 +72,11 @@ interface Props {
   documents: SendDocumentChoice[];
   /** False when this phone cannot open a Mail draft (no account, or a build without the module). */
   mailReady: boolean;
+  /**
+   * True once the screen can open exam-room mode (PR-19's `openExamRoom`). Until then "Show on
+   * this phone" is not listed: a row that opened nothing would be a door to nowhere.
+   */
+  canShowOnPhone?: boolean;
   onClose: () => void;
   /** Called once the sheet has fully gone, with what the owner chose. */
   onAction: (action: SendAction) => void;
@@ -77,7 +85,8 @@ interface Props {
 type Panel = 'targets' | 'email';
 
 export function SendSheet({
-  visible, petName, ownerSurname, live, card, startDate, endDate, today, visitDay, documents, mailReady, onClose, onAction,
+  visible, petName, ownerSurname, live, card, startDate, endDate, today, visitDay, documents, mailReady, canShowOnPhone = false,
+  onClose, onAction,
 }: Props) {
   const { height: windowHeight } = useWindowDimensions(); // window-width-ok: the sheet's travel is the window HEIGHT, never a width
   const insets = useSafeAreaInsets();
@@ -113,8 +122,11 @@ export function SendSheet({
 
   // Focus on the call card once the sheet is up (§14: "Focus on the call card when present").
   const cardRef = useRef<ViewInstance>(null);
+  // And on the draft's heading when the panel swaps to it, so VoiceOver follows the swap.
+  const emailHeadingRef = useRef<ViewInstance>(null);
   useEffect(() => {
-    if (motion.phase === 'open' && panel === 'targets') focusAccessibility(cardRef.current);
+    if (motion.phase !== 'open') return;
+    focusAccessibility(panel === 'targets' ? cardRef.current : emailHeadingRef.current);
   }, [motion.phase, panel]);
 
   const swap = (next: Panel) => {
@@ -138,6 +150,11 @@ export function SendSheet({
     [petName, live, startDate, endDate, today, visit, note, questions],
   );
   const body = emailBodyText(sentences);
+  // Copy travels without the PDF, so its text says what the log covers, never "Attached is".
+  const copyBody = useMemo(
+    () => emailBodyText(emailBody({ petName, live, startDate, endDate, today, visitDay: visit, note, questions, attached: false })),
+    [petName, live, startDate, endDate, today, visit, note, questions],
+  );
   const documentUris = documents.filter((d) => d.uri !== null && attached.has(d.id)).map((d) => d.uri as string);
 
   const choose = (action: SendAction) => {
@@ -146,13 +163,19 @@ export function SendSheet({
   };
   const onTarget = (t: SendTarget) => {
     if (t === 'email') swap('email');
-    else if (t === 'copy') choose({ target: 'copy', subject, body });
+    else if (t === 'copy') choose({ target: 'copy', subject, body: copyBody });
     else choose({ target: t });
   };
 
   return (
     <Modal visible={motion.modalVisible} transparent animationType="none" onShow={motion.onShow} onRequestClose={onClose}>
-      <View style={styles.backdrop} pointerEvents={motion.phase === 'exiting' ? 'none' : 'auto'}>
+      {/* The draft's note and question fields sit low in a bottom sheet: the keyboard pushes the
+          sheet up rather than covering the field and "Open in Mail" (the SheetShell pattern). */}
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        pointerEvents={motion.phase === 'exiting' ? 'none' : 'auto'}
+      >
         <Animated.View style={[StyleSheet.absoluteFill, styles.scrim, motion.scrimStyle]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" accessibilityRole="button" />
         </Animated.View>
@@ -169,7 +192,7 @@ export function SendSheet({
                 <ThemedText style={styles.title} accessibilityRole="header">
                   {petName.trim() ? `Send ${petName.trim()}’s report` : 'Send the report'}
                 </ThemedText>
-                {SEND_TARGETS.map((t) =>
+                {SEND_TARGETS.filter((t) => t !== 'phone' || canShowOnPhone).map((t) =>
                   t === 'email' && !mailReady ? (
                     // No control exists for this state, so no `disabled` claim (C-7): the row is
                     // a sentence saying why, and the other targets carry the send.
@@ -204,9 +227,9 @@ export function SendSheet({
                   >
                     <ThemedText style={styles.backText}>‹ Back</ThemedText>
                   </Pressable>
-                  <ThemedText style={styles.title} accessibilityRole="header">
-                    Email
-                  </ThemedText>
+                  <View ref={emailHeadingRef} accessible accessibilityRole="header">
+                    <ThemedText style={styles.title}>Email</ThemedText>
+                  </View>
                 </View>
                 <ThemedText style={styles.meta}>From your own address. You choose who it goes to in Mail.</ThemedText>
                 <SectionLabel label="Subject" />
@@ -301,7 +324,7 @@ export function SendSheet({
             )}
           </Animated.View>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

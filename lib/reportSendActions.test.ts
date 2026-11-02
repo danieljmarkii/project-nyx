@@ -74,9 +74,14 @@ describe('print, share, copy', () => {
   });
 
   it('a dismissed print sheet is a cancel: no card', async () => {
-    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     (Print.printAsync as jest.Mock).mockRejectedValueOnce(new Error('Printing did not complete'));
     expect(await printReport(report)).toBe('cancelled');
+  });
+
+  it('a failed print job is a failure the screen says, never a silent cancel', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    (Print.printAsync as jest.Mock).mockRejectedValueOnce(new Error("Printing job encountered an error: 'no printer'"));
+    expect(await printReport(report)).toBe('failed');
   });
 
   it('share is done, or failed with no share sheet', async () => {

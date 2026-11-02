@@ -26,15 +26,20 @@ import type { ConfirmationCopy, SendCallCard as SendCallCardModel } from '../../
 
 interface Props {
   copy: ConfirmationCopy;
-  /** The call card to repeat, or null on a quiet send (the one case the check shows). */
+  /**
+   * True only when the live read answered "none" (`sendIsQuiet`): the one case the check shows.
+   * Passed, never inferred from a null card, so a flagged read that somehow yields no card
+   * still gets no check (code review on CUL-2298).
+   */
+  quiet: boolean;
+  /** The call card to repeat above Done, or null when there is none to repeat. */
   card: SendCallCardModel | null;
   onDone: () => void;
 }
 
 const M = COMPLETION_MOTION;
 
-export function SendConfirmation({ copy, card, onDone }: Props) {
-  const quiet = card === null;
+export function SendConfirmation({ copy, quiet, card, onDone }: Props) {
   // One linear native clock, each beat a clamped segment of it (completionMotion's engine rule).
   // Reduce Motion starts the clock at its end: everything at rest in the first frame.
   const reduced = useRef(reducedMotionNow()).current;
@@ -89,7 +94,7 @@ export function SendConfirmation({ copy, card, onDone }: Props) {
         </Animated.View>
       </View>
       <View style={styles.foot}>
-        {card && <SendCallCard card={card} testID="send-confirmation-call-card" />}
+        {!quiet && card && <SendCallCard card={card} testID="send-confirmation-call-card" />}
         <PrimaryButton label="Done" onPress={onDone} testID="send-confirmation-done" />
       </View>
     </Animated.View>

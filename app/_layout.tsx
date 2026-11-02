@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { lockPortrait } from '../lib/screenOrientation';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -128,6 +129,12 @@ function RootLayoutTree() {
     if (appActive && !prevActive.current) refreshAppConfig().catch(() => {});
     prevActive.current = appActive;
   }, [appActive]);
+
+  useEffect(() => {
+    // CUL-2298: the app is portrait; only exam-room mode turns (lib/screenOrientation.ts).
+    // iOS holds portrait natively from the plist default; this lock is Android's.
+    void lockPortrait();
+  }, []);
 
   useEffect(() => {
     // B-301: drop the retired auth-probe log left on devices that ran builds

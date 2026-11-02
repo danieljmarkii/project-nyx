@@ -3,7 +3,7 @@
     "name": "Culprit",
     "slug": "project-nyx",
     "version": "1.3.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "nyx",
@@ -124,7 +124,13 @@
           ]
         }
       ],
-      "expo-mail-composer"
+      "expo-mail-composer",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ]
     ]
   }
 }

@@ -47,8 +47,9 @@ jest.mock('../lib/reportSendActions', () => ({
 let mockEligible = true;
 jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockEligible }));
 jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
+let mockComposerOpen: unknown = null;
 jest.mock('../hooks/useReportComposer', () => ({
-  useReportComposer: () => ({ screen: 'ready', open: null, selected: null, counts: null, after: null, countsState: 'ready', landed: 0 }),
+  useReportComposer: () => ({ screen: 'ready', open: mockComposerOpen, selected: null, counts: null, after: null, countsState: 'ready', landed: 0 }),
 }));
 jest.mock('../components/report/ReportComposer', () => {
   const { Pressable, View } = require('react-native');
@@ -112,6 +113,7 @@ const QUIET = { state: 'none', startDate: '2026-09-06', endDate: '2026-10-31', f
 beforeEach(() => {
   jest.clearAllMocks();
   mockEligible = true;
+  mockComposerOpen = null;
   mockedGenerate.mockResolvedValue(report);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
@@ -141,6 +143,21 @@ describe('Send reads the live flags before the sheet presents (GAP-13)', () => {
     fireEvent.press(r.getByTestId('report-send'));
     await r.findByTestId('sheet');
     expect(r.getByTestId('sheet-card').props.children).toMatch(/Couldn’t check/);
+  });
+});
+
+describe('a failed send-time read never downgrades a flag the composer already showed (adversarial pass)', () => {
+  it('the sheet keeps the known flag and its call rows, and the confirmation shows no check', async () => {
+    mockComposerOpen = { live: FLAGGED };
+    mockedOpen.mockRejectedValue(new Error('offline'));
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    await r.findByTestId('sheet');
+    expect(r.getByTestId('sheet-card').props.children).toMatch(/flag worth a call/);
+    fireEvent.press(r.getByTestId('pick-share'));
+    await r.findByTestId('send-confirmation');
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+    expect(r.getByTestId('send-confirmation-call-card-row-clinic')).toBeTruthy();
   });
 });
 

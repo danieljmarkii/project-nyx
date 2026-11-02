@@ -31,7 +31,7 @@ import { SendConfirmation } from '../components/reportV2/SendConfirmation';
 import { fetchComposerOpen } from '../lib/reportComposerApi';
 import { readHomeAppointment } from '../lib/vetVisits';
 import {
-  confirmationCopy, sendCallCard, sendDocumentsOf, sendIsQuiet, sendStatusWords, uncheckedLive,
+  confirmationCopy, liveForSend, sendCallCard, sendDocumentsOf, sendIsQuiet, sendStatusWords,
   type ConfirmationCopy, type SendCallCard as SendCallCardModel, type SendDocumentChoice, type SendResult,
 } from '../lib/reportSend';
 import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
@@ -341,7 +341,10 @@ export default function ReportScreen() {
   const [sendReading, setSendReading] = useState(false);
   const [sendCtx, setSendCtx] = useState<SendContext | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
-  const [confirmation, setConfirmation] = useState<{ copy: ConfirmationCopy; card: SendCallCardModel | null } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ copy: ConfirmationCopy; quiet: boolean; card: SendCallCardModel | null } | null>(null);
+  // The flags the composer already read this session: a send-time read that fails never
+  // downgrades them (`liveForSend`).
+  const knownLive = composer.open?.live ?? null;
 
   const onOpenSend = useCallback(async () => {
     if (!petId) return;
@@ -349,13 +352,14 @@ export default function ReportScreen() {
     const today = toLocalDayKey(now);
     setSendReading(true);
     try {
-      const [live, appointment, rows, mailReady] = await Promise.all([
-        // GAP-13: the sheet never presents before this answers, and a failure is the louder card.
+      const [fresh, appointment, rows, mailReady] = await Promise.all([
+        // GAP-13: the sheet never presents before this answers. A failure falls back to the flags
+        // already read this session, else to the louder "couldn't check" card, never to none.
         fetchComposerOpen(petId)
           .then((o) => o.live)
           .catch((e) => {
             console.warn('[Report] send flag read failed:', e);
-            return uncheckedLive(today);
+            return null;
           }),
         readHomeAppointment(petId, now).catch((e) => {
           console.warn('[Report] send appointment read failed:', e);
@@ -370,8 +374,10 @@ export default function ReportScreen() {
         mailAvailable(),
       ]);
       setSendCtx({
-        live,
+        live: liveForSend(fresh, knownLive, today),
         today,
+        // Read once at the tap: the sheet and its confirmation order the call rows by the same
+        // hour, so a draft left open across the assumed closing time keeps one ordering.
         hour: now.getHours(),
         visitDay: appointment?.phase === 'upcoming' ? toLocalDayKey(new Date(appointment.view.scheduledAt)) : null,
         documents: sendDocumentsOf(rows),
@@ -381,11 +387,14 @@ export default function ReportScreen() {
     } finally {
       setSendReading(false);
     }
-  }, [petId]);
+  }, [petId, knownLive]);
 
   const onSendAction = useCallback(
     async (action: SendAction) => {
       if (!report || !sendCtx) return;
+      // Exam-room mode (PR-19, CUL-2299) is not on main yet, so the sheet never lists it here;
+      // whichever of PR-18 and PR-19 merges second calls `openExamRoom` in this branch.
+      if (action.target === 'phone') return;
       setSharing(true);
       let result: SendResult;
       try {
@@ -394,6 +403,7 @@ export default function ReportScreen() {
           if (result === 'failed') Alert.alert('Mail isn’t available', 'Share the PDF instead, or copy the email text.');
         } else if (action.target === 'print') {
           result = await printReport(report);
+          if (result === 'failed') Alert.alert('That didn’t print', 'Something went wrong with the print sheet. Give it another try.');
         } else if (action.target === 'share') {
           result = await shareReport(report);
           if (result === 'failed') Alert.alert('Sharing isn’t available', 'This device can’t open a share sheet.');
@@ -402,7 +412,9 @@ export default function ReportScreen() {
         }
       } catch (e) {
         console.error('[Report] send failed:', e);
-        Alert.alert("Couldn't create the PDF", 'Please try again.');
+        // Each target fails in its own words: Copy makes no PDF at all.
+        if (action.target === 'copy') Alert.alert('Couldn’t copy the text', 'Please try again.');
+        else Alert.alert("Couldn't create the PDF", 'Please try again.');
         result = 'failed';
       } finally {
         setSharing(false);
@@ -411,7 +423,8 @@ export default function ReportScreen() {
       if (words === null) return;
       setConfirmation({
         copy: confirmationCopy(report.petName || petName || '', report.startDate, report.endDate, sendCtx.today, words),
-        card: sendIsQuiet(sendCtx.live) ? null : sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour),
+        quiet: sendIsQuiet(sendCtx.live),
+        card: sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour),
       });
     },
     [report, sendCtx, petName],
@@ -776,6 +789,7 @@ export default function ReportScreen() {
       {confirmation && (
         <SendConfirmation
           copy={confirmation.copy}
+          quiet={confirmation.quiet}
           card={confirmation.card}
           onDone={() => {
             setConfirmation(null);

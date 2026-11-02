@@ -16,6 +16,7 @@ const ROOT = join(__dirname, '..');
 type PluginEntry = string | [string, Record<string, unknown>];
 interface AppJson {
   expo: {
+    orientation?: string;
     userInterfaceStyle?: string;
     ios: {
       privacyManifests?: { NSPrivacyAccessedAPITypes?: AccessedApiType[] };
@@ -47,6 +48,18 @@ const pluginOptions = (name: string): Record<string, unknown> | undefined => {
 
 const USER_DEFAULTS = 'NSPrivacyAccessedAPICategoryUserDefaults';
 const APP_GROUP_REASONS = ['1C8F.1', 'CA92.1'];
+
+describe('the app is portrait; only exam-room mode turns (CUL-2298)', () => {
+  // `orientation: "default"` lets the binary rotate so exam-room mode can unlock it. Without
+  // the plugin's portrait default, every iOS screen would turn with the phone: the plist mask
+  // is what holds them before any JavaScript runs (lib/screenOrientation.ts).
+  it('a rotatable binary always carries the portrait default', () => {
+    if (app.expo.orientation !== 'portrait') {
+      expect(pluginNames).toContain('expo-screen-orientation');
+      expect(pluginOptions('expo-screen-orientation')?.initialOrientation).toBe('PORTRAIT_UP');
+    }
+  });
+});
 
 describe('plugins that edit what expo-widgets wrote run after it', () => {
   const widgets = pluginNames.indexOf('expo-widgets');

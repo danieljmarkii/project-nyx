@@ -70,16 +70,22 @@ export async function emailReport(report: VetReport, draft: EmailDraft, mail: Ma
 }
 
 /**
- * The system print sheet over the report's own HTML. A rejection is read as the owner backing
- * out (iOS rejects on a dismissed print sheet), so it makes no card and no alert.
+ * The system print sheet over the report's own HTML. expo-print rejects a DISMISSED sheet with
+ * "Printing did not complete" (`PrintIncompleteException`, ios/ExpoPrintExceptions.swift) and a
+ * failed job with "Printing job encountered an error", so only the first reads as the owner
+ * backing out (no card, no alert); anything else is a failure the screen says.
  */
+export const PRINT_DISMISSED = /printing did not complete/i;
+
 export async function printReport(report: VetReport): Promise<SendResult> {
   try {
     await Print.printAsync({ html: report.html });
     return 'done';
   } catch (e) {
-    console.warn('[reportSend] print did not complete:', e);
-    return 'cancelled';
+    const message = e instanceof Error ? e.message : String(e);
+    if (PRINT_DISMISSED.test(message)) return 'cancelled';
+    console.warn('[reportSend] print failed:', e);
+    return 'failed';
   }
 }
 

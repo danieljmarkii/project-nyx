@@ -8,6 +8,7 @@ import {
   emailBodyText,
   emailSubject,
   sendCallCard,
+  liveForSend,
   sendDocumentsOf,
   sendIsQuiet,
   sendStatusWords,
@@ -170,7 +171,7 @@ describe('the subject (BRK-12): a template with no counts, percentages or weight
 
   it('names the pet with surname, each flag in words, the window and the visit', () => {
     expect(emailSubject(input)).toBe(
-      'Nyx (Reyes) · owner’s home log · flags: possible foreign material, frequent signs this week, weight down, trial diet not finished, long-running signs · Sep 16 to Oct 31 · visit Nov 3',
+      'Nyx (Reyes) · owner’s home log · flags: possible foreign material in vomit, frequent signs this week, weight down, trial diet not finished, long-running signs · Sep 16 to Oct 31 · visit Nov 3',
     );
   });
 
@@ -184,14 +185,16 @@ describe('the subject (BRK-12): a template with no counts, percentages or weight
       'symptom_worsening', 'weight_loss', 'weight_unchecked', 'protein_mismatch', 'unknown_future_kind'];
     for (const kind of kinds) {
       const s = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind, sign: 'vomit', trigger: null }] } });
-      expect(s.split(' · ')[2]).toMatch(/^flags: [a-z -]+$/);
+      expect(s.split(' · ')[2]).toMatch(/^flags: [a-z ,-]+$/);
     }
   });
 
-  it('a refusal reads as refusing, never as eating less', () => {
-    const s = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind: 'intake_decline', sign: null, trigger: 'refused_normal_food' }] } });
-    expect(s).toContain('refusing food');
-    expect(s).not.toContain('eating less');
+  it('a refusal reads as refusing, never as eating less, in the composer’s words', () => {
+    const usual = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind: 'intake_decline', sign: null, trigger: 'refused_normal_food' }] } });
+    expect(usual).toContain('refusing a usual food');
+    expect(usual).not.toContain('eating less');
+    const vomited = emailSubject({ ...input, live: { ...FLAGGED, flags: [{ kind: 'intake_decline', sign: null, trigger: 'refused_then_vomited' }] } });
+    expect(vomited).toContain('refusing food, then vomiting');
   });
 
   it('the guard rejects a digit beside %, kg or lb', () => {
@@ -222,6 +225,14 @@ describe('the call card and its rows (d1, d5)', () => {
   it('after hours, the emergency clinic leads, and both rows always print', () => {
     for (const h of [ASSUMED_CLINIC_CLOSE_HOUR, 23, 0, ASSUMED_CLINIC_OPEN_HOUR - 1]) {
       expect(callRowsFor(h, 'Nyx').map((r) => r.id)).toEqual(['emergency', 'clinic']);
+    }
+  });
+
+  it('before opening time the emergency row says now, never tonight (leave to wait)', () => {
+    for (const h of [0, 5, 6, 7, 18, 23]) {
+      const emergency = callRowsFor(h, 'Nyx').find((r) => r.id === 'emergency');
+      expect(emergency?.text).toMatch(/\bnow\.$/);
+      expect(emergency?.text).not.toMatch(/tonight|later|morning/);
     }
   });
 
@@ -270,5 +281,37 @@ describe('vet documents are listed one by one, and only a whole file on this pho
       { id: 'c', title: 'Discharge', detail: 'Sep 1', uri: null, why: 'Several pages. Send it from Vet Files.' },
       { id: 'd', title: 'Vaccines', detail: 'Aug 1', uri: null, why: 'Not on this phone. Send it from Vet Files.' },
     ]);
+  });
+});
+
+describe('the send never downgrades a flag the screen already read (adversarial pass)', () => {
+  const unchecked = uncheckedLive(TODAY);
+  it('a fresh answer wins, flags or none', () => {
+    expect(liveForSend(FLAGGED, NONE, TODAY)).toBe(FLAGGED);
+    expect(liveForSend(NONE, FLAGGED, TODAY)).toBe(NONE);
+  });
+  it('a failed or incomplete read falls back to the known flags, with their call rows', () => {
+    expect(liveForSend(null, FLAGGED, TODAY)).toBe(FLAGGED);
+    expect(liveForSend(unchecked, FLAGGED, TODAY)).toBe(FLAGGED);
+    expect(sendCallCard(liveForSend(null, FLAGGED, TODAY), 'Nyx', 10)?.rows).toHaveLength(2);
+  });
+  it('with nothing better known, it stays unchecked, never none', () => {
+    expect(liveForSend(null, null, TODAY).state).toBe('incomplete');
+    expect(liveForSend(null, NONE, TODAY).state).toBe('incomplete');
+    expect(liveForSend(unchecked, null, TODAY)).toBe(unchecked);
+  });
+});
+
+describe('Copy travels without the PDF, so it never says "Attached is"', () => {
+  it('opens with what the log covers instead', () => {
+    const copy = emailBody({ ...base, attached: false });
+    expect(copy[1]).toEqual({ id: 'covers', source: 'fixed', text: 'Nyx’s home log covers Sep 16 to Oct 31, for the visit on Nov 3.' });
+    expect(emailBodyText(copy)).not.toContain('Attached');
+  });
+});
+
+describe('Show on this phone makes no card', () => {
+  it('is a way of showing, not a send', () => {
+    expect(sendStatusWords('phone', 'ios', 'done')).toBeNull();
   });
 });
