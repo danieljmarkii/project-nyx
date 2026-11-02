@@ -94,6 +94,29 @@ export async function storedLeadForSnapshot(
   return sentences.map((s) => s.text).join(' ') === stored.text ? sentences : null
 }
 
+/** The stored print HTML carries a lead only through renderPrintV2's slot. */
+export const LEAD_SLOT_MARK = 'data-block="ai-lead"'
+
+/**
+ * VR2-20 (CUL-2300; spec §9.2): settle the draft's lead columns to what the copy being kept
+ * actually printed, before the keep freezes them. A lead the stored HTML does not carry is
+ * cleared, so a kept copy never claims a summary the vet did not get, and the verdict records
+ * why (`at_send`). Today the preview's stored HTML is rendered before any lead exists, so this
+ * clears every lead; when a send path renders the lead into the sent HTML, that path checks
+ * withdrawal (`leadAllowedAtSend`) before it renders, and this step then keeps the text.
+ * False on any failed read or write: the caller refuses the keep rather than freeze a misrecord.
+ */
+export async function settleLeadForKeep(io: Pick<LeadIO, 'readDraft' | 'writeDraft'>, storedHtml: string): Promise<boolean> {
+  const draft = await io.readDraft()
+  if (!draft.found) return false
+  if (draft.text !== null && storedHtml.includes(LEAD_SLOT_MARK)) return true
+  const prior = draft.verdict !== null && typeof draft.verdict === 'object' && !Array.isArray(draft.verdict)
+    ? (draft.verdict as Record<string, unknown>)
+    : null
+  const reason = draft.text !== null ? 'not_on_sent_copy' : prior === null ? 'not_ready' : 'not_printed'
+  return io.writeDraft(null, { ...(prior ?? {}), at_send: { printed: false, reason } } as unknown as StoredVerdict, null)
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** `{ mode: 'ai_lead', reportId, leaveOut? }`. Null for any other mode; an ai_lead request

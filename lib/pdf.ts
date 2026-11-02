@@ -79,6 +79,15 @@ export interface VetReport {
   reportVersion: 'v1' | 'v2';
   /** `user_profiles.last_name`, read only for a v2 report (CUL-2292). Null: unset or unreadable. */
   ownerSurname: string | null;
+  /**
+   * VR2-20 (CUL-2300): the draft saved copy the server kept of this exact `html`, which a send
+   * turns into the owner's kept copy (`lib/reportKeep.ts`). Null: not saved (v1, a failed save,
+   * or a server older than PR-20), and the report still sends; nothing is kept. Absent reads as
+   * null, so a report built elsewhere (a fixture, an older caller) is never kept by mistake.
+   */
+  reportId?: string | null;
+  /** The pet the report is of, as the request named it: the keep call names its row by both. */
+  petId?: string;
 }
 
 // ── B-534 — the report's freshness gate ─────────────────────────────────────
@@ -237,6 +246,8 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
     scopeBasis: typeof data.scope_basis === 'string' ? data.scope_basis : '',
     photoCount: typeof data.photo_count === 'number' ? data.photo_count : 0,
     trialAllowedListMissing: data.trial_allowed_list_missing === true,
+    petId: params.petId,
+    reportId: version === 'v2' && typeof data.report_id === 'string' && data.report_id.length > 0 ? data.report_id : null,
   };
 }
 

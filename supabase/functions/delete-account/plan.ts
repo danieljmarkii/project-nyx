@@ -28,9 +28,12 @@ import { isRangeNotSatisfiable, rowsOrThrow, type PullPage } from '../_shared/pu
 //     FK CASCADE (migration 033 flipped `created_by_user_id → SET NULL` to `CASCADE`),
 //     so — unlike medication, whose row survives with attribution nulled — both the food
 //     row AND its label photo are erased.
-//   • `vetReports` (CUL-2282): saved vet report PDFs. The `vet_reports` table has
-//     existed since migration 001; no path writes rows to it yet, so the bucket is
-//     simply never reached today. A READ error on that table is a hard failure in
+//   • `vetReports` (CUL-2282, CUL-2300): saved vet report copies. generate-report
+//     writes one row per Preview (a `draft`) and its print HTML at
+//     `{petId}/{reportId}.html`; a sent copy turns `kept` (migration 113). Every row is
+//     read here, drafts included, and every pet folder is swept after the auth delete;
+//     the frozen snapshot and the AI lead are columns, so they leave with the row's
+//     cascade and no second object holds them. A READ error on that table is a hard failure in
 //     index.ts (an erasure that cannot list what it must erase has not erased it),
 //     and its paths are re-scoped to the owned-pet-id set like vet documents. The
 //     Storage REMOVE stays best-effort like every bucket, which also tolerates the

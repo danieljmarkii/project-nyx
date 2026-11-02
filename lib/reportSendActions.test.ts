@@ -8,6 +8,8 @@ jest.mock('./pdf', () => ({
 }));
 jest.mock('expo-print', () => ({ printAsync: jest.fn(async () => undefined) }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
+const mockKeep = jest.fn();
+jest.mock('./reportKeep', () => ({ keepAfterSend: (...a: unknown[]) => mockKeep(...a) }));
 
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
@@ -93,5 +95,38 @@ describe('print, share, copy', () => {
   it('copy puts the subject over the body on the clipboard', async () => {
     expect(await copyEmailText('Subject', 'Body')).toBe('done');
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith('Subject\n\nBody');
+  });
+});
+
+describe('each send keeps the copy with what the platform answered (VR2-20, CUL-2300)', () => {
+  it('email hands over its answer, including a saved draft (which keeps nothing)', async () => {
+    await emailReport(report, { subject: 's', body: 'b', documentUris: [] }, mailWith('sent'));
+    await emailReport(report, { subject: 's', body: 'b', documentUris: [] }, mailWith('saved'));
+    expect(mockKeep.mock.calls).toEqual([
+      [report, 'email', 'sent'],
+      [report, 'email', 'saved'],
+    ]);
+  });
+
+  it('print keeps after a job, never after the owner backs out', async () => {
+    await printReport(report);
+    (Print.printAsync as jest.Mock).mockRejectedValueOnce(new Error('Printing did not complete'));
+    await printReport(report);
+    expect(mockKeep.mock.calls).toEqual([[report, 'print', 'done']]);
+  });
+
+  it('share hands over done or failed', async () => {
+    await shareReport(report);
+    (shareReportPdf as jest.Mock).mockResolvedValueOnce(false);
+    await shareReport(report);
+    expect(mockKeep.mock.calls).toEqual([
+      [report, 'share', 'done'],
+      [report, 'share', 'failed'],
+    ]);
+  });
+
+  it('copy keeps nothing: it hands over the email text, not the report', async () => {
+    await copyEmailText('s', 'b');
+    expect(mockKeep).not.toHaveBeenCalled();
   });
 });
