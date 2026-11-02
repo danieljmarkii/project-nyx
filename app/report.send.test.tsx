@@ -285,7 +285,7 @@ describe('Show on this phone opens the exam room (CUL-2299)', () => {
     expect(r.getByTestId('sheet-phone').props.children).toBe('phone');
     fireEvent.press(r.getByTestId('pick-phone'));
     await waitFor(() => expect(mockOpenExamRoom).toHaveBeenCalledTimes(1));
-    expect(mockOpenExamRoom.mock.calls[0][0]).toEqual({ phoneHtml: '<html>Nyx phone</html>' });
+    expect(mockOpenExamRoom.mock.calls[0][0]).toEqual({ phoneHtml: '<html>Nyx phone</html>', printHtml: '<html>Nyx</html>' });
     const { router } = jest.requireMock('expo-router') as { router: { push: jest.Mock } };
     expect(router.push).toHaveBeenCalledWith('/exam-room');
     expect(r.queryByTestId('send-confirmation')).toBeNull();

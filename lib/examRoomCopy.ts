@@ -5,23 +5,25 @@ import { transientDirectory } from './transientFiles';
 // sign-out wipe set").
 //
 // WHY A FILE, AND WHY HERE. The room must open with no network, in a clinic basement, so the
-// report it shows is on the device: the phone layout, exactly as the preview held it. It does
-// not fit in a route param, so it is staged as a file. The printed layout is not kept: the room
-// does not show it yet (app/exam-room.tsx), and what is not shown is not stored.
+// report it shows is on the device: the phone layout and the printed one, exactly as the
+// preview held them. Neither fits in a route param, so they are staged as files.
 //
-// A TRUST & SAFETY REQUIREMENT, not bookkeeping: the file is the whole clinical record of a
-// named household's animal. It lives in the TRANSIENT directory (lib/transientFiles.ts),
+// A TRUST & SAFETY REQUIREMENT, not bookkeeping: each file is the whole clinical record of a
+// named household's animal. They live in the TRANSIENT directory (lib/transientFiles.ts),
 // which `clearTransientFiles` deletes wholesale on every sign-out and account deletion
 // (`clearLocalData`), so the copy joins the wipe set by where it is written, with no list to
-// remember. No row names this file; that is exactly the class the transient directory exists
+// remember. No row names these files; that is exactly the class the transient directory exists
 // for. The room also deletes its copy when it closes, and every open overwrites the last one,
 // so at most one copy is ever on the phone. `examRoomCopy.test.ts` pins all three.
 
 export const EXAM_COPY_DIR = 'exam-room';
 const PHONE_FILE = 'phone.html';
+const PRINT_FILE = 'print.html';
 
 export interface ExamCopy {
   phoneHtml: string;
+  /** The printed layout, for "Printed page"; null when the report has none. */
+  printHtml: string | null;
 }
 
 /** Inside the transient directory, always: the sign-out wipe deletes that directory whole. */
@@ -48,10 +50,12 @@ export function stageExamCopy(copy: ExamCopy): boolean {
   try {
     const dir = examCopyDirectory();
     // FAIL CLOSED on a clear that did not take (privacy review on PR-19): nothing is ever staged
-    // beside an old copy, which could be another pet's report.
+    // beside an old copy, which could be another pet's report (a stale printed page would pair
+    // with a new phone page).
     if (dir.exists) throw new Error('the previous copy could not be removed');
     dir.create({ intermediates: true, idempotent: true });
     new File(dir, PHONE_FILE).writeSync(copy.phoneHtml);
+    if (copy.printHtml !== null) new File(dir, PRINT_FILE).writeSync(copy.printHtml);
     return true;
   } catch (e) {
     console.warn('[exam-room] the copy could not be staged:', e);
@@ -66,7 +70,8 @@ export function readExamCopy(): ExamCopy | null {
     const dir = examCopyDirectory();
     const phone = new File(dir, PHONE_FILE);
     if (!phone.exists) return null;
-    return { phoneHtml: phone.textSync() };
+    const print = new File(dir, PRINT_FILE);
+    return { phoneHtml: phone.textSync(), printHtml: print.exists ? print.textSync() : null };
   } catch (e) {
     console.warn('[exam-room] the copy could not be read:', e);
     return null;

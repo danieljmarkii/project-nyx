@@ -416,7 +416,7 @@ export default function ReportScreen() {
       // screen. Staging the copy can fail (a full disk); then the room never opens empty. Showing
       // the report is not a send, so it makes no confirmation card.
       if (action.target === 'phone') {
-        if (report.phoneHtml === null || !openExamRoom({ phoneHtml: report.phoneHtml }, (r) => router.push(r))) {
+        if (report.phoneHtml === null || !openExamRoom({ phoneHtml: report.phoneHtml, printHtml: report.html }, (r) => router.push(r))) {
           Alert.alert('Couldn’t show the report here', 'Please try again.');
         }
         return;

@@ -142,6 +142,28 @@ export function withExamCsp(html: string): string | null {
   return `${html.slice(0, at)}<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">${html.slice(at)}`;
 }
 
+/**
+ * THE PRINTED PAGE'S WARNING (PM ruling (a) on CUL-2430). The printed layout on a phone has no
+ * pin and no keep-together spacer, so its first screen could show the lead chart's bars with the
+ * confounder line below the fold. The room pins the line's own lead sentence above the printed
+ * view, natively, whenever the record has one: the same words the reflow pins (the model's
+ * `lead`, read back from the reflow's `confounder-verdict` part, never re-cut here). It never
+ * prints. Null when the record has no confounder line, and then the reflow pins nothing either.
+ */
+export function printedWarningOf(phoneHtml: string): string | null {
+  const m = /<p class="verdict" data-part="confounder-verdict" aria-hidden="true">([^<]*)<\/p>/.exec(phoneHtml);
+  if (!m) return null;
+  // `h()` (generate-report/render.ts) escapes these five; `&amp;` decodes last.
+  const text = m[1]
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+  return text.length > 0 ? text : null;
+}
+
 /** The reflow's viewport, as renderPhoneV2 writes it. */
 const PHONE_VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />';
 

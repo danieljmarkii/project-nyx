@@ -5,7 +5,7 @@ import { buildDocumentV2 } from '../../supabase/functions/generate-report/docume
 import { renderPrintV2 } from '../../supabase/functions/generate-report/renderPrintV2.ts'
 import { renderPhoneV2 } from '../../supabase/functions/generate-report/renderPhoneV2.ts'
 import { v2DocFixtures } from './fixtures.deno.ts'
-import { examRoomHtml } from '../../lib/examRoom.ts'
+import { examRoomHtml, printedWarningOf } from '../../lib/examRoom.ts'
 import { theme } from '../../constants/theme.ts'
 
 const out = Deno.args[0]
@@ -20,6 +20,12 @@ for (const [name, snap] of v2DocFixtures()) {
   const exam = examRoomHtml(phone, theme.colorNeutralDark)
   if (exam === null) throw new Error(`${name}: the exam room refused the phone document`)
   Deno.writeTextFileSync(`${out}/${name}.exam.html`, exam)
+  // The printed page's pinned warning (CUL-2430 ruling (a)): every record with a confounder line
+  // has one, and it is the line's own lead, word for word.
+  const conf = doc.blocks.find((b) => b.kind === 'confounder')
+  const warn = printedWarningOf(phone)
+  if (conf && conf.kind === 'confounder' && warn !== conf.lead) throw new Error(`${name}: the printed page would pin "${warn}", not the line's lead "${conf.lead}"`)
+  if (!conf && warn !== null) throw new Error(`${name}: a printed-page warning with no confounder line`)
   names.push(name)
 }
 Deno.writeTextFileSync(`${out}/fixtures.json`, JSON.stringify(names))

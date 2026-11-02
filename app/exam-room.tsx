@@ -14,11 +14,13 @@
 // released on Done, on unmount, on background and on idle. The app never changes system
 // brightness (exam-room.test.tsx greps for it).
 //
-// NO "PRINTED PAGE" YET (adversarial pass on PR-19). The printed layout on a phone screen has no
-// pinned warning and no keep-together spacer, so its first screen can show the lead chart's bars
-// without "Not a test of the diet alone." Spec §10.6's button is held off until the PM rules how
-// that view carries the warning (filed with the class, Gate: clinical); the room shows only the
-// large-type pages, which hold the rule on every page.
+// "PRINTED PAGE" CARRIES ITS WARNING (PM ruling (a) on CUL-2430). The printed layout on a phone
+// has no pin and no keep-together spacer, so its first screen could show the lead chart's bars
+// without "Not a test of the diet alone." (adversarial pass on PR-19). Above the printed view the
+// room pins the line's own lead sentence (`printedWarningOf`, the words the reflow pins), as a
+// sibling of the view, never an overlay, so it is on screen at every scroll and zoom of the page
+// and covers none of it. It is native, so it never prints. No confounder line, no pin, as in the
+// reflow. The printed page keeps its own zoom: the pin does not depend on where the page is.
 //
 // THE OFFLINE COPY (lib/examRoomCopy.ts) lives in the transient directory the sign-out wipe
 // deletes, and this screen deletes it when it closes.
@@ -45,16 +47,22 @@ import {
   examRoomHtml,
   keepAwakeWanted,
   parseExamMessage,
+  printedWarningOf,
   sheetLabel,
+  withExamCsp,
 } from '../lib/examRoom';
 import { clearExamCopy, readExamCopy } from '../lib/examRoomCopy';
 import { androidTextZoom, isPreviewLoadAllowed } from '../lib/reportPreviewV2';
 
 export const EXAM_PAGES_TEST_ID = 'exam-room-pages';
 export const EXAM_PAGER_TEST_ID = 'exam-room-pager';
+export const EXAM_PRINTED_TEST_ID = 'exam-room-printed';
+export const EXAM_PRINTED_WARNING_TEST_ID = 'exam-room-printed-warning';
 export const EXAM_KEEP_AWAKE_TAG = 'nyx-exam-room';
 
 export const EXAM_COPY = {
+  printed: 'Printed page',
+  pages: 'Large type',
   done: 'Done',
   missing: 'This report is no longer on this phone. Open it again from the preview.',
   pagerLabel: 'Report sheets',
@@ -76,11 +84,15 @@ export default function ExamRoomScreen() {
   // Read once: the copy is fixed for the life of the room.
   const [copy] = useState(() => readExamCopy());
   const html = useMemo(() => (copy ? examRoomHtml(copy.phoneHtml, theme.colorNeutralDark) : null), [copy]);
+  const printHtml = useMemo(() => (copy?.printHtml != null ? withExamCsp(copy.printHtml) : null), [copy]);
+  const printedWarning = useMemo(() => (copy ? printedWarningOf(copy.phoneHtml) : null), [copy]);
   // The copy goes when the room closes, however it closes (Done, Android back, a dismissal).
   useEffect(() => () => clearExamCopy(), []);
 
   const web = useRef<ComponentRef<typeof WebView>>(null);
   const [pager, setPager] = useState<{ page: number; of: number }>({ page: 1, of: 1 });
+  const [printed, setPrinted] = useState(false);
+  const [printedMounted, setPrintedMounted] = useState(false);
 
   // Keep-awake: open, foregrounded, touched within the idle window. `idle` is STATE the timer
   // sets unconditionally (code review on PR-19): re-deriving it from the clock at render let a
@@ -167,6 +179,12 @@ export default function ExamRoomScreen() {
     web.current?.injectJavaScript(examGoScript(to));
   };
 
+  const togglePrinted = () => {
+    touch();
+    setPrintedMounted(true);
+    setPrinted((p) => !p);
+  };
+
   const done = () => {
     deactivateKeepAwake(EXAM_KEEP_AWAKE_TAG).catch(() => undefined);
     router.back();
@@ -176,18 +194,27 @@ export default function ExamRoomScreen() {
     <Animated.View style={[styles.root, { opacity: fade }]} onTouchStart={touch} accessibilityViewIsModal>
       <StatusBar style="light" />
       <View style={[styles.pager, { paddingTop: insets.top + theme.space1 }]}>
-        <View
-          testID={EXAM_PAGER_TEST_ID}
-          style={styles.label}
-          accessible
-          accessibilityRole="adjustable"
-          accessibilityLabel={EXAM_COPY.pagerLabel}
-          accessibilityValue={{ text: sheetLabel(pager.page, pager.of) }}
-          accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-          onAccessibilityAction={(ev) => go(pager.page + (ev.nativeEvent.actionName === 'increment' ? 1 : -1))}
-        >
-          <ThemedText style={styles.labelText}>{sheetLabel(pager.page, pager.of)}</ThemedText>
-        </View>
+        {printed ? (
+          <View style={styles.label} />
+        ) : (
+          <View
+            testID={EXAM_PAGER_TEST_ID}
+            style={styles.label}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel={EXAM_COPY.pagerLabel}
+            accessibilityValue={{ text: sheetLabel(pager.page, pager.of) }}
+            accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+            onAccessibilityAction={(ev) => go(pager.page + (ev.nativeEvent.actionName === 'increment' ? 1 : -1))}
+          >
+            <ThemedText style={styles.labelText}>{sheetLabel(pager.page, pager.of)}</ThemedText>
+          </View>
+        )}
+        {html !== null && printHtml !== null && (
+          <Pressable style={styles.pill} onPress={togglePrinted} accessibilityRole="button">
+            <ThemedText style={styles.pillText}>{printed ? EXAM_COPY.pages : EXAM_COPY.printed}</ThemedText>
+          </Pressable>
+        )}
         <Pressable style={styles.pill} onPress={done} accessibilityRole="button">
           <ThemedText style={styles.pillText}>{EXAM_COPY.done}</ThemedText>
         </Pressable>
@@ -198,26 +225,68 @@ export default function ExamRoomScreen() {
             <ThemedText style={styles.missingText}>{EXAM_COPY.missing}</ThemedText>
           </View>
         ) : (
-          <WebView
-            key={docKey}
-            ref={web}
-            testID={EXAM_PAGES_TEST_ID}
-            style={styles.web}
-            originWhitelist={['about:*', 'data:*']}
-            source={{ html }}
-            // The reflow's layout script and the paging script must run (lib/examRoom.ts).
-            javaScriptEnabled
-            onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
-            // Android opens a new window in a fresh WebView that skips the load predicate
-            // (privacy review on PR-19): the room opens none.
-            onOpenWindow={refuseWindow}
-            // No pinch on Android either (lib/examRoom.ts EXAM_VIEWPORT locks it on iOS).
-            setBuiltInZoomControls={false}
-            textZoom={Platform.OS === 'android' ? androidTextZoom(fontScale) : undefined}
-            onMessage={onMessage}
-            onScroll={touch}
-            showsVerticalScrollIndicator
-          />
+          <>
+            <View
+              style={StyleSheet.absoluteFill}
+              importantForAccessibility={printed ? 'no-hide-descendants' : 'auto'}
+              accessibilityElementsHidden={printed}
+              pointerEvents={printed ? 'none' : 'auto'}
+            >
+              <WebView
+                key={docKey}
+                ref={web}
+                testID={EXAM_PAGES_TEST_ID}
+                style={styles.web}
+                originWhitelist={['about:*', 'data:*']}
+                source={{ html }}
+                // The reflow's layout script and the paging script must run (lib/examRoom.ts).
+                javaScriptEnabled
+                onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+                // Android opens a new window in a fresh WebView that skips the load predicate
+                // (privacy review on PR-19): the room opens none.
+                onOpenWindow={refuseWindow}
+                // No pinch on Android either (lib/examRoom.ts EXAM_VIEWPORT locks it on iOS).
+                setBuiltInZoomControls={false}
+                textZoom={Platform.OS === 'android' ? androidTextZoom(fontScale) : undefined}
+                onMessage={onMessage}
+                onScroll={touch}
+                showsVerticalScrollIndicator
+              />
+            </View>
+            {printedMounted && printHtml !== null && (
+              <View
+                style={[StyleSheet.absoluteFill, styles.printed, printed ? styles.shown : styles.hidden]}
+                importantForAccessibility={printed ? 'auto' : 'no-hide-descendants'}
+                accessibilityElementsHidden={!printed}
+                pointerEvents={printed ? 'auto' : 'none'}
+              >
+                {printedWarning !== null && (
+                  // The line's own words are in the page below; this repeat is for the eye only,
+                  // as the reflow's pin is (aria-hidden there).
+                  <View
+                    testID={EXAM_PRINTED_WARNING_TEST_ID}
+                    style={styles.printedWarning}
+                    importantForAccessibility="no-hide-descendants"
+                    accessibilityElementsHidden
+                  >
+                    <ThemedText style={styles.printedWarningText}>{printedWarning}</ThemedText>
+                  </View>
+                )}
+                <WebView
+                  testID={EXAM_PRINTED_TEST_ID}
+                  style={styles.web}
+                  originWhitelist={['about:*', 'data:*']}
+                  source={{ html: printHtml }}
+                  // The printed page carries no script.
+                  javaScriptEnabled={false}
+                  onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+                  onOpenWindow={refuseWindow}
+                  // No script to report a touch, so its scroll keeps the screen awake.
+                  onScroll={touch}
+                />
+              </View>
+            )}
+          </>
         )}
       </View>
     </Animated.View>
@@ -246,6 +315,22 @@ const styles = StyleSheet.create({
   pillText: { fontSize: theme.textSM, fontWeight: theme.weightMedium, color: theme.colorTextOnDark },
   frame: { flex: 1 },
   web: { flex: 1, backgroundColor: theme.colorNeutralDark },
+  printed: { flexDirection: 'column' },
+  shown: { opacity: 1 },
+  hidden: { opacity: 0 },
+  printedWarning: {
+    backgroundColor: theme.colorSurface,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colorBorder,
+  },
+  printedWarningText: {
+    fontSize: theme.textLG,
+    lineHeight: theme.lineHeightLG,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorEventSymptomInk,
+  },
   missing: { flex: 1, justifyContent: 'center', paddingHorizontal: theme.space3 },
   missingText: { color: theme.colorTextOnDark, textAlign: 'center' },
 });

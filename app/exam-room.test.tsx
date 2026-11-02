@@ -37,25 +37,46 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => ({ width: 390, height: 844, scale: 3, fontScale: mockFontScale }),
 }));
-let mockCopy: { phoneHtml: string } | null = null;
+let mockCopy: { phoneHtml: string; printHtml: string | null } | null = null;
 const mockClear = jest.fn();
 jest.mock('../lib/examRoomCopy', () => ({ readExamCopy: () => mockCopy, clearExamCopy: () => mockClear() }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { AccessibilityInfo } from 'react-native';
-import ExamRoomScreen, { EXAM_COPY, EXAM_KEEP_AWAKE_TAG, EXAM_PAGER_TEST_ID, EXAM_PAGES_TEST_ID } from './exam-room';
+import ExamRoomScreen, {
+  EXAM_COPY,
+  EXAM_KEEP_AWAKE_TAG,
+  EXAM_PAGER_TEST_ID,
+  EXAM_PAGES_TEST_ID,
+  EXAM_PRINTED_TEST_ID,
+  EXAM_PRINTED_WARNING_TEST_ID,
+} from './exam-room';
 import { EXAM_IDLE_MS } from '../lib/examRoom';
 
-const PHONE = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /></head><body><main class="sheet" data-sheet="1">Mochi</main><section class="sheet back" data-sheet="2">b</section></body></html>';
+const PRINT = '<html><head></head><body>printed</body></html>';
+const PHONE = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /></head><body><main class="sheet" data-sheet="1">Mochi<div class="keep"><p class="verdict" data-part="confounder-verdict" aria-hidden="true">Not a test of the diet alone.</p></div></main><section class="sheet back" data-sheet="2">b</section></body></html>';
 
 beforeEach(() => {
   jest.useFakeTimers();
   mockActive = true;
   mockFontScale = 1;
-  mockCopy = { phoneHtml: PHONE };
+  mockCopy = { phoneHtml: PHONE, printHtml: PRINT };
   [mockInject, mockBack, mockActivate, mockDeactivate, mockClear].forEach((m) => m.mockClear());
 });
 afterEach(() => jest.useRealTimers());
+
+type Node = { parent: Node | null; children: unknown[] };
+/** True when `a` sits in an earlier sibling branch than `b` under their nearest shared ancestor:
+ *  stacked above it in a column, never laid over it. */
+function comesBefore(a: unknown, b: unknown): boolean {
+  const chain = (n: Node | null): Node[] => (n ? [n, ...chain(n.parent)] : []);
+  const ca = chain(a as Node);
+  const cb = chain(b as Node);
+  const shared = ca.find((n) => cb.includes(n));
+  if (!shared) return false;
+  const branch = (c: Node[]) => c[c.indexOf(shared) - 1];
+  return shared.children.indexOf(branch(ca)) < shared.children.indexOf(branch(cb));
+}
 
 function post(s: ReturnType<typeof render>, data: unknown) {
   act(() => {
@@ -160,12 +181,47 @@ it('Done lets go of keep-awake and closes; closing deletes the copy', () => {
   expect(mockDeactivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
 });
 
-it('offers no "Printed page" until it can carry the warning (held, adversarial pass on PR-19), and the pages never zoom', () => {
+it('the large-type pages never zoom', () => {
   const s = render(<ExamRoomScreen />);
-  expect(s.queryByText('Printed page')).toBeNull();
   const web = s.getByTestId(EXAM_PAGES_TEST_ID);
   expect(web.props.setBuiltInZoomControls).toBe(false);
   expect(web.props.source.html).toContain('user-scalable=no');
+});
+
+describe('"Printed page" carries its warning (PM ruling (a) on CUL-2430)', () => {
+  it('swaps to the printed layout in place, script-free, with the line’s lead sentence pinned above it', () => {
+    const s = render(<ExamRoomScreen />);
+    expect(s.queryByTestId(EXAM_PRINTED_TEST_ID)).toBeNull();
+    fireEvent.press(s.getByText(EXAM_COPY.printed));
+    const printed = s.getByTestId(EXAM_PRINTED_TEST_ID);
+    expect(printed.props.javaScriptEnabled).toBe(false);
+    expect(printed.props.source.html).toContain('printed');
+    expect(printed.props.source.html).toContain('http-equiv="Content-Security-Policy"');
+    expect(printed.props.onShouldStartLoadWithRequest({ url: 'https://example.com' })).toBe(false);
+    expect(printed.props.originWhitelist).toEqual(['about:*', 'data:*']);
+    expect(printed.props.onOpenWindow).toBeDefined();
+    // The pin: the reflow's own words, a sibling ABOVE the printed view (never over it).
+    // Hidden from VoiceOver by design (the full line is read in the page), so queried as such.
+    const pin = s.getByTestId(EXAM_PRINTED_WARNING_TEST_ID, { includeHiddenElements: true });
+    expect(pin.props.accessibilityElementsHidden).toBe(true);
+    expect(s.getByText('Not a test of the diet alone.', { includeHiddenElements: true })).toBeTruthy();
+    expect(comesBefore(pin, printed)).toBe(true);
+    expect(s.getByText(EXAM_COPY.pages)).toBeTruthy();
+  });
+
+  it('a record with no confounder line pins nothing, as the reflow pins nothing', () => {
+    mockCopy = { phoneHtml: PHONE.replace(/<div class="keep">.*?<\/div>/, ''), printHtml: PRINT };
+    const s = render(<ExamRoomScreen />);
+    fireEvent.press(s.getByText(EXAM_COPY.printed));
+    expect(s.getByTestId(EXAM_PRINTED_TEST_ID)).toBeTruthy();
+    expect(s.queryByTestId(EXAM_PRINTED_WARNING_TEST_ID, { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('offers no "Printed page" when the copy has no printed layout', () => {
+    mockCopy = { phoneHtml: PHONE, printHtml: null };
+    const s = render(<ExamRoomScreen />);
+    expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
+  });
 });
 
 it('is the one route that may turn sideways', () => {

@@ -11,6 +11,7 @@ import {
   examRoomHtml,
   keepAwakeWanted,
   parseExamMessage,
+  printedWarningOf,
   sheetLabel,
   withExamCsp,
 } from './examRoom';
@@ -102,5 +103,19 @@ describe('examRoomHtml', () => {
   it('refuses a document that is not a v2 phone reflow', () => {
     expect(examRoomHtml('<html><head></head><body>v1</body></html>', '#000')).toBeNull();
     expect(examRoomHtml('', '#000')).toBeNull();
+  });
+});
+
+describe('printedWarningOf (PM ruling (a) on CUL-2430)', () => {
+  it('reads back the reflow’s own pinned lead sentence, unescaped', () => {
+    const html = '<div class="keep"><p class="verdict" data-part="confounder-verdict" aria-hidden="true">Not a test of the diet alone.</p></div>';
+    expect(printedWarningOf(html)).toBe('Not a test of the diet alone.');
+    const bowl = '<p class="verdict" data-part="confounder-verdict" aria-hidden="true">A free-fed bowl &amp; a &quot;treat&quot; jar &lt;tuna&gt; Mira&#39;s</p>';
+    expect(printedWarningOf(bowl)).toBe('A free-fed bowl & a "treat" jar <tuna> Mira\'s');
+  });
+
+  it('is null where the record has no confounder line (the layout script names the part, but no element carries it)', () => {
+    expect(printedWarningOf('<script>var rep = unit.querySelector(\'[data-part="confounder-verdict"]\');</script>')).toBeNull();
+    expect(printedWarningOf('')).toBeNull();
   });
 });
