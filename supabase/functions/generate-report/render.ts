@@ -6763,10 +6763,31 @@ function legibleReadCount(n: number): string {
  * unread. The sentence is scoped to what is not listed, so it never asserts an absence and never
  * becomes a "0 of N"; its reasons are the nothing-seen branch's, word for word.
  */
-const VOMIT_NOT_LISTED_CAVEAT =
-  'What is not listed here is <b>not</b> a clearance &mdash; a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads.'
-const STOOL_NOT_LISTED_CAVEAT =
-  'What is not listed here is <b>not</b> a clearance &mdash; a photo cannot exclude bleeding, digested (melena) blood darkens the whole stool rather than showing as red, and these are AI reads.'
+// The cold read on the first cut: a caveat naming only bleeding left the OTHER finding (a foreign
+// body beside a blood flag, or blood beside a foreign-material flag) unguarded, and nothing tied it
+// to the incidents nobody read. So it covers every finding, and names the unread count when there is
+// one. A zero is never printed: "0 of 7 … no legible read" would put a "0 of" beside a finding.
+function notListedCaveat(unread: number, total: number, noun: string, reasons: string): string {
+  const unreadBit =
+    unread > 0
+      ? ` ${num(unread)} of ${num(total)} ${noun}${total === 1 ? '' : 's'} had no legible read.`
+      : ''
+  return `What is not listed here is <b>not</b> a clearance for any finding.${unreadBit} ${reasons}`
+}
+const vomitNotListedCaveat = (unread: number, total: number) =>
+  notListedCaveat(
+    unread,
+    total,
+    'incident',
+    'A photo cannot exclude bleeding or a swallowed object, digested (coffee-ground) blood photographs poorly, and these are AI reads.',
+  )
+const stoolNotListedCaveat = (unread: number, total: number) =>
+  notListedCaveat(
+    unread,
+    total,
+    'stool event',
+    'A photo cannot exclude bleeding or mucus, digested (melena) blood darkens the whole stool rather than showing as red, and these are AI reads. Fresh blood or dark tarry stool warrants a vet conversation regardless of a photo.',
+  )
 
 export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers = V1_SECTION_POINTERS): string {
   const p = snap.vomitPhenotype
@@ -6880,7 +6901,7 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
         <span class="h">Present findings</span>
         ${lines.join('<br/>')}<br/>Shown because present. ${aiBadge()} ${
       blood.length > 0 || foreign.length > 0 ? 'These lead the flags for review above.' : ''
-    }<br/>${VOMIT_NOT_LISTED_CAVEAT}
+    }<br/>${vomitNotListedCaveat(p.totalIncidents - assessed, p.totalIncidents)}
       </div>`
   }
 
@@ -6968,9 +6989,11 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // CUL-2390 instance 3 — A SHARE NEEDS A COUNTED DENOMINATOR. Normal stools are logged now and
   // then, so "Normal ×7 · Loose ×5" from 12 logs in 30 days drew a bar that read as "mostly
   // formed" when it is a share of LOGS, not of stools passed. Below one normal stool a day across
-  // the window the bar goes and the two numbers print as counts, with the reason beside them. A
-  // proportion is drawn only when the normal logs could plausibly cover the bowel.
-  const countsOnly = st.normalCount < st.windowDays
+  // the window the bar goes and the two numbers print as counts, with the reason beside them. The
+  // adversarial pass found the floor alone still drew a 60 / 40 bar from normal logs bunched onto
+  // 12 of 30 days, so any day with no log at all also drops it: a share is drawn only when every
+  // day was logged and the normal logs reach one a day. Both conditions only remove the bar.
+  const countsOnly = st.normalCount < st.windowDays || st.loggedDays < st.windowDays
   const noBar = single || countsOnly
   const barHtml = noBar
     ? ''
@@ -6996,7 +7019,7 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
       .map((c) => `${noBar ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
       .join('&nbsp;&middot;&nbsp; ') +
     (countsOnly && st.total > 0
-      ? '<br/>Normal stools are logged now and then, so these are counts of logs, not a share of stools passed.'
+      ? '<br/>Normal stools are logged now and then, so a count here is a count of logs, not a share of stools passed.'
       : '')
 
   // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
@@ -7032,7 +7055,7 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     : ns.kind === 'on'
     ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> the owner's app added a dedicated normal-stool entry, so normal stools before that date are under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
     : ns.kind === 'since'
-    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal share here will look better from the change alone.${shortcutTail}`
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal ${countsOnly ? 'count' : 'share'} here will look better from the change alone.${shortcutTail}`
     : ns.kind === 'between'
     ? `<br/><b>Logging changed between ${nsDay(ns.from)} and ${nsDay(ns.to)}:</b> the owner's app added a dedicated normal-stool entry in that span (the phone's and the server's clocks disagree on the day), so normal stools before it are under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
     : ns.kind === 'by'
@@ -7105,7 +7128,7 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     sideHtml = `
       <div class="present">
         <span class="h">Present findings</span>
-        ${lines.join('<br/>')}<br/>${aiBadge()}<br/>${STOOL_NOT_LISTED_CAVEAT}
+        ${lines.join('<br/>')}<br/>${aiBadge()}<br/>${stoolNotListedCaveat(ai.totalIncidents - ai.assessedCount, ai.totalIncidents)}
       </div>`
   }
 
@@ -8625,11 +8648,12 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
     return bits.join(' &middot; ')
   }
   // CUL-2390 instance 4: a pending read was never read, so "not clear enough to read" told a vet
-  // there was nothing worth asking to see. Pending says pending; failed and uncertain were read
+  // there was nothing worth asking to see. Pending says pending, anchored to the report so a vet
+  // does not wait on a read that may never come; failed and uncertain were read
   // and keep the legibility wording.
   if (ph.status === 'failed') return 'present but not legible — not clear enough to read'
   if (ph.status === 'uncertain') return 'read uncertain — not clear enough to read'
-  return 'still processing — not read yet'
+  return 'still processing — not read as of this report'
 }
 
 function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
@@ -9235,7 +9259,9 @@ export function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
     ? `<img class="phimg" src="${p.dataUri}" alt="Owner photo of a ${h(typeLabel.toLowerCase())} incident on ${h(date)}" />`
     : `<div class="phimg phimg-missing">Photo could not be embedded</div>`
   const readBits = phenotypeFieldBits(p.phenotype)
-  const readLine = readBits ? `<div class="phread"><b>Photo:</b> ${readBits} ${aiBadge()}</div>` : ''
+  // An unread photo carries no AI badge (CUL-2390 cold read): the badge claims a read exists.
+  const badge = p.phenotype && p.phenotype.status !== 'pending' ? ` ${aiBadge()}` : ''
+  const readLine = readBits ? `<div class="phread"><b>Photo:</b> ${readBits}${badge}</div>` : ''
   const note = p.notes ? `<div class="phnote">${h(p.notes)}</div>` : ''
   return `
   <figure class="phcard">

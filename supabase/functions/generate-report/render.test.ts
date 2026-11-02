@@ -8428,10 +8428,12 @@ Deno.test('stool: ruling 1a — the line gives the counts on each side of the da
 })
 
 Deno.test('stool: ruling 2a — a change before the window says so, naming the server day, with the protecting tail', () => {
+  // NS_STOOL logs fewer normal stools than the window's days, so no share is drawn and the line
+  // says "count" (CUL-2390): "normal share" beside "not a share of stools passed" contradicted it.
   const exact = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: true } } }))
   assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> the owner's app added a dedicated normal-stool entry\./.test(exact))
   // "covering any period before", never "from before that date", which reads as the date a report was MADE.
-  assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
+  assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal count here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
   const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
   assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
 })
@@ -9062,13 +9064,13 @@ Deno.test('CUL-2390 instance 2 — a present finding keeps the not-a-clearance c
     },
   }))))
   assert.match(stool, /Present findings/)
-  assert.match(stool, /What is not listed here is not a clearance — a photo cannot exclude bleeding/)
+  assert.match(stool, /What is not listed here is not a clearance for any finding\. 4 of 7 stool events had no legible read\. A photo cannot exclude bleeding or mucus.*Fresh blood or dark tarry stool warrants a vet conversation regardless of a photo\./)
 
   const vomit = flat2390(vomitSection(renderReport(base({
     vomitPhenotype: emptyPhenotype({ foreignPresent: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', note: null }] }),
   }))))
   assert.match(vomit, /Possible foreign material/)
-  assert.match(vomit, /What is not listed here is not a clearance — a photo cannot exclude bleeding/)
+  assert.match(vomit, /What is not listed here is not a clearance for any finding\.( \d+ of \d+ incidents? had no legible read\.)? A photo cannot exclude bleeding or a swallowed object/)
   // The caveat never turns into an absence claim for the missing finding.
   assert.ok(!/blood[^.]*not seen|not seen[^.]*blood/i.test(vomit), vomit)
 })
@@ -9080,7 +9082,7 @@ Deno.test('CUL-2390 instance 3 — occasional normal-stool logging drops the bar
   assert.ok(!/class="barmix"/.test(thin), 'no proportion bar from 7 normal logs in 30 days')
   assert.ok(!/class="sw"/.test(thin), 'no swatches without a bar')
   assert.match(thin, /Normal \/ formed &times;7&nbsp;&middot;&nbsp; Loose \/ watery &times;5/)
-  assert.match(flat2390(thin), /counts of logs, not a share of stools passed/)
+  assert.match(flat2390(thin), /a count of logs, not a share of stools passed/)
   // Boundary from the rule itself: normal = windowDays − 1 still counts-only; = windowDays draws.
   const below = stoolSection(renderReport(base({
     stool: { total: 34, normalCount: 29, looseCount: 5, windowDays: 30, loggedDays: 30, normalShortcut: null, ai: null },
@@ -9090,7 +9092,13 @@ Deno.test('CUL-2390 instance 3 — occasional normal-stool logging drops the bar
     stool: { total: 35, normalCount: 30, looseCount: 5, windowDays: 30, loggedDays: 30, normalShortcut: null, ai: null },
   })))
   assert.ok(/class="barmix"/.test(dense), 'a normal per day across the window draws the bar')
-  assert.ok(!/counts of logs/.test(dense), 'and drops the counts-only clause')
+  assert.ok(!/count of logs/.test(dense), 'and drops the counts-only clause')
+  // Adversarial R1: normal logs bunched onto part of the window draw no share either.
+  const bunched = stoolSection(renderReport(base({
+    stool: { total: 50, normalCount: 30, looseCount: 20, windowDays: 30, loggedDays: 12, normalShortcut: null, ai: null },
+  })))
+  assert.ok(!/class="barmix"/.test(bunched), 'no 60 / 40 bar from logs on 12 of 30 days')
+  assert.match(flat2390(bunched), /a count of logs, not a share/)
 })
 
 Deno.test('CUL-2390 instance 4 — a pending photo read is worded as pending, never "not clear enough"', () => {
@@ -9104,8 +9112,10 @@ Deno.test('CUL-2390 instance 4 — a pending photo read is worded as pending, ne
       occurredAtEarliest: null, occurredAtLatest: null, notes: null, safety: null, phenotype: ph(status), dataUri: null,
     } as never, 'UTC'))
   const pending = card('pending')
-  assert.match(pending, /still processing — not read yet/)
+  assert.match(pending, /still processing — not read as of this report/)
   assert.ok(!/not clear enough/.test(pending), pending)
+  assert.ok(!/AI read/.test(pending), 'an unread photo carries no AI-read badge')
+  assert.match(card('failed'), /AI read/)
   // Failed and uncertain were read, so they keep the legibility wording.
   assert.match(card('failed'), /present but not legible — not clear enough to read/)
   assert.match(card('uncertain'), /read uncertain — not clear enough to read/)
