@@ -694,14 +694,16 @@ describe('vet_reports draft summary withdrawal clear (CUL-2377, migration 118)',
 
 // CUL-2445 (migration 119): every send of a kept copy is a row in
 // vet_report_departures, written by a trigger on vet_reports, never by a role.
-// The behaviour is the probe in the PR (scripts/probes/vet-report-119, 36
-// cases, 9 mutants killed). This pins the shapes a later file could quietly
+// The behaviour is the probe in the PR (scripts/probes/vet-report-119, 40
+// cases, 11 mutants killed). This pins the shapes a later file could quietly
 // undo. MUTANTS, run 2026-11-02 against 119 (each applied to the real file,
 // this suite run, the file restored), all killed: the policy opened to every
 // row; INSERT granted to service_role; ON CONFLICT dropped from the logger;
 // a report column formatted into the guard's RAISE; the guard's status test
 // dropped; the logger's service_role REVOKE dropped; the FK's CASCADE made NO
-// ACTION; the logger made UPDATE-only. Blind spots, stated: a DO block's EXECUTE; a trigger disabled in the
+// ACTION; the logger made UPDATE-only. After rls-privacy-reviewer pass 1: the
+// time bound dropped from the guard (F1); the logger's row-count check dropped
+// (F3). Blind spots, stated: a DO block's EXECUTE; a trigger disabled in the
 // dashboard (VERIFY covers it); a later CREATE OR REPLACE TRIGGER under another
 // name calling the same function with a narrower WHEN.
 describe('vet_report_departures, the send history (CUL-2445, migration 119)', () => {
@@ -754,7 +756,13 @@ describe('vet_report_departures, the send history (CUL-2445, migration 119)', ()
       "IF NEW.status = 'kept' AND NEW.shared_at IS NOT NULL AND ( TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'kept' OR NEW.shared_via IS DISTINCT FROM OLD.shared_via OR NEW.shared_at IS DISTINCT FROM OLD.shared_at ) THEN",
     );
     expect(flat).toContain('ON CONFLICT ON CONSTRAINT vet_report_departures_once DO NOTHING;');
-    expect(flat).not.toMatch(/RAISE/);
+    // A write swallowed by anything but the natural key fails the send (pass 1, F3).
+    expect(flat).toContain(
+      'IF NOT FOUND AND NOT EXISTS ( SELECT 1 FROM public.vet_report_departures d WHERE d.report_id = NEW.id AND d.shared_at = NEW.shared_at AND d.shared_via = NEW.shared_via ) THEN RAISE EXCEPTION',
+    );
+    const raises = [...flat.matchAll(/RAISE EXCEPTION '([^']*)',([^;]*);/g)];
+    expect(raises.length).toBe(1);
+    expect(raises[0][2].split(/ USING /)[0].trim()).toBe('NEW.id');
     const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_log_departure\b/);
     expect(create).toBeGreaterThan(-1);
     expect(sql.slice(create, sql.indexOf(';', create)).replace(/\s+/g, ' ')).toBe(
@@ -770,6 +778,8 @@ describe('vet_report_departures, the send history (CUL-2445, migration 119)', ()
     expect(flat).toContain(
       "WHERE r.id = NEW.report_id AND r.pet_id = NEW.pet_id AND r.status = 'kept' AND r.shared_via = NEW.shared_via AND r.shared_at = NEW.shared_at",
     );
+    // A send inside its copy's lifetime, never an invented time (pass 1, F1).
+    expect(flat).toContain("AND NEW.shared_at >= r.created_at - interval '5 minutes' AND NEW.shared_at <= now() + interval '5 minutes' ) THEN");
     const raises = [...flat.matchAll(/RAISE EXCEPTION '([^']*)',([^;]*);/g)];
     expect(raises.length).toBe(1);
     const args = raises[0][2].split(/ USING /)[0].split(',').map((a) => a.trim()).filter(Boolean);

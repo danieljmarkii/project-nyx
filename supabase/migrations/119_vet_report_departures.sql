@@ -64,8 +64,21 @@
 --   * Sends before this file. Each restamp overwrote the last, so only a kept
 --     copy's latest send is known; §6 backfills that one. An earlier send of a
 --     copy kept before 119 is not recoverable and is not listed.
---   * shared_at is still the writer's claim (113's residual): the departure
---     repeats it, it does not bound it.
+--   * shared_at is still the writer's claim (113's residual), now bounded: §4
+--     admits a departure only between its report's creation and now (5 minutes
+--     of clock slack each way; rls-privacy-reviewer pass 1, F1). Inside that
+--     band the service role can still log a send that did not happen, and the
+--     list keeps it: append only means no one can remove it while the copy
+--     exists. generate-report stamps server time; nothing else writes it.
+--   * "Latest" is the latest WRITTEN stamp, not the latest instant (pass 1,
+--     F2): two sends racing can commit out of order, so vet_reports.shared_at
+--     may trail the newest departure by the race's width. The detail screen
+--     reads this table, ordered by time, so it shows every send in order; the
+--     library list sorts on the stamp.
+--   * ALTER TABLE ... DISABLE TRIGGER, like session_replication_role below, is
+--     the table owner's and turns the append-only guard off (pass 1, F4).
+--   * Export (B-041, not built): departures are the owner's data and belong in
+--     the export when it lands (pass 1, F4).
 --   * Two sends of one copy in the same millisecond by the same route are one
 --     departure (the natural key). Both sends still succeed.
 --   * session_replication_role = replica skips every trigger, the logger
@@ -80,7 +93,13 @@
 --                 functions and five triggers added. No column, row or policy
 --                 of an existing table changed.
 --   Backfill:     §6: one departure per kept vet_reports row, from its current
---                 shared_via / shared_at. Count to expect afterwards:
+--                 shared_via / shared_at. §4's time bound applies to it, so
+--                 before applying (expect 0; a row here fails the apply whole):
+--                   SELECT count(*) FROM public.vet_reports
+--                    WHERE status = 'kept'
+--                      AND (shared_at < created_at - interval '5 minutes'
+--                           OR shared_at > now() + interval '5 minutes');
+--                 Count to expect afterwards:
 --                   SELECT count(*) FROM public.vet_reports WHERE status = 'kept';
 --                 equals
 --                   SELECT count(*) FROM public.vet_report_departures;
@@ -175,6 +194,11 @@ BEGIN
           AND r.status = 'kept'
           AND r.shared_via = NEW.shared_via
           AND r.shared_at = NEW.shared_at
+          -- A send is no earlier than its copy and no later than now (rls-privacy-reviewer
+          -- pass 1, F1): an append-only list must not hold a stamp the writer invented. Five
+          -- minutes of slack each way for the Edge Function's clock against the database's.
+          AND NEW.shared_at >= r.created_at - interval '5 minutes'
+          AND NEW.shared_at <= now() + interval '5 minutes'
      ) THEN
     -- NEW.* only, one message for every cause (C-31).
     RAISE EXCEPTION
@@ -196,7 +220,7 @@ CREATE TRIGGER trg_vet_report_departures_is_stamp
   FOR EACH ROW EXECUTE FUNCTION public.vet_report_departure_is_stamp();
 
 COMMENT ON FUNCTION public.vet_report_departure_is_stamp() IS
-  'CUL-2445 (119): a vet_report_departures row is admitted only when its report is kept, is the same pet, and carries exactly this shared_via and shared_at now, so no writer, the owner included, can log a send the report never stamped. SECURITY DEFINER (reads vet_reports for any writer), search_path pinned, EXECUTE revoked from every caller role; one RAISE naming only NEW.* (C-31).';
+  'CUL-2445 (119): a vet_report_departures row is admitted only when its report is kept, is the same pet, and carries exactly this shared_via and shared_at now, and that time falls between the report''s creation and now (5 minutes of clock slack each way), so no writer, the owner included, can log a send the report never stamped or a time it invented. SECURITY DEFINER (reads vet_reports for any writer), search_path pinned, EXECUTE revoked from every caller role; one RAISE naming only NEW.* (C-31).';
 
 CREATE OR REPLACE FUNCTION public.vet_report_departures_append_only()
 RETURNS TRIGGER
@@ -271,6 +295,17 @@ BEGIN
     INSERT INTO public.vet_report_departures (report_id, pet_id, shared_via, shared_at)
     VALUES (NEW.id, NEW.pet_id, NEW.shared_via, NEW.shared_at)
     ON CONFLICT ON CONSTRAINT vet_report_departures_once DO NOTHING;
+    -- Nothing inserted is right only when the departure is already there (the natural key).
+    -- Anything else (a later rule or trigger that swallowed the write) fails the send loudly
+    -- rather than lose the departure (pass 1, F3; 114's row-count form).
+    IF NOT FOUND AND NOT EXISTS (
+         SELECT 1 FROM public.vet_report_departures d
+          WHERE d.report_id = NEW.id AND d.shared_at = NEW.shared_at AND d.shared_via = NEW.shared_via
+       ) THEN
+      RAISE EXCEPTION
+        'vet_reports: the departure of report % was not recorded', NEW.id
+        USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NULL;
 END;
@@ -286,7 +321,7 @@ CREATE TRIGGER trg_vet_reports_log_departure
   FOR EACH ROW EXECUTE FUNCTION public.vet_reports_log_departure();
 
 COMMENT ON FUNCTION public.vet_reports_log_departure() IS
-  'CUL-2445 (119): writes one vet_report_departures row each time a kept vet_reports row carries a new (shared_via, shared_at): the keep and every restamp, in the same transaction. ON CONFLICT DO NOTHING on the natural key, so logging never fails a send. SECURITY DEFINER (no role holds INSERT on the table), search_path pinned, EXECUTE revoked; raises nothing of its own.';
+  'CUL-2445 (119): writes one vet_report_departures row each time a kept vet_reports row carries a new (shared_via, shared_at): the keep and every restamp, in the same transaction. ON CONFLICT DO NOTHING on the natural key, so a repeated stamp never fails a send; a write swallowed by anything else does (one RAISE naming only NEW.id, C-31). SECURITY DEFINER (no role holds INSERT on the table), search_path pinned, EXECUTE revoked.';
 
 
 -- ============================================================

@@ -114,12 +114,12 @@ SELECT probe('a row inserted kept logs one departure', 'service_role', NULL, $s$
   INSERT INTO public.vet_reports
     (id, pet_id, generated_by, date_range_start, date_range_end, storage_path,
      report_version, renderer_fingerprint, params, scope_basis, status, snapshot,
-     short_id, shared_via, shared_at, content_sha256)
+     short_id, shared_via, shared_at, content_sha256, created_at)
   VALUES ('e1e1e1e1-0000-4000-8000-00000000000c', 'a1a1a1a1-0000-4000-8000-000000000001',
      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '2026-09-01', '2026-10-30',
      'a1a1a1a1-0000-4000-8000-000000000001/e1e1e1e1-0000-4000-8000-00000000000c.pdf',
      'v2', 'fp-1', '{}', 'since_last_visit', 'kept', '{"facts":[4]}', 'P8T3',
-     'email', '2026-11-02T11:00:00Z', repeat('12', 32));
+     'email', '2026-11-02T11:00:00Z', repeat('12', 32), '2026-11-02T10:59:00Z');
   PERFORM public.want(public.dcount('e1e1e1e1-0000-4000-8000-00000000000c'), 1, 'inserted kept');
 END $d$$s$, 'ok');
 
@@ -183,6 +183,24 @@ SELECT probe('owner: a draft''s stamp', 'postgres', NULL, $s$DO $d$ BEGIN
    WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009';
   INSERT INTO public.vet_report_departures (report_id, pet_id, shared_via, shared_at)
   VALUES ('d1d1d1d1-0000-4000-8000-000000000009', 'a1a1a1a1-0000-4000-8000-000000000001', 'print', '2026-11-01T08:00:00Z');
+END $d$$s$, '23514');
+SELECT probe('owner (pass 1, F1): a stamp before the copy existed, round-tripped by restamps', 'postgres', NULL, $s$DO $d$ BEGIN
+  UPDATE public.vet_reports SET shared_via = 'fax', shared_at = '2019-01-01T00:00:00Z'
+   WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a';
+END $d$$s$, '23514');
+SELECT probe('owner (pass 1, F1): a stamp in the future', 'postgres', NULL, $s$DO $d$ BEGIN
+  UPDATE public.vet_reports SET shared_via = 'fax', shared_at = now() + interval '1 day'
+   WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a';
+END $d$$s$, '23514');
+SELECT probe('service: a keep stamped by a clock 4 minutes ahead still lands', 'service_role', NULL, $s$DO $d$ BEGIN
+  UPDATE public.vet_reports SET status = 'kept', shared_via = 'email', shared_at = now() + interval '4 minutes'
+   WHERE id = 'd1d1d1d1-0000-4000-8000-000000000009';
+  PERFORM public.want(public.dcount('d1d1d1d1-0000-4000-8000-000000000009'), 1, 'skewed keep');
+END $d$$s$, 'ok');
+SELECT probe('owner (pass 1, F3): a rule that swallows the departure fails the send, never loses it', 'postgres', NULL, $s$DO $d$ BEGIN
+  CREATE RULE probe_swallow AS ON INSERT TO public.vet_report_departures DO INSTEAD NOTHING;
+  UPDATE public.vet_reports SET shared_via = 'print', shared_at = now()
+   WHERE id = 'd2d2d2d2-0000-4000-8000-00000000000a';
 END $d$$s$, '23514');
 SELECT probe('owner: UPDATE a departure', 'postgres', NULL,
   $s$UPDATE public.vet_report_departures SET shared_at = shared_at - interval '1 day'$s$, '23514');
