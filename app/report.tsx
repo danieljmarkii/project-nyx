@@ -118,6 +118,8 @@ import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } 
 /** What the sheet needs that the report does not carry, read at the moment Send is tapped. */
 interface SendContext {
   live: ComposerLive;
+  /** The one case the confirmation's check may show (`sendIsQuiet`, and no flag known this session). */
+  quiet: boolean;
   today: string;
   hour: number;
   visitDay: string | null;
@@ -342,9 +344,21 @@ export default function ReportScreen() {
   const [sendCtx, setSendCtx] = useState<SendContext | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{ copy: ConfirmationCopy; quiet: boolean; card: SendCallCardModel | null } | null>(null);
-  // The flags the composer already read this session: a send-time read that fails never
-  // downgrades them (`liveForSend`).
-  const knownLive = composer.open?.live ?? null;
+  // The flags this screen has already read for this pet, KEPT ACROSS the composer's reloads: the
+  // past-midnight Preview guard reloads the composer, which clears `open` before it re-reads, so
+  // reading `composer.open` alone lost a flag the owner had just seen when the reload and then the
+  // send read both failed (adversarial pass 2). A send-time read that fails never downgrades
+  // these (`liveForSend`); a fresh "none" after them withholds the check (the louder side).
+  const knownFlags = useRef<{ petId: string; live: ComposerLive } | null>(null);
+  const composerLive = composer.open?.live ?? null;
+  useEffect(() => {
+    if (petId && composerLive?.state === 'flags') knownFlags.current = { petId, live: composerLive };
+  }, [petId, composerLive]);
+  // A different pet's send context is never shown over this pet's report.
+  useEffect(() => {
+    setSendCtx(null);
+    setSendOpen(false);
+  }, [petId]);
 
   const onOpenSend = useCallback(async () => {
     if (!petId) return;
@@ -373,8 +387,13 @@ export default function ReportScreen() {
           : Promise.resolve([]),
         mailAvailable(),
       ]);
+      const known = knownFlags.current?.petId === petId ? knownFlags.current.live : null;
+      const live = liveForSend(fresh, known, today);
+      if (live.state === 'flags') knownFlags.current = { petId, live };
       setSendCtx({
-        live: liveForSend(fresh, knownLive, today),
+        live,
+        // Quiet only when the read answered none AND no flag was read for this pet this session.
+        quiet: sendIsQuiet(live) && known === null,
         today,
         // Read once at the tap: the sheet and its confirmation order the call rows by the same
         // hour, so a draft left open across the assumed closing time keeps one ordering.
@@ -387,7 +406,7 @@ export default function ReportScreen() {
     } finally {
       setSendReading(false);
     }
-  }, [petId, knownLive]);
+  }, [petId]);
 
   const onSendAction = useCallback(
     async (action: SendAction) => {
@@ -423,7 +442,7 @@ export default function ReportScreen() {
       if (words === null) return;
       setConfirmation({
         copy: confirmationCopy(report.petName || petName || '', report.startDate, report.endDate, sendCtx.today, words),
-        quiet: sendIsQuiet(sendCtx.live),
+        quiet: sendCtx.quiet,
         card: sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour),
       });
     },

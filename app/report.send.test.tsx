@@ -161,6 +161,32 @@ describe('a failed send-time read never downgrades a flag the composer already s
   });
 });
 
+describe('the known flags survive the composer’s reload (adversarial pass 2)', () => {
+  it('a reload clears the composer’s flags, the send read fails: the sheet still carries the flag', async () => {
+    mockComposerOpen = { live: FLAGGED };
+    mockedOpen.mockRejectedValue(new Error('offline'));
+    const r = render(<ReportScreen />);
+    fireEvent.press(await r.findByTestId('fallback'));
+    await r.findByText('Send…');
+    // The past-midnight guard reloads the composer, which clears `open` before it re-reads.
+    mockComposerOpen = null;
+    r.rerender(<ReportScreen />);
+    fireEvent.press(r.getByTestId('report-send'));
+    await r.findByTestId('sheet');
+    expect(r.getByTestId('sheet-card').props.children).toMatch(/flag worth a call/);
+  });
+
+  it('a fresh none after a flag this session withholds the check (the louder side)', async () => {
+    mockComposerOpen = { live: FLAGGED };
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    fireEvent.press(await r.findByTestId('pick-share'));
+    await r.findByTestId('send-confirmation');
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+  });
+});
+
 describe('the confirmation (e1, e2)', () => {
   it('a flagged send: the status words, no check, and the call card repeated above Done', async () => {
     mockedOpen.mockResolvedValue({ live: FLAGGED });
