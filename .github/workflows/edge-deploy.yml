@@ -58,6 +58,7 @@ on:
           - extract-medication-from-photo
           - generate-report
           - generate-signal
+          - reap-report-drafts
       ref:
         description: 'Commit on main to deploy it from. main = redeploy it; an older commit = roll it back. all-changed always deploys main, so leave this as main for it.'
         type: string

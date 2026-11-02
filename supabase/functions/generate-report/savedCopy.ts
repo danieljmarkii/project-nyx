@@ -40,6 +40,10 @@ export const KEEP_WINDOW_MS = DRAFT_TTL_MS - 60 * 60 * 1000
 /** Rows the reaper takes per pass: one Storage remove call, one row delete. */
 export const REAP_BATCH = 50
 
+/** Passes one scheduled sweep may make (reap-report-drafts, every 15 minutes): up to 1,000
+ *  drafts a call. What is left waits a quarter hour for the next call, never longer. */
+export const REAP_MAX_PASSES = 20
+
 /** Short-id attempts before the save gives up (20 bits per pet; a clash is rare, a run is rarer). */
 export const SHORT_ID_ATTEMPTS = 5
 
@@ -241,6 +245,52 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
   }
 }
 
+/** What the reaper needs, and all it can reach. */
+export type DraftReaperIO = Pick<SavedCopyIO, 'listStaleDrafts' | 'removeObjects' | 'deleteDrafts' | 'now'>
+
+/**
+ * The scheduled sweep's I/O (CUL-2437): EVERY owner's drafts older than 24 h, oldest first. It
+ * has no pet or maker to pair the rows with (C-27), because it acts for no one: what stands in for
+ * that pairing is that it can only ever reach a row that is a DRAFT and PAST ITS DAY. Both filters
+ * are on the read AND on the delete, so a row kept or made between the two never matches, and the
+ * one Storage key it removes is the key its row names (113's `vet_reports_storage_path_is_row_key`).
+ */
+export function globalDraftReaperIO(admin: SupabaseClient, now: () => number = () => Date.now()): DraftReaperIO {
+  const warn = (what: string, e: { message?: string } | null | unknown) =>
+    console.warn(`vet_reports draft sweep: ${what}:`, (e as { message?: string } | null)?.message ?? String(e))
+  const cutoff = () => new Date(now() - DRAFT_TTL_MS).toISOString()
+  return {
+    listStaleDrafts: async (createdBeforeIso, limit) => {
+      // A capped pull, oldest first: what the cap leaves is reaped by the next pass
+      // (guards/reportPullPagination.test.ts DELIBERATE_CAP 'generate-report/vet_reports').
+      const { data, error } = await admin.from('vet_reports').select('id, storage_path', { count: 'exact' })
+        .eq('status', 'draft')
+        .lt('created_at', createdBeforeIso)
+        .order('created_at', { ascending: true }).order('id', { ascending: true })
+        .limit(limit)
+      if (error) {
+        warn('stale draft read failed', error)
+        return null
+      }
+      return (data ?? []) as Array<{ id: string; storage_path: string }>
+    },
+    removeObjects: async (paths) => {
+      if (paths.length === 0) return true
+      const { error } = await admin.storage.from(VET_REPORTS_BUCKET).remove(paths)
+      if (error) warn('object remove failed', error)
+      return !error
+    },
+    deleteDrafts: async (ids) => {
+      if (ids.length === 0) return true
+      const { error } = await admin.from('vet_reports').delete()
+        .in('id', ids).eq('status', 'draft').lt('created_at', cutoff())
+      if (error) warn('stale draft delete failed', error)
+      return !error
+    },
+    now,
+  }
+}
+
 // ── The flows ────────────────────────────────────────────────────────────────
 
 export interface DraftInput {
@@ -323,13 +373,42 @@ export async function saveDraft<D>(
   return { saved: true, reportId: id, shortId, rendered }
 }
 
-/** This owner's drafts of this pet older than 24 h: objects removed first, then the rows, so a
- *  failed pass leaves rows the next pass retries, never an orphaned object. Best-effort. */
-export async function reapStaleDrafts(io: SavedCopyIO): Promise<number> {
+/** One batch of drafts older than 24 h (this owner's of this pet at Preview; every owner's in the
+ *  scheduled sweep): objects removed first, then the rows, so a failed pass leaves rows the next
+ *  pass retries, never an orphaned object. Best-effort. */
+export async function reapStaleDrafts(io: DraftReaperIO): Promise<number> {
+  return (await reapPass(io)).reaped
+}
+
+async function reapPass(io: DraftReaperIO): Promise<{ reaped: number; listed: number; ok: boolean }> {
   const stale = await io.listStaleDrafts(new Date(io.now() - DRAFT_TTL_MS).toISOString(), REAP_BATCH)
-  if (stale === null || stale.length === 0) return 0
-  if (!(await io.removeObjects(stale.map((r) => r.storage_path)))) return 0
-  return (await io.deleteDrafts(stale.map((r) => r.id))) ? stale.length : 0
+  if (stale === null) return { reaped: 0, listed: 0, ok: false }
+  if (stale.length === 0) return { reaped: 0, listed: 0, ok: true }
+  if (!(await io.removeObjects(stale.map((r) => r.storage_path)))) return { reaped: 0, listed: stale.length, ok: false }
+  const deleted = await io.deleteDrafts(stale.map((r) => r.id))
+  return { reaped: deleted ? stale.length : 0, listed: stale.length, ok: deleted }
+}
+
+export interface SweepResult {
+  reaped: number
+  passes: number
+  /** False when a read, a remove or a delete failed: the next scheduled call retries it. */
+  ok: boolean
+  /** True when the pass cap stopped the sweep with a full batch still listed. */
+  capped: boolean
+}
+
+/** The scheduled sweep (CUL-2437): batches until the stale drafts run out, a pass fails, or
+ *  REAP_MAX_PASSES is spent. A failed pass stops the sweep rather than retry in a loop. */
+export async function reapAllStaleDrafts(io: DraftReaperIO, maxPasses: number = REAP_MAX_PASSES): Promise<SweepResult> {
+  let reaped = 0
+  for (let pass = 1; pass <= maxPasses; pass++) {
+    const out = await reapPass(io)
+    reaped += out.reaped
+    if (!out.ok) return { reaped, passes: pass, ok: false, capped: false }
+    if (out.listed < REAP_BATCH) return { reaped, passes: pass, ok: true, capped: false }
+  }
+  return { reaped, passes: maxPasses, ok: true, capped: true }
 }
 
 export type KeepOutcome =
