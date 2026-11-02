@@ -209,6 +209,15 @@ const ALWAYS_SCANNED = [
   'components/ui/NamedCompletionCard.tsx',
   'components/ui/FloorRaiseLine.tsx',
   'components/ui/MealMark.tsx',
+  // CUL-2298 (Vet report v2 PR-18) — the send flow. The sheet leads with the live-flag call
+  // card, the card itself paints "flags worth a call", and the confirmation repeats it on a
+  // flagged send, where spec §0.2 and AC-11 rule no check and no haptic. No send buzzes at all,
+  // so the silence is never a branch; these name it. None carries the MARKERS (the flags ride
+  // `ComposerLive`). Proven by mutation on CUL-2298: a `commitRoutine` import in each reds
+  // the build.
+  'components/reportV2/SendSheet.tsx',
+  'components/reportV2/SendCallCard.tsx',
+  'components/reportV2/SendConfirmation.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;
