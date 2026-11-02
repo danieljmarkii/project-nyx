@@ -122,6 +122,8 @@ const BACK_SHARED = `
 .bphoto{display:inline-flex;flex-direction:column;}
 .bphoto img{object-fit:cover;border:1pt solid var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .bcap{color:var(--ink2);}
+.back h2,.back h3{break-after:avoid;}
+.back .sec,.pheno,.ledger,.lg,.phcard,.lastmeal,.predicate,.back tr{break-inside:avoid;}
 `
 
 /** The print sheet's back-sheet rules: every size in absolute pt (spec §6.3). */
@@ -138,7 +140,7 @@ export const BACK_STYLE_PRINT = `${BACK_SHARED}
 .barmix{height:16pt;}
 .barmix .seg{font-size:8pt;}
 .mixkey .sw{width:7pt;height:7pt;}
-.phimg{max-height:150pt;}
+.phimg{max-height:112pt;}
 .phimg-missing{min-height:60pt;}
 .phread{font-size:7.5pt;}
 .bphoto img{width:54pt;height:54pt;}
