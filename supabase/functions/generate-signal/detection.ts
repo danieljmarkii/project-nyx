@@ -4826,7 +4826,7 @@ function detectIntakeDeclineRelative(
  * review, B-051): a prior week with one acute multi-bout day was a single low-activity
  * symptom-day, so a spread-out current week reads as an INCREASE in days, not "same".
  */
-interface SymptomStat {
+export interface SymptomStat {
   symptomType: SymptomType
   currentCount: number
   priorCount: number
@@ -4841,10 +4841,13 @@ interface SymptomStat {
   currentLogs: number
 }
 
-interface WindowedStats {
+export interface WindowedStats {
   stats: SymptomStat[]
   /** Both windows clear minLoggingDaysPerWindow — the coarse "was the app used" floor. */
   loggingEligible: boolean
+  /** The logged-day counts behind `loggingEligible` (CUL-2439: SR-4's gate reads both readings). */
+  currentLoggingDays: number
+  priorLoggingDays: number
 }
 
 /**
@@ -4910,9 +4913,10 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
   const currentStart = nowMs - windowMs
   const priorStart = nowMs - 2 * windowMs
 
+  const currentLoggingDays = loggingDaysInWindow(input, currentStart, nowMs)
+  const priorLoggingDays = loggingDaysInWindow(input, priorStart, currentStart)
   const loggingEligible =
-    loggingDaysInWindow(input, currentStart, nowMs) >= cfg.minLoggingDaysPerWindow &&
-    loggingDaysInWindow(input, priorStart, currentStart) >= cfg.minLoggingDaysPerWindow
+    currentLoggingDays >= cfg.minLoggingDaysPerWindow && priorLoggingDays >= cfg.minLoggingDaysPerWindow
 
   const stats: SymptomStat[] = []
   for (const symptomType of LANE_SYMPTOM_TYPES.symptomDelta) {
@@ -4937,7 +4941,126 @@ function computeWindowedStats(input: DetectionInput, config: DetectionConfig): W
       currentLogs,
     })
   }
-  return { stats, loggingEligible }
+  return { stats, loggingEligible, currentLoggingDays, priorLoggingDays }
+}
+
+/** A quarter hour: every zone offset and every DST transition falls on one, so a local day
+ *  begins on a quarter-hour boundary and is constant within each quarter hour. */
+const QUARTER_HOUR_MS = 900_000
+
+/**
+ * CUL-2439 — the owner's calendar day of an instant: `localDayIndex` in the pet's zone, or the UTC
+ * day when no valid zone is known (a stated fallback; see `computeCalendarWeekStats`). Memoized per
+ * quarter hour, since `localDayIndex` runs Intl on every call.
+ */
+function calendarDayOf(timezone: string | undefined): (ms: number) => number {
+  if (!isValidTimeZone(timezone)) return (ms) => Math.floor(ms / MS_PER_DAY)
+  const memo = new Map<number, number>()
+  return (ms) => {
+    const key = Math.floor(ms / QUARTER_HOUR_MS)
+    let d = memo.get(key)
+    if (d === undefined) {
+      d = localDayIndex(ms, timezone)
+      memo.set(key, d)
+    }
+    return d
+  }
+}
+
+/**
+ * CUL-2439 (PM ruling (a) on CUL-2368, 2026-11-02): the same week-over-week stats measured in
+ * the OWNER'S CALENDAR WEEKS. The current week is local days today−6 … today (up to `now`), the
+ * prior week today−13 … today−7, every event placed by `localDayIndex` in the pet's zone. With
+ * no valid zone the day boundary is unknown and the calendar falls back to UTC days, stated here
+ * because it is a guess: the rolling reading beside it is what keeps that guess from quieting a
+ * warning. Logged days and symptom days are local days too, so an evening logger west of UTC
+ * holds the 3-day gate on the days the owner actually logged.
+ *
+ * Why a SECOND reading and not a replacement (the plan the PM ruled, CUL-2439): the rolling
+ * 7 × 24h reading is today's live detector. A vet who counts calendar days can see a rise it
+ * did not measure (CUL-2368 counterexample eleven), and the rolling week can hold a rise the
+ * calendar week has already passed. Each consumer below combines the two so that a warning
+ * fires when EITHER reading sees it and a calm sentence speaks only when BOTH agree. So nothing
+ * this change touches can fire less often than it did before it, or reassure more often.
+ */
+function computeCalendarWeekStats(input: DetectionInput, config: DetectionConfig): WindowedStats | null {
+  const cfg = config.reflection
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const dayOf = calendarDayOf(input.timezone)
+  const today = dayOf(nowMs)
+  const w = cfg.windowDays
+  // Every calendar day in reach starts after now − (2w + 1) days; nothing older is placed.
+  const reachMs = nowMs - (2 * w + 1) * MS_PER_DAY
+  const inCurrent = (ms: number): boolean => ms < nowMs && ms >= reachMs && dayOf(ms) > today - w
+  const inPrior = (ms: number): boolean => {
+    if (ms >= nowMs || ms < reachMs) return false
+    const d = dayOf(ms)
+    return d <= today - w && d > today - 2 * w
+  }
+
+  const loggedDays = (pick: (ms: number) => boolean): number => {
+    const days = new Set<number>()
+    for (const s of input.symptomEvents) {
+      if (!countsTowardComparisonGate(s)) continue
+      const ms = Date.parse(s.occurredAt)
+      if (Number.isFinite(ms) && pick(ms)) days.add(dayOf(ms))
+    }
+    for (const m of input.mealEvents) {
+      const ms = Date.parse(m.occurredAt)
+      if (Number.isFinite(ms) && pick(ms)) days.add(dayOf(ms))
+    }
+    return days.size
+  }
+  const currentLoggingDays = loggedDays(inCurrent)
+  const priorLoggingDays = loggedDays(inPrior)
+  const loggingEligible =
+    currentLoggingDays >= cfg.minLoggingDaysPerWindow && priorLoggingDays >= cfg.minLoggingDaysPerWindow
+
+  const stats: SymptomStat[] = []
+  for (const symptomType of LANE_SYMPTOM_TYPES.symptomDelta) {
+    const msList = input.symptomEvents
+      .filter((s) => s.type === symptomType)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms))
+    const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
+    const cur = onsets.filter(inCurrent)
+    const pri = onsets.filter(inPrior)
+    stats.push({
+      symptomType,
+      currentCount: cur.length,
+      priorCount: pri.length,
+      currentDays: new Set(cur.map(dayOf)).size,
+      priorDays: new Set(pri.map(dayOf)).size,
+      currentLogs: countFlaggedClusters(msList.filter(inCurrent).map((ms) => ({ ms, flagged: true }))),
+    })
+  }
+  return { stats, loggingEligible, currentLoggingDays, priorLoggingDays }
+}
+
+/** Both readings of the week-over-week comparison (CUL-2439). Exported for the never-quieter
+ *  property in detection.calendarWeek.test.ts; no surface reads it. */
+export interface WeekReadings {
+  /** Today's 7 × 24h UTC windows, unchanged: the reading every number the report prints is. */
+  rolling: WindowedStats
+  /** The owner's calendar weeks (`computeCalendarWeekStats`). */
+  calendar: WindowedStats
+}
+
+export function computeWeekReadings(input: DetectionInput, config: DetectionConfig): WeekReadings | null {
+  const rolling = computeWindowedStats(input, config)
+  const calendar = computeCalendarWeekStats(input, config)
+  return rolling && calendar ? { rolling, calendar } : null
+}
+
+/** The readings a WARNING may fire from: each one whose own weeks clear the logging floor. */
+function eligibleReadings(r: WeekReadings): WindowedStats[] {
+  return [r.calendar, r.rolling].filter((w) => w.loggingEligible)
+}
+
+/** One sign's stat in a reading (every reading carries every symptomDelta sign). */
+function statOf(w: WindowedStats, symptomType: SymptomType): SymptomStat | undefined {
+  return w.stats.find((s) => s.symptomType === symptomType)
 }
 
 /**
@@ -4988,9 +5111,15 @@ function isWorseningCard(s: SymptomStat, config: DetectionConfig): boolean {
  */
 export function risingBelowCardFloor(input: DetectionInput, config: DetectionConfig): boolean {
   if (config.en11 === undefined) return false
-  const windowed = computeWindowedStats(input, config)
-  if (!windowed || !windowed.loggingEligible) return false
-  return windowed.stats.some((s) => isWorsening(s, config.reflection) && !isWorseningCard(s, config))
+  const readings = computeWeekReadings(input, config)
+  if (!readings) return false
+  // CUL-2439: per sign, rising in EITHER eligible reading and carded in NEITHER. A sign the other
+  // reading cards is on Home already; a rise only one reading sees still withholds the clause.
+  const eligible = eligibleReadings(readings)
+  return LANE_SYMPTOM_TYPES.symptomDelta.some((t) => {
+    const stats = eligible.map((w) => statOf(w, t)).filter((s): s is SymptomStat => s !== undefined)
+    return stats.some((s) => isWorsening(s, config.reflection)) && !stats.some((s) => isWorseningCard(s, config))
+  })
 }
 
 export function detectReflections(
@@ -4998,16 +5127,20 @@ export function detectReflections(
   config: DetectionConfig = DEFAULT_CONFIG,
 ): ReflectionFinding[] {
   const cfg = config.reflection
-  const windowed = computeWindowedStats(input, config)
-  if (!windowed || !windowed.loggingEligible) return []
-  const { stats } = windowed
+  // CUL-2439: a calm card speaks only when BOTH readings of the week (today's 7 × 24h windows and
+  // the owner's calendar weeks) are logged, unrisen and calm, so the second reading can only make
+  // ③ quieter than it was. Its numbers are the calendar week's, the week its words name.
+  const readings = computeWeekReadings(input, config)
+  if (!readings || !readings.rolling.loggingEligible || !readings.calendar.loggingEligible) return []
+  const both = [readings.calendar, readings.rolling]
+  const stats = readings.calendar.stats
 
   // GLOBAL worsening gate: if ANY tracked symptom is worsening, the WHOLE reflection
   // layer stays silent and yields to the safety lane — detector ④ owns that case now
   // (shared `isWorsening`, so the valve is closed). The per-symptom direction guard
   // alone is defeated across symptoms (rising vomit + falling itch would surface a
   // soothing "itch is down" card while the rising vomit is dropped).
-  if (stats.some((s) => isWorsening(s, cfg))) return []
+  if (both.some((w) => w.stats.some((s) => isWorsening(s, cfg)))) return []
 
   // GLOBAL chronicity gate (§4.4, detector ⑦ — THE VALVE): the reflection layer also stays
   // silent if ANY tracked symptom is chronic. This is the never-reassure heart of the
@@ -5051,18 +5184,18 @@ export function detectReflections(
   // one). So it reads the re-log-deduped log count; re-logs of one vomit inside a minute stay
   // one (the vet report's §5.11 rule). That count is never below the episode count (each
   // onset is a log 3h+ from the next, and a re-log cluster spans a minute), so it needs no max.
-  if (stats.some((s) => s.currentLogs >= cfg.burdenMuteMinEpisodes)) return []
+  if (both.some((w) => w.stats.some((s) => s.currentLogs >= cfg.burdenMuteMinEpisodes))) return []
 
   // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
   // real current count, with enough history in the busier window to state a trend.
+  const calm = (s: SymptomStat | undefined): boolean =>
+    s !== undefined &&
+    s.currentCount >= 1 && // never a zero-symptom (absence) reflection (§9)
+    s.currentCount <= s.priorCount && // flat or falling episode count
+    s.currentDays <= s.priorDays && // flat or falling spread (closes the meal-padding gap)
+    Math.max(s.currentCount, s.priorCount) >= cfg.minEpisodesEitherWindow
   const candidates: ReflectionFinding[] = stats
-    .filter(
-      (s) =>
-        s.currentCount >= 1 && // never a zero-symptom (absence) reflection (§9)
-        s.currentCount <= s.priorCount && // flat or falling episode count
-        s.currentDays <= s.priorDays && // flat or falling spread (closes the meal-padding gap)
-        Math.max(s.currentCount, s.priorCount) >= cfg.minEpisodesEitherWindow,
-    )
+    .filter((s) => calm(s) && calm(statOf(readings.rolling, s.symptomType)))
     .map((s) => ({
       type: 'reflection' as const,
       priorityClass: 'insight' as const,
@@ -5124,21 +5257,21 @@ export function computeReflectionDensity(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
 ): ReflectionDensity | null {
-  const cfg = config.reflection
-  const nowMs = Date.parse(input.now)
-  if (!Number.isFinite(nowMs)) return null
-  const windowMs = cfg.windowDays * MS_PER_DAY
-  const currentStart = nowMs - windowMs
-  const priorStart = nowMs - 2 * windowMs
-  const currentLoggingDays = loggingDaysInWindow(input, currentStart, nowMs)
-  const priorLoggingDays = loggingDaysInWindow(input, priorStart, currentStart)
+  const readings = computeWeekReadings(input, config)
+  if (!readings) return null
   // priorLoggingDays === 0 ⇒ density did not FALL (it could only have risen), so the
   // comparison is not an artifact of less logging → comparable, and no divide-by-zero.
-  const comparable =
-    priorLoggingDays === 0
-      ? true
-      : currentLoggingDays >= priorLoggingDays * DENSITY_COMPARABLE_MIN_RATIO
-  return { comparable, currentLoggingDays, priorLoggingDays }
+  const comparableIn = (w: WindowedStats): boolean =>
+    w.priorLoggingDays === 0 ? true : w.currentLoggingDays >= w.priorLoggingDays * DENSITY_COMPARABLE_MIN_RATIO
+  // CUL-2439: the falling comparison is kept only when the logging held in BOTH readings (③ now
+  // fires only when both agree). The counts stay the rolling reading's: the report prints them as
+  // the engine's UTC days, and row 2 of CUL-2368 moves that sentence with them.
+  const { currentLoggingDays, priorLoggingDays } = readings.rolling
+  return {
+    comparable: comparableIn(readings.rolling) && comparableIn(readings.calendar),
+    currentLoggingDays,
+    priorLoggingDays,
+  }
 }
 
 /**
@@ -5263,13 +5396,23 @@ export function detectWorsening(
   exclude: ReadonlySet<SymptomType> = new Set(),
 ): SymptomWorseningFinding[] {
   const cfg = config.reflection
-  const windowed = computeWindowedStats(input, config)
-  // Both windows must be logging-eligible — same floor as ③. For ④ specifically this is
-  // the fake-rise guard: a rise measured against a dark prior week is not trustworthy.
-  if (!windowed || !windowed.loggingEligible) return []
+  const readings = computeWeekReadings(input, config)
+  if (!readings) return []
 
   // ④ fires on the card predicate; ③'s mute (detectReflections) keeps `isWorsening` (CUL-1411).
-  const worsening = windowed.stats.filter((s) => !exclude.has(s.symptomType) && isWorseningCard(s, config))
+  // CUL-2439: a sign fires when the card predicate holds in EITHER reading whose two weeks are
+  // logging-eligible (the fake-rise guard, same floor as ③: a rise measured against a dark prior
+  // week is not trustworthy). The rolling reading is today's detector, untouched, so ④ never
+  // fires less often than it did; the calendar reading adds the rise a vet counting calendar days
+  // sees. The card carries the calendar week's numbers when that reading fires ("on N of the last
+  // 7 days" is then literally true), else today's.
+  const eligible = eligibleReadings(readings)
+  const worsening: SymptomStat[] = []
+  for (const t of LANE_SYMPTOM_TYPES.symptomDelta) {
+    if (exclude.has(t)) continue
+    const fired = eligible.map((w) => statOf(w, t)).find((s) => s !== undefined && isWorseningCard(s, config))
+    if (fired) worsening.push(fired)
+  }
   if (worsening.length === 0) return []
 
   // One card only — the most-worsening symptom: largest episode rise, then larger
@@ -8284,13 +8427,16 @@ export function foldedWorsening(
   let everyDayMeasured = true
   for (let d = 0; d <= FOLDED_WORSENING_LOOKBACK_DAYS; d++) {
     const asOf = d === 0 ? input : replay(nowMs - d * MS_PER_DAY, 'worsening')
-    const windowed = computeWindowedStats(asOf, config)
-    if (!windowed || !windowed.loggingEligible) {
-      everyDayMeasured = false
-      continue
-    }
-    const stat = windowed.stats.find((x) => x.symptomType === symptomType)
-    if (stat && isWorsening(stat, config.reflection)) return 'rising'
+    const readings = computeWeekReadings(asOf, config)
+    // CUL-2439: a day is MEASURED only on today's rule (the rolling weeks were logged), so "not
+    // rising" is never said where it was not before; it is RISING when either eligible reading rises.
+    if (!readings || !readings.rolling.loggingEligible) everyDayMeasured = false
+    if (!readings) continue
+    const rising = eligibleReadings(readings).some((w) => {
+      const stat = statOf(w, symptomType)
+      return stat !== undefined && isWorsening(stat, config.reflection)
+    })
+    if (rising) return 'rising'
   }
   return everyDayMeasured ? 'not_rising' : 'not_measured'
 }
@@ -8384,6 +8530,8 @@ export const CHRONICITY_HOLD_MAX_STEPS = 700
  *     + W, and in the prior week a week later. The bounds are taken over exactly those events: a
  *     wider set does not add instants, it REPLACES a day's true first event and drops the instant
  *     a later meal made ④ eligible (adversarial pass 2, a morning cough before an evening meal).
+ *   - ④'s calendar reading (CUL-2439) reads whole local days: it turns at every local midnight
+ *     and at the first counted event of each local day (its logging floor).
  * Every event of a sign is taken as a possible onset (a superset: an extra replay is harmless).
  *
  * Returns every instant (`all`), and separately the ones at which ⑦'s answer for a pending card
@@ -8445,6 +8593,30 @@ export function holdChangeInstants(
     add(last + W)
     add(first + W)
     add(last + 2 * W)
+  }
+  // CUL-2439: ④'s calendar reading turns at every local midnight (its weeks are whole local days:
+  // an onset or a logged day leaves the current week, enters the prior one or drops out at one)
+  // and when a local day gets its first counted event (its logging floor). Event instants are
+  // already above; the first event of each LOCAL day and every local midnight in reach are added.
+  const dayOf = calendarDayOf(input.timezone)
+  const localFirst = new Map<number, number>()
+  const noteLocal = (ms: number): void => {
+    const d = dayOf(ms)
+    const f = localFirst.get(d)
+    if (f === undefined || ms < f) localFirst.set(d, ms)
+  }
+  for (const e of input.symptomEvents) {
+    const ms = Date.parse(e.occurredAt)
+    if (Number.isFinite(ms) && countsTowardComparisonGate(e)) noteLocal(ms)
+  }
+  for (const m of input.mealEvents) {
+    const ms = Date.parse(m.occurredAt)
+    if (Number.isFinite(ms)) noteLocal(ms)
+  }
+  for (const first of localFirst.values()) add(first)
+  const scanFrom = Math.floor(floorMs / QUARTER_HOUR_MS) * QUARTER_HOUR_MS
+  for (let ms = scanFrom + QUARTER_HOUR_MS; ms < nowMs; ms += QUARTER_HOUR_MS) {
+    if (dayOf(ms) !== dayOf(ms - 1)) add(ms)
   }
   const newestFirst = (xs: Set<number>): number[] => [...xs].sort((a, b) => b - a)
   return { all: newestFirst(out), chronicity: newestFirst(chronicityOut) }

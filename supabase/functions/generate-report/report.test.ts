@@ -5832,36 +5832,25 @@ Deno.test('CUL-2348 adv 1 — a DST fall-back inside a short window never prints
   assert.ok(!/in 0 logged days/.test(readAs(renderReport(snap))))
 })
 
-Deno.test('CUL-2368 — a calendar-week rise under "did not trigger" names the hour the measured weeks end', () => {
+Deno.test('CUL-2368 / CUL-2439 — a calendar-week rise fires the check, never "did not trigger"', () => {
   idSeq = 0
-  // The issue's counterexample: meals daily; vomits Jun 18 15:00 EDT, then Jun 22, 24, 27, 29 and
-  // Jul 1; run Jul 2 08:00 EDT. By calendar days (Jun 26–Jul 2 vs Jun 19–25) it rises 3 vs 2, which
-  // meets the printed rule. The engine's prior week is Jun 18 08:00 to Jun 25 08:00: it takes in the
-  // Jun 18 afternoon vomit, compares 3 vs 3, and does not fire. The sentence must name 08:00, so a
-  // vet counting calendar days can see the weeks the check measured are not the ones they counted.
+  // The issue's counterexample eleven: meals daily; vomits Jun 18 15:00 EDT, then Jun 22, 24, 27, 29
+  // and Jul 1; run Jul 2 08:00 EDT. The 7 × 24h weeks take in the Jun 18 afternoon vomit and compare
+  // 3 vs 3. By calendar days (Jun 26–Jul 2 vs Jun 19–25) it rises 3 vs 2, which meets the printed
+  // rule. Until CUL-2439 the check did not fire and the band printed it under "Ran and did not
+  // trigger"; the engine now reads the owner's calendar weeks too, so it fires on the calendar count.
   const events = [
     ...mealsOn(dayKeys('2026-04-04', '2026-07-02')),
     makeEvent({ type: 'vomit', occurredAt: '2026-06-18T19:00:00Z' }),
     ...['2026-06-22', '2026-06-24', '2026-06-27', '2026-06-29', '2026-07-01'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) })),
   ]
   const snap = assembleReport(baseInput({ events }))
-  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'symptom_worsening'), 'the engine does not fire: 3 vs 3 over its own weeks')
-  const w = snap.safetyChecks.find((x) => x.kind === 'worsening')
-  assert.ok(w && w.kind === 'worsening' && w.state === 'not_flagged', JSON.stringify(w))
-  assert.equal(w.endIso, new Date(NOW).toISOString())
-  assert.equal(w.priorEndIso, '2026-06-25T12:00:00.000Z')
+  const flag = snap.safetyFlags.find((f) => f.kind === 'symptom_worsening')
+  assert.ok(flag && flag.kind === 'symptom_worsening', 'the engine fires on the calendar weeks')
+  assert.deepEqual([flag.symptomType, flag.currentCount, flag.priorCount], ['vomit', 3, 2], 'the card carries the calendar count')
+  assert.ok(!snap.safetyChecks.some((x) => x.kind === 'worsening' && x.symptomType === 'vomit'), JSON.stringify(snap.safetyChecks))
   const p = readAs(renderReport(snap))
-  const at0 = p.indexOf('vomiting getting worse (')
-  assert.ok(at0 >= 0, p.slice(p.indexOf('Ran and'), p.indexOf('Ran and') + 600))
-  const clause = p.slice(at0, at0 + 400)
-  assert.ok(
-    clause.startsWith(
-      `vomiting getting worse (it triggers at ${DEFAULT_CONFIG.reflection.worseningMinEpisodes} or more in the 7 days from 08:00 on Jun 25 to 08:00 on Jul 2, and more, or on more days (counted in UTC), than the 7 days from 08:00 on Jun 18 to 08:00 on Jun 25`,
-    ),
-    clause,
-  )
-  // The mutation: the bare calendar label is exactly the reading this issue is about.
-  assert.ok(!/in the 7 days to Jul 2/.test(p), 'never the date alone')
+  assert.ok(!/vomiting getting worse \(it triggers at/.test(p), 'never listed under "did not trigger"')
 })
 
 Deno.test('CUL-2368 — a week across a clock change names its own start and end hours', () => {
