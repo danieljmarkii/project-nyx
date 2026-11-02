@@ -7,11 +7,13 @@
 //
 // Who can call it: the platform's verify_jwt gate admits any valid project JWT, the
 // public anon key included, which is how the daily pg_cron job reaches it with no new
-// secret. That is safe by construction: the function reads NOTHING from the request
-// (no body, no query, no header beyond the gate), so a caller cannot point it at a
-// folder; a call can only remove files that are already due; and the reply is 204
-// with no body, so it tells a caller nothing about what it found. The run line in the
-// function's own log carries counts only (plan.ts runLine).
+// secret. That is safe by construction: the only thing read from the request is the
+// fixed run marker (plan.ts gate), never an id or a path, so a caller cannot point it
+// at a folder; a call can only remove files that are already due; a run starts only in
+// the schedule's daily window; and the reply is 204 with no body, so it tells a caller
+// nothing about what it found. The run line in the function's own log carries counts
+// only (plan.ts runLine). A call without the marker (the deploy's smoke POST) gets a
+// 400 with an error body and does nothing.
 //
 // One run at a time per worker: a second request while one runs gets 204 and does
 // nothing, so a burst of calls cannot multiply the Storage load. Two workers can still
@@ -20,7 +22,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sweepBudget, userProbeOf } from '../delete-account/plan.ts'
-import { runLine, runSweep, type SweepIO, type TimedLister } from './plan.ts'
+import { gate, runLine, runSweep, type SweepIO, type TimedLister } from './plan.ts'
 
 const WORKER_STARTED_AT = Date.now()
 let running = false
@@ -59,6 +61,17 @@ function sweepIO(admin: SupabaseClient): SweepIO {
         error: error ? error.message : null,
       }
     },
+    async retiredFoods(ids) {
+      const { data, count, error } = await admin
+        .from('food_item_retired_ids')
+        .select('id, owner_id', { count: 'exact' })
+        .in('id', ids)
+      return {
+        rows: data ? data.map((r: { id: string; owner_id: string | null }) => ({ id: r.id, owner: r.owner_id })) : null,
+        count: typeof count === 'number' ? count : null,
+        error: error ? error.message : null,
+      }
+    },
     async probeUser(id) {
       const { data, error } = await admin.auth.admin.getUserById(id)
       return userProbeOf({ user: data?.user ?? null, error: error ? { code: (error as { code?: string }).code } : null })
@@ -71,8 +84,17 @@ function sweepIO(admin: SupabaseClient): SweepIO {
   }
 }
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (req: Request) => {
   const startedAt = Date.now()
+  let body: unknown = null
+  try {
+    body = await req.json()
+  } catch {
+    body = null
+  }
+  const verdict = gate(body, startedAt)
+  if (verdict === 'not_a_run') return Response.json({ error: 'Not a scheduled sweep run' }, { status: 400 })
+  if (verdict === 'outside_window') return Response.json({ error: 'Outside the run window' }, { status: 400 })
   if (running) return new Response(null, { status: 204 })
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')

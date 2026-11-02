@@ -19,14 +19,22 @@
 //      folder, the batch read returned no error and an exact count equal to the rows
 //      returned, and the folder's id is not among them; for a drug-label folder, GoTrue
 //      answered `user_not_found` (delete-account's userProbeOf; a bare 404 is unknown);
+//      and for a food folder, ALSO that the food can never come back (below);
 //   4. its key has exactly the segment count its bucket's writer produces;
 //   5. its newest timestamp (created_at or updated_at) parses and is older than the
 //      grace period.
 // Anything else stays, and is counted under a named reason in the run line.
 //
-// Why "gone" stays gone: pet ids are retired for good (116), food ids too (106), and an
-// auth uid is a fresh v4 uuid per account, so a folder whose owner was proved gone can
-// never be claimed by a new row between the read and the remove.
+// Why "gone" stays gone. Pet ids: 116 refuses re-inserting a retired id for every role,
+// the same owner included. Auth uids: a fresh v4 uuid per account. Food ids are the
+// exception (rls-privacy-reviewer F3): 106 refuses another account, but lets the OWNER
+// re-create its own retired id, and the app relies on that (reapStalePendingFoods can
+// remove a pending capture whose edit form is still open; commitFood's upsert brings
+// the row back with photo_paths naming the files). So a missing food row alone proves
+// nothing. A food folder is gone only when 106's ledger names the id and either holds
+// no owner (106 then refuses every re-create) or names an owner whose auth user is gone
+// (`user_not_found`). A dead food of a LIVE account is left and counted
+// (`folder_owner_may_return`): that is retention, not an orphan, and is CUL-231's.
 //
 // Why the grace period still matters when the owner row is the proof: it is the margin
 // for a proof this module does not see, such as a row written by a path that uploads
@@ -112,12 +120,20 @@ export interface LiveIdRead {
   error: string | null
 }
 
+export interface RetiredRead {
+  rows: Array<{ id: string; owner: string | null }> | null
+  count: number | null
+  error: string | null
+}
+
 export interface SweepIO {
   // Every bucket in the project. Throws on error.
   listBuckets(): Promise<string[]>
   listerFor(bucket: string): TimedLister
   // `select id from <table> where id in (ids)`, count exact.
   liveIds(table: 'pets' | 'food_items', ids: string[]): Promise<LiveIdRead>
+  // `select id, owner_id from food_item_retired_ids where id in (ids)`, count exact.
+  retiredFoods(ids: string[]): Promise<RetiredRead>
   // delete-account's userProbeOf over `auth.admin.getUserById(id)`.
   probeUser(id: string): Promise<UserProbe>
   // Removes the keys, returns how many objects Storage says it removed. Throws on error.
@@ -144,6 +160,8 @@ export type LeftReason =
   | 'bucket_not_reached'
   | 'folder_unknown_shape'
   | 'folder_owner_unread'
+  | 'folder_owner_may_return'
+  | 'folder_not_retired'
   | 'folder_walk_gap'
   | 'folder_not_reached'
   | 'file_at_root'
@@ -163,9 +181,15 @@ function emptyReport(): SweepReport {
   return { removed: {}, folders: {}, left: {} }
 }
 
+// A bucket name is project data (only the service role creates buckets), but it is
+// used as an object key, so the three that would write to a prototype are renamed.
+function safeKey(bucket: string): string {
+  return bucket === '__proto__' || bucket === 'constructor' || bucket === 'prototype' ? '?' : bucket
+}
+
 function bump(report: SweepReport, bucket: string, reason: LeftReason, n = 1): void {
   if (n <= 0) return
-  const b = (report.left[bucket] ??= {})
+  const b = (report.left[safeKey(bucket)] ??= {})
   b[reason] = (b[reason] ?? 0) + n
 }
 
@@ -288,16 +312,11 @@ async function goneRoots(
   const gone: string[] = []
   if (rule.scope === 'user') {
     for (const root of roots) {
-      let probe: UserProbe = 'unknown'
-      try {
-        probe = await withinTime(() => io.probeUser(root), opts)
-      } catch {
-        probe = 'unknown'
-      }
-      if (probe === 'gone') {
+      const p = await probe(io, root, opts)
+      if (p === 'gone') {
         tally.gone++
         gone.push(root)
-      } else if (probe === 'present') tally.live++
+      } else if (p === 'present') tally.live++
       else bump(report, rule.bucket, 'folder_owner_unread')
     }
     return gone
@@ -315,11 +334,84 @@ async function goneRoots(
       bump(report, rule.bucket, 'folder_owner_unread', batch.length)
       continue
     }
-    tally.gone += g.length
     tally.live += batch.length - g.length
-    gone.push(...g)
+    if (rule.scope === 'food') {
+      const forGood = await foodsGoneForGood(rule, g, io, report, opts)
+      tally.gone += forGood.length
+      gone.push(...forGood)
+    } else {
+      tally.gone += g.length
+      gone.push(...g)
+    }
   }
   return gone
+}
+
+async function probe(io: SweepIO, id: string, opts: SweepRunOptions): Promise<UserProbe> {
+  try {
+    return await withinTime(() => io.probeUser(id), opts)
+  } catch {
+    return 'unknown'
+  }
+}
+
+// Which food ids, already missing from food_items, can never come back (see the
+// header): 106's ledger names them, with no owner or with an owner whose account is
+// gone. Every other id is left and counted.
+async function foodsGoneForGood(
+  rule: BucketRule,
+  missing: string[],
+  io: SweepIO,
+  report: SweepReport,
+  opts: SweepRunOptions,
+): Promise<string[]> {
+  if (missing.length === 0) return []
+  let read: RetiredRead
+  try {
+    read = await withinTime(() => io.retiredFoods(missing), opts)
+  } catch (e) {
+    read = { rows: null, count: null, error: e instanceof Error ? e.message : String(e) }
+  }
+  const owners = retiredOwners(missing, read)
+  if (owners === null) {
+    bump(report, rule.bucket, 'folder_owner_unread', missing.length)
+    return []
+  }
+  const probes = new Map<string, UserProbe>()
+  const out: string[] = []
+  for (const id of missing) {
+    if (!owners.has(id)) {
+      bump(report, rule.bucket, 'folder_not_retired')
+      continue
+    }
+    const owner = owners.get(id) ?? null
+    if (owner === null) {
+      out.push(id)
+      continue
+    }
+    if (!probes.has(owner)) probes.set(owner, await probe(io, owner, opts))
+    const p = probes.get(owner)
+    if (p === 'gone') out.push(id)
+    else if (p === 'present') bump(report, rule.bucket, 'folder_owner_may_return')
+    else bump(report, rule.bucket, 'folder_owner_unread')
+  }
+  return out
+}
+
+// The ledger rows for `ids` as id → owner (null: no owner), or null when the read
+// proves nothing (an error, no count, a count that disagrees with the rows, a row it
+// was not asked for, an id twice). An id absent from the map has no ledger row.
+export function retiredOwners(ids: ReadonlyArray<string>, read: RetiredRead): Map<string, string | null> | null {
+  if (read.error || !Array.isArray(read.rows)) return null
+  if (typeof read.count !== 'number' || read.count !== read.rows.length) return null
+  const asked = new Set(ids)
+  const out = new Map<string, string | null>()
+  for (const row of read.rows) {
+    if (!row || typeof row.id !== 'string' || !asked.has(row.id) || out.has(row.id)) return null
+    if (row.owner !== null && typeof row.owner !== 'string') return null
+    out.set(row.id, row.owner)
+  }
+  return out
 }
 
 // Empties one proved-orphaned folder of every file the verdict allows.
@@ -366,9 +458,13 @@ async function sweepFolder(c: Candidate, io: SweepIO, report: SweepReport, opts:
 }
 
 // One full pass. Best-effort and never throws: every failure is a count in the report.
+// Each bucket is listed, resolved and swept before the next is listed, so the time a
+// run has always removes something (rls-privacy-reviewer F4: collecting every bucket's
+// candidates first could spend the whole budget listing, every day). The starting
+// bucket rotates by UTC day, so a bucket that would always come last cannot be starved.
 // Folders are swept one at a time (a daily job has no hurry, and serial work keeps the
-// run's Storage load flat); past the deadline the rest are counted as not reached and
-// the next run finds them again, since a gone owner stays gone.
+// load flat). Past the deadline the rest are counted as not reached; the next run finds
+// them again, since a folder proved gone stays gone.
 export async function runSweep(io: SweepIO, opts: SweepRunOptions): Promise<SweepReport> {
   const report = emptyReport()
   const known = new Set(BUCKET_RULES.map((r) => r.bucket))
@@ -382,9 +478,9 @@ export async function runSweep(io: SweepIO, opts: SweepRunOptions): Promise<Swee
     bump(report, '*', 'bucket_list_failed')
   }
 
-  const candidates: Candidate[] = []
-  for (const rule of BUCKET_RULES) {
-    if (opts.deadline !== undefined && opts.now() >= opts.deadline) {
+  const past = () => opts.deadline !== undefined && opts.now() >= opts.deadline
+  for (const rule of rotatedRules(opts.now())) {
+    if (past()) {
       bump(report, rule.bucket, 'bucket_not_reached')
       continue
     }
@@ -396,14 +492,43 @@ export async function runSweep(io: SweepIO, opts: SweepRunOptions): Promise<Swee
       continue
     }
     const gone = await goneRoots(rule, roots, io, report, opts)
-    for (const root of gone) candidates.push({ rule, root })
+    let next = 0
+    for (; next < gone.length && !past(); next++) await sweepFolder({ rule, root: gone[next] }, io, report, opts)
+    bump(report, rule.bucket, 'folder_not_reached', gone.length - next)
   }
-
-  let next = 0
-  for (; next < candidates.length; next++) {
-    if (opts.deadline !== undefined && opts.now() >= opts.deadline) break
-    await sweepFolder(candidates[next], io, report, opts)
-  }
-  for (const c of candidates.slice(next)) bump(report, c.rule.bucket, 'folder_not_reached')
   return report
+}
+
+// BUCKET_RULES, starting at the UTC day's index.
+export function rotatedRules(now: number): BucketRule[] {
+  const n = BUCKET_RULES.length
+  const day = Math.floor(now / 86_400_000)
+  const start = ((day % n) + n) % n
+  return [...BUCKET_RULES.slice(start), ...BUCKET_RULES.slice(0, start)]
+}
+
+// ── The request gate ──────────────────────────────────────────────────────────
+
+// The body the pg_cron job sends. NOT a secret: it is written in the schedule's
+// migration. It exists so a call that is not the schedule's does nothing: the deploy's
+// anon smoke POST (`{}`) gets a 400 with an error body, which is what its check passes
+// on, instead of running a real sweep on every deploy (rls-privacy-reviewer F1).
+export const RUN_MARKER = 'sweep-orphaned-storage'
+
+// The schedule: 09:23 UTC daily (the schedule's migration must match), and a run only
+// starts within RUN_WINDOW_MIN of it. Any anon-key holder can reach the function, so
+// this bounds how much work anyone can start to one short window a day
+// (rls-privacy-reviewer F2). It is a bound, not a lease: callers inside the window can
+// still start a run on each worker they reach.
+export const RUN_HOUR_UTC = 9
+export const RUN_MINUTE_UTC = 23
+export const RUN_WINDOW_MIN = 15
+
+export type GateVerdict = 'run' | 'not_a_run' | 'outside_window'
+
+export function gate(body: unknown, now: number): GateVerdict {
+  if (typeof body !== 'object' || body === null || (body as { run?: unknown }).run !== RUN_MARKER) return 'not_a_run'
+  const d = new Date(now)
+  const minutes = d.getUTCHours() * 60 + d.getUTCMinutes() - (RUN_HOUR_UTC * 60 + RUN_MINUTE_UTC)
+  return minutes >= 0 && minutes < RUN_WINDOW_MIN ? 'run' : 'outside_window'
 }

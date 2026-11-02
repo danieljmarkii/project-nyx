@@ -16,6 +16,12 @@ import {
   goneFromRead,
   isSweepableRoot,
   KEY_SEGMENTS,
+  gate,
+  rotatedRules,
+  RUN_HOUR_UTC,
+  RUN_MARKER,
+  RUN_MINUTE_UTC,
+  RUN_WINDOW_MIN,
   runLine,
   runSweep,
   type LiveIdRead,
@@ -45,6 +51,9 @@ interface World {
   pets: string[]
   foods: string[]
   users: Record<string, UserProbe>
+  // food_item_retired_ids: id → owner (null: no owner)
+  retired: Record<string, string | null>
+  retiredOverride?: () => import('./plan.ts').RetiredRead
   extraBuckets?: string[]
   failBucketList?: boolean
   failList?: Set<string>
@@ -99,6 +108,11 @@ function fakeIO(w: World, calls: Calls = { removed: [], listed: [] }): SweepIO {
       const hit = rows.filter((r) => ids.some((i) => i.toLowerCase() === r))
       return Promise.resolve({ ids: hit, count: hit.length, error: null })
     },
+    retiredFoods(ids) {
+      if (w.retiredOverride) return Promise.resolve(w.retiredOverride())
+      const rows = ids.filter((i) => i in w.retired).map((id) => ({ id, owner: w.retired[id] }))
+      return Promise.resolve({ rows, count: rows.length, error: null })
+    },
     probeUser(id) {
       return Promise.resolve(w.users[id] ?? 'unknown')
     },
@@ -135,6 +149,8 @@ function baseWorld(): World {
     pets: [LIVE_PET],
     foods: [LIVE_FOOD],
     users: { [LIVE_USER]: 'present', [DEAD_USER]: 'gone' },
+    // The dead food belonged to the deleted account.
+    retired: { [DEAD_FOOD]: DEAD_USER },
   }
 }
 
@@ -412,21 +428,89 @@ Deno.test('past the deadline no folder starts; each is counted as not reached', 
   assert(report)
 })
 
-Deno.test('folders proved gone but not reached are counted, and nothing else is touched', async () => {
+Deno.test('a run that runs out of time mid-way has still removed something, and counts the rest', async () => {
   const calls: Calls = { removed: [], listed: [] }
-  let reads = 0
   const io = fakeIO(baseWorld(), calls)
-  // The clock passes the deadline once the owner reads are done.
+  let removes = 0
   const report = await runSweep(
-    { ...io, probeUser: (id) => (reads++, io.probeUser(id)) },
-    { now: () => (reads >= 2 ? NOW + 10 : NOW), deadline: NOW + 1 },
+    { ...io, remove: (b, k) => (removes++, io.remove(b, k)) },
+    // The clock passes the deadline as soon as the first folder is removed.
+    { now: () => (removes >= 1 ? NOW + 10 : NOW), deadline: NOW + 1 },
   )
-  assertEquals(calls.removed, [])
-  const notReached = Object.values(report.left).reduce((n, b) => n + (b.folder_not_reached ?? 0), 0)
-  // The dead pet in two buckets and the dead user: the food bucket comes after the
-  // drug labels in rule order, so it was never listed and counts as a bucket.
-  assertEquals(notReached, 3)
-  assertEquals(report.left[STORAGE_BUCKETS.foodPhotos]?.bucket_not_reached, 1)
+  assertEquals(calls.removed.length, 1)
+  const count = (r: 'folder_not_reached' | 'bucket_not_reached') =>
+    Object.values(report.left).reduce((n, b) => n + (b[r] ?? 0), 0)
+  assert(count('bucket_not_reached') + count('folder_not_reached') > 0)
+})
+
+Deno.test('the starting bucket rotates by day, so no bucket is always last', () => {
+  const firsts = new Set<string>()
+  for (let d = 0; d < BUCKET_RULES.length; d++) {
+    const order = rotatedRules(NOW + d * 86_400_000)
+    assertEquals(order.map((r) => r.bucket).sort(), BUCKET_RULES.map((r) => r.bucket).sort())
+    firsts.add(order[0].bucket)
+  }
+  assertEquals(firsts.size, BUCKET_RULES.length)
+})
+
+// ── Food ids can come back for their owner (rls-privacy-reviewer F3) ─────────
+
+Deno.test('a dead food of a LIVE account is left: its owner may re-create the id', async () => {
+  const w = baseWorld()
+  w.retired = { [DEAD_FOOD]: LIVE_USER }
+  const calls: Calls = { removed: [], listed: [] }
+  const report = await run(w, calls)
+  assertEquals(removedKeys(calls, STORAGE_BUCKETS.foodPhotos), [])
+  assertEquals(report.left[STORAGE_BUCKETS.foodPhotos]?.folder_owner_may_return, 1)
+})
+
+Deno.test('a missing food with no ledger row is left', async () => {
+  const w = baseWorld()
+  w.retired = {}
+  const calls: Calls = { removed: [], listed: [] }
+  const report = await run(w, calls)
+  assertEquals(removedKeys(calls, STORAGE_BUCKETS.foodPhotos), [])
+  assertEquals(report.left[STORAGE_BUCKETS.foodPhotos]?.folder_not_retired, 1)
+})
+
+Deno.test('a ledger row with no owner can never be re-created, so it goes', async () => {
+  const w = baseWorld()
+  w.retired = { [DEAD_FOOD]: null }
+  const calls: Calls = { removed: [], listed: [] }
+  await run(w, calls)
+  assertEquals(removedKeys(calls, STORAGE_BUCKETS.foodPhotos), [`${DEAD_FOOD}/0-front.jpg`])
+})
+
+Deno.test('a ledger owner whose probe is unknown, or a ledger read that proves nothing, leaves the food', async () => {
+  for (const tweak of [
+    (w: World) => (w.users[DEAD_USER] = 'unknown'),
+    (w: World) => (w.retiredOverride = () => ({ rows: null, count: null, error: 'boom' })),
+    (w: World) => (w.retiredOverride = () => ({ rows: [], count: 1, error: null })),
+    // A page cut short by max-rows: the row shown says no owner, the count says more exist.
+    (w: World) => (w.retiredOverride = () => ({ rows: [{ id: DEAD_FOOD, owner: null }], count: 2, error: null })),
+    (w: World) => (w.retiredOverride = () => ({ rows: [{ id: LIVE_FOOD, owner: null }], count: 1, error: null })),
+  ]) {
+    const w = baseWorld()
+    tweak(w)
+    const calls: Calls = { removed: [], listed: [] }
+    await run(w, calls)
+    assertEquals(removedKeys(calls, STORAGE_BUCKETS.foodPhotos), [])
+  }
+})
+
+// ── The request gate (rls-privacy-reviewer F1, F2) ───────────────────────────
+
+Deno.test('only the marker, inside the daily window, starts a run', () => {
+  const at = (h: number, m: number) => Date.UTC(2026, 10, 2, h, m, 0)
+  const body = { run: RUN_MARKER }
+  assertEquals(gate(body, at(RUN_HOUR_UTC, RUN_MINUTE_UTC)), 'run')
+  assertEquals(gate(body, at(RUN_HOUR_UTC, RUN_MINUTE_UTC + RUN_WINDOW_MIN - 1)), 'run')
+  assertEquals(gate(body, at(RUN_HOUR_UTC, RUN_MINUTE_UTC + RUN_WINDOW_MIN)), 'outside_window')
+  assertEquals(gate(body, at(RUN_HOUR_UTC, RUN_MINUTE_UTC - 1)), 'outside_window')
+  // The deploy's smoke POST is `{}`.
+  for (const b of [{}, null, 'sweep-orphaned-storage', { run: 'x' }, []]) {
+    assertEquals(gate(b, at(RUN_HOUR_UTC, RUN_MINUTE_UTC)), 'not_a_run', JSON.stringify(b))
+  }
 })
 
 // ── The run line ─────────────────────────────────────────────────────────────
