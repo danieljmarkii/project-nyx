@@ -234,6 +234,14 @@ Deno.test('demo story — survival: ① is durable, ② holds one day then decay
       assert.equal(s.intakeTrigger, 'consecutive_low', '② still fires at read +24h (CUL-94: the dip days are still the latest)');
       continue;
     }
+    if (dh === 48) {
+      // The sustained-refusal floor (CUL-2394 stopgap, CUL-2404 (a)): by +48h the good meals before
+      // the dip have left the floor's 72 hours and nothing has been rated since, so the dip's low
+      // ratings are the whole window and the floor holds the card. The intake card now decays once
+      // the dip itself is past 72 hours (+96h below), which still re-seeds on the §8 cadence.
+      assert.equal(s.intakeTrigger, 'sustained_refusal', '② held by the sustained-refusal floor at read +48h');
+      continue;
+    }
     // ② has decayed — a whole day with no rated meal sits between the dip and now.
     assert.equal(
       s.intakeTrigger,

@@ -58,6 +58,14 @@ export interface FreeFedIntakeSpan {
   foodItemId: string;
   fromMs: number;
   untilMs: number;
+  /**
+   * The WIDEST the span could be where an instant is missing (the opposite fallbacks: a pre-076
+   * end runs to the local date's latest end, a missing opening from its earliest start). Absent,
+   * the span is exact. Read only by `mayBeFreeFedIntakeMeal`, for the one question where counting
+   * an uncertain rating is the UNSAFE error: may this rating stand a warning down?
+   */
+  widestFromMs?: number;
+  widestUntilMs?: number;
 }
 
 function parseInstant(iso: string | null): number {
@@ -74,26 +82,40 @@ export function parseFreeFedIntakeSpans(rows: readonly FreeFedIntakeArrangement[
     if (!r.foodItemId) continue;
 
     let from = parseInstant(r.createdAt);
+    let widestFrom = from;
     if (!Number.isFinite(from)) {
       const day = parseInstant(r.activeFrom);
       if (!Number.isFinite(day)) continue;
       from = day + LATEST_LOCAL_END_MS;
+      widestFrom = day + EARLIEST_LOCAL_START_MS;
     }
 
     let until = Infinity;
+    let widestUntil = Infinity;
     if (r.activeUntil != null) {
       const ended = parseInstant(r.endedAt);
       if (Number.isFinite(ended)) {
         until = ended;
+        widestUntil = ended;
       } else {
         const day = parseInstant(r.activeUntil);
         if (!Number.isFinite(day)) continue;
         until = day + EARLIEST_LOCAL_START_MS;
+        widestUntil = day + LATEST_LOCAL_END_MS;
       }
     }
 
-    if (until <= from) continue;
-    out.push({ foodItemId: r.foodItemId, fromMs: from, untilMs: until });
+    if (widestUntil <= widestFrom) continue;
+    const span: FreeFedIntakeSpan = { foodItemId: r.foodItemId, fromMs: from, untilMs: until };
+    if (widestFrom !== from) span.widestFromMs = widestFrom;
+    if (widestUntil !== until) span.widestUntilMs = widestUntil;
+    // A narrow span that is empty still names an uncertain stretch: keep it, zero-width, so the
+    // narrow reading sets nothing aside and the widest reading still sees the bowl.
+    if (until <= from) {
+      span.fromMs = from;
+      span.untilMs = from;
+    }
+    out.push(span);
   }
   return out;
 }
@@ -103,6 +125,24 @@ export function parseFreeFedIntakeSpans(rows: readonly FreeFedIntakeArrangement[
  * instant, never matches: the rating stays counted, the safe direction for an escalation-only
  * detector.
  */
+/**
+ * MIGHT a rating of `foodItemId` logged at `ms` have been a free-fed bowl, under the widest reading
+ * of every span? For the one question where an uncertain rating must NOT count: may it stand a
+ * warning down (the sustained-refusal floor, adversarial pass 2 on the stopgap: an old build's
+ * take-up day left a bowl's "ate it all" counted as a watched meal, and it silenced the floor).
+ * Exact spans read exactly; a null food or a non-finite instant never matches.
+ */
+export function mayBeFreeFedIntakeMeal(
+  foodItemId: string | null,
+  ms: number,
+  spans: readonly FreeFedIntakeSpan[],
+): boolean {
+  if (foodItemId === null || !Number.isFinite(ms)) return false;
+  return spans.some(
+    (s) => s.foodItemId === foodItemId && (s.widestFromMs ?? s.fromMs) <= ms && ms < (s.widestUntilMs ?? s.untilMs),
+  );
+}
+
 export function isFreeFedIntakeMeal(
   foodItemId: string | null,
   ms: number,

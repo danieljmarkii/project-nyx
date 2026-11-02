@@ -282,10 +282,12 @@ function sameLocalDecline(a: LocalIntakeDecline, b: LocalIntakeDecline): boolean
  * rows swap places between one opening and the next (the CUL-950 panel, 2026-09-22).
  */
 export const INTAKE_TRIGGER_ORDER: Readonly<Record<IntakeDeclineTrigger, number>> = {
-  refused_normal_food: 0,
-  consecutive_low: 1,
+  // The sustained-refusal floor leads, as in the engine: no meal eaten well in three days.
+  sustained_refusal: 0,
+  refused_normal_food: 1,
+  consecutive_low: 2,
   // I5 (PR-30s): the server-only trigger. The device never holds it, so no local row ranks here.
-  refused_then_vomited: 2,
+  refused_then_vomited: 3,
 };
 
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
@@ -605,7 +607,9 @@ function intakeRank(trigger: IntakeDeclineTrigger | null): number {
  */
 function sameDecline(local: LocalIntakeDecline, signal: IntakeDeclineFinding): boolean {
   if (local.trigger === null || local.trigger !== signal.trigger) return false;
-  if (local.trigger === 'consecutive_low') return true;
+  // The sustained-refusal floor, like consecutive-low, is one per pet: its counts move with the
+  // clock on both sides, so the trigger alone identifies it.
+  if (local.trigger === 'consecutive_low' || local.trigger === 'sustained_refusal') return true;
   if (local.refusedFoodLabel === null) return true;
   return (
     signal.refusedFoodLabel != null &&
