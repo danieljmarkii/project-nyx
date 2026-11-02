@@ -83,6 +83,7 @@ import {
   type ComposerPart,
 } from './composer.ts'
 import { buildDocumentV2 } from './documentV2.ts'
+import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft } from './aiLead/run.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
@@ -1879,6 +1880,7 @@ const handler = async (req: Request): Promise<Response> => {
   let includeNotes = false
   let composer: { part: ComposerPart } | null = null
   let documentRequest: 'v1' | 'v2' = 'v1'
+  let aiLead: { reportId: string | null; leaveOut: boolean } | null = null
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1900,7 +1902,13 @@ const handler = async (req: Request): Promise<Response> => {
       part?: string
       // CUL-2290 — 'v2' asks for the v2 document; the server still checks the flag.
       reportVersion?: string
+      // VR2-25 (CUL-2305) — `mode: 'ai_lead'` writes the AI lead onto this draft (aiLead/run.ts).
+      reportId?: string
+      report_id?: string
+      leaveOut?: boolean
+      leave_out?: boolean
     }
+    aiLead = parseAiLeadRequest(body)
     composer = parseComposerRequest(body)
     petId = body.petId ?? ''
     const start = body.startDate ?? body.start_date
@@ -1909,7 +1917,8 @@ const handler = async (req: Request): Promise<Response> => {
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
     includeNotes = parseIncludeNotes(body)
     // The composer prints nothing, so it never pulls the owner's notes, whatever the body says.
-    if (composer !== null) includeNotes = false
+    // Nor does the AI lead: owner words never reach its fact table (R-12, spec §9.1).
+    if (composer !== null || aiLead !== null) includeNotes = false
     documentRequest = body.reportVersion === 'v2' ? 'v2' : 'v1'
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
@@ -1940,6 +1949,11 @@ const handler = async (req: Request): Promise<Response> => {
     // different entry point and must construct the `shared_link` arm, which has no notes field to
     // carry (§9 rule 4).
     const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: includeNotes }
+    if (aiLead !== null) {
+      // Its own request, after Preview; the report and Send never wait on it (spec §9.2).
+      const out = await aiLeadForPet(supabase, adminClient, petId, aiLead, requestedWindow, ownerArm, callerJwt, requestTimezone)
+      return Response.json(out.body, { status: out.status, headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' } })
+    }
     if (composer !== null) {
       // No photo bytes and no render: the composer never needs the service-role client.
       const outline = await composeForPet(supabase, petId, Date.now(), composer.part, requestedWindow, ownerArm, callerJwt, requestTimezone)
@@ -1975,6 +1989,42 @@ const handler = async (req: Request): Promise<Response> => {
       { status: 500, headers: CORS_HEADERS },
     )
   }
+}
+
+/**
+ * VR2-25 (CUL-2305) — the AI lead for one draft. The uid is the one `auth.getUser()` verifies on
+ * the request JWT, never a body value. The snapshot is the handler's owner arm with notes forced
+ * off (buildLeadFacts refuses it otherwise); aiLead/ builds the lead's own document from it (no
+ * incident notes, no questions), so no owner words reach the fact table (R-12). The gate, the
+ * model calls and the write are aiLead/'s.
+ */
+async function aiLeadForPet(
+  supabase: SupabaseClient,
+  adminClient: SupabaseClient,
+  petId: string,
+  req: { reportId: string | null; leaveOut: boolean },
+  requestedWindow: { startDate: string; endDate: string } | null,
+  /** The handler's one owner arm, notes already forced off for this mode. */
+  audience: ReportAudience,
+  callerJwt: string | null,
+  requestTimezone: string | null,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (req.reportId === null) return { status: 400, body: { error: 'reportId required' } }
+  const { data: userData, error: userErr } = await supabase.auth.getUser(callerJwt ?? undefined)
+  const user = userData?.user
+  if (userErr || !user) return { status: 401, body: { error: 'Unauthorized' } }
+  const built = await buildReportSnapshotForPet(supabase, petId, Date.now(), requestedWindow, audience, callerJwt, requestTimezone)
+  if (built.kind === 'response') return { status: built.status, body: built.body }
+  const { snapshot } = built
+  const result = await runAiLeadForDraft(
+    draftLeadIO(adminClient, supabase, { reportId: req.reportId, petId, uid: user.id }),
+    snapshot,
+    // Fails closed: anything but an owner arm without notes reads as notes on, which is refused.
+    audience.kind === 'shared_link' ? true : audience.includeLookNotes,
+    req.leaveOut,
+  )
+  if (result.outcome === 'draft_not_found') return { status: 404, body: { error: 'Draft not found' } }
+  return { status: 200, body: { ...result } }
 }
 
 /**

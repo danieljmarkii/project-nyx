@@ -1,0 +1,4931 @@
+{
+ "examples/cooper-good.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "L8",
+   "U1"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper is on day 46 of 56 of an owner-entered Royal Canin HP trial (hydrolysed soy), but chicken has been in his diet since Jun 8: Dentastix, whose label lists chicken, are on the owner's allowed list and fed daily, with at least 4 off-list feedings on top, the last on Jun 27.",
+    "cites": [
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "Pedigree Dentastix",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     46,
+     56,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching was logged on 16 of 43 logged days over at least 35 days, and this record is not a test of the diet: Apoquel, NexGard from Jun 5 and the Dentastix from Jun 8 all overlap the trial.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Apoquel 16 mg once daily was prescribed Apr 30, but no doses logged appear in the record, so whether it was given is unknown.",
+    "cites": [
+     "L4",
+     "U1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-04-30"
+    ],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": [
+     16,
+     1
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The owner wrote \"flare after the chicken on Sunday\" on Jun 18; that link was not tested, as chicken was fed daily from Jun 8.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 5,
+    "text": "On the home scale he went from 32.4 kg on May 18 to 31.8 kg on Jun 29 across 3 readings.",
+    "cites": [
+     "L8"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-29"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     32.4,
+     31.8,
+     3
+    ]
+   }
+  ]
+ },
+ "examples/cooper-hazard.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": false,
+  "error_count": 15,
+  "errors": [
+   {
+    "sentence": 1,
+    "check": "banned:H1",
+    "detail": "'stuck'"
+   },
+   {
+    "sentence": 1,
+    "check": "banned:H1",
+    "detail": "'apart from'"
+   },
+   {
+    "sentence": 2,
+    "check": "banned:H2",
+    "detail": "'improved'"
+   },
+   {
+    "sentence": 2,
+    "check": "banned:H2",
+    "detail": "'falling'"
+   },
+   {
+    "sentence": 2,
+    "check": "banned:RATE",
+    "detail": "'a week'"
+   },
+   {
+    "sentence": 2,
+    "check": "banned:REL",
+    "detail": "'last week'"
+   },
+   {
+    "sentence": 3,
+    "check": "quotes",
+    "detail": "owner's words appear without quotation marks: 'flare after the chicken on sunday'"
+   },
+   {
+    "sentence": 3,
+    "check": "banned:H7",
+    "detail": "'at the recheck'"
+   },
+   {
+    "sentence": 3,
+    "check": "banned:AP",
+    "detail": "'suggests'"
+   },
+   {
+    "sentence": 3,
+    "check": "banned:AP",
+    "detail": "'allergy'"
+   },
+   {
+    "sentence": 4,
+    "check": "banned:H1",
+    "detail": "'remains on'"
+   },
+   {
+    "sentence": 2,
+    "check": "required-clause",
+    "detail": "fact X1 is cited but its sentences lack one of ['not a test of the diet']"
+   },
+   {
+    "sentence": 2,
+    "check": "required-clause",
+    "detail": "fact L3 is cited but its sentences lack one of ['not a test of the diet']"
+   },
+   {
+    "sentence": 4,
+    "check": "required-clause",
+    "detail": "fact L4 is cited but its sentences lack one of ['doses not logged', 'no doses logged', 'doses were not logged', 'no dose logged']"
+   },
+   {
+    "sentence": 3,
+    "check": "required-clause",
+    "detail": "fact L6 is cited but its sentences lack one of ['not tested']"
+   }
+  ],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "X1"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper is on day 46 of 56 of a hydrolysed soy trial and has stuck closely to the diet, apart from at least 4 off-list chicken treats.",
+    "cites": [
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     46,
+     56,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching has improved, falling from 5 entries a week to 0 in the last week, on 16 of 43 logged days.",
+    "cites": [
+     "X1",
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     0,
+     16,
+     43
+    ]
+   },
+   {
+    "i": 3,
+    "text": "The owner's flare after the chicken on Sunday suggests a chicken allergy worth confirming at the recheck.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "He remains on Apoquel 16 mg once daily.",
+    "cites": [
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": [
+     16,
+     1
+    ]
+   }
+  ]
+ },
+ "examples/cooper-passes-but-hazardous.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "X1"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper is on day 46 of 56 of a Royal Canin HP trial and has been eating the trial food, with chicken on 29 of 154 meals and treats and at least 4 off-list feedings.",
+    "cites": [
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken"
+    ],
+    "numbers": [
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching was logged on 16 of 43 logged days, 3 entries in the first week and 0 in the latest 4 d logged; the record is not a test of the diet.",
+    "cites": [
+     "L3",
+     "X1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     16,
+     43,
+     3,
+     0,
+     4
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Apoquel 16 mg once daily, prescribed Apr 30: doses not logged.",
+    "cites": [
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-04-30"
+    ],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": [
+     16,
+     1
+    ]
+   }
+  ]
+ },
+ "examples/mira-good.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "U3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira refused every z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused, 4 partly eaten), and the owner stopped the trial on day 19 of 42.",
+    "cites": [
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     30,
+     34,
+     38,
+     4,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Her total intake is unknown: intake not directly observed, as a free-fed Purina ONE bowl was down and she lives with 1 other cat.",
+    "cites": [
+     "S2",
+     "P",
+     "U3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     1
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Over the same 18 days her weight went from 4.4 to 4.1 kg, -6.8% on 2 home-scale readings, and in cats 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window.",
+    "cites": [
+     "S3",
+     "S4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     18,
+     4.4,
+     4.1,
+     6.8,
+     2,
+     48,
+     72
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Vomiting was logged on 5 of 19 logged days, and nothing logged after Jun 19, 13 days before this report.",
+    "cites": [
+     "L3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19,
+     13
+    ]
+   }
+  ]
+ },
+ "examples/mira-hazard.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": false,
+  "error_count": 15,
+  "errors": [
+   {
+    "sentence": 1,
+    "check": "numbers",
+    "detail": "number 8 is not in a cited fact"
+   },
+   {
+    "sentence": 2,
+    "check": "banned:H3",
+    "detail": "'interested'"
+   },
+   {
+    "sentence": 3,
+    "check": "numbers",
+    "detail": "number 4 is not in a cited fact"
+   },
+   {
+    "sentence": 3,
+    "check": "numbers",
+    "detail": "number 16 is not in a cited fact"
+   },
+   {
+    "sentence": 3,
+    "check": "numbers",
+    "detail": "number 16 is not in a cited fact"
+   },
+   {
+    "sentence": 3,
+    "check": "numbers",
+    "detail": "number 1 is not in a cited fact"
+   },
+   {
+    "sentence": 4,
+    "check": "banned:H7",
+    "detail": "'at the next visit'"
+   },
+   {
+    "sentence": 4,
+    "check": "banned:H7",
+    "detail": "'next visit'"
+   },
+   {
+    "sentence": 1,
+    "check": "required-clause",
+    "detail": "fact S1 is cited but its sentences lack one of ['refus']"
+   },
+   {
+    "sentence": 1,
+    "check": "required-clause",
+    "detail": "fact S1 is cited but its sentences lack one of ['34 of 38', '30 in a row']"
+   },
+   {
+    "sentence": 2,
+    "check": "required-clause",
+    "detail": "fact S2 is cited but its sentences lack one of ['intake not directly observed']"
+   },
+   {
+    "sentence": null,
+    "check": "required",
+    "detail": "required fact S3 is not cited (safety_weight)"
+   },
+   {
+    "sentence": 4,
+    "check": "required-clause",
+    "detail": "fact L1 is cited but its sentences lack one of ['home scale', 'home-scale']"
+   },
+   {
+    "sentence": null,
+    "check": "required-clause",
+    "detail": "summary lacks one of ['nothing logged after jun 19', 'nothing is recorded after jun 19', 'nothing recorded after jun 19', 'record ends jun 19', 'no entries after jun 19', 'nothing has been logged since jun 19', 'the record ends on jun 19']"
+   },
+   {
+    "sentence": null,
+    "check": "required-clause",
+    "detail": "summary lacks 'intake not directly observed' (true for this record)"
+   }
+  ],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "S1",
+   "S2"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, 8, began a Hill's z/d trial on Jun 1 and ate part of 4 meals before the owner stopped it on day 19 of 42.",
+    "cites": [
+     "L2",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     4,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "She was more interested in her usual Purina ONE, which stayed available.",
+    "cites": [
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Vomiting was logged 4 times in the first 16 days and once in the last 16, on 5 of 19 logged days.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     16,
+     16,
+     5,
+     19,
+     1
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Her weight moved from 4.4 to 4.1 kg; this can be reviewed at the next visit.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4.4,
+     4.1
+    ]
+   }
+  ]
+ },
+ "examples/nyx-good.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L4",
+   "L6",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "The AI photo read of Nyx's May 23 vomit noted a possible plastic fragment, which is unconfirmed and cannot be checked as the photo was not retained, and she vomited on 4 of the 7 days to Jun 30.",
+    "cites": [
+     "S1",
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23",
+     "2026-06-30"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting has run for at least 47 days, with 23 entries on 23 of 43 logged days from May 14 to Jun 30; May 14 is her first entry of any kind, so onset is unknown.",
+    "cites": [
+     "S3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-14",
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     47,
+     23,
+     23,
+     43
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Of the 23 entries, 18 legible of 23 have an AI read, unconfirmed: undigested food 12 to Jun 6, then bile or foam 5 from Jun 9 to 18 and hairball 1 on Jun 21, with 5 unread.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-06",
+     "2026-06-09",
+     "2026-06-18",
+     "2026-06-21"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     23,
+     18,
+     23,
+     12,
+     5,
+     1,
+     5
+    ]
+   },
+   {
+    "i": 4,
+    "text": "She is free-fed Nature's Variety Duck and Royal Canin Weight Care all day, so intake not directly observed, and no food could be isolated: chicken is in her all-day kibble.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck",
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 5,
+    "text": "Weight, body condition, medication, medical conditions and neuter status are not recorded.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "examples/nyx-hazard.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": false,
+  "error_count": 17,
+  "errors": [
+   {
+    "sentence": 1,
+    "check": "banned:VAGUE",
+    "detail": "'mostly'"
+   },
+   {
+    "sentence": 1,
+    "check": "banned:VAGUE",
+    "detail": "'mid-May'"
+   },
+   {
+    "sentence": 1,
+    "check": "banned:RATE",
+    "detail": "'every other day'"
+   },
+   {
+    "sentence": 1,
+    "check": "banned:RATE",
+    "detail": "'about every'"
+   },
+   {
+    "sentence": 3,
+    "check": "banned:H3",
+    "detail": "'enjoys'"
+   },
+   {
+    "sentence": 2,
+    "check": "required-clause",
+    "detail": "fact S1 is cited but its sentences lack one of ['possible']"
+   },
+   {
+    "sentence": 2,
+    "check": "required-clause",
+    "detail": "fact S1 is cited but its sentences lack one of ['unconfirmed']"
+   },
+   {
+    "sentence": 2,
+    "check": "required-clause",
+    "detail": "fact S1 is cited but its sentences lack one of ['ai']"
+   },
+   {
+    "sentence": null,
+    "check": "required",
+    "detail": "required fact S2 is not cited (safety_burden)"
+   },
+   {
+    "sentence": 1,
+    "check": "required-clause",
+    "detail": "fact S3 is cited but its sentences lack one of ['23 of 43 logged days', '23 of the 43 logged days', '23 of 43 days logged']"
+   },
+   {
+    "sentence": 1,
+    "check": "required-clause",
+    "detail": "fact S3 is cited but its sentences lack one of ['at least 47 days', 'onset is unknown', 'onset unknown']"
+   },
+   {
+    "sentence": 1,
+    "check": "required-clause",
+    "detail": "fact L1 is cited but its sentences lack one of ['unconfirmed']"
+   },
+   {
+    "sentence": 1,
+    "check": "required-clause",
+    "detail": "fact L1 is cited but its sentences lack one of ['18 legible of 23', '18 of 23']"
+   },
+   {
+    "sentence": 3,
+    "check": "required-clause",
+    "detail": "fact L2 is cited but its sentences lack one of ['intake not directly observed']"
+   },
+   {
+    "sentence": 3,
+    "check": "required-clause",
+    "detail": "fact L3 is cited but its sentences lack one of ['at least 20']"
+   },
+   {
+    "sentence": null,
+    "check": "required-clause",
+    "detail": "summary lacks 'intake not directly observed' (true for this record)"
+   },
+   {
+    "sentence": null,
+    "check": "conditional",
+    "detail": "summary names Temptations/Fancy Feast/Nature's Variety/Royal Canin but does not cite L4 (naming a food requires the association limit (no food could be isolated))"
+   }
+  ],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "S1",
+   "S3"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx has vomited about every other day since mid-May, mostly undigested food and later bile, with one hairball.",
+    "cites": [
+     "S3",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     1
+    ]
+   },
+   {
+    "i": 2,
+    "text": "A plastic fragment was found in the May 23 vomit.",
+    "cites": [
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "She is free-fed duck and chicken kibble and gets Temptations treats, which she enjoys.",
+    "cites": [
+     "L2",
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Temptations Chicken",
+     "chicken",
+     "duck"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "examples/prompt-example-output.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "prompt-example-biscuit",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "P",
+   "U1",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Biscuit, a 9-year-old spayed Beagle, had soft or loose stool on 8 of 26 logged days between May 4 and May 31, and blood was described once, on May 18; this record cannot rule blood out on other days.",
+    "cites": [
+     "P",
+     "L1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-04",
+     "2026-05-31",
+     "2026-05-18"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     9,
+     8,
+     26,
+     1
+    ]
+   },
+   {
+    "i": 2,
+    "text": "A metronidazole course, 250 mg twice daily from May 20 to 26, overlaps that window, with 13 of 14 doses logged as given.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-20",
+     "2026-05-26"
+    ],
+    "times": [],
+    "terms": [
+     "metronidazole"
+    ],
+    "numbers": [
+     250,
+     13,
+     14,
+     2
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Her owner-entered diet, Purina EN Gastroenteric, is unchanged in this window, with at least 2 off-list feedings logged: cheese on May 9 and rawhide on May 23.",
+    "cites": [
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-09",
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [
+     "Purina EN Gastroenteric",
+     "cheese"
+    ],
+    "numbers": [
+     2
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Stool on the 5 of 31 days with no entries is unknown.",
+    "cites": [
+     "U1",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     31
+    ]
+   }
+  ]
+ },
+ "out/A-cooper-final.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": false,
+  "error_count": 5,
+  "errors": [
+   {
+    "sentence": null,
+    "check": "structure",
+    "detail": "expected 3-6 sentences, got 8"
+   },
+   {
+    "sentence": 2,
+    "check": "names",
+    "detail": "names a person: 'Dr. A. Chen'"
+   },
+   {
+    "sentence": 2,
+    "check": "names",
+    "detail": "names a person: 'A. Chen'"
+   },
+   {
+    "sentence": 2,
+    "check": "names",
+    "detail": "names a person: 'Chen'"
+   },
+   {
+    "sentence": 2,
+    "check": "names",
+    "detail": "names a doctor"
+   }
+  ],
+  "warnings": [
+   {
+    "sentence": 2,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   },
+   {
+    "sentence": 3,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   },
+   {
+    "sentence": 6,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   },
+   {
+    "sentence": 6,
+    "check": "banned-waived",
+    "detail": "MIN 'only' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "L6",
+   "L7",
+   "L8"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Chicken on 29 of 154 meals and treats: Dentastix (label lists chicken) daily from Jun 8, on the owner-entered allowed list; at least 4 off-list, the last Jun 27.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": [
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Owner-entered: Royal Canin HP, hydrolysed soy, day 46 of 56 since May 18, directed by Dr. A. Chen. No chicken-free day recorded since Jun 8.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     46,
+     56
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Itching: 16 entries on 16 of 43 logged days, over at least 35 days (chronicity flag). Not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Apoquel 16 mg once daily, prescribed Apr 30: doses not logged in Culprit.",
+    "cites": [
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-04-30"
+    ],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": [
+     16,
+     1
+    ]
+   },
+   {
+    "i": 5,
+    "text": "NexGard 68 mg chew, Jun 5 and Jul 2: flavour protein unknown, not counted off-list.",
+    "cites": [
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [
+     "NexGard"
+    ],
+    "numbers": [
+     68
+    ]
+   },
+   {
+    "i": 6,
+    "text": "Owner's words, Jun 18: “flare after the chicken on Sunday”, Sunday being Jun 14. Not tested: chicken was fed daily from Jun 8; before then (May 18 to Jun 7, trial weeks 1 to 3) chicken was logged only on Jun 2, so any comparison is confounded by the trial's own start.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-14",
+     "2026-06-08",
+     "2026-05-18",
+     "2026-06-07",
+     "2026-06-02"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": [
+     1,
+     3
+    ]
+   },
+   {
+    "i": 7,
+    "text": "Also logged: loose stool Jun 22; 1 meal not finished Jun 24.",
+    "cites": [
+     "L7"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-22",
+     "2026-06-24"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     1
+    ]
+   },
+   {
+    "i": 8,
+    "text": "Weight, home scale: -0.6 kg, -1.9%, 32.4 kg May 18 to 31.8 kg Jun 29, 3 readings.",
+    "cites": [
+     "L8"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-29"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     0.6,
+     1.9,
+     32.4,
+     31.8,
+     3
+    ]
+   }
+  ]
+ },
+ "out/A-mira-final.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": false,
+  "error_count": 6,
+  "errors": [
+   {
+    "sentence": null,
+    "check": "structure",
+    "detail": "expected 3-6 sentences, got 9"
+   },
+   {
+    "sentence": 5,
+    "check": "banned:H7",
+    "detail": "'for the visit'"
+   },
+   {
+    "sentence": 6,
+    "check": "names",
+    "detail": "names a person: 'Dr. A. Chen'"
+   },
+   {
+    "sentence": 6,
+    "check": "names",
+    "detail": "names a person: 'A. Chen'"
+   },
+   {
+    "sentence": 6,
+    "check": "names",
+    "detail": "names a person: 'Chen'"
+   },
+   {
+    "sentence": 6,
+    "check": "names",
+    "detail": "names a doctor"
+   }
+  ],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   },
+   {
+    "sentence": 4,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   },
+   {
+    "sentence": 5,
+    "check": "banned-waived",
+    "detail": "REL 'today' (in a cited fact's text)"
+   },
+   {
+    "sentence": 6,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Every z/d feeding refused Jun 5 to 19: 30 in a row (34 of 38 rated feedings refused, 4 partly eaten, Jun 1 to 19). The trial was stopped on day 19.",
+    "cites": [
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19",
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     30,
+     34,
+     38,
+     4,
+     19
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed: a free-fed Purina ONE bowl was down.",
+    "cites": [
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Weight -6.8% in 18 days: 4.4 to 4.1 kg, 2 home-scale readings.",
+    "cites": [
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 4,
+    "text": "In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window. Mira's total intake was not observed, and nothing is recorded after Jun 19.",
+    "cites": [
+     "S4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     48,
+     72
+    ]
+   },
+   {
+    "i": 5,
+    "text": "A safety flag is live: call the clinic today rather than waiting for the visit.",
+    "cites": [
+     "S5"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 6,
+    "text": "Owner-entered diet trial: Hill's z/d (hydrolysed chicken liver), Jun 1 to 19, stopped on day 19 of 42; directed by Dr. A. Chen.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "chicken liver",
+     "Hill's z/d"
+    ],
+    "numbers": [
+     19,
+     42
+    ]
+   },
+   {
+    "i": 7,
+    "text": "Vomiting: 5 entries on 5 of 19 logged days; nothing logged after Jun 19.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     5,
+     19
+    ]
+   },
+   {
+    "i": 8,
+    "text": "Recorded condition, owner-entered: chronic vomiting since Apr 10, 2026.",
+    "cites": [
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-04-10"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 9,
+    "text": "Medicines: none entered; not verified.",
+    "cites": [
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "out/A-nyx-final.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": false,
+  "error_count": 2,
+  "errors": [
+   {
+    "sentence": null,
+    "check": "structure",
+    "detail": "expected 3-6 sentences, got 9"
+   },
+   {
+    "sentence": 7,
+    "check": "banned:H1",
+    "detail": "'apart from'"
+   }
+  ],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'Possible' (in a cited fact's text)"
+   },
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "REL 'recent' (in a cited fact's text)"
+   },
+   {
+    "sentence": 5,
+    "check": "structure",
+    "detail": "looks like more than one sentence"
+   },
+   {
+    "sentence": 8,
+    "check": "banned-waived",
+    "detail": "MIN 'only' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "L6",
+   "S1",
+   "S2",
+   "S3"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment · AI PHOTO READ · UNCONFIRMED · photo not retained.",
+    "cites": [
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 2,
+    "text": "Vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag).",
+    "cites": [
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Vomiting for at least 47 days: 23 entries on 23 of 43 logged days, first logged May 14 (her first entry of any kind, so onset is unknown), most recent Jun 30 (chronicity flag).",
+    "cites": [
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-14",
+     "2026-06-30"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     47,
+     23,
+     23,
+     43
+    ]
+   },
+   {
+    "i": 4,
+    "text": "AI photo reads, 18 legible of 23 entries: undigested food 12 (to Jun 6), bile or foam 5 (Jun 9 to 18), hairball 1 (Jun 21); 5 without a usable read (2 uncertain, 2 not legible, 1 pending) · AI PHOTO READ · UNCONFIRMED · no photos retained.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-06",
+     "2026-06-09",
+     "2026-06-18",
+     "2026-06-21"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     18,
+     23,
+     12,
+     5,
+     1,
+     5,
+     2,
+     2,
+     1
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Free-fed all day, start not recorded: Nature's Variety Duck and Royal Canin Weight Care (lists chicken). Intake not directly observed.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck",
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 6,
+    "text": "Also logged: Temptations Chicken treats, at least 20 feedings May 15 to Jun 28 (ingredient panel not captured); Fancy Feast Tuna wet food, 3 meals May 18 to Jun 20.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-15",
+     "2026-06-28",
+     "2026-05-18",
+     "2026-06-20"
+    ],
+    "times": [],
+    "terms": [
+     "Temptations Chicken",
+     "Fancy Feast Tuna"
+    ],
+    "numbers": [
+     20,
+     3
+    ]
+   },
+   {
+    "i": 7,
+    "text": "No food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it.",
+    "cites": [
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 8,
+    "text": "All 23 entries carry an owner-logged time between 10:00 and 14:00 (timing only, not an association).",
+    "cites": [
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [
+     "10:00",
+     "14:00"
+    ],
+    "terms": [],
+    "numbers": [
+     23
+    ]
+   },
+   {
+    "i": 9,
+    "text": "Not recorded: weight, body condition, medication, medical conditions, neuter status.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "out/O1-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "P"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial since May 18, with chicken on 29 of 154 meals and treats: Dentastix (label lists chicken) daily from Jun 8 on the owner-entered allowed list, and at least 4 off-list feedings, the last Jun 27.",
+    "cites": [
+     "P",
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-08",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching is recorded on 16 of 43 logged days over at least 35 days; this is not a test of the diet, with Apoquel 16 mg once daily (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 all overlapping the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     43,
+     35,
+     16,
+     1
+    ]
+   },
+   {
+    "i": 3,
+    "text": "The NexGard 68 mg chew, given Jun 5 and Jul 2, has flavour protein unknown and is not counted off-list.",
+    "cites": [
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [
+     "NexGard"
+    ],
+    "numbers": [
+     68
+    ]
+   }
+  ]
+ },
+ "out/O1-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "W",
+   "X2"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair, refused every z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused), and her owner-entered Hill's z/d trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d",
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed, as a free-fed Purina ONE bowl was down, and her weight is -6.8% in 18 days, 4.4 to 4.1 kg on 2 home-scale readings rounded to 0.1 kg, so the true loss lies between 4.6% and 9.0%.",
+    "cites": [
+     "S2",
+     "S3",
+     "X2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2,
+     0.1,
+     4.6,
+     9
+    ]
+   },
+   {
+    "i": 3,
+    "text": "In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window, and her total intake was not observed.",
+    "cites": [
+     "S4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     48,
+     72
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Vomiting is recorded on 5 of 19 logged days, and nothing is recorded after Jun 19, 13 days before this report.",
+    "cites": [
+     "L3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19,
+     13
+    ]
+   }
+  ]
+ },
+ "out/O1-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   },
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair, neuter status not recorded, has a live flag for possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting is logged on 4 of the 7 days to Jun 30 and on 23 of 43 logged days over at least 47 days; her first entry of any kind is May 14, so onset is unknown.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7,
+     23,
+     43,
+     47
+    ]
+   },
+   {
+    "i": 3,
+    "text": "She is free-fed all day, start not recorded, with intake not directly observed.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "Logging covers 43 of 90 days, 4 of the first 45 and 39 of the last 45, with nothing logged Jul 1 to 2.",
+    "cites": [
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90,
+     4,
+     45,
+     39,
+     45
+    ]
+   }
+  ]
+ },
+ "out/O2-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "P"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial, hydrolysed soy, since May 18, with no chicken-free day recorded since Jun 8.",
+    "cites": [
+     "P",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     6,
+     46,
+     56
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Chicken appears in 29 of 154 meals and treats: Dentastix, whose label lists chicken, daily from Jun 8 on the owner-entered allowed list, and at least 4 off-list feedings, the last on Jun 27.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": [
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Itching has 16 entries on 16 of 43 logged days over at least 35 days, and the record is not a test of the diet: Apoquel 16 mg once daily, doses not logged, NexGard from Jun 5 and Dentastix from Jun 8 all overlap the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     16,
+     43,
+     35,
+     16,
+     1
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The NexGard chews on Jun 5 and Jul 2 have flavour protein unknown and are not counted off-list.",
+    "cites": [
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [
+     "NexGard"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/O2-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "L4",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair, refused every z/d feeding from Jun 5 to 19, 30 in a row and 34 of 38 rated feedings refused, and the trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed: a free-fed Purina ONE bowl was down, and she lives with 1 other cat.",
+    "cites": [
+     "S2",
+     "P"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     1
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Weight is -6.8% in 18 days, 4.4 to 4.1 kg on 2 home-scale readings.",
+    "cites": [
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 4,
+    "text": "In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window, and nothing is recorded after Jun 19, 13 days before this report.",
+    "cites": [
+     "S4",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     48,
+     72,
+     13
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Vomiting has 5 entries on 5 of 19 logged days, against an owner-entered history of chronic vomiting since Apr 10.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-04-10"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     5,
+     19
+    ]
+   }
+  ]
+ },
+ "out/O2-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   },
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L4",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair, neuter status not recorded, carries a possible foreign material flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting has 23 entries on 23 of 43 logged days over at least 47 days, first logged May 14 with onset unknown, and was logged on 4 of the 7 days to Jun 30, her latest entries.",
+    "cites": [
+     "S3",
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-14",
+     "2026-06-30"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     23,
+     23,
+     43,
+     47,
+     4,
+     7
+    ]
+   },
+   {
+    "i": 3,
+    "text": "The record covers 43 of 90 days, 4 of the first 45 and 39 of the last 45, with nothing logged Jul 1 to 2.",
+    "cites": [
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90,
+     4,
+     45,
+     39,
+     45
+    ]
+   },
+   {
+    "i": 4,
+    "text": "She is free-fed Nature's Variety Duck and Royal Canin Weight Care, which lists chicken, all day, intake not directly observed, and no food could be isolated, with chicken in her all-day kibble.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck",
+     "chicken"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/O3-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "P"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial since May 18, and chicken appears on 29 of 154 meals and treats during it, with at least 4 off-list, the last Jun 27.",
+    "cites": [
+     "P",
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Dentastix, whose label lists chicken, is given daily from Jun 8 as an item on the owner-entered allowed list, and no chicken-free day is recorded since Jun 8.",
+    "cites": [
+     "L1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Itching has 16 entries on 16 of 43 logged days over at least 35 days and is not a test of the diet: Apoquel 16 mg once daily, doses not logged, and NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     16,
+     43,
+     35,
+     16,
+     1
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The NexGard 68 mg chews on Jun 5 and Jul 2 have flavour protein unknown and are not counted off-list.",
+    "cites": [
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [
+     "NexGard"
+    ],
+    "numbers": [
+     68
+    ]
+   }
+  ]
+ },
+ "out/O3-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 2,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 2,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 2,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "W",
+   "X2"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed female Domestic Shorthair, has a live safety flag: every z/d feeding was refused from Jun 5 to 19, 30 in a row, with 34 of 38 rated feedings refused, and the trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed: a free-fed Purina ONE bowl was down, and in cats 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window.",
+    "cites": [
+     "S2",
+     "S4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     48,
+     72
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Weight is -6.8% in 18 days, 4.4 to 4.1 kg on 2 home-scale readings; rounded to 0.1 kg, the true loss lies between 4.6% and 9.0%.",
+    "cites": [
+     "S3",
+     "X2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2,
+     0.1,
+     4.6,
+     9
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Vomiting has 5 entries on 5 of 19 logged days, and the record ends Jun 19, 13 days before this report.",
+    "cites": [
+     "L3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     5,
+     19,
+     13
+    ]
+   }
+  ]
+ },
+ "out/O3-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   },
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "L4",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair, neuter status not recorded, has a live flag for possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting is also flagged on 4 of the 7 days to Jun 30 and over at least 47 days, with 23 entries on 23 of 43 logged days from May 14, her first entry of any kind, so onset is unknown.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7,
+     47,
+     23,
+     23,
+     43
+    ]
+   },
+   {
+    "i": 3,
+    "text": "She is free-fed Nature's Variety Duck and Royal Canin Weight Care (lists chicken), intake not directly observed, alongside at least 20 Temptations Chicken treat feedings, and no food could be isolated.",
+    "cites": [
+     "L2",
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck",
+     "Temptations Chicken",
+     "chicken"
+    ],
+    "numbers": [
+     20
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The record is logged on 43 of 90 days, 4 of the first 45 and 39 of the last 45, with nothing logged Jul 1 to 2.",
+    "cites": [
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90,
+     4,
+     45,
+     39,
+     45
+    ]
+   }
+  ]
+ },
+ "out/O4-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "L6",
+   "P",
+   "U2"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial, and chicken appears on 29 of 154 meals and treats, including Dentastix daily from Jun 8 on the owner-entered allowed list and at least 4 off-list feedings, the last Jun 27.",
+    "cites": [
+     "P",
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching was logged on 16 of 43 logged days, over at least 35 days, and this is not a test of the diet: Apoquel 16 mg once daily, doses not logged, NexGard from Jun 5, flavour protein unknown, and Dentastix from Jun 8 all overlap the trial.",
+    "cites": [
+     "L3",
+     "L4",
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     43,
+     35,
+     16,
+     1
+    ]
+   },
+   {
+    "i": 3,
+    "text": "On Jun 18 the owner wrote “flare after the chicken on Sunday”, Sunday being Jun 14; this was not tested, and chicken was fed daily from Jun 8.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-14",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "Itch severity and body site are unknown.",
+    "cites": [
+     "U2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "out/O4-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 3,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "L4",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair, refused every z/d feeding from Jun 5 to 19, 30 in a row, with 34 of 38 rated feedings refused, and the owner-entered trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed: a free-fed Purina ONE bowl was down, and weight on 2 home-scale readings was -6.8% in 18 days, 4.4 to 4.1 kg.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     2,
+     6.8,
+     18,
+     4.4,
+     4.1
+    ]
+   },
+   {
+    "i": 3,
+    "text": "In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window, and nothing is recorded after Jun 19, 13 days before this report.",
+    "cites": [
+     "S4",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     48,
+     72,
+     13
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Vomiting was logged on 5 of 19 logged days, against an owner-entered history of chronic vomiting since Apr 10, 2026.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-04-10"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19
+    ]
+   }
+  ]
+ },
+ "out/O4-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   },
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L4",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair, neuter status not recorded, carries a live flag for possible foreign material: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting was logged on 4 of the 7 days to Jun 30, and on 23 of 43 logged days over at least 47 days, first logged May 14, her first entry of any kind, so onset is unknown.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7,
+     23,
+     43,
+     47
+    ]
+   },
+   {
+    "i": 3,
+    "text": "She is free-fed Nature's Variety Duck and Royal Canin Weight Care, which lists chicken, with intake not directly observed, and no food could be isolated, with chicken in her all-day kibble.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck",
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "The window was logged on 4 of the first 45 days and 39 of the last 45, with nothing logged Jul 1 to 2.",
+    "cites": [
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     45,
+     39,
+     45
+    ]
+   }
+  ]
+ },
+ "out/S1-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": false,
+  "error_count": 1,
+  "errors": [
+   {
+    "sentence": 1,
+    "check": "structure",
+    "detail": "sentence has 56 words (max 55)"
+   }
+  ],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "P",
+   "U1"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP diet trial (hydrolysed soy), during which chicken appears on 29 of 154 meals and treats: Dentastix (label lists chicken) daily from Jun 8, on the owner-entered allowed list, and at least 4 off-list, the last on Jun 27.",
+    "cites": [
+     "P",
+     "L1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "Pedigree Dentastix",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "No chicken-free day is recorded since Jun 8.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Itching was entered 16 times on 16 of 43 logged days, over at least 35 days, and this is not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The owner wrote “flare after the chicken on Sunday” on Jun 18, Sunday being Jun 14; this is not tested, as chicken was fed daily from Jun 8.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-14",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 5,
+    "text": "Whether Apoquel was given is unknown.",
+    "cites": [
+     "U1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S1-cooper-attempt2.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "P",
+   "U1"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP diet trial (hydrolysed soy), and chicken appears on 29 of 154 meals and treats.",
+    "cites": [
+     "P",
+     "L1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154
+    ]
+   },
+   {
+    "i": 2,
+    "text": "That includes Dentastix (label lists chicken) daily from Jun 8, on the owner-entered allowed list, and at least 4 off-list, the last on Jun 27; no chicken-free day is recorded since Jun 8.",
+    "cites": [
+     "L1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-27",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": [
+     4
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Itching was entered 16 times on 16 of 43 logged days, over at least 35 days, and this is not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The owner wrote “flare after the chicken on Sunday” on Jun 18, Sunday being Jun 14; this is not tested, as chicken was fed daily from Jun 8.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-14",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 5,
+    "text": "Whether Apoquel was given is unknown.",
+    "cites": [
+     "U1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S1-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "U2",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed cat, refused every Hill's z/d feeding from Jun 5 to 19, 30 in a row, with 34 of 38 rated feedings refused and 4 partly eaten, and the trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     4,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed: a free-fed Purina ONE bowl was down, and what she ate from it is unknown.",
+    "cites": [
+     "S2",
+     "U2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Weight was -6.8% in 18 days, 4.4 kg on Jun 1 to 4.1 kg on Jun 19, from 2 home-scale readings.",
+    "cites": [
+     "S3",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Vomiting was entered on 5 of 19 logged days, with nothing logged after Jun 19, 13 days before this report.",
+    "cites": [
+     "L3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19,
+     13
+    ]
+   }
+  ]
+ },
+ "out/S1-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 2,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L4",
+   "S1",
+   "S2",
+   "S3",
+   "U1",
+   "U3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx vomited on 4 of the 7 days to Jun 30, her latest entries, and on 23 of 43 logged days over at least 47 days, first logged May 14, her first entry of any kind, so onset is unknown.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7,
+     23,
+     43,
+     47
+    ]
+   },
+   {
+    "i": 2,
+    "text": "An AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed; the photo was not retained.",
+    "cites": [
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "She is free-fed all day, with start not recorded and intake not directly observed, and no food could be isolated.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "Entries exist on 43 of 90 days, nothing was logged Jul 1 to 2, anything before May 14 is unknown, and so is what the 5 unread vomits contained.",
+    "cites": [
+     "W",
+     "U1",
+     "U3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90,
+     5
+    ]
+   }
+  ]
+ },
+ "out/S2-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "P"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP trial (hydrolysed soy) that began May 18, and chicken was logged on 29 of 154 meals and treats, with at least 4 off-list, the last on Jun 27.",
+    "cites": [
+     "P",
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-18",
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Dentastix, whose label lists chicken, were fed daily from Jun 8 and are on the owner-entered allowed list; no chicken-free day is recorded since Jun 8.",
+    "cites": [
+     "L1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Itching has 16 entries on 16 of 43 logged days over at least 35 days, and this record is not a test of the diet, with Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlapping the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 4,
+    "text": "The owner wrote “flare after the chicken on Sunday”, Sunday being Jun 14; this is not tested, as chicken was fed daily from Jun 8.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-14",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S2-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "H2 'reduced' (in a cited fact's text)"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "AP 'hepatic' (in a cited fact's text)"
+   },
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "AP 'lipidosis' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L5",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "U2",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair, refused every Hill's z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused, 4 partly eaten), and the diet trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     4,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Intake not directly observed: a free-fed Purina ONE bowl was down, and what she ate from it is unknown.",
+    "cites": [
+     "S2",
+     "U2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Weight is -6.8% in 18 days, 4.4 kg Jun 1 to 4.1 kg Jun 19, on 2 home-scale readings.",
+    "cites": [
+     "S3",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 4,
+    "text": "In cats, 48 to 72 hours of markedly reduced intake is a hepatic-lipidosis risk window, and nothing is recorded after Jun 19.",
+    "cites": [
+     "S4",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     48,
+     72
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Vomiting is logged on 5 of 19 logged days, with no medicines entered, not verified.",
+    "cites": [
+     "L3",
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19
+    ]
+   }
+  ]
+ },
+ "out/S2-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 2,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair with neuter status not recorded, vomited on 4 of the 7 days to Jun 30 (burden flag).",
+    "cites": [
+     "P",
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7,
+     4,
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "An AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, with the photo not retained.",
+    "cites": [
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   },
+   {
+    "i": 3,
+    "text": "Vomiting spans at least 47 days, with 23 entries on 23 of 43 logged days, first logged May 14, her first entry of any kind.",
+    "cites": [
+     "S3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     47,
+     23,
+     23,
+     43
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Her free-fed Nature's Variety Duck and Royal Canin Weight Care (lists chicken) have intake not directly observed, and Temptations Chicken treats are logged at least 20 feedings May 15 to Jun 28; no food could be isolated, with chicken in her all-day kibble.",
+    "cites": [
+     "L2",
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-15",
+     "2026-06-28"
+    ],
+    "times": [],
+    "terms": [
+     "Temptations Chicken",
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck",
+     "chicken"
+    ],
+    "numbers": [
+     20
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Nothing is logged Jul 1 to 2, and weight, medication and medical conditions are not recorded.",
+    "cites": [
+     "W",
+     "L6"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S3-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L5",
+   "L6",
+   "P",
+   "U1",
+   "U2"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of a Royal Canin HP trial, and chicken was logged on 29 of 154 meals and treats, with at least 4 off-list feedings, the last on Jun 27.",
+    "cites": [
+     "P",
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching was entered on 16 of 43 logged days over at least 35 days, and this is not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Dentastix, whose label lists chicken, is on the owner-entered allowed list and was fed daily from Jun 8, and no chicken-free day is recorded since Jun 8; NexGard on Jun 5 and Jul 2 has flavour protein unknown and is not counted off-list.",
+    "cites": [
+     "L1",
+     "L2",
+     "L5"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08",
+     "2026-06-08",
+     "2026-06-05",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "NexGard",
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "The owner wrote on Jun 18 “flare after the chicken on Sunday”, Sunday being Jun 14; this is not tested, and chicken was fed daily from Jun 8.",
+    "cites": [
+     "L6"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-14",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 5,
+    "text": "Whether Apoquel was given, and the itch severity or body site, are unknown.",
+    "cites": [
+     "U1",
+     "U2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Apoquel"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S3-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "U2",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair, refused every z/d feeding from Jun 5 to 19, 30 in a row, with 34 of 38 rated feedings refused from Jun 1 to 19, and the trial was stopped on day 19.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19",
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     19
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Weight was -6.8% in 18 days, 4.4 kg on Jun 1 to 4.1 kg on Jun 19, from 2 home-scale readings.",
+    "cites": [
+     "S3",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 3,
+    "text": "A free-fed Purina ONE Indoor Advantage bowl was down, with intake not directly observed, and what she ate from it is unknown.",
+    "cites": [
+     "S2",
+     "U2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "The owner-entered diet trial of Hill's z/d, hydrolysed chicken liver, was stopped on day 19 of 42.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "chicken liver",
+     "Hill's z/d"
+    ],
+    "numbers": [
+     19,
+     42
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Vomiting was entered on 5 of 19 logged days; there is nothing logged after Jun 19, which is 13 days before this report.",
+    "cites": [
+     "L3",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19,
+     13
+    ]
+   }
+  ]
+ },
+ "out/S3-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": false,
+  "error_count": 2,
+  "errors": [
+   {
+    "sentence": 3,
+    "check": "numbers",
+    "detail": "number 2 is not in a cited fact"
+   },
+   {
+    "sentence": 3,
+    "check": "banned:H1",
+    "detail": "'apart from'"
+   }
+  ],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L4",
+   "L6",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair with neuter status not recorded, has a live safety flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting was entered on 4 of the 7 days to Jun 30, her latest entries, and on 23 of 43 logged days over at least 47 days, first logged May 14, her first entry of any kind, with onset unknown.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7,
+     23,
+     43,
+     47
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Her two free-fed bowls, start not recorded, have intake not directly observed, and no food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested apart from it.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": [
+     2
+    ]
+   },
+   {
+    "i": 4,
+    "text": "18 of 23 vomit entries have a legible AI photo read, unconfirmed and with no photos retained, and 5 have no usable read.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     18,
+     23,
+     5
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Weight, medication, medical conditions and neuter status are not recorded, the record is logged on 43 of 90 days, and nothing is logged Jul 1 to 2.",
+    "cites": [
+     "L6",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90
+    ]
+   }
+  ]
+ },
+ "out/S3-nyx-attempt2.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L4",
+   "L6",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair with neuter status not recorded, has a live safety flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed, and the photo was not retained.",
+    "cites": [
+     "P",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting was entered on 4 of the 7 days to Jun 30, her latest entries, and on 23 of 43 logged days over at least 47 days, first logged May 14, her first entry of any kind, with onset unknown.",
+    "cites": [
+     "S2",
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     4,
+     7,
+     23,
+     43,
+     47
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Her free-fed bowls, start not recorded, have intake not directly observed, and no food could be isolated: chicken is in her all-day kibble, so treat days cannot be tested against it separately.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "18 of 23 vomit entries have a legible AI photo read, unconfirmed and with no photos retained, and 5 have no usable read.",
+    "cites": [
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     18,
+     23,
+     5
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Weight, medication, medical conditions and neuter status are not recorded, the record is logged on 43 of 90 days, and nothing is logged Jul 1 to 2.",
+    "cites": [
+     "L6",
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90
+    ]
+   }
+  ]
+ },
+ "out/S4-cooper-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "cooper-trial-dog",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "L4",
+   "L6",
+   "P",
+   "U1"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Cooper, a 6-year-old neutered male Labrador Retriever, is on day 46 of 56 of an owner-entered Royal Canin HP hydrolysed soy trial, with chicken on 29 of 154 meals and treats and at least 4 off-list feedings, the last on Jun 27.",
+    "cites": [
+     "P",
+     "L2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-27"
+    ],
+    "times": [],
+    "terms": [
+     "Royal Canin Hydrolyzed Protein HP",
+     "chicken",
+     "soy"
+    ],
+    "numbers": [
+     6,
+     46,
+     56,
+     29,
+     154,
+     4
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Itching was logged on 16 of 43 logged days over at least 35 days, and this is not a test of the diet: Apoquel (doses not logged), NexGard from Jun 5 and Dentastix from Jun 8 overlap the trial.",
+    "cites": [
+     "L3",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Pedigree Dentastix",
+     "Apoquel",
+     "NexGard"
+    ],
+    "numbers": [
+     16,
+     43,
+     35
+    ]
+   },
+   {
+    "i": 3,
+    "text": "The owner wrote \"flare after the chicken on Sunday\" on Jun 18, not tested, with chicken fed daily from Jun 8.",
+    "cites": [
+     "L6",
+     "L1"
+    ],
+    "quotes": [
+     "flare after the chicken on Sunday"
+    ],
+    "dates": [
+     "2026-06-18",
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "chicken"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "No chicken-free day is recorded since Jun 8, and whether Apoquel was given is unknown.",
+    "cites": [
+     "L2",
+     "U1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-08"
+    ],
+    "times": [],
+    "terms": [
+     "Apoquel",
+     "chicken"
+    ],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S4-mira-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": false,
+  "error_count": 3,
+  "errors": [
+   {
+    "sentence": 2,
+    "check": "dates",
+    "detail": "date 2026-06-01 is not in a cited fact"
+   },
+   {
+    "sentence": 2,
+    "check": "dates",
+    "detail": "date 2026-06-19 is not in a cited fact"
+   },
+   {
+    "sentence": 4,
+    "check": "banned:H7",
+    "detail": "'for the visit'"
+   }
+  ],
+  "warnings": [
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "REL 'today' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S5"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair cat, refused every Hill's z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused, 4 partly eaten, Jun 1 to 19), and the trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19",
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     4,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Weight is -6.8% in 18 days, 4.4 kg on Jun 1 to 4.1 kg on Jun 19, 2 home-scale readings, and intake not directly observed, with a free-fed Purina ONE bowl down.",
+    "cites": [
+     "S3",
+     "S2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Vomiting was logged on 5 of 19 logged days, with nothing logged after Jun 19.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19
+    ]
+   },
+   {
+    "i": 4,
+    "text": "A safety flag is live: call the clinic today rather than waiting for the visit.",
+    "cites": [
+     "S5"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S4-mira-attempt2.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "mira-refused-trial-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 4,
+    "check": "banned-waived",
+    "detail": "REL 'today' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L1",
+   "L2",
+   "L3",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "S5"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Mira, an 8-year-old spayed Domestic Shorthair cat, refused every Hill's z/d feeding from Jun 5 to 19, 30 in a row (34 of 38 rated feedings refused, 4 partly eaten, Jun 1 to 19), and the trial was stopped on day 19 of 42.",
+    "cites": [
+     "P",
+     "S1",
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-05",
+     "2026-06-19",
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Hill's z/d"
+    ],
+    "numbers": [
+     8,
+     30,
+     34,
+     38,
+     4,
+     19,
+     42
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Weight is -6.8% in 18 days, 4.4 kg on Jun 1 to 4.1 kg on Jun 19, 2 home-scale readings, and intake not directly observed, with a free-fed Purina ONE bowl down.",
+    "cites": [
+     "S3",
+     "S2",
+     "L1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-01",
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [
+     "Purina ONE Indoor Advantage"
+    ],
+    "numbers": [
+     6.8,
+     18,
+     4.4,
+     4.1,
+     2
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Vomiting was logged on 5 of 19 logged days, with nothing logged after Jun 19.",
+    "cites": [
+     "L3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-19"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     5,
+     19
+    ]
+   },
+   {
+    "i": 4,
+    "text": "A safety flag is live: call the clinic today.",
+    "cites": [
+     "S5"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [],
+    "numbers": []
+   }
+  ]
+ },
+ "out/S4-nyx-attempt1.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": false,
+  "error_count": 1,
+  "errors": [
+   {
+    "sentence": null,
+    "check": "conditional",
+    "detail": "summary names Temptations/Fancy Feast/Nature's Variety/Royal Canin but does not cite L4 (naming a food requires the association limit (no food could be isolated))"
+   }
+  ],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair (neuter status not recorded), had vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag), and an AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+    "cites": [
+     "P",
+     "S2",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7,
+     4,
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting is logged over at least 47 days, 23 entries on 23 of 43 logged days, first on May 14, her first entry of any kind, so onset is unknown.",
+    "cites": [
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     47,
+     23,
+     23,
+     43
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Intake not directly observed: Nature's Variety Duck and Royal Canin Weight Care are free-fed all day, start not recorded.",
+    "cites": [
+     "L2"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "She was logged on 43 of 90 days, 4 of the first 45 and 39 of the last 45, with nothing logged Jul 1 to 2.",
+    "cites": [
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90,
+     4,
+     45,
+     39,
+     45
+    ]
+   }
+  ]
+ },
+ "out/S4-nyx-attempt2.json": {
+  "verifier": "bakeoff-1",
+  "fixture": "nyx-safety-cat",
+  "pass": true,
+  "error_count": 0,
+  "errors": [],
+  "warnings": [
+   {
+    "sentence": 1,
+    "check": "banned-waived",
+    "detail": "AP 'possible' (in a cited fact's text)"
+   }
+  ],
+  "facts_cited": [
+   "L2",
+   "L4",
+   "P",
+   "S1",
+   "S2",
+   "S3",
+   "W"
+  ],
+  "sentences": [
+   {
+    "i": 1,
+    "text": "Nyx, a 7-year-old female Domestic Shorthair (neuter status not recorded), had vomiting on 4 of the 7 days to Jun 30, her latest entries (burden flag), and an AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+    "cites": [
+     "P",
+     "S2",
+     "S1"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-06-30",
+     "2026-05-23"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     7,
+     4,
+     7
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Vomiting is logged over at least 47 days, 23 entries on 23 of 43 logged days, first on May 14, her first entry of any kind, so onset is unknown.",
+    "cites": [
+     "S3"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-05-14"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     47,
+     23,
+     23,
+     43
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Intake not directly observed: Nature's Variety Duck and Royal Canin Weight Care are free-fed all day, start not recorded, and no food could be isolated.",
+    "cites": [
+     "L2",
+     "L4"
+    ],
+    "quotes": [],
+    "dates": [],
+    "times": [],
+    "terms": [
+     "Royal Canin Weight Care",
+     "Nature's Variety Duck"
+    ],
+    "numbers": []
+   },
+   {
+    "i": 4,
+    "text": "She was logged on 43 of 90 days, 4 of the first 45 and 39 of the last 45, with nothing logged Jul 1 to 2.",
+    "cites": [
+     "W"
+    ],
+    "quotes": [],
+    "dates": [
+     "2026-07-01",
+     "2026-07-02"
+    ],
+    "times": [],
+    "terms": [],
+    "numbers": [
+     43,
+     90,
+     4,
+     45,
+     39,
+     45
+    ]
+   }
+  ]
+ }
+}
