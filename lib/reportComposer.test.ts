@@ -1,6 +1,10 @@
 import {
   COUNTS_INCOMPLETE_LINE,
   LIVE_FLAG_DAYS,
+  SEND_READ_TIMEOUT_MS,
+  boundedRead,
+  partialLiveLine,
+  withKnownFlags,
   THIN_RECORD_DAYS,
   afterDisclosure,
   composerDate,
@@ -279,5 +283,94 @@ describe('the range calendar', () => {
   it('the footer names the range and its days', () => {
     expect(rangeFooter('2026-10-01', '2026-10-20', TODAY)).toBe('Oct 1 to Oct 20 · 20 days');
     expect(rangeFooter('2026-10-01', '2026-10-01', TODAY)).toBe('Oct 1 · 1 day');
+  });
+});
+
+// CUL-2425: a read where part of the 56 days failed but some flags came back.
+describe('a partial live read says so', () => {
+  const open = (l: Record<string, unknown>) =>
+    parseComposerOpen({
+      composer: {
+        today: TODAY,
+        petName: 'Nyx',
+        live: l,
+        windows: [{ kind: 'since_visit', startDate: '2026-09-16', endDate: TODAY, days: 46, isDefault: true }],
+        counts: counts(),
+        after: null,
+      },
+    }).live;
+
+  it('only an explicit incomplete: false is a whole flag set; absent reads as partial, as the counts do', () => {
+    expect(open({ ...live(), incomplete: false }).partial).toBe(false);
+    expect(open({ ...live(), incomplete: true }).partial).toBe(true);
+    expect(open({ ...live() }).partial).toBe(true);
+    expect(open({ ...live(), incomplete: false, state: 'incomplete' }).partial).toBe(true);
+  });
+
+  it('a none or unchecked set is never marked partial: its own state already says it', () => {
+    expect(open({ ...live(), state: 'none', flags: [], incomplete: false }).partial).toBe(false);
+    expect(open({ ...live(), state: 'incomplete', flags: [] }).state).toBe('incomplete');
+  });
+
+  it('the card names the flags it found and says the check is not whole', () => {
+    const c = liveCardCopy(live({ partial: true }), 'Nyx');
+    expect(c?.title).toBe('Nyx’s record has flags worth a call to your vet');
+    expect(c?.body).toBe(`Possible foreign material in vomit and a lot of vomiting this week. ${partialLiveLine()}`);
+    expect(partialLiveLine()).toBe(`Part of the last ${LIVE_FLAG_DAYS} days didn’t load, so there may be more.`);
+    expect(liveCardCopy(live({ partial: false }), 'Nyx')?.body).not.toContain('didn’t load');
+  });
+});
+
+describe('a partial send-time read never shows fewer flags than the screen knew', () => {
+  const blood = { kind: 'present_blood', sign: 'stool', trigger: null };
+  const foreign = { kind: 'present_foreign', sign: 'vomit', trigger: null };
+
+  it('keeps a known flag the partial read lacks, and stays partial', () => {
+    const r = withKnownFlags(live({ flags: [foreign], partial: true }), live({ flags: [blood, foreign] }));
+    expect(r?.flags).toEqual([foreign, blood]);
+    expect(r?.partial).toBe(true);
+  });
+
+  it('a whole read is the truth: a flag that resolved is not carried', () => {
+    const fresh = live({ flags: [foreign], partial: false });
+    expect(withKnownFlags(fresh, live({ flags: [blood] }))).toBe(fresh);
+  });
+
+  it('a failed or unchecked read is left to liveForSend', () => {
+    expect(withKnownFlags(null, live())).toBeNull();
+    const unchecked = live({ state: 'incomplete', flags: [] });
+    expect(withKnownFlags(unchecked, live())).toBe(unchecked);
+  });
+});
+
+describe('the send reads are bounded', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('a hung read answers its fallback at the bound, and says why', async () => {
+    const late = jest.fn();
+    const r = boundedRead(new Promise<string>(() => undefined), SEND_READ_TIMEOUT_MS, 'fallback', late);
+    jest.advanceTimersByTime(SEND_READ_TIMEOUT_MS - 1);
+    expect(late).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    await expect(r).resolves.toBe('fallback');
+    expect(late).toHaveBeenCalledTimes(1);
+  });
+
+  it('a read inside the bound is its own answer; a failed one is the fallback', async () => {
+    await expect(boundedRead(Promise.resolve('read'), SEND_READ_TIMEOUT_MS, 'fallback', jest.fn())).resolves.toBe('read');
+    const late = jest.fn();
+    await expect(boundedRead(Promise.reject(new Error('offline')), SEND_READ_TIMEOUT_MS, 'fallback', late)).resolves.toBe('fallback');
+    expect(late).toHaveBeenCalledTimes(1);
+  });
+
+  it('an answer after the bound changes nothing', async () => {
+    let answer: (v: string) => void = () => undefined;
+    const late = jest.fn();
+    const r = boundedRead(new Promise<string>((res) => { answer = res; }), 10, 'fallback', late);
+    jest.advanceTimersByTime(10);
+    answer('read');
+    await expect(r).resolves.toBe('fallback');
+    expect(late).toHaveBeenCalledTimes(1);
   });
 });

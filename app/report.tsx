@@ -36,7 +36,7 @@ import {
 } from '../lib/reportSend';
 import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
 import { openExamRoom } from '../lib/examRoomCopy';
-import type { ComposerLive } from '../lib/reportComposer';
+import { SEND_READ_TIMEOUT_MS, boundedRead, withKnownFlags, type ComposerLive } from '../lib/reportComposer';
 import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } from '../lib/reportPreviewV2';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
@@ -361,35 +361,34 @@ export default function ReportScreen() {
     setSendOpen(false);
   }, [petId]);
 
+  // The pet the screen shows now: a send read that answers after a switch is dropped (CUL-2425
+  // adversarial pass), so one pet's flags or check never present over another's report.
+  const currentPet = useRef(petId);
+  currentPet.current = petId;
+
   const onOpenSend = useCallback(async () => {
     if (!petId) return;
     const now = new Date();
     const today = toLocalDayKey(now);
     setSendReading(true);
     try {
+      // CUL-2425: every read is bounded (`SEND_READ_TIMEOUT_MS`), so a hung connection opens the
+      // sheet with what is known rather than leaving Send loading. A flag read past the bound is a
+      // failed one: the flags already read this session, else the louder "couldn't check" card.
+      const warn = (what: string) => (e: unknown) => console.warn(`[Report] send ${what} read failed:`, e);
       const [fresh, appointment, rows, mailReady] = await Promise.all([
-        // GAP-13: the sheet never presents before this answers. A failure falls back to the flags
-        // already read this session, else to the louder "couldn't check" card, never to none.
-        fetchComposerOpen(petId)
-          .then((o) => o.live)
-          .catch((e) => {
-            console.warn('[Report] send flag read failed:', e);
-            return null;
-          }),
-        readHomeAppointment(petId, now).catch((e) => {
-          console.warn('[Report] send appointment read failed:', e);
-          return null;
-        }),
+        // GAP-13: the sheet never presents before this answers or times out.
+        boundedRead(fetchComposerOpen(petId).then((o): ComposerLive | null => o.live), SEND_READ_TIMEOUT_MS, null, warn('flag')),
+        boundedRead(readHomeAppointment(petId, now), SEND_READ_TIMEOUT_MS, null, warn('appointment')),
         VET_FILES_ENTRY_ENABLED
-          ? readVetLibrary(petId).catch((e) => {
-              console.warn('[Report] send vet-library read failed:', e);
-              return [];
-            })
+          ? boundedRead(readVetLibrary(petId), SEND_READ_TIMEOUT_MS, [], warn('vet-library'))
           : Promise.resolve([]),
-        mailAvailable(),
+        boundedRead(mailAvailable(), SEND_READ_TIMEOUT_MS, false, warn('mail')),
       ]);
+      if (currentPet.current !== petId) return;
       const known = knownFlags.current?.petId === petId ? knownFlags.current.live : null;
-      const live = liveForSend(fresh, known, today);
+      // A partial read keeps the flags it lacks that this screen already read (CUL-2425).
+      const live = liveForSend(withKnownFlags(fresh, known), known, today);
       if (live.state === 'flags') knownFlags.current = { petId, live };
       setSendCtx({
         live,
