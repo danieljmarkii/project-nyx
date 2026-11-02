@@ -1167,9 +1167,19 @@ function sustainedRefusalFlag(input: IntakeDeclineInput): IntakeDeclineFlag | nu
   const windowMs = rule.windowHours * MS_PER_HOUR;
   const latestMs = rated[rated.length - 1].ms;
   const ateWell = INTAKE_SCORE.most;
+  // Only a CERTAINLY watched rating clears the floor: never a possible bowl, never a mix with an
+  // unknown or possibly free-fed part (detection.ts, CUL-2406 instance 2).
+  const certainlyWatched = (m: RatedMeal): boolean => {
+    if (mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, input.freeFedSpans)) return false;
+    if (!m.bowl) return true;
+    return (
+      m.bowl.status === 'mix' &&
+      m.bowl.components.every((c) => c.foodItemId !== null && !mayBeFreeFedIntakeMeal(c.foodItemId, m.ms, input.freeFedSpans))
+    );
+  };
   const qualifying = (endMs: number): RatedMeal[] | null => {
     const inWindow = rated.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs);
-    if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, input.freeFedSpans))) return null;
+    if (inWindow.some((m) => m.score >= ateWell && certainlyWatched(m))) return null;
     const meals = inWindow.filter((m) => m.score < ateWell);
     if (meals.length < rule.minMeals) return null;
     if (!meals.some((m) => m.score <= PICKED_SCORE)) return null;

@@ -4483,10 +4483,22 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
   const latestMs = ratedMeals[ratedMeals.length - 1].ms
   const ateWell = intakeScore('most')
   const picked = intakeScore('picked')
+  // A rating may clear the floor only when the meal was CERTAINLY watched: not possibly a free-fed
+  // bowl (pass 2), and, for a mixed bowl, every component known and none possibly free-fed. A mix's
+  // own food id is null by spec, so the plain check never saw its kibble (CUL-2406, instance 2);
+  // an incomplete bowl's unknown part could be that kibble too.
+  const certainlyWatched = (m: RatedMeal): boolean => {
+    if (mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans)) return false
+    if (!m.bowl) return true
+    return (
+      m.bowl.status === 'mix' &&
+      m.bowl.components.every((c) => c.foodItemId !== null && !mayBeFreeFedIntakeMeal(c.foodItemId, m.ms, spans))
+    )
+  }
   // The qualifying meals of the window ending at `endMs`, or null when it does not qualify.
   const qualifying = (endMs: number): RatedMeal[] | null => {
     const inWindow = ratedMeals.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs)
-    if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))) return null
+    if (inWindow.some((m) => m.score >= ateWell && certainlyWatched(m))) return null
     const meals = inWindow.filter((m) => m.score < ateWell)
     if (meals.length < rule.minMeals) return null
     if (!meals.some((m) => m.score <= picked)) return null
@@ -4524,7 +4536,7 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
     refusedFoodLabel: null,
     ratedMealsConsidered: recent.length,
     // An uncertain bowl must not stand in as the last full meal, or "how long off food" reads short.
-    lastFullMealIso: lastFullMeal(ratedMeals.filter((m) => !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))),
+    lastFullMealIso: lastFullMeal(ratedMeals.filter(certainlyWatched)),
     sustainedRefusal: {
       meals: recent.length,
       refused,

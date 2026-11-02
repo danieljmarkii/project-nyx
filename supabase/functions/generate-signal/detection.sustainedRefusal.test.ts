@@ -307,3 +307,27 @@ Deno.test('adversarial pass 3: the anchored window is a fallback, so an old good
   ]
   assert.equal(run(b1, '2026-07-30T06:00:00.000Z')[0]?.trigger, 'sustained_refusal')
 })
+
+Deno.test('CUL-2406 instance 2: a mix with a free-fed part rated "ate it all" cannot clear the floor', () => {
+  const bowl: FeedingArrangement = {
+    id: 'a-mix', primaryProtein: 'chicken', activeFrom: '2026-07-01', activeUntil: null, foodItemId: KIBBLE,
+    createdAt: '2026-07-01T00:00:00.000Z', endedAt: null,
+  }
+  const mix = (hoursAgo: number, components: { foodItemId: string | null; foodLabel: string }[], status: 'mix' | 'incomplete' = 'mix'): MealEvent => ({
+    ...meal(hoursAgo, 'all'),
+    foodItemId: null,
+    bowl: { status, compositionKey: components.map((c) => c.foodItemId ?? '?').join('+'), components },
+  })
+  const refusals = [meal(2, 'refused'), meal(20, 'refused'), meal(30, 'refused'), meal(44, 'refused')]
+  const withKibble = [...refusals, mix(25, [{ foodItemId: KIBBLE, foodLabel: 'Kibble' }, { foodItemId: WET, foodLabel: 'Wet food' }])]
+  assert.equal(detectIntakeDecline(input('cat', withKibble, { feedingArrangements: [bowl] }))[0]?.trigger, 'sustained_refusal')
+  // An incomplete bowl's unknown part could be the kibble: it cannot clear the floor either.
+  const incomplete = [...refusals, mix(25, [{ foodItemId: WET, foodLabel: 'Wet food' }], 'incomplete')]
+  assert.equal(detectIntakeDecline(input('cat', incomplete, { feedingArrangements: [bowl] }))[0]?.trigger, 'sustained_refusal')
+  // A mix of watched foods only, eaten well, still clears it.
+  const watchedMix = [...refusals, mix(25, [{ foodItemId: WET, foodLabel: 'Wet food' }, { foodItemId: 'f-other', foodLabel: 'Other' }])]
+  assert.deepEqual(
+    detectIntakeDecline(input('cat', watchedMix, { feedingArrangements: [bowl] })).filter((f) => f.trigger === 'sustained_refusal'),
+    [],
+  )
+})

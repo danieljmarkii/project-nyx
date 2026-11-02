@@ -115,6 +115,19 @@ describe('the phone twin of the floor', () => {
     expect(res.flags[0].trigger).toBe('sustained_refusal');
   });
 
+  it('CUL-2406 instance 2: a free-fed mix rated "ate it all" does not clear the floor on the phone', () => {
+    const meals = [m(2, 'refused'), m(20, 'refused'), m(30, 'refused'), m(44, 'refused')];
+    const comp = (foodItemId: string) => ({ foodItemId, foodLabel: foodItemId, foodType: 'meal', primaryProtein: null, proteins: [] });
+    meals.push({ ...m(25, 'all'), foodItemId: null, bowl: { status: 'mix', compositionKey: 'kibble+f1', components: [comp('kibble'), comp('f1')] } });
+    const spans = parseFreeFedIntakeSpans([
+      { foodItemId: 'kibble', createdAt: '2026-07-01T00:00:00.000Z', activeFrom: '2026-07-01', activeUntil: null, endedAt: null },
+    ]);
+    const res = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals, freeFedSpans: spans, timeZone: 'UTC' });
+    expect(res.status).toBe('watch');
+    if (res.status !== 'watch') return;
+    expect(res.flags[0].trigger).toBe('sustained_refusal');
+  });
+
   it('one meal rated "ate most" stands it down, and the old "not enough data" stays', () => {
     const res = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals: [m(2, 'refused'), m(20, 'most'), m(30, 'refused')], freeFedSpans: [], timeZone: 'UTC' });
     expect(res.status).not.toBe('watch');
