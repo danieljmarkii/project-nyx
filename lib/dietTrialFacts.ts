@@ -1101,6 +1101,13 @@ export function intakeDeclineFacts(
  *  FACT only. Register mirrors `generate-signal/phrasing.templateIntakeDecline`:
  *  never "picky", never "fussy", never softened toward preference. */
 export function declineHeadline(flag: IntakeDeclineFlag, petName: string): string {
+  if (flag.trigger === 'sustained_refusal') {
+    // The floor: what the owner rated, never "less than usual" (there is no usual to fall from).
+    const r = flag.sustainedRefusal;
+    return r
+      ? `${petName} hasn't eaten well at any meal you watched and rated in the ${r.windowHours} hours to ${r.anchoredToLastRating ? 'your last rating' : 'now'}: ${r.meals} meals on ${r.days} days.`
+      : `${petName} hasn't eaten well at any meal you watched and rated lately.`;
+  }
   if (flag.trigger === 'refused_normal_food') {
     const food = flag.refusedFoodLabel ?? 'a food they usually finish';
     return `${petName} just turned down ${food}, which ${petName} normally eats.`;

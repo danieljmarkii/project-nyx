@@ -231,6 +231,9 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled:
     // Engines v3 PR-19 (EN-8, CUL-1413) — the weight row: two readings, their sources and the
     // tier's ask. Template-only, which also saves the call (validatePhrasing refuses it anyway).
     finding.type === 'weight_loss' ||
+    // The sustained-refusal floor: counts and a call, with no baseline the model could turn into
+    // "less than usual" or soften into "picky". Template-only, like the other intake safety facts.
+    (finding.type === 'intake_decline' && finding.trigger === 'sustained_refusal') ||
     // Engines v3 PR-30s (I5, CUL-1725): an intake card carrying the refused-then-vomited facts, on
     // its own card or riding ②'s. The load is a sequence the model would turn into a cause ("because
     // she refused") or a mechanism ("nausea", "an empty stomach"), and the intake screens catch
