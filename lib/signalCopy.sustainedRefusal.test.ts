@@ -20,7 +20,7 @@ import { parseFreeFedIntakeSpans } from './freeFedIntake';
 import { sustainedRefusalSentence as serverSentence } from '../supabase/functions/generate-signal/phrasing';
 import type { IntakeDeclineFinding, SustainedRefusalFacts } from './signal';
 
-const FACTS: SustainedRefusalFacts = { meals: 6, refused: 4, picked: 2, days: 3, windowHours: 72, firstIso: '2026-07-28T00:00:00.000Z' };
+const FACTS = { meals: 6, refused: 4, picked: 2, some: 0, days: 3, windowHours: 72, firstIso: '2026-07-28T00:00:00.000Z', endIso: '2026-07-30T20:00:00.000Z', endLocalDay: '2026-07-30', anchoredToLastRating: false };
 
 function card(facts: SustainedRefusalFacts | undefined = FACTS): IntakeDeclineFinding {
   return {
@@ -37,7 +37,7 @@ function card(facts: SustainedRefusalFacts | undefined = FACTS): IntakeDeclineFi
 
 describe('the sustained-refusal card on the phone', () => {
   it('mirrors the server sentence word for word', () => {
-    for (const f of [FACTS, { ...FACTS, refused: 6, picked: 0 }, { ...FACTS, refused: 0, picked: 6 }]) {
+    for (const f of [FACTS, { ...FACTS, refused: 6, picked: 0 }, { ...FACTS, refused: 1, picked: 2, some: 3 }, { ...FACTS, anchoredToLastRating: true }]) {
       expect(sustainedRefusalSentence(f, 'Miso')).toBe(serverSentence(f, 'Miso'));
     }
   });
@@ -47,7 +47,7 @@ describe('the sustained-refusal card on the phone', () => {
     const all = [sampleLine(f), evidenceText(f, 'Miso'), stripNameLine(f), signalHomeAsk(f)].join(' | ');
     expect(all).not.toMatch(/less than usual|below the usual|picky|fussy|!/i);
     expect(sampleLine(f)).toBe('6 rated meals on 3 days, none eaten well');
-    expect(evidenceText(f, 'Miso')).toMatch(/^Miso has picked at or refused every meal you watched and rated in the last 72 hours, 6 meals on 3 days\. That's worth a call to your vet today\./);
+    expect(evidenceText(f, 'Miso')).toMatch(/^Miso hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days \(4 refused, 2 picked at\)\. That's worth a call to your vet today\./);
     expect(signalHomeAsk(f)).toBe('worth a call to your vet today');
     expect(stripAskLine(f)).toBe('Call your vet');
     expect(stripNameLine(f)).toBe('No meal eaten well');
@@ -78,7 +78,7 @@ describe('the phone twin of the floor', () => {
     expect(res.status).toBe('watch');
     if (res.status !== 'watch') return;
     expect(res.flags[0].trigger).toBe('sustained_refusal');
-    expect(declineHeadline(res.flags[0], 'Miso')).toBe('Miso has picked at or refused every meal you watched and rated in the last 72 hours, 3 meals on 2 days.');
+    expect(declineHeadline(res.flags[0], 'Miso')).toBe("Miso hasn't eaten well at any meal you watched and rated in the 72 hours to now: 3 meals on 2 days.");
   });
 
   it('adversarial pass 2: a pre-076 take-up day\'s bowl "ate it all" does not stand the floor down', () => {
@@ -100,8 +100,8 @@ describe('the phone twin of the floor', () => {
     expect(res.flags[0].sustainedRefusal?.meals).toBe(6);
   });
 
-  it('one meal rated Some stands it down, and the old "not enough data" stays', () => {
-    const res = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals: [m(2, 'refused'), m(20, 'some'), m(30, 'refused')], freeFedSpans: [], timeZone: 'UTC' });
+  it('one meal rated "ate most" stands it down, and the old "not enough data" stays', () => {
+    const res = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals: [m(2, 'refused'), m(20, 'most'), m(30, 'refused')], freeFedSpans: [], timeZone: 'UTC' });
     expect(res.status).not.toBe('watch');
   });
 });

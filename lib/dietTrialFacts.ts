@@ -1105,8 +1105,8 @@ export function declineHeadline(flag: IntakeDeclineFlag, petName: string): strin
     // The floor: what the owner rated, never "less than usual" (there is no usual to fall from).
     const r = flag.sustainedRefusal;
     return r
-      ? `${petName} has picked at or refused every meal you watched and rated in the last ${r.windowHours} hours, ${r.meals} meals on ${r.days} days.`
-      : `${petName} has picked at or refused every meal you watched and rated lately.`;
+      ? `${petName} hasn't eaten well at any meal you watched and rated in the ${r.windowHours} hours to ${r.anchoredToLastRating ? 'your last rating' : 'now'}: ${r.meals} meals on ${r.days} days.`
+      : `${petName} hasn't eaten well at any meal you watched and rated lately.`;
   }
   if (flag.trigger === 'refused_normal_food') {
     const food = flag.refusedFoodLabel ?? 'a food they usually finish';

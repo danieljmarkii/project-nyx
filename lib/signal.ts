@@ -78,9 +78,15 @@ export interface SustainedRefusalFacts {
   meals: number;
   refused: number;
   picked: number;
+  /** Rated "ate some"; absent on a cache written before CUL-2404 (a), read as 0. */
+  some?: number;
   days: number;
   windowHours: number;
   firstIso: string;
+  /** Absent on a pre-CUL-2404 cache: the window ended at now. */
+  endIso?: string;
+  endLocalDay?: string;
+  anchoredToLastRating?: boolean;
 }
 
 /** Mirror of detection.ts RefusedThenVomitedFacts (I5). A count over a named population, never a

@@ -2790,11 +2790,17 @@ export function safetyFlagRow(
       // baseline". The counts are the engine's, over the window it names.
       const sr = f.trigger === 'sustained_refusal' ? f.sustainedRefusal : null
       const detail = sr
-        ? `<b>Every watched meal rated in the ${num(sr.windowHours)}&nbsp;h before this window ends was picked at or refused</b>: ${num(
-            sr.meals,
-          )} meal${sr.meals === 1 ? '' : 's'} (${num(sr.refused)} refused, ${num(sr.picked)} picked at) on ${num(sr.days)} day${
-            sr.days === 1 ? '' : 's'
-          }. None was rated better, so there is no recent baseline to compare against; the flag is raised on these ratings alone.`
+        ? `<b>No watched meal rated in the ${num(sr.windowHours)}&nbsp;h to ${
+            sr.endIso ? h(fmtLocalDay(sr.endIso, tz)) : 'the end of this window'
+          } was eaten well</b>: ${num(sr.meals)} meal${sr.meals === 1 ? '' : 's'} (${[
+            sr.refused > 0 ? `${num(sr.refused)} refused` : null,
+            sr.picked > 0 ? `${num(sr.picked)} picked at` : null,
+            (sr.some ?? 0) > 0 ? `${num(sr.some ?? 0)} ate some` : null,
+          ]
+            .filter((p): p is string => p !== null)
+            .join(', ')}) on ${num(sr.days)} day${sr.days === 1 ? '' : 's'}. None was rated &ldquo;ate most&rdquo; or better, so there is no recent baseline to compare against; the flag is raised on these ratings alone.${
+            sr.anchoredToLastRating ? ' The window ends at the last rated meal; nothing has been rated since.' : ''
+          }`
         : f.trigger === 'refused_normal_food'
           ? `This pet <b>refused a food it normally eats</b>${
               f.refusedFoodLabel ? ` (${h(f.refusedFoodLabel)})` : ''
@@ -5965,7 +5971,7 @@ function trialTiles(snap: ReportSnapshot): string[] {
       tile(
         `${sr.meals}`,
         `<small>&nbsp;/&nbsp;${sr.meals}</small>`,
-        `Rated meals picked at or refused, ${sr.windowHours}&nbsp;h to window end<br/>a health signal, not preference`,
+        `Rated meals not eaten well, ${sr.windowHours}&nbsp;h to ${sr.endIso ? h(fmtLocalDay(sr.endIso, snap.timezone)) : 'window end'}<br/>a health signal, not preference`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {

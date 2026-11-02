@@ -112,15 +112,44 @@ Deno.test('one bad night on a single local day does not fire the floor', () => {
   assert.equal(ny[0]?.trigger, 'sustained_refusal')
 })
 
-Deno.test('one meal rated Some or better inside the window stands the floor down', () => {
-  for (const better of ['some', 'most', 'all'] as const) {
+Deno.test('CUL-2404 (a): only "ate most" or better stands the floor down; "ate some" is counted', () => {
+  for (const better of ['most', 'all'] as const) {
     const meals = [meal(2, 'refused'), meal(20, 'picked'), meal(30, 'refused'), meal(40, better)]
     assert.deepEqual(
       detectIntakeDecline(input('cat', meals)).filter((f) => f.trigger === 'sustained_refusal'),
       [],
-      `a meal rated ${better} is not a refusal`,
+      `a meal rated ${better} was eaten well`,
     )
   }
+  // The B2 cat: picked and refused with an "ate some" in the window still fires, and says so.
+  const withSome = detectIntakeDecline(input('cat', [meal(2, 'refused'), meal(20, 'picked'), meal(30, 'refused'), meal(40, 'some')]))
+  assert.equal(withSome[0]?.trigger, 'sustained_refusal')
+  assert.deepEqual(
+    { meals: withSome[0].sustainedRefusal?.meals, some: withSome[0].sustainedRefusal?.some },
+    { meals: 4, some: 1 },
+  )
+  assert.match(templateIntakeDecline(withSome[0], 'Nyx'), /\(2 refused, 1 picked at, 1 ate some\)/)
+})
+
+Deno.test('half-eaten meals alone never raise the call-today card: at least one refused or picked at', () => {
+  const meals = [meal(2, 'some'), meal(20, 'some'), meal(30, 'some'), meal(44, 'some')]
+  assert.deepEqual(detectIntakeDecline(input('cat', meals)).filter((f) => f.trigger === 'sustained_refusal'), [])
+  const oneRefusal = [...meals, meal(50, 'refused')]
+  assert.equal(detectIntakeDecline(input('cat', oneRefusal))[0]?.trigger, 'sustained_refusal')
+})
+
+Deno.test('CUL-2404 (a): lapsed logging keeps the floor for up to 72 hours past the last rating', () => {
+  // Refusals, then nothing rated: the last rating is 50 hours before now.
+  const lapsed = [meal(50, 'refused'), meal(62, 'refused'), meal(74, 'picked'), meal(86, 'refused')]
+  const f = detectIntakeDecline(input('cat', lapsed))[0]
+  assert.equal(f?.trigger, 'sustained_refusal')
+  assert.equal(f.sustainedRefusal?.meals, 4, 'the window ends at the last rating and reaches 72 hours back from it')
+  assert.equal(f.sustainedRefusal?.anchoredToLastRating, true)
+  assert.equal(f.sustainedRefusal?.endIso, lapsed[0].occurredAt)
+  assert.match(templateIntakeDecline(f, 'Nyx'), /in the 72 hours to July 28:/)
+  // Past the bound the window ends at now, and an empty window is silence.
+  const old = [meal(RULE.windowHours + 1, 'refused'), meal(RULE.windowHours + 12, 'refused'), meal(RULE.windowHours + 30, 'refused')]
+  assert.deepEqual(detectIntakeDecline(input('cat', old)).filter((x) => x.trigger === 'sustained_refusal'), [])
 })
 
 Deno.test('a good meal older than the window does not stand it down', () => {
@@ -206,12 +235,11 @@ Deno.test('the sentence: counts over the named window, a call today, never "less
   const f = detectIntakeDecline(input('cat', p2bCat()))[0]
   const text = templateIntakeDecline(f, 'Nyx')
   assert.equal(text, sustainedRefusalSentence(f.sustainedRefusal!, 'Nyx'))
-  assert.equal(text, "Nyx has picked at or refused every meal you watched and rated in the last 72 hours, 6 meals on 3 days. That's worth a call to your vet today.")
+  assert.equal(text, "Nyx hasn't eaten well at any meal you watched and rated in the last 72 hours: 6 meals on 3 days (4 refused, 2 picked at). That's worth a call to your vet today.")
   assert.doesNotMatch(text, /less than usual|picky|fussy|!/i)
-  const allRefused = sustainedRefusalSentence({ meals: 3, refused: 3, picked: 0, days: 2, windowHours: 72, firstIso: NOW }, 'Nyx')
-  assert.match(allRefused, /^Nyx has refused every meal/)
-  const allPicked = sustainedRefusalSentence({ meals: 3, refused: 0, picked: 3, days: 2, windowHours: 72, firstIso: NOW }, 'Nyx')
-  assert.match(allPicked, /^Nyx has picked at every meal/)
+  const base = { meals: 3, refused: 3, picked: 0, some: 0, days: 2, windowHours: 72, firstIso: NOW, endIso: NOW, endLocalDay: '2026-07-30', anchoredToLastRating: false }
+  assert.match(sustainedRefusalSentence(base, 'Nyx'), /: 3 meals on 2 days \(3 refused\)\./)
+  assert.match(sustainedRefusalSentence({ ...base, anchoredToLastRating: true }, 'Nyx'), /in the 72 hours to July 30:/)
 })
 
 Deno.test('the floor never reaches the model: the shell routes it to its template, and the validator refuses any sentence', () => {

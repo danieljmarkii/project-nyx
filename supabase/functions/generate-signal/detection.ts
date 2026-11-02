@@ -757,6 +757,18 @@ export interface DetectionInput {
    */
   feedingArrangements?: FeedingArrangement[]
   /**
+   * The intake lane's own meals (② and its sustained-refusal floor), when the caller's
+   * `mealEvents` are scoped narrower than the intake question needs. The vet report hands its
+   * window's meals to the correlation and timing lanes (window-scoped on purpose) and its whole
+   * lookback pull, up to the window end, here: a two-day report range could otherwise never see
+   * the 72 hours the floor reads, or the 14-day normal the relative triggers read (CUL-2403).
+   * Absent (the Signal, which already passes the whole pull), the lane reads `mealEvents`.
+   */
+  intakeMealEvents?: MealEvent[]
+  /** The free-fed arrangements matching `intakeMealEvents`' span; absent, `feedingArrangements`.
+   *  Read only by the intake lane's free-fed exclusion, never as a correlation exposure. */
+  intakeFeedingArrangements?: FeedingArrangement[]
+  /**
    * Medication exposure windows for this pet (B-117 PR 9, §8) — regimen spans + administered
    * dose points, see MedicationWindow. They are CONFOUNDERS on the food→symptom correlation,
    * not correlates: a drug case-enriched across a symptom's matched pairs SUPPRESSES that
@@ -1159,19 +1171,27 @@ export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | '
 
 /**
  * The sustained-refusal floor's facts (the stopgap for a record with no good meals, so no
- * baseline to fall from). Counts over a named population, the watched rated meals in the last
- * `windowHours`: every one of them refused or picked at. A count, never a rate of anything else.
+ * baseline to fall from). Counts over a named population, the watched rated meals in the
+ * `windowHours` to `endIso`: none eaten well. A count, never a rate of anything else.
  */
 export interface SustainedRefusalFacts {
-  /** Watched rated meals in the window; every one is in the refusal class. */
+  /** Watched rated meals in the window; none rated most or all. */
   meals: number
   refused: number
   picked: number
+  /** Rated "ate some" (CUL-2404 (a): it no longer clears the floor). */
+  some: number
   /** Distinct owner-local days those meals fall on. */
   days: number
   windowHours: number
   /** The first counted meal (ISO), so the span the counts cover is checkable. */
   firstIso: string
+  /** The window's end: the last rated meal when it is within `windowHours` of now, else now. */
+  endIso: string
+  /** `endIso`'s owner-local day (YYYY-MM-DD; UTC with no valid zone), the day the copy names. */
+  endLocalDay: string
+  /** True when the window ends at a rating on an earlier owner-local day than today, so the copy names that day. */
+  anchoredToLastRating: boolean
 }
 
 /**
@@ -4247,7 +4267,7 @@ interface RatedMeal {
  */
 function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
   return parseFreeFedIntakeSpans(
-    (input.feedingArrangements ?? []).map((a) => ({
+    (input.intakeFeedingArrangements ?? input.feedingArrangements ?? []).map((a) => ({
       foodItemId: a.foodItemId ?? null,
       createdAt: a.createdAt ?? null,
       activeFrom: a.activeFrom,
@@ -4255,6 +4275,11 @@ function intakeFreeFedSpans(input: DetectionInput): FreeFedIntakeSpan[] {
       endedAt: a.endedAt ?? null,
     })),
   )
+}
+
+/** The intake lane's meals (CUL-2403): the caller's intake pull, else `mealEvents`. */
+function intakeMealEventsOf(input: DetectionInput): MealEvent[] {
+  return input.intakeMealEvents ?? input.mealEvents
 }
 
 function isFreeFedMeal(m: MealEvent, spans: readonly FreeFedIntakeSpan[]): boolean {
@@ -4332,7 +4357,7 @@ export function detectIntakeDecline(
       daysBelowBaseline: 0,
       refusedFoodLabel: null,
       ratedMealsConsidered: 0,
-      lastFullMealIso: lastFullMeal(classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))),
+      lastFullMealIso: lastFullMeal(classifyRatedMeals(intakeMealEventsOf(input), intakeFreeFedSpans(input))),
       refusedThenVomited: facts,
     },
   ]
@@ -4433,12 +4458,18 @@ function detectIntakeDeclineCore(
 }
 
 /**
- * The sustained-refusal floor: every watched rated meal in the last `windowHours` refused or
- * picked at (`lib/intakeEvidence.ts`'s refusal class, Some never counts), at least `minMeals` of
- * them on at least `minDays` owner-local days. Runs BELOW ②'s coverage floor on purpose: three
- * refusals are a thin record and still the record a vet most needs flagged. An unrated meal is
- * unknown (never a refusal), a free-fed bowl is not a watched meal, and one meal rated Some or
- * better in the window stands the floor down; its absence is silence, never an all-clear.
+ * The sustained-refusal floor, as ruled (PM, 2026-11-02, option (a)): no watched rated meal eaten
+ * well in the 72 hours to the anchor. Qualifying meals are refused, picked at or ate some (`some`
+ * no longer clears it); at least `minMeals` of them on `minDays` owner-local days, and at least one
+ * refused or picked at, so half-eaten meals alone never raise a call-today card. Only a CERTAINLY
+ * watched meal rated most or all stands it down (adversarial pass 2: a pre-076 take-up day's bowl
+ * may be the bowl, and its "ate it all" must neither clear the floor nor count).
+ *
+ * THE ANCHOR. The window ends at the most recent rated meal when that meal is within
+ * `windowHours` of now and on an earlier owner-local day than today (the copy then names that
+ * day), otherwise at now: an owner who stops rating after days of refusals keeps
+ * the card for up to 72 hours past the last rating instead of losing it the hour the window empties
+ * (CUL-2404, B3). Runs below ②'s coverage floor; absence is silence, never an all-clear.
  * Mirrored in lib/analytics.ts detectIntakeDecline; the parity suite drives both.
  */
 function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig): IntakeDeclineFinding | null {
@@ -4446,21 +4477,28 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return null
   const spans = intakeFreeFedSpans(input)
-  const ratedMeals = classifyRatedMeals(input.mealEvents, spans)
-  const start = nowMs - rule.windowHours * MS_PER_HOUR
-  const inWindow = ratedMeals.filter((m) => m.ms >= start && m.ms <= nowMs)
-  // A rating better than picked stands the floor down only when it was CERTAINLY a watched meal:
-  // where a free-fed bowl's end instant is missing (a pre-076 take-up), its "ate it all" on the
-  // take-up day may be the bowl, and counting it silenced the floor (adversarial pass 2). Such a
-  // rating neither stands the floor down nor counts as a refusal.
-  const picked = intakeScore('picked')
-  if (inWindow.some((m) => m.score > picked && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))) return null
-  const recent = inWindow.filter((m) => m.score <= picked)
+  const ratedMeals = classifyRatedMeals(intakeMealEventsOf(input), spans).filter((m) => m.ms <= nowMs)
+  if (ratedMeals.length === 0) return null
+  const windowMs = rule.windowHours * MS_PER_HOUR
+  const latestMs = ratedMeals[ratedMeals.length - 1].ms
+  // Anchored only when the last rating is on an EARLIER owner-local day than today and within the
+  // window of now: a same-day anchor would reach past the "last 72 hours" the copy states.
+  const anchoredToLastRating =
+    nowMs - latestMs <= windowMs && intakeDayOf(latestMs, input.timezone) < intakeDayOf(nowMs, input.timezone)
+  const endMs = anchoredToLastRating ? latestMs : nowMs
+  const inWindow = ratedMeals.filter((m) => m.ms >= endMs - windowMs && m.ms <= endMs)
+  const ateWell = intakeScore('most')
+  if (inWindow.some((m) => m.score >= ateWell && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))) return null
+  const recent = inWindow.filter((m) => m.score < ateWell)
   if (recent.length < rule.minMeals) return null
+  const picked = intakeScore('picked')
+  if (!recent.some((m) => m.score <= picked)) return null
   const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timezone)))
   if (days.size < rule.minDays) return null
   const refused = recent.filter((m) => m.score === intakeScore('refused')).length
+  const pickedCount = recent.filter((m) => m.score === picked).length
   const mean = recent.reduce((sum, m) => sum + m.score, 0) / recent.length
+  const endIso = new Date(endMs).toISOString()
   return {
     type: 'intake_decline',
     priorityClass: 'safety',
@@ -4472,16 +4510,19 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
     daysBelowBaseline: days.size,
     refusedFoodLabel: null,
     ratedMealsConsidered: recent.length,
-    // The same uncertain bowl must not stand in as the last full meal, or "how long off food"
-    // would read short.
+    // An uncertain bowl must not stand in as the last full meal, or "how long off food" reads short.
     lastFullMealIso: lastFullMeal(ratedMeals.filter((m) => !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))),
     sustainedRefusal: {
       meals: recent.length,
       refused,
-      picked: recent.length - refused,
+      picked: pickedCount,
+      some: recent.length - refused - pickedCount,
       days: days.size,
       windowHours: rule.windowHours,
       firstIso: recent[0].occurredAt,
+      endIso,
+      endLocalDay: localIsoDay(endIso, input.timezone),
+      anchoredToLastRating,
     },
   }
 }
@@ -4494,7 +4535,7 @@ function detectIntakeDeclineRelative(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return []
 
-  const ratedMeals = classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))
+  const ratedMeals = classifyRatedMeals(intakeMealEventsOf(input), intakeFreeFedSpans(input))
 
   // Coverage floor: too few rated meals → SILENT. Silence is not an all-clear (§9);
   // the composition layer renders the building/stale state, never "intake is fine".

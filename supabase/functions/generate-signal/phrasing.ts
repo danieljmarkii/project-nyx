@@ -137,11 +137,26 @@ export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: 
  * client (`sustainedRefusalSentence`, lib/signalCopy.ts); keep the two in sync.
  */
 export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
-  // The window is named in HOURS: 72 hours can touch four of the owner's days, so "the last three
-  // days … on 4 days" contradicted itself (adversarial pass 1, B6). "Watched and rated": a free-fed
-  // bowl rated "ate it all" is not counted, and "every meal you rated" was false beside it (B7).
-  const verb = r.refused === r.meals ? 'refused' : r.picked === r.meals ? 'picked at' : 'picked at or refused'
-  return `${petName} has ${verb} every meal you watched and rated in the last ${r.windowHours} hours, ${r.meals} meals on ${r.days} days. That's worth a call to your vet today.`
+  // The window is named in HOURS: 72 hours can touch four of the owner's days (adversarial pass 1,
+  // B6). "Watched and rated": a free-fed bowl is not counted (B7). "Hasn't eaten well": since
+  // CUL-2404 (a) an "ate some" no longer clears the floor, so "picked at or refused every meal"
+  // could be false; the counts say which. A window anchored to an earlier day's last rating names it.
+  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}. That's worth a call to your vet today.`
+}
+
+/** "the last 72 hours", or "the 72 hours to July 30" when the window ends at an earlier day's rating. */
+function sustainedRefusalSpan(r: SustainedRefusalFacts): string {
+  return r.anchoredToLastRating ? `the ${r.windowHours} hours to ${onsetDay(r.endLocalDay)}` : `the last ${r.windowHours} hours`
+}
+
+/** "6 meals on 3 days (4 refused, 2 picked at)": every non-zero part, in the scale's order. */
+function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
+  const parts = [
+    r.refused > 0 ? `${r.refused} refused` : null,
+    r.picked > 0 ? `${r.picked} picked at` : null,
+    r.some > 0 ? `${r.some} ate some` : null,
+  ].filter((p): p is string => p !== null)
+  return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`
 }
 
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {

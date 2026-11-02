@@ -256,8 +256,11 @@ describe('CUL-94 — the buffer day holds the onset: a good morning, then the re
       { iso: `${day(10)}T22:00:00+00:00`, rating: 'refused' },
       { iso: `${day(11)}T08:00:00+00:00`, rating: 'some' },
     ];
+    // Since CUL-2404 (a) the two refusals and the "ate some" also meet the sustained-refusal floor,
+    // which replaces the day-count card with its louder one. Either is the card this protects.
     for (const at of ['19:00', '21:00', '23:30']) {
-      expect(verdict('cat', meals, `${day(11)}T${at}:00+00:00`, 'UTC')).toContain('consecutive_low');
+      const v = verdict('cat', meals, `${day(11)}T${at}:00+00:00`, 'UTC');
+      expect({ at, card: v.includes('consecutive_low') || v.includes('sustained_refusal') }).toEqual({ at, card: true });
     }
   });
 });

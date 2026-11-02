@@ -1191,8 +1191,8 @@ export function evidenceText(
     // free-fed bowl and an unrated meal are not counted; neither is said to be eaten.
     const r = sustainedRefusalOf(finding);
     return r
-      ? `${sustainedRefusalSentence(r, petName)} Only meals you watched and rated are counted, and none in that time was rated better than picked at, so there's no recent normal to compare with.${i5Tail}`
-      : `${petName} has picked at or refused every meal you watched and rated lately. That's worth a call to your vet today.${i5Tail}`;
+      ? `${sustainedRefusalSentence(r, petName)} Only meals you watched and rated are counted, and none in that time was rated "ate most" or better, so there's no recent normal to compare with.${i5Tail}`
+      : `${petName} hasn't eaten well at any meal you watched and rated lately. That's worth a call to your vet today.${i5Tail}`;
   }
   if (finding.trigger === 'refused_then_vomited') {
     // Only witnessed vomits count (a found pile's time is a guess), and nothing is said of the
@@ -1906,18 +1906,31 @@ export function sustainedRefusalOf(finding: SignalFinding): SustainedRefusalFact
   if (!r) return null;
   const ok = (n: number) => Number.isFinite(n) && n >= 1;
   const okZero = (n: number) => Number.isFinite(n) && n >= 0;
-  return ok(r.meals) && ok(r.days) && ok(r.windowHours) && okZero(r.refused) && okZero(r.picked) ? r : null;
+  return ok(r.meals) && ok(r.days) && ok(r.windowHours) && okZero(r.refused) && okZero(r.picked) && (r.some === undefined || okZero(r.some)) ? r : null;
 }
 
-/** The floor's verb: what the owner rated, and only that. Never "less than usual" (no usual). */
-function sustainedRefusalVerb(r: SustainedRefusalFacts): string {
-  return r.refused === r.meals ? 'refused' : r.picked === r.meals ? 'picked at' : 'picked at or refused';
+/** The window, the mirror of phrasing.ts `sustainedRefusalSpan`. */
+function sustainedRefusalSpan(r: SustainedRefusalFacts): string {
+  return r.anchoredToLastRating && r.endLocalDay
+    ? `the ${r.windowHours} hours to ${shortDateUTC(r.endLocalDay)}`
+    : `the last ${r.windowHours} hours`;
+}
+
+/** The counts, the mirror of phrasing.ts `sustainedRefusalCounts`. */
+function sustainedRefusalCounts(r: SustainedRefusalFacts): string {
+  const some = r.some ?? 0;
+  const parts = [
+    r.refused > 0 ? `${r.refused} refused` : null,
+    r.picked > 0 ? `${r.picked} picked at` : null,
+    some > 0 ? `${some} ate some` : null,
+  ].filter((p): p is string => p !== null);
+  return `${r.meals} meals on ${r.days} days (${parts.join(', ')})`;
 }
 
 /** The mirror of `sustainedRefusalSentence` in generate-signal/phrasing.ts (keep the two in sync;
  *  signalCopy.sustainedRefusal.test.ts pins them). Counts over the named window and the call. */
 export function sustainedRefusalSentence(r: SustainedRefusalFacts, petName: string): string {
-  return `${petName} has ${sustainedRefusalVerb(r)} every meal you watched and rated in the last ${r.windowHours} hours, ${r.meals} meals on ${r.days} days. That's worth a call to your vet today.`;
+  return `${petName} hasn't eaten well at any meal you watched and rated in ${sustainedRefusalSpan(r)}: ${sustainedRefusalCounts(r)}. That's worth a call to your vet today.`;
 }
 
 function refusalCountOf(f: TimingStoryLike): number {
@@ -2424,8 +2437,8 @@ function phoneScriptFacts(
         { label: 'Concern', value: 'no meal eaten well' },
         ...(sr
           ? [
-              { label: 'Meals', value: `${sr.refused} refused, ${sr.picked} picked at` },
-              { label: 'Over', value: `${count(sr.days, 'day', 'days')} in the last ${sr.windowHours} hours` },
+              { label: 'Meals', value: sustainedRefusalCounts(sr) },
+              { label: 'Over', value: sustainedRefusalSpan(sr) },
             ]
           : []),
         ...i5Rows,
@@ -2685,7 +2698,7 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
   if (finding.type === 'intake_decline') {
     if (finding.trigger === 'sustained_refusal') {
       // The floor: what was rated, never "less than usual" (there is no usual to fall from).
-      return ` has picked at or refused every meal you watched and rated lately — worth a look.`;
+      return ` hasn't eaten well at any meal you watched and rated lately — worth a look.`;
     }
     if (finding.trigger === 'refused_then_vomited') {
       // I5 (PR-30s): the sequence, never a cause; the banner's own calm ask.

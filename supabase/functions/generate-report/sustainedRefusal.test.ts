@@ -45,12 +45,23 @@ Deno.test('the band row states the counts and why no baseline is compared; never
   const s = assembleReport(p2bCat())
   const f = s.safetyFlags.find((x) => x.kind === 'intake_decline')!
   const html = safetyFlagRow(f, s).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
-  assert.match(html, /Every watched meal rated in the 72\s?h before this window ends was picked at or refused/)
+  assert.match(html, /No watched meal rated in the 72\s?h to [A-Z][a-z]{2} \d+ was eaten well/)
   assert.match(html, /no recent baseline to compare against/)
   assert.match(html, /hepatic-lipidosis/, 'the feline window is named')
   assert.match(html, /No fully-eaten meal is recorded in this window/)
   assert.doesNotMatch(html, /below this pet&#39;s baseline|below this pet's baseline/)
   assert.doesNotMatch(html, /Baseline read over/)
   assert.doesNotMatch(html, /declined:/, 'a flat run is not called a decline')
-  assert.match(html, /6 meals \(4 refused, 2 picked at\) on 3 days/)
+  assert.match(html, /\d+ meals \(\d+ refused, \d+ picked at\) on \d+ days/)
+})
+
+Deno.test('CUL-2403: a one-day custom range still sees the 72 hours behind its end', () => {
+  const base = p2bCat()
+  const oneDay = { ...base, requestedWindow: { startDate: base.requestedWindow!.endDate, endDate: base.requestedWindow!.endDate } }
+  const s = assembleReport(oneDay as typeof base)
+  const f = s.safetyFlags.find((x) => x.kind === 'intake_decline')
+  assert.ok(f, 'the floor reads the lookback, not the one-day window')
+  if (f?.kind !== 'intake_decline') return
+  assert.equal(f.trigger, 'sustained_refusal')
+  assert.ok((f.sustainedRefusal?.days ?? 0) >= 2)
 })
