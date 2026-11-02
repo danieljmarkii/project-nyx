@@ -182,11 +182,20 @@ const PHONE_VIEWPORT = '<meta name="viewport" content="width=device-width, initi
  * NO PINCH-ZOOM IN THE ROOM (adversarial pass on PR-19): the pinned lead sentence is pinned to
  * the layout viewport, so a magnified view of the chart's lower half showed bars with neither
  * the pin nor the confounder line. The room's type already follows the owner's own size (and the
- * system's Zoom still works), so the room locks the page scale. The phone preview's exposure is
- * filed with the class.
+ * system's Zoom still works), so the room locks the page scale. The report preview's phone frame
+ * locks it the same way (CUL-2430).
  */
 export const EXAM_VIEWPORT =
   '<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />';
+
+/**
+ * The reflow with its page scale locked: renderPhoneV2's own viewport swapped for EXAM_VIEWPORT.
+ * Null when the document does not carry that viewport. Shared by the room and the report
+ * preview's phone frame (CUL-2430), so the two lock the same way.
+ */
+export function lockedViewportHtml(phoneHtml: string): string | null {
+  return phoneHtml.includes(PHONE_VIEWPORT) ? phoneHtml.replace(PHONE_VIEWPORT, EXAM_VIEWPORT) : null;
+}
 
 /**
  * The phone document as the exam room shows it, or null when the document is not a v2 phone
@@ -196,8 +205,8 @@ export const EXAM_VIEWPORT =
 export function examRoomHtml(phoneHtml: string, ground: string): string | null {
   if (!phoneHtml.includes('data-sheet=') || !phoneHtml.includes('</head>') || !phoneHtml.includes('</body>')) return null;
   // A document whose viewport the room cannot lock is refused, never shown zoomable.
-  if (!phoneHtml.includes(PHONE_VIEWPORT)) return null;
-  const locked = phoneHtml.replace(PHONE_VIEWPORT, EXAM_VIEWPORT);
+  const locked = lockedViewportHtml(phoneHtml);
+  if (locked === null) return null;
   const at = locked.lastIndexOf('</body>');
   const withScript = `${locked.slice(0, at)}${EXAM_SCRIPT}\n${locked.slice(at)}`;
   const head = withScript.indexOf('</head>');
