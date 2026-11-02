@@ -303,7 +303,11 @@ function declaredPolicies(): Policy[] {
     // and then recreates it (the idempotent house pattern) must land on the
     // create, and a file that creates then drops must land on the drop.
     const statements = [
-      ...[...sql.matchAll(CREATE_POLICY_RE)].map((m) => ({ at: m.index!, kind: 'create' as const, name: m[1] })),
+      // `at` is the end of `CREATE POLICY "<name>" ON storage.objects`, so the
+      // body read below never includes the name: a name holding `for select` or
+      // a `WITH CHECK (…)` cannot stand in for the real command or clause
+      // (rls-privacy-reviewer, CUL-2327 pass 2, s5 and s7).
+      ...[...sql.matchAll(CREATE_POLICY_RE)].map((m) => ({ at: m.index! + m[0].length, kind: 'create' as const, name: m[1] })),
       ...[...sql.matchAll(DROP_POLICY_RE)].map((m) => ({ at: m.index!, kind: 'drop' as const, name: m[1] })),
     ].sort((a, b) => a.at - b.at);
 
@@ -602,7 +606,16 @@ describe('no Storage bucket is public', () => {
 // And every POLICY statement that names storage.objects in any spelling must be
 // one the replay above parsed; ALTER POLICY on it is refused outright.
 //
-// STATED BLIND SPOTS: this reads the repo, not the database (117's VERIFY
+// STATED BLIND SPOTS (the rls-privacy-reviewer's second pass measured each;
+// none is live, all are deliberate evasions a reviewer would question, filed
+// as a follow-up on CUL-2327): the anchor is matched as text, so a wrapper that
+// keeps it but stops it binding (`(EXISTS …)::int >= 0`, `coalesce(true,
+// EXISTS …)`, a CASE with two true arms, the anchor inside a string literal)
+// passes; and the comment stripper knows single quotes only, so a `"--"`,
+// `$q$--$q$` or `E'\'--'` before a live CREATE POLICY on the same line hides
+// it from both counters. A lookup with any extra condition (a `deleted_at IS
+// NULL`, the usual `p.id::text = foldername[1] AND …` EXISTS) reds by design
+// and is a review, not a pass. Also: this reads the repo, not the database (117's VERIFY
 // queries read the live policies). It does not re-check that the three anchor
 // tables still cascade from auth.users; that was measured live on 2026-11-02 and
 // a migration that weakened one would be its own schema PR. A policy made
@@ -619,8 +632,8 @@ describe('no Storage bucket is public', () => {
 // point: nothing may be ANDed into the subquery.
 const CASCADE_ANCHOR_RE = new RegExp(
   String.raw`(?:\bIN\s*\(\s*SELECT\s+[\w.:]+(?:\s+AS\s+\w+)?|\bEXISTS\s*\(\s*SELECT\s+1)` +
-    String.raw`\s+FROM\s+(?:public\.)?(?:pets\s+WHERE\s+(?:\w+\.)?user_id|food_items\s+WHERE\s+(?:\w+\.)?created_by_user_id|user_profiles(?:\s+\w+)?\s+WHERE\s+(?:\w+\.)?id)` +
-    String.raw`\s*=\s*auth\.uid\(\)\s*\)`,
+    String.raw`\s+FROM\s+(?:public\.)?(?:pets(?:\s+(?:AS\s+)?\w+)?\s+WHERE\s+(?:\w+\.)?user_id|food_items(?:\s+(?:AS\s+)?\w+)?\s+WHERE\s+(?:\w+\.)?created_by_user_id|user_profiles(?:\s+(?:AS\s+)?\w+)?\s+WHERE\s+(?:\w+\.)?id)` +
+    String.raw`\s*=\s*(?:auth\.uid\(\)|\(\s*SELECT\s+auth\.uid\(\)\s*\))\s*\)`,
   'i',
 );
 
@@ -689,6 +702,8 @@ describe('a deleted account can no longer write to Storage (CUL-2327, 117)', () 
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'nyx-medication-photos' AND (storage.foldername(name))[1] = auth.uid()::text")).toBe(false);
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND (storage.foldername(name))[1] IN ( SELECT id::text FROM pets WHERE user_id = auth.uid() )")).toBe(true);
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid())")).toBe(true);
+    // House spellings: the initplan `(select auth.uid())` and an `AS` alias.
+    expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND EXISTS (SELECT 1 FROM public.user_profiles AS p WHERE p.id = (select auth.uid()))")).toBe(true);
     // R2 and R3: a subquery with a condition ANDed in, or a count, is not the anchor.
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.deleted)")).toBe(false);
     expect(CASCADE_ANCHOR_RE.test("bucket_id = 'x' AND (SELECT count(*) FROM user_profiles p WHERE p.id = auth.uid()) >= 0")).toBe(false);
