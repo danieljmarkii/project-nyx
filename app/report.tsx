@@ -361,6 +361,11 @@ export default function ReportScreen() {
     setSendOpen(false);
   }, [petId]);
 
+  // The pet the screen shows now: a send read that answers after a switch is dropped (CUL-2425
+  // adversarial pass), so one pet's flags or check never present over another's report.
+  const currentPet = useRef(petId);
+  currentPet.current = petId;
+
   const onOpenSend = useCallback(async () => {
     if (!petId) return;
     const now = new Date();
@@ -380,6 +385,7 @@ export default function ReportScreen() {
           : Promise.resolve([]),
         boundedRead(mailAvailable(), SEND_READ_TIMEOUT_MS, false, warn('mail')),
       ]);
+      if (currentPet.current !== petId) return;
       const known = knownFlags.current?.petId === petId ? knownFlags.current.live : null;
       // A partial read keeps the flags it lacks that this screen already read (CUL-2425).
       const live = liveForSend(withKnownFlags(fresh, known), known, today);

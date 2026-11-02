@@ -206,6 +206,29 @@ describe('the send read is bounded, and a partial read says so (CUL-2425)', () =
     }
   });
 
+  it('a read that answers after a pet switch presents nothing over the other pet', async () => {
+    const { usePetStore } = jest.requireMock('../store/petStore') as {
+      usePetStore: { getState: () => { activePet: { id: string; name: string }; pets: Array<{ id: string; name: string }> } };
+    };
+    const st = usePetStore.getState();
+    const before = { activePet: st.activePet, pets: st.pets };
+    let answer: (v: unknown) => void = () => undefined;
+    mockedOpen.mockReturnValue(new Promise((res) => { answer = res; }));
+    try {
+      const r = await toReport();
+      fireEvent.press(r.getByTestId('report-send'));
+      const other = { id: 'p2', name: 'Mochi' };
+      st.activePet = other;
+      st.pets = [...before.pets, other];
+      r.rerender(<ReportScreen />);
+      await act(async () => answer({ live: QUIET }));
+      expect(r.queryByTestId('sheet')).toBeNull();
+    } finally {
+      st.activePet = before.activePet;
+      st.pets = before.pets;
+    }
+  });
+
   it('a partial read with fewer flags than the screen knew keeps them all, and shows no check', async () => {
     mockComposerOpen = { live: { ...FLAGGED, flags: [...FLAGGED.flags, BLOOD], partial: false } };
     mockedOpen.mockResolvedValue({ live: { ...FLAGGED, partial: true } });
