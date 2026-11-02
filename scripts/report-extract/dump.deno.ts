@@ -8,11 +8,11 @@ const out = Deno.args[0]
 if (!out) throw new Error('usage: dump.deno.ts <outDir>')
 Deno.mkdirSync(out, { recursive: true })
 const names: string[] = []
-for (const { name, doc } of extractionDocs(buildDocumentV2)) {
+for (const { name, doc, aiLead } of extractionDocs(buildDocumentV2)) {
   // The whole document, and sheet 1 alone: a line sheet 1 lost must not pass by surviving on a
   // back sheet that repeats it, so the sheet 1 assertions read a PDF of sheet 1 only.
-  Deno.writeTextFileSync(`${out}/${name}.html`, renderPrintV2(doc))
-  Deno.writeTextFileSync(`${out}/${name}.s1.html`, renderPrintV2({ ...doc, backSheets: [] }))
+  Deno.writeTextFileSync(`${out}/${name}.html`, renderPrintV2(doc, aiLead))
+  Deno.writeTextFileSync(`${out}/${name}.s1.html`, renderPrintV2({ ...doc, backSheets: [] }, aiLead))
   names.push(name, `${name}.s1`)
 }
 Deno.writeTextFileSync(`${out}/fixtures.json`, JSON.stringify(names))

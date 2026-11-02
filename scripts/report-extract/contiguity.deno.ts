@@ -114,10 +114,10 @@ function stripAtPage(css: string): string {
 
 const docs = extractionDocs(buildDocumentV2)
 
-for (const { name, snap, doc } of docs) {
+for (const { name, snap, doc, aiLead } of docs) {
   Deno.test(`contiguity — ${name}: every fired flag and every sheet 1 line is one run in one block`, () => {
-    const html = renderPrintV2(doc)
-    const want = expectationsOf(doc, snap)
+    const html = renderPrintV2(doc, aiLead)
+    const want = expectationsOf(doc, snap, aiLead)
     assert(want.lines.length > 0, `${name}: the model printed no sheet 1 lines`)
     const runs = textRuns(sheet1Html(html))
     const lost = [...brokenLines(runs, want.flags).map((l) => ['flag', l] as const), ...brokenLines(runs, want.lines).map((l) => ['line', l] as const)]
@@ -129,14 +129,20 @@ for (const { name, snap, doc } of docs) {
   })
 
   Deno.test(`contiguity — ${name}: no stylesheet draws a digit outside the page head`, () => {
-    assertEquals(generatedDigits(renderPrintV2(doc)), [])
+    assertEquals(generatedDigits(renderPrintV2(doc, aiLead)), [])
+  })
+
+  Deno.test(`contiguity — ${name}: every safety flag the snapshot fired is a flag the test expects`, () => {
+    // The expectations come from the document; this ties them back to the snapshot, so a flag the
+    // document model dropped cannot also drop out of the test (adversarial pass 1, hardening).
+    assertEquals(expectationsOf(doc, snap, aiLead).flags.length, snap.safetyFlags.length)
   })
 }
 
-for (const { name, snap, doc } of docs) {
+for (const { name, snap, doc, aiLead } of docs) {
   Deno.test(`contiguity — ${name}: no sentence states a decline for the trial's own sign`, () => {
-    const signs = expectationsOf(doc, snap).trialSigns
-    const html = renderPrintV2(doc).replace(/<style>[\s\S]*?<\/style>/g, ' ').replace(/<svg[\s\S]*?<\/svg>/g, ' ')
+    const signs = expectationsOf(doc, snap, aiLead).trialSigns
+    const html = renderPrintV2(doc, aiLead).replace(/<style>[\s\S]*?<\/style>/g, ' ').replace(/<svg[\s\S]*?<\/svg>/g, ' ')
     assertEquals(declineSentences(textRuns(html).join(' '), signs), [])
   })
 }
@@ -154,13 +160,21 @@ Deno.test('contiguity — the fixtures carry every class the extraction job is f
 })
 
 Deno.test('contiguity — "How this record was kept" is a stub only while no renderer prints it (VR2-14)', () => {
-  const printed = docs.filter(({ doc }) => renderPrintV2(doc).includes(KEPT_HEADING)).map((d) => d.name)
+  // Read on the folded text, so markup or a spacing change inside the heading cannot slip past.
+  const prints = (d: (typeof docs)[number]): boolean => fold(textRuns(renderPrintV2(d.doc, d.aiLead)).join(' ')).includes(fold(KEPT_HEADING))
+  const printed = docs.filter(prints).map((d) => d.name)
   if (KEPT_STUB) {
     assertEquals(printed, [], `the "${KEPT_HEADING}" block now prints; write keptSentences() in expect.deno.ts and set KEPT_STUB to false`)
   } else {
     assert(printed.length === docs.length, 'KEPT_STUB is off but not every fixture prints the block')
-    for (const { name, doc } of docs) assert(expectationsOf(doc, docs.find((d) => d.name === name)!.snap).kept.length > 0, `${name}: no kept sentences`)
+    for (const d of docs) assert(expectationsOf(d.doc, d.snap, d.aiLead).kept.length > 0, `${d.name}: no kept sentences`)
   }
+})
+
+Deno.test('contiguity — the AI lead variants print the lead (never a lead-shaped fixture with no lead)', () => {
+  const leads = docs.filter((d) => d.aiLead !== null)
+  assert(leads.length >= 3, 'fewer than three AI lead variants')
+  for (const d of leads) assert(renderPrintV2(d.doc, d.aiLead).includes('data-block="ai-lead"'), `${d.name}: no lead slot`)
 })
 
 // ── The detectors, proved on inputs where the answer is known ──────────────────────────────────
@@ -195,9 +209,49 @@ Deno.test('declineSentences — a decline beside the trial sign is caught; scope
   const signs = ['itching']
   assertEquals(declineSentences('Itching fell from 9 to 2 entries a week.', signs).length, 1)
   assertEquals(declineSentences('Fewer itching entries in week 6. Vomiting: none.', signs).length, 1)
-  assertEquals(declineSentences('Itching on 12 of 14 days. Vomiting fell to 1.', signs), [])
+  assertEquals(declineSentences('Itching on 12 of 14 days. Weight 4.10 kg. Vomiting fell to 1.', signs), [])
+  assertEquals(declineSentences('Vomiting: 5 entries, the last Jun 17. Diet trial: z/d, stopped Jun 19.', ['vomit']), [])
   assertEquals(declineSentences('3 itching entries fall outside this window.', signs), [])
   assertEquals(declineSentences('Itching fell to 1.', []), [])
+})
+
+Deno.test('declineSentences — every decline adversarial pass 1 planted is caught', () => {
+  const planted: Array<[string, string[]]> = [
+    ['Diarrhea entries fell from 5 to 1 a week.', ['diarrhea']],
+    ['Loose stool dropped after week 2.', ['diarrhea']],
+    ['Vomited less often after week 2.', ['vomit']],
+    ['Itching: 9 \u2192 2 entries a week.', ['itch']],
+    ['Itching entries fall after the diet change.', ['itch']],
+    ['Itching settled by week 6.', ['itch']],
+    ['The itching no longer kept her up at night.', ['itch']],
+    ['Itchy episodes were half as frequent.', ['itch']],
+    ['Itching went from 9 to 2.', ['itch']],
+    ['Itching cleared by week 5.', ['itch']],
+    ['Itching is now rare.', ['itch']],
+    ['Itching halved.', ['itch']],
+    ['Itching responded to the diet.', ['itch']],
+    ['Itching is under control.', ['itch']],
+    ['Itching abated.', ['itch']],
+    ['Itching was at its lowest in week 6.', ['itch']],
+    ['Scratched less in week 6.', ['scratch']],
+    ['Itching vs. week 1 fell.', ['itch']],
+    ['Itching on 9 days in week 1. By week 6 it was 2, then 1.', ['itch']],
+  ]
+  for (const [text, signs] of planted) assertEquals(declineSentences(text, signs).length > 0, true, text)
+})
+
+Deno.test('declineSentences — dates, times and the measured carve-outs are not a decline', () => {
+  assertEquals(declineSentences('Itching getting worse: not checked (from 14:00 on Jun 25 to 14:00 on Jul 2).', ['itch']), [])
+  assertEquals(declineSentences('Loose stool photo: not clear enough to read.', ['diarrhea']), [])
+  assertEquals(declineSentences('Vomiting Oct 31: its photo is no longer retained.', ['vomit']), [])
+  // A carve-out never covers a looser phrase:
+  assertEquals(declineSentences('Itching entries fall in the last two weeks.', ['itch']).length, 1)
+})
+
+Deno.test('fold — whitespace between digits is never dropped', () => {
+  assert(!fold('week 74-day week').includes(fold('week 7 4-day week')))
+  assert(!fold('1 2 of 14 days').includes(fold('12 of 14 days')))
+  assert(fold('12 of\n14 days').includes(fold('12 of 14 days')))
 })
 
 Deno.test('withoutFurniture — a running head mid-line is cut; a lost digit still is not forgiven', () => {

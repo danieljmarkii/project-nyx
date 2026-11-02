@@ -11,8 +11,10 @@
 // THE EXPECTATIONS are derived from the document model, never listed (a new block kind fails to
 // compile in `sheet1Lines` until it is classified):
 //   1. every fired flag: each band item ("Flag: … .") and a lead chart that carries a flag;
-//   2. every line sheet 1 prints, whole, which is every digit on sheet 1 in its own sentence;
-//   3. no sentence naming one of the trial's own signs states a decline in it;
+//   2. every line sheet 1 prints, whole, which is every digit on sheet 1 in its own sentence: the
+//      band's photo captions and, when one prints, the AI lead's label and sentences included;
+//   3. no sentence naming one of the trial's own signs (by stem) states a decline in it or in the
+//      unlabelled sentence after it, in words or as a falling count;
 //   4. "How this record was kept": a stub until VR2-14 (CUL-2294) writes those sentences.
 //
 // MATCHING is whitespace-blind, case-blind and NFKC-folded: an extractor may break a line, insert
@@ -22,6 +24,8 @@
 import type { DocumentV2 } from '../../supabase/functions/generate-report/documentV2.ts'
 import { textOf } from '../../supabase/functions/generate-report/documentV2.ts'
 import { pageHeadCss } from '../../supabase/functions/generate-report/renderBackV2.ts'
+import { AI_LEAD_LABEL } from '../../supabase/functions/generate-report/renderPrintV2.ts'
+import type { LeadSentence } from '../../supabase/functions/generate-report/aiLead/verify.ts'
 import type { ReportSnapshot } from '../../supabase/functions/generate-report/report.ts'
 import { symptomLabel } from '../../supabase/functions/generate-report/render.ts'
 import { SKIN_TRIAL_SIGNS } from '../../supabase/functions/generate-report/v2Predicates.ts'
@@ -35,7 +39,7 @@ export interface ExpectedLine {
 export interface Expectations {
   flags: ExpectedLine[]
   lines: ExpectedLine[]
-  /** Lower-case labels of the trial's own signs ("itching"), empty without a gi or skin trial. */
+  /** The trial's own signs as symptom keys ("itch"), empty without a gi or skin trial. */
   trialSigns: string[]
   /** "How this record was kept" (VR2-14). Empty until those sentences exist; see `KEPT_STUB`. */
   kept: ExpectedLine[]
@@ -56,9 +60,12 @@ export function fold(s: string): string {
     .replace(INVISIBLE, '')
     // Measured 2026-11-02 (Chromium, Inter): the curly apostrophe and closing quote extract as the
     // modifier letters U+02BC and U+02EE in both tools. The same mark to a reader, so folded here;
-    // filed for the font work (VR2-11), because a search for the curly form misses them.
+    // filed as CUL-2420, because a search for the curly form misses them.
     .replace(SINGLE_QUOTES, "'")
     .replace(DOUBLE_QUOTES, '"')
+    // Whitespace between two digits is kept as a mark, never dropped: "week 7 4-day week" read back
+    // as "week 74-day week", or "12" as "1 2", changes a number (adversarial pass 1).
+    .replace(/(\d)\s+(?=\d)/g, '$1#')
     .replace(/\s+/g, '')
     .toLowerCase()
 }
@@ -85,7 +92,12 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
         break
       case 'band':
         add(b.id, b.heading)
-        for (const i of b.items) add(b.id, bandItemText(i.tag, i.html))
+        for (const i of b.items) {
+          add(b.id, bandItemText(i.tag, i.html))
+          // The photo captions: the dated evidence beside a fired flag (R-10), a separate run because
+          // an image sits between them and the line (adversarial pass 1).
+          for (const p of i.photos) add(b.id, p.caption)
+        }
         add(b.id, b.checksHtml === null ? null : textOf(b.checksHtml))
         break
       case 'checks':
@@ -156,10 +168,27 @@ export function firedFlags(doc: DocumentV2): ExpectedLine[] {
 /** A gi trial's own signs (v2Predicates keeps its list private to the lead ladder). */
 const GI_TRIAL_SIGNS = ['vomit', 'diarrhea'] as const
 
-export function trialSignLabels(snap: ReportSnapshot): string[] {
+/** The trial's own signs, as symptom keys ("itch"), empty without a gi or skin trial. */
+export function trialSignsOf(snap: ReportSnapshot): string[] {
   const ind = snap.trial?.indication ?? null
-  const signs: readonly string[] = ind === 'skin' ? SKIN_TRIAL_SIGNS : ind === 'gi' ? GI_TRIAL_SIGNS : []
-  return signs.map((s) => symptomLabel(s).toLowerCase())
+  return [...(ind === 'skin' ? SKIN_TRIAL_SIGNS : ind === 'gi' ? GI_TRIAL_SIGNS : [])]
+}
+
+/**
+ * Every way the text names a sign, by stem, not by `symptomLabel` alone: the report's own copy says
+ * "diarrhea" and "loose stool", and a summarizer says "vomited", "itchy", "scratched" (adversarial
+ * pass 1). An unknown key falls back to its label, so a new sign is never silently unmatched.
+ */
+const SIGN_STEMS: Record<string, RegExp> = {
+  vomit: /\bvomit\w*/i,
+  diarrhea: /\b(?:diarrh\w*|loose\s+stool\w*|stools?)\b/i,
+  itch: /\bitch\w*/i,
+  scratch: /\bscratch\w*/i,
+  skin_reaction: /\bskin\b/i,
+}
+
+export function signPattern(key: string): RegExp {
+  return SIGN_STEMS[key] ?? new RegExp(`\\b${symptomLabel(key).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')
 }
 
 /**
@@ -175,8 +204,14 @@ export function keptSentences(_doc: DocumentV2): ExpectedLine[] {
   return []
 }
 
-export function expectationsOf(doc: DocumentV2, snap: ReportSnapshot): Expectations {
-  return { flags: firedFlags(doc), lines: sheet1Lines(doc), trialSigns: trialSignLabels(snap), kept: keptSentences(doc) }
+/** The lead's printed lines when one is handed in: its label, then each sentence as stored. */
+export function aiLeadLines(aiLead: readonly LeadSentence[] | null): ExpectedLine[] {
+  if (aiLead === null || aiLead.length === 0) return []
+  return [{ block: 'ai-lead', text: `${AI_LEAD_LABEL} beta` }, ...aiLead.map((s) => ({ block: 'ai-lead', text: s.text }))]
+}
+
+export function expectationsOf(doc: DocumentV2, snap: ReportSnapshot, aiLead: readonly LeadSentence[] | null = null): Expectations {
+  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...sheet1Lines(doc)], trialSigns: trialSignsOf(snap), kept: keptSentences(doc) }
 }
 
 /** The expected lines whose folded text is not a run inside the folded haystack. */
@@ -186,21 +221,75 @@ export function missing(haystack: string, want: readonly ExpectedLine[]): Expect
 }
 
 /**
- * Words that state a sign went down. Broad on purpose: a false hit costs a look at the fixture, a
- * miss lets a clinic's summarizer tell a vet the trial is working on a sign it is not. "no longer",
- * "stopped" and "resolved" are in it because a summary of a falling count reads as one of those.
- * Two carve-outs, each a measured false hit on main's fixtures: "fall outside this window" (a
- * scope line) and "no longer retained" (a deleted photo). Neither is about the sign's course.
+ * Words that state a sign went down, ended or softened. Broad on purpose: a false hit costs a look at
+ * the fixture, a miss lets a clinic's summarizer tell a vet the trial is working on a sign it is not.
+ * Widened after adversarial pass 1, which planted "settled", "cleared", "halved", "now rare",
+ * "responded", "under control", "lowest" and "dropped" and found each one passing.
  */
-export const DECLINE_WORDS =
-  /\b(declin\w*|decreas\w*|fewer|less|lower\w*|down|dropp?\w*|fell|falling|fall(?!\s+(?:outside|inside|within|before|after|on|in)\b)|improv\w*|reduc\w*|eas(?:ed|ing)|subsid\w*|resolv\w*|better|no longer(?!\s+(?:retained|kept|stored|available|on file)\b)|stopped)\b/i
+export const DECLINE_WORDS = new RegExp(
+  '\\b(?:' +
+    [
+      'declin\\w*', 'decreas\\w*', 'fewer', 'less', 'lower\\w*', 'lowest', 'down', 'dropp?\\w*', 'dips?', 'dipp\\w*',
+      'fell', 'falls?', 'falling', 'improv\\w*', 'reduc\\w*', 'eas(?:ed|es|ing)', 'subsid\\w*', 'resolv\\w*', 'better',
+      'no longer', 'stop(?:ped|s|ping)?', 'ceas\\w*', 'settl\\w*', 'clear(?:ed|ing|s)?', 'halv\\w*', 'half as',
+      'rare\\w*', 'abat\\w*', 'respond\\w*', 'under control', 'taper\\w*', 'fad(?:ed|es|ing)', 'wan(?:ed|es|ing)',
+      'let up', 'died down', 'calm\\w*', 'gone', 'recover\\w*', 'went from', 'quiet\\w*', 'only once', 'no more',
+    ].join('|') +
+    ')\\b',
+  'i',
+)
 
-/** Sentences of `text` that name one of `signs` and state a decline in the same sentence. */
+/**
+ * A count that goes down in so many words: "9 → 2", "9 -> 2", "from 9 to 2", "9, then 2". Digits on
+ * both sides, so a date range ("Jun 1 – Jun 19") and a rising window ("48–72 h") never match.
+ */
+const DESCENT = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:${String.fromCodePoint(0x2192)}|->|to|then|,\\s*then)\\s*(\\d+(?:\\.\\d+)?)\\b`, 'g')
+
+/** Dates ("Jun 25", "Jun 25, 2026") and clock times ("14:00"), cut before the descent test: "from
+ *  14:00 on Jun 25 to 14:00 on Jul 2" is a window, not a count going from 25 to 14. */
+const DATES_AND_TIMES = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:, \d{4})?\b|\b\d{1,2}:\d{2}\b/g
+
+function hasDescent(s: string): boolean {
+  for (const m of s.replace(DATES_AND_TIMES, ' ; ').matchAll(DESCENT)) if (Number(m[2]) < Number(m[1])) return true
+  return false
+}
+
+/**
+ * The carve-outs, as whole phrases and nothing looser, each a measured false hit on main's fixtures
+ * that is not about a sign's course: a scope line ("5 symptom events fall outside this window") and a
+ * deleted photo ("its photo is no longer retained"), and two from the stool reads ("a lower-GI sign",
+ * a photo "not clear enough to read"). Cut from the sentence before it is tested, so
+ * "fall after the diet change" and "no longer kept her up" still count (adversarial pass 1).
+ */
+const NOT_A_COURSE = [
+  /\bfall outside (?:this|the) window\b/gi,
+  /\bphoto is no longer retained\b/gi,
+  /\blower-GI\b/gi, // anatomy: "a lower-GI (large-bowel) sign"
+  /\bnot clear enough to read\b/gi, // a photo's quality, not a sign's course
+  /\ba declined or barely-\s?touched meal\b/gi, // the intake sheet: a refused meal, the opposite of reassurance
+]
+
+/**
+ * Sentences that name one of `signs` with a decline in the same sentence or the next one (a summary
+ * that says "Itching on 9 days in week 1. By week 6 it was 2." splits the claim across two), unless
+ * the next one is a labelled line of its own.
+ */
 export function declineSentences(text: string, signs: readonly string[]): string[] {
   if (signs.length === 0) return []
+  const pats = signs.map(signPattern)
   const flat = text.normalize('NFKC').replace(/\s+/g, ' ')
-  const sentences = flat.split(/(?<=[.;!?])\s+/)
-  return sentences.filter((s) => signs.some((sign) => s.toLowerCase().includes(sign)) && DECLINE_WORDS.test(s))
+  const sentences = flat.split(/(?<=[.;!?])\s+(?=[A-Z0-9"'(])/)
+  const out: string[] = []
+  sentences.forEach((sent, i) => {
+    if (!pats.some((p) => p.test(sent))) return
+    // The next sentence joins only when it opens no subject of its own: a labelled line ("Diet trial
+    // (owner-entered): ... stopped Jun 19") is the next record line, not a follow-on to this one.
+    const next = sentences[i + 1] ?? ''
+    const follows = !/^[^.:]{1,60}:\s/.test(next)
+    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), x)).join(' ')
+    if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
+  })
+  return out
 }
 
 /** Where a missing line stops matching: its longest prefix that is a run in the haystack, and the

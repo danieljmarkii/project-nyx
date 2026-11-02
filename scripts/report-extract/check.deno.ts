@@ -6,14 +6,17 @@
 //     "How this record was kept" sentences (a stub until VR2-14);
 //   • both: no private-use code point, the mark of a glyph with no Unicode behind it;
 //   • the small cat: 1.95 kg and 1.86 kg read back at two decimals with their pound twins.
-// Usage: deno run --allow-read --allow-env scripts/report-extract/check.deno.ts <dir>
+// Usage: deno run --allow-read --allow-env scripts/report-extract/check.deno.ts <dir> [--only <name>]
 import { buildDocumentV2 } from '../../supabase/functions/generate-report/documentV2.ts'
 import { extractionDocs } from './docs.deno.ts'
 import { declineSentences, divergence, expectationsOf, fold, KEPT_STUB, missing, withoutFurniture } from './expect.deno.ts'
 import { SMALL_CAT_WEIGHTS } from './fixtures.deno.ts'
 
 const dir = Deno.args[0]
-if (!dir) throw new Error('usage: check.deno.ts <dir>')
+if (!dir) throw new Error('usage: check.deno.ts <dir> [--only <name>]')
+// `--only <name>`: one fixture, for run.sh's canary.
+const onlyAt = Deno.args.indexOf('--only')
+const only = onlyAt > 0 ? Deno.args[onlyAt + 1] : null
 
 const PAPERS = ['A4', 'Letter'] as const
 const TOOLS = ['pypdf', 'pdfminer'] as const
@@ -24,10 +27,10 @@ function read(name: string, paper: string, tool: string): string {
   return Deno.readTextFileSync(`${dir}/${name}.${paper}.${tool}.txt`)
 }
 
-const docs = extractionDocs(buildDocumentV2)
+const docs = extractionDocs(buildDocumentV2).filter((d) => only === null || d.name === only)
 if (docs.length === 0) throw new Error('no extraction fixtures')
-for (const { name, snap, doc } of docs) {
-  const want = expectationsOf(doc, snap)
+for (const { name, snap, doc, aiLead } of docs) {
+  const want = expectationsOf(doc, snap, aiLead)
   for (const paper of PAPERS) {
     for (const tool of TOOLS) {
       const at = `${name} · ${paper} · ${tool}`
@@ -46,7 +49,7 @@ for (const { name, snap, doc } of docs) {
     }
   }
 }
-for (const kg of Object.keys(SMALL_CAT_WEIGHTS)) if (!docs.some((d) => d.name === kg)) failures.push(`fixture ${kg} is missing`)
+if (only === null) for (const kg of Object.keys(SMALL_CAT_WEIGHTS)) if (!docs.some((d) => d.name === kg)) failures.push(`fixture ${kg} is missing`)
 
 if (KEPT_STUB) console.log('note: "How this record was kept" is a stub until VR2-14 (CUL-2294); nothing asserted for it yet')
 if (failures.length > 0) {
