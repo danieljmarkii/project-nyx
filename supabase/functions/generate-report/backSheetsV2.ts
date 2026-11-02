@@ -241,7 +241,16 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
     m.set(x.day, x.count)
     byType.set(x.type, m)
   }
-  const leadDays = fill ? byType.get(fill) ?? new Map<string, number>() : new Map<string, number>()
+  // INTAKE LEADS: the grid draws what the flag is about (cold read round 2, Mira: thirty refusals
+  // left off the grid read as quiet days). Its days are the watched rated meals not fully eaten, the
+  // same predicate the lead chart's intake row draws, and every symptom moves to the lines below.
+  const intakeFill = lead?.sign === 'intake' && snap.v2.mealNotFinishedDayCounts.length > 0
+  const symptomFill: ReportSymptomType | null = intakeFill ? null : fill
+  const leadDays = intakeFill
+    ? new Map(snap.v2.mealNotFinishedDayCounts.map((x) => [x.day, x.count] as const))
+    : symptomFill
+      ? byType.get(symptomFill) ?? new Map<string, number>()
+      : new Map<string, number>()
 
   const cells: LedgerCell[] = days.map((day) => {
     const count = leadDays.get(day) ?? 0
@@ -254,28 +263,34 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
     rows.push({ label: dayLabel(slice[0].day), cells: slice })
   }
 
-  const label = fill ? symptomLabel(fill) : null
-  const lower = label ? label.toLowerCase() : null
+  const label = intakeFill ? 'Meals not finished' : symptomFill ? symptomLabel(symptomFill) : null
+  const lower = intakeFill ? 'a meal not finished' : label ? label.toLowerCase() : null
   const drawsSign = cells.some((c) => c.state === 'sign')
   const drawsLogged = cells.some((c) => c.state === 'logged')
   const hatched = cells.filter((c) => c.state === 'none').map((c) => c.day)
   // The caption names only the marks this grid draws (AC 4, the chart standard's twin rule).
   const legend = [
-    ...(drawsSign && lower ? [`Filled: ${lower} that day, with its count.`] : []),
+    ...(drawsSign && lower
+      ? [intakeFill ? 'Filled: rated meals not fully eaten that day (any rating below “ate it all”), with their count.' : `Filled: ${lower} that day, with its count.`]
+      : []),
     // "Plain" is a day something else was logged, never a day the sign was seen not to happen
     // (cold read: a plain square read as a normal-stool day on a record of 12 stools in 30 days).
     ...(drawsLogged
-      ? [lower && drawsSign ? `Plain: something else was logged that day, but no ${lower}; not a sign it did not happen.` : 'Plain: something was logged that day.']
+      ? [
+          lower && drawsSign
+            ? intakeFill
+              ? 'Plain: something was logged that day, but no rated meal left unfinished; not a sign every meal was eaten.'
+              : `Plain: something else was logged that day, but no ${lower}; not a sign it did not happen.`
+            : 'Plain: something was logged that day.',
+        ]
       : []),
     ...(hatched.length > 0 ? ['Hatched: nothing logged.'] : []),
   ]
-  // When intake leads, the grid draws the busiest sign, and says outright that refusals are not on it.
-  const notDrawn = lead?.sign === 'intake' && intakeSheet ? [`Meals not finished are not drawn on this grid.`] : []
-  const caption = `Every day of the ${days.length}, as logged. One square is one day. ${[...legend, ...notDrawn].join(' ')}`.trim()
+  const caption = `Every day of the ${days.length}, as logged. One square is one day. ${legend.join(' ')}`.trim()
 
   const dayWithCount = (day: string, n: number): string => (n > 1 ? `${dayLabel(day)} ×${n}` : dayLabel(day))
   const lines: string[] = []
-  if (fill && lower) {
+  if (label && lower) {
     const ds = [...leadDays.entries()].filter(([d]) => d >= snap.scope.startDate && d <= snap.scope.endDate).sort((a, b) => a[0].localeCompare(b[0]))
     if (ds.length > 0) {
       lines.push(`${label} on ${ds.length} of ${days.length} days: ${ds.map(([d, n]) => dayWithCount(d, n)).join(', ')}.`)
@@ -284,7 +299,7 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
   // Every other sign, dated, so the ledger dates every entry in the window (the chronicity
   // pointer's claim, CUL-2350) and a second or third sign is never only a count (Dr. Chen,
   // 2026-10-31: three signs on overlapping days).
-  const others = REPORT_SYMPTOM_TYPES.filter((t) => t !== fill && byType.has(t)).map((t) => {
+  const others = REPORT_SYMPTOM_TYPES.filter((t) => t !== symptomFill && byType.has(t)).map((t) => {
     const ds = [...(byType.get(t) as Map<string, number>).entries()]
       .filter(([d]) => d >= snap.scope.startDate && d <= snap.scope.endDate)
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -292,7 +307,7 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
   }).filter((o) => o.ds.length > 0)
   if (others.length > 0) {
     lines.push(
-      `${fill ? 'Also on these days' : 'Entries by day'}: ${others
+      `${label ? 'Also on these days' : 'Entries by day'}: ${others
         .map((o) => `${symptomLabel(o.t).toLowerCase()} ${o.ds.map(([d, n]) => dayWithCount(d, n)).join(', ')}`)
         .join('; ')}.`,
     )

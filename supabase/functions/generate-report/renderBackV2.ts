@@ -78,7 +78,9 @@ function cssString(text: string): string {
 export function pageHeadCss(doc: DocumentV2): string {
   const mast = doc.blocks.find((b) => b.kind === 'masthead')
   if (!mast || mast.kind !== 'masthead') return ''
-  const head = cssString(`${mast.name} · owner’s home log · ${mast.window}`)
+  // Whose record, by more than a first name: species, sex and age, the window, and the report id
+  // when the copy is saved (cold read round 2: a detached page read "Nyx" and nothing more).
+  const head = cssString([mast.name, mast.signalmentBrief, 'owner’s home log', mast.window, ...(doc.reportId ? [`report ${doc.reportId}`] : [])].join(' · '))
   // Margin boxes inherit nothing from the body, so they name the sheet's family themselves.
   const box = 'font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:7pt;color:#565961;'
   return `@page{@top-left{content:${head};${box}}@bottom-right{content:"page " counter(page) " of " counter(pages);${box}}}@page :first{@top-left{content:none;}}`

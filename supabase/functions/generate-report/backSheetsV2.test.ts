@@ -149,9 +149,13 @@ Deno.test('ledger — one square per window day; hatch exactly on the days nothi
       assert.ok(c.state !== 'sign' || c.count > 0, `${name} ${c.day}: a filled square carries a count`)
       assert.ok(c.state === 'sign' || c.count === 0, `${name} ${c.day}: no count without a fill`)
     }
-    if (lg.fills) {
+    const inWindow = (d: string) => d >= s.scope.startDate && d <= s.scope.endDate
+    if (lg.fills === 'Meals not finished') {
+      const want = s.v2.mealNotFinishedDayCounts.filter((x) => inWindow(x.day)).reduce((n, x) => n + x.count, 0)
+      assert.equal(cells.reduce((n, c) => n + c.count, 0), want, `${name}: the filled counts are the snapshot's`)
+    } else if (lg.fills) {
       const type = s.symptoms.find((x) => x.type !== undefined && lg.fills === labelOf(x.type))?.type
-      const want = s.v2.symptomDayCounts.filter((x) => x.type === type).reduce((n, x) => n + x.count, 0)
+      const want = s.v2.symptomDayCounts.filter((x) => x.type === type && inWindow(x.day)).reduce((n, x) => n + x.count, 0)
       assert.equal(cells.reduce((n, c) => n + c.count, 0), want, `${name}: the filled counts are the snapshot's`)
     }
     const html = renderPrintV2(docOf(s))
@@ -194,13 +198,17 @@ Deno.test('ledger — its lines date every symptom entry in the window, so the c
   assert.ok(checked >= 40, `the fixtures carry entries (${checked})`)
 })
 
-Deno.test('ledger — a refusing cat whose lead is intake still has her vomiting filled on its days', () => {
+Deno.test('ledger — when intake leads, the grid draws the meals not finished on their days; every sign is still dated (cold read round 2, Mira)', () => {
   const s = fixture('mira')
   const lg = blockIn(backSheetsOf(s), 'ledger')
   assert.ok(lg)
-  assert.equal(lg.fills, 'Vomiting')
-  assert.ok(lg.rows.flatMap((r) => r.cells).some((c) => c.state === 'sign'))
-  assert.ok(lg.lines.some((l) => l.includes(`sheet headed “${INTAKE_SHEET_TITLE}”`)), 'and points at the intake sheet for the meals')
+  assert.equal(lg.fills, 'Meals not finished')
+  const filled = lg.rows.flatMap((r) => r.cells).filter((c) => c.state === 'sign')
+  assert.equal(filled.reduce((n, c) => n + c.count, 0), 38, 'her 38 rated meals not fully eaten')
+  assert.equal(filled.length, 19, 'on 19 days')
+  assert.match(lg.caption, /Filled: rated meals not fully eaten that day \(any rating below “ate it all”\), with their count\./)
+  assert.ok(lg.lines.some((l) => /^Also on these days: vomiting /.test(l)), 'her vomiting is dated below')
+  assert.ok(lg.lines.some((l) => l.includes(`sheet headed “${INTAKE_SHEET_TITLE}”`)), 'and the meal times are pointed at')
 })
 
 // ── What each episode looked like (spec §6.1, GAP-31, AC 5) ──────────────────
@@ -435,7 +443,9 @@ Deno.test('styles — no back-sheet rule reaches a sheet 1 element (cold read: v
 Deno.test('pages — every printed page after the first names the patient; owner-entered text cannot break out of the stylesheet', () => {
   const d = docOf(fixture('mira'))
   const css = pageHeadCss(d)
-  assert.match(css, /@page\{@top-left\{content:"Mira · owner’s home log · [^"]+"/)
+  assert.match(css, /@page\{@top-left\{content:"Mira · Cat[^"]* · owner’s home log · Jun 1 – Jul 2, 2026[^"]*"/)
+  assert.doesNotMatch(css, /report /, 'no id on an unsaved copy')
+  assert.match(pageHeadCss({ ...d, reportId: 'N3XR' }), /· report N3XR"/)
   assert.match(css, /@page :first\{@top-left\{content:none;\}\}/)
   const hostile = { ...d, blocks: d.blocks.map((b) => (b.kind === 'masthead' ? { ...b, name: 'Mi"ra</style><script>x</script>\\' } : b)) }
   const out = pageHeadCss(hostile)

@@ -121,6 +121,7 @@ export function nyxLiveSnapshot(): ReportSnapshot {
         return r ? { occurredAt: r.occurredAt, rating: r.intakeRating, foodLabel: r.foodLabel } : null
       })(),
       watchedRatedMeals: intake.filter((x) => !x.notCountedFreeFed).length,
+      mealNotFinishedDayCounts: [...notFinished.reduce((m, r) => m.set(localDay(r.occurredAt, tz), (m.get(localDay(r.occurredAt, tz)) ?? 0) + 1), new Map<string, number>())].map(([day, count]) => ({ day, count })),
       symptomDayCounts: [...counts.entries()].map(([k, count]) => {
         const [type, day] = k.split('|')
         return { type: type as ReportSnapshot['symptoms'][number]['type'], day, count }

@@ -222,6 +222,8 @@ export interface DocumentV2 {
   blocks: BlockV2[]
   /** Sheets 2 to N (VR2-13 onward, `backSheetsV2.ts`). */
   backSheets: BackSheetV2[]
+  /** The saved copy's short id (`opts.shortId`), for the head on every printed page; null unsaved. */
+  reportId: string | null
 }
 
 export interface DocumentV2Options {
@@ -992,7 +994,7 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
   }
 
   blocks.push({ kind: 'colophon', id: 'colophon', text: colophonOf(snap, opts, 1 + backSheets.length) })
-  return { version: 'v2', sheet: 1, blocks, backSheets }
+  return { version: 'v2', sheet: 1, blocks, backSheets, reportId: opts.shortId }
 }
 
 // ── The word budget (ruling B, spec §5.7) ───────────────────────────────────

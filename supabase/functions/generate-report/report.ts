@@ -3435,6 +3435,9 @@ export interface ReportV2Facts {
   lastMealAboveRefusal: { occurredAt: string; rating: IntakeRating; foodLabel: string | null } | null
   /** The watched rated meals that line reads over (0: the line has nothing to say). */
   watchedRatedMeals: number
+  /** CUL-2293: per local day, the watched rated meals not fully eaten (`!== 'all'`, the predicate
+   *  `intakeWeeks` counts), so the sheet 2 ledger can draw intake on its days when intake leads. */
+  mealNotFinishedDayCounts: Array<{ day: string; count: number }>
   /** CUL-2290: in-window symptom incidents per local day, for the day row under a 14-day window.
    *  The same deduped incidents as `SymptomAggregate.count` (they sum to it, per type). */
   symptomDayCounts: Array<{ type: ReportSymptomType; day: string; count: number }>
@@ -6819,6 +6822,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       intakeWeeksBowlExcluded: ratedMealsInWindow.filter((e) =>
         isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans),
       ).length,
+      mealNotFinishedDayCounts: mealNotFinishedDayCountsOf(
+        ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
+        (iso) => eventDayNumber(iso, tz),
+      ),
       ...lastMealAboveRefusalOf(
         ratedMealsInWindow.filter((e) => !isFreeFedIntakeMeal(e.meal!.foodItemId ?? null, Date.parse(e.occurredAt), intakeFreeFedSpans)),
       ),
@@ -6841,6 +6848,22 @@ function lastMealAboveRefusalOf(
     lastMealAboveRefusal: best ? { occurredAt: best.occurredAt, rating: best.meal!.intakeRating as IntakeRating, foodLabel: mealFoodLabel(best.meal!) } : null,
     watchedRatedMeals: watched.filter((e) => isKnownIntakeRating(e.meal!.intakeRating)).length,
   }
+}
+
+/** CUL-2293 — `ReportV2Facts.mealNotFinishedDayCounts`, the same population and predicate as `intakeWeeksOf`. */
+function mealNotFinishedDayCountsOf(
+  rated: ReadonlyArray<ReportEventInput>,
+  dayOf: (iso: string) => number | null,
+): ReportV2Facts['mealNotFinishedDayCounts'] {
+  const counts = new Map<string, number>()
+  for (const e of rated) {
+    const dn = dayOf(e.occurredAt)
+    const r = e.meal?.intakeRating ?? null
+    if (dn === null || r === null || r === 'all') continue
+    const k = dayKeyFromNumber(dn)
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([day, count]) => ({ day, count }))
 }
 
 /** CUL-2290 — `ReportV2Facts.intakeWeeks`, bucketed by the symptom chart's own closure. */
