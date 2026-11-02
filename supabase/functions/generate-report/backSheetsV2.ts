@@ -756,7 +756,8 @@ function timeTagsText(snap: ReportSnapshot): string {
     ['unspecified', 'unspecified means no confidence was recorded; treat that time as approximate'],
   ]
   const used = keys.filter(([k]) => present.has(k)).map(([, t]) => t)
-  return `In the event log, ${used.length > 1 ? `${used.slice(0, -1).join('; ')}; and ${used[used.length - 1]}` : used[0]}.`
+  const list = used.length <= 1 ? used[0] : used.length === 2 ? `${used[0]}, and ${used[1]}` : `${used.slice(0, -1).join('; ')}; and ${used[used.length - 1]}`
+  return `In the event log, ${list}.`
 }
 
 /**
@@ -842,7 +843,9 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
       ? [
           {
             term: 'Incident photos',
-            text: `The owner’s own photos, attached when each event was logged, are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first. Location, device and capture-time metadata are removed and the images are downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
+            // Never promises an image (cold read round 3): a card whose image could not be embedded
+            // says so on the card, and its read and date stay.
+            text: `Every photographed incident has a card on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first, with the owner’s photo where it could be embedded and its read either way. An embedded image has its location, device and capture-time metadata removed and is downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
           },
         ]
       : []),
@@ -869,7 +872,10 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
     {
       // Last, as v1 ends its legend: what the record is computed over.
       term: 'Deleted entries',
-      text: `Entries the owner deleted are excluded. Every symptom count traces line by line to the event log, and the treats, table food and other off-diet feedings to their table on the sheet headed “${DIET_SHEET_TITLE}”; medication, diet, weight and normal-stool figures summarise the owner’s logs for those items rather than itemising each one. Nothing is counted that the owner did not log.`,
+      // v1's claim and no wider (cold read round 3): sheet 1's symptom counts are the window's, and the
+      // event log lists every entry in the window; counts outside the window (a trial's earlier days)
+      // and the treat totals summarise rather than itemise.
+      text: 'Entries the owner deleted are excluded. The symptom counts on sheet 1 trace line by line to the event log; medication, diet, treat, weight and normal-stool figures, and counts from outside this window, summarise the owner’s logs rather than itemising each one. Nothing is counted that the owner did not log.',
     },
   ]
   return entries
