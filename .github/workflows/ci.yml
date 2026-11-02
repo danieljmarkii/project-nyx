@@ -360,8 +360,9 @@ jobs:
   # dropped digits and punctuation from exactly this text layer (CUL-2385, CUL-2386); re-adding
   # either one turns this job red.
   #
-  # Inter is installed because it is the sans those measurements were taken with (the report names
-  # Geist first, which the runner does not have; VR2-11 embeds the real faces). WebKit, the engine
+  # Inter is installed and made the default sans because it is the face those measurements were
+  # taken with (the report names Geist first, which the runner does not have; VR2-11 embeds the
+  # real faces). WebKit, the engine
   # iOS prints in, is not covered here (CUL-1771's on-device probe).
   #
   # Separate job so a Chromium or apt hiccup never reds the type check, and one stable check name
@@ -396,6 +397,26 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.63.0
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
           sudo apt-get install -y --no-install-recommends fonts-inter
+          # Installing Inter is not enough: the runner's default sans stays DejaVu, so the report's
+          # `ui-sans-serif` / `system-ui` fallbacks resolved to it and lines broke elsewhere than
+          # where they were measured (first CI run, 2026-11-02). Prefer Inter for both generics,
+          # and fail here, not in the check, if the preference did not take.
+          mkdir -p "$HOME/.config/fontconfig"
+          cat > "$HOME/.config/fontconfig/fonts.conf" <<'XML'
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+          <fontconfig>
+            <alias><family>sans-serif</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>system-ui</family><prefer><family>Inter</family></prefer></alias>
+            <alias><family>ui-sans-serif</family><prefer><family>Inter</family></prefer></alias>
+          </fontconfig>
+          XML
+          fc-cache -f >/dev/null
+          for fam in sans-serif system-ui; do
+            got="$(fc-match "$fam")"
+            echo "$fam -> $got"
+            case "$got" in *Inter*) ;; *) echo "::error::$fam resolves to $got, not Inter"; exit 1 ;; esac
+          done
           echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
 
       - name: Install pypdf and pdfminer.six (hash-pinned)

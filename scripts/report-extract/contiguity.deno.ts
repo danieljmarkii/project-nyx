@@ -27,7 +27,7 @@ import { strict as nodeAssert } from 'node:assert'
 import { buildDocumentV2 } from '../../supabase/functions/generate-report/documentV2.ts'
 import { renderPrintV2 } from '../../supabase/functions/generate-report/renderPrintV2.ts'
 import { extractionDocs } from './docs.deno.ts'
-import { declineSentences, divergence, expectationsOf, fold, KEPT_HEADING, KEPT_STUB, missing, type ExpectedLine } from './expect.deno.ts'
+import { declineSentences, divergence, expectationsOf, fold, KEPT_HEADING, KEPT_STUB, missing, withoutFurniture, type ExpectedLine } from './expect.deno.ts'
 import { SMALL_CAT_WEIGHTS } from './fixtures.deno.ts'
 
 // node:assert is bundled, so this suite fetches nothing (the CI step runs it --cached-only).
@@ -198,4 +198,15 @@ Deno.test('declineSentences — a decline beside the trial sign is caught; scope
   assertEquals(declineSentences('Itching on 12 of 14 days. Vomiting fell to 1.', signs), [])
   assertEquals(declineSentences('3 itching entries fall outside this window.', signs), [])
   assertEquals(declineSentences('Itching fell to 1.', []), [])
+})
+
+Deno.test('withoutFurniture — a running head mid-line is cut; a lost digit still is not forgiven', () => {
+  const d = docs.find((x) => x.name === 'mira-long-bowls')
+  assert(d, 'mira-long-bowls fixture missing')
+  const m = d.doc.blocks.find((b) => b.kind === 'masthead')
+  assert(m && m.kind === 'masthead')
+  const head = `page 1 of 2 ${m.name} · ${m.signalmentBrief} · owner\u2019s home log · ${m.window}`
+  const want: ExpectedLine[] = [{ block: 'lead-chart', text: 'courses and foods: Purina ONE 12 days' }]
+  assertEquals(missing(withoutFurniture(`courses and foods: ${head} Purina ONE 12 days`, d.doc), want), [])
+  assertEquals(missing(withoutFurniture(`courses and foods: ${head} Purina ONE 1 days`, d.doc), want).length, 1)
 })

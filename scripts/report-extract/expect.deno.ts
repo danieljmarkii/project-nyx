@@ -21,6 +21,7 @@
 // reordered character does, and fails.
 import type { DocumentV2 } from '../../supabase/functions/generate-report/documentV2.ts'
 import { textOf } from '../../supabase/functions/generate-report/documentV2.ts'
+import { pageHeadCss } from '../../supabase/functions/generate-report/renderBackV2.ts'
 import type { ReportSnapshot } from '../../supabase/functions/generate-report/report.ts'
 import { symptomLabel } from '../../supabase/functions/generate-report/render.ts'
 import { SKIN_TRIAL_SIGNS } from '../../supabase/functions/generate-report/v2Predicates.ts'
@@ -216,4 +217,23 @@ export function divergence(haystack: string, line: string): string {
   }
   const at = hay.indexOf(want.slice(0, lo))
   return `matched "${want.slice(Math.max(0, lo - 24), lo)}", wanted "${want.slice(lo, lo + 16)}", text has "${hay.slice(at + lo, at + lo + 16)}"`
+}
+
+/**
+ * The page furniture Chromium prints in the `@page` margin boxes: the running head (the patient,
+ * from the renderer's own `pageHeadCss`, so it is never mirrored here) and "page N of M". An
+ * extractor reads it wherever the page breaks, which can be mid-line: measured in CI on 2026-11-02,
+ * a Letter page break put "page 1 of 2 · Mira · Cat ..." inside a chart twin. The line's own text
+ * still read back whole and in order, so the furniture is cut out of the haystack before matching.
+ * Cut on the folded text, so a line is never joined across anything but furniture.
+ */
+export function withoutFurniture(haystack: string, doc: DocumentV2): string {
+  let hay = fold(haystack).replace(/page\d+of\d+/g, '')
+  const m = /@top-left\{content:("(?:[^"\\]|\\.)*")/.exec(pageHeadCss(doc))
+  if (m) {
+    const head = m[1].slice(1, -1).replace(/\\3C /g, '<').replace(/\\(.)/g, '$1')
+    const f = fold(head)
+    if (f !== '') hay = hay.split(f).join('')
+  }
+  return hay
 }
