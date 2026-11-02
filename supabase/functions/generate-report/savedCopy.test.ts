@@ -13,9 +13,12 @@ import {
   KEEP_WINDOW_MS,
   keepCopy,
   newShortId,
+  openCopy,
+  parseOpenRequest,
   parseKeepRequest,
   reapStaleDrafts,
   saveDraft,
+  savedCopyIO,
   savedCopyPath,
   sha256Hex,
   snapshotForCopy,
@@ -354,4 +357,76 @@ Deno.test('a draft past the keep window is never kept, so keep cannot race the r
   assert.equal(f.rows.get(ID)!.status, 'draft')
   f.rows.get(ID)!.created_at = new Date(NOW - KEEP_WINDOW_MS + 60_000).toISOString()
   assert.equal((await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, async () => true)).status, 200)
+})
+
+
+// ── Opening a kept copy (PR-21, CUL-2301) ─────────────────────────────────────
+
+async function keptCopy() {
+  const f = fakeIO()
+  const saved = await saveDraft(f.io, input, render, () => ID)
+  assert.equal(saved.saved, true)
+  const kept = await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, async () => true)
+  assert.equal(kept.status, 200)
+  return f
+}
+
+Deno.test('an open request names a well-formed id, or reads as none', () => {
+  assert.deepEqual(parseOpenRequest({ mode: 'open', reportId: ID.toUpperCase() }), { reportId: ID })
+  assert.deepEqual(parseOpenRequest({ mode: 'open', report_id: ID }), { reportId: ID })
+  assert.deepEqual(parseOpenRequest({ mode: 'open', reportId: `${PET}/../x` }), { reportId: null })
+  assert.equal(parseOpenRequest({ mode: 'keep', reportId: ID }), null)
+  assert.equal(parseOpenRequest({ reportId: ID }), null)
+})
+
+Deno.test('a kept copy opens as the exact bytes it was sent with', async () => {
+  const f = await keptCopy()
+  const out = await openCopy(f.io, { reportId: ID })
+  assert.equal(out.status, 200)
+  assert.deepEqual(out.body, { html: `<html>report ${f.rows.get(ID)!.short_id}</html>` })
+})
+
+Deno.test('a draft never opens: it answers exactly as a missing id does', async () => {
+  const f = fakeIO()
+  await saveDraft(f.io, input, render, () => ID)
+  const draft = await openCopy(f.io, { reportId: ID })
+  const missing = await openCopy(f.io, { reportId: 'ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee' })
+  assert.equal(draft.status, 404)
+  assert.deepEqual(draft, missing)
+})
+
+Deno.test('a stored file that no longer matches its frozen hash is refused, never shown', async () => {
+  const f = await keptCopy()
+  const path = f.rows.get(ID)!.storage_path
+  f.objects.set(path, new TextEncoder().encode('<html>changed</html>'))
+  const out = await openCopy(f.io, { reportId: ID })
+  assert.equal(out.status, 409)
+  assert.equal('html' in out.body, false)
+})
+
+Deno.test('a missing object, a failed read or a bad request shows nothing', async () => {
+  const f = await keptCopy()
+  f.objects.clear()
+  // A download that fails is retryable (500); only a changed file is 409.
+  assert.equal((await openCopy(f.io, { reportId: ID })).status, 500)
+  assert.equal((await openCopy({ ...f.io, readRow: async () => 'error' as const }, { reportId: ID })).status, 500)
+  assert.equal((await openCopy(f.io, { reportId: null })).status, 400)
+})
+
+Deno.test('the real row read names its row by id PAIRED WITH pet and verified maker (C-27; rls-privacy-reviewer F1)', async () => {
+  // The one lock between "my own pet + someone else's report id" and their report. Driven through
+  // the real savedCopyIO against a recording client, so deleting either filter reds here.
+  const eqs: Array<[string, unknown]> = []
+  const q = {
+    select: () => q,
+    eq: (c: string, v: unknown) => {
+      eqs.push([c, v])
+      return q
+    },
+    maybeSingle: async () => ({ data: null, error: null }),
+  }
+  const admin = { from: (t: string) => { assert.equal(t, 'vet_reports'); return q }, storage: { from: () => ({}) } }
+  const io = savedCopyIO(admin as never, { petId: PET, uid: 'verified-uid' })
+  assert.equal(await io.readRow(ID), null)
+  assert.deepEqual(eqs, [['id', ID], ['pet_id', PET], ['generated_by', 'verified-uid']])
 })

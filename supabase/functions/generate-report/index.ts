@@ -84,7 +84,7 @@ import {
 } from './composer.ts'
 import { buildDocumentV2, type DocumentV2 } from './documentV2.ts'
 import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft, settleLeadForKeep } from './aiLead/run.ts'
-import { keepCopy, parseKeepRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type SaveResult, type SharedVia } from './savedCopy.ts'
+import { isUuid, keepCopy, openCopy, parseKeepRequest, parseOpenRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type SaveResult, type SharedVia } from './savedCopy.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
@@ -1917,6 +1917,7 @@ const handler = async (req: Request): Promise<Response> => {
   let documentRequest: 'v1' | 'v2' = 'v1'
   let aiLead: { reportId: string | null; leaveOut: boolean } | null = null
   let keep: { reportId: string | null; sharedVia: SharedVia | null } | null = null
+  let open: { reportId: string | null } | null = null
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1944,10 +1945,12 @@ const handler = async (req: Request): Promise<Response> => {
       leaveOut?: boolean
       leave_out?: boolean
       // VR2-20 (CUL-2300) — `mode: 'keep'` keeps this draft as sent (savedCopy.ts).
+      // VR2-21 (CUL-2301) — `mode: 'open'` returns one kept copy's stored HTML (savedCopy.ts).
       sharedVia?: string
       shared_via?: string
     }
     keep = parseKeepRequest(body)
+    open = parseOpenRequest(body)
     aiLead = parseAiLeadRequest(body)
     composer = parseComposerRequest(body)
     petId = body.petId ?? ''
@@ -1978,7 +1981,8 @@ const handler = async (req: Request): Promise<Response> => {
   //   · PR 7: incident-photo bytes from nyx-event-attachments, at the exact paths the RLS-scoped
   //     rows named (ownership is re-checked before any pull);
   //   · VR2-25 (CUL-2305): the AI lead's read and write of one draft (aiLead/run.ts);
-  //   · VR2-20 (CUL-2300): the saved copy's rows and its nyx-vet-reports object (savedCopy.ts).
+  //   · VR2-20 (CUL-2300): the saved copy's rows and its nyx-vet-reports object (savedCopy.ts);
+  //   · VR2-21 (CUL-2301): one kept copy's stored object, opened for its owner (savedCopy.ts).
   // Every vet_reports query names its row by id PAIRED WITH its pet and the uid auth.getUser()
   // verified on the request JWT (C-27); 113's trigger refuses a maker who does not own the pet.
   const adminClient: SupabaseClient = createClient(
@@ -1992,6 +1996,11 @@ const handler = async (req: Request): Promise<Response> => {
     // different entry point and must construct the `shared_link` arm, which has no notes field to
     // carry (§9 rule 4).
     const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: includeNotes }
+    if (open !== null) {
+      // The Reports library: no report is built, nothing is written, no model is called.
+      const out = await openForPet(supabase, adminClient, petId, open, callerJwt)
+      return Response.json(out.body, { status: out.status, headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' } })
+    }
     if (keep !== null) {
       // After the report left the phone: no report is built and no model is called.
       const out = await keepForPet(supabase, adminClient, petId, keep, callerJwt)
@@ -2115,6 +2124,31 @@ async function keepForPet(
   const reportId = req.reportId
   const leadIO = draftLeadIO(adminClient, supabase, { reportId, petId, uid: user.id })
   const out = await keepCopy(savedCopyIO(adminClient, { petId, uid: user.id }), req, (html) => settleLeadForKeep(leadIO, html))
+  return { status: out.status, body: out.body }
+}
+
+/**
+ * VR2-21 (CUL-2301) — open one kept copy for its owner. Three locks, each sufficient alone for the
+ * pet half: the uid is the one `auth.getUser()` verifies on the request JWT; the pet must be one
+ * the caller's own RLS-scoped client can read (a pet that is not theirs answers 404, exactly as a
+ * missing id does); and the service-role row read pairs the id with that pet AND that maker (C-27).
+ * Only a kept copy opens, and only bytes that still match its frozen hash (savedCopy.ts).
+ */
+export async function openForPet(
+  supabase: SupabaseClient,
+  adminClient: SupabaseClient,
+  petId: string,
+  req: { reportId: string | null },
+  callerJwt: string | null,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (req.reportId === null || !isUuid(petId)) return { status: 400, body: { error: 'petId and reportId required' } }
+  const { data: userData, error: userErr } = await supabase.auth.getUser(callerJwt ?? undefined)
+  const user = userData?.user
+  if (userErr || !user) return { status: 401, body: { error: 'Unauthorized' } }
+  const { data: pet, error: petErr } = await supabase.from('pets').select('id').eq('id', petId).maybeSingle()
+  if (petErr) return { status: 500, body: { error: 'Saved copy could not be read' } }
+  if (!pet) return { status: 404, body: { error: 'Saved copy not found' } }
+  const out = await openCopy(savedCopyIO(adminClient, { petId: petId.toLowerCase(), uid: user.id }), req)
   return { status: out.status, body: out.body }
 }
 

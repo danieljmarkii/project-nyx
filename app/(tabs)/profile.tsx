@@ -80,6 +80,7 @@ import {
 } from '../../lib/medications';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useHasSavedReports } from '../../hooks/useHasSavedReports';
 import {
   focusScrollY, medFocusScrollY, profileFocusFromParams, profileStartTrialFromParams,
   widgetTrialFromParams,
@@ -242,6 +243,8 @@ export default function ProfileScreen() {
   // (null off-iOS / before the widget index is published), so the profile names
   // the slot instead of leaving the owner to bind by trial and error.
   const widgetSlotLabel = useWidgetSlotLabel(activePet?.id);
+  // Vet report v2 PR-21 (CUL-2301): the library's door shows only once this pet has a sent copy.
+  const hasSavedReports = useHasSavedReports(activePet?.id ?? null);
   // CUL-1856 — the hero reads the same signed link as every avatar disc, and
   // falls back to the initials on the same terms.
   const heroPhoto = usePetPhotoUri(activePet?.photo_path ?? null);
@@ -1630,6 +1633,14 @@ export default function ProfileScreen() {
             onPress={() => router.push('/report')}
             style={styles.reportButton}
           />
+          {hasSavedReports && (
+            <DoorRow
+              testID="profile-all-reports"
+              title="All reports"
+              onPress={() => router.push({ pathname: '/reports', params: { pet: activePet.id } })}
+              accessibilityLabel={`All reports. Every report you sent about ${activePet.name}, each as it was sent.`}
+            />
+          )}
         </Card>
 
         {/* ── Vet visits (CUL-900 VV-2, mock A1) ──
