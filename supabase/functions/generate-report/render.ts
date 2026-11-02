@@ -10658,7 +10658,11 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
       // live record page 1 counted 18 doses given inside a food while this row said none was.
       // The louder of the two stands.
       vehicleDosesOf(snap) > 0
-      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged during the trial as given inside a food that does not resolve to a meal logged in this window, so the food is not named here (counted among the trial&rsquo;s doses by mouth).`
+      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged ${
+          // The trial block's own scope phrase, so the two counts cannot read as two populations
+          // ("during the trial" read as the whole 87-day trial beside "the 35 trial days").
+          snap.trial ? trialCountScope(snap.trial) : 'during the trial'
+        } as given inside a food off the allowed list or not identified, which does not resolve to a meal logged in this window, so the food is not named here (counted among the trial&rsquo;s doses by mouth).`
       : snap.medications.length > 0 || snap.unlinkedMedications.length > 0
       ? 'Not recorded &mdash; no dose in this window was logged as given in food.'
       : 'Not recorded.'

@@ -104,7 +104,7 @@ Deno.test('CUL-2440 — cetirizine is dated from Jul 1 in every section, and nam
 Deno.test('CUL-2440 — the diet history no longer says no dose was given in food beside 18 that were (nyx-live)', () => {
   const t = v1('nyx-live')
   assert.doesNotMatch(t, /no dose in this window was logged as given in food/)
-  assert.match(t, /Food used to give medication ?18 doses were logged during the trial as given inside a food/)
+  assert.match(t, /Food used to give medication ?18 doses were logged in the 35 trial days this report covers as given inside a food off the allowed list or not identified/, 'the same scope and definition as the trial block')
 })
 
 Deno.test('CUL-2440 — v2 carries the same facts: sheet 1 and the back sheets (nyx-live)', () => {
