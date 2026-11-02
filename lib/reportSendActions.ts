@@ -10,11 +10,15 @@
 // before this dependency landed (the PM's dev client and the TestFlight build until the next
 // native cut). A static import would take down the whole report route; required here, the
 // Email row says Mail isn't available and Share still works.
+//
+// EACH KEEPS THE OWNER'S COPY AFTER IT ANSWERS (VR2-20, CUL-2300): `keepAfterSend` decides from
+// the platform's answer whether the report left, and never delays the result (lib/reportKeep.ts).
 
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
 import { renderReportPdf, shareReportPdf, type VetReport } from './pdf';
 import type { SendResult } from './reportSend';
+import { keepAfterSend } from './reportKeep';
 
 type MailModule = typeof import('expo-mail-composer');
 
@@ -63,7 +67,9 @@ export async function emailReport(report: VetReport, draft: EmailDraft, mail: Ma
       isHtml: false,
       attachments: [pdf.uri, ...draft.documentUris],
     });
-    return status === 'sent' || status === 'saved' || status === 'cancelled' ? status : 'undetermined';
+    const result: SendResult = status === 'sent' || status === 'saved' || status === 'cancelled' ? status : 'undetermined';
+    keepAfterSend(report, 'email', result);
+    return result;
   } finally {
     pdf.release();
   }
@@ -80,6 +86,7 @@ export const PRINT_DISMISSED = /printing did not complete/i;
 export async function printReport(report: VetReport): Promise<SendResult> {
   try {
     await Print.printAsync({ html: report.html });
+    keepAfterSend(report, 'print', 'done');
     return 'done';
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
@@ -91,7 +98,9 @@ export async function printReport(report: VetReport): Promise<SendResult> {
 
 /** The share sheet with the named PDF. `failed` when the platform has no share sheet. */
 export async function shareReport(report: VetReport): Promise<SendResult> {
-  return (await shareReportPdf(report)) ? 'done' : 'failed';
+  const result: SendResult = (await shareReportPdf(report)) ? 'done' : 'failed';
+  keepAfterSend(report, 'share', result);
+  return result;
 }
 
 /** The email's subject and body as text, for an owner who sends from somewhere else. */

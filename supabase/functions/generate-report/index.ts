@@ -82,8 +82,9 @@ import {
   validWindow,
   type ComposerPart,
 } from './composer.ts'
-import { buildDocumentV2 } from './documentV2.ts'
-import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft } from './aiLead/run.ts'
+import { buildDocumentV2, type DocumentV2 } from './documentV2.ts'
+import { draftLeadIO, parseAiLeadRequest, runAiLeadForDraft, settleLeadForKeep } from './aiLead/run.ts'
+import { keepCopy, parseKeepRequest, reapStaleDrafts, saveDraft, savedCopyIO, type DraftInput, type Rendered, type SaveResult, type SharedVia } from './savedCopy.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { REPORT_DOCUMENT_FLAG, reportDocumentV2On } from './documentFlag.ts'
@@ -1136,6 +1137,10 @@ export async function generateReportForPet(
   // AND `report_document_v2` resolves on for the JWT-verified caller; anything else is v1. The
   // default is v1, the layout every caller already gets, so omitting it changes nothing.
   documentRequest: 'v1' | 'v2' = 'v1',
+  // VR2-20 (CUL-2300): keeps the v2 render as a draft saved copy (savedCopy.ts). Null ⇒ nothing is
+  // saved and the colophon carries no short id, the render every caller before PR-20 got. Only the
+  // handler passes one, bound to the JWT-verified uid; it runs only on the v2 document.
+  saveCopy: SaveCopy | null = null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const built = await buildReportSnapshotForPet(supabase, petId, nowMs, requestedWindow, audience, callerJwt, requestTimezone)
   if (built.kind === 'response') return { status: built.status, body: built.body }
@@ -1156,15 +1161,33 @@ export async function generateReportForPet(
   // (`html`, what the PDF and every caller before the preview read) and the phone reflow
   // (`phone_html`, the preview's main frame). One build, so the two can never disagree on a word,
   // a flag or an order (spec §3.4, §10.2). v1 has no phone layout: `phone_html` is null there.
-  const doc = documentV2On === true
-    ? buildDocumentV2(snapshot, {
-        // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
-        owner: await readOwnerNames(supabase),
-        shortId: null,
-        questions: [],
-      })
-    : null
-  const html = doc !== null ? renderPrintV2(doc) : renderReport(snapshot)
+  // VR2-20 (CUL-2300): with a saver, the draft row is written first so its short id prints in the
+  // colophon, and the print HTML stored is byte-for-byte the `html` returned (the copy that is sent).
+  let saved: SaveResult<DocumentV2> | null = null
+  if (documentV2On === true) {
+    // The surname ONLY from `last_name` (spec §5.7): never the email fallback `ownerName` takes.
+    const owner = await readOwnerNames(supabase)
+    const render = (shortId: string | null): Rendered<DocumentV2> => {
+      const d = buildDocumentV2(snapshot, { owner, shortId, questions: [] })
+      return { doc: d, html: renderPrintV2(d) }
+    }
+    saved = saveCopy !== null
+      ? await saveCopy({
+          petId,
+          startDate: snapshot.scope.startDate,
+          endDate: snapshot.scope.endDate,
+          scopeBasis: snapshot.scope.basis,
+          params: {
+            requested_window: requestedWindow,
+            timezone: requestTimezone,
+            include_look_notes: audience.kind === 'owner' ? audience.includeLookNotes : false,
+          },
+          snapshot,
+        }, render)
+      : { saved: false, rendered: render(null) }
+  }
+  const doc = saved !== null ? saved.rendered.doc : null
+  const html = saved !== null ? saved.rendered.html : renderReport(snapshot)
   const phoneHtml = doc !== null ? renderPhoneV2(doc) : null
 
   return {
@@ -1175,6 +1198,9 @@ export async function generateReportForPet(
       // Spec §3.6: which renderer ran and the flag it read (null: not read, because v1 was asked for).
       report_version: documentV2On === true ? 'v2' : 'v1',
       report_flags_read: { [REPORT_DOCUMENT_FLAG]: documentV2On },
+      // VR2-20 (CUL-2300): the draft saved copy this render is, for `mode: 'keep'` at send. Null:
+      // not saved (v1, or the save failed), and the report still sends.
+      report_id: saved !== null && saved.saved ? saved.reportId : null,
       pet_name: snapshot.signalment.name,
       start_date: snapshot.scope.startDate,
       end_date: snapshot.scope.endDate,
@@ -1195,6 +1221,9 @@ export async function generateReportForPet(
     },
   }
 }
+
+/** VR2-20 (CUL-2300) — saves the v2 render as a draft copy; see `saveDraft`. */
+export type SaveCopy = (input: DraftInput, render: (shortId: string | null) => Rendered<DocumentV2>) => Promise<SaveResult<DocumentV2>>
 
 /** What `buildReportSnapshotForPet` hands back: the assembled snapshot, or the response to send. */
 export type BuiltReportSnapshot =
@@ -1887,6 +1916,7 @@ const handler = async (req: Request): Promise<Response> => {
   let composer: { part: ComposerPart } | null = null
   let documentRequest: 'v1' | 'v2' = 'v1'
   let aiLead: { reportId: string | null; leaveOut: boolean } | null = null
+  let keep: { reportId: string | null; sharedVia: SharedVia | null } | null = null
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1913,7 +1943,11 @@ const handler = async (req: Request): Promise<Response> => {
       report_id?: string
       leaveOut?: boolean
       leave_out?: boolean
+      // VR2-20 (CUL-2300) — `mode: 'keep'` keeps this draft as sent (savedCopy.ts).
+      sharedVia?: string
+      shared_via?: string
     }
+    keep = parseKeepRequest(body)
     aiLead = parseAiLeadRequest(body)
     composer = parseComposerRequest(body)
     petId = body.petId ?? ''
@@ -1955,6 +1989,11 @@ const handler = async (req: Request): Promise<Response> => {
     // different entry point and must construct the `shared_link` arm, which has no notes field to
     // carry (§9 rule 4).
     const ownerArm: ReportAudience = { kind: 'owner', includeLookNotes: includeNotes }
+    if (keep !== null) {
+      // After the report left the phone: no report is built and no model is called.
+      const out = await keepForPet(supabase, adminClient, petId, keep, callerJwt)
+      return Response.json(out.body, { status: out.status, headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' } })
+    }
     if (aiLead !== null) {
       // Its own request, after Preview; the report and Send never wait on it (spec §9.2).
       const out = await aiLeadForPet(supabase, adminClient, petId, aiLead, requestedWindow, ownerArm, callerJwt, requestTimezone)
@@ -1978,6 +2017,7 @@ const handler = async (req: Request): Promise<Response> => {
       adminClient,
       requestTimezone,
       documentRequest,
+      documentRequest === 'v2' ? draftSaver(supabase, adminClient, petId, callerJwt) : null,
     )
     return Response.json(body, {
       status,
@@ -2031,6 +2071,48 @@ async function aiLeadForPet(
   )
   if (result.outcome === 'draft_not_found') return { status: 404, body: { error: 'Draft not found' } }
   return { status: 200, body: { ...result } }
+}
+
+/**
+ * VR2-20 (CUL-2300) — the Preview's saver, bound to the uid `auth.getUser()` verifies on the
+ * request JWT (never a body value). An unverifiable caller gets an unsaved render, never a row.
+ * After a save it reaps this owner's stale drafts of this pet; a failed reap costs nothing.
+ */
+function draftSaver(supabase: SupabaseClient, adminClient: SupabaseClient, petId: string, callerJwt: string | null): SaveCopy {
+  return async (input, render) => {
+    const { data, error } = await supabase.auth.getUser(callerJwt ?? undefined)
+    const uid = data?.user?.id
+    if (error || !uid) return { saved: false, rendered: render(null) }
+    const io = savedCopyIO(adminClient, { petId, uid })
+    const result = await saveDraft(io, input, render)
+    try {
+      await reapStaleDrafts(io)
+    } catch (e) {
+      console.warn('vet_reports draft reap failed:', e instanceof Error ? e.message : String(e))
+    }
+    return result
+  }
+}
+
+/**
+ * VR2-20 (CUL-2300) — keep a draft as sent. The uid is the verified one; the row is named by id,
+ * pet and maker (savedCopy.ts), and the lead's columns are settled by their one writer first.
+ */
+async function keepForPet(
+  supabase: SupabaseClient,
+  adminClient: SupabaseClient,
+  petId: string,
+  req: { reportId: string | null; sharedVia: SharedVia | null },
+  callerJwt: string | null,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }
+  const { data: userData, error: userErr } = await supabase.auth.getUser(callerJwt ?? undefined)
+  const user = userData?.user
+  if (userErr || !user) return { status: 401, body: { error: 'Unauthorized' } }
+  const reportId = req.reportId
+  const leadIO = draftLeadIO(adminClient, supabase, { reportId, petId, uid: user.id })
+  const out = await keepCopy(savedCopyIO(adminClient, { petId, uid: user.id }), req, (html) => settleLeadForKeep(leadIO, html))
+  return { status: out.status, body: out.body }
 }
 
 /**

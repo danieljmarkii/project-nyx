@@ -151,6 +151,11 @@ const DELIBERATE_CAP: Record<string, string> = {
     'is what makes the cap safe, and `lookRowsComplete` already carries the shortfall into ' +
     'the render as a floor with no start date. Paging it would read an unbounded history to ' +
     'improve one clause that is already honest when it degrades.',
+  'generate-report/vet_reports':
+    'CUL-2300. The draft reaper (savedCopy.ts listStaleDrafts) reads one batch of this owner\'s ' +
+    'stale drafts of one pet, oldest first, and removes them; it is not a pull over the record ' +
+    'and prints nothing. What the cap leaves stays for the next Preview\'s pass, and account ' +
+    'deletion reads every row through delete-account\'s own paged reader whatever the reaper missed.',
 };
 
 /**
@@ -237,7 +242,10 @@ describe('CUL-975 / CUL-989 — every pull in the covered functions paginates or
     expect(found.length).toBeGreaterThanOrEqual(24);
     expect(found.length).toBe(plain.filter((m) => !m.storage && !m.write).length);
     expect(plain.filter((m) => m.storage).length).toBe(1); // the report's incident-photo bucket
-    expect(plain.filter((m) => m.write).length).toBe(2); // the Signal's cache replace: delete + insert
+    // The Signal's cache replace (delete + insert), and the report's saved copy (CUL-2300:
+    // savedCopy.ts's draft insert, its three updates (hash stamp, keep, departure stamp) and
+    // its two draft deletes).
+    expect(plain.filter((m) => m.write).length).toBe(8);
     // And the tables are the ones this report is actually built from, not a subset the
     // extractor happened to reach.
     for (const t of ['events', 'medication_administrations', 'diet_trials', 'vet_visits', 'looks']) {

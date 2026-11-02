@@ -53,6 +53,7 @@ import {
   type StorageListEntry,
   type StorageLister,
 } from './plan.ts'
+import { savedCopyPath } from '../generate-report/savedCopy.ts'
 
 // emptyOwned's ownerUserId is 'user-1', matching the `user-1/med-9/label.jpg`
 // fixtures below, so the B-128 prefix guard (scopeMedicationPaths) passes those
@@ -389,6 +390,27 @@ Deno.test('collectStoragePaths — CUL-2282: a foreign or traversal report path 
 Deno.test('collectStoragePaths — CUL-2282: a user with no pets purges no report, even a listed one', () => {
   const purges = collectStoragePaths(owned({ vetReportPaths: ['pet-victim/r.pdf'] }))
   assertEquals(purges.some((p) => p.bucket === STORAGE_BUCKETS.vetReports), false)
+})
+
+Deno.test('collectStoragePaths — CUL-2300: every key the saved-copy writer builds reaches the purge, .html and .pdf alike', () => {
+  const pet = '11111111-2222-4333-8444-555555555555'
+  const draft = savedCopyPath(pet, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  const kept = savedCopyPath(pet.toUpperCase(), 'ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee')
+  const pdf = `${pet}/0aaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.pdf`
+  const purges = collectStoragePaths(owned({ ownedPetIds: [pet], vetReportPaths: [draft, kept, pdf] }))
+  const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
+  assertEquals(byBucket[STORAGE_BUCKETS.vetReports], [draft, kept, pdf])
+  assertEquals(SWEEP_SCOPE.vetReports, 'pet')
+})
+
+Deno.test('index.ts — CUL-2300: the vet_reports read takes every row of the owned pets, drafts and kept copies alike', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url))
+  const call = src.slice(src.indexOf("readAllOwnedPaths('vet_reports'"), src.indexOf("readAllOwnedPaths('vet_reports'") + 200)
+  assert(call.includes("ownedPathPage(adminClient, 'vet_reports', petIds)"), call)
+  const page = src.slice(src.indexOf('function ownedPathPage('), src.indexOf('function ownedPathPage(') + 500)
+  assert(!/\.eq\('status'|\.neq\(|\.is\(|\.not\(/.test(page.slice(0, page.indexOf('\n}'))), 'the owned-row read must not filter on status')
+  // The bucket exists now, so a missing one is a failure, never an empty listing.
+  assert(!/bucket not found/i.test(src.replace(/\/\/[^\n]*/g, '')), 'the "Bucket not found lists as empty" tolerance is back')
 })
 
 // ── scopePetPhotoPaths (B-463) ───────────────────────────────────────────────

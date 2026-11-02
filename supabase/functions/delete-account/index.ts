@@ -179,18 +179,15 @@ function ownedPathPage(adminClient: SupabaseClient, table: string, petIds: strin
 
 // One page of a bucket folder's direct children, for listPrefixRecursive. Every error
 // THROWS, because a listing that came back short would read exactly like a complete
-// one. One exception: `nyx-vet-reports` has no writer yet and may not exist, and a
-// missing bucket holds no objects, so for that bucket alone "Bucket not found" lists as
-// empty. Any other bucket missing is a misnamed constant, and fails loud.
+// one. A missing bucket fails loud too: `nyx-vet-reports` was the one exception while it
+// had no writer, and since generate-report writes saved copies into it (VR2-20, CUL-2300)
+// a "Bucket not found" there would read as an account with no saved reports.
 function bucketLister(adminClient: SupabaseClient, bucket: string): StorageLister {
   return async (prefix, offset, limit) => {
     const { data, error } = await adminClient.storage
       .from(bucket)
       .list(prefix, { limit, offset, sortBy: { column: 'name', order: 'asc' } })
-    if (error) {
-      if (bucket === STORAGE_BUCKETS.vetReports && /bucket not found/i.test(error.message)) return []
-      throw new Error(`Failed to list ${bucket}: ${error.message}`)
-    }
+    if (error) throw new Error(`Failed to list ${bucket}: ${error.message}`)
     // storage-api returns a folder with a null id; supabase-js types id as string.
     return (data ?? []).map((e) => ({ name: e.name, id: (e.id as string | null) ?? null }))
   }
@@ -446,8 +443,7 @@ Deno.serve(async (req: Request) => {
             if (error) storageFailures.push(`${step.bucket}: ${error.message}`)
             else removed += data?.length ?? 0
           } catch (e) {
-            // A non-existent bucket (nyx-vet-reports before its first saved report)
-            // may throw rather than return an error — tolerate it; this is best-effort.
+            // A remove that throws is recorded and the run carries on; this is best-effort.
             storageFailures.push(`${step.bucket}: ${e instanceof Error ? e.message : String(e)}`)
           }
         }
