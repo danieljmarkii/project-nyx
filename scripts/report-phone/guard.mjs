@@ -19,7 +19,7 @@
 //
 // Usage:
 //   deno run --allow-read --allow-write --allow-env scripts/report-phone/dump.deno.ts <dir>
-//   node scripts/report-phone/guard.mjs <dir> [--shots <dir>]
+//   node scripts/report-phone/guard.mjs <dir> [--shots <dir>] [--sizes WxH,WxH]
 // Needs Playwright's Chromium and Python's pypdf (the text layer). Exits 1 on any failure.
 import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
@@ -44,6 +44,18 @@ const SIZES = [
   { name: '320pt-short', width: 320, height: 460, band: false },
   { name: '390pt', width: 390, height: 844, band: true },
 ]
+// CUL-2383 — `--sizes 320x394,390x609` replaces the sizes above with the host's real frames: the
+// WebView's height once the app's header and send bar take theirs (the preview's bars inset the
+// frame, never overlay it, so `innerHeight` is this number). Every host size checks the band.
+const sizesAt = process.argv.indexOf('--sizes')
+if (sizesAt > 0) {
+  SIZES.length = 0
+  for (const spec of process.argv[sizesAt + 1].split(',')) {
+    const m = /^(\d+)x(\d+)$/.exec(spec.trim())
+    if (!m) throw new Error(`--sizes takes WxH,WxH (got "${spec}")`)
+    SIZES.push({ name: `host-${m[1]}x${m[2]}`, width: Number(m[1]), height: Number(m[2]), band: true })
+  }
+}
 const SCALES = [1, 2.35, 3.1]
 const BAND_SCALES = [1, 2.35]
 const MIN_PX = 11
