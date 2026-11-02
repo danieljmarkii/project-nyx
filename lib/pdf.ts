@@ -128,13 +128,28 @@ export interface ReportFreshness {
 }
 
 export async function flushBeforeReport(): Promise<ReportFreshness> {
+  return (await flushAndCount()) ?? { pending: 0, quarantined: 0 };
+}
+
+/**
+ * CUL-2457, the send's half of the same gate: flush, then count what is still on this phone.
+ * Null when the first count could not be read. The report's freshness line reads that as silence
+ * (above), because a standing false alarm there would be wrong advice forever; the send's calm
+ * check reads it as "unknown", and an unknown record never earns the check. Same flush, same
+ * fail-safe re-count; only what the caller does with "no evidence" differs.
+ */
+export async function flushBeforeSend(): Promise<ReportFreshness | null> {
+  return flushAndCount();
+}
+
+async function flushAndCount(): Promise<ReportFreshness | null> {
   let counts: ReportFreshness;
   try {
     const s = await getSyncStatus();
     counts = { pending: s.pendingCount, quarantined: s.quarantinedCount };
   } catch (e) {
     console.warn('[Report] freshness check failed:', e);
-    return { pending: 0, quarantined: 0 };
+    return null;
   }
   if (counts.pending === 0) return counts;
   try {

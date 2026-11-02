@@ -11,6 +11,7 @@ import {
   liveForSend,
   sendDocumentsOf,
   sendIsQuiet,
+  sendRecordAllSent,
   sendStatusWords,
   subjectIsClean,
   uncheckedLive,
@@ -333,5 +334,16 @@ describe('Copy travels without the PDF, so it never says "Attached is"', () => {
 describe('Show on this phone makes no card', () => {
   it('is a way of showing, not a send', () => {
     expect(sendStatusWords('phone', 'ios', 'done')).toBeNull();
+  });
+});
+
+describe('sendRecordAllSent (CUL-2457)', () => {
+  it('only a read count with nothing pending and nothing refused is all sent', () => {
+    expect(sendRecordAllSent({ pending: 0, quarantined: 0 })).toBe(true);
+    expect(sendRecordAllSent({ pending: 1, quarantined: 0 })).toBe(false);
+    expect(sendRecordAllSent({ pending: 0, quarantined: 1 })).toBe(false);
+  });
+  it('an unread count is unknown, never all sent', () => {
+    expect(sendRecordAllSent(null)).toBe(false);
   });
 });

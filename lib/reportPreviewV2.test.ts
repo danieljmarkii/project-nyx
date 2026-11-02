@@ -1,5 +1,5 @@
 // The v2 preview's pure rules (PR-17, CUL-2297 + CUL-2383).
-import { androidTextZoom, bandSlotFor, hasPhonePreview, isPreviewLoadAllowed, PREVIEW_TOGGLE_LABEL } from './reportPreviewV2';
+import { androidTextZoom, bandSlotFor, hasPhonePreview, isBareV2Report, isPreviewLoadAllowed, PREVIEW_TOGGLE_LABEL } from './reportPreviewV2';
 
 describe('hasPhonePreview', () => {
   it('needs the v2 document AND its phone layout', () => {
@@ -51,4 +51,13 @@ describe('androidTextZoom', () => {
 it('the toggle names where the tap goes', () => {
   expect(PREVIEW_TOGGLE_LABEL.phone).toBe('View as printed');
   expect(PREVIEW_TOGGLE_LABEL.printed).toBe('View on phone');
+});
+
+describe('isBareV2Report (CUL-2458)', () => {
+  it('a v2 response without a usable phone layout is bare; a whole v2 or any v1 is not', () => {
+    expect(isBareV2Report({ reportVersion: 'v2', phoneHtml: null })).toBe(true);
+    expect(isBareV2Report({ reportVersion: 'v2', phoneHtml: '' })).toBe(true);
+    expect(isBareV2Report({ reportVersion: 'v2', phoneHtml: '<html>p</html>' })).toBe(false);
+    expect(isBareV2Report({ reportVersion: 'v1', phoneHtml: null })).toBe(false);
+  });
 });

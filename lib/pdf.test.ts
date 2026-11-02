@@ -8,7 +8,7 @@
 // only so importing pdf.ts doesn't drag native code into jest.
 
 import {
-  flushBeforeReport, reportFreshnessLine, reportPdfFilename, reportPdfFilenameFor, reportPdfFilenameV2, generateVetReport,
+  flushBeforeReport, flushBeforeSend, reportFreshnessLine, reportPdfFilename, reportPdfFilenameFor, reportPdfFilenameV2, generateVetReport,
   reportVersionFor, shareReportPdf, type VetReport,
 } from './pdf';
 import { useBetaOptInStore } from './betaFeatures';
@@ -574,5 +574,33 @@ describe('generateVetReport — reportVersion on the wire (CUL-2347)', () => {
     useBetaOptInStore.getState().setOptIn('report_composer_v2', true);
     await generateVetReport({ petId: 'p1', includeNotes: true });
     expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: TODAY });
+  });
+});
+
+describe('flushBeforeSend (CUL-2457)', () => {
+  const mockedStatus = getSyncStatus as jest.Mock;
+  const mockedSyncNow = syncNow as jest.Mock;
+  const status = (pendingCount: number, quarantinedCount = 0) => ({ pendingCount, oldestPendingAt: null, quarantinedCount });
+
+  beforeEach(() => {
+    mockedStatus.mockReset();
+    mockedSyncNow.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('the first count failing is unknown (null), not "nothing unsent"', async () => {
+    mockedStatus.mockRejectedValueOnce(new Error('boom'));
+    await expect(flushBeforeSend()).resolves.toBeNull();
+  });
+
+  it('flushes pending rows and reports what is left', async () => {
+    mockedStatus.mockResolvedValueOnce(status(2)).mockResolvedValueOnce(status(1, 1));
+    await expect(flushBeforeSend()).resolves.toEqual({ pending: 1, quarantined: 1 });
+    expect(mockedSyncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('FAIL-SAFE: a failed flush leaves the positive count standing', async () => {
+    mockedStatus.mockResolvedValueOnce(status(2));
+    mockedSyncNow.mockRejectedValueOnce(new Error('offline'));
+    await expect(flushBeforeSend()).resolves.toEqual({ pending: 2, quarantined: 0 });
   });
 });

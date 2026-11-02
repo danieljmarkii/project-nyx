@@ -97,12 +97,43 @@ it('a v1 report renders as before: no preview, no toggle, JS off', async () => {
   expect(s.queryByTestId('report-v2-phone', hidden)).toBeNull();
 });
 
-it('a v2 report from a server without the phone layout falls back to the plain page', async () => {
-  mockedGenerate.mockResolvedValue(report({ phoneHtml: null }));
+// CUL-2458: the v2 `html` is the PRINTED page; shown bare on a phone it has no pinned warning
+// and zoom on. A v2 response without its phone layout is refused into the build error.
+const printedOnScreen = (s: ReturnType<typeof render>) =>
+  s.UNSAFE_root.findAll((n: { props: unknown }) => (n.props as { source?: { html?: string } }).source?.html === '<html>print</html>');
+
+it.each([
+  ['missing', null],
+  ['empty', ''],
+])('a v2 report whose phone layout is %s is refused: the error and retry, never the printed page bare', async (_w, phoneHtml) => {
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  mockedGenerate.mockResolvedValue(report({ phoneHtml }));
   const s = render(<ReportScreen />);
-  await s.findByText('Send to vet');
+  await s.findByText('Couldn’t prepare the report');
+  expect(s.getByText('Try again')).toBeTruthy();
+  expect(printedOnScreen(s)).toHaveLength(0);
+  expect(s.queryByText('Send to vet')).toBeNull();
+});
+
+it('a refresh that comes back bare replaces the good v2 report with the error, not the printed page', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  mockedGenerate.mockResolvedValueOnce(report());
+  const s = render(<ReportScreen />);
+  await s.findByTestId('report-v2-view-toggle');
+  mockedGenerate.mockResolvedValueOnce(report({ phoneHtml: null, html: '<html>print</html>' }));
+  fireEvent.press(s.getByText('Custom…'));
+  await s.findByText('Couldn’t prepare the report');
   expect(s.queryByTestId('report-v2-view-toggle')).toBeNull();
-  expect(s.queryByTestId('report-v2-phone', hidden)).toBeNull();
+  // The good report's printed half sat in the toggle's other view; nothing printed is mounted now.
+  expect(printedOnScreen(s)).toHaveLength(0);
+});
+
+it('the retry after a refused bare v2 report builds again and shows the preview when it lands whole', async () => {
+  jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  mockedGenerate.mockResolvedValueOnce(report({ phoneHtml: null })).mockResolvedValueOnce(report());
+  const s = render(<ReportScreen />);
+  fireEvent.press(await s.findByText('Try again'));
+  await s.findByTestId('report-v2-view-toggle');
 });
 
 it('asking for v2, the first build waits on the v2 Front Page; asking for v1, on the shipped silhouette', async () => {
