@@ -73,6 +73,10 @@
 -- Vault. If the key is ever rotated, re-run cron.schedule below with the new
 -- key (the same name replaces the job).
 --
+-- The body names the sweep: the function refuses `{}` with a 400 (the
+-- deploy's boot check sends `{}` with this same key and needs a 4xx that does
+-- nothing), so only this job's call reaps.
+--
 -- If the function is not deployed yet when this applies, each call answers
 -- 404 into net._http_response and nothing else happens.
 --
@@ -226,7 +230,7 @@ SELECT cron.schedule(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFpZ2NobHVxbHV6dWh0YmZsbGdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NTcwNDcsImV4cCI6MjA5NDQzMzA0N30.FWerawEGnFuaDeBIuzVHF6LuGIJMu2Yw6RbEzVf8yTo'
     ),
-    body := '{}'::jsonb,
+    body := '{"sweep": "drafts"}'::jsonb,
     timeout_milliseconds := 30000
   );
   $job$
