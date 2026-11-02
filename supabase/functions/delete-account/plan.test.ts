@@ -32,6 +32,14 @@ import {
   SWEEP_TIME_LIMIT,
   EDGE_WORKER_WALL_CLOCK_MS,
   sweepBudget,
+  DELETE_START_FLOOR_MS,
+  WALL_CLOCK_MISMATCH_SLACK_MS,
+  canStartDeletion,
+  folderKey,
+  killedLeftoversLine,
+  userProbeOf,
+  wallClockMismatchLine,
+  workerTimeLeft,
   sweepLeftoversLine,
   sweepOwnedPrefixes,
   SWEEP_SCOPE,
@@ -1762,4 +1770,109 @@ Deno.test('sweepOwnedPrefixes — CUL-2345: a worker past its edge names every f
   assertEquals(res.unswept, sweep)
   assertEquals(res.partial, [])
   assertEquals(JSON.parse(sweepLeftoversLine('user-1', res)!).unswept.length, sweep.length)
+})
+
+// ── CUL-2362: the kills the budget cannot see ─────────────────────────────────
+
+Deno.test('canStartDeletion — CUL-2362: refuses below the floor, at the boundary exactly', () => {
+  const edge = T0 - (EDGE_WORKER_WALL_CLOCK_MS - DELETE_START_FLOOR_MS) // exactly the floor left
+  assertEquals(workerTimeLeft(T0, edge), DELETE_START_FLOOR_MS)
+  assert(canStartDeletion(T0, edge))
+  assert(!canStartDeletion(T0 + 1, edge))
+  assert(canStartDeletion(T0, T0)) // a fresh worker
+  assert(!canStartDeletion(T0, T0 - EDGE_WORKER_WALL_CLOCK_MS - 1)) // already past its edge
+})
+
+Deno.test('canStartDeletion — CUL-2362: any deletion it admits leaves the sweep time to start a folder', () => {
+  // The floor exists so the sweep is not born past its deadline. Walk every worker age
+  // the gate admits, plus up to a minute spent before the delete, and check the sweep
+  // budget still has its deadline ahead of the moment the gate passed.
+  for (let age = 0; age <= EDGE_WORKER_WALL_CLOCK_MS; age += 1_000) {
+    const worker = T0 - age
+    if (!canStartDeletion(T0, worker)) continue
+    const { deadline } = sweepBudget(T0, worker)
+    assert(deadline > T0, `age ${age}: the sweep's deadline is ahead when the gate passes`)
+  }
+})
+
+const KILL_SWEEP = [
+  { bucket: 'nyx-pet-photos', root: 'pet-1' },
+  { bucket: 'nyx-pet-photos', root: 'pet-2' },
+  { bucket: 'nyx-food-photos', root: 'food-1' },
+]
+
+Deno.test('killedLeftoversLine — CUL-2362: a kill before the sweep names every folder', () => {
+  const line = JSON.parse(
+    killedLeftoversLine({ userId: 'user-1', phase: 'deleting', sweep: KILL_SWEEP, done: new Set() }, 'WallClockTime'),
+  )
+  assertEquals(line, {
+    event: 'delete-account.killed.leftovers',
+    userId: 'user-1',
+    reason: 'WallClockTime',
+    phase: 'deleting',
+    unfinished: KILL_SWEEP,
+  })
+})
+
+Deno.test('killedLeftoversLine — CUL-2362: names only the folders not emptied, with an unknown reason', () => {
+  const done = new Set([folderKey(KILL_SWEEP[1])])
+  const line = JSON.parse(killedLeftoversLine({ userId: 'user-1', phase: 'sweeping', sweep: KILL_SWEEP, done }, null))
+  assertEquals(line.reason, 'unknown')
+  assertEquals(line.unfinished, [KILL_SWEEP[0], KILL_SWEEP[2]])
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2362: onFolderDone fires for emptied folders only, so a kill names the rest', async () => {
+  const done = new Set<string>()
+  const listerFor = (): StorageLister => async (prefix, offset) =>
+    offset === 0 && prefix !== 'pet-2' ? [{ name: 'a.jpg', id: 'id' }] : []
+  const res = await sweepOwnedPrefixes(
+    KILL_SWEEP,
+    listerFor,
+    async (_bucket, keys) => {
+      if (keys[0].startsWith('food-1/')) throw new Error('rejected')
+      return keys.length
+    },
+    { onFolderDone: (f) => done.add(folderKey(f)) },
+  )
+  // food-1's remove was rejected: partial, so not done.
+  assertEquals(res.partial, [KILL_SWEEP[2]])
+  assertEquals([...done].sort(), [folderKey(KILL_SWEEP[0]), folderKey(KILL_SWEEP[1])].sort())
+  const line = JSON.parse(killedLeftoversLine({ userId: 'u', phase: 'sweeping', sweep: KILL_SWEEP, done }, 'CPUTime'))
+  assertEquals(line.unfinished, [KILL_SWEEP[2]])
+})
+
+Deno.test('sweepOwnedPrefixes — CUL-2362: a folder the deadline left unstarted is never marked done', async () => {
+  const done = new Set<string>()
+  const res = await sweepOwnedPrefixes(KILL_SWEEP, () => async () => [], async () => 0, {
+    deadline: T0 - 1,
+    now: () => T0,
+    onFolderDone: (f) => done.add(folderKey(f)),
+  })
+  assertEquals(res.unswept, KILL_SWEEP)
+  assertEquals(done.size, 0)
+})
+
+Deno.test('wallClockMismatchLine — CUL-2362: an early wall-clock kill is loud, a CPU kill or an on-time kill is not', () => {
+  const free = JSON.parse(wallClockMismatchLine('WallClockTime', 150_000)!)
+  assertEquals(free, {
+    event: 'delete-account.wall-clock-mismatch',
+    reason: 'WallClockTime',
+    workerAgeMs: 150_000,
+    expectedMs: EDGE_WORKER_WALL_CLOCK_MS,
+  })
+  assertEquals(wallClockMismatchLine('WallClockTime', EDGE_WORKER_WALL_CLOCK_MS - WALL_CLOCK_MISMATCH_SLACK_MS), null)
+  assert(wallClockMismatchLine('WallClockTime', EDGE_WORKER_WALL_CLOCK_MS - WALL_CLOCK_MISMATCH_SLACK_MS - 1) !== null)
+  assertEquals(wallClockMismatchLine('CPUTime', 1_000), null)
+  assertEquals(wallClockMismatchLine(null, 1_000), null)
+})
+
+Deno.test('userProbeOf — CUL-2362 A4: only GoTrue\'s user_not_found is gone, only a returned user is present', () => {
+  assertEquals(userProbeOf({ user: { id: 'u' }, error: null }), 'present')
+  assertEquals(userProbeOf({ user: null, error: { code: 'user_not_found' } }), 'gone')
+  // A bare 404 may be a gateway's, not GoTrue's: never read as an erased account.
+  assertEquals(userProbeOf({ user: null, error: { status: 404 } as { code?: string } }), 'unknown')
+  // A failed probe never reads as intact: the caller names the folders.
+  assertEquals(userProbeOf({ user: null, error: { status: 500 } as { code?: string } }), 'unknown')
+  assertEquals(userProbeOf({ user: null, error: {} }), 'unknown')
+  assertEquals(userProbeOf({ user: null, error: null }), 'unknown')
 })
