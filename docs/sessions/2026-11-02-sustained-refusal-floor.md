@@ -13,12 +13,18 @@ It lives in `supabase/functions/generate-signal/detection.ts` (the issue named a
 
 ## What broke, and how
 
-Two adversarial passes, the cap.
+Two adversarial passes on the stopgap (the cap), then a third, PM-authorised, on the scope change below.
 
 - **Pass 1 broke the plan itself.** The approved plan had the floor yield to `consecutive_low`. A cat that ate well for two weeks and then refused every meal for 72 hours met the floor and still got "eaten less than usual today … if it carries on". The floor now replaces that card when both hold, a departure from the plan on the louder side, stated on the issue. Wording fixes: the window is named in hours, "watched and rated", and the report anchors to its window end.
 - **Pass 2 broke the free-fed rule.** The shared free-fed predicate counts an uncertain bowl rating (an old build's take-up day, no toggle-off instant) as a watched meal, which is the safe error for a flag that a bad rating fires and the unsafe one for a flag that a good rating stands down. A bowl's "ate it all" on the take-up morning silenced the floor on both detectors, and the parity suite agreed, because both were wrong the same way. Free-fed spans now carry their widest bounds, and only a certainly watched rating can stand the floor down.
 
 Filed: CUL-2403 (the report reads only in-range meals; Live harm), CUL-2404 (the rule's shape: "some" stands it down, lapsed logging; Waiting on PM, rides the ruling), CUL-2405 (old app builds show the softer card; Live harm), CUL-2406 (three small residuals; Backlog).
+
+## The scope change, and pass 3
+
+Mid-session the PM ruled in the dispatcher session (CUL-2394's newest comment) and gave the go here: the report's intake lane reads the lookback pull up to the window end, not the window alone (CUL-2403), and ruling (a) on the floor's shape (CUL-2404): only a watched "ate most" or "ate it all" clears it, "ate some" is counted with at least one refused or picked-at meal required, and the window can end at the last rating when the owner stops rating. The PM allowed a third adversarial pass on that addition.
+
+Pass 3 broke the anchor: ending the window at the last rating reached a good meal older than 72 hours and silenced a floor the 72 hours to now had raised, at breakfast on the morning after a 23:59 refusal. The anchored window is now a fallback, tried only when the now-window does not qualify. The demo story's intake card is now held by the floor two days after its seeded dip and decays at four. Residuals: the report now shares the Signal's baseline drag (noted on CUL-1797, labelled Live harm), and a cat rated "ate some" at every meal stays silent (an input for the threshold ruling, on CUL-2394).
 
 ## Teach
 
