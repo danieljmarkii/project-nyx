@@ -127,6 +127,11 @@ function generate(seed: number): Rec {
   return { species, nowMs, bowls, meals, zone: pick(ZONES) };
 }
 
+function pick3(r: () => number): IntakeRating {
+  const xs: IntakeRating[] = ['some', 'most', 'all'];
+  return xs[Math.floor(r() * xs.length)];
+}
+
 const labelOf = (id: string | null): string | null => (id === null ? null : `Food ${id}`);
 
 function phoneVerdict(rec: Rec): Verdict[] {
@@ -228,6 +233,35 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     // decided 434 and the zone 304. Fired rose from 352 mostly because a low day now holds its
     // card until the next day's first rated meal (ruling (a) on CUL-94).
     expect(zoneDecided).toBeGreaterThan(100);
+  });
+
+  it('the sustained-refusal floor: both surfaces agree on records with no good meals', () => {
+    // The stopgap's floor runs below the coverage floor and needs no baseline, so the general
+    // generator rarely reaches it. Here every known rating is re-drawn from the refusal class with
+    // an occasional Some or better, so the agreement is measured where the floor decides.
+    let floorFired = 0;
+    let floorStoodDown = 0;
+    for (let seed = 1; seed <= 2000; seed++) {
+      const base = generate(seed);
+      const r = rng(seed * 7919);
+      const rec: Rec = {
+        ...base,
+        meals: base.meals.map((m) => ({
+          ...m,
+          rating: m.rating === null ? null : r() < 0.93 ? (r() < 0.5 ? 'refused' : 'picked') : pick3(r),
+        })),
+      };
+      const phone = phoneVerdict(rec);
+      const server = serverVerdict(rec, true);
+      if (JSON.stringify(server) !== JSON.stringify(phone)) {
+        throw new Error(`seed ${seed} disagrees\nphone:  ${JSON.stringify(phone)}\nserver: ${JSON.stringify(server)}`);
+      }
+      if (server.some((v) => v.trigger === 'sustained_refusal')) floorFired++;
+      else if (rec.meals.some((m) => m.rating === 'some' || m.rating === 'most' || m.rating === 'all')) floorStoodDown++;
+    }
+    // Non-vacuity, measured at authoring: the floor fired on several hundred of 2000 records.
+    expect(floorFired).toBeGreaterThan(100);
+    expect(floorStoodDown).toBeGreaterThan(100);
   });
 
   it('both surfaces free the masked drop: the free-fed "ate it all" bowl no longer hides it', () => {

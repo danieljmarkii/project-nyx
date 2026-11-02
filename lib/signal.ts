@@ -68,7 +68,20 @@ export type IncidentCategory = 'vomit' | 'stool';
 // build names it. A build from before PR-30s does not know it and falls through to the
 // consecutive-low copy ("Eating less than usual"), so the key may not flip for an account still on
 // such a build (adversarial pass D4; the condition is on CUL-1725).
-export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited';
+// `sustained_refusal` (the stopgap floor for a record with no good meals): every rated meal in the
+// last three days refused or picked at. A build from before it falls through to the consecutive-low
+// copy, as I5 did; that copy still raises the card.
+export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited' | 'sustained_refusal';
+
+/** Mirror of detection.ts SustainedRefusalFacts. Counts over the named window, never a rate. */
+export interface SustainedRefusalFacts {
+  meals: number;
+  refused: number;
+  picked: number;
+  days: number;
+  windowHours: number;
+  firstIso: string;
+}
 
 /** Mirror of detection.ts RefusedThenVomitedFacts (I5). A count over a named population, never a
  *  rate: absence says nothing, so no surface ever prints a zero of it. */
@@ -250,6 +263,8 @@ export interface IntakeDeclineFinding {
   /** I5: on a `refused_then_vomited` card it is the claim; on the other two it is the card's extra
    *  line. Absent on every cache written without `engines_v3_en5`. */
   refusedThenVomited?: RefusedThenVomitedFacts;
+  /** The floor's counts: present on a `sustained_refusal` card and only there. */
+  sustainedRefusal?: SustainedRefusalFacts;
 }
 
 // Reflection (③, B-051) — descriptive symptom-count trend, no causal/wellness

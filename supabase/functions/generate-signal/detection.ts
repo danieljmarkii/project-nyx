@@ -1154,7 +1154,24 @@ export interface CorrelationFinding extends FindingBase {
 // down a bowl, on at least two days. It is emitted ONLY under `engines_v3_en5` (config.en5), and only
 // when the other two are quiet: when either fires, the same facts ride on it as `refusedThenVomited`
 // instead (ruling sheet §2.7 I5 = a line on the cat intake card, not a new card; PM option A, 10/09).
-export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited'
+export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited' | 'sustained_refusal'
+
+/**
+ * The sustained-refusal floor's facts (the stopgap for a record with no good meals, so no
+ * baseline to fall from). Counts over a named population, the watched rated meals in the last
+ * `windowHours`: every one of them refused or picked at. A count, never a rate of anything else.
+ */
+export interface SustainedRefusalFacts {
+  /** Watched rated meals in the window; every one is in the refusal class. */
+  meals: number
+  refused: number
+  picked: number
+  /** Distinct owner-local days those meals fall on. */
+  days: number
+  windowHours: number
+  /** The first counted meal (ISO), so the span the counts cover is checkable. */
+  firstIso: string
+}
 
 /**
  * I5's facts: how many collapsed vomit episodes followed a refused bowl within `windowMinutes`, on
@@ -1211,6 +1228,12 @@ export interface IntakeDeclineFinding extends FindingBase {
    * extra line the card prints. Absent says nothing (a record that rates bowls by exception).
    */
   refusedThenVomited?: RefusedThenVomitedFacts
+  /**
+   * The sustained-refusal floor's facts: present on a `sustained_refusal` finding and only there.
+   * That trigger compares against no baseline (there is none to fall from), so its score fields
+   * hold the window's own mean and no surface reads them as a comparison.
+   */
+  sustainedRefusal?: SustainedRefusalFacts
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -2231,6 +2254,18 @@ export interface DetectionConfig {
       consecutiveDaysBelowBaseline: number
       singleDayConcernCeiling: number
     }
+    /**
+     * The sustained-refusal floor (the stopgap beside the relative check): every watched rated
+     * meal in the last `windowHours` refused or picked at, at least `minMeals` of them, on at least
+     * `minDays` owner-local days. It needs no baseline and runs below the coverage floor, so a
+     * record with no good meals at all still raises the flag. PROVISIONAL: the threshold is the
+     * PM's and Dr. Chen's ruling; these values are the louder floor shipped while it waits.
+     */
+    sustainedRefusal: {
+      windowHours: number
+      minMeals: number
+      minDays: number
+    }
   }
   /**
    * EN-5's Signal half (Engines v3 PR-30s, CUL-1725), behind `engines_v3_en5`. ABSENT on
@@ -2757,6 +2792,10 @@ export const DEFAULT_CONFIG: DetectionConfig = {
       consecutiveDaysBelowBaseline: 1,
       singleDayConcernCeiling: 2,
     },
+    // The stopgap's floor (PM go, 2026-11-02): 72 hours, the far edge of the feline 48 to 72 hour
+    // liver window; three meals on two days, so one bad night never fires it. Both species, the
+    // louder side, until the ruling. Mirrored byte for byte in lib/analytics.ts DECLINE.
+    sustainedRefusal: { windowHours: 72, minMeals: 3, minDays: 2 },
   },
   // B-051 reflection floor — Conservative-but-useful (product-team call 2026-06-07,
   // PM deferred the exact values). Week-over-week; needs ≥3 episodes in the busier
@@ -4301,9 +4340,11 @@ export function detectIntakeDecline(
 /** The ranker's order within intake_decline (refused_normal_food leads), shared with the line's
  *  placement so the line always sits on the card that leads. */
 const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
-  refused_normal_food: 0,
-  consecutive_low: 1,
-  refused_then_vomited: 2,
+  // A record with no good meal in three days leads: it is the one a vet would act on first.
+  sustained_refusal: 0,
+  refused_normal_food: 1,
+  consecutive_low: 2,
+  refused_then_vomited: 3,
 }
 
 /**
@@ -4368,7 +4409,70 @@ export function withEn5Config(config: DetectionConfig): DetectionConfig {
   return { ...config, en5: EN5_SETTINGS }
 }
 
+/**
+ * ②'s two relative triggers plus the sustained-refusal floor. The relative triggers compare recent
+ * meals with the pet's own normal, so a record with no good meals has no normal to fall from and
+ * they stay silent: a cat whose every rated meal for a month was picked at or refused raised no
+ * flag (adversarial-reviewer, VR2-13, P2b). The floor closes that by itself, without a baseline.
+ * It yields to `consecutive_low` (one "is she eating" card, and that one already names the fall),
+ * and sits beside `refused_normal_food`, which names a food.
+ */
 function detectIntakeDeclineCore(
+  input: DetectionInput,
+  config: DetectionConfig,
+): IntakeDeclineFinding[] {
+  const relative = detectIntakeDeclineRelative(input, config)
+  if (relative.some((f) => f.trigger === 'consecutive_low')) return relative
+  const floor = sustainedRefusalFinding(input, config)
+  return floor ? [floor, ...relative] : relative
+}
+
+/**
+ * The sustained-refusal floor: every watched rated meal in the last `windowHours` refused or
+ * picked at (`lib/intakeEvidence.ts`'s refusal class, Some never counts), at least `minMeals` of
+ * them on at least `minDays` owner-local days. Runs BELOW ②'s coverage floor on purpose: three
+ * refusals are a thin record and still the record a vet most needs flagged. An unrated meal is
+ * unknown (never a refusal), a free-fed bowl is not a watched meal, and one meal rated Some or
+ * better in the window stands the floor down; its absence is silence, never an all-clear.
+ * Mirrored in lib/analytics.ts detectIntakeDecline; the parity suite drives both.
+ */
+function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig): IntakeDeclineFinding | null {
+  const rule = config.intakeDecline.sustainedRefusal
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const ratedMeals = classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))
+  const start = nowMs - rule.windowHours * MS_PER_HOUR
+  const recent = ratedMeals.filter((m) => m.ms >= start && m.ms <= nowMs)
+  if (recent.length < rule.minMeals) return null
+  if (!recent.every((m) => m.score <= intakeScore('picked'))) return null
+  const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timezone)))
+  if (days.size < rule.minDays) return null
+  const refused = recent.filter((m) => m.score === intakeScore('refused')).length
+  const mean = recent.reduce((sum, m) => sum + m.score, 0) / recent.length
+  return {
+    type: 'intake_decline',
+    priorityClass: 'safety',
+    trigger: 'sustained_refusal',
+    species: input.pet.species,
+    // No baseline: the score fields hold the window's own mean, and no surface compares them.
+    baselineScore: mean,
+    recentScore: mean,
+    daysBelowBaseline: days.size,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: recent.length,
+    lastFullMealIso: lastFullMeal(ratedMeals),
+    sustainedRefusal: {
+      meals: recent.length,
+      refused,
+      picked: recent.length - refused,
+      days: days.size,
+      windowHours: rule.windowHours,
+      firstIso: recent[0].occurredAt,
+    },
+  }
+}
+
+function detectIntakeDeclineRelative(
   input: DetectionInput,
   config: DetectionConfig,
 ): IntakeDeclineFinding[] {

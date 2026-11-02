@@ -81,6 +81,7 @@ import {
   type DetectionInput,
   type CorrelationFinding,
   type IntakeDeclineFinding,
+  type SustainedRefusalFacts,
   type SymptomChronicityFinding,
   type SymptomWorseningFinding,
   type SymptomBurdenFinding,
@@ -1628,6 +1629,12 @@ export type SafetyFlag =
        * window-relative arithmetic. Never negative (clamped).
        */
       hoursSinceLastFullMeal: number | null
+      /**
+       * The sustained-refusal floor's counts (the stopgap for a record with no good meals), or
+       * null on every other trigger. That trigger has no baseline, so `baselineScore` and
+       * `ratedMealsConsidered` describe the window itself and the band row reads these instead.
+       */
+      sustainedRefusal?: SustainedRefusalFacts | null
     }
   | {
       /**
@@ -5443,6 +5450,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ratedMealsConsidered: f.ratedMealsConsidered,
       lastFullMealIso: f.lastFullMealIso,
       hoursSinceLastFullMeal,
+      sustainedRefusal: f.sustainedRefusal ?? null,
     })
   }
   // B-494 — THE REFUSED PRESCRIBED DIET REACHES THE BAND. Ordered immediately after

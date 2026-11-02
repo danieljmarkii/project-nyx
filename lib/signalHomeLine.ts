@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
+import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
@@ -83,6 +83,8 @@ export function signalHomeAsk(finding: SignalFinding, nowMs?: number): string | 
     case 'intake_decline':
       // I5 (PR-30s): its sentence ends on I4's tail, so its ask is that tail's words.
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
+      // The sustained-refusal floor's sentence ends on a call today.
+      if (finding.trigger === 'sustained_refusal') return 'worth a call to your vet today';
       return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
       return incidentRedFlagAsk(finding, nowMs);
@@ -174,6 +176,11 @@ function countLine(finding: SignalFinding, nowMs: number | undefined): string | 
         // The sentence's own form: the times only when they differ from the days.
         if (!r) return null;
         return r.episodeCount === r.dayCount ? `On ${plural(r.dayCount, 'day', 'days')}` : `${plural(r.episodeCount, 'time', 'times')}, on ${plural(r.dayCount, 'day', 'days')}`;
+      }
+      if (finding.trigger === 'sustained_refusal') {
+        // The floor's count, through the copy module's guard (a malformed cache reads as absent).
+        const sr = sustainedRefusalOf(finding);
+        return sr ? `${plural(sr.meals, 'meal', 'meals')} on ${plural(sr.days, 'day', 'days')}` : null;
       }
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
