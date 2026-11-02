@@ -155,7 +155,7 @@ for (const { name, snap, doc, aiLead } of docs) {
   Deno.test(`contiguity — ${name}: no sentence states a decline for the trial's own sign`, () => {
     const want = expectationsOf(doc, snap, aiLead)
     const html = renderPrintV2(doc, aiLead).replace(/<style>[\s\S]*?<\/style>/g, ' ').replace(/<svg[\s\S]*?<\/svg>/g, ' ')
-    assertEquals(declineSentences(textRuns(html).join(' '), want.trialSigns, want.lineLabels), [])
+    assertEquals(declineSentences(textRuns(html).join(' '), want.trialSigns, want.lineLabels, want.spanWords), [])
   })
 }
 
@@ -295,10 +295,25 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('35 days of a trial that has run 87 \u2014 52 trial days fall before it (10 vomiting).', ['vomit']), [])
   assertEquals(declineSentences('Vomiting 87 \u2014 52 over the trial.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting entries fall before the diet change.', ['vomit']).length, 1)
-  // The strip's span sentence is cut only when the words it names are not the trial's signs.
-  assertEquals(declineSentences('▲ a vomit logged that day Hunched or tucked up falls entirely before this span.', ['vomit']), [])
-  assertEquals(declineSentences('Scratching more falls entirely before this span.', ['itch', 'scratch']).length, 1)
-  assertEquals(declineSentences('Off, Scratching more fall entirely before this span.', ['itch', 'scratch']).length, 1)
+  // The strip's span sentence is cut only against the document's own word list, and only when that
+  // list names none of the trial's signs (adversarial passes 1 and 2).
+  const skin = ['itch', 'scratch']
+  assertEquals(declineSentences('▲ a vomit logged that day Hunched or tucked up falls entirely before this span.', ['vomit'], [], ['Hunched or tucked up']), [])
+  assertEquals(declineSentences('▲ a vomit logged that day Hunched or tucked up falls entirely before this span.', ['vomit']).length, 1, 'no list: nothing is cut')
+  assertEquals(declineSentences('Scratching more falls entirely before this span.', skin, [], ['Scratching more']).length, 1)
+  assertEquals(declineSentences('Off, Scratching more fall entirely before this span.', skin, [], ['Off', 'Scratching more']).length, 1)
+  for (const words of [
+    ['Scratching more', 'A film across the eye', 'Hunched or tucked up'],
+    ['Licking or chewing one spot', 'Didn\u2019t want the walk', 'Stiff'],
+    ['Scratching more', 'Lip-licking', 'Drooling'],
+  ]) {
+    assertEquals(declineSentences(`${words.join(', ')} fall entirely before this span.`, skin, [], words).length, 1, words.join(', '))
+  }
+  // A non-sign list with hyphens, curly or extracted apostrophes and a lone capital is cut whole.
+  const plain = ['A film across the eye', 'Lip-licking', 'Didn\u2019t want the walk']
+  assertEquals(declineSentences('Vomiting 3 days. A film across the eye, Lip-licking, Didn\u02BCt want the walk fall entirely before this span.', ['vomit'], [], plain), [])
+  // A list that differs from the document's is not cut.
+  assertEquals(declineSentences('Vomiting. Hunched or tucked up falls entirely before this span.', ['vomit'], [], ['Off']).length, 1)
   assertEquals(declineSentences('Vomiting falls entirely before this span.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting falls entirely after the switch.', ['vomit']).length, 1)
   assertEquals(declineSentences('9 of 14 timed vomiting episodes fell within ~30 min of eating.', ['vomit']), [])

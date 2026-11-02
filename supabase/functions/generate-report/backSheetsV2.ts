@@ -48,6 +48,8 @@ import {
   dietTrialSection,
   eventLogParts,
   allTimesWitnessed,
+  cherryPickDisclosure,
+  timeConfidence,
   fmtDay,
   fmtLocalDay,
   fmtLocalTime,
@@ -526,7 +528,13 @@ function intakeBlock(snap: ReportSnapshot): BackBlockV2 {
     introHtml: onSheets(mealsIntroHtml(V2_SECTION_POINTERS)),
     predicate: predicateLineOf(snap),
     lastAboveRefused: lastAboveRefusedOf(snap),
-    tablesHtml: onSheets(tables),
+    // The same pointer swap and guard as VR2-14's sheets: the meal-items footnote points at the diet
+    // sheet's "Timing vs symptoms", never at sheet 1 (cold read round 2).
+    tablesHtml: (() => {
+      const html = v2Pointers(tables, snap, INTAKE_SHEET_TITLE)
+      assertNoV1Pointer(html, 'intake')
+      return html
+    })(),
   }
 }
 
@@ -555,12 +563,21 @@ function letterTitles(snap: ReportSnapshot): Map<string, string> {
  * they share a sheet, so each phrase says "this sheet"; read one by one, so a "page 1" this table
  * does not know falls through to "sheet 1" only where `assertNoV1Pointer` lets it.
  */
+/** v1 page 1's diet-side sections, which all print on v2's diet sheet: "this sheet" there, the
+ *  diet sheet by title from any other (cold read round 2: the intake sheet's footnote said
+ *  "sheet 1 under Timing vs symptoms"). */
+function dietSheetPointers(here: string | null): Array<readonly [string, string]> {
+  const at = here === DIET_SHEET_TITLE ? 'this sheet' : sheetHeaded(DIET_SHEET_TITLE)
+  return [
+    ['Weight trend on page&nbsp;1', `Weight trend on ${at}`],
+    ['so page&nbsp;1 shows no weight trend', here === DIET_SHEET_TITLE ? 'so this sheet shows no weight trend' : `so ${sheetHeaded(DIET_SHEET_TITLE)} shows no weight trend`],
+    ['on page&nbsp;1 under Timing vs symptoms', `on ${at} under Timing vs symptoms`],
+    ['not the association test on page&nbsp;1', `not the association test on ${at}`],
+    ['the diet-trial block on page&nbsp;1', `the diet-trial block on ${at}`],
+  ]
+}
+
 const RELATIVE: ReadonlyArray<readonly [string, string]> = [
-  ['Weight trend on page&nbsp;1', 'Weight trend on this sheet'],
-  ['so page&nbsp;1 shows no weight trend', 'so this sheet shows no weight trend'],
-  ['on page&nbsp;1 under Timing vs symptoms', 'on this sheet under Timing vs symptoms'],
-  ['not the association test on page&nbsp;1', 'not the association test on this sheet'],
-  ['the diet-trial block on page&nbsp;1', 'the diet-trial block on this sheet'],
   // The Noticed line prints under the ledger on v2, and lists symptom-class words only, as v1's did.
   ['only an activity word, which page 1 never lists', 'only an activity word, which this line never lists'],
   // "Above" and "below" that meant a v1 page-1 neighbour v2 prints elsewhere. Each lands where its
@@ -634,7 +651,7 @@ export function v2Pointers(html: string, snap: ReportSnapshot, here: string | nu
     // navigation only, and v2's sheets carry their titles, so it is left out whole.
     .replace(/\s*<p class="ref">Full event log, [\s\S]*?<\/p>/g, '')
   // v1 spells "page 1" both with a no-break space and without; each phrase matches either.
-  for (const [from, to] of RELATIVE) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
+  for (const [from, to] of [...dietSheetPointers(here), ...RELATIVE]) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
   out = medicationPointers(out)
     .replace(/\(appendix(?:&nbsp;| )([A-G])\)/g, (_m, l: string) => `(${at(l, true)})`)
     .replace(/\bin appendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => at(l, true))
@@ -728,6 +745,20 @@ function noticedLineBlock(snap: ReportSnapshot): BackBlockV2 | null {
 
 // ── How this record was kept (spec §6.1, GAP-33) ─────────────────────────────
 
+/** The time-confidence key for the tags the event log prints, in its column's order, and no others. */
+function timeTagsText(snap: ReportSnapshot): string {
+  const present = new Set(snap.provenance.symptomLog.map(timeConfidence))
+  const keys: Array<[ReturnType<typeof timeConfidence>, string]> = [
+    ['seen', 'seen means a witnessed time'],
+    ['est', 'est an estimated time'],
+    ['range', 'range a window the event occurred in, found later'],
+    ['bound', 'a bare “before” or “after” time is one known bound'],
+    ['unspecified', 'unspecified means no confidence was recorded; treat that time as approximate'],
+  ]
+  const used = keys.filter(([k]) => present.has(k)).map(([, t]) => t)
+  return `In the event log, ${used.length > 1 ? `${used.slice(0, -1).join('; ')}; and ${used[used.length - 1]}` : used[0]}.`
+}
+
 /**
  * The fixed absence rules, in clinical words, always the last sheet. v1's "How to read this report"
  * is the source: every rule it teaches a reader is here, re-pointed at v2's sheets, and each entry
@@ -766,9 +797,18 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
     },
     {
       term: 'Range',
-      text: `The window is ${plain(fmtRange(snap.scope.startDate, snap.scope.endDate))} (${plain(scopeBasisLabel(snap.scope).toLowerCase())}). A hand-picked window states how many symptom events fall outside it, so nothing is cropped to a good week.${
+      // Only what this record prints (cold read round 2): sheet 1 states the events outside a
+      // hand-picked window when there are any, and says nothing when there are none, so the rule
+      // never promises a count the page does not carry.
+      text: `The window is ${plain(fmtRange(snap.scope.startDate, snap.scope.endDate))} (${plain(scopeBasisLabel(snap.scope).toLowerCase())}).${
+        cherryPickDisclosure(snap) !== ''
+          ? ' It was hand-picked, so sheet 1 states how many symptom events were logged outside it.'
+          : snap.scope.basis === 'custom'
+            ? ' It was hand-picked; entries outside it are not on this record.'
+            : ''
+      }${
         trialCropDisclosureRenders(snap)
-          ? ' Where the range covers only part of a diet trial, the trial section names the symptom events logged in the trial days it leaves out, and how many of those days hold no meal log. What those meals were (the foods, the doses, the intake) is counted nowhere on this record; neither count reports an absence of symptoms.'
+          ? ' It covers only part of a diet trial: the trial section names the symptom events logged in the trial days it leaves out, and what those days’ meals were is counted nowhere on this record. Neither reports an absence of symptoms.'
           : ''
       } A range can include days the record never covered.`,
     },
@@ -784,7 +824,7 @@ export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
         ? 'Every time in the event log was witnessed by the owner, so its times carry no tag. “Occurred” is when it happened; “logged” is when the owner recorded it.'
         : snap.provenance.symptomLog.length === 0
           ? 'The event log lists no symptom event in this window, so no time needs a tag.'
-          : 'In the event log, seen means a witnessed time, est an estimated time, and range a window the event occurred in, found later. A bare “before” or “after” time is one known bound. Unspecified means no confidence was recorded; treat that time as approximate.',
+          : timeTagsText(snap),
     },
     {
       term: 'Duplicate logs',

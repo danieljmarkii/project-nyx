@@ -46,6 +46,8 @@ export interface Expectations {
   lineLabels: string[]
   /** "How this record was kept" (VR2-14): each rule's term and every sentence of its text. */
   kept: ExpectedLine[]
+  /** The Noticed strip's words that fall entirely before its span, from the snapshot (VR2-14). */
+  spanWords: string[]
 }
 
 /** Soft hyphen, zero-width space, ZWNJ, ZWJ, word joiner, BOM: nothing a reader sees. Built from
@@ -217,7 +219,7 @@ export function aiLeadLines(aiLead: readonly LeadSentence[] | null): ExpectedLin
 export function expectationsOf(doc: DocumentV2, snap: ReportSnapshot, aiLead: readonly LeadSentence[] | null = null): Expectations {
   const lines = sheet1Lines(doc)
   const lineLabels = [...new Set(lines.map((l) => /^([^.:]{1,60}):\s/.exec(l.text)?.[1] ?? '').filter((x) => x !== ''))]
-  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...lines], trialSigns: trialSignsOf(snap), lineLabels, kept: keptSentences(doc) }
+  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...lines], trialSigns: trialSignsOf(snap), lineLabels, kept: keptSentences(doc), spanWords: (snap.noticed?.strip.wordsAbsentInSpan ?? []).map((w) => w.label) }
 }
 
 /** The expected lines whose folded text is not a run inside the folded haystack. */
@@ -315,15 +317,26 @@ const NOT_A_COURSE = [
 
 /**
  * The Noticed strip's "<words> falls entirely before this span" (VR2-14 reprints it on v2's Noticed
- * sheet). Cut only when none of the words it names is one of the trial's signs: "Hunched or tucked up
- * falls entirely before this span" says nothing about a gi trial's vomiting, while "Scratching more
- * falls entirely before this span" on a skin trial reads to a summariser as "scratching resolved"
- * from absence over answered days (adversarial pass 1), so it stays a hit. The words are the
- * capitalised list straight before the phrase, never the legend text an extractor runs into it.
+ * sheet). Cut only when the document's OWN list of those words (`spanWords`, from the snapshot, never
+ * parsed out of the text) holds none of the trial's signs, and only where the text carries that exact
+ * list: "Hunched or tucked up falls entirely before this span" says nothing about a gi trial's
+ * vomiting, while "Scratching more falls entirely before this span" on a skin trial reads to a
+ * summariser as "scratching resolved" from absence over answered days, so it stays a hit.
+ *
+ * NOT A GRAMMAR (adversarial pass 2). Parsing the list out of the text failed on real labels ("Lip-
+ * licking", "Didn’t want the walk", "A film across the eye"): the match restarted at the last item and
+ * cut the phrase from a list that named a sign. Without the document's list, nothing is cut: a false
+ * hit fails CI, which errs loud.
  */
-const SPAN_WORDS = /\b([A-Z][a-z]+(?: [a-z]+)*(?:, [A-Z][a-z]+(?: [a-z]+)*)*) (?:falls|fall) entirely before this span\b/g
-function cutSpanWords(s: string, pats: readonly RegExp[]): string {
-  return s.replace(SPAN_WORDS, (m, words: string) => (pats.some((p) => new RegExp(p.source, p.flags.replace('g', '')).test(words)) ? m : ' '))
+function spanPhrase(words: readonly string[]): RegExp {
+  const item = (w: string): string =>
+    w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/['\u2019\u02BC]/g, "['\u2019\u02BC]").replace(/\s+/g, '\\s+')
+  return new RegExp(`${words.map(item).join(',\\s+')}\\s+${words.length === 1 ? 'falls' : 'fall'}\\s+entirely\\s+before\\s+this\\s+span`, 'g')
+}
+function cutSpanWords(s: string, pats: readonly RegExp[], spanWords: readonly string[]): string {
+  if (spanWords.length === 0) return s
+  if (spanWords.some((w) => pats.some((p) => new RegExp(p.source, p.flags.replace('g', '')).test(w)))) return s
+  return s.replace(spanPhrase(spanWords), ' ')
 }
 
 /**
@@ -331,7 +344,7 @@ function cutSpanWords(s: string, pats: readonly RegExp[]): string {
  * that says "Itching on 9 days in week 1. By week 6 it was 2." splits the claim across two), unless
  * the next one is a labelled line of its own.
  */
-export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = []): string[] {
+export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = [], spanWords: readonly string[] = []): string[] {
   if (signs.length === 0) return []
   const pats = signs.map(signPattern)
   const flat = text.normalize('NFKC').replace(/\s+/g, ' ')
@@ -344,7 +357,7 @@ export function declineSentences(text: string, signs: readonly string[], lineLab
     // the document's labels count: any early colon did, and hid "By week 6 it had settled: 2" (pass 2).
     const next = sentences[i + 1] ?? ''
     const follows = !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
-    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), cutSpanWords(x, pats))).join(' ')
+    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), cutSpanWords(x, pats, spanWords))).join(' ')
     if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
   })
   return out

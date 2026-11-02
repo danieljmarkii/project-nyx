@@ -28,7 +28,7 @@ import {
   type BackBlockV2,
   type BackSheetV2,
 } from './backSheetsV2.ts'
-import { chronicityRecordPrecedesCounts, hasIncidentPhotos, hasNoticed, mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
+import { cherryPickDisclosure, chronicityRecordPrecedesCounts, hasIncidentPhotos, timeConfidence, hasNoticed, mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
 import { documentBlockIds } from './renderBackV2.ts'
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
@@ -671,4 +671,24 @@ Deno.test('VR2-14 medications and diet — the lifetime table leads the dose log
   }
   // v1's weight sparkline is aria-hidden on v2; its words beside it are the twin.
   assert.match(renderPrintV2(live), /<svg class="spark"[^>]*aria-hidden="true"/)
+})
+
+Deno.test('VR2-14 kept — a rule never promises a line the record does not print (cold read round 2)', () => {
+  let custom = 0
+  for (const [name, s] of all()) {
+    const e = keptEntries(s)
+    const range = e.find((x) => x.term === 'Range')?.text ?? ''
+    // The count of events outside a hand-picked window is claimed only where sheet 1 prints it.
+    assert.equal(/states how many symptom events/.test(range), cherryPickDisclosure(s) !== '', `${name}: ${range}`)
+    if (s.scope.basis === 'custom') custom++
+    // The time-confidence key names only the tags the event log prints.
+    const tc = e.find((x) => x.term === 'Time confidence')?.text ?? ''
+    const present = new Set(s.provenance.symptomLog.map(timeConfidence))
+    for (const [tag, word] of [['est', /\best an estimated/], ['range', /\brange a window/], ['unspecified', /\bunspecified means/]] as const) {
+      assert.equal(word.test(tc), present.has(tag) && !s.provenance.symptomLog.every((x) => timeConfidence(x) === 'seen'), `${name}: ${tag}`)
+    }
+    // No back sheet sends a reader to sheet 1 for "Timing vs symptoms": it is on the diet sheet.
+    assert.doesNotMatch(textOf(renderPrintV2(docOf(s))), /sheet 1 under Timing vs symptoms/, name)
+  }
+  assert.ok(custom >= 2, `hand-picked windows are exercised (${custom})`)
 })
