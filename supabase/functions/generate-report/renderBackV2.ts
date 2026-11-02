@@ -33,7 +33,7 @@ export function bandPhotosHtml(photos: readonly BandPhoto[]): string {
 function cell(c: LedgerCell): string {
   switch (c.state) {
     case 'sign':
-      return `<td class="lg-sign">${c.count}</td>`
+      return `<td class="${c.refusedAll === false ? 'lg-sign lg-partly' : 'lg-sign'}">${c.count}</td>`
     case 'logged':
       return '<td class="lg-logged"></td>'
     case 'none':
@@ -113,6 +113,7 @@ const BACK_SHARED = `
 .back .lg th{font-weight:400;color:var(--ink2);text-align:right;padding:0 4pt 0 0;white-space:nowrap;}
 .back .lg td{border:.75pt solid var(--hair);text-align:center;vertical-align:middle;font-weight:650;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .back .lg td.lg-sign{background:var(--concern);border-color:var(--concern);color:var(--paper);}
+.back .lg td.lg-sign.lg-partly{background:var(--partly);border-color:var(--partly);color:var(--ink);}
 .back .lg td.lg-none{background:repeating-linear-gradient(45deg,var(--faint) 0 1px,var(--paper) 1px 4px);}
 .back .lg td.lg-out{border-color:transparent;}
 .back .lgline{margin:3pt 0 0;}

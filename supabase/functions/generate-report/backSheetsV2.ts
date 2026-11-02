@@ -62,6 +62,9 @@ export interface LedgerCell {
    *  sign (drawn as nothing, never a 0); `sign`: the lead sign that day, with its count. */
   state: 'none' | 'logged' | 'sign' | 'outside'
   count: number
+  /** Intake fill only: true when every rated meal that day was refused (drawn solid); false when a
+   *  meal was not fully eaten but not every one was refused (drawn light), the lead chart's two fills. */
+  refusedAll?: boolean
 }
 
 export interface LedgerRow {
@@ -252,9 +255,15 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
       ? byType.get(symptomFill) ?? new Map<string, number>()
       : new Map<string, number>()
 
+  const intakeByDay = new Map(snap.v2.mealNotFinishedDayCounts.map((x) => [x.day, x] as const))
   const cells: LedgerCell[] = days.map((day) => {
     const count = leadDays.get(day) ?? 0
-    return { day, count, state: count > 0 ? 'sign' : logged.has(day) ? 'logged' : 'none' }
+    const cell: LedgerCell = { day, count, state: count > 0 ? 'sign' : logged.has(day) ? 'logged' : 'none' }
+    if (intakeFill && count > 0) {
+      const d = intakeByDay.get(day)
+      cell.refusedAll = d !== undefined && d.refused === d.rated
+    }
+    return cell
   })
   const rows: LedgerRow[] = []
   for (let i = 0; i < cells.length; i += 7) {
@@ -271,7 +280,13 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
   // The caption names only the marks this grid draws (AC 4, the chart standard's twin rule).
   const legend = [
     ...(drawsSign && lower
-      ? [intakeFill ? 'Filled: rated meals not fully eaten that day (any rating below “ate it all”), with their count.' : `Filled: ${lower} that day, with its count.`]
+      ? intakeFill
+        ? [
+            ...(cells.some((c) => c.refusedAll === true) ? ['Solid: every rated meal that day refused.'] : []),
+            ...(cells.some((c) => c.refusedAll === false) ? ['Light: a rated meal not fully eaten that day (any rating below “ate it all”), not every one refused.'] : []),
+            'The number is the meals not fully eaten that day.',
+          ]
+        : [`Filled: ${lower} that day, with its count.`]
       : []),
     // "Plain" is a day something else was logged, never a day the sign was seen not to happen
     // (cold read: a plain square read as a normal-stool day on a record of 12 stools in 30 days).
@@ -290,7 +305,20 @@ function ledgerBlock(snap: ReportSnapshot, intakeSheet: boolean): BackBlockV2 {
 
   const dayWithCount = (day: string, n: number): string => (n > 1 ? `${dayLabel(day)} ×${n}` : dayLabel(day))
   const lines: string[] = []
-  if (label && lower) {
+  if (intakeFill) {
+    // Refusal apart from a partly eaten meal, by day, with the meals behind each (cold read round 3:
+    // one mark for both erased the day she stopped eating anything).
+    const inW = snap.v2.mealNotFinishedDayCounts.filter((x) => x.day >= snap.scope.startDate && x.day <= snap.scope.endDate)
+    const all = inW.filter((x) => x.refused === x.rated).map((x) => x.day)
+    const part = inW.filter((x) => x.refused !== x.rated).map((x) => x.day)
+    const notFinished = inW.reduce((n, x) => n + x.count, 0)
+    const rated = inW.reduce((n, x) => n + x.rated, 0)
+    lines.push(
+      `Meals not finished on ${inW.length} of ${days.length} days (${notFinished} of the ${rated} rated meals on those days)${
+        all.length > 0 ? `; every rated meal refused on ${dayRanges(all).join(', ')}` : ''
+      }${part.length > 0 ? `; not finished, not every one refused, on ${dayRanges(part).join(', ')}` : ''}.`,
+    )
+  } else if (label && lower) {
     const ds = [...leadDays.entries()].filter(([d]) => d >= snap.scope.startDate && d <= snap.scope.endDate).sort((a, b) => a[0].localeCompare(b[0]))
     if (ds.length > 0) {
       lines.push(`${label} on ${ds.length} of ${days.length} days: ${ds.map(([d, n]) => dayWithCount(d, n)).join(', ')}.`)

@@ -176,7 +176,12 @@ Deno.test('ledger — the caption names every mark the grid draws and no other (
     assert.ok(lg, name)
     const cells = lg.rows.flatMap((r) => r.cells)
     const draws = { sign: cells.some((c) => c.state === 'sign'), logged: cells.some((c) => c.state === 'logged'), none: cells.some((c) => c.state === 'none') }
-    assert.equal(/Filled:/.test(lg.caption), draws.sign, `${name}: filled`)
+    if (lg.fills === 'Meals not finished') {
+      assert.equal(/Solid:/.test(lg.caption), cells.some((c) => c.refusedAll === true), `${name}: solid`)
+      assert.equal(/Light:/.test(lg.caption), cells.some((c) => c.refusedAll === false), `${name}: light`)
+    } else {
+      assert.equal(/Filled:/.test(lg.caption), draws.sign, `${name}: filled`)
+    }
     assert.equal(/Plain:/.test(lg.caption), draws.logged, `${name}: plain`)
     assert.equal(/Hatched:/.test(lg.caption), draws.none, `${name}: hatched`)
   }
@@ -206,7 +211,15 @@ Deno.test('ledger — when intake leads, the grid draws the meals not finished o
   const filled = lg.rows.flatMap((r) => r.cells).filter((c) => c.state === 'sign')
   assert.equal(filled.reduce((n, c) => n + c.count, 0), 38, 'her 38 rated meals not fully eaten')
   assert.equal(filled.length, 19, 'on 19 days')
-  assert.match(lg.caption, /Filled: rated meals not fully eaten that day \(any rating below “ate it all”\), with their count\./)
+  assert.match(lg.caption, /Solid: every rated meal that day refused\. Light: a rated meal not fully eaten that day/)
+  // The turn she took is on the grid: partly eaten on Jun 1 to 4, every meal refused from Jun 5.
+  const light = filled.filter((c) => c.refusedAll === false).map((c) => c.day)
+  const solid = filled.filter((c) => c.refusedAll === true).map((c) => c.day)
+  assert.deepEqual(light, ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04'])
+  assert.equal(solid.length, 15)
+  assert.ok(lg.lines.includes('Meals not finished on 19 of 32 days (38 of the 38 rated meals on those days); every rated meal refused on Jun 5–19; not finished, not every one refused, on Jun 1–4.'))
+  const html = renderPrintV2(docOf(s))
+  assert.equal((html.match(/<td class="lg-sign lg-partly">/g) ?? []).length, 4, 'the light fill is drawn')
   assert.ok(lg.lines.some((l) => /^Also on these days: vomiting /.test(l)), 'her vomiting is dated below')
   assert.ok(lg.lines.some((l) => l.includes(`sheet headed “${INTAKE_SHEET_TITLE}”`)), 'and the meal times are pointed at')
 })

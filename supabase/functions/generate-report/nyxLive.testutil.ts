@@ -123,7 +123,12 @@ export function nyxLiveSnapshot(): ReportSnapshot {
       watchedRatedMeals: intake.filter((x) => !x.notCountedFreeFed).length,
       // The capture has no bowl spans; Nyx's snapshot lists her free-fed food, so the caveat stays on.
       freeFedDownSinceLastMeal: s.diet.freeFed.length > 0,
-      mealNotFinishedDayCounts: [...notFinished.reduce((m, r) => m.set(localDay(r.occurredAt, tz), (m.get(localDay(r.occurredAt, tz)) ?? 0) + 1), new Map<string, number>())].map(([day, count]) => ({ day, count })),
+      mealNotFinishedDayCounts: [...notFinished.reduce((m, r) => m.set(localDay(r.occurredAt, tz), (m.get(localDay(r.occurredAt, tz)) ?? 0) + 1), new Map<string, number>())].map(([day, count]) => ({
+        day,
+        count,
+        refused: notFinished.filter((r) => r.intakeRating === 'refused' && localDay(r.occurredAt, tz) === day).length,
+        rated: intake.filter((r) => localDay(r.occurredAt, tz) === day).length,
+      })),
       symptomDayCounts: [...counts.entries()].map(([k, count]) => {
         const [type, day] = k.split('|')
         return { type: type as ReportSnapshot['symptoms'][number]['type'], day, count }

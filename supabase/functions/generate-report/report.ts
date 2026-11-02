@@ -3442,7 +3442,7 @@ export interface ReportV2Facts {
   freeFedDownSinceLastMeal: boolean
   /** CUL-2293: per local day, the watched rated meals not fully eaten (`!== 'all'`, the predicate
    *  `intakeWeeks` counts), so the sheet 2 ledger can draw intake on its days when intake leads. */
-  mealNotFinishedDayCounts: Array<{ day: string; count: number }>
+  mealNotFinishedDayCounts: Array<{ day: string; count: number; refused: number; rated: number }>
   /** CUL-2290: in-window symptom incidents per local day, for the day row under a 14-day window.
    *  The same deduped incidents as `SymptomAggregate.count` (they sum to it, per type). */
   symptomDayCounts: Array<{ type: ReportSymptomType; day: string; count: number }>
@@ -6867,15 +6867,24 @@ function mealNotFinishedDayCountsOf(
   rated: ReadonlyArray<ReportEventInput>,
   dayOf: (iso: string) => number | null,
 ): ReportV2Facts['mealNotFinishedDayCounts'] {
-  const counts = new Map<string, number>()
+  // Per day: the rated meals, those not fully eaten, and of those the ones refused outright, so the
+  // ledger can draw refusal apart from a partly eaten meal, as the lead chart's two fills do.
+  const days = new Map<string, { count: number; refused: number; rated: number }>()
   for (const e of rated) {
     const dn = dayOf(e.occurredAt)
     const r = e.meal?.intakeRating ?? null
-    if (dn === null || r === null || r === 'all') continue
+    if (dn === null || r === null) continue
     const k = dayKeyFromNumber(dn)
-    counts.set(k, (counts.get(k) ?? 0) + 1)
+    const d = days.get(k) ?? { count: 0, refused: 0, rated: 0 }
+    d.rated++
+    if (r !== 'all') d.count++
+    if (r === 'refused') d.refused++
+    days.set(k, d)
   }
-  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([day, count]) => ({ day, count }))
+  return [...days.entries()]
+    .filter(([, d]) => d.count > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([day, d]) => ({ day, ...d }))
 }
 
 /** CUL-2290 — `ReportV2Facts.intakeWeeks`, bucketed by the symptom chart's own closure. */
