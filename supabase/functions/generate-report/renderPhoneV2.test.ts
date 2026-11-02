@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import { buildDocumentV2, h, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
 import { blockIdsOf, renderPrintV2 } from './renderPrintV2.ts'
+import { documentBlockIds } from './renderBackV2.ts'
 import { BODY_PX, COMPACT_SCALE, PLOT_W, VERDICT_MAX_PX, renderPhoneV2, STYLE_PHONE, SVG_TEXT_MIN } from './renderPhoneV2.ts'
 import { textOf } from './documentV2.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
@@ -42,7 +43,7 @@ Deno.test('parity — the phone emits the print renderer’s block ids, in the s
   for (const [name, d] of docs()) {
     const phone = blockIdsOf(renderPhoneV2(d))
     assert.deepEqual(phone, blockIdsOf(renderPrintV2(d)), name)
-    assert.deepEqual(phone, d.blocks.map((b) => b.id), name)
+    assert.deepEqual(phone, documentBlockIds(d), name)
   }
 })
 
@@ -78,6 +79,12 @@ Deno.test('parity — every block says the PDF’s words; the phone adds only it
         q = q.replace(/<svg class="chart"[\s\S]*?<\/svg>/, '')
       }
       assert.equal(textOf(p), textOf(q), `${name}: block ${b.id}`)
+    }
+    // The back sheets share one writer (renderBackV2.ts), so their words are the PDF's exactly.
+    for (const b of d.backSheets.flatMap((sh) => sh.blocks)) {
+      const p = phone.get(b.id)
+      assert.ok(p !== undefined && p !== '', `${name}: back block ${b.id} prints on the phone`)
+      assert.equal(textOf(p), textOf(print.get(b.id) ?? ''), `${name}: back block ${b.id}`)
     }
   }
 })

@@ -36,9 +36,9 @@
       "pet": "Nyx, July reconstruction",
       "shape": "One sign, a possible-foreign-material photo, no trial, no medication",
       "proves": "A single safety flag leading with a printed photo",
-      "source": "Built in VR2-9 from round 4’s d5",
-      "status": "to build",
-      "builtBy": "VR2-9",
+      "source": "supabase/functions/generate-report/v2Fixtures.testutil.ts (nyxSafetyCat), built in VR2-13",
+      "status": "committed",
+      "builtBy": "VR2-13",
       "drawnInMock": "round 4 d5"
     },
     {
@@ -96,8 +96,8 @@
       "pet": "Rufus, dog",
       "shape": "Loose stool with photos, one read showing blood present",
       "proves": "Blood present leads the band; never “0 of” beside blood",
-      "source": "Built in VR2-13",
-      "status": "to build",
+      "source": "supabase/functions/generate-report/v2Fixtures.testutil.ts (stoolPhotoDog)",
+      "status": "committed",
       "builtBy": "VR2-13",
       "drawnInMock": "sheet 2 (VR2-13)"
     },

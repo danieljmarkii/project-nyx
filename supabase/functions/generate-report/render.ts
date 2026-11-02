@@ -240,7 +240,7 @@ export function fmtLocalDay(iso: string, tz: string | null): string {
 }
 
 /** An ISO instant → owner-local "HH:MM" 24h (falls back to UTC on a bad tz). */
-function fmtLocalTime(iso: string, tz: string | null): string {
+export function fmtLocalTime(iso: string, tz: string | null): string {
   const ms = Date.parse(iso)
   if (Number.isNaN(ms)) return '—'
   if (tz) {
@@ -276,7 +276,7 @@ function humanizeGap(hours: number): string {
 // ── Display-label maps ───────────────────────────────────────────────────────────
 
 /** Owner-recorded intake, as a clinical label for the meal appendix (B-213). */
-function intakeLabel(rating: string): string {
+export function intakeLabel(rating: string): string {
   switch (rating) {
     case 'all':
       return 'Ate it all'
@@ -1194,7 +1194,7 @@ function trialCountScope(t: NonNullable<ReportSnapshot['trial']>): string {
 }
 
 /** The off-trial marker. Present-only and explicitly non-causal; defined once per sheet. */
-function offTrialFootnote(targetProtein: string | null): string {
+export function offTrialFootnote(targetProtein: string | null): string {
   return targetProtein
     ? `<p class="note"><b>*</b> a protein other than the trial protein (${h(
         capProtein(targetProtein),
@@ -2458,10 +2458,56 @@ function chronicityRecordPrecedesCounts(snap: ReportSnapshot): boolean {
 // THIS function so the v2 band can never word a flag differently from v1 (the superset invariant,
 // spec v2 §12). `row` lays the (tag, body) pair out; v1 passes its own `flagRow`, so v1's bytes are
 // unchanged.
+/**
+ * Where a flag row sends the reader for the detail behind it (CUL-2350). Each value is a whole
+ * phrase, so a document that prints the detail under another name swaps the phrase and keeps
+ * every other word of the row. v1 names its appendices (`V1_FLAG_POINTERS`, the default, so the
+ * v1 page is byte-identical); v2 names the sheet that prints the same table
+ * (`documentV2.ts` `v2FlagPointersOf`). The superset test swaps exactly these phrases and nothing
+ * else, so no other word of a v1 flag can differ on v2.
+ */
+export interface FlagPointers {
+  /** Where the intake ratings are: "Intake ratings in appendix E." */
+  mealsIn: string
+  /** Where the meal-by-meal rows are: "Meal-by-meal detail in appendix E (meals & intake)." */
+  mealsDetailIn: string
+  /** Who lists the window's entries: "appendix A lists this window's entries, including those before then". */
+  logLists: string
+  /** The incident red flag's pointer, or null where the document prints no incident photos. */
+  incidents: string | null
+}
+
+export const V1_FLAG_POINTERS: FlagPointers = {
+  mealsIn: 'in appendix&nbsp;E',
+  mealsDetailIn: 'in appendix&nbsp;E (meals &amp; intake)',
+  logLists: 'appendix&nbsp;A lists',
+  incidents: 'see the incident appendix',
+}
+
+/**
+ * The same idea for the detail sections v2's back sheets reuse word for word (CUL-2293): the
+ * characteristics, the meals introduction and the photo introduction each point at an appendix
+ * by letter. v1 passes `V1_SECTION_POINTERS` (byte-identical); v2 passes null for an appendix it
+ * does not print yet, and the sentence that pointed there is left out whole, never re-pointed at
+ * a page that is not in the document.
+ */
+export interface SectionPointers {
+  /** The event log: "Per-incident detail in appendix A." Null where no event log prints. */
+  eventLog: string | null
+  /** "Free-fed food is in appendix B and treats in appendix C". Null where neither prints. */
+  freeFedAndTreats: string | null
+}
+
+export const V1_SECTION_POINTERS: SectionPointers = {
+  eventLog: 'appendix&nbsp;A',
+  freeFedAndTreats: 'Free-fed food is in appendix&nbsp;B and treats in appendix&nbsp;C',
+}
+
 export function safetyFlagRow(
   f: SafetyFlag,
   snap: ReportSnapshot,
   row: (tag: string, body: string) => string = flagRow,
+  ptr: FlagPointers = V1_FLAG_POINTERS,
 ): string {
   const tz = snap.timezone
   switch (f.kind) {
@@ -2669,7 +2715,7 @@ export function safetyFlagRow(
         } is a clinical finding in its own right</b>, not a preference.${feline} Shown because it is present in the log; it is not a measure of how much was eaten overall.${
           // Only where appendix E is printed: a refusal-stopped trial with no meals
           // logged has none, and the pointer dangled (release QA, 2026-10-02).
-          mealsAppendixVisible(snap) ? ' Intake ratings in appendix&nbsp;E.' : ''
+          mealsAppendixVisible(snap) ? ` Intake ratings ${ptr.mealsIn}.` : ''
         }`,
       )
       return row('Diet not eaten', bits.join(' '))
@@ -2725,8 +2771,8 @@ export function safetyFlagRow(
       ).length
       const bowlAfterPointer =
         bowlAfterShown >= bowlAfter
-          ? '(dated in appendix&nbsp;E)'
-          : `(the most recent ${num(bowlAfterShown)} dated in appendix&nbsp;E)`
+          ? `(dated ${ptr.mealsIn})`
+          : `(the most recent ${num(bowlAfterShown)} dated ${ptr.mealsIn})`
       const freeFedBit =
         bowlRatings > 0
           ? ` ${num(bowlRatings)} rating${bowlRatings === 1 ? '' : 's'} of a free-fed bowl ${
@@ -2738,7 +2784,7 @@ export function safetyFlagRow(
             }.`
           : ''
       const appendixBit =
-        snap.provenance.intakeLog.length > 0 ? ' Meal-by-meal detail in appendix&nbsp;E (meals &amp; intake).' : ''
+        snap.provenance.intakeLog.length > 0 ? ` Meal-by-meal detail ${ptr.mealsDetailIn}.` : ''
       const detail =
         f.trigger === 'refused_normal_food'
           ? `This pet <b>refused a food it normally eats</b>${
@@ -2903,7 +2949,7 @@ export function safetyFlagRow(
       // ruling is that the safety band must stand without the legend, and this sentence's whole job
       // is to say what the counts leave out.
       const appendixTail =
-        ' &mdash; appendix&nbsp;A lists this window&rsquo;s entries, including those before then; they are not in the numbers above.'
+        ` &mdash; ${ptr.logLists} this window&rsquo;s entries, including those before then; they are not in the numbers above.`
       const recordBit = !hasUncountedRecord
         ? ''
         : firstLoggedKey === localDayKeyOf(f.firstOnsetIso, tz)
@@ -3022,7 +3068,7 @@ export function safetyFlagRow(
       )
     case 'engine_other': {
       const words: Record<string, string> = {
-        incident_red_flag: 'a red flag on a photographed incident (see the incident appendix)',
+        incident_red_flag: `a red flag on a photographed incident${ptr.incidents === null ? '' : ` (${ptr.incidents})`}`,
       }
       const named = f.findingTypes.map((t) => h(words[t] ?? t.replace(/_/g, ' ')))
       return row('Also flagged', `The app's checks also flagged ${named.join('; ')}. This report does not detail ${f.findingTypes.length === 1 ? 'it' : 'them'} here.`)
@@ -6687,7 +6733,7 @@ function legibleReadCount(n: number): string {
 }
 
 /** Vomit characteristics (§3.6) — assessed denominators + present-only blood/foreign. */
-function vomitCharacteristics(snap: ReportSnapshot): string {
+export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers = V1_SECTION_POINTERS): string {
   const p = snap.vomitPhenotype
   if (!p) return ''
   const assessed = p.assessedCount
@@ -6746,7 +6792,9 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
   const denom = `Across ${p.totalIncidents === 1 ? 'the' : 'all'} ${num(p.totalIncidents)} vomiting incident${
     p.totalIncidents === 1 ? '' : 's'
-  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit}${colourBit} Per-incident detail in appendix&nbsp;A.`
+  }; ${legibleReadCount(assessed)} a legible AI read${stateDisclosure}.${consistBit}${colourBit}${
+    ptr.eventLog === null ? '' : ` Per-incident detail in ${ptr.eventLog}.`
+  }`
 
   // COLLAPSE THE EMPTY BLOCK TO A LINE (B-502). With nothing photographed the section said
   // "no photo" three ways — a lead describing a read that never happened, a chart-shaped grey
@@ -6869,7 +6917,7 @@ function distributionBit(dist: Record<string, number>, lead: string, label: (k: 
  * the four-state denominator disclosure (§5.10). Mucus is surfaced but framed as monitor-tier, not
  * an escalation (D5). When no stool photo was read, the pre-AI-source limitation note stands.
  */
-function stoolCharacteristics(snap: ReportSnapshot): string {
+export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers = V1_SECTION_POINTERS): string {
   const st: StoolCharacteristics | null = snap.stool
   if (!st) return ''
   const allCats = [
@@ -7044,7 +7092,11 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
           st.windowDays,
         )} days, so a stool on those days is not in this count`
       : ''
-  }. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
+  }.${
+    ptr.eventLog === null
+      ? ' Normal stools are counted from the owner\'s logs, not itemised.'
+      : ` Loose-stool events are itemised in the symptom log (${ptr.eventLog}); normal stools are counted from the owner's logs, not itemised.`
+  }${aiLine}</div>
       </div>
       ${sideHtml}
     </div>
@@ -8084,7 +8136,7 @@ function footer(snap: ReportSnapshot, sectionLabel: string): string {
  * own guard never drift apart — the exact copy-paste-boolean drift class that produced round-2's
  * dangling-appendix bug (code-reviewer catch).
  */
-function mealsAppendixVisible(snap: ReportSnapshot): boolean {
+export function mealsAppendixVisible(snap: ReportSnapshot): boolean {
   return snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0
 }
 
@@ -8313,7 +8365,7 @@ function mealsAppendixPointer(snap: ReportSnapshot): string {
  * "every photographed incident" claim never silently contradicts the analysis-scoped counts on
  * page 1 / Appendix A — vet-report-cold-read finding, PR 7).
  */
-function hasIncidentPhotos(snap: ReportSnapshot): boolean {
+export function hasIncidentPhotos(snap: ReportSnapshot): boolean {
   return snap.incidentPhotos.length > 0 || snap.incidentPhotosRemoved.length > 0
 }
 function photosAppendixLetter(snap: ReportSnapshot): string {
@@ -8614,7 +8666,9 @@ function loggedCell(e: SymptomLogEntry, tz: string | null): string {
  *                cell already said (CUL-634)
  *   unspecified  logged before B-010, no confidence recorded
  */
-function timeConfidence(e: SymptomLogEntry): 'seen' | 'est' | 'range' | 'bound' | 'unspecified' {
+export function timeConfidence(
+  e: Pick<SymptomLogEntry, 'occurredAtConfidence' | 'occurredAtEarliest' | 'occurredAtLatest'>,
+): 'seen' | 'est' | 'range' | 'bound' | 'unspecified' {
   const conf = e.occurredAtConfidence
   if (conf === 'window') {
     if (e.occurredAtEarliest && e.occurredAtLatest) return 'range'
@@ -8675,6 +8729,16 @@ function occurredCell(e: SymptomLogEntry, tz: string | null, uniformSeen = false
  * a report with no logged meals runs A–D with no gap (a hardcoded "F" read as a missing page on
  * the first real artifact).
  */
+/** Appendix E's opening paragraph, shared with v2's intake sheet (CUL-2293); only the pointer to
+ *  the free-fed and treat appendices varies, and with none printed that clause is left out whole. */
+export function mealsIntroHtml(ptr: SectionPointers = V1_SECTION_POINTERS): string {
+  const listed =
+    ptr.freeFedAndTreats === null
+      ? 'A food logged as a meal is listed here even where its format also counts it as a treat or as human food.'
+      : `${ptr.freeFedAndTreats}; a food logged as a meal is listed here even where its format also counts it as a treat or as human food.`
+  return `The meals the owner logged in this window: the foods fed as discrete meals. ${listed} &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; A meal logged with no intake recorded is counted and shown as &ldquo;not recorded&rdquo;: its intake is unknown, neither eaten nor refused. Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.`
+}
+
 function mealsAppendix(snap: ReportSnapshot): string {
   const items = snap.diet.mealItems
   const log: IntakeLogEntry[] = snap.provenance.intakeLog
@@ -8692,7 +8756,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>
-  <p class="appx-sub">The meals the owner logged in this window: the foods fed as discrete meals. Free-fed food is in appendix&nbsp;B and treats in appendix&nbsp;C; a food logged as a meal is listed here even where its format also counts it as a treat or as human food. &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is a possible health signal, never &ldquo;picky.&rdquo; A meal logged with no intake recorded is counted and shown as &ldquo;not recorded&rdquo;: its intake is unknown, neither eaten nor refused. Free-fed food is not directly observed and is not rated, so it does not appear here. Meals are grouped by food below; the time of each individual meal is in the Culprit app.</p>
+  <p class="appx-sub">${mealsIntroHtml()}</p>
   ${
     // The intake table can be a sheet tall, so it is never the anchor: measured on the
     // `refused` fixture, wrapping it whole pushed it to a fresh sheet and cost a page. Its
@@ -8834,7 +8898,7 @@ export function mixRampText(mix: MixRow): string {
 }
 
 /** The grouped meal-item summary — one row per food fed as meals (label · protein · feedings · span · intake recorded). */
-function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): string {
+export function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): string {
   const { logged: total, rated } = mealCounts(snap.diet)
   const markOffTrial = snap.diet.trialTargetProtein != null
   const rows = items
@@ -8908,7 +8972,7 @@ function mealItemsTable(snap: ReportSnapshot, items: DietSummary['mealItems']): 
  * reduced-intake flag. Most-recent-first; the last fully-eaten meal is tagged so the page-1
  * "last full meal" number has an unambiguous home, pinned back in past the cap when needed.
  */
-function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: string): string {
+export function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], foot: string): string {
   const hidden = snap.provenance.intakeLogHiddenOlder
   // B-532 — the two populations, named. `unfinished` means no reduced-intake flag fired,
   // so there is no page-1 figure for these rows to trace to: they are here because the
@@ -9041,9 +9105,9 @@ function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
  * so this appendix's "every photographed incident" claim never silently contradicts the
  * analysis-scoped "Photo:" lines in Appendix A / the phenotype counts on page 1.
  */
-function incidentPhotosAppendix(snap: ReportSnapshot): string {
-  if (!hasIncidentPhotos(snap)) return ''
-  const letter = photosAppendixLetter(snap)
+/** The incident-photo appendix's opening paragraph, shared with v2's photo strip (CUL-2293).
+ *  Only the pointer to the event log varies; with none printed, that sentence is left out whole. */
+export function incidentPhotosIntroHtml(snap: ReportSnapshot, ptr: SectionPointers = V1_SECTION_POINTERS): string {
   const photos = snap.incidentPhotos
   const n = photos.length
   const missing = photos.filter((p) => !p.dataUri).length
@@ -9068,9 +9132,11 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
     removed > 0
       ? ` ${num(removed)} further incident${removed === 1 ? ' was' : 's were'} photographed and read but ${
           removed === 1 ? 'its' : 'their'
-        } photo is no longer retained (removed by the owner): ${removedNames}. The read${
-          removed === 1 ? '' : 's'
-        } ${removed === 1 ? 'remains' : 'remain'} in appendix&nbsp;A, marked there.`
+        } photo is no longer retained (removed by the owner): ${removedNames}.${
+          ptr.eventLog === null
+            ? ''
+            : ` The read${removed === 1 ? '' : 's'} ${removed === 1 ? 'remains' : 'remain'} in ${ptr.eventLog}, marked there.`
+        }`
       : ''
   const lead =
     n > 0
@@ -9078,6 +9144,14 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
           n === 1 ? '' : 's'
         } with a retained photo in this window, most recent first`
       : `No photographed incident in this window still has a retained photo`
+  return `${lead} — the owner's own photos, attached when the event was logged. For analyzed incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}`
+}
+
+function incidentPhotosAppendix(snap: ReportSnapshot): string {
+  if (!hasIncidentPhotos(snap)) return ''
+  const letter = photosAppendixLetter(snap)
+  const photos = snap.incidentPhotos
+  const n = photos.length
   // The grid's LAST ROW is the footer's anchor (CUL-993 A.1): the two-column grid is split so
   // its final one or two cards sit in the tail container with the footer, and the rest of the
   // grid breaks between cards as it always has. Wrapping the whole grid would push a nearly
@@ -9089,13 +9163,13 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix ${letter} — Incident photos</p>
-  <p class="appx-sub">${lead} — the owner's own photos, attached when the event was logged. For analyzed incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}</p>
+  <p class="appx-sub">${incidentPhotosIntroHtml(snap)}</p>
   ${headGrid}
   ${sectionTail(tailGrid, footer(snap, `Appendix ${letter} — incident photos`))}
 </section>`
 }
 
-function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
+export function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
   const date = fmtLocalDay(p.occurredAt, tz)
   const typeLabel = symptomLabel(p.type)
   const safetyTag = p.safety
@@ -10591,6 +10665,12 @@ const STYLE = `
     orphans:3;widows:3;
   }
   /* No font-variant-numeric on the sheet: its tnum glyphs drop out of the PDF text layer (CUL-2385). */
+  /* The text layer, part two (CUL-2386, measured 2026-11-02, Chromium page.pdf, pypdf and pdfminer):
+     the runner's sans (Inter) swaps punctuation beside a digit for a contextual alternate with no
+     ToUnicode entry, so ":" "(" "×" "–" next to a number left the extracted text ("48–72 h" read
+     "4872 h"). Off, every one of them extracts; the list marker's UA tnum goes with it. */
+  *{font-feature-settings:"calt" 0,"case" 0;}
+  ::marker{font-variant-numeric:normal;}
   .serif{font-family:"Newsreader",Georgia,"Iowan Old Style","Palatino Linotype",serif;}
 
   /* The page's radius and shadow are the IN-APP PREVIEW's, not the sheet's: they draw a

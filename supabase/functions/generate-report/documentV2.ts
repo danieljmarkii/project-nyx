@@ -23,6 +23,7 @@ import {
   type ReportSymptomType,
   type SafetyFlag,
   type SymptomAggregate,
+  type SymptomLogEntry as SymptomLogTimeFields,
   SYMPTOM_WEEK_MIN_LOGGED_DAYS,
 } from './report.ts'
 import {
@@ -35,8 +36,12 @@ import {
   h,
   lastEntryLine,
   safetyChecksText,
+  fmtLocalTime,
   safetyFlagRow,
+  timeConfidence,
   scopeBasisLabel,
+  V1_FLAG_POINTERS,
+  type FlagPointers,
   symptomLabel,
   truncationDisclosure,
 } from './render.ts'
@@ -56,6 +61,7 @@ import {
   type LeadSign,
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
+import { backSheetsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -173,7 +179,7 @@ export type BlockV2 =
       lastEntryHtml: string
     }
   | { kind: 'disclosure'; id: 'disclosure'; html: string }
-  | { kind: 'band'; id: 'band'; heading: string; items: Array<{ id: string; tag: string; html: string }>; checksHtml: string | null }
+  | { kind: 'band'; id: 'band'; heading: string; items: BandItem[]; checksHtml: string | null }
   | { kind: 'checks'; id: 'checks'; html: string }
   | { kind: 'scope_line'; id: 'scope-line'; text: string }
   | { kind: 'changes'; id: 'changes'; placement: 'band_slot' | 'under_chart'; heading: string; lines: ChangeLine[] }
@@ -193,10 +199,31 @@ export type BlockV2 =
   | { kind: 'questions'; id: 'questions'; heading: string; items: QuestionItem[] }
   | { kind: 'colophon'; id: 'colophon'; text: string }
 
+/** A photo on an event a band line cites, printed dated beside that line (R-10, spec §5.9). */
+export interface BandPhoto {
+  /** The EXIF-stripped `data:` URI, or null when it could not be embedded (the caption says so). */
+  src: string | null
+  /** Plain text: "photo Sep 22, 1:30 am". */
+  caption: string
+  alt: string
+}
+
+export interface BandItem {
+  id: string
+  tag: string
+  html: string
+  photos: BandPhoto[]
+}
+
 export interface DocumentV2 {
   version: 'v2'
   sheet: 1
+  /** Sheet 1, the Front Page. */
   blocks: BlockV2[]
+  /** Sheets 2 to N (VR2-13 onward, `backSheetsV2.ts`). */
+  backSheets: BackSheetV2[]
+  /** The saved copy's short id (`opts.shortId`), for the head on every printed page; null unsaved. */
+  reportId: string | null
 }
 
 export interface DocumentV2Options {
@@ -323,8 +350,8 @@ export function ownerNameOf(owner: DocumentV2Options['owner']): string | null {
   return name === '' ? null : name
 }
 
-/** The ONE colophon template (spec §5.10). "Sheet 1 of 1" until the back sheets exist. */
-export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options): string {
+/** The ONE colophon template (spec §5.10). The sheet count is computed from the sheets printed. */
+export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options, sheets = 1): string {
   const owner = ownerNameOf(opts.owner)
   const generated = textOf(fmtDayYear(snap.atAGlance.recordEdge.reportDate))
   return [
@@ -332,7 +359,7 @@ export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options): strin
     'owner-reported, not a diagnosis',
     `generated ${generated}`,
     ...(opts.shortId ? [`report ${opts.shortId}`] : []),
-    'sheet 1 of 1',
+    `sheet 1 of ${sheets}`,
   ].join(' · ')
 }
 
@@ -340,14 +367,21 @@ export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options): strin
 
 /** v1's row for a flag, captured as (tag, html). Photos are left out of the snapshot handed to it:
  *  v1's thumbnail points at v1's appendix E, which v2 does not print; the dated photo beside a band
- *  line is R-10's (the photo row). The flag TEXT is untouched. */
-export function flagRowOf(f: SafetyFlag, snap: ReportSnapshot): { tag: string; html: string } {
+ *  line is R-10's (`bandPhotosOf`). The flag TEXT is v1's, with only its pointers swapped
+ *  (CUL-2350): the document passes `v2FlagPointersOf`, so every "see appendix" lands on a sheet v2
+ *  prints. The default is v1's own pointers, so `flagRowOf(f, s)` is v1's row byte for byte. */
+export function flagRowOf(f: SafetyFlag, snap: ReportSnapshot, ptr: FlagPointers = V1_FLAG_POINTERS): { tag: string; html: string } {
   const noPhotos: ReportSnapshot = { ...snap, incidentPhotos: [] }
   let captured: { tag: string; html: string } | null = null
-  safetyFlagRow(f, noPhotos, (tag, body) => {
-    captured = { tag, html: body }
-    return ''
-  })
+  safetyFlagRow(
+    f,
+    noPhotos,
+    (tag, body) => {
+      captured = { tag, html: body }
+      return ''
+    },
+    ptr,
+  )
   if (captured === null) throw new Error(`safetyFlagRow wrote no row for ${f.kind}`)
   return captured
 }
@@ -360,6 +394,57 @@ function checksHtmlOf(snap: ReportSnapshot): string | null {
     .filter((x) => x !== '')
     .join(' ')
   return body === '' ? null : body
+}
+
+/** R-10: the photos on the events a band line cites, each dated with its time, most recent first
+ *  as the snapshot orders them. Only the present-blood and present-foreign lines cite events. */
+export function bandPhotosOf(f: SafetyFlag, snap: ReportSnapshot): BandPhoto[] {
+  if (f.kind !== 'present_blood' && f.kind !== 'present_foreign') return []
+  const ids = new Set(f.incidents.map((i) => i.eventId))
+  return snap.incidentPhotos
+    .filter((p) => ids.has(p.eventId))
+    .map((p) => {
+      const day = textOf(fmtLocalDay(p.occurredAt, snap.timezone))
+      const when = `${day}, ${incidentTimeWords(p, snap.timezone)}`
+      return {
+        src: p.dataUri,
+        // The time is the INCIDENT's, as the owner recorded it, never the photo's (capture time is
+        // stripped); said with how sure it is, so a found vomit never prints as a witnessed minute
+        // (cold read, CUL-2293: the time since ingestion sets the urgency of imaging).
+        caption: `${/^sometime between /.test(incidentTimeWords(p, snap.timezone)) ? 'Photo of the incident' : `Photo of the ${day} incident`}, ${incidentTimeWords(
+          p,
+          snap.timezone,
+        )}${p.dataUri ? '' : '; the photo could not be embedded'}`,
+        alt: `Owner photo of the ${symptomLabel(p.type).toLowerCase()} incident on ${when}`,
+      }
+    })
+}
+
+/** An incident's time in words with its confidence (v1's classes, `timeConfidence`). */
+export function incidentTimeWords(
+  p: { occurredAt: string; occurredAtConfidence: SymptomLogTimeFields['occurredAtConfidence']; occurredAtEarliest: string | null; occurredAtLatest: string | null },
+  tz: string | null,
+): string {
+  const t = (iso: string): string => textOf(fmtLocalTime(iso, tz))
+  switch (timeConfidence(p)) {
+    case 'seen':
+      return `seen at ${t(p.occurredAt)}`
+    case 'est':
+      return `about ${t(p.occurredAt)} (an estimate)`
+    case 'range': {
+      // A range across midnight names both days, or "Oct 9, 22:00–06:00" reads a day late on the
+      // first edge (adversarial pass 2: time since ingestion, understated by 24 hours).
+      const a = p.occurredAtEarliest as string
+      const b = p.occurredAtLatest as string
+      const dayA = textOf(fmtLocalDay(a, tz))
+      const dayB = textOf(fmtLocalDay(b, tz))
+      return dayA === dayB ? `sometime ${t(a)}–${t(b)}` : `sometime between ${dayA} ${t(a)} and ${dayB} ${t(b)}`
+    }
+    case 'bound':
+      return p.occurredAtLatest ? `sometime before ${t(p.occurredAtLatest)}` : `sometime after ${t(p.occurredAtEarliest as string)}`
+    case 'unspecified':
+      return `about ${t(p.occurredAt)} (not recorded as seen)`
+  }
 }
 
 function flagId(f: SafetyFlag, i: number): string {
@@ -522,7 +607,12 @@ function cellWord(count: number, col: ChartColumn, unit: LeadChart['unit']): str
   return col.loggedDays === col.days ? `not read (a ${col.days}-day ${unit === 'two_weeks' ? 'bin' : 'week'})` : `not read (logged ${col.loggedDays} of ${col.days})`
 }
 
-function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extract<SafetyFlag, { kind: 'chronicity' }> | null): LeadChart {
+function buildLeadChart(
+  snap: ReportSnapshot,
+  lead: Lead | null,
+  leadFlag: Extract<SafetyFlag, { kind: 'chronicity' }> | null,
+  ptr: FlagPointers,
+): LeadChart {
   // A zero-sign sheet leads with coverage (round 5's c′), EXCEPT when intake leads because it is
   // flagged: then the chart is the measure the flag fired on, never a row of logged days
   // (adversarial pass 1 on CUL-2290, break 2: the 48-hour refusal cat drew 31 solid bars).
@@ -646,7 +736,7 @@ function buildLeadChart(snap: ReportSnapshot, lead: Lead | null, leadFlag: Extra
   const leadLabel =
     zeroSign ? 'Days logged' : lead?.sign === 'intake' ? 'Meals not finished' : lead ? symptomLabel(lead.sign) : 'Entries'
   const byWord = unit === 'day' ? 'by day' : unit === 'week' ? 'by week' : 'by 2 weeks'
-  const flag = leadFlag ? flagRowOf(leadFlag, snap) : null
+  const flag = leadFlag ? flagRowOf(leadFlag, snap, ptr) : null
   const heading = leadFlag
     ? `Flag: ${symptomLabel(leadFlag.symptomType).toLowerCase()} over at least ${chronicitySpanDaysShown(leadFlag, snap)} days, the trial’s own sign`
     : zeroSign
@@ -837,6 +927,9 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
 export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): DocumentV2 {
   const blocks: BlockV2[] = []
   const zeroSign = isZeroSignSheet(snap)
+  // The back sheets first: sheet 1's flag rows point at them by number (CUL-2350).
+  const backSheets = backSheetsOf(snap)
+  const ptr = v2FlagPointersOf(backSheets, snap)
 
   blocks.push({
     kind: 'masthead',
@@ -862,7 +955,7 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
       kind: 'band',
       id: 'band',
       heading: `Flags for the vet · ${band.length}`,
-      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(f, snap) })),
+      items: band.map((f, i) => ({ id: flagId(f, i), ...flagRowOf(f, snap, ptr), photos: bandPhotosOf(f, snap) })),
       checksHtml: checks,
     })
   } else if (checks !== null) {
@@ -888,7 +981,7 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
   const lines = recordLinesOf(snap, lead, edge.length > 0)
   if (lines.length > 0) blocks.push({ kind: 'lead_sentence', id: 'lead-sentence', text: lines[0].text })
 
-  blocks.push({ kind: 'lead_chart', id: 'lead-chart', chart: buildLeadChart(snap, lead, leadFlag) })
+  blocks.push({ kind: 'lead_chart', id: 'lead-chart', chart: buildLeadChart(snap, lead, leadFlag, ptr) })
   if (changesBlock && !zeroSign) blocks.push(changesBlock)
 
   const confounder = confounderOf(snap)
@@ -910,8 +1003,8 @@ export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): 
     blocks.push({ kind: 'questions', id: 'questions', heading: 'The owner’s questions', items: questions.map((text, i) => ({ n: i + 1, text, pointer })) })
   }
 
-  blocks.push({ kind: 'colophon', id: 'colophon', text: colophonOf(snap, opts) })
-  return { version: 'v2', sheet: 1, blocks }
+  blocks.push({ kind: 'colophon', id: 'colophon', text: colophonOf(snap, opts, 1 + backSheets.length) })
+  return { version: 'v2', sheet: 1, blocks, backSheets, reportId: opts.shortId }
 }
 
 // ── The word budget (ruling B, spec §5.7) ───────────────────────────────────

@@ -26,6 +26,7 @@
 // say). Everything above that slot, the band included, renders byte-for-byte as without a lead.
 // The sentences print exactly as stored and verified (`aiLeadSlot` adds markup, never words);
 // each is followed by its citations, named by the lines' own nouns.
+import { BACK_STYLE_PRINT, backSheetHtml, bandPhotosHtml, pageHeadCss } from './renderBackV2.ts'
 import type { LeadSentence } from './aiLead/verify.ts'
 import { h, notReadCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { fmtDay } from './render.ts'
@@ -235,7 +236,7 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       return `${open('div', 'disc')}${b.html}</div>`
     case 'band':
       return `${open('section', 'band')}<h2>${h(b.heading)}</h2><ul>${b.items
-        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}</li>`)
+        .map((i) => `<li data-item="${h(i.id)}"><b>Flag: ${h(i.tag.toLowerCase())}.</b> ${i.html}${bandPhotosHtml(i.photos)}</li>`)
         .join('')}</ul>${b.checksHtml ? `<p class="checks">${b.checksHtml}</p>` : ''}</section>`
     case 'checks':
       return `${open('p', 'checks unframed')}${b.html}</p>`
@@ -284,6 +285,11 @@ const STYLE_V2 = `
 @page{size:auto;margin:36pt 40pt;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
+/* The PDF text layer (CUL-2386, measured 2026-11-02): Inter's contextual alternates beside a digit carry no
+   ToUnicode entry, so ":" "(" "×" "–" next to a number dropped from the extracted text; the UA's tabular list
+   markers did the same to a line's number. Both off; the guard is guards/reportNoTnum.test.ts. */
+*{font-feature-settings:"calt" 0,"case" 0;}
+::marker{font-variant-numeric:normal;}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:9.5pt;line-height:1.38;orphans:3;widows:3;}
 .sheet{width:515pt;margin:0 auto;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
@@ -340,7 +346,7 @@ svg .halo{paint-order:stroke;stroke:var(--paper);stroke-width:2.5px;stroke-linej
 svg .ax{font-size:7.5px;fill:var(--ink2);}
 svg .ax.part{fill:var(--ink);}
 @media print{.sheet{width:auto;}}
-`
+${BACK_STYLE_PRINT}`
 
 /** The whole v2 document as HTML: sheet 1 only until the back sheets ship (VR2-13). `aiLead`
  *  is a lead the send path read back with `storedLeadForDocument` (verified, same facts) or null. */
@@ -355,12 +361,13 @@ export function renderPrintV2(doc: DocumentV2, aiLead: readonly LeadSentence[] |
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="report-version" content="v2" />
 <title>${h(title)}</title>
-<style>${STYLE_V2}</style>
+<style>${STYLE_V2}${pageHeadCss(doc)}</style>
 </head>
 <body>
 <main class="sheet" data-sheet="1">
 ${doc.blocks.map((b) => block(b, slot)).join('\n')}
 </main>
+${doc.backSheets.map((sh) => backSheetHtml(doc, sh)).join('\n')}
 </body>
 </html>`
 }
