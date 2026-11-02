@@ -15,10 +15,21 @@ import {
   intakeFlagFired,
   NO_PHOTOS_LINE,
   RECORD_SHEET_TITLE,
+  LOG_SHEET_TITLE,
+  MEDICATION_SHEET_TITLE,
+  DIET_SHEET_TITLE,
+  NOTICED_SHEET_TITLE,
+  KEPT_SHEET_TITLE,
+  V2_SECTION_POINTERS,
+  assertNoV1Pointer,
+  keptEntries,
+  keptSentencesOf,
+  v2Pointers,
   type BackBlockV2,
   type BackSheetV2,
 } from './backSheetsV2.ts'
-import { mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
+import { cherryPickDisclosure, chronicityRecordPrecedesCounts, hasIncidentPhotos, timeConfidence, hasNoticed, mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
+import { documentBlockIds } from './renderBackV2.ts'
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { at, baseInput, dailyMeals, dayKey, meal, nyxSafetyCat, stoolPhotoDog, symptom } from './v2Fixtures.testutil.ts'
@@ -76,7 +87,9 @@ Deno.test('order — on the record sheet the photo strip (or its one line) comes
     const kinds = record.blocks.map((b) => b.kind)
     assert.ok(kinds[0] === 'photo_strip' || kinds[0] === 'no_photos', `${name}: ${kinds}`)
     assert.equal(kinds[1], 'ledger', name)
-    assert.ok(kinds.length === 2 || (kinds.length === 3 && kinds[2] === 'episodes'), `${name}: ${kinds}`)
+    // Then the Noticed answered-day line when the owner answered (VR2-14, spec §6.1), then the episodes.
+    const rest = record.blocks.slice(2).map((b) => b.id)
+    assert.deepEqual(rest, [...(hasNoticed(s) ? ['noticed-line'] : []), ...(rest.includes('episodes') ? ['episodes'] : [])], `${name}: ${kinds}`)
   }
 })
 
@@ -281,19 +294,20 @@ Deno.test('episodes — v1’s sections word for word (with v2’s pointers), un
   assert.match(text, /Possible foreign material — 1 incident:/)
   assert.doesNotMatch(text, /Possible blood/, 'blood prints only when present')
   assert.doesNotMatch(text, /appendix/i, 'no pointer to a sheet v2 does not print')
-  // The same words as v1's section, but the dropped pointer sentence.
+  // The same words as v1's section; the pointer sentence is back since VR2-14, aimed at the event log.
   assert.equal(
     text,
-    textOf(vomitCharacteristics(cat, { eventLog: null, freeFedAndTreats: null }))
+    textOf(vomitCharacteristics(cat, V2_SECTION_POINTERS))
       .replace(/page 1/g, 'sheet 1')
       .replace('These lead the flags for review above.', 'These lead the flags for review on sheet 1.'),
   )
+  assert.match(text, /Per-incident detail in the sheet headed “Event log”\./)
   assert.match(text, /These lead the flags for review on sheet 1\./, 'the band is a sheet away, never "above"')
   const dog = assembleReport(stoolPhotoDog())
   const dt = textOf(blockIn(backSheetsOf(dog), 'episodes')?.html ?? '')
   assert.match(dt, /Possible blood — 1 incident:/)
   assert.match(dt, /Mucus — 1 incident:/)
-  assert.ok(dt.includes(textOf(stoolCharacteristics(dog, { eventLog: null, freeFedAndTreats: null }))))
+  assert.ok(dt.includes(textOf(stoolCharacteristics(dog, V2_SECTION_POINTERS))))
   // A record with nothing photographed keeps v1's "not a clearance" sentence word for word.
   const mira = textOf(blockIn(backSheetsOf(fixture('mira')), 'episodes')?.html ?? '')
   assert.match(mira, /Not a clearance:/)
@@ -436,7 +450,10 @@ Deno.test('sheets — every back sheet prints its running head with the computed
     for (const sh of d.backSheets) {
       assert.ok(html.includes(`<section class="sheet back" data-sheet="${sh.n}">`), `${name}: sheet ${sh.n}`)
       assert.ok(html.includes(` · sheet ${sh.n} of ${1 + d.backSheets.length} · <span class="rt">${sh.title}</span>`), `${name}: head ${sh.n}`)
-      assert.ok([RECORD_SHEET_TITLE, INTAKE_SHEET_TITLE].includes(sh.title))
+      assert.ok(
+        [RECORD_SHEET_TITLE, INTAKE_SHEET_TITLE, LOG_SHEET_TITLE, MEDICATION_SHEET_TITLE, DIET_SHEET_TITLE, NOTICED_SHEET_TITLE, KEPT_SHEET_TITLE].includes(sh.title),
+        `${name}: ${sh.title}`,
+      )
     }
   }
   assert.match(renderPrintV2(docOf(fixture('mira'))), /\.sheet\.back\{break-before:page;\}/)
@@ -523,4 +540,155 @@ Deno.test('CUL-2401 — a header cell in a body row, a spanning heading, a secon
   )
   assert.match(html, /<tr><th>Oct 16<\/th><td data-label="When">13:00<\/td><td data-label="Food name">Kibble<\/td><td data-label="Intake">Refused<\/td><\/tr>/)
   assert.match(html, /<table class="x lg"><tbody><tr><th>Jun 1<\/th><td>2<\/td>/, 'a ledger with a second class stays unlabelled')
+})
+
+// ── VR2-14 (CUL-2294): the event log, medication, diet, Noticed and "How this record was kept" ──
+
+Deno.test('VR2-14 order — event log, medications, diet always; Noticed only when answered; "How this record was kept" always last', () => {
+  for (const [name, s] of all()) {
+    const kinds = backSheetsOf(s).map((x) => x.kind)
+    const lead = kinds.slice(0, kinds.indexOf('log'))
+    assert.ok(lead.includes('record'), name)
+    assert.deepEqual(kinds.slice(lead.length), ['log', 'medication', 'diet', ...(hasNoticed(s) ? (['noticed'] as const) : []), 'kept'], name)
+    assert.deepEqual(backSheetsOf(s).map((x) => x.n), kinds.map((_, i) => i + 2), `${name}: numbered from 2, computed`)
+  }
+  assert.ok(all().some(([, s]) => hasNoticed(s)), 'a fixture prints the Noticed sheet')
+  assert.ok(all().some(([, s]) => !hasNoticed(s)), 'a fixture leaves it out')
+})
+
+Deno.test('VR2-14 kept — the last block of both renders on every fixture, every entry whole on its page', () => {
+  for (const [name, s] of all()) {
+    const d = docOf(s)
+    assert.equal(documentBlockIds(d).at(-1), 'kept', name)
+    for (const html of [renderPrintV2(d), renderPhoneV2(d)]) {
+      const last = html.lastIndexOf('data-block="')
+      assert.ok(html.slice(last).startsWith('data-block="kept"'), `${name}: kept is the last block printed`)
+    }
+  }
+  assert.match(BACK_STYLE_PRINT, /\.back \.kentry\{break-inside:avoid;/)
+})
+
+Deno.test('VR2-14 kept — the absence rules in clinical words: no flag is not an all-clear, present-only, assessed denominators, deleted entries last', () => {
+  const s = fixture('mira')
+  const e = keptEntries(s)
+  const text = e.map((x) => `${x.term}. ${x.text}`).join(' ')
+  assert.equal(e[0].term, 'No flag is not an all-clear')
+  assert.match(e[0].text, /When no flag prints, no check fired; that is not the same as nothing being wrong\./)
+  // B-494: every lane the checks watch is named, so a lane's silence is never read as a result.
+  for (const lane of ['chronicity', 'symptom burden', 'reduced intake', 'a prescribed diet going uneaten', 'weight loss', 'weight left unchecked', 'possible blood or foreign material', 'a protein the trial diet does not list', 'worsening', 'other patterns the detection engine raises']) assert.ok(e[0].text.includes(lane), lane)
+  assert.match(text, /Blood, foreign material and mucus are reported only when seen in an incident/)
+  assert.match(text, /A read that was uncertain, failed or still processing is named as such and is never counted as clear\./)
+  assert.match(text, /A day with nothing logged is not a day without signs\./)
+  assert.match(text, /never as picky/)
+  assert.equal(e.at(-1)?.term, 'Deleted entries')
+  assert.match(e.at(-1)?.text ?? '', /^Entries the owner deleted are excluded\./)
+  // The rule, never a result: the first entry reads the same whether or not a flag fired.
+  const withFlags = all().find(([, x]) => x.safetyFlags.length > 0)?.[1]
+  const without = all().find(([, x]) => x.safetyFlags.length === 0)?.[1]
+  assert.ok(withFlags && without)
+  assert.equal(keptEntries(withFlags)[0].text, keptEntries(without)[0].text)
+  assert.doesNotMatch(text, /none (?:were|was) (?:present|raised)|all clear\b(?!.)/i)
+})
+
+Deno.test('VR2-14 kept — an entry that describes a section prints only where the document carries it (B-599)', () => {
+  let photos = 0
+  let noticed = 0
+  let chron = 0
+  for (const [name, s] of all()) {
+    const terms = keptEntries(s).map((e) => e.term)
+    assert.equal(terms.includes('Incident photos'), hasIncidentPhotos(s), `${name}: photos`)
+    assert.equal(terms.includes('Noticed'), hasNoticed(s), `${name}: Noticed`)
+    assert.equal(terms.includes('Where the chronicity counts begin'), chronicityRecordPrecedesCounts(s), `${name}: chronicity`)
+    photos += Number(hasIncidentPhotos(s))
+    noticed += Number(hasNoticed(s))
+    chron += Number(chronicityRecordPrecedesCounts(s))
+  }
+  assert.ok(photos > 0 && noticed > 0, `each gate is exercised both ways (photos ${photos}, Noticed ${noticed}, chronicity ${chron})`)
+})
+
+Deno.test('VR2-14 kept — sentences split whole, each ending where it ends (what the extraction test asserts)', () => {
+  const sentences = keptSentencesOf(keptEntries(fixture('nyx-live')))
+  assert.ok(sentences.length >= 40, `${sentences.length}`)
+  assert.ok(sentences.includes('When no flag prints, no check fired; that is not the same as nothing being wrong.'))
+  for (const x of sentences) assert.ok(x.length > 3 && !/^\s|\s$/.test(x), x)
+})
+
+Deno.test('VR2-14 pointers — no back sheet names an appendix or page 1, and every "sheet headed" names a sheet this document prints', () => {
+  let pointed = 0
+  for (const [name, s] of all()) {
+    const d = docOf(s)
+    const titles = new Set(d.backSheets.map((b) => b.title))
+    for (const sh of d.backSheets) {
+      for (const b of sh.blocks) {
+        const html = 'html' in b ? b.html : 'introHtml' in b ? b.introHtml : ''
+        const t = textOf(html)
+        assert.doesNotMatch(t, /\bappendi(?:x|ces)\b/i, `${name}: ${b.id}`)
+        assert.doesNotMatch(t, /\bpage 1\b/, `${name}: ${b.id}`)
+        for (const m of t.matchAll(/sheet headed “([^”]+)”/g)) {
+          assert.ok(titles.has(m[1]), `${name}: ${b.id} points at “${m[1]}”`)
+          assert.notEqual(m[1], sh.title, `${name}: ${b.id} names its own sheet; it says "this sheet"`)
+          pointed++
+        }
+      }
+    }
+  }
+  assert.ok(pointed >= 50, `the fixtures carry pointers (${pointed})`)
+})
+
+Deno.test('VR2-14 pointers — mutation: an unmapped letter, a stray page 1 or a sheet-1 pointer v2 cannot honour throws', () => {
+  const s = fixture('mira')
+  assert.throws(() => v2Pointers('Listed in appendix&nbsp;G.', s), /appendix G has no v2 sheet/)
+  assert.throws(() => assertNoV1Pointer('<p>See the appendix for the rest.</p>', 'x'), /names an appendix/)
+  assert.throws(() => assertNoV1Pointer('<p>See page&nbsp;1.</p>', 'x'), /names page 1/)
+  assert.throws(() => assertNoV1Pointer('<p>The weight trend on sheet&nbsp;1.</p>', 'x'), /sheet 1 may not hold/)
+  assert.doesNotThrow(() => assertNoV1Pointer('<p>any safety flag on sheet&nbsp;1 stands on its own.</p>', 'x'))
+  assert.equal(v2Pointers('Dates in appendix&nbsp;C.', s, DIET_SHEET_TITLE), 'Dates on this sheet.')
+  assert.equal(v2Pointers('Dates in appendix&nbsp;C.', s, LOG_SHEET_TITLE), 'Dates on the sheet headed &ldquo;Diet, weight and food exposure&rdquo;.')
+})
+
+Deno.test('VR2-14 event log — every photographed row names its read in words, completed included; no triage glyph', () => {
+  const cat = docOf(assembleReport(nyxSafetyCat()))
+  const log = cat.backSheets.flatMap((x) => x.blocks).find((b) => b.id === 'event-log')
+  assert.ok(log && log.kind === 'section')
+  const photos = [...log.html.matchAll(/<b>Photo:<\/b> ([^<]*)/g)].map((m) => m[1])
+  assert.ok(photos.length >= 4, `${photos.length}`)
+  for (const p of photos) assert.match(p, /^(read completed|read uncertain|present but not legible|still processing)/, p)
+  assert.ok(photos.some((p) => p.startsWith('read completed')))
+  assert.ok(photos.some((p) => p.startsWith('still processing')))
+  assert.doesNotMatch(log.html, /[\u{1F534}\u{1F7E0}\u{1F7E1}\u{1F7E2}\u26A0]/u, 'no owner-facing triage glyph crosses over')
+  assert.match(textOf(log.html), /Occurred \(owner-reported\)/)
+})
+
+Deno.test('VR2-14 medications and diet — the lifetime table leads the dose log; the trial precedes the block that says it is above', () => {
+  const live = docOf(fixture('nyx-live'))
+  const med = live.backSheets.find((x) => x.kind === 'medication')
+  assert.deepEqual(med?.blocks.map((b) => b.id), ['medication-history', 'medication-log'])
+  for (const [name, s] of all()) {
+    const ids = docOf(s).backSheets.find((x) => x.kind === 'diet')?.blocks.map((b) => b.id) ?? []
+    assert.equal(ids[0], 'weight', name)
+    if (ids.includes('diet-trial')) assert.ok(ids.indexOf('diet-trial') < ids.indexOf('diet-meds'), name)
+    assert.deepEqual(ids.slice(-2), ['diet-history', 'exposures'], name)
+  }
+  // v1's weight sparkline is aria-hidden on v2; its words beside it are the twin.
+  assert.match(renderPrintV2(live), /<svg class="spark"[^>]*aria-hidden="true"/)
+})
+
+Deno.test('VR2-14 kept — a rule never promises a line the record does not print (cold read round 2)', () => {
+  let custom = 0
+  for (const [name, s] of all()) {
+    const e = keptEntries(s)
+    const range = e.find((x) => x.term === 'Range')?.text ?? ''
+    // The count of events outside a hand-picked window is claimed only where sheet 1 prints it.
+    assert.equal(/states how many symptom events/.test(range), cherryPickDisclosure(s) !== '', `${name}: ${range}`)
+    if (s.scope.basis === 'custom') custom++
+    // The time-confidence key names only the tags the event log prints.
+    const tc = e.find((x) => x.term === 'Time confidence')?.text ?? ''
+    const present = new Set(s.provenance.symptomLog.map(timeConfidence))
+    for (const [tag, word] of [['est', /\best an estimated/], ['range', /\brange a window/], ['unspecified', /\bunspecified means/]] as const) {
+      assert.equal(word.test(tc), present.has(tag) && !s.provenance.symptomLog.every((x) => timeConfidence(x) === 'seen'), `${name}: ${tag}`)
+    }
+    // No back sheet sends a reader to sheet 1 for "Timing vs symptoms": it is on the diet sheet.
+    assert.doesNotMatch(textOf(renderPrintV2(docOf(s))), /sheet 1 under Timing vs symptoms/, name)
+  }
+  assert.ok(custom >= 2, `hand-picked windows are exercised (${custom})`)
 })

@@ -22,6 +22,9 @@
 // It also predates `atAGlance.recordEdge` (CUL-2283). Nyx's window ends on the report date, so the
 // edge is filled from `atAGlance.lastLoggedDate` with nothing after the window and nothing dated
 // ahead of it (the capture's window reaches the report date, so neither can exist).
+// It also predates `weight.notCounted` (owner estimates kept off the trend, read by v1's weight block,
+// which v2's diet sheet reprints since VR2-14). The capture lists every weigh-in it counted and
+// carries no estimate, so the list is empty: the estimates note cannot fire here (a fixture limit).
 // A test that needs a fact this file cannot honestly fill builds its own fixture instead.
 import type { ReportSnapshot } from './report.ts'
 // A static import, not a file read: CI runs `deno test --allow-read=supabase/functions`, and the
@@ -104,6 +107,7 @@ export function nyxLiveSnapshot(): ReportSnapshot {
   return {
     ...s,
     atAGlance,
+    weight: { ...s.weight, notCounted: (s.weight as Partial<ReportSnapshot['weight']>).notCounted ?? [] },
     v2: {
       chronicity: [],
       loggedMeals: rated,

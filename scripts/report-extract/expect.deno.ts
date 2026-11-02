@@ -15,7 +15,7 @@
 //      band's photo captions and, when one prints, the AI lead's label and sentences included;
 //   3. no sentence naming one of the trial's own signs (by stem) states a decline in it or in the
 //      unlabelled sentence after it, in words or as a falling count;
-//   4. "How this record was kept": a stub until VR2-14 (CUL-2294) writes those sentences.
+//   4. "How this record was kept" (VR2-14, CUL-2294): every sentence of the last sheet, whole.
 //
 // MATCHING is whitespace-blind, case-blind and NFKC-folded: an extractor may break a line, insert
 // a space at a kerning gap, read a `text-transform: uppercase` heading in capitals, or hand back a
@@ -29,6 +29,7 @@ import type { LeadSentence } from '../../supabase/functions/generate-report/aiLe
 import type { ReportSnapshot } from '../../supabase/functions/generate-report/report.ts'
 import { symptomLabel } from '../../supabase/functions/generate-report/render.ts'
 import { SKIN_TRIAL_SIGNS } from '../../supabase/functions/generate-report/v2Predicates.ts'
+import { keptSentencesOf } from '../../supabase/functions/generate-report/backSheetsV2.ts'
 
 export interface ExpectedLine {
   /** The block it prints in (`data-block`), so a failure names where to look. */
@@ -43,8 +44,10 @@ export interface Expectations {
   trialSigns: string[]
   /** The labels the document's own lines open with ("Diet trial (owner-entered)"), for the window. */
   lineLabels: string[]
-  /** "How this record was kept" (VR2-14). Empty until those sentences exist; see `KEPT_STUB`. */
+  /** "How this record was kept" (VR2-14): each rule's term and every sentence of its text. */
   kept: ExpectedLine[]
+  /** The Noticed strip's words that fall entirely before its span, from the snapshot (VR2-14). */
+  spanWords: string[]
 }
 
 /** Soft hyphen, zero-width space, ZWNJ, ZWJ, word joiner, BOM: nothing a reader sees. Built from
@@ -195,15 +198,16 @@ export function signPattern(key: string): RegExp {
 
 /**
  * "How this record was kept" (spec §6.1, GAP-33): the fixed absence rules, always last. VR2-14
- * (CUL-2294) writes them; until then there is nothing to assert, and this says so rather than
- * passing quietly. When that block lands, `keptSentences` reads it off the back sheets and this
- * flips to `false`; `contiguity.deno.ts` fails the day the block exists while this is still `true`.
+ * (CUL-2294) prints them, so this reads every sentence off the document's kept block and the check
+ * asserts each one survives both extractors whole ("No flag is not an all-clear" included). A
+ * document with no kept block throws here rather than asserting nothing: the block is mandatory.
  */
-export const KEPT_STUB = true
 export const KEPT_HEADING = 'How this record was kept'
 
-export function keptSentences(_doc: DocumentV2): ExpectedLine[] {
-  return []
+export function keptSentences(doc: DocumentV2): ExpectedLine[] {
+  const kept = doc.backSheets.flatMap((s) => s.blocks).find((b) => b.kind === 'kept')
+  if (!kept || kept.kind !== 'kept') throw new Error('the document prints no "How this record was kept" block')
+  return [{ block: 'kept', text: KEPT_HEADING }, ...keptSentencesOf(kept.entries).map((text) => ({ block: 'kept', text }))]
 }
 
 /** The lead's printed lines when one is handed in: its label, then each sentence as stored. */
@@ -215,7 +219,7 @@ export function aiLeadLines(aiLead: readonly LeadSentence[] | null): ExpectedLin
 export function expectationsOf(doc: DocumentV2, snap: ReportSnapshot, aiLead: readonly LeadSentence[] | null = null): Expectations {
   const lines = sheet1Lines(doc)
   const lineLabels = [...new Set(lines.map((l) => /^([^.:]{1,60}):\s/.exec(l.text)?.[1] ?? '').filter((x) => x !== ''))]
-  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...lines], trialSigns: trialSignsOf(snap), lineLabels, kept: keptSentences(doc) }
+  return { flags: firedFlags(doc), lines: [...aiLeadLines(aiLead), ...lines], trialSigns: trialSignsOf(snap), lineLabels, kept: keptSentences(doc), spanWords: (snap.noticed?.strip.wordsAbsentInSpan ?? []).map((w) => w.label) }
 }
 
 /** The expected lines whose folded text is not a run inside the folded haystack. */
@@ -280,7 +284,10 @@ function hasDescent(s: string): boolean {
  * The carve-outs, as whole phrases and nothing looser, each a measured false hit on main's fixtures
  * that is not about a sign's course: a scope line ("5 symptom events fall outside this window") and a
  * deleted photo ("its photo is no longer retained"), and two from the stool reads ("a lower-GI sign",
- * a photo "not clear enough to read"). Cut from the sentence before it is tested, so
+ * a photo "not clear enough to read"), and the back sheets' scope, timing and weight phrases (VR2-14,
+ * each named below). A table's cells, or two sheets, can run together in the text an extractor
+ * returns ("for pruritus" then the next sheet's "down from 32.40 kg"), which is how a weight reading
+ * sat in a sentence with the trial's sign. Cut from the sentence before it is tested, so
  * "fall after the diet change" and "no longer kept her up" still count (adversarial pass 1).
  */
 const NOT_A_COURSE = [
@@ -290,14 +297,54 @@ const NOT_A_COURSE = [
   /\bnot clear enough to read\b/gi, // a photo's quality, not a sign's course
   /\ba declined or barely-\s?touched meal\b/gi, // the intake sheet: a refused meal, the opposite of reassurance
   /\bnot a single incident\b/gi, // beside every chronicity flag: a course, not one event
+  // VR2-14 (CUL-2294) reprints v1's event log, trial, diet and Noticed sections on the back sheets;
+  // each of these is a measured false hit there, and none is about a sign's course:
+  /\bphoto no longer retained\b/gi, // the event log's tag beside a read whose photo was removed
+  /\btrial days fall (?:before and after|before|after) it\b/gi, // the trial's scope beside this window
+  /\bof a trial that has run \d+ \u2014/gi, // "35 days of a trial that has run 87 — 52 trial days…": a dash, not an arrow
+  /\bfell within ~?\d+ min of eating\b/gi, // the timing line: when episodes happened, not how many
+  /\bweigh-in falls inside this window\b/gi, // the diet history's nutritional status
+  /\bvs \d+ of \d+ matched control windows\b/gi, // an association's control count, not a course
+  /\bthe highest before it in the last \d+ days\b/gi, // the weight block's comparison, not a sign
+  /\bdown from \d+\.\d{2} kg\b/gi, // a weight reading (kg at 2 dp), not a sign
+  /\bthe less this marker means\b/gi, // the exposures' timing-marker footnote: the marker, not a sign
+  // "How this record was kept": a clearance DENIED, the opposite of a decline (pdfminer ran the
+  // Noticed log's "vomit logged" into the kept sheet's first term).
+  /\b(?:is not|never) an all-clear\b/gi,
+  /\bno flag is not an all-clear\b/gi,
+  /\bnever counted as clear\b/gi,
 ]
+
+/**
+ * The Noticed strip's "<words> falls entirely before this span" (VR2-14 reprints it on v2's Noticed
+ * sheet). Cut only when the document's OWN list of those words (`spanWords`, from the snapshot, never
+ * parsed out of the text) holds none of the trial's signs, and only where the text carries that exact
+ * list: "Hunched or tucked up falls entirely before this span" says nothing about a gi trial's
+ * vomiting, while "Scratching more falls entirely before this span" on a skin trial reads to a
+ * summariser as "scratching resolved" from absence over answered days, so it stays a hit.
+ *
+ * NOT A GRAMMAR (adversarial pass 2). Parsing the list out of the text failed on real labels ("Lip-
+ * licking", "Didn’t want the walk", "A film across the eye"): the match restarted at the last item and
+ * cut the phrase from a list that named a sign. Without the document's list, nothing is cut: a false
+ * hit fails CI, which errs loud.
+ */
+function spanPhrase(words: readonly string[]): RegExp {
+  const item = (w: string): string =>
+    w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/['\u2019\u02BC]/g, "['\u2019\u02BC]").replace(/\s+/g, '\\s+')
+  return new RegExp(`${words.map(item).join(',\\s+')}\\s+${words.length === 1 ? 'falls' : 'fall'}\\s+entirely\\s+before\\s+this\\s+span`, 'g')
+}
+function cutSpanWords(s: string, pats: readonly RegExp[], spanWords: readonly string[]): string {
+  if (spanWords.length === 0) return s
+  if (spanWords.some((w) => pats.some((p) => new RegExp(p.source, p.flags.replace('g', '')).test(w)))) return s
+  return s.replace(spanPhrase(spanWords), ' ')
+}
 
 /**
  * Sentences that name one of `signs` with a decline in the same sentence or the next one (a summary
  * that says "Itching on 9 days in week 1. By week 6 it was 2." splits the claim across two), unless
  * the next one is a labelled line of its own.
  */
-export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = []): string[] {
+export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = [], spanWords: readonly string[] = []): string[] {
   if (signs.length === 0) return []
   const pats = signs.map(signPattern)
   const flat = text.normalize('NFKC').replace(/\s+/g, ' ')
@@ -310,7 +357,7 @@ export function declineSentences(text: string, signs: readonly string[], lineLab
     // the document's labels count: any early colon did, and hid "By week 6 it had settled: 2" (pass 2).
     const next = sentences[i + 1] ?? ''
     const follows = !lineLabels.some((l) => l !== '' && next.toLowerCase().startsWith(`${l.toLowerCase()}:`))
-    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), x)).join(' ')
+    const window = [sent, follows ? next : ''].map((x) => NOT_A_COURSE.reduce((acc, re) => acc.replace(re, ' '), cutSpanWords(x, pats, spanWords))).join(' ')
     if (DECLINE_WORDS.test(window) || hasDescent(window)) out.push(follows && next !== '' ? `${sent} ${next}` : sent)
   })
   return out
