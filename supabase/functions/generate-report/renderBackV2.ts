@@ -276,7 +276,7 @@ ${BACK_V1_PRINT}
 // sat off-screen at 320pt. Grid columns size to their content by default, so a nowrap tag or a 46px
 // word at AX5 pushed the whole page sideways. Screen only, so neither PDF moves.
 // - The ledger: at compact text (`data-compact`, scale >= 1.6) its week label goes above its days.
-// - The intake tables stack wherever their column is under 24rem: every phone at every text size
+// - The intake tables, and the tables of v1 sections reprinted by VR2-14, stack wherever their column is under 24rem: every phone at every text size
 //   (five columns in a phone's column starved Food to a letter a line), side by side only on a wide
 //   screen, measured in text sizes so no script is needed. Each cell takes its own line under its
 //   own column heading (`labelTableCells`), never a position against a key (a cell's own " · " made
@@ -292,7 +292,7 @@ const BACK_FIT_PHONE_SCREEN = `@media screen{
 [data-compact] .back .lg tr{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2pt;margin-bottom:2pt;}
 [data-compact] .back .lg th{grid-column:1/-1;text-align:left;padding:0;}
 [data-compact] .back .lg td{width:auto;}
-.back .intake{container-type:inline-size;}
+.back .intake,.back .v1sec{container-type:inline-size;}
 .back table:not(.lg) .num{white-space:nowrap;}
 }
 @container (max-width:24rem){
@@ -325,7 +325,8 @@ export const BACK_STYLE_PHONE_SCREEN = `${BACK_SHARED}
 .back .appx-sub,.back .kv,.back .callout,.back .callout .k,.back .weight,.back .fields,.back .rnote,.back .aside,.back .noticed-line,.back .noticed-counts,.back .noticed-note,.back .noticed-h,.back .nb-title,.back .nb-lab,.back .nb-first,.back .nb-val,.back .nb-held,.back .noticed-conflict,.back .ns-v,.back .ns-o,.back .ns-f,.back .ns-n,.back .ns-legend,.back .ns-words,.back .ns-cap,.back .ng-vom,.back .ng-trunc,.back .kept,.back .ptrow{font-size:0.875rem;}
 .back .weight .wt-read .v{font-size:1rem;}
 .back .nb-track{height:0.6rem;}
-.back .noticed-graph,.back .kvcol .kv{grid-template-columns:1fr;display:block;}
+.back .noticed-graph,.back .kv{grid-template-columns:1fr;display:block;}
+.back .kv .k{display:block;}
 .back .weight{flex-wrap:wrap;}
 ${BACK_FIT_PHONE_SCREEN}
 `
