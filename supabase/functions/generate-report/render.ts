@@ -5236,28 +5236,20 @@ function halvesLine(
   m: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } },
   rangeDays: number,
 ): string {
-  const start = t.evidenceStartDate
-  const end = t.evidenceEndDate
-  const firstEnd = shiftDayKey(start, m.firstHalf.days - 1)
-  const lastStart = shiftDayKey(end, -(m.lastHalf.days - 1))
-  const halfRange = (a: string | null, b: string | null): string => (a && b ? ` (${h(fmtRange(a, b))})` : '')
-  const halves = `${num(m.firstHalf.daysLogged)} of ${num(m.firstHalf.days)} in the first half${halfRange(start, firstEnd)}, ${num(
-    m.lastHalf.daysLogged,
-  )} of ${num(m.lastHalf.days)} in the second${halfRange(lastStart, end)}`
+  // The range stays named in the sentence (B-600: the halves are the RANGE's, not the trial's).
+  const halves = `${num(m.firstHalf.daysLogged)} of ${num(m.firstHalf.days)} in the first half of ${h(
+    fmtRange(t.evidenceStartDate, t.evidenceEndDate),
+  )}, ${num(m.lastHalf.daysLogged)} of ${num(m.lastHalf.days)} in the second`
   const middleDays = rangeDays - m.firstHalf.days - m.lastHalf.days
   if (middleDays !== 1) return `${halves}.`
-  const middle = shiftDayKey(start, m.firstHalf.days)
+  const middle = shiftDayKey(t.evidenceStartDate, m.firstHalf.days)
   if (!middle) return `${halves}.`
   const cov = t.coverage
   const middleLogged =
     cov && cov.daysElapsed === rangeDays ? cov.daysLogged - m.firstHalf.daysLogged - m.lastHalf.daysLogged : null
-  const state =
-    middleLogged === 1
-      ? ' and had a meal logged'
-      : middleLogged === 0
-        ? ' and had no meal logged'
-        : ''
-  const total = middleLogged === 0 || middleLogged === 1 ? ` (${num(cov!.daysLogged)} of ${num(rangeDays)} in all)` : ''
+  const known = middleLogged === 0 || middleLogged === 1
+  const state = !known ? '' : middleLogged === 1 ? ' and had a meal logged' : ' and had no meal logged'
+  const total = known ? ` (${num(cov!.daysLogged)} of ${num(rangeDays)} in all)` : ''
   return `${halves}; the middle day, ${h(fmtDay(middle))}, is in neither half${state}${total}.`
 }
 
@@ -5272,11 +5264,11 @@ function oralRouteSentence(
   const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
   const how =
     chew > 0 && food > 0
-      ? `${doses(chew)} ${chew === 1 ? 'was a chewable' : 'were chewables'}, which carry a flavour, and ${doses(food)} ${
+      ? `${doses(chew)} ${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour, and ${doses(food)} ${
           food === 1 ? 'was' : 'were'
         } logged as given inside a food off the allowed list or not identified`
       : chew > 0
-        ? `${chew === 1 ? 'was a chewable' : 'were chewables'}, which carry a flavour`
+        ? `${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour`
         : `${food === 1 ? 'was' : 'were'} logged as given inside a food off the allowed list or not identified`
   const lead = chew > 0 && food > 0 ? `<b>${doses(oral.length)} by mouth</b> reached ${pet}: ${how}` : `<b>${doses(oral.length)} by mouth</b> ${how}`
   return `${lead} (${drugs.map((d) => h(d)).join(', ')}). <b>The protein ${
@@ -8094,14 +8086,15 @@ function dosingSpan(m: MedicationAdherence): string {
   // CUL-2443: A PACE THE SCHEDULE NOTE CONTRADICTS IS NOT THE YARDSTICK. "15 prescribed doses at
   // 1×/day take 15 days" beside a note reading "every 24 hours for 10 days, then every 48 hours"
   // made the course's undosed days read as missed. The arithmetic stays; the note is quoted
-  // beside it so the vet can read the gaps against the schedule the owner actually entered.
+  // beside any span with gaps, so the vet reads them against the schedule the owner entered.
   const notes = m.scheduleNotes?.trim()
-  const schedule = notes ? ` ${scheduleNoteBit(notes)}` : ''
-  if (given === 1) return ` That dose was administered on ${h(fmtDayYear(first))} ${needBit}.${schedule}`
+  if (given === 1) return ` That dose was administered on ${h(fmtDayYear(first))} ${needBit}.`
   const subject = `The ${num(given)} administered doses`
-  if (days === 1) return ` ${subject} all fell on ${h(fmtDayYear(first))} ${needBit}.${schedule}`
+  if (days === 1) return ` ${subject} all fell on ${h(fmtDayYear(first))} ${needBit}.`
   const span = daysBetweenDayKeys(first, last) + 1
-  if (days >= span) return ` ${subject} fell on all ${num(days)} days, ${h(fmtRange(first, last))} ${needBit}.${schedule}`
+  if (days >= span) return ` ${subject} fell on all ${num(days)} days, ${h(fmtRange(first, last))} ${needBit}.`
+  // Only a span with undosed days inside it needs the note beside it.
+  const schedule = notes ? ` ${scheduleNoteBit(notes)}` : ''
   // CUL-2443: THE DENOMINATOR NAMES ITSELF. This span runs first dose to last dose, while the
   // window clause beside it counts the course's recorded days ("15 of 21 days of the course"), so
   // a bare "15 of the 20 days" read as a second, irreconcilable count of the same course.
@@ -8112,7 +8105,8 @@ function dosingSpan(m: MedicationAdherence): string {
 
 /** The owner's schedule note, quoted as theirs, beside a count of undosed days (CUL-2443). */
 function scheduleNoteBit(notes: string): string {
-  return `The schedule note reads &ldquo;${h(notes)}&rdquo;, so a day with no dose may be the schedule rather than a missed dose.`
+  // Neutral on purpose: it neither calls the gaps missed doses nor excuses them as the schedule.
+  return `The schedule note reads &ldquo;${h(notes)}&rdquo;; read the days with no dose against it.`
 }
 
 /** "from Mon D to Mon D, YYYY" (one year) or "from Mon D, YYYY to Mon D, YYYY" — the year once per pair (C-19). */
@@ -10647,9 +10641,7 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
       // live record page 1 counted 18 doses given inside a food while this row said none was.
       // The louder of the two stands.
       vehicleDosesOf(snap) > 0
-      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged during the trial as given inside a food that does not resolve to a meal logged in this window, so the food is not identified (the trial block on page&nbsp;1 counts ${
-          vehicleDosesOf(snap) === 1 ? 'it' : 'them'
-        }).`
+      ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged during the trial as given inside a food that does not resolve to a meal logged in this window, so the food is not identified (counted among the trial&rsquo;s doses by mouth).`
       : snap.medications.length > 0 || snap.unlinkedMedications.length > 0
       ? 'Not recorded &mdash; no dose in this window was logged as given in food.'
       : 'Not recorded.'
@@ -10750,9 +10742,9 @@ export function medicationAppendix(snap: ReportSnapshot): string {
                   : `No dose given against this course on ${
                       m.elapsedDaysInWindow === 1 ? 'its 1 day' : `any of its ${num(m.elapsedDaysInWindow)} days`
                     } in this window`
-              }${courseDaysTail(m)}.${
-                m.scheduleNotes?.trim() && m.courseDays.nothingLogged > 0 ? ` ${scheduleNoteBit(m.scheduleNotes.trim())}` : ''
-              }${outsideCourseNote(m)} Other doses against this course in this window: ${doseCounts.join(', ')}.`
+              }${courseDaysTail(m)}.${outsideCourseNote(m)} Other doses against this course in this window: ${doseCounts.join(
+                ', ',
+              )}.${m.scheduleNotes?.trim() && m.courseDays.nothingLogged > 0 ? ` ${scheduleNoteBit(m.scheduleNotes.trim())}` : ''}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(

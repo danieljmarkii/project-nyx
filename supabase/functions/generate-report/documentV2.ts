@@ -927,10 +927,11 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     const to = plainDay(m.toDate)
     // An ad-hoc drug is dated from its earliest dose on record (CUL-2440), and says it has no
     // regimen: "its course has no recorded end" read as a prescribed course still running.
+    // Sheet 1 is word-budgeted, so this is the short form; the back sheets carry the full one.
     const tail = m.recordStart
-      ? ` (doses on record since ${plainDay(m.recordStart.firstDoseDay)}${
-          m.recordStart.atHistoryFloor ? ', the earliest day this report reads' : ''
-        }; no regimen or end recorded)`
+      ? m.recordStart.atHistoryFloor
+        ? ` (ad-hoc, from ${plainDay(m.recordStart.firstDoseDay)} or earlier)`
+        : ` (ad-hoc, first logged ${plainDay(m.recordStart.firstDoseDay)})`
       : m.activeAtWindowEnd
         ? ' (its course has no recorded end)'
         : ''

@@ -6330,21 +6330,21 @@ Deno.test('CUL-994 Part 2 — adversarial round 3, break 1: one linked dose logg
   // 28 doses front-loaded Jul 17–25 (9 days) + one linked dose Aug 12 → last endpoint past the end. The
   // old early return ("dosing reached the end") deleted the sentence; the day count carries the hole.
   const html = renderReport(base({ medications: [endedCourse({ lifetimeDosesLogged: 29, lifetimeLastDoseDay: '2026-08-12', lifetimeDoseDayCount: 10, givenDoses: 29, windowDosesLogged: 29, windowDosesTotal: 29, daysWithDose: 10 })] }))
-  assert.equal(spanSentence(html), 'The 29 administered doses fell on 10 of the 27 days from Jul 17 to Aug 12, 2026 (29 doses at 2×/day take 15 days; 28 were prescribed).')
+  assert.equal(spanSentence(html), 'The 29 administered doses fell on 10 of the 27 days from the first dose to the last, Jul 17 – Aug 12, 2026 (29 doses at 2×/day take 15 days; 28 were prescribed).')
 })
 
 Deno.test('CUL-994 Part 2 — adversarial round 3, break 2 + cold read round 2: an interior hole is visible as a ratio over the span, never hidden inside a first–last range', () => {
   // 1×/day, 28 planned; 10 doses Jul 1–5, nothing Jul 6–24, 10 doses Jul 25–29; End Aug 9. Ten dosing
   // days over a 29-day span used to print as "Doses administered Jul 1 – Jul 29".
   const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, lifetimeDosesLogged: 20, lifetimeFirstDoseDay: '2026-07-01', lifetimeLastDoseDay: '2026-07-29', lifetimeDoseDayCount: 10, givenDoses: 20, windowDosesLogged: 20, windowDosesTotal: 20, daysWithDose: 10 })] }))
-  assert.equal(spanSentence(html), 'The 20 administered doses fell on 10 of the 29 days from Jul 1 to Jul 29, 2026 (28 prescribed doses at 1×/day take 28 days).')
+  assert.equal(spanSentence(html), 'The 20 administered doses fell on 10 of the 29 days from the first dose to the last, Jul 1 – Jul 29, 2026 (28 prescribed doses at 1×/day take 28 days).')
 })
 
 Deno.test('CUL-994 Part 2 — the need is exact on a fractional pace: every-other-day dosing is not a false gap', () => {
   // 0.5×/day × 20 days = 10 planned, given Jul 1, 3, …, 19 (10 days over a 19-day span). ceil(10 / 0.5)
   // = 20 would have demanded a day the pace never uses; floor((10 − 1) / 0.5) + 1 = 19.
   const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 0.5, prescribedDoses: 10, lifetimeDosesLogged: 10, lifetimeFirstDoseDay: '2026-07-01', lifetimeLastDoseDay: '2026-07-19', lifetimeDoseDayCount: 10, endedAt: '2026-07-20', givenDoses: 10, windowDosesLogged: 10, windowDosesTotal: 10, daysWithDose: 10 })] }))
-  assert.equal(spanSentence(html), 'The 10 administered doses fell on 10 of the 19 days from Jul 1 to Jul 19, 2026 (10 prescribed doses at 0.5×/day take 19 days).')
+  assert.equal(spanSentence(html), 'The 10 administered doses fell on 10 of the 19 days from the first dose to the last, Jul 1 – Jul 19, 2026 (10 prescribed doses at 0.5×/day take 19 days).')
 })
 
 Deno.test('CUL-994 Part 2 — both endpoints come from the ADMINISTERED population: one dose then twenty refusals prints one day, never a span to the last refusal', () => {
@@ -6397,7 +6397,7 @@ Deno.test('CUL-994 Part 2 — nothing administered, no sentence: "0 of N" alread
 
 Deno.test('CUL-994 Part 2 — dosing that reaches or passes the recorded end still states its density (the old "not a gap" early return is gone)', () => {
   const onEnd = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, lifetimeDosesLogged: 5, lifetimeLastDoseDay: '2026-08-09', lifetimeDoseDayCount: 5, givenDoses: 5, windowDosesLogged: 5, windowDosesTotal: 5, daysWithDose: 5 })] }))
-  assert.equal(spanSentence(onEnd), 'The 5 administered doses fell on 5 of the 24 days from Jul 17 to Aug 9, 2026 (28 prescribed doses at 1×/day take 28 days).')
+  assert.equal(spanSentence(onEnd), 'The 5 administered doses fell on 5 of the 24 days from the first dose to the last, Jul 17 – Aug 9, 2026 (28 prescribed doses at 1×/day take 28 days).')
 })
 
 // ── The other R-11 cold-read items in this pass's regions ──
@@ -6478,7 +6478,7 @@ Deno.test('CUL-994 Part 2 — adversarial round 4: record-scoped dates carry the
   assert.equal(spanSentence(html), 'The 28 administered doses fell on all 14 days, May 10 – May 23, 2025 (28 prescribed doses at 2×/day take 14 days).')
   assert.ok(/May 1, 2025 – Apr 10, 2026 \(end recorded by owner\)/.test(html), 'the regimen dates stamp both years')
   const yearLong = renderReport(base({ medications: [endedCourse({ dosesPerDay: 1, prescribedDoses: 365, lifetimeDosesLogged: 305, startedAt: '2025-06-20', endedAt: '2026-06-25', lifetimeFirstDoseDay: '2025-06-21', lifetimeLastDoseDay: '2026-06-20', lifetimeDoseDayCount: 305, elapsedDaysInWindow: 84, windowDosesLogged: 79, windowDosesTotal: 79, daysWithDose: 79, givenDoses: 79 })] }))
-  assert.equal(spanSentence(yearLong), 'The 305 administered doses fell on 305 of the 365 days from Jun 21, 2025 to Jun 20, 2026 (365 prescribed doses at 1×/day take 365 days).')
+  assert.equal(spanSentence(yearLong), 'The 305 administered doses fell on 305 of the 365 days from the first dose to the last, Jun 21, 2025 – Jun 20, 2026 (365 prescribed doses at 1×/day take 365 days).')
   assert.ok(/Jun 20, 2025 – Jun 25, 2026 \(end recorded by owner\)/.test(yearLong))
   // An ACTIVE regimen's start is record-scoped too (the meds pull is unbounded), so "since" carries its year.
   const active = renderReport(base({ medications: [med({ startedAt: '2025-11-14', endedAt: null, status: 'active', courseEnded: false })] }))
@@ -6490,7 +6490,7 @@ Deno.test('CUL-994 Part 2 — adversarial round 4: the need is exact on every tw
   const html = renderReport(base({ medications: [endedCourse({ dosesPerDay: 0.14, prescribedDoses: 8, lifetimeDosesLogged: 8, startedAt: '2026-04-30', endedAt: '2026-06-21', lifetimeFirstDoseDay: '2026-05-01', lifetimeLastDoseDay: '2026-06-20', lifetimeDoseDayCount: 8, elapsedDaysInWindow: 53, windowDosesLogged: 8, windowDosesTotal: 8, daysWithDose: 8, givenDoses: 8 })] }))
   assert.equal(
     spanSentence(html),
-    'The 8 administered doses fell on 8 of the 51 days from May 1 to Jun 20, 2026 (8 prescribed doses at 0.14×/day take 51 days).',
+    'The 8 administered doses fell on 8 of the 51 days from the first dose to the last, May 1 – Jun 20, 2026 (8 prescribed doses at 0.14×/day take 51 days).',
     'exact rational arithmetic',
   )
 })
@@ -8536,7 +8536,7 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
     { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 3, controlExposed: 1, riskDifference: 0.5, pValue: 0.2, symptomEventCount: 4, correlationWindowHours: 24 },
   ])
   assert.ok(
-    /^Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; short of the established threshold, so not confirmed; no food or protein reached that threshold over this window\. Not a negative result\./m.test(withEarly.replace(/Timing vs symptoms/g, '\n')),
+    /^Not confirmed, an early signal short of the established threshold: Beef was in the 24&nbsp;h before 3 of 4 vomiting episodes, vs 1 of 4 matched control windows; no food or protein reached that threshold over this window\. Not a negative result\./m.test(withEarly.replace(/Timing vs symptoms/g, '\n')),
     'the Early finding is named with its counts and its limit',
   )
   assert.ok(!/p&nbsp;=&nbsp;0\.200/.test(withEarly), 'no p value rides with an Early association')
@@ -8556,8 +8556,8 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
       }),
     ),
   )
-  assert.ok(/Beef shows an early association with vomiting \(.*?\); and Lamb shows an early association with loose stool/.test(two), 'both named, the primary sign first')
-  assert.ok(two.indexOf('Beef shows an early association') < two.indexOf('no food or protein reached that threshold'), 'the association leads, the null clause follows')
+  assert.ok(/Beef was in the 12&nbsp;h before 3 of 3 vomiting episodes, .*?; and Lamb was in the 24&nbsp;h before 4 of 4 loose stool episodes/.test(two), 'both named, the primary sign first')
+  assert.ok(two.indexOf('Beef was in the') < two.indexOf('no food or protein reached that threshold'), 'the association leads, the null clause follows')
   const without = corr([])
   assert.ok(/No food or protein reached the established association threshold over this window &mdash; not a negative result: a record this size cannot rule a food out\./.test(without))
   assert.ok(!/No single food\/protein reached/.test(without), 'the old negative-reading line is gone')
@@ -8619,7 +8619,7 @@ Deno.test('CUL-1978 ⑥ — an Established finding never silences a second one o
   // An Established finding on another symptom beside an Early one on the primary sign.
   const mixed = corr([lamb], [chickenEarly])
   assert.ok(/lamb reached the established association threshold for loose stool/.test(mixed))
-  assert.ok(/Chicken shows an early association with vomiting \(Chicken in the 12&nbsp;h before 5 of 5 episodes, vs 0 of 5 matched control windows\) &mdash; short of the established threshold, so not confirmed\./.test(mixed), 'the Early finding survives an Established one')
+  assert.ok(/Not confirmed, an early signal short of the established threshold: Chicken was in the 12&nbsp;h before 5 of 5 vomiting episodes, vs 0 of 5 matched control windows\./.test(mixed), 'the Early finding survives an Established one')
   // Two Established findings, the primary sign's ranked second by the engine: both print, it first.
   const two = corr([lamb, beef], [])
   assert.ok(two.indexOf('beef reached the established association threshold for vomiting') >= 0, 'the second Established finding prints')
