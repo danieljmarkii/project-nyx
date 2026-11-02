@@ -41,7 +41,10 @@ Deno.test('the job body sweeps once and answers with no count or id', async () =
   assert.equal(d.swept, 1)
 })
 
-Deno.test('an incomplete sweep is a 500, so the failure shows in the job history', async () => {
+// A 500 reaches net._http_response only, which pg_net purges after about 6 h, and pg_cron's own
+// history records the call as queued either way: nobody sees it. Making a stopped sweep visible is
+// CUL-2465. The 500 is still right: it is the one honest answer the response can give.
+Deno.test('an incomplete sweep answers 500, never a clean 204', async () => {
   const res = await handleSweep(post(JSON.stringify(SWEEP_BODY)), deps({ reaped: 0, passes: 1, ok: false, capped: false }))
   assert.equal(res.status, 500)
 })
