@@ -11,8 +11,19 @@
 //   - the intake sheet ("Intake per feeding"), whenever v1 would print appendix E. It comes FIRST
 //     among the back sheets when an intake or refusal flag fired (GAP-35), otherwise after the
 //     record sheet.
-// The rest of the back sheets (event log, medication, trial, Noticed, "How this record was kept")
-// are VR2-14's.
+// VR2-14 (CUL-2294) prints the rest, after those two, in this order:
+//   - "Event log" (v1 appendix A), every read's state in words;
+//   - "Medications": the lifetime table first, then the dose log for this window (v1 D2 and D);
+//   - "Diet, weight and food exposure": v1 page 1's diet, feeding and medication block, its weight
+//     trend and the diet trial section, then v1's diet history and off-diet exposures (appendices
+//     B and C). v1's protein-over-time chart is not reprinted: its labels are SVG text under v2's
+//     11pt floor, every feeding it draws is dated in the exposures table, and a chart enters v2 only
+//     with its own row in docs/nyx-chart-standard.md;
+//   - "Noticed (owner’s observations)" when the owner answered: v1's graph, then every look by day;
+//   - "How this record was kept", always last: the fixed absence rules (spec §6.1, GAP-33).
+// Every one of them is v1's own section (rule 2 below); `v2Pointers` swaps v1's letters and "page 1"
+// for the sheet each pointer lands on, and the must-carry registry (`mustCarry.ts`) holds every
+// v1 §3 and §4 item to a block here or on sheet 1.
 //
 // THE RULES THIS FILE KEEPS (the same three as `documentV2.ts`):
 //   1. It computes no clinical number. Counts come off the snapshot; the ledger only places the
@@ -30,11 +41,29 @@ import {
   type SafetyFlag,
 } from './report.ts'
 import {
+  chronicityRecordPrecedesCounts,
+  dietHistoryAppendix,
+  dietMeds,
+  dietTrialSection,
+  eventLogParts,
   fmtDay,
   fmtLocalDay,
   fmtLocalTime,
   h,
   hasIncidentPhotos,
+  hasNoticed,
+  medicationAppendix,
+  medicationHistoryTable,
+  noticedAppendixLetter,
+  noticedAppendixParts,
+  noticedGraph,
+  noticedLine,
+  offDietAppendix,
+  photosAppendixLetter,
+  scopeBasisLabel,
+  fmtRange,
+  trialCropDisclosureRenders,
+  weightBlock,
   incidentPhotoCard,
   incidentPhotosIntroHtml,
   intakeDetailTable,
@@ -89,6 +118,10 @@ export type BackBlockV2 =
       lines: string[]
     }
   | { kind: 'episodes'; id: 'episodes'; heading: string; html: string }
+  /** A v1 section reprinted whole under a v2 heading (VR2-14): its HTML is v1's, pointers swapped. */
+  | { kind: 'section'; id: SectionBlockId; heading: string | null; html: string }
+  /** "How this record was kept" (spec §6.1, GAP-33): fixed sentences, plain text, always last. */
+  | { kind: 'kept'; id: 'kept'; heading: string; entries: KeptEntry[] }
   | {
       kind: 'intake'
       id: 'intake'
@@ -101,31 +134,67 @@ export type BackBlockV2 =
       tablesHtml: string
     }
 
+export type SectionBlockId =
+  | 'noticed-line'
+  | 'event-log'
+  | 'medication-history'
+  | 'medication-log'
+  | 'diet-meds'
+  | 'weight'
+  | 'diet-trial'
+  | 'diet-history'
+  | 'exposures'
+  | 'noticed-graph'
+  | 'noticed-log'
+
+/** One rule of "How this record was kept": a term and its sentences, plain text. */
+export interface KeptEntry {
+  term: string
+  text: string
+}
+
+export type BackSheetKind = 'record' | 'intake' | 'log' | 'medication' | 'diet' | 'noticed' | 'kept'
+
 export interface BackSheetV2 {
   /** 2, 3, …: computed, never typed (WBC-11). */
   n: number
   id: string
-  kind: 'record' | 'intake'
+  kind: BackSheetKind
   title: string
   blocks: BackBlockV2[]
 }
 
 // ── Pointers (CUL-2350) ──────────────────────────────────────────────────────
 
-/** v1's detail sections with the appendices v2 does not print yet left out (rule 2 above). */
-export const V2_SECTION_POINTERS: SectionPointers = { eventLog: null, freeFedAndTreats: null }
-
 /** The intake sheet's name, as every pointer to it prints it. */
 export const INTAKE_SHEET_TITLE = 'Intake per feeding'
 export const RECORD_SHEET_TITLE = 'The record by day'
+export const LOG_SHEET_TITLE = 'Event log'
+export const MEDICATION_SHEET_TITLE = 'Medications'
+export const DIET_SHEET_TITLE = 'Diet, weight and food exposure'
+export const NOTICED_SHEET_TITLE = 'Noticed (owner’s observations)'
+export const KEPT_SHEET_TITLE = 'How this record was kept'
+
+/** A pointer at a sheet by the title it prints, as HTML (rule 3). Never a number: see below. */
+export const sheetHeaded = (title: string): string => `the sheet headed &ldquo;${h(title)}&rdquo;`
+
+/**
+ * v1's detail sections, pointed at v2's sheets (VR2-14). Until this row these were null and every
+ * sentence that pointed at an appendix was left out whole; the event log and the diet sheet now
+ * print, so the sentences come back, pointed at the sheets by title.
+ */
+export const V2_SECTION_POINTERS: SectionPointers = {
+  eventLog: sheetHeaded(LOG_SHEET_TITLE),
+  freeFedAndTreats: `Free-fed food and treats are on ${sheetHeaded(DIET_SHEET_TITLE)}`,
+}
 export const EPISODES_HEADING = 'What each episode looked like'
 export const NO_PHOTOS_LINE = 'No incident photos in this window.'
 
 /**
  * Where sheet 1's reused v1 flag rows point (CUL-2350): every pointer lands on a sheet this document
  * prints, by the title that sheet prints in its running head and heading. v1's "appendix A lists
- * this window's entries" becomes the ledger, which dates every entry in the window by day (the
- * event log itself is VR2-14's).
+ * this window's entries" becomes the event log, which lists every entry by date and time (VR2-14;
+ * before it, the ledger stood in).
  *
  * BY TITLE, NEVER BY NUMBER. A sheet number inside a flag line is a digit that is not a clinical
  * fact, and the AI lead's verifier (PR-25) reads every number band item 1 prints as one the lead must
@@ -136,13 +205,15 @@ export function v2FlagPointersOf(sheets: readonly BackSheetV2[], snap: ReportSna
   const titled = (t: string): string => `on the sheet headed &ldquo;${h(t)}&rdquo;`
   const intake = sheets.find((s) => s.kind === 'intake')
   if (!sheets.some((s) => s.kind === 'record')) throw new Error('the record sheet always prints')
+  if (!sheets.some((s) => s.kind === 'log')) throw new Error('the event log always prints')
   // v1 only points at appendix E where it prints it, by the same predicate the intake sheet uses,
   // so a missing intake sheet is never pointed at; the fallback only keeps the type total.
   const meals = titled(intake ? INTAKE_SHEET_TITLE : RECORD_SHEET_TITLE)
   return {
     mealsIn: meals,
     mealsDetailIn: meals,
-    logLists: `the day ledger ${titled(RECORD_SHEET_TITLE)} dates`,
+    // The event log lists every entry by date and time (VR2-14), as v1's appendix A did.
+    logLists: `the event log ${titled(LOG_SHEET_TITLE)} lists`,
     incidents: snap.incidentPhotos.length > 0 ? `see the incident photos ${titled(RECORD_SHEET_TITLE)}` : null,
   }
 }
@@ -457,23 +528,312 @@ function intakeBlock(snap: ReportSnapshot): BackBlockV2 {
   }
 }
 
+// ── The pointer swap (VR2-14) ────────────────────────────────────────────────
+
+/**
+ * v1's letters, resolved to the v2 sheet that prints the same section. v1 letters its appendices by
+ * what renders (`photosAppendixLetter`, `noticedAppendixLetter`), so the map reads v1's own
+ * functions rather than typing a letter, and a letter v2 has no sheet for is never in it.
+ */
+function letterTitles(snap: ReportSnapshot): Map<string, string> {
+  const m = new Map<string, string>([
+    ['A', LOG_SHEET_TITLE],
+    ['B', DIET_SHEET_TITLE],
+    ['C', DIET_SHEET_TITLE],
+    ['D', MEDICATION_SHEET_TITLE],
+  ])
+  if (mealsAppendixVisible(snap)) m.set('E', INTAKE_SHEET_TITLE)
+  if (hasIncidentPhotos(snap)) m.set(photosAppendixLetter(snap), RECORD_SHEET_TITLE)
+  if (hasNoticed(snap)) m.set(noticedAppendixLetter(snap), NOTICED_SHEET_TITLE)
+  return m
+}
+
+/**
+ * v1 page 1's sections that v2 reprints on the diet sheet point at each other as "page 1". On v2
+ * they share a sheet, so each phrase says "this sheet"; read one by one, so a "page 1" this table
+ * does not know falls through to "sheet 1" only where `assertNoV1Pointer` lets it.
+ */
+const SAME_SHEET: ReadonlyArray<readonly [string, string]> = [
+  ['Weight trend on page&nbsp;1', 'Weight trend on this sheet'],
+  ['so page&nbsp;1 shows no weight trend', 'so this sheet shows no weight trend'],
+  ['on page&nbsp;1 under Timing vs symptoms', 'on this sheet under Timing vs symptoms'],
+  ['not the association test on page&nbsp;1', 'not the association test on this sheet'],
+  ['the diet-trial block on page&nbsp;1', 'the diet-trial section on this sheet'],
+  // The Noticed line prints under the ledger on v2, and lists symptom-class words only, as v1's did.
+  ['only an activity word, which page 1 never lists', 'only an activity word, which this line never lists'],
+]
+
+/**
+ * The "page 1" phrases that stay true as "sheet 1" on v2: each names something sheet 1 prints (the
+ * band's flags, the changes in this window). Anything else that says "page 1" is a pointer at a v1
+ * section whose v2 home is a back sheet, and `assertNoV1Pointer` fails the build on it rather than
+ * let a vet turn to sheet 1 for a section it does not hold.
+ */
+const SHEET_ONE_TRUE = [
+  /safety flags? on sheet&nbsp;1/,
+  /flag(?:s for review)? on sheet&nbsp;1/,
+  /reduced-intake flag on sheet&nbsp;1/,
+  /named among the concurrent changes on sheet&nbsp;1/,
+  /These lead the flags for review on sheet&nbsp;1/,
+  /the Weight flag on sheet&nbsp;1/,
+  /the &ldquo;last fully-eaten meal&rdquo; on sheet&nbsp;1/,
+  /so sheet&nbsp;1 shows no &ldquo;last full meal&rdquo;/,
+  /\(sheet&nbsp;1 anchor\)/,
+]
+
+/** v1's whole-course adherence line is the diet sheet's; the dose log on the medication sheet says so. */
+function medicationPointers(html: string): string {
+  return html.replace('page&nbsp;1&rsquo;s adherence line counts the whole course', `the adherence line on ${sheetHeaded(DIET_SHEET_TITLE)} counts the whole course`)
+}
+
+/**
+ * Swap every v1 pointer in a reprinted v1 section for the v2 sheet that holds its target (rule 2:
+ * only the pointer changes, never the sentence around it). An appendix title becomes the block's
+ * own heading, without its letter.
+ */
+export function v2Pointers(html: string, snap: ReportSnapshot): string {
+  const titles = letterTitles(snap)
+  const title = (letter: string): string => {
+    const t = titles.get(letter)
+    if (!t) throw new Error(`appendix ${letter} has no v2 sheet on this record`)
+    return t
+  }
+  let out = html
+    .replace(/<p class="appx-title serif"[^>]*>(?:Appendix [A-G] (?:—|&mdash;) )?([\s\S]*?)<\/p>/g, '<h2>$1</h2>')
+    // v1's weight sparkline is role="img" with a label; on v2 every SVG is aria-hidden and its words
+    // are the twin (the reading, count, span and change printed beside it), as sheet 1's charts are.
+    .replace(/<svg class="spark"([^>]*?) role="img" aria-label="[^"]*"/g, '<svg class="spark"$1 aria-hidden="true"')
+    // v1 page 1's diet block closes on a contents line ("Full event log, … : appendices A–E"):
+    // navigation only, and v2's sheets carry their titles, so it is left out whole.
+    .replace(/\s*<p class="ref">Full event log, [\s\S]*?<\/p>/g, '')
+  // v1 spells "page 1" both with a no-break space and without; each phrase matches either.
+  for (const [from, to] of SAME_SHEET) out = out.replaceAll(from, to).replaceAll(from.replaceAll('&nbsp;', ' '), to)
+  out = medicationPointers(out)
+    .replace(/\(appendix(?:&nbsp;| )([A-G])\)/g, (_m, l: string) => `(${sheetHeaded(title(l))})`)
+    .replace(/\bin appendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => `on ${sheetHeaded(title(l))}`)
+    .replace(/\bappendix(?:&nbsp;| )([A-G])\b/g, (_m, l: string) => sheetHeaded(title(l)))
+  return onSheets(out)
+}
+
+/**
+ * The guard behind the swap: no reprinted section may name an appendix, a page, or a "sheet 1"
+ * that sheet 1 does not hold. Thrown at build time, so a v1 change that adds a pointer reds every
+ * v2 test before it can print a dangling reference (the class v1 paid for with B-599).
+ */
+export function assertNoV1Pointer(html: string, where: string): void {
+  const text = html.replace(/<[^>]*>/g, ' ')
+  const appendix = /\bappendi(?:x|ces)\b/i.exec(text)
+  if (appendix) throw new Error(`${where}: names an appendix: “${text.slice(Math.max(0, appendix.index - 60), appendix.index + 40).trim()}”`)
+  const page = /\bpage(?:&nbsp;|\s)1\b/.exec(html)
+  if (page) throw new Error(`${where}: names page 1: “${html.slice(Math.max(0, page.index - 80), page.index + 40)}”`)
+  let rest = html
+  for (const ok of SHEET_ONE_TRUE) rest = rest.replace(new RegExp(ok.source, 'g'), '')
+  const s1 = /sheet&nbsp;1/.exec(rest)
+  if (s1) throw new Error(`${where}: points at sheet 1 for something sheet 1 may not hold: “${rest.slice(Math.max(0, s1.index - 80), s1.index + 40)}”`)
+}
+
+/** A v1 section as a v2 block: pointers swapped, then held to the guard. Null when v1 prints nothing. */
+function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot): BackBlockV2 | null {
+  if (v1Html.trim() === '') return null
+  const html = v2Pointers(v1Html, snap).trim()
+  assertNoV1Pointer(html, id)
+  return { kind: 'section', id, heading, html }
+}
+
+// ── The event log, medication, diet and Noticed sheets ───────────────────────
+
+function eventLogBlock(snap: ReportSnapshot): BackBlockV2 {
+  const p = eventLogParts(snap, true)
+  const html = `<p class="bnote">${p.subHtml}</p>${p.tableHtml}<p class="note">${p.noteHtml}</p>`
+  return sectionBlock('event-log', 'Symptom event log', html, snap) as BackBlockV2
+}
+
+function medicationBlocks(snap: ReportSnapshot): BackBlockV2[] {
+  // The lifetime table first (spec §6.1): its coverage note and H1 disclosure lead the data, and it
+  // answers "has she ever been on steroids?" before the window's dose detail narrows the view.
+  return [sectionBlock('medication-history', null, medicationHistoryTable(snap), snap), sectionBlock('medication-log', null, medicationAppendix(snap), snap)].filter(
+    (b): b is BackBlockV2 => b !== null,
+  )
+}
+
+function dietBlocks(snap: ReportSnapshot): BackBlockV2[] {
+  // The off-trial "*" key goes beside the table that used it, as v1's `appendixBCD` places it.
+  const hasTrial = snap.diet.trial != null
+  const markedB =
+    hasTrial &&
+    (snap.diet.trial!.proteinSet.offTrial.length > 0 ||
+      snap.diet.freeFed.some((f) => f.proteinSet.offTrial.length > 0) ||
+      snap.diet.mealItems.some((m) => m.proteinSet.offTrial.length > 0))
+  const markedC = hasTrial && snap.provenance.confounders.some((c) => c.proteinSet.offTrial.length > 0)
+  const key = offTrialFootnote(snap.diet.trialTargetProtein)
+  return [
+    sectionBlock('diet-meds', null, dietMeds(snap), snap),
+    sectionBlock('weight', 'Weight', weightBlock(snap), snap),
+    sectionBlock('diet-trial', null, dietTrialSection(snap), snap),
+    sectionBlock('diet-history', null, `${dietHistoryAppendix(snap)}${markedB ? key : ''}`, snap),
+    sectionBlock('exposures', null, `${offDietAppendix(snap)}${!markedB && markedC ? key : ''}`, snap),
+  ].filter((b): b is BackBlockV2 => b !== null)
+}
+
+function noticedBlocks(snap: ReportSnapshot): BackBlockV2[] {
+  const parts = noticedAppendixParts(snap, 'the four-week strip above')
+  if (!parts) return []
+  const log = `<p class="bnote">${parts.subHtml}</p>${parts.tableHtml}<p class="note">${parts.footHtml}</p>`
+  return [sectionBlock('noticed-graph', null, noticedGraph(snap), snap), sectionBlock('noticed-log', 'Every answer, by day', log, snap)].filter(
+    (b): b is BackBlockV2 => b !== null,
+  )
+}
+
+/** Spec §6.1's Noticed row: the answered-day line under the sheet 2 ledger, pointing at the Noticed sheet. */
+function noticedLineBlock(snap: ReportSnapshot): BackBlockV2 | null {
+  if (!hasNoticed(snap)) return null
+  return sectionBlock('noticed-line', null, noticedLine(snap), snap)
+}
+
+// ── How this record was kept (spec §6.1, GAP-33) ─────────────────────────────
+
+/**
+ * The fixed absence rules, in clinical words, always the last sheet. v1's "How to read this report"
+ * is the source: every rule it teaches a reader is here, re-pointed at v2's sheets, and each entry
+ * that describes a section prints only where the document carries that section (v1's B-599 rule: a
+ * legend entry for a line the report lacks is a dangling reference).
+ *
+ * THE FLAG ENTRY STATES THE RULE, NEVER A RESULT. v1 learned it on a cat refusing 34 of 38 feedings:
+ * "none were present in this window" reads as an all-clear and then denies being one. So the
+ * sentence is the same whether or not a flag fired, and it lists every lane the checks watch
+ * (B-494), so a lane's silence is never read as its negative result.
+ *
+ * Plain text, sentence by sentence, because the extraction test (`scripts/report-extract`) asserts
+ * every sentence survives a clinic's text extraction (GAP-33).
+ */
+export function keptEntries(snap: ReportSnapshot): KeptEntry[] {
+  const entries: KeptEntry[] = [
+    {
+      term: 'No flag is not an all-clear',
+      text: 'Flags for review print on sheet 1 only when a check fired, and they rest on the owner’s record, not a diagnosis. The checks look for chronicity, reduced intake, a prescribed diet going uneaten, weight loss, possible blood or foreign material, and worsening. When no flag prints, no check fired; that is not the same as nothing being wrong.',
+    },
+    {
+      term: 'Owner-reported',
+      text: 'Every entry was logged by the owner on a phone. This is a record of what the owner observed, not a clinical examination, and it contains no diagnosis or treatment recommendation.',
+    },
+    {
+      term: 'Present-only findings',
+      text: 'Blood, foreign material and mucus are reported only when seen in an incident; their absence is never printed as a count. Absence in a photo cannot exclude bleeding, digested blood photographs poorly, and these are automated reads. A clear photo is never an all-clear.',
+    },
+    {
+      term: 'Assessed denominators',
+      text: 'Photo findings are counted over the incidents with a legible automated read. A read that was uncertain, failed or still processing is named as such and is never counted as clear. The reads are owner-reviewable, not reviewed, and never carry a diagnosis or a single-incident verdict.',
+    },
+    {
+      term: 'Denominators',
+      text: 'Every count is shown over its window and the days logged, so a count is never read without how long and how completely it was tracked. A day with nothing logged is not a day without signs.',
+    },
+    {
+      term: 'Range',
+      text: `This record covers ${plain(scopeBasisLabel(snap.scope).toLowerCase())}, ${plain(fmtRange(snap.scope.startDate, snap.scope.endDate))}. A hand-picked window states how many symptom events fall outside it, so nothing is cropped to a good week.${
+        trialCropDisclosureRenders(snap)
+          ? ' Where the range covers only part of a diet trial, the trial section names the symptom events logged in the trial days it leaves out; neither count reports an absence of symptoms.'
+          : ''
+      }`,
+    },
+    {
+      term: 'Entries and episodes',
+      text: 'An entry is one logged row, with same-minute duplicates collapsed: the unit of the counts and the day ledger. An episode is a bout: entries within three hours of each other are chained into one, the unit of the chronicity flag. A sign logged repeatedly during one bout shows more entries than episodes; the two are deliberately not reconciled into one number.',
+    },
+    {
+      term: 'Time confidence',
+      text: 'In the event log, seen means a witnessed time, est an estimated time, and range a window the event occurred in, found later. A bare “before” or “after” time is one known bound. Unspecified means no confidence was recorded; treat that time as approximate.',
+    },
+    {
+      term: 'Duplicate logs',
+      text: 'The same incident logged more than once is counted once everywhere on this record, and the number of logs is shown beside it rather than hidden.',
+    },
+    ...(chronicityRecordPrecedesCounts(snap)
+      ? [
+          {
+            term: 'Where the chronicity counts begin',
+            text: `The chronicity flag reads a fixed recent window, which can be shorter than this record’s range. Its day counts begin where it says; the earlier entries are real, are listed on the sheet headed “${LOG_SHEET_TITLE}”, and are outside the counted window, not judged unrelated.`,
+          },
+        ]
+      : []),
+    ...(hasIncidentPhotos(snap)
+      ? [
+          {
+            term: 'Incident photos',
+            text: `The owner’s own photos, attached when each event was logged, are on the sheet headed “${RECORD_SHEET_TITLE}”, most recent first. Location, device and capture-time metadata are removed and the images are downscaled. A photo flagged for possible blood or foreign material also leads the flags on sheet 1.`,
+          },
+        ]
+      : []),
+    ...(hasNoticed(snap)
+      ? [
+          {
+            term: 'Noticed',
+            text: `A once-a-day check the owner answers from a fixed list of plain-language words. The unit is a day she answered, not an episode. “Marked nothing unusual” is her claim about a day, not an examination and not an all-clear. These observations are counted nowhere else on this record: no symptom count, chart or flag reads them. Every answer is on the sheet headed “${NOTICED_SHEET_TITLE}”.`,
+          },
+        ]
+      : []),
+    {
+      term: 'Intake',
+      text: 'A declined or barely touched meal is recorded as a possible health signal, never as picky. Free-fed food is not directly observed, so the absence of a meal log is not read as a meal not eaten.',
+    },
+    {
+      term: 'Weight',
+      text: 'Weights are the owner’s weigh-ins, at home or at the vet where marked, read as a trend and never as a diagnosis. Body condition is not assessed. A weight flag compares the latest reading with the highest in the year before it, which may come from a different scale.',
+    },
+    {
+      term: 'Associations',
+      text: 'A timing relationship is reported as co-occurrence with its counts, for the clinician to weigh. Nothing on this record asserts that a food caused a symptom.',
+    },
+    {
+      // Last, as v1 ends its legend: what the record is computed over.
+      term: 'Deleted entries',
+      text: `Entries the owner deleted are excluded. Every symptom count traces line by line to the event log, and the off-diet exposures to the exposures table on the sheet headed “${DIET_SHEET_TITLE}”; medication, diet, weight and normal-stool figures summarise the owner’s logs for those items rather than itemising each one. Nothing is counted that the owner did not log.`,
+    },
+  ]
+  return entries
+}
+
+/** The sentences of the kept block, one per entry sentence: what the extraction test asserts. */
+export function keptSentencesOf(entries: readonly KeptEntry[]): string[] {
+  return entries.flatMap((e) => [e.term, ...e.text.split(/(?<=[.;])\s+(?=[A-Z“])/)]).map((x) => x.trim()).filter((x) => x !== '')
+}
+
 // ── The sheets ───────────────────────────────────────────────────────────────
 
-/** Sheets 2 to N in print order, numbered from 2. */
+/**
+ * Sheets 2 to N in print order, numbered from 2. The record and intake sheets lead (GAP-35 decides
+ * which first); the event log, medication and diet sheets always print, as v1's appendices A to D
+ * always do; Noticed prints only when the owner answered; "How this record was kept" is always last.
+ */
 export function backSheetsOf(snap: ReportSnapshot): BackSheetV2[] {
   const hasIntake = mealsAppendixVisible(snap)
   const intakeFirst = hasIntake && intakeFlagFired(snap)
-  const order: Array<'record' | 'intake'> = hasIntake ? (intakeFirst ? ['intake', 'record'] : ['record', 'intake']) : ['record']
-  const numberOf = (k: 'record' | 'intake'): number | null => {
-    const i = order.indexOf(k)
-    return i < 0 ? null : i + 2
-  }
-  return order.map((kind) => {
-    const n = numberOf(kind) as number
-    if (kind === 'intake') return { n, id: `sheet-${n}`, kind, title: INTAKE_SHEET_TITLE, blocks: [intakeBlock(snap)] }
-    const blocks: BackBlockV2[] = [photoBlock(snap), ledgerBlock(snap, hasIntake)]
-    const ep = episodesBlock(snap)
-    if (ep) blocks.push(ep)
-    return { n, id: `sheet-${n}`, kind, title: RECORD_SHEET_TITLE, blocks }
+  const lead: BackSheetKind[] = hasIntake ? (intakeFirst ? ['intake', 'record'] : ['record', 'intake']) : ['record']
+  const order: BackSheetKind[] = [...lead, 'log', 'medication', 'diet', ...(hasNoticed(snap) ? (['noticed'] as const) : []), 'kept']
+  return order.map((kind, i) => {
+    const n = i + 2
+    const sheet = (title: string, blocks: BackBlockV2[]): BackSheetV2 => ({ n, id: `sheet-${n}`, kind, title, blocks })
+    switch (kind) {
+      case 'intake':
+        return sheet(INTAKE_SHEET_TITLE, [intakeBlock(snap)])
+      case 'record': {
+        const blocks: BackBlockV2[] = [photoBlock(snap), ledgerBlock(snap, hasIntake)]
+        const noticed = noticedLineBlock(snap)
+        if (noticed) blocks.push(noticed)
+        const ep = episodesBlock(snap)
+        if (ep) blocks.push(ep)
+        return sheet(RECORD_SHEET_TITLE, blocks)
+      }
+      case 'log':
+        return sheet(LOG_SHEET_TITLE, [eventLogBlock(snap)])
+      case 'medication':
+        return sheet(MEDICATION_SHEET_TITLE, medicationBlocks(snap))
+      case 'diet':
+        return sheet(DIET_SHEET_TITLE, dietBlocks(snap))
+      case 'noticed':
+        return sheet(NOTICED_SHEET_TITLE, noticedBlocks(snap))
+      case 'kept':
+        return sheet(KEPT_SHEET_TITLE, [{ kind: 'kept', id: 'kept', heading: KEPT_SHEET_TITLE, entries: keptEntries(snap) }])
+    }
   })
 }

@@ -61,6 +61,14 @@ function backBlock(b: BackBlockV2, phone: boolean): string {
       return `${open('section', 'intake')}<h2>${h(b.heading)}</h2><p class="bnote">${b.introHtml}</p>${
         b.lastAboveRefused ? `<p class="lastmeal">${h(b.lastAboveRefused)}</p>` : ''
       }${b.predicate ? `<p class="predicate">${h(b.predicate)}</p>` : ''}${phone ? labelTableCells(b.tablesHtml) : b.tablesHtml}</section>`
+    case 'section':
+      // A v1 section reprinted whole (VR2-14); the phone labels its table cells like the intake sheet.
+      return `${open('section', `v1sec ${b.id}`)}${b.heading ? `<h2>${h(b.heading)}</h2>` : ''}${phone ? labelTableCells(b.html) : b.html}</section>`
+    case 'kept':
+      // Each rule is one unit that never splits across a page, so its sentences extract whole.
+      return `${open('section', 'kept')}<h2>${h(b.heading)}</h2><dl>${b.entries
+        .map((e) => `<div class="kentry"><dt>${h(e.term)}</dt><dd>${h(e.text)}</dd></div>`)
+        .join('')}</dl></section>`
   }
 }
 

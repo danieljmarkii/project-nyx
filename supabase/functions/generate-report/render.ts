@@ -1377,7 +1377,7 @@ function incompleteMarker(kind: PanelKind): string {
   return kind === 'home' ? 'home food &mdash; other ingredients not recorded' : 'list not read'
 }
 
-function proteinTimelineSection(snap: ReportSnapshot): string {
+export function proteinTimelineSection(snap: ReportSnapshot): string {
   const t = snap.proteinTimeline
   if (t.proteins.length === 0 && !t.hasUnknown) return '' // nothing off-diet to chart
   // A chart that counts DISCRETE feedings sat directly above a diet line saying a protein
@@ -2202,7 +2202,7 @@ function trialCropUnloggedDays(snap: ReportSnapshot): number {
 }
 
 /** Does the trial-crop disclosure put ANYTHING on the page? The legend gate reads this. */
-function trialCropDisclosureRenders(snap: ReportSnapshot): boolean {
+export function trialCropDisclosureRenders(snap: ReportSnapshot): boolean {
   const c = snap.scope.trialCropSymptoms
   return c !== null && (c.count > 0 || trialCropUnloggedDays(snap) > 0)
 }
@@ -2444,7 +2444,7 @@ function safetyBandThumbs(snap: ReportSnapshot, eventIds: string[]): string {
  * class, which this report has paid for before; a row gaining a year it did not need is merely
  * more explicit.
  */
-function chronicityRecordPrecedesCounts(snap: ReportSnapshot): boolean {
+export function chronicityRecordPrecedesCounts(snap: ReportSnapshot): boolean {
   return snap.safetyFlags.some(
     (f) =>
       f.kind === 'chronicity' &&
@@ -3358,7 +3358,7 @@ function headline(snap: ReportSnapshot): string {
 //     structurally incapable of reading as one that was followed (the round-1b
 //     Jordan finding: "All 54 matched the trial diet" three lines above "wouldn't
 //     eat it").
-function dietTrialSection(snap: ReportSnapshot): string {
+export function dietTrialSection(snap: ReportSnapshot): string {
   const t = snap.trial
   if (!t) return ''
   const pet = h(snap.signalment.name)
@@ -5288,7 +5288,7 @@ function weightEstimatesNote(w: WeightSection): string {
   return `<br/><span class="l">Owner estimate${w.notCounted.length === 1 ? '' : 's'}, not a scale reading and not counted above: ${list}.</span>`
 }
 
-function weightBlock(snap: ReportSnapshot): string {
+export function weightBlock(snap: ReportSnapshot): string {
   const w: WeightSection = snap.weight
   const flagNote = weightFlagNote(snap)
   // Empty state when there is genuinely nothing to draw. Belt-and-suspenders on `latest`
@@ -5615,7 +5615,7 @@ function noticedBlindIntakeSentence(snap: ReportSnapshot, n: NoticedBlock): stri
  * multi-select and reads as an arithmetic error to a cold reader. It is also stated in
  * BOTH directions — see `activityOnlyDays`.
  */
-function noticedLine(snap: ReportSnapshot): string {
+export function noticedLine(snap: ReportSnapshot): string {
   const n = snap.noticed
   if (!n) return ''
   const parts: string[] = [`Answered on ${num(n.answeredDays)} of ${num(n.windowDays)} days`]
@@ -5711,7 +5711,7 @@ function noticedLine(snap: ReportSnapshot): string {
  * from a self-selected sample of four; the line and the strip carry the same facts with
  * their denominators visible, so nothing is lost but the misreading.
  */
-function noticedGraph(snap: ReportSnapshot): string {
+export function noticedGraph(snap: ReportSnapshot): string {
   const n = snap.noticed
   if (!n) return ''
   const bars = noticedBars(snap, n)
@@ -7198,7 +7198,7 @@ function distinctLabels(items: ReadonlyArray<{ label: string | null }>, cap: num
 }
 
 /** Diet, feeding, medications & supplements (§3.8) — B-040, B-102, B-117, timing. */
-function dietMeds(snap: ReportSnapshot): string {
+export function dietMeds(snap: ReportSnapshot): string {
   const d: DietSummary = snap.diet
   const left: string[] = []
   const right: string[] = []
@@ -8445,7 +8445,7 @@ function mealsAppendixPointer(snap: ReportSnapshot): string {
 export function hasIncidentPhotos(snap: ReportSnapshot): boolean {
   return snap.incidentPhotos.length > 0 || snap.incidentPhotosRemoved.length > 0
 }
-function photosAppendixLetter(snap: ReportSnapshot): string {
+export function photosAppendixLetter(snap: ReportSnapshot): string {
   return mealsAppendixVisible(snap) ? 'F' : 'E'
 }
 
@@ -8467,10 +8467,10 @@ function photosAppendixLetter(snap: ReportSnapshot): string {
  * the record, and because appending keeps every existing letter where a reader of an
  * earlier report expects it.
  */
-function hasNoticed(snap: ReportSnapshot): boolean {
+export function hasNoticed(snap: ReportSnapshot): boolean {
   return snap.noticed !== null && snap.noticed.days.length > 0
 }
-function noticedAppendixLetter(snap: ReportSnapshot): string {
+export function noticedAppendixLetter(snap: ReportSnapshot): string {
   if (hasIncidentPhotos(snap)) return mealsAppendixVisible(snap) ? 'G' : 'F'
   return mealsAppendixVisible(snap) ? 'F' : 'E'
 }
@@ -8528,10 +8528,23 @@ function allTimesWitnessed(snap: ReportSnapshot): boolean {
   return log.length > 0 && log.every((e) => timeConfidence(e) === 'seen')
 }
 
-function appendixA(snap: ReportSnapshot): string {
+/**
+ * Appendix A's parts, so v2's event log sheet (VR2-14) prints the same sentences and the same table
+ * under its own heading. `appendixA` composes them into v1's page, byte for byte as before.
+ */
+export interface EventLogParts {
+  /** The preamble: occurred vs logged, the time-confidence gloss, the uncategorised count. */
+  subHtml: string
+  /** The table of every symptom event in the window. */
+  tableHtml: string
+  /** "Why a range and not a time", the closing note. */
+  noteHtml: string
+}
+
+export function eventLogParts(snap: ReportSnapshot, stateWords = false): EventLogParts {
   const uniformSeen = allTimesWitnessed(snap)
   const rows = snap.provenance.symptomLog
-    .map((e) => symptomLogRow(e, snap.timezone, uniformSeen))
+    .map((e) => symptomLogRow(e, snap.timezone, uniformSeen, stateWords))
     .join('')
   const count = snap.provenance.symptomLog.length
   // Counted over the rows below with the predicate that tags them (`timeConfidence`), never
@@ -8586,12 +8599,8 @@ function appendixA(snap: ReportSnapshot): string {
           uncat === 1 ? 'for it' : 'for them'
         } is in the Culprit app.`
       : ''
-  return `
-<section class="page">
-  ${appendixDivider(snap)}
-  <p class="appx-title serif">Appendix A — Symptom event log</p>
-  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed. &ldquo;Logged&rdquo; is when the owner recorded it, and carries a date whenever that fell on a different day from the event; a gap between the two is expected and is itself information, since the longer it is, the more of the reported time is recall.${estBit}${glossBit}${uncatBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
-  <table>
+  const subHtml = `Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed. &ldquo;Logged&rdquo; is when the owner recorded it, and carries a date whenever that fell on a different day from the event; a gap between the two is expected and is itself information, since the longer it is, the more of the reported time is recall.${estBit}${glossBit}${uncatBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).`
+  const tableHtml = `<table>
     <caption>${num(count)} symptom event${count === 1 ? '' : 's'} &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead>
       <tr>
@@ -8603,9 +8612,21 @@ function appendixA(snap: ReportSnapshot): string {
       </tr>
     </thead>
     <tbody>${rows || `<tr><td colspan="5">No symptom events in this window.</td></tr>`}</tbody>
-  </table>
+  </table>`
+  const noteHtml = `<b>Why a range and not a time:</b> an event found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).`
+  return { subHtml, tableHtml, noteHtml }
+}
+
+function appendixA(snap: ReportSnapshot): string {
+  const { subHtml, tableHtml, noteHtml } = eventLogParts(snap)
+  return `
+<section class="page">
+  ${appendixDivider(snap)}
+  <p class="appx-title serif">Appendix A — Symptom event log</p>
+  <p class="appx-sub">${subHtml}</p>
+  ${tableHtml}
   ${sectionTail(
-    `<p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> an event found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>`,
+    `<p class="note" style="margin-top:9px">${noteHtml}</p>`,
     footer(snap, 'Appendix A — event log'),
   )}
 </section>`
@@ -8619,7 +8640,7 @@ function appendixA(snap: ReportSnapshot): string {
  * positive "no", §5.9).
  * Returns '' when there is no phenotype. NEVER an n=1 verdict/recommendation.
  */
-function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
+function phenotypeFieldBits(ph: SymptomLogPhenotype | null, stateWords = false): string {
   if (!ph) return ''
   if (ph.status === 'completed') {
     // PRESENT-only (§5.9): render blood/foreign/mucus ONLY when present; silence otherwise.
@@ -8647,7 +8668,10 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
             ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
             ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
           ].filter(Boolean)
-    return bits.join(' &middot; ')
+    // v2's event log names every read's state in words, completed included (spec §6.1, GAP-32):
+    // a completed read with no present field otherwise prints "Photo:" and nothing, which a
+    // reader cannot tell from a read that never ran. v1 keeps its own row.
+    return (stateWords ? ['read completed', ...bits] : bits).join(' &middot; ')
   }
   // CUL-2390 instance 4: a pending read was never read, so "not clear enough to read" told a vet
   // there was nothing worth asking to see. Pending says pending, anchored to the report so a vet
@@ -8658,7 +8682,7 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
   return 'still processing — not read as of this report'
 }
 
-function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
+function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false, stateWords = false): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
   const occCell = occurredCell(e, tz, uniformSeen)
   const logged = loggedCell(e, tz)
@@ -8669,7 +8693,7 @@ function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = fals
     // over a photo that no longer exists. Said HERE, beside the findings it qualifies,
     // rather than only as a count on the photos sheet: the findings are what a vet acts on.
     const gone = e.photoRemoved ? ` <span class="conf">photo no longer retained</span>` : ''
-    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}${gone}</span>`
+    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype, stateWords)}${gone}</span>`
   }
   return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
     logged,
@@ -9323,10 +9347,20 @@ function noticedNoteHtml(note: string, petName: string): string {
  * `<script>…` in one), and the note itself whenever this is not the owner's own render
  * (§9 rule 4 — an unauthenticated mint carries no notes decision to inherit).
  */
-function noticedAppendix(snap: ReportSnapshot): string {
+/**
+ * The Noticed appendix's parts (VR2-14 prints them on v2's Noticed sheet under its own heading);
+ * `noticedAppendix` composes v1's page from them, byte for byte as before. Null where no look
+ * prints. `stripPointer` is the sentence's pointer to the four-week strip: v1's "page 1" by default.
+ */
+export interface NoticedAppendixParts {
+  subHtml: string
+  tableHtml: string
+  footHtml: string
+}
+
+export function noticedAppendixParts(snap: ReportSnapshot, stripPointer = 'page&nbsp;1&rsquo;s four-week strip'): NoticedAppendixParts | null {
   const n = snap.noticed
-  if (!n || !hasNoticed(snap)) return ''
-  const letter = noticedAppendixLetter(snap)
+  if (!n || !hasNoticed(snap)) return null
   const petName = snap.signalment.name
   // The WINDOW's vomit days, from the block — not the strip's, which is a 28-day slice.
   // This appendix spans the whole window, so reading the strip would have left every day
@@ -9378,6 +9412,23 @@ function noticedAppendix(snap: ReportSnapshot): string {
     : n.notesWithheld > 0
       ? ` ${num(n.notesWithheld)} of these entries carr${n.notesWithheld === 1 ? 'ies' : 'y'} a written note, not printed on this copy.`
       : ''
+  const subHtml = `A once-a-day check the owner answers from a fixed list of words, grouped by the day she answered. Two entries on one day are two lines under that day &mdash; they are not two episodes. These are the owner&rsquo;s observations of ${h(
+    petName,
+  )}, not examination findings, and they are counted nowhere else on this report: no symptom total, no frequency chart and no flag reads them. Days she did not answer are not listed; ${stripPointer} shows them as days.${noteState}`
+  const tableHtml = `<table class="tbl ng">
+    <thead><tr><th>Time</th><th>What she recorded</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`
+  const footHtml = `There is no observer column: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
+    petName,
+  )}&rsquo;s record keeps the full list of words available to her; a word she was never offered cannot appear.`
+  return { subHtml, tableHtml, footHtml }
+}
+
+function noticedAppendix(snap: ReportSnapshot): string {
+  const parts = noticedAppendixParts(snap)
+  if (!parts) return ''
+  const letter = noticedAppendixLetter(snap)
   // The running footer every other sheet carries (§3.9) — this appendix shipped without one,
   // and it is the sheet holding the owner's verbatim notes, the one a filing clerk most needs
   // to be able to put back with its patient.
@@ -9385,17 +9436,10 @@ function noticedAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix ${h(letter)} &mdash; Noticed (owner&rsquo;s observations)</p>
-  <p class="appx-sub">A once-a-day check the owner answers from a fixed list of words, grouped by the day she answered. Two entries on one day are two lines under that day &mdash; they are not two episodes. These are the owner&rsquo;s observations of ${h(
-    petName,
-  )}, not examination findings, and they are counted nowhere else on this report: no symptom total, no frequency chart and no flag reads them. Days she did not answer are not listed; page&nbsp;1&rsquo;s four-week strip shows them as days.${noteState}</p>
-  <table class="tbl ng">
-    <thead><tr><th>Time</th><th>What she recorded</th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
+  <p class="appx-sub">${parts.subHtml}</p>
+  ${parts.tableHtml}
   ${sectionTail(
-    `<p class="appx-foot">There is no observer column: the app records one account per pet today, so every entry here is the account holder&rsquo;s. ${h(
-      petName,
-    )}&rsquo;s record keeps the full list of words available to her; a word she was never offered cannot appear.</p>`,
+    `<p class="appx-foot">${parts.footHtml}</p>`,
     noticedFoot,
   )}
 </section>`
@@ -9660,7 +9704,7 @@ function confounderRowHtml(
   )}</td><td class="c num">${feedings}</td><td class="num">${span}</td></tr>`
 }
 
-function offDietAppendix(snap: ReportSnapshot): string {
+export function offDietAppendix(snap: ReportSnapshot): string {
   const conf: ConfounderExposure[] = snap.provenance.confounders
   const hasTrial = !!snap.diet.trial
   // TRIAL-DERIVED means every row here came from `classifyFeeding` against this
@@ -10078,7 +10122,7 @@ function indicationsNamedOnReport(snap: ReportSnapshot): Array<{ indication: str
   return out
 }
 
-function dietHistoryAppendix(snap: ReportSnapshot): string {
+export function dietHistoryAppendix(snap: ReportSnapshot): string {
   const d = snap.diet
   // "NONE RECORDED" IS ABOUT THE LOG, AND ON A TRIAL REPORT IT IS LOAD-BEARING (B-532,
   // cold-read finding). Appendix D goes to real trouble to say a medication's absence is not
@@ -10293,7 +10337,7 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
   </table>`
 }
 
-function medicationAppendix(snap: ReportSnapshot): string {
+export function medicationAppendix(snap: ReportSnapshot): string {
   const meds = snap.medications.filter((m) => !m.isSupplement && m.overlapsWindow)
   const unlinked = snap.unlinkedMedications
   const regimenRows = meds
@@ -10541,7 +10585,7 @@ function medHistoryDoses(e: MedicationHistoryEntry): string {
  * data — a deliberate refinement of the mock's bottom footnote, per the B-494 rule that a load-
  * bearing disclosure a reader must apply to the table cannot sit where a skimmer never reaches it.
  */
-function medicationHistoryTable(snap: ReportSnapshot): string {
+export function medicationHistoryTable(snap: ReportSnapshot): string {
   const mh = snap.medicationHistory
   if (!mh || mh.entries.length === 0) return ''
   const rows = mh.entries

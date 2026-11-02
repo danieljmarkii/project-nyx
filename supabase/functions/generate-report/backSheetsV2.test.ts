@@ -15,10 +15,16 @@ import {
   intakeFlagFired,
   NO_PHOTOS_LINE,
   RECORD_SHEET_TITLE,
+  LOG_SHEET_TITLE,
+  MEDICATION_SHEET_TITLE,
+  DIET_SHEET_TITLE,
+  NOTICED_SHEET_TITLE,
+  KEPT_SHEET_TITLE,
+  V2_SECTION_POINTERS,
   type BackBlockV2,
   type BackSheetV2,
 } from './backSheetsV2.ts'
-import { mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
+import { hasNoticed, mealsAppendixVisible, vomitCharacteristics, stoolCharacteristics } from './render.ts'
 import { feedingWasFinished } from '../../../lib/dietTrial.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 import { at, baseInput, dailyMeals, dayKey, meal, nyxSafetyCat, stoolPhotoDog, symptom } from './v2Fixtures.testutil.ts'
@@ -76,7 +82,9 @@ Deno.test('order — on the record sheet the photo strip (or its one line) comes
     const kinds = record.blocks.map((b) => b.kind)
     assert.ok(kinds[0] === 'photo_strip' || kinds[0] === 'no_photos', `${name}: ${kinds}`)
     assert.equal(kinds[1], 'ledger', name)
-    assert.ok(kinds.length === 2 || (kinds.length === 3 && kinds[2] === 'episodes'), `${name}: ${kinds}`)
+    // Then the Noticed answered-day line when the owner answered (VR2-14, spec §6.1), then the episodes.
+    const rest = record.blocks.slice(2).map((b) => b.id)
+    assert.deepEqual(rest, [...(hasNoticed(s) ? ['noticed-line'] : []), ...(rest.includes('episodes') ? ['episodes'] : [])], `${name}: ${kinds}`)
   }
 })
 
@@ -281,19 +289,20 @@ Deno.test('episodes — v1’s sections word for word (with v2’s pointers), un
   assert.match(text, /Possible foreign material — 1 incident:/)
   assert.doesNotMatch(text, /Possible blood/, 'blood prints only when present')
   assert.doesNotMatch(text, /appendix/i, 'no pointer to a sheet v2 does not print')
-  // The same words as v1's section, but the dropped pointer sentence.
+  // The same words as v1's section; the pointer sentence is back since VR2-14, aimed at the event log.
   assert.equal(
     text,
-    textOf(vomitCharacteristics(cat, { eventLog: null, freeFedAndTreats: null }))
+    textOf(vomitCharacteristics(cat, V2_SECTION_POINTERS))
       .replace(/page 1/g, 'sheet 1')
       .replace('These lead the flags for review above.', 'These lead the flags for review on sheet 1.'),
   )
+  assert.match(text, /Per-incident detail in the sheet headed “Event log”\./)
   assert.match(text, /These lead the flags for review on sheet 1\./, 'the band is a sheet away, never "above"')
   const dog = assembleReport(stoolPhotoDog())
   const dt = textOf(blockIn(backSheetsOf(dog), 'episodes')?.html ?? '')
   assert.match(dt, /Possible blood — 1 incident:/)
   assert.match(dt, /Mucus — 1 incident:/)
-  assert.ok(dt.includes(textOf(stoolCharacteristics(dog, { eventLog: null, freeFedAndTreats: null }))))
+  assert.ok(dt.includes(textOf(stoolCharacteristics(dog, V2_SECTION_POINTERS))))
   // A record with nothing photographed keeps v1's "not a clearance" sentence word for word.
   const mira = textOf(blockIn(backSheetsOf(fixture('mira')), 'episodes')?.html ?? '')
   assert.match(mira, /Not a clearance:/)
@@ -436,7 +445,10 @@ Deno.test('sheets — every back sheet prints its running head with the computed
     for (const sh of d.backSheets) {
       assert.ok(html.includes(`<section class="sheet back" data-sheet="${sh.n}">`), `${name}: sheet ${sh.n}`)
       assert.ok(html.includes(` · sheet ${sh.n} of ${1 + d.backSheets.length} · <span class="rt">${sh.title}</span>`), `${name}: head ${sh.n}`)
-      assert.ok([RECORD_SHEET_TITLE, INTAKE_SHEET_TITLE].includes(sh.title))
+      assert.ok(
+        [RECORD_SHEET_TITLE, INTAKE_SHEET_TITLE, LOG_SHEET_TITLE, MEDICATION_SHEET_TITLE, DIET_SHEET_TITLE, NOTICED_SHEET_TITLE, KEPT_SHEET_TITLE].includes(sh.title),
+        `${name}: ${sh.title}`,
+      )
     }
   }
   assert.match(renderPrintV2(docOf(fixture('mira'))), /\.sheet\.back\{break-before:page;\}/)
