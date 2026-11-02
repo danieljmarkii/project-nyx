@@ -376,3 +376,44 @@ export async function keepCopy(
   }
   return { status: 500, body: { error: 'Saved copy could not be kept' } }
 }
+
+// ── Opening a kept copy (Vet report v2 PR-21, CUL-2301; spec §11.3) ──────────
+//
+// THE OWNER'S ONE READ OF THE STORED FILE. `nyx-vet-reports` has no Storage policy, so only the
+// service role reaches it; this is the path the Reports library opens a copy through. The caller's
+// uid is the one `auth.getUser()` verified (never a body value), the row is read by id PAIRED WITH
+// its pet and that maker (`readRow`), and only a KEPT row opens: a draft answers exactly as a
+// missing id does, so a library can never show a report that was not sent. The bytes go back
+// inline (no signed URL is minted, so there is no bearer link to leak), and only after their
+// SHA-256 matches the hash the row froze at keep: a copy whose object changed is refused, never
+// shown as "exactly as sent".
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID.test(value)
+}
+
+/** `{ mode: 'open', reportId }`. Null for any other mode; a malformed id reads as null. */
+export function parseOpenRequest(body: { mode?: unknown; reportId?: unknown; report_id?: unknown }): { reportId: string | null } | null {
+  if (body.mode !== 'open') return null
+  const id = body.reportId ?? body.report_id
+  return { reportId: isUuid(id) ? id.toLowerCase() : null }
+}
+
+export type OpenOutcome =
+  | { status: 200; body: { html: string } }
+  | { status: 400 | 404 | 409 | 500; body: { error: string } }
+
+/** The stored HTML of one kept copy, exactly as it was sent, or a refusal that shows nothing. */
+export async function openCopy(io: Pick<SavedCopyIO, 'readRow' | 'download'>, req: { reportId: string | null }): Promise<OpenOutcome> {
+  if (req.reportId === null) return { status: 400, body: { error: 'reportId required' } }
+  const row = await io.readRow(req.reportId)
+  if (row === 'error') return { status: 500, body: { error: 'Saved copy could not be read' } }
+  // A draft is not a sent report: it answers as a missing id does.
+  if (row === null || row.status !== 'kept') return { status: 404, body: { error: 'Saved copy not found' } }
+  if (row.content_sha256 === null) return { status: 409, body: { error: 'Saved copy unavailable' } }
+  const bytes = await io.download(row.storage_path)
+  if (bytes === null || (await sha256Hex(bytes)) !== row.content_sha256) {
+    return { status: 409, body: { error: 'Saved copy unavailable' } }
+  }
+  return { status: 200, body: { html: new TextDecoder().decode(bytes) } }
+}
