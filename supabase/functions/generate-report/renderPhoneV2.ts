@@ -278,6 +278,11 @@ const STYLE_PHONE = `
 html{font-size:${BODY_PX}px;font:-apple-system-body;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
+/* The PDF text layer (CUL-2386, measured 2026-11-02): Inter's contextual alternates beside a digit carry no
+   ToUnicode entry, so ":" "(" "×" "–" next to a number dropped from the extracted text; the UA's tabular list
+   markers did the same to a line's number. Both off; the guard is guards/reportNoTnum.test.ts. */
+*{font-feature-settings:"calt" 0,"case" 0;}
+::marker{font-variant-numeric:normal;}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:1rem;line-height:1.4;overflow-wrap:anywhere;}
 .sheet{padding:1rem 16px 2rem;max-width:40rem;margin:0 auto;}
 #v2probe{position:absolute;left:-999rem;top:0;display:block;font-size:1rem;line-height:1;visibility:hidden;}

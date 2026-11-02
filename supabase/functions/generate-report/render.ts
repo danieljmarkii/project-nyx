@@ -10591,6 +10591,12 @@ const STYLE = `
     orphans:3;widows:3;
   }
   /* No font-variant-numeric on the sheet: its tnum glyphs drop out of the PDF text layer (CUL-2385). */
+  /* The text layer, part two (CUL-2386, measured 2026-11-02, Chromium page.pdf, pypdf and pdfminer):
+     the runner's sans (Inter) swaps punctuation beside a digit for a contextual alternate with no
+     ToUnicode entry, so ":" "(" "×" "–" next to a number left the extracted text ("48–72 h" read
+     "4872 h"). Off, every one of them extracts; the list marker's UA tnum goes with it. */
+  *{font-feature-settings:"calt" 0,"case" 0;}
+  ::marker{font-variant-numeric:normal;}
   .serif{font-family:"Newsreader",Georgia,"Iowan Old Style","Palatino Linotype",serif;}
 
   /* The page's radius and shadow are the IN-APP PREVIEW's, not the sheet's: they draw a
