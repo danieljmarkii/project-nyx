@@ -94,22 +94,25 @@ export function pageHeadCss(doc: DocumentV2): string {
  * document's bytes never move. A spanning cell (the "earlier meals not shown" row) takes no label.
  */
 export function labelTableCells(tablesHtml: string): string {
-  return tablesHtml.replace(/<table\b[^>]*>[\s\S]*?<\/table>/g, (table) => {
-    if (/^<table[^>]*class="lg"/.test(table)) return table
+  const span = (attrs: string) => Math.max(1, Number(/\bcolspan="(\d+)"/.exec(attrs)?.[1] ?? 1))
+  return tablesHtml.replace(/<table\b([^>]*)>[\s\S]*?<\/table>/g, (table, tattrs: string) => {
+    if ((/\bclass="([^"]*)"/.exec(tattrs)?.[1] ?? '').split(/\s+/).includes('lg')) return table
     const thead = /<thead\b[^>]*>([\s\S]*?)<\/thead>/.exec(table)?.[1] ?? ''
-    const heads = [...thead.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1].replace(/<[^>]*>/g, '').replace(/"/g, '&quot;').trim())
+    // One label per column a heading covers, so a spanning heading never shifts the ones after it.
+    const heads = [...thead.matchAll(/<th\b([^>]*)>([\s\S]*?)<\/th>/g)].flatMap((m) => {
+      const label = m[2].replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/"/g, '&quot;').replace(/\s+/g, ' ').trim()
+      return Array<string>(span(m[1])).fill(label)
+    })
     if (heads.length === 0) return table
     return table.replace(/<tbody\b[^>]*>[\s\S]*?<\/tbody>/, (tbody) =>
       tbody.replace(/<tr\b[^>]*>[\s\S]*?<\/tr>/g, (tr) => {
+        // Every cell, header or data, takes its columns; only a single-column data cell is labelled.
         let col = 0
-        return tr.replace(/<td\b([^>]*)>/g, (td, attrs: string) => {
-          const span = /\bcolspan="(\d+)"/.exec(attrs)
-          if (span) {
-            col += Number(span[1])
-            return td
-          }
-          const label = heads[col++]
-          return label ? `<td${attrs} data-label="${label}">` : td
+        return tr.replace(/<(td|th)\b([^>]*)>/g, (cell, tag: string, attrs: string) => {
+          const n = span(attrs)
+          const label = heads[col]
+          col += n
+          return tag === 'td' && n === 1 && label ? `<td${attrs} data-label="${label}">` : cell
         })
       }))
   })

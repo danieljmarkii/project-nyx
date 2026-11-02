@@ -514,3 +514,13 @@ Deno.test('CUL-2401 — intake labels ride the phone document only: the print do
   }
   assert.match(phone, /data-label="Intake recorded"/)
 })
+
+Deno.test('CUL-2401 — a header cell in a body row, a spanning heading, a second class on the ledger and a broken heading never shift a label', () => {
+  const html = labelTableCells(
+    '<table><thead><tr><th colspan="2">When</th><th>Food<br>name</th><th>Intake</th></tr></thead><tbody>' +
+      '<tr><th>Oct 16</th><td>13:00</td><td>Kibble</td><td>Refused</td></tr></tbody></table>' +
+      '<table class="x lg"><tbody><tr><th>Jun 1</th><td>2</td></tr></tbody></table>',
+  )
+  assert.match(html, /<tr><th>Oct 16<\/th><td data-label="When">13:00<\/td><td data-label="Food name">Kibble<\/td><td data-label="Intake">Refused<\/td><\/tr>/)
+  assert.match(html, /<table class="x lg"><tbody><tr><th>Jun 1<\/th><td>2<\/td>/, 'a ledger with a second class stays unlabelled')
+})
