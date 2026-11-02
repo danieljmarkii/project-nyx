@@ -95,6 +95,16 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
   const docSeq = useRef<{ html: string | null; n: number }>({ html: null, n: 0 });
   if (docSeq.current.html !== phoneHtml) docSeq.current = { html: phoneHtml, n: docSeq.current.n + 1 };
   const docKey = `phone-${docSeq.current.n}`;
+  // The printed frame is keyed the same way, by the pair it shows (CUL-2430, adversarial pass 1):
+  // a WebView handed a new `source` keeps painting the old page, at its old scroll, until the new
+  // one paints, while the pin above has already moved to the new record. A window change from a
+  // record with a confounder to one without would show the old bars under no pin for those frames.
+  // A fresh instance per document paints nothing until its own page loads.
+  const printSeq = useRef<{ phone: string | null; print: string | null; n: number }>({ phone: null, print: null, n: 0 });
+  if (printSeq.current.phone !== phoneHtml || printSeq.current.print !== printHtml) {
+    printSeq.current = { phone: phoneHtml, print: printHtml, n: printSeq.current.n + 1 };
+  }
+  const printKey = `print-${printSeq.current.n}`;
   const [silhouetteMounted, setSilhouetteMounted] = useState(true);
   const silhouetteOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -196,6 +206,7 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
             </View>
           )}
           <WebView
+            key={printKey}
             testID={PREVIEW_PRINTED_TEST_ID}
             style={styles.web}
             originWhitelist={['about:*', 'data:*']}

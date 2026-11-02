@@ -193,3 +193,18 @@ it('CUL-2430: a line whose lead cannot be read back keeps the phone frame, never
   expect(t.queryByTestId(PREVIEW_PRINTED_TEST_ID, { includeHiddenElements: true })).toBeNull();
   expect(t.getByTestId(PREVIEW_PHONE_TEST_ID)).toBeTruthy();
 });
+
+it('CUL-2430 (adversarial pass 1): a window change while printed shows gets a fresh printed frame, never the old page under the new pin', () => {
+  const PRINT_B = '<!DOCTYPE html><html><head></head><body><main>record B, no trial</main></body></html>';
+  const s = render(<ReportPreviewV2 {...base} phoneHtml={PHONE_WITH_LINE} printHtml={PRINT} view="printed" />);
+  const before = s.getByTestId(PREVIEW_PRINTED_TEST_ID);
+  // Record A's page, A's pin.
+  expect(s.getByTestId(PREVIEW_PRINTED_WARNING_TEST_ID, { includeHiddenElements: true })).toBeTruthy();
+  // The window changes to record B, with no confounder line, in the same commit that keeps `printed`.
+  s.rerender(<ReportPreviewV2 {...base} phoneHtml={PHONE_NO_LINE} printHtml={PRINT_B} view="printed" />);
+  const after = s.getByTestId(PREVIEW_PRINTED_TEST_ID);
+  expect(s.queryByTestId(PREVIEW_PRINTED_WARNING_TEST_ID, { includeHiddenElements: true })).toBeNull();
+  // Not the same native view handed a new source (which would keep painting A's bars): a new one.
+  expect(after).not.toBe(before);
+  expect(after.props.source).toEqual({ html: PRINT_B });
+});
