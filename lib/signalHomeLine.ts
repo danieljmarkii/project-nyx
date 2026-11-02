@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord } from './signalCopy';
+import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, sustainedRefusalOf, symptomWord, UNKNOWN_INTAKE_COPY } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
@@ -85,7 +85,9 @@ export function signalHomeAsk(finding: SignalFinding, nowMs?: number): string | 
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       // The sustained-refusal floor's sentence ends on a call today.
       if (finding.trigger === 'sustained_refusal') return 'worth a call to your vet today';
-      return 'worth keeping an eye on, and a word with your vet if it carries on';
+      if (finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food') return 'worth keeping an eye on, and a word with your vet if it carries on';
+      // CUL-2405: a trigger this build does not know asks at its most cautious.
+      return UNKNOWN_INTAKE_COPY.ask;
     case 'incident_red_flag':
       return incidentRedFlagAsk(finding, nowMs);
     case 'symptom_burden':
@@ -182,6 +184,8 @@ function countLine(finding: SignalFinding, nowMs: number | undefined): string | 
         const sr = sustainedRefusalOf(finding);
         return sr ? `${plural(sr.meals, 'meal', 'meals')} on ${plural(sr.days, 'day', 'days')}` : null;
       }
+      // CUL-2405: an unknown trigger has no count this build can back.
+      if (finding.trigger !== 'consecutive_low') return null;
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
       // The headline and the eyebrow carry it: the phrase, the family and the date. PR-30a: a

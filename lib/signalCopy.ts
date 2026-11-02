@@ -692,6 +692,8 @@ export function sampleLine(finding: SignalFinding): string {
     const r = refusedThenVomitedOf(finding);
     return r ? `${count(r.episodeCount, 'episode', 'episodes')} you saw, each soon after a refused meal` : 'Episodes you saw, soon after a refused meal';
   }
+  // CUL-2405: only the consecutive-low card compares with a usual; an unknown trigger never does.
+  if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
   return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, across ${count(
     finding.ratedMealsConsidered,
     'recent meal',
@@ -1208,6 +1210,8 @@ export function evidenceText(
       `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
     );
   }
+  // CUL-2405: an unknown trigger reads at its most cautious, never as the consecutive-low card.
+  if (finding.trigger !== 'consecutive_low') return `${unknownIntakeSentence(petName)}${i5Tail}`;
   return (
     `${petName} has eaten less than usual for ${count(finding.daysBelowBaseline, 'day', 'days')}, ` +
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
@@ -1867,6 +1871,31 @@ export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | nu
 // the Patterns panel cannot drift; the terse Home row omits it because it opens the card.
 export const REFUSAL_VET_TAIL = "That's worth mentioning to your vet.";
 
+// CUL-2405: an intake trigger this build does not know. The server can ship a new trigger before
+// the app build that names it, and every switch below once fell through to the consecutive-low
+// copy: "eaten less than usual … compared with 6 recent meals … if it carries on" on a card
+// whose own claim may be "call your vet today". So the consecutive-low copy is named, never
+// defaulted to, and the default is the most cautious intake wording this build has: no baseline
+// ("less than usual", "below the usual", "compared with"), no "if it carries on", and the
+// loudest vet ask any intake card carries (the sustained-refusal floor's call today). It can
+// out-ask the unknown card's own sentence; that residual errs loud, by design (clinical-guardrails).
+// A client default protects only builds that carry it.
+export const UNKNOWN_INTAKE_COPY = {
+  /** The strip's name line, and so Home's headline (`signalTitle`). */
+  name: 'Something in recent meals',
+  /** The sample line and the strip's count line: where the facts came from, no count it cannot back. */
+  sample: 'From the meals you logged',
+  /** The ask, verbatim, as Home and the evidence text say it. */
+  ask: 'worth a call to your vet today',
+  /** The evidence row's concern. */
+  concern: 'something in recent meals',
+} as const;
+
+/** The cautious evidence sentence for an unknown intake trigger. */
+export function unknownIntakeSentence(petName: string): string {
+  return `Something in ${petName}'s recent meals stood out in what you logged. That's ${UNKNOWN_INTAKE_COPY.ask}.`;
+}
+
 /** I5 (Engines v3 PR-30s): the refused-then-vomited facts on an intake card, or null. Present only
  *  on caches written under `engines_v3_en5`; a malformed count reads as absent, never as a zero. */
 export function refusedThenVomitedOf(finding: SignalFinding): RefusedThenVomitedFacts | null {
@@ -2459,6 +2488,10 @@ function phoneScriptFacts(
         ...i5Rows,
       ];
     }
+    if (finding.trigger !== 'consecutive_low') {
+      // CUL-2405: an unknown trigger states no duration and no comparison it cannot back.
+      return [{ label: 'Concern', value: UNKNOWN_INTAKE_COPY.concern }, ...i5Rows];
+    }
     return [
       { label: 'Concern', value: 'eating less than usual' },
       { label: 'How long', value: `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual` },
@@ -2713,6 +2746,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
         ? ` turned down ${food}, which they usually finish — worth a look.`
         : ` turned down a meal they usually finish — worth a look.`;
     }
+    if (finding.trigger !== 'consecutive_low') {
+      // CUL-2405: an unknown trigger; no "less than usual", and the ask kept on the banner.
+      return `: something in recent meals stood out — ${UNKNOWN_INTAKE_COPY.ask}.`;
+    }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
     return ` has eaten less than usual ${span} — worth a look.`;
@@ -2927,7 +2964,9 @@ export function stripNameLine(finding: SignalFinding): string | null {
           ? 'Vomited after a refused meal'
           : finding.trigger === 'sustained_refusal'
             ? 'No meal eaten well'
-            : 'Eating less than usual';
+            : finding.trigger === 'consecutive_low'
+              ? 'Eating less than usual'
+              : UNKNOWN_INTAKE_COPY.name;
     case 'incident_red_flag':
       // Blood leads when both flags are set (the engine's own stable order, and the more
       // urgent read); the sentence and the expand still name both. The noun is the family
@@ -2986,7 +3025,9 @@ export function stripAskLine(finding: SignalFinding): string | null {
       // "That's worth mentioning to your vet.", an unconditional tell.
       // The sustained-refusal floor ends "worth a call to your vet today", an unconditional call.
       if (finding.trigger === 'sustained_refusal') return STRIP_ASKS.call;
-      return finding.trigger === 'refused_then_vomited' ? STRIP_ASKS.tell : STRIP_ASKS.check;
+      if (finding.trigger === 'refused_then_vomited') return STRIP_ASKS.tell;
+      // CUL-2405: the two conditional cards are named; a trigger this build does not know calls.
+      return finding.trigger === 'consecutive_low' || finding.trigger === 'refused_normal_food' ? STRIP_ASKS.check : STRIP_ASKS.call;
     case 'incident_red_flag':
       // templateIncidentRedFlag: "worth a call to your vet".
       return STRIP_ASKS.call;
@@ -3044,6 +3085,7 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
         const body = r.episodeCount === r.dayCount ? `On ${days}` : `${count(r.episodeCount, 'time', 'times')}, on ${days}`;
         return `${body}${since}`;
       }
+      if (finding.trigger !== 'consecutive_low') return UNKNOWN_INTAKE_COPY.sample;
       return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
     case 'incident_red_flag':
       // "AI read" keeps it an unconfirmed read (the detail-screen register); the date is the
