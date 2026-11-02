@@ -27,6 +27,8 @@ jest.mock('expo-keep-awake', () => ({
   deactivateKeepAwake: (...a: unknown[]) => mockDeactivate(...(a as [])),
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
+const mockRotation = jest.fn();
+jest.mock('../lib/screenOrientation', () => ({ useRotationUnlocked: (a: boolean) => mockRotation(a) }));
 let mockActive = true;
 jest.mock('../hooks/useAppActive', () => ({ useAppActive: () => mockActive }));
 jest.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: () => true }));
@@ -164,6 +166,11 @@ it('offers no "Printed page" until it can carry the warning (held, adversarial p
   const web = s.getByTestId(EXAM_PAGES_TEST_ID);
   expect(web.props.setBuiltInZoomControls).toBe(false);
   expect(web.props.source.html).toContain('user-scalable=no');
+});
+
+it('is the one route that may turn sideways', () => {
+  render(<ExamRoomScreen />);
+  expect(mockRotation).toHaveBeenCalledWith(true);
 });
 
 it('with no copy on the phone, says so and shows no page', () => {

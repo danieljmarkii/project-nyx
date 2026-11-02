@@ -37,6 +37,7 @@ import { ThemedText } from '../components/ui/ThemedText';
 import { theme } from '../constants/theme';
 import { useAppActive } from '../hooks/useAppActive';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { useRotationUnlocked } from '../lib/screenOrientation';
 import {
   EXAM_IDLE_MS,
   clampPage,
@@ -68,6 +69,9 @@ export default function ExamRoomScreen() {
   const reduced = useReducedMotion();
   const appActive = useAppActive();
   const { fontScale } = useWindowDimensions();
+  // The one route that may turn (lib/screenOrientation.ts, PM ruling on the landscape fork):
+  // sideways, the sheet fits the width. Portrait is locked again when the room closes.
+  useRotationUnlocked(true);
 
   // Read once: the copy is fixed for the life of the room.
   const [copy] = useState(() => readExamCopy());
