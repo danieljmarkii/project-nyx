@@ -281,7 +281,9 @@ Deno.test('compact — at scale 1.6 the details fold behind one line; species, s
   const script = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))
   assert.match(script, /function bandPast\(bandH\)\{ return bandH\.getBoundingClientRect\(\)\.bottom \+ window\.pageYOffset > window\.innerHeight; \}/)
   assert.match(script, /bandPast\(bandH\)\) \{\s*root\.setAttribute\('data-tight', ''\);/)
-  assert.match(script, /if \(bandPast\(bandH\) && \(!bandBox \|\| bandBox\.getBoundingClientRect\(\)\.top \+ window\.pageYOffset >= window\.innerHeight\)\) root\.removeAttribute\('data-tight'\);/, 'no fold that does not bring the band box in')
+  assert.match(script, /if \(bandPast\(bandH\) && !firstLineIn\(bandH\)\) root\.removeAttribute\('data-tight'\);/, 'no fold that does not bring the warning\'s first line in')
+  // The first warning is the band's heading, or the flagged lead chart's where no band prints (r11).
+  assert.match(script, /var bandH = document\.querySelector\('\[data-block=band\] h2'\) \|\| document\.querySelector\('\[data-block=lead-chart\]\.flagged > h2\.flagh'\);/)
   assert.doesNotMatch(print, /data-compact/, 'compaction never reaches print')
   assert.doesNotMatch(screen.slice(0, screen.indexOf('@media screen{')), /data-compact/, 'no compact rule outside the screen block')
   const html = renderPhoneV2(buildDocumentV2(nyxLiveSnapshot(), OPTS))

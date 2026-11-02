@@ -58,6 +58,12 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
   // wait covers the frames between a new `source` and its first paint.
   const [loadedHtml, setLoadedHtml] = useState<string | null>(null);
   const waiting = phoneHtml === null || loadedHtml !== phoneHtml;
+  // Each document gets its own WebView instance, so a late onLoadEnd from the previous one can
+  // never mark the new one loaded and lift the wait over a page still laying out (adversarial
+  // pass 1 on PR-17).
+  const docSeq = useRef<{ html: string | null; n: number }>({ html: null, n: 0 });
+  if (docSeq.current.html !== phoneHtml) docSeq.current = { html: phoneHtml, n: docSeq.current.n + 1 };
+  const docKey = `phone-${docSeq.current.n}`;
   const [silhouetteMounted, setSilhouetteMounted] = useState(true);
   const silhouetteOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -119,6 +125,7 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
           pointerEvents={showingPrinted ? 'none' : 'auto'}
         >
           <WebView
+            key={docKey}
             testID={PREVIEW_PHONE_TEST_ID}
             style={styles.web}
             originWhitelist={['about:*', 'data:*']}

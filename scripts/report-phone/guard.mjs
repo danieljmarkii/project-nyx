@@ -105,7 +105,9 @@ async function screenChecks(page, where, s, size) {
         }
       }
       if (checkBand) {
-        const h2 = document.querySelector('[data-block="band"] h2')
+        // The first warning: the band's heading, or the flagged lead chart's where no band prints
+        // (a sole chronicity flag; adversarial pass 1 on PR-17).
+        const h2 = document.querySelector('[data-block="band"] h2') || document.querySelector('[data-block="lead-chart"].flagged > h2.flagh')
         if (h2) out.band = { bottom: h2.getBoundingClientRect().bottom, H }
       }
       return out

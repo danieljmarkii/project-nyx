@@ -388,9 +388,13 @@ const SCRIPT_PHONE = `
   var root = document.documentElement;
   function scale(){ var p = document.getElementById('v2probe'); return p ? p.getBoundingClientRect().height / ${BODY_PX} : 1; }
   function bandPast(bandH){ return bandH.getBoundingClientRect().bottom + window.pageYOffset > window.innerHeight; }
+  function firstLineIn(el){ var cs = getComputedStyle(el); var line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3; return el.getBoundingClientRect().top + window.pageYOffset + line <= window.innerHeight; }
   function lay(){
     root.removeAttribute('data-tight');
-    var bandH = document.querySelector('[data-block=band] h2');
+    // The first warning on the page: the band's heading, or, where the only flag is drawn on the
+    // lead chart itself (a sole chronicity flag, \`bandMembersOf\`), that chart's flag heading
+    // (adversarial pass 1 on PR-17, CUL-2297: r11-steady carried its flag below the fold).
+    var bandH = document.querySelector('[data-block=band] h2') || document.querySelector('[data-block=lead-chart].flagged > h2.flagh');
     var mast = document.querySelector('.mast');
     // Compact at font scale 1.6, and ALSO at any scale where the full masthead would push the
     // band's heading out of the first frame (PM ruling (a) on CUL-2297, CUL-2400): the app's
@@ -409,10 +413,11 @@ const SCRIPT_PHONE = `
       // Fold the brief only where folding brings the band into the frame; otherwise it costs the
       // species for nothing (adversarial pass 2 on CUL-2295). "Into the frame" is the band's own
       // box, not its whole heading (PM ruling (a) on CUL-2297): on a 320pt phone at large text the
-      // heading wraps to three lines, and the box's top on the first screen is still the warning
+      // heading wraps to three lines, and its first line on the first screen is still the warning
       // arriving a screen sooner than with the brief open.
-      var bandBox = bandH.closest('[data-block=band]');
-      if (bandPast(bandH) && (!bandBox || bandBox.getBoundingClientRect().top + window.pageYOffset >= window.innerHeight)) root.removeAttribute('data-tight');
+      // The fold must buy the first LINE of the warning's heading, never a sliver of its border
+      // (adversarial pass 1 on PR-17: 6pt of the box cost the species for no words).
+      if (bandPast(bandH) && !firstLineIn(bandH)) root.removeAttribute('data-tight');
     }
     var unit = document.querySelector('[data-keep="lead"]');
     var push = document.querySelector('.keep-push');
@@ -426,7 +431,8 @@ const SCRIPT_PHONE = `
     if (rep) rep.hidden = false;
     // The pin is capped against THIS frame, not a fixed scale (PM ruling (a) on CUL-2297): it
     // repeats words printed at full size below, so where it would take more than PIN_SHARE of the
-    // frame its type steps down, never under 11px, and the bars always show beneath it.
+    // frame its type steps down. The 11px floor wins over the share: a very long confounder at
+    // 320pt can still take more (adversarial pass 1 measured 57%), which errs toward the warning.
     if (rep) {
       rep.style.fontSize = '';
       var px = parseFloat(getComputedStyle(rep).fontSize);
