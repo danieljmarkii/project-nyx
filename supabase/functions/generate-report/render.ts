@@ -6757,6 +6757,38 @@ function legibleReadCount(n: number): string {
 }
 
 /** Vomit characteristics (§3.6) — assessed denominators + present-only blood/foreign. */
+/**
+ * CUL-2390 instance 2 — the not-a-clearance caveat beside a PRESENT finding. One finding shown
+ * (foreign material, say) used to drop the caveat for the other (blood), even with most incidents
+ * unread. The sentence is scoped to what is not listed, so it never asserts an absence and never
+ * becomes a "0 of N"; its reasons are the nothing-seen branch's, word for word.
+ */
+// The cold read on the first cut: a caveat naming only bleeding left the OTHER finding (a foreign
+// body beside a blood flag, or blood beside a foreign-material flag) unguarded, and nothing tied it
+// to the incidents nobody read. So it covers every finding, and names the unread count when there is
+// one. A zero is never printed: "0 of 7 … no legible read" would put a "0 of" beside a finding.
+function notListedCaveat(unread: number, total: number, noun: string, reasons: string): string {
+  const unreadBit =
+    unread > 0
+      ? ` ${num(unread)} of ${num(total)} ${noun}${total === 1 ? '' : 's'} had no legible read.`
+      : ''
+  return `What is not listed here is <b>not</b> a clearance for any finding.${unreadBit} ${reasons}`
+}
+const vomitNotListedCaveat = (unread: number, total: number) =>
+  notListedCaveat(
+    unread,
+    total,
+    'incident',
+    'A photo cannot exclude bleeding or a swallowed object, digested (coffee-ground) blood photographs poorly, and these are AI reads.',
+  )
+const stoolNotListedCaveat = (unread: number, total: number) =>
+  notListedCaveat(
+    unread,
+    total,
+    'stool event',
+    'A photo cannot exclude bleeding or mucus, digested (melena) blood darkens the whole stool rather than showing as red, and these are AI reads. Fresh blood or dark tarry stool warrants a vet conversation regardless of a photo.',
+  )
+
 export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers = V1_SECTION_POINTERS): string {
   const p = snap.vomitPhenotype
   if (!p) return ''
@@ -6869,7 +6901,7 @@ export function vomitCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
         <span class="h">Present findings</span>
         ${lines.join('<br/>')}<br/>Shown because present. ${aiBadge()} ${
       blood.length > 0 || foreign.length > 0 ? 'These lead the flags for review above.' : ''
-    }
+    }<br/>${vomitNotListedCaveat(p.totalIncidents - assessed, p.totalIncidents)}
       </div>`
   }
 
@@ -6954,7 +6986,18 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // with no second part, which three cold-read lenses each named. One category prints as its
   // count line; the swatch goes with the bar it keyed.
   const single = cats.length === 1
-  const barHtml = single
+  // CUL-2390 instance 3 — A SHARE NEEDS A COUNTED DENOMINATOR. Normal stools are logged now and
+  // then, so "Normal ×7 · Loose ×5" from 12 logs in 30 days drew a bar that read as "mostly
+  // formed" when it is a share of LOGS, not of stools passed. Below one normal stool a day across
+  // the window the bar goes and the two numbers print as counts, with the reason beside them. The
+  // adversarial pass found the floor alone still drew a 60 / 40 bar from normal logs bunched onto
+  // 12 of 30 days, so any day with no log at all also drops it: a share is drawn only when every
+  // day carries some log (of any kind; `loggedDays` is not a stool-day count, so stools bunched
+  // onto some of those days can still draw a bar, which errs toward a larger loose share) and the
+  // normal logs reach one a day. Both conditions only remove the bar.
+  const countsOnly = st.normalCount < st.windowDays || st.loggedDays < st.windowDays
+  const noBar = single || countsOnly
+  const barHtml = noBar
     ? ''
     : `<div class="barmix">${cats
         .map((c) => `<div class="seg" style="flex:${c.n};background:${c.bg}">${c.n}</div>`)
@@ -6975,8 +7018,11 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     thinLead +
     allCats
       .filter((c) => !(thinStool && c.n === 0))
-      .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
-      .join('&nbsp;&middot;&nbsp; ')
+      .map((c) => `${noBar ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
+      .join('&nbsp;&middot;&nbsp; ') +
+    (countsOnly && st.total > 0
+      ? '<br/>Normal stools are logged now and then, so a count here is a count of logs, not a share of stools passed.'
+      : '')
 
   // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
   // it reaches into the window. Easier logging moves what gets RECORDED, not what the pet did, so
@@ -7011,7 +7057,7 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     : ns.kind === 'on'
     ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> the owner's app added a dedicated normal-stool entry, so normal stools before that date are under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
     : ns.kind === 'since'
-    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal share here will look better from the change alone.${shortcutTail}`
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal ${countsOnly ? 'count' : 'share'} here will look better from the change alone.${shortcutTail}`
     : ns.kind === 'between'
     ? `<br/><b>Logging changed between ${nsDay(ns.from)} and ${nsDay(ns.to)}:</b> the owner's app added a dedicated normal-stool entry in that span (the phone's and the server's clocks disagree on the day), so normal stools before it are under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
     : ns.kind === 'by'
@@ -7067,17 +7113,24 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
     }
     if (ai.mucusPresent.length > 0) {
       const dates = ai.mucusPresent.map((m) => fmtLocalDay(m.occurredAt, snap.timezone)).join(', ')
-      // D5: mucus alone is monitor-tier — surfaced, never dropped, never framed as an escalation.
+      // Surfaced, never dropped, present-only, and never glossed (CUL-2390, PM ruling (a),
+      // 2026-11-02, superseding D5's "common and often benign" framing for this sentence): one
+      // unconfirmed AI read cannot carry a reassurance, and the mucus can sit days before a
+      // fresh-blood read in a large-bowel picture. Not bolded as a red flag either; the line
+      // says only what the record shows.
       lines.push(
         `<b>Mucus — ${num(ai.mucusPresent.length)} incident${
           ai.mucusPresent.length === 1 ? '' : 's'
-        }:</b> ${h(dates)}. Common and often benign on its own; shown because present.`,
+        }:</b> ${h(dates)}. Shown because present.`,
       )
     }
+    // CUL-2390 instance 2: a present finding is not a clearance for the rest. With mucus shown
+    // and most photos unread, nothing said blood was not excluded; the nothing-seen branch's
+    // caveat now prints here too, scoped to what is not listed (never "not seen", never "0 of N").
     sideHtml = `
       <div class="present">
         <span class="h">Present findings</span>
-        ${lines.join('<br/>')}<br/>${aiBadge()}
+        ${lines.join('<br/>')}<br/>${aiBadge()}<br/>${stoolNotListedCaveat(ai.totalIncidents - ai.assessedCount, ai.totalIncidents)}
       </div>`
   }
 
@@ -8562,7 +8615,8 @@ function appendixA(snap: ReportSnapshot): string {
  * The owner-reviewable, PRESENT-only photo-analysis fields as one inline string — shared by
  * Appendix A's symptom log AND Appendix E's incident-photo caption, so the two can never phrase the
  * same read differently. Completed → colour · contents · consistency · (present-only) blood/foreign;
- * a non-completed state → the honest "not clear enough to read" (never a positive "no", §5.9).
+ * a failed / uncertain read → "not clear enough to read"; a pending one → "not read yet" (never a
+ * positive "no", §5.9).
  * Returns '' when there is no phenotype. NEVER an n=1 verdict/recommendation.
  */
 function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
@@ -8595,9 +8649,13 @@ function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
           ].filter(Boolean)
     return bits.join(' &middot; ')
   }
-  const stateWord =
-    ph.status === 'failed' ? 'present but not legible' : ph.status === 'uncertain' ? 'read uncertain' : 'still processing'
-  return `${h(stateWord)} — not clear enough to read`
+  // CUL-2390 instance 4: a pending read was never read, so "not clear enough to read" told a vet
+  // there was nothing worth asking to see. Pending says pending, anchored to the report so a vet
+  // does not wait on a read that may never come; failed and uncertain were read
+  // and keep the legibility wording.
+  if (ph.status === 'failed') return 'present but not legible — not clear enough to read'
+  if (ph.status === 'uncertain') return 'read uncertain — not clear enough to read'
+  return 'still processing — not read as of this report'
 }
 
 function symptomLogRow(e: SymptomLogEntry, tz: string | null, uniformSeen = false): string {
@@ -9203,7 +9261,9 @@ export function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
     ? `<img class="phimg" src="${p.dataUri}" alt="Owner photo of a ${h(typeLabel.toLowerCase())} incident on ${h(date)}" />`
     : `<div class="phimg phimg-missing">Photo could not be embedded</div>`
   const readBits = phenotypeFieldBits(p.phenotype)
-  const readLine = readBits ? `<div class="phread"><b>Photo:</b> ${readBits} ${aiBadge()}</div>` : ''
+  // An unread photo carries no AI badge (CUL-2390 cold read): the badge claims a read exists.
+  const badge = p.phenotype && p.phenotype.status !== 'pending' ? ` ${aiBadge()}` : ''
+  const readLine = readBits ? `<div class="phread"><b>Photo:</b> ${readBits}${badge}</div>` : ''
   const note = p.notes ? `<div class="phnote">${h(p.notes)}</div>` : ''
   return `
   <figure class="phcard">
