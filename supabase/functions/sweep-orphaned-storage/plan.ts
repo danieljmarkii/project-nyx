@@ -33,8 +33,13 @@
 // the row back with photo_paths naming the files). So a missing food row alone proves
 // nothing. A food folder is gone only when 106's ledger names the id and either holds
 // no owner (106 then refuses every re-create) or names an owner whose auth user is gone
-// (`user_not_found`). A dead food of a LIVE account is left and counted
-// (`folder_owner_may_return`): that is retention, not an orphan, and is CUL-231's.
+// (`user_not_found`). A dead food of a LIVE account whose ledger row names that account
+// is left and counted (`folder_owner_may_return`): that is retention, not an orphan, and
+// is CUL-231's. One exception, stated (rls-privacy-reviewer pass 2, R1): 106's backfill
+// wrote NO owner for a pre-106 folder with several uploaders or an unattributed object,
+// so such a folder goes even when one uploader's account is live. Nobody can reach
+// those files (106 refuses every re-create, no row names them), the same as the folders
+// of a pet a live account deleted before 116, which this sweep also removes.
 //
 // Why the grace period still matters when the owner row is the proof: it is the margin
 // for a proof this module does not see, such as a row written by a path that uploads
