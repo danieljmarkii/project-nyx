@@ -350,7 +350,7 @@ Deno.test('colophon — the surname only from last_name, never the email; no id 
   assert.doesNotMatch(none.text, /@|report [0-9A-Z]{4}/)
   const named = block(docOf(s, { owner: { firstName: 'Zoë', lastName: 'Müller-Ñúñez' }, shortId: 'N3XR', questions: [] }), 'colophon')
   assert.ok(named)
-  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 3')
+  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 8')
 })
 
 Deno.test('colophon — the sheet count is the sheets printed, on every fixture (computed, never typed: WBC-11)', () => {
@@ -517,7 +517,40 @@ Deno.test('adversarial 5 — a hollow course keeps its dates in the twin; "given
     ],
     medications: [
       ...s.medications,
-      { regimenId: 'r-pred', drugName: 'Prednisolone', isSupplement: false, overlapsWindow: true, courseDays: { given: 0, loggedNotGiven: 0, nothingLogged: 21 } },
+      // Every field a production course carries: the medication sheet (VR2-14) reprints v1's dose
+      // log, which reads the dates and the outside-course split this test never sets.
+      {
+        regimenId: 'r-pred',
+        drugName: 'Prednisolone',
+        strength: null,
+        doseAmount: null,
+        route: null,
+        dosesPerDay: 1,
+        scheduleNotes: null,
+        indication: null,
+        startedAt: `${dayKey(30)}T12:00:00Z`,
+        endedAt: `${dayKey(10)}T12:00:00Z`,
+        status: 'completed',
+        isSupplement: false,
+        overlapsWindow: true,
+        adherenceState: 'not_tracked',
+        elapsedDaysInWindow: 21,
+        daysWithDose: 0,
+        courseDays: { given: 0, loggedNotGiven: 0, nothingLogged: 21, outsideCourseGiven: 0, outsideCourseNotGiven: 0, outsideCourseGivenDays: [], outsideCourseNotGivenDays: [] },
+        doseDays: [],
+        prescribedDoses: null,
+        lifetimeDosesLogged: 0,
+        lifetimeFirstDoseDay: null,
+        lifetimeLastDoseDay: null,
+        lifetimeDoseDayCount: 0,
+        windowDosesLogged: 0,
+        windowDosesTotal: 0,
+        courseEnded: true,
+        givenDoses: 0,
+        partialDoses: 0,
+        missedDoses: 0,
+        refusedDoses: 0,
+      },
     ],
   } as unknown as ReportSnapshot
   assert.ok(start < dayKey(30))
