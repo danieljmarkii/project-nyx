@@ -6992,7 +6992,9 @@ export function stoolCharacteristics(snap: ReportSnapshot, ptr: SectionPointers 
   // the window the bar goes and the two numbers print as counts, with the reason beside them. The
   // adversarial pass found the floor alone still drew a 60 / 40 bar from normal logs bunched onto
   // 12 of 30 days, so any day with no log at all also drops it: a share is drawn only when every
-  // day was logged and the normal logs reach one a day. Both conditions only remove the bar.
+  // day carries some log (of any kind; `loggedDays` is not a stool-day count, so stools bunched
+  // onto some of those days can still draw a bar, which errs toward a larger loose share) and the
+  // normal logs reach one a day. Both conditions only remove the bar.
   const countsOnly = st.normalCount < st.windowDays || st.loggedDays < st.windowDays
   const noBar = single || countsOnly
   const barHtml = noBar
