@@ -463,7 +463,8 @@ Deno.test('styles — no back-sheet rule reaches a sheet 1 element (cold read: v
   for (const css of [BACK_STYLE_PRINT, BACK_STYLE_PHONE_SCREEN, BACK_STYLE_PHONE_PRINT]) {
     for (const m of css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(^|\})\s*([^{}@]+)\{/g)) {
       for (const sel of m[2].split(',').map((x) => x.trim())) {
-        assert.ok(/^(\.sheet\.back|\.back|\.bphotos?|\.bcap)\b/.test(sel), `"${sel}" is not scoped to the back sheets or the band photo`)
+        // `[data-compact] ` only narrows a back-sheet rule to large text (CUL-2401); the scope that follows is still checked.
+        assert.ok(/^(\[data-compact\] )?(\.sheet\.back|\.back|\.bphotos?|\.bcap)\b/.test(sel), `"${sel}" is not scoped to the back sheets or the band photo`)
       }
     }
   }

@@ -171,6 +171,30 @@ export const BACK_STYLE_PRINT = `${BACK_SHARED}
 .bcap{font-size:7.5pt;}
 `
 
+// Nothing on the phone's back sheets may run past the screen's edge (CUL-2401): a photo's AI read
+// sat off-screen at 320pt. Grid and table columns size to their content by default, so a nowrap
+// tag or a 46px word at AX5 pushed the whole page sideways. Screen only, so neither PDF moves.
+// At compact text (`data-compact`, scale >= 1.6) the two grids that cannot hold their columns
+// stack: the ledger's week label goes above its seven days, and each intake table prints its
+// headings once as a key, then one block per row in the same order.
+const BACK_FIT_PHONE_SCREEN = `@media screen{
+.back .phstrip{grid-template-columns:repeat(auto-fill,minmax(min(100%,8rem),1fr));}
+.back .phcard,.back .pheno>*{min-width:0;}
+.back .pheno{grid-template-columns:minmax(0,1fr);}
+.back .phcard,.back .pheno{overflow-wrap:anywhere;}
+.back .aitag,.back .aibadge,.back .conf{white-space:normal;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
+.back table:not(.lg) th,.back table:not(.lg) td{width:auto!important;overflow-wrap:anywhere;}
+[data-compact] .back .lg,[data-compact] .back .lg tbody{display:block;}
+[data-compact] .back .lg tr{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2pt;margin-bottom:2pt;}
+[data-compact] .back .lg th{grid-column:1/-1;text-align:left;padding:0;}
+[data-compact] .back .lg td{width:auto;}
+[data-compact] .back table:not(.lg),[data-compact] .back table:not(.lg) caption,[data-compact] .back table:not(.lg) thead,[data-compact] .back table:not(.lg) tbody,[data-compact] .back table:not(.lg) tr{display:block;}
+[data-compact] .back table:not(.lg) th,[data-compact] .back table:not(.lg) td{display:inline;padding:0;border:0;}
+[data-compact] .back table:not(.lg) tr{padding:0.3rem 0;border-bottom:.5pt solid var(--hair);}
+[data-compact] .back table:not(.lg) thead tr{border-bottom:1pt solid var(--ink);}
+[data-compact] .back table:not(.lg) th+th::before,[data-compact] .back table:not(.lg) td+td::before{content:" · " / "";font-weight:400;color:var(--ink2);}
+}`
+
 /** The phone's back-sheet rules for the screen: rem only, nothing under 11pt (spec §6.2, §6.3). */
 export const BACK_STYLE_PHONE_SCREEN = `${BACK_SHARED}
 .sheet.back{padding-top:1rem;border-top:1px solid var(--hair);}
@@ -189,6 +213,7 @@ export const BACK_STYLE_PHONE_SCREEN = `${BACK_SHARED}
 .back .barmix .seg{font-size:0.875rem;}
 .back .mixkey .sw{width:0.6rem;height:0.6rem;}
 .bphoto img{width:4.5rem;height:4.5rem;}
+${BACK_FIT_PHONE_SCREEN}
 `
 
 /** The phone's back-sheet rules inside its `@media print` block: absolute pt, like the print sheet. */
