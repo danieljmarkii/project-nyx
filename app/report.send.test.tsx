@@ -99,6 +99,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 import { generateVetReport, shareReportPdf, type VetReport } from '../lib/pdf';
 import { fetchComposerOpen } from '../lib/reportComposerApi';
+import { SEND_READ_TIMEOUT_MS } from '../lib/reportComposer';
 import { emailReport, shareReport } from '../lib/reportSendActions';
 import ReportScreen from './report';
 
@@ -167,6 +168,54 @@ describe('a failed send-time read never downgrades a flag the composer already s
     await r.findByTestId('send-confirmation');
     expect(r.queryByTestId('send-confirmation-check')).toBeNull();
     expect(r.getByTestId('send-confirmation-call-card-row-clinic')).toBeTruthy();
+  });
+});
+
+describe('the send read is bounded, and a partial read says so (CUL-2425)', () => {
+  const BLOOD = { kind: 'present_blood', sign: 'stool', trigger: null };
+
+  it('a hung read opens the sheet at the bound with the couldn’t-check card, never no card', async () => {
+    jest.useFakeTimers();
+    try {
+      mockedOpen.mockReturnValue(new Promise(() => undefined));
+      const r = await toReport();
+      fireEvent.press(r.getByTestId('report-send'));
+      expect(r.queryByTestId('sheet')).toBeNull();
+      await act(async () => { jest.advanceTimersByTime(SEND_READ_TIMEOUT_MS); });
+      expect(r.getByTestId('sheet-card').props.children).toMatch(/Couldn’t check/);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a hung read after a flag this session keeps the flag, and the confirmation shows no check', async () => {
+    jest.useFakeTimers();
+    try {
+      mockComposerOpen = { live: FLAGGED };
+      mockedOpen.mockReturnValue(new Promise(() => undefined));
+      const r = await toReport();
+      fireEvent.press(r.getByTestId('report-send'));
+      await act(async () => { jest.advanceTimersByTime(SEND_READ_TIMEOUT_MS); });
+      expect(r.getByTestId('sheet-card').props.children).toMatch(/flag worth a call/);
+      fireEvent.press(r.getByTestId('pick-share'));
+      await act(async () => { jest.advanceTimersByTime(0); });
+      expect(r.getByTestId('send-confirmation')).toBeTruthy();
+      expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a partial read with fewer flags than the screen knew keeps them all, and shows no check', async () => {
+    mockComposerOpen = { live: { ...FLAGGED, flags: [...FLAGGED.flags, BLOOD], partial: false } };
+    mockedOpen.mockResolvedValue({ live: { ...FLAGGED, partial: true } });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    await r.findByTestId('sheet');
+    expect(r.getByTestId('sheet-card').props.children).toMatch(/has flags worth a call/);
+    fireEvent.press(r.getByTestId('pick-share'));
+    await r.findByTestId('send-confirmation');
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
   });
 });
 

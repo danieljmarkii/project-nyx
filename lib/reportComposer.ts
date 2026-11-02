@@ -76,6 +76,12 @@ export interface ComposerLive {
   startDate: string;
   endDate: string;
   flags: ComposerFlag[];
+  /**
+   * `flags` only: part of the 56 days did not load, so more flags may be missing (CUL-2425).
+   * Optional so a set built in code (a single-flag probe, the unchecked fallback) need not name it;
+   * absent there reads as whole. The parse below never leaves it absent.
+   */
+  partial?: boolean;
 }
 
 export interface ComposerOpen {
@@ -172,7 +178,11 @@ function parseLive(raw: unknown): ComposerLive {
   // Any flag wins over whatever state was claimed; an unknown state with none reads as unchecked,
   // never as "none": the louder reading is the safe one.
   const state: ComposerLive['state'] = flags.length > 0 ? 'flags' : l.state === 'none' ? 'none' : 'incomplete';
-  return { state, startDate: l.startDate, endDate: l.endDate, flags };
+  // A flag set the server did not vouch for as whole reads as partial (CUL-2425), as the counts
+  // do: an explicit `incomplete: false` is the only whole one. The server's state never tells,
+  // since it says `flags` whenever one fired, read in full or not.
+  const partial = state === 'flags' && (l.incomplete !== false || l.state === 'incomplete');
+  return { state, startDate: l.startDate, endDate: l.endDate, flags, partial };
 }
 
 export function parseComposerOpen(data: unknown): ComposerOpen {
@@ -369,6 +379,56 @@ export function afterDisclosure(after: ComposerAfter, windowEnd: string, today: 
  *  "eating less" is not today's "refusing food, then vomiting" (adversarial pass 2, B2). */
 const flagKey = (f: ComposerFlag): string => `${f.kind}:${f.sign ?? ''}:${f.kind === 'intake_decline' ? f.trigger ?? '' : ''}`;
 
+/**
+ * The live set a send-time read hands the sheet, before `liveForSend` (CUL-2425). A partial read
+ * proves no absence, so a flag this screen already read for the pet and the partial read lacks is
+ * kept: the sheet never shows fewer flags than the screen knew. A whole read stays the truth.
+ */
+export function withKnownFlags(fresh: ComposerLive | null, known: ComposerLive | null): ComposerLive | null {
+  if (!fresh || fresh.state !== 'flags' || !fresh.partial) return fresh;
+  if (!known || known.state !== 'flags') return fresh;
+  const have = new Set(fresh.flags.map(flagKey));
+  const kept = known.flags.filter((f) => !have.has(flagKey(f)));
+  return kept.length === 0 ? fresh : { ...fresh, flags: [...fresh.flags, ...kept] };
+}
+
+/**
+ * How long Send waits on each read before it opens the sheet with what it has (CUL-2425). The flag
+ * read is a cold `generate-report` call that builds a 56-day snapshot: a few seconds on a good
+ * link, more on clinic-lobby cellular. Twelve seconds clears that and is still short enough that a
+ * hung connection costs the owner one wait, not the send. Past it the read counts as failed, which
+ * falls back to the flags already known, else to "couldn't check", never to none.
+ */
+export const SEND_READ_TIMEOUT_MS = 12_000;
+
+/** The read's answer, or `fallback` once it fails or `ms` passes. Never rejects, never hangs. */
+export function boundedRead<T>(read: Promise<T>, ms: number, fallback: T, onLate: (why: unknown) => void): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onLate(new Error(`timed out after ${ms}ms`));
+      resolve(fallback);
+    }, ms);
+    read.then(
+      (v) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        onLate(e);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
 /** The one flag the report computes as of TODAY whatever the window (the weight lane runs on the
  *  whole weight history at the report date), so a past window's copy of it is today's. */
 const AS_OF_TODAY_KINDS: ReadonlySet<string> = new Set(['weight_loss']);
@@ -474,12 +534,20 @@ export function liveCardCopy(live: ComposerLive, petName: string): LiveCardCopy 
   if (live.state !== 'flags' || live.flags.length === 0) return null;
   const names = [...new Set(live.flags.map(flagWords))];
   const sentence = joinWords(names);
+  const body = `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
   return {
     // About the RECORD, not the report: whether a given window's report prints each flag is said
     // under the counts (`droppedFlagsLine`), so the card never promises what a window drops.
     title: `${possessive} record has ${live.flags.length === 1 ? 'a flag' : 'flags'} worth a call to your vet`,
-    body: `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`,
+    // A partial read names what it found and says the check is not whole (CUL-2425): the flags are
+    // real, but their absence elsewhere is unproven.
+    body: live.partial ? `${body} ${partialLiveLine()}` : body,
   };
+}
+
+/** Said after the flags a partial read found: the same words as the counts' short read. */
+export function partialLiveLine(): string {
+  return `Part of the last ${LIVE_FLAG_DAYS} days didn’t load, so there may be more.`;
 }
 
 /** The whole-screen failure (the first read): nothing was checked, and the screen says so. */
