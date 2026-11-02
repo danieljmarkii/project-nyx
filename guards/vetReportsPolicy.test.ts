@@ -621,7 +621,10 @@ describe('vet_reports kept-id reservations (CUL-2339, migration 114)', () => {
 // the three IS NULL tests dropped; a fourth column (snapshot) stripped with the
 // summary; the UPDATE's status = 'draft' filter dropped; the WARNING turned
 // into EXCEPTION; the WHEN widened to every answer; a third scope added to the
-// WHEN; the function made SECURITY INVOKER.
+// WHEN; the function made SECURITY INVOKER. Pass 1's fixes (§1b, lock_timeout),
+// run the same way: FOR SHARE dropped; the scope list narrowed to one; the
+// count bound loosened to >= 1; the checker test dropped; the RAISE turned to
+// a WARNING; the trigger made UPDATE-only; lock_timeout dropped.
 // Blind spots, stated: a DO block's EXECUTE; a trigger disabled in the
 // dashboard (VERIFY covers it); a later CREATE OR REPLACE TRIGGER under
 // another name that calls the same function with a wider WHEN.
@@ -658,5 +661,28 @@ describe('vet_reports draft summary withdrawal clear (CUL-2377, migration 118)',
     );
     expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_ai_consent_clear_draft_summary\b/);
     expect(sql).not.toMatch(/\bGRANT\s[^;]*\bON\s+FUNCTION\s+(?:public\.)?clear_draft_summary_on_withdrawal\b/i);
+    // A locked draft must become a caught 55P03, never the statement timeout
+    // that would refuse the "no" (pass 1, F4).
+    expect(header).toMatch(/SET lock_timeout = '2s'/);
+  });
+
+  it('refuses a draft write carrying model output unless the maker holds both yeses, read FOR SHARE', () => {
+    const { header, body } = lastFunctionIn(sql, 'vet_reports_summary_needs_consent');
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "IF NEW.status = 'draft' AND (NEW.ai_lead_text IS NOT NULL OR NEW.ai_lead_model IS NOT NULL OR jsonb_typeof(NEW.ai_lead_verdict -> 'sentences') = 'array' OR jsonb_typeof(NEW.ai_lead_verdict -> 'checker') = 'object')",
+    );
+    expect(flat).toContain(
+      "SELECT count(*) = 2 INTO granted_both FROM (SELECT 1 FROM public.ai_consent c WHERE c.user_id = NEW.generated_by AND c.scope IN ('ai_boundary', 'report_summary') AND c.granted FOR SHARE) yes; IF NOT granted_both THEN RAISE EXCEPTION 'vet_reports: an AI summary needs the maker''s consent' USING ERRCODE = 'check_violation';",
+    );
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_summary_needs_consent\b/);
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create, sql.indexOf(';', create)).replace(/\s+/g, ' ')).toBe(
+      'CREATE TRIGGER trg_vet_reports_summary_needs_consent BEFORE INSERT OR UPDATE ON public.vet_reports FOR EACH ROW EXECUTE FUNCTION public.vet_reports_summary_needs_consent()',
+    );
+    expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_reports_summary_needs_consent\b/);
+    expect(sql).not.toMatch(/\bGRANT\s[^;]*\bON\s+FUNCTION\s+(?:public\.)?vet_reports_summary_needs_consent\b/i);
   });
 });

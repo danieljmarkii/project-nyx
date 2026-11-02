@@ -58,3 +58,5 @@ run "$root/supabase/migrations/100_ai_consent.sql"
 run "$root/supabase/migrations/112_report_summary_consent.sql"
 run "$cut118"
 psql -X -q -v ON_ERROR_STOP=1 -d "$db" -P pager=off -v variant="$variant" -f "$here/cases.sql"
+[ "$variant" = full ] && bash "$here/race.sh" "$db"
+

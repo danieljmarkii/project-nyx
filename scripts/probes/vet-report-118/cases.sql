@@ -41,18 +41,22 @@ BEGIN
      CASE WHEN kept THEN repeat('ab', 32) END);
 END;
 $$;
--- Short ids must be Crockford; md5 hex is 0-9a-f, upper-cased: all Crockford.
-SELECT seed_report('d1d1d1d1-0000-4000-8000-000000000001', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', false);
-SELECT seed_report('d2d2d2d2-0000-4000-8000-000000000002', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', false);
-SELECT seed_report('d3d3d3d3-0000-4000-8000-000000000003', 'b1b1b1b1-0000-4000-8000-000000000003', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', false);
-SELECT seed_report('d4d4d4d4-0000-4000-8000-000000000004', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
-
 -- Both accounts said yes to both scopes.
 INSERT INTO public.ai_consent (user_id, scope, granted, copy_version, source) VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'ai_boundary', true, '2026-10-11', 'onboarding'),
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'report_summary', true, '2026-11-01', 'settings'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'ai_boundary', true, '2026-10-11', 'onboarding'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'report_summary', true, '2026-11-01', 'settings');
+
+-- Short ids must be Crockford; md5 hex is 0-9a-f, upper-cased: all Crockford.
+SELECT seed_report('d1d1d1d1-0000-4000-8000-000000000001', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', false);
+SELECT seed_report('d2d2d2d2-0000-4000-8000-000000000002', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', false);
+SELECT seed_report('d3d3d3d3-0000-4000-8000-000000000003', 'b1b1b1b1-0000-4000-8000-000000000003', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', false);
+SELECT seed_report('d4d4d4d4-0000-4000-8000-000000000004', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
+-- DA0: A's draft with no summary yet (the race in race.sh writes one).
+SELECT seed_report('d5d5d5d5-0000-4000-8000-000000000005', 'a1a1a1a1-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', false);
+UPDATE public.vet_reports SET ai_lead_text = NULL, ai_lead_verdict = NULL, ai_lead_model = NULL
+ WHERE id = 'd5d5d5d5-0000-4000-8000-000000000005';
 
 -- The reading: per row, 'set' (all three summary columns hold a value),
 -- 'clear' (all three NULL) or 'mixed'; then A's two answers.
@@ -66,7 +70,7 @@ CREATE FUNCTION leads() RETURNS text LANGUAGE sql AS $$
             CASE WHEN ai_lead_text IS NOT NULL AND ai_lead_verdict IS NOT NULL AND ai_lead_model IS NOT NULL THEN 'set'
                  WHEN ai_lead_text IS NULL AND ai_lead_verdict IS NULL AND ai_lead_model IS NULL THEN 'clear'
                  ELSE 'mixed' END, ' ' ORDER BY id)
-            FROM public.vet_reports)
+            FROM public.vet_reports WHERE id <> 'd5d5d5d5-0000-4000-8000-000000000005')
       || ' | A:' || (SELECT string_agg(scope || '=' || granted::text, ',' ORDER BY scope)
                       FROM public.ai_consent WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
 $$;
@@ -225,6 +229,54 @@ SELECT probe('F6: a DEFINER clear of one column only', 'authenticated', 'aaaaaaa
 
 SELECT probe('F7: a DEFINER clear that also keeps the draft', 'authenticated', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   $$INSERT INTO public.probe_hook VALUES ('to-kept')$$, '23514');
+
+-- ── §1b: a summary written after the "no" ────────────────────────────────────
+-- The pipeline writes as the service role. `printed` is a verdict with sentences.
+SELECT probe('L1: after A''s "no", the pipeline writes a summary: refused', 'postgres', NULL,
+  $$UPDATE public.ai_consent SET granted = false WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND scope = 'report_summary';
+    SET LOCAL ROLE service_role;
+    UPDATE public.vet_reports SET ai_lead_text = 'Late.', ai_lead_model = 'model-x',
+           ai_lead_verdict = '{"outcome":"printed","sentences":[{"text":"Late."}]}'
+     WHERE id = 'd5d5d5d5-0000-4000-8000-000000000005'$$,
+  w('23514', 'DA1=set DA2=set DB=set KA=set | A:ai_boundary=true,report_summary=false',
+    '23514'));
+
+SELECT probe('L2: with both yeses, the same write lands', 'service_role', NULL,
+  $$UPDATE public.vet_reports SET ai_lead_text = 'Fine.', ai_lead_model = 'model-x',
+           ai_lead_verdict = '{"outcome":"printed","sentences":[{"text":"Fine."}]}'
+     WHERE id = 'd1d1d1d1-0000-4000-8000-000000000001'$$,
+  'DA1=set DA2=set DB=set KA=set | A:ai_boundary=true,report_summary=true');
+
+SELECT probe('L3: after a "no", a verdict with no model output still records', 'postgres', NULL,
+  $$UPDATE public.ai_consent SET granted = false WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND scope = 'ai_boundary';
+    SET LOCAL ROLE service_role;
+    UPDATE public.vet_reports SET ai_lead_verdict = '{"outcome":"declined","sentences":null,"checker":null}'
+     WHERE id = 'd1d1d1d1-0000-4000-8000-000000000001'$$,
+  w('DA1=mixed DA2=clear DB=set KA=set | A:ai_boundary=false,report_summary=true',
+    'DA1=set DA2=set DB=set KA=set | A:ai_boundary=false,report_summary=true',
+    -- no-arm: a "no" run by the owner role is exempt from the freeze, so it clears.
+    'DA1=mixed DA2=clear DB=set KA=set | A:ai_boundary=false,report_summary=true'));
+
+SELECT probe('L4: after a "no", a verdict carrying the checker''s quotes: refused', 'postgres', NULL,
+  $$UPDATE public.ai_consent SET granted = false WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND scope = 'report_summary';
+    SET LOCAL ROLE service_role;
+    UPDATE public.vet_reports SET ai_lead_verdict = '{"outcome":"rejected","sentences":null,"checker":{"quotes":{"H1":"x"}}}'
+     WHERE id = 'd5d5d5d5-0000-4000-8000-000000000005'$$,
+  w('23514', 'DA1=set DA2=set DB=set KA=set | A:ai_boundary=true,report_summary=false', '23514'));
+
+SELECT probe('L5: one scope only (no to ai_boundary, yes to report_summary): refused', 'postgres', NULL,
+  $$UPDATE public.ai_consent SET granted = false WHERE user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' AND scope = 'ai_boundary';
+    SET LOCAL ROLE service_role;
+    UPDATE public.vet_reports SET ai_lead_text = 'Late.', ai_lead_model = 'model-x',
+           ai_lead_verdict = '{"outcome":"printed","sentences":[{"text":"Late."}]}'
+     WHERE id = 'd5d5d5d5-0000-4000-8000-000000000005'$$,
+  w('23514', 'DA1=set DA2=set DB=set KA=set | A:ai_boundary=false,report_summary=true', '23514'));
+
+SELECT probe('L6: no consent row at all (B''s rows gone): refused', 'postgres', NULL,
+  $$DELETE FROM public.ai_consent WHERE user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    SET LOCAL ROLE service_role;
+    UPDATE public.vet_reports SET ai_lead_text = 'Again.' WHERE id = 'd3d3d3d3-0000-4000-8000-000000000003'$$,
+  w('23514', 'DA1=set DA2=set DB=set KA=set | A:ai_boundary=true,report_summary=true', '23514'));
 
 \o
 \echo

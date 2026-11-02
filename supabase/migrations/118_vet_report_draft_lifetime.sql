@@ -39,6 +39,27 @@
 -- consent gate and clears on its next read, and §3's reaper removes the whole
 -- draft within 24 h 15 m of its making.
 --
+-- A WAIT ON A LOCKED DRAFT IS BOUNDED (rls-privacy-reviewer, pass 1, F4). The
+-- function carries lock_timeout = 2s, so a draft row held by another write
+-- becomes a caught 55P03 (a WARNING) and never the request's statement
+-- timeout (57014), which no handler catches and which would refuse the "no".
+--
+-- §1b. A SUMMARY WRITTEN AFTER THE "NO" IS REFUSED (rls-privacy-reviewer,
+-- pass 1, F1). §1 clears what exists at the moment of the "no"; the summary
+-- pipeline checks consent before its model calls and writes up to a minute
+-- later. A BEFORE INSERT OR UPDATE trigger on vet_reports therefore refuses a
+-- draft write that puts model output in the summary columns (ai_lead_text,
+-- ai_lead_model, or a verdict carrying `sentences` or `checker`) unless the
+-- maker holds a yes to BOTH scopes. The pipeline reads a refused write as
+-- `draft_not_found` and returns no summary (aiLead/leadPipeline.ts record).
+-- Verdicts with no model output (declined, left out, the keep's settle) pass.
+-- It reads the two consent rows FOR SHARE: a "no" being written holds those
+-- rows until it commits, so the write waits and then sees it; and a write
+-- that read them first makes the "no" wait, after which §1's clear finds the
+-- summary and removes it. Either order ends with no summary on the draft.
+-- The wording version of a yes is not checked here (it lives in code,
+-- REPORT_SUMMARY_COPY_VERSION); the pipeline's gate checks it.
+--
 -- §2. ONE NEW ARM IN 110's CLIENT FREEZE
 -- ------------------------------------------------------------
 -- §1's UPDATE runs inside the owner's own PostgREST request. 110's freeze reads
@@ -83,6 +104,7 @@
 -- Migration Safety Pre-flight
 -- ------------------------------------------------------------
 --   Destructive:  n. One trigger and one function added on ai_consent; one
+--                 trigger and one function added on vet_reports (§1b); one
 --                 arm added to an existing function; one extension and one
 --                 scheduled job added. No column, row or policy changed.
 --   Backfill:     N/A. 0 draft rows hold a summary (report_ai_lead is off and
@@ -92,6 +114,8 @@
 --                   DROP EXTENSION pg_cron;
 --                   DROP TRIGGER trg_ai_consent_clear_draft_summary ON public.ai_consent;
 --                   DROP FUNCTION public.clear_draft_summary_on_withdrawal();
+--                   DROP TRIGGER trg_vet_reports_summary_needs_consent ON public.vet_reports;
+--                   DROP FUNCTION public.vet_reports_summary_needs_consent();
 --                   -- then re-run 113 §7b's CREATE OR REPLACE FUNCTION
 --                   -- public.vet_reports_client_freeze() and its COMMENT.
 --   Ordering:     after 117. reap-report-drafts may deploy before or after;
@@ -109,6 +133,7 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
+SET lock_timeout = '2s'
 AS $$
 BEGIN
   BEGIN
@@ -138,6 +163,60 @@ CREATE TRIGGER trg_ai_consent_clear_draft_summary
 
 COMMENT ON FUNCTION public.clear_draft_summary_on_withdrawal() IS
   'CUL-2377 (118): on a "no" to ai_boundary or report_summary, nulls ai_lead_text, ai_lead_verdict and ai_lead_model on every DRAFT vet_reports row that owner made. Kept copies are never touched. A failed clear is a WARNING, never a refused withdrawal; the 24 h reaper bounds it. SECURITY DEFINER (the client holds no grant on the lead columns), search_path empty, message names no value (C-31).';
+
+
+-- ============================================================
+-- §1b. A summary written after the "no" is refused
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.vet_reports_summary_needs_consent()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  granted_both boolean;
+BEGIN
+  IF NEW.status = 'draft'
+     AND (NEW.ai_lead_text IS NOT NULL
+          OR NEW.ai_lead_model IS NOT NULL
+          OR jsonb_typeof(NEW.ai_lead_verdict -> 'sentences') = 'array'
+          OR jsonb_typeof(NEW.ai_lead_verdict -> 'checker') = 'object')
+     AND (TG_OP = 'INSERT'
+          OR NEW.ai_lead_text IS DISTINCT FROM OLD.ai_lead_text
+          OR NEW.ai_lead_verdict IS DISTINCT FROM OLD.ai_lead_verdict
+          OR NEW.ai_lead_model IS DISTINCT FROM OLD.ai_lead_model) THEN
+    -- FOR SHARE waits on a "no" being written, then reads it (header §1b).
+    SELECT count(*) = 2 INTO granted_both
+      FROM (SELECT 1 FROM public.ai_consent c
+             WHERE c.user_id = NEW.generated_by
+               AND c.scope IN ('ai_boundary', 'report_summary')
+               AND c.granted
+               FOR SHARE) yes;
+    IF NOT granted_both THEN
+      -- Names no value (C-31).
+      RAISE EXCEPTION
+        'vet_reports: an AI summary needs the maker''s consent'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.vet_reports_summary_needs_consent() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.vet_reports_summary_needs_consent() FROM anon;
+REVOKE ALL ON FUNCTION public.vet_reports_summary_needs_consent() FROM authenticated;
+
+-- Sorts after trg_vet_reports_client_freeze (same-event triggers fire in name
+-- order), so the freeze still judges the writer's row first.
+DROP TRIGGER IF EXISTS trg_vet_reports_summary_needs_consent ON public.vet_reports;
+CREATE TRIGGER trg_vet_reports_summary_needs_consent
+  BEFORE INSERT OR UPDATE ON public.vet_reports
+  FOR EACH ROW EXECUTE FUNCTION public.vet_reports_summary_needs_consent();
+
+COMMENT ON FUNCTION public.vet_reports_summary_needs_consent() IS
+  'CUL-2377 (118): a draft write that puts model output in the AI summary columns (ai_lead_text, ai_lead_model, or a verdict carrying sentences or checker) is refused unless the maker holds a yes to both ai_boundary and report_summary, read FOR SHARE so a concurrent "no" is waited for. Verdicts with no model output pass; kept rows are not judged here (113''s content freeze holds them). SECURITY DEFINER (reads ai_consent for the service role''s writes), search_path empty, message names no value (C-31).';
 
 
 -- ============================================================
@@ -245,11 +324,21 @@ SELECT cron.schedule(
 --         WHERE tgrelid = 'public.ai_consent'::regclass AND NOT tgisinternal
 --         ORDER BY tgname;
 --      -> trg_ai_consent_clear_draft_summary, trg_ai_consent_decided_at,
---         trg_ai_consent_log; each tgenabled = 'O'.
+--         trg_ai_consent_log; each tgenabled = 'O'. And on vet_reports:
+--        SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.vet_reports'::regclass
+--           AND tgname = 'trg_vet_reports_summary_needs_consent';
+--      -> one row.
 --   2. No client EXECUTE on the new function:
---        SELECT has_function_privilege('anon', 'public.clear_draft_summary_on_withdrawal()', 'EXECUTE'),
---               has_function_privilege('authenticated', 'public.clear_draft_summary_on_withdrawal()', 'EXECUTE');
---      -> f, f.
+--        SELECT p.proname, has_function_privilege('anon', p.oid, 'EXECUTE'),
+--               has_function_privilege('authenticated', p.oid, 'EXECUTE')
+--          FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+--           AND p.proname IN ('clear_draft_summary_on_withdrawal', 'vet_reports_summary_needs_consent');
+--      -> f, f on both rows. And no client reach into cron:
+--        SELECT has_schema_privilege('anon', 'cron', 'USAGE'),
+--               has_schema_privilege('authenticated', 'cron', 'USAGE');
+--      -> f, f. And the owner still bypasses RLS on vet_reports (§1 relies on it):
+--        SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.vet_reports'::regclass;
+--      -> f.
 --   3. The job:
 --        SELECT jobname, schedule, active FROM cron.job WHERE jobname = 'reap-vet-report-drafts';
 --      -> one row, '*/15 * * * *', true.
