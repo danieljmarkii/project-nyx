@@ -5959,6 +5959,15 @@ function trialTiles(snap: ReportSnapshot): string[] {
         `Days a meal was logged &middot; ${span}<br/>record coverage &mdash; not intake, not a clean-elimination count${overrunNote}`,
       ),
     )
+  } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'sustained_refusal' && intake.sustainedRefusal) {
+    const sr = intake.sustainedRefusal
+    tiles.push(
+      tile(
+        `${sr.meals}`,
+        `<small>&nbsp;/&nbsp;${sr.meals}</small>`,
+        `Rated meals picked at or refused, ${sr.windowHours}&nbsp;h to window end<br/>a health signal, not preference`,
+      ),
+    )
   } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'consecutive_low') {
     tiles.push(
       tile(
@@ -5979,15 +5988,6 @@ function trialTiles(snap: ReportSnapshot): string[] {
         `Meals fully eaten (rated meals only)${
           recentNotFullyEatenRun(mc) > 0 ? `<br/><b>last ${num(recentNotFullyEatenRun(mc))} in a row not fully eaten</b>` : ''
         }${intake ? '<br/>recent decline flagged above' : ''}`,
-      ),
-    )
-  } else if (intake && intake.kind === 'intake_decline' && intake.trigger === 'sustained_refusal' && intake.sustainedRefusal) {
-    const sr = intake.sustainedRefusal
-    tiles.push(
-      tile(
-        `${sr.meals}`,
-        `<small>&nbsp;/&nbsp;${sr.meals}</small>`,
-        `Rated meals picked at or refused, ${sr.windowHours}&nbsp;h to window end<br/>a health signal, not preference`,
       ),
     )
   } else if (intake && intake.kind === 'intake_decline') {

@@ -44,7 +44,7 @@
 
 import { getDb } from './db';
 import { bowlFoodType, bowlProteins, componentDisplayName, loadMealBowls, type AppBowl } from './mealBowls';
-import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
+import { isFreeFedIntakeMeal, mayBeFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
 import {
   FINISHED_SCORE,
   INTAKE_SCORE,
@@ -1158,9 +1158,12 @@ function sustainedRefusalFlag(input: IntakeDeclineInput): IntakeDeclineFlag | nu
   const nowMs = input.nowMs;
   if (!Number.isFinite(nowMs)) return null;
   const start = nowMs - rule.windowHours * MS_PER_HOUR;
-  const recent = classifyRatedMeals(input.meals, input.freeFedSpans).filter((m) => m.ms >= start && m.ms <= nowMs);
+  const inWindow = classifyRatedMeals(input.meals, input.freeFedSpans).filter((m) => m.ms >= start && m.ms <= nowMs);
+  // Only a CERTAINLY watched rating better than picked stands the floor down (detection.ts, the
+  // pre-076 take-up day: adversarial pass 2); an uncertain one neither stands down nor counts.
+  if (inWindow.some((m) => m.score > PICKED_SCORE && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, input.freeFedSpans))) return null;
+  const recent = inWindow.filter((m) => m.score <= PICKED_SCORE);
   if (recent.length < rule.minMeals) return null;
-  if (!recent.every((m) => m.score <= PICKED_SCORE)) return null;
   const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timeZone)));
   if (days.size < rule.minDays) return null;
   const refused = recent.filter((m) => m.score === INTAKE_SCORE.refused).length;

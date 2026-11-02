@@ -16,6 +16,7 @@ import {
 import { signalHomeAsk } from './signalHomeLine';
 import { detectIntakeDecline, type AnalyticsMeal } from './analytics';
 import { declineHeadline } from './dietTrialFacts';
+import { parseFreeFedIntakeSpans } from './freeFedIntake';
 import { sustainedRefusalSentence as serverSentence } from '../supabase/functions/generate-signal/phrasing';
 import type { IntakeDeclineFinding, SustainedRefusalFacts } from './signal';
 
@@ -78,6 +79,25 @@ describe('the phone twin of the floor', () => {
     if (res.status !== 'watch') return;
     expect(res.flags[0].trigger).toBe('sustained_refusal');
     expect(declineHeadline(res.flags[0], 'Miso')).toBe('Miso has picked at or refused every meal you watched and rated in the last 72 hours, 3 meals on 2 days.');
+  });
+
+  it('adversarial pass 2: a pre-076 take-up day\'s bowl "ate it all" does not stand the floor down', () => {
+    const now = Date.parse('2026-07-31T00:00:00.000Z');
+    const at = (iso: string, rating: string, foodItemId = 'f1'): AnalyticsMeal => ({
+      ms: Date.parse(iso), foodItemId, foodLabel: null, foodType: 'meal', primaryProtein: null, intakeRating: rating,
+    });
+    const meals = ['2026-07-28T12', '2026-07-28T22', '2026-07-29T12', '2026-07-29T22', '2026-07-30T12', '2026-07-30T22'].map((h) =>
+      at(`${h}:00:00.000Z`, 'refused'),
+    );
+    meals.push(at('2026-07-30T13:00:00.000Z', 'all', 'kibble'));
+    const spans = parseFreeFedIntakeSpans([
+      { foodItemId: 'kibble', createdAt: '2026-07-01T12:00:00.000Z', activeFrom: '2026-07-01', activeUntil: '2026-07-30', endedAt: null },
+    ]);
+    const res = detectIntakeDecline({ species: 'cat', nowMs: now, meals, freeFedSpans: spans, timeZone: 'America/New_York' });
+    expect(res.status).toBe('watch');
+    if (res.status !== 'watch') return;
+    expect(res.flags[0].trigger).toBe('sustained_refusal');
+    expect(res.flags[0].sustainedRefusal?.meals).toBe(6);
   });
 
   it('one meal rated Some stands it down, and the old "not enough data" stays', () => {

@@ -87,6 +87,7 @@ import {
 import { isTrialRunning } from '../../../lib/dietTrial.ts'
 import {
   isFreeFedIntakeMeal,
+  mayBeFreeFedIntakeMeal,
   parseFreeFedIntakeSpans,
   type FreeFedIntakeSpan,
 } from '../../../lib/freeFedIntake.ts'
@@ -4444,11 +4445,18 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
   const rule = config.intakeDecline.sustainedRefusal
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return null
-  const ratedMeals = classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))
+  const spans = intakeFreeFedSpans(input)
+  const ratedMeals = classifyRatedMeals(input.mealEvents, spans)
   const start = nowMs - rule.windowHours * MS_PER_HOUR
-  const recent = ratedMeals.filter((m) => m.ms >= start && m.ms <= nowMs)
+  const inWindow = ratedMeals.filter((m) => m.ms >= start && m.ms <= nowMs)
+  // A rating better than picked stands the floor down only when it was CERTAINLY a watched meal:
+  // where a free-fed bowl's end instant is missing (a pre-076 take-up), its "ate it all" on the
+  // take-up day may be the bowl, and counting it silenced the floor (adversarial pass 2). Such a
+  // rating neither stands the floor down nor counts as a refusal.
+  const picked = intakeScore('picked')
+  if (inWindow.some((m) => m.score > picked && !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))) return null
+  const recent = inWindow.filter((m) => m.score <= picked)
   if (recent.length < rule.minMeals) return null
-  if (!recent.every((m) => m.score <= intakeScore('picked'))) return null
   const days = new Set(recent.map((m) => intakeDayOf(m.ms, input.timezone)))
   if (days.size < rule.minDays) return null
   const refused = recent.filter((m) => m.score === intakeScore('refused')).length
@@ -4464,7 +4472,9 @@ function sustainedRefusalFinding(input: DetectionInput, config: DetectionConfig)
     daysBelowBaseline: days.size,
     refusedFoodLabel: null,
     ratedMealsConsidered: recent.length,
-    lastFullMealIso: lastFullMeal(ratedMeals),
+    // The same uncertain bowl must not stand in as the last full meal, or "how long off food"
+    // would read short.
+    lastFullMealIso: lastFullMeal(ratedMeals.filter((m) => !mayBeFreeFedIntakeMeal(m.foodItemId, m.ms, spans))),
     sustainedRefusal: {
       meals: recent.length,
       refused,

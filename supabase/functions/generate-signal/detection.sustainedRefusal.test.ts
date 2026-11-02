@@ -224,3 +224,33 @@ Deno.test('the floor never reaches the model: the shell routes it to its templat
   const f = detectIntakeDecline(input('cat', p2bCat()))[0]
   assert.equal(validatePhrasing(templateIntakeDecline(f, 'Nyx'), f), false)
 })
+
+Deno.test('adversarial pass 2: an old build\'s take-up day cannot let a bowl\'s "ate it all" silence the floor', () => {
+  // New York; now is 07-30 20:00 local. Six watched refusals over 07-28 to 07-30. A kibble bowl down
+  // since 07-01, taken up on 07-30 by a build that wrote no `ended_at`, rated "all" at 09:00 local
+  // on the take-up day: was it the bowl or a watched meal? The record cannot say.
+  const now = '2026-07-31T00:00:00.000Z'
+  const at = (iso: string, rating: IntakeRating, foodItemId = WET): MealEvent => ({
+    id: `p2-${iso}`, occurredAt: iso, foodItemId, primaryProtein: 'chicken', intakeRating: rating, foodType: 'meal',
+    foodLabel: foodItemId === WET ? 'Wet food' : 'Kibble',
+  })
+  const meals = [
+    at('2026-07-28T12:00:00.000Z', 'refused'), at('2026-07-28T22:00:00.000Z', 'refused'),
+    at('2026-07-29T12:00:00.000Z', 'refused'), at('2026-07-29T22:00:00.000Z', 'refused'),
+    at('2026-07-30T12:00:00.000Z', 'refused'), at('2026-07-30T22:00:00.000Z', 'refused'),
+    at('2026-07-30T13:00:00.000Z', 'all', KIBBLE),
+  ]
+  const bowl = (endedAt: string | null): FeedingArrangement => ({
+    id: 'a-p2', primaryProtein: 'chicken', activeFrom: '2026-07-01', activeUntil: '2026-07-30', foodItemId: KIBBLE,
+    createdAt: '2026-07-01T12:00:00.000Z', endedAt,
+  })
+  const run = (endedAt: string | null) =>
+    detectIntakeDecline({ ...input('cat', meals, { timezone: 'America/New_York', feedingArrangements: [bowl(endedAt)] }), now })
+  // With the toggle-off instant on file (after the rating), the bowl is excluded and the floor fires.
+  assert.equal(run('2026-07-30T23:30:00.000Z')[0]?.trigger, 'sustained_refusal')
+  // Without it, the narrow reading counts the rating as watched; it must still not stand the floor down.
+  const pre076 = run(null)
+  assert.equal(pre076[0]?.trigger, 'sustained_refusal')
+  assert.equal(pre076[0].sustainedRefusal?.meals, 6, 'the uncertain rating is not counted as a refusal either')
+  assert.equal(pre076[0].lastFullMealIso, null, 'nor named as the last full meal')
+})
