@@ -124,14 +124,19 @@ describe('printedWarningOf (PM ruling (a) on CUL-2430)', () => {
 describe('printedViewAllowed: the printed page is offered only when it can carry its warning', () => {
   const line = '<p class="conf" data-block="confounder">Not a test of the diet alone. Apoquel overlaps.</p>';
   const pin = '<p class="verdict" data-part="confounder-verdict" aria-hidden="true">Not a test of the diet alone.</p>';
+  const print = `<main>${line}</main>`;
+  const plainPrint = '<main><p class="lead">a</p></main>';
   it('a confounder line with its pin: allowed', () => {
-    expect(printedViewAllowed(`${pin}${line}`)).toBe(true);
+    expect(printedViewAllowed(`${pin}${line}`, print)).toBe(true);
   });
   it('a confounder line whose pin cannot be read (changed markup): withheld, never shown quieter', () => {
-    expect(printedViewAllowed(line)).toBe(false);
-    expect(printedViewAllowed(`<p class="verdict v2" data-part="confounder-verdict">x</p>${line}`)).toBe(false);
+    expect(printedViewAllowed(line, print)).toBe(false);
+    expect(printedViewAllowed(`<p class="verdict v2" data-part="confounder-verdict">x</p>${line}`, print)).toBe(false);
   });
-  it('no confounder line: allowed, and nothing to pin', () => {
-    expect(printedViewAllowed('<main data-sheet="1">a</main><script>q(\'[data-block="confounder"]\')</script>')).toBe(true);
+  it('the printed page carries the line but the reflow lost it and its pin: withheld (CUL-2458 pass 1)', () => {
+    expect(printedViewAllowed('<main data-sheet="1">a</main>', print)).toBe(false);
+  });
+  it('no confounder line in either layout: allowed, and nothing to pin', () => {
+    expect(printedViewAllowed('<main data-sheet="1">a</main><script>q(\'[data-block="confounder"]\')</script>', plainPrint)).toBe(true);
   });
 });

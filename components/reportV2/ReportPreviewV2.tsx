@@ -134,7 +134,7 @@ export function ReportPreviewV2({ phoneHtml, printHtml, view, petName, working, 
 
   const lockedPhoneHtml = useMemo(() => (phoneHtml === null ? null : lockedPreviewHtml(phoneHtml)), [phoneHtml]);
   // The printed page shows only where its warning can be pinned (lib/examRoom.ts).
-  const printedAllowed = phoneHtml !== null && printHtml !== null && printedViewAllowed(phoneHtml);
+  const printedAllowed = phoneHtml !== null && printHtml !== null && printedViewAllowed(phoneHtml, printHtml);
   const printedWarning = useMemo(() => (phoneHtml === null ? null : printedWarningOf(phoneHtml)), [phoneHtml]);
   const showingPrinted = view === 'printed' && printedAllowed;
 

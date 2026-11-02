@@ -87,7 +87,7 @@ export default function ExamRoomScreen() {
   const html = useMemo(() => (copy ? examRoomHtml(copy.phoneHtml, theme.colorNeutralDark) : null), [copy]);
   // Withheld when the record has a confounder line whose pin cannot be read back (fails loud).
   const printHtml = useMemo(
-    () => (copy?.printHtml != null && printedViewAllowed(copy.phoneHtml) ? withExamCsp(copy.printHtml) : null),
+    () => (copy?.printHtml != null && printedViewAllowed(copy.phoneHtml, copy.printHtml) ? withExamCsp(copy.printHtml) : null),
     [copy],
   );
   const printedWarning = useMemo(() => (copy ? printedWarningOf(copy.phoneHtml) : null), [copy]);

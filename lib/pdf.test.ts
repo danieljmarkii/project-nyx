@@ -13,7 +13,7 @@ import {
 } from './pdf';
 import { useBetaOptInStore } from './betaFeatures';
 import { supabase } from './supabase';
-import { getSyncStatus } from './db';
+import { countRecordGaps, getSyncStatus } from './db';
 import { clearTransientFiles } from './transientFiles';
 import { waitFor } from '@testing-library/react-native';
 import { syncNow } from './sync';
@@ -29,7 +29,7 @@ jest.mock('./supabase', () => ({
 jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicago'), fetchOwnerSurname: jest.fn() }));
 // The freshness gate's two dependencies — mocked at the module edge so the gate's
 // control flow (the part the adversarial pass broke) is what the tests exercise.
-jest.mock('./db', () => ({ getSyncStatus: jest.fn() }));
+jest.mock('./db', () => ({ getSyncStatus: jest.fn(), countRecordGaps: jest.fn() }));
 // CUL-2347 — Gate 1 for the report layout, read through allowlistFlagNow. Only
 // `report_document_v2` is consulted; every test starts with it off (the shipped seed).
 let mockDocumentEligible = false;
@@ -581,29 +581,47 @@ describe('generateVetReport — reportVersion on the wire (CUL-2347)', () => {
 });
 
 describe('flushBeforeSend (CUL-2457)', () => {
+  const mockedGaps = countRecordGaps as jest.Mock;
   const mockedStatus = getSyncStatus as jest.Mock;
   const mockedSyncNow = syncNow as jest.Mock;
-  const status = (pendingCount: number, quarantinedCount = 0) => ({ pendingCount, oldestPendingAt: null, quarantinedCount });
+  const gaps = (unsent: number, refused = 0) => ({ unsent, refused });
 
   beforeEach(() => {
+    mockedGaps.mockReset();
     mockedStatus.mockReset();
     mockedSyncNow.mockReset().mockResolvedValue(undefined);
   });
 
-  it('the first count failing is unknown (null), not "nothing unsent"', async () => {
-    mockedStatus.mockRejectedValueOnce(new Error('boom'));
-    await expect(flushBeforeSend()).resolves.toBeNull();
+  it('counts with the one-statement reader, never the two-read banner count (adversarial pass 2)', async () => {
+    mockedGaps.mockResolvedValueOnce(gaps(0, 0));
+    await expect(flushBeforeSend()).resolves.toEqual({ pending: 0, quarantined: 0 });
+    expect(mockedStatus).not.toHaveBeenCalled();
   });
 
-  it('flushes pending rows and reports what is left', async () => {
-    mockedStatus.mockResolvedValueOnce(status(2)).mockResolvedValueOnce(status(1, 1));
+  it('the first count failing is unknown (null), not "nothing unsent"', async () => {
+    mockedGaps.mockRejectedValueOnce(new Error('boom'));
+    await expect(flushBeforeSend()).resolves.toBeNull();
+    expect(mockedSyncNow).not.toHaveBeenCalled();
+  });
+
+  it('flushes pending rows and re-counts with the same reader', async () => {
+    mockedGaps.mockResolvedValueOnce(gaps(2)).mockResolvedValueOnce(gaps(1, 1));
     await expect(flushBeforeSend()).resolves.toEqual({ pending: 1, quarantined: 1 });
     expect(mockedSyncNow).toHaveBeenCalledTimes(1);
+    expect(mockedStatus).not.toHaveBeenCalled();
   });
 
-  it('FAIL-SAFE: a failed flush leaves the positive count standing', async () => {
-    mockedStatus.mockResolvedValueOnce(status(2));
+  it('refused rows only: nothing to flush, but they stand', async () => {
+    mockedGaps.mockResolvedValueOnce(gaps(0, 2));
+    await expect(flushBeforeSend()).resolves.toEqual({ pending: 0, quarantined: 2 });
+    expect(mockedSyncNow).not.toHaveBeenCalled();
+  });
+
+  it('FAIL-SAFE: a failed flush or re-count leaves the positive count standing', async () => {
+    mockedGaps.mockResolvedValueOnce(gaps(2));
     mockedSyncNow.mockRejectedValueOnce(new Error('offline'));
     await expect(flushBeforeSend()).resolves.toEqual({ pending: 2, quarantined: 0 });
+    mockedGaps.mockResolvedValueOnce(gaps(3)).mockRejectedValueOnce(new Error('boom'));
+    await expect(flushBeforeSend()).resolves.toEqual({ pending: 3, quarantined: 0 });
   });
 });

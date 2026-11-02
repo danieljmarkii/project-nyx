@@ -1,7 +1,7 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File } from 'expo-file-system';
-import { getSyncStatus } from './db';
+import { countRecordGaps, getSyncStatus } from './db';
 import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
@@ -128,8 +128,26 @@ export interface ReportFreshness {
 }
 
 export async function flushBeforeReport(): Promise<ReportFreshness> {
-  return (await flushAndCount()) ?? { pending: 0, quarantined: 0 };
+  return (await flushAndCount(bannerCount)) ?? { pending: 0, quarantined: 0 };
 }
+
+type UnsentCounter = () => Promise<ReportFreshness>;
+
+const bannerCount: UnsentCounter = async () => {
+  const s = await getSyncStatus();
+  return { pending: s.pendingCount, quarantined: s.quarantinedCount };
+};
+
+/**
+ * ONE statement (`countRecordGaps`, Ask's reader). `getSyncStatus` counts pending and refused in
+ * two reads, and a drain that marks a parent synced and then re-arms its refused child between
+ * them (refused → pending) makes both answer zero while the child is still on this phone
+ * (CUL-2457 adversarial pass 2). Same rows, partitioned by the same `sync_error` test.
+ */
+const oneReadCount: UnsentCounter = async () => {
+  const g = await countRecordGaps();
+  return { pending: g.unsent, quarantined: g.refused };
+};
 
 /**
  * CUL-2457, the send's half of the same gate: flush, then count what is still on this phone.
@@ -139,14 +157,13 @@ export async function flushBeforeReport(): Promise<ReportFreshness> {
  * fail-safe re-count; only what the caller does with "no evidence" differs.
  */
 export async function flushBeforeSend(): Promise<ReportFreshness | null> {
-  return flushAndCount();
+  return flushAndCount(oneReadCount);
 }
 
-async function flushAndCount(): Promise<ReportFreshness | null> {
+async function flushAndCount(count: UnsentCounter): Promise<ReportFreshness | null> {
   let counts: ReportFreshness;
   try {
-    const s = await getSyncStatus();
-    counts = { pending: s.pendingCount, quarantined: s.quarantinedCount };
+    counts = await count();
   } catch (e) {
     console.warn('[Report] freshness check failed:', e);
     return null;
@@ -158,8 +175,7 @@ async function flushAndCount(): Promise<ReportFreshness | null> {
     // over-warn in the safe direction, and the line's own remedy ("reopen the
     // report") is exactly what resolves it.
     await syncNow();
-    const s = await getSyncStatus();
-    return { pending: s.pendingCount, quarantined: s.quarantinedCount };
+    return await count();
   } catch (e) {
     console.warn('[Report] pre-report flush failed (counts stand):', e);
     return counts;

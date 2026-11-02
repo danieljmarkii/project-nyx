@@ -170,10 +170,15 @@ export function printedWarningOf(phoneHtml: string): string | null {
  * changed the markup) would show the printed bars with nothing pinned, so the view is withheld
  * rather than shown quieter.
  */
-export function printedViewAllowed(phoneHtml: string): boolean {
-  const hasLine = /<[a-z]+[^>]*\sdata-block="confounder"/.test(phoneHtml);
+export function printedViewAllowed(phoneHtml: string, printHtml: string): boolean {
+  // Either layout carrying the line needs the pin (CUL-2458 adversarial pass 1): a reflow that
+  // lost its confounder markup while the printed page kept it would otherwise pass as "no line".
+  const hasLine = CONFOUNDER_BLOCK.test(phoneHtml) || CONFOUNDER_BLOCK.test(printHtml);
   return !hasLine || printedWarningOf(phoneHtml) !== null;
 }
+
+/** The confounder block's opening tag, as both renderPhoneV2 and renderPrintV2 write it. */
+const CONFOUNDER_BLOCK = /<[a-z]+[^>]*\sdata-block="confounder"/;
 
 /** The reflow's viewport, as renderPhoneV2 writes it. */
 const PHONE_VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />';

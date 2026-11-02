@@ -194,6 +194,13 @@ it('CUL-2430: a line whose lead cannot be read back keeps the phone frame, never
   expect(t.getByTestId(PREVIEW_PHONE_TEST_ID)).toBeTruthy();
 });
 
+it('CUL-2458 (adversarial pass 1): the printed page carries the line but the reflow lost it: the printed view is withheld', () => {
+  const printWithLine = '<!DOCTYPE html><html><body><p class="conf" data-block="confounder">Not a test of the diet alone.</p></body></html>';
+  const s = render(<ReportPreviewV2 {...base} phoneHtml={PHONE_NO_LINE} printHtml={printWithLine} view="printed" />);
+  expect(s.queryByTestId(PREVIEW_PRINTED_TEST_ID, { includeHiddenElements: true })).toBeNull();
+  expect(s.getByTestId(PREVIEW_PHONE_TEST_ID)).toBeTruthy();
+});
+
 it('CUL-2430 (adversarial pass 1): a window change while printed shows gets a fresh printed frame, never the old page under the new pin', () => {
   const PRINT_B = '<!DOCTYPE html><html><head></head><body><main>record B, no trial</main></body></html>';
   const s = render(<ReportPreviewV2 {...base} phoneHtml={PHONE_WITH_LINE} printHtml={PRINT} view="printed" />);
