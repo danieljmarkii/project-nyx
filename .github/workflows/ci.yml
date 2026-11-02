@@ -328,7 +328,11 @@ jobs:
         # scripts/report-preview/ (CUL-2308) is the real-record report harness. Same shape:
         # its one remote edge is supabase-js, imported by generate-report/index.ts, which the
         # warm step caches.
-        run: deno check --lock=deno.lock scripts/*.deno.ts scripts/engine-replay/*.deno.ts scripts/web-capture/*.deno.ts scripts/report-preview/*.deno.ts
+        #
+        # scripts/report-extract/ (CUL-2292) is the clinic-AI extraction test. Its graph is entirely
+        # local (generate-report, its fixtures, node:assert): measured zero downloads from a cold
+        # DENO_DIR with no node_modules.
+        run: deno check --lock=deno.lock scripts/*.deno.ts scripts/engine-replay/*.deno.ts scripts/web-capture/*.deno.ts scripts/report-preview/*.deno.ts scripts/report-extract/*.deno.ts
 
       # The report harness end to end (CUL-2308): the unchanged generateReportForPet reading a
       # synthetic export through the stand-in client. It is also the harness's drift guard:
@@ -337,3 +341,70 @@ jobs:
       # a pattern `deno test` discovers. Read-only, no network, same cached graph.
       - name: Deno test (report preview)
         run: deno test --lock=deno.lock --cached-only --allow-read=supabase/functions,scripts scripts/report-preview/e2e.deno.ts
+
+      # The clinic-AI contiguity guard (CUL-2292, v2 spec §8): every fired flag and every sheet 1
+      # line of each v2 fixture is one unbroken run inside one block of the print HTML, no stylesheet
+      # draws a digit, and no sentence states a decline for the trial's own sign. The browserless half
+      # of the extraction test, so it rides in this required job. Named by path for the same reason
+      # as the step above. Read-only, no network, same cached graph.
+      - name: Deno test (report extraction contiguity)
+        run: deno test --lock=deno.lock --cached-only --allow-read=supabase/functions,scripts scripts/report-extract/contiguity.deno.ts
+
+  # ── The clinic-AI extraction job (CUL-2292, row VR2-12; v2 spec §8) ─────────────────────────────
+  #
+  # Clinics run reports through their own AI, which reads the PDF's text layer, not its pixels. This
+  # prints every v2 fixture to PDF in Chromium (A4 and Letter), pulls the text out with pypdf and
+  # with pdfminer.six, and fails when a fired flag, a sheet 1 line (so any digit on sheet 1) or the
+  # 1.95 / 1.86 kg weights do not read back whole, or when a sentence states a decline for the
+  # trial's own sign. Measured 2026-11-01/02: `tabular-nums` and Inter's contextual alternates each
+  # dropped digits and punctuation from exactly this text layer (CUL-2385, CUL-2386); re-adding
+  # either one turns this job red.
+  #
+  # Inter is installed because it is the sans those measurements were taken with (the report names
+  # Geist first, which the runner does not have; VR2-11 embeds the real faces). WebKit, the engine
+  # iOS prints in, is not covered here (CUL-1771's on-device probe).
+  #
+  # Separate job so a Chromium or apt hiccup never reds the type check, and one stable check name
+  # for the `main` ruleset. `ubuntu-24.04`, not `-latest`: requirements.txt pins wheels for its
+  # CPython 3.12.
+  report-extraction:
+    name: Vet report extraction (Chromium, pypdf, pdfminer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DENO_DIR: ${{ github.workspace }}/.deno-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.4
+
+      # Playwright outside the project tree (`--prefix`), so package.json and the lockfile stay the
+      # app's; NODE_PATH lets print.mjs resolve it. Exact-pinned for the same reason as Deno.
+      - name: Install Playwright's Chromium and the Inter font
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund playwright@1.63.0
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          sudo apt-get install -y --no-install-recommends fonts-inter
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+
+      - name: Install pypdf and pdfminer.six (hash-pinned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/py"
+          "$RUNNER_TEMP/py/bin/pip" install --require-hashes --only-binary=:all: -r scripts/report-extract/requirements.txt
+          echo "$RUNNER_TEMP/py/bin" >> "$GITHUB_PATH"
+
+      - name: Extract and check
+        run: scripts/report-extract/run.sh "$RUNNER_TEMP/extract"
