@@ -313,3 +313,25 @@ Deno.test('CUL-2441 — the milestone tap ("completed") is not the owner’s acc
     assert.ok(recordRow(trialHtml(endedTrial({ outcome: null, notes: null, stoppedReason: reason }))), reason)
   }
 })
+
+// ── Adversarial pass 2's counterexamples, each a QUIET break before its fix ─────────────────────
+
+Deno.test('CUL-2441 — a weigh-in after the trial is named with the Weight block’s own change', () => {
+  // Pass 2, #1: up 2% inside the trial, then a fall four days after it that one reading cannot flag.
+  const row = recordRow(trialHtml(endedTrial({ weights: [weigh('2026-06-02', 30), weigh('2026-06-27', 30.6), weigh('2026-07-01', 28.2)] })))!
+  assert.ok(row.includes('Weight up about 2% of body weight over the trial: 30.00 kg'), row)
+  assert.ok(
+    /The latest weigh-in on this report is 28\.20 kg \(62\.2 lb\) on Jul 1, 2026: down about 8% of body weight from 30\.60 kg \(67\.5 lb\) on Jun 27, 2026\./.test(row),
+    row,
+  )
+})
+
+Deno.test('CUL-2441 — a window that ends inside the trial scopes the weight to the days it covers', () => {
+  // Pass 2, #2: the report covers Jun 1–15 of a trial to Jun 28; "in the trial" claimed the whole of it.
+  const input = endedTrial({ weights: [weigh('2026-06-10', 30), weigh('2026-06-27', 28)] })
+  input.requestedWindow = { startDate: '2026-06-01', endDate: '2026-06-15' }
+  const row = recordRow(trialHtml(input))!
+  assert.ok(row.includes('Weight change over the trial days this report covers cannot be measured: one weigh-in in the trial days this report covers, 30.00 kg'), row)
+  assert.ok(!/over the trial[:.]|in the trial[,.]/.test(row), row)
+  assert.ok(/The latest weigh-in on this report is 28\.00 kg .* on Jun 27, 2026/.test(row), row)
+})

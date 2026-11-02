@@ -4349,7 +4349,10 @@ function trialRecordLine(snap: ReportSnapshot): string {
       } logged as &ldquo;other&rdquo; and ${uncat === 1 ? 'is' : 'are'} in neither count.`,
     )
   }
-  parts.push(trialWeightClause(snap))
+  // The weight sentence names its scope as the signs do (adversarial pass 2): `trialChange` is
+  // bounded to the evidence span, so where that span is not the whole trial it says so.
+  const wholeTrial = endsWithTrial && t.evidenceStartDate === t.startedAt.slice(0, 10)
+  parts.push(trialWeightClause(snap, wholeTrial ? 'the trial' : 'the trial days this report covers'))
   return parts.join(' ')
 }
 
@@ -4419,28 +4422,43 @@ function mealLessDaysClause(snap: ReportSnapshot, start: string, end: string): s
   return `${meals}, and nothing at all on ${silent === without ? (without === 1 ? 'it' : 'them') : `${num(silent)} of them`}`
 }
 
-/** The trial's weight, as readings: a change, one weigh-in, or none, then the Weight flag's loss. */
-function trialWeightClause(snap: ReportSnapshot): string {
+/**
+ * The trial's weight, as readings: a change, one weigh-in, or none; then any later weigh-in on the
+ * report, read as the Weight block reads it; then the Weight flag's loss.
+ *
+ * A LATER WEIGH-IN IS NEVER LEFT OUT (adversarial pass 2, QUIET): the row reaches past the trial for
+ * signs, so it does for weight. "Up about 2% over the trial" printed under "better" while the Weight
+ * block read a reading four days later as down about 8%, because only the flag (which a single new
+ * reading does not fire) carried it.
+ */
+function trialWeightClause(snap: ReportSnapshot, scope: string): string {
   const c = snap.weight.trialChange
   const at = (e: WeightChangeEnd): string => `${weightReadingText(e.kg)} on ${h(fmtDayYear(e.day))}`
   const latest = snap.weight.latest
   let s: string
   // `undefined` is a stored copy assembled before the field existed: unknown, never "none".
   if (c === undefined) s = 'The weight over the trial is not recorded in this copy.'
-  else if (c === null)
-    s = `No weight recorded in the trial.${
-      latest ? ` The latest weigh-in on this report is ${weightReadingText(latest.kg)} on ${h(fmtDayYear(latest.date))}.` : ''
-    }`
+  else if (c === null) s = `No weight recorded in ${scope}.`
   else if (!c.highBefore || c.deltaKg === null)
     // NOT "so no change is measured", which reads aloud as "no change" (cold read, finding 8).
-    s = `Weight change over the trial cannot be measured: one weigh-in in the trial, ${at(c.latest)}.${
+    s = `Weight change over ${scope} cannot be measured: one weigh-in in ${scope}, ${at(c.latest)}.${
       latest && latest.date === c.latest.day ? ' None is recorded after it.' : ''
     }`
-  else if (c.deltaKg === 0) s = `Weight unchanged over the trial: ${at(c.highBefore)}; ${at(c.latest)}.`
+  else if (c.deltaKg === 0) s = `Weight unchanged over ${scope}: ${at(c.highBefore)}; ${at(c.latest)}.`
   else
-    s = `Weight ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b> over the trial: ${at(
+    s = `Weight ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b> over ${scope}: ${at(
       c.highBefore,
     )} &rarr; ${at(c.latest)}.`
+  // The report's latest weigh-in, when it falls after every reading named above.
+  const namedUpTo = c ? c.latest.day : null
+  if (latest && c !== undefined && (namedUpTo === null || latest.date > namedUpTo)) {
+    const ch = snap.weight.change
+    const read =
+      ch && ch.latest.day === latest.date && ch.highBefore && ch.deltaKg !== null && ch.deltaKg !== 0
+        ? `: ${ch.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(ch)}</b> from ${at(ch.highBefore)}`
+        : ''
+    s += ` The latest weigh-in on this report is ${weightReadingText(latest.kg)} on ${h(fmtDayYear(latest.date))}${read}.`
+  }
   if ((snap.incompletePulls ?? []).includes('weight_checks')) s += ' The weigh-in record did not load in full.'
   const f = weightFlagOf(snap)
   if (f) {
