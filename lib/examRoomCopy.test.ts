@@ -40,7 +40,7 @@ jest.mock('expo-file-system', () => {
       return mockFiles.has(this.uri);
     }
     writeSync(content: string) {
-      if (mockFailWrite && this.uri.endsWith('print.html')) throw new Error('disk full');
+      if (mockFailWrite) throw new Error('disk full');
       mockFiles.set(this.uri, content);
     }
     textSync() {
@@ -63,14 +63,14 @@ beforeEach(() => {
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
-const copy = { phoneHtml: '<html>Mochi phone</html>', printHtml: '<html>Mochi print</html>' };
+const copy = { phoneHtml: '<html>Mochi phone</html>' };
 
 it('stages the copy inside the transient directory, and nowhere else', () => {
   expect(stageExamCopy(copy)).toBe(true);
   const root = `${transientDirectory().uri}/`;
   expect(root).toBe(`cache/${TRANSIENT_DIR}/`);
   expect(examCopyDirectory().uri.startsWith(root)).toBe(true);
-  expect(mockFiles.size).toBe(2);
+  expect(mockFiles.size).toBe(1);
   for (const k of mockFiles.keys()) expect(k.startsWith(root)).toBe(true);
   expect(readExamCopy()).toEqual(copy);
 });
@@ -82,11 +82,11 @@ it('the sign-out sweep (clearTransientFiles, run by clearLocalData) removes the 
   expect(readExamCopy()).toBeNull();
 });
 
-it('keeps at most one copy: a second open replaces the first, and its missing print leaves none behind', () => {
+it('keeps at most one copy: a second open replaces the first', () => {
   stageExamCopy(copy);
-  stageExamCopy({ phoneHtml: '<html>Cooper phone</html>', printHtml: null });
+  stageExamCopy({ phoneHtml: '<html>Cooper phone</html>' });
   expect(mockFiles.size).toBe(1);
-  expect(readExamCopy()).toEqual({ phoneHtml: '<html>Cooper phone</html>', printHtml: null });
+  expect(readExamCopy()).toEqual({ phoneHtml: '<html>Cooper phone</html>' });
 });
 
 it('closing the room deletes the copy', () => {
@@ -111,12 +111,12 @@ it('opens the room only after the copy is staged', () => {
   expect(push).toHaveBeenCalledWith(EXAM_ROOM_ROUTE);
 });
 
-it('never pairs a new report with the last one’s printed page when the old copy cannot be removed', () => {
+it('never stages a new report beside an old copy it could not remove', () => {
   stageExamCopy(copy);
   mockFailDelete = true;
   const push = jest.fn();
-  expect(openExamRoom({ phoneHtml: '<html>Cooper phone</html>', printHtml: null }, push)).toBe(false);
+  expect(openExamRoom({ phoneHtml: '<html>Cooper phone</html>' }, push)).toBe(false);
   expect(push).not.toHaveBeenCalled();
-  // The old pair is untouched and still whole; nothing of Cooper's was written beside it.
+  // Nothing of Cooper's was written beside Mochi's copy (the sign-out wipe still removes it).
   expect([...mockFiles.values()].some((v) => v.includes('Cooper'))).toBe(false);
 });

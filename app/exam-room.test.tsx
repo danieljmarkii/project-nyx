@@ -35,22 +35,22 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => ({ width: 390, height: 844, scale: 3, fontScale: mockFontScale }),
 }));
-let mockCopy: { phoneHtml: string; printHtml: string | null } | null = null;
+let mockCopy: { phoneHtml: string } | null = null;
 const mockClear = jest.fn();
 jest.mock('../lib/examRoomCopy', () => ({ readExamCopy: () => mockCopy, clearExamCopy: () => mockClear() }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { AccessibilityInfo } from 'react-native';
-import ExamRoomScreen, { EXAM_COPY, EXAM_KEEP_AWAKE_TAG, EXAM_PAGER_TEST_ID, EXAM_PAGES_TEST_ID, EXAM_PRINTED_TEST_ID } from './exam-room';
+import ExamRoomScreen, { EXAM_COPY, EXAM_KEEP_AWAKE_TAG, EXAM_PAGER_TEST_ID, EXAM_PAGES_TEST_ID } from './exam-room';
 import { EXAM_IDLE_MS } from '../lib/examRoom';
 
-const PHONE = '<!DOCTYPE html><html><head></head><body><main class="sheet" data-sheet="1">Mochi</main><section class="sheet back" data-sheet="2">b</section></body></html>';
+const PHONE = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /></head><body><main class="sheet" data-sheet="1">Mochi</main><section class="sheet back" data-sheet="2">b</section></body></html>';
 
 beforeEach(() => {
   jest.useFakeTimers();
   mockActive = true;
   mockFontScale = 1;
-  mockCopy = { phoneHtml: PHONE, printHtml: '<html><head></head><body>printed</body></html>' };
+  mockCopy = { phoneHtml: PHONE };
   [mockInject, mockBack, mockActivate, mockDeactivate, mockClear].forEach((m) => m.mockClear());
 });
 afterEach(() => jest.useRealTimers());
@@ -127,16 +127,14 @@ it('lets go when the idle timer fires, whatever the clock says, and holds again 
   expect(mockActivate).not.toHaveBeenCalled();
   post(s, { type: 'exam-touch' });
   expect(mockActivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
-  // The printed page has no script: its scroll is what counts as use.
-  fireEvent.press(s.getByText(EXAM_COPY.printed));
-  mockActivate.mockClear();
+  // A scroll of the page counts as use too.
   act(() => {
     jest.advanceTimersByTime(EXAM_IDLE_MS + 1);
   });
-  expect(s.getByTestId(EXAM_PRINTED_TEST_ID).props.onScroll).toBeDefined();
+  mockActivate.mockClear();
   act(() => {
     jest.advanceTimersByTime(2000);
-    s.getByTestId(EXAM_PRINTED_TEST_ID).props.onScroll();
+    s.getByTestId(EXAM_PAGES_TEST_ID).props.onScroll();
   });
   expect(mockActivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
 });
@@ -147,12 +145,6 @@ it('a text-size change with the room open reloads the pages at the new size', ()
   mockFontScale = 2;
   s.rerender(<ExamRoomScreen />);
   expect(s.getByTestId(EXAM_PAGES_TEST_ID)).not.toBe(before);
-});
-
-it('offers no "Printed page" when the copy has no printed layout', () => {
-  mockCopy = { phoneHtml: PHONE, printHtml: null };
-  const s = render(<ExamRoomScreen />);
-  expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
 });
 
 it('Done lets go of keep-awake and closes; closing deletes the copy', () => {
@@ -166,19 +158,12 @@ it('Done lets go of keep-awake and closes; closing deletes the copy', () => {
   expect(mockDeactivate).toHaveBeenCalledWith(EXAM_KEEP_AWAKE_TAG);
 });
 
-it('"Printed page" swaps to the printed layout in place, script-free', () => {
+it('offers no "Printed page" until it can carry the warning (held, adversarial pass on PR-19), and the pages never zoom', () => {
   const s = render(<ExamRoomScreen />);
-  expect(s.queryByTestId(EXAM_PRINTED_TEST_ID)).toBeNull();
-  fireEvent.press(s.getByText(EXAM_COPY.printed));
-  const printed = s.getByTestId(EXAM_PRINTED_TEST_ID);
-  expect(printed.props.javaScriptEnabled).toBe(false);
-  expect(printed.props.source.html).toContain('printed');
-  // The printed page is boxed in the same way: no navigation, no new window, nothing loaded.
-  expect(printed.props.source.html).toContain('http-equiv="Content-Security-Policy"');
-  expect(printed.props.onShouldStartLoadWithRequest({ url: 'https://example.com' })).toBe(false);
-  expect(printed.props.originWhitelist).toEqual(['about:*', 'data:*']);
-  expect(printed.props.onOpenWindow).toBeDefined();
-  expect(s.getByText(EXAM_COPY.pages)).toBeTruthy();
+  expect(s.queryByText('Printed page')).toBeNull();
+  const web = s.getByTestId(EXAM_PAGES_TEST_ID);
+  expect(web.props.setBuiltInZoomControls).toBe(false);
+  expect(web.props.source.html).toContain('user-scalable=no');
 });
 
 it('with no copy on the phone, says so and shows no page', () => {

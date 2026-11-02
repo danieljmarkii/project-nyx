@@ -16,8 +16,8 @@
 //      ruling (a) on CUL-2320): the app's exact exam document at 320×568, 390×844 and 844×390
 //      landscape, at 1.0, 2.35 and 3.1, every page in sheet order: one sheet shows at a time,
 //      the type is at least the arm's-length size, nothing clips or falls under 11pt, the band
-//      reaches page 1's first frame, and every check in 3 holds on the page the unit is on,
-//      again after a live text-size change.
+//      reaches page 1's first frame, every band flag shows with the reflow's own words (and the
+//      confounder line too), and every check in 3 holds on the page the unit is on.
 //
 // Dynamic Type is simulated the way iOS applies it: the root's resolved size changes and nothing
 // else does. The phone sheet's `html{font-size:17px;font:-apple-system-body}` keeps its 17px in
@@ -79,7 +79,7 @@ const PIN_MAX_SHARE = 0.4
 
 const fixtures = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8'))
 const failures = []
-const seenCounts = { fixtures: 0, bandChecked: 0, pointerShown: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0, examPages: 0, examUnits: 0 }
+const seenCounts = { fixtures: 0, bandChecked: 0, pointerShown: 0, units: 0, unitsWithConf: 0, repeatShown: 0, repeatHidden: 0, examPages: 0, examUnits: 0, examParity: 0 }
 const fail = (where, what) => failures.push(`${where}: ${what}`)
 
 /** Dynamic Type as iOS applies it: the root's resolved size, and nothing else. */
@@ -354,6 +354,36 @@ try {
         const posted = await page.evaluate(() => window.__posts || [])
         const first = posted.find((m) => m.type === 'exam-page')
         if (!first || first.page !== 1 || first.of !== of) fail(where0, `the room did not announce sheet 1 of ${of} (got ${JSON.stringify(first)})`)
+        // PARITY (adversarial pass on PR-19): the room may hide whole sheets and nothing else.
+        // Every band flag shows, and the band's and the confounder line's visible words are the
+        // phone reflow's own, so CSS that hid a flag or added words would red here.
+        const phoneView = await browser.newPage({ viewport: { width: size.width, height: size.height } })
+        await phoneView.setContent(atScale(fs.readFileSync(path.join(dir, `${name}.phone.html`), 'utf8'), s), { waitUntil: 'load' })
+        const words = (pg) => pg.evaluate(() => {
+          // Case is folded: the compact layout drops the band heading's text-transform.
+          const norm = (t) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase()
+          const pick = (sel) => [...document.querySelectorAll(sel)].map((el) => norm(el.innerText))
+          const lis = [...document.querySelectorAll('[data-block="band"] li')]
+          // Words drawn by CSS (::before / ::after) are invisible to innerText: list them too.
+          const drawn = []
+          // Scoped to where flags and warnings live; the fold and pointer arrows follow compaction.
+          const scope = ['band', 'lead-chart', 'confounder'].map((b) => `[data-block="${b}"], [data-block="${b}"] *`).join(', ')
+          for (const el of document.querySelectorAll(scope)) {
+            for (const ps of ['::before', '::after']) {
+              const c = getComputedStyle(el, ps).content
+              if (c && c !== 'none' && c !== 'normal') drawn.push(`${el.tagName}${ps}${c}`)
+            }
+          }
+          return {
+            drawn: drawn.sort(),
+            band: pick('[data-block="band"]'),
+            conf: pick('[data-block="confounder"]'),
+            lis: lis.length,
+            lisShown: lis.filter((li) => li.getBoundingClientRect().height > 0 && getComputedStyle(li).visibility !== 'hidden').length,
+          }
+        })
+        const phoneWords = await words(phoneView)
+        await phoneView.close()
         let unitPage = null
         for (let n = 1; n <= of; n++) {
           const where = `${where0} sheet ${n}/${of}`
@@ -371,18 +401,21 @@ try {
           if (facts.scrollY !== 0) fail(where, `the page opened scrolled to ${facts.scrollY}, not its top`)
           // Every sheet the room shows is checked, the back sheets included, not only sheet 1's main.
           await screenChecks(page, where, s, { ...size, band: size.band && n === 1 }, '[data-sheet]:not([data-exam-off]) *')
+          if (n === 1) {
+            const w = await words(page)
+            if (w.lis !== phoneWords.lis || w.lisShown !== w.lis) fail(where, `the band shows ${w.lisShown} of ${w.lis} flags (the reflow has ${phoneWords.lis})`)
+            if (JSON.stringify(w.band) !== JSON.stringify(phoneWords.band)) fail(where, 'the band does not say the reflow\'s words')
+            if (JSON.stringify(w.conf) !== JSON.stringify(phoneWords.conf)) fail(where, 'the confounder line does not say the reflow\'s words')
+            if (JSON.stringify(w.drawn) !== JSON.stringify(phoneWords.drawn)) fail(where, 'the room draws words with CSS that the reflow does not')
+            seenCounts.examParity++
+          }
           if (facts.unitShown) {
             if (unitPage !== null) fail(where, `the lead chart's unit shows on sheet ${unitPage} and again here`)
             unitPage = n
             const unit = await keepChecks(page, where)
             if (unit) seenCounts.examUnits++
-            if (s === 1) {
-              // The owner's text size changes with the room open: the app re-runs the type.
-              await page.addStyleTag({ content: `html{font-size:${(BODY_PX * 2.35).toFixed(2)}px}` })
-              await page.evaluate(() => window.__nyxExamType())
-              await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-              await keepChecks(page, `${where} → 2.35 live`)
-            }
+            // A text-size change with the room open reloads it (app/exam-room.tsx keys the
+            // WebView on the scale), so the fresh loads at 2.35 and 3.1 are that case.
           }
         }
         if (unitPage !== null && unitPage !== 1) fail(where0, `the lead chart's unit is on sheet ${unitPage}, not sheet 1`)
@@ -424,6 +457,7 @@ if (seenCounts.unitsWithConf < 1) fail('guard', 'no keep-together unit with a co
 if (seenCounts.repeatShown < 1) fail('guard', 'no repeat was seen')
 if (seenCounts.examPages < seenCounts.fixtures * EXAM_SIZES.length * SCALES.length) fail('guard', `only ${seenCounts.examPages} exam pages were walked`)
 if (seenCounts.examUnits < 1) fail('guard', 'no exam page carried the keep-together unit')
+if (seenCounts.examParity < seenCounts.fixtures * EXAM_SIZES.length * SCALES.length) fail('guard', 'the exam parity check did not run on every room')
 console.log(summary.join('\n'))
 console.log(JSON.stringify(seenCounts))
 if (failures.length > 0) {

@@ -99,12 +99,12 @@ const EXAM_SCRIPT = `<script id="nyx-exam-script">
   function show(n){
     page = Math.max(0, Math.min(sheets.length - 1, n));
     sheets.forEach(function(s, i){ if (i === page) s.removeAttribute('data-exam-off'); else s.setAttribute('data-exam-off', ''); });
+    // scroll-motion-ok: a DOM scroll inside the page script, which jumps (no smooth behaviour).
     window.scrollTo(0, 0);
     lay();
     post({ type: 'exam-page', page: page + 1, of: sheets.length });
   }
   window.__nyxExamGo = function(n){ show(n - 1); };
-  window.__nyxExamType = function(){ type(); lay(); };
   // A horizontal swipe turns the page; a vertical one scrolls it.
   var sx = null, sy = null, lastTouch = 0;
   document.addEventListener('touchstart', function(e){
@@ -142,6 +142,19 @@ export function withExamCsp(html: string): string | null {
   return `${html.slice(0, at)}<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">${html.slice(at)}`;
 }
 
+/** The reflow's viewport, as renderPhoneV2 writes it. */
+const PHONE_VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />';
+
+/**
+ * NO PINCH-ZOOM IN THE ROOM (adversarial pass on PR-19): the pinned lead sentence is pinned to
+ * the layout viewport, so a magnified view of the chart's lower half showed bars with neither
+ * the pin nor the confounder line. The room's type already follows the owner's own size (and the
+ * system's Zoom still works), so the room locks the page scale. The phone preview's exposure is
+ * filed with the class.
+ */
+export const EXAM_VIEWPORT =
+  '<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />';
+
 /**
  * The phone document as the exam room shows it, or null when the document is not a v2 phone
  * reflow (no sheets, or no place to put the mode): the caller then refuses to open the room
@@ -149,8 +162,11 @@ export function withExamCsp(html: string): string | null {
  */
 export function examRoomHtml(phoneHtml: string, ground: string): string | null {
   if (!phoneHtml.includes('data-sheet=') || !phoneHtml.includes('</head>') || !phoneHtml.includes('</body>')) return null;
-  const at = phoneHtml.lastIndexOf('</body>');
-  const withScript = `${phoneHtml.slice(0, at)}${EXAM_SCRIPT}\n${phoneHtml.slice(at)}`;
+  // A document whose viewport the room cannot lock is refused, never shown zoomable.
+  if (!phoneHtml.includes(PHONE_VIEWPORT)) return null;
+  const locked = phoneHtml.replace(PHONE_VIEWPORT, EXAM_VIEWPORT);
+  const at = locked.lastIndexOf('</body>');
+  const withScript = `${locked.slice(0, at)}${EXAM_SCRIPT}\n${locked.slice(at)}`;
   const head = withScript.indexOf('</head>');
   return withExamCsp(`${withScript.slice(0, head)}${examStyle(ground)}\n${withScript.slice(head)}`);
 }

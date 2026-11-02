@@ -4,6 +4,7 @@
 import {
   ARM_LENGTH_PX,
   EXAM_CSP,
+  EXAM_VIEWPORT,
   EXAM_IDLE_MS,
   clampPage,
   examGoScript,
@@ -14,7 +15,7 @@ import {
   withExamCsp,
 } from './examRoom';
 
-const PHONE = '<!DOCTYPE html><html><head><style>x{}</style></head><body><main class="sheet" data-sheet="1">a</main><section class="sheet back" data-sheet="2">b</section><script>/*reflow*/</script></body></html>';
+const PHONE = '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /><style>x{}</style></head><body><main class="sheet" data-sheet="1">a</main><section class="sheet back" data-sheet="2">b</section><script>/*reflow*/</script></body></html>';
 
 it('the pager says and announces "Sheet N of M"', () => {
   expect(sheetLabel(2, 4)).toBe('Sheet 2 of 4');
@@ -57,7 +58,7 @@ describe('examRoomHtml', () => {
     expect(out).not.toBeNull();
     const html = out as string;
     // Every byte of the reflow survives, in order: the mode only inserts.
-    const stripped = html.replace(/<style id="nyx-exam-style">[\s\S]*?<\/style>\n/, '').replace(/<script id="nyx-exam-script">[\s\S]*?<\/script>\n/, '').replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '');
+    const stripped = html.replace(/<style id="nyx-exam-style">[\s\S]*?<\/style>\n/, '').replace(/<script id="nyx-exam-script">[\s\S]*?<\/script>\n/, '').replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '').replace(EXAM_VIEWPORT, '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
     expect(stripped).toBe(PHONE);
   });
 
@@ -82,6 +83,16 @@ describe('examRoomHtml', () => {
     expect(EXAM_CSP).toContain("connect-src 'none'");
     expect(EXAM_CSP).not.toMatch(/https?:|\*/);
     expect(withExamCsp('no head')).toBeNull();
+  });
+
+  it('locks the page scale, so a pinch never shows the bars without the pinned warning', () => {
+    const html = out as string;
+    expect(html).toContain(EXAM_VIEWPORT);
+    expect(EXAM_VIEWPORT).toContain('maximum-scale=1');
+    expect(EXAM_VIEWPORT).toContain('user-scalable=no');
+    expect(html).not.toContain('initial-scale=1, viewport-fit=cover');
+    // A reflow whose viewport the room cannot lock is refused.
+    expect(examRoomHtml(PHONE.replace('initial-scale=1, ', ''), '#000')).toBeNull();
   });
 
   it('never touches brightness', () => {
