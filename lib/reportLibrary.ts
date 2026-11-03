@@ -75,7 +75,12 @@ export async function readSavedReports(petId: string, client: Client = supabase)
         .order('shared_at', { ascending: false })
         .order('id', { ascending: false })
         .range(from, from + LIBRARY_PAGE - 1);
-      if (error || !Array.isArray(data) || typeof count !== 'number') return { kind: 'failed' };
+      if (error) {
+        // A PostgREST refusal arrives here, never as a throw (CUL-2477): said, not swallowed.
+        console.warn('[reportLibrary] the saved reports could not be read:', error);
+        return { kind: 'failed' };
+      }
+      if (!Array.isArray(data) || typeof count !== 'number') return { kind: 'failed' };
       total = count;
       if (data.length === 0) break;
       for (const r of data as unknown as Raw[]) {
@@ -110,7 +115,10 @@ export async function readSavedReport(petId: string, reportId: string, client: C
       .eq('pet_id', petId)
       .eq('status', 'kept')
       .maybeSingle();
-    if (error) return 'failed';
+    if (error) {
+      console.warn('[reportLibrary] the saved report could not be read:', error);
+      return 'failed';
+    }
     const r = data as unknown as Raw | null;
     if (!r || !r.short_id || !r.shared_via || !r.shared_at) return null;
     return {
@@ -122,7 +130,8 @@ export async function readSavedReport(petId: string, reportId: string, client: C
       sharedVia: r.shared_via,
       sharedAt: r.shared_at,
     };
-  } catch {
+  } catch (e) {
+    console.warn('[reportLibrary] the saved report could not be read:', e);
     return 'failed';
   }
 }
@@ -187,7 +196,11 @@ export async function readDepartures(petId: string, reportId: string, client: Cl
         .order('shared_at', { ascending: false })
         .order('id', { ascending: false })
         .range(from, from + DEPARTURES_PAGE - 1);
-      if (error || !Array.isArray(data) || typeof count !== 'number') return { kind: 'failed' };
+      if (error) {
+        console.warn('[reportLibrary] the send history could not be read:', error);
+        return { kind: 'failed' };
+      }
+      if (!Array.isArray(data) || typeof count !== 'number') return { kind: 'failed' };
       total = count;
       if (data.length === 0) break;
       for (const r of data as unknown as RawDeparture[]) {

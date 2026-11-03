@@ -163,16 +163,80 @@ export function withExamCsp(html: string): string | null {
 export function printedWarningOf(phoneHtml: string): string | null {
   const m = /<p class="verdict" data-part="confounder-verdict" aria-hidden="true">([^<]*)<\/p>/.exec(phoneHtml);
   if (!m) return null;
-  // `h()` (generate-report/render.ts) escapes these five; `&amp;` decodes last.
-  const text = m[1]
+  const text = unescapeText(m[1]);
+  return text.length > 0 ? text : null;
+}
+
+/** Text escaped by `h()` (generate-report/render.ts), which escapes these five; `&amp;` decodes last. */
+function unescapeText(escaped: string): string {
+  return escaped
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&')
     .trim();
-  return text.length > 0 ? text : null;
 }
+
+export type SavedCopyWarning = { kind: 'none' } | { kind: 'pin'; text: string } | { kind: 'refuse' };
+
+/**
+ * THE SAVED COPY'S WARNING (CUL-2467, PM go 2026-11-03 on option (a)). A kept copy is the stored
+ * PRINTED page only (`generate-report` `mode: 'open'`): there is no reflow to open and no reflow
+ * lead to read back. So the saved-report screen pins the printed page's own confounder line, in
+ * full, natively above the page: the page's words, nothing re-cut or mirrored from the server's
+ * rule, and always a superset of the lead the reflow pins.
+ *  - `none`: the page carries no confounder marker at all, so nothing to pin.
+ *  - `pin`: the line, unescaped.
+ *  - `refuse`: the page carries a confounder marker (the block, or the line's class) but the line
+ *    cannot be read back whole (changed markup, inline markup inside it, or empty). The screen
+ *    then shows no paper rather than the printed bars with nothing pinned.
+ */
+export function savedCopyWarningOf(printHtml: string): SavedCopyWarning {
+  const marked = CONFOUNDER_BLOCK.test(printHtml) || CONFOUNDER_CLASS.test(printHtml);
+  if (!marked) return { kind: 'none' };
+  const lines = [...printHtml.matchAll(PRINTED_CONFOUNDER_LINE)];
+  // One line, exactly as renderPrintV2 writes it. Two would mean a layout this rule never saw.
+  if (lines.length !== 1) return { kind: 'refuse' };
+  const text = unescapeText(lines[0][1]);
+  return text.length > 0 ? { kind: 'pin', text: bowlFirst(text) } : { kind: 'refuse' };
+}
+
+/**
+ * The bowl warning, as `documentV2.ts` writes it (`BOWL_WARNING`). Same value, same question: the
+ * sentence that must lead a no-medication line, which the reflow leads with because the "no
+ * medication" sentence alone reads as a clean trial (cold read on CUL-2295, Mira).
+ * `guards/savedCopyBowlWarning.test.ts` reds when the server's sentence changes.
+ */
+export const SAVED_COPY_BOWL_WARNING = 'A free-fed bowl was down in this window; the trial cannot exclude it.';
+
+/** The no-medication sentence, as `documentV2.ts` `confounderOf` writes it (`none`); guarded with the bowl's. */
+export const SAVED_COPY_NO_MEDICATION =
+  'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.';
+
+/**
+ * The no-medication line with the bowl warning moved to the front (adversarial pass 1 on
+ * CUL-2467), as the reflow leads with it: every word stays, only the order the eye meets them
+ * changes. Only that line: a medication line leads with "Not a test of the diet alone.", which
+ * stays first, and any other line is returned as it is.
+ */
+function bowlFirst(text: string): string {
+  if (!text.startsWith(SAVED_COPY_NO_MEDICATION)) return text;
+  const at = text.indexOf(SAVED_COPY_BOWL_WARNING);
+  if (at < 0) return text;
+  const rest = `${text.slice(0, at)}${text.slice(at + SAVED_COPY_BOWL_WARNING.length)}`.replace(/\s{2,}/g, ' ').trim();
+  return `${SAVED_COPY_BOWL_WARNING} ${rest}`;
+}
+
+/** The printed confounder line, as renderPrintV2 writes it (`open('p', 'conf')`, then `h(text)`). */
+const PRINTED_CONFOUNDER_LINE = /<p class="conf" data-block="confounder">([^<]*)<\/p>/g;
+
+/**
+ * The line's class on a PARAGRAPH: a marker the strict read above must then account for. Never a
+ * bare class match: the back sheets' time and meal tags are `<span class="conf">` (render.ts), and
+ * every no-trial copy carrying one was refused (adversarial pass 1 on CUL-2467, LOUD).
+ */
+const CONFOUNDER_CLASS = /<p\s[^>]*class="conf(?:\s[^"]*)?"/;
 
 /**
  * May the room offer "Printed page"? Only when it can pin the warning. A record whose reflow

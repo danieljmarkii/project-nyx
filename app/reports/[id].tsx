@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
-import { PixelRatio, Platform, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PixelRatio, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SkeletonCard, ThemedText } from '../../components/ui';
 import { VisitLinkSheet } from '../../components/reportV2/VisitLinkSheet';
+import { boxedPreviewHtml } from '../../components/reportV2/ReportPreviewV2';
+import { REPORT_WEBVIEW_ORIGINS, savedCopyWarningOf } from '../../lib/examRoom';
 import { ANONYMOUS_PET_NAME, resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { androidTextZoom, isPreviewLoadAllowed } from '../../lib/reportPreviewV2';
 import {
@@ -64,7 +66,20 @@ import { readVetVisitsHome } from '../../lib/vetVisits';
 // a shorter history that would read as the whole one (C-12).
 //
 // WHOSE RECORD (C-9): the title names the pet the ROW belongs to, never the active pet. A `pet`
-// param this account does not hold opens nothing.
+// param this account does not hold opens nothing. Each load clears the previous copy's row first,
+// and an answer for an earlier id, pet or attempt never lands (CUL-2477).
+//
+// THE BARS NEVER SHOW WITHOUT THEIR WARNING (CUL-2467, PM go on option (a)). The stored copy is
+// the PRINTED page, which has no pin and no keep-together spacer. Above it this screen pins the
+// page's own confounder line, in full (`savedCopyWarningOf`, lib/examRoom.ts), as a native
+// sibling, never an overlay: no scroll or zoom of the page can move the bars away from it. The
+// strip has no height cap, so a long line shrinks the paper, never the warning. A page whose line
+// cannot be read back shows no paper at all.
+//
+// BOXED IN LIKE THE PREVIEW (CUL-2487). The page carries the exam room's CSP (`boxedPreviewHtml`),
+// `originWhitelist` is `*` (REPORT_WEBVIEW_ORIGINS) so every navigation reaches the load
+// predicate instead of going to the system browser, Android's new-window path is refused, and
+// every `data:` navigation is refused (`savedCopyLoadAllowed`).
 
 type Copy =
   | { kind: 'loading' }
@@ -72,6 +87,22 @@ type Copy =
   | { kind: 'offline' }
   | { kind: 'unavailable' }
   | { kind: 'failed' };
+
+/** Android's new-window path, refused (CUL-2487): the window never opens. */
+function refuseWindow(): void {}
+
+/**
+ * The saved copy's load check (CUL-2487, privacy passes 1 and 2). `isPreviewLoadAllowed` lets any
+ * `data:` URL through; here a `data:` navigation can only be the page leaving itself (an injected
+ * refresh to a `data:` document that carries no CSP), so it is refused outright. The copy's own
+ * document never needs it: Android's `loadDataWithBaseURL` is an app-initiated load the check is
+ * never asked about, and iOS reports it as `about:blank`. A gate on "has it loaded yet" lost the
+ * race on Android (the check blocks the UI thread the load-end event needs), so there is none.
+ * Wrong about a build, this fails closed: a blank paper, never a leak.
+ */
+export function savedCopyLoadAllowed(url: string): boolean {
+  return !url.startsWith('data:') && isPreviewLoadAllowed(url);
+}
 
 export default function SavedReportScreen() {
   const pets = usePetStore((s) => s.pets);
@@ -86,20 +117,29 @@ export default function SavedReportScreen() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [sends, setSends] = useState<Departure[] | null>(null);
   const [allSends, setAllSends] = useState(false);
+  // Every load (a params change, or "Try again") takes a number; only the newest one may land.
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    setRow(null);
     if (typeof id !== 'string' || typeof pet !== 'string' || !held) {
       setCopy({ kind: 'unavailable' });
       return;
     }
     setCopy({ kind: 'loading' });
     const [r, opened] = await Promise.all([readSavedReport(pet, id), openSavedReport(pet, id)]);
+    if (seq !== loadSeq.current) return;
     if (r !== 'failed') setRow(r);
     setCopy(opened.kind === 'ok' && r === null ? { kind: 'unavailable' } : opened);
   }, [id, pet, held]);
 
   useEffect(() => {
     void load();
+    return () => {
+      // An answer that arrives after the screen moved on (or unmounted) never lands.
+      loadSeq.current += 1;
+    };
   }, [load]);
 
   // The copy's link and the picker's choices. A read for an earlier copy never lands on this one.
@@ -155,40 +195,60 @@ export default function SavedReportScreen() {
   const currentYear = new Date().getFullYear();
   const petName = resolveRecordPetName(pets, row?.petId ?? null);
   const title = row ? copyTitle(petName, ANONYMOUS_PET_NAME, row.sharedAt, currentYear) : COPY_TITLE_PENDING;
-  const message = copy.kind === 'offline' ? COPY_OFFLINE : copy.kind === 'unavailable' ? COPY_UNAVAILABLE : copy.kind === 'failed' ? COPY_FAILED : null;
+  const warning = useMemo(() => (copy.kind === 'ok' ? savedCopyWarningOf(copy.html) : null), [copy]);
+  const boxedHtml = useMemo(() => (copy.kind === 'ok' ? boxedPreviewHtml(copy.html) : null), [copy]);
+  // A printed page whose warning cannot be read back is never drawn (CUL-2467): it reads as a
+  // copy that cannot be shown, and the vet's copy is untouched.
+  const shown = copy.kind === 'ok' && warning !== null && warning.kind !== 'refuse';
+  const message = copy.kind === 'ok' && !shown ? COPY_UNAVAILABLE : copy.kind === 'offline' ? COPY_OFFLINE : copy.kind === 'unavailable' ? COPY_UNAVAILABLE : copy.kind === 'failed' ? COPY_FAILED : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <Header title={title} leading="back" onLeadingPress={() => router.back()} titleBelowAtLargeText />
-      {row && copy.kind === 'ok' && (
+      {row && shown && (
         <ThemedText variant="caption" style={styles.asSent} testID="report-as-sent">
           {asSentLine(row.sharedAt, currentYear)}
         </ThemedText>
       )}
       <View style={styles.paper}>
         {copy.kind === 'loading' && <SkeletonCard style={styles.wait} />}
-        {copy.kind === 'ok' && (
+        {shown && warning?.kind === 'pin' && (
+          // The line's own words are in the page below; this repeat is for the eye only, as the
+          // reflow's pin is (aria-hidden there). Taller than the paper (a long line at the largest
+          // text), it scrolls inside the paper rather than clip, and the page below gets nothing.
+          <ScrollView
+            testID="report-copy-warning"
+            style={styles.warningScroll}
+            contentContainerStyle={styles.warning}
+            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden
+          >
+            <ThemedText style={styles.warningText}>{warning.text}</ThemedText>
+          </ScrollView>
+        )}
+        {shown && boxedHtml !== null && (
           <WebView
             testID="report-copy"
             style={styles.web}
-            originWhitelist={['about:*', 'data:*']}
-            source={{ html: copy.html }}
+            originWhitelist={REPORT_WEBVIEW_ORIGINS}
+            source={{ html: boxedHtml }}
             // The stored print page carries no script; nothing on paper runs or loads.
             javaScriptEnabled={false}
             // Health bytes never land in the WebView's own storage, outside every wipe path
             // (DocumentPdfViewer's precedent; rls-privacy-reviewer F2).
             incognito
             cacheEnabled={false}
-            onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+            onShouldStartLoadWithRequest={(req) => savedCopyLoadAllowed(req.url)}
+            onOpenWindow={refuseWindow}
             // The owner's text size reaches the page on Android, as in the preview.
             textZoom={Platform.OS === 'android' ? androidTextZoom(PixelRatio.getFontScale()) : undefined}
             showsVerticalScrollIndicator
           />
         )}
         {message !== null && (
-          <View style={styles.message} testID={`report-${copy.kind}`}>
+          <View style={styles.message} testID={`report-${copy.kind === 'ok' ? 'unavailable' : copy.kind}`}>
             <ThemedText variant="caption" style={styles.messageText}>{message}</ThemedText>
-            {copy.kind !== 'unavailable' && <PrimaryButton label="Try again" variant="secondary" onPress={() => void load()} />}
+            {copy.kind !== 'unavailable' && copy.kind !== 'ok' && <PrimaryButton label="Try again" variant="secondary" onPress={() => void load()} />}
           </View>
         )}
       </View>
@@ -266,6 +326,22 @@ const styles = StyleSheet.create({
   paper: { flex: 1, backgroundColor: theme.colorSurface },
   wait: { margin: theme.space3 },
   web: { flex: 1, backgroundColor: theme.colorSurface },
+  // Its own height up to the whole paper, never more: the page takes what is left.
+  warningScroll: { flexGrow: 0, flexShrink: 1 },
+  // The preview's printed-view pin (ReportPreviewV2), so the two read as one warning.
+  warning: {
+    backgroundColor: theme.colorSurface,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colorBorder,
+  },
+  warningText: {
+    fontSize: theme.textLG,
+    lineHeight: theme.lineHeightLG,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorEventSymptomInk,
+  },
   message: { padding: theme.space3, gap: theme.space2 },
   messageText: { color: theme.colorTextSecondary },
   footer: { padding: theme.space3, gap: theme.space1 },

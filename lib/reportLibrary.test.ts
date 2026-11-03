@@ -22,6 +22,7 @@ import {
   NEW_REPORT_LABEL,
   openSavedReport,
   readDepartures,
+  readSavedReport,
   readSavedReports,
   SENDS_SHOWN,
   showAllSendsLabel,
@@ -321,5 +322,31 @@ describe('send history words', () => {
   it('offers the rest past the first few', () => {
     expect(SENDS_SHOWN).toBe(3);
     expect(showAllSendsLabel(5)).toBe('Show all 5 sends');
+  });
+});
+
+describe('a PostgREST refusal is said, never swallowed (CUL-2477)', () => {
+  const refusal = { code: '42501', message: 'permission denied' };
+  it('the list read warns with the error and fails', async () => {
+    const { client } = fakeClient([raw(1, at(2026, 10, 30))], { failAt: 0 });
+    expect(await readSavedReports(PET, client)).toEqual({ kind: 'failed' });
+    expect(console.warn).toHaveBeenCalledWith('[reportLibrary] the saved reports could not be read:', { message: 'boom' });
+  });
+  it('the one-row read warns with the error and fails', async () => {
+    const q: Record<string, unknown> = {};
+    q.select = () => q;
+    q.eq = () => q;
+    q.maybeSingle = () => Promise.resolve({ data: null, error: refusal });
+    expect(await readSavedReport(PET, 'r1', { from: () => q } as never)).toBe('failed');
+    expect(console.warn).toHaveBeenCalledWith('[reportLibrary] the saved report could not be read:', refusal);
+  });
+  it('the send history warns with the error and fails', async () => {
+    const q: Record<string, unknown> = {};
+    q.select = () => q;
+    q.eq = () => q;
+    q.order = () => q;
+    q.range = () => Promise.resolve({ data: null, error: refusal, count: null });
+    expect(await readDepartures(PET, 'r1', { from: () => q } as never)).toEqual({ kind: 'failed' });
+    expect(console.warn).toHaveBeenCalledWith('[reportLibrary] the send history could not be read:', refusal);
   });
 });
