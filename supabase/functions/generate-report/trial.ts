@@ -317,6 +317,13 @@ export interface TrialLoggingDensity {
   meals: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } }
 }
 
+/**
+ * CUL-2481 — a food fed after the trial that was never on its list, with its feedings DURING the
+ * trial when there were any (off-diet by construction, dated in appendix C). `inTrial` absent is a
+ * stored copy from before the field; null is "none in the range this report covers".
+ */
+export type TrialNewFood = NewFoodIntroduced & { inTrial?: { feedings: number; firstDate: string } | null }
+
 /** One off-diet feeding, resolved by `classifyFeeding` (§5.3). */
 export interface TrialExposure {
   eventId: string
@@ -687,7 +694,7 @@ export interface TrialBlock {
   /** §6.3 — foods fed after the trial ENDED that were never on its list, each with the
    *  symptoms in its forward windows SIDE BY SIDE, never as attribution. Empty while
    *  the trial runs. */
-  newFoods?: NewFoodIntroduced[]
+  newFoods?: TrialNewFood[]
   exposures: {
     totalFeedings: number
     /** A FLOOR, never a total (§5.2). */
@@ -849,6 +856,13 @@ export interface TrialBlock {
    * because the fact it needed was not on this type.
    */
   rangeRefusalSpansEpisodes: boolean
+  /**
+   * CUL-2479 — the in-range feedings that carried the trial diet (rung 1 on a `primary_diet` row,
+   * or a mixed bowl holding it), by event id. The report's intake flag reads every meal; this is
+   * how the trial block knows when the meals behind it were the trial diet. Optional: a stored
+   * copy assembled before it existed reads as unknown, never as "not the trial diet".
+   */
+  trialDietFeedingEventIds?: string[]
   /** PR 3's token. `refused` is load-bearing: §4.3 routes it to the intake-decline
    *  HEALTH lane and forbids rendering it as a compliance outcome. */
   stoppedReason: string | null
@@ -1177,12 +1191,21 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   let bowlsWithTrialDiet = 0
   const symptomDays = [...new Set(args.symptomDayIndices)]
   const exposures: TrialExposure[] = []
+  const trialDietFeedingEventIds: string[] = []
   for (const e of args.meals) {
     if (!e.meal) continue
     const dn = dayIndexOf(ctx, e.occurredAt)
     if (!inRange(dn)) continue
     const classification = classifyFeeding(ctx, toTrialFeeding(e))
     if (classification.components && carriesTrialDiet(classification)) bowlsWithTrialDiet += 1
+    // CUL-2479: which in-range feedings carried the trial diet, so the trial block can say when
+    // the report's intake flag fires on it. The same classification, never a label match.
+    if (
+      (classification.verdict === 'permitted' && classification.role === 'primary_diet') ||
+      (classification.components && carriesTrialDiet(classification))
+    ) {
+      trialDietFeedingEventIds.push(e.id)
+    }
     if (classification.verdict === 'permitted' && classification.permittedBy) {
       const key = allowedRowKey(classification.permittedBy)
       permittedCounts.set(key, (permittedCounts.get(key) ?? 0) + 1)
@@ -1416,7 +1439,33 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
           otherFoodLabels: derived.otherFoodLabels,
           firstExclusive,
         }
-  const newFoods = newFoodsIntroduced({ ...transitionInput, symptoms: args.recordSymptoms ?? [] })
+  // CUL-2481: a food "never on the list" can still have been fed DURING the trial: off-diet, in
+  // appendix C. `newFoodsIntroduced` reads only the days after the end, so the row printed its
+  // first post-trial day as if the food were new. The in-trial feedings of the same food (by the
+  // label the derivation itself keys its output on) ride with it, over the evidence range.
+  const inTrialByLabel = new Map<string, { feedings: number; firstDay: string }>()
+  for (const e of args.meals) {
+    if (!e.meal) continue
+    const dn = dayIndexOf(ctx, e.occurredAt)
+    if (!inRange(dn)) continue
+    const f = toTrialFeeding(e)
+    const labels = (f.components?.length ?? 0) > 0 ? [...new Set((f.components ?? []).map((c) => c.label))] : [f.label]
+    for (const label of labels) {
+      if (!label) continue
+      const day = dayKeyFromIndex(dn)
+      const got = inTrialByLabel.get(label)
+      if (got) {
+        got.feedings += 1
+        if (day < got.firstDay) got.firstDay = day
+      } else inTrialByLabel.set(label, { feedings: 1, firstDay: day })
+    }
+  }
+  const newFoods: TrialNewFood[] = newFoodsIntroduced({ ...transitionInput, symptoms: args.recordSymptoms ?? [] }).map(
+    (food) => {
+      const fed = inTrialByLabel.get(food.label)
+      return { ...food, inTrial: fed ? { feedings: fed.feedings, firstDate: fed.firstDay } : null }
+    },
+  )
 
   return {
     transition,
@@ -1542,6 +1591,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     trialDietRefusal: facts.trialDietRefusal,
     rangeRefusal,
     rangeRefusalSpansEpisodes: facts.rangeRefusalSpansEpisodes,
+    trialDietFeedingEventIds,
     stoppedReason: trial.stoppedReason ?? null,
     outcome: trial.outcome ?? null,
     outcomeNotes: trial.outcomeNotes ?? null,
