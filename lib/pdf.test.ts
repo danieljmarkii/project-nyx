@@ -658,24 +658,26 @@ describe.each([
     mockedSyncNow.mockReset().mockImplementation(async () => {
       order.push('sync');
     });
-    mockedIngest.mockReset().mockImplementation(async () => {
-      order.push('ingest');
-    });
+    mockedIngest.mockReset();
     mockedInbox.mockReset();
   });
 
-  it('ingests the inbox, with the account pets, before anything is counted or flushed', async () => {
+  afterEach(() => {
+    // A writer started from the report screen could outlive a sign-out's wipe (CUL-1968).
+    expect(mockedIngest).not.toHaveBeenCalled();
+  });
+
+  it('counts the inbox for the account pets, before the rows', async () => {
     mockedInbox.mockImplementation(() => (order.push('inbox'), 0));
     mockedGaps.mockImplementation(async () => (order.push('rows'), { unsent: 0, refused: 0 }));
     await expect(gate()).resolves.toEqual({ pending: 0, quarantined: 0 });
-    expect(order).toEqual(['ingest', 'inbox', 'rows']);
-    expect([...(mockedIngest.mock.calls[0][0] as Set<string>)]).toEqual(['pet-a', 'pet-b']);
+    expect(order).toEqual(['inbox', 'rows']);
     expect([...(mockedInbox.mock.calls[0][0] as Set<string>)]).toEqual(['pet-a', 'pet-b']);
   });
 
-  it('a treat still in the inbox after the ingest counts as pending, and earns the flush', async () => {
-    // The trial edge: a deferred widget treat is on neither SQLite nor the server.
-    mockedInbox.mockReturnValueOnce(1).mockReturnValueOnce(1);
+  it('a treat still in the inbox counts as pending, and earns the flush', async () => {
+    // The trial edge: a widget treat not yet ingested is on neither SQLite nor the server.
+    mockedInbox.mockReturnValue(1);
     mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
     await expect(gate()).resolves.toEqual({ pending: 1, quarantined: 0 });
     expect(mockedSyncNow).toHaveBeenCalledTimes(1);
@@ -692,26 +694,25 @@ describe.each([
     mockedInbox.mockImplementation(() => (order.push('inbox'), 1));
     mockedGaps.mockImplementation(async () => (order.push('rows'), { unsent: 0, refused: 0 }));
     await gate();
-    expect(order).toEqual(['ingest', 'inbox', 'rows', 'sync', 'inbox', 'rows']);
+    expect(order).toEqual(['inbox', 'rows', 'sync', 'inbox', 'rows']);
   });
 
-  it('a failed ingest does not stop the gate, and its files still count', async () => {
-    mockedIngest.mockRejectedValueOnce(new Error('ingest boom'));
+  it('an unreadable inbox never costs the rows: 12 unsent and 2 refused still stand (adversarial pass 1)', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    mockedInbox.mockReturnValue(3);
-    mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
-    await expect(gate()).resolves.toEqual({ pending: 3, quarantined: 0 });
+    mockedInbox.mockImplementation(() => {
+      throw new Error('list boom');
+    });
+    mockedGaps.mockResolvedValue({ unsent: 12, refused: 2 });
+    mockedSyncNow.mockImplementation(async () => undefined);
+    await expect(gate()).resolves.toEqual({ pending: 12, quarantined: 2 });
   });
 
-  it('an inbox that cannot be listed fails the first count like the rows would', async () => {
+  it('an unreadable inbox over clean rows reads as the rows alone, not as a failed count', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     mockedInbox.mockImplementation(() => {
       throw new Error('list boom');
     });
     mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
-    const r = await gate();
-    // The freshness line reads no evidence as silence; the send reads it as unknown (null).
-    expect(r === null || (r.pending === 0 && r.quarantined === 0)).toBe(true);
-    expect(mockedSyncNow).not.toHaveBeenCalled();
+    await expect(gate()).resolves.toEqual({ pending: 0, quarantined: 0 });
   });
 });

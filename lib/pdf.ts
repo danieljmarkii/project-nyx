@@ -2,7 +2,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File } from 'expo-file-system';
 import { countRecordGaps } from './db';
-import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
+import { countUnclaimedInbox } from './captureInbox';
 import { usePetStore } from '../store/petStore';
 import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
@@ -154,18 +154,34 @@ function accountPetIds(): ReadonlySet<string> {
 
 /**
  * CUL-2468: the widget's capture inbox, counted with the rows. A capture waits there (outside
- * SQLite) until the app ingests it, so a SQLite-only count read a treat logged from the widget
- * during a diet trial as "everything sent" while the server, and the report's off-diet read, had
- * never seen it. The gate ingests first (below); what is still in the inbox after that counts as
- * pending: it has not reached the server, and connecting plus reopening is what moves it.
+ * SQLite) until the foreground ingest (hooks/useSync.ts) takes it in, so a SQLite-only count read
+ * a treat logged from the widget during a diet trial as "everything sent" while the server, and
+ * the report's off-diet read, had never seen it. Whatever is still in the inbox counts as pending:
+ * it has not reached the server.
+ *
+ * COUNTED, NEVER INGESTED HERE. The gate does not run the ingest itself: an ingest is a WRITER,
+ * and one started from this screen while a sign-out is wiping the store would have no session
+ * epoch to fence on (useSync captures it at session start; this gate cannot), so it could write
+ * the old account's rows after the wipe (CUL-1968's hazard). Counting alone closes the gap; the
+ * cost is an over-warn for a capture the foreground has not reached yet, which reopening clears.
  *
  * ORDER: the inbox is read BEFORE the rows. A foreground ingest running beside this gate only
  * ever moves a record inbox → rows, so read in this order a record caught mid-move is counted
  * twice (an over-warn), never by neither (the CUL-2471 two-read hazard, across two stores).
+ *
+ * AN UNREADABLE INBOX NEVER COSTS THE ROWS. Its read is its own: if listing it throws, the gate
+ * counts the rows alone (what it did before the inbox was counted at all) rather than letting the
+ * failure null out a row count that succeeded, which the freshness line would read as silence
+ * over unsent rows (adversarial pass 1 on this change).
  */
 function withInbox(count: UnsentCounter): UnsentCounter {
   return async () => {
-    const inbox = countUnclaimedInbox(accountPetIds());
+    let inbox = 0;
+    try {
+      inbox = countUnclaimedInbox(accountPetIds());
+    } catch (e) {
+      console.warn('[Report] capture inbox unreadable (rows still counted):', e);
+    }
     const rows = await count();
     return { pending: rows.pending + inbox, quarantined: rows.quarantined };
   };
@@ -183,11 +199,6 @@ export async function flushBeforeSend(): Promise<ReportFreshness | null> {
 }
 
 async function flushAndCount(rowCount: UnsentCounter): Promise<ReportFreshness | null> {
-  // Take the widget's captures in first, so they ride the flush below like any other row. The
-  // same allowlisted, sign-out-fenced ingest the foreground runs (hooks/useSync.ts); idempotent,
-  // so running beside that one is harmless. Best effort: a failed ingest leaves its files in the
-  // inbox, where the count below still sees them.
-  await ingestCaptureInbox(accountPetIds()).catch((e) => console.warn('[Report] inbox ingest failed:', e));
   const count = withInbox(rowCount);
   let counts: ReportFreshness;
   try {

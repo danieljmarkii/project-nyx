@@ -101,7 +101,7 @@ it('a v1 report renders as before: no preview, no toggle, JS off', async () => {
 
 // CUL-2486: the v1 frame had `originWhitelist ['*']` and no load check, so an injected link or
 // meta refresh loaded https in the frame. Boxed now like every report frame.
-it('the v1 frame is boxed: every URL reaches the load check, which refuses all but the document; no window; CSP', async () => {
+it('the v1 frame is boxed: every URL reaches the load check, which refuses every network and app scheme; no window; CSP', async () => {
   mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, html: '<html><head></head><body>v1</body></html>' }));
   const s = render(<ReportScreen />);
   await s.findByText('Send to vet');
