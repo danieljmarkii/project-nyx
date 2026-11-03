@@ -2139,7 +2139,7 @@
     "verifier": "pass",
     "checker": "reject"
    },
-   "note": "band-once and one-observation mean no lead on this record can cite S2 beside S1; the v2 contract requires band item 1 only (the open fork on CUL-2380)"
+   "note": "band-once and one-observation mean no lead on this record can cite S2 beside S1; the PM ruled 2026-11-03 that a lead may print citing band item 1 only, with the band in full above it, so the checker and this stop rule measure the omission"
   },
   {
    "id": "res-order-a",
@@ -2223,7 +2223,7 @@
     "verifier": "pass",
     "checker": "pass"
    },
-   "note": "cites band item 1 only; whether the checker should reject a lead that leaves band items 2 to 6 to the band above is the open fork on CUL-2380"
+   "note": "cites band item 1 only, as the PM ruled 2026-11-03 a lead may on a multi-flag record (the band prints in full above it)"
   },
   {
    "id": "ctl-nyx-b",
@@ -2422,7 +2422,7 @@
     "verifier": "pass",
     "checker": "pass"
    },
-   "note": "the burden flag S2 is not cited (res-omit-a); the checker may reject this, which is the open fork"
+   "note": "the burden flag S2 is not cited (res-omit-a); allowed by the PM's 2026-11-03 ruling, measured by the checker"
   },
   {
    "id": "ctl-pet-a",

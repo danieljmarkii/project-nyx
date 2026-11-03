@@ -53,7 +53,7 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
 
 The closed vocabulary means a lead's words come from the lines it cites, the pet's name, and a pinned 29-word frame. Also refused: letters outside A to Z; a sentence touching a flag put in the past; an adequacy phrase ("full meal" included) moved from its place; and a date moved off the anchor word its line prints ("from", "last", "most recent"). What is left is meaning built from those words alone:
 
-- **A later band item left out.** Band-once and one-observation let a lead cite one band item. On a record with several live flags, the rest are left to the band printed directly above it. The rubric scores Nyx's burden flag missing as material H7 (`res-omit-a`). Whether a lead may print on such a record is the open fork on CUL-2380.
+- **A later band item left out.** Band-once and one-observation let a lead cite one band item. On a record with several live flags, the rest are left to the band printed directly above it. The rubric scores Nyx's burden flag missing as material H7 (`res-omit-a`). The PM ruled on 2026-11-03 (CUL-2484, option a) that a lead may print on such a record citing band item 1, with the band in full above it. The checker's H7 must still pass it, and stop (2) measures it.
 - **Order and emphasis inside a line's own words:** the calm clauses first (`res-order-a`), or the silent week before the count (`res-order-b`).
 
 The bake-off measures these: stop (2) applies to them like any other item.
