@@ -163,16 +163,50 @@ export function withExamCsp(html: string): string | null {
 export function printedWarningOf(phoneHtml: string): string | null {
   const m = /<p class="verdict" data-part="confounder-verdict" aria-hidden="true">([^<]*)<\/p>/.exec(phoneHtml);
   if (!m) return null;
-  // `h()` (generate-report/render.ts) escapes these five; `&amp;` decodes last.
-  const text = m[1]
+  const text = unescapeText(m[1]);
+  return text.length > 0 ? text : null;
+}
+
+/** Text escaped by `h()` (generate-report/render.ts), which escapes these five; `&amp;` decodes last. */
+function unescapeText(escaped: string): string {
+  return escaped
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, '&')
     .trim();
-  return text.length > 0 ? text : null;
 }
+
+export type SavedCopyWarning = { kind: 'none' } | { kind: 'pin'; text: string } | { kind: 'refuse' };
+
+/**
+ * THE SAVED COPY'S WARNING (CUL-2467, PM go 2026-11-03 on option (a)). A kept copy is the stored
+ * PRINTED page only (`generate-report` `mode: 'open'`): there is no reflow to open and no reflow
+ * lead to read back. So the saved-report screen pins the printed page's own confounder line, in
+ * full, natively above the page: the page's words, nothing re-cut or mirrored from the server's
+ * rule, and always a superset of the lead the reflow pins.
+ *  - `none`: the page carries no confounder marker at all, so nothing to pin.
+ *  - `pin`: the line, unescaped.
+ *  - `refuse`: the page carries a confounder marker (the block, or the line's class) but the line
+ *    cannot be read back whole (changed markup, inline markup inside it, or empty). The screen
+ *    then shows no paper rather than the printed bars with nothing pinned.
+ */
+export function savedCopyWarningOf(printHtml: string): SavedCopyWarning {
+  const marked = CONFOUNDER_BLOCK.test(printHtml) || CONFOUNDER_CLASS.test(printHtml);
+  if (!marked) return { kind: 'none' };
+  const lines = [...printHtml.matchAll(PRINTED_CONFOUNDER_LINE)];
+  // One line, exactly as renderPrintV2 writes it. Two would mean a layout this rule never saw.
+  if (lines.length !== 1) return { kind: 'refuse' };
+  const text = unescapeText(lines[0][1]);
+  return text.length > 0 ? { kind: 'pin', text } : { kind: 'refuse' };
+}
+
+/** The printed confounder line, as renderPrintV2 writes it (`open('p', 'conf')`, then `h(text)`). */
+const PRINTED_CONFOUNDER_LINE = /<p class="conf" data-block="confounder">([^<]*)<\/p>/g;
+
+/** The line's class anywhere, in any tag: a marker the strict read above must then account for. */
+const CONFOUNDER_CLASS = /\sclass="conf(?:\s[^"]*)?"/;
 
 /**
  * May the room offer "Printed page"? Only when it can pin the warning. A record whose reflow

@@ -13,6 +13,7 @@ import {
   parseExamMessage,
   printedViewAllowed,
   printedWarningOf,
+  savedCopyWarningOf,
   sheetLabel,
   withExamCsp,
 } from './examRoom';
@@ -138,5 +139,48 @@ describe('printedViewAllowed: the printed page is offered only when it can carry
   });
   it('no confounder line in either layout: allowed, and nothing to pin', () => {
     expect(printedViewAllowed('<main data-sheet="1">a</main><script>q(\'[data-block="confounder"]\')</script>', plainPrint)).toBe(true);
+  });
+});
+
+describe('savedCopyWarningOf: a saved printed page pins its own confounder line, or is not drawn (CUL-2467)', () => {
+  // renderPrintV2's own shapes: `open('p', 'conf')` then `h(text)`.
+  const page = (body: string) => `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1" /></head><body><main class="sheet" data-sheet="1">${body}</main></body></html>`;
+  const chart = '<section class="leadchart" data-block="lead_chart"><h2 class="charth">Itch</h2><svg></svg></section>';
+
+  it('pins the line in full, unescaped: the page’s words, a superset of the reflow’s lead', () => {
+    const line = 'Not a test of the diet alone. Overlapping the trial: Apoquel &amp; &quot;fish oil&quot; (entered as a supplement), overlapping it Oct 1 to Oct 20. Spans are the courses as recorded, not evidence of administration.';
+    const out = savedCopyWarningOf(page(`${chart}<p class="conf" data-block="confounder">${line}</p>`));
+    expect(out).toEqual({
+      kind: 'pin',
+      text: 'Not a test of the diet alone. Overlapping the trial: Apoquel & "fish oil" (entered as a supplement), overlapping it Oct 1 to Oct 20. Spans are the courses as recorded, not evidence of administration.',
+    });
+  });
+
+  it('the no-medication line with a bowl keeps the bowl warning in what is pinned (its lead is not its first sentence)', () => {
+    const line = 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner. A free-fed bowl was down in this window; the trial cannot exclude it. Free-fed: Kibble; intake not directly observed.';
+    const out = savedCopyWarningOf(page(`${chart}<p class="conf" data-block="confounder">${line}</p>`));
+    expect(out.kind === 'pin' && out.text).toContain('A free-fed bowl was down in this window; the trial cannot exclude it.');
+  });
+
+  it('no confounder marker anywhere: nothing to pin', () => {
+    expect(savedCopyWarningOf(page(chart))).toEqual({ kind: 'none' });
+    // `cond` (the masthead's conditions) is not the line.
+    expect(savedCopyWarningOf(page('<p class="cond">Atopy</p>'))).toEqual({ kind: 'none' });
+  });
+
+  it('a marker whose line cannot be read back whole is refused, never drawn quieter', () => {
+    // Changed attribute order.
+    expect(savedCopyWarningOf(page('<p data-block="confounder" class="conf">Not a test of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
+    // A second class.
+    expect(savedCopyWarningOf(page('<p class="conf wide" data-block="confounder">Not a test of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
+    // The class alone, block id lost.
+    expect(savedCopyWarningOf(page('<div class="conf">Not a test of the diet alone.</div>'))).toEqual({ kind: 'refuse' });
+    // Inline markup inside the line.
+    expect(savedCopyWarningOf(page('<p class="conf" data-block="confounder"><b>Not a test</b> of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
+    // Empty.
+    expect(savedCopyWarningOf(page('<p class="conf" data-block="confounder">  </p>'))).toEqual({ kind: 'refuse' });
+    // Two lines: a layout this rule never saw.
+    const two = '<p class="conf" data-block="confounder">A.</p><p class="conf" data-block="confounder">B.</p>';
+    expect(savedCopyWarningOf(page(two))).toEqual({ kind: 'refuse' });
   });
 });
