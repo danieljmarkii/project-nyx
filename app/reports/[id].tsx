@@ -78,8 +78,8 @@ import { readVetVisitsHome } from '../../lib/vetVisits';
 //
 // BOXED IN LIKE THE PREVIEW (CUL-2487). The page carries the exam room's CSP (`boxedPreviewHtml`),
 // `originWhitelist` is `*` (REPORT_WEBVIEW_ORIGINS) so every navigation reaches the load
-// predicate instead of going to the system browser, Android's new-window path is refused, and a
-// `data:` navigation after the page has loaded is refused (`savedCopyLoadAllowed`).
+// predicate instead of going to the system browser, Android's new-window path is refused, and
+// every `data:` navigation is refused (`savedCopyLoadAllowed`).
 
 type Copy =
   | { kind: 'loading' }
@@ -92,14 +92,16 @@ type Copy =
 function refuseWindow(): void {}
 
 /**
- * The saved copy's load check (CUL-2487, privacy pass 1). `isPreviewLoadAllowed` lets any `data:`
- * URL through, because some Android builds report the inline document itself as one. Once that
- * document has loaded, a `data:` navigation can only be the page leaving itself (an injected
- * refresh to a `data:` document that carries no CSP), so after the first load it is refused.
+ * The saved copy's load check (CUL-2487, privacy passes 1 and 2). `isPreviewLoadAllowed` lets any
+ * `data:` URL through; here a `data:` navigation can only be the page leaving itself (an injected
+ * refresh to a `data:` document that carries no CSP), so it is refused outright. The copy's own
+ * document never needs it: Android's `loadDataWithBaseURL` is an app-initiated load the check is
+ * never asked about, and iOS reports it as `about:blank`. A gate on "has it loaded yet" lost the
+ * race on Android (the check blocks the UI thread the load-end event needs), so there is none.
+ * Wrong about a build, this fails closed: a blank paper, never a leak.
  */
-export function savedCopyLoadAllowed(url: string, loaded: boolean): boolean {
-  if (url.startsWith('data:')) return !loaded;
-  return isPreviewLoadAllowed(url);
+export function savedCopyLoadAllowed(url: string): boolean {
+  return !url.startsWith('data:') && isPreviewLoadAllowed(url);
 }
 
 export default function SavedReportScreen() {
@@ -117,8 +119,6 @@ export default function SavedReportScreen() {
   const [allSends, setAllSends] = useState(false);
   // Every load (a params change, or "Try again") takes a number; only the newest one may land.
   const loadSeq = useRef(0);
-  // Whether the drawn copy has finished its first load (savedCopyLoadAllowed).
-  const pageLoaded = useRef(false);
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
@@ -196,11 +196,7 @@ export default function SavedReportScreen() {
   const petName = resolveRecordPetName(pets, row?.petId ?? null);
   const title = row ? copyTitle(petName, ANONYMOUS_PET_NAME, row.sharedAt, currentYear) : COPY_TITLE_PENDING;
   const warning = useMemo(() => (copy.kind === 'ok' ? savedCopyWarningOf(copy.html) : null), [copy]);
-  const boxedHtml = useMemo(() => {
-    // A new document starts unloaded.
-    pageLoaded.current = false;
-    return copy.kind === 'ok' ? boxedPreviewHtml(copy.html) : null;
-  }, [copy]);
+  const boxedHtml = useMemo(() => (copy.kind === 'ok' ? boxedPreviewHtml(copy.html) : null), [copy]);
   // A printed page whose warning cannot be read back is never drawn (CUL-2467): it reads as a
   // copy that cannot be shown, and the vet's copy is untouched.
   const shown = copy.kind === 'ok' && warning !== null && warning.kind !== 'refuse';
@@ -242,10 +238,7 @@ export default function SavedReportScreen() {
             // (DocumentPdfViewer's precedent; rls-privacy-reviewer F2).
             incognito
             cacheEnabled={false}
-            onShouldStartLoadWithRequest={(req) => savedCopyLoadAllowed(req.url, pageLoaded.current)}
-            onLoadEnd={() => {
-              pageLoaded.current = true;
-            }}
+            onShouldStartLoadWithRequest={(req) => savedCopyLoadAllowed(req.url)}
             onOpenWindow={refuseWindow}
             // The owner's text size reaches the page on Android, as in the preview.
             textZoom={Platform.OS === 'android' ? androidTextZoom(PixelRatio.getFontScale()) : undefined}
