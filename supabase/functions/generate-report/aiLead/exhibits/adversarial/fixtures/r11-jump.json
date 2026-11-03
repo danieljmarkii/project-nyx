@@ -1,0 +1,35 @@
+{
+ "pet_name": "Fixture",
+ "species": "dog",
+ "record_start": "2026-08-22",
+ "record_end": "2026-10-16",
+ "band": [
+  {
+   "id": "band-1-chronicity-itch",
+   "label": "Chronicity",
+   "text": "Itching spans 49 days (first logged Aug 27): 18 episodes on 18 days; most recent 1 day ago. A sustained pattern over many samples, not a single incident. This window opens Aug 22, so 49 days is a floor — the record cannot show how long the sign predates it."
+  }
+ ],
+ "record_lines": [
+  {
+   "id": "line-1",
+   "kind": "lead",
+   "text": "Itching: 18 entries on 18 of 56 logged days, the last Oct 15."
+  },
+  {
+   "id": "intake",
+   "kind": "record",
+   "text": "Meals (logged as meals, not treats): 56 logged; 56 rated; every rated meal recorded as fully eaten."
+  },
+  {
+   "id": "confounder",
+   "kind": "confounder",
+   "text": "No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner."
+  }
+ ],
+ "trial_line": {
+  "id": "trial",
+  "text": "Diet trial (owner-entered): Vetline Hydrolysed Soy, from Aug 17, 2026, day 61 of 84."
+ },
+ "record_edge": []
+}

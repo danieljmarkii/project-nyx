@@ -1,0 +1,80 @@
+{
+ "pet_name": "Nyx",
+ "species": "cat",
+ "record_start": "2026-09-16",
+ "record_end": "2026-10-31",
+ "band": [
+  {
+   "id": "band-1-present_foreign",
+   "label": "Foreign material",
+   "text": "1 vomiting incident (Sep 22) — possible foreign material on automated photo analysis. AI read · unconfirmed"
+  },
+  {
+   "id": "band-2-trial_diet_refusal",
+   "label": "Diet not eaten",
+   "text": "2 of 4 rated feedings carrying the trial diet left unfinished (entries with the diet in them, treats included) on 2 days between Sep 21 and Oct 8; no trial-diet feeding rated since shows whether that has changed. Trial diet: Royal Canin Selected Protein PR, Dry / Royal Canin Selected Protein PR, Wet / Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T. / Instinct Limited Ingredient Diet Real Rabbit Recipe in Savory Gravy / Rabbit Meat Cooked Rabbit / Vital Essentials Freeze-Dried Raw Rabbit Bites. Dates covered: Sep 16 – Oct 20, 2026. Refusal of a prescribed diet is a clinical finding in its own right , not a preference. In cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window. Shown because it is present in the log; it is not a measure of how much was eaten overall. Intake ratings on the sheet headed “Intake per feeding”."
+  },
+  {
+   "id": "band-3-symptom_burden-vomit",
+   "label": "Burden",
+   "text": "6 vomiting entries in the last 7 days, on 3 days in a row. A high count on its own, with no earlier week needed to compare. The owner was told to call the vet soon."
+  },
+  {
+   "id": "band-4-weight_loss",
+   "label": "Weight",
+   "text": "Weighed 3.73 kg ( 8.2 lb) on Sep 16, 2026 on a home scale, a single reading, down from 4.40 kg ( 9.7 lb) on Jun 15, 2026 on a home scale, a single reading — about 15 % of body weight. The latest reading against the highest before it in the last 365 days, not a diagnosis; body condition was not assessed. The owner was told it is worth booking a vet visit."
+  },
+  {
+   "id": "band-5-chronicity-vomit",
+   "label": "Chronicity",
+   "text": "Vomiting spans 44 days (first logged Sep 17): 14 episodes on 12 days; most recent today. A sustained pattern over many samples, not a single incident. Cough and vomiting are both flagged chronic for this patient. Post-tussive vomiting, and cough mistaken for hairball retching, are common in both directions, so either count may be understated as readily as overstated — both are owner-classified, reported separately and un-reclassified. This window opens Sep 16, so 44 days is a floor — the record cannot show how long the sign predates it."
+  },
+  {
+   "id": "band-6-chronicity-cough",
+   "label": "Chronicity",
+   "text": "Coughing spans 34 days (first logged Sep 17): 5 episodes on 5 days; most recent 10 days ago. A sustained pattern over many samples, not a single incident. This window opens Sep 16, so 34 days is a floor — the record cannot show how long the sign predates it."
+  }
+ ],
+ "record_lines": [
+  {
+   "id": "line-1",
+   "kind": "lead",
+   "text": "Vomiting: 16 entries (14 episodes as the flag counts them) on 12 of 45 logged days, the last Oct 31."
+  },
+  {
+   "id": "intake",
+   "kind": "record",
+   "text": "Meals (logged as meals, not treats): 3 logged; 3 rated; 2 not fully eaten, on 2 days."
+  },
+  {
+   "id": "sign-cough",
+   "kind": "record",
+   "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21."
+  },
+  {
+   "id": "sign-sneeze",
+   "kind": "record",
+   "text": "Sneezing: 3 entries on 3 of 45 logged days, the last Oct 24."
+  },
+  {
+   "id": "medication-00000000-0000-4000-8000-000000000001",
+   "kind": "record",
+   "text": "Prednisolone: given on 15 of 21 course days (11 partial)."
+  },
+  {
+   "id": "noticed",
+   "kind": "record",
+   "text": "Noticed: answered on 15 of 46 days; “Hunched or tucked up” on 1 (Sep 25)."
+  },
+  {
+   "id": "confounder",
+   "kind": "confounder",
+   "text": "Not a test of the diet alone. Overlapping the trial: Motozol, overlapping it Jul 26 to Aug 9; Motozol, overlapping it Sep 21 to Sep 27; Prednisolone, overlapping it Sep 21 to Oct 11; Cetirizine HCl (Zyrtec) (entered as a supplement), overlapping it Jul 26 to Oct 20 (ad-hoc, by Jul 1). Spans are the courses as recorded, not evidence of administration."
+  }
+ ],
+ "trial_line": {
+  "id": "trial",
+  "text": "Diet trial (owner-entered): Royal Canin Selected Protein PR, Dry and 5 other trial foods, from Jul 26, 2026, ended Oct 20, 2026; planned for 84 days."
+ },
+ "record_edge": []
+}

@@ -1,0 +1,24 @@
+{
+ "pet_name": "Nyx",
+ "species": "cat",
+ "record_start": "2026-09-17",
+ "record_end": "2026-10-31",
+ "band": [],
+ "record_lines": [
+  {
+   "id": "line-1",
+   "kind": "lead",
+   "text": "Vomiting: 6 entries on 4 days from Oct 26 to Oct 31, and 0 entries Oct 19 to Oct 25."
+  },
+  {
+   "id": "new-foods",
+   "kind": "record",
+   "text": "Chicken foods first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31, side by side, not as a cause."
+  }
+ ],
+ "trial_line": {
+  "id": "trial",
+  "text": "Diet trial (owner-entered): Rabbit diet, from Sep 17, 2026, ended Oct 20, 2026."
+ },
+ "record_edge": []
+}

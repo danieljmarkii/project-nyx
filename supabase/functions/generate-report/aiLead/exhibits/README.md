@@ -1,5 +1,7 @@
 # Bake-off verifier exhibits
 
+`adversarial/` is the smoke bake-off's adversarial set and its fixtures (CUL-2380): read `docs/vet-report-v3-discovery/bakeoff/adversarial/PROTOCOL.md`, and `../adversarialSet.test.ts` checks it on every PR. Everything else here is described below.
+
 Byte-identical copies of the inputs in `docs/vet-report-v3-discovery/bakeoff/`, plus `expected.json`, the report the real `verify.py` printed for each (facts, summary) pair; `../verifyCore.test.ts` asserts the Deno port matches every one. To regenerate, run this from the repo root as `python3 -I <this script>`:
 
 ```python

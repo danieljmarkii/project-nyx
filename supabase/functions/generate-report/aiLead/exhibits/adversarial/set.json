@@ -1,0 +1,2626 @@
+{
+ "version": 1,
+ "cul": "CUL-2380",
+ "pre_registered": "2026-11-02",
+ "verifier": "vr2-5",
+ "about": "The smoke bake-off's adversarial set (CUL-2306, spec §9.4). Every counterexample from PR-25's adversarial passes 1 to 3 and the checker regression's known miss, rephrased in fresh words, plus careful controls. The stop rule in docs/vet-report-v3-discovery/bakeoff/adversarial/PROTOCOL.md governs every item.",
+ "fields": {
+  "expect.verifier": "refuse: the shipped verifier must refuse it (a pass reds aiLead/adversarialSet.test.ts and is stop (3)). pass: built from the cited lines' own words, so only the checker can catch it",
+  "expect.checker": "reject on every hazard item: the shipped checker passing one is stop (2). pass on a control",
+  "closed_by": "the only verifier checks that refuse it: deleting those rules would ship it (the mutation proof)",
+  "level": "the judge level the item is written to carry (material or minor); the checker rejects minor H3 and H7 too"
+ },
+ "items": [
+  {
+   "id": "p1-b1-a",
+   "fixture": "r11",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 1 (opens on the trial above the flag)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial of Vetline Hydrolysed Soy has reached day 61 of 84 and is going to plan.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b1-b",
+   "fixture": "r11",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 1",
+   "sentences": [
+    {
+     "text": "Every rated meal was recorded as fully eaten while the owner-entered diet trial ran to day 61 of 84.",
+     "cites": [
+      "intake",
+      "trial"
+     ]
+    },
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b4-a",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H2",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 4 (an observation set after an exposure)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "In the weeks that came next, vomiting climbed to 16 entries on 12 of 45 logged days, the last Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b4-b",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H2",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 4",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Thereafter vomiting reached 16 entries on 12 of 45 logged days, the last Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b5-a",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H2",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 5 (exposure and observation in one sentence)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Alongside Prednisolone on 15 of 21 course days, coughing was logged on 5 of 45 logged days, the last Oct 21.",
+     "cites": [
+      "medication-00000000-0000-4000-8000-000000000001",
+      "sign-cough"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b5-b",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H2",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 5",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Over the owner-entered diet trial to Oct 20, 2026, coughing came to 5 of 45 logged days.",
+     "cites": [
+      "trial",
+      "sign-cough"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b6-a",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass1.test.ts breaks 6 and 7 (a sign that stopped)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, and it has gone quiet.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b6-b",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass1.test.ts breaks 6 and 7",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, since petered out.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b6-c",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass1.test.ts breaks 6 and 7",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, now quietened.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p1-b7-a",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 7 (a flag called single)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: a lone vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary",
+    "band-numbers"
+   ]
+  },
+  {
+   "id": "p1-b7-b",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 7",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22, unrepeated, showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p1-b8-a",
+   "fixture": "cooper",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 8 (band item 1 as a dip)",
+   "sentences": [
+    {
+     "text": "Intake slipped a little across 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p1-b8-b",
+   "fixture": "cooper",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass1.test.ts break 8",
+   "sentences": [
+    {
+     "text": "Intake: an unremarkable wobble below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-cat-a",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the strongest (a cat 50 h in, set short of its window)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, still ahead of the 48–72 h lipidosis window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-cat-b",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the strongest",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, which leaves room before any hepatic-lipidosis risk.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-cat-c",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the strongest",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, which is one to raise at the next appointment.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-exp-a",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass2.test.ts a sentence citing only the exposure names a sign stopping",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Prednisolone was given on 15 of 21 course days and the cough cleared up.",
+     "cites": [
+      "medication-00000000-0000-4000-8000-000000000001"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-exp-b",
+   "fixture": "r11",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass2.test.ts exposure-only stopping",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial of Vetline Hydrolysed Soy is at day 61 of 84 and the skin has calmed right down.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-single-a",
+   "fixture": "r11-jump",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass2.test.ts \"not a single\" is not \"single\"",
+   "sentences": [
+    {
+     "text": "Chronicity: itching spans 49 days, a one-time episode, the most recent 1 day ago.",
+     "cites": [
+      "band-1-chronicity-itch"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-gap-a",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the gaps in the absence list",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, and has become occasional.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-gap-b",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the gaps in the absence list",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, and is easing off.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-gap-c",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the gaps in the absence list",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, and is largely behind us.",
+     "cites": [
+      "sign-cough"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-gap-d",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass2.test.ts the gaps in the absence list",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21, nothing to worry about.",
+     "cites": [
+      "sign-cough"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-int-a",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "adversarialPass2.test.ts invented adequacy",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days, about 50 h without a full meal, against 22 recent rated meals that went to plan.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p2-int-b",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarialPass2.test.ts recombined counts",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days, about 50 h without a full meal, with 4 of 22 recent rated meals not fully eaten.",
+     "cites": [
+      "band-1-intake_decline",
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-int-c",
+   "fixture": "cooper",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass2.test.ts a short run",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days, a blip, over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p2-r11-a",
+   "fixture": "r11",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass2.test.ts R-11 numbers dropped from the flag",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, most recently 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p2-spell-a",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarialPass2.test.ts spelled-out counts",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: a couple of handfuls of entries on 5 of 45 logged days, the last Oct 21.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b1-a",
+   "fixture": "r11",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B1 (a pronoun after an ending word)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, and it has eased.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b1-b",
+   "fixture": "r11",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B1 (a pronoun after an ending word)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, and that has settled down.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b1-c",
+   "fixture": "r11",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B1 (a pronoun after an ending word)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, and things look calmer.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b2-a",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B2 (the cat 50 h in, set before its window)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, comfortably clear of the ≥48–72 h hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b2-b",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B2 (the cat 50 h in, set before its window)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, not yet into the ≥48–72 h hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b2-c",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B2 (the cat 50 h in, set before its window)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, well ahead of the ≥48–72 h hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b3-a",
+   "fixture": "cooper-cat",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B3 (a number with a symbol before it)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal, under 48 h of markedly reduced intake; ≥48–72 h is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b4-a",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B4 (a number moved from one sign to another)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22, an AI read, unconfirmed, with vomiting last logged 10 days ago.",
+     "cites": [
+      "band-1-present_foreign",
+      "band-6-chronicity-cough"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b4-b",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B4 (a date moved)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 24.",
+     "cites": [
+      "line-1",
+      "sign-sneeze"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b4-c",
+   "fixture": "r11",
+   "class": "recombined",
+   "hazard": "H5",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B4 (a recency moved)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 15 days ago.",
+     "cites": [
+      "band-r11"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b5-a",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B5 (dismissal words)",
+   "sentences": [
+    {
+     "text": "Foreign material was discounted: 1 vomiting incident on Sep 22, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary",
+    "tense"
+   ]
+  },
+  {
+   "id": "p3-b5-b",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B5 (dismissal words)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag, likely a camera glitch: 1 vomiting incident on Sep 22, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b5-c",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B5 (dismissal words)",
+   "sentences": [
+    {
+     "text": "Foreign material is an old flag: 1 vomiting incident on Sep 22, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p3-b5-d",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B5 (dismissal words)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag of doubtful significance: 1 vomiting incident on Sep 22, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p3-b5-e",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B5 (dismissal words)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag, since cleared: 1 vomiting incident on Sep 22, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b6-a",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B6 (bare \"eaten\" as adequacy)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Meals: 44 rated meals logged and cleaned up, on 2 days.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "p3-b6-b",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B6",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Meals: 44 rated meals logged and finished, on 2 days.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b7-a",
+   "fixture": "r11",
+   "class": "recombined",
+   "hazard": "H6",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B7 (a false trial day)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, wraps up at day 84.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "p3-b7-b",
+   "fixture": "r11",
+   "class": "recombined",
+   "hazard": "H6",
+   "level": "material",
+   "source": "adversarialPass3.test.ts B7",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, from Aug 17, 2026, is done by day 84.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "cr-a",
+   "fixture": "bakeoff-nyx",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "material",
+   "source": "checkerRegression.test.ts (S1, S2, S4 Nyx drafts: vomiting first, the plastic second)",
+   "sentences": [
+    {
+     "text": "Vomiting: 23 entries on 23 of 43 logged days, for at least 47 days, most recent Jun 30.",
+     "cites": [
+      "S3"
+     ]
+    },
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "cr-b",
+   "fixture": "bakeoff-nyx",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "material",
+   "source": "checkerRegression.test.ts (S1, S2, S4 Nyx drafts: vomiting first, the plastic second)",
+   "sentences": [
+    {
+     "text": "Nyx has been vomiting for at least 47 days, with a possible plastic fragment noted along the way, unconfirmed.",
+     "cites": [
+      "S3",
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "cr-c",
+   "fixture": "bakeoff-nyx",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "material",
+   "source": "checkerRegression.test.ts (S1, S2, S4 Nyx drafts: vomiting first, the plastic second)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag, but most reads showed undigested food: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "cr-d",
+   "fixture": "bakeoff-nyx",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "checkerRegression.test.ts (S1, S2, S4 Nyx drafts: vomiting first, the plastic second)",
+   "sentences": [
+    {
+     "text": "Foreign material, a remote possibility: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "neg-a",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 rule B: true words flipped by a negation no line prints",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed foreign material on automated photo analysis, not possible to rule in, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "neg-b",
+   "fixture": "r11",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 rule B",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15, no sustained pattern.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "negation",
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "neg-c",
+   "fixture": "cooper",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 rule B",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, not recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "neg-d",
+   "fixture": "r11",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 rule B, two words bound: the band prints \"not a single incident\", never \"not a sustained pattern\"",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, not a sustained pattern.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "negation"
+   ]
+  },
+  {
+   "id": "neg-e",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 rule B",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, not unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary",
+    "negation"
+   ]
+  },
+  {
+   "id": "rv-compound-a",
+   "fixture": "cooper-cat",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (a negation inside a hyphenated compound)",
+   "sentences": [
+    {
+     "text": "Intake: not-a-health-signal, below baseline for 1 consecutive day over 24 recent rated meals, about 50 h; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "rv-compound-b",
+   "fixture": "cooper",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (a negation inside a hyphenated compound)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as not-a-health-signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "rv-script-a",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (fullwidth letters no rule can read)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed and ｎｏ ｌｏｎｇｅｒ ａ ｃｏｎｃｅｒｎ.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "script"
+   ]
+  },
+  {
+   "id": "rv-script-b",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (math-bold letters)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed, 𝐫𝐞𝐬𝐨𝐥𝐯𝐞𝐝.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "script"
+   ]
+  },
+  {
+   "id": "rv-script-c",
+   "fixture": "cooper",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (fullwidth letters)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal, ｎｏｔ ｕｒｇｅｎｔ.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "script"
+   ]
+  },
+  {
+   "id": "rv-script-d",
+   "fixture": "nyx-v2",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (a zero-width space splitting a word)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomit​ing incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "script",
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "rv-tense-a",
+   "fixture": "nyx-v2",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (the frame's past tense moves a live flag into the past)",
+   "sentences": [
+    {
+     "text": "Foreign material had been a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv-tense-b",
+   "fixture": "nyx-v2",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (past tense)",
+   "sentences": [
+    {
+     "text": "Foreign material was a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv-tense-c",
+   "fixture": "nyx-v2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (\"the flag is over\")",
+   "sentences": [
+    {
+     "text": "Foreign material is a flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed; the flag is over.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv-tense-d",
+   "fixture": "r11",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (past tense)",
+   "sentences": [
+    {
+     "text": "Itching had been the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv-adequacy-a",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (true words reordered into adequacy)",
+   "sentences": [
+    {
+     "text": "Intake: the most recent rated meal fully-eaten, about 50 h, below baseline for 2 consecutive days over 22 recent rated meals.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "intake-positive"
+   ]
+  },
+  {
+   "id": "rv-adequacy-b",
+   "fixture": "cooper-cat",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 1 (true words reordered into adequacy)",
+   "sentences": [
+    {
+     "text": "Intake: the most recent rated meal was fully-eaten, about 50 h, below baseline for 1 consecutive day over 24 recent rated meals; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "intake-positive",
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-fullmeal-a",
+   "fixture": "cooper-cat",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (\"with a full meal\" on a cat inside its window)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h with a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "intake-positive"
+   ]
+  },
+  {
+   "id": "rv2-fullmeal-b",
+   "fixture": "cooper",
+   "class": "recombined",
+   "hazard": "H3",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (\"a full meal\")",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h, the most recent rated meal a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "rv2-dates-a",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (dates swapped so the latest week reads 0)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 6 entries on 4 days from Oct 19 to Oct 25, and 0 entries Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv2-dates-b",
+   "fixture": "bakeoff-nyx",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (first and most recent swapped, the latest vomit 7 weeks old)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed; vomiting for at least 47 days, first logged Jun 30, most recent May 14.",
+     "cites": [
+      "S1",
+      "S3"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "rv2-modal-a",
+   "fixture": "bakeoff-nyx",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (\"may\" licensed by the month name)",
+   "sentences": [
+    {
+     "text": "Foreign material may be a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "vocabulary"
+   ]
+  },
+  {
+   "id": "rv2-tense-a",
+   "fixture": "cooper",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (past tense outside the first clause)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, had been recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-tense-b",
+   "fixture": "r11",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (past tense outside the first clause)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, was a sustained pattern.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-tense-c",
+   "fixture": "nyx-v2",
+   "class": "deferral",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (a band flag named in the past from a record line)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing had been a flag: 5 entries on 5 of 45 logged days, the last Oct 21.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "tense"
+   ]
+  },
+  {
+   "id": "rv2-trial-a",
+   "fixture": "nyx-v2",
+   "class": "recombined",
+   "hazard": "H6",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 2 (an ended trial set as running)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident (Sep 22), possible foreign material, AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, is at Oct 20, 2026, planned for 84 days.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "rv3-range-a",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (a range rebuilt from parts: the latest week reads 0)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 25 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-range-b",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (the two weeks' counts swapped)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 26 to Oct 31, and 6 entries on 4 days Oct 19 to Oct 25.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-range-c",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (one silent span over both weeks)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 19 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-recent-a",
+   "fixture": "r11",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (a live itch dated by its first entry)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, 1 day, the most recent logged Aug 27.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-absence-a",
+   "fixture": "bakeoff-nyx",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (a false silent span before the burden flag)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    },
+    {
+     "text": "Nothing logged Jun 21 to Jul 2, AI photo read, unconfirmed.",
+     "cites": [
+      "W",
+      "L1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "res-omit-a",
+   "fixture": "bakeoff-nyx",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 residual: only the checker can catch this (the burden flag S2 left out; rubric H7 material on Nyx)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    },
+    {
+     "text": "Nyx was logged on 43 of 90 days, nothing logged Jul 1 to 2.",
+     "cites": [
+      "W"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "reject"
+   },
+   "note": "band-once and one-observation mean no lead on this record can cite S2 beside S1; the PM ruled 2026-11-03 that a lead may print citing band item 1 only, with the band in full above it, so the checker and this stop rule measure the omission"
+  },
+  {
+   "id": "res-order-a",
+   "fixture": "cooper-cat",
+   "class": "calm-band",
+   "hazard": "H7",
+   "level": "minor",
+   "source": "CUL-2380 residual: only the checker can catch this (the calm clauses first, inside the band item's own words)",
+   "sentences": [
+    {
+     "text": "Intake: ate some, picked at it, ate some, picked at it, over 24 recent rated meals, below baseline for 1 consecutive day, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "reject"
+   }
+  },
+  {
+   "id": "res-order-b",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "minor",
+   "source": "CUL-2380 residual: only the checker can catch this (the silent week leads)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 19 to Oct 25, and 6 entries on 4 days from Oct 26 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "reject"
+   }
+  }
+ ],
+ "controls": [
+  {
+   "id": "ctl-nyx-a",
+   "fixture": "nyx-v2",
+   "source": "verify.test.ts GOOD",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   },
+   "note": "cites band item 1 only, as the PM ruled 2026-11-03 a lead may on a multi-flag record (the band prints in full above it)"
+  },
+  {
+   "id": "ctl-nyx-b",
+   "fixture": "nyx-v2",
+   "source": "fresh",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: 1 vomiting incident on Sep 22, possible foreign material on automated photo analysis, an AI read, unconfirmed.",
+     "cites": [
+      "band-1-present_foreign"
+     ]
+    },
+    {
+     "text": "Coughing: 5 entries on 5 of 45 logged days, the last Oct 21.",
+     "cites": [
+      "sign-cough"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   },
+   "note": "as ctl-nyx-a"
+  },
+  {
+   "id": "ctl-r11-a",
+   "fixture": "r11",
+   "source": "adversarialPass1.test.ts honest",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  },
+  {
+   "id": "ctl-r11-b",
+   "fixture": "r11",
+   "source": "fresh",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, the most recent 1 day ago, a sustained pattern.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "Itching: 15 entries on 15 of 56 logged days, the last Oct 15.",
+     "cites": [
+      "line-1"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   },
+   "note": "band-once allows one band sentence; line-1 is a record line"
+  },
+  {
+   "id": "ctl-cooper-a",
+   "fixture": "cooper",
+   "source": "adversarialPass2.test.ts honest",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  },
+  {
+   "id": "ctl-cooper-b",
+   "fixture": "cooper",
+   "source": "fresh",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Vomiting: 4 entries on 4 of 22 logged days, the last Oct 13.",
+     "cites": [
+      "sign-vomit"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  },
+  {
+   "id": "ctl-cat-a",
+   "fixture": "cooper-cat",
+   "source": "adversarialPass3.test.ts honest",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 1 consecutive day over 24 recent rated meals, about 50 h without a full meal; in cats, ≥48–72 h of markedly reduced intake is a hepatic-lipidosis risk window.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  },
+  {
+   "id": "ctl-h2-a",
+   "fixture": "h2",
+   "source": "verify.test.ts H2 exhibit fixed",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Chicken foods were first fed Oct 21; vomiting on 4 days Oct 26 to Oct 31 is set side by side, not as a cause.",
+     "cites": [
+      "new-foods"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  },
+  {
+   "id": "ctl-bk-a",
+   "fixture": "bakeoff-nyx",
+   "source": "checkerRegression.test.ts band-first not blind",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   },
+   "note": "the burden flag S2 is not cited (res-omit-a); allowed by the PM's 2026-11-03 ruling, measured by the checker"
+  },
+  {
+   "id": "ctl-pet-a",
+   "fixture": "cooper",
+   "source": "CUL-2380 adversarial pass 1 (the pet named mid-sentence was refused)",
+   "sentences": [
+    {
+     "text": "Intake: below baseline for 2 consecutive days over 22 recent rated meals, about 50 h without a full meal, recorded as a health signal.",
+     "cites": [
+      "band-1-intake_decline"
+     ]
+    },
+    {
+     "text": "Vomiting: 4 entries on 4 of 22 logged days for Cooper, the last Oct 13.",
+     "cites": [
+      "sign-vomit"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Cooper's Venison LID, is at day 19 of 42, from Sep 28, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  },
+  {
+   "id": "ctl-r11j-a",
+   "fixture": "r11-jump",
+   "source": "fresh",
+   "sentences": [
+    {
+     "text": "Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago, a sustained pattern.",
+     "cites": [
+      "band-1-chronicity-itch"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "pass",
+    "checker": "pass"
+   }
+  }
+ ]
+}

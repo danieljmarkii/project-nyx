@@ -6,7 +6,7 @@ import { buildDocumentV2 } from '../documentV2.ts'
 import { nyxLiveSnapshot } from '../nyxLive.testutil.ts'
 import { buildLeadFacts, tableFromPayload, type LeadFactPayload } from './facts.ts'
 import { WRITER_SYSTEM } from './prompts.ts'
-import { printedLeadText, verifyLead, type LeadSentence } from './verify.ts'
+import { framePatternHits, LEAD_FRAME, printedLeadText, verifyLead, type LeadSentence } from './verify.ts'
 
 const nyxSnap = nyxLiveSnapshot()
 const nyxFacts = buildLeadFacts(buildDocumentV2(nyxSnap, { owner: null, shortId: null, questions: [] }), {
@@ -150,4 +150,59 @@ Deno.test('the prompt\'s worked example passes the verifier it teaches', () => {
 
 Deno.test('the printed text is the sentences, normalised, joined by one space', () => {
   assert.equal(printedLeadText({ sentences: [{ text: ' A  b. ', cites: [] }, { text: 'C.', cites: [] }] }), 'A b. C.')
+})
+
+// ── The closed vocabulary and bound negation (CUL-2380) ─────────────────────────────────────────
+
+Deno.test('the frame is pinned, and no frame word can soften, time, defer or negate', () => {
+  // A word added here must be added in review, against this list: the frame is the one place a
+  // lead may print a word no cited line carries.
+  assert.deepEqual([...LEAD_FRAME], [
+    'a', 'an', 'the', 'and', 'of', 'to', 'at', 'on', 'in', 'by', 'for', 'from', 'as', 'with', 'over',
+    'is', 'are', 'was', 'were', 'be', 'been', 'has', 'have', 'had',
+    'live', 'flag', 'showed', 'ran',
+    'set',
+  ])
+  for (const w of LEAD_FRAME) assert.deepEqual(framePatternHits(w), [], `frame word ${w}`)
+  // The probe is not deaf: it sees the words it exists to keep out.
+  for (const w of ['stopped', 'after', 'eaten', 'five', 'not', "hasn't"]) assert.notDeepEqual(framePatternHits(w), [], w)
+})
+
+Deno.test('vocabulary: a softening word no list names is refused because no cited line prints it', () => {
+  // Two sentences, so the trial line's absence is the only other error ('required').
+  const quieter = { ...GOOD[1], text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31, quietening.' }
+  const v = verifyLead(nyxTable, { sentences: [GOOD[0], quieter] })
+  assert.deepEqual([...new Set(v.errors.map((e) => e.check))].filter((c) => c !== 'required'), ['vocabulary'])
+  assert.ok(v.errors.some((e) => e.detail.includes('"quietening"')))
+  assert.deepEqual(verifyLead(nyxTable, { sentences: [GOOD[0], GOOD[1]] }).errors.filter((e) => e.check !== 'required'), [], 'the same lead without the word passes')
+})
+
+Deno.test('vocabulary: a word another line prints is not licensed by citing this one', () => {
+  // "overstated" is printed in the vomiting chronicity row, never in the foreign-material row.
+  const borrowed = { ...GOOD[0], text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed, overstated.' }
+  assert.ok(checks([borrowed, GOOD[1], GOOD[2]]).includes('vocabulary'))
+})
+
+Deno.test('vocabulary: the pet\'s name, a possessive and a band label are known; a compound passes by its parts', () => {
+  const named = { ...GOOD[1], text: 'Nyx\'s vomiting: 16 entries on 12 of 45 logged days.' }
+  assert.deepEqual(checks([GOOD[0], named, GOOD[2]]), [])
+  const table = tableFromPayload({
+    pet_name: 'Biscuit', species: 'dog', record_start: '2026-08-22', record_end: '2026-10-16',
+    band: [{ id: 'band-1', label: 'Chronicity', text: 'Itching spans 49 days (first logged Aug 27): 18 episodes on 18 days; most recent 1 day ago.' }],
+    record_lines: [], trial_line: null, record_edge: [],
+  })
+  const labelled = [{ text: 'Chronicity: itching spans 49 days, 18 episodes on 18 days, the most recent 1 day ago.', cites: ['band-1'] }]
+  assert.deepEqual(verifyLead(table, { sentences: labelled }).errors, [])
+})
+
+Deno.test('negation: bound to the two words a cited line prints after it', () => {
+  const r11 = tableFromPayload({
+    pet_name: 'Biscuit', species: 'dog', record_start: '2026-08-22', record_end: '2026-10-16',
+    band: [{ id: 'band-r11', label: 'itching', text: 'Flag: itching over at least 49 days. 15 episodes on 15 days; most recent 1 day ago. A sustained pattern over many samples, not a single incident.' }],
+    record_lines: [], trial_line: null, record_edge: [],
+  })
+  const ok = [{ text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, most recent 1 day ago, not a single incident.', cites: ['band-r11'] }]
+  assert.deepEqual(verifyLead(r11, { sentences: ok }).errors.filter((e) => e.check === 'negation'), [])
+  const flipped = [{ ...ok[0], text: 'Itching is the flag: over at least 49 days, 15 episodes on 15 days, most recent 1 day ago, not a sustained pattern.' }]
+  assert.deepEqual([...new Set(verifyLead(r11, { sentences: flipped }).errors.map((e) => e.check))], ['negation'])
 })
