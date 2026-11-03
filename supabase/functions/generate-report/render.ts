@@ -4601,7 +4601,9 @@ function trialCropComparison(snap: ReportSnapshot): string | null {
           inside.get(k) ?? 0,
         )} in the ${num(coveredDays)} this report covers`,
     )
-  return `Over the whole trial, per sign: ${pairs.join('; ')}.`
+  // COLD READ RECHECK: not "over the whole trial". The Record row says "No count below is measured
+  // over the trial as a whole", and this line is two counts beside each other, not one trial figure.
+  return `Beside the trial days outside this report, per sign: ${pairs.join('; ')}.`
 }
 
 /**
@@ -9248,7 +9250,7 @@ function appendixDivider(snap: ReportSnapshot): string {
   // position the only address it has.
   const medHistBit =
     snap.medicationHistory && snap.medicationHistory.entries.length > 0
-      ? ' &middot; medication history (lifetime) &mdash; un-lettered, immediately before D'
+      ? ' &middot; medication history (as far back as the record reads) &mdash; un-lettered, immediately before D'
       : ''
   return `
   <div class="divider">
@@ -11441,10 +11443,12 @@ export function medicationHistoryTable(snap: ReportSnapshot): string {
   // CUL-2480 (cold-read recheck): "Lifetime of the record (since Jul 2026)" read as the record's own
   // start, over a record whose meals go back to May. `sinceDay` is the earliest MEDICATION entry the
   // history reads, so it is named as that, and a drug given before it would not appear.
-  const since = mh.sinceDay ? `, from the earliest medication entry this report reads (${h(fmtMonthYear(mh.sinceDay))})` : ''
+  const since = mh.sinceDay
+    ? ` from ${h(fmtMonthYear(mh.sinceDay))}, the earliest medication entry this report reads; a medication given before it would not appear`
+    : ''
   return `
   <p class="appx-title serif" style="margin-top:22px">Medication history</p>
-  <p class="appx-sub">Every medication on record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way. <b>This lists only what the owner entered in Culprit</b> — a medication prescribed or given elsewhere and never logged does not appear here, and its absence is not evidence it was not given.</p>
+  <p class="appx-sub">Medications on record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way. <b>This lists only what the owner entered in Culprit</b> — a medication prescribed or given elsewhere and never logged does not appear here, and its absence is not evidence it was not given.</p>
   <table>
     <thead><tr><th>Medication</th><th style="width:118px">Dates</th><th style="width:186px">Course</th><th class="c" style="width:118px">Doses given (incl. partial)</th></tr></thead>
     <tbody>${rows}</tbody>

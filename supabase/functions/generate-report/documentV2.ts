@@ -135,7 +135,9 @@ export type ChartRow =
       when: string
       /**
        * CUL-2480 instance 1: an ad-hoc drug (doses with no regimen) has no course to draw, so its row
-       * is a tick on each column holding a logged dose, never a continuous bar. Absent on a course.
+       * is a tick per dosed day, never a continuous bar. Each entry is a fractional column position:
+       * the column's index plus the day's place inside it, so seven daily doses in one week column
+       * draw as seven ticks, not one (cold read recheck). Absent on a course.
        */
       doseCols?: number[]
     }
@@ -601,7 +603,13 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
       when,
     }
     if (adHoc && doseDays.length > 0) {
-      row.doseCols = [...new Set(doseDays.filter((d) => d >= first).map((d) => colOf(cols, d)))].sort((a, b) => a - b)
+      const dayNo = (k: string): number => Math.round(Date.parse(`${k}T00:00:00Z`) / 86_400_000)
+      row.doseCols = [...new Set(doseDays.filter((d) => d >= first))].sort().map((d) => {
+        const i = colOf(cols, d)
+        const col = cols[i]
+        const within = Math.min(Math.max(dayNo(d) - dayNo(col.start), 0), col.days - 1)
+        return i + (within + 0.5) / col.days
+      })
     }
     if (rows.length < SPAN_ROWS_MAX) rows.push(row)
     else overflow.push(`${c.label} ${when}`)
@@ -752,7 +760,7 @@ function buildLeadChart(
   const ticks = spans.rows.filter((r) => r.doseCols)
   if (solid.length > 0) twinParts.push(`Bracketed lines, courses and foods: ${solid.map((r) => `${r.label} ${r.when}`).join('; ')}`)
   if (hollow.length > 0) twinParts.push(`Hollow dashed line: ${hollow.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
-  if (ticks.length > 0) twinParts.push(`Ticks, one per drawn period holding an ad-hoc dose: ${ticks.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
+  if (ticks.length > 0) twinParts.push(`Ticks, one per day an ad-hoc dose was logged: ${ticks.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
 
   const partials = columns
     .map((c, i) => ({ c, i, l: colLabel(c, unit) }))

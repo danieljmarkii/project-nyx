@@ -162,7 +162,7 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], pi
   // CUL-2480 instance 1: ad-hoc doses are ticks on the columns that hold one, never a bar.
   if (r.doseCols) {
     const ticks = r.doseCols.map((i) => {
-      const x = (x0(i, n) + colW(n) / 2).toFixed(1)
+      const x = (x0(Math.floor(i), n) + (i - Math.floor(i)) * colW(n)).toFixed(1)
       return `<line class="span dose" x1="${x}" x2="${x}" y1="${y - 4}" y2="${y + 4}"/>`
     })
     return rowWrap(r.label, 'rl span-l', rowSvg(pid, SPAN_ROW_H, ticks.join(''), false))

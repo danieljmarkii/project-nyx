@@ -4908,7 +4908,7 @@ Deno.test('§4.4 render — the table renders its title, coverage note and the H
     ], '2026-02-11'),
   })))
   assert.ok(/Medication history/.test(t))
-  assert.ok(/Every medication on record, from the earliest medication entry this report reads \(Feb 2026\)/.test(t))
+  assert.ok(/Medications on record from Feb 2026, the earliest medication entry this report reads; a medication given before it would not appear/.test(t))
   // CUL-2480: never named as the record's own lifetime.
   assert.ok(!/Lifetime of the record/.test(t))
   assert.ok(/the medications logged in Culprit/.test(t))
@@ -7614,7 +7614,7 @@ Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table
     }),
   )
   const divider = plain(html.slice(html.indexOf('End of clinical summary'), html.indexOf('Appendix A —')))
-  assert.ok(/medication history \(lifetime\)/.test(divider), 'the table is still named in the contents line')
+  assert.ok(/medication history \(as far back as the record reads\)/.test(divider), 'the table is still named in the contents line')
   assert.ok(/un-lettered/.test(divider), 'and the reader is told it carries no letter')
   assert.ok(/before D|with D|D's sheet/.test(divider), 'and where to find it')
 })

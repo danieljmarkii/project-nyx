@@ -170,7 +170,10 @@ function withRecordOnlyOverlaps(snap: ReportSnapshot): ReportSnapshot {
     out.push({
       drugName,
       isSupplement: group?.isSupplement ?? false,
-      route: group?.route ?? null,
+      // ADVERSARIAL PASS 2 (R1, QUIET): NO ROUTE. The row pools every dose-derived course of the name,
+      // across items, and the window group is at most one of them, so its route can belong to another
+      // item ("in the eye" over an oral course that crossed the trial). Nothing is louder than a guess.
+      route: null,
       firstDoseDay: first,
       lastDoseDay: last,
       dosesOnRecord: doses,

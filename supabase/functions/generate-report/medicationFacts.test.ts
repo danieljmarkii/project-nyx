@@ -233,7 +233,7 @@ Deno.test('CUL-2480 instance 4 — a drug whose doses on record cross the trial 
     {
       drugName: 'Cetirizine HCl (Zyrtec)',
       isSupplement: true,
-      route: out.unlinkedMedications.find((u) => u.drugName.startsWith('Cetirizine'))!.route,
+      route: null,
       firstDoseDay: '2026-07-01',
       lastDoseDay: '2026-10-24',
       dosesOnRecord: 21,
@@ -244,7 +244,7 @@ Deno.test('CUL-2480 instance 4 — a drug whose doses on record cross the trial 
   const t = plain(renderReport(withoutCetirizineRow()))
   assert.match(
     t,
-    /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · by mouth · ad-hoc doses on record Jul 1, 2026–Oct 24, 2026 \(the first is the earliest day this report reads\), a span that crosses the trial; 21 doses on record in all, and this report does not count which fell in the trial\./,
+    /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · ad-hoc doses on record Jul 1, 2026–Oct 24, 2026 \(the first is the earliest day this report reads\), a span that crosses the trial; 21 doses on record in all, and this report does not count which fell in the trial\./,
   )
   assert.match(t, /Doses of Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) are on record from Jul 1, 2026 to Oct 24, 2026, a span that crosses the trial/, '§7.2')
   assert.match(
@@ -277,6 +277,11 @@ Deno.test('CUL-2480 instance 1 — ad-hoc doses are ticks on v2’s chart, never
   const rows = lead.chart.rows.map((r) => ({ kind: r.kind, label: r.label, doseCols: r.kind === 'span' ? r.doseCols : undefined }))
   const cet = rows.find((r) => r.kind === 'span' && r.label.startsWith('Cetirizine'))
   assert.ok(cet?.doseCols && cet.doseCols.length > 0, JSON.stringify(rows.map((r) => r.label)))
+  // Cold read recheck: a tick per dosed day, placed inside its column, so seven daily doses in one
+  // week column are seven ticks, never one.
+  const motozol = rows.find((r) => r.kind === 'span' && r.label === 'Motozol' && r.doseCols)
+  assert.equal(motozol?.doseCols?.length, 7)
+  assert.equal(new Set(motozol!.doseCols).size, 7)
   const pred = rows.find((r) => r.kind === 'span' && r.label === 'Prednisolone')
   assert.equal(pred?.doseCols, undefined, 'a prescribed course stays a bar')
   const html = renderPrintV2(doc)
@@ -302,7 +307,7 @@ Deno.test('CUL-2480 (#1428) — the overlap line carries the route, and an ad-ho
 Deno.test('CUL-2480 — the lifetime table names its floor as the earliest medication entry read, not the record’s start', () => {
   const t = v1('nyx-live')
   assert.doesNotMatch(t, /Lifetime of the record/)
-  assert.match(t, /Every medication on record, from the earliest medication entry this report reads \(Jul 2026\)/)
+  assert.match(t, /Medications on record from Jul 2026, the earliest medication entry this report reads; a medication given before it would not appear/)
   assert.match(t, /Cetirizine HCl \(Zyrtec\)Jul 1 – Oct 24, 2026 \(first dose on the earliest day read\)/)
 })
 
@@ -326,4 +331,13 @@ Deno.test('adversarial B5 — an antibacterial whose doses on record cross a GI 
     assert.match(t, /antibacterial/i)
     assert.match(t, /effect on the microbiome does not/)
   }
+})
+
+Deno.test('adversarial R1 — a record-only row never takes a route from another item of its name', () => {
+  const s = withoutCetirizineRow()
+  for (const u of s.unlinkedMedications) if (u.drugName.startsWith('Cetirizine')) u.route = 'ophthalmic'
+  const t = plain(renderReport(s))
+  assert.match(t, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · ad-hoc doses on record/)
+  const row = t.slice(t.indexOf('Medication during the trial'), t.indexOf('Medication during the trial') + 600)
+  assert.doesNotMatch(row, /in the eye/, row)
 })

@@ -143,7 +143,7 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], to
     return [
       rowLabel(r.label, y + 3, 'rl span-l'),
       ...r.doseCols.map((i) => {
-        const x = (x0(i, n) + colW(n) / 2).toFixed(1)
+        const x = (x0(Math.floor(i), n) + (i - Math.floor(i)) * colW(n)).toFixed(1)
         return `<line class="span dose" x1="${x}" x2="${x}" y1="${y - 4}" y2="${y + 4}"/>`
       }),
     ].join('')

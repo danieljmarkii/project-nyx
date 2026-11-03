@@ -527,7 +527,7 @@ Deno.test('CUL-2491 — the cropped trial days are set beside the covered ones, 
   const r = row(dietTrialSection(nyxLiveSnapshot()), FROM)!
   assert.ok(
     r.includes(
-      'Over the whole trial, per sign: coughing 21 in the 52 earlier trial days, 4 in the 35 this report covers; vomiting 10 in the 52 earlier trial days, 10 in the 35 this report covers;',
+      'Beside the trial days outside this report, per sign: coughing 21 in the 52 earlier trial days, 4 in the 35 this report covers; vomiting 10 in the 52 earlier trial days, 10 in the 35 this report covers;',
     ),
     r,
   )
@@ -549,7 +549,7 @@ Deno.test('CUL-2491 — a sign logged only in the cropped days still gets its pa
 
 Deno.test('CUL-2491 — a trial this report covers whole prints no cropped-days line', () => {
   const html = trialHtml(endedTrial({ events: [symptom('2026-06-02'), symptom('2026-06-25')] }))
-  assert.ok(!/Over the whole trial, per sign/.test(html), html)
+  assert.ok(!/Beside the trial days outside this report, per sign/.test(html), html)
 })
 
 Deno.test('CUL-2491 adversarial B6 — a short events pull floors the cropped side too (it loses the oldest rows)', () => {
