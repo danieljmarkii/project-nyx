@@ -3522,8 +3522,10 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // identity, on the window-change precedent: it qualifies the date above it.
   const switchLine = trialSwitchLine(t, identityDay)
   if (switchLine) rows.push(kv('Switch onto the diet', switchLine))
-  const newFoodsLine = trialNewFoodsLine(t, identityDay, (type) => symptomLabel(type))
-  if (newFoodsLine) rows.push(kv('New foods after the trial', newFoodsLine))
+  const newFoodsLine = trialNewFoodsLine(t, identityDay, (type) => symptomLabel(type), (snap.incompletePulls ?? []).includes('events'))
+  // CUL-2481: never "new". The list is the foods off the trial's list fed after it, and one of them
+  // may also have been fed during it (the line says so, per food).
+  if (newFoodsLine) rows.push(kv('Off-list foods after the trial', newFoodsLine))
 
   // B-704 §6 — the target-vs-label tension does NOT render a second disclosure line here.
   // It leads the SAFETY BAND above (a `protein_mismatch` flag), because a disclosure line
@@ -3675,6 +3677,9 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     )
   }
   recordBits.push(...exposureSentences(t, mealsAppendixVisible(snap)))
+  // CUL-2479 (PM ruling (a)): the intake flag's own count, on the trial diet, in the trial block.
+  const intakeOnTrial = trialIntakeFlagSentence(snap)
+  if (intakeOnTrial) recordBits.push(intakeOnTrial.html)
   // ── B-530: THE WEIGHT FACT IS NO LONGER A PASSENGER ON THE REFUSAL BRANCH ───
   //
   // It used to be pushed from INSIDE `exposureSentences`' refusal branch, so the
@@ -4268,6 +4273,19 @@ export function dietTrialSection(snap: ReportSnapshot): string {
         : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record.',
     )
   }
+  // CUL-2479, cold read: the record row carried the flag's count and the callout a vet reads for
+  // the bottom line still led with coverage. Where no refusal fact speaks, the flag on the trial diet
+  // takes the refusal sentence's place, in the same terms: the record cannot show the diet was eaten.
+  if (refusalCaveat === null) {
+    const intake = trialIntakeFlagSentence(snap)
+    if (intake) {
+      refusalCaveat = `${
+        intake.onTrialDiet
+          ? 'The reduced-intake flag fires on the trial diet (above)'
+          : 'The reduced-intake flag fires over meals inside the trial (above)'
+      }, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
+    }
+  }
   const suppressStatement =
     (caveats.length > 0 || refusalCaveat !== null) && t.interpretability === 'supports'
   const shown = suppressStatement ? null : statement
@@ -4396,7 +4414,29 @@ function trialRecordLine(snap: ReportSnapshot): string {
       : endsWithTrial
         ? `the trial&rsquo;s last ${dayWord(spanDays)} this report covers`
         : `the last ${dayWord(spanDays)} of the trial this report covers`
-  const parts = [`${signsClause(snap, start, end, span)}.`]
+  const parts = [`${signsClause(snap, start, end, span)}.${offDietInSpanClause(snap, start, end)}${looksInSpanSentence(snap, start, end)}`]
+  // CUL-2460 (PM ruling (a), instances 1 and 6): A COMPARATOR, AS COUNTS. The last week alone left the
+  // owner's verdict as the only comparison on the row, and a quiet final week read as agreement. The
+  // first 7 trial days this report covers sit beside it, per sign, as a pair of counts and nothing
+  // more; only where the two weeks do not overlap, because an overlapping pair counts a day twice.
+  const firstEnd = shiftDayKey(t.evidenceStartDate, 6)
+  const fromTrialStart = t.evidenceStartDate === t.startedAt.slice(0, 10)
+  if (firstEnd !== null && firstEnd < start) {
+    const firstSpan = fromTrialStart ? 'the trial&rsquo;s first 7 days' : 'the first 7 trial days this report covers'
+    parts.push(
+      `${signsClause(snap, t.evidenceStartDate, firstEnd, firstSpan)}.${offDietInSpanClause(snap, t.evidenceStartDate, firstEnd)}${looksInSpanSentence(
+        snap,
+        t.evidenceStartDate,
+        firstEnd,
+      )}`,
+    )
+    const pair = signPairSentence(snap, t.evidenceStartDate, firstEnd, start, end, firstSpan, span)
+    if (pair) parts.push(pair)
+  } else if (t.evidenceStartDate < start) {
+    parts.push(
+      `The trial days this report covers are too few for a first week to be set beside the last without counting a day twice, so no earlier week is shown.`,
+    )
+  }
   // The window runs on past the trial's end: what the record holds after it, its length said, so
   // two spans of different lengths are never read as one scale (cold read, finding 7).
   const afterStart = endsWithTrial ? shiftDayKey(end, 1) : null
@@ -4415,11 +4455,185 @@ function trialRecordLine(snap: ReportSnapshot): string {
       } logged as &ldquo;other&rdquo; and ${uncat === 1 ? 'is' : 'are'} in neither count.`,
     )
   }
+  // CUL-2460 instance 7: "better" and "resolved" compare against BEFORE the trial, and a report whose
+  // window holds no pre-trial day cannot show that comparison. Said, never left for the reader to
+  // assume the report checked it.
+  const trialStart = t.startedAt.slice(0, 10)
+  if (snap.scope.startDate >= trialStart) {
+    parts.push(
+      `${
+        snap.scope.startDate === trialStart
+          ? 'This report&rsquo;s window opens on the trial&rsquo;s first day'
+          : 'This report&rsquo;s window opens after the trial began'
+      }, so the comparison with before the trial cannot be made from this report.`,
+    )
+  }
   // The weight sentence names its scope as the signs do (adversarial pass 2): `trialChange` is
   // bounded to the evidence span, so where that span is not the whole trial it says so.
   const wholeTrial = endsWithTrial && t.evidenceStartDate === t.startedAt.slice(0, 10)
   parts.push(trialWeightClause(snap, wholeTrial ? 'the trial' : 'the trial days this report covers'))
   return parts.join(' ')
+}
+
+/**
+ * CUL-2460 instance 2: " <b>11 feedings in those days were off the trial diet</b> (dated in appendix C).",
+ * or "" when none. The trial's own off-diet itemisation, by its local day. A count over the span the
+ * signs are counted in, so a week that reads as the on-diet end state says it was not. Nothing when
+ * no allowed list was recorded: the record could not be checked, and the trial block says so.
+ */
+function offDietInSpanClause(snap: ReportSnapshot, start: string, end: string): string {
+  const t = snap.trial!
+  if (t.allowedSetUnavailable) return ''
+  let n = 0
+  for (const x of t.exposures.items) {
+    if (!x.classification.offDiet) continue
+    const d = dayKeyOfIndex(x.dayIndex)
+    if (d >= start && d <= end) n += 1
+  }
+  if (n === 0) return ''
+  // Meals are events: a short events pull makes this a floor, as it does the signs (adversarial pass 1).
+  const floor = (snap.incompletePulls ?? []).includes('events') ? 'At least ' : ''
+  return ` <b>${floor}${num(n)} feeding${n === 1 ? '' : 's'} in those days ${n === 1 ? 'was' : 'were'} off the trial diet</b> (dated in appendix&nbsp;C).`
+}
+
+/**
+ * CUL-2460 instance 12: a POINTER, never a count. A daily look is counted in no figure on this report
+ * (§10.5, CUL-891), so the row does not count looks; it says on how many of the span's days the owner
+ * marked a concern (or a word this copy cannot read), and where they are listed.
+ */
+function looksInSpanSentence(snap: ReportSnapshot, start: string, end: string): string {
+  const n = snap.noticed
+  if (!n || n.days.length === 0) return ''
+  const concern = new Set(n.concernWords.map((w) => w.key))
+  let marked = 0
+  for (const d of n.days) {
+    if (d.day < start || d.day > end) continue
+    const hit = d.entries.some(
+      (e) => e.words.some((w) => concern.has(w.key)) || (e.outcome !== 'nothing_unusual' && e.words.length === 0) || e.unknownWords > 0,
+    )
+    if (hit) marked += 1
+  }
+  if (marked === 0) return ''
+  return ` The owner&rsquo;s daily look marks a concern on ${n.windowTruncated ? 'at least ' : ''}${num(marked)} of those days (appendix&nbsp;${noticedAppendixLetter(
+    snap,
+  )}); looks are counted in no figure on this report.`
+}
+
+/**
+ * CUL-2460 instances 1 and 6: "Per sign, the first 7 trial days this report covers against the trial's
+ * last 7 days: vomiting 4 and 3, sneezing 0 and 1." Each span by the name its own clause gives it, so a
+ * cropped window's first week is never read as the trial's (cold read).
+ * Counts only, in the order the two spans are named; no arrow, no direction, no reading. Null when
+ * neither span holds a sign (each clause above already says so).
+ */
+function signPairSentence(
+  snap: ReportSnapshot,
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string,
+  aName: string,
+  bName: string,
+): string | null {
+  const a = new Map<string, number>()
+  const b = new Map<string, number>()
+  for (const e of snap.provenance.symptomLog) {
+    const d = localDayKeyOf(e.occurredAt, snap.timezone)
+    if (d >= aStart && d <= aEnd) a.set(e.type, (a.get(e.type) ?? 0) + 1)
+    else if (d >= bStart && d <= bEnd) b.set(e.type, (b.get(e.type) ?? 0) + 1)
+  }
+  const types = [...new Set([...a.keys(), ...b.keys()])]
+  if (types.length === 0) return null
+  const total = (k: string): number => (a.get(k) ?? 0) + (b.get(k) ?? 0)
+  const pairs = types
+    .sort((x, y) => total(y) - total(x) || symptomLabel(x).localeCompare(symptomLabel(y)))
+    .map((k) => `${h(symptomLabel(k).toLowerCase())} ${num(a.get(k) ?? 0)} and ${num(b.get(k) ?? 0)}`)
+  const floor = (snap.incompletePulls ?? []).includes('events') ? ' (each count at least: part of the event record could not be read)' : ''
+  return `Per sign, ${aName} against ${bName}${floor}: ${pairs.join(', ')}.`
+}
+
+/**
+ * CUL-2479 (PM ruling (a), 2026-11-03) — WHEREVER THE INTAKE FLAG FIRES ON THE TRIAL DIET INSIDE THE
+ * TRIAL SPAN, THE TRIAL BLOCK CARRIES ITS COUNT.
+ *
+ * Cooper's record: four rated trial-diet meals in a row unfinished (some, picked, some, picked), about
+ * 50 hours without a full meal. The page-1 Intake flag fired; the trial block said nothing, because its
+ * refusal facts need half the rated trial-diet feedings unfinished (`REFUSAL_SHARE`) over the trial or
+ * its last 14 days, and four of ~36 clears neither, while `some` breaks the refusal run. The flag is the
+ * detection engine's, over every meal. So the count here is the FLAG'S population: the rated meals it
+ * counted after its last-full-meal anchor (every listed one when there is none), the ones of them that
+ * were feedings of the trial diet inside the trial span. No new threshold: it prints when the flag
+ * fired and at least one of its meals was the trial diet. Intake is not preference: never "picky",
+ * never a reassurance, and a later full meal elsewhere is not a retraction.
+ */
+function trialIntakeFlagSentence(snap: ReportSnapshot): { html: string; onTrialDiet: boolean } | null {
+  const t = snap.trial
+  const f = snap.safetyFlags.find((x) => x.kind === 'intake_decline')
+  if (!t || !f || f.kind !== 'intake_decline') return null
+  const tz = snap.timezone
+  const trialStart = t.startedAt.slice(0, 10)
+  const trialEnd = t.endedAt ? t.endedAt.slice(0, 10) : snap.scope.endDate
+  const anchorMs = f.lastFullMealIso ? Date.parse(f.lastFullMealIso) : NaN
+  // A short events pull: meals are events, so every count below is a floor (adversarial pass 2).
+  const pullFloor = (snap.incompletePulls ?? []).includes('events')
+  const since = Number.isFinite(anchorMs)
+    ? `inside the trial since the most recent fully-eaten meal (${h(fmtLocalDay(f.lastFullMealIso!, tz))})`
+    : 'inside the trial in this window, which records no fully-eaten meal'
+  const gap =
+    Number.isFinite(anchorMs) && f.hoursSinceLastFullMeal !== null
+      ? ` About ${humanizeGap(f.hoursSinceLastFullMeal)} without a full meal.`
+      : ''
+  const tail = (others: number, after: number, floor: string): string =>
+    `${
+      others > 0
+        ? ` ${floor}${num(others)} other rated meal${others === 1 ? '' : 's'} in that span ${others === 1 ? 'was' : 'were'} not identified as the trial diet.`
+        : ''
+    }${
+      after > 0
+        ? ` ${floor}${num(after)} more rated meal${after === 1 ? '' : 's'} after the trial ended ${after === 1 ? 'was' : 'were'} not finished either.`
+        : ''
+    } Recorded as a health signal, not &ldquo;picky.&rdquo;`
+  // THE COUNT IS THE SNAPSHOT'S, over every meal the flag counted (report.ts), never off the capped
+  // appendix list: forty post-trial rows filled that list and the trial diet's decline vanished
+  // (adversarial pass 2).
+  const full = snap.provenance.intakeFlagTrialMeals
+  if (full) {
+    const unfinished = full.trialDietUnfinished
+    if (unfinished.length === 0) return null
+    const floor = pullFloor ? 'at least ' : ''
+    const first = localDayKeyOf(unfinished[0].occurredAt, tz)
+    const last = localDayKeyOf(unfinished[unfinished.length - 1].occurredAt, tz)
+    const dates = h(first === last ? fmtDayYear(first) : fmtRange(first, last))
+    const ratings =
+      unfinished.length <= 8 ? `: ${h(unfinished.map((e) => intakeLabel(e.intakeRating).toLowerCase()).join(' → '))}` : ''
+    const n = unfinished.length
+    return {
+      html: `<b>The reduced-intake flag above fires on the trial diet: ${floor}${num(n)} rated meal${n === 1 ? '' : 's'} of it ${since} ${
+        n === 1 ? 'was' : 'were'
+      } not finished</b>, ${dates}${ratings}.${gap}${tail(full.otherInTrial, full.afterTrialUnfinished, pullFloor ? 'At least ' : '')}`,
+      onTrialDiet: true,
+    }
+  }
+  // AN OLDER STORED COPY, without the count: what its capped list shows, always a floor where the
+  // list may not hold every meal (the cap fields themselves may be absent: unknown is a floor), and
+  // which meals were the trial diet is unknown. Never silence while the flag's listed meals fall in
+  // the trial.
+  const listed = snap.provenance.intakeLog.filter(
+    (e) => !e.notCountedFreeFed && !e.isLastFullMeal && !(Number.isFinite(anchorMs) && Date.parse(e.occurredAt) <= anchorMs),
+  )
+  const counted = listed.filter((e) => {
+    const d = localDayKeyOf(e.occurredAt, tz)
+    return d >= trialStart && d <= trialEnd
+  })
+  if (counted.length === 0) return null
+  const anchorListed = snap.provenance.intakeLog.some((e) => e.isLastFullMeal && e.pinned === false)
+  const maybeTruncated = pullFloor || !(snap.provenance.intakeLogHiddenOlder === 0 || anchorListed)
+  return {
+    html: `<b>The reduced-intake flag above counts ${maybeTruncated ? 'at least ' : ''}${num(counted.length)} rated meal${
+      counted.length === 1 ? '' : 's'
+    } ${since}</b>; which of them were the trial diet is not recorded in this copy.${gap} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
+    onTrialDiet: false,
+  }
 }
 
 /** Later of two day keys. */
@@ -5357,18 +5571,21 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
   // trial is unreadable without them — a steroid course and a successful elimination
   // produce the identical improving curve.
   // SAY WHICH KIND OF PROBLEM IT IS NOT. "Not a problem with the trial" was doing two
-  // jobs and only one of them was true: these are not a COMPLIANCE problem — routinely
-  // prescribed alongside a trial, and flagging them would scold an owner for following
-  // their vet — but they are very much a problem for READING the result, which is what
-  // §7.2 says two lines below. The cold read caught the downplaying clause sitting as
-  // the weaker of two adjacent statements, and the assertive one should be the caveat.
+  // jobs and only one of them was true: these are not a COMPLIANCE problem — flagging them
+  // would scold an owner for following their vet — but they are very much a problem for
+  // READING the result, which is what §7.2 says two lines below. The cold read caught the
+  // downplaying clause sitting as the weaker of two adjacent statements, and the assertive
+  // one should be the caveat.
+  // CUL-2478 (PM ruling (a), 2026-11-03): NO CLAIM ABOUT WHAT IS ROUTINE. "Routinely prescribed
+  // alongside a trial" is false for a glucocorticoid on a GI trial and for an OTC antihistamine
+  // the record says no one prescribed, and it softened the biggest confounder on the page.
   // NAME THE SOURCE OF THE SPAN. These dates come from the regimen the owner recorded,
   // not from logged doses — a course can read "still running" with zero doses logged
   // against it, in a document whose own appendix D closes with "Nothing is counted that
   // the owner did not log." Round 4 read that as duration inferred from two ad-hoc
   // doses. It is not inferred, but nothing on the page said so, and the fix is to cite
   // where it comes from and where the per-regimen adherence lives.
-  return `${rows.join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. Routinely prescribed alongside a trial, so this is not a compliance problem &mdash; but it does bear on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  return `${rows.join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. This is not a compliance problem, but it bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
 }
 
 function indicationLabel(indication: 'skin' | 'gi' | 'other'): string {
@@ -9294,9 +9511,12 @@ export function trialNewFoodsLine(
   t: TrialBlock,
   day: (d: string) => string,
   symptomName: (type: string) => string,
+  /** A short events pull: feedings are events, so the in-trial count is a floor. */
+  eventsIncomplete = false,
 ): string | null {
   const newFoods = t.newFoods ?? []
   if (newFoods.length === 0) return null
+  const atLeast = eventsIncomplete ? 'at least ' : ''
   const windowDays = CHALLENGE_WINDOW_DAYS[t.species]
   const foods = newFoods.map((f) => {
     const first = dayKeyOfIndex(f.firstFedDayIndex)
@@ -9304,9 +9524,13 @@ export function trialNewFoodsLine(
     const span = first === last ? h(day(first)) : `${h(day(first))} &ndash; ${h(day(last))}`
     const firstShare = f.ramp[0]?.share ?? null
     const lastShare = f.ramp[f.ramp.length - 1]?.share ?? null
+    // Cold read: "on its own of what went into the bowl → about ⅓" could not be parsed. Each end
+    // says what it is: fed on its own, or a share of the bowl.
+    const shareText = (x: number | null): string =>
+      x !== null && x >= 0.999 ? 'fed on its own' : `${proportionWord(x)} of what went into the bowl`
     const ramp =
       f.ramp.length > 1 && firstShare !== lastShare
-        ? `, ${h(proportionWord(firstShare))} of what went into the bowl &rarr; ${h(proportionWord(lastShare))} (owner&rsquo;s estimate, not what was eaten)`
+        ? `, ${h(shareText(firstShare))} at first, then ${h(shareText(lastShare))} (owner&rsquo;s estimate, not what was eaten)`
         : firstShare !== null && firstShare < 0.999
           ? `, ${h(proportionWord(firstShare))} of what went into the bowl (owner&rsquo;s estimate, not what was eaten)`
           : ''
@@ -9318,13 +9542,42 @@ export function trialNewFoodsLine(
         : '0 logged'
     // The denominator rides with the count: a quiet window over unlogged days is not a
     // clean one (cold read, CUL-2052).
-    const coverage = `anything logged on ${num(f.windowDaysLogged)} of the ${num(f.windowDaysElapsed)} window day${
+    // "Anything logged on 10 of 10" read as symptoms on 10 of 10 (cold read): it is coverage, and says so.
+    const coverage = `the record holds an entry of any kind on ${num(f.windowDaysLogged)} of the ${num(f.windowDaysElapsed)} window day${
       f.windowDaysElapsed === 1 ? '' : 's'
     } so far`
     const fed = `${num(f.ramp.length)} feeding${f.ramp.length === 1 ? '' : 's'} on ${num(f.fedDays)} day${f.fedDays === 1 ? '' : 's'}`
-    return `${h(f.label)}: ${fed}, ${span}${ramp}. Symptoms logged within ${num(windowDays)} days after a feeding: ${symptoms} (${coverage}).`
+    // CUL-2481: FED DURING THE TRIAL TOO, said beside it. The derivation reads only the days after
+    // the end, so on Nyx's record a chicken food fed on the trial's last two days printed with its
+    // first post-trial day as if it were new. A stored copy without `inTrial` falls back to the
+    // trial's own off-diet itemisation, by the same label.
+    const inTrial = f.inTrial !== undefined ? f.inTrial : inTrialFromExposures(t, f.label)
+    // A window cropped at the trial's start sees only part of it (adversarial pass 1): scoped, never whole.
+    const cropped = t.trialDaysOutsideRange.before > 0 ? ' in the trial days this report covers' : ''
+    const during = inTrial
+      ? ` <b>Also fed during the trial</b>${cropped}: ${atLeast}${num(inTrial.feedings)} feeding${inTrial.feedings === 1 ? '' : 's'} from ${h(
+          day(inTrial.firstDate),
+        )}, off the trial diet (dated in appendix&nbsp;C).`
+      : ''
+    return `${h(f.label)}: ${fed} after the trial, ${span}${ramp}.${during} Symptoms logged within ${num(windowDays)} days after a feeding: ${symptoms} (${coverage}).`
   })
   return `${foods.join(' ')} Shown side by side with the feedings, not as a cause.`
+}
+
+/** A stored copy's in-trial feedings of an off-list food, from the trial's off-diet itemisation (the
+ *  only place such a feeding can sit: a food never on the list is off-diet whenever it is fed). A
+ *  mixed bowl is matched by its component names. */
+function inTrialFromExposures(t: TrialBlock, label: string): { feedings: number; firstDate: string } | null {
+  let feedings = 0
+  let first: string | null = null
+  for (const x of t.exposures.items) {
+    const names = x.label?.endsWith(', mixed') ? x.label.slice(0, -', mixed'.length).split(' + ') : [x.label]
+    if (!names.includes(label)) continue
+    feedings += 1
+    const d = dayKeyOfIndex(x.dayIndex)
+    if (first === null || d < first) first = d
+  }
+  return first === null ? null : { feedings, firstDate: first }
 }
 
 /** 'YYYY-MM-DD' for an epoch-day index (UTC read, the inverse of `localDayIndexOf`). */

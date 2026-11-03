@@ -2855,6 +2855,12 @@ export interface ConfounderExposure {
  * rows). Raw ratings only; no derived "below baseline" verdict (two co-firing findings can
  * carry different baselines, and the vet reads the decline directly from the ratings).
  */
+export interface IntakeFlagTrialMeals {
+  trialDietUnfinished: Array<{ occurredAt: string; intakeRating: IntakeRating }>
+  otherInTrial: number
+  afterTrialUnfinished: number
+}
+
 export interface IntakeLogEntry {
   eventId: string
   occurredAt: string
@@ -2949,6 +2955,14 @@ export interface Provenance {
    *   • `null`          — nothing rated below "all", so there is nothing to itemise.
    */
   intakeLogScope: 'intake_flag' | 'unfinished' | null
+  /**
+   * CUL-2479 — the intake flag's meals against the trial, counted over EVERY meal the flag counted
+   * after its last-full-meal anchor (never the capped list above): the trial diet's unfinished
+   * ratings inside the trial span, oldest first; the other in-trial rated meals; and the unfinished
+   * rated meals after the trial ended. Null when the flag did not fire or there is no trial; absent
+   * on a stored copy from before it (read as unknown).
+   */
+  intakeFlagTrialMeals?: IntakeFlagTrialMeals | null
   /** Appendix B — off-diet exposures (treats + human food). */
   confounders: ConfounderExposure[]
   /**
@@ -6336,6 +6350,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   let intakeLogHiddenOlder = 0
   let intakeLogFreeFedExcluded = 0
   let intakeLogFreeFedAfterAnchor = 0
+  let intakeFlagTrialMeals: IntakeFlagTrialMeals | null = null
   // CUL-1086 — the detector's own exclusion, over the SAME arrangements detection received, so
   // the list can never call a row a bowl that the flag counted (adversarial round 2).
   const intakeFreeFedSpans = parseFreeFedIntakeSpans(
@@ -6390,6 +6405,27 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const anchorMs = Date.parse(anchorMeal.occurredAt) // parsed, never compared as text (C-40)
       intakeLogFreeFedAfterAnchor = bowlRows.filter((e) => Date.parse(e.occurredAt) > anchorMs).length
     }
+    // CUL-2479 (adversarial pass 2, QUIET): the trial block's count of the flag's meals is taken
+    // here, over EVERY counted meal after the anchor, never off the capped list: forty post-trial
+    // rows filled the list and the trial diet's decline before them vanished from the trial block.
+    if (intakeLogScope === 'intake_flag' && trialBlock && Array.isArray(trialBlock.trialDietFeedingEventIds)) {
+      const onDiet = new Set(trialBlock.trialDietFeedingEventIds)
+      const trialStart = trialBlock.startedAt.slice(0, 10)
+      const trialEnd = trialBlock.endedAt ? trialBlock.endedAt.slice(0, 10) : scope.endDate
+      const anchorMs = anchorMeal !== null ? Date.parse(anchorMeal.occurredAt) : -Infinity
+      const since = counted.filter((e) => e !== anchorMeal && Date.parse(e.occurredAt) > anchorMs)
+      const dayOf = (e: ReportEventInput): string => localDayKey(e.occurredAt, tz) ?? e.occurredAt.slice(0, 10)
+      const inTrial = since.filter((e) => dayOf(e) >= trialStart && dayOf(e) <= trialEnd)
+      const trialDiet = inTrial.filter((e) => onDiet.has(e.id))
+      intakeFlagTrialMeals = {
+        trialDietUnfinished: trialDiet
+          .filter((e) => e.meal!.intakeRating !== 'all')
+          .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt))
+          .map((e) => ({ occurredAt: e.occurredAt, intakeRating: e.meal!.intakeRating as IntakeRating })),
+        otherInTrial: inTrial.length - trialDiet.length,
+        afterTrialUnfinished: since.filter((e) => dayOf(e) > trialEnd && e.meal!.intakeRating !== 'all').length,
+      }
+    }
     intakeLog = shownRows.map((e) => ({
       eventId: e.id,
       occurredAt: e.occurredAt,
@@ -6413,6 +6449,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     intakeLogFreeFedExcluded,
     intakeLogFreeFedAfterAnchor,
     intakeLogScope,
+    intakeFlagTrialMeals,
     confounders,
     proteinExposureTally,
     proteinUnknownCount,
