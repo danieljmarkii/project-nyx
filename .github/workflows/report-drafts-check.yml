@@ -1,0 +1,50 @@
+# The daily vet report draft check (CUL-2465, PM ruling (a) 2026-11-03).
+#
+# Asks reap-report-drafts whether any unsent draft is older than 25 hours, and opens a Linear issue
+# (team Culprit) when one is, or when the function cannot answer. A later day comments on the open
+# issue instead of opening another. Why the check reads the outcome rather than pg_cron's history,
+# and what does and does not leave, is scripts/ops/reportDraftsCheck.ts.
+#
+# NEVER A REQUIRED CHECK, NEVER ON A PULL REQUEST. Its own workflow, on a schedule and by hand only,
+# so it cannot join the `main` ruleset's required checks (those are named in ci.yml), and so a PR
+# branch can never run it.
+#
+# THE KEY. LINEAR_API_KEY is an environment secret on `ops-alerts`, whose deployments are limited to
+# `main`: no PR branch or agent session can read it (docs/secrets-register.md). A run that finds a
+# problem exits non-zero on purpose, so GitHub's failed-run email reaches the workflow's owner even
+# when Linear, or the key, is the thing that broke.
+name: Vet report draft check
+
+on:
+  schedule:
+    # Daily, 17:23 UTC: away from the top of the hour and from the 06:00–09:00 Pacific queue.
+    - cron: '23 17 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: report-drafts-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Vet report drafts past their day
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ops-alerts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      # No npm ci: the script imports only node:fs and its sibling module.
+      - name: Ask the sweep, and tell Linear if it needs a person
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: node --experimental-strip-types scripts/ops/reportDraftsCheck.cli.ts

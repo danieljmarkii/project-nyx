@@ -58,5 +58,6 @@ run "$root/supabase/migrations/100_ai_consent.sql"
 run "$root/supabase/migrations/112_report_summary_consent.sql"
 run "$cut118"
 psql -X -q -v ON_ERROR_STOP=1 -d "$db" -P pager=off -v variant="$variant" -f "$here/cases.sql"
-[ "$variant" = full ] && bash "$here/race.sh" "$db"
-
+# An if, not `[ … ] && …`: as the last line, the bare test made every other variant exit 1
+# with every case passing (found wiring this into CI, CUL-2465).
+if [ "$variant" = full ]; then bash "$here/race.sh" "$db"; fi
