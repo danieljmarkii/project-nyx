@@ -63,6 +63,7 @@ import {
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { backSheetsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -558,7 +559,10 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
     const end = c.endInWindow ? c.endInWindow.slice(0, 10) : null
     const med = medicationFor(snap, c)
     const none = med !== null && med.courseDays.given === 0 && med.courseDays.loggedNotGiven === 0
-    const from = start === null ? (c.startDate ? `from ${plainDay(c.startDate.slice(0, 10))} (before this window)` : 'start not recorded') : `from ${plainDay(start)}`
+    // CUL-2440: an ad-hoc drug whose record reaches before this window is not drawn as starting
+    // here. Its bar begins at the first dose in the window, so the label says so.
+    const recordBit = c.recordStart ? ` (first dose here; on record from ${plainDay(c.recordStart.firstDoseDay)})` : ''
+    const from = start === null ? (c.startDate ? `from ${plainDay(c.startDate.slice(0, 10))} (before this window)` : 'start not recorded') : `from ${plainDay(start)}${recordBit}`
     const to = end === null ? 'through the window' : c.endIsDeclared ? `to ${plainDay(end)}` : `to ${plainDay(end)} (last dose logged)`
     const span = `${from}${start === null && !c.startDate ? ',' : ''} ${to}`
     const when = none ? `prescribed ${span}, no doses logged` : span
@@ -839,7 +843,10 @@ function medicationLines(snap: ReportSnapshot): RecordLine[] {
       const body =
         total === 0
           ? 'no course days in this window'
-          : `given on ${c.given} of ${plural(total, 'course day', 'course days')}${c.loggedNotGiven > 0 ? `, logged as not given on ${c.loggedNotGiven}` : ''}`
+          : `given on ${c.given} of ${plural(total, 'course day', 'course days')}${
+              // CUL-2440: the partial doses ride with the count, as on every back sheet.
+              m.partialDoses > 0 ? ` (${m.partialDoses} partial)` : ''
+            }${c.loggedNotGiven > 0 ? `, logged as not given on ${c.loggedNotGiven}` : ''}`
       return { id: `medication-${m.regimenId}`, text: `${m.drugName}${kind}: ${body}.` }
     })
 }
@@ -924,7 +931,21 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
   const items = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)
     const to = plainDay(m.toDate)
-    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${m.activeAtWindowEnd ? ' (its course has no recorded end)' : ''}`
+    // An ad-hoc drug is dated from its earliest dose on record (CUL-2440), and says it has no
+    // regimen: "its course has no recorded end" read as a prescribed course still running.
+    // Sheet 1 is word-budgeted, so this is the short form; the back sheets carry the full one.
+    // ADVERSARIAL PASS 2 (QUIET): "no recorded end" stays unless the last dose fell after the trial.
+    const afterTrial = !!m.endedAt && m.endedAt.slice(0, 10) > m.toDate
+    const tail = m.recordStart && !afterTrial
+      ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)}${m.activeAtWindowEnd ? '; its course has no recorded end' : ''})`
+      : m.recordStart
+      ? m.recordStart.atHistoryFloor
+        ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
+        : ` (ad-hoc, first logged ${plainDay(m.recordStart.firstDoseDay)})`
+      : m.activeAtWindowEnd
+        ? ' (its course has no recorded end)'
+        : ''
+    return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${tail}`
   })
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
@@ -937,7 +958,9 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
 
 // ── The document ─────────────────────────────────────────────────────────────
 
-export function buildDocumentV2(snap: ReportSnapshot, opts: DocumentV2Options): DocumentV2 {
+export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options): DocumentV2 {
+  // One medication fact per drug, read the same way by sheet 1 and every back sheet (CUL-2440).
+  const snap = withRecordOverlaps(input)
   const blocks: BlockV2[] = []
   const zeroSign = isZeroSignSheet(snap)
   // The back sheets first: sheet 1's flag rows point at them by number (CUL-2350).
