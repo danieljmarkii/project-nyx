@@ -37,7 +37,15 @@ import {
 import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
 import { openExamRoom } from '../lib/examRoomCopy';
 import { SEND_READ_TIMEOUT_MS, boundedRead, withKnownFlags, type ComposerLive } from '../lib/reportComposer';
-import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, isBareV2Report, type PreviewView } from '../lib/reportPreviewV2';
+import {
+  PREVIEW_TOGGLE_LABEL,
+  bandSlotFor,
+  hasPhonePreview,
+  isBareV2Report,
+  isPreviewLoadAllowed,
+  type PreviewView,
+} from '../lib/reportPreviewV2';
+import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS, withExamCsp } from '../lib/examRoom';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -129,6 +137,29 @@ interface SendContext {
 }
 
 type Status = 'loading' | 'ready' | 'error';
+export const V1_PREVIEW_TEST_ID = 'report-v1-preview';
+
+/** Android's new-window path, refused (CUL-2486): the v1 frame opens none, as the v2 frames don't. */
+function refuseWindow(): void {}
+
+/**
+ * The v1 report with the room's CSP (CUL-2486), the way the v2 preview boxes its documents: in a
+ * real `<head>` when there is one (`withExamCsp` alone would also take a `<header>`, CUL-2470),
+ * else at the very top, after a doctype, where the parser places it in the implied head. Never
+ * shown without it.
+ */
+export function boxedV1Html(html: string): string {
+  if (/<head(\s[^>]*)?>/i.test(html)) {
+    const withCsp = withExamCsp(html);
+    if (withCsp !== null) return withCsp;
+  }
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+  if (doctype === null) return `${meta}${html}`;
+  const at = doctype.index + doctype[0].length;
+  return `${html.slice(0, at)}${meta}${html.slice(at)}`;
+}
+
 type RangeMode = 'default' | 'custom';
 
 // The default custom span: the last 90 inclusive calendar days, mirroring the
@@ -507,6 +538,8 @@ export default function ReportScreen() {
   // that carries its phone layout. A v2 response without one never reaches here: `load` refuses
   // it (CUL-2458), so the plain WebView below only ever shows a v1 report.
   const previewV2 = report ? hasPhonePreview(report) : askingV2 && building;
+  // The v1 frame's document, boxed with the room's CSP (CUL-2486). Null while v2 shows instead.
+  const v1Html = useMemo(() => (report && !previewV2 ? boxedV1Html(report.html) : null), [report, previewV2]);
   // A new document opens on its phone layout; "View as printed" is a look, not a mode.
   useEffect(() => {
     setPreviewView('phone');
@@ -718,12 +751,17 @@ export default function ReportScreen() {
               />
             ) : (
             <WebView
+              testID={V1_PREVIEW_TEST_ID}
               style={styles.web}
-              originWhitelist={['*']}
-              source={{ html: report.html }}
-              // The v1 report is static, self-contained clinical HTML — no scripts, no
-              // third-party subresources (§8). Disabling JS keeps the surface minimal.
+              // Boxed like every report frame (CUL-2486): every URL reaches the load check, which
+              // refuses all but the inline document; no new window; the room's CSP, so the page
+              // may load or send nothing. The v1 report is static, self-contained clinical HTML
+              // (photos are data: URIs, no web fonts), so the policy takes nothing it needs.
+              originWhitelist={REPORT_WEBVIEW_ORIGINS}
+              source={{ html: v1Html ?? '' }}
               javaScriptEnabled={false}
+              onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+              onOpenWindow={refuseWindow}
               showsVerticalScrollIndicator
             />
             )}

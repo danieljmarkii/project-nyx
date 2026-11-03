@@ -514,3 +514,54 @@ export async function ingestCaptureInbox(
   // debounced so a burst of widget taps collapses into one regen per pet.
   for (const petId of regenPets) triggerSignalRegenDebounced(petId);
 }
+
+// CUL-2468 — "is anything from the widget still waiting here?", for the vet report's two unsent
+// gates (`lib/pdf.ts` flushBeforeReport / flushBeforeSend). A capture sits in the inbox until the
+// app ingests it, and until then it is in neither SQLite nor the server: a treat waiting here
+// during a diet trial is invisible to the report's off-diet read. The gates ingest first, then
+// count what is STILL here: a record the ingest deferred (its food not cached yet, a newer
+// schema or kind) that names one of this account's pets.
+//
+// Counted: anything that is, or may yet become, a record for one of `petIds`. Not counted: a
+// file the ingest will drop (it can never land), and one naming another pet (a foreign record
+// ages out over 45 days, and a "waiting to upload" line standing that long would be a lie).
+// An empty `petIds` counts nothing, as the ingest applies nothing.
+export function countUnclaimedInboxPayloads(raws: readonly string[], petIds: ReadonlySet<string>): number {
+  let n = 0;
+  for (const raw of raws) {
+    const c = classifyInboxPayload(raw);
+    if (c.status === 'drop') continue;
+    const petId =
+      c.status === 'valid'
+        ? c.record.petId
+        : (() => {
+            try {
+              const p = (JSON.parse(raw) as { petId?: unknown }).petId;
+              return typeof p === 'string' ? p : null;
+            } catch {
+              return null;
+            }
+          })();
+    if (petId !== null && petIds.has(petId)) n += 1;
+  }
+  return n;
+}
+
+// The file-system half. A file that cannot be read counts: it is most likely a real capture,
+// and over-warning is the safe direction. A listing that fails THROWS, so the caller's count
+// fails as a whole and takes its own "no evidence" path. No inbox (Android, no entitlement) is 0.
+export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
+  const inbox = getCaptureInboxDirectory();
+  if (!inbox) return 0;
+  const raws: string[] = [];
+  let unreadable = 0;
+  for (const entry of inbox.list()) {
+    if (!('textSync' in entry) || !entry.name.endsWith('.json')) continue;
+    try {
+      raws.push(entry.textSync());
+    } catch {
+      unreadable += 1;
+    }
+  }
+  return unreadable + countUnclaimedInboxPayloads(raws, petIds);
+}

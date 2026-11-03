@@ -52,7 +52,8 @@ jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { generateVetReport, type VetReport } from '../lib/pdf';
 import { REPORT_FRONT_SILHOUETTE_TEST_ID } from '../components/surfaces/waits/ReportFrontSilhouette';
-import ReportScreen from './report';
+import ReportScreen, { V1_PREVIEW_TEST_ID, boxedV1Html } from './report';
+import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS } from '../lib/examRoom';
 import { boxedPreviewHtml } from '../components/reportV2/ReportPreviewV2';
 
 const mockedGenerate = generateVetReport as jest.Mock;
@@ -96,6 +97,32 @@ it('a v1 report renders as before: no preview, no toggle, JS off', async () => {
   await s.findByText('Send to vet');
   expect(s.queryByTestId('report-v2-view-toggle')).toBeNull();
   expect(s.queryByTestId('report-v2-phone', hidden)).toBeNull();
+});
+
+// CUL-2486: the v1 frame had `originWhitelist ['*']` and no load check, so an injected link or
+// meta refresh loaded https in the frame. Boxed now like every report frame.
+it('the v1 frame is boxed: every URL reaches the load check, which refuses every network and app scheme; no window; CSP', async () => {
+  mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, html: '<html><head></head><body>v1</body></html>' }));
+  const s = render(<ReportScreen />);
+  await s.findByText('Send to vet');
+  const web = s.getByTestId(V1_PREVIEW_TEST_ID, hidden);
+  const p = web.props as {
+    originWhitelist: string[];
+    javaScriptEnabled: boolean;
+    source: { html: string };
+    onShouldStartLoadWithRequest: (r: { url: string }) => boolean;
+    onOpenWindow?: unknown;
+  };
+  expect(p.originWhitelist).toEqual(REPORT_WEBVIEW_ORIGINS);
+  expect(p.javaScriptEnabled).toBe(false);
+  expect(p.source.html).toBe(boxedV1Html('<html><head></head><body>v1</body></html>'));
+  expect(p.source.html.indexOf('Content-Security-Policy')).toBeLessThan(p.source.html.indexOf('<body>'));
+  expect(p.source.html).toContain(`content="${EXAM_CSP}"`);
+  expect(typeof p.onOpenWindow).toBe('function');
+  expect(p.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
+  for (const url of ['https://evil.example/?d=record', 'http://x.test', 'nyx://report', 'mailto:a@b.c', 'javascript:alert(1)']) {
+    expect(p.onShouldStartLoadWithRequest({ url })).toBe(false);
+  }
 });
 
 // CUL-2458: the v2 `html` is the PRINTED page; shown bare on a phone it has no pinned warning
@@ -148,4 +175,11 @@ it('asking for v2, the first build waits on the v2 Front Page; asking for v1, on
   const v1 = render(<ReportScreen />);
   await waitFor(() => expect(v1.getByTestId('v1-silhouette')).toBeTruthy());
   expect(v1.queryByTestId(REPORT_FRONT_SILHOUETTE_TEST_ID, hidden)).toBeNull();
+});
+
+it('boxedV1Html: the policy lands in a real head, never in a <header>, and without a head after the doctype', () => {
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+  expect(boxedV1Html('<html><head><title>t</title></head><body/></html>')).toBe(`<html><head>${meta}<title>t</title></head><body/></html>`);
+  expect(boxedV1Html('<!DOCTYPE html><body><header>h</header></body>')).toBe(`<!DOCTYPE html>${meta}<body><header>h</header></body>`);
+  expect(boxedV1Html('<body>x</body>')).toBe(`${meta}<body>x</body>`);
 });
