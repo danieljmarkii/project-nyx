@@ -22,6 +22,11 @@ import { DRAFT_TTL_MS, REAP_BATCH, VET_REPORTS_BUCKET } from '../generate-report
  *  left waits a quarter hour for the next call. */
 export const REAP_MAX_PASSES = 20
 
+/** Rows one sweep may retry one at a time. A failed batch beyond this is counted failed whole and
+ *  the cursor still moves past it, so a Storage outage over many drafts costs at most this many
+ *  extra calls per sweep (each anon-callable), not one per row (rls-privacy-reviewer F4, CUL-2465). */
+export const ROW_RETRY_BUDGET = 2 * REAP_BATCH
+
 /** A draft past this is overdue: its 24 h, the quarter hour between sweeps, and 45 minutes of
  *  slack, so a sweep that is merely running late never trips the check (PM ruling (a), CUL-2465). */
 export const OVERDUE_MS = DRAFT_TTL_MS + 60 * 60 * 1000
@@ -119,13 +124,18 @@ export interface SweepResult {
 }
 
 /** One batch, all at once; on any failure, its rows one at a time. Object first, then row. */
-async function reapBatch(io: SweepIO, batch: StaleDraft[]): Promise<{ reaped: number; failed: number }> {
+async function reapBatch(io: SweepIO, batch: StaleDraft[], budget: { left: number }): Promise<{ reaped: number; failed: number }> {
   if (await io.removeObjects(batch.map((r) => r.storage_path))) {
     if (await io.deleteDrafts(batch.map((r) => r.id))) return { reaped: batch.length, failed: 0 }
   }
   let reaped = 0
   let failed = 0
   for (const row of batch) {
+    if (budget.left <= 0) {
+      failed++
+      continue
+    }
+    budget.left--
     // A row whose object will not go keeps its row, so the next sweep can still find the object.
     if ((await io.removeObjects([row.storage_path])) && (await io.deleteDrafts([row.id]))) reaped++
     else failed++
@@ -141,11 +151,12 @@ export async function reapAllStaleDrafts(io: SweepIO, maxPasses: number = REAP_M
   let reaped = 0
   let failed = 0
   let after: SweepCursor = null
+  const budget = { left: ROW_RETRY_BUDGET }
   for (let pass = 1; pass <= maxPasses; pass++) {
     const batch = await io.listStaleDrafts(before, REAP_BATCH, after)
     if (batch === null) return { reaped, failed, passes: pass, ok: false, capped: false }
     if (batch.length > 0) {
-      const out = await reapBatch(io, batch)
+      const out = await reapBatch(io, batch, budget)
       reaped += out.reaped
       failed += out.failed
       const last = batch[batch.length - 1]

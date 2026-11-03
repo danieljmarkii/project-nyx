@@ -23,7 +23,8 @@ export const LINEAR_TIMEOUT_MS = 20_000
 /** Team Culprit, and CUL-2465 (the issue this check exists for), by their Linear ids. */
 export const LINEAR_TEAM_ID = '7d624e99-9819-4232-b53e-6f7306837df0'
 export const PARENT_ISSUE_ID = '01db6231-7da1-4b57-9b26-49facfa4e324'
-export const LABEL_NAMES = ['Live harm', 'Area: Privacy/RLS'] as const
+// `Waiting on PM` too: CLAUDE.md routes live harm touching privacy onto the PM queue (rls-privacy-reviewer F3).
+export const LABEL_NAMES = ['Live harm', 'Area: Privacy/RLS', 'Waiting on PM'] as const
 
 /** The marker: one open issue with this exact title is the thread every later day comments on. */
 export const ISSUE_TITLE = 'Vet report drafts: the daily check found a draft past its day, or could not run'

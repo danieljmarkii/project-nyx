@@ -12,6 +12,7 @@ import {
   globalSweepIO,
   OVERDUE_MS,
   REAP_MAX_PASSES,
+  ROW_RETRY_BUDGET,
   reapAllStaleDrafts,
   type StaleDraft,
   type SweepIO,
@@ -134,6 +135,21 @@ Deno.test('a failing row is tried once per sweep, never in a loop', async () => 
   // The batch try, then the one-row retry: two deletes, then the sweep ends.
   assert.equal(f.log.filter((l) => l.startsWith('delete')).length, 2)
   assert.ok(f.log.filter((l) => l.startsWith('list')).length <= REAP_MAX_PASSES)
+})
+
+Deno.test('a Storage outage over many drafts costs at most the retry budget, and the sweep still reads past it', async () => {
+  // Every remove fails: the old per-row path would make one call per row, each anon-callable.
+  const f = fakeIO()
+  staleDrafts(f, REAP_BATCH * 6)
+  f.io.removeObjects = async (paths) => {
+    f.log.push(`remove ${paths.length}`)
+    return false
+  }
+  const out = await reapAllStaleDrafts(f.io)
+  assert.deepEqual(out, { reaped: 0, failed: REAP_BATCH * 6, passes: 7, ok: false, capped: false })
+  const singleRemoves = f.log.filter((l) => l === 'remove 1').length
+  assert.equal(singleRemoves, ROW_RETRY_BUDGET)
+  assert.equal(f.rows.size, REAP_BATCH * 6)
 })
 
 Deno.test('a read that fails reports it rather than ending clean; nothing stale is a clean sweep', async () => {
