@@ -59,7 +59,7 @@
   {
    "id": "medication-00000000-0000-4000-8000-000000000001",
    "kind": "record",
-   "text": "Prednisolone: given on 15 of 21 course days."
+   "text": "Prednisolone: given on 15 of 21 course days (11 partial)."
   },
   {
    "id": "noticed",
@@ -69,7 +69,7 @@
   {
    "id": "confounder",
    "kind": "confounder",
-   "text": "Not a test of the diet alone. Overlapping the trial: Motozol, overlapping it Jul 26 to Aug 9; Motozol, overlapping it Sep 21 to Sep 27; Prednisolone, overlapping it Sep 21 to Oct 11; Cetirizine HCl (Zyrtec) (entered as a supplement), overlapping it Oct 3 to Oct 20 (its course has no recorded end). Spans are the courses as recorded, not evidence of administration."
+   "text": "Not a test of the diet alone. Overlapping the trial: Motozol, overlapping it Jul 26 to Aug 9; Motozol, overlapping it Sep 21 to Sep 27; Prednisolone, overlapping it Sep 21 to Oct 11; Cetirizine HCl (Zyrtec) (entered as a supplement), overlapping it Jul 26 to Oct 20 (ad-hoc, by Jul 1). Spans are the courses as recorded, not evidence of administration."
   }
  ],
  "trial_line": {
