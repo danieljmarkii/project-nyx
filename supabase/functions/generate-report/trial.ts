@@ -1289,6 +1289,31 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     // CUL-2479, adversarial pass 1 (QUIET): the trial diet fed before its list row's `allowed_from`
     // classifies off-diet, and it is still the trial diet. Its intake decline is the trial diet's.
     if (permittedLater?.role === 'primary_diet') trialDietFeedingEventIds.push(e.id)
+    // Adversarial pass 2 (QUIET): a transition BOWL is never permitted whole while it holds the old
+    // food, so the probe above cannot see the trial diet inside it. Each component is asked alone.
+    else if (classification.components && !carriesTrialDiet(classification)) {
+      const whole = toTrialFeeding(e)
+      const laterDates = [...new Set(allowedFoods.filter((f) => f.role === 'primary_diet').map((f) => f.allowedFrom))].filter((from) => {
+        const fdn = dayIndexOfValue(from, timeZone)
+        return fdn !== null && fdn > dn
+      })
+      const holdsDiet = (whole.components ?? []).some((c) =>
+        laterDates.some((from) => {
+          const alone = classifyFeeding(ctx, {
+            ...whole,
+            components: undefined,
+            foodItemId: c.foodItemId,
+            foodKey: c.foodKey,
+            label: c.label,
+            foodType: c.foodType,
+            proteins: c.proteins,
+            occurredAt: from,
+          })
+          return alone.verdict === 'permitted' && alone.role === 'primary_diet'
+        }),
+      )
+      if (holdsDiet) trialDietFeedingEventIds.push(e.id)
+    }
     exposures.push({
       eventId: e.id,
       occurredAt: e.occurredAt,

@@ -347,6 +347,7 @@ Deno.test('CUL-2479 — an unflagged trial is unchanged, and an older copy says 
   assert.ok(!/reduced-intake flag/.test(row(dietTrialSection(quiet), 'Record')!))
   const old = assembleReport(decliningTrial(HP))
   delete old.trial!.trialDietFeedingEventIds
+  delete old.provenance.intakeFlagTrialMeals
   const r = row(dietTrialSection(old), 'Record')!
   assert.ok(/The reduced-intake flag above counts 4 rated meals inside the trial since the most recent fully-eaten meal \(Jun 29\); which of them were the trial diet is not recorded in this copy\./.test(r), r)
 })
@@ -363,9 +364,29 @@ function activeCatTrial(): ReportInput {
   input.pet.species = 'cat'
   return input
 }
+function part(f: Food, share: number) {
+  return {
+    foodItemId: f.id, snapshotLabel: `${f.brand} ${f.product}`, foodKey: `id:${f.id}`, foodType: 'meal', format: null,
+    primaryProtein: f.protein, proteins: [f.protein], ingredientsNotes: null, extractionConfidence: null, brand: f.brand,
+    productName: f.product, share, normalizedShare: share, shareSource: 'preset', amountValue: null, amountUnit: null,
+  }
+}
+function bowl(date: string, parts: ReturnType<typeof part>[], rating: string, hour: string): ReportEventInput {
+  const occurredAt = `${date}T${hour}:00:00Z`
+  const keys = parts.map((p) => p.foodKey).sort()
+  return {
+    id: nextId('mix'), type: 'meal', occurredAt, occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null,
+    severity: null, notes: null, loggedAt: occurredAt,
+    meal: {
+      foodItemId: null, intakeRating: rating, quantity: null, foodType: 'meal', format: null, primaryProtein: null, proteins: null,
+      ingredientsNotes: null, extractionConfidence: null, brand: null, productName: null,
+      bowl: { status: 'mix', components: parts, compositionKey: keys.join('+'), compositionKeyWithRatio: keys.join('+'), writtenAtMs: Date.parse(occurredAt) },
+    },
+  } as unknown as ReportEventInput
+}
 const intakeBit = (html: string): string => (row(html, 'Record')!.match(/The reduced-intake flag[^]*?picky\.”/) ?? ['<none>'])[0]
 
-Deno.test('pass 1 Q1 — a decline longer than the listed meals is a floor, never an exact count', () => {
+Deno.test('pass 1 Q1 — a decline longer than the listed meals is counted whole, never cut at the list', () => {
   const input = activeCatTrial()
   const good = days('2026-06-01', '2026-06-10').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
   const bad = days('2026-06-11', '2026-07-01').flatMap((d) => [meal(d, HP, 'some', '13'), meal(d, HP, 'picked', '22')])
@@ -373,17 +394,17 @@ Deno.test('pass 1 Q1 — a decline longer than the listed meals is a floor, neve
   const snap = assembleReport(input)
   assert.ok(snap.provenance.intakeLogHiddenOlder > 0, 'the fixture overflows the list')
   const r = intakeBit(dietTrialSection(snap))
-  assert.ok(/fires on the trial diet: at least 40 rated meals of it inside the trial since the most recent fully-eaten meal \(Jun 10\)/.test(r), r)
-  assert.ok(r.includes('the most recent listed in appendix E; earlier ones are not itemised'), r)
+  // Pass 2: counted over every meal the flag counted, never off the capped list: exact, from its start.
+  assert.ok(r.includes('fires on the trial diet: 42 rated meals of it inside the trial since the most recent fully-eaten meal (Jun 10) were not finished, Jun 11 – Jul 1, 2026.'), r)
 })
 
-Deno.test('pass 1 Q1 — an anchor before the window: the count is a floor too', () => {
+Deno.test('pass 1 Q1 — an anchor before the window: the count still starts at the decline', () => {
   const input = activeCatTrial()
   const pre = days('2026-05-20', '2026-05-31').flatMap((d) => [meal(d, CHICKEN, 'all', '13'), meal(d, CHICKEN, 'all', '22')])
   const bad = days('2026-06-01', '2026-07-01').flatMap((d) => [meal(d, HP, 'some', '13'), meal(d, HP, 'picked', '22')])
   input.events = [...pre, ...bad]
   const r = intakeBit(trialHtml(input))
-  assert.ok(/fires on the trial diet: at least \d+ rated meals of it/.test(r), r)
+  assert.ok(/fires on the trial diet: 62 rated meals of it inside the trial since the most recent fully-eaten meal \(May 31\) were not finished, Jun 1 – Jul 1, 2026\./.test(r), r)
 })
 
 Deno.test('pass 1 Q2 — the trial diet fed before its list row’s allowed-from date is still the trial diet', () => {
@@ -432,4 +453,51 @@ Deno.test('pass 1 Q5 — a window cropped at the trial’s start scopes "also fe
   input.requestedWindow = { startDate: '2026-06-20', endDate: '2026-07-02' }
   const r = row(trialHtml(input), 'Off-list foods after the trial')!
   assert.ok(r.includes('Also fed during the trial in the trial days this report covers: 1 feeding from Jun 27'), r)
+})
+
+// ── Adversarial pass 2's counterexamples, each a QUIET break before its fix ─────────────────────
+
+Deno.test('pass 2 A — a decline past the trial that overflows the list keeps the trial diet’s part', () => {
+  const input = endedTrial({})
+  input.now = '2026-07-22T12:00:00Z'
+  input.requestedWindow = { startDate: '2026-06-01', endDate: '2026-07-22' }
+  const good = days('2026-06-01', '2026-06-22').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+  const badTrial = days('2026-06-23', '2026-06-28').flatMap((d) => [meal(d, HP, 'some', '13'), meal(d, HP, 'picked', '22')])
+  const badAfter = days('2026-06-29', '2026-07-21').flatMap((d) => [meal(d, CHICKEN, 'some', '13'), meal(d, CHICKEN, 'picked', '22')])
+  input.events = [...good, ...badTrial, ...badAfter]
+  const snap = assembleReport(input)
+  assert.ok(snap.provenance.intakeLogHiddenOlder > 0, 'the post-trial rows fill the list')
+  const html = dietTrialSection(snap)
+  const r = intakeBit(html)
+  assert.ok(r.includes('fires on the trial diet: 12 rated meals of it inside the trial since the most recent fully-eaten meal (Jun 22) were not finished, Jun 23 – Jun 28, 2026.'), r)
+  assert.ok(r.includes('46 more rated meals after the trial ended were not finished either.'), r)
+  const callout = plain(html.split('Interpreting this record')[1] ?? '')
+  assert.ok(callout.startsWith(' The reduced-intake flag fires on the trial diet (above)'), callout)
+})
+
+Deno.test('pass 2 B — a transition bowl holding the trial diet before its list date is the trial diet', () => {
+  const input = activeCatTrial()
+  input.dietTrials[0].allowedFoods![0].allowedFrom = '2026-07-02'
+  const good = days('2026-06-01', '2026-06-29').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+  const bad = days('2026-06-30', '2026-07-01').flatMap((d) => [
+    bowl(d, [part(HP, 0.5), part(CHICKEN, 0.5)], 'picked', '13'),
+    bowl(d, [part(HP, 0.5), part(CHICKEN, 0.5)], 'refused', '22'),
+  ])
+  input.events = [...good, ...bad]
+  const r = intakeBit(trialHtml(input))
+  assert.ok(/fires on the trial diet: 4 rated meals of it/.test(r), r)
+  assert.ok(!/not identified as the trial diet/.test(r), r)
+})
+
+Deno.test('pass 2 E — a short events pull floors the intake count and the in-trial feedings', () => {
+  const input = activeCatTrial()
+  const good = days('2026-06-01', '2026-06-29').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+  const bad = days('2026-06-30', '2026-07-01').flatMap((d) => [meal(d, HP, 'picked', '13'), meal(d, HP, 'refused', '22')])
+  input.events = [...good, ...bad]
+  input.incompletePulls = ['events']
+  assert.ok(intakeBit(trialHtml(input)).includes('fires on the trial diet: at least 4 rated meals of it'))
+  const ended = endedTrial({ mealEvents: [...days('2026-05-20', '2026-07-02').map((d) => meal(d)), meal('2026-06-27', CHICKEN, null, '19'), meal('2026-06-29', CHICKEN, null, '19')] })
+  ended.incompletePulls = ['events']
+  const r = row(trialHtml(ended), 'Off-list foods after the trial')!
+  assert.ok(r.includes('Also fed during the trial: at least 1 feeding from Jun 27'), r)
 })
