@@ -3679,7 +3679,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   recordBits.push(...exposureSentences(t, mealsAppendixVisible(snap)))
   // CUL-2479 (PM ruling (a)): the intake flag's own count, on the trial diet, in the trial block.
   const intakeOnTrial = trialIntakeFlagSentence(snap)
-  if (intakeOnTrial) recordBits.push(intakeOnTrial)
+  if (intakeOnTrial) recordBits.push(intakeOnTrial.html)
   // ── B-530: THE WEIGHT FACT IS NO LONGER A PASSENGER ON THE REFUSAL BRANCH ───
   //
   // It used to be pushed from INSIDE `exposureSentences`' refusal branch, so the
@@ -4273,6 +4273,19 @@ export function dietTrialSection(snap: ReportSnapshot): string {
         : 'For part of this window no trial diet was recorded on the allowed list, so proteins fed then could not be checked against it — the elimination cannot be confirmed clean from this record.',
     )
   }
+  // CUL-2479, cold read: the record row carried the flag's count and the callout a vet reads for
+  // the bottom line still led with coverage. Where no refusal fact speaks, the flag on the trial diet
+  // takes the refusal sentence's place, in the same terms: the record cannot show the diet was eaten.
+  if (refusalCaveat === null) {
+    const intake = trialIntakeFlagSentence(snap)
+    if (intake) {
+      refusalCaveat = `${
+        intake.onTrialDiet
+          ? 'The reduced-intake flag fires on the trial diet (above)'
+          : 'The reduced-intake flag fires over meals inside the trial (above)'
+      }, so this record cannot show the diet was eaten as fed &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`
+    }
+  }
   const suppressStatement =
     (caveats.length > 0 || refusalCaveat !== null) && t.interpretability === 'supports'
   const shown = suppressStatement ? null : statement
@@ -4417,7 +4430,7 @@ function trialRecordLine(snap: ReportSnapshot): string {
         firstEnd,
       )}`,
     )
-    const pair = signPairSentence(snap, t.evidenceStartDate, firstEnd, start, end)
+    const pair = signPairSentence(snap, t.evidenceStartDate, firstEnd, start, end, firstSpan, span)
     if (pair) parts.push(pair)
   } else if (t.evidenceStartDate < start) {
     parts.push(
@@ -4504,11 +4517,21 @@ function looksInSpanSentence(snap: ReportSnapshot, start: string, end: string): 
 }
 
 /**
- * CUL-2460 instances 1 and 6: "Per sign, first week against last: vomiting 4 and 3, sneezing 0 and 1."
+ * CUL-2460 instances 1 and 6: "Per sign, the first 7 trial days this report covers against the trial's
+ * last 7 days: vomiting 4 and 3, sneezing 0 and 1." Each span by the name its own clause gives it, so a
+ * cropped window's first week is never read as the trial's (cold read).
  * Counts only, in the order the two spans are named; no arrow, no direction, no reading. Null when
  * neither span holds a sign (each clause above already says so).
  */
-function signPairSentence(snap: ReportSnapshot, aStart: string, aEnd: string, bStart: string, bEnd: string): string | null {
+function signPairSentence(
+  snap: ReportSnapshot,
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string,
+  aName: string,
+  bName: string,
+): string | null {
   const a = new Map<string, number>()
   const b = new Map<string, number>()
   for (const e of snap.provenance.symptomLog) {
@@ -4522,7 +4545,7 @@ function signPairSentence(snap: ReportSnapshot, aStart: string, aEnd: string, bS
   const pairs = types
     .sort((x, y) => total(y) - total(x) || symptomLabel(x).localeCompare(symptomLabel(y)))
     .map((k) => `${h(symptomLabel(k).toLowerCase())} ${num(a.get(k) ?? 0)} and ${num(b.get(k) ?? 0)}`)
-  return `Per sign, first week against last: ${pairs.join(', ')}.`
+  return `Per sign, ${aName} against ${bName}: ${pairs.join(', ')}.`
 }
 
 /**
@@ -4539,7 +4562,7 @@ function signPairSentence(snap: ReportSnapshot, aStart: string, aEnd: string, bS
  * fired and at least one of its meals was the trial diet. Intake is not preference: never "picky",
  * never a reassurance, and a later full meal elsewhere is not a retraction.
  */
-function trialIntakeFlagSentence(snap: ReportSnapshot): string | null {
+function trialIntakeFlagSentence(snap: ReportSnapshot): { html: string; onTrialDiet: boolean } | null {
   const t = snap.trial
   const f = snap.safetyFlags.find((x) => x.kind === 'intake_decline')
   if (!t || !f || f.kind !== 'intake_decline') return null
@@ -4567,9 +4590,12 @@ function trialIntakeFlagSentence(snap: ReportSnapshot): string | null {
   if (!Array.isArray(ids)) {
     // An older stored copy cannot say which meals were the trial diet: the flag's count inside the
     // trial span is said, and the unknown with it. Never silence.
-    return `<b>The reduced-intake flag above counts ${floor}${num(counted.length)} rated meal${
-      counted.length === 1 ? '' : 's'
-    } inside the trial ${since}</b>; which of them were the trial diet is not recorded in this copy.${gap} Recorded as a health signal, not &ldquo;picky.&rdquo;`
+    return {
+      html: `<b>The reduced-intake flag above counts ${floor}${num(counted.length)} rated meal${
+        counted.length === 1 ? '' : 's'
+      } inside the trial ${since}</b>; which of them were the trial diet is not recorded in this copy.${gap} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
+      onTrialDiet: false,
+    }
   }
   const onDiet = new Set(ids)
   const trialMeals = counted.filter((e) => onDiet.has(e.eventId))
@@ -4584,9 +4610,12 @@ function trialIntakeFlagSentence(snap: ReportSnapshot): string | null {
   const otherBit =
     others > 0 ? ` ${num(others)} other rated meal${others === 1 ? '' : 's'} in that span ${others === 1 ? 'was' : 'were'} not the trial diet.` : ''
   const n = unfinished.length
-  return `<b>The reduced-intake flag above fires on the trial diet: ${floor}${num(n)} rated meal${n === 1 ? '' : 's'} of it ${
-    since
-  } ${n === 1 ? 'was' : 'were'} not finished</b>, ${dates}${ratings}.${gap}${otherBit} Recorded as a health signal, not &ldquo;picky.&rdquo;`
+  return {
+    html: `<b>The reduced-intake flag above fires on the trial diet: ${floor}${num(n)} rated meal${n === 1 ? '' : 's'} of it ${
+      since
+    } ${n === 1 ? 'was' : 'were'} not finished</b>, ${dates}${ratings}.${gap}${otherBit} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
+    onTrialDiet: true,
+  }
 }
 
 /** Later of two day keys. */
@@ -9474,9 +9503,13 @@ export function trialNewFoodsLine(
     const span = first === last ? h(day(first)) : `${h(day(first))} &ndash; ${h(day(last))}`
     const firstShare = f.ramp[0]?.share ?? null
     const lastShare = f.ramp[f.ramp.length - 1]?.share ?? null
+    // Cold read: "on its own of what went into the bowl → about ⅓" could not be parsed. Each end
+    // says what it is: fed on its own, or a share of the bowl.
+    const shareText = (x: number | null): string =>
+      x !== null && x >= 0.999 ? 'fed on its own' : `${proportionWord(x)} of what went into the bowl`
     const ramp =
       f.ramp.length > 1 && firstShare !== lastShare
-        ? `, ${h(proportionWord(firstShare))} of what went into the bowl &rarr; ${h(proportionWord(lastShare))} (owner&rsquo;s estimate, not what was eaten)`
+        ? `, ${h(shareText(firstShare))} at first, then ${h(shareText(lastShare))} (owner&rsquo;s estimate, not what was eaten)`
         : firstShare !== null && firstShare < 0.999
           ? `, ${h(proportionWord(firstShare))} of what went into the bowl (owner&rsquo;s estimate, not what was eaten)`
           : ''
@@ -9488,7 +9521,8 @@ export function trialNewFoodsLine(
         : '0 logged'
     // The denominator rides with the count: a quiet window over unlogged days is not a
     // clean one (cold read, CUL-2052).
-    const coverage = `anything logged on ${num(f.windowDaysLogged)} of the ${num(f.windowDaysElapsed)} window day${
+    // "Anything logged on 10 of 10" read as symptoms on 10 of 10 (cold read): it is coverage, and says so.
+    const coverage = `the record holds an entry of any kind on ${num(f.windowDaysLogged)} of the ${num(f.windowDaysElapsed)} window day${
       f.windowDaysElapsed === 1 ? '' : 's'
     } so far`
     const fed = `${num(f.ramp.length)} feeding${f.ramp.length === 1 ? '' : 's'} on ${num(f.fedDays)} day${f.fedDays === 1 ? '' : 's'}`

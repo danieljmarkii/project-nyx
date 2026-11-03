@@ -173,7 +173,7 @@ Deno.test('CUL-2460 — the first trial week is counted beside the last, per sig
   )
   const r = row(html, FROM)!
   assert.ok(r.includes('Logged in the trial’s first 7 days, Jun 1 – Jun 7, 2026: 2 vomiting, 1 coughing.'), r)
-  assert.ok(r.includes('Per sign, first week against last: vomiting 2 and 1, coughing 1 and 0.'), r)
+  assert.ok(r.includes('Per sign, the trial’s first 7 days against the trial’s last 7 days: vomiting 2 and 1, coughing 1 and 0.'), r)
   // Counts, never a reading of them.
   assert.ok(!/better|worse|improv|fewer|more than/i.test(r), r)
 })
@@ -216,7 +216,7 @@ Deno.test('CUL-2481 — Nyx: the 11 chicken feedings of Oct 18–20 sit beside t
   const r = row(dietTrialSection(nyxLiveSnapshot()), FROM)!
   assert.ok(r.includes('Oct 14 – Oct 20, 2026: 3 vomiting, 1 sneezing;'), r)
   assert.ok(r.includes('11 feedings in those days were off the trial diet (dated in appendix C).'), r)
-  assert.ok(r.includes('Per sign, first week against last: vomiting 4 and 3, coughing 1 and 0, sneezing 0 and 1.'), r)
+  assert.ok(r.includes('Per sign, the first 7 trial days this report covers against the trial’s last 7 days: vomiting 4 and 3, coughing 1 and 0, sneezing 0 and 1.'), r)
   assert.ok(r.includes('Logged in the first 7 trial days this report covers, Sep 16 – Sep 22, 2026: 4 vomiting, 1 coughing;'), r)
 })
 
@@ -261,6 +261,10 @@ Deno.test('CUL-2481 — Nyx: a food fed in the trial’s last days is said to ha
   assert.ok(r.includes('Applaws Chicken Breast in broth: 12 feedings on 8 days after the trial, Oct 21 – Oct 28'), r)
   assert.ok(r.includes('Also fed during the trial: 4 feedings from Oct 19, off the trial diet (dated in appendix C).'), r)
   assert.ok(r.includes('Blue Buffalo Tastefuls Purées with Chicken: 18 feedings on 7 days after the trial, Oct 21 – Oct 27. Also fed during the trial: 7 feedings from Oct 18'), r)
+  // Cold read: the ramp reads as two states, and the coverage as coverage, never as symptom days.
+  assert.ok(r.includes('Oct 21 – Oct 28, fed on its own at first, then about ⅓ of what went into the bowl (owner’s estimate, not what was eaten).'), r)
+  assert.ok(r.includes('(the record holds an entry of any kind on 10 of the 10 window days so far)'), r)
+  assert.ok(!/anything logged on/.test(r), r)
 })
 
 Deno.test('CUL-2481 — an assembled report carries the in-trial feedings, and a food first fed after says nothing', () => {
@@ -303,6 +307,9 @@ Deno.test('CUL-2479 — Cooper: the trial’s Record row carries the intake flag
     ),
     r,
   )
+  // And the callout a vet reads for the bottom line leads with it (cold read).
+  const callout = plain(dietTrialSection(snap).split('Interpreting this record')[1] ?? '')
+  assert.ok(callout.includes('The reduced-intake flag fires on the trial diet (above), so this record cannot show the diet was eaten as fed'), callout)
 })
 
 /** A trial whose last two days' meals go unfinished after a fortnight of finished bowls. */
