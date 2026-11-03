@@ -259,8 +259,8 @@ Deno.test('CUL-2481 — Nyx: a food fed in the trial’s last days is said to ha
   assert.equal(row(html, 'New foods after the trial'), null)
   const r = row(html, 'Off-list foods after the trial')!
   assert.ok(r.includes('Applaws Chicken Breast in broth: 12 feedings on 8 days after the trial, Oct 21 – Oct 28'), r)
-  assert.ok(r.includes('Also fed during the trial: 4 feedings from Oct 19, off the trial diet (dated in appendix C).'), r)
-  assert.ok(r.includes('Blue Buffalo Tastefuls Purées with Chicken: 18 feedings on 7 days after the trial, Oct 21 – Oct 27. Also fed during the trial: 7 feedings from Oct 18'), r)
+  assert.ok(r.includes('Also fed during the trial in the trial days this report covers: 4 feedings from Oct 19, off the trial diet (dated in appendix C).'), r)
+  assert.ok(r.includes('Blue Buffalo Tastefuls Purées with Chicken: 18 feedings on 7 days after the trial, Oct 21 – Oct 27. Also fed during the trial in the trial days this report covers: 7 feedings from Oct 18'), r)
   // Cold read: the ramp reads as two states, and the coverage as coverage, never as symptom days.
   assert.ok(r.includes('Oct 21 – Oct 28, fed on its own at first, then about ⅓ of what went into the bowl (owner’s estimate, not what was eaten).'), r)
   assert.ok(r.includes('(the record holds an entry of any kind on 10 of the 10 window days so far)'), r)
@@ -303,7 +303,7 @@ Deno.test('CUL-2479 — Cooper: the trial’s Record row carries the intake flag
   const r = row(dietTrialSection(snap), 'Record')!
   assert.ok(
     r.includes(
-      'The reduced-intake flag above fires on the trial diet: 4 rated meals of it since the most recent fully-eaten meal (Oct 14) were not finished, Oct 15 – Oct 16, 2026: ate some → picked at it → ate some → picked at it. About 50 h without a full meal. Recorded as a health signal, not “picky.”',
+      'The reduced-intake flag above fires on the trial diet: 4 rated meals of it inside the trial since the most recent fully-eaten meal (Oct 14) were not finished, Oct 15 – Oct 16, 2026: ate some → picked at it → ate some → picked at it. About 50 h without a full meal. Recorded as a health signal, not “picky.”',
     ),
     r,
   )
@@ -330,7 +330,7 @@ Deno.test('CUL-2479 — the sentence prints only when the flag’s meals were th
   const onDiet = assembleReport(decliningTrial(HP))
   assert.ok(onDiet.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the fixture fires the flag')
   const r = row(dietTrialSection(onDiet), 'Record')!
-  assert.ok(/The reduced-intake flag above fires on the trial diet: 4 rated meals of it since the most recent fully-eaten meal \(Jun 29\) were not finished/.test(r), r)
+  assert.ok(/The reduced-intake flag above fires on the trial diet: 4 rated meals of it inside the trial since the most recent fully-eaten meal \(Jun 29\) were not finished/.test(r), r)
   // Intake is not preference: "picky" appears only in its negation.
   assert.equal((r.match(/picky/g) ?? []).length, 1, r)
   assert.ok(r.includes('not “picky.”'), r)
@@ -349,4 +349,87 @@ Deno.test('CUL-2479 — an unflagged trial is unchanged, and an older copy says 
   delete old.trial!.trialDietFeedingEventIds
   const r = row(dietTrialSection(old), 'Record')!
   assert.ok(/The reduced-intake flag above counts 4 rated meals inside the trial since the most recent fully-eaten meal \(Jun 29\); which of them were the trial diet is not recorded in this copy\./.test(r), r)
+})
+
+// ── Adversarial pass 1's counterexamples, each a QUIET break before its fix ─────────────────────
+
+function activeCatTrial(): ReportInput {
+  const input = endedTrial({})
+  input.dietTrials[0].status = 'active'
+  input.dietTrials[0].endedAt = null
+  input.dietTrials[0].completedAt = null
+  input.dietTrials[0].outcome = null
+  input.dietTrials[0].targetDurationDays = 56
+  input.pet.species = 'cat'
+  return input
+}
+const intakeBit = (html: string): string => (row(html, 'Record')!.match(/The reduced-intake flag[^]*?picky\.”/) ?? ['<none>'])[0]
+
+Deno.test('pass 1 Q1 — a decline longer than the listed meals is a floor, never an exact count', () => {
+  const input = activeCatTrial()
+  const good = days('2026-06-01', '2026-06-10').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+  const bad = days('2026-06-11', '2026-07-01').flatMap((d) => [meal(d, HP, 'some', '13'), meal(d, HP, 'picked', '22')])
+  input.events = [...good, ...bad]
+  const snap = assembleReport(input)
+  assert.ok(snap.provenance.intakeLogHiddenOlder > 0, 'the fixture overflows the list')
+  const r = intakeBit(dietTrialSection(snap))
+  assert.ok(/fires on the trial diet: at least 40 rated meals of it inside the trial since the most recent fully-eaten meal \(Jun 10\)/.test(r), r)
+  assert.ok(r.includes('the most recent listed in appendix E; earlier ones are not itemised'), r)
+})
+
+Deno.test('pass 1 Q1 — an anchor before the window: the count is a floor too', () => {
+  const input = activeCatTrial()
+  const pre = days('2026-05-20', '2026-05-31').flatMap((d) => [meal(d, CHICKEN, 'all', '13'), meal(d, CHICKEN, 'all', '22')])
+  const bad = days('2026-06-01', '2026-07-01').flatMap((d) => [meal(d, HP, 'some', '13'), meal(d, HP, 'picked', '22')])
+  input.events = [...pre, ...bad]
+  const r = intakeBit(trialHtml(input))
+  assert.ok(/fires on the trial diet: at least \d+ rated meals of it/.test(r), r)
+})
+
+Deno.test('pass 1 Q2 — the trial diet fed before its list row’s allowed-from date is still the trial diet', () => {
+  for (const allowedFrom of ['2026-07-02', '2026-07-01']) {
+    const input = activeCatTrial()
+    input.dietTrials[0].allowedFoods![0].allowedFrom = allowedFrom
+    const good = days('2026-06-01', '2026-06-29').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+    const bad = days('2026-06-30', '2026-07-01').flatMap((d) => [meal(d, HP, 'picked', '13'), meal(d, HP, 'refused', '22')])
+    input.events = [...good, ...bad]
+    const r = intakeBit(trialHtml(input))
+    assert.ok(/fires on the trial diet: 4 rated meals of it/.test(r), `${allowedFrom}: ${r}`)
+    assert.ok(!/not identified as the trial diet/.test(r), `${allowedFrom}: ${r}`)
+  }
+})
+
+Deno.test('pass 1 Q3 — a decline that runs past the trial’s end is counted past it', () => {
+  const input = endedTrial({})
+  input.pet.species = 'cat'
+  const good = days('2026-06-01', '2026-06-26').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+  const bad = days('2026-06-27', '2026-07-01').flatMap((d) => [meal(d, HP, 'picked', '13'), meal(d, HP, 'refused', '22')])
+  input.events = [...good, ...bad]
+  const snap = assembleReport(input)
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'intake_decline'))
+  const r = intakeBit(dietTrialSection(snap))
+  assert.ok(r.includes('4 rated meals of it inside the trial since the most recent fully-eaten meal (Jun 26) were not finished'), r)
+  assert.ok(r.includes('6 more rated meals after the trial ended were not finished either.'), r)
+})
+
+Deno.test('pass 1 Q4 — a short events pull makes the off-diet count and the per-sign pair floors', () => {
+  const mealEvents = [...days('2026-05-20', '2026-07-02').map((d) => meal(d)), meal('2026-06-26', CHICKEN, null, '19')]
+  const input = endedTrial({ mealEvents, events: [symptom('2026-06-02'), symptom('2026-06-27')] })
+  input.incompletePulls = ['events']
+  const r = row(trialHtml(input), FROM)!
+  assert.ok(r.includes('At least 1 feeding in those days was off the trial diet'), r)
+  assert.ok(r.includes('(each count at least: part of the event record could not be read): vomiting 1 and 1.'), r)
+})
+
+Deno.test('pass 1 Q5 — a window cropped at the trial’s start scopes "also fed during the trial"', () => {
+  const mealEvents = [
+    ...days('2026-05-20', '2026-07-02').map((d) => meal(d)),
+    meal('2026-06-05', CHICKEN, null, '19'),
+    meal('2026-06-27', CHICKEN, null, '19'),
+    meal('2026-06-30', CHICKEN, null, '19'),
+  ]
+  const input = endedTrial({ mealEvents })
+  input.requestedWindow = { startDate: '2026-06-20', endDate: '2026-07-02' }
+  const r = row(trialHtml(input), 'Off-list foods after the trial')!
+  assert.ok(r.includes('Also fed during the trial in the trial days this report covers: 1 feeding from Jun 27'), r)
 })

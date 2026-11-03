@@ -4414,7 +4414,7 @@ function trialRecordLine(snap: ReportSnapshot): string {
       : endsWithTrial
         ? `the trial&rsquo;s last ${dayWord(spanDays)} this report covers`
         : `the last ${dayWord(spanDays)} of the trial this report covers`
-  const parts = [`${signsClause(snap, start, end, span)}.${offDietInSpanClause(t, start, end)}${looksInSpanSentence(snap, start, end)}`]
+  const parts = [`${signsClause(snap, start, end, span)}.${offDietInSpanClause(snap, start, end)}${looksInSpanSentence(snap, start, end)}`]
   // CUL-2460 (PM ruling (a), instances 1 and 6): A COMPARATOR, AS COUNTS. The last week alone left the
   // owner's verdict as the only comparison on the row, and a quiet final week read as agreement. The
   // first 7 trial days this report covers sit beside it, per sign, as a pair of counts and nothing
@@ -4424,7 +4424,7 @@ function trialRecordLine(snap: ReportSnapshot): string {
   if (firstEnd !== null && firstEnd < start) {
     const firstSpan = fromTrialStart ? 'the trial&rsquo;s first 7 days' : 'the first 7 trial days this report covers'
     parts.push(
-      `${signsClause(snap, t.evidenceStartDate, firstEnd, firstSpan)}.${offDietInSpanClause(t, t.evidenceStartDate, firstEnd)}${looksInSpanSentence(
+      `${signsClause(snap, t.evidenceStartDate, firstEnd, firstSpan)}.${offDietInSpanClause(snap, t.evidenceStartDate, firstEnd)}${looksInSpanSentence(
         snap,
         t.evidenceStartDate,
         firstEnd,
@@ -4481,7 +4481,8 @@ function trialRecordLine(snap: ReportSnapshot): string {
  * signs are counted in, so a week that reads as the on-diet end state says it was not. Nothing when
  * no allowed list was recorded: the record could not be checked, and the trial block says so.
  */
-function offDietInSpanClause(t: NonNullable<ReportSnapshot['trial']>, start: string, end: string): string {
+function offDietInSpanClause(snap: ReportSnapshot, start: string, end: string): string {
+  const t = snap.trial!
   if (t.allowedSetUnavailable) return ''
   let n = 0
   for (const x of t.exposures.items) {
@@ -4490,7 +4491,9 @@ function offDietInSpanClause(t: NonNullable<ReportSnapshot['trial']>, start: str
     if (d >= start && d <= end) n += 1
   }
   if (n === 0) return ''
-  return ` <b>${num(n)} feeding${n === 1 ? '' : 's'} in those days ${n === 1 ? 'was' : 'were'} off the trial diet</b> (dated in appendix&nbsp;C).`
+  // Meals are events: a short events pull makes this a floor, as it does the signs (adversarial pass 1).
+  const floor = (snap.incompletePulls ?? []).includes('events') ? 'At least ' : ''
+  return ` <b>${floor}${num(n)} feeding${n === 1 ? '' : 's'} in those days ${n === 1 ? 'was' : 'were'} off the trial diet</b> (dated in appendix&nbsp;C).`
 }
 
 /**
@@ -4545,7 +4548,8 @@ function signPairSentence(
   const pairs = types
     .sort((x, y) => total(y) - total(x) || symptomLabel(x).localeCompare(symptomLabel(y)))
     .map((k) => `${h(symptomLabel(k).toLowerCase())} ${num(a.get(k) ?? 0)} and ${num(b.get(k) ?? 0)}`)
-  return `Per sign, ${aName} against ${bName}: ${pairs.join(', ')}.`
+  const floor = (snap.incompletePulls ?? []).includes('events') ? ' (each count at least: part of the event record could not be read)' : ''
+  return `Per sign, ${aName} against ${bName}${floor}: ${pairs.join(', ')}.`
 }
 
 /**
@@ -4570,21 +4574,36 @@ function trialIntakeFlagSentence(snap: ReportSnapshot): { html: string; onTrialD
   const trialStart = t.startedAt.slice(0, 10)
   const trialEnd = t.endedAt ? t.endedAt.slice(0, 10) : snap.scope.endDate
   const anchorMs = f.lastFullMealIso ? Date.parse(f.lastFullMealIso) : NaN
-  const counted = snap.provenance.intakeLog.filter((e) => {
-    if (e.notCountedFreeFed || e.isLastFullMeal) return false
-    if (Number.isFinite(anchorMs) && Date.parse(e.occurredAt) <= anchorMs) return false
+  // The flag's meals as the snapshot lists them: rated, not a free-fed bowl, after the anchor.
+  const sinceAnchor = snap.provenance.intakeLog.filter(
+    (e) => !e.notCountedFreeFed && !e.isLastFullMeal && !(Number.isFinite(anchorMs) && Date.parse(e.occurredAt) <= anchorMs),
+  )
+  const inTrial = (e: { occurredAt: string }): boolean => {
     const d = localDayKeyOf(e.occurredAt, tz)
     return d >= trialStart && d <= trialEnd
-  })
+  }
+  const counted = sinceAnchor.filter(inTrial)
   if (counted.length === 0) return null
-  // No anchor: the log holds the most recent meals only, so past its cap the count is a floor.
-  const floor = !Number.isFinite(anchorMs) && snap.provenance.intakeLogHiddenOlder > 0 ? 'at least ' : ''
+  // ADVERSARIAL PASS 1 (QUIET): the list holds the most recent rows only. Unless the anchor itself is
+  // listed in sequence, rows between it and the cap's edge are not in hand, so every count is a floor
+  // and the dates are the listed ones, never the decline's start.
+  const anchorListed = snap.provenance.intakeLog.some((e) => e.isLastFullMeal && !e.pinned)
+  const truncated = snap.provenance.intakeLogHiddenOlder > 0 && !anchorListed
+  const floor = truncated ? 'at least ' : ''
   const since = Number.isFinite(anchorMs)
-    ? `since the most recent fully-eaten meal (${h(fmtLocalDay(f.lastFullMealIso!, tz))})`
-    : 'in this window, which records no fully-eaten meal'
+    ? `inside the trial since the most recent fully-eaten meal (${h(fmtLocalDay(f.lastFullMealIso!, tz))})`
+    : 'inside the trial in this window, which records no fully-eaten meal'
   const gap =
     Number.isFinite(anchorMs) && f.hoursSinceLastFullMeal !== null
       ? ` About ${humanizeGap(f.hoursSinceLastFullMeal)} without a full meal.`
+      : ''
+  const listedNote = truncated ? ` (the most recent listed in appendix&nbsp;E; earlier ones are not itemised)` : ''
+  // ADVERSARIAL PASS 1 (QUIET): a decline that runs past the trial's end is not cut at the end. The
+  // meals after it are counted beside it, whatever food they were.
+  const afterTrial = sinceAnchor.filter((e) => localDayKeyOf(e.occurredAt, tz) > trialEnd && e.intakeRating !== 'all').length
+  const afterBit =
+    afterTrial > 0
+      ? ` ${num(afterTrial)} more rated meal${afterTrial === 1 ? '' : 's'} after the trial ended ${afterTrial === 1 ? 'was' : 'were'} not finished either.`
       : ''
   const ids = t.trialDietFeedingEventIds
   if (!Array.isArray(ids)) {
@@ -4593,7 +4612,7 @@ function trialIntakeFlagSentence(snap: ReportSnapshot): { html: string; onTrialD
     return {
       html: `<b>The reduced-intake flag above counts ${floor}${num(counted.length)} rated meal${
         counted.length === 1 ? '' : 's'
-      } inside the trial ${since}</b>; which of them were the trial diet is not recorded in this copy.${gap} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
+      } ${since}</b>${listedNote}; which of them were the trial diet is not recorded in this copy.${gap}${afterBit} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
       onTrialDiet: false,
     }
   }
@@ -4607,13 +4626,16 @@ function trialIntakeFlagSentence(snap: ReportSnapshot): { html: string; onTrialD
   const dates = h(first === last ? fmtDayYear(first) : fmtRange(first, last))
   const ratings = chrono.length <= 8 ? `: ${h(chrono.map((e) => intakeLabel(e.intakeRating).toLowerCase()).join(' → '))}` : ''
   const others = counted.length - trialMeals.length
+  // "Not identified as", never "not": a re-photographed bag is the trial diet the classifier missed.
   const otherBit =
-    others > 0 ? ` ${num(others)} other rated meal${others === 1 ? '' : 's'} in that span ${others === 1 ? 'was' : 'were'} not the trial diet.` : ''
+    others > 0
+      ? ` ${num(others)} other rated meal${others === 1 ? '' : 's'} in that span ${others === 1 ? 'was' : 'were'} not identified as the trial diet.`
+      : ''
   const n = unfinished.length
   return {
     html: `<b>The reduced-intake flag above fires on the trial diet: ${floor}${num(n)} rated meal${n === 1 ? '' : 's'} of it ${
       since
-    } ${n === 1 ? 'was' : 'were'} not finished</b>, ${dates}${ratings}.${gap}${otherBit} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
+    } ${n === 1 ? 'was' : 'were'} not finished</b>, ${dates}${listedNote}${ratings}.${gap}${otherBit}${afterBit} Recorded as a health signal, not &ldquo;picky.&rdquo;`,
     onTrialDiet: true,
   }
 }
@@ -9531,8 +9553,10 @@ export function trialNewFoodsLine(
     // first post-trial day as if it were new. A stored copy without `inTrial` falls back to the
     // trial's own off-diet itemisation, by the same label.
     const inTrial = f.inTrial !== undefined ? f.inTrial : inTrialFromExposures(t, f.label)
+    // A window cropped at the trial's start sees only part of it (adversarial pass 1): scoped, never whole.
+    const cropped = t.trialDaysOutsideRange.before > 0 ? ' in the trial days this report covers' : ''
     const during = inTrial
-      ? ` <b>Also fed during the trial</b>: ${num(inTrial.feedings)} feeding${inTrial.feedings === 1 ? '' : 's'} from ${h(
+      ? ` <b>Also fed during the trial</b>${cropped}: ${num(inTrial.feedings)} feeding${inTrial.feedings === 1 ? '' : 's'} from ${h(
           day(inTrial.firstDate),
         )}, off the trial diet (dated in appendix&nbsp;C).`
       : ''

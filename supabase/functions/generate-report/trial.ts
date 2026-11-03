@@ -1286,6 +1286,9 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       }
       return null
     })()
+    // CUL-2479, adversarial pass 1 (QUIET): the trial diet fed before its list row's `allowed_from`
+    // classifies off-diet, and it is still the trial diet. Its intake decline is the trial diet's.
+    if (permittedLater?.role === 'primary_diet') trialDietFeedingEventIds.push(e.id)
     exposures.push({
       eventId: e.id,
       occurredAt: e.occurredAt,
