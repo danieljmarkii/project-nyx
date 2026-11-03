@@ -89,7 +89,7 @@ Deno.test('CUL-2440 — cetirizine is dated from Jul 1 in every section, and nam
   const t = v1('nyx-live')
   assert.match(
     t,
-    /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · by mouth · doses on record since Jul 1, 2026, the earliest day this report’s medication history reads, so dosing may have begun earlier, overlapping Jul 26–Oct 20 · 4 ad-hoc doses logged in the trial days this report covers, 21 on record in all \(last dose logged Oct 24, after the trial ended\)\. Ad-hoc doses, no regimen recorded/,
+    /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · by mouth · doses on record since Jul 1, 2026, the earliest day this report’s medication history reads, so dosing may have begun earlier, overlapping Jul 26–Oct 20 · ad-hoc, dosed on 4 of the trial days this report covers; 21 doses on record in all \(last dose logged Oct 24, after the trial ended\)\. Ad-hoc doses, no regimen recorded/,
   )
   assert.doesNotMatch(t, /Cetirizine[^.]*still running/, 'an ad-hoc drug is never "still running": the lifetime table says an unrecorded end is not one still under way'
   )
@@ -109,11 +109,11 @@ Deno.test('CUL-2440 — the diet history no longer says no dose was given in foo
 
 Deno.test('CUL-2440 — v2 carries the same facts: sheet 1 and the back sheets (nyx-live)', () => {
   const t = v2('nyx-live')
-  assert.match(t, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\), overlapping it Jul 26 to Oct 20 \(21 ad-hoc doses, by Jul 1\)/, 'sheet 1')
+  assert.match(t, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\), overlapping it Jul 26 to Oct 20 \(ad-hoc, by Jul 1\)/, 'sheet 1')
   assert.doesNotMatch(t, /overlapping it Oct 3 to Oct 20/)
   assert.match(t, /15 of 15 \(11 partial\)/, 'the lifetime table on the back sheets')
   assert.match(t, /Prednisolone: given on 15 of 21 course days \(11 partial\)/, 'sheet 1 carries the partial count')
-  assert.match(t, /Cetirizine HCl \(Zyrtec\), 5 ad-hoc doses logged here, no regimen recorded \(Oct 3, Oct 11, Oct 12, Oct 20, Oct 24\); on record from Jul 1/, 'sheet 1’s chart label does not start cetirizine in the window')
+  assert.match(t, /Cetirizine HCl \(Zyrtec\), ad-hoc, dosed on 5 days here, no regimen recorded \(Oct 3, Oct 11, Oct 12, Oct 20, Oct 24\); on record from Jul 1/, 'sheet 1’s chart label does not start cetirizine in the window')
   assert.match(t, /Motozol \(2 courses\), Prednisolone and Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) overlapped the trial/)
 })
 
@@ -210,11 +210,11 @@ Deno.test('adversarial 2.2 — an ad-hoc drug last dosed on or before the trial 
   const cet = s.trial!.medicationOverlap.find((m) => m.drugName.startsWith('Cetirizine'))!
   cet.endedAt = '2026-10-20'
   const t1 = plain(renderReport(s))
-  assert.match(t1, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · by mouth · doses on record since Jul 1[^·]*· 4 ad-hoc doses logged in the trial days this report covers, 21 on record in all still running at the end of this window/)
+  assert.match(t1, /Cetirizine HCl \(Zyrtec\) \(entered as a supplement\) · by mouth · doses on record since Jul 1[^·]*· ad-hoc, dosed on 4 of the trial days this report covers; 21 doses on record in all still running at the end of this window/)
   assert.doesNotMatch(t1, /\(last dose logged/)
   assert.doesNotMatch(t1, /· 87 d\b/)
   const t2 = plain(renderPrintV2(buildDocumentV2(s, OPTS)))
-  assert.match(t2, /overlapping it Jul 26 to Oct 20 \(21 ad-hoc doses, by Jul 1; its course has no recorded end\)/)
+  assert.match(t2, /overlapping it Jul 26 to Oct 20 \(ad-hoc, by Jul 1; its course has no recorded end\)/)
 })
 
 // ── CUL-2480: the medication-facts class, its remaining instances ─────────────────────────────
@@ -238,6 +238,7 @@ Deno.test('CUL-2480 instance 4 — a drug whose doses on record cross the trial 
       lastDoseDay: '2026-10-24',
       dosesOnRecord: 21,
       atHistoryFloor: true,
+      antibacterialInGiTrial: false,
     },
   ])
   const t = plain(renderReport(withoutCetirizineRow()))
@@ -294,7 +295,7 @@ Deno.test('CUL-2480 (#1428) — the overlap line carries the route, and an ad-ho
   const t = v1('nyx-live')
   assert.match(t, /Motozol · in the ear · since Jul 16, overlapping Jul 26–Aug 9 · 15 d\./)
   assert.match(t, /Prednisolone · by mouth · Sep 21–Oct 11 · 21 d\./)
-  assert.match(t, /overlapping Jul 26–Oct 20 · 4 ad-hoc doses logged in the trial days this report covers, 21 on record in all/)
+  assert.match(t, /overlapping Jul 26–Oct 20 · ad-hoc, dosed on 4 of the trial days this report covers; 21 doses on record in all/)
   assert.doesNotMatch(t, /Cetirizine[^.]*· 87 d/)
 })
 
@@ -303,4 +304,26 @@ Deno.test('CUL-2480 — the lifetime table names its floor as the earliest medic
   assert.doesNotMatch(t, /Lifetime of the record/)
   assert.match(t, /Every medication on record, from the earliest medication entry this report reads \(Jul 2026\)/)
   assert.match(t, /Cetirizine HCl \(Zyrtec\)Jul 1 – Oct 24, 2026 \(first dose on the earliest day read\)/)
+})
+
+// ── CUL-2480 adversarial pass 1 ───────────────────────────────────────────────────────────────
+
+Deno.test('adversarial B1 — the route is the row’s own record’s, never pooled by name (an oral steroid is never "in the eye")', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  for (const m of s.medications) if (m.drugName === 'Prednisolone') m.route = null
+  s.unlinkedMedications.push({ ...s.unlinkedMedications[0], itemId: 'pred-eye', drugName: 'Prednisolone', route: 'ophthalmic', firstDate: '2026-10-15', lastDate: '2026-10-15', doseDays: ['2026-10-15'] })
+  const t = plain(renderReport(s))
+  assert.match(t, /Prednisolone · Sep 21–Oct 11 · 21 d\./)
+  assert.doesNotMatch(t, /Prednisolone · in the eye/)
+})
+
+Deno.test('adversarial B5 — an antibacterial whose doses on record cross a GI trial carries the microbiome sentence', () => {
+  const s = withoutCetirizineRow()
+  for (const e of s.medicationHistory!.entries) if (e.drugName.startsWith('Cetirizine')) e.drugName = 'Metronidazole'
+  for (const u of s.unlinkedMedications) if (u.drugName.startsWith('Cetirizine')) u.drugName = 'Metronidazole'
+  assert.equal(s.trial!.indication, 'gi')
+  for (const t of [plain(renderReport(s)), plain(renderPrintV2(buildDocumentV2(s, OPTS)))]) {
+    assert.match(t, /antibacterial/i)
+    assert.match(t, /effect on the microbiome does not/)
+  }
 })

@@ -20,7 +20,7 @@
 // sentence says "on record since", and `atHistoryFloor` lets it add that dosing may predate it
 // (C-37: scope a date to the query when the read behind it may be truncated).
 import type { MedicationHistoryEntry, ReportSnapshot } from './report.ts'
-import type { TrialRecordOnlyOverlap } from './trial.ts'
+import { looksAntibacterial, type TrialRecordOnlyOverlap } from './trial.ts'
 import { dayKeyFromIndex } from '../../../lib/utils.ts'
 
 /** The earliest logged dose of an ad-hoc drug, when the record reaches before its window. */
@@ -175,6 +175,8 @@ function withRecordOnlyOverlaps(snap: ReportSnapshot): ReportSnapshot {
       lastDoseDay: last,
       dosesOnRecord: doses,
       atHistoryFloor: hist.sinceDay !== null && first <= hist.sinceDay,
+      // ADVERSARIAL PASS 1 (B5): the same microbiome sentence a full overlap row would carry.
+      antibacterialInGiTrial: t.indication === 'gi' && looksAntibacterial(drugName),
     })
   }
   if (out.length === 0) return snap
@@ -197,8 +199,10 @@ function withRedatedOverlaps(snap: ReportSnapshot): ReportSnapshot {
     const fromDate = from >= m.fromDate ? m.fromDate : from
     // The doses the row is made of (from #1428's cold read): the window's doses inside the trial
     // span, and every dose on record for the drug, from the same pool the record start reads.
+    // ADVERSARIAL PASS 1 (B2, QUIET): `doseDays` are DAYS, not doses, so the window's side is a count
+    // of dose days and is named as one; twice-daily dosing printed as half its doses.
     const adHocDoses = {
-      inTrialInWindow: group.doseDays.filter((d) => d >= fromDate && d <= m.toDate).length,
+      inTrialInWindowDays: group.doseDays.filter((d) => d >= fromDate && d <= m.toDate).length,
       onRecord: doseCoursesOf(snap, group).reduce((n, e) => n + e.dosesLogged, 0),
     }
     if (from >= m.fromDate) {

@@ -104,6 +104,22 @@ export function nyxLiveSnapshot(): ReportSnapshot {
       afterWindowLookDaysUnread: 0,
     },
   }
+  // It also predates `permittedFoods[].panelComplete` (CUL-2492). Filled from the capture's own
+  // per-food protein-set verdict (appendix E's rows, by label), the same `complete` the appendices
+  // print "ingredient list not captured" from. A trial food with no appendix row this window has no
+  // verdict in the capture, so it stays absent, which the render reads as not read (the louder side).
+  if (s.trial) {
+    const verdict = (label: string): boolean | undefined =>
+      s.diet.mealItems.find((m) => m.foodLabel !== null && !m.mix && (m.foodLabel === label || m.foodLabel.startsWith(`${label} (`)))
+        ?.proteinSet.complete
+    s.trial = {
+      ...s.trial,
+      permittedFoods: s.trial.permittedFoods.map((f) => {
+        const v = verdict(f.label)
+        return v === undefined ? f : { ...f, panelComplete: v }
+      }),
+    }
+  }
   return {
     ...s,
     atAGlance,

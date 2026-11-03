@@ -551,3 +551,30 @@ Deno.test('CUL-2491 — a trial this report covers whole prints no cropped-days 
   const html = trialHtml(endedTrial({ events: [symptom('2026-06-02'), symptom('2026-06-25')] }))
   assert.ok(!/Over the whole trial, per sign/.test(html), html)
 })
+
+Deno.test('CUL-2491 adversarial B6 — a short events pull floors the cropped side too (it loses the oldest rows)', () => {
+  const snap = nyxLiveSnapshot()
+  snap.incompletePulls = ['events']
+  const r = row(dietTrialSection(snap), FROM)!
+  assert.ok(r.includes('vomiting at least 10 in the 52 earlier trial days, at least 10 in the 35 this report covers'), r)
+})
+
+// ── CUL-2492, from the cold read: the panel verdict, and the unread panel in the bottom line ────
+
+Deno.test('CUL-2492 — an unread trial-diet panel reaches "Interpreting this record", by name (cooper)', () => {
+  const html = dietTrialSection(assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } }))
+  const callout = plain(html.split('Interpreting this record').at(-1) ?? '')
+  assert.ok(callout.includes('The trial diet’s ingredient panel (Cooper&#39;s Venison LID) was not read, so a protein in it beyond the one recorded would appear nowhere in this record'), callout)
+  assert.ok(/owner-entered protein; label not read/.test(html))
+})
+
+Deno.test('CUL-2492 — "label read" is the panel verdict, never the photo source alone (nyx-live: RC Wet is photo-sourced, panel not captured)', () => {
+  const snap = nyxLiveSnapshot()
+  const wet = snap.trial!.permittedFoods.find((f) => f.label === 'Royal Canin Selected Protein PR, Wet')!
+  assert.equal(wet.source, 'photo')
+  assert.equal(wet.panelComplete, false)
+  const html = plain(dietTrialSection(snap))
+  assert.ok(!/label read for 5 of the 6/.test(html), html)
+  assert.ok(html.includes('Royal Canin Selected Protein PR, Wet'))
+  assert.ok(/ingredient panels of \d of the 6 trial-diet foods \(Royal Canin Selected Protein PR, Wet;/.test(html), html)
+})

@@ -385,9 +385,7 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
  * shrinks it. Never raise one to go green. The fixed parts are reported beside, never budgeted.
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
-  // 191 → 193 (CUL-2480, argued in its PR): "(21 ad-hoc doses, by Jul 1)" for "(ad-hoc, by Jul 1)".
-  // #1428's cold read read the bare ad-hoc span as continuous antihistamine cover; the count is the fix.
-  'nyx-live': 193,
+  'nyx-live': 191,
   'cooper': 74,
   'r11-steady': 62,
   'r11-jump': 62,

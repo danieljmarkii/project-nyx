@@ -77,6 +77,7 @@ import {
 } from '../../../lib/dietTrial.ts'
 export type { ContaminationFact } from '../../../lib/dietTrial.ts'
 import { localDayIndexOf, trialDayCounter } from '../../../lib/utils.ts'
+import { mayClaimCompleteProteinSet } from '../generate-signal/protein.ts'
 
 const MS_PER_DAY = 86_400_000
 
@@ -106,6 +107,8 @@ export interface TrialFoodSource {
   /** CUL-1979 — `food_items.ai_extraction_confidence`, already spread in by
    *  `mapFoodProteins`; read only for the provenance word (`proteinSourceOf`). */
   extractionConfidence?: unknown
+  /** CUL-2492: `food_items.ingredients_notes`, read only for the panel verdict (`panelComplete`). */
+  ingredientsNotes?: string | null
 }
 
 export interface TrialSource {
@@ -241,9 +244,9 @@ export interface TrialMedicationOverlap {
   /**
    * RENDER-LAYER ONLY (CUL-2480, from #1428's cold read). Set beside `recordStart`: an ad-hoc drug
    * has no course, so its span in days ("87 d") reads as continuous cover. These are the doses the
-   * row is made of: those logged in the trial days this report covers, and those on record in all.
+   * row is made of: the days dosed in the trial days this report covers, and the doses on record in all.
    */
-  adHocDoses?: { inTrialInWindow: number; onRecord: number }
+  adHocDoses?: { inTrialInWindowDays: number; onRecord: number }
 }
 
 /**
@@ -261,6 +264,7 @@ export interface TrialRecordOnlyOverlap {
   lastDoseDay: string
   dosesOnRecord: number
   atHistoryFloor: boolean
+  antibacterialInGiTrial: boolean
 }
 
 /** One permitted food, with the count §7 asks for ("DentaStix — 168 feedings"). */
@@ -293,6 +297,12 @@ export interface TrialPermittedFood {
   /** CUL-1979 — photo-read vs owner-entered, for the provenance note beside a
    *  contamination claim about this food. Optional for the fixture corpus. */
   source?: ProteinSource
+  /**
+   * CUL-2492: the food's ingredient panel was captured and read (`mayClaimCompleteProteinSet`, the
+   * verdict behind every "ingredient list not captured" marker). Optional for the fixture corpus and
+   * frozen snapshots; absent is read as NOT read, never as read.
+   */
+  panelComplete?: boolean
 }
 
 /** C5, ruled: the symptom trend is rendered AGAINST logging density over the same
@@ -1410,6 +1420,13 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     !hasPrimary || (primaryPermitted === 0 && bowlsWithTrialDiet === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
 
   const sourceByFoodId = new Map((trial.allowedFoods ?? []).map((f) => [f.foodItemId, f.extractionConfidence ?? null]))
+  // CUL-2492: the SAME panel verdict the appendices print ("ingredient list not captured"), per food.
+  const panelByFoodId = new Map(
+    (trial.allowedFoods ?? []).map((f) => [
+      f.foodItemId,
+      mayClaimCompleteProteinSet(f.proteins ?? [], f.ingredientsNotes ?? null, f.extractionConfidence),
+    ]),
+  )
   const permittedFoods: TrialPermittedFood[] = allowedFoods
     .map((f) => ({
       label: f.label,
@@ -1426,6 +1443,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       proteins: [...(f.proteins ?? [])],
       panelRead: (f.proteins ?? []).length > 0,
       source: proteinSourceOf(sourceByFoodId.get(f.foodItemId)),
+      panelComplete: panelByFoodId.get(f.foodItemId) ?? false,
     }))
     .sort(
       (a, b) =>

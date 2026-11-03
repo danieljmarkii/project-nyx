@@ -573,7 +573,7 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
     const span = `${from}${start === null && !c.startDate ? ',' : ''} ${to}`
     const doseDays = adHoc ? adHoc.doseDays.filter((d) => d >= windowStart) : []
     const when = adHoc && doseDays.length > 0
-      ? `${doseDays.length} ad-hoc dose${doseDays.length === 1 ? '' : 's'} logged here, no regimen recorded (${
+      ? `ad-hoc, dosed on ${doseDays.length} day${doseDays.length === 1 ? '' : 's'} here, no regimen recorded (${
           doseDays.length <= 6 ? doseDays.map(plainDay).join(', ') : `${plainDay(doseDays[0])} to ${plainDay(doseDays[doseDays.length - 1])}`
         })${
           c.recordStart ? `; on record from ${plainDay(c.recordStart.firstDoseDay)}` : ''
@@ -963,21 +963,19 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     // Sheet 1 is word-budgeted, so this is the short form; the back sheets carry the full one.
     // ADVERSARIAL PASS 2 (QUIET): "no recorded end" stays unless the last dose fell after the trial.
     const afterTrial = !!m.endedAt && m.endedAt.slice(0, 10) > m.toDate
-    // From #1428's cold read: an ad-hoc span is its doses, not continuous cover, so the count rides it.
-    const adHocWord = m.adHocDoses ? `${m.adHocDoses.onRecord} ad-hoc dose${m.adHocDoses.onRecord === 1 ? '' : 's'}` : 'ad-hoc'
     const tail = m.recordStart && !afterTrial
-      ? ` (${adHocWord}, by ${plainDay(m.recordStart.firstDoseDay)}${m.activeAtWindowEnd ? '; its course has no recorded end' : ''})`
+      ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)}${m.activeAtWindowEnd ? '; its course has no recorded end' : ''})`
       : m.recordStart
       ? m.recordStart.atHistoryFloor
-        ? ` (${adHocWord}, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
-        : ` (${adHocWord}, first logged ${plainDay(m.recordStart.firstDoseDay)})`
+        ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
+        : ` (ad-hoc, first logged ${plainDay(m.recordStart.firstDoseDay)})`
       : m.activeAtWindowEnd
         ? ' (its course has no recorded end)'
         : ''
     return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${tail}`
   })
   const items = [...overlapItems, ...recordOnly]
-  const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
+  const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial) || (t.recordOnlyOverlap ?? []).some((r) => r.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
     : ''
   return {

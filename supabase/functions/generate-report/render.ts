@@ -97,7 +97,7 @@ import { NOTICED_STRIP_DAYS } from './noticed.ts'
 // §5.5's standing contamination fact, shared with the trial block. Imported from the
 // adapter rather than re-declared: the render must not hold its own idea of what a
 // contamination finding is.
-import type { ContaminationFact, TrialBlock } from './trial.ts'
+import type { ContaminationFact, TrialBlock, TrialMedicationOverlap } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
@@ -3420,17 +3420,19 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   const protein = snap.diet.trialTargetProtein
   const prov = snap.diet.trialProteinProvenance
   // CUL-2492: "CONFIRMED" AND "READ FROM THE LABEL" ARE CLAIMS ABOUT THE PANEL. The owner's word
-  // corroborates the label only where the label was read (a photo of the panel, read automatically);
-  // over a trial diet whose proteins the owner typed in, the protein is the owner's entry and nothing
-  // checked it. Cooper's row read "owner-confirmed protein" over a panel nobody captured. Every
-  // trial-diet food must have been photo-read for either label-read word; unknown is not read.
-  // With several trial-diet foods, some photo-read and some typed in, neither word is true of the
-  // set, so the line says how many were read (nyx-live: 5 of 6).
+  // corroborates the label only where the panel was captured and read (`panelComplete`, the same
+  // verdict behind every "ingredient list not captured" in the appendices); over a trial diet whose
+  // panel nobody captured, the protein is the owner's entry and nothing checked it. Cooper's row read
+  // "owner-confirmed protein" over a panel nobody captured. Absent is not read (a frozen snapshot).
+  // With several trial-diet foods, some read and some not, neither word is true of the set, so the
+  // line says how many were read. COLD READ, pass 1: a photo-sourced protein is not a read panel
+  // (nyx-live's RC Wet carries photo-read proteins and no captured panel), so `source` is not the test.
   const primaryFoods = t.permittedFoods.filter((f) => f.role === 'primary_diet')
-  const readCount = primaryFoods.filter((f) => f.source === 'photo').length
-  const labelRead = primaryFoods.length > 0 && readCount === primaryFoods.length
+  const unreadPrimary = primaryFoods.filter((f) => f.panelComplete !== true)
+  const readCount = primaryFoods.length - unreadPrimary.length
+  const labelRead = primaryFoods.length > 0 && unreadPrimary.length === 0
   const partRead = !labelRead && readCount > 0
-  const partWord = `label read for ${num(readCount)} of the ${num(primaryFoods.length)} trial-diet foods`
+  const partWord = `ingredient panel read for ${num(readCount)} of the ${num(primaryFoods.length)} trial-diet foods`
   const provWord = !prov
     ? ''
     : prov.source === 'owner'
@@ -4216,11 +4218,32 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       clauses.push(`the trial diet&rsquo;s own label (<b>${h(c.food.label)}</b>) also lists ${extras(c)}`)
     }
     for (const c of others) {
-      clauses.push(`<b>${h(c.food.label)}</b>, fed during the trial, lists ${extras(c)}, which the trial diet does not`)
+      // ADVERSARIAL PASS 1 (B4): no "which the trial diet does not". `extraProteins` is measured
+      // against the food's own primary, not the trial diet, so that clause could name the trial's
+      // own protein as foreign. The words match the Label contamination row they point to.
+      clauses.push(`<b>${h(c.food.label)}</b>, fed during the trial, also lists ${extras(c)}`)
     }
     const joined = clauses.join('; and ')
     caveats.push(
       `${joined.charAt(0).toUpperCase()}${joined.slice(1)} (above), so this record cannot establish that the elimination was clean.`,
+    )
+  }
+  // CUL-2492, from the cold read (Cooper and nyx-live): an unread trial-diet panel is the commonest
+  // contamination route on an over-the-counter diet, and the identity row's "label not read" never
+  // reached the section a vet reads to judge the trial. Said here, by food.
+  if (unreadPrimary.length > 0 && !t.allowedSetUnavailable) {
+    const shown = unreadPrimary.slice(0, 3).map((f) => `<b>${h(f.label)}</b>`)
+    // Semicolons: product labels carry their own commas ("Royal Canin Selected Protein PR, Wet").
+    const list = shown.join('; ')
+    const more = unreadPrimary.length > 3 ? `; and ${num(unreadPrimary.length - 3)} more` : ''
+    const subject =
+      primaryFoods.length === 1
+        ? `The trial diet&rsquo;s ingredient panel (${list}) was not read`
+        : `The ingredient panel${unreadPrimary.length === 1 ? '' : 's'} of ${num(unreadPrimary.length)} of the ${num(
+            primaryFoods.length,
+          )} trial-diet foods (${list}${more}) ${unreadPrimary.length === 1 ? 'was' : 'were'} not read`
+    caveats.push(
+      `${subject}, so a protein in ${unreadPrimary.length === 1 ? 'it' : 'them'} beyond the one recorded would appear nowhere in this record, and the elimination cannot be confirmed clean from it.`,
     )
   }
   // §7, verbatim: "without it a derm trial is unreadable — a steroid course and a
@@ -4563,8 +4586,11 @@ function trialCropComparison(snap: ReportSnapshot): string | null {
   const types = [...new Set([...outside.keys(), ...inside.keys()])]
   if (types.length === 0) return null
   const total = (k: string): number => (outside.get(k) ?? 0) + (inside.get(k) ?? 0)
-  const outFloor = c.countIsFloor ? 'at least ' : ''
-  const inFloor = (snap.incompletePulls ?? []).includes('events') ? 'at least ' : ''
+  // ADVERSARIAL PASS 1 (B6): a short newest-first events pull loses the OLDEST rows, the cropped
+  // head, so it floors that side too.
+  const shortPull = (snap.incompletePulls ?? []).includes('events')
+  const outFloor = c.countIsFloor || shortPull ? 'at least ' : ''
+  const inFloor = shortPull ? 'at least ' : ''
   const tailCropped = t.trialDaysOutsideRange.after > 0
   const outName = `${num(c.cropDays)} ${tailCropped ? 'trial days outside this report' : 'earlier trial days'}`
   const pairs = types
@@ -5610,12 +5636,21 @@ function oralRouteSentence(
   } carried is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them.`
 }
 
-/** The route a drug was logged with, when every record of it agrees on one; else null. */
-function routeOfDrug(snap: ReportSnapshot, drugName: string): string | null {
-  const routes = new Set<string>()
-  for (const m of snap.medications) if (m.drugName === drugName && m.route) routes.add(m.route.trim().toLowerCase())
-  for (const u of snap.unlinkedMedications) if (u.drugName === drugName && u.route) routes.add(u.route.trim().toLowerCase())
-  return routes.size === 1 ? [...routes][0] : null
+/**
+ * The route of the record an overlap row was built from, or null (ADVERSARIAL PASS 1, B1, QUIET).
+ * Read off the row's OWN record, never pooled by name: a route-less oral steroid beside a same-name
+ * eye-drop item printed "in the eye" and discounted a systemic steroid. A regimen row is the regimen
+ * of its name starting on its start day; an ad-hoc row (re-dated or not) is the one unlinked group of
+ * its name. More than one candidate, or none, or no route on it: nothing is printed.
+ */
+function routeOfOverlap(snap: ReportSnapshot, m: TrialMedicationOverlap): string | null {
+  const start = m.startedAt?.slice(0, 10) ?? null
+  const groups = snap.unlinkedMedications.filter((u) => u.drugName === m.drugName)
+  const regimens = snap.medications.filter((r) => r.drugName === m.drugName && r.startedAt !== null && r.startedAt.slice(0, 10) === start)
+  if (m.recordStart || m.adHocDoses) return groups.length === 1 ? groups[0].route?.trim().toLowerCase() || null : null
+  const adHocHere = groups.filter((u) => u.firstDate === start)
+  const hits = [...regimens.map((r) => r.route), ...adHocHere.map((u) => u.route)]
+  return hits.length === 1 ? hits[0]?.trim().toLowerCase() || null : null
 }
 
 function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: ReportSnapshot): string {
@@ -5629,7 +5664,11 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
       r.atHistoryFloor ? ' (the first is the earliest day this report reads)' : ''
     }, a span that crosses the trial; ${num(r.dosesOnRecord)} dose${
       r.dosesOnRecord === 1 ? '' : 's'
-    } on record in all, and this report does not count which fell in the trial.`
+    } on record in all, and this report does not count which fell in the trial.${
+      r.antibacterialInGiTrial
+        ? ' <b>An antibacterial on record across a GI trial:</b> a steroid&rsquo;s effect withdraws when it stops, a course&rsquo;s effect on the microbiome does not.'
+        : ''
+    }`
   })
   if (t.medicationOverlap.length === 0 && recordOnly.length > 0) {
     return `${recordOnly.join(' ')} <span class="qual">No regimen is recorded for ${
@@ -5691,12 +5730,12 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     // From #1428's cold read: the route, so a topical otic product does not sit beside an oral
     // steroid as an equal GI confounder; and an ad-hoc row's length is its doses, never "87 d",
     // which reads as continuous cover.
-    const route = routeOfDrug(snap, m.drugName)
+    const route = routeOfOverlap(snap, m)
     const routeBit = route ? ` &middot; ${h(routeLabel(route))}` : ''
     const length = m.adHocDoses
-      ? `${num(m.adHocDoses.inTrialInWindow)} ad-hoc dose${m.adHocDoses.inTrialInWindow === 1 ? '' : 's'} logged in the trial days this report covers, ${num(
+      ? `ad-hoc, dosed on ${num(m.adHocDoses.inTrialInWindowDays)} of the trial days this report covers; ${num(
           m.adHocDoses.onRecord,
-        )} on record in all`
+        )} dose${m.adHocDoses.onRecord === 1 ? '' : 's'} on record in all`
       : `${num(m.daysOverlapping)}&nbsp;d`
     return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${still}.${adHoc}${abx}`
   })

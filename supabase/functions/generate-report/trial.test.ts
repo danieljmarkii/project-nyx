@@ -133,6 +133,9 @@ const TRIAL_FOOD = {
   productName: 'Hydrolyzed HP',
   proteins: ['soy'],
   ingredientsNotes: 'Hydrolysed soy protein, rice, animal fats',
+  // CUL-2492: a panel captured AND read (the photo extraction's confidence), so the trial diet's
+  // identity may say "read from the label" and §7.2 keeps its affirmative tier.
+  extractionConfidence: { proteins: 0.92 },
 }
 
 const PERMITTED_TREAT = {
@@ -5569,27 +5572,27 @@ for (const [tz, now] of [
 // Re-captured at CUL-2443, which names the middle day an odd span leaves in neither half: a text
 // diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': 'c421397a3da14e10',
-  'endedPast/window/America/Phoenix': 'ead67d04b3e7bae0',
-  'endedToday/America/Phoenix': '963562dc4a6bda2b',
-  'endedToday/window/America/Phoenix': '4e7f3ad9102d078e',
-  'endedOnTarget/America/Phoenix': '2306509a010d975f',
-  'endedOnTarget/window/America/Phoenix': 'e7291c4fe40ef552',
-  'active/America/Phoenix': '0bbb348059930c3d',
-  'endedPast/Pacific/Noumea': 'c421397a3da14e10',
-  'endedPast/window/Pacific/Noumea': 'ead67d04b3e7bae0',
-  'endedToday/Pacific/Noumea': '963562dc4a6bda2b',
-  'endedToday/window/Pacific/Noumea': '4e7f3ad9102d078e',
-  'endedOnTarget/Pacific/Noumea': '2306509a010d975f',
-  'endedOnTarget/window/Pacific/Noumea': 'e7291c4fe40ef552',
-  'active/Pacific/Noumea': '47fc52b578aa7a1a',
-  'endedPast/UTC': 'c421397a3da14e10',
-  'endedPast/window/UTC': 'ead67d04b3e7bae0',
-  'endedToday/UTC': '963562dc4a6bda2b',
-  'endedToday/window/UTC': '4e7f3ad9102d078e',
-  'endedOnTarget/UTC': '2306509a010d975f',
-  'endedOnTarget/window/UTC': 'e7291c4fe40ef552',
-  'active/UTC': '0bbb348059930c3d',
+  'endedPast/America/Phoenix': 'cd5b6b8fb0e85a2d',
+  'endedPast/window/America/Phoenix': '857ee73830555eab',
+  'endedToday/America/Phoenix': 'f2e9823832db5920',
+  'endedToday/window/America/Phoenix': 'b4c2e0f1a6667f96',
+  'endedOnTarget/America/Phoenix': '25e5de5eb3117848',
+  'endedOnTarget/window/America/Phoenix': '719d9f6d3efd24ed',
+  'active/America/Phoenix': 'f8f887a36a5e2372',
+  'endedPast/Pacific/Noumea': 'cd5b6b8fb0e85a2d',
+  'endedPast/window/Pacific/Noumea': '857ee73830555eab',
+  'endedToday/Pacific/Noumea': 'f2e9823832db5920',
+  'endedToday/window/Pacific/Noumea': 'b4c2e0f1a6667f96',
+  'endedOnTarget/Pacific/Noumea': '25e5de5eb3117848',
+  'endedOnTarget/window/Pacific/Noumea': '719d9f6d3efd24ed',
+  'active/Pacific/Noumea': 'ded63778f07d5524',
+  'endedPast/UTC': 'cd5b6b8fb0e85a2d',
+  'endedPast/window/UTC': '857ee73830555eab',
+  'endedToday/UTC': 'f2e9823832db5920',
+  'endedToday/window/UTC': 'b4c2e0f1a6667f96',
+  'endedOnTarget/UTC': '25e5de5eb3117848',
+  'endedOnTarget/window/UTC': '719d9f6d3efd24ed',
+  'active/UTC': 'f8f887a36a5e2372',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {
