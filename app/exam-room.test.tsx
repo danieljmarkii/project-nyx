@@ -92,7 +92,8 @@ it('shows the staged copy as the exam document, runs its scripts, and loads noth
   expect(web.props.source.html).toContain('Mochi');
   expect(web.props.onShouldStartLoadWithRequest({ url: 'https://example.com' })).toBe(false);
   expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
-  expect(web.props.originWhitelist).toEqual(['about:*', 'data:*']);
+  // Every URL reaches the predicate; none is handed to the system browser (CUL-2428 review).
+  expect(web.props.originWhitelist).toEqual(['*']);
   expect(web.props.onOpenWindow).toBeDefined();
   expect(web.props.source.html).toContain('http-equiv="Content-Security-Policy"');
 });
@@ -198,7 +199,7 @@ describe('"Printed page" carries its warning (PM ruling (a) on CUL-2430)', () =>
     expect(printed.props.source.html).toContain('printed');
     expect(printed.props.source.html).toContain('http-equiv="Content-Security-Policy"');
     expect(printed.props.onShouldStartLoadWithRequest({ url: 'https://example.com' })).toBe(false);
-    expect(printed.props.originWhitelist).toEqual(['about:*', 'data:*']);
+    expect(printed.props.originWhitelist).toEqual(['*']);
     expect(printed.props.onOpenWindow).toBeDefined();
     // The pin: the reflow's own words, a sibling ABOVE the printed view (never over it).
     // Hidden from VoiceOver by design (the full line is read in the page), so queried as such.
@@ -221,6 +222,15 @@ describe('"Printed page" carries its warning (PM ruling (a) on CUL-2430)', () =>
     mockCopy = {
       phoneHtml: PHONE.replace(/<div class="keep">.*?<\/div>/, '<p class="conf" data-block="confounder">Not a test of the diet alone.</p>'),
       printHtml: PRINT,
+    };
+    const s = render(<ExamRoomScreen />);
+    expect(s.queryByText(EXAM_COPY.printed)).toBeNull();
+  });
+
+  it('withholds "Printed page" when the printed page carries the line but the reflow lost it (CUL-2458 pass 1)', () => {
+    mockCopy = {
+      phoneHtml: PHONE.replace(/<div class="keep">.*?<\/div>/, ''),
+      printHtml: PRINT.replace('printed', '<p class="conf" data-block="confounder">Not a test of the diet alone.</p>'),
     };
     const s = render(<ExamRoomScreen />);
     expect(s.queryByText(EXAM_COPY.printed)).toBeNull();

@@ -28,6 +28,7 @@ jest.mock('../store/petStore', () => {
 jest.mock('../lib/supabase', () => ({ supabase: { functions: { invoke: jest.fn() }, from: jest.fn() } }));
 jest.mock('../lib/pdf', () => ({
   flushBeforeReport: jest.fn(async () => ({ pending: 0, quarantined: 0 })),
+  flushBeforeSend: jest.fn(async () => ({ pending: 0, quarantined: 0 })),
   reportFreshnessLine: () => null,
   reportVersionFor: (eligible: boolean, optedIn: boolean) => (eligible && optedIn ? 'v2' : null),
   generateVetReport: jest.fn(),
@@ -97,7 +98,7 @@ jest.mock('../lib/examRoomCopy', () => ({ openExamRoom: (c: unknown, p: (r: stri
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
-import { generateVetReport, shareReportPdf, type VetReport } from '../lib/pdf';
+import { flushBeforeSend, generateVetReport, shareReportPdf, type VetReport } from '../lib/pdf';
 import { fetchComposerOpen } from '../lib/reportComposerApi';
 import { SEND_READ_TIMEOUT_MS } from '../lib/reportComposer';
 import { emailReport, shareReport } from '../lib/reportSendActions';
@@ -114,7 +115,9 @@ const report: VetReport = {
   scopeBasis: 'since_visit',
   photoCount: 0,
   trialAllowedListMissing: false,
-  reportVersion: 'v2',
+  // A v1 document on the send flow (the composer on, the v2 layout off): a v2 one without its
+  // phone layout is refused before it can render (CUL-2458), so the fixture is never that shape.
+  reportVersion: 'v1',
   ownerSurname: 'Reyes',
 };
 const FLAGGED = { state: 'flags', startDate: '2026-09-06', endDate: '2026-10-31', flags: [{ kind: 'present_foreign', sign: 'vomit', trigger: null }] };
@@ -141,7 +144,8 @@ describe('Send reads the live flags before the sheet presents (GAP-13)', () => {
     mockedOpen.mockReturnValue(new Promise((res) => { answer = res; }));
     const r = await toReport();
     fireEvent.press(r.getByTestId('report-send'));
-    expect(mockedOpen).toHaveBeenCalledWith('p1');
+    // The flag read starts once the send's flush has answered (CUL-2457).
+    await waitFor(() => expect(mockedOpen).toHaveBeenCalledWith('p1'));
     expect(r.queryByTestId('sheet')).toBeNull();
     await act(async () => answer({ live: FLAGGED }));
     expect(r.getByTestId('sheet-card').props.children).toMatch(/flag worth a call/);
@@ -181,6 +185,7 @@ describe('the send read is bounded, and a partial read says so (CUL-2425)', () =
       const r = await toReport();
       fireEvent.press(r.getByTestId('report-send'));
       expect(r.queryByTestId('sheet')).toBeNull();
+      await act(async () => undefined); // the flush answers; the flag read's bound starts
       await act(async () => { jest.advanceTimersByTime(SEND_READ_TIMEOUT_MS); });
       expect(r.getByTestId('sheet-card').props.children).toMatch(/Couldn’t check/);
     } finally {
@@ -195,6 +200,7 @@ describe('the send read is bounded, and a partial read says so (CUL-2425)', () =
       mockedOpen.mockReturnValue(new Promise(() => undefined));
       const r = await toReport();
       fireEvent.press(r.getByTestId('report-send'));
+      await act(async () => undefined); // the flush answers; the flag read's bound starts
       await act(async () => { jest.advanceTimersByTime(SEND_READ_TIMEOUT_MS); });
       expect(r.getByTestId('sheet-card').props.children).toMatch(/flag worth a call/);
       fireEvent.press(r.getByTestId('pick-share'));
@@ -326,6 +332,77 @@ describe('the confirmation (e1, e2)', () => {
   });
 });
 
+describe('the check never shows over an entry still on this phone (CUL-2457)', () => {
+  const mockedFlush = flushBeforeSend as jest.Mock;
+
+  async function sendQuietly() {
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    fireEvent.press(await r.findByTestId('pick-share'));
+    await r.findByTestId('send-confirmation');
+    return r;
+  }
+
+  it('the flush runs before the flag read, so the read can see what it just landed', async () => {
+    const order: string[] = [];
+    mockedFlush.mockImplementationOnce(async () => { order.push('flush'); return { pending: 0, quarantined: 0 }; });
+    mockedOpen.mockImplementationOnce(async () => { order.push('read'); return { live: QUIET }; });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    await r.findByTestId('sheet');
+    expect(order).toEqual(['flush', 'read']);
+  });
+
+  it('a server "none" with an entry the flush could not send: no check', async () => {
+    mockedFlush.mockResolvedValueOnce({ pending: 1, quarantined: 0 });
+    const r = await sendQuietly();
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+  });
+
+  it('a server "none" with an entry the queue refused: no check', async () => {
+    mockedFlush.mockResolvedValueOnce({ pending: 0, quarantined: 1 });
+    const r = await sendQuietly();
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+  });
+
+  it('an unsent count that could not be read is unknown, and unknown earns no check', async () => {
+    mockedFlush.mockResolvedValueOnce(null);
+    const r = await sendQuietly();
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+  });
+
+  it('a flush that fails outright earns no check', async () => {
+    mockedFlush.mockRejectedValueOnce(new Error('db'));
+    const r = await sendQuietly();
+    expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+  });
+
+  it('a flush that hangs opens the sheet at the bound, and the confirmation shows no check', async () => {
+    jest.useFakeTimers();
+    try {
+      mockedFlush.mockReturnValueOnce(new Promise(() => undefined));
+      mockedOpen.mockResolvedValue({ live: QUIET });
+      const r = await toReport();
+      fireEvent.press(r.getByTestId('report-send'));
+      await act(async () => { jest.advanceTimersByTime(SEND_READ_TIMEOUT_MS); });
+      await act(async () => undefined);
+      fireEvent.press(r.getByTestId('pick-share'));
+      await act(async () => undefined);
+      expect(r.getByTestId('send-confirmation')).toBeTruthy();
+      expect(r.queryByTestId('send-confirmation-check')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('everything sent and a server "none": the check shows (the one quiet case)', async () => {
+    mockedFlush.mockResolvedValueOnce({ pending: 0, quarantined: 0 });
+    const r = await sendQuietly();
+    expect(r.getByTestId('send-confirmation-check')).toBeTruthy();
+  });
+});
+
 describe('off the composer path, nothing changed', () => {
   it('"Send to vet" shares at once, with no flag read and no sheet', async () => {
     mockEligible = false;
@@ -338,7 +415,7 @@ describe('off the composer path, nothing changed', () => {
 });
 
 describe('Show on this phone opens the exam room (CUL-2299)', () => {
-  const v2 = { ...report, phoneHtml: '<html>Nyx phone</html>' };
+  const v2: VetReport = { ...report, reportVersion: 'v2', phoneHtml: '<html>Nyx phone</html>' };
 
   it('is offered only when the report has its phone layout', async () => {
     mockedOpen.mockResolvedValue({ live: QUIET });

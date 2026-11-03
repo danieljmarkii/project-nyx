@@ -22,7 +22,7 @@ import { ReportNotesOption } from '../components/report/ReportNotesOption';
 import { useReportComposer } from '../hooks/useReportComposer';
 import { WINDOW_LABEL, composerRange, type ComposerWindow } from '../lib/reportComposer';
 import {
-  flushBeforeReport, generateVetReport, reportFreshnessLine, reportVersionFor, shareReportPdf,
+  flushBeforeReport, flushBeforeSend, generateVetReport, reportFreshnessLine, reportVersionFor, shareReportPdf,
   type VetReport, type VetReportParams,
 } from '../lib/pdf';
 import { ReportPreviewV2 } from '../components/reportV2/ReportPreviewV2';
@@ -31,13 +31,13 @@ import { SendConfirmation } from '../components/reportV2/SendConfirmation';
 import { fetchComposerOpen } from '../lib/reportComposerApi';
 import { readHomeAppointment } from '../lib/vetVisits';
 import {
-  confirmationCopy, liveForSend, sendCallCard, sendDocumentsOf, sendIsQuiet, sendStatusWords,
+  confirmationCopy, liveForSend, sendCallCard, sendDocumentsOf, sendIsQuiet, sendRecordAllSent, sendStatusWords,
   type ConfirmationCopy, type SendCallCard as SendCallCardModel, type SendDocumentChoice, type SendResult,
 } from '../lib/reportSend';
 import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
 import { openExamRoom } from '../lib/examRoomCopy';
 import { SEND_READ_TIMEOUT_MS, boundedRead, withKnownFlags, type ComposerLive } from '../lib/reportComposer';
-import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, type PreviewView } from '../lib/reportPreviewV2';
+import { PREVIEW_TOGGLE_LABEL, bandSlotFor, hasPhonePreview, isBareV2Report, type PreviewView } from '../lib/reportPreviewV2';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -285,6 +285,9 @@ export default function ReportScreen() {
         if (token?.cancelled) return;
         const r = await generateVetReport(requestParams);
         if (token?.cancelled) return;
+        // CUL-2458: a v2 printed page never renders on its own here. Refused into the same error
+        // and retry as a failed build, before it can replace the report on screen.
+        if (isBareV2Report(r)) throw new Error('v2 report arrived without its phone layout');
         setStaleLine(reportFreshnessLine(freshness));
         setReport(r);
         setStatus('ready');
@@ -376,6 +379,11 @@ export default function ReportScreen() {
       // sheet with what is known rather than leaving Send loading. A flag read past the bound is a
       // failed one: the flags already read this session, else the louder "couldn't check" card.
       const warn = (what: string) => (e: unknown) => console.warn(`[Report] send ${what} read failed:`, e);
+      // CUL-2457: land what this phone still holds BEFORE the flag read, as the report's own build
+      // does (B-534), so the read can see an entry logged a moment ago. Whatever the flush leaves,
+      // or a count that fails or runs past the bound, withholds the check below.
+      const unsent = await boundedRead(flushBeforeSend(), SEND_READ_TIMEOUT_MS, null, warn('unsent-count'));
+      if (currentPet.current !== petId) return;
       const [fresh, appointment, rows, mailReady] = await Promise.all([
         // GAP-13: the sheet never presents before this answers or times out.
         boundedRead(fetchComposerOpen(petId).then((o): ComposerLive | null => o.live), SEND_READ_TIMEOUT_MS, null, warn('flag')),
@@ -392,8 +400,9 @@ export default function ReportScreen() {
       if (live.state === 'flags') knownFlags.current = { petId, live };
       setSendCtx({
         live,
-        // Quiet only when the read answered none AND no flag was read for this pet this session.
-        quiet: sendIsQuiet(live) && known === null,
+        // Quiet only when the read answered none, no flag was read for this pet this session,
+        // and nothing for the read to miss is still on this phone (CUL-2457).
+        quiet: sendIsQuiet(live) && known === null && sendRecordAllSent(unsent),
         today,
         // Read once at the tap: the sheet and its confirmation order the call rows by the same
         // hour, so a draft left open across the assumed closing time keeps one ordering.
@@ -495,7 +504,8 @@ export default function ReportScreen() {
   // pill carries the tick.
   const building = status === 'loading' && !report;
   // The v2 preview spans the first build (when v2 is being asked for) and every ready v2 report
-  // that carries its phone layout. A v2 response without one falls back to the plain WebView.
+  // that carries its phone layout. A v2 response without one never reaches here: `load` refuses
+  // it (CUL-2458), so the plain WebView below only ever shows a v1 report.
   const previewV2 = report ? hasPhonePreview(report) : askingV2 && building;
   // A new document opens on its phone layout; "View as printed" is a look, not a mode.
   useEffect(() => {

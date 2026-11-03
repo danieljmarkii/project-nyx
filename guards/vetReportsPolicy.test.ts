@@ -691,3 +691,127 @@ describe('vet_reports draft summary withdrawal clear (CUL-2377, migration 118)',
     expect(sql).not.toMatch(/\bGRANT\s[^;]*\bON\s+FUNCTION\s+(?:public\.)?vet_reports_summary_needs_consent\b/i);
   });
 });
+
+// CUL-2445 (migration 119): every send of a kept copy is a row in
+// vet_report_departures, written by a trigger on vet_reports, never by a role.
+// The behaviour is the probe in the PR (scripts/probes/vet-report-119, 40
+// cases, 11 mutants killed). This pins the shapes a later file could quietly
+// undo. MUTANTS, run 2026-11-02 against 119 (each applied to the real file,
+// this suite run, the file restored), all killed: the policy opened to every
+// row; INSERT granted to service_role; ON CONFLICT dropped from the logger;
+// a report column formatted into the guard's RAISE; the guard's status test
+// dropped; the logger's service_role REVOKE dropped; the FK's CASCADE made NO
+// ACTION; the logger made UPDATE-only. After rls-privacy-reviewer pass 1: the
+// time bound dropped from the guard (F1); the logger's row-count check dropped
+// (F3). Blind spots, stated: a DO block's EXECUTE; a trigger disabled in the
+// dashboard (VERIFY covers it); a later CREATE OR REPLACE TRIGGER under another
+// name calling the same function with a narrower WHEN.
+describe('vet_report_departures, the send history (CUL-2445, migration 119)', () => {
+  const sql = allMigrations();
+  const DEP = String.raw`(?:public\.)?vet_report_departures\b`;
+  const OWNED_DEP = String.raw`USING \(pet_id IN \(SELECT p\.id FROM public\.pets p WHERE p\.user_id = \(SELECT auth\.uid\(\)\)\)\)`;
+
+  function depGrants(role: string): string[] {
+    const re = new RegExp(String.raw`\b(?:GRANT|REVOKE)\s[^;]*?\bON\s+(?:TABLE\s+)?${DEP}[^;]*?\b(?:TO|FROM)\s+[^;]*\b${role}\b[^;]*;`, 'gi');
+    return [...sql.matchAll(re)].map((m) => m[0].replace(/\s+/g, ' '));
+  }
+
+  it('keeps RLS on and exactly one owner SELECT policy', () => {
+    expect(sql).toMatch(new RegExp(String.raw`ALTER TABLE ${DEP} ENABLE ROW LEVEL SECURITY;`));
+    expect(sql).not.toMatch(new RegExp(String.raw`ALTER TABLE ${DEP}[^;]*\b(?:DISABLE|NO FORCE) ROW LEVEL SECURITY`, 'i'));
+    const policies = [...sql.matchAll(new RegExp(String.raw`\b(CREATE|DROP|ALTER)\s+POLICY\s+(?:IF\s+EXISTS\s+)?(\w+)\s+ON\s+${DEP}[^;]*;`, 'gi'))];
+    expect(policies.map((m) => m[1].toUpperCase())).toEqual(['CREATE']);
+    const flat = policies[0][0].replace(/\s+/g, ' ');
+    expect(flat).toMatch(/ FOR SELECT TO authenticated /);
+    expect(flat).toMatch(new RegExp(OWNED_DEP));
+  });
+
+  it('gives no role anything but SELECT, and anon and PUBLIC nothing', () => {
+    for (const role of ['anon', 'PUBLIC']) {
+      expect(depGrants(role).filter((g) => /^GRANT\b/i.test(g))).toEqual([]);
+    }
+    for (const role of ['anon', 'authenticated', 'service_role', 'PUBLIC']) {
+      expect(depGrants(role).filter((g) => /^REVOKE ALL\b/i.test(g)).length).toBe(1);
+    }
+    for (const role of ['authenticated', 'service_role']) {
+      expect(depGrants(role).filter((g) => /^GRANT\b/i.test(g))).toEqual([`GRANT SELECT ON public.vet_report_departures TO ${role};`]);
+    }
+  });
+
+  it('ties each departure to its report and pet, cascading from the report', () => {
+    const create = sql.match(new RegExp(String.raw`CREATE TABLE ${DEP}[\s\S]*?\n\);`));
+    expect(create).not.toBeNull();
+    const flat = (create?.[0] ?? '').replace(/\s+/g, ' ');
+    expect(flat).toContain('FOREIGN KEY (report_id, pet_id) REFERENCES public.vet_reports (id, pet_id) ON DELETE CASCADE');
+    expect(sql).toMatch(/ALTER TABLE public\.vet_reports\s+ADD CONSTRAINT vet_reports_id_pet_unique UNIQUE \(id, pet_id\);/);
+    expect(sql).not.toMatch(/\bDROP CONSTRAINT (?:IF EXISTS )?(?:vet_reports_id_pet_unique|vet_report_departures_report_same_pet)\b/);
+  });
+
+  it('logs every new stamp on a kept copy, after the write, without ever failing the send', () => {
+    const { header, body } = lastFunctionIn(sql, 'vet_reports_log_departure');
+    expect(header).toMatch(/SECURITY DEFINER/);
+    expect(header).toMatch(/SET search_path = ''/);
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "IF NEW.status = 'kept' AND NEW.shared_at IS NOT NULL AND ( TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'kept' OR NEW.shared_via IS DISTINCT FROM OLD.shared_via OR NEW.shared_at IS DISTINCT FROM OLD.shared_at ) THEN",
+    );
+    expect(flat).toContain('ON CONFLICT ON CONSTRAINT vet_report_departures_once DO NOTHING;');
+    // A write swallowed by anything but the natural key fails the send (pass 1, F3).
+    expect(flat).toContain(
+      'IF NOT FOUND AND NOT EXISTS ( SELECT 1 FROM public.vet_report_departures d WHERE d.report_id = NEW.id AND d.shared_at = NEW.shared_at AND d.shared_via = NEW.shared_via ) THEN RAISE EXCEPTION',
+    );
+    const raises = [...flat.matchAll(/RAISE EXCEPTION '([^']*)',([^;]*);/g)];
+    expect(raises.length).toBe(1);
+    expect(raises[0][2].split(/ USING /)[0].trim()).toBe('NEW.id');
+    const create = lastIndexOf(sql, /CREATE TRIGGER trg_vet_reports_log_departure\b/);
+    expect(create).toBeGreaterThan(-1);
+    expect(sql.slice(create, sql.indexOf(';', create)).replace(/\s+/g, ' ')).toBe(
+      'CREATE TRIGGER trg_vet_reports_log_departure AFTER INSERT OR UPDATE ON public.vet_reports FOR EACH ROW EXECUTE FUNCTION public.vet_reports_log_departure()',
+    );
+    expect(sql.slice(create)).not.toMatch(/DROP TRIGGER (?:IF EXISTS )?trg_vet_reports_log_departure\b/);
+  });
+
+  it('admits only the report\'s own current stamp, naming only NEW.* (C-31)', () => {
+    const { header, body } = lastFunctionIn(sql, 'vet_report_departure_is_stamp');
+    expect(header).toMatch(/SECURITY DEFINER/);
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "WHERE r.id = NEW.report_id AND r.pet_id = NEW.pet_id AND r.status = 'kept' AND r.shared_via = NEW.shared_via AND r.shared_at = NEW.shared_at",
+    );
+    // A send inside its copy's lifetime, never an invented time (pass 1, F1).
+    expect(flat).toContain("AND NEW.shared_at >= r.created_at - interval '5 minutes' AND NEW.shared_at <= now() + interval '5 minutes' ) THEN");
+    const raises = [...flat.matchAll(/RAISE EXCEPTION '([^']*)',([^;]*);/g)];
+    expect(raises.length).toBe(1);
+    const args = raises[0][2].split(/ USING /)[0].split(',').map((a) => a.trim()).filter(Boolean);
+    for (const a of args) expect(a).toMatch(/^NEW\.\w+$/);
+  });
+
+  it('keeps departures append-only for every writer: no UPDATE, no TRUNCATE, DELETE only once the report is gone', () => {
+    const { body } = lastFunctionIn(sql, 'vet_report_departures_append_only');
+    const flat = body.replace(/\s+/g, ' ');
+    expect(flat).toContain("IF TG_OP = 'UPDATE' THEN RAISE EXCEPTION");
+    expect(flat).toContain("IF TG_OP = 'TRUNCATE' THEN RAISE EXCEPTION");
+    expect(flat).toContain('IF EXISTS (SELECT 1 FROM public.vet_reports r WHERE r.id = OLD.report_id) THEN RAISE EXCEPTION');
+    for (const [name, event] of [
+      ['trg_vet_report_departures_is_stamp', 'BEFORE INSERT'],
+      ['trg_vet_report_departures_no_update', 'BEFORE UPDATE'],
+      ['trg_vet_report_departures_no_delete', 'BEFORE DELETE'],
+      ['trg_vet_report_departures_no_truncate', 'BEFORE TRUNCATE'],
+    ]) {
+      const at = lastIndexOf(sql, new RegExp(String.raw`CREATE TRIGGER ${name}\s+${event} ON public\.vet_report_departures\b`));
+      expect(at).toBeGreaterThan(-1);
+      expect(sql.slice(at)).not.toMatch(new RegExp(String.raw`DROP TRIGGER (?:IF EXISTS )?${name}\b`));
+    }
+    expect(sql).not.toMatch(new RegExp(String.raw`ALTER TABLE ${DEP}[^;]*\b(?:DISABLE|ENABLE REPLICA|ENABLE ALWAYS) TRIGGER`, 'i'));
+  });
+
+  it.each(['vet_reports_log_departure', 'vet_report_departure_is_stamp', 'vet_report_departures_append_only'])(
+    'revokes EXECUTE on %s from every caller role',
+    (fn) => {
+      for (const role of ['PUBLIC', 'anon', 'authenticated', 'service_role']) {
+        expect(sql).toMatch(new RegExp(String.raw`REVOKE ALL ON FUNCTION public\.${fn}\(\) FROM ${role};`));
+      }
+      expect(sql).not.toMatch(new RegExp(String.raw`\bGRANT\s[^;]*\bON\s+FUNCTION\s+(?:public\.)?${fn}\b`, 'i'));
+    },
+  );
+});

@@ -58,6 +58,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { recordRouteOptions } from '../lib/recordRoute';
 import { installCrashHandlers } from '../lib/crashHandlers';
 import { CrashBoundary } from '../components/CrashBoundary';
+import { clearExamCopy } from '../lib/examRoomCopy';
 
 // Hold the native splash until the font gate releases, so the first painted
 // frame is already in the v1.2 faces — no system→custom flash, and no blank
@@ -75,6 +76,12 @@ startReducedMotionRead();
 // designed crash screen, installed at module load so a failure during the first render
 // is already covered. Nothing about the error leaves the phone.
 installCrashHandlers();
+
+// CUL-2429: the exam room's offline copy (the whole record, band photos included) is deleted when
+// the room closes, but a crash or a kill with the room open skips that. Sweep it here, at module
+// load, so it runs before any route (a deep link to the room included) can mount and read it. A
+// copy never outlives the next launch. Never throws.
+clearExamCopy();
 
 // The boundary sits above everything this file renders, so a render error in the root
 // layout itself lands on the same screen as one in any route below it.

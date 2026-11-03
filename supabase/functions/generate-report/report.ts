@@ -2667,6 +2667,12 @@ export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'fre
 export interface ConcurrentChange {
   kind: InterventionKind
   label: string
+  /**
+   * RENDER-LAYER ONLY, never written by the builder (CUL-2440). Set by `withRecordOverlaps`
+   * (medicationFacts.ts) on an ad-hoc drug whose record reaches before this window: `startDate`
+   * is then the first dose IN the window, and this is the earliest one on record.
+   */
+  recordStart?: { firstDoseDay: string; atHistoryFloor: boolean }
   /** The intervention's start date; NULL when a standing arrangement's start was never recorded (a free-fed bowl "always down") — rendered "ongoing (start not recorded)". */
   startDate: string | null
   /** The 7-day bucket index where this intervention started (the dashed marker, §3.5); null if it started outside the window (a standing confounder gets no marker). */

@@ -232,6 +232,12 @@ export interface TrialMedicationOverlap {
    * antibiotics. The flag only ever ADDS a sentence.
    */
   antibacterialInGiTrial: boolean
+  /**
+   * RENDER-LAYER ONLY, never written by the builder (CUL-2440). Set by `withRecordOverlaps`
+   * (medicationFacts.ts) on an ad-hoc drug whose record reaches before its window: the span
+   * above has been re-dated from this earliest logged dose.
+   */
+  recordStart?: { firstDoseDay: string; atHistoryFloor: boolean }
 }
 
 /** One permitted food, with the count §7 asks for ("DentaStix — 168 feedings"). */

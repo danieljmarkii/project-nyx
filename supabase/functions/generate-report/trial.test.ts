@@ -779,7 +779,11 @@ Deno.test('C3 — a chewable preventive is an exposure, and never reads as "skip
   assert.equal(snap.trial?.oralRoute.length, 1, 'the given chewable only')
   const text = plain(renderReport(snap))
   assert.ok(/1 dose by mouth/.test(text))
-  assert.ok(/Dosing should continue exactly as prescribed/.test(text), '§6.8 — never a reason to skip a dose')
+  // CUL-2443: §6.8 is kept by saying nothing about the next dose. The old closing line
+  // ("Dosing should continue exactly as prescribed") was a treatment instruction, and is gone.
+  assert.ok(!/Dosing should continue|as prescribed/.test(text), 'no treatment instruction')
+  assert.ok(!/skip|withhold/i.test(text.slice(text.indexOf('dose by mouth'), text.indexOf('dose by mouth') + 400)), '§6.8 — never a reason to skip a dose')
+  assert.ok(/1 dose by mouth was a chewable, which carries a flavour \(NexGard\)/.test(text), 'the trigger is named, never "a chewable, or a dose given inside food"')
   assert.ok(!/stop giving/i.test(text))
   // An oral-route exposure also blocks the affirmative sentence: the blind-spot
   // qualifier tells the reader flavoured products aren't visible, so the one that IS
@@ -968,7 +972,8 @@ Deno.test('the challenge-window marker is forward-only, species-keyed, and never
   assert.equal(snap.trial?.exposures.items[0].symptomInChallengeWindow, true)
   assert.equal(snap.trial?.challengeWindowDays, 14)
   const text = plain(renderReport(snap))
-  assert.ok(/the published time-to-flare window in dogs/.test(text))
+  // CUL-2443: the window was measured on skin signs; the marker counts any symptom.
+  assert.ok(/the published time-to-flare window for skin signs in dogs \(Olivry &(amp;)? Mueller\); this marker counts any logged symptom/.test(text))
   assert.ok(/Timing only\./.test(text))
   assert.ok(/not an attribution/.test(text))
   // CUL-1978 cold read 2 — its same-day exclusion is the MARKER's rule, not page 1's test,
@@ -2396,7 +2401,9 @@ Deno.test('CUL-2307 — a PARTIAL refusal states the rated count it rests on, ne
   ds.slice(-4).forEach((d, i) => input.events.push(meal({ date: d, ...HP, intakeRating: rated[i] })))
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(
-    /2 of 4 rated feedings of the trial diet were not finished, so this record documents a refusal/.test(text),
+    // CUL-2443: 4 rated feedings cannot document a refusal; they cannot show the diet was eaten either.
+    /2 of 4 rated feedings of the trial diet were not finished; only 4 feedings of the trial diet carry a rating, so this record cannot show the diet was eaten as fed/.test(text) &&
+      !/documents a refusal/.test(text),
     `the refusal sentence read: ${text.slice(text.indexOf('rated feedings'), text.indexOf('rated feedings') + 160)}`,
   )
   assert.ok(!/largely/.test(text), '"largely" never describes feedings nobody rated')
@@ -3244,8 +3251,8 @@ Deno.test('R6 — the oral-route line says the flavour is unrecorded AND exclude
   ] as unknown as ReportInput['doses']
   input.events.push({ id: 'd-1', type: 'medication', occurredAt: '2026-06-10T09:00:00Z', deletedAt: null } as unknown as ReportEventInput)
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/carried a flavour into/.test(text))
-  assert.ok(/flavouring.s protein is not recorded anywhere/.test(text))
+  assert.ok(/was a chewable, which carries a flavour/.test(text))
+  assert.ok(/protein it carried is not recorded anywhere/.test(text))
   assert.ok(/not in the antigen tally above/.test(text))
 })
 
@@ -5556,27 +5563,29 @@ for (const [tz, now] of [
 // Re-captured at CUL-2386, which turns off the sheet font's contextual alternates and resets the
 // list marker: with those two rules removed, this grid reproduced the previous digests exactly
 // before they were replaced.
+// Re-captured at CUL-2443, which names the middle day an odd span leaves in neither half: a text
+// diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': '0d601f1c3a259be3',
-  'endedPast/window/America/Phoenix': '0d119bff8b432101',
-  'endedToday/America/Phoenix': '2ae181db2b458089',
-  'endedToday/window/America/Phoenix': '73f51e152dbe3003',
-  'endedOnTarget/America/Phoenix': 'eac518f7797caa47',
-  'endedOnTarget/window/America/Phoenix': '98b019b794aaedd6',
+  'endedPast/America/Phoenix': '4627006b45933897',
+  'endedPast/window/America/Phoenix': '51531a22bcef885f',
+  'endedToday/America/Phoenix': 'd561e04facb189a1',
+  'endedToday/window/America/Phoenix': '6502a43c62f5e12d',
+  'endedOnTarget/America/Phoenix': 'c72e12776b2efe50',
+  'endedOnTarget/window/America/Phoenix': '1af1ff8f8347b6b7',
   'active/America/Phoenix': 'eb028b1a7b398497',
-  'endedPast/Pacific/Noumea': '0d601f1c3a259be3',
-  'endedPast/window/Pacific/Noumea': '0d119bff8b432101',
-  'endedToday/Pacific/Noumea': '2ae181db2b458089',
-  'endedToday/window/Pacific/Noumea': '73f51e152dbe3003',
-  'endedOnTarget/Pacific/Noumea': 'eac518f7797caa47',
-  'endedOnTarget/window/Pacific/Noumea': '98b019b794aaedd6',
+  'endedPast/Pacific/Noumea': '4627006b45933897',
+  'endedPast/window/Pacific/Noumea': '51531a22bcef885f',
+  'endedToday/Pacific/Noumea': 'd561e04facb189a1',
+  'endedToday/window/Pacific/Noumea': '6502a43c62f5e12d',
+  'endedOnTarget/Pacific/Noumea': 'c72e12776b2efe50',
+  'endedOnTarget/window/Pacific/Noumea': '1af1ff8f8347b6b7',
   'active/Pacific/Noumea': '1dd6b3e473f595c8',
-  'endedPast/UTC': '0d601f1c3a259be3',
-  'endedPast/window/UTC': '0d119bff8b432101',
-  'endedToday/UTC': '2ae181db2b458089',
-  'endedToday/window/UTC': '73f51e152dbe3003',
-  'endedOnTarget/UTC': 'eac518f7797caa47',
-  'endedOnTarget/window/UTC': '98b019b794aaedd6',
+  'endedPast/UTC': '4627006b45933897',
+  'endedPast/window/UTC': '51531a22bcef885f',
+  'endedToday/UTC': 'd561e04facb189a1',
+  'endedToday/window/UTC': '6502a43c62f5e12d',
+  'endedOnTarget/UTC': 'c72e12776b2efe50',
+  'endedOnTarget/window/UTC': '1af1ff8f8347b6b7',
   'active/UTC': 'eb028b1a7b398497',
 }
 
