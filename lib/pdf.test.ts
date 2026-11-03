@@ -697,9 +697,9 @@ describe.each([
     expect(order).toEqual(['inbox', 'rows', 'sync', 'inbox', 'rows']);
   });
 
-  it('an unreadable inbox never costs the rows: 12 unsent and 2 refused still stand (adversarial pass 1)', async () => {
+  it('an unreadable inbox never costs the rows (adversarial pass 1: 12 unsent and 2 refused went silent)', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    mockedInbox.mockImplementation(() => {
+    mockedInbox.mockReturnValueOnce(0).mockImplementation(() => {
       throw new Error('list boom');
     });
     mockedGaps.mockResolvedValue({ unsent: 12, refused: 2 });
@@ -707,12 +707,36 @@ describe.each([
     await expect(gate()).resolves.toEqual({ pending: 12, quarantined: 2 });
   });
 
-  it('an unreadable inbox over clean rows reads as the rows alone, not as a failed count', async () => {
+  it('a re-count that cannot read the inbox carries the first read forward (adversarial pass 2)', async () => {
+    // syncNow never ingests, so only a successful read can show those three treats gone.
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    mockedInbox.mockImplementation(() => {
-      throw new Error('list boom');
+    mockedInbox.mockReturnValueOnce(3).mockImplementationOnce(() => {
+      throw new Error('EIO');
     });
     mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
-    await expect(gate()).resolves.toEqual({ pending: 0, quarantined: 0 });
+    await expect(gate()).resolves.toEqual({ pending: 3, quarantined: 0 });
+  });
+});
+
+describe('an inbox that cannot be read on the first count errs loud, per gate (CUL-2468, adversarial pass 2)', () => {
+  const mockedGaps = countRecordGaps as jest.Mock;
+  const mockedInbox = countUnclaimedInbox as jest.Mock;
+  const mockedSyncNow = syncNow as jest.Mock;
+
+  beforeEach(() => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockedGaps.mockReset().mockResolvedValue({ unsent: 0, refused: 0 });
+    mockedSyncNow.mockReset().mockResolvedValue(undefined);
+    mockedInbox.mockReset().mockImplementation(() => {
+      throw new Error('list boom');
+    });
+  });
+
+  it('the send reads it as unknown: no calm check over an inbox nobody could read', async () => {
+    await expect(flushBeforeSend()).resolves.toBeNull();
+  });
+
+  it('the freshness line counts one entry rather than going silent (the stopgap until the PM rules)', async () => {
+    await expect(flushBeforeReport()).resolves.toEqual({ pending: 1, quarantined: 0 });
   });
 });
