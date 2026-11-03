@@ -199,14 +199,44 @@ export function savedCopyWarningOf(printHtml: string): SavedCopyWarning {
   // One line, exactly as renderPrintV2 writes it. Two would mean a layout this rule never saw.
   if (lines.length !== 1) return { kind: 'refuse' };
   const text = unescapeText(lines[0][1]);
-  return text.length > 0 ? { kind: 'pin', text } : { kind: 'refuse' };
+  return text.length > 0 ? { kind: 'pin', text: bowlFirst(text) } : { kind: 'refuse' };
+}
+
+/**
+ * The bowl warning, as `documentV2.ts` writes it (`BOWL_WARNING`). Same value, same question: the
+ * sentence that must lead a no-medication line, which the reflow leads with because the "no
+ * medication" sentence alone reads as a clean trial (cold read on CUL-2295, Mira).
+ * `guards/savedCopyBowlWarning.test.ts` reds when the server's sentence changes.
+ */
+export const SAVED_COPY_BOWL_WARNING = 'A free-fed bowl was down in this window; the trial cannot exclude it.';
+
+/** The no-medication sentence, as `documentV2.ts` `confounderOf` writes it (`none`); guarded with the bowl's. */
+export const SAVED_COPY_NO_MEDICATION =
+  'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.';
+
+/**
+ * The no-medication line with the bowl warning moved to the front (adversarial pass 1 on
+ * CUL-2467), as the reflow leads with it: every word stays, only the order the eye meets them
+ * changes. Only that line: a medication line leads with "Not a test of the diet alone.", which
+ * stays first, and any other line is returned as it is.
+ */
+function bowlFirst(text: string): string {
+  if (!text.startsWith(SAVED_COPY_NO_MEDICATION)) return text;
+  const at = text.indexOf(SAVED_COPY_BOWL_WARNING);
+  if (at < 0) return text;
+  const rest = `${text.slice(0, at)}${text.slice(at + SAVED_COPY_BOWL_WARNING.length)}`.replace(/\s{2,}/g, ' ').trim();
+  return `${SAVED_COPY_BOWL_WARNING} ${rest}`;
 }
 
 /** The printed confounder line, as renderPrintV2 writes it (`open('p', 'conf')`, then `h(text)`). */
 const PRINTED_CONFOUNDER_LINE = /<p class="conf" data-block="confounder">([^<]*)<\/p>/g;
 
-/** The line's class anywhere, in any tag: a marker the strict read above must then account for. */
-const CONFOUNDER_CLASS = /\sclass="conf(?:\s[^"]*)?"/;
+/**
+ * The line's class on a PARAGRAPH: a marker the strict read above must then account for. Never a
+ * bare class match: the back sheets' time and meal tags are `<span class="conf">` (render.ts), and
+ * every no-trial copy carrying one was refused (adversarial pass 1 on CUL-2467, LOUD).
+ */
+const CONFOUNDER_CLASS = /<p\s[^>]*class="conf(?:\s[^"]*)?"/;
 
 /**
  * May the room offer "Printed page"? Only when it can pin the warning. A record whose reflow

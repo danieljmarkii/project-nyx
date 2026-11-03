@@ -13,6 +13,8 @@ import {
   parseExamMessage,
   printedViewAllowed,
   printedWarningOf,
+  SAVED_COPY_BOWL_WARNING,
+  SAVED_COPY_NO_MEDICATION,
   savedCopyWarningOf,
   sheetLabel,
   withExamCsp,
@@ -162,6 +164,30 @@ describe('savedCopyWarningOf: a saved printed page pins its own confounder line,
     expect(out.kind === 'pin' && out.text).toContain('A free-fed bowl was down in this window; the trial cannot exclude it.');
   });
 
+  it('a no-trial copy whose back sheets carry time and meal tags pins nothing and is drawn (adversarial pass 1)', () => {
+    // render.ts's own tag shapes, as backSheetsV2 reuses them.
+    const back = '<section class="sheet back" data-sheet="2"><p>Time tags: <span class="conf">seen</span> witnessed · <span class="conf">est</span> estimated</p><td>08:10 <span class="conf">seen</span> <span class="conf">2 logs</span></td></section>';
+    expect(savedCopyWarningOf(page(`${chart}</main>${back}<main>`))).toEqual({ kind: 'none' });
+  });
+
+  it('a trial copy with back-sheet tags still pins its one line', () => {
+    const back = '<section class="sheet back" data-sheet="2"><span class="conf">est</span></section>';
+    const out = savedCopyWarningOf(page(`${chart}<p class="conf" data-block="confounder">Not a test of the diet alone.</p></main>${back}<main>`));
+    expect(out).toEqual({ kind: 'pin', text: 'Not a test of the diet alone.' });
+  });
+
+  it('a no-medication line with a bowl leads with the bowl warning, every word kept (adversarial pass 1)', () => {
+    const none = SAVED_COPY_NO_MEDICATION;
+    const tail = 'Free-fed: Kibble; intake not directly observed.';
+    const out = savedCopyWarningOf(page(`<p class="conf" data-block="confounder">${none} ${SAVED_COPY_BOWL_WARNING} ${tail}</p>`));
+    expect(out).toEqual({ kind: 'pin', text: `${SAVED_COPY_BOWL_WARNING} ${none} ${tail}` });
+    // A medication line keeps "Not a test of the diet alone." first, bowl and all.
+    const meds = `Not a test of the diet alone. Overlapping the trial: Apoquel, overlapping it Oct 1 to Oct 20. Spans are the courses as recorded, not evidence of administration. ${SAVED_COPY_BOWL_WARNING} ${tail}`;
+    expect(savedCopyWarningOf(page(`<p class="conf" data-block="confounder">${meds}</p>`))).toEqual({ kind: 'pin', text: meds });
+    // The no-medication line with no bowl is unchanged.
+    expect(savedCopyWarningOf(page(`<p class="conf" data-block="confounder">${none}</p>`))).toEqual({ kind: 'pin', text: none });
+  });
+
   it('no confounder marker anywhere: nothing to pin', () => {
     expect(savedCopyWarningOf(page(chart))).toEqual({ kind: 'none' });
     // `cond` (the masthead's conditions) is not the line.
@@ -173,8 +199,8 @@ describe('savedCopyWarningOf: a saved printed page pins its own confounder line,
     expect(savedCopyWarningOf(page('<p data-block="confounder" class="conf">Not a test of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
     // A second class.
     expect(savedCopyWarningOf(page('<p class="conf wide" data-block="confounder">Not a test of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
-    // The class alone, block id lost.
-    expect(savedCopyWarningOf(page('<div class="conf">Not a test of the diet alone.</div>'))).toEqual({ kind: 'refuse' });
+    // The class alone on a paragraph, block id lost.
+    expect(savedCopyWarningOf(page('<p class="conf">Not a test of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
     // Inline markup inside the line.
     expect(savedCopyWarningOf(page('<p class="conf" data-block="confounder"><b>Not a test</b> of the diet alone.</p>'))).toEqual({ kind: 'refuse' });
     // Empty.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PixelRatio, Platform, StyleSheet, View } from 'react-native';
+import { PixelRatio, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -78,7 +78,8 @@ import { readVetVisitsHome } from '../../lib/vetVisits';
 //
 // BOXED IN LIKE THE PREVIEW (CUL-2487). The page carries the exam room's CSP (`boxedPreviewHtml`),
 // `originWhitelist` is `*` (REPORT_WEBVIEW_ORIGINS) so every navigation reaches the load
-// predicate instead of going to the system browser, and Android's new-window path is refused.
+// predicate instead of going to the system browser, Android's new-window path is refused, and a
+// `data:` navigation after the page has loaded is refused (`savedCopyLoadAllowed`).
 
 type Copy =
   | { kind: 'loading' }
@@ -89,6 +90,17 @@ type Copy =
 
 /** Android's new-window path, refused (CUL-2487): the window never opens. */
 function refuseWindow(): void {}
+
+/**
+ * The saved copy's load check (CUL-2487, privacy pass 1). `isPreviewLoadAllowed` lets any `data:`
+ * URL through, because some Android builds report the inline document itself as one. Once that
+ * document has loaded, a `data:` navigation can only be the page leaving itself (an injected
+ * refresh to a `data:` document that carries no CSP), so after the first load it is refused.
+ */
+export function savedCopyLoadAllowed(url: string, loaded: boolean): boolean {
+  if (url.startsWith('data:')) return !loaded;
+  return isPreviewLoadAllowed(url);
+}
 
 export default function SavedReportScreen() {
   const pets = usePetStore((s) => s.pets);
@@ -105,6 +117,8 @@ export default function SavedReportScreen() {
   const [allSends, setAllSends] = useState(false);
   // Every load (a params change, or "Try again") takes a number; only the newest one may land.
   const loadSeq = useRef(0);
+  // Whether the drawn copy has finished its first load (savedCopyLoadAllowed).
+  const pageLoaded = useRef(false);
 
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
@@ -182,7 +196,11 @@ export default function SavedReportScreen() {
   const petName = resolveRecordPetName(pets, row?.petId ?? null);
   const title = row ? copyTitle(petName, ANONYMOUS_PET_NAME, row.sharedAt, currentYear) : COPY_TITLE_PENDING;
   const warning = useMemo(() => (copy.kind === 'ok' ? savedCopyWarningOf(copy.html) : null), [copy]);
-  const boxedHtml = useMemo(() => (copy.kind === 'ok' ? boxedPreviewHtml(copy.html) : null), [copy]);
+  const boxedHtml = useMemo(() => {
+    // A new document starts unloaded.
+    pageLoaded.current = false;
+    return copy.kind === 'ok' ? boxedPreviewHtml(copy.html) : null;
+  }, [copy]);
   // A printed page whose warning cannot be read back is never drawn (CUL-2467): it reads as a
   // copy that cannot be shown, and the vet's copy is untouched.
   const shown = copy.kind === 'ok' && warning !== null && warning.kind !== 'refuse';
@@ -200,15 +218,17 @@ export default function SavedReportScreen() {
         {copy.kind === 'loading' && <SkeletonCard style={styles.wait} />}
         {shown && warning?.kind === 'pin' && (
           // The line's own words are in the page below; this repeat is for the eye only, as the
-          // reflow's pin is (aria-hidden there).
-          <View
+          // reflow's pin is (aria-hidden there). Taller than the paper (a long line at the largest
+          // text), it scrolls inside the paper rather than clip, and the page below gets nothing.
+          <ScrollView
             testID="report-copy-warning"
-            style={styles.warning}
+            style={styles.warningScroll}
+            contentContainerStyle={styles.warning}
             importantForAccessibility="no-hide-descendants"
             accessibilityElementsHidden
           >
             <ThemedText style={styles.warningText}>{warning.text}</ThemedText>
-          </View>
+          </ScrollView>
         )}
         {shown && boxedHtml !== null && (
           <WebView
@@ -222,7 +242,10 @@ export default function SavedReportScreen() {
             // (DocumentPdfViewer's precedent; rls-privacy-reviewer F2).
             incognito
             cacheEnabled={false}
-            onShouldStartLoadWithRequest={(req) => isPreviewLoadAllowed(req.url)}
+            onShouldStartLoadWithRequest={(req) => savedCopyLoadAllowed(req.url, pageLoaded.current)}
+            onLoadEnd={() => {
+              pageLoaded.current = true;
+            }}
             onOpenWindow={refuseWindow}
             // The owner's text size reaches the page on Android, as in the preview.
             textZoom={Platform.OS === 'android' ? androidTextZoom(PixelRatio.getFontScale()) : undefined}
@@ -310,6 +333,8 @@ const styles = StyleSheet.create({
   paper: { flex: 1, backgroundColor: theme.colorSurface },
   wait: { margin: theme.space3 },
   web: { flex: 1, backgroundColor: theme.colorSurface },
+  // Its own height up to the whole paper, never more: the page takes what is left.
+  warningScroll: { flexGrow: 0, flexShrink: 1 },
   // The preview's printed-view pin (ReportPreviewV2), so the two read as one warning.
   warning: {
     backgroundColor: theme.colorSurface,

