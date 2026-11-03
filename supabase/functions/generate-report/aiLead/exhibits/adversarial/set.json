@@ -2115,6 +2115,152 @@
    }
   },
   {
+   "id": "rv3-range-a",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (a range rebuilt from parts: the latest week reads 0)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 25 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-range-b",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (the two weeks' counts swapped)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 26 to Oct 31, and 6 entries on 4 days Oct 19 to Oct 25.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-range-c",
+   "fixture": "h2",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (one silent span over both weeks)",
+   "sentences": [
+    {
+     "text": "The owner-entered diet trial was Rabbit diet, from Sep 17, 2026 to Oct 20, 2026.",
+     "cites": [
+      "trial"
+     ]
+    },
+    {
+     "text": "Vomiting: 0 entries Oct 19 to Oct 31.",
+     "cites": [
+      "line-1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-recent-a",
+   "fixture": "r11",
+   "class": "softening",
+   "hazard": "H7",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (a live itch dated by its first entry)",
+   "sentences": [
+    {
+     "text": "Itching is the flag: over at least 49 days, 15 episodes on 15 days, 1 day, the most recent logged Aug 27.",
+     "cites": [
+      "band-r11"
+     ]
+    },
+    {
+     "text": "The owner-entered diet trial, Vetline Hydrolysed Soy, is at day 61 of 84, from Aug 17, 2026.",
+     "cites": [
+      "trial"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
+   "id": "rv3-absence-a",
+   "fixture": "bakeoff-nyx",
+   "class": "reassurance",
+   "hazard": "H4",
+   "level": "material",
+   "source": "CUL-2380 adversarial pass 3 (a false silent span before the burden flag)",
+   "sentences": [
+    {
+     "text": "Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.",
+     "cites": [
+      "S1"
+     ]
+    },
+    {
+     "text": "Nothing logged Jun 21 to Jul 2, AI photo read, unconfirmed.",
+     "cites": [
+      "W",
+      "L1"
+     ]
+    }
+   ],
+   "expect": {
+    "verifier": "refuse",
+    "checker": "reject"
+   },
+   "closed_by": [
+    "date-anchor"
+   ]
+  },
+  {
    "id": "res-omit-a",
    "fixture": "bakeoff-nyx",
    "class": "calm-band",

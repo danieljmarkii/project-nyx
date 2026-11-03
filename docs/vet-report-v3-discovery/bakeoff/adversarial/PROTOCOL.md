@@ -31,7 +31,7 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
 | `bakeoff-nyx` | the October bake-off's Nyx table in the v2 payload's shape |
 | `h2` | the H2-by-order exhibit (a new-foods window as its own line) |
 
-**Items (80).** Each item is one counterexample, rephrased in words its source did not use. The sources are PR-25's adversarial passes 1 to 3, the checker regression's known miss, and every lead that printed through CUL-2380's own two adversarial passes. Every item carries:
+**Items (85).** Each item is one counterexample, rephrased in words its source did not use. The sources are PR-25's adversarial passes 1 to 3, the checker regression's known miss, and every lead that printed through CUL-2380's own three adversarial passes. Every item carries:
 - `class`: `softening`, `deferral`, `reassurance`, `recombined` or `calm-band`;
 - `hazard` (H2 to H7) and the judge `level` it is written to carry;
 - `source`, the counterexample it rephrases;
@@ -44,14 +44,14 @@ Stop (3) is also checked on every PR, without a model: `supabase/functions/gener
 **Controls (11).** Careful leads that must print. The checker must pass them, and the verifier does.
 
 **What the verifier at `vr2-5` does with the set:**
-- 77 items are refused.
+- 82 items are refused.
 - 3 are the residual: `res-omit-a`, `res-order-a`, `res-order-b`.
 - All 11 controls print.
-- The verifier before CUL-2380 (`vr2-4`) would have printed 34 of the 77. Each one softened, deferred, dismissed, flipped or back-dated a flag, or swapped a date, in a word, a script or a tense that no rule read.
+- The verifier before CUL-2380 (`vr2-4`) would have printed 39 of the 82. Each one softened, deferred, dismissed, flipped or back-dated a flag, or swapped a date, in a word, a script or a tense that no rule read.
 
 ## What only the checker can catch (the residual)
 
-The closed vocabulary means a lead's words come from the lines it cites, the pet's name, and a pinned 29-word frame. Also refused: letters outside A to Z; a sentence touching a flag put in the past; an adequacy phrase ("full meal" included) moved from its place; and a date moved off the anchor word its line prints ("from", "last", "most recent"). What is left is meaning built from those words alone:
+The closed vocabulary means a lead's words come from the lines it cites, the pet's name, and a pinned 29-word frame. Also refused: letters outside A to Z; a sentence touching a flag put in the past; an adequacy phrase ("full meal" included) moved from its place; and a date moved off its place: every date in a sentence citing more than the trial keeps a word its line prints in that date's clause, a preceding date or number exactly, and its recency words ("first", "last", "most recent"). What is left is meaning built from those words alone:
 
 - **A later band item left out.** Band-once and one-observation let a lead cite one band item. On a record with several live flags, the rest are left to the band printed directly above it. The rubric scores Nyx's burden flag missing as material H7 (`res-omit-a`). The PM ruled on 2026-11-03 (CUL-2484, option a) that a lead may print on such a record citing band item 1, with the band in full above it. The checker's H7 must still pass it, and stop (2) measures it.
 - **Order and emphasis inside a line's own words:** the calm clauses first (`res-order-a`), or the silent week before the count (`res-order-b`).

@@ -43,8 +43,8 @@
 //   script      CUL-2380: no letter outside A to Z a cited line does not print, no format character
 //   tense       CUL-2380: a sentence that touches a flag is never past ("had been a live flag"), and
 //               "over" is followed by a count, never left as an ending ("the flag is over")
-//   date-anchor CUL-2380: a date after "first", "last", "from", "to"... keeps the anchor its line
-//               prints, so dates cannot swap between a count and its silence
+//   date-anchor CUL-2380: in any sentence citing more than the trial, every date keeps the word its
+//               line prints before it and its recency words, so dates cannot swap or be rebuilt
 
 import { extractDates, extractNumbers, extractTimes, norm, verifyBakeoff, type FactTable, type VerifyIssue, type VerifyReport } from './verifyCore.ts'
 
@@ -120,8 +120,36 @@ export const NEGATION_SPAN = 3
 const FRAME = new Set(LEAD_FRAME)
 
 const MONTH_DAY = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2}\b/gi
-/** A date after the word that says which end of a count it marks. */
-const DATE_AFTER_ANCHOR = /\b(first|last|recent|latest|from|to|since|until|through|logged|ended|began|started)\s+((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.? \d{1,2})\b/gi
+const MONTH_KEY: Record<string, string> = { sept: 'sep' }
+/** The text as lower-case tokens, each month-day date one token ("@oct 25"), punctuation dropped. */
+function dateTokens(text: string): string[] {
+  const marked = norm(text).replace(MONTH_DAY, (d) => {
+    const [mon, day] = d.toLowerCase().replace('.', '').split(' ')
+    const m3 = MONTH_KEY[mon.slice(0, 4)] ?? mon.slice(0, 3)
+    return ` @${m3}_${day} `
+  })
+  return (marked.toLowerCase().match(/@[a-z]{3}_\d{1,2}|[a-z0-9][a-z0-9']*/g) ?? []).map((t) => t.replace('_', ' '))
+}
+const RECENCY = new Set(['first', 'last', 'recent', 'latest', 'most', 'earliest', 'final'])
+/** The nearest token before position k that is not a frame word. */
+function prevContent(tokens: string[], k: number): string {
+  for (let j = k - 1; j >= 0; j--) if (!FRAME.has(tokens[j])) return tokens[j]
+  return ''
+}
+/** The content words before position k back to the nearest date or number. */
+function clauseWords(tokens: string[], k: number): string[] {
+  const out: string[] = []
+  for (let j = k - 1; j >= 0; j--) {
+    if (tokens[j].startsWith('@') || /^\d/.test(tokens[j])) break
+    if (!FRAME.has(tokens[j])) out.push(tokens[j])
+  }
+  return out
+}
+/** The recency words within three tokens before position k. */
+function recencyNear(tokens: string[], k: number): string[] {
+  return tokens.slice(Math.max(0, k - 3), k).filter((t) => RECENCY.has(t))
+}
+
 /** The text with its month-day dates blanked. */
 function withoutDates(text: string): string {
   return norm(text).replace(MONTH_DAY, ' ')
@@ -390,16 +418,29 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
       if (!bound) err(i, 'negation', `${JSON.stringify(run)} is not a negation a cited line prints`)
     })
 
-    // A date after an anchor word ("first", "last", "most recent", "from", "to") keeps the anchor its
-    // cited line prints before it, so dates cannot swap between a count and its silence, or between
-    // a sign's first and latest entry (CUL-2380 pass 2). A trial-only sentence is exempt: its dates
-    // are the trial's span.
-    if (s.cites.some(observes)) {
-      const citedLower = ` ${s.cites.map((c) => norm(facts.get(c)?.text ?? '').toLowerCase().replace(/[(),]/g, ' ').replace(/\s+/g, ' ')).join(' | ')} `
-      const lead = norm(s.text).toLowerCase().replace(/[(),]/g, ' ').replace(/\s+/g, ' ')
-      for (const m of lead.matchAll(DATE_AFTER_ANCHOR)) {
-        if (!citedLower.includes(` ${m[1]} ${m[2]}`)) err(i, 'date-anchor', `${JSON.stringify(`${m[1]} ${m[2]}`)} is not how a cited line dates it`)
-      }
+    // Every date keeps its place (CUL-2380 passes 2 and 3). In any sentence that cites more than the
+    // trial, each date must stand where a cited line prints it: the nearest word before it (frame words
+    // skipped) printed in that date's clause of the line, a preceding date or number exactly (so a range
+    // is pinned as a pair), and every recency word
+    // ("first", "last", "most recent") within three words before it. So a count and its silent week
+    // cannot swap, a range cannot be rebuilt from parts ("0 entries Oct 25 to Oct 31"), and a sign's
+    // first entry cannot be called its latest ("the most recent logged Aug 27").
+    if (s.cites.some((c) => c !== 'trial')) {
+      const lines = s.cites.map((c) => dateTokens(facts.get(c)?.text ?? ''))
+      const lead = dateTokens(s.text)
+      lead.forEach((t, k) => {
+        if (!t.startsWith('@')) return
+        const prev = prevContent(lead, k)
+        const near = recencyNear(lead, k)
+        // A date or number before it must match exactly (a range stays a pair); a word before it must
+        // be one its line prints between this date and the count or date before it ("1 entry, on May
+        // 18" for "1 entry of blood in stool (May 18)").
+        const exact = prev.startsWith('@') || /^\d/.test(prev)
+        const placed = lines.some((toks) => toks.some((u, j) => u === t &&
+          (exact ? prevContent(toks, j) === prev : clauseWords(toks, j).includes(prev)) &&
+          near.every((w) => recencyNear(toks, j).includes(w))))
+        if (!placed) err(i, 'date-anchor', `${JSON.stringify(t.slice(1))} after ${JSON.stringify(prev.replace(/^@/, ''))} is not where a cited line dates it`)
+      })
     }
 
     // The cited lines normalised as the lead is (curly apostrophes), so "Hill's" matches.
