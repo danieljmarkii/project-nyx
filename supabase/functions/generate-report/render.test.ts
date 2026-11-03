@@ -4908,7 +4908,9 @@ Deno.test('§4.4 render — the table renders its title, coverage note and the H
     ], '2026-02-11'),
   })))
   assert.ok(/Medication history/.test(t))
-  assert.ok(/Lifetime of the record \(since Feb 2026\)/.test(t))
+  assert.ok(/Every medication on record, from the earliest medication entry this report reads \(Feb 2026\)/.test(t))
+  // CUL-2480: never named as the record's own lifetime.
+  assert.ok(!/Lifetime of the record/.test(t))
   assert.ok(/the medications logged in Culprit/.test(t))
   // Dates are described accurately for BOTH registers (regimen span vs dose span).
   assert.ok(/Dates are each course.s span/.test(t))
@@ -6252,7 +6254,7 @@ Deno.test('CUL-982 item 4 — a week with more than three starts says the count 
   )
   assert.ok(/4 starts this week/.test(html), 'count + week')
   assert.ok(!/starts &middot; May/.test(html), 'no date list past three starts')
-  assert.ok(/the supplement a on May 1; the supplement b on May 2; the supplement c on May 3; the supplement d on May 4/.test(html), 'the legend still carries every date')
+  assert.ok(/a \(entered as a supplement\) on May 1; b \(entered as a supplement\) on May 2; c \(entered as a supplement\) on May 3; d \(entered as a supplement\) on May 4/.test(html), 'the legend still carries every date')
 })
 
 // ── CUL-857: the weigh-in nudge ──
@@ -6759,7 +6761,7 @@ Deno.test('R-4 site 2 — a supplement carried only as an UNLINKED dose group re
   // so an OTC supplement dosed with no configured regimen — which is what an owner-bought
   // antihistamine is — rendered on three other pages and never here.
   const html = renderReport(base({ medications: [], unlinkedMedications: [unlinkedMed()] }))
-  const cell = text(appendixBRow(html, 'Supplements'))
+  const cell = text(appendixBRow(html, 'Entered as supplements'))
   assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'the supplement the rest of the report names is named here')
   assert.ok(!/None recorded/.test(cell), 'and the negative does not render over it')
 })
@@ -6782,14 +6784,14 @@ Deno.test('R-4 site 2 — a supplement named only in the concurrent-change list 
       ],
     }),
   )
-  const cell = text(appendixBRow(html, 'Supplements'))
+  const cell = text(appendixBRow(html, 'Entered as supplements'))
   assert.ok(!/^None recorded/.test(cell.trim()), 'a supplement the document names anywhere blocks the bare negative')
   assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'and the row points at it')
 })
 
 Deno.test('R-4 site 2 — the reconciliation sits WITH the negative, not a page later in appendix D', () => {
   const html = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [] }))
-  const cell = text(appendixBRow(html, 'Supplements')).trim()
+  const cell = text(appendixBRow(html, 'Entered as supplements')).trim()
   assert.ok(/^None recorded/.test(cell), 'a truly quiet record still gets the calm negative')
   assert.ok(/taken as food|with a meal/i.test(cell), 'the appendix D reconciliation is inlined at the claim')
   assert.ok(/not evidence/.test(cell), 'the claim is about the record')

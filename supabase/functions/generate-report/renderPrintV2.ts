@@ -138,6 +138,16 @@ function spanRow(r: Extract<ChartRow, { kind: 'span' }>, cols: ChartColumn[], to
   const xa = r.openStart ? LABEL_W : x0(r.fromCol, n) + colW(n) / 2
   const xb = r.openEnd ? LABEL_W + PLOT_W : x0(r.toCol, n) + colW(n) / 2
   const cls = r.hollow ? 'span hollow' : 'span'
+  // CUL-2480 instance 1: ad-hoc doses are ticks on the columns that hold one, never a bar.
+  if (r.doseCols) {
+    return [
+      rowLabel(r.label, y + 3, 'rl span-l'),
+      ...r.doseCols.map((i) => {
+        const x = (x0(i, n) + colW(n) / 2).toFixed(1)
+        return `<line class="span dose" x1="${x}" x2="${x}" y1="${y - 4}" y2="${y + 4}"/>`
+      }),
+    ].join('')
+  }
   const parts = [rowLabel(r.label, y + 3, 'rl span-l'), `<line class="${cls}" x1="${xa.toFixed(1)}" x2="${Math.max(xa + 2, xb).toFixed(1)}" y1="${y}" y2="${y}"/>`]
   // The bracket ends: a tick where the record dates a start or an end, none where it runs off the edge.
   if (!r.openStart) parts.push(`<line class="${cls}" x1="${xa.toFixed(1)}" x2="${xa.toFixed(1)}" y1="${y - 4}" y2="${y + 4}"/>`)

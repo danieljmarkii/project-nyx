@@ -238,6 +238,29 @@ export interface TrialMedicationOverlap {
    * above has been re-dated from this earliest logged dose.
    */
   recordStart?: { firstDoseDay: string; atHistoryFloor: boolean }
+  /**
+   * RENDER-LAYER ONLY (CUL-2480, from #1428's cold read). Set beside `recordStart`: an ad-hoc drug
+   * has no course, so its span in days ("87 d") reads as continuous cover. These are the doses the
+   * row is made of: those logged in the trial days this report covers, and those on record in all.
+   */
+  adHocDoses?: { inTrialInWindow: number; onRecord: number }
+}
+
+/**
+ * RENDER-LAYER ONLY (CUL-2480 instance 4), set by `withRecordOverlaps`: an ad-hoc drug whose doses
+ * on record run from before the trial's last day to after its first, with no overlap row (the
+ * builder sees only the window's doses, and those all fell outside the trial). Doses during the
+ * trial are not counted anywhere in the report, so the row says the span crosses the trial and
+ * that the report does not count which doses fell in it. It never claims a dose was given then.
+ */
+export interface TrialRecordOnlyOverlap {
+  drugName: string
+  isSupplement: boolean
+  route: string | null
+  firstDoseDay: string
+  lastDoseDay: string
+  dosesOnRecord: number
+  atHistoryFloor: boolean
 }
 
 /** One permitted food, with the count §7 asks for ("DentaStix — 168 feedings"). */
@@ -870,6 +893,8 @@ export interface TrialBlock {
   outcomeNotes: string | null
 
   medicationOverlap: TrialMedicationOverlap[]
+  /** CUL-2480 instance 4: render-layer only, never written by the builder (`withRecordOverlaps`). */
+  recordOnlyOverlap?: TrialRecordOnlyOverlap[]
   loggingDensity: TrialLoggingDensity | null
   /** The species' forward challenge window in days — the legend for
    *  `symptomInChallengeWindow`. */

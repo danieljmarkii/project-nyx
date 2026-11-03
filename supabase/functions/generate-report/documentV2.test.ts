@@ -263,6 +263,7 @@ const TWIN_WORDS: Record<LeadChart['marks'][number], RegExp> = {
   not_read: /not read \((logged \d+ of \d+|a \d+-day (week|bin))\)/,
   span: /Bracketed line/,
   hollow_span: /Hollow dashed/,
+  dose_ticks: /Ticks, one per drawn period holding an ad-hoc dose/,
   intake_refused: /refused/,
   intake_partly: /partly eaten/,
 }
@@ -384,7 +385,9 @@ Deno.test('questions — verbatim, at most 5, each at most 200 characters, point
  * shrinks it. Never raise one to go green. The fixed parts are reported beside, never budgeted.
  */
 const CUTTABLE_RATCHET: Record<string, number> = {
-  'nyx-live': 191,
+  // 191 → 193 (CUL-2480, argued in its PR): "(21 ad-hoc doses, by Jul 1)" for "(ad-hoc, by Jul 1)".
+  // #1428's cold read read the bare ad-hoc span as continuous antihistamine cover; the count is the fix.
+  'nyx-live': 193,
   'cooper': 74,
   'r11-steady': 62,
   'r11-jump': 62,

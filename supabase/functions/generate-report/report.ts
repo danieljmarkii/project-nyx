@@ -2526,6 +2526,12 @@ export interface MedicationAdherence {
   /** Administered (given + partial) across the WHOLE record — the canonical claim's numerator. */
   lifetimeDosesLogged: number
   /**
+   * CUL-2480 instance 3: the PARTIAL doses among `lifetimeDosesLogged`, across the whole record, so a
+   * course whose partials all fall outside this window still says how many of its doses were
+   * partial. Optional: a snapshot frozen before it existed falls back to the window's count.
+   */
+  lifetimePartialDoses?: number
+  /**
    * The first and last local day an ADMINISTERED dose (given | partial) was logged, across the
    * WHOLE record — the dosing span (CUL-994 Part 2). ONE population for both ends, and the same
    * population as `lifetimeDosesLogged` beside it: the gap sentence the render prints from these
@@ -3305,6 +3311,9 @@ export interface MedicationHistoryEntry {
   plannedDoses: number | null
   // ── Dose evidence (H4) ──
   dosesLogged: number // dosesTowardTarget (given + partial)
+  /** CUL-2480 instance 3: the partial doses among `dosesLogged`, over the whole record. Optional
+   *  so a snapshot frozen before it existed still renders (the window's count, scoped as such). */
+  partialDoses?: number
 }
 
 export interface MedicationHistoryTable {
@@ -7404,6 +7413,7 @@ function buildMedicationAdherence(
   // instant parse (B-441-safe) — and it is order-independent, so it does not care which
   // direction the row pull happened to arrive in (CUL-975 reorders every pull).
   let lifetimeDosesLogged = 0
+  let lifetimePartialDoses = 0
   let lifetimeFirstDoseDay: string | null = null
   let lifetimeLastDoseDay: string | null = null
   const lifetimeDoseDayKeys = new Set<string>()
@@ -7416,6 +7426,7 @@ function buildMedicationAdherence(
     // visible as unconfirmedDoses so the render can be honest about it.
     if (administered) {
       lifetimeDosesLogged++
+      if (d.adherence === 'partial') lifetimePartialDoses++
       const dk = localDayKey(d.occurredAt, tz)
       if (dk !== null) {
         if (lifetimeFirstDoseDay === null || dk < lifetimeFirstDoseDay) lifetimeFirstDoseDay = dk
@@ -7496,6 +7507,7 @@ function buildMedicationAdherence(
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.
     prescribedDoses: course?.plannedDoses ?? null,
     lifetimeDosesLogged,
+    lifetimePartialDoses,
     lifetimeFirstDoseDay,
     lifetimeLastDoseDay,
     lifetimeDoseDayCount: lifetimeDoseDayKeys.size,
@@ -7688,6 +7700,7 @@ function buildMedicationHistory(
       runDays: c.runDays,
       plannedDoses: c.plannedDoses,
       dosesLogged: c.dosesLogged,
+      partialDoses: c.tally.partial,
     }
   })
 

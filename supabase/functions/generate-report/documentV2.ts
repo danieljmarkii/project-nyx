@@ -63,7 +63,7 @@ import {
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 import { backSheetsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
-import { withRecordOverlaps } from './medicationFacts.ts'
+import { adHocGroupOf, withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -133,10 +133,15 @@ export type ChartRow =
       endDeclared: boolean
       /** The twin's words for this span ("Sep 21 to Oct 11", "prescribed, no doses logged"). */
       when: string
+      /**
+       * CUL-2480 instance 1: an ad-hoc drug (doses with no regimen) has no course to draw, so its row
+       * is a tick on each column holding a logged dose, never a continuous bar. Absent on a course.
+       */
+      doseCols?: number[]
     }
 
 /** Every mark kind the chart can draw. The twin must name each one it draws (spec §5.4). */
-export type MarkKind = 'bar' | 'empty' | 'not_read' | 'hatch' | 'partial' | 'span' | 'hollow_span' | 'intake_refused' | 'intake_partly'
+export type MarkKind = 'bar' | 'empty' | 'not_read' | 'hatch' | 'partial' | 'span' | 'hollow_span' | 'dose_ticks' | 'intake_refused' | 'intake_partly'
 
 export interface LeadChart {
   unit: 'week' | 'two_weeks' | 'day'
@@ -559,13 +564,23 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
     const end = c.endInWindow ? c.endInWindow.slice(0, 10) : null
     const med = medicationFor(snap, c)
     const none = med !== null && med.courseDays.given === 0 && med.courseDays.loggedNotGiven === 0
+    const adHoc = adHocGroupOf(snap, c)
     // CUL-2440: an ad-hoc drug whose record reaches before this window is not drawn as starting
     // here. Its bar begins at the first dose in the window, so the label says so.
     const recordBit = c.recordStart ? ` (first dose here; on record from ${plainDay(c.recordStart.firstDoseDay)})` : ''
     const from = start === null ? (c.startDate ? `from ${plainDay(c.startDate.slice(0, 10))} (before this window)` : 'start not recorded') : `from ${plainDay(start)}${recordBit}`
     const to = end === null ? 'through the window' : c.endIsDeclared ? `to ${plainDay(end)}` : `to ${plainDay(end)} (last dose logged)`
     const span = `${from}${start === null && !c.startDate ? ',' : ''} ${to}`
-    const when = none ? `prescribed ${span}, no doses logged` : span
+    const doseDays = adHoc ? adHoc.doseDays.filter((d) => d >= windowStart) : []
+    const when = adHoc && doseDays.length > 0
+      ? `${doseDays.length} ad-hoc dose${doseDays.length === 1 ? '' : 's'} logged here, no regimen recorded (${
+          doseDays.length <= 6 ? doseDays.map(plainDay).join(', ') : `${plainDay(doseDays[0])} to ${plainDay(doseDays[doseDays.length - 1])}`
+        })${
+          c.recordStart ? `; on record from ${plainDay(c.recordStart.firstDoseDay)}` : ''
+        }`
+      : none
+        ? `prescribed ${span}, no doses logged`
+        : span
     const first = cols[0]?.start ?? windowStart
     // A course that ended before the first drawn column (a day row starting at the first entry)
     // is not drawn over that column; it is named under the chart instead (adversarial pass 1, 6).
@@ -584,6 +599,9 @@ function spanRows(snap: ReportSnapshot, cols: ChartColumn[]): { rows: Extract<Ch
       hollow: none,
       endDeclared: c.endIsDeclared,
       when,
+    }
+    if (adHoc && doseDays.length > 0) {
+      row.doseCols = [...new Set(doseDays.filter((d) => d >= first).map((d) => colOf(cols, d)))].sort((a, b) => a - b)
     }
     if (rows.length < SPAN_ROWS_MAX) rows.push(row)
     else overflow.push(`${c.label} ${when}`)
@@ -726,13 +744,15 @@ function buildLeadChart(
   const spans = spanRows(snap, columns)
   for (const r of spans.rows) {
     rows.push(r)
-    marks.add(r.hollow ? 'hollow_span' : 'span')
+    marks.add(r.doseCols ? 'dose_ticks' : r.hollow ? 'hollow_span' : 'span')
   }
   if (spans.overflow.length > 0) overflowParts.push(`also running: ${spans.overflow.join('; ')}`)
-  const solid = spans.rows.filter((r) => !r.hollow)
-  const hollow = spans.rows.filter((r) => r.hollow)
+  const solid = spans.rows.filter((r) => !r.hollow && !r.doseCols)
+  const hollow = spans.rows.filter((r) => r.hollow && !r.doseCols)
+  const ticks = spans.rows.filter((r) => r.doseCols)
   if (solid.length > 0) twinParts.push(`Bracketed lines, courses and foods: ${solid.map((r) => `${r.label} ${r.when}`).join('; ')}`)
   if (hollow.length > 0) twinParts.push(`Hollow dashed line: ${hollow.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
+  if (ticks.length > 0) twinParts.push(`Ticks, one per drawn period holding an ad-hoc dose: ${ticks.map((r) => `${r.label}, ${r.when}`).join('; ')}`)
 
   const partials = columns
     .map((c, i) => ({ c, i, l: colLabel(c, unit) }))
@@ -921,14 +941,21 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
   // CUL-2295): a surface that pins the warning beside the chart pins a bounded sentence, never a
   // list of free-text names that can grow past the screen.
   const bowl = bowls.length > 0 ? ` ${BOWL_WARNING} Free-fed: ${bowls.join(', ')}; intake not directly observed.` : ''
-  if (t.medicationOverlap.length === 0) {
+  // CUL-2480 instance 4: an ad-hoc drug whose doses on record cross the trial, with no overlap row.
+  const recordOnly = (t.recordOnlyOverlap ?? []).map(
+    (r) =>
+      `${r.drugName}${r.isSupplement ? ' (entered as a supplement)' : ''}, ad-hoc doses on record ${plainDay(r.firstDoseDay)} to ${plainDay(
+        r.lastDoseDay,
+      )}, a span that crosses the trial (which doses fell in it is not counted)`,
+  )
+  if (t.medicationOverlap.length === 0 && recordOnly.length === 0) {
     const none = 'No medication or supplement is recorded as overlapping the trial in this window, not checked with the owner.'
     // With no medication overlapping, a bowl left down is the line's warning, so it leads wherever
     // only one sentence fits (cold read on CUL-2295, Mira): the "no medication" sentence alone
     // reads as a clean trial.
     return { text: `${none}${bowl}`, lead: bowl ? BOWL_WARNING : none }
   }
-  const items = t.medicationOverlap.map((m) => {
+  const overlapItems = t.medicationOverlap.map((m) => {
     const from = plainDay(m.fromDate)
     const to = plainDay(m.toDate)
     // An ad-hoc drug is dated from its earliest dose on record (CUL-2440), and says it has no
@@ -936,17 +963,20 @@ function confounderOf(snap: ReportSnapshot): { text: string; lead: string } | nu
     // Sheet 1 is word-budgeted, so this is the short form; the back sheets carry the full one.
     // ADVERSARIAL PASS 2 (QUIET): "no recorded end" stays unless the last dose fell after the trial.
     const afterTrial = !!m.endedAt && m.endedAt.slice(0, 10) > m.toDate
+    // From #1428's cold read: an ad-hoc span is its doses, not continuous cover, so the count rides it.
+    const adHocWord = m.adHocDoses ? `${m.adHocDoses.onRecord} ad-hoc dose${m.adHocDoses.onRecord === 1 ? '' : 's'}` : 'ad-hoc'
     const tail = m.recordStart && !afterTrial
-      ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)}${m.activeAtWindowEnd ? '; its course has no recorded end' : ''})`
+      ? ` (${adHocWord}, by ${plainDay(m.recordStart.firstDoseDay)}${m.activeAtWindowEnd ? '; its course has no recorded end' : ''})`
       : m.recordStart
       ? m.recordStart.atHistoryFloor
-        ? ` (ad-hoc, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
-        : ` (ad-hoc, first logged ${plainDay(m.recordStart.firstDoseDay)})`
+        ? ` (${adHocWord}, by ${plainDay(m.recordStart.firstDoseDay)})` // on record from that day, the read's floor: by then at the latest
+        : ` (${adHocWord}, first logged ${plainDay(m.recordStart.firstDoseDay)})`
       : m.activeAtWindowEnd
         ? ' (its course has no recorded end)'
         : ''
     return `${m.drugName}${m.isSupplement ? ' (entered as a supplement)' : ''}, overlapping it ${from} to ${to}${tail}`
   })
+  const items = [...overlapItems, ...recordOnly]
   const abx = t.medicationOverlap.some((m) => m.antibacterialInGiTrial)
     ? ' An antibacterial course overlaps a GI trial: a steroid’s effect withdraws when it stops, a course’s effect on the microbiome does not.'
     : ''

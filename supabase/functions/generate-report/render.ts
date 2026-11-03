@@ -190,10 +190,17 @@ function vehicleDosesOf(snap: ReportSnapshot): number {
  * count is exact for the whole course only when every dose on record falls inside the window;
  * otherwise the figure is scoped to the window, never stretched over the course.
  */
-function partialOf(m: Pick<MedicationAdherence, 'partialDoses' | 'windowDosesLogged' | 'lifetimeDosesLogged'>): {
+function partialOf(
+  m: Pick<MedicationAdherence, 'partialDoses' | 'windowDosesLogged' | 'lifetimeDosesLogged' | 'lifetimePartialDoses'>,
+): {
   n: number
   wholeCourse: boolean
 } | null {
+  // CUL-2480 instance 3: the whole record's partial count, where the snapshot carries it. Without
+  // it, a course whose partial doses all fell outside the window printed no partial count at all.
+  if (m.lifetimePartialDoses !== undefined) {
+    return m.lifetimePartialDoses > 0 ? { n: m.lifetimePartialDoses, wholeCourse: true } : null
+  }
   if (!m.partialDoses) return null
   return { n: m.partialDoses, wholeCourse: m.windowDosesLogged >= m.lifetimeDosesLogged }
 }
@@ -4027,7 +4034,7 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   }
 
   // ── Element 1: the medication overlap ───────────────────────────────────────
-  rows.push(kv('Medication during the trial', medicationOverlapLine(t)))
+  rows.push(kv('Medication during the trial', medicationOverlapLine(t, snap)))
 
   // ── The owner's read, AS the owner's ────────────────────────────────────────
   if (t.outcome) {
@@ -4240,6 +4247,14 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     const names = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
     caveats.push(
       `${names} overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
+    )
+  }
+  // CUL-2480 instance 4: a drug whose doses on record cross the trial but which no overlap row holds.
+  for (const r of t.recordOnlyOverlap ?? []) {
+    caveats.push(
+      `Doses of ${h(r.drugName)}${r.isSupplement ? ' (entered as a supplement)' : ''} are on record from ${h(
+        fmtDayYear(r.firstDoseDay),
+      )} to ${h(fmtDayYear(r.lastDoseDay))}, a span that crosses the trial, and this report does not count which fell in it, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
     )
   }
   // CUL-979 — THE HOUSEHOLD, AS THE FIFTH ITEM ON THIS LIST. The central compliance
@@ -5595,7 +5610,32 @@ function oralRouteSentence(
   } carried is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them.`
 }
 
-function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string {
+/** The route a drug was logged with, when every record of it agrees on one; else null. */
+function routeOfDrug(snap: ReportSnapshot, drugName: string): string | null {
+  const routes = new Set<string>()
+  for (const m of snap.medications) if (m.drugName === drugName && m.route) routes.add(m.route.trim().toLowerCase())
+  for (const u of snap.unlinkedMedications) if (u.drugName === drugName && u.route) routes.add(u.route.trim().toLowerCase())
+  return routes.size === 1 ? [...routes][0] : null
+}
+
+function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: ReportSnapshot): string {
+  // CUL-2480 instance 4: a drug whose doses on record cross the trial, with no overlap row, is never
+  // left under "No medication or supplement is recorded as overlapping".
+  const recordOnly = (t.recordOnlyOverlap ?? []).map((r) => {
+    const route = r.route ? ` &middot; ${h(routeLabel(r.route))}` : ''
+    return `${h(r.drugName)}${r.isSupplement ? ' (entered as a supplement)' : ''}${route} &middot; ad-hoc doses on record ${h(
+      fmtDayYear(r.firstDoseDay),
+    )}&ndash;${h(fmtDayYear(r.lastDoseDay))}${
+      r.atHistoryFloor ? ' (the first is the earliest day this report reads)' : ''
+    }, a span that crosses the trial; ${num(r.dosesOnRecord)} dose${
+      r.dosesOnRecord === 1 ? '' : 's'
+    } on record in all, and this report does not count which fell in the trial.`
+  })
+  if (t.medicationOverlap.length === 0 && recordOnly.length > 0) {
+    return `${recordOnly.join(' ')} <span class="qual">No regimen is recorded for ${
+      recordOnly.length === 1 ? 'it' : 'them'
+    }, so ${recordOnly.length === 1 ? 'its' : 'their'} span is the first and last logged dose, not a continuous course. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  }
   if (t.medicationOverlap.length === 0) {
     // NOT "no medications were given" — the report knows only what was logged, and
     // an absence claim here would be the same reassurance-on-absence G2 deletes one
@@ -5648,9 +5688,17 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
     const adHoc = rec
       ? ' Ad-hoc doses, no regimen recorded: the span runs from the first logged dose, not a continuous course.'
       : ''
-    return `${h(m.drugName)}${m.isSupplement ? ' (supplement)' : ''} &middot; ${span} &middot; ${num(
-      m.daysOverlapping,
-    )}&nbsp;d${still}.${adHoc}${abx}`
+    // From #1428's cold read: the route, so a topical otic product does not sit beside an oral
+    // steroid as an equal GI confounder; and an ad-hoc row's length is its doses, never "87 d",
+    // which reads as continuous cover.
+    const route = routeOfDrug(snap, m.drugName)
+    const routeBit = route ? ` &middot; ${h(routeLabel(route))}` : ''
+    const length = m.adHocDoses
+      ? `${num(m.adHocDoses.inTrialInWindow)} ad-hoc dose${m.adHocDoses.inTrialInWindow === 1 ? '' : 's'} logged in the trial days this report covers, ${num(
+          m.adHocDoses.onRecord,
+        )} on record in all`
+      : `${num(m.daysOverlapping)}&nbsp;d`
+    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${still}.${adHoc}${abx}`
   })
   // EXPLICITLY NOT JUDGED, and the sentence saying so is not optional: antipruritics
   // are permitted throughout a trial and a 2–3 week prednisolone course is a
@@ -5673,7 +5721,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
   // the owner did not log." Round 4 read that as duration inferred from two ad-hoc
   // doses. It is not inferred, but nothing on the page said so, and the fix is to cite
   // where it comes from and where the per-regimen adherence lives.
-  return `${rows.join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  return `${[...rows, ...recordOnly].join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
 }
 
 function indicationLabel(indication: 'skin' | 'gi' | 'other'): string {
@@ -7329,8 +7377,10 @@ function legendLabel(c: ConcurrentChange): string {
       return `the trial diet ${h(c.label)}`
     case 'medication':
       return `the medication ${h(c.label)}`
+    // CUL-2480 instance 2: "supplement" is how the owner filed it, not a drug class (cetirizine is
+    // an antihistamine), so it is never said bare.
     case 'supplement':
-      return `the supplement ${h(c.label)}`
+      return `${h(c.label)} (entered as a supplement)`
     case 'free_fed':
       return `free-fed ${h(c.label)}`
     case 'diet_allowed':
@@ -7373,7 +7423,7 @@ function changeLabel(c: ConcurrentChange): string {
     case 'medication':
       return `${h(c.label)} (medication)`
     case 'supplement':
-      return `${h(c.label)} (a supplement)`
+      return `${h(c.label)} (entered as a supplement)`
     case 'free_fed':
       return `free-fed ${h(c.label)}`
     case 'diet_allowed':
@@ -8174,7 +8224,7 @@ export function dietMeds(snap: ReportSnapshot): string {
   for (const m of supps) {
     right.push(
       kv(
-        'Supplement',
+        'Entered as a supplement',
         // "a concurrent intervention over this window" is self-contained; the old copy claimed
         // "named in the trend note above," but that note only renders when symptom events exist
         // (else it points at nothing) — adversarial finding A1 sibling. The note DOES name every
@@ -11049,7 +11099,7 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
       <tr><th>Treats</th><td>${treatBit}</td></tr>
       <tr><th>Human food</th><td>${humanBit}</td></tr>
       <tr><th>Food used to give medication</th><td>${vehicleBit}</td></tr>
-      <tr><th>Supplements</th><td>${suppBit}</td></tr>
+      <tr><th>Entered as supplements</th><td>${suppBit}</td></tr>
       <tr><th>Active conditions</th><td>${condBit}</td></tr>
       <tr><th>Nutritional status</th><td>${weightBit}</td></tr>
     </tbody>
@@ -11312,6 +11362,9 @@ function medHistoryDoses(e: MedicationHistoryEntry, snap: ReportSnapshot): strin
  * with no doses in the window says nothing, as before: the header still reads "incl. partial".
  */
 function medHistoryPartial(e: MedicationHistoryEntry, snap: ReportSnapshot): string {
+  // CUL-2480 instance 3: the course's own partial count, from the same tally as the dose count this
+  // cell prints, over the whole record. Window counts below are the fallback for a frozen snapshot.
+  if (e.partialDoses !== undefined) return e.partialDoses > 0 ? ` (${num(e.partialDoses)} partial)` : ''
   if (e.source === 'regimen') {
     const m = snap.medications.find((x) => x.regimenId === e.key)
     const p = m ? partialOf(m) : null
@@ -11336,15 +11389,23 @@ export function medicationHistoryTable(snap: ReportSnapshot): string {
   const rows = mh.entries
     .map(
       (e) =>
-        `<tr><td>${h(e.drugName)}</td><td>${medHistoryDates(e)}</td><td>${medHistoryCourse(
+        `<tr><td>${h(e.drugName)}</td><td>${medHistoryDates(e)}${
+          // The dose on the history's floor day is the read's edge, not a known start (C-37).
+          e.source === 'doses' && e.firstDoseDay !== null && e.firstDoseDay === mh.sinceDay && !e.singleDay
+            ? ' <span class="rnote">(first dose on the earliest day read)</span>'
+            : ''
+        }</td><td>${medHistoryCourse(
           e,
         )}</td><td class="c num">${medHistoryDoses(e, snap)}</td></tr>`,
     )
     .join('')
-  const since = mh.sinceDay ? ` (since ${h(fmtMonthYear(mh.sinceDay))})` : ''
+  // CUL-2480 (cold-read recheck): "Lifetime of the record (since Jul 2026)" read as the record's own
+  // start, over a record whose meals go back to May. `sinceDay` is the earliest MEDICATION entry the
+  // history reads, so it is named as that, and a drug given before it would not appear.
+  const since = mh.sinceDay ? `, from the earliest medication entry this report reads (${h(fmtMonthYear(mh.sinceDay))})` : ''
   return `
   <p class="appx-title serif" style="margin-top:22px">Medication history</p>
-  <p class="appx-sub">Lifetime of the record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way. <b>This lists only what the owner entered in Culprit</b> — a medication prescribed or given elsewhere and never logged does not appear here, and its absence is not evidence it was not given.</p>
+  <p class="appx-sub">Every medication on record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way. <b>This lists only what the owner entered in Culprit</b> — a medication prescribed or given elsewhere and never logged does not appear here, and its absence is not evidence it was not given.</p>
   <table>
     <thead><tr><th>Medication</th><th style="width:118px">Dates</th><th style="width:186px">Course</th><th class="c" style="width:118px">Doses given (incl. partial)</th></tr></thead>
     <tbody>${rows}</tbody>
