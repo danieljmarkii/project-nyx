@@ -18,6 +18,7 @@
 export const PROJECT_URL = 'https://aigchluqluzuhtbfllgh.supabase.co'
 export const CHECK_BODY = { check: 'overdue' } as const
 export const CHECK_TIMEOUT_MS = 30_000
+export const LINEAR_TIMEOUT_MS = 20_000
 
 /** Team Culprit, and CUL-2465 (the issue this check exists for), by their Linear ids. */
 export const LINEAR_TEAM_ID = '7d624e99-9819-4232-b53e-6f7306837df0'
@@ -116,6 +117,8 @@ export function linearGraphQL(fetchFn: FetchLike, apiKey: string): GraphQL {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: apiKey },
       body: JSON.stringify({ query, variables }),
+      // Bounded, so a hung Linear still ends in a logged exit 2 rather than the job's timeout.
+      signal: AbortSignal.timeout(LINEAR_TIMEOUT_MS),
     })
     const body = (await res.json().catch(() => null)) as { data?: Record<string, unknown>; errors?: Array<{ message?: string }> } | null
     if (!res.ok || body === null || body.errors?.length || !body.data) {

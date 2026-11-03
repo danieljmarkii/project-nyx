@@ -252,6 +252,9 @@ describe('CUL-975 / CUL-989 — every pull in the covered functions paginates or
       }));
     });
     expect(found.length).toBeGreaterThanOrEqual(24);
+    // CUL-2465: the sweep's two reads (the capped batch and the overdue head count). Its paged
+    // floor above is 0 by design, so this is what reds if the extractor stops seeing it.
+    expect(found.filter((x) => fnOf(x) === 'reap-report-drafts').length).toBe(2);
     expect(found.length).toBe(plain.filter((m) => !m.storage && !m.write).length);
     expect(plain.filter((m) => m.storage).length).toBe(1); // the report's incident-photo bucket
     // The Signal's cache replace (delete + insert), and the report's saved copy (CUL-2300:

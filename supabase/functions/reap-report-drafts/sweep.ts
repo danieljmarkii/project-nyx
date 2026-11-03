@@ -60,6 +60,8 @@ export function globalSweepIO(admin: SupabaseClient, now: () => number = () => D
     listStaleDrafts: async (createdBeforeIso, limit, after) => {
       // A capped pull, oldest first on a total key: what the cap leaves is read by the next pass
       // (guards/reportPullPagination.test.ts DELIBERATE_CAP 'reap-report-drafts/vet_reports').
+      // The count is nothing this reads: the guard requires a registered cap to be counted, so
+      // removing it reds the guard rather than saving a query.
       let q = admin.from('vet_reports').select('id, storage_path, created_at', { count: 'exact' })
         .eq('status', 'draft')
         .lt('created_at', createdBeforeIso)
