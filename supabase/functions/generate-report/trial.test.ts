@@ -402,8 +402,9 @@ Deno.test('§12 — an overlapping anti-pruritic renders inside the trial block,
   // Without this a derm trial is unreadable — a steroid course and a successful
   // elimination produce the identical improving curve — but flagging it as a
   // compliance violation would scold an owner for following their vet.
-  assert.ok(/This is not a compliance problem/.test(block), 'not a compliance problem — that half is true')
-  assert.ok(/it bears directly on reading the symptom trend/.test(block), '…and the interpretive half is not downplayed')
+  // CUL-2490 (PM ruling (a)): no compliance claim either way, and nothing scolds.
+  assert.ok(!/compliance problem/.test(block), 'no claim about compliance')
+  assert.ok(/It bears directly on reading the symptom trend/.test(block), '…and the interpretive half is not downplayed')
   // CUL-2478 (PM ruling (a)): no claim about what is routinely prescribed.
   assert.ok(!/[Rr]outinely prescribed/.test(block), block)
 })

@@ -289,7 +289,14 @@ Deno.test('CUL-2481 — an assembled report carries the in-trial feedings, and a
 Deno.test('CUL-2478 — the medication line makes no claim about what is routine, and still does not scold', () => {
   const r = row(dietTrialSection(nyxLiveSnapshot()), 'Medication during the trial')!
   assert.ok(!/[Rr]outinely|prescribed alongside/.test(r), r)
-  assert.ok(r.includes('This is not a compliance problem, but it bears directly on reading the symptom trend; see “Interpreting this record” below.'), r)
+  assert.ok(r.includes('It bears directly on reading the symptom trend; see “Interpreting this record” below.'), r)
+})
+
+// ── CUL-2490: no compliance claim either way ───────────────────────────────────────────────────
+
+Deno.test('CUL-2490 — the medication line makes no compliance claim, over partial steroid doses and an OTC antihistamine', () => {
+  const r = row(dietTrialSection(nyxLiveSnapshot()), 'Medication during the trial')!
+  assert.ok(!/compliance/.test(r), r)
 })
 
 // ── CUL-2479: the intake flag, on the trial diet, in the trial block ──────────────────────────
@@ -500,4 +507,47 @@ Deno.test('pass 2 E — a short events pull floors the intake count and the in-t
   ended.incompletePulls = ['events']
   const r = row(trialHtml(ended), 'Off-list foods after the trial')!
   assert.ok(r.includes('Also fed during the trial: at least 1 feeding from Jun 27'), r)
+})
+
+// ── CUL-2505: the contamination caveat names the food, and says when it is the trial diet ──────
+
+Deno.test('CUL-2505 — the trial diet’s own label is named as the trial diet, never as "a food fed during the trial"', () => {
+  const html = dietTrialSection(nyxLiveSnapshot())
+  const callout = plain(html.split('Interpreting this record').at(-1) ?? '')
+  assert.ok(
+    callout.includes('The trial diet’s own label (Royal Canin Selected Protein PR, Dry) also lists Pea protein and Hydrolyzed soy protein (above), so this record cannot establish that the elimination was clean.'),
+    callout,
+  )
+  assert.ok(!/A food fed during the trial lists a protein/.test(callout), callout)
+})
+
+// ── CUL-2491 (PM ruling (a)): the cropped trial days beside the ones this report covers ────────
+
+Deno.test('CUL-2491 — the cropped trial days are set beside the covered ones, per sign, as counts and days', () => {
+  const r = row(dietTrialSection(nyxLiveSnapshot()), FROM)!
+  assert.ok(
+    r.includes(
+      'Over the whole trial, per sign: coughing 21 in the 52 earlier trial days, 4 in the 35 this report covers; vomiting 10 in the 52 earlier trial days, 10 in the 35 this report covers;',
+    ),
+    r,
+  )
+  // The covered side's days are the trial's own days in this report, the same figure the Record row states.
+  assert.ok(/This report shows 35 days of a trial that has run 87/.test(plain(dietTrialSection(nyxLiveSnapshot()))))
+})
+
+Deno.test('CUL-2491 — a cropped count that is a floor says "at least" on that side only', () => {
+  const snap = nyxLiveSnapshot()
+  snap.scope.trialCropSymptoms = { ...snap.scope.trialCropSymptoms!, countIsFloor: true }
+  const r = row(dietTrialSection(snap), FROM)!
+  assert.ok(r.includes('vomiting at least 10 in the 52 earlier trial days, 10 in the 35 this report covers'), r)
+})
+
+Deno.test('CUL-2491 — a sign logged only in the cropped days still gets its pair, with a zero for the covered side', () => {
+  const r = row(dietTrialSection(nyxLiveSnapshot()), FROM)!
+  assert.ok(r.includes('itching 3 in the 52 earlier trial days, 0 in the 35 this report covers'), r)
+})
+
+Deno.test('CUL-2491 — a trial this report covers whole prints no cropped-days line', () => {
+  const html = trialHtml(endedTrial({ events: [symptom('2026-06-02'), symptom('2026-06-25')] }))
+  assert.ok(!/Over the whole trial, per sign/.test(html), html)
 })

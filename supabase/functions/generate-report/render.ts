@@ -3412,13 +3412,33 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // form, never a bare "Elimination diet trial —" with nothing after the dash.
   const protein = snap.diet.trialTargetProtein
   const prov = snap.diet.trialProteinProvenance
+  // CUL-2492: "CONFIRMED" AND "READ FROM THE LABEL" ARE CLAIMS ABOUT THE PANEL. The owner's word
+  // corroborates the label only where the label was read (a photo of the panel, read automatically);
+  // over a trial diet whose proteins the owner typed in, the protein is the owner's entry and nothing
+  // checked it. Cooper's row read "owner-confirmed protein" over a panel nobody captured. Every
+  // trial-diet food must have been photo-read for either label-read word; unknown is not read.
+  // With several trial-diet foods, some photo-read and some typed in, neither word is true of the
+  // set, so the line says how many were read (nyx-live: 5 of 6).
+  const primaryFoods = t.permittedFoods.filter((f) => f.role === 'primary_diet')
+  const readCount = primaryFoods.filter((f) => f.source === 'photo').length
+  const labelRead = primaryFoods.length > 0 && readCount === primaryFoods.length
+  const partRead = !labelRead && readCount > 0
+  const partWord = `label read for ${num(readCount)} of the ${num(primaryFoods.length)} trial-diet foods`
   const provWord = !prov
     ? ''
     : prov.source === 'owner'
-      ? prov.confirmedDay != null
-        ? `owner-confirmed protein &middot; recorded on day ${num(prov.confirmedDay)}`
-        : 'owner-confirmed protein'
-      : 'protein read from the trial diet&rsquo;s label'
+      ? `${
+          labelRead
+            ? 'owner-confirmed protein'
+            : partRead
+              ? `owner-entered protein; ${partWord}`
+              : 'owner-entered protein; label not read'
+        }${prov.confirmedDay != null ? ` &middot; recorded on day ${num(prov.confirmedDay)}` : ''}`
+      : labelRead
+        ? 'protein read from the trial diet&rsquo;s label'
+        : partRead
+          ? `protein from the trial diet&rsquo;s food records; ${partWord}`
+          : 'protein as entered on the trial diet&rsquo;s food record; label not read'
   // (declared above `identity` so the day phrase can take the same decision)
   // THE TRIAL'S OWN DATES TAKE THE BAND'S YEAR DECISION TOO (CUL-746 pass 4). These sit
   // twelve words from the Allowed list and the exposure clause, so leaving them bare is
@@ -4176,8 +4196,24 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     // the allowed list carrying a second protein is as trial-invalidating as a
     // contaminated primary diet. A record with one is not a record that supports reading
     // an elimination result, whatever its coverage.
+    // CUL-2505: NAME THE FOOD, AND SAY WHEN IT IS THE TRIAL DIET. The fixed sentence ("a food fed
+    // during the trial lists a protein the trial diet does not") printed over the trial diet's OWN
+    // label too, pointing a vet at the treats and away from the elimination diet the cat ate 93
+    // times, and contradicting the "Label contamination" row it pointed to.
+    const extras = (c: (typeof t.contamination)[number]): string =>
+      h(proteinList(c.extraProteins.map(capProtein)))
+    const own = t.contamination.filter((c) => c.food.role === 'primary_diet')
+    const others = t.contamination.filter((c) => c.food.role !== 'primary_diet')
+    const clauses: string[] = []
+    for (const c of own) {
+      clauses.push(`the trial diet&rsquo;s own label (<b>${h(c.food.label)}</b>) also lists ${extras(c)}`)
+    }
+    for (const c of others) {
+      clauses.push(`<b>${h(c.food.label)}</b>, fed during the trial, lists ${extras(c)}, which the trial diet does not`)
+    }
+    const joined = clauses.join('; and ')
     caveats.push(
-      'A food fed during the trial lists a protein the trial diet does not (above), so this record cannot establish that the elimination was clean.',
+      `${joined.charAt(0).toUpperCase()}${joined.slice(1)} (above), so this record cannot establish that the elimination was clean.`,
     )
   }
   // §7, verbatim: "without it a derm trial is unreadable — a steroid course and a
@@ -4437,6 +4473,8 @@ function trialRecordLine(snap: ReportSnapshot): string {
       `The trial days this report covers are too few for a first week to be set beside the last without counting a day twice, so no earlier week is shown.`,
     )
   }
+  const crop = trialCropComparison(snap)
+  if (crop) parts.push(crop)
   // The window runs on past the trial's end: what the record holds after it, its length said, so
   // two spans of different lengths are never read as one scale (cold read, finding 7).
   const afterStart = endsWithTrial ? shiftDayKey(end, 1) : null
@@ -4473,6 +4511,56 @@ function trialRecordLine(snap: ReportSnapshot): string {
   const wholeTrial = endsWithTrial && t.evidenceStartDate === t.startedAt.slice(0, 10)
   parts.push(trialWeightClause(snap, wholeTrial ? 'the trial' : 'the trial days this report covers'))
   return parts.join(' ')
+}
+
+/**
+ * CUL-2491 (PM ruling (a), 2026-11-03): THE CROPPED TRIAL DAYS, SET BESIDE THE ONES THIS REPORT COVERS.
+ *
+ * Where the window opens after the trial began, the in-window first week is days 53–59 of the trial,
+ * and "vomiting 4 and 3" read as flat over a record whose earlier trial days ran lower. The cropped
+ * span's count was already on the page (the Record row), but never against the in-window one. So, per
+ * sign, two counts and their days, and nothing else: "vomiting 10 in the 52 earlier trial days, 10 in
+ * the 35 this report covers". No rate is computed; the reader divides. No events are pulled outside
+ * the window: the cropped side is `scope.trialCropSymptoms`, counted in the snapshot builder.
+ *
+ * ONE SPAN EACH SIDE, WITH ITS OWN DAYS (C-3). The cropped side's days are `cropDays`, built in the
+ * same pass as its count; the covered side's days are the trial's elapsed days inside the window,
+ * the span its count is taken over. A floor on either side says "at least" on that side's numbers.
+ * "Earlier" only when every cropped day is before the window; a tail crop is "outside this report".
+ * The un-logged-days sentence on the Record row stays the cropped side's denominator caveat.
+ */
+function trialCropComparison(snap: ReportSnapshot): string | null {
+  const t = snap.trial!
+  const c = snap.scope.trialCropSymptoms
+  if (!c || c.cropDays <= 0) return null
+  const trialFirst = dayKeyOfIndex(t.elapsedStartDayIndex)
+  const trialLast = dayKeyOfIndex(t.elapsedEndDayIndex)
+  const from = maxDayKey(trialFirst, snap.scope.startDate)
+  const to = trialLast < snap.scope.endDate ? trialLast : snap.scope.endDate
+  if (to < from) return null
+  const coveredDays = daysBetweenDayKeys(from, to) + 1
+  const inside = new Map<string, number>()
+  for (const e of snap.provenance.symptomLog) {
+    const d = localDayKeyOf(e.occurredAt, snap.timezone)
+    if (d >= from && d <= to) inside.set(e.type, (inside.get(e.type) ?? 0) + 1)
+  }
+  const outside = new Map<string, number>(c.byType.map((x) => [x.type, x.count]))
+  const types = [...new Set([...outside.keys(), ...inside.keys()])]
+  if (types.length === 0) return null
+  const total = (k: string): number => (outside.get(k) ?? 0) + (inside.get(k) ?? 0)
+  const outFloor = c.countIsFloor ? 'at least ' : ''
+  const inFloor = (snap.incompletePulls ?? []).includes('events') ? 'at least ' : ''
+  const tailCropped = t.trialDaysOutsideRange.after > 0
+  const outName = `${num(c.cropDays)} ${tailCropped ? 'trial days outside this report' : 'earlier trial days'}`
+  const pairs = types
+    .sort((x, y) => total(y) - total(x) || symptomLabel(x).localeCompare(symptomLabel(y)))
+    .map(
+      (k) =>
+        `${h(symptomLabel(k).toLowerCase())} ${outFloor}${num(outside.get(k) ?? 0)} in the ${outName}, ${inFloor}${num(
+          inside.get(k) ?? 0,
+        )} in the ${num(coveredDays)} this report covers`,
+    )
+  return `Over the whole trial, per sign: ${pairs.join('; ')}.`
 }
 
 /**
@@ -5585,7 +5673,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
   // the owner did not log." Round 4 read that as duration inferred from two ad-hoc
   // doses. It is not inferred, but nothing on the page said so, and the fix is to cite
   // where it comes from and where the per-regimen adherence lives.
-  return `${rows.join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. This is not a compliance problem, but it bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  return `${rows.join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. It bears directly on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
 }
 
 function indicationLabel(indication: 'skin' | 'gi' | 'other'): string {
