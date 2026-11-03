@@ -37,6 +37,8 @@ const { DatabaseSync } = require('node:sqlite');
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import {
   classifyInboxPayload,
+  countUnclaimedInbox,
+  countUnclaimedInboxPayloads,
   ingestCaptureRecords,
   ingestCaptureInbox,
   inboxFileSortKey,
@@ -798,5 +800,64 @@ describe('a capture-inbox pass already running at sign-out stops before its next
       expect(entries.map((e) => e.deleted)).toEqual([true, true]);
       expect(triggerSignalRegenDebounced).toHaveBeenCalledWith(PET);
     });
+  });
+});
+
+// CUL-2468 — what the vet report's unsent gates count as still waiting in the inbox.
+describe('countUnclaimedInboxPayloads / countUnclaimedInbox (CUL-2468)', () => {
+  const OTHER_PET = '55555555-5555-4555-9555-555555555555';
+  const mine = new Set([PET]);
+  const treat = (petId = PET) => JSON.stringify(validRecord({ kind: 'treat', petId }));
+
+  afterEach(() => {
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue(null);
+  });
+
+  it('counts a treat, a meal and a top-up for one of this account\'s pets', () => {
+    const raws = [treat(), JSON.stringify(validRecord()), JSON.stringify(topUpRecord())];
+    expect(countUnclaimedInboxPayloads(raws, mine)).toBe(3);
+  });
+
+  it('counts a record the ingest defers for version skew, when it names our pet', () => {
+    const newer = JSON.stringify({ ...validRecord(), schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1 });
+    const newKind = JSON.stringify({ ...validRecord(), kind: 'water' });
+    expect(classifyInboxPayload(newer).status).toBe('defer');
+    expect(countUnclaimedInboxPayloads([newer, newKind], mine)).toBe(2);
+  });
+
+  it('does not count another pet\'s record (it ages out; a 45-day "waiting" line would be a lie)', () => {
+    expect(countUnclaimedInboxPayloads([treat(OTHER_PET)], mine)).toBe(0);
+  });
+
+  it('does not count a file the ingest will drop', () => {
+    const forged = JSON.stringify({ ...validRecord(), loggedVia: 'app' });
+    expect(countUnclaimedInboxPayloads(['{not json', forged], mine)).toBe(0);
+  });
+
+  it('an empty pet set counts nothing, as the ingest applies nothing', () => {
+    expect(countUnclaimedInboxPayloads([treat()], new Set())).toBe(0);
+  });
+
+  it('reads the directory: .json files only, an unreadable one counts', () => {
+    const unreadable = {
+      name: 'b.json',
+      textSync: () => {
+        throw new Error('io');
+      },
+      delete: () => undefined,
+    };
+    const entries = [fakeFile('a.json', treat()), unreadable, fakeFile('c.tmp', treat()), { name: 'dir' }];
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => entries });
+    expect(countUnclaimedInbox(mine)).toBe(2);
+  });
+
+  it('no inbox (Android) is zero; a listing that fails throws for the caller', () => {
+    expect(countUnclaimedInbox(mine)).toBe(0);
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => {
+        throw new Error('list');
+      },
+    });
+    expect(() => countUnclaimedInbox(mine)).toThrow('list');
   });
 });

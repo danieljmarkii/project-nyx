@@ -1,7 +1,9 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File } from 'expo-file-system';
-import { countRecordGaps, getSyncStatus } from './db';
+import { countRecordGaps } from './db';
+import { countUnclaimedInbox } from './captureInbox';
+import { usePetStore } from '../store/petStore';
 import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
@@ -107,7 +109,7 @@ export interface VetReport {
 //    itself long synced) produced an empty safety band on a refusing cat, with
 //    the staleness zone advertising currency. The report reads events, meals,
 //    weights, doses, visits and trials alike, so the honest question is "has
-//    this phone sent everything?", which `getSyncStatus` already answers across
+//    this phone sent everything?", which the sync queue count already answers across
 //    every queue — and the flush is `syncNow()`, the one documented cycle with
 //    the FK ordering and the in-flight guard, not a bespoke two-table push
 //    running concurrently against it.
@@ -128,26 +130,66 @@ export interface ReportFreshness {
 }
 
 export async function flushBeforeReport(): Promise<ReportFreshness> {
-  return (await flushAndCount(bannerCount)) ?? { pending: 0, quarantined: 0 };
+  return (await flushAndCount(oneReadCount)) ?? { pending: 0, quarantined: 0 };
 }
 
 type UnsentCounter = () => Promise<ReportFreshness>;
-
-const bannerCount: UnsentCounter = async () => {
-  const s = await getSyncStatus();
-  return { pending: s.pendingCount, quarantined: s.quarantinedCount };
-};
 
 /**
  * ONE statement (`countRecordGaps`, Ask's reader). `getSyncStatus` counts pending and refused in
  * two reads, and a drain that marks a parent synced and then re-arms its refused child between
  * them (refused → pending) makes both answer zero while the child is still on this phone
- * (CUL-2457 adversarial pass 2). Same rows, partitioned by the same `sync_error` test.
+ * (CUL-2457 adversarial pass 2). Same rows, partitioned by the same `sync_error` test. Both gates
+ * use it: the send's calm check since CUL-2457, the report's freshness line since CUL-2471.
  */
 const oneReadCount: UnsentCounter = async () => {
   const g = await countRecordGaps();
   return { pending: g.unsent, quarantined: g.refused };
 };
+
+/** The pets whose widget captures this phone may still hold (the ingest's own allowlist). */
+function accountPetIds(): ReadonlySet<string> {
+  return new Set(usePetStore.getState().pets.map((p) => p.id));
+}
+
+/**
+ * CUL-2468: the widget's capture inbox, counted with the rows. A capture waits there (outside
+ * SQLite) until the foreground ingest (hooks/useSync.ts) takes it in, so a SQLite-only count read
+ * a treat logged from the widget during a diet trial as "everything sent" while the server, and
+ * the report's off-diet read, had never seen it. Whatever is still in the inbox counts as pending:
+ * it has not reached the server.
+ *
+ * COUNTED, NEVER INGESTED HERE. The gate does not run the ingest itself: an ingest is a WRITER,
+ * and one started from this screen while a sign-out is wiping the store would have no session
+ * epoch to fence on (useSync captures it at session start; this gate cannot), so it could write
+ * the old account's rows after the wipe (CUL-1968's hazard). Counting alone closes the gap; the
+ * cost is an over-warn for a capture the foreground has not reached yet, which reopening clears.
+ *
+ * ORDER: the inbox is read BEFORE the rows. A foreground ingest running beside this gate only
+ * ever moves a record inbox → rows, so read in this order a record caught mid-move is counted
+ * twice (an over-warn), never by neither (the CUL-2471 two-read hazard, across two stores).
+ *
+ * AN UNREADABLE INBOX ERRS LOUD, AND NEVER COSTS THE ROWS (adversarial passes 1 and 2). Its read is
+ * its own, so a throwing listing never nulls a row count that succeeded (pass 1: 12 unsent and 2
+ * refused rows went silent). What it counts for when unreadable:
+ *  • on the re-count, the first read's value carries forward: `syncNow` never ingests, so nothing
+ *    but a successful read can show those captures gone (pass 2: three treats went to zero);
+ *  • on the first read, the send answers "unknown" (null), because an unknown record never earns
+ *    its calm check; the freshness line counts ONE pending entry, the louder side of a ruling the
+ *    PM owns (silence over a possible capture vs a line that may stand while the inbox stays
+ *    unreadable). The stopgap is loud until that ruling.
+ */
+function readInbox(): number | null {
+  try {
+    return countUnclaimedInbox(accountPetIds());
+  } catch (e) {
+    console.warn('[Report] capture inbox unreadable:', e);
+    return null;
+  }
+}
+
+/** What the gate does with an inbox it could not read on the FIRST count. */
+type UnreadableInbox = 'count-one' | 'unknown';
 
 /**
  * CUL-2457, the send's half of the same gate: flush, then count what is still on this phone.
@@ -157,13 +199,21 @@ const oneReadCount: UnsentCounter = async () => {
  * fail-safe re-count; only what the caller does with "no evidence" differs.
  */
 export async function flushBeforeSend(): Promise<ReportFreshness | null> {
-  return flushAndCount(oneReadCount);
+  return flushAndCount(oneReadCount, 'unknown');
 }
 
-async function flushAndCount(count: UnsentCounter): Promise<ReportFreshness | null> {
+async function flushAndCount(
+  rowCount: UnsentCounter,
+  unreadableInbox: UnreadableInbox = 'count-one',
+): Promise<ReportFreshness | null> {
+  // The inbox is read BEFORE the rows, each time (above).
+  const firstInbox = readInbox();
+  if (firstInbox === null && unreadableInbox === 'unknown') return null;
+  const inboxOnce = firstInbox ?? 1;
   let counts: ReportFreshness;
   try {
-    counts = await count();
+    const rows = await rowCount();
+    counts = { pending: rows.pending + inboxOnce, quarantined: rows.quarantined };
   } catch (e) {
     console.warn('[Report] freshness check failed:', e);
     return null;
@@ -175,7 +225,9 @@ async function flushAndCount(count: UnsentCounter): Promise<ReportFreshness | nu
     // over-warn in the safe direction, and the line's own remedy ("reopen the
     // report") is exactly what resolves it.
     await syncNow();
-    return await count();
+    const inbox = readInbox() ?? inboxOnce;
+    const rows = await rowCount();
+    return { pending: rows.pending + inbox, quarantined: rows.quarantined };
   } catch (e) {
     console.warn('[Report] pre-report flush failed (counts stand):', e);
     return counts;
