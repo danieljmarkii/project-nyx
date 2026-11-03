@@ -65,6 +65,9 @@ const COVERED: Record<string, number> = {
   'generate-report': 11,
   'generate-signal': 6,
   ask: 7,
+  // CUL-2465: the scheduled draft sweep moved here from generate-report/savedCopy.ts. It pages
+  // nothing (floor 0); its batch read is a registered cap and its overdue check a head count.
+  'reap-report-drafts': 0,
 };
 
 /** Source files of a function, derived from the REPOSITORY rather than from a list in
@@ -152,11 +155,16 @@ const DELIBERATE_CAP: Record<string, string> = {
     'the render as a floor with no start date. Paging it would read an unbounded history to ' +
     'improve one clause that is already honest when it degrades.',
   'generate-report/vet_reports':
-    'CUL-2300, CUL-2437. The draft reaper (savedCopy.ts listStaleDrafts, and the scheduled ' +
-    'sweep\'s globalDraftReaperIO) reads one batch of stale drafts, oldest first, and removes them; ' +
-    'it is not a pull over the record and prints nothing. What the cap leaves stays for the next ' +
-    'pass (the sweep loops batches, then waits a quarter hour), and account deletion reads every ' +
-    'row through delete-account\'s own paged reader whatever the reaper missed.',
+    'CUL-2300. The Preview reaper (savedCopy.ts listStaleDrafts) reads one batch of this owner\'s ' +
+    'stale drafts of this pet, oldest first, and removes them; it is not a pull over the record ' +
+    'and prints nothing. What the cap leaves stays for the next Preview or the scheduled sweep, ' +
+    'and account deletion reads every row through delete-account\'s own paged reader.',
+  'reap-report-drafts/vet_reports':
+    'CUL-2437, CUL-2465. The scheduled sweep (sweep.ts globalSweepIO listStaleDrafts) reads one ' +
+    'batch of every owner\'s drafts past their day, oldest first on (created_at, id), and removes ' +
+    'them; it is not a pull over the record and prints nothing. The next pass reads past the last ' +
+    'row listed (a keyset), what the pass cap leaves waits a quarter hour for the next call, and the ' +
+    'daily overdue check reads any draft the sweep could not remove.',
 };
 
 /**
@@ -209,9 +217,12 @@ function isPaged(s: Site): boolean {
 const TIME_COLUMNS = ['occurred_at', 'created_at', 'started_at', 'visited_at', 'local_day'];
 
 /** A site that returns AT MOST ONE ROW cannot truncate. `.limit(1)` is one row by
- *  definition (CUL-989: the active trial, the latest cached Signal), and says so in code. */
+ *  definition (CUL-989: the active trial, the latest cached Signal), and says so in code.
+ *  A head count (`count: 'exact', head: true`) returns NO rows, only the count, which
+ *  `max-rows` does not cap (CUL-2465: the draft sweep's overdue check). */
 function isSingleRow(s: Site): boolean {
-  return /\.maybeSingle\(\)/.test(s.chain) || /\.limit\(1\)/.test(s.chain);
+  return /\.maybeSingle\(\)/.test(s.chain) || /\.limit\(1\)/.test(s.chain) ||
+    /count:\s*'exact',\s*head:\s*true/.test(s.chain);
 }
 
 describe('CUL-975 / CUL-989 — every pull in the covered functions paginates or carries an ordered, counted cap', () => {
@@ -245,7 +256,8 @@ describe('CUL-975 / CUL-989 — every pull in the covered functions paginates or
     expect(plain.filter((m) => m.storage).length).toBe(1); // the report's incident-photo bucket
     // The Signal's cache replace (delete + insert), and the report's saved copy (CUL-2300:
     // savedCopy.ts's draft insert, its three updates (hash stamp, keep, departure stamp) and
-    // its two draft deletes), and the scheduled sweep's draft delete (CUL-2437).
+    // its two draft deletes), and the scheduled sweep's draft delete (CUL-2437; in
+    // reap-report-drafts/sweep.ts since CUL-2465).
     expect(plain.filter((m) => m.write).length).toBe(9);
     // And the tables are the ones this report is actually built from, not a subset the
     // extractor happened to reach.
