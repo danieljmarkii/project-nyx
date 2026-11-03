@@ -263,6 +263,7 @@ const TWIN_WORDS: Record<LeadChart['marks'][number], RegExp> = {
   not_read: /not read \((logged \d+ of \d+|a \d+-day (week|bin))\)/,
   span: /Bracketed line/,
   hollow_span: /Hollow dashed/,
+  dose_ticks: /Ticks, one per day an ad-hoc dose was logged/,
   intake_refused: /refused/,
   intake_partly: /partly eaten/,
 }

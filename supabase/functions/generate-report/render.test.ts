@@ -3741,11 +3741,16 @@ function proteinDiet(over: Partial<import('./report.ts').DietSummary>): import('
   }
 }
 
+/** CUL-2492: the trial diet as an allowed food, read from a label photo or typed in by the owner. */
+function primaryFood(label: string, source: 'photo' | 'owner', protein: string) {
+  return [{ label, role: 'primary_diet' as const, allowedFrom: '2026-05-08', allowedUntil: null, feedings: 20, addedAfterStart: false, endedBeforeWindowEnd: false, proteins: [protein], panelRead: true, source, panelComplete: source === 'photo' }]
+}
+
 Deno.test('B-704 §7.4 — the identity leads with "Elimination diet trial — {protein}" and the derived provenance', () => {
   const html = text(
     renderReport(
       base({
-        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08' }),
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08', permittedFoods: primaryFood('Novel Duck', 'photo', 'duck') }),
         diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'derived', confirmedDay: null } }),
       }),
     ),
@@ -3760,7 +3765,7 @@ Deno.test('B-704 §7.4 — an OWNER target reads "owner-confirmed protein"', () 
   const html = text(
     renderReport(
       base({
-        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08' }),
+        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08', permittedFoods: primaryFood('Instinct Rabbit', 'photo', 'rabbit') }),
         diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay: null } }),
       }),
     ),
@@ -3774,13 +3779,58 @@ Deno.test('B-704 §7.4 — an owner target set after day 1 discloses "recorded o
   const html = text(
     renderReport(
       base({
-        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08' }),
+        trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08', permittedFoods: primaryFood('Instinct Rabbit', 'photo', 'rabbit') }),
         diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay: 8 } }),
       }),
     ),
   )
   assert.ok(/owner-confirmed protein/.test(html))
   assert.ok(/recorded on day 8/.test(html), 'a mid-trial confirmation is dated')
+})
+
+Deno.test('CUL-2492 — an owner protein over a label nobody read is "owner-entered", never "owner-confirmed"', () => {
+  for (const permittedFoods of [primaryFood('Instinct Rabbit', 'owner', 'rabbit'), []]) {
+    for (const confirmedDay of [null, 8]) {
+      const html = text(
+        renderReport(
+          base({
+            trial: trialBlockFixture({ trialDietLabels: ['Instinct Rabbit'], startedAt: '2026-05-08', permittedFoods }),
+            diet: proteinDiet({ trialTargetProtein: 'rabbit', trialProteinProvenance: { source: 'owner', confirmedDay } }),
+          }),
+        ),
+      )
+      assert.ok(!/owner-confirmed/.test(html), html.slice(0, 2000))
+      assert.ok(/owner-entered protein; label not read/.test(html))
+      if (confirmedDay) assert.ok(/recorded on day 8/.test(html))
+    }
+  }
+})
+
+Deno.test('CUL-2492 — a derived protein over a typed-in food record is not "read from the trial diet\'s label"', () => {
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck'], startedAt: '2026-05-08', permittedFoods: primaryFood('Novel Duck', 'owner', 'duck') }),
+        diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'derived', confirmedDay: null } }),
+      }),
+    ),
+  )
+  assert.ok(!/read from the trial diet/.test(html))
+  assert.ok(/as entered on the trial diet&rsquo;s food record; label not read/.test(html), html.slice(0, 2000))
+})
+
+Deno.test('CUL-2492 — one typed-in trial-diet food among two photo-read ones is not a label read', () => {
+  const permittedFoods = [...primaryFood('Novel Duck', 'photo', 'duck'), ...primaryFood('Duck Wet', 'owner', 'duck')]
+  const html = text(
+    renderReport(
+      base({
+        trial: trialBlockFixture({ trialDietLabels: ['Novel Duck', 'Duck Wet'], startedAt: '2026-05-08', permittedFoods }),
+        diet: proteinDiet({ trialTargetProtein: 'duck', trialProteinProvenance: { source: 'owner', confirmedDay: null } }),
+      }),
+    ),
+  )
+  assert.ok(!/owner-confirmed/.test(html))
+  assert.ok(/owner-entered protein; ingredient panel read for 1 of the 2 trial-diet foods/.test(html))
 })
 
 Deno.test('B-704 §6/TG-3 — the mismatch LEADS the safety band, names the consequence, and stays trial-level', () => {
@@ -3794,6 +3844,7 @@ Deno.test('B-704 §6/TG-3 — the mismatch LEADS the safety band, names the cons
         trialDietLabels: ['Novel Duck'],
         startedAt: '2026-05-08',
         antigenTally: [{ protein: 'chicken', feedings: 3, fromPermitted: 0 }],
+        permittedFoods: primaryFood('Novel Duck', 'photo', 'duck'),
       }),
       diet: proteinDiet({
         trialTargetProtein: 'duck', // the baseline is the food, coherent with the counts
@@ -4857,7 +4908,9 @@ Deno.test('§4.4 render — the table renders its title, coverage note and the H
     ], '2026-02-11'),
   })))
   assert.ok(/Medication history/.test(t))
-  assert.ok(/Lifetime of the record \(since Feb 2026\)/.test(t))
+  assert.ok(/Medications on record from Feb 2026, the earliest medication entry this report reads; a medication given before it would not appear/.test(t))
+  // CUL-2480: never named as the record's own lifetime.
+  assert.ok(!/Lifetime of the record/.test(t))
   assert.ok(/the medications logged in Culprit/.test(t))
   // Dates are described accurately for BOTH registers (regimen span vs dose span).
   assert.ok(/Dates are each course.s span/.test(t))
@@ -6201,7 +6254,7 @@ Deno.test('CUL-982 item 4 — a week with more than three starts says the count 
   )
   assert.ok(/4 starts this week/.test(html), 'count + week')
   assert.ok(!/starts &middot; May/.test(html), 'no date list past three starts')
-  assert.ok(/the supplement a on May 1; the supplement b on May 2; the supplement c on May 3; the supplement d on May 4/.test(html), 'the legend still carries every date')
+  assert.ok(/a \(entered as a supplement\) on May 1; b \(entered as a supplement\) on May 2; c \(entered as a supplement\) on May 3; d \(entered as a supplement\) on May 4/.test(html), 'the legend still carries every date')
 })
 
 // ── CUL-857: the weigh-in nudge ──
@@ -6708,7 +6761,7 @@ Deno.test('R-4 site 2 — a supplement carried only as an UNLINKED dose group re
   // so an OTC supplement dosed with no configured regimen — which is what an owner-bought
   // antihistamine is — rendered on three other pages and never here.
   const html = renderReport(base({ medications: [], unlinkedMedications: [unlinkedMed()] }))
-  const cell = text(appendixBRow(html, 'Supplements'))
+  const cell = text(appendixBRow(html, 'Entered as supplements'))
   assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'the supplement the rest of the report names is named here')
   assert.ok(!/None recorded/.test(cell), 'and the negative does not render over it')
 })
@@ -6731,14 +6784,14 @@ Deno.test('R-4 site 2 — a supplement named only in the concurrent-change list 
       ],
     }),
   )
-  const cell = text(appendixBRow(html, 'Supplements'))
+  const cell = text(appendixBRow(html, 'Entered as supplements'))
   assert.ok(!/^None recorded/.test(cell.trim()), 'a supplement the document names anywhere blocks the bare negative')
   assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(cell), 'and the row points at it')
 })
 
 Deno.test('R-4 site 2 — the reconciliation sits WITH the negative, not a page later in appendix D', () => {
   const html = renderReport(base({ medications: [], unlinkedMedications: [], concurrentChanges: [] }))
-  const cell = text(appendixBRow(html, 'Supplements')).trim()
+  const cell = text(appendixBRow(html, 'Entered as supplements')).trim()
   assert.ok(/^None recorded/.test(cell), 'a truly quiet record still gets the calm negative')
   assert.ok(/taken as food|with a meal/i.test(cell), 'the appendix D reconciliation is inlined at the claim')
   assert.ok(/not evidence/.test(cell), 'the claim is about the record')
@@ -7561,7 +7614,7 @@ Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table
     }),
   )
   const divider = plain(html.slice(html.indexOf('End of clinical summary'), html.indexOf('Appendix A —')))
-  assert.ok(/medication history \(lifetime\)/.test(divider), 'the table is still named in the contents line')
+  assert.ok(/medication history \(as far back as the record reads\)/.test(divider), 'the table is still named in the contents line')
   assert.ok(/un-lettered/.test(divider), 'and the reader is told it carries no letter')
   assert.ok(/before D|with D|D's sheet/.test(divider), 'and where to find it')
 })
@@ -8585,6 +8638,27 @@ Deno.test('CUL-1979 — the label-contamination row names the source of the food
   const owner = row('owner')
   assert.ok(/Entered by the owner, not read from a label photo/.test(owner), owner)
   assert.ok(!/photo of the label/.test(owner))
+})
+
+Deno.test('CUL-2505 — the contamination caveat names an allowed extra, the trial diet itself, or both', () => {
+  const chew = { foodItemId: 'fi-chew', foodKey: null, label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck', proteins: ['duck', 'chicken'] }
+  const diet = { ...chew, foodItemId: 'fi-duck', label: 'Novel Duck', role: 'primary_diet' as const, proteins: ['duck', 'pea'] }
+  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[] }>) => {
+    const html = text(renderReport(cleanTrialSnap(NO_HOUSEHOLD, { contamination })))
+    const i = html.lastIndexOf('so this record cannot establish that the elimination was clean')
+    assert.ok(i >= 0, 'the caveat renders')
+    return html.slice(Math.max(0, i - 300), i)
+  }
+  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
+  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(extra), extra)
+  const own = caveat([{ food: diet, extraProteins: ['pea'], derivedFromPrimary: [] }])
+  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea \(above\), $/.test(own), own)
+  assert.ok(!/fed during the trial, also lists/.test(own), own)
+  const both = caveat([
+    { food: diet, extraProteins: ['pea'], derivedFromPrimary: [] },
+    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] },
+  ])
+  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(both), both)
 })
 
 Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and the off-trial legend never says "no link"', () => {

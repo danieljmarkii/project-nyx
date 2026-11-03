@@ -133,6 +133,9 @@ const TRIAL_FOOD = {
   productName: 'Hydrolyzed HP',
   proteins: ['soy'],
   ingredientsNotes: 'Hydrolysed soy protein, rice, animal fats',
+  // CUL-2492: a panel captured AND read (the photo extraction's confidence), so the trial diet's
+  // identity may say "read from the label" and §7.2 keeps its affirmative tier.
+  extractionConfidence: { proteins: 0.92 },
 }
 
 const PERMITTED_TREAT = {
@@ -402,8 +405,9 @@ Deno.test('§12 — an overlapping anti-pruritic renders inside the trial block,
   // Without this a derm trial is unreadable — a steroid course and a successful
   // elimination produce the identical improving curve — but flagging it as a
   // compliance violation would scold an owner for following their vet.
-  assert.ok(/This is not a compliance problem/.test(block), 'not a compliance problem — that half is true')
-  assert.ok(/it bears directly on reading the symptom trend/.test(block), '…and the interpretive half is not downplayed')
+  // CUL-2490 (PM ruling (a)): no compliance claim either way, and nothing scolds.
+  assert.ok(!/compliance problem/.test(block), 'no claim about compliance')
+  assert.ok(/It bears directly on reading the symptom trend/.test(block), '…and the interpretive half is not downplayed')
   // CUL-2478 (PM ruling (a)): no claim about what is routinely prescribed.
   assert.ok(!/[Rr]outinely prescribed/.test(block), block)
 })
@@ -5568,27 +5572,27 @@ for (const [tz, now] of [
 // Re-captured at CUL-2443, which names the middle day an odd span leaves in neither half: a text
 // diff of all 21 renders against the merge-base differed only in that "Symptoms vs logging" line.
 const CUL_2094_GOLDEN: Record<string, string> = {
-  'endedPast/America/Phoenix': '4627006b45933897',
-  'endedPast/window/America/Phoenix': '51531a22bcef885f',
-  'endedToday/America/Phoenix': 'd561e04facb189a1',
-  'endedToday/window/America/Phoenix': '6502a43c62f5e12d',
-  'endedOnTarget/America/Phoenix': 'c72e12776b2efe50',
-  'endedOnTarget/window/America/Phoenix': '1af1ff8f8347b6b7',
-  'active/America/Phoenix': 'eb028b1a7b398497',
-  'endedPast/Pacific/Noumea': '4627006b45933897',
-  'endedPast/window/Pacific/Noumea': '51531a22bcef885f',
-  'endedToday/Pacific/Noumea': 'd561e04facb189a1',
-  'endedToday/window/Pacific/Noumea': '6502a43c62f5e12d',
-  'endedOnTarget/Pacific/Noumea': 'c72e12776b2efe50',
-  'endedOnTarget/window/Pacific/Noumea': '1af1ff8f8347b6b7',
-  'active/Pacific/Noumea': '1dd6b3e473f595c8',
-  'endedPast/UTC': '4627006b45933897',
-  'endedPast/window/UTC': '51531a22bcef885f',
-  'endedToday/UTC': 'd561e04facb189a1',
-  'endedToday/window/UTC': '6502a43c62f5e12d',
-  'endedOnTarget/UTC': 'c72e12776b2efe50',
-  'endedOnTarget/window/UTC': '1af1ff8f8347b6b7',
-  'active/UTC': 'eb028b1a7b398497',
+  'endedPast/America/Phoenix': 'cd5b6b8fb0e85a2d',
+  'endedPast/window/America/Phoenix': '857ee73830555eab',
+  'endedToday/America/Phoenix': 'f2e9823832db5920',
+  'endedToday/window/America/Phoenix': 'b4c2e0f1a6667f96',
+  'endedOnTarget/America/Phoenix': '25e5de5eb3117848',
+  'endedOnTarget/window/America/Phoenix': '719d9f6d3efd24ed',
+  'active/America/Phoenix': 'f8f887a36a5e2372',
+  'endedPast/Pacific/Noumea': 'cd5b6b8fb0e85a2d',
+  'endedPast/window/Pacific/Noumea': '857ee73830555eab',
+  'endedToday/Pacific/Noumea': 'f2e9823832db5920',
+  'endedToday/window/Pacific/Noumea': 'b4c2e0f1a6667f96',
+  'endedOnTarget/Pacific/Noumea': '25e5de5eb3117848',
+  'endedOnTarget/window/Pacific/Noumea': '719d9f6d3efd24ed',
+  'active/Pacific/Noumea': 'ded63778f07d5524',
+  'endedPast/UTC': 'cd5b6b8fb0e85a2d',
+  'endedPast/window/UTC': '857ee73830555eab',
+  'endedToday/UTC': 'f2e9823832db5920',
+  'endedToday/window/UTC': 'b4c2e0f1a6667f96',
+  'endedOnTarget/UTC': '25e5de5eb3117848',
+  'endedOnTarget/window/UTC': '719d9f6d3efd24ed',
+  'active/UTC': 'f8f887a36a5e2372',
 }
 
 Deno.test('CUL-2094 — every trial the fix does not reach renders byte-identically (before/after)', async () => {

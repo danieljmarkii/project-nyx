@@ -6444,3 +6444,28 @@ Deno.test('CUL-2286 — a partial weigh-in pull never carries the noise caveat (
   assert.ok(!/moves about that much on its own/.test(cut), 'never over a record that did not load in full')
   assert.ok(!/inside a home scale/.test(cut))
 })
+
+// ── CUL-2480 instance 3: partial doses outside the window still count ───────────────────────────
+
+Deno.test('CUL-2480 — a course whose partial doses all fall before the window still says how many were partial', () => {
+  const rec = lateConfiguredCourse()
+  // The four doses of Jul 17–18 were partial; the window (Jul 25 – Aug 4) holds none.
+  const lifetimeDoses = rec.lifetimeDoses.map((d, i) => (i < 4 ? { ...d, adherence: 'partial' } : d))
+  const snap = assembleReport(
+    baseInput({
+      now: MED_NOW,
+      ...rec,
+      lifetimeDoses,
+      doses: lifetimeDoses,
+      requestedWindow: { startDate: '2026-07-25', endDate: '2026-08-04' },
+    }),
+  )
+  const otic = snap.medications.find((m) => m.drugName === 'Motozol')!
+  assert.equal(otic.partialDoses, 0, 'the window holds no partial dose')
+  assert.equal(otic.lifetimePartialDoses, 4, 'the whole record does')
+  const entry = snap.medicationHistory!.entries.find((e) => e.drugName === 'Motozol')!
+  assert.equal(entry.partialDoses, 4)
+  const html = renderReport(snap).replace(/<[^>]+>/g, '')
+  assert.ok(/administered across the whole course, 4 of them partial/.test(html), 'page 1')
+  assert.ok(/28 of 28 \(4 partial\)/.test(html), 'the lifetime table')
+})
