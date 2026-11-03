@@ -415,3 +415,45 @@ jobs:
 
       - name: Extract and check
         run: scripts/report-extract/run.sh "$RUNNER_TEMP/extract"
+
+  # Migration 118's withdrawal clear, run for real (CUL-2465 instance 3). An owner's "no" to the
+  # AI summary must clear it from their unsent drafts at once. guards/vetReportsPolicy.test.ts pins
+  # the text, and scripts/probes/vet-report-118 proves the behaviour, but nothing in CI ran the
+  # probe: a later migration that made the clear fail would show only as a Postgres WARNING. It
+  # replays 110, 113, 114, 100, 112 and 118 (minus 118's pg_cron schedule) on a throwaway Postgres
+  # 17 and runs every case. The two other variants replay without 118 and without its freeze arm,
+  # and assert the hole is there, so the probe is proven to see what 118 changes. Not a required
+  # check (those are named in the `main` ruleset).
+  vet-report-withdrawal-probe:
+    name: Vet report withdrawal clear (Postgres probe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Probe (118 as written, then without 118, then without its freeze arm)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variant in full no118 no-arm; do
+            echo "::group::VARIANT=$variant"
+            VARIANT="$variant" bash scripts/probes/vet-report-118/run.sh
+            echo "::endgroup::"
+          done
