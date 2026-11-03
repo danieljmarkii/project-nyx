@@ -17,6 +17,7 @@ import { countRecordGaps, getSyncStatus } from './db';
 import { clearTransientFiles } from './transientFiles';
 import { waitFor } from '@testing-library/react-native';
 import { syncNow } from './sync';
+import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
 import * as Print from 'expo-print';
 import { fetchOwnerSurname } from './profile';
 import * as Sharing from 'expo-sharing';
@@ -37,6 +38,11 @@ jest.mock('../hooks/useAppConfig', () => ({
   allowlistFlagNow: (key: string) => key === 'report_document_v2' && mockDocumentEligible,
 }));
 jest.mock('./sync', () => ({ syncNow: jest.fn() }));
+// CUL-2468: the widget's capture inbox, which both gates ingest and then count.
+jest.mock('./captureInbox', () => ({ ingestCaptureInbox: jest.fn(), countUnclaimedInbox: jest.fn() }));
+jest.mock('../store/petStore', () => ({
+  usePetStore: { getState: () => ({ pets: [{ id: 'pet-a' }, { id: 'pet-b' }] }) },
+}));
 jest.mock('expo-print', () => ({ printToFileAsync: jest.fn() }));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
 
@@ -425,15 +431,23 @@ describe('shareReportPdf', () => {
 // held positive evidence of unsent rows. These tests pin every shape.
 
 describe('flushBeforeReport (B-534)', () => {
-  const mockedStatus = getSyncStatus as jest.Mock;
+  // CUL-2471: counted with the one-statement reader, as the send is. `mockedStatus` is the
+  // two-read banner count, kept only to assert it is never reached.
+  const mockedStatus = countRecordGaps as jest.Mock;
+  const mockedBanner = getSyncStatus as jest.Mock;
   const mockedSyncNow = syncNow as jest.Mock;
-  const status = (pendingCount: number, quarantinedCount = 0) => ({
-    pendingCount, oldestPendingAt: null, quarantinedCount,
-  });
+  const status = (unsent: number, refused = 0) => ({ unsent, refused });
 
   beforeEach(() => {
     mockedStatus.mockReset();
+    mockedBanner.mockReset();
     mockedSyncNow.mockReset().mockResolvedValue(undefined);
+    (ingestCaptureInbox as jest.Mock).mockReset().mockResolvedValue(undefined);
+    (countUnclaimedInbox as jest.Mock).mockReset().mockReturnValue(0);
+  });
+
+  afterEach(() => {
+    expect(mockedBanner).not.toHaveBeenCalled();
   });
 
   it('nothing pending → no flush, clean counts', async () => {
@@ -590,6 +604,8 @@ describe('flushBeforeSend (CUL-2457)', () => {
     mockedGaps.mockReset();
     mockedStatus.mockReset();
     mockedSyncNow.mockReset().mockResolvedValue(undefined);
+    (ingestCaptureInbox as jest.Mock).mockReset().mockResolvedValue(undefined);
+    (countUnclaimedInbox as jest.Mock).mockReset().mockReturnValue(0);
   });
 
   it('counts with the one-statement reader, never the two-read banner count (adversarial pass 2)', async () => {
@@ -623,5 +639,79 @@ describe('flushBeforeSend (CUL-2457)', () => {
     await expect(flushBeforeSend()).resolves.toEqual({ pending: 2, quarantined: 0 });
     mockedGaps.mockResolvedValueOnce(gaps(3)).mockRejectedValueOnce(new Error('boom'));
     await expect(flushBeforeSend()).resolves.toEqual({ pending: 3, quarantined: 0 });
+  });
+});
+
+describe.each([
+  ['flushBeforeReport', flushBeforeReport],
+  ['flushBeforeSend', flushBeforeSend],
+])('%s and the widget capture inbox (CUL-2468)', (_name, gate) => {
+  const mockedGaps = countRecordGaps as jest.Mock;
+  const mockedSyncNow = syncNow as jest.Mock;
+  const mockedIngest = ingestCaptureInbox as jest.Mock;
+  const mockedInbox = countUnclaimedInbox as jest.Mock;
+  let order: string[];
+
+  beforeEach(() => {
+    order = [];
+    mockedGaps.mockReset();
+    mockedSyncNow.mockReset().mockImplementation(async () => {
+      order.push('sync');
+    });
+    mockedIngest.mockReset().mockImplementation(async () => {
+      order.push('ingest');
+    });
+    mockedInbox.mockReset();
+  });
+
+  it('ingests the inbox, with the account pets, before anything is counted or flushed', async () => {
+    mockedInbox.mockImplementation(() => (order.push('inbox'), 0));
+    mockedGaps.mockImplementation(async () => (order.push('rows'), { unsent: 0, refused: 0 }));
+    await expect(gate()).resolves.toEqual({ pending: 0, quarantined: 0 });
+    expect(order).toEqual(['ingest', 'inbox', 'rows']);
+    expect([...(mockedIngest.mock.calls[0][0] as Set<string>)]).toEqual(['pet-a', 'pet-b']);
+    expect([...(mockedInbox.mock.calls[0][0] as Set<string>)]).toEqual(['pet-a', 'pet-b']);
+  });
+
+  it('a treat still in the inbox after the ingest counts as pending, and earns the flush', async () => {
+    // The trial edge: a deferred widget treat is on neither SQLite nor the server.
+    mockedInbox.mockReturnValueOnce(1).mockReturnValueOnce(1);
+    mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
+    await expect(gate()).resolves.toEqual({ pending: 1, quarantined: 0 });
+    expect(mockedSyncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('inbox and rows add; the re-count reads the inbox again', async () => {
+    mockedInbox.mockReturnValueOnce(2).mockReturnValueOnce(0);
+    mockedGaps.mockResolvedValueOnce({ unsent: 1, refused: 1 }).mockResolvedValueOnce({ unsent: 0, refused: 1 });
+    await expect(gate()).resolves.toEqual({ pending: 0, quarantined: 1 });
+    expect(mockedInbox).toHaveBeenCalledTimes(2);
+  });
+
+  it('the inbox is read BEFORE the rows, on the re-count too (a record mid-ingest double-counts, never vanishes)', async () => {
+    mockedInbox.mockImplementation(() => (order.push('inbox'), 1));
+    mockedGaps.mockImplementation(async () => (order.push('rows'), { unsent: 0, refused: 0 }));
+    await gate();
+    expect(order).toEqual(['ingest', 'inbox', 'rows', 'sync', 'inbox', 'rows']);
+  });
+
+  it('a failed ingest does not stop the gate, and its files still count', async () => {
+    mockedIngest.mockRejectedValueOnce(new Error('ingest boom'));
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockedInbox.mockReturnValue(3);
+    mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
+    await expect(gate()).resolves.toEqual({ pending: 3, quarantined: 0 });
+  });
+
+  it('an inbox that cannot be listed fails the first count like the rows would', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockedInbox.mockImplementation(() => {
+      throw new Error('list boom');
+    });
+    mockedGaps.mockResolvedValue({ unsent: 0, refused: 0 });
+    const r = await gate();
+    // The freshness line reads no evidence as silence; the send reads it as unknown (null).
+    expect(r === null || (r.pending === 0 && r.quarantined === 0)).toBe(true);
+    expect(mockedSyncNow).not.toHaveBeenCalled();
   });
 });

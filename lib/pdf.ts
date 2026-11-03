@@ -1,7 +1,9 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File } from 'expo-file-system';
-import { countRecordGaps, getSyncStatus } from './db';
+import { countRecordGaps } from './db';
+import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
+import { usePetStore } from '../store/petStore';
 import { transientDirectory } from './transientFiles';
 import { supabase } from './supabase';
 import { syncNow } from './sync';
@@ -107,7 +109,7 @@ export interface VetReport {
 //    itself long synced) produced an empty safety band on a refusing cat, with
 //    the staleness zone advertising currency. The report reads events, meals,
 //    weights, doses, visits and trials alike, so the honest question is "has
-//    this phone sent everything?", which `getSyncStatus` already answers across
+//    this phone sent everything?", which the sync queue count already answers across
 //    every queue — and the flush is `syncNow()`, the one documented cycle with
 //    the FK ordering and the in-flight guard, not a bespoke two-table push
 //    running concurrently against it.
@@ -128,26 +130,46 @@ export interface ReportFreshness {
 }
 
 export async function flushBeforeReport(): Promise<ReportFreshness> {
-  return (await flushAndCount(bannerCount)) ?? { pending: 0, quarantined: 0 };
+  return (await flushAndCount(oneReadCount)) ?? { pending: 0, quarantined: 0 };
 }
 
 type UnsentCounter = () => Promise<ReportFreshness>;
-
-const bannerCount: UnsentCounter = async () => {
-  const s = await getSyncStatus();
-  return { pending: s.pendingCount, quarantined: s.quarantinedCount };
-};
 
 /**
  * ONE statement (`countRecordGaps`, Ask's reader). `getSyncStatus` counts pending and refused in
  * two reads, and a drain that marks a parent synced and then re-arms its refused child between
  * them (refused → pending) makes both answer zero while the child is still on this phone
- * (CUL-2457 adversarial pass 2). Same rows, partitioned by the same `sync_error` test.
+ * (CUL-2457 adversarial pass 2). Same rows, partitioned by the same `sync_error` test. Both gates
+ * use it: the send's calm check since CUL-2457, the report's freshness line since CUL-2471.
  */
 const oneReadCount: UnsentCounter = async () => {
   const g = await countRecordGaps();
   return { pending: g.unsent, quarantined: g.refused };
 };
+
+/** The pets whose widget captures this phone may still hold (the ingest's own allowlist). */
+function accountPetIds(): ReadonlySet<string> {
+  return new Set(usePetStore.getState().pets.map((p) => p.id));
+}
+
+/**
+ * CUL-2468: the widget's capture inbox, counted with the rows. A capture waits there (outside
+ * SQLite) until the app ingests it, so a SQLite-only count read a treat logged from the widget
+ * during a diet trial as "everything sent" while the server, and the report's off-diet read, had
+ * never seen it. The gate ingests first (below); what is still in the inbox after that counts as
+ * pending: it has not reached the server, and connecting plus reopening is what moves it.
+ *
+ * ORDER: the inbox is read BEFORE the rows. A foreground ingest running beside this gate only
+ * ever moves a record inbox → rows, so read in this order a record caught mid-move is counted
+ * twice (an over-warn), never by neither (the CUL-2471 two-read hazard, across two stores).
+ */
+function withInbox(count: UnsentCounter): UnsentCounter {
+  return async () => {
+    const inbox = countUnclaimedInbox(accountPetIds());
+    const rows = await count();
+    return { pending: rows.pending + inbox, quarantined: rows.quarantined };
+  };
+}
 
 /**
  * CUL-2457, the send's half of the same gate: flush, then count what is still on this phone.
@@ -160,7 +182,13 @@ export async function flushBeforeSend(): Promise<ReportFreshness | null> {
   return flushAndCount(oneReadCount);
 }
 
-async function flushAndCount(count: UnsentCounter): Promise<ReportFreshness | null> {
+async function flushAndCount(rowCount: UnsentCounter): Promise<ReportFreshness | null> {
+  // Take the widget's captures in first, so they ride the flush below like any other row. The
+  // same allowlisted, sign-out-fenced ingest the foreground runs (hooks/useSync.ts); idempotent,
+  // so running beside that one is harmless. Best effort: a failed ingest leaves its files in the
+  // inbox, where the count below still sees them.
+  await ingestCaptureInbox(accountPetIds()).catch((e) => console.warn('[Report] inbox ingest failed:', e));
+  const count = withInbox(rowCount);
   let counts: ReportFreshness;
   try {
     counts = await count();

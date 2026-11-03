@@ -52,7 +52,7 @@ jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => true }));
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { generateVetReport, type VetReport } from '../lib/pdf';
 import { REPORT_FRONT_SILHOUETTE_TEST_ID } from '../components/surfaces/waits/ReportFrontSilhouette';
-import ReportScreen, { V1_PREVIEW_TEST_ID } from './report';
+import ReportScreen, { V1_PREVIEW_TEST_ID, boxedV1Html } from './report';
 import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS } from '../lib/examRoom';
 import { boxedPreviewHtml } from '../components/reportV2/ReportPreviewV2';
 
@@ -115,7 +115,8 @@ it('the v1 frame is boxed: every URL reaches the load check, which refuses all b
   };
   expect(p.originWhitelist).toEqual(REPORT_WEBVIEW_ORIGINS);
   expect(p.javaScriptEnabled).toBe(false);
-  expect(p.source.html).toBe(boxedPreviewHtml('<html><head></head><body>v1</body></html>'));
+  expect(p.source.html).toBe(boxedV1Html('<html><head></head><body>v1</body></html>'));
+  expect(p.source.html.indexOf('Content-Security-Policy')).toBeLessThan(p.source.html.indexOf('<body>'));
   expect(p.source.html).toContain(`content="${EXAM_CSP}"`);
   expect(typeof p.onOpenWindow).toBe('function');
   expect(p.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
@@ -174,4 +175,11 @@ it('asking for v2, the first build waits on the v2 Front Page; asking for v1, on
   const v1 = render(<ReportScreen />);
   await waitFor(() => expect(v1.getByTestId('v1-silhouette')).toBeTruthy());
   expect(v1.queryByTestId(REPORT_FRONT_SILHOUETTE_TEST_ID, hidden)).toBeNull();
+});
+
+it('boxedV1Html: the policy lands in a real head, never in a <header>, and without a head after the doctype', () => {
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+  expect(boxedV1Html('<html><head><title>t</title></head><body/></html>')).toBe(`<html><head>${meta}<title>t</title></head><body/></html>`);
+  expect(boxedV1Html('<!DOCTYPE html><body><header>h</header></body>')).toBe(`<!DOCTYPE html>${meta}<body><header>h</header></body>`);
+  expect(boxedV1Html('<body>x</body>')).toBe(`${meta}<body>x</body>`);
 });

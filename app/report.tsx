@@ -25,7 +25,7 @@ import {
   flushBeforeReport, flushBeforeSend, generateVetReport, reportFreshnessLine, reportVersionFor, shareReportPdf,
   type VetReport, type VetReportParams,
 } from '../lib/pdf';
-import { ReportPreviewV2, boxedPreviewHtml } from '../components/reportV2/ReportPreviewV2';
+import { ReportPreviewV2 } from '../components/reportV2/ReportPreviewV2';
 import { SendSheet, type SendAction } from '../components/reportV2/SendSheet';
 import { SendConfirmation } from '../components/reportV2/SendConfirmation';
 import { fetchComposerOpen } from '../lib/reportComposerApi';
@@ -45,7 +45,7 @@ import {
   isPreviewLoadAllowed,
   type PreviewView,
 } from '../lib/reportPreviewV2';
-import { REPORT_WEBVIEW_ORIGINS } from '../lib/examRoom';
+import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS, withExamCsp } from '../lib/examRoom';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -141,6 +141,24 @@ export const V1_PREVIEW_TEST_ID = 'report-v1-preview';
 
 /** Android's new-window path, refused (CUL-2486): the v1 frame opens none, as the v2 frames don't. */
 function refuseWindow(): void {}
+
+/**
+ * The v1 report with the room's CSP (CUL-2486), the way the v2 preview boxes its documents: in a
+ * real `<head>` when there is one (`withExamCsp` alone would also take a `<header>`, CUL-2470),
+ * else at the very top, after a doctype, where the parser places it in the implied head. Never
+ * shown without it.
+ */
+export function boxedV1Html(html: string): string {
+  if (/<head(\s[^>]*)?>/i.test(html)) {
+    const withCsp = withExamCsp(html);
+    if (withCsp !== null) return withCsp;
+  }
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(html);
+  if (doctype === null) return `${meta}${html}`;
+  const at = doctype.index + doctype[0].length;
+  return `${html.slice(0, at)}${meta}${html.slice(at)}`;
+}
 
 type RangeMode = 'default' | 'custom';
 
@@ -521,7 +539,7 @@ export default function ReportScreen() {
   // it (CUL-2458), so the plain WebView below only ever shows a v1 report.
   const previewV2 = report ? hasPhonePreview(report) : askingV2 && building;
   // The v1 frame's document, boxed with the room's CSP (CUL-2486). Null while v2 shows instead.
-  const v1Html = useMemo(() => (report && !previewV2 ? boxedPreviewHtml(report.html) : null), [report, previewV2]);
+  const v1Html = useMemo(() => (report && !previewV2 ? boxedV1Html(report.html) : null), [report, previewV2]);
   // A new document opens on its phone layout; "View as printed" is a look, not a mode.
   useEffect(() => {
     setPreviewView('phone');
