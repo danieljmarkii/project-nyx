@@ -1,0 +1,345 @@
+// The trial section says only what the record shows (CUL-2460 ruling (a), CUL-2481, CUL-2478 ruling
+// (a), CUL-2479 ruling (a)).
+//
+// Every fixture is assembled through `assembleReport` (C-35) or is a canonical capture (nyx-live) or
+// the demo story (Cooper). Local days are America/New_York; synthetic instants are 14:00 or 19:00 UTC,
+// the same local day there (C-29).
+import { strict as assert } from 'node:assert'
+import { assembleReport, type ReportEventInput, type ReportInput, type ReportLookInput } from './report.ts'
+import { dietTrialSection } from './render.ts'
+import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
+import { cooperInput } from './cooperDemo.testutil.ts'
+
+const NOW = '2026-07-02T12:00:00Z'
+const TZ = 'America/New_York'
+
+let seq = 0
+const nextId = (p: string): string => `${p}-${String(++seq).padStart(4, '0')}`
+
+function days(from: string, to: string): string[] {
+  const out: string[] = []
+  const end = Date.parse(`${to}T00:00:00Z`)
+  for (let ms = Date.parse(`${from}T00:00:00Z`); ms <= end; ms += 86_400_000) out.push(new Date(ms).toISOString().slice(0, 10))
+  return out
+}
+
+type Food = { id: string; brand: string; product: string; protein: string }
+const HP: Food = { id: 'f-hp', brand: 'Royal Canin', product: 'Hydrolyzed HP', protein: 'soy' }
+const CHICKEN: Food = { id: 'f-ck', brand: 'Applaws', product: 'Chicken Breast', protein: 'chicken' }
+
+function meal(date: string, food: Food = HP, intakeRating: string | null = null, hour = '14'): ReportEventInput {
+  const occurredAt = `${date}T${hour}:00:00Z`
+  return {
+    id: nextId('meal'),
+    type: 'meal',
+    occurredAt,
+    occurredAtConfidence: 'witnessed',
+    occurredAtEarliest: null,
+    occurredAtLatest: null,
+    severity: null,
+    notes: null,
+    loggedAt: occurredAt,
+    meal: {
+      foodItemId: food.id,
+      intakeRating,
+      quantity: null,
+      foodType: 'meal',
+      format: null,
+      primaryProtein: food.protein,
+      proteins: [food.protein],
+      ingredientsNotes: null,
+      extractionConfidence: null,
+      brand: food.brand,
+      productName: food.product,
+    },
+  } as ReportEventInput
+}
+
+function symptom(date: string, type = 'vomit'): ReportEventInput {
+  const occurredAt = `${date}T19:00:00Z`
+  return {
+    id: nextId(type),
+    type,
+    occurredAt,
+    occurredAtConfidence: 'witnessed',
+    occurredAtEarliest: null,
+    occurredAtLatest: null,
+    severity: null,
+    notes: null,
+    loggedAt: occurredAt,
+    meal: null,
+  }
+}
+
+function look(day: string, words: string[]): ReportLookInput {
+  return {
+    eventId: nextId('look'),
+    localDay: day,
+    createdAt: `${day}T19:00:00Z`,
+    occurredAt: `${day}T19:00:00Z`,
+    outcome: words.length > 0 ? 'observed' : 'nothing_unusual',
+    words,
+    vocabVersion: 1,
+    notes: null,
+  }
+}
+
+/** A 28-day trial, Jun 1 – Jun 28, ended with the owner's "better"; the window runs on to Jul 2. */
+function endedTrial(o: { events?: ReportEventInput[]; mealEvents?: ReportEventInput[]; looks?: ReportLookInput[]; trialStart?: string }): ReportInput {
+  const start = o.trialStart ?? '2026-06-01'
+  return {
+    now: NOW,
+    engineFlags: { on: [], readOk: true },
+    timezone: TZ,
+    pet: { id: 'pet-1', name: 'Cooper', species: 'dog', breed: 'Labrador', sex: 'male', dateOfBirth: '2020-01-01', weightKg: 31 },
+    ownerName: 'Jordan',
+    events: [...(o.mealEvents ?? days('2026-05-20', '2026-07-02').map((d) => meal(d))), ...(o.events ?? [])],
+    aiAnalyses: [],
+    weightChecks: [],
+    doses: [],
+    medications: [],
+    medicationItems: [],
+    dietTrials: [
+      {
+        id: 'trial-1',
+        foodItemId: 'f-hp',
+        startedAt: start,
+        targetDurationDays: 28,
+        status: 'completed',
+        completedAt: '2026-06-28',
+        endedAt: '2026-06-28',
+        indication: 'gi',
+        vetName: 'Dr. Chen',
+        foodLabel: 'Royal Canin Hydrolyzed HP',
+        primaryProtein: 'soy',
+        proteins: ['soy'],
+        outcome: 'improved',
+        outcomeNotes: null,
+        stoppedReason: null,
+        allowedFoods: [
+          {
+            foodItemId: 'f-hp',
+            foodLabel: 'Royal Canin Hydrolyzed HP',
+            role: 'primary_diet',
+            allowedFrom: start,
+            allowedUntil: null,
+            primaryProtein: 'soy',
+            brand: 'Royal Canin',
+            productName: 'Hydrolyzed HP',
+            proteins: ['soy'],
+            ingredientsNotes: 'Hydrolysed soy protein, rice',
+          },
+        ],
+      },
+    ],
+    vetVisits: [],
+    feedingArrangements: [],
+    conditions: [],
+    lookRows: o.looks ?? [],
+    lookRowsComplete: true,
+    audience: { kind: 'owner', includeLookNotes: true },
+  } as ReportInput
+}
+
+function plain(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&rarr;/g, '→')
+    .replace(/&ndash;/g, '–')
+    .replace(/&times;/g, '×')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+}
+
+/** A kv row's value by its label: anchored, never `.*`. */
+function row(html: string, label: string): string | null {
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const m = html.match(new RegExp(`<div class="kv"><span class="k">${esc}</span><span>([\\s\\S]*?)</span></div>`))
+  return m ? plain(m[1]) : null
+}
+
+const FROM = 'From the record'
+const trialHtml = (input: ReportInput): string => dietTrialSection(assembleReport(input))
+
+// ── CUL-2460 instances 1 and 6: the first week beside the last, as counts ──────────────────────
+
+Deno.test('CUL-2460 — the first trial week is counted beside the last, per sign, as a pair of counts', () => {
+  const html = trialHtml(
+    endedTrial({ events: [symptom('2026-06-02'), symptom('2026-06-03'), symptom('2026-06-05', 'cough'), symptom('2026-06-25')] }),
+  )
+  const r = row(html, FROM)!
+  assert.ok(r.includes('Logged in the trial’s first 7 days, Jun 1 – Jun 7, 2026: 2 vomiting, 1 coughing.'), r)
+  assert.ok(r.includes('Per sign, first week against last: vomiting 2 and 1, coughing 1 and 0.'), r)
+  // Counts, never a reading of them.
+  assert.ok(!/better|worse|improv|fewer|more than/i.test(r), r)
+})
+
+Deno.test('CUL-2460 — a trial with no sign in either week says so of both, and draws no pair', () => {
+  // Instance 6: "resolved" over a quiet last week no longer reads as the only evidence.
+  const r = row(trialHtml(endedTrial({})), FROM)!
+  assert.ok(r.startsWith('No symptom event logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026.'), r)
+  assert.ok(r.includes('No symptom event logged in the trial’s first 7 days, Jun 1 – Jun 7, 2026.'), r)
+  assert.ok(!r.includes('Per sign'), r)
+})
+
+Deno.test('CUL-2460 — a trial too short for two separate weeks says so, and never counts a day twice', () => {
+  // A 10-day trial: the first and last weeks would overlap on four days.
+  const html = trialHtml(endedTrial({ trialStart: '2026-06-19', events: [symptom('2026-06-23')] }))
+  const r = row(html, FROM)!
+  assert.ok(r.includes('too few for a first week to be set beside the last without counting a day twice'), r)
+  assert.ok(!r.includes('Per sign'), r)
+})
+
+// ── CUL-2460 instance 2 / CUL-2481 item 1: off-diet feedings in the counted week ───────────────
+
+Deno.test('CUL-2460 — off-diet feedings inside the counted week are counted beside it', () => {
+  const mealEvents = [
+    ...days('2026-05-20', '2026-07-02').map((d) => meal(d)),
+    meal('2026-06-26', CHICKEN, null, '19'),
+    meal('2026-06-27', CHICKEN, null, '19'),
+    meal('2026-06-27', CHICKEN, null, '20'),
+  ]
+  const r = row(trialHtml(endedTrial({ mealEvents, events: [symptom('2026-06-27')] })), FROM)!
+  assert.ok(
+    r.startsWith('Logged in the trial’s last 7 days, Jun 22 – Jun 28, 2026: 1 vomiting. 3 feedings in those days were off the trial diet (dated in appendix C).'),
+    r,
+  )
+  // Not said of the first week, which held none.
+  assert.equal(r.match(/off the trial diet/g)?.length, 1, r)
+})
+
+Deno.test('CUL-2481 — Nyx: the 11 chicken feedings of Oct 18–20 sit beside the owner’s end-of-trial week', () => {
+  const r = row(dietTrialSection(nyxLiveSnapshot()), FROM)!
+  assert.ok(r.includes('Oct 14 – Oct 20, 2026: 3 vomiting, 1 sneezing;'), r)
+  assert.ok(r.includes('11 feedings in those days were off the trial diet (dated in appendix C).'), r)
+  assert.ok(r.includes('Per sign, first week against last: vomiting 4 and 3, coughing 1 and 0, sneezing 0 and 1.'), r)
+  assert.ok(r.includes('Logged in the first 7 trial days this report covers, Sep 16 – Sep 22, 2026: 4 vomiting, 1 coughing;'), r)
+})
+
+// ── CUL-2460 instance 7: the pre-trial comparison ─────────────────────────────────────────────
+
+Deno.test('CUL-2460 — a window with no pre-trial day says the comparison cannot be made here', () => {
+  const first = row(trialHtml(endedTrial({})), FROM)!
+  assert.ok(first.includes('This report’s window opens on the trial’s first day, so the comparison with before the trial cannot be made from this report.'), first)
+  const nyx = row(dietTrialSection(nyxLiveSnapshot()), FROM)!
+  assert.ok(nyx.includes('This report’s window opens after the trial began, so the comparison with before the trial cannot be made from this report.'), nyx)
+})
+
+Deno.test('CUL-2460 — a window that holds days before the trial says nothing of the kind', () => {
+  const input = endedTrial({})
+  input.requestedWindow = { startDate: '2026-05-20', endDate: '2026-07-02' }
+  const snap = assembleReport(input)
+  assert.ok(snap.scope.startDate < '2026-06-01', snap.scope.startDate)
+  const r = row(dietTrialSection(snap), FROM)!
+  assert.ok(!/comparison with before the trial/.test(r), r)
+})
+
+// ── CUL-2460 instance 12: a pointer to marked looks, never a count ────────────────────────────
+
+Deno.test('CUL-2460 — looks marking a concern in the counted week are pointed at, not counted', () => {
+  const looks = [look('2026-06-23', ['hiding']), look('2026-06-24', ['hunched', 'drooling']), look('2026-06-25', ['lively']), look('2026-06-26', [])]
+  const html = trialHtml(endedTrial({ looks }))
+  const r = row(html, FROM)!
+  assert.ok(/The owner’s daily look marks a concern on 2 of those days \(appendix [A-Z]\); looks are counted in no figure on this report\./.test(r), r)
+  // The signs count is untouched by them.
+  assert.ok(r.startsWith('No symptom event logged in the trial’s last 7 days'), r)
+  // An activity word or "nothing unusual" alone is no pointer.
+  const quiet = row(trialHtml(endedTrial({ looks: [look('2026-06-25', ['lively']), look('2026-06-26', [])] })), FROM)!
+  assert.ok(!/daily look/.test(quiet), quiet)
+})
+
+// ── CUL-2481 item 2: off-list foods fed during the trial are never "new" ──────────────────────
+
+Deno.test('CUL-2481 — Nyx: a food fed in the trial’s last days is said to have been fed during it', () => {
+  const html = dietTrialSection(nyxLiveSnapshot())
+  assert.equal(row(html, 'New foods after the trial'), null)
+  const r = row(html, 'Off-list foods after the trial')!
+  assert.ok(r.includes('Applaws Chicken Breast in broth: 12 feedings on 8 days after the trial, Oct 21 – Oct 28'), r)
+  assert.ok(r.includes('Also fed during the trial: 4 feedings from Oct 19, off the trial diet (dated in appendix C).'), r)
+  assert.ok(r.includes('Blue Buffalo Tastefuls Purées with Chicken: 18 feedings on 7 days after the trial, Oct 21 – Oct 27. Also fed during the trial: 7 feedings from Oct 18'), r)
+})
+
+Deno.test('CUL-2481 — an assembled report carries the in-trial feedings, and a food first fed after says nothing', () => {
+  const mealEvents = [
+    ...days('2026-05-20', '2026-07-02').map((d) => meal(d)),
+    meal('2026-06-27', CHICKEN, null, '19'),
+    meal('2026-06-29', CHICKEN, null, '19'),
+    meal('2026-06-30', CHICKEN, null, '19'),
+  ]
+  const snap = assembleReport(endedTrial({ mealEvents }))
+  const food = snap.trial!.newFoods!.find((f) => f.label === 'Applaws Chicken Breast')!
+  assert.deepEqual(food.inTrial, { feedings: 1, firstDate: '2026-06-27' })
+  const r = row(dietTrialSection(snap), 'Off-list foods after the trial')!
+  assert.ok(r.includes('Also fed during the trial: 1 feeding from Jun 27, off the trial diet'), r)
+  const after = [...days('2026-05-20', '2026-07-02').map((d) => meal(d)), meal('2026-06-29', CHICKEN, null, '19'), meal('2026-06-30', CHICKEN, null, '19')]
+  const r2 = row(trialHtml(endedTrial({ mealEvents: after })), 'Off-list foods after the trial')!
+  assert.ok(!r2.includes('Also fed during the trial'), r2)
+})
+
+// ── CUL-2478: no claim about what is routinely prescribed ─────────────────────────────────────
+
+Deno.test('CUL-2478 — the medication line makes no claim about what is routine, and still does not scold', () => {
+  const r = row(dietTrialSection(nyxLiveSnapshot()), 'Medication during the trial')!
+  assert.ok(!/[Rr]outinely|prescribed alongside/.test(r), r)
+  assert.ok(r.includes('This is not a compliance problem, but it bears directly on reading the symptom trend; see “Interpreting this record” below.'), r)
+})
+
+// ── CUL-2479: the intake flag, on the trial diet, in the trial block ──────────────────────────
+
+Deno.test('CUL-2479 — Cooper: the trial’s Record row carries the intake flag’s count on the trial diet', () => {
+  const snap = assembleReport({ ...cooperInput(), audience: { kind: 'owner', includeLookNotes: false } })
+  // The cause, pinned: neither trial refusal fact fires, while the engine’s intake flag does.
+  assert.equal(snap.trial!.rangeRefusal, null)
+  assert.equal(snap.trial!.trialDietRefusal, null)
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'intake_decline'))
+  const r = row(dietTrialSection(snap), 'Record')!
+  assert.ok(
+    r.includes(
+      'The reduced-intake flag above fires on the trial diet: 4 rated meals of it since the most recent fully-eaten meal (Oct 14) were not finished, Oct 15 – Oct 16, 2026: ate some → picked at it → ate some → picked at it. About 50 h without a full meal. Recorded as a health signal, not “picky.”',
+    ),
+    r,
+  )
+})
+
+/** A trial whose last two days' meals go unfinished after a fortnight of finished bowls. */
+function decliningTrial(food: Food): ReportInput {
+  const input = endedTrial({})
+  input.dietTrials[0].status = 'active'
+  input.dietTrials[0].endedAt = null
+  input.dietTrials[0].completedAt = null
+  input.dietTrials[0].outcome = null
+  input.dietTrials[0].targetDurationDays = 56
+  const good = days('2026-06-01', '2026-06-29').flatMap((d) => [meal(d, HP, 'all', '13'), meal(d, HP, 'all', '22')])
+  const bad = days('2026-06-30', '2026-07-01').flatMap((d) => [meal(d, food, 'picked', '13'), meal(d, food, 'refused', '22')])
+  input.events = [...good, ...bad]
+  return input
+}
+
+Deno.test('CUL-2479 — the sentence prints only when the flag’s meals were the trial diet', () => {
+  const onDiet = assembleReport(decliningTrial(HP))
+  assert.ok(onDiet.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the fixture fires the flag')
+  const r = row(dietTrialSection(onDiet), 'Record')!
+  assert.ok(/The reduced-intake flag above fires on the trial diet: 4 rated meals of it since the most recent fully-eaten meal \(Jun 29\) were not finished/.test(r), r)
+  // Intake is not preference: "picky" appears only in its negation.
+  assert.equal((r.match(/picky/g) ?? []).length, 1, r)
+  assert.ok(r.includes('not “picky.”'), r)
+  // The same decline on an off-list food: the flag is not about the trial diet, so the trial block
+  // does not claim it is (the band still carries the flag).
+  const offDiet = assembleReport(decliningTrial(CHICKEN))
+  assert.ok(offDiet.safetyFlags.some((f) => f.kind === 'intake_decline'))
+  assert.ok(!/reduced-intake flag/.test(row(dietTrialSection(offDiet), 'Record')!))
+})
+
+Deno.test('CUL-2479 — an unflagged trial is unchanged, and an older copy says what it cannot know', () => {
+  const quiet = assembleReport(endedTrial({}))
+  assert.ok(!quiet.safetyFlags.some((f) => f.kind === 'intake_decline'))
+  assert.ok(!/reduced-intake flag/.test(row(dietTrialSection(quiet), 'Record')!))
+  const old = assembleReport(decliningTrial(HP))
+  delete old.trial!.trialDietFeedingEventIds
+  const r = row(dietTrialSection(old), 'Record')!
+  assert.ok(/The reduced-intake flag above counts 4 rated meals inside the trial since the most recent fully-eaten meal \(Jun 29\); which of them were the trial diet is not recorded in this copy\./.test(r), r)
+})
