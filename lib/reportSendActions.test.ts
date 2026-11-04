@@ -14,7 +14,7 @@ jest.mock('./reportKeep', () => ({ keepAfterSend: (...a: unknown[]) => mockKeep(
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
 import { shareReportPdf, type VetReport } from './pdf';
-import { copyEmailText, emailReport, loadMailComposer, mailAvailable, printReport, shareReport } from './reportSendActions';
+import { copyEmailText, emailReport, keepShown, loadMailComposer, mailAvailable, printReport, shareReport } from './reportSendActions';
 
 const report = { html: '<html>report</html>' } as VetReport;
 
@@ -35,7 +35,7 @@ describe('the mail composer is loaded lazily (an old binary has no native module
     });
     expect(mail).toBeNull();
     expect(await mailAvailable(mail)).toBe(false);
-    expect(await emailReport(report, { subject: 's', body: 'b', documentUris: [] }, mail)).toBe('failed');
+    expect((await emailReport(report, { subject: 's', body: 'b', documentUris: [] }, mail)).result).toBe('failed');
   });
 });
 
@@ -59,7 +59,7 @@ describe('emailReport', () => {
     ['undetermined', 'undetermined'],
     ['something-new', 'undetermined'],
   ])('Mail’s %s reads as %s', async (status, result) => {
-    expect(await emailReport(report, { subject: 's', body: 'b', documentUris: [] }, mailWith(status))).toBe(result);
+    expect((await emailReport(report, { subject: 's', body: 'b', documentUris: [] }, mailWith(status))).result).toBe(result);
   });
 
   it('releases the print temp even when Mail throws', async () => {
@@ -71,25 +71,25 @@ describe('emailReport', () => {
 
 describe('print, share, copy', () => {
   it('print hands the report’s own HTML to the print sheet', async () => {
-    expect(await printReport(report)).toBe('done');
+    expect((await printReport(report)).result).toBe('done');
     expect(Print.printAsync).toHaveBeenCalledWith({ html: report.html });
   });
 
   it('a dismissed print sheet is a cancel: no card', async () => {
     (Print.printAsync as jest.Mock).mockRejectedValueOnce(new Error('Printing did not complete'));
-    expect(await printReport(report)).toBe('cancelled');
+    expect((await printReport(report)).result).toBe('cancelled');
   });
 
   it('a failed print job is a failure the screen says, never a silent cancel', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     (Print.printAsync as jest.Mock).mockRejectedValueOnce(new Error("Printing job encountered an error: 'no printer'"));
-    expect(await printReport(report)).toBe('failed');
+    expect((await printReport(report)).result).toBe('failed');
   });
 
   it('share is done, or failed with no share sheet', async () => {
-    expect(await shareReport(report)).toBe('done');
+    expect((await shareReport(report)).result).toBe('done');
     (shareReportPdf as jest.Mock).mockResolvedValueOnce(false);
-    expect(await shareReport(report)).toBe('failed');
+    expect((await shareReport(report)).result).toBe('failed');
   });
 
   it('copy puts the subject over the body on the clipboard', async () => {
@@ -128,5 +128,24 @@ describe('each send keeps the copy with what the platform answered (VR2-20, CUL-
   it('copy keeps nothing: it hands over the email text, not the report', async () => {
     await copyEmailText('s', 'b');
     expect(mockKeep).not.toHaveBeenCalled();
+  });
+});
+
+describe('each send hands back the keep it set off (CUL-2434)', () => {
+  it('the keep’s promise rides beside the result, and a send that keeps nothing hands back null', async () => {
+    const keep = Promise.resolve('failed');
+    mockKeep.mockReturnValueOnce(keep);
+    expect((await printReport(report)).keep).toBe(keep);
+    mockKeep.mockReturnValueOnce(null);
+    expect((await shareReport(report)).keep).toBeNull();
+    (Print.printAsync as jest.Mock).mockRejectedValueOnce(new Error('Printing did not complete'));
+    expect(await printReport(report)).toEqual({ result: 'cancelled', keep: null });
+  });
+
+  it('the exam room keeps as shown', () => {
+    const keep = Promise.resolve('kept');
+    mockKeep.mockReturnValueOnce(keep);
+    expect(keepShown(report)).toBe(keep);
+    expect(mockKeep).toHaveBeenCalledWith(report, 'shown', 'done');
   });
 });

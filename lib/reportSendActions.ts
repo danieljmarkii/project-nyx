@@ -13,12 +13,20 @@
 //
 // EACH KEEPS THE OWNER'S COPY AFTER IT ANSWERS (VR2-20, CUL-2300): `keepAfterSend` decides from
 // the platform's answer whether the report left, and never delays the result (lib/reportKeep.ts).
+// The keep's outcome rides back beside the result (`SendOutcome.keep`, CUL-2434), so the screen
+// can tell the owner when a copy that left was not kept.
 
 import * as Clipboard from 'expo-clipboard';
 import * as Print from 'expo-print';
 import { renderReportPdf, shareReportPdf, type VetReport } from './pdf';
 import type { SendResult } from './reportSend';
-import { keepAfterSend } from './reportKeep';
+import { keepAfterSend, type KeepOutcome } from './reportKeep';
+
+/** What the platform answered, and the keep it set off: null when nothing was to be kept. */
+export interface SendOutcome {
+  result: SendResult;
+  keep: Promise<KeepOutcome> | null;
+}
 
 type MailModule = typeof import('expo-mail-composer');
 
@@ -57,8 +65,8 @@ export interface EmailDraft {
  * Open a Mail draft from the owner's own address with the report attached (R-4: from the
  * owner's own address; the To line is theirs to fill, the clinic's address is not stored).
  */
-export async function emailReport(report: VetReport, draft: EmailDraft, mail: MailModule | null = loadMailComposer()): Promise<SendResult> {
-  if (!mail) return 'failed';
+export async function emailReport(report: VetReport, draft: EmailDraft, mail: MailModule | null = loadMailComposer()): Promise<SendOutcome> {
+  if (!mail) return { result: 'failed', keep: null };
   const pdf = await renderReportPdf(report);
   try {
     const { status } = await mail.composeAsync({
@@ -68,8 +76,7 @@ export async function emailReport(report: VetReport, draft: EmailDraft, mail: Ma
       attachments: [pdf.uri, ...draft.documentUris],
     });
     const result: SendResult = status === 'sent' || status === 'saved' || status === 'cancelled' ? status : 'undetermined';
-    keepAfterSend(report, 'email', result);
-    return result;
+    return { result, keep: keepAfterSend(report, 'email', result) };
   } finally {
     pdf.release();
   }
@@ -83,24 +90,31 @@ export async function emailReport(report: VetReport, draft: EmailDraft, mail: Ma
  */
 export const PRINT_DISMISSED = /printing did not complete/i;
 
-export async function printReport(report: VetReport): Promise<SendResult> {
+export async function printReport(report: VetReport): Promise<SendOutcome> {
   try {
     await Print.printAsync({ html: report.html });
-    keepAfterSend(report, 'print', 'done');
-    return 'done';
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    if (PRINT_DISMISSED.test(message)) return 'cancelled';
+    if (PRINT_DISMISSED.test(message)) return { result: 'cancelled', keep: null };
     console.warn('[reportSend] print failed:', e);
-    return 'failed';
+    return { result: 'failed', keep: null };
   }
+  return { result: 'done', keep: keepAfterSend(report, 'print', 'done') };
 }
 
 /** The share sheet with the named PDF. `failed` when the platform has no share sheet. */
-export async function shareReport(report: VetReport): Promise<SendResult> {
+export async function shareReport(report: VetReport): Promise<SendOutcome> {
   const result: SendResult = (await shareReportPdf(report)) ? 'done' : 'failed';
-  keepAfterSend(report, 'share', result);
-  return result;
+  return { result, keep: keepAfterSend(report, 'share', result) };
+}
+
+/**
+ * The exam room opened (CUL-2434, PM go (a) 2026-11-04): the vet reads the report across the
+ * table, so it is kept as `shown`. Called once the room is staged and pushed, never before, and
+ * never when it could not open.
+ */
+export function keepShown(report: VetReport): Promise<KeepOutcome> | null {
+  return keepAfterSend(report, 'shown', 'done');
 }
 
 /** The email's subject and body as text, for an owner who sends from somewhere else. */
