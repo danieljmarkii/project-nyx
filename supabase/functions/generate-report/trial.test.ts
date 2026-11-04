@@ -4372,18 +4372,25 @@ Deno.test('B-613 — the clause names the MIX, not just the most recent sign', (
   input.eventsSinceIso = '2026-01-03T00:00:00Z'
   const snap = assembleReport(input)
   // Descending by count, then by type name — the same record always renders the same way.
-  assert.deepEqual(snap.scope.trialCropSymptoms?.byType, [
+  const counts = (b: NonNullable<ReturnType<typeof assembleReport>['scope']['trialCropSymptoms']>['byType']) =>
+    b.map(({ type, count }) => ({ type, count }))
+  assert.deepEqual(counts(snap.scope.trialCropSymptoms!.byType), [
     { type: 'vomit', count: 5 },
     { type: 'itch', count: 2 },
     { type: 'diarrhea', count: 1 },
   ])
+  // CUL-2510: every one of these sits before the window, and the earliest of each is carried.
+  const itch = snap.scope.trialCropSymptoms!.byType.find((b) => b.type === 'itch')!
+  assert.equal(itch.beforeWindow, 2)
+  assert.ok(itch.earliestBeforeWindowIso!.startsWith('2026-04-21'), itch.earliestBeforeWindowIso!)
+  assert.equal(snap.scope.trialCropSymptoms!.byType.find((b) => b.type === 'vomit')!.beforeWindow, 5)
   assert.match(plain(renderReport(snap)), /8 symptom events were logged in those days \(5 vomiting, 2 itching, 1 loose stool; most recent: vomiting, May 24\)/)
   // A tie breaks on type name, so two equal counts cannot swap between renders.
   const tie = truncatedTrialInput()
   tie.eventsSinceIso = '2026-01-03T00:00:00Z'
   tie.events = tie.events.filter((e) => e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z')
   tie.events.push(symptom('2026-05-02', 'vomit'), symptom('2026-05-03', 'itch'))
-  assert.deepEqual(assembleReport(tie).scope.trialCropSymptoms?.byType, [
+  assert.deepEqual(counts(assembleReport(tie).scope.trialCropSymptoms!.byType), [
     { type: 'itch', count: 1 },
     { type: 'vomit', count: 1 },
   ])

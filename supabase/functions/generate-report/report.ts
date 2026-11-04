@@ -1545,7 +1545,17 @@ export interface ScopeInfo extends ReportScope {
      * field exists to end, one notch smaller. Descending by count, then by type name so
      * the same record always renders in the same order.
      */
-    byType: Array<{ type: ReportSymptomType; count: number }>
+    byType: Array<{
+      type: ReportSymptomType
+      count: number
+      /**
+       * CUL-2510 — of `count`, the episodes in the trial days BEFORE this window, and the earliest
+       * of them. The chronicity flag's floor is the window's; these say how far back the same
+       * report shows the sign. Optional: a copy stored before them is unknown, never "none".
+       */
+      beforeWindow?: number
+      earliestBeforeWindowIso?: string | null
+    }>
     /**
      * THE DENOMINATOR (cold read round 16, BLOCKING). "5 symptom events over 42 days" is
      * a rate if those days were logged and an unknown if they were not, and nothing said
@@ -6587,6 +6597,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     let mostRecentIso: string | null = null
     let mostRecentType: ReportSymptomType | null = null
     const tally = new Map<ReportSymptomType, number>()
+    const headTally = new Map<ReportSymptomType, { n: number; earliest: string }>()
     // The cropped days themselves, so the count above can be read as a rate. Collected in
     // the SAME pass and with the same two predicates, so the numerator and its denominator
     // can never describe different spans.
@@ -6635,13 +6646,26 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const t = e.type as ReportSymptomType
       count++
       tally.set(t, (tally.get(t) ?? 0) + 1)
+      if (dn < scope.startDayNum) {
+        const hd = headTally.get(t)
+        if (!hd) headTally.set(t, { n: 1, earliest: e.occurredAt })
+        else {
+          hd.n += 1
+          if (e.occurredAt < hd.earliest) hd.earliest = e.occurredAt
+        }
+      }
       if (mostRecentIso === null || e.occurredAt > mostRecentIso) {
         mostRecentIso = e.occurredAt
         mostRecentType = t
       }
     }
     const byType = [...tally.entries()]
-      .map(([type, n]) => ({ type, count: n }))
+      .map(([type, n]) => ({
+        type,
+        count: n,
+        beforeWindow: headTally.get(type)?.n ?? 0,
+        earliestBeforeWindowIso: headTally.get(type)?.earliest ?? null,
+      }))
       .sort((a, b) => b.count - a.count || (a.type < b.type ? -1 : a.type > b.type ? 1 : 0))
     // IS THIS COUNT A TOTAL OR A FLOOR? Only the HEAD can be short: the pull carries no
     // upper bound (`.gte` only, index.ts), so everything from the floor to `now` is in

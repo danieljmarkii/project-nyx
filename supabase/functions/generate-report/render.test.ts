@@ -9263,3 +9263,38 @@ Deno.test('CUL-2516 — dayListText: up to four days named, more as a counted sp
   )
   assert.equal(dayListText(['2025-12-30', '2026-01-02']), 'on Dec 30, 2025 and Jan 2, 2026')
 })
+
+Deno.test('CUL-2510 — the chronicity floor names how far back the trial section shows the same sign', () => {
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 8,
+    spanDays: 40,
+    activeWeeks: 5,
+    symptomDays: 8,
+    daysSinceLastEpisode: 2,
+    firstOnsetIso: '2026-04-03T14:00:00Z',
+    firstLoggedIso: '2026-04-03T14:00:00Z',
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const crop = (byType: NonNullable<ReportSnapshot['scope']['trialCropSymptoms']>['byType']) => {
+    const s = base({ safetyFlags: [flag] })
+    s.scope.trialCropSymptoms = { count: 10, mostRecentIso: '2026-03-30T10:00:00Z', mostRecentType: 'vomit', byType, cropDays: 52, mealLoggedDaysInCrop: 50, countIsFloor: false }
+    const html = text(renderReport(s))
+    const i = html.indexOf('Vomiting spans')
+    return html.slice(i, html.indexOf('\n', i) > 0 ? html.indexOf('\n', i) : i + 1200)
+  }
+  const row = crop([{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
+  assert.ok(
+    /This window opens Apr 3, but the trial section counts 10 vomiting episodes in the trial days before it, the earliest on Feb 10, 2026: the record shows the sign at least that far back\./.test(row),
+    row,
+  )
+  assert.ok(!/days is a floor/.test(row), row)
+  // Control: a copy stored before the field keeps B-532's floor sentence (unknown, never "none").
+  const old = crop([{ type: 'vomit', count: 10 }])
+  assert.ok(/days is a floor/.test(old) && !/trial section counts/.test(old), old)
+  // Control: earlier episodes of a DIFFERENT sign are not read as this one's.
+  const other = crop([{ type: 'cough', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
+  assert.ok(!/trial section counts/.test(other), other)
+})

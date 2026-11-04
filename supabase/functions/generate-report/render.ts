@@ -2965,7 +2965,27 @@ export function safetyFlagRow(
       //     fact is stated without attaching any duration to it — which is also the honest
       //     reading, since what the window edge bounds here is the record, not the span.
       const spanShown = chronicitySpanDaysShown(f, snap)
-      const censorBit = !leftCensored
+      // CUL-2510 (QUIET): THE REPORT ITSELF SHOWS THE SIGN BEFORE THIS WINDOW. "44 days is a floor"
+      // dated a course to the window while the trial section, on the same report, counts the same
+      // sign in the trial days before it. Said as a DATE, never as a longer duration (C-19), and
+      // placed last in the row with its year stamped, so no bare date follows a stamped one.
+      const crop = snap.scope.trialCropSymptoms
+      const cropType = crop?.byType.find(
+        (b) => b.type === f.symptomType && (b.beforeWindow ?? 0) > 0 && typeof b.earliestBeforeWindowIso === 'string',
+      )
+      const cropBit =
+        crop && cropType && cropType.earliestBeforeWindowIso
+          ? ` This window opens ${h(scopeStartDay)}, but the trial section counts ${crop.countIsFloor ? 'at least ' : ''}<b>${num(
+              cropType.beforeWindow ?? 0,
+            )} ${h(symptomLabel(f.symptomType).toLowerCase())} episode${
+              cropType.beforeWindow === 1 ? '' : 's'
+            } in the trial days before it, the earliest on ${h(fmtLocalDay(cropType.earliestBeforeWindowIso, tz))}, ${h(
+              localDayKeyOf(cropType.earliestBeforeWindowIso, tz).slice(0, 4),
+            )}</b>: the record shows the sign at least that far back.`
+          : null
+      const censorBit = cropBit !== null
+        ? cropBit
+        : !leftCensored
         ? ''
         : hasUncountedRecord
           // NOT "the record's first entry sits at that edge" — CHRONICITY_LEFT_CENSOR_DAYS is a
