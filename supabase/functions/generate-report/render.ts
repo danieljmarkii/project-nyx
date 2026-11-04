@@ -65,6 +65,7 @@ import type {
   UnlinkedMedicationGroup,
   MedicationHistoryEntry,
   CorrelationSummary,
+  EstablishedCorrelation,
   ConcurrentChange,
   SymptomLogEntry,
   IntakeLogEntry,
@@ -4117,9 +4118,11 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // mouth) are the same class and get their own sentences beside it.
   const countScope = trialCountScope(t)
   if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable) {
-    caveats.push(
-      `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.`,
-    )
+    // CUL-2516 (QUIET): A BREAK THE RECORD SHOWS IS NOT AN UNCERTAINTY. "Cannot establish that the
+    // elimination was clean" read eleven chicken feedings as a question about the record; they are
+    // a fact in it. The bottom line says the diet was not fed exclusively, with the days, and points
+    // at the timing line when a protein those feedings carried is named there.
+    caveats.push(offDietBottomLine(snap, countScope))
   }
   if (t.exposures.unclassifiable > 0) {
     caveats.push(
@@ -9757,6 +9760,63 @@ function inTrialFromExposures(t: TrialBlock, label: string): { feedings: number;
     if (first === null || d < first) first = d
   }
   return first === null ? null : { feedings, firstDate: first }
+}
+
+/**
+ * The off-diet days as a reader checks them: up to four named, otherwise the count and the span. The
+ * year is stamped once per band (C-19), on both ends only when the band crosses a year.
+ */
+export function dayListText(days: readonly string[]): string {
+  const sorted = [...new Set(days)].sort()
+  if (sorted.length === 0) return ''
+  const first = sorted[0]
+  const last = sorted[sorted.length - 1]
+  const crossesYear = first.slice(0, 4) !== last.slice(0, 4)
+  if (sorted.length === 1) return `on ${h(fmtDayYear(first))}`
+  if (sorted.length <= 4) {
+    const named = sorted.map((d, i) =>
+      i === sorted.length - 1 || crossesYear ? h(fmtDayYear(d)) : h(fmtDay(d)),
+    )
+    return `on ${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
+  }
+  return `on ${num(sorted.length)} days between ${h(crossesYear ? fmtDayYear(first) : fmtDay(first))} and ${h(
+    fmtDayYear(last),
+  )}`
+}
+
+/**
+ * CUL-2516 — "Interpreting this record"'s off-diet sentence. States the break (the trial diet was not
+ * fed exclusively), its count and its days, and names the timing finding when one of its proteins is
+ * among the proteins those feedings carried (Cooper: beef jerky on the vomit days). The count stays a
+ * floor: an unlogged feeding is always possible, never the other way round.
+ */
+function offDietBottomLine(snap: ReportSnapshot, countScope: string): string {
+  const t = snap.trial!
+  const off = t.exposures.items.filter((x) => x.classification.offDiet)
+  const days = off.map((x) => dayKeyOfIndex(x.dayIndex))
+  const when = days.length > 0 ? ` ${dayListText(days)}` : ''
+  const carried = new Set(off.flatMap((x) => x.classification.antigens.map((a) => a.toLowerCase())))
+  // The timing counts are stated here rather than pointed to: this block is reprinted on v2's diet
+  // sheet, where a pointer to page 1 would dangle. Same words as the timing line; the tier rides with
+  // each, so an Early finding never reads as confirmed.
+  const c = snap.correlation
+  const carries = (f: EstablishedCorrelation): boolean =>
+    (f.proteins && f.proteins.length > 0 ? f.proteins : [f.protein]).some((p) => carried.has(p.toLowerCase()))
+  const clauses = [
+    ...(c.established ?? []).filter(carries).map((f) => ({ f, tier: 'reached the established association threshold' })),
+    ...(c.early ?? []).filter(carries).map((f) => ({ f, tier: 'an early signal, not confirmed' })),
+  ].map(
+    ({ f, tier }) =>
+      `${h(capProtein(f.protein))} ${f.proteins && f.proteins.length > 1 ? 'were' : 'was'} in the ${num(
+        f.correlationWindowHours,
+      )}&nbsp;h before ${num(f.caseExposed)} of ${num(f.matchedPairs)} ${h(
+        symptomLabel(f.symptomType).toLowerCase(),
+      )} episodes (${tier})`,
+  )
+  const timing = clauses.length > 0 ? ` Of the proteins those feedings carried: ${clauses.join('; ')}.` : ''
+  return `<b>The trial diet was not fed exclusively:</b> ${num(t.exposures.offDiet)} of ${num(
+    t.exposures.totalFeedings,
+  )} feedings ${countScope} did not match it${when} (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one.${timing}`
 }
 
 /** 'YYYY-MM-DD' for an epoch-day index (UTC read, the inverse of `localDayIndexOf`). */

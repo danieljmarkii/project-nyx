@@ -14,7 +14,7 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { chronicitySpanDaysShown, incidentPhotoCard, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
+import { chronicitySpanDaysShown, dayListText, incidentPhotoCard, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
 import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 // CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
 // so this file cannot drift from `trial.ts` without going red.
@@ -8507,7 +8507,9 @@ Deno.test('CUL-1978 ① — off-diet feedings take the affirmative out of the ca
   )
   const callout = text(interpretingCallout(breached))
   assert.ok(!/supports interpreting it/.test(callout), callout)
-  assert.ok(/4 of 44 feedings during the trial did not match the trial diet .*cannot establish that the elimination was clean/.test(callout), callout)
+  // CUL-2516: the break is stated as a fact, never as an uncertainty about the record.
+  assert.ok(/The trial diet was not fed exclusively: 4 of 44 feedings during the trial did not match it \(appendix&nbsp;C; a floor, not a total\), so this record shows an elimination that was broken, not a clean one\./.test(callout), callout)
+  assert.ok(!/cannot establish that the elimination was clean/.test(callout), callout)
   const headline = text(/<div class="headline">[\s\S]*?<\/div>/.exec(breached)![0])
   assert.ok(/4 of 44 logged feedings did not match the trial diet/.test(headline), headline)
   assert.ok(/see the diet section before reading the trial as a result/.test(headline), headline)
@@ -9211,4 +9213,53 @@ Deno.test('CUL-2390 guard — no "0 of" ever sits beside blood, foreign material
       if (/\bblood|foreign|mucus/i.test(sentence)) assert.ok(!/\b0 of\b/.test(sentence), `"0 of" beside a present-only finding: ${sentence}`)
     }
   }
+})
+
+// ── Lane A (vet report v2): sections that read quieter than a fact the same report holds ──
+
+Deno.test('CUL-2516 — off-diet feedings state the break, its days, and the timing line that names their protein', () => {
+  // Cooper: beef jerky ×4 on the vomit days. 20606 is 2026-06-02 (UTC day index).
+  const beef = (day: number) => {
+    const x = exposureItem('derived_protein', null)
+    return { ...x, dayIndex: day, label: 'Beef Jerky', classification: { ...x.classification, antigens: ['beef'] } }
+  }
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: {
+      totalFeedings: 44,
+      offDiet: 4,
+      byRung: { derived_protein: 4, unrecognised: 0 },
+      fedBeforePermitted: 0,
+      unclassifiable: 0,
+      items: [beef(20606), beef(20606), beef(20607), beef(20609)],
+    },
+    mayClaimAllMatched: false,
+  })
+  snap.correlation = {
+    ...snap.correlation,
+    early: [
+      { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.03, symptomEventCount: 4, correlationWindowHours: 12 },
+    ],
+  }
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(
+    callout.includes(
+      'The trial diet was not fed exclusively: 4 of 44 feedings during the trial did not match it on Jun 2, Jun 3 and Jun 5, 2026 (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).',
+    ),
+    callout,
+  )
+  assert.ok(!/cannot establish that the elimination was clean/.test(callout), callout)
+  // Control: a timing finding on a protein the off-diet feedings did not carry is not pointed to.
+  snap.correlation = { ...snap.correlation, early: [{ ...snap.correlation.early![0], protein: 'lamb', proteins: ['lamb'] }] }
+  const other = text(interpretingCallout(renderReport(snap)))
+  assert.ok(/was broken, not a clean one\./.test(other) && !/Of the proteins those feedings carried/.test(other), other)
+})
+
+Deno.test('CUL-2516 — dayListText: up to four days named, more as a counted span, the year stamped once', () => {
+  assert.equal(dayListText(['2026-10-18']), 'on Oct 18, 2026')
+  assert.equal(dayListText(['2026-10-20', '2026-10-18', '2026-10-18']), 'on Oct 18 and Oct 20, 2026')
+  assert.equal(
+    text(dayListText(['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-22', '2026-11-02'])),
+    'on 5 days between Oct 18 and Nov 2, 2026',
+  )
+  assert.equal(dayListText(['2025-12-30', '2026-01-02']), 'on Dec 30, 2025 and Jan 2, 2026')
 })
