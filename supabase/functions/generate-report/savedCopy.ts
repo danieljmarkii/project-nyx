@@ -19,10 +19,12 @@
 // A FAILED SAVE NEVER BLOCKS THE REPORT. The owner still previews and sends; the response says
 // `report_id: null` and the colophon carries no short id (spec §5.10: never one nothing resolves).
 //
-// The AI lead's columns are not written here: aiLead/run.ts is their one writer
-// (aiLead/storage.guard.test.ts), and `keepCopy` takes its settle step as an argument.
+// The AI lead's columns are not NAMED here: aiLead/run.ts builds what the keep writes to them
+// (`KeepLead`, aiLead/storage.guard.test.ts), `keepCopy` takes that settle step as an argument,
+// and `markKept` carries its result into the keep's one UPDATE without reading it (CUL-2436).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import type { KeepLead } from './aiLead/run.ts'
 
 export const VET_REPORTS_BUCKET = 'nyx-vet-reports'
 
@@ -46,8 +48,9 @@ export const SHORT_ID_ATTEMPTS = 5
 /** Crockford base32: no I, L, O, U. Migration 113's `vet_reports_short_id_crockford` CHECK. */
 export const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 
-/** How a kept copy left the phone. `shared_via` is free text (≤ 32) in 113; this is its set. */
-export const SHARED_VIA = ['email', 'print', 'share'] as const
+/** How a kept copy left the phone. `shared_via` is free text (≤ 32) in 113; this is its set.
+ *  `shown`: exam-room mode, the report shown across the table (CUL-2434, PM go (a) 2026-11-04). */
+export const SHARED_VIA = ['email', 'print', 'share', 'shown'] as const
 export type SharedVia = (typeof SHARED_VIA)[number]
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -135,7 +138,8 @@ export interface SavedCopyIO {
   /** 'error' on a failed read; null when no row of this pet and maker has the id. */
   readRow(id: string): Promise<StoredRow | null | 'error'>
   download(path: string): Promise<Uint8Array | null>
-  markKept(id: string, via: SharedVia, atIso: string, sha: string): Promise<boolean>
+  /** The keep: ONE statement that turns the draft kept and settles its lead (`lead`, CUL-2436). */
+  markKept(id: string, via: SharedVia, atIso: string, sha: string, lead: KeepLead): Promise<boolean>
   restamp(id: string, via: SharedVia, atIso: string): Promise<boolean>
   now(): number
 }
@@ -219,14 +223,17 @@ export function savedCopyIO(admin: SupabaseClient, key: CopyKey): SavedCopyIO {
       }
       return new Uint8Array(await data.arrayBuffer())
     },
-    markKept: async (id, via, atIso, sha) => {
+    markKept: async (id, via, atIso, sha, lead) => {
       // One write: 113's vet_reports_kept_complete CHECK needs snapshot, short_id, shared_at and
-      // content_sha256 together, and the freeze starts on the next statement.
-      const { data, error } = await admin.from('vet_reports')
-        .update({ status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha })
+      // content_sha256 together, and the freeze starts on the next statement. The lead's settled
+      // columns ride in the SAME statement (CUL-2436), so no lead write can land between the settle
+      // and the freeze; a pinned lead that changed since its read matches nothing here.
+      let q = admin.from('vet_reports')
+        .update({ ...lead.set, status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha })
         .eq('id', id).eq('pet_id', key.petId).eq('generated_by', key.uid).eq('status', 'draft')
         .eq('content_sha256', sha)
-        .select('id')
+      for (const [column, value] of Object.entries(lead.unchanged)) q = q.eq(column, value)
+      const { data, error } = await q.select('id')
       if (error) warn('keep failed', error)
       return !error && Array.isArray(data) && data.length === 1
     },
@@ -343,13 +350,14 @@ export type KeepOutcome =
 
 /**
  * Keep the draft as sent. The stored file must still be the one its hash names; the AI lead's
- * columns are settled first (aiLead/run.ts, handed in as `settleLead`), because the freeze starts
- * with the keep. A copy already kept only moves its departure stamp.
+ * columns are settled IN the keep's one write (aiLead/run.ts builds them, handed in as
+ * `settleLead`; CUL-2436), because the freeze starts with the keep. A copy already kept only
+ * moves its departure stamp.
  */
 export async function keepCopy(
   io: SavedCopyIO,
   req: { reportId: string | null; sharedVia: SharedVia | null },
-  settleLead: (storedHtml: string) => Promise<boolean>,
+  settleLead: (storedHtml: string) => Promise<KeepLead | null>,
 ): Promise<KeepOutcome> {
   if (req.reportId === null || req.sharedVia === null) return { status: 400, body: { error: 'reportId and sharedVia required' } }
   const at = new Date(io.now()).toISOString()
@@ -370,8 +378,9 @@ export async function keepCopy(
   if (bytes === null || (await sha256Hex(bytes)) !== row.content_sha256) {
     return { status: 409, body: { error: 'Saved copy unavailable' } }
   }
-  if (!(await settleLead(new TextDecoder().decode(bytes)))) return { status: 500, body: { error: 'Saved copy could not be kept' } }
-  if (await io.markKept(req.reportId, req.sharedVia, at, row.content_sha256)) return { status: 200, body: { kept: true, first: true } }
+  const lead = await settleLead(new TextDecoder().decode(bytes))
+  if (lead === null) return { status: 500, body: { error: 'Saved copy could not be kept' } }
+  if (await io.markKept(req.reportId, req.sharedVia, at, row.content_sha256, lead)) return { status: 200, body: { kept: true, first: true } }
   // Two sends racing: the other one kept it. Anything else is a failure, said as one.
   const again = await io.readRow(req.reportId)
   if (again !== 'error' && again !== null && again.status === 'kept') {

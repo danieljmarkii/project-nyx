@@ -2108,7 +2108,8 @@ function draftSaver(supabase: SupabaseClient, adminClient: SupabaseClient, petId
 
 /**
  * VR2-20 (CUL-2300) — keep a draft as sent. The uid is the verified one; the row is named by id,
- * pet and maker (savedCopy.ts), and the lead's columns are settled by their one writer first.
+ * pet and maker (savedCopy.ts), and the lead's columns are settled in the keep's one write
+ * (aiLead/run.ts builds them, CUL-2436).
  */
 async function keepForPet(
   supabase: SupabaseClient,
