@@ -5712,7 +5712,8 @@ Deno.test('CUL-2509 instance 3 — an ad-hoc row counts its days dosed in the ea
   delete noLife.lifetimeDoses
   const unknown = assembleReport(noLife).trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
   assert.equal(unknown.adHocEarlierTrialDoseDays, null)
-  assert.doesNotMatch(plain(renderReport(assembleReport(noLife))), /earlier trial days this report leaves out/)
+  // Pass 2 (QUIET): said as uncounted, never left out.
+  assert.match(plain(renderReport(assembleReport(noLife))), /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
 })
 
 Deno.test('CUL-2509 instance 2 — a dose logged "in food" with no meal paired reaches the diet history', () => {
@@ -5739,4 +5740,16 @@ Deno.test('CUL-2509 pass 1 — an ad-hoc row with no item id is unknown, never 0
   const snap = assembleReport(short)
   assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDaysIsFloor, true)
   assert.match(plain(renderReport(snap)), /dosed on at least 3 of the 42 earlier trial days/)
+})
+
+Deno.test('CUL-2509 pass 2 — a count that could not be taken is said, never left out or read as 0', () => {
+  // A short pull with nothing read in the earlier days: unknown, never "at least 0".
+  const short = cetirizineTrialInput()
+  short.incompletePulls = ['medication_administrations']
+  short.lifetimeDoses = short.lifetimeDoses!.filter((d) => d.eventId === 'c6' || d.eventId === 'c7')
+  const snap = assembleReport(short)
+  assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDays, null)
+  const text = plain(renderReport(snap))
+  assert.match(text, /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
+  assert.doesNotMatch(text, /at least 0 of the/)
 })

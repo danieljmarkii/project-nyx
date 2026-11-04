@@ -9329,3 +9329,20 @@ Deno.test('CUL-2511 pass 1 — a loss under 1% across the trial start stays off 
   snap.weight = { ...snap.weight, acrossTrialStart: { ...snap.weight.acrossTrialStart!, deltaKg: -0.02, pct: 0 } }
   assert.ok(!/across the trial&rsquo;s start|across the trial’s start/.test(interpretingCallout(renderReport(snap))))
 })
+
+Deno.test('CUL-2516 pass 2 — the permitted-later sentence keeps the days and the timing counts', () => {
+  const beef = (day: number) => {
+    const x = exposureItem('derived_protein', '2026-06-20')
+    return { ...x, dayIndex: day, classification: { ...x.classification, antigens: ['beef'] } }
+  }
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: { totalFeedings: 44, offDiet: 2, byRung: { derived_protein: 2, unrecognised: 0 }, fedBeforePermitted: 2, unclassifiable: 0, items: [beef(20606), beef(20607)] },
+    mayClaimAllMatched: false,
+  })
+  snap.correlation = {
+    ...snap.correlation,
+    early: [{ symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.03, symptomEventCount: 4, correlationWindowHours: 12 }],
+  }
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(callout.includes('did not match the trial diet on Jun 2 and Jun 3, 2026 (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).'), callout)
+})

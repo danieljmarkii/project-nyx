@@ -5451,8 +5451,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         const dn = eventDayNumber(d.occurredAt, tz)
         if (dn !== null && dn >= trialBlock.elapsedStartDayIndex && dn <= headEnd) days.add(dn)
       }
-      row.adHocEarlierTrialDoseDays = days.size
-      if (dosesShort) row.adHocEarlierTrialDoseDaysIsFloor = true
+      // Adversarial pass 2 (QUIET): a short pull loses the oldest doses first, so "at least 0" would read
+      // as none at the drug's confounding head. Zero from a short pull is unknown.
+      row.adHocEarlierTrialDoseDays = dosesShort && days.size === 0 ? null : days.size
+      if (dosesShort && days.size > 0) row.adHocEarlierTrialDoseDaysIsFloor = true
     }
   }
 

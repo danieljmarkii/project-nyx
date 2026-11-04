@@ -4172,8 +4172,11 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // trial whose only off-diet rows are those keeps the uncertain sentence.
   const onlyPermittedLater = t.exposures.offDiet > 0 && t.exposures.fedBeforePermitted >= t.exposures.offDiet
   if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable && onlyPermittedLater) {
+    // Adversarial pass 2 (QUIET): the uncertain sentence keeps the days and the timing counts. A later
+    // permission does not stop beef being the protein the timing line names.
+    const d = offDietDetail(snap)
     caveats.push(
-      `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.`,
+      `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet${d.when} (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.${d.timing}`,
     )
   } else if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable) {
     // CUL-2516 (QUIET): A BREAK THE RECORD SHOWS IS NOT AN UNCERTAINTY. "Cannot establish that the
@@ -5867,10 +5870,16 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     // "dosed on 4 of the trial days this report covers" over 52 earlier trial days holding 21 coughs,
     // and its dosing there was counted nowhere. Days dosed, never doses (B2).
     const before = snap.trial?.trialDaysOutsideRange.before ?? 0
+    // Adversarial pass 2 (QUIET): a count the builder could not take (null, not a stored copy's absent
+    // field) is said, never left out.
     const earlier =
-      typeof m.adHocEarlierTrialDoseDays === 'number' && before > 0
-        ? `; dosed on <b>${m.adHocEarlierTrialDoseDaysIsFloor ? 'at least ' : ''}${num(m.adHocEarlierTrialDoseDays)} of the ${num(before)} earlier trial days</b> this report leaves out`
-        : ''
+      before <= 0
+        ? ''
+        : typeof m.adHocEarlierTrialDoseDays === 'number'
+          ? `; dosed on <b>${m.adHocEarlierTrialDoseDaysIsFloor ? 'at least ' : ''}${num(m.adHocEarlierTrialDoseDays)} of the ${num(before)} earlier trial days</b> this report leaves out`
+          : m.adHocEarlierTrialDoseDays === null
+            ? `; its dosing in the ${num(before)} earlier trial days this report leaves out <b>could not be counted</b>`
+            : ''
     return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
   })
   // EXPLICITLY NOT JUDGED, and the sentence saying so is not optional: antipruritics
@@ -9936,6 +9945,15 @@ export function dayListText(days: readonly string[]): string {
  */
 function offDietBottomLine(snap: ReportSnapshot, countScope: string): string {
   const t = snap.trial!
+  const { when, timing } = offDietDetail(snap)
+  return `<b>The trial diet was not fed exclusively:</b> ${num(t.exposures.offDiet)} of ${num(
+    t.exposures.totalFeedings,
+  )} feedings ${countScope} did not match it${when} (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one.${timing}`
+}
+
+/** The off-diet feedings' days and the timing counts of the proteins they carried, for either sentence. */
+function offDietDetail(snap: ReportSnapshot): { when: string; timing: string } {
+  const t = snap.trial!
   const off = t.exposures.items.filter((x) => x.classification.offDiet)
   const days = off.map((x) => dayKeyOfIndex(x.dayIndex))
   const when = days.length > 0 ? ` ${dayListText(days)}` : ''
@@ -9958,9 +9976,7 @@ function offDietBottomLine(snap: ReportSnapshot, countScope: string): string {
       )} episodes (${tier})`,
   )
   const timing = clauses.length > 0 ? ` Of the proteins those feedings carried: ${clauses.join('; ')}.` : ''
-  return `<b>The trial diet was not fed exclusively:</b> ${num(t.exposures.offDiet)} of ${num(
-    t.exposures.totalFeedings,
-  )} feedings ${countScope} did not match it${when} (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one.${timing}`
+  return { when, timing }
 }
 
 /** 'YYYY-MM-DD' for an epoch-day index (UTC read, the inverse of `localDayIndexOf`). */
