@@ -5670,3 +5670,59 @@ Deno.test('CUL-2286 — two single readings on a refusing cat, no weight flag: t
   assert.ok(/Weight fell to 4\.25 kg/.test(band), 'the weight fact composes with the refusal, above the fold')
   assert.ok(!/moves about that much on its own/.test(text), 'never a discount beside a live refusal flag')
 })
+
+// ── CUL-2509 — medication rows carry where they came from ─────────────────────────────
+
+function cetirizineTrialInput(): ReportInput {
+  const input = truncatedTrialInput()
+  input.medicationItems = [{ id: 'mi-cet', genericName: 'cetirizine', brandName: 'Zyrtec', strength: null, route: 'oral', isPrescription: false, form: 'tablet' }]
+  // Ad-hoc doses: four in the trial days before the window (Apr 25, Apr 26 ×2, May 10), two inside it.
+  const dose = (id: string, date: string, over: Partial<ReportInput['doses'][number]> = {}) => ({
+    eventId: id, occurredAt: at(date, '09:00:00'), medicationId: null, medicationItemId: 'mi-cet', adherence: 'given', doseAmount: null, pairedEventId: null, ...over,
+  })
+  const earlier = [dose('c1', '2026-04-25'), dose('c2', '2026-04-26'), { ...dose('c3', '2026-04-26'), occurredAt: at('2026-04-26', '19:00:00') }, dose('c4', '2026-05-10'), dose('c5', '2026-05-12', { adherence: 'missed' })]
+  const inWindow = [dose('c6', '2026-06-25'), dose('c7', '2026-06-28', { howGiven: 'in_food' })]
+  input.doses = inWindow
+  input.lifetimeDoses = [...earlier, ...inWindow]
+  for (const d of [...earlier, ...inWindow]) {
+    input.events.push({ id: d.eventId, type: 'medication', occurredAt: d.occurredAt, occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: d.occurredAt, meal: null })
+  }
+  return input
+}
+
+Deno.test('CUL-2509 — the builder writes each medication row’s provenance', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  const row = snap.trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  assert.equal(row.adHoc, true)
+  assert.equal(row.itemId, 'mi-cet')
+  const cc = snap.concurrentChanges.find((c) => /cetirizine/i.test(c.label))!
+  assert.equal(cc.adHoc, true)
+  assert.equal(cc.itemId, 'mi-cet')
+})
+
+Deno.test('CUL-2509 instance 3 — an ad-hoc row counts its days dosed in the earlier trial days', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  const row = snap.trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  // Apr 25, Apr 26 (twice), May 10 given; May 12 missed: 3 days.
+  assert.equal(row.adHocEarlierTrialDoseDays, 3)
+  const text = plain(renderReport(snap))
+  assert.match(text, /dosed on 3 of the 42 earlier trial days this report leaves out/)
+  // Without the lifetime read the count is unknown, never zero.
+  const noLife = cetirizineTrialInput()
+  delete noLife.lifetimeDoses
+  const unknown = assembleReport(noLife).trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  assert.equal(unknown.adHocEarlierTrialDoseDays, null)
+  assert.doesNotMatch(plain(renderReport(assembleReport(noLife))), /earlier trial days this report leaves out/)
+})
+
+Deno.test('CUL-2509 instance 2 — a dose logged "in food" with no meal paired reaches the diet history', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  assert.equal(snap.diet.medicationVehicles?.unresolvedDoses, 1)
+  const text = plain(renderReport(snap))
+  assert.match(text, /1 dose was logged in this window as given in food or a treat that does not resolve to a meal logged here, so the food is not named\./)
+  assert.doesNotMatch(text, /no dose in this window was logged as given in food/)
+  // Control: unanswered or "direct" is no vehicle.
+  const direct = cetirizineTrialInput()
+  direct.doses = direct.doses.map((d) => ({ ...d, howGiven: d.howGiven ? 'direct' : null }))
+  assert.equal(assembleReport(direct).diet.medicationVehicles, null)
+})

@@ -510,6 +510,9 @@ export interface ReportDoseInput {
   adherence: string | null // dose_adherence: 'given'|'partial'|'missed'|'refused'|null(unconfirmed)
   doseAmount: string | null
   pairedEventId: string | null // B-156 combo: the meal/treat this dose rode inside
+  /** CUL-2509 — `medication_administrations.how_given` (migration 022): 'direct' | 'in_food' |
+   *  'in_treat' | 'in_pill_pocket' | 'other', or null (unanswered). Optional for older fixtures. */
+  howGiven?: string | null
 }
 
 /**
@@ -2470,6 +2473,12 @@ export interface DietSummary {
      * SAY which, the way the oral-route disclosure names its own exclusion.
      */
     countedInTally: number
+    /**
+     * CUL-2509 — doses in this window given in food whose food the row cannot name (logged "in
+     * food / a treat / a pill pocket" with no meal paired, or paired to no meal logged here). The
+     * row then exists with `feedings: 0` when these are its only content. Optional on older copies.
+     */
+    unresolvedDoses?: number
   } | null
 }
 
@@ -2693,6 +2702,12 @@ export interface ConcurrentChange {
   label: string
   /** `new_food` only (CUL-2512): the distinct local days in this window the food was logged as fed. */
   fedDays?: number
+  /**
+   * CUL-2509 — BUILDER-WRITTEN PROVENANCE on a medication / supplement row: true when it came from
+   * an ad-hoc dose group, false from a regimen; absent on other kinds and on older copies.
+   */
+  adHoc?: boolean
+  itemId?: string | null
   /**
    * RENDER-LAYER ONLY, never written by the builder (CUL-2440). Set by `withRecordOverlaps`
    * (medicationFacts.ts) on an ad-hoc drug whose record reaches before this window: `startDate`
@@ -5380,13 +5395,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         // An ad-hoc group's span is first dose → last dose, which is all the record
         // supports.
         medications: [
-          ...medications,
+          ...medications.map((m, i) => ({ ...m, adHoc: false, itemId: input.medications[i]?.medicationItemId ?? null })),
           ...unlinkedMedications.map((u) => ({
             drugName: u.drugName,
             isSupplement: u.isSupplement,
             startedAt: u.firstDate,
             endedAt: u.lastDate,
             indication: null,
+            adHoc: true,
+            itemId: u.itemId,
           })),
         ],
         arrangements: input.feedingArrangements,
@@ -5411,6 +5428,29 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         timeZone: tz,
       })
     : null
+  // CUL-2509 instance 3 — an ad-hoc row's dose days in the trial days BEFORE this window. The
+  // builder's doses are the window's; the lifetime read reaches the trial's head. Same item key and
+  // the same administered predicate (given + partial) as the group's own `doseDays`. Unknown (null)
+  // without the lifetime read, never a zero.
+  if (trialBlock && trialBlock.trialDaysOutsideRange.before > 0) {
+    const headEnd = scope.startDayNum - 1
+    for (const row of trialBlock.medicationOverlap) {
+      if (row.adHoc !== true) continue
+      if (!input.lifetimeDoses) {
+        row.adHocEarlierTrialDoseDays = null
+        continue
+      }
+      const days = new Set<number>()
+      for (const d of input.lifetimeDoses) {
+        if (d.medicationId !== null || droppedEventIds.has(d.eventId)) continue
+        if ((d.medicationItemId ?? null) !== (row.itemId ?? null)) continue
+        if (d.adherence !== 'given' && d.adherence !== 'partial') continue
+        const dn = eventDayNumber(d.occurredAt, tz)
+        if (dn !== null && dn >= trialBlock.elapsedStartDayIndex && dn <= headEnd) days.add(dn)
+      }
+      row.adHocEarlierTrialDoseDays = days.size
+    }
+  }
 
   const trial = trialBlock
     ? {
@@ -6175,11 +6215,21 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       for (const mid of e.memberEventIds) survivorOfMember.set(mid, e.id)
     }
     const paired = new Set<string>()
+    const windowMealIds = new Set(windowMeals.map((e) => e.id))
+    // CUL-2509 instance 2 (QUIET): a dose given in food whose food this row cannot name — logged
+    // "in food / in a treat / in a pill pocket" with no meal paired (`how_given`, migration 022), or
+    // paired to a meal that is not a meal logged in this window. The row counted only pairings that
+    // resolve, so these went unmentioned. In-window doses only, as the row's own population.
+    let unresolvedVehicleDoses = 0
     for (const d of input.doses) {
       if (droppedEventIds.has(d.eventId)) continue
       if (d.pairedEventId) paired.add(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
+      if (!inWindow(d.occurredAt)) continue
+      const resolves = d.pairedEventId !== null && windowMealIds.has(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
+      const saysVehicle = d.howGiven === 'in_food' || d.howGiven === 'in_treat' || d.howGiven === 'in_pill_pocket'
+      if (!resolves && (saysVehicle || d.pairedEventId !== null)) unresolvedVehicleDoses++
     }
-    if (paired.size === 0) return null
+    if (paired.size === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null
     const inTally = new Set(confounderFeedings.map((e) => e.id))
     const counts = new Map<string, number>()
     let feedings = 0
@@ -6191,11 +6241,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const label = mealFoodLabel(e.meal!)
       if (label) counts.set(label, (counts.get(label) ?? 0) + 1)
     }
-    if (feedings === 0) return null
+    if (feedings === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null
     const labels = [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([label]) => label)
-    return { labels, feedings, countedInTally }
+    return { labels, feedings, countedInTally, unresolvedDoses: unresolvedVehicleDoses }
   })()
 
   const diet: DietSummary = {
@@ -7918,6 +7968,8 @@ function buildConcurrentChanges(
      * the A1 finding says must never be dropped.
      */
     onlyInWindowTransition = false,
+    /** CUL-2509 — a medication row's provenance, written onto the change. */
+    provenance?: { adHoc: boolean; itemId: string | null },
   ) => {
     // A NULL startDate = a standing arrangement whose start was never recorded (a free-fed bowl
     // "always down"). Treat it as active from before the window (spanStart -Infinity) so it is
@@ -7947,6 +7999,7 @@ function buildConcurrentChanges(
       // only set strictly before `endDayNum` — so this is a real index, never a clamp artefact.
       endBucketIndex: endInWindow !== null ? bucketIndexOfDay(activeEndDn as number) : null,
       endIsDeclared,
+      ...(provenance ?? {}),
     })
   }
   for (const t of input.dietTrials) {
@@ -7990,7 +8043,10 @@ function buildConcurrentChanges(
   }
   for (const m of input.medications) {
     // A regimen's `ended_at` is an owner action (the End tap), so its end is declared.
-    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true)
+    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt, true, false, {
+      adHoc: false,
+      itemId: m.medicationItemId,
+    })
   }
   for (const u of unlinkedMedications) {
     // `lastDate` is the last dose IN WINDOW, so an ongoing ad-hoc course reads as
@@ -8005,7 +8061,10 @@ function buildConcurrentChanges(
     // `med start` on the window's first day and the prose says "started" — a window-boundary
     // artefact wearing an exposure verb, and the mirror of the endpoint above. It is pre-existing
     // and fixing it changes the START lane on every existing report, so it is its own change.
-    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false)
+    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate, false, false, {
+      adHoc: true,
+      itemId: u.itemId,
+    })
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,

@@ -172,7 +172,7 @@ reads as (
   select 'medication_administrations', count(*), coalesce(json_agg(json_build_object(
       'event_id', ma.event_id, 'medication_id', ma.medication_id,
       'medication_item_id', ma.medication_item_id, 'adherence', ma.adherence,
-      'dose_amount', ma.dose_amount, 'paired_event_id', ma.paired_event_id,
+      'dose_amount', ma.dose_amount, 'paired_event_id', ma.paired_event_id, 'how_given', ma.how_given,
       'events', (select json_build_object('occurred_at', ev.occurred_at, 'deleted_at', ev.deleted_at)
         from events ev where ev.id = ma.event_id and ev.pet_id = (select id from subj))
     ) order by ma.created_at desc, ma.id desc)::text, '[]')

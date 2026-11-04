@@ -90,19 +90,39 @@ function regimenCouldBe(snap: ReportSnapshot, drugName: string, day: string): bo
 }
 
 /**
+ * CUL-2509 instance 1 (QUIET) — the ad-hoc group a row was built from. The builder now writes each
+ * row's provenance (`adHoc`, `itemId`), so a regimen and an ad-hoc group of one name starting the
+ * same day are told apart by what built them: the ad-hoc row is re-dated, the regimen is left as
+ * built. A copy stored before the field keeps `regimenCouldBe`'s guess, which leaves a row as built
+ * when in doubt.
+ */
+function adHocSourceOf(
+  snap: ReportSnapshot,
+  row: { adHoc?: boolean; itemId?: string | null },
+  name: string,
+  day: string,
+): ReportSnapshot['unlinkedMedications'][number] | null {
+  if (row.adHoc === false) return null
+  const sameName = (u: ReportSnapshot['unlinkedMedications'][number]) => u.drugName === name && u.firstDate === day
+  if (row.adHoc === true) {
+    const byItem = row.itemId !== undefined ? snap.unlinkedMedications.find((u) => u.itemId === row.itemId && u.firstDate === day) : undefined
+    return byItem ?? snap.unlinkedMedications.find(sameName) ?? null
+  }
+  const group = snap.unlinkedMedications.find(sameName)
+  return !group || regimenCouldBe(snap, name, day) ? null : group
+}
+
+/**
  * The ad-hoc (no-regimen) dose group a concurrent-change row was built from, or null (CUL-2480
  * instance 1). Same predicate as `withRecordChanges`: an unlinked group of the row's name whose first
  * window dose is the row's start, and no same-name regimen that could have produced it instead.
  */
 export function adHocGroupOf(
   snap: ReportSnapshot,
-  c: Pick<ReportSnapshot['concurrentChanges'][number], 'kind' | 'label' | 'startDate'>,
+  c: Pick<ReportSnapshot['concurrentChanges'][number], 'kind' | 'label' | 'startDate' | 'adHoc' | 'itemId'>,
 ): ReportSnapshot['unlinkedMedications'][number] | null {
   if ((c.kind !== 'medication' && c.kind !== 'supplement') || c.startDate === null) return null
-  const start = c.startDate.slice(0, 10)
-  const group = snap.unlinkedMedications.find((u) => u.drugName === c.label && u.firstDate === start)
-  if (!group || regimenCouldBe(snap, c.label, start)) return null
-  return group
+  return adHocSourceOf(snap, c, c.label, c.startDate.slice(0, 10))
 }
 
 /**
@@ -114,8 +134,8 @@ function withRecordChanges(snap: ReportSnapshot): ReportSnapshot {
   let changed = false
   const concurrentChanges = snap.concurrentChanges.map((c) => {
     if ((c.kind !== 'medication' && c.kind !== 'supplement') || c.startDate === null || c.recordStart) return c
-    const group = snap.unlinkedMedications.find((u) => u.drugName === c.label && u.firstDate === c.startDate)
-    if (!group || regimenCouldBe(snap, c.label, c.startDate.slice(0, 10))) return c
+    const group = adHocSourceOf(snap, c, c.label, c.startDate.slice(0, 10))
+    if (!group) return c
     const rec = adHocRecordStartOf(snap, group, c.startDate)
     if (!rec) return c
     changed = true
@@ -194,8 +214,8 @@ function withRedatedOverlaps(snap: ReportSnapshot): ReportSnapshot {
   const medicationOverlap = t.medicationOverlap.map((m) => {
     if (m.startedAt === null || m.recordStart) return m
     const started = m.startedAt.slice(0, 10)
-    const group = snap.unlinkedMedications.find((u) => u.drugName === m.drugName && u.firstDate === started)
-    if (!group || regimenCouldBe(snap, m.drugName, started)) return m
+    const group = adHocSourceOf(snap, m, m.drugName, started)
+    if (!group) return m
     const rec = adHocRecordStartOf(snap, group, started)
     if (!rec) return m
     const from = rec.firstDoseDay > trialStart ? rec.firstDoseDay : trialStart

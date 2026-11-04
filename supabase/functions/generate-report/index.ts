@@ -296,6 +296,8 @@ interface DoseRow {
   adherence: string | null
   dose_amount: string | null
   paired_event_id: string | null
+  /** CUL-2509 — migration 022's `dose_route_vehicle`; optional so an older fixture still maps. */
+  how_given?: string | null
   events: ParentEventJoin | ParentEventJoin[] | null
 }
 
@@ -777,6 +779,7 @@ export function mapDoseRows(rows: DoseRow[], lookbackMs?: number): ReportDoseInp
       adherence: r.adherence ?? null,
       doseAmount: r.dose_amount ?? null,
       pairedEventId: r.paired_event_id ?? null,
+      howGiven: r.how_given ?? null,
     })
   }
   return out
@@ -1485,7 +1488,7 @@ export async function buildReportSnapshotForPet(
       supabase
       .from('medication_administrations')
       .select(
-        'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, ' +
+        'event_id, medication_id, medication_item_id, adherence, dose_amount, paired_event_id, how_given, ' +
           'events!medication_administrations_event_id_fkey(occurred_at, deleted_at)',
         { count: 'exact' },
       )

@@ -5839,7 +5839,15 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
           m.adHocDoses.onRecord,
         )} dose${m.adHocDoses.onRecord === 1 ? '' : 's'} on record in all`
       : `${num(m.daysOverlapping)}&nbsp;d`
-    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${still}.${adHoc}${abx}`
+    // CUL-2509 instance 3 (QUIET): the earlier trial days this report leaves out. Cetirizine read
+    // "dosed on 4 of the trial days this report covers" over 52 earlier trial days holding 21 coughs,
+    // and its dosing there was counted nowhere. Days dosed, never doses (B2).
+    const before = snap.trial?.trialDaysOutsideRange.before ?? 0
+    const earlier =
+      typeof m.adHocEarlierTrialDoseDays === 'number' && before > 0
+        ? `; dosed on <b>${num(m.adHocEarlierTrialDoseDays)} of the ${num(before)} earlier trial days</b> this report leaves out`
+        : ''
+    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
   })
   // EXPLICITLY NOT JUDGED, and the sentence saying so is not optional: antipruritics
   // are permitted throughout a trial and a 2–3 week prednisolone course is a
@@ -11244,26 +11252,33 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
   // tally needs to know whether it is inside that number. Nothing here widens the tally —
   // `countedInTally` is a count of what the off-diet member set already holds.
   const veh = d.medicationVehicles
-  const vehicleBit = veh
+  // CUL-2509 instance 2: doses given in food whose food this row cannot name. Said beside the named
+  // ones, or on their own; never dropped for want of a meal to point at.
+  const unresolved = veh?.unresolvedDoses ?? 0
+  const unresolvedBit = `${num(unresolved)} dose${unresolved === 1 ? ' was' : 's were'} logged in this window as given in food or a treat that does not resolve to a meal logged here, so the food is not named.`
+  const named = veh && veh.feedings > 0 ? veh : null
+  const vehicleBit = named
     ? `${distinctLabels(
-        veh.labels.map((label) => ({ label })),
+        named.labels.map((label) => ({ label })),
         4,
-      )} (${num(veh.feedings)} feeding${veh.feedings === 1 ? '' : 's'} carried a dose). ${
-        veh.countedInTally === 0
+      )} (${num(named.feedings)} feeding${named.feedings === 1 ? '' : 's'} carried a dose). ${
+        named.countedInTally === 0
           ? 'Not counted among the off-diet exposures in appendix&nbsp;C, so the protein tally there does not describe them.'
-          : veh.countedInTally === veh.feedings
+          : named.countedInTally === named.feedings
             ? 'Counted among the off-diet exposures in appendix&nbsp;C.'
-            : `${num(veh.countedInTally)} of these ${
-                veh.countedInTally === 1 ? 'is' : 'are'
+            : `${num(named.countedInTally)} of these ${
+                named.countedInTally === 1 ? 'is' : 'are'
               } counted among the off-diet exposures in appendix&nbsp;C; the rest are not, so the protein tally there does not describe those.`
-      }`
+      }${unresolved > 0 ? ` ${unresolvedBit}` : ''}`
     : // An absence here means different things depending on whether there was anything to
       // give, and the vet is reading this row to decide whether a pill vehicle is in play.
       // CUL-2440: NOT WHILE THE TRIAL BLOCK COUNTS ONE. The oral-route detector reads each dose's
       // paired food directly, including a pairing to a meal this row cannot resolve, so on the
       // live record page 1 counted 18 doses given inside a food while this row said none was.
       // The louder of the two stands.
-      vehicleDosesOf(snap) > 0
+      unresolved > vehicleDosesOf(snap)
+      ? unresolvedBit
+      : vehicleDosesOf(snap) > 0
       ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged ${
           // The trial block's own scope phrase, so the two counts cannot read as two populations
           // ("during the trial" read as the whole 87-day trial beside "the 35 trial days").
