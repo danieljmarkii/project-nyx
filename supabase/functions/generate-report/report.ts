@@ -7864,9 +7864,11 @@ function buildWindowNewFoods(
     if (firstMealDn === null || dn < firstMealDn) firstMealDn = dn
     const parts: Array<{ id: string | null; key: string; label: string | null }> = e.meal.bowl
       ? e.meal.bowl.components.map((c) => ({
+          // Keyed and labelled as a plain meal of the same food is, so a food fed alone and in a
+          // bowl is one food (the real-record run listed Applaws twice).
           id: c.foodItemId,
-          key: c.foodKey,
-          label: `${c.brand ?? ''} ${c.productName ?? ''}`.trim() || c.snapshotLabel,
+          key: c.foodItemId ?? c.foodKey,
+          label: mealFoodLabel({ brand: c.brand, productName: c.productName, format: c.format }) ?? c.snapshotLabel,
         }))
       : [
           {

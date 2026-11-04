@@ -6513,3 +6513,29 @@ Deno.test('CUL-2512 — a record that starts at the window edge does not call it
   ]
   assert.deepEqual(assembleReport(baseInput({ events: before })).windowNewFoods, [])
 })
+
+Deno.test('CUL-2512 — a food fed alone and in a mixed bowl is one new food, not two', () => {
+  idSeq = 0
+  const events = [
+    ...dayKeys('2026-03-20', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })),
+    mealEvent('2026-06-14', { label: 'Applaws', format: 'wet_canned' }),
+  ]
+  const bowl = mealEvent('2026-06-10', { label: 'House Kibble' })
+  bowl.meal = {
+    ...bowl.meal!,
+    foodItemId: null,
+    bowl: {
+      status: 'mix',
+      compositionKey: 'k',
+      compositionKeyWithRatio: 'k',
+      writtenAtMs: null,
+      components: [
+        { foodItemId: 'Applaws', snapshotLabel: 'Applaws', foodKey: 'applaws', foodType: 'meal', format: 'wet_canned', primaryProtein: null, brand: null, productName: 'Applaws', share: null, normalizedShare: null, shareSource: 'unknown', amountValue: null, amountUnit: null, proteins: [] } as never,
+        { foodItemId: 'House Kibble', snapshotLabel: 'House Kibble', foodKey: 'house kibble', foodType: 'meal', format: 'dry_kibble', primaryProtein: null, brand: null, productName: 'House Kibble', share: null, normalizedShare: null, shareSource: 'unknown', amountValue: null, amountUnit: null, proteins: [] } as never,
+      ],
+    },
+  }
+  events.push(bowl)
+  const foods = assembleReport(baseInput({ events })).windowNewFoods!
+  assert.deepEqual(foods.map((c) => [c.label, c.startDate, c.fedDays]), [['Applaws (Wet)', '2026-06-10', 2]])
+})
