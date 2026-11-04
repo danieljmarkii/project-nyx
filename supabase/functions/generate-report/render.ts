@@ -3747,6 +3747,14 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   if (trialWeight && !snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal')) {
     recordBits.push(trialWeight)
   }
+  // CUL-2511 — the change across the trial's start, on every trial branch. Not twice: when the
+  // owner's read prints, "From the record" carries it (`trialWeightClause`).
+  const acrossStart = acrossTrialStartSentence(snap)
+  const ownerReadPrints =
+    !!t.outcome ||
+    !!t.outcomeNotes ||
+    (t.stoppedReason !== null && t.stoppedReason !== undefined && t.stoppedReason !== 'completed')
+  if (acrossStart && !ownerReadPrints) recordBits.push(acrossStart)
   // The blind-spot qualifier is INLINE and permanent on the claim itself, never a
   // page-level legend (§5.2). It names flavoured NON-chewables specifically because
   // C3 ruled the chewable lane INTO v1 — rung 4 detects those, and the pre-C3
@@ -4401,9 +4409,19 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     shown !== null && t.status !== 'active' && t.trialDaysElapsed < t.targetDurationDays
       ? `The trial ran ${num(t.trialDaysElapsed)} of a planned ${num(t.targetDurationDays)} days.`
       : null
-  // Refusal first, then the run's length, then the record-quality statement, then the
-  // remaining caveats.
-  const body = [refusalCaveat, ranShort, shown ? h(shown) : null, ...caveats].filter(
+  // CUL-2511 (QUIET): a LOSS across the trial's start sits beside the refusal on the bottom line,
+  // where unfinished trial-diet meals are read. Not a caveat on the record, so it never suppresses
+  // the statement; a gain is left to the trial section.
+  const across = acrossTrialStartOf(snap)
+  const weightLine =
+    across && across.highBefore && across.deltaKg !== null && across.deltaKg < 0
+      ? `Weight is down <b>${weightPctText(across)}</b> across the trial&rsquo;s start (${h(
+          fmtDayYear(across.highBefore.day),
+        )} &rarr; ${h(fmtDayYear(across.latest.day))}; above).`
+      : null
+  // Refusal first, then the weight across the start, then the run's length, then the
+  // record-quality statement, then the remaining caveats.
+  const body = [refusalCaveat, weightLine, ranShort, shown ? h(shown) : null, ...caveats].filter(
     (p): p is string => p !== null,
   )
   const callout =
@@ -4865,6 +4883,49 @@ function mealLessDaysClause(snap: ReportSnapshot, start: string, end: string): s
  * block read a reading four days later as down about 8%, because only the flag (which a single new
  * reading does not fire) carried it.
  */
+/**
+ * CUL-2511 (QUIET) — the weight change ACROSS the trial's start, or null. `trialChange` is bounded
+ * to the trial, so a loss measured from a pre-trial reading never reached the trial read or its
+ * bottom line. Both ends are dated with the year; the earlier one is said to be before the trial.
+ */
+export function acrossTrialStartOf(snap: ReportSnapshot): WeightChangeView | null {
+  if (snap.weight.acrossTrialStart !== undefined) return snap.weight.acrossTrialStart
+  // A copy stored before the field: the report's own change says the same thing when its two ends
+  // straddle the trial's start and its latest is inside the trial. Read, never re-derived.
+  // Failing that, the Weight flag's own pair (nyx-live's capture holds no `change`, and its flag reads
+  // Jun 15 → Sep 16 across a Jul 26 start).
+  const t = snap.trial
+  if (!t) return null
+  const start = t.startedAt.slice(0, 10)
+  const straddles = (lo: { day: string }, hi: { day: string }): boolean =>
+    lo.day < start && hi.day >= start && hi.day <= t.evidenceEndDate
+  const ch = snap.weight.change
+  if (ch && ch.highBefore && straddles(ch.highBefore, ch.latest)) return ch
+  const f = weightFlagOf(snap)
+  if (f && straddles(f.highBefore, f.latest)) {
+    const deltaKg = Math.round((f.latest.kg - f.highBefore.kg) * 100) / 100
+    const end = (e: typeof f.latest): WeightChangeEnd => ({ ...e, lbs: kgToLbsNum(e.kg) })
+    return {
+      latest: end(f.latest),
+      highBefore: end(f.highBefore),
+      deltaKg,
+      deltaLbs: Math.round((kgToLbsNum(f.latest.kg) - kgToLbsNum(f.highBefore.kg)) * 10) / 10,
+      pct: Math.round((Math.abs(deltaKg) / f.highBefore.kg) * 100),
+      withinNoise: false,
+    }
+  }
+  return null
+}
+
+export function acrossTrialStartSentence(snap: ReportSnapshot): string | null {
+  const c = acrossTrialStartOf(snap)
+  if (!c || !c.highBefore || c.deltaKg === null || c.deltaKg === 0) return null
+  const at = (e: WeightChangeEnd): string => `${weightReadingText(e.kg)} on ${h(fmtDayYear(e.day))}`
+  return `Across the trial&rsquo;s start, weight is ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b>: ${at(
+    c.highBefore,
+  )}, before the trial began, &rarr; ${at(c.latest)}.`
+}
+
 function trialWeightClause(snap: ReportSnapshot, scope: string): string {
   const c = snap.weight.trialChange
   const at = (e: WeightChangeEnd): string => `${weightReadingText(e.kg)} on ${h(fmtDayYear(e.day))}`
@@ -4893,6 +4954,8 @@ function trialWeightClause(snap: ReportSnapshot, scope: string): string {
         : ''
     s += ` The latest weigh-in on this report is ${weightReadingText(latest.kg)} on ${h(fmtDayYear(latest.date))}${read}.`
   }
+  const across = acrossTrialStartSentence(snap)
+  if (across) s += ` ${across}`
   if ((snap.incompletePulls ?? []).includes('weight_checks')) s += ' The weigh-in record did not load in full.'
   const f = weightFlagOf(snap)
   if (f) {

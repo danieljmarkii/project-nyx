@@ -2202,6 +2202,14 @@ export interface WeightSection {
    * renderer never prints the noise caveat from it (adversarial pass 1).
    */
   trialChange: WeightChangeView | null
+  /**
+   * CUL-2511 — the change ACROSS the trial's start: the story's latest counted reading up to the
+   * trial's evidence end, from the highest counted reading before it, kept only when that earlier
+   * end falls before the trial began and the latest inside it. `trialChange` is bounded to the trial
+   * span, so two readings straddling the start (Nyx: Jun 15 → Sep 16, about 15% down) reached no
+   * trial sentence. Optional: a copy stored before it is unknown, never "none".
+   */
+  acrossTrialStart?: WeightChangeView | null
   /** In-window owner estimates: listed beside the block, never counted, plotted or used as the latest. */
   notCounted: Array<{ kg: number; lbs: number; day: string }>
 }
@@ -6918,6 +6926,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           trialBlock.evidenceStartDate,
           trialBlock.evidenceEndDate,
         )
+        : null,
+      acrossTrialStart: trialBlock
+        ? (() => {
+          const trialStartDay = new Date(trialBlock.elapsedStartDayIndex * 86_400_000).toISOString().slice(0, 10)
+          const c = weightChangeOf(
+            storyReadings,
+            scope.detectionNowIso,
+            input.pet.dateOfBirth,
+            tz,
+            undefined,
+            trialBlock.evidenceEndDate,
+          )
+          return c && c.highBefore && c.highBefore.day < trialStartDay && c.latest.day >= trialStartDay ? c : null
+        })()
         : null,
     },
     atAGlance,
