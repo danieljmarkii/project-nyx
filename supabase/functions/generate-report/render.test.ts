@@ -8652,7 +8652,8 @@ Deno.test('CUL-2505 — the contamination caveat names an allowed extra, the tri
     return html.slice(Math.max(0, i - 300), i)
   }
   const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
-  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(extra), extra)
+  // CUL-2513: an extra's proteins are measured against the trial, so the clause says so.
+  assert.ok(/Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(extra), extra)
   const own = caveat([{ food: diet, extraProteins: ['pea'], derivedFromPrimary: [] }])
   assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea \(above\), $/.test(own), own)
   assert.ok(!/fed during the trial, also lists/.test(own), own)
@@ -8660,7 +8661,7 @@ Deno.test('CUL-2505 — the contamination caveat names an allowed extra, the tri
     { food: diet, extraProteins: ['pea'], derivedFromPrimary: [] },
     { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] },
   ])
-  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(both), both)
+  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(both), both)
 })
 
 Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and the off-trial legend never says "no link"', () => {

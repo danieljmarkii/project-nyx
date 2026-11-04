@@ -226,8 +226,9 @@ export interface FoodProteinRecord {
  * D-A widened this from the trial diet to the whole allowed list: the
  * vet-approved rabbit jerky that also lists chicken fat is exactly as
  * trial-invalidating as a contaminated primary diet, and less likely to be
- * noticed. The comparator is each food's OWN designated primary — see the
- * "two protein sets" note in `lib/dietTrial.ts`.
+ * noticed. The comparator is a trial diet's OWN designated primary, and the
+ * trial's set for a permitted extra (CUL-2513) — see the "two protein sets" note
+ * in `lib/dietTrial.ts`.
  */
 export function trialFoodContaminants(ctx: TrialProteinContext): string[] {
   const seen = new Set<string>();

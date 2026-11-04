@@ -3915,9 +3915,11 @@ export function dietTrialSection(snap: ReportSnapshot): string {
     const items = t.contamination
       .map(
         (c) =>
-          `<b>${h(c.food.label)}</b>${
-            c.food.role === 'primary_diet' ? ' (the trial diet)' : ''
-          } also lists ${h(proteinList(c.extraProteins.map(capProtein)))}`,
+          // CUL-2513: an extra's proteins are measured against the trial, so it "lists X, which
+          // the trial diet does not"; the trial diet's own row is measured against its front.
+          c.food.role === 'primary_diet'
+            ? `<b>${h(c.food.label)}</b> (the trial diet) also lists ${h(proteinList(c.extraProteins.map(capProtein)))}`
+            : `<b>${h(c.food.label)}</b> lists ${h(proteinList(c.extraProteins.map(capProtein)))}, which the trial diet does not`,
       )
       .join('; ')
     const onlyPrimary = t.contamination.every((c) => c.food.role === 'primary_diet')
@@ -4261,10 +4263,10 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       clauses.push(`the trial diet&rsquo;s own label (<b>${h(c.food.label)}</b>) also lists ${extras(c)}`)
     }
     for (const c of others) {
-      // ADVERSARIAL PASS 1 (B4): no "which the trial diet does not". `extraProteins` is measured
-      // against the food's own primary, not the trial diet, so that clause could name the trial's
-      // own protein as foreign. The words match the Label contamination row they point to.
-      clauses.push(`<b>${h(c.food.label)}</b>, fed during the trial, also lists ${extras(c)}`)
+      // CUL-2513: `extraProteins` is now measured against the trial (it was the food's own primary,
+      // which named a duck trial's duck as the extra), so the clause pass 1 (B4) removed is true
+      // again. The words match the Label contamination row they point to.
+      clauses.push(`<b>${h(c.food.label)}</b>, fed during the trial, lists ${extras(c)}, which the trial diet does not`)
     }
     const joined = clauses.join('; and ')
     caveats.push(
@@ -8070,9 +8072,9 @@ export function dietMeds(snap: ReportSnapshot): string {
       // so a vet following it to see what else the chew carries lands on a table the
       // chew is not in. An allowed-list treat's set is in appendix C, with its rung.
       contamBits.push(
-        `${h(c.food.label)}, on the allowed list, also lists ${h(
+        `${h(c.food.label)}, on the allowed list, lists ${h(
           proteinList(c.extraProteins.map(capProtein)),
-        )} (its full set is in appendix&nbsp;C).`,
+        )}, which the trial diet does not (its full set is in appendix&nbsp;C).`,
       )
     }
     const freeFedOff = breach.freeFed
@@ -9873,19 +9875,19 @@ function inTrialFromExposures(t: TrialBlock, label: string): { feedings: number;
  * year is stamped once per band (C-19), on both ends only when the band crosses a year.
  */
 export function dayListText(days: readonly string[]): string {
-  const sorted = [...new Set(days)].sort()
-  if (sorted.length === 0) return ''
-  const first = sorted[0]
-  const last = sorted[sorted.length - 1]
+  const ordered = [...new Set(days)].sort()
+  if (ordered.length === 0) return ''
+  const first = ordered[0]
+  const last = ordered[ordered.length - 1]
   const crossesYear = first.slice(0, 4) !== last.slice(0, 4)
-  if (sorted.length === 1) return `on ${h(fmtDayYear(first))}`
-  if (sorted.length <= 4) {
-    const named = sorted.map((d, i) =>
-      i === sorted.length - 1 || crossesYear ? h(fmtDayYear(d)) : h(fmtDay(d)),
+  if (ordered.length === 1) return `on ${h(fmtDayYear(first))}`
+  if (ordered.length <= 4) {
+    const named = ordered.map((d, i) =>
+      i === ordered.length - 1 || crossesYear ? h(fmtDayYear(d)) : h(fmtDay(d)),
     )
     return `on ${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
   }
-  return `on ${num(sorted.length)} days between ${h(crossesYear ? fmtDayYear(first) : fmtDay(first))} and ${h(
+  return `on ${num(ordered.length)} days between ${h(crossesYear ? fmtDayYear(first) : fmtDay(first))} and ${h(
     fmtDayYear(last),
   )}`
 }

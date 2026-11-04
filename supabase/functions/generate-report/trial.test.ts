@@ -750,18 +750,20 @@ Deno.test('D-A — a permitted extra that also lists another protein is a standi
   ]
   const snap = assembleReport(input)
   assert.equal(snap.trial?.contamination.length, 1)
-  assert.deepEqual(snap.trial?.contamination[0].extraProteins, ['chicken'])
+  // CUL-2513: measured against the (soy) trial, the jerky's own rabbit is named beside the chicken.
+  assert.deepEqual(snap.trial?.contamination[0].extraProteins, ['rabbit', 'chicken'])
   const text = plain(renderReport(snap))
   // NAMED. The cold read could not act on an unnamed "a food on the allowed list":
   // the row called it as trial-invalidating as a contaminated primary diet and then
   // withheld which product to stop.
-  assert.ok(/Ziwi Rabbit Jerky also lists Chicken/.test(text))
+  assert.ok(/Ziwi Rabbit Jerky lists Rabbit and Chicken, which the trial diet does not/.test(text), text)
   assert.ok(/less likely to be noticed/.test(text))
   // And it defeats the §7.2 affirmative, whatever the coverage.
   assert.ok(/cannot establish that the elimination was clean/.test(text))
   assert.ok(!/supports interpreting it/.test(text), 'the clause a busy reader lifts must not open a paragraph that dismantles it')
   // …and it reaches the HEADLINE, which is where a 60-second scan stops.
-  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+  // CUL-2513: the headline names every protein the trial diet does not hold, the jerky's own included.
+  assert.ok(/The record shows Rabbit and Chicken in Cooper\u2019s diet during the trial/.test(text), (text.match(/The record shows[^.]*/) ?? [''])[0])
 })
 
 // ── C3 — the oral route ──────────────────────────────────────────────────────
@@ -1348,10 +1350,11 @@ Deno.test('a PERMITTED extra\u2019s contamination never renders in the TRIAL FOO
   ]
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(!/The trial food\u2019s own label also lists Chicken/.test(text), 'the trial diet is clean and must not be accused')
-  assert.ok(/Pedigree Dentastix, on the allowed list, also lists Chicken/.test(text), 'the finding names its own product, in its own voice')
+  // CUL-2513: measured against the (soy) trial, in its own voice; the fixture designates cereal as its primary.
+  assert.ok(/Pedigree Dentastix, on the allowed list, lists Cereal and Chicken, which the trial diet does not/.test(text), (text.match(/Pedigree Dentastix, on the allowed list[^(]*/) ?? [''])[0])
   // The headline names the PROTEIN and the PET, never the food, so promoting it there
   // cannot mis-attribute the source.
-  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+  assert.ok(/The record shows Cereal and Chicken in Cooper\u2019s diet during the trial/.test(text), (text.match(/The record shows[^.]*/) ?? [''])[0])
 })
 
 Deno.test('§7.2 carries the medication confound, not only the exposure caveat', () => {

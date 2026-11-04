@@ -362,7 +362,28 @@ describe('§5.5 D-A — the standing fact covers permitted extras', () => {
     const facts = trialContamination(ctx());
     expect(facts).toHaveLength(1);
     expect(facts[0].food.foodItemId).toBe('rabbit-jerky');
-    expect(facts[0].extraProteins).toEqual(['chicken']);
+    // CUL-2513: measured against the trial, so the jerky's own rabbit is named too —
+    // the trial diet holds neither (and rung 1 already records rabbit as an antigen).
+    expect(facts[0].extraProteins).toEqual(['rabbit', 'chicken']);
+  });
+
+  it('CUL-2513 — names the novel protein, never the trial protein, on a permitted extra', () => {
+    // A duck trial; a permitted "Salmon Biscuit" whose label lists salmon and duck.
+    const biscuit: AllowedFood = { ...RABBIT_JERKY, foodItemId: 'salmon-biscuit', label: 'Salmon Biscuit', primaryProtein: 'salmon', proteins: ['salmon', 'duck'] };
+    const facts = trialContamination(buildTrialContext(TRIAL, [DRY_DUCK, biscuit]));
+    expect(facts).toHaveLength(1);
+    expect(facts[0].extraProteins).toEqual(['salmon']);
+    // A permitted extra built only on the trial protein is no finding.
+    const duckTreat: AllowedFood = { ...biscuit, foodItemId: 'duck-treat', primaryProtein: 'duck', proteins: ['duck'] };
+    expect(trialContamination(buildTrialContext(TRIAL, [DRY_DUCK, duckTreat]))).toEqual([]);
+    // B-529 kin, carried: a hydrolysed-chicken treat on a hydrolysed-chicken trial lists its own
+    // source; intact chicken on a beef chew still flags (kinship never crosses foods).
+    const ha = food({ foodItemId: 'ha', label: 'Purina HA', primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'] });
+    const haTreat: AllowedFood = { ...biscuit, foodItemId: 'ha-treat', primaryProtein: 'hydrolyzed chicken', proteins: ['hydrolyzed chicken', 'chicken'] };
+    const chew: AllowedFood = { ...biscuit, foodItemId: 'chew', primaryProtein: 'beef', proteins: ['beef', 'chicken'] };
+    const kin = trialContamination(buildTrialContext(TRIAL, [ha, haTreat, chew]));
+    expect(contaminationFindings(kin).map((f) => [f.food.foodItemId, f.extraProteins])).toEqual([['chew', ['beef', 'chicken']]]);
+    expect(kin.find((f) => f.food.foodItemId === 'ha-treat')?.derivedFromPrimary).toEqual(['chicken']);
   });
 
   it('flags a contaminated PRIMARY diet against its own designated protein', () => {

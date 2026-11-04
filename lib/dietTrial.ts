@@ -45,11 +45,14 @@
 //     sanction chicken for every other food in the library.
 //
 //   intendedProteins — each food's OWN owner-designated `primary_protein`. The
-//     comparator for the STANDING CONTAMINATION FACT (§5.5), which asks a
-//     different question: "does this food list more than it says on the front?"
-//     Comparing a food against `sanctionedProteins` would be vacuous — a duck
-//     formula that also lists chicken puts chicken INTO the union, so it could
-//     never flag itself.
+//     comparator for the STANDING CONTAMINATION FACT (§5.5) on a `primary_diet`
+//     row, which asks a different question: "does this food list more than it
+//     says on the front?" Comparing a trial diet against `sanctionedProteins`
+//     would be vacuous — a duck formula that also lists chicken puts chicken
+//     INTO the union, so it could never flag itself. A PERMITTED EXTRA is the
+//     exception (CUL-2513): it never enters the union, so measuring it against
+//     the trial's set is not vacuous, and measuring it against its own front
+//     named a duck trial's duck as the extra and missed the salmon.
 //
 // Same inputs, two questions, two answers. Merging them re-opens B-351 shape ①.
 import { canonicalizeProtein } from './protein.ts';
@@ -658,7 +661,21 @@ export function allowedFoodsOn(ctx: TrialContext, dayIndex: number): AllowedFood
 export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<string> {
   const out = new Set<string>();
   for (const food of allowedFoodsOn(ctx, dayIndex)) {
-    if (food.role !== 'primary_diet') continue;
+    for (const key of sanctionedProteinsOfFood(food)) out.add(key);
+  }
+  return out;
+}
+
+/**
+ * One allowed-set row's contribution to the sanctioned set: nothing unless it is a
+ * characterized `primary_diet` row, then its designated primary and its label's
+ * proteins less the primary's kin. Shared by `sanctionedProteinsOn` (one day) and
+ * `trialContamination` (the whole trial), so the two comparators are one rule.
+ */
+function sanctionedProteinsOfFood(food: AllowedFood): string[] {
+  const out: string[] = [];
+  {
+    if (food.role !== 'primary_diet') return out;
     // A FOOD WITH NO DESIGNATED PRIMARY CONTRIBUTES NOTHING, and that is the fix
     // for the worst self-consistency break the adversarial pass found. Consider a
     // trial food carrying `['duck','chicken']` with a NULL `primary_protein` —
@@ -682,13 +699,13 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
     // then printed "no main protein on file" and "the trial diet also lists
     // Chicken and Soy" ONE ROW APART — R7's own defect #1, computed from the
     // comparator the row above disclaims.
-    if (isUncharacterizedTrialDiet(food)) continue;
+    if (isUncharacterizedTrialDiet(food)) return out;
     const primary = canonicalizeProtein(food.primaryProtein);
-    if (!primary) continue;
+    if (!primary) return out;
     // The designated primary is part of the diet even on a row whose array was
     // never captured — otherwise a manually-entered trial food with a main
     // protein and no ingredient panel sanctions nothing at all.
-    out.add(primary);
+    out.push(primary);
     // B-529/R7. A KIN TERM OF THIS FOOD'S OWN PRIMARY DOES NOT ENTER THE
     // SANCTIONED SET. A hydrolysed diet's label routinely yields both keys —
     // `hydrolyzed chicken` on the front, a panel term that canonicalizes to
@@ -707,7 +724,7 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
     // without the other either re-opens this false negative or re-opens the
     // false self-contamination it was paired with.
     const { extra } = partitionKinOfPrimary(canonicalProteins(food.proteins), primary);
-    for (const key of extra) out.add(key);
+    for (const key of extra) out.push(key);
   }
   return out;
 }
@@ -1403,9 +1420,11 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
 
 export interface ContaminationFact {
   food: AllowedFood;
-  /** Proteins in this food beyond its OWN designated primary, EXCLUDING terms
-   *  that name the primary's own source at a different stage of processing
-   *  (B-529/R7 — see `derivedFromPrimary`). */
+  /** Proteins in this food the TRIAL does not hold (CUL-2513), EXCLUDING terms
+   *  that name the food's own primary source at a different stage of processing
+   *  (B-529/R7 — see `derivedFromPrimary`). For a `primary_diet` row the
+   *  comparator is its own designated primary (the trial diet cannot sanction
+   *  its own contaminant); for a permitted extra it is the trial's set. */
   extraProteins: string[];
   /** B-529/R7 — label terms absorbed as the primary's own source: the `chicken`
    *  on a `hydrolyzed chicken` diet's panel. NOT a contamination and never
@@ -1434,14 +1453,46 @@ export interface ContaminationFact {
  * contaminated primary diet, and less likely to be noticed. Cost: one more set
  * union, no new alarm surface, no per-feeding verdict.
  *
- * The comparator is the food's OWN `primaryProtein`, not `sanctionedProteins` —
- * see the module header. A food with no designated primary is skipped entirely:
+ * The comparator is the food's OWN `primaryProtein` for a `primary_diet` row, and
+ * the trial's own set for a permitted extra (CUL-2513) — see the module header. A food with no designated primary is skipped entirely:
  * with nothing to compare against, "everything in it is extra" is not a finding,
  * it is an artefact (and D10 forbids turning an unread record into a claim).
  */
 export function trialContamination(ctx: TrialContext): ContaminationFact[] {
   const out: ContaminationFact[] = [];
+  // CUL-2513 — THE TRIAL'S OWN SET, for permitted extras. Every characterized
+  // `primary_diet` row on the list, undated: this fact is standing, computed once.
+  const trialSet = new Set<string>();
+  for (const food of ctx.allowedFoods) for (const key of sanctionedProteinsOfFood(food)) trialSet.add(key);
   for (const food of ctx.allowedFoods) {
+    // CUL-2513 (QUIET) — A PERMITTED EXTRA IS MEASURED AGAINST THE TRIAL, NOT
+    // AGAINST ITSELF. Against its own primary, a "Salmon Biscuit" listing salmon
+    // and duck on a duck trial came back "also lists Duck": the trial's own
+    // protein named as the contaminant, and salmon, the novel one, never named.
+    // So the extra's proteins (its designated primary included) less the trial's
+    // set. Its own-primary kin is absorbed only when that primary IS a trial
+    // protein (a hydrolysed-chicken treat on a hydrolysed-chicken trial lists
+    // `chicken` as its own source, as the diet does); otherwise kinship never
+    // crosses foods (B-529: an intact-chicken treat still flags). With no trial
+    // set to compare against, the old own-primary comparator stands, so the
+    // fact is never lost to a dark set.
+    if (food.role !== 'primary_diet' && trialSet.size > 0) {
+      const own = canonicalizeProtein(food.primaryProtein);
+      const pool = canonicalProteins(food.proteins);
+      if (own && !pool.includes(own)) pool.unshift(own);
+      let candidates = pool;
+      let derivedFromPrimary: string[] = [];
+      if (own && trialSet.has(own)) {
+        const split = partitionKinOfPrimary(pool, own);
+        candidates = split.extra;
+        derivedFromPrimary = split.derivedFromPrimary;
+      }
+      const extra = candidates.filter((p) => !trialSet.has(p));
+      if (extra.length > 0 || derivedFromPrimary.length > 0) {
+        out.push({ food, extraProteins: extra, derivedFromPrimary });
+      }
+      continue;
+    }
     // Same one predicate as `sanctionedProteinsOn` (see the note there): a food
     // whose primary names no SOURCE has no usable comparator, so "everything in
     // it is extra" is an artefact, not a finding.
