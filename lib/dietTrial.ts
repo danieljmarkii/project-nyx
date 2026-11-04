@@ -1426,6 +1426,11 @@ export interface ContaminationFact {
    *  comparator is its own designated primary (the trial diet cannot sanction
    *  its own contaminant); for a permitted extra it is the trial's set. */
   extraProteins: string[];
+  /** CUL-2513 — what `extraProteins` was measured against: the trial's own set, or (a trial
+   *  diet's row, or an extra on a trial whose set is dark) the food's own primary. Only a
+   *  `trial` fact may be described as "a protein the trial diet does not" hold. Optional on
+   *  facts stored before it, which read as `own_primary`. */
+  measuredAgainst?: 'trial' | 'own_primary';
   /** B-529/R7 — label terms absorbed as the primary's own source: the `chicken`
    *  on a `hydrolyzed chicken` diet's panel. NOT a contamination and never
    *  counted as one, but carried rather than discarded so the suppression stays
@@ -1489,7 +1494,7 @@ export function trialContamination(ctx: TrialContext): ContaminationFact[] {
       }
       const extra = candidates.filter((p) => !trialSet.has(p));
       if (extra.length > 0 || derivedFromPrimary.length > 0) {
-        out.push({ food, extraProteins: extra, derivedFromPrimary });
+        out.push({ food, extraProteins: extra, derivedFromPrimary, measuredAgainst: 'trial' });
       }
       continue;
     }
@@ -1516,7 +1521,7 @@ export function trialContamination(ctx: TrialContext): ContaminationFact[] {
       intended,
     );
     if (extra.length > 0 || derivedFromPrimary.length > 0) {
-      out.push({ food, extraProteins: extra, derivedFromPrimary });
+      out.push({ food, extraProteins: extra, derivedFromPrimary, measuredAgainst: 'own_primary' });
     }
   }
   return out;

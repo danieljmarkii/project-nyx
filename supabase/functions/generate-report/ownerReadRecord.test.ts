@@ -218,7 +218,7 @@ Deno.test('CUL-2441 — a weight rise, and a trial with one weigh-in', () => {
   // CUL-2511: the two readings straddle the trial's start, and the row says so, dated, as a change
   // across the start rather than over the trial (#10a still holds: it is not offered as trial evidence).
   assert.ok(
-    one.includes('Across the trial’s start, weight is down about 9% of body weight: 33.00 kg (72.8 lb) on May 20, 2026, before the trial began, → 30.00 kg (66.1 lb) on Jun 10, 2026.'),
+    one.includes('Across the trial’s start, weight is down about 9% of body weight: 33.00 kg (72.8 lb) on May 20, 2026 on a home scale, a single reading, before the trial began, → 30.00 kg (66.1 lb) on Jun 10, 2026 on a home scale, a single reading.'),
     one,
   )
   // The builder carries it as its own field.
@@ -279,7 +279,7 @@ Deno.test('CUL-2441 — Nyx: the week after the trial and the Weight flag reach 
   // The capture predates `weight.trialChange`: unknown, said as unknown, never "no weight".
   assert.ok(row.includes('The weight over the trial is not recorded in this copy.'), row)
   // CUL-2511: but the copy's own change straddles the trial start, and the row now says so.
-  assert.ok(/Across the trial’s start, weight is down about 15% of body weight: .* on Jun 15, 2026, before the trial began, → .* on Sep 16, 2026\./.test(row), row)
+  assert.ok(/Across the trial’s start, weight is down about 15% of body weight: .* on Jun 15, 2026 on a home scale, a single reading, before the trial began, → .* on Sep 16, 2026 on a home scale, a single reading\./.test(row), row)
   assert.ok(!row.includes('No weight recorded'), row)
 })
 

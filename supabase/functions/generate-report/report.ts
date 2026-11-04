@@ -5434,9 +5434,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // without the lifetime read, never a zero.
   if (trialBlock && trialBlock.trialDaysOutsideRange.before > 0) {
     const headEnd = scope.startDayNum - 1
+    // Adversarial pass 1 (QUIET): a row with no item id cannot be matched to its doses, so its count is
+    // unknown, never 0; and a short dose pull loses the OLDEST doses first, so the count is a floor.
+    const dosesShort = (input.incompletePulls ?? []).includes('medication_administrations')
     for (const row of trialBlock.medicationOverlap) {
       if (row.adHoc !== true) continue
-      if (!input.lifetimeDoses) {
+      if (!input.lifetimeDoses || !row.itemId) {
         row.adHocEarlierTrialDoseDays = null
         continue
       }
@@ -5449,6 +5452,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         if (dn !== null && dn >= trialBlock.elapsedStartDayIndex && dn <= headEnd) days.add(dn)
       }
       row.adHocEarlierTrialDoseDays = days.size
+      if (dosesShort) row.adHocEarlierTrialDoseDaysIsFloor = true
     }
   }
 
@@ -7847,10 +7851,17 @@ function buildWindowNewFoods(
   bucketIndexOfDay: (dn: number) => number,
 ): ConcurrentChange[] {
   const named = new Set(changes.map((c) => c.label.trim().toLowerCase()))
+  // Only the trial DIET of a trial that overlaps this window is already a change (`diet_trial`). A
+  // permitted extra, or any food of a past trial's list, is not one unless its permission opened in
+  // the window (`diet_allowed`, caught by the label check below), so it can still be new (pass 1).
   const listed = new Set<string>()
   for (const t of input.dietTrials) {
+    const start = dayNumber(t.startedAt.slice(0, 10))
+    const endValue = trialEndValue(t)
+    const end = endValue ? dayNumber(endValue.slice(0, 10)) : null
+    if (start === null || start > scope.endDayNum || (end !== null && end < scope.startDayNum)) continue
     if (t.foodItemId) listed.add(t.foodItemId)
-    for (const f of t.allowedFoods ?? []) if (f.foodItemId) listed.add(f.foodItemId)
+    for (const f of t.allowedFoods ?? []) if (f.foodItemId && f.role === 'primary_diet') listed.add(f.foodItemId)
   }
   // A free-fed bowl is already its own change (`free_fed`); a meal-fed arrangement is not, so its
   // food can still be new.
@@ -7862,28 +7873,29 @@ function buildWindowNewFoods(
     const dn = eventDayNumber(e.occurredAt, tz)
     if (dn === null) continue
     if (firstMealDn === null || dn < firstMealDn) firstMealDn = dn
-    const parts: Array<{ id: string | null; key: string; label: string | null }> = e.meal.bowl
+    const parts: Array<{ id: string | null; label: string | null }> = e.meal.bowl
       ? e.meal.bowl.components.map((c) => ({
           // Keyed and labelled as a plain meal of the same food is, so a food fed alone and in a
           // bowl is one food (the real-record run listed Applaws twice).
           id: c.foodItemId,
-          key: c.foodItemId ?? c.foodKey,
           label: mealFoodLabel({ brand: c.brand, productName: c.productName, format: c.format }) ?? c.snapshotLabel,
         }))
       : [
           {
             id: e.meal.foodItemId,
-            key: e.meal.foodItemId ?? `${e.meal.brand ?? ''}|${e.meal.productName ?? ''}`.toLowerCase(),
             label: mealFoodLabel(e.meal),
           },
         ]
     for (const p of parts) {
-      if (!p.label || p.key === '|') continue
-      const f = foods.get(p.key)
+      if (!p.label) continue
+      // One key for a food fed alone or in a bowl: its id, else its label (pass 1: a food with no id
+      // was keyed two ways and listed twice).
+      const key = p.id ?? `label:${p.label.trim().toLowerCase()}`
+      const f = foods.get(key)
       const inWin = dn >= scope.startDayNum && dn <= scope.endDayNum
       if (!f) {
         if (p.id && listed.has(p.id)) continue
-        foods.set(p.key, { label: p.label, firstDn: dn, windowDays: new Set(inWin ? [dn] : []) })
+        foods.set(key, { label: p.label, firstDn: dn, windowDays: new Set(inWin ? [dn] : []) })
       } else {
         if (dn < f.firstDn) f.firstDn = dn
         if (inWin) f.windowDays.add(dn)

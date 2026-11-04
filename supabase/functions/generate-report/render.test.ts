@@ -8645,21 +8645,24 @@ Deno.test('CUL-1979 — the label-contamination row names the source of the food
 Deno.test('CUL-2505 — the contamination caveat names an allowed extra, the trial diet itself, or both', () => {
   const chew = { foodItemId: 'fi-chew', foodKey: null, label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck', proteins: ['duck', 'chicken'] }
   const diet = { ...chew, foodItemId: 'fi-duck', label: 'Novel Duck', role: 'primary_diet' as const, proteins: ['duck', 'pea'] }
-  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[] }>) => {
+  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[]; measuredAgainst?: 'trial' | 'own_primary' }>) => {
     const html = text(renderReport(cleanTrialSnap(NO_HOUSEHOLD, { contamination })))
     const i = html.lastIndexOf('so this record cannot establish that the elimination was clean')
     assert.ok(i >= 0, 'the caveat renders')
     return html.slice(Math.max(0, i - 300), i)
   }
-  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
+  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [], measuredAgainst: 'trial' as const }])
   // CUL-2513: an extra's proteins are measured against the trial, so the clause says so.
   assert.ok(/Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(extra), extra)
+  // Adversarial pass 1: measured against its own front (a dark trial set, or a stored copy), it never says so.
+  const fallback = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
+  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(fallback), fallback)
   const own = caveat([{ food: diet, extraProteins: ['pea'], derivedFromPrimary: [] }])
   assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea \(above\), $/.test(own), own)
   assert.ok(!/fed during the trial, also lists/.test(own), own)
   const both = caveat([
     { food: diet, extraProteins: ['pea'], derivedFromPrimary: [] },
-    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] },
+    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [], measuredAgainst: 'trial' as const },
   ])
   assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(both), both)
 })
@@ -9288,7 +9291,7 @@ Deno.test('CUL-2510 — the chronicity floor names how far back the trial sectio
   }
   const row = crop([{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
   assert.ok(
-    /This window opens Apr 3, but the trial section counts 10 vomiting episodes in the trial days before it, the earliest on Feb 10, 2026: the record shows the sign at least that far back\./.test(row),
+    /This window opens Apr 3, but the record holds 10 vomiting episodes in the trial days before it, the earliest on Feb 10, 2026: the sign runs back at least that far\./.test(row),
     row,
   )
   assert.ok(!/days is a floor/.test(row), row)
@@ -9297,8 +9300,32 @@ Deno.test('CUL-2510 — the chronicity floor names how far back the trial sectio
   assert.ok(!/first logged Apr 3/.test(row), row)
   // Control: a copy stored before the field keeps B-532's floor sentence (unknown, never "none").
   const old = crop([{ type: 'vomit', count: 10 }])
-  assert.ok(/days is a floor/.test(old) && !/trial section counts/.test(old), old)
+  assert.ok(/days is a floor/.test(old) && !/the record holds/.test(old), old)
   // Control: earlier episodes of a DIFFERENT sign are not read as this one's.
   const other = crop([{ type: 'cough', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
-  assert.ok(!/trial section counts/.test(other), other)
+  assert.ok(!/the record holds/.test(other), other)
+  // Adversarial pass 1: a short events pull makes the count a floor and the date the earliest READ.
+  const s2 = base({ safetyFlags: [flag] })
+  s2.scope.trialCropSymptoms = { count: 10, mostRecentIso: '2026-03-30T10:00:00Z', mostRecentType: 'vomit', byType: [{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }], cropDays: 52, mealLoggedDaysInCrop: 50, countIsFloor: false }
+  s2.incompletePulls = ['events']
+  assert.ok(/the record holds at least 10 vomiting episodes in the trial days before it, the earliest of those read on Feb 10, 2026/.test(text(renderReport(s2))))
+})
+
+Deno.test('CUL-2516 pass 1 — off-diet rows that are all "fed before it was permitted" keep the uncertain sentence', () => {
+  const x = exposureItem('derived_protein', '2026-06-12')
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: { totalFeedings: 44, offDiet: 1, byRung: { derived_protein: 1, unrecognised: 0 }, fedBeforePermitted: 1, unclassifiable: 0, items: [x] },
+    mayClaimAllMatched: false,
+  })
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(/cannot establish that the elimination was clean/.test(callout) && !/not fed exclusively/.test(callout), callout)
+})
+
+Deno.test('CUL-2511 pass 1 — a loss under 1% across the trial start stays off the bottom line', () => {
+  const end = (kg: number, day: string) => ({ kg, lbs: kg * 2.2, day, source: 'home_scale' as const, single: true })
+  const snap = cleanTrialSnap(NO_HOUSEHOLD)
+  snap.weight = { ...snap.weight, acrossTrialStart: { latest: end(4.47, '2026-05-20'), highBefore: end(4.5, '2026-05-01'), deltaKg: -0.03, deltaLbs: -0.1, pct: 1, withinNoise: false } }
+  assert.ok(/Weight is down about 1% of body weight across the trial/.test(text(interpretingCallout(renderReport(snap)))))
+  snap.weight = { ...snap.weight, acrossTrialStart: { ...snap.weight.acrossTrialStart!, deltaKg: -0.02, pct: 0 } }
+  assert.ok(!/across the trial&rsquo;s start|across the trial’s start/.test(interpretingCallout(renderReport(snap))))
 })

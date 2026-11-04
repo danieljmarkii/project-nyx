@@ -5726,3 +5726,17 @@ Deno.test('CUL-2509 instance 2 — a dose logged "in food" with no meal paired r
   direct.doses = direct.doses.map((d) => ({ ...d, howGiven: d.howGiven ? 'direct' : null }))
   assert.equal(assembleReport(direct).diet.medicationVehicles, null)
 })
+
+Deno.test('CUL-2509 pass 1 — an ad-hoc row with no item id is unknown, never 0; a short dose pull is a floor', () => {
+  const noItem = cetirizineTrialInput()
+  noItem.medicationItems = []
+  noItem.doses = noItem.doses.map((d) => ({ ...d, medicationItemId: null }))
+  noItem.lifetimeDoses = noItem.lifetimeDoses!.map((d) => ({ ...d, medicationItemId: d.eventId === 'c6' || d.eventId === 'c7' ? null : 'mi-cet' }))
+  const row = assembleReport(noItem).trial!.medicationOverlap.find((m) => m.adHoc)!
+  assert.equal(row.adHocEarlierTrialDoseDays, null)
+  const short = cetirizineTrialInput()
+  short.incompletePulls = ['medication_administrations']
+  const snap = assembleReport(short)
+  assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDaysIsFloor, true)
+  assert.match(plain(renderReport(snap)), /dosed on at least 3 of the 42 earlier trial days/)
+})

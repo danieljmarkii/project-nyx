@@ -6539,3 +6539,41 @@ Deno.test('CUL-2512 — a food fed alone and in a mixed bowl is one new food, no
   const foods = assembleReport(baseInput({ events })).windowNewFoods!
   assert.deepEqual(foods.map((c) => [c.label, c.startDate, c.fedDays]), [['Applaws (Wet)', '2026-06-10', 2]])
 })
+
+Deno.test('CUL-2512 pass 1 — a permitted extra, or a past trial’s food, first fed in the window is new', () => {
+  idSeq = 0
+  const events = [
+    ...dayKeys('2026-03-20', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })),
+    mealEvent('2026-06-10', { label: 'Chicken Jerky', foodType: 'treat', format: 'treat' }),
+  ]
+  const trial = (id: string, startedAt: string, endedAt: string | null) => ({
+    id, foodItemId: 'House Kibble', startedAt, targetDurationDays: 56, status: endedAt ? 'completed' : 'active', completedAt: endedAt, endedAt, vetName: null, foodLabel: 'House Kibble', primaryProtein: 'duck',
+    allowedFoods: [
+      { foodItemId: 'House Kibble', foodLabel: 'House Kibble', role: 'primary_diet' as const, allowedFrom: startedAt, allowedUntil: null, primaryProtein: 'duck', brand: null, productName: 'House Kibble', proteins: ['duck'], ingredientsNotes: null },
+      { foodItemId: 'Chicken Jerky', foodLabel: 'Chicken Jerky', role: 'permitted_treat' as const, allowedFrom: startedAt, allowedUntil: null, primaryProtein: 'chicken', brand: null, productName: 'Chicken Jerky', proteins: ['chicken'], ingredientsNotes: null },
+    ],
+  })
+  for (const t of [trial('past', '2026-01-02', '2026-02-20'), trial('now', '2026-04-01', null)]) {
+    const foods = assembleReport(baseInput({ events, dietTrials: [t] as never })).windowNewFoods!
+    assert.deepEqual(foods.map((c) => c.label), ['Chicken Jerky (Treat)'], t.id)
+  }
+})
+
+Deno.test('CUL-2512 pass 1 — a food with no id is one food fed alone or in a bowl', () => {
+  idSeq = 0
+  const plainMeal = mealEvent('2026-06-14', { label: 'Applaws', format: 'wet_canned' })
+  plainMeal.meal = { ...plainMeal.meal!, foodItemId: null }
+  const bowl = mealEvent('2026-06-10', { label: 'House Kibble' })
+  bowl.meal = {
+    ...bowl.meal!,
+    foodItemId: null,
+    bowl: {
+      status: 'mix', compositionKey: 'k', compositionKeyWithRatio: 'k', writtenAtMs: null,
+      components: [
+        { foodItemId: null, snapshotLabel: 'Applaws', foodKey: 'applaws', foodType: 'meal', format: 'wet_canned', primaryProtein: null, brand: null, productName: 'Applaws', share: null, normalizedShare: null, shareSource: 'unknown', amountValue: null, amountUnit: null, proteins: [] } as never,
+      ],
+    },
+  }
+  const events = [...dayKeys('2026-03-20', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })), plainMeal, bowl]
+  assert.deepEqual(assembleReport(baseInput({ events })).windowNewFoods!.map((c) => [c.label, c.fedDays]), [['Applaws (Wet)', 2]])
+})

@@ -265,6 +265,8 @@ export interface TrialMedicationOverlap {
    * whole trial's head, or the lifetime read was not passed (unknown, never zero).
    */
   adHocEarlierTrialDoseDays?: number | null
+  /** True when the dose pull was short: the count is a floor ("at least"). */
+  adHocEarlierTrialDoseDaysIsFloor?: boolean
 }
 
 /**

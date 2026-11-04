@@ -2985,15 +2985,19 @@ export function safetyFlagRow(
       const cropType = crop?.byType.find(
         (b) => b.type === f.symptomType && (b.beforeWindow ?? 0) > 0 && typeof b.earliestBeforeWindowIso === 'string',
       )
+      // Adversarial pass 1: a floor whenever the trial section's own count is one (a short events pull
+      // too), and the earliest date then scoped to what was read (C-37). Named as the record's count,
+      // not the trial section's: with both ends cropped that section prints a combined figure.
+      const cropFloor = !!crop && (crop.countIsFloor || (snap.incompletePulls ?? []).includes('events'))
       const cropBit =
         crop && cropType && cropType.earliestBeforeWindowIso
-          ? ` This window opens ${h(scopeStartDay)}, but the trial section counts ${crop.countIsFloor ? 'at least ' : ''}<b>${num(
+          ? ` This window opens ${h(scopeStartDay)}, but the record holds ${cropFloor ? 'at least ' : ''}<b>${num(
               cropType.beforeWindow ?? 0,
             )} ${h(symptomLabel(f.symptomType).toLowerCase())} episode${
               cropType.beforeWindow === 1 ? '' : 's'
-            } in the trial days before it, the earliest on ${h(fmtLocalDay(cropType.earliestBeforeWindowIso, tz))}, ${h(
-              localDayKeyOf(cropType.earliestBeforeWindowIso, tz).slice(0, 4),
-            )}</b>: the record shows the sign at least that far back.`
+            } in the trial days before it, the earliest ${cropFloor ? 'of those read ' : ''}on ${h(
+              fmtLocalDay(cropType.earliestBeforeWindowIso, tz),
+            )}, ${h(localDayKeyOf(cropType.earliestBeforeWindowIso, tz).slice(0, 4))}</b>: the sign runs back at least that far.`
           : null
       const censorBit = cropBit !== null
         ? cropBit
@@ -3922,7 +3926,9 @@ export function dietTrialSection(snap: ReportSnapshot): string {
           // the trial diet does not"; the trial diet's own row is measured against its front.
           c.food.role === 'primary_diet'
             ? `<b>${h(c.food.label)}</b> (the trial diet) also lists ${h(proteinList(c.extraProteins.map(capProtein)))}`
-            : `<b>${h(c.food.label)}</b> lists ${h(proteinList(c.extraProteins.map(capProtein)))}, which the trial diet does not`,
+            : c.measuredAgainst === 'trial'
+              ? `<b>${h(c.food.label)}</b> lists ${h(proteinList(c.extraProteins.map(capProtein)))}, which the trial diet does not`
+              : `<b>${h(c.food.label)}</b> also lists ${h(proteinList(c.extraProteins.map(capProtein)))}`,
       )
       .join('; ')
     const onlyPrimary = t.contamination.every((c) => c.food.role === 'primary_diet')
@@ -4162,7 +4168,14 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // ranks first. `mayClaimAllMatched`'s other two reasons (a feeding naming no food, a dose by
   // mouth) are the same class and get their own sentences beside it.
   const countScope = trialCountScope(t)
-  if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable) {
+  // Adversarial pass 1 (LOUD): a feeding of a food permitted later is a record gap, not a breach, so a
+  // trial whose only off-diet rows are those keeps the uncertain sentence.
+  const onlyPermittedLater = t.exposures.offDiet > 0 && t.exposures.fedBeforePermitted >= t.exposures.offDiet
+  if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable && onlyPermittedLater) {
+    caveats.push(
+      `${num(t.exposures.offDiet)} of ${num(t.exposures.totalFeedings)} feedings ${countScope} did not match the trial diet (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean.`,
+    )
+  } else if (t.exposures.offDiet > 0 && !t.allowedSetUnavailable) {
     // CUL-2516 (QUIET): A BREAK THE RECORD SHOWS IS NOT AN UNCERTAINTY. "Cannot establish that the
     // elimination was clean" read eleven chicken feedings as a question about the record; they are
     // a fact in it. The bottom line says the diet was not fed exclusively, with the days, and points
@@ -4269,7 +4282,13 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       // CUL-2513: `extraProteins` is now measured against the trial (it was the food's own primary,
       // which named a duck trial's duck as the extra), so the clause pass 1 (B4) removed is true
       // again. The words match the Label contamination row they point to.
-      clauses.push(`<b>${h(c.food.label)}</b>, fed during the trial, lists ${extras(c)}, which the trial diet does not`)
+      // Adversarial pass 1 (CUL-2513): only a fact measured against the trial says so; a dark trial
+      // set falls back to the food's own front, where B4's reason for dropping the clause still holds.
+      clauses.push(
+        c.measuredAgainst === 'trial'
+          ? `<b>${h(c.food.label)}</b>, fed during the trial, lists ${extras(c)}, which the trial diet does not`
+          : `<b>${h(c.food.label)}</b>, fed during the trial, also lists ${extras(c)}`,
+      )
     }
     const joined = clauses.join('; and ')
     caveats.push(
@@ -4431,7 +4450,8 @@ export function dietTrialSection(snap: ReportSnapshot): string {
   // the statement; a gain is left to the trial section.
   const across = acrossTrialStartOf(snap)
   const weightLine =
-    across && across.highBefore && across.deltaKg !== null && across.deltaKg < 0
+    // Adversarial pass 1 (LOUD): under 1% is scale noise on the bottom line; the trial section keeps it.
+    across && across.highBefore && across.deltaKg !== null && across.deltaKg < 0 && (across.pct ?? 0) >= 1
       ? `Weight is down <b>${weightPctText(across)}</b> across the trial&rsquo;s start (${h(
           fmtDayYear(across.highBefore.day),
         )} &rarr; ${h(fmtDayYear(across.latest.day))}; above).`
@@ -4937,10 +4957,11 @@ export function acrossTrialStartOf(snap: ReportSnapshot): WeightChangeView | nul
 export function acrossTrialStartSentence(snap: ReportSnapshot): string | null {
   const c = acrossTrialStartOf(snap)
   if (!c || !c.highBefore || c.deltaKg === null || c.deltaKg === 0) return null
-  const at = (e: WeightChangeEnd): string => `${weightReadingText(e.kg)} on ${h(fmtDayYear(e.day))}`
-  return `Across the trial&rsquo;s start, weight is ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b>: ${at(
+  // Adversarial pass 1: each end with its source and "a single reading", as every other weight line.
+  return `Across the trial&rsquo;s start, weight is ${c.deltaKg < 0 ? 'down' : 'up'} <b>${weightPctText(c)}</b>: ${weightEndText(
     c.highBefore,
-  )}, before the trial began, &rarr; ${at(c.latest)}.`
+    snap,
+  ).replace(/, before this window$/, '')}, before the trial began, &rarr; ${weightEndText(c.latest, snap)}.`
 }
 
 function trialWeightClause(snap: ReportSnapshot, scope: string): string {
@@ -5848,7 +5869,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     const before = snap.trial?.trialDaysOutsideRange.before ?? 0
     const earlier =
       typeof m.adHocEarlierTrialDoseDays === 'number' && before > 0
-        ? `; dosed on <b>${num(m.adHocEarlierTrialDoseDays)} of the ${num(before)} earlier trial days</b> this report leaves out`
+        ? `; dosed on <b>${m.adHocEarlierTrialDoseDaysIsFloor ? 'at least ' : ''}${num(m.adHocEarlierTrialDoseDays)} of the ${num(before)} earlier trial days</b> this report leaves out`
         : ''
     return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
   })
@@ -8083,9 +8104,13 @@ export function dietMeds(snap: ReportSnapshot): string {
       // so a vet following it to see what else the chew carries lands on a table the
       // chew is not in. An allowed-list treat's set is in appendix C, with its rung.
       contamBits.push(
-        `${h(c.food.label)}, on the allowed list, lists ${h(
-          proteinList(c.extraProteins.map(capProtein)),
-        )}, which the trial diet does not (its full set is in appendix&nbsp;C).`,
+        c.measuredAgainst === 'trial'
+          ? `${h(c.food.label)}, on the allowed list, lists ${h(
+              proteinList(c.extraProteins.map(capProtein)),
+            )}, which the trial diet does not (its full set is in appendix&nbsp;C).`
+          : `${h(c.food.label)}, on the allowed list, also lists ${h(
+              proteinList(c.extraProteins.map(capProtein)),
+            )} (its full set is in appendix&nbsp;C).`,
       )
     }
     const freeFedOff = breach.freeFed

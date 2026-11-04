@@ -384,6 +384,15 @@ describe('§5.5 D-A — the standing fact covers permitted extras', () => {
     const kin = trialContamination(buildTrialContext(TRIAL, [ha, haTreat, chew]));
     expect(contaminationFindings(kin).map((f) => [f.food.foodItemId, f.extraProteins])).toEqual([['chew', ['beef', 'chicken']]]);
     expect(kin.find((f) => f.food.foodItemId === 'ha-treat')?.derivedFromPrimary).toEqual(['chicken']);
+    expect(facts[0].measuredAgainst).toBe('trial');
+  });
+
+  it('CUL-2513 pass 1 — with no trial set to compare against, a fact says it was measured against its own front', () => {
+    // The trial diet has no designated primary, so the trial set is dark; the extra falls back.
+    const dark = food({ foodItemId: 'dark', label: 'Duck Diet', primaryProtein: null, proteins: ['duck'] });
+    const chew: AllowedFood = { ...RABBIT_JERKY, foodItemId: 'rd-chew', primaryProtein: 'rabbit', proteins: ['rabbit', 'duck'] };
+    const facts = trialContamination(buildTrialContext(TRIAL, [dark, chew]));
+    expect(facts.map((f) => [f.food.foodItemId, f.measuredAgainst])).toEqual([['rd-chew', 'own_primary']]);
   });
 
   it('flags a contaminated PRIMARY diet against its own designated protein', () => {
