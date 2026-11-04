@@ -10,15 +10,19 @@
 //
 // WHAT IT PROVES, reading migration 120 from disk (comments stripped by the
 // shared lexer, so the header's prose cannot satisfy it):
-//   1. exactly one cron.schedule names 'sweep-orphaned-storage' in any
-//      migration, and it is 120's;
+//   1. no migration but 120 names 'sweep-orphaned-storage' beside any cron
+//      call (schedule, alter_job, unschedule; positional or named arguments,
+//      any quoting), no migration calls cron.alter_job at all (it takes a job
+//      id, so a name check cannot see it), and 120 holds exactly one cron call
+//      whose command is the http_post and nothing after it;
 //   2. its expression is `${RUN_MINUTE_UTC} ${RUN_HOUR_UTC} * * *`, plain
 //      integers, every day;
 //   3. its body parses to exactly { run: RUN_MARKER }, and the real gate()
 //      answers 'run' for that body at the scheduled instant (so the window
 //      check is the function's own, not re-derived here);
 //   4. it POSTs to this project's /functions/v1/sweep-orphaned-storage with
-//      the anon role's key (never the service role) for the same project ref;
+//      the anon key, byte for byte the one eas.json ships (so a pasted typo or
+//      a stale key, which production would 401 daily, reds here);
 //   5. pg_net waits longer than the Edge request limit, so the response row
 //      records the run's real answer.
 //
@@ -28,14 +32,19 @@
 //   ✗ the body key renamed ({"sweep": …})   ✗ an extra body key
 //   ✗ the URL pointed at another function   ✗ a service_role key
 //   ✗ the timeout cut to 118's 30 s         ✗ the job renamed
-//   ✗ the whole call commented out
+//   ✗ the whole call commented out          ✗ a second call appended in 120
+//   ✗ a clause after the http_post           ✗ a corrupted key signature
+//   ✗ a later migration re-pointing the job: plain-quoted cron.schedule,
+//     cron.alter_job by id, named arguments (rls-privacy-reviewer R1, R4)
 // And the constants side: gate() is driven at window start and window end, so
 // a RUN_WINDOW_MIN of 0 or a moved RUN_HOUR_UTC fails case 3 or 2.
 //
 // BLIND SPOTS, stated. It reads the repo, not production: an unapplied 120,
-// a changed cron.timezone, or a rotated anon key are invisible here (120's
-// VERIFY block covers them after `apply 120`). It does not prove the job
-// fires; pg_cron's own run details and the function's run line do.
+// a changed cron.timezone, a job edited by hand in the SQL Editor, or a key
+// rotated without a migration are invisible here (120's VERIFY block covers
+// them after `apply 120`). It does not prove the job fires or that a run
+// swept anything; the function's run line does, and an alarm on a missing
+// run line is filed separately (rls-privacy-reviewer R2).
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -53,6 +62,26 @@ const MIGRATIONS = path.resolve(__dirname, '..', 'supabase', 'migrations');
 const FILE = '120_sweep_orphaned_storage_schedule.sql';
 const JOB = 'sweep-orphaned-storage';
 const PROJECT_REF = 'aigchluqluzuhtbfllgh';
+const REPO_ROOT = path.resolve(__dirname, '..');
+
+// Every anon key eas.json ships (one per build profile). They must agree, and
+// the schedule's key must be that one.
+function shippedAnonKeys(): string[] {
+  const text = fs.readFileSync(path.join(REPO_ROOT, 'eas.json'), 'utf8');
+  return [...new Set([...text.matchAll(/"EXPO_PUBLIC_SUPABASE_ANON_KEY"\s*:\s*"([^"]+)"/g)].map((m) => m[1]))];
+}
+
+// Files that touch this job, by any cron call in any argument form. A pure
+// function over (name -> sql) so the mutants below need no fixture on disk.
+function jobTouchers(files: Record<string, string>): string[] {
+  return Object.entries(files)
+    .filter(([, sql]) => {
+      const code = stripSqlComments(sql);
+      return /cron\.alter_job\s*\(/.test(code) || (/cron\.\w+\s*\(/.test(code) && code.includes(JOB));
+    })
+    .map(([name]) => name)
+    .sort();
+}
 
 interface Schedule {
   name: string;
@@ -89,6 +118,12 @@ function scheduleProblems(sql: string): string[] {
   if (mine.length !== 1) return [`expected one cron.schedule('${JOB}', …), found ${mine.length}`];
   const { expr, command } = mine[0];
 
+  const cronCalls = stripSqlComments(sql).match(/cron\.\w+\s*\(/g) ?? [];
+  if (cronCalls.length !== 1) problems.push(`expected one cron call in 120, found ${cronCalls.length}`);
+  if (!/^\s*SELECT\s+net\.http_post\s*\([\s\S]*\)\s*;\s*$/.test(command)) {
+    problems.push('the job command is not a bare net.http_post(...);');
+  }
+
   const want = `${RUN_MINUTE_UTC} ${RUN_HOUR_UTC} * * *`;
   if (expr !== want) problems.push(`cron expression '${expr}' is not '${want}'`);
 
@@ -119,6 +154,10 @@ function scheduleProblems(sql: string): string[] {
   if (!claims || claims.role !== 'anon' || claims.ref !== PROJECT_REF) {
     problems.push(`Authorization is not this project's anon key (role ${String(claims?.role)})`);
   }
+  const shipped = shippedAnonKeys();
+  if (shipped.length !== 1 || token !== shipped[0]) {
+    problems.push(`Authorization is not the anon key eas.json ships (${shipped.length} distinct there)`);
+  }
 
   const timeout = Number(command.match(/timeout_milliseconds\s*:=\s*(\d+)/)?.[1] ?? NaN);
   if (!(timeout > SWEEP_REQUEST_LIMIT_MS)) {
@@ -134,12 +173,13 @@ describe('migration 120 schedules the sweep inside its gate', () => {
     expect(scheduleProblems(real)).toEqual([]);
   });
 
-  it('is the only migration that schedules the job', () => {
-    const holders = fs
-      .readdirSync(MIGRATIONS)
-      .filter((f) => f.endsWith('.sql'))
-      .filter((f) => schedulesIn(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')).some((s) => s.name === JOB));
-    expect(holders).toEqual([FILE]);
+  it('is the only migration that touches the job', () => {
+    const files: Record<string, string> = {};
+    for (const f of fs.readdirSync(MIGRATIONS).filter((n) => n.endsWith('.sql'))) {
+      files[f] = fs.readFileSync(path.join(MIGRATIONS, f), 'utf8');
+    }
+    expect(Object.keys(files).length).toBeGreaterThan(100); // non-vacuity: the real directory was read
+    expect(jobTouchers(files)).toEqual([FILE]);
   });
 
   it('fires inside the window the gate opens, not at its edge', () => {
@@ -166,6 +206,7 @@ describe('mutation proof: each drift from the gate is caught', () => {
     ['timeout cut to 30 s', 'timeout_milliseconds := 160000', 'timeout_milliseconds := 30000'],
     ['job renamed', `'sweep-orphaned-storage',\n  '23 9`, `'sweep-orphans',\n  '23 9`],
     ['call commented out', '\nSELECT cron.schedule(', '\n-- SELECT cron.schedule('],
+    ['a clause after the http_post', '160000\n  );', '160000\n  ) WHERE false;'],
   ];
 
   // Each mutant edits the live call only. The header and VERIFY comments quote
@@ -183,6 +224,32 @@ describe('mutation proof: each drift from the gate is caught', () => {
   it.each(mutants)('%s', (_label, from, to) => {
     expect(real.slice(callStart, callEnd).includes(from)).toBe(true);
     expect(scheduleProblems(inCall(from, to)).length).toBeGreaterThan(0);
+  });
+
+  it('a second call appended in 120', () => {
+    const extra = `${real}\nSELECT cron.schedule('${JOB}', '0 3 * * *', 'SELECT 1');\n`;
+    expect(scheduleProblems(extra).length).toBeGreaterThan(0);
+  });
+
+  it('a corrupted key signature', () => {
+    const token = real.match(/'Bearer ([^']*)'/)![1];
+    const [h, p] = token.split('.');
+    expect(scheduleProblems(real.replace(token, `${h}.${p}.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`)).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['plain-quoted cron.schedule', `SELECT cron.schedule('${JOB}', '0 3 * * *', 'SELECT 1');`],
+    ['cron.alter_job by name lookup', `SELECT cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = '${JOB}'), schedule := '0 3 * * *');`],
+    ['cron.alter_job by bare id', `SELECT cron.alter_job(7, schedule := '0 3 * * *');`],
+    ['named arguments', `SELECT cron.schedule(job_name := '${JOB}', schedule := '0 3 * * *', command := $c$SELECT 1$c$);`],
+    ['cron.unschedule', `SELECT cron.unschedule('${JOB}');`],
+  ])('a later migration re-pointing the job: %s', (_label, sql) => {
+    expect(jobTouchers({ [FILE]: real, '121_later.sql': sql })).toEqual(['121_later.sql', FILE].sort());
+  });
+
+  it('a later migration about another job is not flagged', () => {
+    const other = `SELECT cron.schedule('some-other-job', '0 4 * * *', $j$SELECT 1$j$);`;
+    expect(jobTouchers({ [FILE]: real, '121_other.sql': other })).toEqual([FILE]);
   });
 
   it('a service_role key', () => {

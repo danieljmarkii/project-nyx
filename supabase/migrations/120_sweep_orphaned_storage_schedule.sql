@@ -108,18 +108,26 @@ SELECT cron.schedule(
 --        SELECT has_schema_privilege('anon', 'cron', 'USAGE'),
 --               has_schema_privilege('authenticated', 'cron', 'USAGE');
 --      -> f, f.
---   4. After the first 09:23 UTC (allow up to 160 s for the response):
+--   4. After the first 09:23 UTC, the same day (pg_net keeps responses only
+--      for pg_net.ttl; read it with SHOW pg_net.ttl before relying on this):
 --        SELECT d.status, d.start_time FROM cron.job_run_details d
 --          JOIN cron.job j USING (jobid)
 --         WHERE j.jobname = 'sweep-orphaned-storage'
 --         ORDER BY d.start_time DESC LIMIT 1;
---      -> 'succeeded' (the POST was queued).
+--      -> 'succeeded'. That means only that the POST was queued.
 --        SELECT status_code, timed_out, created FROM net._http_response
---         WHERE created > now()::date + time '09:22'
---           AND created < now()::date + time '09:30'
+--         WHERE created >= now()::date + time '09:23'
+--           AND created <  now()::date + time '09:27'
 --         ORDER BY created DESC;
---      -> 204 for the sweep. A 400 means the schedule left the gate's window
---         (check cron.timezone) or the body changed; a 500 is a failed run.
---   5. The function's run line in the Edge Function logs for
+--      (The window excludes 118's reaper responses at 09:15 and 09:30; the
+--      response row carries no URL, so the time window is the only filter.)
+--      -> 204: the call reached the function inside the gate's window. It
+--         does NOT prove a sweep: a run whose listings or owner reads all
+--         failed also answers 204, and so does a call that found a run
+--         already going on that worker. Step 5 is the proof.
+--      -> 400: the schedule left the window (check cron.timezone) or the body
+--         changed. 401: the key. 500: missing env or a code regression.
+--         504 or timed_out: the run passed the 150 s request limit.
+--   5. THE PROOF. The function's run line in the Edge Function logs for
 --      sweep-orphaned-storage, 09:23 to 09:26 UTC: it names what was removed
---      and what was left, per bucket and per reason.
+--      and what was left, per bucket and per reason, and any read that failed.
