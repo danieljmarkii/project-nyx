@@ -315,6 +315,7 @@ describe('send history words', () => {
     expect(departureLine({ id: 'b', sharedVia: 'email', sharedAt: morning }, thisYearForWords)).toBe('Shared by email · Nov 3, 9:05 AM');
     const midnight = new Date(thisYearForWords, 10, 3, 0, 0).toISOString();
     expect(departureLine({ id: 'c', sharedVia: 'share', sharedAt: midnight }, thisYearForWords)).toBe('Shared · Nov 3, 12:00 AM');
+    expect(departureLine({ id: 'e', sharedVia: 'shown', sharedAt: midnight }, thisYearForWords)).toBe('Shown on this phone · Nov 3, 12:00 AM');
     const noon = new Date(thisYearForWords - 1, 10, 3, 12, 0).toISOString();
     expect(departureLine({ id: 'd', sharedVia: 'share', sharedAt: noon }, thisYearForWords)).toBe(`Shared · Nov 3, ${thisYearForWords - 1}, 12:00 PM`);
   });

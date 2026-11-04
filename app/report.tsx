@@ -34,7 +34,9 @@ import {
   confirmationCopy, liveForSend, sendCallCard, sendDocumentsOf, sendIsQuiet, sendRecordAllSent, sendStatusWords,
   type ConfirmationCopy, type SendCallCard as SendCallCardModel, type SendDocumentChoice, type SendResult,
 } from '../lib/reportSend';
-import { copyEmailText, emailReport, mailAvailable, printReport, shareReport } from '../lib/reportSendActions';
+import { copyEmailText, emailReport, keepShown, mailAvailable, printReport, shareReport, type SendOutcome } from '../lib/reportSendActions';
+import { keepMissLine, type KeepOutcome, type KeepVia } from '../lib/reportKeep';
+import { useLiveRegionAnnouncement } from '../hooks/useLiveRegionAnnouncement';
 import { openExamRoom } from '../lib/examRoomCopy';
 import { SEND_READ_TIMEOUT_MS, boundedRead, withKnownFlags, type ComposerLive } from '../lib/reportComposer';
 import {
@@ -379,6 +381,32 @@ export default function ReportScreen() {
   const [sendCtx, setSendCtx] = useState<SendContext | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{ copy: ConfirmationCopy; quiet: boolean; card: SendCallCardModel | null } | null>(null);
+  // CUL-2434: every copy that leaves ends kept, or the owner is told. The keep runs behind the
+  // confirmation; when it ends unkept, its line lands on the card (`confirmKeepLine`), or, for the
+  // exam room, which makes no card, on this screen once the room closes (`keepMiss`). `sendSeq`
+  // drops a late answer from an earlier send, so a line is only ever about the copy just sent.
+  const [confirmKeepLine, setConfirmKeepLine] = useState<string | null>(null);
+  const [keepMiss, setKeepMiss] = useState<string | null>(null);
+  useLiveRegionAnnouncement(keepMiss, keepMiss);
+  const sendSeq = useRef(0);
+  const onKeep = useCallback(
+    (keep: Promise<KeepOutcome> | null, via: KeepVia, name: string, show: (line: string | null) => void) => {
+      const seq = ++sendSeq.current;
+      setConfirmKeepLine(null);
+      setKeepMiss(null);
+      if (keep === null) return;
+      keep.then(
+        (outcome) => {
+          if (seq === sendSeq.current) show(keepMissLine(outcome, name, via));
+        },
+        // keepReportCopy never rejects; a rejection here would be a bug, said as a miss, not hidden.
+        () => {
+          if (seq === sendSeq.current) show(keepMissLine('failed', name, via));
+        },
+      );
+    },
+    [],
+  );
   // The flags this screen has already read for this pet, KEPT ACROSS the composer's reloads: the
   // past-midnight Preview guard reloads the composer, which clears `open` before it re-reads, so
   // reading `composer.open` alone lost a flag the owner had just seen when the reload and then the
@@ -454,23 +482,32 @@ export default function ReportScreen() {
       // Exam-room mode (CUL-2299): the sheet has dismissed (C-14), so the room presents over this
       // screen. Staging the copy can fail (a full disk); then the room never opens empty. Showing
       // the report is not a send, so it makes no confirmation card.
+      const name = report.petName || petName || '';
       if (action.target === 'phone') {
         if (report.phoneHtml === null || !openExamRoom({ phoneHtml: report.phoneHtml, printHtml: report.html }, (r) => router.push(r))) {
           Alert.alert('Couldn’t show the report here', 'Please try again.');
+          return;
         }
+        // The room is up: the vet is reading it, so it is kept as shown (CUL-2434). A miss is said
+        // on this screen, behind the room, never over the vet's view.
+        onKeep(keepShown(report), 'shown', name, setKeepMiss);
         return;
       }
       setSharing(true);
       let result: SendResult;
+      let sent: SendOutcome | null = null;
       try {
         if (action.target === 'email') {
-          result = await emailReport(report, { subject: action.subject, body: action.body, documentUris: action.documentUris });
+          sent = await emailReport(report, { subject: action.subject, body: action.body, documentUris: action.documentUris });
+          result = sent.result;
           if (result === 'failed') Alert.alert('Mail isn’t available', 'Share the PDF instead, or copy the email text.');
         } else if (action.target === 'print') {
-          result = await printReport(report);
+          sent = await printReport(report);
+          result = sent.result;
           if (result === 'failed') Alert.alert('That didn’t print', 'Something went wrong with the print sheet. Give it another try.');
         } else if (action.target === 'share') {
-          result = await shareReport(report);
+          sent = await shareReport(report);
+          result = sent.result;
           if (result === 'failed') Alert.alert('Sharing isn’t available', 'This device can’t open a share sheet.');
         } else {
           result = await copyEmailText(action.subject, action.body);
@@ -485,6 +522,7 @@ export default function ReportScreen() {
         setSharing(false);
       }
       const words = sendStatusWords(action.target, Platform.OS, result);
+      if (sent !== null && action.target !== 'copy') onKeep(sent.keep, action.target, name, setConfirmKeepLine);
       if (words === null) return;
       setConfirmation({
         copy: confirmationCopy(report.petName || petName || '', report.startDate, report.endDate, sendCtx.today, words),
@@ -492,7 +530,7 @@ export default function ReportScreen() {
         card: sendCallCard(sendCtx.live, report.petName || petName || '', sendCtx.hour),
       });
     },
-    [report, sendCtx, petName],
+    [report, sendCtx, petName, onKeep],
   );
 
   const onShare = useCallback(async () => {
@@ -838,6 +876,11 @@ export default function ReportScreen() {
                 testID="report-send"
               />
             )}
+            {keepMiss !== null && (
+              <ThemedText style={styles.barHint} accessibilityLiveRegion="polite" testID="report-keep-miss">
+                {keepMiss}
+              </ThemedText>
+            )}
             {!sendFlow && (
               <Text style={styles.barHint}>
                 Creates a PDF you can email, message, or AirDrop to your vet.
@@ -864,6 +907,7 @@ export default function ReportScreen() {
           copy={confirmation.copy}
           quiet={confirmation.quiet}
           card={confirmation.card}
+          keepLine={confirmKeepLine}
           onDone={() => {
             setConfirmation(null);
             router.back();

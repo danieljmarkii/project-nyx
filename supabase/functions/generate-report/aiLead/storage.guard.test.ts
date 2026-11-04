@@ -34,6 +34,27 @@ Deno.test('the lead columns are written in one place: run.ts, one update on vet_
   assert.match(write.slice(0, 300), /\.eq\('id', key\.reportId\)\.eq\('pet_id', key\.petId\)\.eq\('generated_by', key\.uid\)\.eq\('status', 'draft'\)/)
 })
 
+Deno.test('the keep settles the lead in its own one write, with only what run.ts built (CUL-2436)', async () => {
+  // The settle used to be a second UPDATE before the keep's, and a lead written between the two
+  // froze onto a copy that never printed it. Now run.ts builds the columns (`KeepLead`) and the
+  // keep's single UPDATE carries them: savedCopy.ts spreads `lead.set` into that update, pins each
+  // `lead.unchanged` column in its WHERE, and names no lead column itself (the test above).
+  const files = await scan()
+  const saved = files.find((f) => f.rel === 'generate-report/savedCopy.ts')!.src
+  const mark = saved.slice(saved.indexOf('markKept: async'), saved.indexOf('restamp: async'))
+  assert.equal(mark.split('.update(').length - 1, 1, 'the keep is one UPDATE')
+  assert.match(mark, /\.update\(\{ \.\.\.lead\.set, status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha \}\)/)
+  assert.match(mark, /for \(const \[column, value\] of Object\.entries\(lead\.unchanged\)\) q = q\.eq\(column, value\)/)
+  assert.ok(mark.indexOf('lead.unchanged') < mark.indexOf(".select('id')"), 'the pins are in the WHERE of that same statement')
+  // run.ts's settle reads and never writes: the one lead `.update(` stays writeDraft's.
+  const run = files.find((f) => f.rel === 'generate-report/aiLead/run.ts')!.src
+  const settle = run.slice(run.indexOf('export async function settleLeadForKeep'), run.indexOf('const UUID ='))
+  assert.ok(!/writeDraft|\.update\(/.test(settle), 'the settle is not a write')
+  // And the keep's caller hands it run.ts's settle, nothing else.
+  const index = files.find((f) => f.rel === 'generate-report/index.ts')!.src
+  assert.match(index, /keepCopy\(savedCopyIO\(adminClient, \{ petId, uid: user\.id \}\), req, \(html\) => settleLeadForKeep\(leadIO, html\)\)/)
+})
+
 Deno.test('nothing under aiLead/ keeps a lead past the request', async () => {
   for (const f of (await scan()).filter((x) => x.rel.startsWith('generate-report/aiLead/'))) {
     for (const banned of [/Deno\.openKv/, /\bcaches\./, /\.storage\s*\.from\(/, /globalThis/, /localStorage/, /\.upsert\(/, /\.insert\(/]) {
@@ -49,7 +70,12 @@ Deno.test('the pipeline is reachable only through run.ts, and run.ts only from i
   const files = await scan()
   const importers = (target: RegExp) => files.filter((f) => f.rel.startsWith('generate-report/') && target.test(f.src)).map((f) => f.rel).sort()
   assert.deepEqual(importers(/from '\.\/leadPipeline\.ts'/), ['generate-report/aiLead/run.ts'])
-  assert.deepEqual(importers(/from '\.\/aiLead\/run\.ts'/), ['generate-report/index.ts'])
+  // A VALUE import of run.ts is index.ts's alone. savedCopy.ts may import only the TYPE of what the
+  // keep writes (`KeepLead`, CUL-2436), which carries no code and so reaches no pipeline.
+  assert.deepEqual(importers(/^import (?!type )[^\n]*from '\.\/aiLead\/run\.ts'/m), ['generate-report/index.ts'])
+  assert.deepEqual(importers(/from '\.\/aiLead\/run\.ts'/), ['generate-report/index.ts', 'generate-report/savedCopy.ts'])
+  const saved = files.find((f) => f.rel === 'generate-report/savedCopy.ts')!.src
+  assert.deepEqual(saved.match(/^import .*from '\.\/aiLead\/run\.ts'.*$/gm), ["import type { KeepLead } from './aiLead/run.ts'"])
   assert.deepEqual(importers(/from '\.\/model\.ts'/), ['generate-report/aiLead/leadPipeline.ts', 'generate-report/aiLead/run.ts'])
   // The renderer may know the lead's shape, never its pipeline.
   const render = files.find((f) => f.rel === 'generate-report/renderPrintV2.ts')!.src

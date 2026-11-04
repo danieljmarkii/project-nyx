@@ -98,30 +98,52 @@ export async function storedLeadForSnapshot(
 export const LEAD_SLOT_MARK = 'data-block="ai-lead"'
 
 /**
+ * What the keep's ONE write does to the lead columns (CUL-2436): `set` is written in the same
+ * UPDATE that turns the row kept, and every column in `unchanged` must still hold the value read
+ * here, or that UPDATE matches nothing and the keep is refused. Built only by `settleLeadForKeep`,
+ * so this file stays the only one that names a lead column (aiLead/storage.guard.test.ts);
+ * savedCopy.ts's `markKept` carries it without reading it.
+ */
+export interface KeepLead {
+  readonly set: Readonly<Record<string, unknown>>
+  readonly unchanged: Readonly<Record<string, string>>
+}
+
+/**
  * VR2-20 (CUL-2300; spec §9.2): settle the draft's lead columns to what the copy being kept
- * actually printed, before the keep freezes them. A lead the stored HTML does not carry is
- * cleared, so a kept copy never claims a summary the vet did not get, and the verdict records
- * why (`at_send`). Today the preview's stored HTML is rendered before any lead exists, so this
- * clears every lead; when a send path renders the lead into the sent HTML, that path checks
- * withdrawal (`leadAllowedAtSend`) before it renders, and this step then keeps the text.
- * False on any failed read or write: the caller refuses the keep rather than freeze a misrecord.
+ * actually printed. A lead the stored HTML does not carry is cleared, so a kept copy never claims
+ * a summary the vet did not get, and the verdict records why (`at_send`). Today the preview's
+ * stored HTML is rendered before any lead exists, so this clears every lead; when a send path
+ * renders the lead into the sent HTML, that path checks withdrawal (`leadAllowedAtSend`) before
+ * it renders, and this step then keeps the text.
+ *
+ * NOT A WRITE (CUL-2436, rls-privacy-reviewer F3 on PR-20). The settle used to be its own UPDATE
+ * before the keep's, and an `ai_lead` request whose `writeDraft` landed between the two was then
+ * frozen onto a copy that never printed it. Now this only reads, and hands the keep the columns
+ * to write in its own single statement: a lead written after this read is overwritten by the
+ * keep (it set the cleared columns), and one written after the keep matches no draft. A lead the
+ * stored copy DOES print is pinned instead: the keep requires its text unchanged, so a lead
+ * rewritten in between refuses the keep rather than freezing text the vet did not get.
+ * Null on an unreadable draft: the caller refuses the keep rather than freeze a misrecord.
  *
  * A lead not on the sent copy leaves no model output behind in the verdict either: `sentences` and
  * `checker` are dropped, the reason and the hash kept (rls-privacy-reviewer pass 2 on CUL-2377).
- * The kept row's verdict is frozen, so text the vet never got must not ride into it; and after a
- * withdrawal whose clear was skipped, migration 118's guard refuses any draft write that still
- * carries model output, which would otherwise refuse the Send itself on every retry.
+ * The kept row's verdict is frozen, so text the vet never got must not ride into it; and migration
+ * 118's guard refuses any draft write that still carries model output after a withdrawal.
  */
-export async function settleLeadForKeep(io: Pick<LeadIO, 'readDraft' | 'writeDraft'>, storedHtml: string): Promise<boolean> {
+export async function settleLeadForKeep(io: Pick<LeadIO, 'readDraft'>, storedHtml: string): Promise<KeepLead | null> {
   const draft = await io.readDraft()
-  if (!draft.found) return false
-  if (draft.text !== null && storedHtml.includes(LEAD_SLOT_MARK)) return true
+  if (!draft.found) return null
+  if (draft.text !== null && storedHtml.includes(LEAD_SLOT_MARK)) return { set: {}, unchanged: { ai_lead_text: draft.text } }
   const prior = draft.verdict !== null && typeof draft.verdict === 'object' && !Array.isArray(draft.verdict)
     ? (draft.verdict as Record<string, unknown>)
     : null
   const reason = draft.text !== null ? 'not_on_sent_copy' : prior === null ? 'not_ready' : 'not_printed'
   const { sentences: _sentences, checker: _checker, ...record } = prior ?? {}
-  return io.writeDraft(null, { ...record, at_send: { printed: false, reason } } as unknown as StoredVerdict, null)
+  return {
+    set: { ai_lead_text: null, ai_lead_verdict: { ...record, at_send: { printed: false, reason } }, ai_lead_model: null },
+    unchanged: {},
+  }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

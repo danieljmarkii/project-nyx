@@ -40,10 +40,11 @@ jest.mock('../lib/vetVisits', () => ({ readHomeAppointment: jest.fn(async () => 
 jest.mock('../lib/reportComposerApi', () => ({ fetchComposerOpen: jest.fn(), fetchComposerWindow: jest.fn() }));
 jest.mock('../lib/reportSendActions', () => ({
   mailAvailable: jest.fn(async () => true),
-  emailReport: jest.fn(async () => 'sent'),
-  printReport: jest.fn(async () => 'done'),
-  shareReport: jest.fn(async () => 'done'),
+  emailReport: jest.fn(async () => ({ result: 'sent', keep: Promise.resolve('kept') })),
+  printReport: jest.fn(async () => ({ result: 'done', keep: Promise.resolve('kept') })),
+  shareReport: jest.fn(async () => ({ result: 'done', keep: Promise.resolve('kept') })),
   copyEmailText: jest.fn(async () => 'done'),
+  keepShown: jest.fn(() => Promise.resolve('kept')),
 }));
 let mockEligible = true;
 jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockEligible }));
@@ -101,7 +102,7 @@ import { Platform } from 'react-native';
 import { flushBeforeSend, generateVetReport, shareReportPdf, type VetReport } from '../lib/pdf';
 import { fetchComposerOpen } from '../lib/reportComposerApi';
 import { SEND_READ_TIMEOUT_MS } from '../lib/reportComposer';
-import { emailReport, shareReport } from '../lib/reportSendActions';
+import { emailReport, keepShown, shareReport } from '../lib/reportSendActions';
 import ReportScreen from './report';
 
 const mockedGenerate = generateVetReport as jest.Mock;
@@ -323,7 +324,7 @@ describe('the confirmation (e1, e2)', () => {
 
   it('a cancelled draft makes no card', async () => {
     mockedOpen.mockResolvedValue({ live: QUIET });
-    (emailReport as jest.Mock).mockResolvedValueOnce('cancelled');
+    (emailReport as jest.Mock).mockResolvedValueOnce({ result: 'cancelled', keep: null });
     const r = await toReport();
     fireEvent.press(r.getByTestId('report-send'));
     fireEvent.press(await r.findByTestId('pick-email'));
@@ -451,5 +452,68 @@ describe('Show on this phone opens the exam room (CUL-2299)', () => {
     await waitFor(() => expect(alert).toHaveBeenCalledWith('Couldn’t show the report here', 'Please try again.'));
     const { router } = jest.requireMock('expo-router') as { router: { push: jest.Mock } };
     expect(router.push).not.toHaveBeenCalledWith('/exam-room');
+    expect(keepShown).not.toHaveBeenCalled();
+  });
+
+  it('keeps the copy as shown once the room is up, and says so on this screen when it was not kept (CUL-2434)', async () => {
+    mockedGenerate.mockResolvedValue(v2);
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    (keepShown as jest.Mock).mockReturnValueOnce(Promise.resolve('failed'));
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    fireEvent.press(await r.findByTestId('pick-phone'));
+    await waitFor(() => expect(keepShown).toHaveBeenCalledWith(v2));
+    expect((await r.findByTestId('report-keep-miss')).props.children).toBe(
+      'This copy wasn’t saved to Nyx’s vet reports. Show it on this phone again to save one.',
+    );
+  });
+
+  it('a kept shown copy says nothing', async () => {
+    mockedGenerate.mockResolvedValue(v2);
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    fireEvent.press(await r.findByTestId('pick-phone'));
+    await waitFor(() => expect(keepShown).toHaveBeenCalled());
+    await act(async () => undefined);
+    expect(r.queryByTestId('report-keep-miss')).toBeNull();
+  });
+});
+
+describe('every copy that leaves ends kept, or the card says it was not (CUL-2434)', () => {
+  async function share(keep: Promise<string> | null) {
+    mockedOpen.mockResolvedValue({ live: QUIET });
+    (shareReport as jest.Mock).mockResolvedValueOnce({ result: 'done', keep });
+    const r = await toReport();
+    fireEvent.press(r.getByTestId('report-send'));
+    fireEvent.press(await r.findByTestId('pick-share'));
+    await r.findByTestId('send-confirmation');
+    return r;
+  }
+
+  it('an offline or failed keep: the line lands on the card once the keep gives up', async () => {
+    let settle: (o: string) => void = () => undefined;
+    const r = await share(new Promise((res) => (settle = res)));
+    expect(r.queryByTestId('send-confirmation-keep-line')).toBeNull();
+    await act(async () => settle('failed'));
+    expect(r.getByTestId('send-confirmation-keep-line').props.children).toBe(
+      'This copy wasn’t saved to Nyx’s vet reports. Send it again to save one.',
+    );
+  });
+
+  it('a failed save at Preview, or a Preview held past the keep window: preview again', async () => {
+    for (const outcome of ['not_saved', 'expired']) {
+      const r = await share(Promise.resolve(outcome));
+      expect((await r.findByTestId('send-confirmation-keep-line')).props.children).toBe(
+        'This copy wasn’t saved to Nyx’s vet reports. Preview the report again and send it to save one.',
+      );
+      r.unmount();
+    }
+  });
+
+  it('a kept copy adds nothing to the card', async () => {
+    const r = await share(Promise.resolve('kept'));
+    await act(async () => undefined);
+    expect(r.queryByTestId('send-confirmation-keep-line')).toBeNull();
   });
 });
