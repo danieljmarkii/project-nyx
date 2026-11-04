@@ -2686,11 +2686,13 @@ export interface CorrelationSummary {
  * because the label differs — "the trial diet (Greenies)" would be a false sentence about a
  * treat — and because the chart's face says `diet added`, never `diet start`.
  */
-export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed'
+export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'free_fed' | 'diet_allowed' | 'new_food'
 
 export interface ConcurrentChange {
   kind: InterventionKind
   label: string
+  /** `new_food` only (CUL-2512): the distinct local days in this window the food was logged as fed. */
+  fedDays?: number
   /**
    * RENDER-LAYER ONLY, never written by the builder (CUL-2440). Set by `withRecordOverlaps`
    * (medicationFacts.ts) on an ad-hoc drug whose record reaches before this window: `startDate`
@@ -3386,6 +3388,14 @@ export interface ReportSnapshot {
   medicationHistory: MedicationHistoryTable | null
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
+  /**
+   * CUL-2512 — foods FIRST LOGGED inside this window, after at least `NEW_FOOD_MIN_PRIOR_DAYS` of
+   * meal record before them, and not already a change above (the trial diet, an allowed food, a
+   * free-fed bowl). Each is a `new_food` change: dated start, no end claimed (a food is not a course).
+   * Kept beside `concurrentChanges`, not in it, so a consumer that draws every change as a span
+   * (v2's chart) reads it by choice. Optional: a copy stored before it is unknown, never "none".
+   */
+  windowNewFoods?: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
   provenance: Provenance
   /** CUL-975 — `ReportInput.incompletePulls`, carried through for the page-1 disclosure. */
@@ -5511,6 +5521,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     bucketIndexOfDay,
     unlinkedMedications,
   )
+  const windowNewFoods = buildWindowNewFoods(input, dedupedAll, concurrentChanges, scope, tz, bucketIndexOfDay)
 
   // ── Safety flags (§3.1 order; §5.3 empty when none) ──────────────────────────
   const safetyFlags: SafetyFlag[] = []
@@ -6953,6 +6964,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     medicationHistory,
     correlation,
     concurrentChanges,
+    windowNewFoods,
     proteinTimeline,
     provenance,
     incompletePulls: input.incompletePulls ?? [],
@@ -7760,6 +7772,90 @@ function buildMedicationHistory(
   }
 
   return { entries, sinceDay }
+}
+
+/**
+ * CUL-2512 — a food needs this much meal record BEFORE its first logged feeding to be called new.
+ * Without it every food on a record that starts at the window's edge reads as introduced there.
+ */
+export const NEW_FOOD_MIN_PRIOR_DAYS = 7
+
+/**
+ * CUL-2512 (QUIET) — the foods first logged inside this window. A plain meal food never became a
+ * change, so Nyx's chicken foods (first fed Oct 18, as vomiting rose) were missing from the chart's
+ * markers and from "N changes overlap this window". A mixed bowl counts by its components.
+ *
+ * "First logged" is a fact about the record this report READ, never a claim the pet had not eaten
+ * it before: an unlogged earlier feeding is always possible, so the render says so beside it.
+ */
+function buildWindowNewFoods(
+  input: ReportInput,
+  events: readonly ReportEventInput[],
+  changes: readonly ConcurrentChange[],
+  scope: ReportScope,
+  tz: string | null,
+  bucketIndexOfDay: (dn: number) => number,
+): ConcurrentChange[] {
+  const named = new Set(changes.map((c) => c.label.trim().toLowerCase()))
+  const listed = new Set<string>()
+  for (const t of input.dietTrials) {
+    if (t.foodItemId) listed.add(t.foodItemId)
+    for (const f of t.allowedFoods ?? []) if (f.foodItemId) listed.add(f.foodItemId)
+  }
+  // A free-fed bowl is already its own change (`free_fed`); a meal-fed arrangement is not, so its
+  // food can still be new.
+  for (const a of input.feedingArrangements ?? []) if (a.method === 'free_choice') listed.add(a.foodItemId)
+  let firstMealDn: number | null = null
+  const foods = new Map<string, { label: string; firstDn: number; windowDays: Set<number> }>()
+  for (const e of events) {
+    if (e.type !== 'meal' || !e.meal) continue
+    const dn = eventDayNumber(e.occurredAt, tz)
+    if (dn === null) continue
+    if (firstMealDn === null || dn < firstMealDn) firstMealDn = dn
+    const parts: Array<{ id: string | null; key: string; label: string | null }> = e.meal.bowl
+      ? e.meal.bowl.components.map((c) => ({
+          id: c.foodItemId,
+          key: c.foodKey,
+          label: `${c.brand ?? ''} ${c.productName ?? ''}`.trim() || c.snapshotLabel,
+        }))
+      : [
+          {
+            id: e.meal.foodItemId,
+            key: e.meal.foodItemId ?? `${e.meal.brand ?? ''}|${e.meal.productName ?? ''}`.toLowerCase(),
+            label: mealFoodLabel(e.meal),
+          },
+        ]
+    for (const p of parts) {
+      if (!p.label || p.key === '|') continue
+      const f = foods.get(p.key)
+      const inWin = dn >= scope.startDayNum && dn <= scope.endDayNum
+      if (!f) {
+        if (p.id && listed.has(p.id)) continue
+        foods.set(p.key, { label: p.label, firstDn: dn, windowDays: new Set(inWin ? [dn] : []) })
+      } else {
+        if (dn < f.firstDn) f.firstDn = dn
+        if (inWin) f.windowDays.add(dn)
+      }
+    }
+  }
+  const out: ConcurrentChange[] = []
+  for (const f of foods.values()) {
+    if (f.firstDn < scope.startDayNum || f.firstDn > scope.endDayNum) continue
+    if (firstMealDn === null || f.firstDn - firstMealDn < NEW_FOOD_MIN_PRIOR_DAYS) continue
+    if (named.has(f.label.trim().toLowerCase())) continue
+    out.push({
+      kind: 'new_food',
+      label: f.label,
+      fedDays: f.windowDays.size,
+      startDate: dayKeyFromNumber(f.firstDn),
+      bucketIndex: bucketIndexOfDay(f.firstDn),
+      ongoing: false,
+      endInWindow: null,
+      endBucketIndex: null,
+      endIsDeclared: false,
+    })
+  }
+  return out.sort((a, b) => (a.startDate! < b.startDate! ? -1 : a.startDate! > b.startDate! ? 1 : a.label.localeCompare(b.label)))
 }
 
 /**

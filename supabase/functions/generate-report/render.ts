@@ -522,6 +522,18 @@ const MARKER_FACE: Record<ConcurrentChange['kind'], { start: string; stop: strin
   // item was a chicken-bearing treat, i.e. the thing invalidating the elimination. "Permitted" is
   // the word §7's own allowed list already teaches the reader two inches below.
   diet_allowed: { start: 'permitted', stop: 'permit ended' },
+  // CUL-2512: "new food", never "diet change" — the record shows a first logged feeding, not that
+  // the diet was switched. No stop: a food is not a course.
+  new_food: { start: 'new food', stop: 'new food' },
+}
+
+/**
+ * CUL-2512 — every change the window's three change surfaces list (chart markers, the marker
+ * legend, "Reading the trend"): the builder's interventions plus the foods first logged in this
+ * window. One accessor, so the three cannot disagree about whether a new food is a change.
+ */
+export function windowChangesOf(snap: ReportSnapshot): ConcurrentChange[] {
+  return [...snap.concurrentChanges, ...(snap.windowNewFoods ?? [])]
 }
 
 /**
@@ -7131,7 +7143,7 @@ function symptomTrend(snap: ReportSnapshot): string {
   // only its start, so `markedSpan` names only its start, and a change that draws nothing at all
   // is not in this list. B-599's rule runs in both directions — the legend may not explain a line
   // the page does not carry, nor leave one it does carry unexplained.
-  const marked = snap.concurrentChanges
+  const marked = windowChangesOf(snap)
     .filter((c) => (c.bucketIndex !== null && c.startDate !== null) || drawsStopMark(c))
     .map((c) => ({ c, at: (c.bucketIndex !== null ? c.startDate : null) ?? c.endInWindow ?? '' }))
     .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
@@ -7326,7 +7338,7 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
         snap.atAGlance.secondHalfLoggedDays,
       )} of ${num(halves.days)} d logged)`
     : ''
-  const markers = snap.concurrentChanges
+  const markers = windowChangesOf(snap)
   return `
     <div class="trend">
       <div class="top">
@@ -7355,7 +7367,7 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
  * with its start date, states the co-attribution caution, and calls out logging gaps.
  */
 function readingTheTrend(snap: ReportSnapshot): string {
-  const changes = snap.concurrentChanges
+  const changes = windowChangesOf(snap)
   const gapDays = snap.atAGlance.windowDays - snap.atAGlance.loggedDays
   const gapBit =
     gapDays > 0
@@ -7458,6 +7470,12 @@ function changeTiming(c: ConcurrentChange): string {
   // a food challenge with a negative result over zero trials, which a vet can rationally read as
   // "those were fine, keep them" — and if that food is the trigger, the next real feeding is an
   // unrecorded relapse. So this lane gets its own verb and never borrows the exposure one.
+  // CUL-2512: a first logged feeding, and how often it was logged here. "First logged" is the
+  // record's, never a claim the food was never fed before (C-37: scoped to what was read).
+  if (c.kind === 'new_food') {
+    const fed = c.fedDays !== undefined ? `; logged as fed on ${num(c.fedDays)} day${c.fedDays === 1 ? '' : 's'} in this window` : ''
+    return `first logged ${start}, none earlier in the record this report read${fed}`
+  }
   if (c.kind === 'diet_allowed') {
     if (!c.ongoing) return end ? `permitted ${start} to ${end}` : `permitted from ${start}`
     return end ? `permitted before this window, until ${end}` : `permitted before this window`
@@ -7512,6 +7530,8 @@ function legendLabel(c: ConcurrentChange): string {
       return `free-fed ${h(c.label)}`
     case 'diet_allowed':
       return `the allowed food ${h(c.label)}`
+    case 'new_food':
+      return `the food ${h(c.label)}, first logged in this window`
   }
 }
 
@@ -7530,6 +7550,7 @@ function markedSpan(c: ConcurrentChange): string {
   // The enumeration hangs off a sentence whose only verbs are "started" and "stopped", so a bare
   // " on Jun 8" after a permission row is read as "Dentastix started Jun 8" — which the report's
   // own page 1 refutes ("1 was fed before that food was permitted"). The verb comes with it.
+  if (c.kind === 'new_food') return start ? `, from ${start}` : ''
   if (c.kind === 'diet_allowed') {
     if (start && stop) return `, permitted ${start} to ${stop}`
     if (start) return `, permitted from ${start}`
@@ -7557,6 +7578,8 @@ function changeLabel(c: ConcurrentChange): string {
       // Named for the PERMISSION, not the diet: "the trial diet (Greenies)" would be a false
       // sentence about a treat, and the §7 allowed list is where the vet meets this food again.
       return `${h(c.label)} (an allowed food)`
+    case 'new_food':
+      return `${h(c.label)} (a food first logged in this window)`
   }
 }
 

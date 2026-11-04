@@ -6469,3 +6469,47 @@ Deno.test('CUL-2480 — a course whose partial doses all fall before the window 
   assert.ok(/administered across the whole course, 4 of them partial/.test(html), 'page 1')
   assert.ok(/28 of 28 \(4 partial\)/.test(html), 'the lifetime table')
 })
+
+// ── CUL-2512 — a food first logged in the window is a change wherever changes are listed ──
+
+Deno.test('CUL-2512 — a food first logged mid-window reaches the markers, the legend and "Reading the trend"', () => {
+  idSeq = 0
+  const events = [
+    ...dayKeys('2026-03-20', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })),
+    ...['2026-06-10', '2026-06-11', '2026-06-14'].map((d) => mealEvent(d, { label: 'Chicken Treat', foodType: 'treat', format: 'treat', protein: 'chicken' })),
+    ...['2026-05-02', '2026-06-12', '2026-06-15', '2026-06-20'].map((d) => makeEvent({ type: 'vomit', occurredAt: at(d, '09:00:00') })),
+  ]
+  const snap = assembleReport(baseInput({ events }))
+  assert.deepEqual(
+    snap.windowNewFoods?.map((c) => ({ kind: c.kind, label: c.label, startDate: c.startDate, fedDays: c.fedDays, ongoing: c.ongoing, endInWindow: c.endInWindow })),
+    [{ kind: 'new_food', label: 'Chicken Treat (Treat)', startDate: '2026-06-10', fedDays: 3, ongoing: false, endInWindow: null }],
+  )
+  assert.ok(snap.windowNewFoods![0].bucketIndex !== null, 'it draws a marker')
+  // Additive: the builder's interventions are unchanged, so a consumer drawing them as spans is not.
+  assert.ok(!snap.concurrentChanges.some((c) => c.kind === 'new_food'))
+  const html = renderReport(snap)
+  assert.ok(html.includes('<b>One change overlaps this window:</b>'), 'the trend note counts it')
+  assert.ok(
+    html.includes('Chicken Treat (Treat) (a food first logged in this window) (first logged Jun 10, none earlier in the record this report read; logged as fed on <span class="num">3</span> days in this window)'),
+    html.slice(html.indexOf('Reading the trend'), html.indexOf('Reading the trend') + 600),
+  )
+  assert.ok(html.includes('the food Chicken Treat (Treat), first logged in this window, from Jun 10'), 'the marker legend names it')
+  assert.ok(html.includes('new food'), 'the chart marker carries its face')
+})
+
+Deno.test('CUL-2512 — a record that starts at the window edge does not call its foods new', () => {
+  idSeq = 0
+  // Logging begins Jun 1; every food is first logged within NEW_FOOD_MIN_PRIOR_DAYS of the first meal.
+  const events = [
+    ...dayKeys('2026-06-01', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })),
+    mealEvent('2026-06-03', { label: 'Chicken Treat', foodType: 'treat', format: 'treat' }),
+  ]
+  assert.deepEqual(assembleReport(baseInput({ events })).windowNewFoods, [])
+  // And a food fed before the window is not new inside it.
+  const before = [
+    ...dayKeys('2026-03-20', '2026-07-01').map((d) => mealEvent(d, { label: 'House Kibble' })),
+    mealEvent('2026-03-25', { label: 'Chicken Treat', foodType: 'treat', format: 'treat' }),
+    mealEvent('2026-06-10', { label: 'Chicken Treat', foodType: 'treat', format: 'treat' }),
+  ]
+  assert.deepEqual(assembleReport(baseInput({ events: before })).windowNewFoods, [])
+})
