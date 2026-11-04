@@ -9292,6 +9292,9 @@ Deno.test('CUL-2510 — the chronicity floor names how far back the trial sectio
     row,
   )
   assert.ok(!/days is a floor/.test(row), row)
+  // Cold read: the lead no longer says "first logged" in the window, and scopes the span to it.
+  assert.ok(/^Vomiting spans \d+ days in this window: 8 episodes/.test(row), row)
+  assert.ok(!/first logged Apr 3/.test(row), row)
   // Control: a copy stored before the field keeps B-532's floor sentence (unknown, never "none").
   const old = crop([{ type: 'vomit', count: 10 }])
   assert.ok(/days is a floor/.test(old) && !/trial section counts/.test(old), old)

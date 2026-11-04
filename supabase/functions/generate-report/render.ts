@@ -3089,9 +3089,12 @@ export function safetyFlagRow(
         // The "(first logged …)" parenthetical is dropped where the record reaches back past the
         // counts: glued to "spans N days" it reads as the span's start, so it would assert a
         // duration nobody measured. `recordBit` then carries both dates in their own sentence.
+        // CUL-2510, cold read: where the trial section shows the sign before this window, "first
+        // logged Sep 17" is false and the span reads as the course. The span is scoped to the window
+        // (never widened, C-19) and the record's earlier date follows in `cropBit`.
         `<b>${h(symptomLabel(f.symptomType))} spans ${num(spanShown)} day${
           spanShown === 1 ? '' : 's'
-        }</b>${hasUncountedRecord ? '' : ` (first logged ${h(onsetDay)})`}: ${num(f.episodeCount)} episode${
+        }${cropBit !== null ? ' in this window' : ''}</b>${hasUncountedRecord || cropBit !== null ? '' : ` (first logged ${h(onsetDay)})`}: ${num(f.episodeCount)} episode${
           f.episodeCount === 1 ? '' : 's'
         } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; ${recencyText}${recencyTail}. A sustained pattern over many samples, not a single incident.${adjacencyBit}${recordBit}${censorBit}`,
       )
