@@ -193,6 +193,10 @@ export interface TrialMedicationSource {
   startedAt: string
   endedAt: string | null
   indication: string | null
+  /** CUL-2509 — provenance, carried onto the overlap row: a regimen (false) or an ad-hoc dose group (true). */
+  adHoc?: boolean
+  /** The medication item behind the row, when one is recorded. */
+  itemId?: string | null
 }
 
 export interface TrialArrangementSource {
@@ -247,6 +251,22 @@ export interface TrialMedicationOverlap {
    * row is made of: the days dosed in the trial days this report covers, and the doses on record in all.
    */
   adHocDoses?: { inTrialInWindowDays: number; onRecord: number }
+  /**
+   * CUL-2509 — BUILDER-WRITTEN PROVENANCE. True when the row was built from an ad-hoc (no-regimen)
+   * dose group, false from a regimen. Name plus start day could not tell a regimen from an ad-hoc
+   * group that began the same day, so the render left the ad-hoc row un-re-dated. Absent on a copy
+   * stored before it: the render then falls back to that name-and-day guess.
+   */
+  adHoc?: boolean
+  itemId?: string | null
+  /**
+   * CUL-2509 instance 3 — an ad-hoc row's DAYS dosed (administered doses, by local day) in the trial
+   * days BEFORE this window, read from the lifetime dose record. Null when this window holds the
+   * whole trial's head, or the lifetime read was not passed (unknown, never zero).
+   */
+  adHocEarlierTrialDoseDays?: number | null
+  /** True when the dose pull was short: the count is a floor ("at least"). */
+  adHocEarlierTrialDoseDaysIsFloor?: boolean
 }
 
 /**
@@ -1919,6 +1939,7 @@ function medicationOverlap(
       activeAtWindowEnd: endDn === null || endDn >= range.endDayIndex,
       overlapsLast7Days: to >= range.endDayIndex - 6,
       antibacterialInGiTrial: indication === 'gi' && looksAntibacterial(m.drugName),
+      ...(m.adHoc !== undefined ? { adHoc: m.adHoc, itemId: m.itemId ?? null } : {}),
     })
   }
   return out.sort(

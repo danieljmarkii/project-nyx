@@ -341,3 +341,34 @@ Deno.test('adversarial R1 — a record-only row never takes a route from another
   const row = t.slice(t.indexOf('Medication during the trial'), t.indexOf('Medication during the trial') + 600)
   assert.doesNotMatch(row, /in the eye/, row)
 })
+
+Deno.test('CUL-2509 instance 1 — provenance re-dates an ad-hoc row beside a same-day same-name regimen', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  const cet = s.trial!.medicationOverlap.find((m) => m.drugName.startsWith('Cetirizine'))!
+  // A regimen of the same name starting on the ad-hoc group's first window day.
+  s.medications.push({ ...s.medications[0], regimenId: 'cet-rx', drugName: cet.drugName, startedAt: cet.startedAt! })
+  // Stored before provenance: the guess leaves the row exactly as built (the old, quieter read).
+  const guessed = withRecordOverlaps(s).trial!.medicationOverlap.find((m) => m.drugName === cet.drugName)!
+  assert.equal(guessed.recordStart, undefined)
+  // With the builder's provenance, the ad-hoc row is re-dated from its earliest dose on record.
+  const group = s.unlinkedMedications.find((u) => u.drugName === cet.drugName)!
+  cet.adHoc = true
+  cet.itemId = group.itemId
+  const cc = s.concurrentChanges.find((c) => c.label === cet.drugName)!
+  cc.adHoc = true
+  cc.itemId = group.itemId
+  const out = withRecordOverlaps(s)
+  assert.deepEqual(out.trial!.medicationOverlap.find((m) => m.drugName === cet.drugName)!.recordStart, { firstDoseDay: '2026-07-01', atHistoryFloor: true })
+  assert.deepEqual(out.concurrentChanges.find((c) => c.label === cet.drugName)!.recordStart, { firstDoseDay: '2026-07-01', atHistoryFloor: true })
+})
+
+Deno.test('CUL-2509 instance 1 — a regimen row the builder marks as one is never re-dated, whatever shares its name', () => {
+  const s = structuredClone(fixture('nyx-live'))
+  s.unlinkedMedications.push({ ...s.unlinkedMedications[0], itemId: 'pred-2', drugName: 'Prednisolone', firstDate: '2026-09-21' })
+  s.medicationHistory!.entries.push({ ...s.medicationHistory!.entries[0], key: 'item:pred-2', drugName: 'Prednisolone', firstDoseDay: '2026-06-01' })
+  const pred = s.trial!.medicationOverlap.find((m) => m.drugName === 'Prednisolone')!
+  pred.adHoc = false
+  pred.startedAt = '2026-09-21'
+  const out = withRecordOverlaps(s)
+  assert.equal(out.trial!.medicationOverlap.find((m) => m.drugName === 'Prednisolone')!.recordStart, undefined)
+})

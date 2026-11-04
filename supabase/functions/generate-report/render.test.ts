@@ -14,7 +14,7 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { chronicitySpanDaysShown, incidentPhotoCard, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
+import { chronicitySpanDaysShown, dayListText, incidentPhotoCard, OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE, weightLossPct } from './render.ts'
 import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 // CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
 // so this file cannot drift from `trial.ts` without going red.
@@ -8507,7 +8507,9 @@ Deno.test('CUL-1978 ① — off-diet feedings take the affirmative out of the ca
   )
   const callout = text(interpretingCallout(breached))
   assert.ok(!/supports interpreting it/.test(callout), callout)
-  assert.ok(/4 of 44 feedings during the trial did not match the trial diet .*cannot establish that the elimination was clean/.test(callout), callout)
+  // CUL-2516: the break is stated as a fact, never as an uncertainty about the record.
+  assert.ok(/The trial diet was not fed exclusively: 4 of 44 feedings during the trial did not match it \(appendix&nbsp;C; a floor, not a total\), so this record shows an elimination that was broken, not a clean one\./.test(callout), callout)
+  assert.ok(!/cannot establish that the elimination was clean/.test(callout), callout)
   const headline = text(/<div class="headline">[\s\S]*?<\/div>/.exec(breached)![0])
   assert.ok(/4 of 44 logged feedings did not match the trial diet/.test(headline), headline)
   assert.ok(/see the diet section before reading the trial as a result/.test(headline), headline)
@@ -8643,22 +8645,26 @@ Deno.test('CUL-1979 — the label-contamination row names the source of the food
 Deno.test('CUL-2505 — the contamination caveat names an allowed extra, the trial diet itself, or both', () => {
   const chew = { foodItemId: 'fi-chew', foodKey: null, label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck', proteins: ['duck', 'chicken'] }
   const diet = { ...chew, foodItemId: 'fi-duck', label: 'Novel Duck', role: 'primary_diet' as const, proteins: ['duck', 'pea'] }
-  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[] }>) => {
+  const caveat = (contamination: Array<{ food: typeof chew | typeof diet; extraProteins: string[]; derivedFromPrimary: string[]; measuredAgainst?: 'trial' | 'own_primary' }>) => {
     const html = text(renderReport(cleanTrialSnap(NO_HOUSEHOLD, { contamination })))
     const i = html.lastIndexOf('so this record cannot establish that the elimination was clean')
     assert.ok(i >= 0, 'the caveat renders')
     return html.slice(Math.max(0, i - 300), i)
   }
-  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
-  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(extra), extra)
+  const extra = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [], measuredAgainst: 'trial' as const }])
+  // CUL-2513: an extra's proteins are measured against the trial, so the clause says so.
+  assert.ok(/Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(extra), extra)
+  // Adversarial pass 1: measured against its own front (a dark trial set, or a stored copy), it never says so.
+  const fallback = caveat([{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }])
+  assert.ok(/Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(fallback), fallback)
   const own = caveat([{ food: diet, extraProteins: ['pea'], derivedFromPrimary: [] }])
   assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea \(above\), $/.test(own), own)
   assert.ok(!/fed during the trial, also lists/.test(own), own)
   const both = caveat([
     { food: diet, extraProteins: ['pea'], derivedFromPrimary: [] },
-    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] },
+    { food: chew, extraProteins: ['chicken'], derivedFromPrimary: [], measuredAgainst: 'trial' as const },
   ])
-  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, also lists Chicken \(above\), $/.test(both), both)
+  assert.ok(/The trial diet&rsquo;s own label \(Novel Duck\) also lists Pea; and Dental Chew, fed during the trial, lists Chicken, which the trial diet does not \(above\), $/.test(both), both)
 })
 
 Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and the off-trial legend never says "no link"', () => {
@@ -9211,4 +9217,132 @@ Deno.test('CUL-2390 guard — no "0 of" ever sits beside blood, foreign material
       if (/\bblood|foreign|mucus/i.test(sentence)) assert.ok(!/\b0 of\b/.test(sentence), `"0 of" beside a present-only finding: ${sentence}`)
     }
   }
+})
+
+// ── Lane A (vet report v2): sections that read quieter than a fact the same report holds ──
+
+Deno.test('CUL-2516 — off-diet feedings state the break, its days, and the timing line that names their protein', () => {
+  // Cooper: beef jerky ×4 on the vomit days. 20606 is 2026-06-02 (UTC day index).
+  const beef = (day: number) => {
+    const x = exposureItem('derived_protein', null)
+    return { ...x, dayIndex: day, label: 'Beef Jerky', classification: { ...x.classification, antigens: ['beef'] } }
+  }
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: {
+      totalFeedings: 44,
+      offDiet: 4,
+      byRung: { derived_protein: 4, unrecognised: 0 },
+      fedBeforePermitted: 0,
+      unclassifiable: 0,
+      items: [beef(20606), beef(20606), beef(20607), beef(20609)],
+    },
+    mayClaimAllMatched: false,
+  })
+  snap.correlation = {
+    ...snap.correlation,
+    early: [
+      { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.03, symptomEventCount: 4, correlationWindowHours: 12 },
+    ],
+  }
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(
+    callout.includes(
+      'The trial diet was not fed exclusively: 4 of 44 feedings during the trial did not match it on Jun 2, Jun 3 and Jun 5, 2026 (appendix&nbsp;C; a floor, not a total), so this record shows an elimination that was broken, not a clean one. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).',
+    ),
+    callout,
+  )
+  assert.ok(!/cannot establish that the elimination was clean/.test(callout), callout)
+  // Control: a timing finding on a protein the off-diet feedings did not carry is not pointed to.
+  snap.correlation = { ...snap.correlation, early: [{ ...snap.correlation.early![0], protein: 'lamb', proteins: ['lamb'] }] }
+  const other = text(interpretingCallout(renderReport(snap)))
+  assert.ok(/was broken, not a clean one\./.test(other) && !/Of the proteins those feedings carried/.test(other), other)
+})
+
+Deno.test('CUL-2516 — dayListText: up to four days named, more as a counted span, the year stamped once', () => {
+  assert.equal(dayListText(['2026-10-18']), 'on Oct 18, 2026')
+  assert.equal(dayListText(['2026-10-20', '2026-10-18', '2026-10-18']), 'on Oct 18 and Oct 20, 2026')
+  assert.equal(
+    text(dayListText(['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-22', '2026-11-02'])),
+    'on 5 days between Oct 18 and Nov 2, 2026',
+  )
+  assert.equal(dayListText(['2025-12-30', '2026-01-02']), 'on Dec 30, 2025 and Jan 2, 2026')
+})
+
+Deno.test('CUL-2510 — the chronicity floor names how far back the trial section shows the same sign', () => {
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 8,
+    spanDays: 40,
+    activeWeeks: 5,
+    symptomDays: 8,
+    daysSinceLastEpisode: 2,
+    firstOnsetIso: '2026-04-03T14:00:00Z',
+    firstLoggedIso: '2026-04-03T14:00:00Z',
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const crop = (byType: NonNullable<ReportSnapshot['scope']['trialCropSymptoms']>['byType']) => {
+    const s = base({ safetyFlags: [flag] })
+    s.scope.trialCropSymptoms = { count: 10, mostRecentIso: '2026-03-30T10:00:00Z', mostRecentType: 'vomit', byType, cropDays: 52, mealLoggedDaysInCrop: 50, countIsFloor: false }
+    const html = text(renderReport(s))
+    const i = html.indexOf('Vomiting spans')
+    return html.slice(i, html.indexOf('\n', i) > 0 ? html.indexOf('\n', i) : i + 1200)
+  }
+  const row = crop([{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
+  assert.ok(
+    /This window opens Apr 3, but the record holds 10 vomiting episodes in the trial days before it, the earliest on Feb 10, 2026: the sign runs back at least that far\./.test(row),
+    row,
+  )
+  assert.ok(!/days is a floor/.test(row), row)
+  // Cold read: the lead no longer says "first logged" in the window, and scopes the span to it.
+  assert.ok(/^Vomiting spans \d+ days in this window: 8 episodes/.test(row), row)
+  assert.ok(!/first logged Apr 3/.test(row), row)
+  // Control: a copy stored before the field keeps B-532's floor sentence (unknown, never "none").
+  const old = crop([{ type: 'vomit', count: 10 }])
+  assert.ok(/days is a floor/.test(old) && !/the record holds/.test(old), old)
+  // Control: earlier episodes of a DIFFERENT sign are not read as this one's.
+  const other = crop([{ type: 'cough', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }])
+  assert.ok(!/the record holds/.test(other), other)
+  // Adversarial pass 1: a short events pull makes the count a floor and the date the earliest READ.
+  const s2 = base({ safetyFlags: [flag] })
+  s2.scope.trialCropSymptoms = { count: 10, mostRecentIso: '2026-03-30T10:00:00Z', mostRecentType: 'vomit', byType: [{ type: 'vomit', count: 10, beforeWindow: 10, earliestBeforeWindowIso: '2026-02-10T12:00:00Z' }], cropDays: 52, mealLoggedDaysInCrop: 50, countIsFloor: false }
+  s2.incompletePulls = ['events']
+  assert.ok(/the record holds at least 10 vomiting episodes in the trial days before it, the earliest of those read on Feb 10, 2026/.test(text(renderReport(s2))))
+})
+
+Deno.test('CUL-2516 pass 1 — off-diet rows that are all "fed before it was permitted" keep the uncertain sentence', () => {
+  const x = exposureItem('derived_protein', '2026-06-12')
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: { totalFeedings: 44, offDiet: 1, byRung: { derived_protein: 1, unrecognised: 0 }, fedBeforePermitted: 1, unclassifiable: 0, items: [x] },
+    mayClaimAllMatched: false,
+  })
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(/cannot establish that the elimination was clean/.test(callout) && !/not fed exclusively/.test(callout), callout)
+})
+
+Deno.test('CUL-2511 pass 1 — a loss under 1% across the trial start stays off the bottom line', () => {
+  const end = (kg: number, day: string) => ({ kg, lbs: kg * 2.2, day, source: 'home_scale' as const, single: true })
+  const snap = cleanTrialSnap(NO_HOUSEHOLD)
+  snap.weight = { ...snap.weight, acrossTrialStart: { latest: end(4.47, '2026-05-20'), highBefore: end(4.5, '2026-05-01'), deltaKg: -0.03, deltaLbs: -0.1, pct: 1, withinNoise: false } }
+  assert.ok(/Weight is down about 1% of body weight across the trial/.test(text(interpretingCallout(renderReport(snap)))))
+  snap.weight = { ...snap.weight, acrossTrialStart: { ...snap.weight.acrossTrialStart!, deltaKg: -0.02, pct: 0 } }
+  assert.ok(!/across the trial&rsquo;s start|across the trial’s start/.test(interpretingCallout(renderReport(snap))))
+})
+
+Deno.test('CUL-2516 pass 2 — the permitted-later sentence keeps the days and the timing counts', () => {
+  const beef = (day: number) => {
+    const x = exposureItem('derived_protein', '2026-06-20')
+    return { ...x, dayIndex: day, classification: { ...x.classification, antigens: ['beef'] } }
+  }
+  const snap = cleanTrialSnap(NO_HOUSEHOLD, {
+    exposures: { totalFeedings: 44, offDiet: 2, byRung: { derived_protein: 2, unrecognised: 0 }, fedBeforePermitted: 2, unclassifiable: 0, items: [beef(20606), beef(20607)] },
+    mayClaimAllMatched: false,
+  })
+  snap.correlation = {
+    ...snap.correlation,
+    early: [{ symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.03, symptomEventCount: 4, correlationWindowHours: 12 }],
+  }
+  const callout = text(interpretingCallout(renderReport(snap)))
+  assert.ok(callout.includes('did not match the trial diet on Jun 2 and Jun 3, 2026 (dates in appendix&nbsp;C; a floor, not a total), so this record cannot establish that the elimination was clean. Of the proteins those feedings carried: Beef was in the 12&nbsp;h before 4 of 4 vomiting episodes (an early signal, not confirmed).'), callout)
 })

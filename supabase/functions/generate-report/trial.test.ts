@@ -750,18 +750,20 @@ Deno.test('D-A — a permitted extra that also lists another protein is a standi
   ]
   const snap = assembleReport(input)
   assert.equal(snap.trial?.contamination.length, 1)
-  assert.deepEqual(snap.trial?.contamination[0].extraProteins, ['chicken'])
+  // CUL-2513: measured against the (soy) trial, the jerky's own rabbit is named beside the chicken.
+  assert.deepEqual(snap.trial?.contamination[0].extraProteins, ['rabbit', 'chicken'])
   const text = plain(renderReport(snap))
   // NAMED. The cold read could not act on an unnamed "a food on the allowed list":
   // the row called it as trial-invalidating as a contaminated primary diet and then
   // withheld which product to stop.
-  assert.ok(/Ziwi Rabbit Jerky also lists Chicken/.test(text))
+  assert.ok(/Ziwi Rabbit Jerky lists Rabbit and Chicken, which the trial diet does not/.test(text), text)
   assert.ok(/less likely to be noticed/.test(text))
   // And it defeats the §7.2 affirmative, whatever the coverage.
   assert.ok(/cannot establish that the elimination was clean/.test(text))
   assert.ok(!/supports interpreting it/.test(text), 'the clause a busy reader lifts must not open a paragraph that dismantles it')
   // …and it reaches the HEADLINE, which is where a 60-second scan stops.
-  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+  // CUL-2513: the headline names every protein the trial diet does not hold, the jerky's own included.
+  assert.ok(/The record shows Rabbit and Chicken in Cooper\u2019s diet during the trial/.test(text), (text.match(/The record shows[^.]*/) ?? [''])[0])
 })
 
 // ── C3 — the oral route ──────────────────────────────────────────────────────
@@ -1348,10 +1350,11 @@ Deno.test('a PERMITTED extra\u2019s contamination never renders in the TRIAL FOO
   ]
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(!/The trial food\u2019s own label also lists Chicken/.test(text), 'the trial diet is clean and must not be accused')
-  assert.ok(/Pedigree Dentastix, on the allowed list, also lists Chicken/.test(text), 'the finding names its own product, in its own voice')
+  // CUL-2513: measured against the (soy) trial, in its own voice; the fixture designates cereal as its primary.
+  assert.ok(/Pedigree Dentastix, on the allowed list, lists Cereal and Chicken, which the trial diet does not/.test(text), (text.match(/Pedigree Dentastix, on the allowed list[^(]*/) ?? [''])[0])
   // The headline names the PROTEIN and the PET, never the food, so promoting it there
   // cannot mis-attribute the source.
-  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+  assert.ok(/The record shows Cereal and Chicken in Cooper\u2019s diet during the trial/.test(text), (text.match(/The record shows[^.]*/) ?? [''])[0])
 })
 
 Deno.test('§7.2 carries the medication confound, not only the exposure caveat', () => {
@@ -4372,18 +4375,25 @@ Deno.test('B-613 — the clause names the MIX, not just the most recent sign', (
   input.eventsSinceIso = '2026-01-03T00:00:00Z'
   const snap = assembleReport(input)
   // Descending by count, then by type name — the same record always renders the same way.
-  assert.deepEqual(snap.scope.trialCropSymptoms?.byType, [
+  const counts = (b: NonNullable<ReturnType<typeof assembleReport>['scope']['trialCropSymptoms']>['byType']) =>
+    b.map(({ type, count }) => ({ type, count }))
+  assert.deepEqual(counts(snap.scope.trialCropSymptoms!.byType), [
     { type: 'vomit', count: 5 },
     { type: 'itch', count: 2 },
     { type: 'diarrhea', count: 1 },
   ])
+  // CUL-2510: every one of these sits before the window, and the earliest of each is carried.
+  const itch = snap.scope.trialCropSymptoms!.byType.find((b) => b.type === 'itch')!
+  assert.equal(itch.beforeWindow, 2)
+  assert.ok(itch.earliestBeforeWindowIso!.startsWith('2026-04-21'), itch.earliestBeforeWindowIso!)
+  assert.equal(snap.scope.trialCropSymptoms!.byType.find((b) => b.type === 'vomit')!.beforeWindow, 5)
   assert.match(plain(renderReport(snap)), /8 symptom events were logged in those days \(5 vomiting, 2 itching, 1 loose stool; most recent: vomiting, May 24\)/)
   // A tie breaks on type name, so two equal counts cannot swap between renders.
   const tie = truncatedTrialInput()
   tie.eventsSinceIso = '2026-01-03T00:00:00Z'
   tie.events = tie.events.filter((e) => e.type !== 'vomit' || e.occurredAt >= '2026-06-02T00:00:00Z')
   tie.events.push(symptom('2026-05-02', 'vomit'), symptom('2026-05-03', 'itch'))
-  assert.deepEqual(assembleReport(tie).scope.trialCropSymptoms?.byType, [
+  assert.deepEqual(counts(assembleReport(tie).scope.trialCropSymptoms!.byType), [
     { type: 'itch', count: 1 },
     { type: 'vomit', count: 1 },
   ])
@@ -5659,4 +5669,87 @@ Deno.test('CUL-2286 — two single readings on a refusing cat, no weight flag: t
   const band = text.slice(0, text.indexOf('Diet trial'))
   assert.ok(/Weight fell to 4\.25 kg/.test(band), 'the weight fact composes with the refusal, above the fold')
   assert.ok(!/moves about that much on its own/.test(text), 'never a discount beside a live refusal flag')
+})
+
+// ── CUL-2509 — medication rows carry where they came from ─────────────────────────────
+
+function cetirizineTrialInput(): ReportInput {
+  const input = truncatedTrialInput()
+  input.medicationItems = [{ id: 'mi-cet', genericName: 'cetirizine', brandName: 'Zyrtec', strength: null, route: 'oral', isPrescription: false, form: 'tablet' }]
+  // Ad-hoc doses: four in the trial days before the window (Apr 25, Apr 26 ×2, May 10), two inside it.
+  const dose = (id: string, date: string, over: Partial<ReportInput['doses'][number]> = {}) => ({
+    eventId: id, occurredAt: at(date, '09:00:00'), medicationId: null, medicationItemId: 'mi-cet', adherence: 'given', doseAmount: null, pairedEventId: null, ...over,
+  })
+  const earlier = [dose('c1', '2026-04-25'), dose('c2', '2026-04-26'), { ...dose('c3', '2026-04-26'), occurredAt: at('2026-04-26', '19:00:00') }, dose('c4', '2026-05-10'), dose('c5', '2026-05-12', { adherence: 'missed' })]
+  const inWindow = [dose('c6', '2026-06-25'), dose('c7', '2026-06-28', { howGiven: 'in_food' })]
+  input.doses = inWindow
+  input.lifetimeDoses = [...earlier, ...inWindow]
+  for (const d of [...earlier, ...inWindow]) {
+    input.events.push({ id: d.eventId, type: 'medication', occurredAt: d.occurredAt, occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: d.occurredAt, meal: null })
+  }
+  return input
+}
+
+Deno.test('CUL-2509 — the builder writes each medication row’s provenance', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  const row = snap.trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  assert.equal(row.adHoc, true)
+  assert.equal(row.itemId, 'mi-cet')
+  const cc = snap.concurrentChanges.find((c) => /cetirizine/i.test(c.label))!
+  assert.equal(cc.adHoc, true)
+  assert.equal(cc.itemId, 'mi-cet')
+})
+
+Deno.test('CUL-2509 instance 3 — an ad-hoc row counts its days dosed in the earlier trial days', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  const row = snap.trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  // Apr 25, Apr 26 (twice), May 10 given; May 12 missed: 3 days.
+  assert.equal(row.adHocEarlierTrialDoseDays, 3)
+  const text = plain(renderReport(snap))
+  assert.match(text, /dosed on 3 of the 42 earlier trial days this report leaves out/)
+  // Without the lifetime read the count is unknown, never zero.
+  const noLife = cetirizineTrialInput()
+  delete noLife.lifetimeDoses
+  const unknown = assembleReport(noLife).trial!.medicationOverlap.find((m) => /cetirizine/i.test(m.drugName))!
+  assert.equal(unknown.adHocEarlierTrialDoseDays, null)
+  // Pass 2 (QUIET): said as uncounted, never left out.
+  assert.match(plain(renderReport(assembleReport(noLife))), /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
+})
+
+Deno.test('CUL-2509 instance 2 — a dose logged "in food" with no meal paired reaches the diet history', () => {
+  const snap = assembleReport(cetirizineTrialInput())
+  assert.equal(snap.diet.medicationVehicles?.unresolvedDoses, 1)
+  const text = plain(renderReport(snap))
+  assert.match(text, /1 dose was logged in this window as given in food or a treat that does not resolve to a meal logged here, so the food is not named\./)
+  assert.doesNotMatch(text, /no dose in this window was logged as given in food/)
+  // Control: unanswered or "direct" is no vehicle.
+  const direct = cetirizineTrialInput()
+  direct.doses = direct.doses.map((d) => ({ ...d, howGiven: d.howGiven ? 'direct' : null }))
+  assert.equal(assembleReport(direct).diet.medicationVehicles, null)
+})
+
+Deno.test('CUL-2509 pass 1 — an ad-hoc row with no item id is unknown, never 0; a short dose pull is a floor', () => {
+  const noItem = cetirizineTrialInput()
+  noItem.medicationItems = []
+  noItem.doses = noItem.doses.map((d) => ({ ...d, medicationItemId: null }))
+  noItem.lifetimeDoses = noItem.lifetimeDoses!.map((d) => ({ ...d, medicationItemId: d.eventId === 'c6' || d.eventId === 'c7' ? null : 'mi-cet' }))
+  const row = assembleReport(noItem).trial!.medicationOverlap.find((m) => m.adHoc)!
+  assert.equal(row.adHocEarlierTrialDoseDays, null)
+  const short = cetirizineTrialInput()
+  short.incompletePulls = ['medication_administrations']
+  const snap = assembleReport(short)
+  assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDaysIsFloor, true)
+  assert.match(plain(renderReport(snap)), /dosed on at least 3 of the 42 earlier trial days/)
+})
+
+Deno.test('CUL-2509 pass 2 — a count that could not be taken is said, never left out or read as 0', () => {
+  // A short pull with nothing read in the earlier days: unknown, never "at least 0".
+  const short = cetirizineTrialInput()
+  short.incompletePulls = ['medication_administrations']
+  short.lifetimeDoses = short.lifetimeDoses!.filter((d) => d.eventId === 'c6' || d.eventId === 'c7')
+  const snap = assembleReport(short)
+  assert.equal(snap.trial!.medicationOverlap.find((m) => m.adHoc)!.adHocEarlierTrialDoseDays, null)
+  const text = plain(renderReport(snap))
+  assert.match(text, /its dosing in the 42 earlier trial days this report leaves out could not be counted/)
+  assert.doesNotMatch(text, /at least 0 of the/)
 })
