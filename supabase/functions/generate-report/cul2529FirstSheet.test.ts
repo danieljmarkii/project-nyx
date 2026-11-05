@@ -68,6 +68,8 @@ Deno.test('CUL-2529 — the first sheet names the off-diet protein with its days
   const head = headlineOf(html)
   assert.match(head, /11 of 167 logged feedings did not match the trial diet, carrying Chicken \(11\) on Oct 18, Oct 19 and Oct 20, 2026 \(/, head)
   assert.match(head, /Medication overlapping the trial: Motozol \([^)]*2 courses\), Prednisolone \([^)]*Sep 21–Oct 11[^)]*\) and Cetirizine HCl \(Zyrtec\) \(entered as a supplement[^)]*\), so a change in the signs cannot be attributed to the diet alone/, head)
+  // Cold read at f8acadc: what each course was for rides with it (prednisolone was for the cough).
+  assert.match(head, /Prednisolone \(by mouth, for coughing, Sep 21–Oct 11/, head)
   // On the first sheet: the headline precedes the weight block, the at-a-glance and the trial block.
   assert.ok(html.indexOf('<div class="headline">') < html.indexOf('<h2>Diet trial'), 'the drugs are named before the trial block')
 })
@@ -153,9 +155,9 @@ Deno.test('CUL-2529 — the Diet-not-eaten flag names its unfinished feedings, a
   s.provenance.trialDietRatings = NYX_RATINGS
   const html = renderReport(s)
   const band = bandOf(html)
-  assert.match(band, /2 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 2 days between Sep 21 and Oct 8 \(Sep 21, a meal, picked at it; Oct 8, a treat, picked at it\)/, band)
+  assert.match(band, /2 of 4 rated feedings carrying the trial diet left unfinished \(entries with the diet in them, treats included\) on 2 days between Sep 21 and Oct 8 \(Sep 21, a meal, picked at it; Oct 8, a treat, picked at it; 0 of the 4 rated “ate it all”\)/, band)
   const t = plain(html)
-  assert.match(t, /Rated feedings carrying the trial diet, not in the table above — treats included, oldest first\. With the 2 trial-diet meals in the table above, these are the 4 rated feedings behind the Diet not eaten flag; it counts the 2 rated below “ate most” as left unfinished\./)
+  assert.match(t, /Rated feedings carrying the trial diet, not in the table above — treats included, oldest first\. With the 2 trial-diet meals in the table above, these are the 4 rated feedings behind the Diet not eaten flag; it counts the 2 rated below “ate most” \(Sep 21, Oct 8\) as left unfinished, and 0 of the 4 were rated “ate it all”\./)
   assert.match(t, /Sep 2[89]\s*\d\d:\d\d\s*Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S\.I\.T\. \(Jerky\) treat\s*Ate most/)
   assert.match(t, /Oct 8\s*\d\d:\d\d\s*Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S\.I\.T\. \(Jerky\) treat\s*Picked at it/)
 })

@@ -3579,6 +3579,10 @@ export function headlineMedicationBit(snap: ReportSnapshot, t: NonNullable<Repor
       .filter((m) => !m.recordStart && !m.adHocDoses && m.startedAt !== null)
       .map((m) => snap.medications.find((r) => r.drugName === name && r.startedAt.slice(0, 10) === m.startedAt!.slice(0, 10)))
       .filter((r): r is MedicationAdherence => r !== undefined)
+    // Cold read at f8acadc: what the drug was for, from its own course(s) — a steroid given for the
+    // cough the trial is also measuring is the confound a vet weighs first.
+    const indications = [...new Set(matched.map((r) => r.indication?.trim().toLowerCase()).filter((x): x is string => !!x))]
+    if (indications.length > 0) bits.splice(route ? 1 : 0, 0, `for ${h(indications.join(' and '))}`)
     const parts = matched.map((r) => ({ r, p: partialOf(r) })).filter((x) => x.p !== null)
     if (parts.length > 0) {
       const n = parts.reduce((a, x) => a + x.p!.n, 0)
@@ -10145,7 +10149,12 @@ function trialDietRatingsBlock(snap: ReportSnapshot, log: readonly IntakeLogEntr
   const note = reconciles
     ? `${sum} the ${num(fact.rated)} rated feedings behind the Diet not eaten flag; it counts the ${num(
         fact.refused,
-      )} rated below &ldquo;ate most&rdquo; as left unfinished.`
+      )} rated below &ldquo;ate most&rdquo; (${all
+        .filter((r) => flagCountsUnfinished(r.intakeRating))
+        .map((r) => h(fmtLocalDay(r.occurredAt, tz)))
+        .join(', ')}) as left unfinished, and ${num(
+        all.filter((r) => r.intakeRating.trim().toLowerCase() === 'all').length,
+      )} of the ${num(fact.rated)} were rated &ldquo;ate it all&rdquo;.`
     : `The Diet not eaten flag counts ${num(fact.refused)} of ${num(
         fact.rated,
       )} rated feedings over the trial days it covers; these rows and the trial-diet meals above are the rated feedings of the trial diet in this report&rsquo;s window. The two are taken over different spans, so their counts can differ.`
@@ -10167,9 +10176,13 @@ export function refusalUnfinishedNamed(snap: ReportSnapshot, refused: number, ra
   const un = rows.filter((r) => flagCountsUnfinished(r.intakeRating))
   if (un.length !== refused || un.length === 0 || un.length > 3) return ''
   const tz = snap.timezone
+  // Cold read at f8acadc (QUIET stopgap, filed for a ruling): the flag counts "ate most" as finished,
+  // so "2 of 4 left unfinished" stood over a record where none of the 4 was eaten in full. The
+  // fully-eaten count rides beside it; the flag's own count and threshold are unchanged.
+  const full = rows.filter((r) => r.intakeRating.trim().toLowerCase() === 'all').length
   return ` (${un
     .map((r) => `${h(fmtLocalDay(r.occurredAt, tz))}, ${r.isTreat ? 'a treat' : 'a meal'}, ${h(intakeLabel(r.intakeRating).toLowerCase())}`)
-    .join('; ')})`
+    .join('; ')}; ${num(full)} of the ${num(rated)} rated &ldquo;ate it all&rdquo;)`
 }
 
 /** A share the record holds only as a proportion (§6): a common fraction when it is one,
