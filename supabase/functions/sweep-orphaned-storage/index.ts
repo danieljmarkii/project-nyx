@@ -15,6 +15,11 @@
 // only (plan.ts runLine). A call without the marker (the deploy's smoke POST) gets a
 // 400 with an error body and does nothing.
 //
+// The daily check (CUL-2521): `{ check: 'overdue' }`, in its own window (plan.ts gate),
+// runs the same pass with a remove that deletes nothing and answers 204 (nothing due was
+// left) or 200 `{ overdue, incomplete }`. It reveals two bits, never a count, a path or
+// an id.
+//
 // One run at a time per worker: a second request while one runs gets 204 and does
 // nothing, so a burst of calls cannot multiply the Storage load. Two workers can still
 // overlap; every step is idempotent (a remove of an object already removed removes
@@ -22,7 +27,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { sweepBudget, userProbeOf } from '../delete-account/plan.ts'
-import { gate, runLine, runSweep, type SweepIO, type TimedLister } from './plan.ts'
+import { checkLine, checkVerdict, gate, runLine, runStartOf, runSweep, type SweepIO, type TimedLister } from './plan.ts'
 
 const WORKER_STARTED_AT = Date.now()
 let running = false
@@ -40,6 +45,13 @@ function timedLister(admin: SupabaseClient, bucket: string): TimedLister {
       updatedAt: (e.updated_at as string | null) ?? null,
     }))
   }
+}
+
+// CUL-2521: the check's IO. The real reads, and a remove that deletes NOTHING: it
+// answers every key as removed, so the report's `removed` counts what the morning run
+// left behind. Built from sweepIO so the reads can never drift from the run's.
+function checkIO(admin: SupabaseClient): SweepIO {
+  return { ...sweepIO(admin), remove: (_bucket, keys) => Promise.resolve(keys.length) }
 }
 
 function sweepIO(admin: SupabaseClient): SweepIO {
@@ -95,7 +107,9 @@ Deno.serve(async (req: Request) => {
   const verdict = gate(body, startedAt)
   if (verdict === 'not_a_run') return Response.json({ error: 'Not a scheduled sweep run' }, { status: 400 })
   if (verdict === 'outside_window') return Response.json({ error: 'Outside the run window' }, { status: 400 })
-  if (running) return new Response(null, { status: 204 })
+  // A check that finds the worker busy cannot answer; 503 reads as "could not run" to
+  // the check, never as the clean 204.
+  if (running) return new Response(null, { status: verdict === 'check' ? 503 : 204 })
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -108,6 +122,15 @@ Deno.serve(async (req: Request) => {
   try {
     const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
     const { deadline, cutoff } = sweepBudget(startedAt, WORKER_STARTED_AT)
+    if (verdict === 'check') {
+      // Read-only: checkIO's remove deletes nothing. Age is judged at today's run start.
+      const report = await runSweep(checkIO(admin), { now: Date.now, deadline, cutoff, asOf: runStartOf(startedAt) })
+      console.log(checkLine(report))
+      const { overdue, incomplete } = checkVerdict(report)
+      // Two bits and no counts: a caller learns only whether to call a person.
+      if (!overdue && !incomplete) return new Response(null, { status: 204 })
+      return Response.json({ overdue, incomplete }, { status: 200 })
+    }
     const report = await runSweep(sweepIO(admin), { now: Date.now, deadline, cutoff })
     console.log(runLine(report))
     return new Response(null, { status: 204 })

@@ -15,6 +15,8 @@ import {
   scopeVetDocumentPaths,
   scopeVetReportPaths,
   scopePetPhotoPaths,
+  scopeDropCounts,
+  scopeDropLine,
   collectStoragePaths,
   buildDeletionPlan,
   chunk,
@@ -401,6 +403,55 @@ Deno.test('collectStoragePaths — CUL-2300: every key the saved-copy writer bui
   const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
   assertEquals(byBucket[STORAGE_BUCKETS.vetReports], [draft, kept, pdf])
   assertEquals(SWEEP_SCOPE.vetReports, 'pet')
+})
+
+Deno.test('scopeDropCounts — CUL-2311: an honest key a guard refuses is counted, per bucket, never named', () => {
+  const pet = '11111111-2222-4333-8444-555555555555'
+  const food = '22222222-2222-4333-8444-555555555555'
+  const counts = scopeDropCounts(owned({
+    ownedPetIds: [pet],
+    ownedFoodItemIds: [food],
+    // A writer that drifted: three segments, and a user-id folder.
+    vetReportPaths: [savedCopyPath(pet, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'), `${pet}/r1/report.pdf`, 'user-1/r2.pdf'],
+    vetDocumentPaths: [`${pet}/d.pdf`, `${pet}/../victim/x.pdf`],
+    petPhotoPaths: [`${pet}/profile.jpg`],
+    medicationPhotoPaths: ['user-1/med-9/label.jpg', 'user-2/med-9/label.jpg'],
+    foodPhotoPaths: [`${food}/0-front.jpg`, 'other-food/0-front.jpg'],
+  }))
+  assertEquals(counts, {
+    [STORAGE_BUCKETS.vetReports]: 2,
+    [STORAGE_BUCKETS.vetDocuments]: 1,
+    [STORAGE_BUCKETS.medicationPhotos]: 1,
+    [STORAGE_BUCKETS.foodPhotos]: 1,
+  })
+  const line = scopeDropLine('user-1', counts)!
+  assert(line.includes('"event":"delete-account.scope_dropped"'), line)
+  for (const secret of [pet, food, 'report.pdf', 'victim', 'user-2', 'other-food']) {
+    assert(!line.includes(secret), `the line names ${secret}: ${line}`)
+  }
+})
+
+Deno.test('scopeDropCounts — CUL-2311: blanks, nulls and duplicates are not drops; a clean run logs nothing', () => {
+  const pet = '11111111-2222-4333-8444-555555555555'
+  const key = `${pet}/r.html`
+  const counts = scopeDropCounts(owned({ ownedPetIds: [pet], vetReportPaths: [key, key, null, undefined, '', '  '] }))
+  assertEquals(counts, {})
+  assertEquals(scopeDropLine('user-1', counts), null)
+})
+
+Deno.test('scopeDropCounts — CUL-2311: an account with no pets counts every pet-scoped key it holds as dropped', () => {
+  // The fail-closed empty set: the purge removes none of these, so the log must say so.
+  const counts = scopeDropCounts(owned({ ownedPetIds: [], vetReportPaths: ['p/r.html'], petPhotoPaths: ['p/profile.jpg'] }))
+  assertEquals(counts, { [STORAGE_BUCKETS.vetReports]: 1, [STORAGE_BUCKETS.petPhotos]: 1 })
+})
+
+Deno.test('index.ts — CUL-2311: the scope-drop line is logged from the same owned paths the plan is built from', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url))
+  const plan = src.indexOf('const plan = buildDeletionPlan(ownedPaths)')
+  assert(plan > 0)
+  const after = src.slice(plan, plan + 400)
+  assert(/scopeDropLine\(userId, scopeDropCounts\(ownedPaths\)\)/.test(after), after)
+  assert(/console\.warn\(dropped\)/.test(after), after)
 })
 
 Deno.test('index.ts — CUL-2300: the vet_reports read takes every row of the owned pets, drafts and kept copies alike', async () => {
