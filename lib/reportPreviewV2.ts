@@ -37,21 +37,6 @@ export function bandSlotFor(live: ComposerLive | null | undefined): boolean {
   return live?.state === 'flags';
 }
 
-/**
- * CUL-2383 — the phone document runs its own inline layout script (compaction at font scale 1.6,
- * the keep-together spacer, the pinned warning's scroll padding, `data-tight`), so its WebView has
- * JavaScript ON. What makes that safe is that the WebView can go nowhere: the document is our own
- * server render with no external scripts or links that load, and every navigation away from the
- * inline document is refused here. `about:blank` (and `about:srcdoc`) is the inline document
- * itself on both platforms; a `data:` URL is how some Android builds report it.
- *
- * The v1 preview's check only (`app/report.tsx`, CUL-2527). Every v2 report frame passes
- * `reportFrameLoadAllowed`, which refuses `data:`.
- */
-export function isPreviewLoadAllowed(url: string): boolean {
-  return url === 'about:blank' || url === 'about:srcdoc' || url.startsWith('data:');
-}
-
 /** The part of a navigation the frame check reads. `isTopFrame` is iOS only. */
 export interface ReportFrameRequest {
   url: string;

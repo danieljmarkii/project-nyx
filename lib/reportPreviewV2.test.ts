@@ -7,7 +7,6 @@ import {
   bandSlotFor,
   hasPhonePreview,
   isBareV2Report,
-  isPreviewLoadAllowed,
   PREVIEW_TOGGLE_LABEL,
   REPORT_FRAME_PROPS,
   reportFrameLoadAllowed,
@@ -33,19 +32,6 @@ describe('bandSlotFor', () => {
     expect(bandSlotFor(live('incomplete'))).toBe(false);
     expect(bandSlotFor(null)).toBe(false);
     expect(bandSlotFor(undefined)).toBe(false);
-  });
-});
-
-describe('isPreviewLoadAllowed (the v1 preview only, CUL-2527; CUL-2383)', () => {
-  it('lets the inline document load', () => {
-    for (const u of ['about:blank', 'about:srcdoc', 'data:text/html;charset=utf-8,<html></html>']) {
-      expect(isPreviewLoadAllowed(u)).toBe(true);
-    }
-  });
-  it('refuses every navigation away from it', () => {
-    for (const u of ['https://example.com', 'http://example.com', 'file:///etc/hosts', 'javascript:alert(1)', 'mailto:a@b.c', 'tel:123', 'about:blank.evil.com'.replace('about:blank', 'https://about')]) {
-      expect(isPreviewLoadAllowed(u)).toBe(false);
-    }
   });
 });
 
@@ -117,11 +103,13 @@ describe('REPORT_FRAME_PROPS: the props every v2 report WebView spreads (CUL-246
   });
 
   // A frame that passes its own check, whitelist or window handler drifts from the others; one
-  // that skips the spread has none of them. Every <WebView in the v2 frames' files is read.
+  // that skips the spread has none of them. Every <WebView in a report frame's file is read,
+  // the live v1 preview's included (CUL-2527).
   const FRAMES: Record<string, number> = {
     'components/reportV2/ReportPreviewV2.tsx': 2,
     'app/exam-room.tsx': 2,
     'app/reports/[id].tsx': 1,
+    'app/report.tsx': 1,
   };
   it.each(Object.entries(FRAMES))('%s: every WebView spreads REPORT_FRAME_PROPS and overrides none of it', (file, count) => {
     const src = readFileSync(join(ROOT, file), 'utf8');

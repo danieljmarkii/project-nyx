@@ -53,7 +53,8 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { generateVetReport, type VetReport } from '../lib/pdf';
 import { REPORT_FRONT_SILHOUETTE_TEST_ID } from '../components/surfaces/waits/ReportFrontSilhouette';
 import ReportScreen, { V1_PREVIEW_TEST_ID, boxedV1Html } from './report';
-import { EXAM_CSP, REPORT_WEBVIEW_ORIGINS } from '../lib/examRoom';
+import { EXAM_CSP, PREFETCH_OFF_META } from '../lib/examRoom';
+import { REPORT_FRAME_PROPS } from '../lib/reportPreviewV2';
 import { boxedPreviewHtml } from '../components/reportV2/ReportPreviewV2';
 
 const mockedGenerate = generateVetReport as jest.Mock;
@@ -100,27 +101,41 @@ it('a v1 report renders as before: no preview, no toggle, JS off', async () => {
 });
 
 // CUL-2486: the v1 frame had `originWhitelist ['*']` and no load check, so an injected link or
-// meta refresh loaded https in the frame. Boxed now like every report frame.
-it('the v1 frame is boxed: every URL reaches the load check, which refuses every network and app scheme; no window; CSP', async () => {
+// meta refresh loaded https in the frame. CUL-2527: its own check still admitted every `data:` URL,
+// so a meta refresh to a `data:` document with no CSP could carry the record out. It now spreads
+// the one set of report frame props, so it refuses exactly what every v2 frame refuses.
+it('the v1 frame spreads the report frame props: data:, sub-frames and every other scheme refused; JS off; CSP and prefetch off', async () => {
   mockedGenerate.mockResolvedValue(report({ reportVersion: 'v1', phoneHtml: null, html: '<html><head></head><body>v1</body></html>' }));
   const s = render(<ReportScreen />);
   await s.findByText('Send to vet');
   const web = s.getByTestId(V1_PREVIEW_TEST_ID, hidden);
-  const p = web.props as {
-    originWhitelist: string[];
+  const p = web.props as Record<string, unknown> & {
     javaScriptEnabled: boolean;
     source: { html: string };
-    onShouldStartLoadWithRequest: (r: { url: string }) => boolean;
-    onOpenWindow?: unknown;
+    onShouldStartLoadWithRequest: (r: { url: string; isTopFrame?: boolean }) => boolean;
   };
-  expect(p.originWhitelist).toEqual(REPORT_WEBVIEW_ORIGINS);
+  for (const [key, value] of Object.entries(REPORT_FRAME_PROPS)) expect(p[key]).toBe(value);
   expect(p.javaScriptEnabled).toBe(false);
   expect(p.source.html).toBe(boxedV1Html('<html><head></head><body>v1</body></html>'));
-  expect(p.source.html.indexOf('Content-Security-Policy')).toBeLessThan(p.source.html.indexOf('<body>'));
+  const body = p.source.html.indexOf('<body>');
+  expect(p.source.html.indexOf('Content-Security-Policy')).toBeLessThan(body);
+  expect(p.source.html.indexOf(PREFETCH_OFF_META)).toBeGreaterThan(-1);
+  expect(p.source.html.indexOf(PREFETCH_OFF_META)).toBeLessThan(body);
   expect(p.source.html).toContain(`content="${EXAM_CSP}"`);
-  expect(typeof p.onOpenWindow).toBe('function');
   expect(p.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
-  for (const url of ['https://evil.example/?d=record', 'http://x.test', 'nyx://report', 'mailto:a@b.c', 'javascript:alert(1)']) {
+  expect(p.onShouldStartLoadWithRequest({ url: 'about:blank', isTopFrame: false })).toBe(false);
+  for (const url of [
+    'data:text/html,<img src=https://evil.example/?x=',
+    'data:text/html;charset=utf-8,<html></html>',
+    'data:image/svg+xml,<svg/>',
+    'DATA:text/html,x',
+    'about:srcdoc',
+    'https://evil.example/?d=record',
+    'http://x.test',
+    'nyx://report',
+    'mailto:a@b.c',
+    'javascript:alert(1)',
+  ]) {
     expect(p.onShouldStartLoadWithRequest({ url })).toBe(false);
   }
 });
@@ -177,9 +192,10 @@ it('asking for v2, the first build waits on the v2 Front Page; asking for v1, on
   expect(v1.queryByTestId(REPORT_FRONT_SILHOUETTE_TEST_ID, hidden)).toBeNull();
 });
 
-it('boxedV1Html: the policy lands in a real head, never in a <header>, and without a head after the doctype', () => {
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">`;
-  expect(boxedV1Html('<html><head><title>t</title></head><body/></html>')).toBe(`<html><head>${meta}<title>t</title></head><body/></html>`);
-  expect(boxedV1Html('<!DOCTYPE html><body><header>h</header></body>')).toBe(`<!DOCTYPE html>${meta}<body><header>h</header></body>`);
-  expect(boxedV1Html('<body>x</body>')).toBe(`${meta}<body>x</body>`);
+it('boxedV1Html: the policy and the prefetch switch land in a real head, never in a <header>, and without a head after the doctype', () => {
+  const head = `<meta http-equiv="Content-Security-Policy" content="${EXAM_CSP}">${PREFETCH_OFF_META}`;
+  expect(boxedV1Html('<html><head><title>t</title></head><body/></html>')).toBe(`<html><head>${head}<title>t</title></head><body/></html>`);
+  expect(boxedV1Html('<html><HEAD lang="en"><title>t</title></HEAD></html>')).toBe(`<html><HEAD lang="en">${head}<title>t</title></HEAD></html>`);
+  expect(boxedV1Html('<!DOCTYPE html><body><header>h</header></body>')).toBe(`<!DOCTYPE html>${head}<body><header>h</header></body>`);
+  expect(boxedV1Html('<body>x</body>')).toBe(`${head}<body>x</body>`);
 });

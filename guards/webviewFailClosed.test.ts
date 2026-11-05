@@ -4,7 +4,7 @@
 // (or on an interrupt), loads it anyway. `RNCWebView`'s constructor sets the messaging module for
 // every WebView, so every frame with `onShouldStartLoadWithRequest` took that path: an injected
 // script could keep the JS thread busy while looping `location=` and walk the record out of a
-// report frame past `isPreviewLoadAllowed`. `patches/react-native-webview+<version>.patch` makes
+// report frame past its load check. `patches/react-native-webview+<version>.patch` makes
 // both branches block. This guard reads the INSTALLED source (what a build compiles, after
 // `postinstall` applied the patch) and the patch's version against package.json, so a version bump
 // that drops the patch, or a patch that stops applying, reds here instead of shipping fail-open.
