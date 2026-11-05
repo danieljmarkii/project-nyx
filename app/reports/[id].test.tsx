@@ -53,7 +53,8 @@ jest.mock('../../lib/vetVisits', () => ({
   readVetVisitsHome: (...a: unknown[]) => mockHome(...a),
 }));
 
-import SavedReportScreen, { savedCopyLoadAllowed } from './[id]';
+import SavedReportScreen from './[id]';
+import { reportFrameLoadAllowed } from '../../lib/reportPreviewV2';
 import { boxedPreviewHtml } from '../../components/reportV2/ReportPreviewV2';
 import { EXAM_CSP } from '../../lib/examRoom';
 
@@ -260,8 +261,8 @@ describe('boxed in like the preview (CUL-2487)', () => {
     expect(web.props.onShouldStartLoadWithRequest({ url: 'data:text/html;charset=utf-8,x' })).toBe(false);
     // The copy's own document (iOS reports it as about:blank) still loads.
     expect(web.props.onShouldStartLoadWithRequest({ url: 'about:blank' })).toBe(true);
-    expect(savedCopyLoadAllowed(hop)).toBe(false);
-    expect(savedCopyLoadAllowed('https://evil.example/')).toBe(false);
+    // The shared check, the one every v2 report frame passes (CUL-2494).
+    expect(web.props.onShouldStartLoadWithRequest).toBe(reportFrameLoadAllowed);
     // No load-end gate to race.
     expect(web.props.onLoadEnd).toBeUndefined();
   });

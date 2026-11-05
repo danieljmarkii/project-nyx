@@ -1,9 +1,18 @@
+import { readFileSync } from 'fs';
+import { JSDOM } from 'jsdom';
+import { join } from 'path';
 // Exam-room mode's pure rules (CUL-2299, spec §10.6). What only a layout engine can see (one
 // sheet at a time, the arm's-length type, the keep-together unit on every page) is
 // scripts/report-phone/guard.mjs's exam pass.
 import {
   ARM_LENGTH_PX,
   EXAM_CSP,
+  EXAM_CSP_META,
+  FRAME_LOCK_HEAD,
+  FRAME_LOCK_SCRIPT,
+  PREFETCH_OFF_META,
+  neutralizeRefusedTags,
+  withFrameLock,
   EXAM_VIEWPORT,
   EXAM_IDLE_MS,
   clampPage,
@@ -63,7 +72,7 @@ describe('examRoomHtml', () => {
     expect(out).not.toBeNull();
     const html = out as string;
     // Every byte of the reflow survives, in order: the mode only inserts.
-    const stripped = html.replace(/<style id="nyx-exam-style">[\s\S]*?<\/style>\n/, '').replace(/<script id="nyx-exam-script">[\s\S]*?<\/script>\n/, '').replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '').replace(EXAM_VIEWPORT, '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
+    const stripped = html.replace(/<style id="nyx-exam-style">[\s\S]*?<\/style>\n/, '').replace(/<script id="nyx-exam-script">[\s\S]*?<\/script>\n/, '').replace(FRAME_LOCK_HEAD, '').replace(EXAM_VIEWPORT, '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />');
     expect(stripped).toBe(PHONE);
   });
 
@@ -208,5 +217,174 @@ describe('savedCopyWarningOf: a saved printed page pins its own confounder line,
     // Two lines: a layout this rule never saw.
     const two = '<p class="conf" data-block="confounder">A.</p><p class="conf" data-block="confounder">B.</p>';
     expect(savedCopyWarningOf(page(two))).toEqual({ kind: 'refuse' });
+  });
+});
+
+describe('the frame lock (CUL-2469, CUL-2495)', () => {
+  it('opens the head of every v2 frame document: CSP, prefetch off, the lock script, before any server markup', () => {
+    const doc = '<!DOCTYPE html><html><head><meta charset="utf-8" /><style>x{}</style></head><body><script>/*s*/</script></body></html>';
+    const locked = withFrameLock(doc) as string;
+    expect(locked.startsWith(`<!DOCTYPE html><html><head>${FRAME_LOCK_HEAD}<meta charset`)).toBe(true);
+    expect(FRAME_LOCK_HEAD.indexOf(EXAM_CSP_META)).toBe(0);
+    expect(FRAME_LOCK_HEAD).toContain(PREFETCH_OFF_META);
+    expect(PREFETCH_OFF_META).toBe('<meta http-equiv="x-dns-prefetch-control" content="off">');
+    expect(FRAME_LOCK_HEAD.indexOf(PREFETCH_OFF_META)).toBeLessThan(FRAME_LOCK_HEAD.indexOf('<script>'));
+    expect(withFrameLock('no head')).toBeNull();
+    // The room's own documents take it, both of them.
+    expect(examRoomHtml(PHONE, '#0A0A0A')).toContain(`<head>${FRAME_LOCK_HEAD}`);
+  });
+
+  it('the v1 box is unchanged: CSP only (CUL-2527 moves v1 separately)', () => {
+    expect(withExamCsp('<html><head></head><link rel=preconnect href=//x></html>')).toBe(
+      `<html><head>${EXAM_CSP_META}</head><link rel=preconnect href=//x></html>`,
+    );
+  });
+
+  it('renames every refused tag inert before the parser sees it, in any ASCII case, start or end', () => {
+    expect(neutralizeRefusedTags('<link rel=dns-prefetch href=//d.evil.example>')).toBe('<x-refused-link rel=dns-prefetch href=//d.evil.example>');
+    expect(neutralizeRefusedTags('<LINK\trel="preconnect" href="https://e">')).toBe('<x-refused-LINK\trel="preconnect" href="https://e">');
+    expect(neutralizeRefusedTags('<iframe srcdoc="x"></iframe>')).toBe('<x-refused-iframe srcdoc="x"></x-refused-iframe>');
+    expect(neutralizeRefusedTags('<IfRaMe/onload=alert(1)>')).toBe('<x-refused-IfRaMe/onload=alert(1)>');
+    for (const t of ['frame', 'frameset', 'object', 'embed', 'portal', 'fencedframe', 'a', 'area']) {
+      expect(neutralizeRefusedTags(`<${t} data=x>`)).toBe(`<x-refused-${t} data=x>`);
+    }
+    expect(neutralizeRefusedTags('<iframe')).toBe('<x-refused-iframe');
+    // Not a refused tag, or escaped text: untouched.
+    for (const s of ['<links>', '<abbr>x</abbr>', '<aside>', '<article>', '&lt;iframe src=x&gt;', '<p>link iframe</p>', '<linkx>', '<script>/*s*/</script>', '<script id="nyx-exam-script">']) {
+      expect(neutralizeRefusedTags(s)).toBe(s);
+    }
+    // An anchor's host is never a DNS prefetch, on an engine that ignores the switch either.
+    expect(neutralizeRefusedTags('<a href="https://r.evil.example/">x</a>')).toBe('<x-refused-a href="https://r.evil.example/">x</x-refused-a>');
+    // A script with any attribute but the room's own is renamed: speculation rules, import maps,
+    // modules, a type spelled with character references, a `>` hidden in a quoted value.
+    for (const tag of [
+      '<script type="speculationrules">',
+      '<SCRIPT type=speculationrules>',
+      '<script/type=speculationrules>',
+      '<script type="speculation&#114;ules">',
+      '<script x=">" type=speculationrules>',
+      '<script id="nyx-exam-script" type="speculationrules">',
+      '<script\ttype=module>',
+      '<script type=importmap>',
+    ]) {
+      const out = neutralizeRefusedTags(`${tag}{"prefetch":[{"urls":["https://p.evil.example/"]}]}</script>`);
+      expect(out.startsWith('<x-refused-script')).toBe(true);
+    }
+    // Through the box, a parser-placed hint or frame never exists.
+    const boxed = withFrameLock('<html><head></head><body><link rel=preconnect href=https://p.evil><iframe srcdoc="<script>x</script>"></iframe></body></html>') as string;
+    expect(boxed).not.toMatch(/<(link|iframe)[\s/>]/i);
+    // The report's own documents pass through untouched: the renderer's scripts, the room's
+    // script and the lock carry nothing the renaming would touch.
+    expect(neutralizeRefusedTags(PHONE)).toBe(PHONE);
+    const room = examRoomHtml(PHONE, '#0A0A0A') as string;
+    expect(room).toContain('<script id="nyx-exam-script">');
+    expect(room).not.toContain('x-refused');
+  });
+
+  /** A browser-shaped window with the lock run first, as the head runs it. */
+  function lockedWindow(runTwice = false) {
+    const dom = new JSDOM('<!DOCTYPE html><html><head></head><body><main id="m"><p>record</p></main></body></html>', { runScripts: 'outside-only' });
+    const w = dom.window as unknown as Record<string, unknown> & { eval: (s: string) => unknown; document: Document };
+    // jsdom has no WebRTC; stand in the engine's constructors so the lock has something to take.
+    w.eval('window.RTCPeerConnection = function(){}; window.webkitRTCPeerConnection = function(){}; window.RTCDataChannel = function(){};');
+    w.eval(FRAME_LOCK_SCRIPT);
+    if (runTwice) w.eval(FRAME_LOCK_SCRIPT);
+    return w;
+  }
+
+  it('takes WebRTC away for good: gone, and a later script cannot put it back', () => {
+    const w = lockedWindow();
+    expect(w.eval('typeof RTCPeerConnection')).toBe('undefined');
+    expect(w.eval('typeof webkitRTCPeerConnection')).toBe('undefined');
+    expect(w.eval('typeof RTCDataChannel')).toBe('undefined');
+    expect(w.eval('try { window.RTCPeerConnection = function(){}; } catch (e) {} typeof RTCPeerConnection')).toBe('undefined');
+    expect(w.eval('try { Object.defineProperty(window, "RTCPeerConnection", { value: 1 }); "redefined"; } catch (e) { "refused"; }')).toBe('refused');
+    expect(w.eval('delete window.RTCPeerConnection')).toBe(false);
+  });
+
+  it('window.open returns null and stays that way', () => {
+    const w = lockedWindow();
+    expect(w.eval('window.open("", "_blank")')).toBeNull();
+    expect(w.eval('try { window.open = function(){ return 1; }; } catch (e) {} window.open()')).toBeNull();
+  });
+
+  it('no script can put a frame or a link into the document, by any insertion path', () => {
+    const w = lockedWindow();
+    const refused = (js: string) => w.eval(`try { ${js}; "ran"; } catch (e) { "refused"; }`);
+    expect(refused('document.createElement("iframe")')).toBe('refused');
+    expect(refused('document.createElement("LINK")')).toBe('refused');
+    expect(refused('document.createElementNS("http://www.w3.org/1999/xhtml", "iframe")')).toBe('refused');
+    expect(refused('document.write("<iframe></iframe>")')).toBe('refused');
+    expect(refused('document.open()')).toBe('refused');
+    expect(refused('document.body.attachShadow({ mode: "open" })')).toBe('refused');
+    // setHTML (the Sanitizer API) parses and inserts on its own path: locked to throw, even where
+    // the engine has none yet (jsdom has none, so the descriptor is the proof).
+    expect(w.eval('var d = Object.getOwnPropertyDescriptor(Element.prototype, "setHTML"); typeof d.value + d.writable + d.configurable')).toBe('functionfalsefalse');
+    expect(refused('document.body.setHTML("<iframe></iframe>")')).toBe('refused');
+    // No script element goes in at all: a speculationrules script inserted by script prefetches.
+    expect(refused('document.createElement("script")')).toBe('refused');
+    expect(w.eval(`new DOMParser().parseFromString('<script type=speculationrules>{}<\\/script>', "text/html").head.firstChild.nodeName`)).toBe('SCRIPT');
+    expect(refused(`document.body.appendChild(new DOMParser().parseFromString('<script type=speculationrules>{}<\\/script>', "text/html").head.firstChild)`)).toBe('refused');
+    // An element from an inert parse (DOMParser keeps it), adopted and inserted: refused before it
+    // lands, by every node path.
+    const parsed = (tag: string) => `new DOMParser().parseFromString(${JSON.stringify(tag)}, "text/html").body.firstChild`;
+    expect(w.eval(`${parsed('<iframe></iframe>')}.nodeName`)).toBe('IFRAME');
+    for (const insert of ['document.body.appendChild(N)', 'document.body.append(N)', 'document.body.insertBefore(N, null)', 'document.getElementById("m").after(N)', 'document.body.replaceChildren(N)']) {
+      expect(refused(insert.replace('N', parsed('<iframe></iframe>')))).toBe('refused');
+      // A node from ANOTHER document never lands, however harmless it looks: another document can
+      // carry a declarative shadow root (closed included) whose frame no check can see from outside
+      // (privacy pass 2 on PR-31, A1).
+      expect(refused(insert.replace('N', parsed('<p>x</p>')))).toBe('refused');
+      expect(refused(insert.replace('N', 'document.implementation.createHTMLDocument("").createElement("p")'))).toBe('refused');
+    }
+    // The ways to bring another document's nodes in, or to parse one with shadow roots, are locked
+    // (jsdom lacks some, so the descriptor is the proof).
+    for (const [owner, key] of [['Document.prototype', 'importNode'], ['Document.prototype', 'adoptNode'], ['Document', 'parseHTMLUnsafe'], ['Document', 'parseHTML']]) {
+      expect(w.eval(`var d = Object.getOwnPropertyDescriptor(${owner}, "${key}"); typeof d.value + d.writable + d.configurable`)).toBe('functionfalsefalse');
+    }
+    expect(refused('document.importNode(document.createElement("p"), true)')).toBe('refused');
+    expect(refused('document.adoptNode(new DOMParser().parseFromString("<p>x</p>", "text/html").body.firstChild)')).toBe('refused');
+    w.eval('document.body.innerHTML = "<main id=m><p>record</p></main>"');
+    // A template's content is cleaned as it is parsed.
+    expect(w.eval('var t = document.createElement("template"); t.innerHTML = "<iframe></iframe><link rel=preconnect href=//x><b>y</b>"; t.content.childNodes.length')).toBe(1);
+    // HTML strings are parsed inert first and land without the refused elements.
+    w.eval('document.getElementById("m").innerHTML = "<p>a</p><iframe srcdoc=x></iframe><link rel=preconnect href=//x>"');
+    w.eval('document.getElementById("m").insertAdjacentHTML("beforeend", "<div><iframe></iframe><object data=x></object>b</div>")');
+    w.eval('var r = document.createRange(); r.selectNodeContents(document.body); document.body.appendChild(r.createContextualFragment("<embed src=x><span>c</span>"))');
+    const html = w.document.documentElement.outerHTML;
+    expect(html).not.toMatch(/<(iframe|link|object|embed|frame)[\s>]/i);
+    expect(w.document.querySelectorAll('iframe,link,object,embed').length).toBe(0);
+    expect(w.eval('window.length')).toBe(0);
+    // Ordinary content still goes in.
+    expect(html).toContain('<p>a</p>');
+    expect(html).toContain('<div>b</div>');
+    expect(html).toContain('<span>c</span>');
+    expect(refused('document.body.appendChild(document.createElement("div"))')).toBe('ran');
+    // outerHTML too.
+    w.eval('document.querySelector("span").outerHTML = "<i>d</i><iframe></iframe>"');
+    expect(w.document.querySelectorAll('iframe').length).toBe(0);
+    expect(w.document.body.innerHTML).toContain('<i>d</i>');
+  });
+
+  it('a second run (the injected copy after the inline one) changes nothing', () => {
+    const w = lockedWindow(true);
+    expect(w.eval('typeof RTCPeerConnection')).toBe('undefined');
+    expect(w.eval('window.open()')).toBeNull();
+    expect(w.eval('try { document.createElement("iframe"); "ran" } catch (e) { "refused" }')).toBe('refused');
+    w.eval('document.body.innerHTML = "<p>e</p>"');
+    expect(w.document.body.innerHTML).toBe('<p>e</p>');
+  });
+
+  // The lock refuses node insertion of frames and links and reroutes HTML strings; it relies on the
+  // server's own scripts inserting nothing, so a renderer that starts to is read here first.
+  it('the report scripts the lock sits under insert no nodes and write no HTML', () => {
+    const phone = readFileSync(join(__dirname, '../supabase/functions/generate-report/renderPhoneV2.ts'), 'utf8');
+    const start = phone.indexOf('const SCRIPT_PHONE = `');
+    expect(start).toBeGreaterThan(0);
+    const scripts = [phone.slice(start, phone.indexOf('`', start + 22)), readFileSync(join(__dirname, 'examRoom.ts'), 'utf8').split('const EXAM_SCRIPT')[1]?.split('</script>`')[0] ?? ''];
+    expect(scripts[1].length).toBeGreaterThan(100);
+    for (const s of scripts) {
+      expect(s).not.toMatch(/innerHTML|outerHTML|insertAdjacent|appendChild|insertBefore|replaceChild|createElement|document\.write|attachShadow|\.append\(|\.prepend\(|\.after\(|\.before\(|replaceWith|replaceChildren/);
+    }
   });
 });
