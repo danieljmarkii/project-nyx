@@ -1,0 +1,1055 @@
+<title>Vet Visits Mock Archive</title>
+<style>
+  /* ============================================================
+     PAGE (studio presentation layer) — theme-aware tokens.
+     Phone screens use FIXED app tokens (constants/theme.ts),
+     never these — the app looks like the app in any theme.
+     Lifted from docs/culprit-vet-files-mockups.html so the two
+     vet-facing surfaces read as one system.
+     ============================================================ */
+  :root {
+    --canvas:      #F4F7F6;
+    --panel:       #FFFFFF;
+    --ink:         #16211F;
+    --ink-soft:    #4A5754;
+    --ink-faint:   #7B8884;
+    --line:        #E2E9E6;
+    --line-soft:   #EDF2F0;
+    --accent:      #068A78;
+    --accent-tint: #E4F4F1;
+    --amber:       #9A6A00;
+    --amber-tint:  #F6EED9;
+    --rose:        #B8433B;
+    --rose-tint:   #F7E4E2;
+    --shadow:      0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+      --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+      --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: "Newsreader", Georgia, "Times New Roman", serif; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding-block: clamp(28px, 6vw, 72px) 96px; padding-inline: clamp(18px, 5vw, 44px); }
+
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1.title { font-size: clamp(30px, 5.4vw, 50px); line-height: 1.05; letter-spacing: -.02em; font-weight: 500; margin: 0 0 20px; text-wrap: balance; max-width: 22ch; }
+  .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 68ch; margin: 0; }
+  .lede b, .sec-lede b, .opt-cap b, .note b, .ledger-row b { color: var(--ink); font-weight: 600; }
+
+  .ledger { margin-top: 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .ledger-h { padding: 12px 18px; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); border-bottom: 1px solid var(--line-soft); }
+  .ledger-row { display: flex; gap: 14px; padding: 11px 18px; font-size: 13.5px; color: var(--ink-soft); border-bottom: 1px solid var(--line-soft); align-items: baseline; }
+  .ledger-row:last-child { border-bottom: 0; }
+  .ledger-who { flex: none; width: 92px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .ledger-who.team { color: var(--amber); }
+  .ledger-row .moved { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-faint); }
+
+  section { margin-top: clamp(52px, 8vw, 88px); }
+  .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  h2 { font-size: clamp(22px, 3.4vw, 30px); font-weight: 500; letter-spacing: -.015em; margin: 0 0 12px; line-height: 1.12; text-wrap: balance; }
+  .sec-lede { font-size: 16px; color: var(--ink-soft); max-width: 68ch; margin: 0; }
+
+  .rail { display: grid; gap: clamp(22px, 4vw, 40px); margin-top: 30px; }
+  .rail-3 { grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); align-items: start; }
+  .rail-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  .opt { display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 0; }
+  .opt-cap { text-align: center; max-width: 38ch; }
+  .opt-cap .k { font-weight: 600; font-size: 15px; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .opt-cap p { margin: 7px 0 0; font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
+  .tag.cur { background: var(--accent-tint); color: var(--accent); }
+  .tag.open { background: var(--amber-tint); color: var(--amber); }
+  .tag.guard { background: var(--rose-tint); color: var(--rose); }
+
+  .optbox { border: 1.5px dashed var(--amber); border-radius: 20px; padding: 14px 14px 10px; background: color-mix(in srgb, var(--amber-tint) 40%, transparent); }
+  .optbox-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); margin-bottom: 10px; text-align: center; }
+
+  .note-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 26px; }
+  .note { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.55; }
+  .note b { display: block; margin-bottom: 4px; font-size: 13px; }
+  .note.amber { border-left: 3px solid var(--amber); }
+  .note.rose { border-left: 3px solid var(--rose); }
+  .note.teal { border-left: 3px solid var(--accent); }
+
+  .foot { margin-top: clamp(56px, 8vw, 90px); border-top: 1px solid var(--line); padding-top: 26px; font-size: 13.5px; color: var(--ink-faint); max-width: 74ch; }
+  .foot b { color: var(--ink-soft); }
+
+  /* ============================================================
+     PHONE FRAME — fixed Culprit app tokens (constants/theme.ts).
+     ============================================================ */
+  .phone {
+    --a-bg:#FAFAFA; --a-surface:#FFFFFF; --a-subtle:#F5F5F5;
+    --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373; --a-text-dis:#A3A3A3;
+    --a-border:#EAEAEA; --a-border-strong:#D4D4D4;
+    --a-accent:#00C2A8; --a-accent-soft:#86D9CC; --a-accent-light:#E0FBF7; --a-accent-ink:#0B7B6C;
+    --a-symptom:#F43F5E; --a-symptom-light:#FFE4E6; --a-symptom-ink:#B3123A;
+    --a-med:#5B7A9E; --a-med-light:#E8EEF5;
+    --a-dark:#0A0A0A;
+    --a-scrim: rgba(10,10,10,.35);
+    --a-shadow: 0 1px 3px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04);
+    width: 300px; max-width: 100%; background: var(--a-bg);
+    border-radius: 36px; border: 1px solid var(--line);
+    box-shadow: var(--shadow); overflow: hidden; flex: none;
+    font-size: 14px; color: var(--a-text); text-align: left;
+  }
+  .ph-screen { padding: 18px 16px 20px; min-height: 520px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+
+  .ph-nav { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+  .ph-back { color: var(--a-accent-ink); font-size: 13.5px; font-weight: 500; }
+  .ph-title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
+  .ph-x { width: 30px; text-align: right; color: var(--a-text3); font-size: 16px; }
+  .ph-spacer { width: 30px; }
+  .ph-pagetitle { font-size: 24px; font-weight: 600; letter-spacing: -.3px; margin: 2px 0 0; line-height: 1.15; }
+  .ph-sub { font-size: 12.5px; color: var(--a-text3); margin-top: 2px; }
+  .ph-eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); }
+
+  /* home header (DP-2 one-row) */
+  .home-hd { display: flex; align-items: center; justify-content: space-between; }
+  .home-hd .l { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 34px; height: 34px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #E8E4F5, #A79ACB); border: 1px solid var(--a-border); }
+  .home-name { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
+  .home-name i { font-style: normal; color: var(--a-text3); font-size: 11px; margin-left: 4px; }
+  .home-hd .r { display: flex; align-items: center; gap: 8px; }
+  .ask-pill { font-size: 11.5px; font-weight: 600; color: var(--a-text2); border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 5px; }
+  .ask-pill::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--a-accent); }
+  .you { width: 26px; height: 26px; border-radius: 999px; background: #DDD; }
+
+  /* pet tab hero */
+  .pet-hero { display: flex; align-items: center; gap: 12px; }
+  .pet-avatar { width: 52px; height: 52px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #E8E4F5, #A79ACB); border: 1px solid var(--a-border); }
+  .pet-name { font-size: 22px; font-weight: 600; letter-spacing: -.3px; }
+  .pet-sub { font-size: 12px; color: var(--a-text3); margin-top: 1px; }
+
+  /* cards */
+  .card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 14px; }
+  .card h4 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.15px; }
+  .card .blurb { font-size: 12px; color: var(--a-text2); line-height: 1.5; margin-top: 4px; }
+  .cardbtn { margin-top: 11px; border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; font-weight: 600; background: var(--a-accent); color: #fff; }
+  .cardbtn.ghost { background: var(--a-surface); border: 1px solid var(--a-border-strong); color: var(--a-text); font-weight: 500; }
+  .dim { opacity: .45; }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .card-count { font-size: 11px; color: var(--a-text3); flex: none; }
+
+  /* the appointment strip (Home, inside the window) — a context strip under the Signal, the TrialStrip's register */
+  .appt { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 13px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .appt .date { flex: none; width: 44px; border-radius: 10px; background: var(--a-subtle); border: 1px solid var(--a-border); text-align: center; padding: 5px 0 6px; }
+  .appt .date b { display: block; font-size: 17px; font-weight: 600; line-height: 1.1; }
+  .appt .date span { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin-top: 2px; }
+  .appt .main { flex: 1; min-width: 0; }
+  .appt .t { font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
+  .appt .s { font-size: 11.5px; color: var(--a-text3); margin-top: 2px; }
+  .appt .doors { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  .door { font-size: 11px; font-weight: 600; color: var(--a-accent-ink); background: var(--a-accent-light); border-radius: 999px; padding: 5px 10px; }
+  .door.ghost { color: var(--a-text2); background: var(--a-surface); border: 1px solid var(--a-border-strong); font-weight: 500; }
+
+  /* insight card (Signal) — schematic, rail-led */
+  .insight { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 12px 14px 12px 12px; display: flex; gap: 10px; }
+  .insight .rail { display: block; width: 3px; border-radius: 3px; background: var(--a-accent); flex: none; margin: 0; }
+  .insight .rail.sym { background: var(--a-symptom); }
+  .insight .body { flex: 1; min-width: 0; }
+  .insight .clause { font-size: 13.5px; line-height: 1.4; letter-spacing: -.1px; }
+  .insight .count { font-size: 11.5px; color: var(--a-text3); margin-top: 4px; }
+  .insight .ask { font-size: 12px; font-weight: 600; color: var(--a-symptom-ink); margin-top: 4px; }
+
+  /* today band + trend (schematic) */
+  .today { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 11px 14px; font-size: 12.5px; color: var(--a-text2); display: flex; justify-content: space-between; align-items: center; }
+  .today .pips { display: flex; gap: 5px; }
+  .today .pips i { width: 8px; height: 8px; border-radius: 999px; background: var(--a-accent); display: block; }
+  .today .pips i.sym { background: var(--a-symptom); }
+  .trend { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 12px 14px; }
+  .trend .t { font-size: 12.5px; font-weight: 600; }
+  .trend .bars { display: flex; align-items: flex-end; gap: 4px; height: 36px; margin-top: 8px; }
+  .trend .bars i { display: block; flex: 1; background: var(--a-accent-soft); border-radius: 3px 3px 0 0; }
+  .strip { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 10px 14px; font-size: 12.5px; color: var(--a-text2); }
+  .strip b { color: var(--a-text); font-weight: 600; }
+
+  /* tab bar */
+  .tabbar { margin: auto -16px -20px; padding: 10px 14px 14px; border-top: 1px solid var(--a-border); background: var(--a-surface); display: flex; justify-content: space-around; font-size: 10.5px; color: var(--a-text3); }
+  .tabbar span { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .tabbar span::before { content: ""; width: 18px; height: 18px; border-radius: 6px; background: var(--a-border); }
+  .tabbar span.on { color: var(--a-accent-ink); font-weight: 600; }
+  .tabbar span.on::before { background: var(--a-accent); }
+  .tabbar .fab { width: 40px; height: 40px; border-radius: 999px; background: var(--a-dark); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; line-height: 1; margin-top: -18px; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
+  .tabbar .fab::before { display: none; }
+
+  /* generic rows */
+  .rowcard { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; }
+  .row + .row { border-top: 1px solid var(--a-border); }
+  .row .v { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; }
+  .row .v small { display: block; font-size: 11px; color: var(--a-text3); font-weight: 400; margin-top: 2px; }
+  .row .chev { color: var(--a-text-dis); font-size: 16px; flex: none; }
+  .row .tick { width: 20px; height: 20px; border-radius: 999px; border: 1.5px solid var(--a-border-strong); flex: none; }
+  .row .tick.on { background: var(--a-accent); border-color: var(--a-accent); position: relative; }
+  .row .tick.on::after { content: ""; position: absolute; left: 6px; top: 2.5px; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .sec-label { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin: 4px 0 -4px 2px; }
+
+  /* rundown tiles */
+  .tile { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 10px 14px; }
+  .tile + .tile { border-top: 1px solid var(--a-border); }
+  .tile .lab { font-size: 11px; color: var(--a-text3); width: 84px; flex: none; }
+  .tile .val { flex: 1; font-size: 13px; font-weight: 500; letter-spacing: -.1px; }
+  .tile .val small { display: block; font-size: 11px; color: var(--a-text3); font-weight: 400; margin-top: 1px; }
+
+  /* question rows */
+  .q { display: flex; gap: 10px; padding: 10px 14px; align-items: flex-start; }
+  .q + .q { border-top: 1px solid var(--a-border); }
+  .q .n { flex: none; width: 20px; height: 20px; border-radius: 999px; background: var(--a-subtle); border: 1px solid var(--a-border); font-size: 10.5px; font-weight: 700; color: var(--a-text2); display: flex; align-items: center; justify-content: center; }
+  .q .t { font-size: 13px; line-height: 1.4; flex: 1; }
+  .q .t small { display: block; font-size: 11px; color: var(--a-text3); margin-top: 2px; }
+  .q.add .t { color: var(--a-accent-ink); font-weight: 600; }
+  .q.add .n { background: var(--a-accent-light); border-color: var(--a-accent-soft); color: var(--a-accent-ink); }
+
+  /* fields */
+  .field { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px 12px; }
+  .field .lab { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--a-text3); }
+  .field .val { font-size: 13.5px; margin-top: 3px; font-weight: 500; }
+  .field .val.ph { color: var(--a-text-dis); font-weight: 400; }
+  .field.tall .val { min-height: 74px; line-height: 1.45; font-weight: 400; }
+  .field-row { display: flex; gap: 8px; }
+  .field-row .field { flex: 1; min-width: 0; }
+
+  /* plan hand-off rows (record-aware) */
+  .plan { display: flex; align-items: flex-start; gap: 11px; padding: 11px 14px; }
+  .plan + .plan { border-top: 1px solid var(--a-border); }
+  .plan .ico { width: 30px; height: 30px; border-radius: 9px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+  .plan .ico.med { background: var(--a-med-light); color: var(--a-med); }
+  .plan .ico.diet { background: var(--a-accent-light); color: var(--a-accent-ink); }
+  .plan .ico.next { background: var(--a-subtle); color: var(--a-text2); }
+  .plan .ico.doc { background: #F3EEFB; color: #6B4FA0; }
+  .plan .t { flex: 1; min-width: 0; }
+  .plan .t b { display: block; font-size: 13px; font-weight: 600; }
+  .plan .t span { display: block; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
+  .plan .go { font-size: 11.5px; font-weight: 600; color: var(--a-accent-ink); flex: none; padding-top: 6px; }
+  .plan .done { font-size: 11px; color: var(--a-text3); flex: none; padding-top: 6px; }
+  .chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .chip { font-size: 11px; font-weight: 500; color: var(--a-text2); background: var(--a-surface); border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 4px 10px; }
+  .chip.on { background: var(--a-accent-light); border-color: var(--a-accent); color: var(--a-accent-ink); font-weight: 600; }
+  .chip.quiet { border-style: dashed; color: var(--a-text3); }
+
+  /* buttons */
+  .btn { border-radius: 12px; padding: 13px 16px; font-size: 14px; font-weight: 600; text-align: center; }
+  .btn.primary { background: var(--a-dark); color: #fff; }
+  .btn.accent { background: var(--a-accent); color: #fff; }
+  .btn.ghost { background: var(--a-surface); border: 1px solid var(--a-border-strong); color: var(--a-text); font-weight: 500; }
+  .btn.quiet { color: var(--a-text2); font-weight: 500; padding: 8px; }
+  .btn-stack { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+  .barhint { font-size: 11px; color: var(--a-text3); text-align: center; }
+
+  /* overflow menu */
+  .menu-pop { position: absolute; top: 44px; right: 14px; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.14); overflow: hidden; width: 176px; z-index: 2; }
+  .menu-item { padding: 12px 15px; font-size: 13.5px; font-weight: 500; }
+  .menu-item + .menu-item { border-top: 1px solid var(--a-border); }
+  .menu-item small { display: block; font-weight: 400; font-size: 10.5px; color: var(--a-text3); margin-top: 1px; }
+
+  /* consent sheet + recording state (v1.x options) */
+  .sheet-scrim { position: absolute; inset: 0; background: var(--a-scrim); display: flex; align-items: flex-end; }
+  .sheet { background: var(--a-surface); border-radius: 24px 24px 0 0; width: 100%; padding: 10px 16px 22px; }
+  .sheet-grab { width: 36px; height: 4px; border-radius: 999px; background: var(--a-border-strong); margin: 4px auto 12px; }
+  .sheet-h { font-size: 17px; font-weight: 600; letter-spacing: -.2px; margin-bottom: 6px; }
+  .sheet-p { font-size: 12.5px; color: var(--a-text2); line-height: 1.55; }
+  .sheet-facts { margin: 12px 0; border: 1px solid var(--a-border); border-radius: 12px; overflow: hidden; }
+  .sheet-facts div { padding: 8px 12px; font-size: 11.5px; color: var(--a-text2); display: flex; gap: 8px; align-items: flex-start; }
+  .sheet-facts div + div { border-top: 1px solid var(--a-border); }
+  .sheet-facts div::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--a-accent); flex: none; margin-top: 5px; }
+  .rec-bar { background: var(--a-dark); color: #fff; border-radius: 14px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+  .rec-dot { width: 10px; height: 10px; border-radius: 999px; background: #F43F5E; flex: none; box-shadow: 0 0 0 4px rgba(244,63,94,.25); }
+  .rec-bar .t { flex: 1; font-size: 12.5px; font-weight: 600; }
+  .rec-bar .t small { display: block; font-size: 10.5px; font-weight: 400; color: rgba(255,255,255,.7); margin-top: 1px; }
+  .rec-stop { font-size: 11.5px; font-weight: 700; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.14); }
+  .transcript { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--a-text2); line-height: 1.5; }
+  .transcript .live { color: var(--a-text-dis); }
+
+  /* booking sheet rows */
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; font-size: 13px; }
+  .toggle-row + .toggle-row { border-top: 1px solid var(--a-border); }
+  .toggle-row small { display: block; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
+  .sw { width: 38px; height: 22px; border-radius: 999px; background: var(--a-border-strong); position: relative; flex: none; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .sw.on { background: var(--a-accent); }
+  .sw.on::after { left: 18px; }
+
+  /* saved moment */
+  .saved-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+  .saved-check { width: 56px; height: 56px; border-radius: 999px; background: var(--a-accent-light); display: flex; align-items: center; justify-content: center; }
+  .saved-h { font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+  .saved-p { font-size: 12.5px; color: var(--a-text2); line-height: 1.5; max-width: 26ch; }
+  .saved-offline { font-size: 11px; color: var(--a-text3); }
+
+  /* visits list */
+  .visit { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+  .visit + .visit { border-top: 1px solid var(--a-border); }
+  .visit .d { flex: none; width: 44px; text-align: center; }
+  .visit .d b { display: block; font-size: 16px; font-weight: 600; line-height: 1.1; }
+  .visit .d span { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin-top: 2px; }
+  .visit .m { flex: 1; min-width: 0; }
+  .visit .m b { display: block; font-size: 13.5px; font-weight: 600; letter-spacing: -.1px; }
+  .visit .m span { display: block; font-size: 11.5px; color: var(--a-text3); margin-top: 2px; line-height: 1.4; }
+  .visit .chev { color: var(--a-text-dis); font-size: 16px; }
+  .pillrow { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .mini { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 4px; padding: 2px 5px; background: var(--a-subtle); color: var(--a-text2); }
+  .mini.med { background: var(--a-med-light); color: var(--a-med); }
+  .mini.diet { background: var(--a-accent-light); color: var(--a-accent-ink); }
+  /* ── round 4 additions ─────────────────────────────────────────── */
+  .q .tk { width: 18px; height: 18px; border-radius: 999px; border: 1.5px solid var(--a-border-strong); flex: none; margin-top: 1px; }
+  .q .tk.on { background: var(--a-accent); border-color: var(--a-accent); position: relative; }
+  .q .tk.on::after { content: ""; position: absolute; left: 5.5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .q .t .ans { display: block; margin-top: 5px; font-size: 12px; color: var(--a-text2); background: var(--a-subtle); border-radius: 8px; padding: 6px 8px; line-height: 1.4; }
+  .q .t .ans.ph { color: var(--a-text-dis); }
+  .q.opt { outline: 1.5px dashed var(--a-border-strong); outline-offset: -5px; border-radius: 10px; }
+  .q.raised .t { color: var(--a-text2); }
+  .q.raised .t small { color: var(--a-text-dis); }
+  .plan .sug { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .plan .chip.on.vet { border-color: var(--a-med); background: var(--a-med-light); color: var(--a-med); }
+  .plan .t .why { display: block; font-size: 11px; color: var(--a-text2); margin-top: 5px; line-height: 1.4; }
+  .plan.opt { outline: 1.5px dashed var(--a-border-strong); outline-offset: -5px; border-radius: 10px; }
+  .plan .settled { font-size: 11px; color: var(--a-text2); flex: none; padding-top: 6px; font-weight: 600; }
+  .confirm { position: absolute; inset: 0; background: var(--a-scrim); display: flex; align-items: center; justify-content: center; padding: 22px; z-index: 3; }
+  .confirm .box { background: var(--a-surface); border-radius: 16px; padding: 16px; width: 100%; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+  .confirm .h { font-size: 15px; font-weight: 600; letter-spacing: -.15px; }
+  .confirm .p { font-size: 12px; color: var(--a-text2); margin-top: 6px; line-height: 1.45; }
+  .confirm .acts { display: flex; gap: 8px; margin-top: 12px; }
+  .confirm .acts div { flex: 1; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid var(--a-border-strong); }
+  .confirm .acts .danger { background: var(--a-symptom-light); color: var(--a-symptom-ink); border-color: transparent; }
+  .phase { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; background: var(--a-subtle); color: var(--a-text3); border: 1px solid var(--a-border); }
+  .seg.on { background: var(--a-accent-light); color: var(--a-accent-ink); border-color: var(--a-accent-soft); }
+  .fork { border: 1.5px dashed var(--amber); border-radius: 22px; padding: 18px 16px 12px; background: color-mix(in srgb, var(--amber-tint) 30%, transparent); }
+  .fork-h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); text-align: center; margin-bottom: 14px; }
+  .rail-2.fork-rail { margin-top: 0; }
+  .note.teal b::before { content: "Record · "; color: var(--accent); font-weight: 700; }
+  .ledger-who.rec { color: var(--rose); }
+  /* ── round 5 additions ─────────────────────────────────────────── */
+  .note.research { border-left: 3px solid var(--accent); }
+  .note.research b::before { content: "Research · "; color: var(--accent); font-weight: 700; }
+  .note.route b::before { content: "Goes away · "; color: var(--ink-faint); font-weight: 700; }
+  .readmore { font-size: 11.5px; font-weight: 600; color: var(--a-accent-ink); margin-top: 6px; }
+  .quiet-sec { opacity: .62; }
+  .linkrow { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; font-size: 12.5px; font-weight: 500; color: var(--a-text2); }
+  .linkrow .chev { color: var(--a-text-dis); }
+  .face-note { font-size: 10.5px; color: var(--a-text3); }
+  .retired { border: 1px dashed var(--line); border-radius: 12px; padding: 12px 16px; font-size: 13px; color: var(--ink-faint); margin-top: 26px; }
+</style>
+
+<div class="wrap">
+  <div class="ledger" style="margin-top:0;margin-bottom:28px;border-color:var(--amber)"><div class="ledger-h" style="color:var(--amber)">Archive · rounds 1–5 · deliberation, not the current proposal</div><div class="ledger-row"><span class="ledger-who">Read this</span><div><b>The current proposal moved to its own page on 2026-09-17 (round 6).</b> Past five rounds on one page the PM could not tell the live proposal from superseded frames, so this page is now the deliberation archive: every frame below is as it stood at round 5, kept for the record. The current proposal — the visit as one page with three faces, the cohesive vet area, the motion pass and the boxed AI option — is <b>docs/culprit-vet-visits-mockups.html</b>, published at the URL this page used to hold: <a href="https://claude.ai/artifact/V8APvcPkCgV77jvxuhGMHP" style="color:var(--amber);font-weight:600">open the current proposal</a>. Nothing here is edited again.</div></div></div>
+  <p class="eyebrow">Archive · Culprit · design review · CUL-878 Vet visits · round 5 — one proposal, from the research</p>
+  <h1 class="title serif">The vet visit — before, during, after</h1>
+  <p class="lede"><b>Round 5 (2026-09-17, later the same day)</b> is <b>one proposal</b>: <b>the visit is one page with three faces</b> — Booked, Today, Visited — reached from every door, its sections activated by the clock, one primary that relabels. It comes from a competitive sweep of twenty-eight products in three lanes (pet apps, human healthcare apps, and products that carry one object across time), every screen claim verified at its source the same day: <code>docs/research/2026-09-vet-visit-lifecycle-design-inspiration.md</code>. Round 4's fork (G1 / G1b) has left the page — git keeps it at <b>253499e</b> — because the PM leaned to G1b's doors and asked whether the whole thing was over-complicated, and the research answered: nobody good has four phased screens. §H is the proposal; §G's detail frames (G2–G6) survive as the sections of that page. Round 4's own note follows.</p>
+  <p class="lede"><b>Round 4 (2026-09-17)</b> draws the recommendations from the synthetic review the way the PM asked to see them — as frames, not sentences — with the four reactions applied, and it reads one real record for the first time: <b>Nyx's Sep 16 visit at Completely Cat Clinic</b>, the first appointment the companion carried end to end. Every round-3 frame still stands; where a round-4 frame redraws one, the caption says so. The states question (reaction 1) is a genuine fork, so it is drawn as <b>two options side by side, neither tagged current</b>. Section G is new; round 3's own note follows.</p>
+  <p class="lede"><b>Round 3 (CUL-952)</b> is additive: it draws the one screen the lifecycle was missing — <b>changing or removing a booked appointment</b> — and the second answer the <i>Waiting on you</i> row was asking for and not offering. Nothing from round 2 is retired; every frame below still stands. Round 2's own note follows.</p>
+  <p class="lede">Round 2 applies the PM's reactions to round 1 and the nine isolated persona interviews as <b>one proposal</b>. The retired direction (A3, the Ask-only door) has left the page — git keeps round 1 at <b>4f4e6f1</b>. Every frame below is tagged: <b>current</b> is the proposal; a dashed box is an <b>option drawn for a later decision</b>, not the proposal. Real content throughout: Nyx, the PM's own cat, with a GI history, a hydrolyzed trial, a PRN antiemetic and an appointment on Tuesday.</p>
+
+  <div class="ledger">
+    <div class="ledger-h">Round 5 · the PM's reactions to round 4, the research, and what moved on the page</div>
+    <div class="ledger-row"><span class="ledger-who">PM · G1</span><div><b>"If the 'Notes' section is VERY small on this state and there's a long bit of notes, cutting it off isn't going to be super helpful. Notes field should be large to help preview it."</b> Ruled, and the research backs it: two or three clamped lines need no expander; anything longer gets <i>Read more</i> on its own line; never a cut-off preview (Thumbprint). <span class="moved">H1–H3: the field is large on every face; on the day it is the first screenful; afterwards the notes show in full under <i>What the vet said</i>, with <i>Read more</i> only past a long threshold.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · G1b</span><div><b>"At least an improvement… the screens having at least the same entry point helps cut down."</b> Taken as the lean, and the research went further in the same direction: the best products keep one object and let every door land on it. <span class="moved">§H is one page with three faces; G1b's doors are inside it (every door opens the page), so nothing of G1b is lost. G1 and G1b leave the page as separate frames.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · trial</span><div><b>"We have a feature that we're working on now which is 'diet trial extension'… factor that in."</b> Its write path shipped this morning (<code>changeTrialWindow</code>, CUL-1039); its sheet (<code>TrialWindowSheet</code>, PR 3, with the <i>My vet asked for this</i> box) is not built yet. <span class="moved">H2's trial row gains <i>Extended</i>, which opens <b>that</b> sheet with the box pre-checked and links the trial to the visit — one write, one sheet, two doors. Sequences after PR 3, or PR 3 mounts it from both.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · research</span><div><b>"I still have a sense that we're over-complicating this. Can we do some competitive research and take some design inspiration from others?"</b> Three isolated lanes, twenty-eight products, every screen claim fetched at a primary source on 2026-09-17 (the brief is in <code>docs/research/</code>; the seven patterns are in the note grid under §H). <span class="moved">The headline moved the page: one object, two faces (upcoming, past); the clock changes the lead fact and the primary; content is gated by time, doors never are; the after-visit artifact is read, not filled; and every extra tab or door is where users lose the artifact. §H is those rules drawn on Nyx's visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who team">Designer</span><div><b>The warm pass, drawn versus built.</b> E1 drew a <i>Get ready</i> door on the list that the build dropped; C1 drew the record's Worth-raising rows as ticks in the room and the build ticked only the owner's; and "one long page puts the in-room field below Worth raising and the rundown — the room needs it in the first screenful." <span class="moved">The dropped door is moot on one page; C1's ticks are H2's <i>To raise</i>; H2 puts Notes first and the rundown last.</span></div></div>
+  </div>
+
+  <div class="ledger">
+    <div class="ledger-h">Round 4 · the PM's reactions to the review, and what Nyx's record said — what moved on the page</div>
+    <div class="ledger-row"><span class="ledger-who">PM · 1</span><div><b>"Should we have a 'get ready' OR 'how did it go?' state? … should this just be a vet appt and we not have the complexity of the states?"</b> A fork, not a reaction to a frame, so it is drawn rather than argued: <b>G1</b> is one appointment page that fills in over time and changes only its primary; <b>G1b</b> keeps the built screens and fixes their doors (the review's REC 1). What the record adds: the PM's own visit went through five screens, and two of the vet's instructions still never reached the record — an argument that the door between screens, not the count of them, is the cost. <span class="moved">Neither option is tagged current. The decision brief is at the foot of §G.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · 2</span><div><b>"Decision 2 — I'd need to see a mockup."</b> <span class="moved">G2 and G4: the questions with their ticks and a note each, in the room and on the visit afterwards, using Nyx's two real questions and the answers the PM typed into the notes.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · 3</span><div><b>"Repeat info and a waste of space… it should really just be one row… 'worth raising', checkable, or at least we can add notes to it like a question."</b> Ruled in shape. Worth raising and the owner's questions become <b>one list, "To raise"</b>: every row tickable, every row annotatable, the intake decline said once from the fresher source. The spine does not move — a record row is still quoted, never re-derived; safety rows still sit above the cap — what changes is that a record row is now a thing the owner can tick and answer, exactly like a question. <span class="moved">G2 draws the list in the room; G4 keeps the ticks and notes on the visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · 7</span><div><b>"Love the 'weighed at the clinic' option. I added that in notes."</b> The record agrees twice: <i>8.22 lbs</i> is the first line of the visit's notes (22:03), and a separate weight event was logged at 22:51 — the same number, typed again forty-eight minutes later. <span class="moved">G3 draws the row on <i>How did it go?</i>; G4 shows it on the visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>The plan never landed.</b> The notes say <i>"Treat left ear. Motozol. Once a day."</i> and <i>"Steroid for coughing… Pred… 10d full strength"</i>; the medications table gained no row. The only Motozol on record is the July course, completed Aug 9. <span class="moved">G3's <i>Started something new?</i> offers the past course back ("Motozol again?") — confirmation over entry — and G4 shows the plan written on the visit with a door to add to it afterwards (REC 4). This is the PM's item 6 with the evidence attached.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>The trial's window did not move.</b> <i>"Min 8 week. Recommending 12… stay on diet trial for 4 more weeks."</i> The trial's target is still 56 days (Jul 26 → Sep 20). The write path for a vet-directed window change shipped this morning (<code>changeTrialWindow</code>, CUL-1039; migration 068's <code>target_duration_vet_directed</code>). <span class="moved">G3's trial row gains <i>Extended</i>, which calls it with the visit as its provenance.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>The reason for the visit lived in free text.</b> Sep 13: three events with notes — <i>"Tipping ear down"</i>, <i>"Shaking her head- ear is bothering her"</i>, <i>"Scratched ear"</i> — logged as <code>other</code> and <code>itch</code>. Worth raising had no row for any of it (there is no ear lane), and the first question the PM typed was about ears. <span class="moved">G2 carries one dashed option row, <i>from your notes</i>: the owner's own recent event notes, quoted verbatim, tappable to the event. Deterministic; an option, not the proposal.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>Two instructions have no home at all.</b> <i>"Outcome to look for: a reduction in coughing or sneezing… if after the 10d full-strength pred she's still coughing, call"</i> is a watch-and-a-deadline, not a medication — drawn as a dashed option row in G3 because it needs a scheduled notification (the consented-schedule carve-out). <i>"Start monthly with the cleaning. Every 4 weeks."</i> cannot be expressed by the medication model (<code>doses_per_day</code>, where NULL means as-needed and nothing is coarser than daily). <span class="moved">Named here, not drawn.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who rec">Record</span><div><b>What worked.</b> Two questions typed ahead and both ticked in the room (4:42 and 4:54 pm); one photo of the paperwork, filed under Nyx and linked to the visit; the notes edited on the visit 38 minutes after saving. The appointment had no time and no reason, and neither mattered. <span class="moved">Nothing to move; recorded so the frames above are read against a real visit, not a fixture.</span></div></div>
+  </div>
+
+  <div class="ledger">
+    <div class="ledger-h">Round 3 · CUL-952 — what was found, and what moved on the page</div>
+    <div class="ledger-row"><span class="ledger-who">PM · device</span><div><b>"Once a visit is scheduled it can never be edited. Why? What if I wanted to change the time, location.. etc"</b> Reached on the PM's own device, independently of the two review finds below. Honest answer: it was never specified — §4.1 E3 covers booking and §10 parks reminders; reschedule is in neither list. An omission, not a deferral. <span class="moved">E4 added: the appointment as an editable record, the shape <code>app/vet-visits/edit.tsx</code> already has for a visit.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan · Sam</span><div><b>"Change the appointment" lands on a screen whose only control books a second one.</b> Found independently by both lenses on the VV-6 finish pass. The ⋯ item on Get ready pushes <code>/vet-visits</code>, where the only button is <i>Add</i> — so following the app's own instruction books a second appointment beside the one the owner meant to move, and Home then leads with whichever is earlier. <span class="moved">The <i>Change</i> door E1 already drew gains a destination; the ⋯ item points at it too.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Team · answer</span><div><b>A two-answer question must offer two answers.</b> <i>Waiting on you</i> says "log the visit to move it into Nyx's history" under a single door. The other answer — <i>It didn't</i> — exists only on Home, and only for five days; past that a booking the owner never attended is furniture in the list forever. <span class="moved">E5 added: the same <i>It didn't happen</i> verb the Home strip uses, in the list, with no window.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Correction</span><div><b>D2 said "starts from today"; the rule says it may not.</b> A stale frame, not a change: the vet report's window anchors <i>strictly before</i> today, so a report cut in the car park still runs to yesterday, and §4.1 D2 forbids the phrase outright. The build caught it — <code>components/vetvisits/VisitSavedMoment.tsx:24</code> has carried a note that this frame is superseded — but the page kept saying it. <span class="moved">D2's line now reads "starts from this visit", matching what ships.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Review</span><div><b>The build taught the frame three things, so the frame moved.</b> <code>pm-feature-review</code> walked the shipped screens as Jordan and as Sam. Two blocking findings were fixed in the same PR (Get ready did not re-read after the edit it launches, so the headline path ended on the old date; and the footnote implied removal was safe). <span class="moved">E4 redrawn to what ships: stacked fields, <i>Remove</i> demoted to a link below a rule, the footnote conditional and moved above Save. The design authority now agrees with the product rather than describing an earlier draft of it.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">Not drawn</span><div><b>A second upcoming booking is still invisible everywhere (CUL-970).</b> Its own issue, deliberately. Round 3 removes the cause most likely to mint one; it does not change what the list shows when two exist. <span class="moved">Nothing.</span></div></div>
+  </div>
+
+  <div class="ledger">
+    <div class="ledger-h">The reaction ledger — what each reaction ruled, and what moved on the page</div>
+    <div class="ledger-row"><span class="ledger-who">PM · toggle</span><div><b>Build behind a feature toggle; retire it at GA.</b> Ruled. The track ships dark behind a rollout flag shaped exactly like the daily look's — an <code>app_config</code> allowlist row, a client key, a beta-shelf entry — and retires on a PM GA call. <span class="moved">Nothing to draw; the beta shelf already exists and gains one row.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · place</span><div><b>A1 + A2.</b> Ruled. The Pet-tab card is the home; the Home strip is the moment. <span class="moved">A3 retired. A2 redrawn under the Signal (see the team row below). A2b added: the strip's one ask after the day passes.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · files</span><div><b>"Weird to have Files as well as Visits."</b> Tabled by the PM. <span class="moved">Recorded in §F as a later question; nothing moves in v1.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · rundown</span><div><b>Promote it, don't rebuild it.</b> Ruled. <span class="moved">B1's rundown block stays the shipped screen verbatim.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · window</span><div><b>"Fine anywhere between 3 and 7 days."</b> The team picks <b>5</b>: enough lead to get the report to the clinic ahead of time, short enough that the strip is a moment and not furniture. A constant, tunable at build. <span class="moved">A2's caption.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · share</span><div><b>"I don't know that we want the rundown shared with the vet."</b> Ruled, and all nine lenses agreed independently: the vet's artifact is the report. <span class="moved">B1: one primary, <i>Send the vet report</i>; the shipped text share (CUL-206) moves under ⋯ as <i>Copy as text</i>, addressed to no one — Jordan and Sam both named the household (the partner taking the pet) as its real reader.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · C1</span><div><b>"Draft open-ended notes; jot down questions ahead of time — am I thinking about that right?"</b> Yes, exactly: questions are jotted <i>before</i> (on Get ready, or one tap from the Home strip at 11 pm), notes are typed during or after, and the questions come along as ticks. A clarification, not a change. <span class="moved">C1 unchanged; A2 gains an <i>Add a question</i> door.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · photo</span><div><b>"Should the photo go in Files or live in this record?"</b> Both, because it is one row: Vet Files holds it, linked to the visit, filed under the visit's pet; the visit shows it under Paperwork. Never a second store (the D1 principle applied to a photo). Nine of nine lenses gave this answer. <span class="moved">C1 / D3 captions.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · C2</span><div><b>"Good for v1.x; deep dive later."</b> Ruled. <span class="moved">C2 / C3 stay boxed as v1.x options, untouched.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · D1</span><div><b>"If we have a medication logged, how do we start that med?"</b> The row reads the record before it asks. An existing course renders as a confirmation — <i>Keep · Changed · Stopped</i>; <i>Add</i> appears only for a course the record lacks, and opens the real medication setup as a pushed route with the visit as its origin; <i>Later</i> keeps the visit saved with the row open. Dr. Chen added the two verbs the recheck needs: <i>Stopped</i> on a med and <i>Ended / switched</i> on a trial. Sam added the door vets open most: <i>add the food to the library</i>, beside <i>start a trial</i>. <span class="moved">D1 redrawn.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · E1 / E2</span><div><b>Next / past; the empty state; logging historic visits.</b> Ruled. <span class="moved">Unchanged. E3 added: the booking sheet, with Sam's "Also for Juniper?" in multi-pet accounts.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who">PM · rich text</span><div><b>Plain text.</b> Ruled. <span class="moved">Unchanged.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who team">Team · safety</span><div><b>A safety or intake card leads; the visit never rewrites a Signal string.</b> The interviews' one shared non-negotiable (Designer, Sam, Dr. Chen: "you're already handled" delivered by layout is n=1 reassurance inside the hepatic-lipidosis window). The code already has the shape: Home's context strips (the trial strip, the med strips) sit <i>under</i> the Signal. <span class="moved">A2 redrawn: the appointment strip sits under the Signal cards, in the trial strip's register; round 1's "worth raising Tuesday" on a symptom card is gone.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who team">Team · once</span><div><b>The strip asks once, then leaves.</b> An unlogged appointment must not sit on Home for a month (Principle 4 by another name). <span class="moved">A2b: the day after, one ask — <i>Did Tuesday's visit happen?</i> — then the strip goes.</span></div></div>
+    <div class="ledger-row"><span class="ledger-who team">Team · quiet</span><div><b>"Worth raising" caps at four rows and says nothing when the record is quiet</b> — never "nothing to raise" (Jordan: more rows make me the hypochondriac owner; Dr. Chen: silence is a coverage fact, not wellness). <span class="moved">B1 caption; B1b the quiet state.</span></div></div>
+  </div>
+
+  <!-- ═══════════════ A · PLACEMENT ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">A · Placement — the home and the moment</p>
+    <h2 class="serif">The Pet tab holds visits. Home carries the one that is close.</h2>
+    <p class="sec-lede">A <b>home</b> is where the owner browses and manages visits; a <b>moment</b> is where the app brings the close one to the owner. Both ruled. The Home strip now sits where Home already puts context, under the Signal, so a safety card is never outranked by an appointment.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Domestic shorthair · 8 yrs · 4.1 kg</div></div></div>
+          <div class="card dim"><h4>Vet report</h4><div class="blurb">A clinical summary of Nyx's symptoms, diet and trends — view it here, then send it to your vet as a PDF.</div><div class="cardbtn">Open vet report</div></div>
+          <div class="card">
+            <div class="card-head"><h4>Vet visits</h4><span class="card-count">2 visits</span></div>
+            <div class="appt" style="box-shadow:none;border-radius:12px;padding:10px 11px;margin-top:10px;background:var(--a-subtle)">
+              <div class="date"><b>16</b><span>Sep</span></div>
+              <div class="main"><div class="t">Tuesday · 3:00 pm</div><div class="s">Riverside Animal Hospital · recheck</div></div>
+            </div>
+            <div class="blurb" style="margin-top:8px">Last visit Jul 30 — GI follow-up. Plan: hydrolyzed trial, Cerenia as needed.</div>
+            <div class="cardbtn ghost">Open visits</div>
+          </div>
+          <div class="card dim"><div class="card-head"><h4>Vet Files</h4><span class="card-count">3 documents</span></div><div class="blurb">Records, results &amp; clinic emails you've saved.</div></div>
+          <div class="tabbar"><span>Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span class="on">Nyx</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A1 · Pet tab — the vet-facing trio <span class="tag cur">current</span></span><p>Between the report and the files: the next appointment leads, the last plan sits under it, "Open visits" is the door. Same anatomy as its siblings. With zero visits the card renders E2's two doors in place of the appointment and the plan line (Principle 5).</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="home-hd"><div class="l"><div class="avatar"></div><div class="home-name">Nyx<i>▾</i></div></div><div class="r"><span class="ask-pill">Ask</span><div class="you"></div></div></div>
+          <div class="insight"><span class="rail sym"></span><div class="body"><div class="clause">Nyx has finished 2 of 8 meals since Sunday.</div><div class="ask">Worth a call to your vet today</div><div class="count">Intake · last 3 days</div></div></div>
+          <div class="insight"><span class="rail"></span><div class="body"><div class="clause">Day 23 of the hydrolyzed trial. 41 of 48 meals finished.</div><div class="count">No off-diet foods logged in 9 days</div></div></div>
+          <div class="appt">
+            <div class="date"><b>16</b><span>Sep</span></div>
+            <div class="main">
+              <div class="t">Vet visit on Tuesday</div>
+              <div class="s">Riverside Animal Hospital · 3:00 pm · recheck</div>
+              <div class="doors"><span class="door">Get ready</span><span class="door ghost">Add a question</span></div>
+            </div>
+          </div>
+          <div class="strip"><b>Cerenia</b> · as needed · last Sep 4</div>
+          <div class="today"><span>Today · 2 logged</span><div class="pips"><i></i><i class="sym"></i></div></div>
+          <div class="tabbar"><span class="on">Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span>Nyx</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A2 · Home — the strip, under the Signal <span class="tag cur">current</span></span><p>Five days out through the day of the visit, in the register of the trial and med strips: a context strip, never an insight. The intake card above it keeps its own ask; nothing on the Signal mentions Tuesday. Two doors: <i>Get ready</i> and <i>Add a question</i> (a one-line sheet, saved to the visit). The report send lives inside Get ready. Never urgency styling.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="home-hd"><div class="l"><div class="avatar"></div><div class="home-name">Nyx<i>▾</i></div></div><div class="r"><span class="ask-pill">Ask</span><div class="you"></div></div></div>
+          <div class="insight"><span class="rail"></span><div class="body"><div class="clause">Day 24 of the hydrolyzed trial. 43 of 50 meals finished.</div><div class="count">No off-diet foods logged in 10 days</div></div></div>
+          <div class="appt">
+            <div class="date"><b>16</b><span>Sep</span></div>
+            <div class="main">
+              <div class="t">Did Tuesday's visit happen?</div>
+              <div class="s">Riverside Animal Hospital · recheck</div>
+              <div class="doors"><span class="door">Yes — how did it go?</span><span class="door ghost">It didn't</span></div>
+            </div>
+          </div>
+          <div class="strip"><b>Cerenia</b> · as needed · last Sep 4</div>
+          <div class="today"><span>Nothing logged yet — how's Nyx doing?</span></div>
+          <div class="trend"><div class="t">Vomiting · last 4 weeks</div><div class="bars"><i style="height:60%"></i><i style="height:80%"></i><i style="height:45%"></i><i style="height:30%"></i></div></div>
+          <div class="tabbar"><span class="on">Home</span><span>History</span><span class="fab">+</span><span>Foods</span><span>Nyx</span></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">A2b · The day after — one ask, then gone <span class="tag cur">current</span></span><p>The strip's doors follow the clock. After the appointment's day passes with no visit logged it asks once: <i>Yes</i> opens the after-visit capture (D1) prefilled; <i>It didn't</i> cancels the appointment. Either way the strip leaves Home. It never lingers for a month, and it never nags twice.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ B · BEFORE ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">B · Before the visit — "Get ready"</p>
+    <h2 class="serif">The rundown, promoted. One hand-off to the vet, and it is the report.</h2>
+    <p class="sec-lede">The shipped rundown with a job title, plus the two things it lacked: the record's own questions and the owner's. One primary action. The text share the rundown already has moves under ⋯, named for what it is — a copy for the human going in with the pet.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div class="menu-pop"><div class="menu-item">Copy as text<small>for whoever's taking Nyx in</small></div><div class="menu-item">Change the appointment</div></div>
+          <div><div class="ph-eyebrow">Tuesday · 3:00 pm</div><div class="ph-pagetitle">Get ready for Nyx's visit</div><div class="ph-sub">Riverside Animal Hospital · Dr. Chen · recheck</div></div>
+
+          <div class="sec-label">The rundown · last 30 days</div>
+          <div class="rowcard">
+            <div class="tile"><span class="lab">Vomiting</span><span class="val">7 in 30 days · 3 this week<small>5 of 7 between 12am–8am</small></span></div>
+            <div class="tile"><span class="lab">Appetite</span><span class="val">41 of 48 meals finished<small>meals logged on 27 of 30 days</small></span></div>
+            <div class="tile"><span class="lab">Weight</span><span class="val">4.0–4.2 kg<small>3 weigh-ins</small></span></div>
+            <div class="tile"><span class="lab">Cerenia</span><span class="val">As needed · last Sep 4</span></div>
+            <div class="tile"><span class="lab">Since Jul 30</span><span class="val">2 new foods · 1 new med</span></div>
+          </div>
+
+          <div class="sec-label">Worth raising</div>
+          <div class="rowcard">
+            <div class="q"><span class="n">1</span><span class="t">The overnight pattern — 5 of 7 vomits between midnight and 8 am.<small>from the Signal</small></span></div>
+            <div class="q"><span class="n">2</span><span class="t">The hydrolyzed trial: day 23 of 56, 41 of 48 meals finished.<small>from the trial</small></span></div>
+            <div class="q"><span class="n">3</span><span class="t">Cerenia — 9 doses since Jul 30, no end recorded.<small>from the course</small></span></div>
+            <div class="q"><span class="n">4</span><span class="t">Should I be worried about the weight?<small>added by you</small></span></div>
+            <div class="q add"><span class="n">+</span><span class="t">Add a question</span></div>
+          </div>
+
+          <div class="btn-stack">
+            <div class="btn primary">Send the vet report</div>
+            <div class="barhint">The report is the clinical record. This page is your quick answer.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B1 · Get ready <span class="tag cur">current</span></span><p>Reached from the Home strip, the Pet-tab card, the visits list and Ask. The rundown block is the shipped screen verbatim. "Worth raising" is deterministic and capped at four: each row is a finding the app already states elsewhere, phrased as a thing to raise, its source named — never a new claim, never a preference word about a decline. The owner's rows are typed once and carried into the visit. ⋯ holds <i>Copy as text</i> (the CUL-206 share, renamed and demoted) and <i>Change the appointment</i>. <b>Round 5:</b> the Booked face (H1) of the one page; the rundown collapses to one line and keeps its own screen for Ask.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen" style="min-height:auto">
+          <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Thursday · 10:30 am</div><div class="ph-pagetitle">Get ready for Nyx's visit</div><div class="ph-sub">Riverside Animal Hospital · annual</div></div>
+          <div class="sec-label">The rundown · last 30 days</div>
+          <div class="rowcard">
+            <div class="tile"><span class="lab">Symptoms</span><span class="val" style="color:var(--a-text2);font-weight:400">None logged in 30 days</span></div>
+            <div class="tile"><span class="lab">Appetite</span><span class="val">46 of 47 meals finished<small>meals logged on 29 of 30 days</small></span></div>
+            <div class="tile"><span class="lab">Weight</span><span class="val">4.1 kg<small>1 weigh-in</small></span></div>
+            <div class="tile"><span class="lab">Current meds</span><span class="val" style="color:var(--a-text2);font-weight:400">None active</span></div>
+          </div>
+          <div class="sec-label">Your questions</div>
+          <div class="rowcard">
+            <div class="q add"><span class="n">+</span><span class="t">Add a question</span></div>
+          </div>
+          <div class="btn-stack" style="margin-top:12px"><div class="btn primary">Send the vet report</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">B1b · A quiet record <span class="tag cur">current</span></span><p>No "Worth raising" section at all when the record has nothing standing — not a row that says so. Absence is a coverage fact, never wellness, so the rundown's own "None logged in 30 days" is the only sentence about it. The owner's questions block still opens.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="optbox">
+          <div class="optbox-h">Option · v2 · gated on a PM + T&amp;S ruling, not the current proposal</div>
+          <div class="phone"><div class="ph-screen" style="min-height:auto">
+            <div class="ph-nav"><span class="ph-back">‹ Home</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+            <div><div class="ph-eyebrow">Tuesday · 3:00 pm</div><div class="ph-pagetitle">Get ready for Nyx's visit</div></div>
+            <div class="sec-label">Last time · Jul 30</div>
+            <div class="card">
+              <div class="blurb" style="margin-top:0;font-size:12.5px;color:var(--a-text)">GI follow-up with Dr. Chen. Started the hydrolyzed trial for 8 weeks and Cerenia as needed for nausea. Recheck in six weeks; call sooner if the vomiting gets more frequent.</div>
+              <div class="blurb">Written from your notes and the recording · <span style="color:var(--a-accent-ink);font-weight:600">Read the full visit</span></div>
+            </div>
+          </div></div>
+        </div>
+        <div class="opt-cap"><span class="k">B2 · "Last time" at the top <span class="tag open">v2 · gated</span></span><p>In v1 this block is the owner's own recorded plan, verbatim, on the visit (D3). The frame shows the v2 shape — a summary written from the notes and a recording, always labelled — which waits on the same class of ruling Vet Files' AI phase waits on.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ C · DURING ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">C · During the visit — capture</p>
+    <h2 class="serif">Notes and the checklist in v1. The recording stays a v1.x option.</h2>
+    <p class="sec-lede">In the room Jordan is holding a dog and Sam has two carriers. v1 is a notes field that opens from Get ready on the day, with the prepared questions as ticks and one door for the paperwork. The recording frames are unchanged from round 1 and stay boxed; the PM will deep-dive them after v1.0 ships.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">At the vet</span><span class="ph-x">Done</span></div>
+          <div class="ph-sub" style="margin-top:-8px">Tuesday · Riverside · with Dr. Chen</div>
+          <div class="field tall"><div class="lab">What the vet said</div><div class="val">Likely still the food. Keep the trial going the full 8 weeks — no treats, no table food. Cerenia only if she vomits twice in a day.</div></div>
+          <div class="sec-label">Your questions</div>
+          <div class="rowcard">
+            <div class="row"><span class="tick on"></span><span class="v" style="font-weight:400">The overnight pattern</span></div>
+            <div class="row"><span class="tick on"></span><span class="v" style="font-weight:400">The trial — day 23 of 56</span></div>
+            <div class="row"><span class="tick"></span><span class="v" style="font-weight:400">Cerenia — no end recorded</span></div>
+            <div class="row"><span class="tick"></span><span class="v" style="font-weight:400">The weight</span></div>
+          </div>
+          <div class="btn-stack">
+            <div class="btn ghost">Photograph the paperwork</div>
+            <div class="barhint">Saved as you type · finish the visit when you're out</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">C1 · Notes + the checklist <span class="tag cur">current</span></span><p>Get ready stays the day's primary door; "At the vet" lives inside it, so the tap on the leash lands on the numbers, not an empty box. One plain-text field, saved as it is typed, never lost to a phone call. The photo goes to Vet Files under the visit's pet with the visit linked and no document type asked; it shows on the visit (D3) afterwards. No toolbar, no mic in v1. <b>Round 4:</b> G2 redraws this screen with the PM's reaction 3 applied (one list, ticks, a note per row); this frame stays current until that ruling. <b>Round 5:</b> in the one-page proposal this screen is the Today face (H2), not a screen of its own.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="optbox">
+          <div class="optbox-h">Option · v1.x · unchanged from round 1 · deep dive after v1.0</div>
+          <div class="phone"><div class="ph-screen">
+            <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">At the vet</span><span class="ph-x">Done</span></div>
+            <div class="field tall dim"><div class="lab">What the vet said</div><div class="val ph">Type, or record and read it back later</div></div>
+            <div class="sheet-scrim"><div class="sheet">
+              <div class="sheet-grab"></div>
+              <div class="sheet-h">Recording a visit — ask first</div>
+              <div class="sheet-p">In some states everyone in the room has to agree to a recording. Tell Dr. Chen you'd like to record so you don't miss anything — most vets are fine with it, and many clinics record too.</div>
+              <div class="sheet-facts">
+                <div>The audio stays on this phone. It's turned into text here, and you can delete either at any time.</div>
+                <div>A recording light shows the whole time, and you can stop or discard it whenever you like.</div>
+                <div>Start once the exam-room door is closed — the waiting room is other people's conversations.</div>
+              </div>
+              <div class="btn accent">Everyone's okay with it — start recording</div>
+              <div class="btn quiet" style="text-align:center">Not this time</div>
+            </div></div>
+          </div></div>
+        </div>
+        <div class="opt-cap"><span class="k">C2 · The consent moment <span class="tag open">v1.x · gated</span></span><p>Every recording begins here, every time. The spec's §6 carries the contract; the spoken announcement at the start is the one open decision inside it (§F).</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="optbox">
+          <div class="optbox-h">Option · v1.x · unchanged from round 1 · deep dive after v1.0</div>
+          <div class="phone"><div class="ph-screen">
+            <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">At the vet</span><span class="ph-x">Done</span></div>
+            <div class="rec-bar"><span class="rec-dot"></span><span class="t">Recording · 12:41<small>On this phone · nothing uploaded · screen stays on</small></span><span class="rec-stop">Stop</span></div>
+            <div class="barhint" style="text-align:left;margin-top:-4px">Said aloud when it started: "Culprit is recording this visit." <span style="color:var(--a-accent-ink)">option, see §F</span></div>
+            <div class="transcript">…so keep her on the hydrolyzed diet for the full eight weeks. No treats at all, that's usually where these trials fall apart. If she vomits twice in a day, give the Cerenia and <span class="live">call us if it happens two days running…</span></div>
+            <div class="field"><div class="lab">A note while it runs</div><div class="val ph">Type here</div></div>
+          </div></div>
+        </div>
+        <div class="opt-cap"><span class="k">C3 · Recording, honestly <span class="tag open">v1.x · gated</span></span><p>Visible state, foreground only, on-device transcript, unattributed. Unchanged.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ D · AFTER ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">D · After the visit — the plan becomes records</p>
+    <h2 class="serif">The rows read the record first. Confirm what exists; add only what is new.</h2>
+    <p class="sec-lede">The PM's question — "if we have a medication logged, how do we start that med" — is answered by not asking. Each plan row looks at the record before it speaks: an existing course is confirmed with one chip, a running trial is kept, ended or switched, and <i>Add</i> appears only for something the record does not hold. Every door is a pushed route with the visit as its origin; it pops back reading <i>Linked</i>. Nothing is stored twice.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">How did it go?</span><span class="ph-spacer"></span></div>
+          <div class="field-row">
+            <div class="field"><div class="lab">When</div><div class="val">Tue, Sep 16</div></div>
+            <div class="field"><div class="lab">Where</div><div class="val">Riverside · Dr. Chen</div></div>
+          </div>
+          <div class="field tall" style="min-height:0"><div class="lab">What the vet said</div><div class="val" style="min-height:48px">Likely still the food. Keep the trial the full 8 weeks — no treats. Cerenia only if she vomits twice in a day. Recheck in six weeks.</div></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Cerenia</b><span>as needed · 9 doses since Jul 30</span><span class="chips"><span class="chip on">Keep</span><span class="chip">Changed</span><span class="chip">Stopped</span></span></span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Started something new?</b><span>opens the medication setup, linked here</span></span><span class="go">Add</span></div>
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Hydrolyzed trial</b><span>day 23 of 56</span><span class="chips"><span class="chip on">Keep</span><span class="chip">Ended</span><span class="chip">Switched</span></span></span></div>
+            <div class="plan"><span class="ico diet">+</span><span class="t"><b>A new food to try?</b><span>adds it to Nyx's library</span></span><span class="go">Add</span></div>
+            <div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>Six weeks from today</span></span><span class="go">Oct 28</span></div>
+            <div class="plan"><span class="ico doc">▤</span><span class="t"><b>Paperwork</b><span>1 photo added at the visit · or the clinic's summary</span></span><span class="go">Add more</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Save Nyx's visit</div><div class="barhint">Anything left open stays on the visit — finish it later</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">D1 · The after-visit capture <span class="tag cur">current</span></span><p>Prefilled from the appointment; saving with nothing typed is allowed, and an open row is never a blocker — <i>Later</i> is the row's resting state. The existing course and the running trial render as confirmations; <i>Changed</i> edits the course rather than minting a second Cerenia that would split the dose count; <i>Stopped</i> and <i>Ended</i> are the owner actions the H1 register requires. <i>Add</i> opens the real medication setup (the label photo works there tomorrow, from the visit). This screen replaces <code>app/vet-visit.tsx</code>. <b>Round 4:</b> G3 redraws the plan rows from Nyx's real visit — <i>Extended</i> on the trial, the past course offered back, the clinic weight, a confirm on <i>Stopped</i>. <b>Round 5:</b> the plan section of the Today face (H2); <i>Save</i> is the page's primary on the day.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="saved-wrap">
+            <div class="saved-check"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7B6C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+            <div class="saved-h">Saved to Nyx's visits</div>
+            <div class="saved-p">Your next vet report starts from this visit, and "since last visit" on Home resets.</div>
+            <div class="saved-offline">On this phone now — backs up when you're online</div>
+            <div class="rowcard" style="width:100%;text-align:left">
+              <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Cerenia</b><span>kept · linked to this visit</span></span><span class="done">Linked</span></div>
+              <div class="plan"><span class="ico next">→</span><span class="t"><b>Oct 28 · recheck</b><span>Riverside Animal Hospital</span></span><span class="done">Added</span></div>
+            </div>
+            <div class="btn-stack" style="width:100%"><div class="btn ghost">Done</div></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">D2 · The saved moment <span class="tag cur">current</span></span><p>Names the pet, names what the save did to the rest of the app (the report window and the Home strip both move on a logged visit), and lists what was linked. <b>Round 3 correction:</b> this frame read "starts from <i>today</i>" since round 1 — the report's window anchors strictly before today, so the shipped copy says "from this visit" and <code>VisitSavedMoment.tsx:24</code> already recorded the frame as superseded. The page now agrees with the rule.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Tuesday, Sep 16</div><div class="ph-pagetitle">Recheck — GI</div><div class="ph-sub">Riverside Animal Hospital · Dr. Chen</div></div>
+          <div class="field tall" style="border:0;padding:0;background:transparent"><div class="lab">What the vet said</div><div class="val">Likely still the food. Keep the trial the full 8 weeks — no treats. Cerenia only if she vomits twice in a day. Recheck in six weeks.</div></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Cerenia</b><span>As needed · 9 doses since Jul 30</span></span><span class="go">Open</span></div>
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Hydrolyzed trial</b><span>Day 23 of 56 · continues</span></span><span class="go">Open</span></div>
+            <div class="plan"><span class="ico next">→</span><span class="t"><b>Oct 28 · recheck</b><span>3:00 pm · Riverside</span></span><span class="go">Open</span></div>
+          </div>
+          <div class="sec-label">Paperwork · in Vet Files</div>
+          <div class="rowcard"><div class="row"><span class="v">Discharge sheet — Sep 16<small>Photo · added at the visit</small></span><span class="chev">›</span></div></div>
+          <div class="barhint" style="margin-top:auto">Asked: 3 of 4 questions</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">D3 · A visit, afterwards <span class="tag cur">current</span></span><p>The record of one visit: the notes, the plan as live links whose numbers come from the linked records, the paperwork from Vet Files, the questions asked. ⋯ holds Edit and Delete; Delete confirms that the report window moves back and that the linked course and trial survive. <b>Round 4:</b> G4 redraws this frame with the plan persisted on the visit and a door to add to it afterwards; the build today renders only first-linked courses and a count of the questions. <b>Round 5:</b> the Visited face (H3) of the one page.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ E · THE HOME ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">E · The home — the visits list, the empty state, booking</p>
+    <h2 class="serif">Next, then past. Empty is a feature. Booking is one sheet.</h2>
+    <p class="sec-lede">Unchanged where the PM said so. The booking sheet is new: a date, an optional time, the clinic and vet prefilled from the last visit, a reason, and — only in a multi-pet account — Sam's "Also for Juniper?".</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title">Vet visits</span><span class="ph-x" style="color:var(--a-accent-ink);font-weight:600;font-size:13px">Add</span></div>
+          <div class="sec-label">Next</div>
+          <div class="appt">
+            <div class="date"><b>16</b><span>Sep</span></div>
+            <div class="main"><div class="t">Tuesday · 3:00 pm</div><div class="s">Riverside Animal Hospital · Dr. Chen · recheck</div><div class="doors"><span class="door">Get ready</span><span class="door ghost">Change</span></div></div>
+          </div>
+          <div class="sec-label">Past</div>
+          <div class="rowcard">
+            <div class="visit"><div class="d"><b>30</b><span>Jul</span></div><div class="m"><b>GI follow-up</b><span>Riverside · Dr. Chen</span><div class="pillrow"><span class="mini diet">Trial started</span><span class="mini med">Cerenia</span><span class="mini">Recheck set</span></div></div><span class="chev">›</span></div>
+            <div class="visit"><div class="d"><b>2</b><span>May</span></div><div class="m"><b>Vomiting — first visit</b><span>Riverside · Dr. Patel</span><div class="pillrow"><span class="mini">Bloodwork</span><span class="mini">2 documents</span></div></div><span class="chev">›</span></div>
+            <div class="visit"><div class="d"><b>14</b><span>Jan</span></div><div class="m"><b>Annual</b><span>Riverside</span></div><span class="chev">›</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E1 · The list <span class="tag cur">current</span></span><p>"Add" asks one thing first — already happened, or booked? The tags under a past visit are derived from the linked records, never typed. <b>Round 3:</b> the <i>Change</i> door was drawn here in round 2 and shipped without a destination — it now opens E4. Otherwise unchanged.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title">Vet visits</span><span class="ph-spacer"></span></div>
+          <div class="saved-wrap" style="gap:12px">
+            <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:4px"><div class="appt" style="width:120px;padding:9px 10px;box-shadow:none;transform:rotate(-4deg)"><div class="date" style="width:34px"><b style="font-size:14px">?</b><span>Next</span></div></div></div>
+            <div class="saved-h" style="max-width:16ch;line-height:1.25">Nyx's visits, in one place</div>
+            <div class="saved-p" style="max-width:28ch">The next appointment, what each visit changed, and everything to bring — so the 15 minutes in the room count.</div>
+            <div class="btn-stack" style="width:100%;margin-top:6px">
+              <div class="btn accent">Add the next visit</div>
+              <div class="btn ghost">Log a visit that already happened</div>
+            </div>
+            <div class="saved-offline" style="max-width:30ch">Your vet report already starts from the last visit you log.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E2 · Empty <span class="tag cur">current</span></span><p>The primary screen for most owners most of the time. Unchanged; copy through the voice pass at build.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">Cancel</span><span class="ph-title">Next visit</span><span class="ph-x" style="color:var(--a-accent-ink);font-weight:600;font-size:13px">Add</span></div>
+          <div class="field-row">
+            <div class="field"><div class="lab">When</div><div class="val">Tue, Sep 16</div></div>
+            <div class="field"><div class="lab">Time</div><div class="val ph">Optional</div></div>
+          </div>
+          <div class="field"><div class="lab">Where</div><div class="val">Riverside Animal Hospital · Dr. Chen</div><div class="barhint" style="text-align:left;margin-top:4px">from the last visit</div></div>
+          <div class="field"><div class="lab">Reason</div><div class="val">Recheck</div></div>
+          <div class="rowcard">
+            <div class="toggle-row"><span>Also for Juniper<small>books the same visit for her too</small></span><span class="sw on"></span></div>
+          </div>
+          <div class="barhint" style="margin-top:auto">Shows on Home five days before. No reminder yet — that's its own step.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E3 · Booking <span class="tag cur">current</span></span><p>Only the date is required; everything else prefills or waits. "Also for Juniper" renders only in a multi-pet account and books a second appointment row under the other pet (the Vet Files duplicate-on-add pattern) — each pet's Home shows its own. Reminders stay CUL-253's, which this sheet unblocks.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-2" style="margin-top:34px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Vet visits</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="ph-pagetitle">Change this appointment</div>
+          <div class="ph-sub">Nyx</div>
+          <div class="field" style="margin-top:6px"><div class="lab">When</div><div class="val">Tuesday, Sep 16</div></div>
+          <div class="field"><div class="lab">Time</div><div class="val">3:00 pm<span style="float:right;font-weight:500;color:var(--a-text2);font-size:12px">Clear</span></div></div>
+          <div class="field"><div class="lab">Where</div><div class="val">Riverside Animal Hospital</div></div>
+          <div class="field"><div class="lab">Vet</div><div class="val">Dr. Chen</div></div>
+          <div class="field"><div class="lab">Reason</div><div class="val">Recheck</div></div>
+          <div class="barhint" style="margin-top:auto">Your 4 questions for this visit stay with it.</div>
+          <div class="btn accent">Save changes</div>
+          <div style="height:1px;background:var(--a-border);margin-top:14px"></div>
+          <div class="btn quiet" style="color:var(--a-symptom-ink);margin-top:6px">Remove this appointment</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E4 · Change the appointment <span class="tag cur">current</span></span><p>The missing screen. Deliberately the <b>visit</b> edit's shape one directory over, not the booking sheet's: no <i>happened or booked?</i> chips (an appointment is not a visit) and no "Also for Juniper" (that toggle mints a second row, which would turn "change this" into "and book another"). <i>Remove</i> writes <code>cancelled_at</code> through the one writer the Home strip already uses. <b>Redrawn to the build:</b> fields stack full width rather than pairing When/Time; <i>Remove</i> is a quiet link below a rule rather than a button stacked under Save, so it cannot be mistaken for a peer of it; and the footnote sits <b>above</b> Save and is <b>conditional</b> — below, it sat one divider from <i>Remove</i>, so the foot of the screen read "Remove this appointment · your questions and notes stay with it", a promise that removal is safe when a cancel in fact puts the prep out of reach. It also now names what the owner actually prepared, and is absent for a first-time rescheduler who has none.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title">Vet visits</span><span class="ph-x" style="color:var(--a-accent-ink);font-weight:600;font-size:13px">Add</span></div>
+          <div class="ph-pagetitle">Vet visits</div>
+          <div class="ph-sub">Nyx</div>
+          <div class="sec-label">Waiting on you</div>
+          <div class="appt">
+            <div class="date"><b>2</b><span>Sep</span></div>
+            <div class="main"><div class="t">Tuesday · 3:00 pm</div><div class="s">Riverside Animal Hospital · Dr. Chen · recheck</div>
+              <div class="doors"><span class="door ghost">Take notes</span><span class="door">How did it go?</span><span class="door">It didn’t happen</span><span class="door ghost">Change</span></div>
+            </div>
+          </div>
+          <div class="barhint" style="text-align:left;margin-top:2px">This day has passed. Log the visit to move it into Nyx’s history, or say it didn’t happen.</div>
+          <div class="sec-label" style="margin-top:8px">Past</div>
+          <div class="rowcard">
+            <div class="visit"><div class="d"><b>30</b><span>Jul</span></div><div class="m"><b>GI follow-up</b><span>Riverside · Dr. Chen</span></div><span class="chev">›</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">E5 · Waiting on you <span class="tag cur">current</span></span><p>The row that was asking a two-answer question under one door. <i>It didn’t happen</i> is Home's <i>It didn’t</i> verb — one vocabulary, one writer, and here with <b>no five-day window</b>, so a booking missed by a week is still answerable. <i>Change</i> is on this row too rather than only on <i>Next</i>: the commonest reason a booking lands here is that the visit moved and nobody told the app, and remove-and-rebook would discard the prepared questions Get ready exists for. Four doors wrap; the two answers lead, because answering is what this section is asking for.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ G · ROUND 4 ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">G · Round 4 — the review's recommendations, drawn against Nyx's own visit</p>
+    <h2 class="serif">One appointment, or the screens with their doors fixed? Drawn, so the PM can rule.</h2>
+    <p class="sec-lede">Every frame below is Nyx's Sep 16 visit as the record holds it: Completely Cat Clinic, Dr Miller, "Potential ear infection", the two questions the PM typed, the notes as written, the plan the vet gave that the app never received. Round 5 retired the fork that opened this section (see the note); G2–G6 are kept because each is now a <b>section</b> of the one page drawn in §H.</p>
+
+    <div class="retired"><b>Round 5:</b> the fork this section opened with — G1 (one appointment page) beside G1b (the built screens with every door present) — has left the page; git keeps both frames at <b>253499e</b>. The PM leaned to G1b's doors and asked whether the design was over-complicated; the research (§H) answered with one page, so the fork is drawn once, as the proposal. The frames below survive as the sections of that page.</div>
+
+    <div class="rail rail-3" style="margin-top:36px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title"></span><span class="ph-x" style="color:var(--a-accent-ink);font-weight:600;font-size:12.5px;width:auto;white-space:nowrap">How did it go?</span></div>
+          <div><div class="ph-pagetitle" style="font-size:20px">Notes for Nyx's visit</div><div class="ph-sub">Today · Completely Cat Clinic</div></div>
+          <div class="sec-label">To raise</div>
+          <div class="rowcard">
+            <div class="q raised"><span class="tk on"></span><span class="t">Coming up on 8 weeks of the trial — is it worth continuing?<small>added ahead of the visit</small><span class="ans">Min 8 weeks, recommending 12. Stay on it 4 more weeks; then reintroduce one protein at a time.</span></span></div>
+            <div class="q raised"><span class="tk on"></span><span class="t">When she's had ear infections in the past — which ear?<small>added ahead of the visit</small><span class="ans">Both ears last time. This one is left only. Cleaned it; Motozol once a day.</span></span></div>
+            <div class="q"><span class="tk"></span><span class="t">Day 53 of 56 on Royal Canin Selected Protein.<small>from the trial</small><span class="ans ph">Jot the answer</span></span></div>
+            <div class="q"><span class="tk"></span><span class="t">Coughing — 1 logged this week.<small>from the record</small></span></div>
+            <div class="q opt"><span class="tk"></span><span class="t">"Tipping ear down" · "Shaking her head" · "Scratched ear"<small>from your notes · Sep 13 · option</small></span></div>
+            <div class="q add"><span class="n">+</span><span class="t">Add</span></div>
+          </div>
+          <div class="sec-label">Notes</div>
+          <div class="field tall" style="min-height:0"><div class="val" style="min-height:44px">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever. Lungs sound good…</div><div class="barhint" style="text-align:left;margin-top:6px">Saved as you type · kept with this visit</div></div>
+          <div class="btn-stack"><div class="btn ghost">Photograph the paperwork <span style="font-weight:400;color:var(--a-text3)">· 1 in Vet Files</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G2 · One list, "To raise" — tick it, jot the answer <span class="tag cur">current · a section of H2</span></span><p>Reactions 2 and 3 together. The record's rows and the owner's are one numbered list; every row has a tick and a place for the answer, so question and answer sit together and survive onto the visit. The record's rows are still quoted, never re-derived, still capped at four with safety above the cap — and the intake decline, when both the record and the Signal carry it, is <b>one</b> row from the fresher source. The dashed row is the option from the ledger: the owner's own event notes since booking, quoted. The header's right action is the finish door, named for what it opens.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">How did it go?</span><span class="ph-spacer"></span></div>
+          <div class="field-row">
+            <div class="field"><div class="lab">When</div><div class="val">Tue, Sep 16</div></div>
+            <div class="field"><div class="lab">Where</div><div class="val">Completely Cat · Dr Miller</div></div>
+          </div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>day 53 of 56</span><span class="chips"><span class="chip">Keep</span><span class="chip on vet">Extended</span><span class="chip">Ended</span><span class="chip">Switched</span></span><span class="why">To 12 weeks · ends Oct 18 · the vet's call</span></span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Started something new?</b><span>a course the record does not hold</span><span class="sug"><span class="chip">Motozol again? · Jul 16 – Aug 9</span><span class="chip">Add another</span></span></span></div>
+            <div class="plan"><span class="ico med">⚖</span><span class="t"><b>Weighed at the clinic?</b><span>writes an ordinary weight check, dated today</span></span><span class="go">8.22 lb</span></div>
+            <div class="plan opt"><span class="ico next">◷</span><span class="t"><b>Something to watch for?</b><span>option · "less coughing by Sep 26" · one reminder, then it leaves</span></span><span class="go">Set</span></div>
+            <div class="plan"><span class="ico next">→</span><span class="t"><b>Next visit</b><span>none needed, the vet said</span></span><span class="go">Set a date</span></div>
+            <div class="plan"><span class="ico doc">▤</span><span class="t"><b>Paperwork</b><span>1 photo · add a photo or a PDF</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Save Nyx's visit</div><div class="barhint">Anything left open stays on the visit — add to it later</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G3 · The plan rows, from a real visit <span class="tag cur">current · the plan section of H2</span></span><p>What Dr Miller actually said, as rows. <i>Extended</i> is the verb the trial row lacked — it calls the window-change write that shipped this morning, with the visit as its provenance and "the vet's call" recorded. <i>Started something new?</i> offers the July Motozol course back before it offers a blank form (Principle 2). <i>Weighed at the clinic?</i> is the row the PM loved, and the record wanted. <i>Something to watch for?</i> is dashed: it is a scheduled reminder, so it waits on the notification foundation's consent posture. The Paperwork row takes a PDF, which is the seam the repeat visitor named. "Add to it later" is now a promise the visit keeps (G4).</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Visits</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Tuesday, Sep 16</div><div class="ph-pagetitle" style="font-size:20px">Potential ear infection</div><div class="ph-sub">Completely Cat Clinic · Dr Miller</div></div>
+          <div class="sec-label">The plan · as recorded at this visit</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>extended to 12 weeks · ends Oct 18</span></span><span class="settled">Extended</span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day · started here</span></span><span class="settled">Started</span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Pred</b><span>10 days full strength · started here</span></span><span class="settled">Started</span></div>
+            <div class="plan"><span class="ico med">⚖</span><span class="t"><b>8.22 lb</b><span>weighed at the clinic</span></span><span class="settled">Logged</span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Add to this visit</b><span>a course, a weight, a document, the next visit</span></span><span class="go">Add</span></div>
+          </div>
+          <div class="sec-label">Raised · 2 of 3</div>
+          <div class="rowcard">
+            <div class="q raised"><span class="tk on"></span><span class="t">Worth continuing the trial?<span class="ans">Min 8 weeks, recommending 12. Stay on it 4 more weeks.</span></span></div>
+            <div class="q raised"><span class="tk on"></span><span class="t">Which ear, before?<span class="ans">Both last time; left only now.</span></span></div>
+          </div>
+          <div class="sec-label">What the vet said</div>
+          <div class="field" style="border:0;padding:0;background:transparent"><div class="val" style="font-weight:400;font-size:12.5px">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever. Lungs sound good. Change of season might impact the sneeze and cough…</div></div>
+          <div class="sec-label">Paperwork · in Vet Files</div>
+          <div class="rowcard"><div class="row"><span class="v">Photo — Sep 16<small>added at the visit</small></span><span class="chev">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G4 · The visit, afterwards — the plan written on it <span class="tag cur">current · the Visited face, H3</span></span><p>REC 4. Every verdict is a fact the visit produced and is written on it — extended, started, logged — so the visit as later read says what was said, not only which course first got a link. <i>Add to this visit</i> is the door the PM went looking for the next day and did not find: the plan rows reopen from here, for the medication that was forgotten in the car park or the PDF that arrives that evening. The questions keep their ticks and their answers. Cost: schema (a per-visit verdict row, own PR) plus this screen.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-2" style="margin-top:36px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹</span><span class="ph-title">How did it go?</span><span class="ph-spacer"></span></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day · since Sep 16</span><span class="chips"><span class="chip">Keep</span><span class="chip">Changed</span><span class="chip on" style="border-color:var(--a-symptom-ink);color:var(--a-symptom-ink);background:var(--a-symptom-light)">Stopped</span></span></span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Pred</b><span>10 days full strength · since Sep 16</span><span class="chips"><span class="chip">Keep</span><span class="chip">Changed</span><span class="chip">Stopped</span></span></span></div>
+          </div>
+          <div class="confirm"><div class="box"><div class="h">Stop Motozol?</div><div class="p">The course ends today. Its logged doses stay on the timeline and in vet reports.</div><div class="acts"><div>Keep it</div><div class="danger">Stop it</div></div></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G5 · One safety net on <i>Stopped</i> <span class="tag cur">current</span></span><p>REC 5, drawn at Nyx's next visit. The destructive chip confirms, naming the course and the date; <i>Keep</i> stays one tap. After the confirm the row settles to <i>Motozol · stopped today</i> instead of vanishing, and the record writes <code>stopped</code>, not <code>completed</code>. The same shape on the trial's <i>Ended</i>.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="saved-wrap">
+            <div class="saved-check"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0B7B6C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+            <div class="saved-h">Saved to Nyx's visits</div>
+            <div class="saved-p">From tomorrow, Nyx's vet report starts from this visit. One you build today still covers up to yesterday.</div>
+            <div class="rowcard" style="width:100%;text-align:left">
+              <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>extended to 12 weeks · ends Oct 18</span></span><span class="done">Extended</span></div>
+              <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day</span></span><span class="done">Started</span></div>
+              <div class="plan"><span class="ico med">⚖</span><span class="t"><b>8.22 lb</b><span>weighed at the clinic</span></span><span class="done">Logged</span></div>
+            </div>
+            <div class="saved-offline">On this phone now — backs up when you're online</div>
+            <div class="btn-stack" style="width:100%"><div class="btn ghost">Done</div></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">G6 · The saved moment, with the plan it wrote <span class="tag cur">current · redraws D2</span></span><p>Unchanged in shape; it now lists the three things the record gained rather than a link. The trial line names the new end date so the owner can check it against what the vet said before they drive.</p></div>
+      </div>
+    </div>
+
+    <div class="note-grid">
+      <div class="note amber"><b>Decision · reaction 1 — one appointment, or the screens with their doors fixed?</b> <i>Deciding:</i> whether the companion is one page that fills in over time (G1) or the built screens with every door present (G1b). <i>Options:</i> (a) G1 — the door problem disappears by construction; a consolidation of four screens, a long page in the exam room. (b) G1b — doors and strings, no screen is rebuilt; recommended by the team as the smaller step that can be walked on a device next week, with G1 kept as the shape to grow toward if the doors still feel disjointed after it. (c) As built. <i>Consequence:</i> (a) reopens §4.1 B–D as one spec section and the mock's C–D frames retire; (b) is REC 1 and ships in one PR; (c) leaves the PM's item 1 open.</div>
+      <div class="note amber"><b>Decision · REC 4 — a verdict written on the visit (R-D1).</b> <i>Deciding:</i> whether <i>Keep · Extended · Stopped · Started</i> are recorded per visit or remain a first-wins provenance link. <i>Options:</i> (a) a per-visit verdict row, no numbers on the visit — recommended; G4 is only possible under it. (b) link-only, as ruled. <i>Consequence:</i> (a) is the schema PR that makes "finish it later" true; (b) keeps the visit silent about every course it did not start.</div>
+      <div class="note amber"><b>Decision · REC 3 — which source owns the intake row.</b> <i>Deciding:</i> when the record and the Signal both carry the decline, which sentence the owner reads aloud. <i>Options:</i> (a) the record's count wins, the Signal's sentence beneath or dropped — recommended (the cache can be a day stale); (b) CUL-950's option (a) as written; (c) both, each dated. In every option the local read is un-gated from the trial, because today a cat with no trial has no offline intake row at all.</div>
+      <div class="note rose"><b>Not drawn · two phones on one login.</b> The household lens showed two phones can save two visits for one appointment and that whichever phone flushes last overwrites the other's notes. The first is a one-clause guard on the attend write (in REC 4); the second collides with the last-write-wins hard constraint and sits in the review's Conflicts for the PM.</div>
+      <div class="note rose"><b>Not drawn · Files and Visits as one card.</b> Reaction 2 asked for a mock before ruling on the questions; the card-count question (the review's REC 6) is the same kind of call and wants a Pet-tab frame of its own rather than a corner of this page. The seams it named — a PDF on the Paperwork row, <i>Add to this visit</i> — are in G3 and G4.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ H · ROUND 5 — ONE PAGE, THREE FACES ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">H · Round 5 — the proposal: the visit is one page with three faces</p>
+    <h2 class="serif">Booked, Today, Visited. One page, every door lands on it, the clock does the rest.</h2>
+    <p class="sec-lede">What twenty-eight products taught the frames, drawn on Nyx's Sep 16 visit as the record holds it. The page exists from booking. Its sections are fixed; the clock decides which are live and which is first. One primary, relabelled by the day. The report stays the vet's artifact, Home writes nothing new, a visit stays provenance, no model is called.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Tue, Sep 16 · in 4 days</div><div class="ph-pagetitle" style="font-size:21px">Nyx's vet visit</div><div class="ph-sub">Completely Cat Clinic</div></div>
+          <div class="phase"><span class="seg on">Booked</span><span class="seg">Today</span><span class="seg">Visited</span></div>
+          <div class="sec-label">To raise</div>
+          <div class="rowcard">
+            <div class="q"><span class="n">1</span><span class="t">Coming up on 8 weeks of the trial — is it worth continuing?<small>added ahead of the visit</small></span></div>
+            <div class="q"><span class="n">2</span><span class="t">When she's had ear infections in the past — which ear?<small>added ahead of the visit</small></span></div>
+            <div class="q"><span class="n">3</span><span class="t">Day 49 of 56 on Royal Canin Selected Protein.<small>from the trial</small></span></div>
+            <div class="q add"><span class="n">+</span><span class="t">Add</span></div>
+          </div>
+          <div class="sec-label">Notes</div>
+          <div class="field tall"><div class="val" style="min-height:96px">Ear: tipping it down since Saturday, shaking her head, scratched it twice. Ask about routine cleaning.</div><div class="face-note" style="margin-top:6px">Saved as you type · kept with this visit</div></div>
+          <div class="rowcard"><div class="linkrow"><span>See the 30-day rundown</span><span class="chev">›</span></div></div>
+          <div class="btn-stack"><div class="btn primary">Send the vet report</div><div class="barhint">Home shows this visit from Thursday</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">H1 · Booked <span class="tag cur">current</span></span><p>From booking to the day. The list the PM asked for — the record's rows and the owner's questions as one thing to raise, <i>+ Add</i> always present — and a notes field that is large from the first day, never a preview (reaction G1). The rundown, which is Ask's, is one line away rather than a block. One primary, the report; ⋯ holds <i>Change the appointment</i>, <i>Remove</i> and <i>Copy as text</i>, which now carries the list and the notes. The rule this face borrows: MyChart's single <i>Get Ready</i> door, Medcorder's one appointment detail that holds the questions.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Today · Completely Cat Clinic</div><div class="ph-pagetitle" style="font-size:21px">Nyx's vet visit</div></div>
+          <div class="phase"><span class="seg">Booked</span><span class="seg on">Today</span><span class="seg">Visited</span></div>
+          <div class="sec-label">Notes</div>
+          <div class="field tall"><div class="val" style="min-height:104px">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever. Lungs sound good. Diet trial: min 8 weeks, recommending 12. Ears: left one has dirt in it, right looks good. Treat left ear, Motozol once a day…</div><div class="face-note" style="margin-top:6px">Saved as you type</div></div>
+          <div class="sec-label">To raise</div>
+          <div class="rowcard">
+            <div class="q raised"><span class="tk on"></span><span class="t">Coming up on 8 weeks — worth continuing?<span class="ans">Min 8, recommending 12. Stay on it 4 more weeks.</span></span></div>
+            <div class="q raised"><span class="tk on"></span><span class="t">Which ear, before?<span class="ans">Both last time; left only now.</span></span></div>
+            <div class="q"><span class="tk"></span><span class="t">Day 53 of 56 on Royal Canin Selected Protein.<small>from the trial</small></span></div>
+          </div>
+          <div class="rowcard"><div class="plan"><span class="ico doc">▤</span><span class="t"><b>Paperwork</b><span>1 photo · add a photo or a PDF</span></span><span class="go">Add</span></div></div>
+          <div class="sec-label quiet-sec">The plan · after the room</div>
+          <div class="rowcard quiet-sec">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span class="chips"><span class="chip">Keep</span><span class="chip">Extended</span><span class="chip">Ended</span><span class="chip">Switched</span></span></span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Started something new?</b><span class="sug"><span class="chip">Motozol again?</span><span class="chip">Add</span></span></span></div>
+            <div class="plan"><span class="ico med">⚖</span><span class="t"><b>Weighed at the clinic?</b></span><span class="go">Add</span></div>
+          </div>
+          <div class="btn-stack"><div class="btn primary">Save Nyx's visit</div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">H2 · Today <span class="tag cur">current</span></span><p>The same page on the day. Notes move to the first screenful, because the room is for writing (the Designer's condition). The list gains ticks — one tap says <i>asked</i>; a second, quieter tap opens the answer under the row, so the checklist never turns into a form. Paperwork appears. The plan appears below, quiet, for after the room: the rows read the record first (G3), <i>Extended</i> opens the trial extension track's own sheet, <i>Started something new?</i> offers the July course back. <i>Save</i> is the primary all day; nothing typed is fine. Borrowed rules: Banfield's and Digitail's day-of controls appearing on the same card; Granola's brief becoming the scratchpad.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Nyx</span><span class="ph-title"></span><span class="ph-x">⋯</span></div>
+          <div><div class="ph-eyebrow">Visited · Tue, Sep 16</div><div class="ph-pagetitle" style="font-size:21px">Nyx's vet visit</div><div class="ph-sub">Completely Cat Clinic · Dr Miller · Potential ear infection</div></div>
+          <div class="phase"><span class="seg">Booked</span><span class="seg">Today</span><span class="seg on">Visited</span></div>
+          <div class="sec-label">What the vet said</div>
+          <div class="field" style="border:0;padding:0;background:transparent"><div class="val" style="font-weight:400;font-size:12.5px;line-height:1.45">8.22 lbs — Dr Miller wasn't very concerned about this loss. No fever. Lungs sound good. Diet trial: min 8 weeks, recommending 12. Ears: left one has dirt in it, right looks good. Treat left ear, Motozol once a day. Steroid for the coughing…</div><div class="readmore">Read more</div></div>
+          <div class="sec-label">The plan</div>
+          <div class="rowcard">
+            <div class="plan"><span class="ico diet">◐</span><span class="t"><b>Royal Canin Selected Protein</b><span>extended to 12 weeks · ends Oct 18</span></span><span class="settled">Extended</span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Motozol</b><span>left ear · once a day</span></span><span class="settled">Started</span></div>
+            <div class="plan"><span class="ico med">Rx</span><span class="t"><b>Pred</b><span>10 days full strength</span></span><span class="settled">Started</span></div>
+            <div class="plan"><span class="ico med">⚖</span><span class="t"><b>8.22 lb</b><span>weighed at the clinic</span></span><span class="settled">Logged</span></div>
+            <div class="plan"><span class="ico med">+</span><span class="t"><b>Add to this visit</b></span><span class="go">Add</span></div>
+          </div>
+          <div class="sec-label">Raised · 2 of 3</div>
+          <div class="rowcard">
+            <div class="q raised"><span class="tk on"></span><span class="t">Worth continuing the trial?<span class="ans">Min 8, recommending 12. Stay on it 4 more weeks.</span></span></div>
+            <div class="q raised"><span class="tk on"></span><span class="t">Which ear, before?<span class="ans">Both last time; left only now.</span></span></div>
+          </div>
+          <div class="sec-label">Paperwork · in Vet Files</div>
+          <div class="rowcard"><div class="row"><span class="v">Photo — Sep 16<small>added at the visit</small></span><span class="chev">›</span></div></div>
+        </div></div>
+        <div class="opt-cap"><span class="k">H3 · Visited <span class="tag cur">current</span></span><p>The same page as the record, in the order a good After Visit Summary uses: what was said, the plan as it was decided, what was raised, the paperwork. No primary — this is the record; ⋯ holds <i>Edit</i>. The notes show in full by default, with <i>Read more</i> only past a long threshold (Thumbprint's rule). <i>Add to this visit</i> reopens the plan rows, which makes "finish it later" true. Borrowed rules: the After Visit Summary is read, not filled; NHS keeps the documents on the past row; Lyft keeps time-bounded actions on the ride.</p></div>
+      </div>
+    </div>
+
+    <div class="rail rail-2" style="margin-top:34px">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="home-hd"><div class="l"><div class="avatar"></div><div class="home-name">Nyx<i>▾</i></div></div><div class="r"><span class="ask-pill">Ask</span><div class="you"></div></div></div>
+          <div class="sec-label">Home · five days out through the day before</div>
+          <div class="appt"><div class="date"><b>16</b><span>Sep</span></div><div class="main"><div class="t">Vet visit on Tuesday</div><div class="s">Completely Cat Clinic</div><div class="doors"><span class="door">Get ready</span></div></div></div>
+          <div class="sec-label" style="margin-top:6px">Home · the day</div>
+          <div class="appt"><div class="date"><b>16</b><span>Sep</span></div><div class="main"><div class="t">Today · Completely Cat Clinic</div><div class="s">Nyx's vet visit</div><div class="doors"><span class="door">Open</span></div></div></div>
+          <div class="sec-label" style="margin-top:6px">Home · the day after, nothing saved</div>
+          <div class="appt"><div class="date"><b>16</b><span>Sep</span></div><div class="main"><div class="t">Did Tuesday's visit happen?</div><div class="doors"><span class="door">Yes — how did it go?</span><span class="door ghost">It moved</span><span class="door ghost">It didn't</span></div></div></div>
+          <div class="barhint" style="margin-top:auto;text-align:left">Every door opens the one page. Home gains no write; <i>It didn't</i> stays the third class.</div>
+        </div></div>
+        <div class="opt-cap"><span class="k">H4 · Home — the same object's lead fact, by the clock <span class="tag cur">current</span></span><p>Flighty's rule: one card, the clock picks the fact on top. Inside the window the strip says what is coming and offers one door; on the day it names the visit and opens it; after an unsaved day it asks once, with the third answer the strip lacked. Nothing here is a form, and every door lands on the same page — the strip is the moment, the page is the home (G2 unchanged).</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span class="ph-spacer"></span></div>
+          <div class="pet-hero"><div class="pet-avatar"></div><div><div class="pet-name">Nyx</div><div class="pet-sub">Cat · 8.22 lb</div></div></div>
+          <div class="card">
+            <div class="card-head"><h4>Vet visits</h4><span class="card-count">1 visit</span></div>
+            <div class="appt" style="box-shadow:none;border-radius:12px;padding:10px 11px;margin-top:10px;background:var(--a-subtle)"><div class="date"><b>16</b><span>Sep</span></div><div class="main"><div class="t">Tue · in 4 days</div><div class="s">Completely Cat Clinic</div></div></div>
+            <div class="cardbtn ghost">Open</div>
+          </div>
+          <div class="sec-label" style="margin-top:8px">The list · one, upcoming then past</div>
+          <div class="rowcard">
+            <div class="visit"><div class="d"><b>16</b><span>Sep</span></div><div class="m"><b>Nyx's vet visit</b><span>Completely Cat Clinic · in 4 days</span></div><span class="chev">›</span></div>
+            <div class="visit" style="opacity:.75"><div class="d"><b>16</b><span>Jul</span></div><div class="m"><b>Ear infection</b><span>Completely Cat Clinic · visited</span><div class="pillrow"><span class="mini med">Motozol</span></div></div><span class="chev">›</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap"><span class="k">H5 · The Pet tab and the list — one door each <span class="tag cur">current</span></span><p>The card shows the next visit and one door, <i>Open</i>; the list is one list, upcoming above past (TripIt), every row the same page in a different face. <i>Take notes</i>, <i>Get ready</i> and <i>How did it go?</i> stop being doors, because they are sections and a primary on the page they used to lead to.</p></div>
+      </div>
+    </div>
+
+    <div class="note-grid">
+      <div class="note research"><b>One object, two faces.</b> The same row is <i>upcoming</i> then <i>past</i>; day-of is a control that appears on the card, never a page — MyChart, Kaiser, NHS, Zocdoc, Banfield, Digitail, Vetster, Flighty, United, Uber. All fetched.</div>
+      <div class="note research"><b>One named prepare door with a window.</b> Epic's own label is <i>Get Ready</i>; Zocdoc's card verb is <i>Prepare</i>; edits live inside it and freeze during the slot.</div>
+      <div class="note research"><b>Time gates content, never doors.</b> Airbnb's check-in instructions appear 48 h before; Amazon's map at "10 stops away"; United's home screen becomes the trip at T-48 h. The entry point never moves.</div>
+      <div class="note research"><b>After is appended to the same record, often time-bounded.</b> Uber's receipt under the amount; Lyft's tip for 72 h; Vetster's 48 h message channel; TripIt's past trips lower on one list.</div>
+      <div class="note research"><b>The after-artifact is read, not filled; changes land on standing objects.</b> No human-health product asks the patient to record what changed; Digitail's discharge notes update the Medications tab; Pawtient turns the visit into one-tap suggested entries; "what's next" is a pointer to the next row.</div>
+      <div class="note research"><b>One note, three states.</b> Granola's brief becomes the scratchpad becomes the summary on one page; Medcorder holds questions, notes and the plan for next time on one appointment detail; the inert calendar event is the failure mode.</div>
+      <div class="note research"><b>Findability is the recurring failure.</b> NN/g: "Several participants had difficulty finding information or features that existed." One Medical's Care Plan tab, Carbon's care plan in Messages, Delta's day-of tab, PetDesk's prep in a generic To Do list.</div>
+      <div class="note route"><b><code>app/rundown.tsx</code>'s Get ready mode</b> → the Booked face (H1). The rundown keeps its own screen for Ask, one line away.</div>
+      <div class="note route"><b><code>app/vet-visits/at-the-vet.tsx</code></b> → the Notes and To raise sections of the Today face (H2).</div>
+      <div class="note route"><b><code>app/vet-visits/after.tsx</code></b> → the plan section of the Today face + <i>Save</i>; the saved moment (D2) stays as the completion beat.</div>
+      <div class="note route"><b><code>app/vet-visits/[id].tsx</code></b> → the Visited face (H3). <code>edit.tsx</code> and <code>edit-appointment.tsx</code> stay as ⋯ destinations. Five screens become one page with three faces and two editors.</div>
+      <div class="note amber"><b>Decision · rule on the one page.</b> <i>Deciding:</i> whether the companion is rebuilt as one page with three faces (§H) or kept as the built screens with every door present (round 4's G1b, now folded into §H). <i>Options:</i> (a) §H — recommended; it is what the research found everywhere the pattern works, and it contains G1b's doors. (b) G1b alone — doors and strings, no rebuild; the smallest step, and the one the research says still leaves the artifact split across screens. <i>Consequence:</i> (a) reopens spec §4.1 B–D as one section and retires the C–D frames; it is a consolidation PR series (the pages exist, the sections exist; the work is one route and three faces), no new schema beyond the REC 4 question. (b) is REC 1 as filed.</div>
+      <div class="note amber"><b>Decision · the verdict's home (REC 4, R-D1).</b> The research says the visit page should read like a summary and changes should land on the standing objects — which the plan rows already do. The gap is only that <i>Keep</i> leaves no trace. <i>Options:</i> (a) a per-visit verdict row (round 4); (b) a <i>reviewed at</i> mark on the course. Either lets H3 render; (a) keeps history per visit.</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ F · OPEN + NOT DRAWN ═══════════════ -->
+  <section>
+    <p class="sec-eyebrow">F · Open decisions and what is deliberately not drawn</p>
+    <h2 class="serif">Four open items, each decided on its issue at build</h2>
+    <div class="note-grid">
+      <div class="note amber"><b>Delete a visit while the report is held (VV-1).</b> The Product Owner's catch: `vet_visits.deleted_at` reaches the report's window reader inside `generate-report`, which sits under the CUL-19 deploy hold. Until it runs, Home says "since last visit" moved back while the production report still keys off the deleted row. Options: the delete confirm names the lag; visit delete waits for the redeploy; CUL-19 names this reader as a third rider. Decide on VV-1.</div>
+      <div class="note amber"><b>The window default (VV-3).</b> Drawn at five days; the PM is fine with three to seven. A constant, changed in one place.</div>
+      <div class="note amber"><b>The spoken announcement (v1.x, VV-5).</b> T&amp;S: default-on and locked. Designer: tap-only. Dr. Chen: it is what makes the staff comfortable. Unchanged; decided when v1.x is picked up.</div>
+      <div class="note amber"><b>Files and Visits as two cards (tabled by the PM).</b> "It's now weird to have files as well as visits." Not v1; a later question about whether Vet Files becomes a section inside Visits.</div>
+      <div class="note rose"><b>Live suggestions in the room.</b> Punted by the PM; the team's dissent stands recorded in the spec §9.</div>
+      <div class="note rose"><b>The microphone in the submission binary.</b> A toggle hides a screen; it cannot hide a purpose string. VV-5 never merges before the submission build is cut.</div>
+    </div>
+  </section>
+
+  <div class="foot"><b>Round 5 replaces round 4's fork with one proposal (§H, H1–H5)</b> and keeps §G's detail frames as the sections of that page; G1 and G1b left the page (git <b>253499e</b>). The research behind it is <b>docs/research/2026-09-vet-visit-lifecycle-design-inspiration.md</b> (frozen, 2026-09-17). <b>Round 4 is additive over round 3:</b> it adds §G (G1–G6) from the 2026-09-17 synthetic review and the PM's four reactions, redraws nothing in place, and retires nothing — the fork in G1/G1b is unruled, so the C–D frames stay current until it is. The review itself is published beside this page (<i>Vet Visits Beta Review</i>, round 1). <b>Round 3 is additive over round 2</b> (which superseded round 1, git <b>4f4e6f1</b>; the retired direction A3 left the page then). Round 3 adds E4 and E5 for <b>CUL-952</b> and retires nothing. The spec that pairs with this page is <b>docs/nyx-vet-visits-requirements.md</b> (v1.0, build-ready; decision record in §0); the evidence is <b>docs/research/2026-09-vet-visit-companion-evidence.md</b>; the issue is <b>CUL-878</b>; the build track is the Linear project <b>Vet visits — the appointment companion</b>. Phone frames use the app's fixed tokens from <b>constants/theme.ts</b>; the page chrome is theme-aware.</div>
+</div>
