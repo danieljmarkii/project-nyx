@@ -162,7 +162,7 @@ import {
 } from './trial.ts'
 // B-494's flag carries the refusal fact verbatim rather than flattening it, so the
 // band and the trial block on the same page cannot state different numbers.
-import { carriesTrialDiet, COVERAGE_FLOOR, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
+import { carriesTrialDiet, COVERAGE_FLOOR, VEHICLE_HOW_GIVEN, type TrialDietRefusal, type TrialSpecies } from '../../../lib/dietTrial.ts'
 import { weightStory, type WeightPoint, type WeightReading } from '../../../lib/weightStory.ts'
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 export type {
@@ -6232,7 +6232,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (d.pairedEventId) paired.add(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
       if (!inWindow(d.occurredAt)) continue
       const resolves = d.pairedEventId !== null && windowMealIds.has(survivorOfMember.get(d.pairedEventId) ?? d.pairedEventId)
-      const saysVehicle = d.howGiven === 'in_food' || d.howGiven === 'in_treat' || d.howGiven === 'in_pill_pocket'
+      const saysVehicle = d.howGiven != null && VEHICLE_HOW_GIVEN.has(d.howGiven.trim().toLowerCase())
       if (!resolves && (saysVehicle || d.pairedEventId !== null)) unresolvedVehicleDoses++
     }
     if (paired.size === 0) return unresolvedVehicleDoses > 0 ? { labels: [], feedings: 0, countedInTally: 0, unresolvedDoses: unresolvedVehicleDoses } : null

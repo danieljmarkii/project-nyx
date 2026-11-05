@@ -256,6 +256,11 @@ export interface TrialDose {
    *  PRESCRIBED DIET — see `classifyDose`. */
   vehicleFoodItemId?: string | null;
   vehicleFoodKey?: string | null;
+  /** CUL-2525 — `medication_administrations.how_given` (migration 022): 'direct' |
+   *  'in_food' | 'in_treat' | 'in_pill_pocket', or null. A dose logged as given in
+   *  food with NO pairing is still a dose given in food: its vehicle is unknown, not
+   *  absent. Optional: a caller that does not pass it keeps the pairing-only read. */
+  howGiven?: string | null;
 }
 
 /** An overlapping `free_choice` feeding arrangement (§5.6). */
@@ -1370,6 +1375,37 @@ export interface OralRouteExposure {
  * after the exposure it reports; the setup line acts on day 0.
  */
 export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExposure | null {
+  const route = doseRouteOf(ctx, dose);
+  return route?.kind === 'exposure' ? route.exposure : null;
+}
+
+/** CUL-2525 — a dose given inside a food ON the allowed list. Not an exposure (the
+ *  pill hidden in the prescribed diet, see `doseRouteOf`), and still a fact the vet
+ *  needs: the page that is silent about it reads as "no dose went in food". */
+export interface OralRouteOnList {
+  eventId: string;
+  occurredAt: string;
+  drugLabel: string | null;
+  /** The allowed food the vehicle matched, by its allowed-list label. */
+  vehicleLabel: string;
+}
+
+export type DoseRoute =
+  | { kind: 'exposure'; exposure: OralRouteExposure }
+  | { kind: 'on_list'; onList: OralRouteOnList };
+
+/** VEHICLE-SAYING `how_given` values (migration 022). One list: the report's appendix B
+ *  row reads the same three (CUL-2509), so the two cannot disagree about what "given in
+ *  food" means. */
+export const VEHICLE_HOW_GIVEN: ReadonlySet<string> = new Set(['in_food', 'in_treat', 'in_pill_pocket']);
+
+/**
+ * CUL-2525 — the ONE decision for a dose by mouth: an exposure (rung 4), a dose inside
+ * an allowed food, or neither. `classifyDose` is its exposure half; the on-list half
+ * exists so a surface can say a vehicle was in play without a second predicate that
+ * re-decides the window, the adherence rule or the allowed-list match (C-4).
+ */
+export function doseRouteOf(ctx: TrialContext, dose: TrialDose): DoseRoute | null {
   const dayIndex = dayIndexOf(ctx, dose.occurredAt);
   if (!isInTrialWindow(ctx, dayIndex)) return null;
 
@@ -1393,11 +1429,20 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
   const adherence = dose.adherence?.trim().toLowerCase() ?? null;
   if (adherence === 'missed' || adherence === 'refused') return null;
 
+  const exposure = (trigger: OralRouteTrigger): DoseRoute => ({
+    kind: 'exposure',
+    exposure: { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger },
+  });
   const form = dose.form?.trim().toLowerCase() ?? null;
-  if (form === 'chewable') {
-    return { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'chewable' };
+  if (form === 'chewable') return exposure('chewable');
+  if (!dose.pairedEventId) {
+    // CUL-2525 (QUIET): logged "in food / in a treat / in a pill pocket" with no meal
+    // paired. The pairing is optional in the log sheet, so this is an ordinary record,
+    // and the closed-world rule below ("an UNKNOWN vehicle still counts") applied only
+    // to a PAIRED unknown: an unpaired one dropped off page 1 while appendix B named it.
+    const how = dose.howGiven?.trim().toLowerCase() ?? null;
+    return how !== null && VEHICLE_HOW_GIVEN.has(how) ? exposure('food_vehicle') : null;
   }
-  if (!dose.pairedEventId) return null;
 
   // THE VEHICLE HAS TO BE OFF THE LIST TO BE AN EXPOSURE. A daily pill hidden in
   // the PRESCRIBED DIET is the commonest way an owner gives a tablet on an
@@ -1407,13 +1452,17 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
   // vehicle resolves on the same identity rule as rung 1, so a re-photographed
   // bag of the trial diet is still the trial diet here too.
   const day = dayIndex as number;
-  if (matchAllowed(allowedFoodsOn(ctx, day), dose.vehicleFoodItemId ?? null, dose.vehicleFoodKey ?? null)) {
-    return null;
+  const hit = matchAllowed(allowedFoodsOn(ctx, day), dose.vehicleFoodItemId ?? null, dose.vehicleFoodKey ?? null);
+  if (hit) {
+    return {
+      kind: 'on_list',
+      onList: { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, vehicleLabel: hit.food.label },
+    };
   }
   // An UNKNOWN vehicle still counts: the food was not on the list as far as
   // anything can tell, and the closed-world rule says record it. What is lost is
   // attribution, not detection.
-  return { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'food_vehicle' };
+  return exposure('food_vehicle');
 }
 
 // ── §5.5 — the standing contamination fact (D-A) ─────────────────────────────
@@ -1982,6 +2031,10 @@ export interface TrialFacts {
   extensionCoveredDayIndices: number[];
   exposures: TrialExposureSummary;
   oralRoute: OralRouteExposure[];
+  /** CUL-2525 — doses given inside a food on the allowed list, from `doseRouteOf` over
+   *  the same doses and window as `oralRoute`. Absent when empty (older facts, and
+   *  the goldens that digest them, are unchanged by a record with none). */
+  oralRouteOnList?: OralRouteOnList[];
   contamination: ContaminationFact[];
   arrangementExposures: ArrangementExposure[];
   /** Null unless the floors below are cleared. Presence-only, like everything
@@ -3316,11 +3369,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   );
 
   const oralRoute: OralRouteExposure[] = [];
+  const oralRouteOnList: OralRouteOnList[] = [];
   for (const dose of input.doses ?? []) {
     const day = dayIndexOf(ctx, dose.occurredAt);
     if (day === null || day < exposureStart || day > evidenceEnd) continue;
-    const hit = classifyDose(ctx, dose);
-    if (hit) oralRoute.push(hit);
+    const route = doseRouteOf(ctx, dose);
+    if (route?.kind === 'exposure') oralRoute.push(route.exposure);
+    else if (route?.kind === 'on_list') oralRouteOnList.push(route.onList);
   }
 
   const allowedSetUnavailable =
@@ -3564,6 +3619,9 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       antigenTally: [...antigens.values()].sort((a, b) => b.feedings - a.feedings),
     },
     oralRoute,
+    // Present only when it holds a dose: a record with none stays byte-identical to the
+    // facts it produced before the field existed (the CUL-2094 goldens digest them).
+    ...(oralRouteOnList.length > 0 ? { oralRouteOnList } : {}),
     trialDietRefusal,
     rangeRefusal,
     // Measured on the RANGE fact's own stamps, not the recency window's — the live

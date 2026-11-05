@@ -817,6 +817,73 @@ Deno.test('C3 — a pill hidden in the PRESCRIBED diet is not 32 exposures', () 
   assert.equal(snap.trial?.oralRoute.length, 0, 'the vehicle IS the trial diet')
 })
 
+// ── CUL-2525 — doses given in food, on page 1 and in appendix B (Nyx's shape) ──
+
+/** Nyx's record, 2026-11-04, by shape: a completed trial, daily pills hidden in the ALLOWED wet
+ *  food, one dose logged "in food" with no meal paired, a direct dose, and an off-list chicken
+ *  treat carrying a dose AFTER the trial ended. Page 1 said nothing about doses in food. */
+function nyxVehicleShape(): ReportInput {
+  const input = wellLoggedTrialInput({
+    medicationItems: [
+      { id: 'mi-pred', genericName: 'prednisolone', brandName: null, strength: null, route: 'oral', isPrescription: true, form: 'tablet' },
+      { id: 'mi-cet', genericName: 'cetirizine', brandName: 'Zyrtec', strength: null, route: 'oral', isPrescription: false, form: 'capsule' },
+    ],
+  })
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].endedAt = '2026-06-25'
+  const dose = (eventId: string, date: string, item: string, extra: Partial<ReportInput['doses'][number]>) => {
+    input.events.push({ id: eventId, type: 'medication', occurredAt: at(date, '09:30:00'), occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: at(date, '09:30:00'), meal: null })
+    input.doses.push({ eventId, occurredAt: at(date, '09:30:00'), medicationId: null, medicationItemId: item, adherence: 'given', doseAmount: null, pairedEventId: null, ...extra })
+  }
+  input.doses = []
+  // Three pills in the trial diet itself (the vehicle IS on the list).
+  for (const d of ['2026-06-08', '2026-06-09', '2026-06-10']) {
+    const v = meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], time: '09:30:00' })
+    input.events.push(v)
+    dose(id('dose'), d, 'mi-pred', { pairedEventId: v.id, howGiven: 'in_food' })
+  }
+  // In food, no meal paired: the vehicle is unknown, and the closed-world rule counts it.
+  dose('dose-unpaired', '2026-06-12', 'mi-cet', { howGiven: 'in_food', adherence: 'partial' })
+  // Given directly: not a dose in food at all.
+  dose('dose-direct', '2026-06-13', 'mi-cet', { howGiven: 'direct' })
+  // An off-list chicken treat carrying a dose after the trial ended: appendix B's window only.
+  const treat = meal({ date: '2026-06-28', brand: 'Blue Buffalo', product: 'Chicken Puree', foodItemId: 'f-bb', foodType: 'treat', proteins: ['chicken'], time: '20:00:00' })
+  input.events.push(treat)
+  dose('dose-treat', '2026-06-28', 'mi-cet', { pairedEventId: treat.id, howGiven: 'in_food' })
+  return input
+}
+
+Deno.test('CUL-2525 — an unpaired dose logged in food is an oral-route exposure; a pill in the trial diet is stated, not counted', () => {
+  const snap = assembleReport(nyxVehicleShape())
+  const t = snap.trial!
+  assert.deepEqual(t.oralRoute.map((o) => [o.eventId, o.trigger]), [['dose-unpaired', 'food_vehicle']])
+  assert.equal(t.oralRouteOnList?.length, 3, 'the three pills in the allowed food')
+  assert.ok(t.oralRouteOnList!.every((o) => o.vehicleLabel === 'Royal Canin Hydrolyzed HP'))
+  assert.equal(t.mayClaimAllMatched, false, 'an unknown vehicle defeats the affirmative')
+})
+
+Deno.test('CUL-2525 — page 1 names the doses given in food, and appendix B quotes the same two counts', () => {
+  const text = plain(renderReport(assembleReport(nyxVehicleShape())))
+  // Page 1: both halves of the doses given in food during the trial.
+  assert.ok(/1 dose by mouth was logged as given inside a food off the allowed list or not identified \(Zyrtec\)/.test(text), 'the unpaired dose')
+  assert.ok(
+    /3 doses by mouth were logged as given inside a food on the allowed list \(Royal Canin Hydrolyzed HP × 3\), from Jun 8 to Jun 10, 2026 \(prednisolone\)/.test(text),
+    (text.match(/\d+ doses? by mouth were logged as given inside a food on the allowed list[^.]*/) ?? ['(absent)'])[0],
+  )
+  assert.ok(/1 dose by mouth during the trial may carry a protein/.test(text), 'the caveat fires on the unknown vehicle')
+  // Appendix B: the row's window-wide feedings, then page 1's split over the trial days.
+  const row = text.slice(text.indexOf('Food used to give medication'), text.indexOf('Entered as supplements'))
+  assert.ok(/4 feedings carried a dose/.test(row), row)
+  assert.ok(/During the trial, page 1 counts 3 doses given inside a food on the allowed list and 1 dose given in a food off the list or not identified\./.test(row), row)
+})
+
+Deno.test('CUL-2525 — mutation: a pill in the trial diet with no dose in food leaves both lines silent', () => {
+  const input = nyxVehicleShape()
+  input.doses = input.doses.filter((d) => d.eventId === 'dose-direct')
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/by mouth were logged as given inside a food|page 1 counts/.test(text))
+})
+
 // ── §5.4 — identity is brand+product, not the UUID ───────────────────────────
 
 Deno.test('§5.4 — a re-photographed bag of the trial diet does not flag off-diet', () => {

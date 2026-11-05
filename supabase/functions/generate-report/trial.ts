@@ -69,6 +69,7 @@ import {
   type Interpretability,
   type NewFoodIntroduced,
   type OralRouteExposure,
+  type OralRouteOnList,
   type TrialDietRefusal,
   type TrialDose,
   type TrialFeeding,
@@ -178,6 +179,8 @@ export interface TrialDoseSource {
   medicationItemId: string | null
   adherence: string | null
   pairedEventId: string | null
+  /** CUL-2525 — `how_given`: an unpaired dose logged in food is still a vehicle dose. */
+  howGiven?: string | null
 }
 
 export interface TrialMedItemSource {
@@ -812,6 +815,12 @@ export interface TrialBlock {
   mayStateRecordClean: boolean
 
   oralRoute: OralRouteExposure[]
+  /**
+   * CUL-2525 — doses by mouth given inside a food ON the allowed list, over the same doses and
+   * window as `oralRoute` (one decision, `doseRouteOf`). Not exposures; page 1 and appendix B
+   * state them so a vet can see a vehicle was in play. Optional: older copies lack it.
+   */
+  oralRouteOnList?: OralRouteOnList[]
   /**
    * `startRecorded` is FALSE when the bowl's `active_from` was never captured (B-233: the
    * column holds the day the owner first LOGGED the food, not the day the bowl went down,
@@ -1668,6 +1677,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // `rangeRefusal === null` all moved into `mayStateRecordClean` above.
       true,
     oralRoute: facts.oralRoute,
+    oralRouteOnList: facts.oralRouteOnList ?? [],
     arrangementExposures: facts.arrangementExposures.map((a) => ({
       label: a.label,
       // Read off the ORIGINAL input, not the mapped arrangement: the mapping above
@@ -1876,6 +1886,7 @@ function mapDoses(
       form: item?.form ?? null,
       pairedEventId: d.pairedEventId,
       adherence: d.adherence,
+      howGiven: d.howGiven ?? null,
       vehicleFoodItemId: vm?.foodItemId ?? null,
       vehicleFoodKey:
         vm && (vm.brand !== null || vm.productName !== null) ? trialFoodKey(vm.brand, vm.productName) : null,

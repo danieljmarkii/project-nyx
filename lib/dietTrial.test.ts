@@ -15,6 +15,7 @@ import {
   MIN_INTERPRETABLE_DAYS,
   buildTrialContext,
   classifyDose,
+  doseRouteOf,
   classifyFeeding,
   computeTrialFacts,
   contaminationNote,
@@ -466,6 +467,46 @@ describe('§5.3 rung 4 — the oral route', () => {
         adherence: 'given',
       }),
     ).toBeNull();
+  });
+
+  // CUL-2525 (QUIET): the pairing is optional in the log sheet, so "given in food" with no
+  // meal paired is an ordinary record. Its vehicle is unknown, and an unknown vehicle counts.
+  it.each(['in_food', 'in_treat', 'in_pill_pocket'])('an unpaired dose logged %s is a food-vehicle exposure', (howGiven) => {
+    const hit = classifyDose(ctx(), {
+      eventId: 'd4',
+      occurredAt: at('2026-07-15'),
+      drugLabel: 'Zyrtec',
+      form: 'capsule',
+      pairedEventId: null,
+      adherence: 'partial',
+      howGiven,
+    });
+    expect(hit?.trigger).toBe('food_vehicle');
+  });
+
+  it('an unpaired dose given directly, or missed in food, is not', () => {
+    const base = { eventId: 'd5', occurredAt: at('2026-07-15'), drugLabel: 'Zyrtec', form: 'capsule', pairedEventId: null };
+    expect(doseRouteOf(ctx(), { ...base, adherence: 'given', howGiven: 'direct' })).toBeNull();
+    expect(doseRouteOf(ctx(), { ...base, adherence: 'missed', howGiven: 'in_food' })).toBeNull();
+    expect(doseRouteOf(ctx(), { ...base, adherence: 'given' })).toBeNull();
+  });
+
+  it('a pill in an allowed food is on the list, never an exposure, and names the food', () => {
+    const route = doseRouteOf(ctx(), {
+      eventId: 'd6',
+      occurredAt: at('2026-07-15'),
+      drugLabel: 'Prednisolone',
+      form: 'tablet',
+      pairedEventId: 'meal-10',
+      adherence: 'given',
+      howGiven: 'in_food',
+      vehicleFoodItemId: 'wet-duck',
+      vehicleFoodKey: null,
+    });
+    expect(route).toEqual({
+      kind: 'on_list',
+      onList: { eventId: 'd6', occurredAt: at('2026-07-15'), drugLabel: 'Prednisolone', vehicleLabel: 'Royal Canin Duck Wet' },
+    });
   });
 
   // §6.8 — a missed critical dose is a worse outcome than a contaminated trial.
