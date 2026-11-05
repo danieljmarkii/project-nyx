@@ -939,12 +939,13 @@ function buildLeadChart(
     .map((c, i) => ({ c, i, l: colLabel(c, unit) }))
     .filter((x) => x.l !== null)
   if (partials.length > 0) marks.add('partial')
-  // CUL-2360: a short last column draws its bars as outlines ("so far"), so fewer days can never
-  // read as fewer entries; the twin says so wherever such a bar is drawn.
+  // CUL-2360: a short last column draws its count bars as outlines ("so far"), so fewer days can
+  // never read as fewer entries; the twin says so wherever such a bar is drawn.
   const soFarIdx = soFarCol(columns, unit)
   const soFarDrawn =
     soFarIdx !== null &&
-    rows.some((r) => (r.kind === 'sign' && r.counts[soFarIdx] > 0) || (r.kind === 'intake' && (r.cells[soFarIdx]?.notFinished ?? 0) > 0))
+    // Count bars only: an intake bar is a share of the meals rated and stays filled.
+    rows.some((r) => r.kind === 'sign' && r.counts[soFarIdx] > 0)
   const fromNote = dayRowFrom !== null ? `, the first day with an entry in this window` : ''
   const head = `By ${unitWord} from ${startLabel}${fromNote}${
     partials.length > 0

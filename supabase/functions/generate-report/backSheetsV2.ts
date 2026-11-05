@@ -708,15 +708,16 @@ export function trialReadingOf(snap: ReportSnapshot): string | null {
   const m = /<div class="callout"><span class="k">Interpreting this record<\/span>([\s\S]*?)<\/div>/.exec(section)
   if (!m || m[1].includes('<div')) throw new Error('trialReadingOf: v1 printed “Interpreting this record” but its callout could not be lifted whole')
   const diet = `on ${sheetHeaded(DIET_SHEET_TITLE)}`
+  // Only v1's own pointer phrases move, each anchored on the words v1 writes after it ("(above), so
+  // …", "; above)."), never a bare "above": owner-typed names (a food, a drug) sit inside this
+  // callout, and "Cerenia (dose above)" is the owner's text, not a pointer (adversarial pass 1 on
+  // PR-29: a guard on the bare word made that name fail the whole report).
   const body = m[1]
     .trim()
     .replace(/(flag fires (?:on the trial diet|over meals inside the trial)) \(above\)/g, '$1 (in the flags above)')
-    .replace(/; above\)/g, `; ${diet})`)
-    .replace(/ \(above\)/g, ` (${diet})`)
-  const html = v2Pointers(body, snap, null).trim()
-  assertNoV1Pointer(html, 'trial-reading')
-  if (/\babove\b/.test(html.replace(/in the flags above/g, ''))) throw new Error('trialReadingOf: an “above” sheet 1 cannot honour')
-  return html
+    .replace(/; above\)\./g, `; ${diet}).`)
+    .replace(/ \(above\), so /g, ` (${diet}), so `)
+  return v2Pointers(body, snap, null).trim()
 }
 
 function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot, here: string): BackBlockV2 | null {

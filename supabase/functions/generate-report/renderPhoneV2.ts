@@ -118,7 +118,7 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], ax
   return rowWrap(r.label, r.lead ? 'rl lead' : 'rl', rowSvg(pid, base + 2, parts.join(''), hatched))
 }
 
-function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[], pid: string, unit: LeadChart['unit']): string {
+function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[], pid: string): string {
   const n = cols.length
   const top = SVG_TEXT_MIN + 2
   const base = top + BAR_H
@@ -136,9 +136,10 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     const x = x0(i, n) + (colW(n) - w) / 2
     const refusedH = (cell.refused / cell.rated) * BAR_H
     const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
-    const sf = i === soFarCol(cols, unit) ? ' sofar' : ''
-    if (refusedH > 0) parts.push(`<rect class="bar lead${sf}" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
-    if (partlyH > 0) parts.push(`<rect class="bar partly${sf}" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
+    // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
+    // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
+    if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
+    if (partlyH > 0) parts.push(`<rect class="bar partly" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, base - refusedH - partlyH - 2, `${cell.notFinished} of ${cell.rated}`))
   })
   return rowWrap(r.label, 'rl lead', rowSvg(pid, base + 2, parts.join(''), hatched), '0 to 100% of rated')
@@ -225,7 +226,7 @@ export function chartHtml(chart: LeadChart): string {
   ;[...signish, ...spans].forEach((r, i) => {
     const pid = `v2h${i}`
     if (r.kind === 'sign') rows.push(signRow(r, chart.columns, axisMax, chart.unit, pid))
-    else if (r.kind === 'intake') rows.push(intakeRow(r, chart.columns, pid, chart.unit))
+    else if (r.kind === 'intake') rows.push(intakeRow(r, chart.columns, pid))
     else if (r.kind === 'coverage') rows.push(coverageRow(r, chart.columns, pid))
     else rows.push(spanRow(r, chart.columns, pid))
   })

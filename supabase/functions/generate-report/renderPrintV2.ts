@@ -98,7 +98,7 @@ function signRow(r: Extract<ChartRow, { kind: 'sign' }>, cols: ChartColumn[], to
   return parts.join('')
 }
 
-function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[], top: number, unit: LeadChart['unit']): string {
+function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[], top: number): string {
   const n = cols.length
   const base = top + SIGN_ROW_H - 4
   const parts: string[] = [rowLabel(r.label, base - 2, 'rl lead'), rowLabel('0 to 100% of rated', base + 8, 'rl sub')]
@@ -114,9 +114,10 @@ function intakeRow(r: Extract<ChartRow, { kind: 'intake' }>, cols: ChartColumn[]
     const x = x0(i, n) + (colW(n) - w) / 2
     const refusedH = (cell.refused / cell.rated) * BAR_H
     const partlyH = ((cell.notFinished - cell.refused) / cell.rated) * BAR_H
-    const sf = i === soFarCol(cols, unit) ? ' sofar' : ''
-    if (refusedH > 0) parts.push(`<rect class="bar lead${sf}" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
-    if (partlyH > 0) parts.push(`<rect class="bar partly${sf}" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
+    // An intake bar is a share of the meals rated, so a short week does not shorten it: it stays
+    // filled, refused solid, never hollowed (adversarial pass 1 on PR-29: Cooper's newest column).
+    if (refusedH > 0) parts.push(`<rect class="bar lead" x="${x.toFixed(1)}" y="${(base - refusedH).toFixed(1)}" width="${w.toFixed(1)}" height="${refusedH.toFixed(1)}"/>`)
+    if (partlyH > 0) parts.push(`<rect class="bar partly" x="${x.toFixed(1)}" y="${(base - refusedH - partlyH).toFixed(1)}" width="${w.toFixed(1)}" height="${partlyH.toFixed(1)}"/>`)
     parts.push(haloText(x + w / 2, Math.max(top + 8, base - refusedH - partlyH - 2), `${cell.notFinished} of ${cell.rated}`))
   })
   return parts.join('')
@@ -222,7 +223,7 @@ export function chartSvg(chart: LeadChart): string {
   const body: string[] = []
   for (const r of signish) {
     if (r.kind === 'sign') body.push(signRow(r, chart.columns, y, axisMax, chart.unit))
-    else if (r.kind === 'intake') body.push(intakeRow(r, chart.columns, y, chart.unit))
+    else if (r.kind === 'intake') body.push(intakeRow(r, chart.columns, y))
     else if (r.kind === 'coverage') body.push(coverageRow(r, chart.columns, y))
     y += SIGN_ROW_H
   }

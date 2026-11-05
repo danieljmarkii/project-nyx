@@ -263,3 +263,31 @@ Deno.test('CUL-2360 N9 — no mark or label on any fixture’s chart runs past t
     }
   }
 })
+
+// ── Adversarial pass 1 on PR-29 ──────────────────────────────────────────────
+
+Deno.test('pass 1 — an owner-typed name with "above" in it builds, prints verbatim, and is never taken for a pointer', () => {
+  for (const name of ['Cerenia (dose above)', 'Metronidazole (see above)', 'same as above']) {
+    const s = structuredClone(nyxLiveSnapshot())
+    assert.ok(s.trial && s.trial.medicationOverlap.length > 0)
+    s.trial.medicationOverlap[0] = { ...s.trial.medicationOverlap[0], drugName: name }
+    const d = docOf(s) // threw before the fix: the whole v2 report failed
+    const r = block(d, 'trial_reading')
+    assert.ok(r)
+    assert.ok(textOf(r.html).includes(name), `“${name}” prints as the owner typed it`)
+  }
+})
+
+Deno.test('pass 1 — the intake row’s short last column stays filled: a share of meals rated is not shortened by fewer days (Cooper 4 of 12)', () => {
+  const d = docOf(cooper())
+  const c = chartOf(d)
+  assert.equal(c.columns[c.columns.length - 1].days, 6)
+  for (const html of [renderPrintV2(d), renderPhoneV2(d)]) {
+    const chart = html.slice(html.indexOf('data-block="lead-chart"'))
+    assert.ok(/class="bar partly" /.test(chart), 'the newest intake column is drawn filled')
+    assert.ok(!/class="bar partly sofar"/.test(chart), 'no intake bar is hollowed')
+  }
+  // The vomiting row (not the lead here) in that column still draws its outline, and the twin says so.
+  assert.match(renderPrintV2(d), /class="bar sofar"/)
+  assert.match(c.twin, /so far, its bars drawn as outlines/)
+})
