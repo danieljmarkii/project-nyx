@@ -70,6 +70,13 @@ Deno.test('CUL-2529 — the first sheet names the off-diet protein with its days
   assert.match(head, /Medication overlapping the trial: Motozol \([^)]*2 courses\), Prednisolone \([^)]*Sep 21–Oct 11[^)]*\) and Cetirizine HCl \(Zyrtec\) \(entered as a supplement[^)]*\), so a change in the signs cannot be attributed to the diet alone/, head)
   // Cold read at f8acadc: what each course was for rides with it (prednisolone was for the cough).
   assert.match(head, /Prednisolone \(by mouth, for coughing, Sep 21–Oct 11/, head)
+  // Final cold read: every indication the headline names has a row to trace to in the trial block.
+  const t = plain(html)
+  const named = [...head.matchAll(/(\w[\w ()]*?) \([^)]*?for ([a-z ]+?)(?:,|\))/g)]
+  assert.ok(named.length >= 2, `the headline names an indication for each course that has one (${named.length})`)
+  for (const m of named) {
+    assert.ok(t.includes(`· for ${m[2]} ·`), `"for ${m[2]}" (${m[1]}) traces to the trial block's medication row`)
+  }
   // On the first sheet: the headline precedes the weight block, the at-a-glance and the trial block.
   assert.ok(html.indexOf('<div class="headline">') < html.indexOf('<h2>Diet trial'), 'the drugs are named before the trial block')
 })

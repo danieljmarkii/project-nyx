@@ -6140,6 +6140,14 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     // which reads as continuous cover.
     const route = routeOfOverlap(snap, m)
     const routeBit = route ? ` &middot; ${h(routeLabel(route))}` : ''
+    // CUL-2529 (final cold read): what the course was for, from the same regimen the headline reads,
+    // so the first sheet's "for ear infection" has a row to trace to (appendix B lists indications of
+    // courses inside the window only, and this course can sit before it).
+    const ownCourse =
+      !m.recordStart && !m.adHocDoses && m.startedAt !== null
+        ? snap.medications.find((r) => r.drugName === m.drugName && r.startedAt.slice(0, 10) === m.startedAt!.slice(0, 10))
+        : undefined
+    const forBit = ownCourse?.indication?.trim() ? ` &middot; for ${h(ownCourse.indication.trim().toLowerCase())}` : ''
     const length = m.adHocDoses
       ? `ad-hoc, dosed on ${num(m.adHocDoses.inTrialInWindowDays)} of the trial days this report covers; ${num(
           m.adHocDoses.onRecord,
@@ -6159,7 +6167,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
           : m.adHocEarlierTrialDoseDays === null
             ? `; its dosing in the ${num(before)} earlier trial days this report leaves out <b>could not be counted</b>`
             : ''
-    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
+    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit}${forBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
   })
   // EXPLICITLY NOT JUDGED, and the sentence saying so is not optional: antipruritics
   // are permitted throughout a trial and a 2–3 week prednisolone course is a
