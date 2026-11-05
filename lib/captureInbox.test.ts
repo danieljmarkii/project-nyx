@@ -335,6 +335,15 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(1);
     });
 
+    it('clamps a tap stamped in the future to the ingest time (adversarial pass 2)', async () => {
+      const ahead = new Date(NOW.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+      await ingestCaptureRecords(db, files(validRecord({ createdAt: ahead })), new Set([PET]), NOW);
+      const evt = raw.prepare('SELECT updated_at FROM events WHERE id = ?').get(EVT) as { updated_at: string };
+      const meal = raw.prepare('SELECT updated_at FROM meals WHERE id = ?').get(MEAL) as { updated_at: string };
+      expect(evt.updated_at).toBe(NOW.toISOString());
+      expect(meal.updated_at).toBe(NOW.toISOString());
+    });
+
     it('stamps the TAP time as updated_at, so an old capture still pending ages from its tap (CUL-2489)', async () => {
       // Every pending count (and the SyncBanner's over-a-day line) ages a row from updated_at.
       // Stamped with the ingest time, a capture tapped days ago restarted that clock.
@@ -1004,6 +1013,15 @@ describe('summarizeUnclaimedInboxPayloads / readUnclaimedInbox / withUnclaimedIn
     expect(summarizeUnclaimedInboxPayloads([newer], mine)).toEqual({
       count: 1,
       oldestAt: '2026-07-01T08:00:00.000Z',
+      unknownAge: 0,
+    });
+  });
+
+  it('a capture stamped in the future ages from now, never from that future date', () => {
+    const now = new Date('2026-11-05T12:00:00.000Z');
+    expect(summarizeUnclaimedInboxPayloads([at('2027-03-01T08:00:00.000Z')], mine, now)).toEqual({
+      count: 1,
+      oldestAt: '2026-11-05T12:00:00.000Z',
       unknownAge: 0,
     });
   });

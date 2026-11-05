@@ -377,7 +377,10 @@ export async function ingestCaptureRecords(
     // tapped three days ago and still unsent restarted that clock here and silenced the
     // banner for another day. The server restamps updated_at on INSERT (migration 107), and
     // hydration never overwrites an unpushed row, so the local stamp only ages the row.
-    const tapIso = record.createdAt;
+    // Clamped to now: a tap stamped ahead (the phone's clock was fast at the tap) would
+    // otherwise hold the banner silent until that future date, and block remote edits to the
+    // row from hydrating until then (adversarial pass 2).
+    const tapIso = Date.parse(record.createdAt) > now.getTime() ? nowIso : record.createdAt;
     if (fenced()) {
       stoppedAt = index;
       break;
@@ -566,6 +569,7 @@ export interface UnclaimedInboxSummary {
 export function summarizeUnclaimedInboxPayloads(
   raws: readonly string[],
   petIds: ReadonlySet<string>,
+  now: Date = new Date(),
 ): UnclaimedInboxSummary {
   let count = 0;
   let unknownAge = 0;
@@ -591,7 +595,9 @@ export function summarizeUnclaimedInboxPayloads(
     if (petId !== null && petIds.size > 0 && !petIds.has(petId)) continue;
     count += 1;
     if (Number.isNaN(createdMs)) unknownAge += 1;
-    else if (createdMs < oldestMs) oldestMs = createdMs;
+    // A tap stamped in the future (a fast clock at the tap) ages from now, never from that
+    // future date, which would hold the banner silent until it passed.
+    else if (Math.min(createdMs, now.getTime()) < oldestMs) oldestMs = Math.min(createdMs, now.getTime());
   }
   return {
     count,
