@@ -3,7 +3,7 @@
 **Date:** 2026-11-05
 **One thing:** none — dispatched session, not this round's teach row
 
-Dispatched DISCOVERY row for CUL-2306. Shipped via the PR opened from `claude/vet-report-v2-pr26-11051930`, which names no issue because the run failed.
+Dispatched DISCOVERY row for CUL-2306. Shipped via #1447, which names no issue because the run failed.
 
 **What ran.** This is PR-35's re-run, under `docs/vet-report-v3-discovery/bakeoff/rerun/PREREGISTRATION.md` as written. It used the shipped pipeline on `main` `3171cd4` with the real models: 35 runs on the round's seven fixtures, the thin pair, and set v2's 110 items through `checkerDecision(verdict, { table, draft })`. Two blind model-persona judges read the result. The harness, the outputs, the judge sheets and a byte-reproducible `score.json` are in `rerun/2026-11-05-run/`.
 
