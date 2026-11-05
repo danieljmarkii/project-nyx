@@ -393,8 +393,10 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .carry .tile .v .arw{color:var(--faint);font-weight:400;}
 .carry .tile .l{font-size:8pt;color:var(--ink2);margin-top:3pt;line-height:1.35;}
 .carry .trend + .trend{margin-top:7pt;border-top:1px solid var(--hair);padding-top:7pt;}
-.carry .trend .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12pt;}
-.carry .trend .who{font-size:10pt;font-weight:700;}
+/* The name and its window stay one line, and the count drops under it when both don't fit: a
+   window wrapped beside the count is read out of order by a PDF's text layer. */
+.carry .trend .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:2pt 12pt;}
+.carry .trend .who{font-size:10pt;font-weight:700;white-space:nowrap;}
 .carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:8pt;margin-left:2px;}
 .carry .trend .big{text-align:right;line-height:1.1;}
 .carry .trend .big .n{font-size:16pt;font-weight:600;}

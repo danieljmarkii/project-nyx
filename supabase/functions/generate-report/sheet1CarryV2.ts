@@ -182,7 +182,9 @@ function withoutFallingHalves(div: string, snap: ReportSnapshot): string {
 export const UNDRAWN_CHART_CAPTIONS: ReadonlyArray<{ name: string; re: RegExp; to: string }> = [
   { name: 'the change marks’ key', re: /\s*<div class="chartlegend">[\s\S]*?<\/div>/g, to: '' },
   { name: 'the protein chart’s date row', re: /\s*<div class="subnote">Under each date: [\s\S]*?<\/div>/g, to: '' },
-  { name: 'the protein chart’s unread-week glyph', re: /\s*<div class="subnote"><svg class="key"[\s\S]*?<\/div>/g, to: '' },
+  // Only the glyph goes: its sentence is a caveat (a week with no off-diet feeding logged is not read
+  // as clean), and dropping it read as clean weeks (cold read at 4be169d).
+  { name: 'the protein chart’s unread-week glyph', re: /(<div class="subnote">)<svg class="key"[\s\S]*?<\/svg>: a week/g, to: '$1A week' },
   { name: 'the protein chart’s bars', re: /; each bar is one week, stacked by protein\./g, to: '.' },
   { name: 'the protein chart’s stacks', re: /, so a week&rsquo;s stack can total more than its feedings\./g, to: '.' },
   // The count beside it already names the trial days it covers; the pointer sentence after it stays.

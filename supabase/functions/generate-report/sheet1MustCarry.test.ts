@@ -193,7 +193,7 @@ function captionCut(leaf: V1Leaf): { rest: string; items: string | null } | null
   const key = /^a dashed vertical marks the week a treatment or diet change started; a flat-headed vertical marks the week one stopped: (.*)\. timing and overlap are in "reading the trend" below\.$/.exec(leaf.text)
   if (key) return { rest: '', items: key[1] }
   if (/^under each date: days with a meal logged, of [^.]*\. a treat alone does not count as a meal\.$/.test(leaf.text)) return { rest: '', items: null }
-  if (/^: a week with (?:no off-diet feeding recorded that is still not read as clean|meals logged on fewer than)/.test(leaf.text)) return { rest: '', items: null }
+  if (/^: a week with (?:no off-diet feeding recorded that is still not read as clean|meals logged on fewer than)/.test(leaf.text)) return { rest: leaf.text.slice(2), items: null }
   const cut = leaf.text
     .replace(/^(?:pre|post)-trial(?: and post-trial)? columns? falls? outside the trial days this report covers \([^)]*\) and are not counted here\. /, '')
     .replace(", so a week's stack can total more than its feedings.", '.')
@@ -436,6 +436,8 @@ Deno.test('CUL-2579 — no caption of an undrawn chart prints, and the counts be
   assert.ok(has(t, 'off-diet feedings (feedings not matched to the trial diet or the allowed list) over'), 'the protein chart’s count still prints')
   assert.ok(has(t, 'a food containing several proteins counts once for each'), 'its counting rule still prints')
   assert.ok(has(t, 'treats logged outside the trial are counted'), 'the outside-columns note’s pointer still prints')
+  // The unread-week note loses its glyph, never its caveat (cold read at 4be169d: QUIET when it went).
+  assert.ok(has(t, 'a week with no off-diet feeding recorded that is still not read as clean'), 'the not-read-as-clean caveat still prints')
   assert.equal(UNDRAWN_CHART_CAPTIONS.length, 7)
 })
 
