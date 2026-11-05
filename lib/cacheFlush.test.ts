@@ -193,6 +193,15 @@ describe('flushLegacyCatalogCachesIfNeeded (B-354 PR 2 — one-time per-account 
     db.close();
   });
 
+  it('keeps 600 inbox foods: past SQLite\'s 500-term compound limit, the flush still runs', async () => {
+    const db = freshDb();
+    const ids = Array.from({ length: 600 }, (_, i) => `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`);
+    db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ${ids.map((id) => `('${id}', 'x')`).join(', ')}, ('f2', 'Stranger');`);
+    expect(await flushLegacyCatalogCachesIfNeeded(asyncAdapter(db), CACHE_SCHEMA_VERSION, ids)).toBe(true);
+    expect(counts(db).foods).toBe(600);
+    db.close();
+  });
+
   it('never puts a keep id that is not a uuid into the SQL', async () => {
     const db = freshDb();
     db.exec(`INSERT INTO food_items_cache (id, brand) VALUES ('f1', 'A');`);

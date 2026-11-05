@@ -1275,6 +1275,13 @@ describe('ingestCaptureInbox: the first-deferral stamp (CUL-2542)', () => {
     expect(countUnclaimedInbox(new Set([PET]))).toBe(0);
   });
 
+  it('a sign-out leaves even a lone orphan stamp alone (the wipe owns the inbox)', async () => {
+    const orphan = stampFile('gone.json', daysAgo(3));
+    install([orphan]);
+    await ingestCaptureInbox(new Set([PET]), () => true);
+    expect(orphan.deleted).toBe(false);
+  });
+
   it('a sign-out mid-pass writes and deletes no stamp', async () => {
     const orphan = stampFile('gone.json', daysAgo(3));
     install([recordFile('w.json', { foodItemId: MISSING_FOOD }), orphan]);

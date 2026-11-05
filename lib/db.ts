@@ -100,10 +100,11 @@ export async function flushLegacyCatalogCachesIfNeeded(
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   const current = row?.user_version ?? 0;
   if (current >= target) return false;
-  const inboxKeep = keepFoodIds
-    .filter((id) => INBOX_FOOD_ID_RE.test(id))
-    .map((id) => `\n         UNION\n         SELECT '${id}'`)
-    .join('');
+  // An IN list, never a UNION term per id: SQLite caps a compound SELECT at 500 terms, and a
+  // flush that throws on every launch never runs (rls-privacy-reviewer).
+  const inboxIds = keepFoodIds.filter((id) => INBOX_FOOD_ID_RE.test(id));
+  const inboxKeep =
+    inboxIds.length === 0 ? '' : `\n         AND id NOT IN (${inboxIds.map((id) => `'${id}'`).join(', ')})`;
   await database.execAsync(
     `DELETE FROM food_items_cache
        WHERE id NOT IN (
@@ -111,8 +112,8 @@ export async function flushLegacyCatalogCachesIfNeeded(
          UNION
          SELECT food_item_id FROM meal_components WHERE synced = 0 AND food_item_id IS NOT NULL
          UNION
-         SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL${inboxKeep}
-       );
+         SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL
+       )${inboxKeep};
      DELETE FROM medication_items_cache
        WHERE id NOT IN (
          SELECT medication_item_id FROM medications WHERE synced = 0 AND medication_item_id IS NOT NULL

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { usePetStore, loadPersistedActivePetId } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { decideOnboarding } from '../lib/onboarding';
+import { currentSignOutEpoch } from '../lib/signOutEpoch';
 
 export function usePet() {
   const { user } = useAuthStore();
@@ -32,13 +33,18 @@ export function usePet() {
     // empty-with-no-error before the token is attached) before trusting an
     // empty-and-uncompleted result — a false onboarding bounce risks a duplicate pet.
     async function loadArchivedPetIds(): Promise<void> {
+      // Fenced on the sign-out epoch, not only `cancelled`: the wipe resets the pet store
+      // and only later clears the session, so `cancelled` stays false through it, and a
+      // read answering in that gap would put this account's ids into the next one's store
+      // (the add is a union, so they would stay). rls-privacy-reviewer, CUL-2542.
+      const epoch = currentSignOutEpoch();
       try {
         const { data, error } = await supabase
           .from('pets')
           .select('id')
           .eq('user_id', userId)
           .eq('is_active', false);
-        if (cancelled) return;
+        if (cancelled || currentSignOutEpoch() !== epoch) return;
         if (error) {
           console.warn('[usePet] archived pet ids fetch failed:', error.message);
           return;
