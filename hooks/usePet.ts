@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { usePetStore, loadPersistedActivePetId } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { decideOnboarding } from '../lib/onboarding';
+import { currentSignOutEpoch } from '../lib/signOutEpoch';
 
 export function usePet() {
   const { user } = useAuthStore();
@@ -13,6 +14,9 @@ export function usePet() {
     if (!user) return;
     const userId = user.id;
     let cancelled = false;
+    // The sign-out epoch this effect runs under, read once: a retry timer that fires after a
+    // sign-out began must not capture the new epoch (adversarial pass 2, CUL-2542).
+    const effectEpoch = currentSignOutEpoch();
 
     // Decide onboarding from the DURABLE flag (user_profiles.onboarding_completed_at,
     // migration 027) instead of inferring it from "has >=1 pet" (B-251 PR 4 / §6,
@@ -31,6 +35,30 @@ export function usePet() {
     // error, and retry once to absorb the cold-start token-attach race (RLS returns
     // empty-with-no-error before the token is attached) before trusting an
     // empty-and-uncompleted result — a false onboarding bounce risks a duplicate pet.
+    async function loadArchivedPetIds(): Promise<void> {
+      // Fenced on the sign-out epoch, not only `cancelled`: the wipe resets the pet store
+      // and only later clears the session, so `cancelled` stays false through it, and a
+      // read answering in that gap would put this account's ids into the next one's store
+      // (the add is a union, so they would stay). rls-privacy-reviewer, CUL-2542.
+      if (currentSignOutEpoch() !== effectEpoch) return;
+      try {
+        const { data, error } = await supabase
+          .from('pets')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_active', false);
+        if (cancelled || currentSignOutEpoch() !== effectEpoch) return;
+        if (error) {
+          console.warn('[usePet] archived pet ids fetch failed:', error.message);
+          return;
+        }
+        const ids = ((data ?? []) as { id: string }[]).map((p) => p.id);
+        usePetStore.getState().addArchivedPetIds(ids);
+      } catch (e) {
+        console.warn('[usePet] archived pet ids fetch threw:', e);
+      }
+    }
+
     async function loadState(attempt: number): Promise<void> {
       const persistedId = await loadPersistedActivePetId();
 
@@ -66,6 +94,12 @@ export function usePet() {
         }
         return;
       }
+
+      // CUL-2542: the account's archived pet ids, for the widget capture inbox only (a
+      // capture for a pet archived before the app took it in is still the owner's). Off the
+      // gate's critical path on purpose: a failure here leaves the list as it was and never
+      // blocks or bounces the launch; the inbox then treats that pet as unknown, as before.
+      void loadArchivedPetIds();
 
       const [profileRes, petsRes] = reads;
       const { data: profile, error: profileError } = profileRes;
