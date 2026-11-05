@@ -268,7 +268,7 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
   // The core judges the printed form, never the model's raw strings.
   const printed: LeadSummary = { sentences: summary.sentences.map((s, i) => ({ text: printedSentences(summary)[i], cites: s.cites })) }
   const core = verifyBakeoff(table, printed, { minSentences: 1, maxSentences: LEAD_MAX_SENTENCES, maxWordsPerSentence: LEAD_MAX_WORDS })
-  const errors: VerifyIssue[] = waiveSideBySide(core.errors, printed, table)
+  const errors: VerifyIssue[] = waiveNotClean(waiveSideBySide(core.errors, printed, table), printed, table)
   const err = (sentence: number | null, check: string, detail: string) => errors.push({ sentence, check, detail })
   const facts = new Map(table.facts.map((f) => [f.id, f]))
   const sents = printed.sentences
@@ -367,7 +367,9 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     for (const c of s.cites) {
       const text = norm(facts.get(c)?.text ?? '')
       if (!text.toLowerCase().includes(FLOOR_PHRASE)) continue
-      const nums = numbersOf(text, year)
+      // Only the floor line's own numbers: "day 19 of 42" beside "4 of 42 feedings" keeps no count.
+      const elsewhere = new Set(s.cites.filter((o) => o !== c).flatMap((o) => numbersOf(facts.get(o)?.text ?? '', year)))
+      const nums = numbersOf(text, year).filter((n) => !elsewhere.has(n))
       const kept = numbersOf(s.text, year).some((n) => nums.includes(n))
       if (kept && !norm(s.text).toLowerCase().includes(FLOOR_PHRASE)) err(i, 'floor', `a count from ${c} prints without "${FLOOR_PHRASE}"`)
     }
@@ -421,7 +423,10 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     const touchesFlag = s.cites.some((c) => facts.get(c)?.role === 'band') || /\bflags?\b/i.test(s.text) ||
       bandLabelWords.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(s.text))
     if (touchesFlag) {
-      for (const past of norm(s.text).matchAll(/\b(?:was|were|had|been|used to|formerly|once)\b/gi)) err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
+      for (const past of norm(s.text).matchAll(/\b(?:was|were|had|been|used to|formerly|once)\b/gi)) {
+        if (pastExcused(norm(s.text), past.index ?? 0, past[0], s.cites, facts)) continue
+        err(i, 'tense', `${JSON.stringify(past[0])}: a live flag set in the past`)
+      }
     }
     for (const m of norm(s.text).matchAll(/\bover\b\s*([^\s,.;:]*)/gi)) {
       const follower = m[1].toLowerCase()
@@ -452,9 +457,20 @@ export function verifyLead(table: FactTable, summary: LeadSummary): LeadVerdict 
     // first entry cannot be called its latest ("the most recent logged Aug 27").
     if (s.cites.some((c) => c !== 'trial')) {
       const lines = s.cites.map((c) => dateTokens(facts.get(c)?.text ?? ''))
+      // An ended trial's sanctioned shape ("ran Jul 26, 2026 to Oct 20, 2026": "ended" is an absence
+      // word the lead never prints) anchors its two dates like the line's own words would.
+      const ended = s.cites.includes('trial') ? /\bfrom ([A-Z][a-z]{2} \d{1,2}, \d{4}), ended ([A-Z][a-z]{2} \d{1,2}, \d{4})/.exec(facts.get('trial')?.text ?? '') : null
+      if (ended) lines.push(dateTokens(`ran ${ended[1]} to ${ended[2]}`))
+      // A date only the trial line prints keeps the trial-only freedom ("ran Jul 26, 2026 to Oct 20,
+      // 2026", CUL-2532: the trial's sentence now carries its reading and its confounder). It cannot
+      // move onto a sign: exposure and observation never share a sentence (the order rule). A date
+      // another cited line also prints is anchored as before, so it cannot swap between them.
+      const trialOnly = s.cites.includes('trial')
+        ? new Set(dateTokens(facts.get('trial')?.text ?? '').filter((t) => t.startsWith('@') && s.cites.every((c) => c === 'trial' || !dateTokens(facts.get(c)?.text ?? '').includes(t))))
+        : new Set<string>()
       const lead = dateTokens(s.text)
       lead.forEach((t, k) => {
-        if (!t.startsWith('@')) return
+        if (!t.startsWith('@') || trialOnly.has(t)) return
         const prev = prevContent(lead, k)
         const near = recencyNear(lead, k)
         // A date or number before it must match exactly (a range stays a pair); a word before it must
@@ -503,4 +519,53 @@ function waiveSideBySide(errors: VerifyIssue[], summary: LeadSummary, table: Fac
     budget.set(e.sentence, left - 1)
     return false
   })
+}
+
+/** The trial reading's bottom lines that say a trial is NOT clean (CUL-2532), each with the word the
+ *  core's H1 ban refuses inside it. The ban exempts only "not clean" and "not a clean", so "the
+ *  elimination cannot be confirmed clean" and "the trial diet was not fed exclusively" (the very
+ *  clauses the lead must carry) would fail it. Waived like `waiveSideBySide`: one H1 hit on that word
+ *  per occurrence of its phrase in the sentence, and only when a fact the sentence cites prints the
+ *  phrase. Any other "clean" or "exclusively" in the sentence is still refused. */
+export const NOT_CLEAN_PHRASES: ReadonlyArray<readonly [phrase: string, word: string]> = [
+  ['cannot be confirmed clean', 'clean'],
+  ['cannot establish that the elimination was clean', 'clean'],
+  ['not fed exclusively', 'exclusively'],
+]
+
+function waiveNotClean(errors: VerifyIssue[], summary: LeadSummary, table: FactTable): VerifyIssue[] {
+  const facts = new Map(table.facts.map((f) => [f.id, f]))
+  const budget = new Map<string, number>()
+  summary.sentences.forEach((s, idx) => {
+    const cited = s.cites.map((c) => norm(facts.get(c)?.text ?? '').toLowerCase()).join(' | ')
+    const text = norm(s.text).toLowerCase()
+    for (const [phrase, word] of NOT_CLEAN_PHRASES) {
+      if (!cited.includes(phrase)) continue
+      const key = `${idx + 1}|${word}`
+      budget.set(key, (budget.get(key) ?? 0) + text.split(phrase).length - 1)
+    }
+  })
+  return errors.filter((e) => {
+    if (e.check !== 'banned:H1' || e.sentence === null) return true
+    const key = `${e.sentence}|${e.detail.toLowerCase().replace(/^'|'$/g, '')}`
+    const left = budget.get(key) ?? 0
+    if (left === 0) return true
+    budget.set(key, left - 1)
+    return false
+  })
+}
+
+/** A past-tense word in a sentence that touches a flag is excused only inside a trial reading's own
+ *  words: the word with the two words either side of it printed together in a cited trial-reading
+ *  line, in a sentence that cites no band item ("the trial diet was not fed exclusively": the band's
+ *  "Diet not eaten" label makes every trial sentence touch a flag). "The flag was" is never printed
+ *  in a trial reading, so it is still refused. */
+export const TENSE_SPAN = 2
+function pastExcused(text: string, at: number, word: string, cites: string[], facts: Map<string, { role?: string; text?: string }>): boolean {
+  if (cites.some((c) => facts.get(c)?.role === 'band')) return false
+  const before = flatWords(text.slice(0, at)).split(' ').filter(Boolean).slice(-TENSE_SPAN)
+  const after = flatWords(text.slice(at + word.length)).split(' ').filter(Boolean).slice(0, TENSE_SPAN)
+  if (before.length < TENSE_SPAN || after.length < TENSE_SPAN) return false
+  const span = ` ${[...before, word.toLowerCase(), ...after].join(' ')} `
+  return cites.some((c) => c.startsWith('trial-reading-') && ` ${flatWords(facts.get(c)?.text ?? '')} `.includes(span))
 }

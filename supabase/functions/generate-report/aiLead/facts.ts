@@ -72,6 +72,16 @@ export function trialReadingSentences(text: string): string[] {
   return text.trim().split(/(?<=\.)\s+(?=[A-Z])/).map((t) => t.trim()).filter((t) => t !== '')
 }
 
+/** A trial-reading sentence's must-say: its other scope phrases each, and its bottom-line phrases
+ *  as ONE group of alternatives (a sentence often prints two, "not fed exclusively … not a clean
+ *  one"; either says the trial is not clean, and requiring both would leave no words for the band). */
+function readingMustSay(text: string): string[][] {
+  const lower = text.toLowerCase()
+  const bottom = BOTTOM_LINE_PHRASES.filter((p) => lower.includes(p))
+  return [...mustSayOf(text).filter((g) => !BOTTOM_LINE_PHRASES.includes(g[0])), ...(bottom.length > 0 ? [bottom] : [])]
+}
+const BOTTOM_LINE_PHRASES: readonly string[] = ['not fed exclusively', 'cannot be confirmed clean', 'not a clean one', 'cannot establish that the elimination was clean']
+
 /** The id of the trial reading's bottom-line sentence among the payload's lines, or null. */
 export function bottomLineId(lines: ReadonlyArray<{ id: string; kind: string; text: string }>): string | null {
   const reading = lines.filter((l) => l.kind === 'trial_reading')
@@ -193,7 +203,7 @@ export function tableFromPayload(payload: LeadFactPayload): FactTable {
     // (CUL-2550: the smoke bake-off's commonest checker findings were the trial printed alone, H1
     // 17 of 23, and the not-checked confounder left out, 14 of 23).
     ...recordLines.map((l) => ({
-      id: l.id, text: l.text, role: l.kind, must_say: mustSayOf(l.text),
+      id: l.id, text: l.text, role: l.kind, must_say: l.kind === 'trial_reading' ? readingMustSay(l.text) : mustSayOf(l.text),
       ...(trial && (l.id === 'confounder' || l.id === bottomLine) ? { required: true } : {}),
     })),
     // An ended trial is said to have ended, or to have run (CUL-2380 pass 2: "is at Oct 20").

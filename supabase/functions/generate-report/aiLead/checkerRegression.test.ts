@@ -6,6 +6,7 @@
 //      parser and decision rule must reproduce RESULTS.md: A 3 shipped; O 12 shipped; S 10 shipped
 //      and 2 rejected (M06, M09, both H7 material). A change to `parseChecker` or
 //      `checkerDecision` that would have shipped a rejected draft, or dropped a good one, reds here.
+//      (Replayed through `modelDecision`, the model's half: the code half below needs each draft.)
 //   2. THE KNOWN MISS, CLOSED IN CODE. RESULTS.md: "Three Nyx drafts opened on the vomiting count
 //      and put the possible plastic second. Both judges scored all three material (H7). The
 //      checker passed them." Those are N02, N04, N05 (S1, S2, S4). The v2 band-first rule rejects
@@ -14,7 +15,7 @@
 //   before the flag reaches anyone (CUL-2306, spec §9.4).
 import assert from 'node:assert/strict'
 import { tableFromPayload, type LeadFactPayload } from './facts.ts'
-import { checkerDecision, modelDecision, parseChecker } from './leadPipeline.ts'
+import { checkerDecision, modelDecision, parseChecker, type CheckerVerdict } from './leadPipeline.ts'
 import { verifyLead, type LeadSentence } from './verify.ts'
 
 const DIR = new URL('./exhibits/', import.meta.url)
@@ -72,4 +73,48 @@ Deno.test('band-first is not blind: a first sentence that leads with the flag pa
   }
   const v = verifyLead(table, { sentences: [lead] })
   assert.deepEqual(v.errors.filter((e) => e.check === 'band-first'), [])
+})
+
+// CUL-2548: the smoke bake-off (2026-11-05) fed the adversarial set through the shipped checker and
+// the model passed cr-a (the vomiting count before the possible plastic), October's miss rephrased.
+// The checker's decision now has a code half that reads H7 by order, so the recorded verdict itself,
+// all hazards none and no omissions, rejects with its draft and table. The verifier's band-first
+// rule stays on beside it (verify.test.ts, adversarialSet.test.ts).
+const BAND_ORDER = ['cr-a', 'cr-b', 'p1-b1-a', 'p1-b1-b']
+
+async function bandOrderCases() {
+  const set = (await read('adversarial/set.json')) as { items: Array<{ id: string; fixture: string; sentences: LeadSentence[] }> }
+  const recorded = (await read('checker/band-order-smoke-verdicts.json')) as { verdicts: Record<string, unknown> }
+  return Promise.all(BAND_ORDER.map(async (id) => {
+    const item = set.items.find((i) => i.id === id)!
+    const payload = (await read(`adversarial/fixtures/${item.fixture}.json`)) as LeadFactPayload
+    // Stored as the pipeline stores it (StoredVerdict.checker), already parsed.
+    const verdict = recorded.verdicts[id] as CheckerVerdict
+    assert.ok(verdict && verdict.levels && Array.isArray(verdict.omissions), `${id}: a recorded verdict`)
+    return { id, item, table: tableFromPayload(payload), verdict }
+  }))
+}
+
+Deno.test('CUL-2548: the checker rejects cr-a on the very verdict the model returned', async () => {
+  const [cra] = await bandOrderCases()
+  assert.equal(cra.id, 'cr-a')
+  assert.equal(modelDecision(cra.verdict), 'pass', 'the recorded model verdict passed it (the miss)')
+  assert.equal(checkerDecision(cra.verdict, { table: cra.table, draft: { sentences: cra.item.sentences } }), 'reject')
+})
+
+Deno.test('CUL-2548: every band-order item is rejected by the checker whatever the model says', async () => {
+  const clean = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
+  for (const c of await bandOrderCases()) {
+    for (const v of [c.verdict, clean]) {
+      assert.equal(checkerDecision(v, { table: c.table, draft: { sentences: c.item.sentences } }), 'reject', c.id)
+    }
+  }
+})
+
+Deno.test('CUL-2548: the code half is not blind: a lead that opens on band item 1 takes the model\'s decision', async () => {
+  const table = await nyxTable()
+  const clean = parseChecker({ takeaway: 'x', hazards: Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), omissions: [] })!
+  const lead: LeadSentence = { text: 'Foreign material is a live flag: the AI photo read of the May 23 vomit noted a possible plastic fragment, unconfirmed.', cites: ['S1'] }
+  assert.equal(checkerDecision(clean, { table, draft: { sentences: [lead] } }), 'pass')
+  assert.equal(checkerDecision(parseChecker({ ...clean, hazards: { ...Object.fromEntries(['H1', 'H2', 'H3', 'H4', 'H6', 'H7'].map((h) => [h, { level: 'none', quote: '', why: '' }])), H5: { level: 'minor', quote: 'x', why: 'x' } } })!, { table, draft: { sentences: [lead] } }), 'repair')
 })

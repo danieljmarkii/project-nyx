@@ -20,10 +20,12 @@ const FACTS = buildLeadFacts(buildDocumentV2(snap, { owner: null, shortId: null,
   includeLookNotes: false,
 })
 
+// Band item 1 is the band's first PRINTED row: on Nyx, the burden flag (CUL-2532). The trial
+// sentence carries the reading's bottom line and the confounder, both required beside it.
 const GOOD: LeadSentence[] = [
-  { text: 'Foreign material is a live flag: 1 vomiting incident on Sep 22 showed possible foreign material on automated photo analysis, an AI read, unconfirmed.', cites: ['band-1-present_foreign'] },
+  { text: 'Burden is a live flag: 6 vomiting entries in the last 7 days, on 3 days in a row.', cites: ['band-3-symptom_burden-vomit'] },
   { text: 'Vomiting: 16 entries on 12 of 45 logged days, the last Oct 31.', cites: ['line-1'] },
-  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026.', cites: ['trial'] },
+  { text: 'The owner-entered diet trial, Royal Canin Selected Protein PR, Dry and 5 other trial foods, ran Jul 26, 2026 to Oct 20, 2026; the trial diet was not fed exclusively, and it is not a test of the diet alone.', cites: ['trial', 'trial-reading-3', 'confounder'] },
 ]
 const BAD: LeadSentence[] = [{ text: 'Vomiting improved on the trial.', cites: ['line-1'] }]
 
@@ -229,4 +231,12 @@ Deno.test('withdrawal at send (promise 4, option a): a lead prints only while bo
   assert.equal(leadAllowedAtSend(no, on, 'u1'), false)
   assert.equal(leadAllowedAtSend(yes, [on[0]], 'u1'), false)
   assert.equal(leadAllowedAtSend(null, on, 'u1'), false)
+})
+
+Deno.test('step 7 decides with the checker\'s code half: the draft and the table, never the model alone (CUL-2548)', async () => {
+  // The verifier refuses an order-failing draft before the checker sees it, so no scripted run can
+  // reach step 7 with one; the wiring is pinned on the call itself.
+  const src = await Deno.readTextFile(new URL('./leadPipeline.ts', import.meta.url))
+  assert.ok(src.includes('checkerDecision(cv, { table: facts.table, draft: summary })'), 'step 7 calls checkerDecision with the draft and the table')
+  assert.ok(!/\bmodelDecision\(cv\)/.test(src), 'step 7 never decides on the model alone')
 })
