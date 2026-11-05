@@ -3537,7 +3537,7 @@ export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>):
   }
   const named = [...byProtein.entries()]
     .sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))
-    .map(([p, g]) => `<b>${h(capProtein(p))}</b> (${num(g.n)}) ${dayListText(g.days)}`)
+    .map(([p, g]) => `${h(capProtein(p))} (${num(g.n)}) ${dayListText(g.days)}`)
   if (none.length > 0) {
     named.push(`${num(none.length)} with no off-trial protein recorded ${dayListText(none)}`)
   }
@@ -10054,8 +10054,7 @@ function mealsAppendix(snap: ReportSnapshot): string {
     // table (a few rows) does.
     log.length > 0 ? mealItemsBlock : sectionTail(mealItemsBlock, foot)
   }
-  ${log.length > 0 ? intakeDetailTable(snap, log, foot) : ''}
-  ${trialDietRatingsBlock(snap)}
+  ${log.length > 0 ? intakeDetailTable(snap, log, foot) : trialDietRatingsBlock(snap, [])}
 </section>`
 }
 
@@ -10074,19 +10073,25 @@ function flagCountsUnfinished(r: string): boolean {
 }
 
 /**
- * CUL-2529 instance 7 (QUIET) — THE FLAG'S POPULATION, LISTED. "2 of 4 rated feedings carrying the
- * trial diet" pointed here, and this appendix listed meals only: Nyx's two treat ratings (Sep 29,
- * Oct 8, the second one of the two unfinished) appeared nowhere. Printed only beside a narrow
- * Diet-not-eaten flag, and says when its rows do not reconcile with the flag's count, never hiding it.
+ * CUL-2529 instance 7 (QUIET) — THE FLAG'S POPULATION, TRACEABLE. "2 of 4 rated feedings carrying the
+ * trial diet" pointed at this appendix, whose intake table lists meals only: Nyx's two treat ratings
+ * (Sep 28, and Oct 8, one of the two unfinished) appeared nowhere. This lists the rated trial-diet
+ * feedings the table above does not show, and says how the two add up to the flag's count, or that
+ * they do not (different spans), never hiding the gap. Printed only beside a narrow Diet-not-eaten
+ * flag; part of the shared intake table, so v2's reprint carries it too.
  */
-function trialDietRatingsBlock(snap: ReportSnapshot): string {
+function trialDietRatingsBlock(snap: ReportSnapshot, log: readonly IntakeLogEntry[]): string {
   const fact = narrowTrialRefusal(snap)
-  const rows = snap.provenance.trialDietRatings
-  if (!fact || !rows || rows.length === 0) return ''
+  const all = snap.provenance.trialDietRatings
+  if (!fact || !all || all.length === 0) return ''
+  const shown = new Set(log.map((e) => e.eventId))
+  const extra = all.filter((r) => !shown.has(r.eventId))
+  if (extra.length === 0) return ''
   const tz = snap.timezone
-  const unfinished = rows.filter((r) => flagCountsUnfinished(r.intakeRating)).length
-  const reconciles = rows.length === fact.rated && unfinished === fact.refused
-  const body = rows
+  const inTable = all.length - extra.length
+  const unfinished = all.filter((r) => flagCountsUnfinished(r.intakeRating)).length
+  const reconciles = all.length === fact.rated && unfinished === fact.refused
+  const body = extra
     .map((r) => {
       const cell = flagCountsUnfinished(r.intakeRating)
         ? `<b>${h(intakeLabel(r.intakeRating))}</b>`
@@ -10096,15 +10101,18 @@ function trialDietRatingsBlock(snap: ReportSnapshot): string {
       )}</td><td>${r.foodLabel ? h(r.foodLabel) : '&mdash;'}${r.isTreat ? ' <span class="conf">treat</span>' : ''}</td><td>${cell}</td></tr>`
     })
     .join('')
+  const sum = inTable > 0
+    ? `With the ${num(inTable)} trial-diet ${inTable === 1 ? 'meal' : 'meals'} in the table above, these are`
+    : 'These are'
   const note = reconciles
-    ? `These are the ${num(fact.rated)} rated feedings behind the Diet not eaten flag in the clinical summary; the ${num(
+    ? `${sum} the ${num(fact.rated)} rated feedings behind the Diet not eaten flag; it counts the ${num(
         fact.refused,
-      )} in bold are the ones it counts as left unfinished (below &ldquo;ate most&rdquo;).`
-    : `The Diet not eaten flag in the clinical summary counts ${num(fact.refused)} of ${num(
+      )} rated below &ldquo;ate most&rdquo; as left unfinished.`
+    : `The Diet not eaten flag counts ${num(fact.refused)} of ${num(
         fact.rated,
-      )} rated feedings over the trial days it covers; these rows are the rated feedings of the trial diet in this report&rsquo;s window, and the two are taken over different spans, so their counts can differ.`
+      )} rated feedings over the trial days it covers; these rows and the trial-diet meals above are the rated feedings of the trial diet in this report&rsquo;s window. The two are taken over different spans, so their counts can differ.`
   return `
-  <p class="note lead" style="margin-top:16px"><b>Rated feedings carrying the trial diet</b> &mdash; treats included, oldest first. ${note}</p>
+  <p class="note lead" style="margin-top:16px"><b>Rated feedings carrying the trial diet, not in the table above</b> &mdash; treats included, oldest first. ${note}</p>
   <table>
     <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
     <tbody>${body}</tbody>
@@ -10534,7 +10542,7 @@ export function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], f
     <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  ${sectionTail(`<p class="note" style="margin-top:9px">${readingBit}</p>`, foot)}`
+  ${sectionTail(`<p class="note" style="margin-top:9px">${readingBit}</p>${trialDietRatingsBlock(snap, log)}`, foot)}`
 }
 
 function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
@@ -12148,9 +12156,6 @@ function appendixF(snap: ReportSnapshot): string {
  */
 export const V1_SUMMARY_POINTER_REWRITES: ReadonlyArray<readonly [RegExp, string]> = [
   [/only an activity word, which page 1 never lists/g, 'only an activity word, which this line never lists'],
-  [/\(page&nbsp;1 anchor\)/g, '(the reduced-intake flag&rsquo;s anchor)'],
-  [/not the association test on page&nbsp;1/g, 'not the association test in the clinical summary (Timing vs symptoms)'],
-  [/on page&nbsp;1 under Timing vs symptoms/g, 'in the clinical summary, under Timing vs symptoms'],
   [/A page-1 &ldquo;time since/g, 'The clinical summary&rsquo;s &ldquo;time since'],
   [/the diet-trial block on page 1\b/g, 'the diet-trial block in the clinical summary'],
   // The &nbsp; form only: the code writes every remaining pointer that way, and an owner's own note
