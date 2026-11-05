@@ -11,6 +11,13 @@ import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.t
 import { STORAGE_BUCKETS, type UserProbe } from '../delete-account/plan.ts'
 import {
   BUCKET_RULES,
+  CHECK_BLIND_REASONS,
+  CHECK_HOUR_UTC,
+  CHECK_MARKER,
+  CHECK_MINUTE_UTC,
+  CHECK_WINDOW_MIN,
+  checkLine,
+  checkVerdict,
   fileVerdict,
   GRACE_MS,
   goneFromRead,
@@ -23,6 +30,7 @@ import {
   RUN_MINUTE_UTC,
   RUN_WINDOW_MIN,
   runLine,
+  runStartOf,
   runSweep,
   type LiveIdRead,
   type SweepIO,
@@ -533,4 +541,157 @@ Deno.test('a re-run after a full sweep removes nothing more', async () => {
   const calls: Calls = { removed: [], listed: [] }
   await run(w, calls)
   assertEquals(calls.removed, [])
+})
+
+// ── CUL-2328: an upload that commits after the account's deletion ─────────────
+//
+// delete-account empties every owned folder after the auth delete. An upload whose
+// INSERT check passed before the cascade could still commit after that listing, if
+// storage-api commits a streamed upload late. Whether it can is untested against
+// production; this sweep is the backstop either way: the pet row is gone (and 116
+// retires its id), so the folder is proved gone and the file leaves once its own
+// timestamp is past the grace period, however long the upload took.
+
+Deno.test('CUL-2328: a vet document that lands after the deletion is kept through grace, then removed', async () => {
+  const deletedAt = NOW - 2 * 60 * 60 * 1000
+  const landedAt = new Date(deletedAt + 10 * 60 * 1000).toISOString() // 10 min after the delete
+  const key = `${DEAD_PET}/dddddddd-0000-4000-8000-000000000001.pdf`
+  const world = (): World => ({
+    objects: { [STORAGE_BUCKETS.vetDocuments]: { [key]: obj(landedAt) } },
+    pets: [],
+    foods: [],
+    users: {},
+    retired: {},
+  })
+
+  // The next morning's run, inside grace: kept, and counted as such.
+  const early: Calls = { removed: [], listed: [] }
+  const report = await runSweep(fakeIO(world(), early), { now: () => NOW })
+  assertEquals(removedKeys(early), [])
+  assertEquals(report.left[STORAGE_BUCKETS.vetDocuments]?.file_in_grace, 1)
+
+  // The first run past grace: removed.
+  const late: Calls = { removed: [], listed: [] }
+  await runSweep(fakeIO(world(), late), { now: () => Date.parse(landedAt) + GRACE_MS + 60_000 })
+  assertEquals(removedKeys(late, STORAGE_BUCKETS.vetDocuments), [key])
+})
+
+// ── CUL-2521: the daily check ────────────────────────────────────────────────
+
+const atCheck = (h: number, m: number) => Date.UTC(2026, 10, 2, h, m)
+
+Deno.test('CUL-2521: the check has its own window and never passes as a run', () => {
+  const body = { check: CHECK_MARKER }
+  assertEquals(gate(body, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC)), 'check')
+  assertEquals(gate(body, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + CHECK_WINDOW_MIN - 1)), 'check')
+  assertEquals(gate(body, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + CHECK_WINDOW_MIN)), 'outside_window')
+  assertEquals(gate(body, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC - 1)), 'outside_window')
+  // In the RUN window a check body is still a check, so it is outside its window: a
+  // check can never start a deleting run.
+  assertEquals(gate(body, atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC)), 'outside_window')
+  // And a run body in the check window is not a run.
+  assertEquals(gate({ run: RUN_MARKER }, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC)), 'outside_window')
+  for (const b of [{ check: 'x' }, { check: true }, { check: RUN_MARKER }]) {
+    assertEquals(gate(b, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC)), 'not_a_run', JSON.stringify(b))
+  }
+  // The two windows do not overlap.
+  assert(CHECK_HOUR_UTC * 60 + CHECK_MINUTE_UTC >= RUN_HOUR_UTC * 60 + RUN_MINUTE_UTC + RUN_WINDOW_MIN)
+  assert(CHECK_HOUR_UTC * 60 + CHECK_MINUTE_UTC + CHECK_WINDOW_MIN <= 24 * 60)
+})
+
+Deno.test('CUL-2521: runStartOf is the same UTC day\'s run start', () => {
+  assertEquals(runStartOf(atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 30)), atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC))
+  assertEquals(runStartOf(Date.UTC(2026, 10, 2, 23, 59)), atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC))
+})
+
+// The check as index.ts runs it: the real pass, a remove that deletes nothing, age
+// judged at the morning run's start.
+async function check(w: World, checkAt: number) {
+  const io = fakeIO(w)
+  const report = await runSweep({ ...io, remove: (_b, keys) => Promise.resolve(keys.length) }, {
+    now: () => checkAt,
+    asOf: runStartOf(checkAt),
+  })
+  return { report, verdict: checkVerdict(report) }
+}
+
+Deno.test('CUL-2521: a file the morning run should have removed is overdue; the check deletes nothing', async () => {
+  const checkAt = atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5)
+  const w = baseWorld() // gone owners with OLD files: a morning run would have removed them
+  const before = JSON.stringify(w.objects)
+  const { verdict } = await check(w, checkAt)
+  assertEquals(verdict, { overdue: true, incomplete: false })
+  assertEquals(JSON.stringify(w.objects), before)
+})
+
+Deno.test('CUL-2521: after a good morning run the check is clean', async () => {
+  const w = baseWorld()
+  await runSweep(fakeIO(w), { now: () => atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC + 1) })
+  const { verdict } = await check(w, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5))
+  assertEquals(verdict, { overdue: false, incomplete: false })
+})
+
+Deno.test('CUL-2521: a file not yet due at the run\'s start is not overdue, even if due by the check', async () => {
+  const runStart = atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC)
+  const key = `${DEAD_PET}/profile.jpg`
+  const w: World = {
+    // Past grace at the check (12:12), not at the run (09:23): the run rightly kept it.
+    objects: { [STORAGE_BUCKETS.petPhotos]: { [key]: obj(new Date(runStart - GRACE_MS + 60 * 60 * 1000).toISOString()) } },
+    pets: [],
+    foods: [],
+    users: {},
+    retired: {},
+  }
+  const { verdict, report } = await check(w, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5))
+  assertEquals(verdict, { overdue: false, incomplete: false })
+  assertEquals(report.left[STORAGE_BUCKETS.petPhotos]?.file_in_grace, 1)
+  // One minute earlier and it was due at the run: overdue.
+  w.objects[STORAGE_BUCKETS.petPhotos][key] = obj(new Date(runStart - GRACE_MS - 60_000).toISOString())
+  assertEquals((await check(w, atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5))).verdict.overdue, true)
+})
+
+Deno.test('CUL-2521: a check that cannot read is incomplete, never clean', async () => {
+  const at = atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5)
+  const w = baseWorld()
+  await runSweep(fakeIO(w), { now: () => atCheck(RUN_HOUR_UTC, RUN_MINUTE_UTC + 1) })
+
+  const listFails = { ...w, failList: new Set([`${STORAGE_BUCKETS.petPhotos}:`]) }
+  assertEquals((await check(listFails, at)).verdict.incomplete, true)
+
+  const ownerFails = { ...w, liveIdsOverride: () => ({ ids: null, count: null, error: 'down' }) }
+  assertEquals((await check(ownerFails, at)).verdict.incomplete, true)
+
+  const bucketsFail = { ...w, failBucketList: true }
+  assertEquals((await check(bucketsFail, at)).verdict.incomplete, true)
+})
+
+Deno.test('CUL-2521: checkVerdict reads every blind reason, and only those', () => {
+  for (const r of CHECK_BLIND_REASONS) {
+    assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 1 } } }).incomplete, true, r)
+  }
+  for (const r of ['file_in_grace', 'folder_owner_may_return', 'bucket_unknown', 'file_unknown_shape'] as const) {
+    assertEquals(checkVerdict({ removed: {}, folders: {}, left: { b: { [r]: 3 } } }), { overdue: false, incomplete: false }, r)
+  }
+  assertEquals(checkVerdict({ removed: { b: 0 }, folders: {}, left: {} }).overdue, false)
+  assertEquals(checkVerdict({ removed: { b: 1 }, folders: {}, left: {} }).overdue, true)
+})
+
+Deno.test('CUL-2521: the check line carries counts only', async () => {
+  const { report } = await check(baseWorld(), atCheck(CHECK_HOUR_UTC, CHECK_MINUTE_UTC + 5))
+  const line = checkLine(report)
+  for (const secret of [LIVE_PET, DEAD_PET, LIVE_FOOD, DEAD_FOOD, LIVE_USER, DEAD_USER, 'profile.jpg', 'a1.jpg']) {
+    assert(!line.includes(secret), `check line leaks ${secret}`)
+  }
+  assertEquals(JSON.parse(line).event, 'sweep-orphaned-storage.check')
+})
+
+Deno.test('index.ts — CUL-2521: the check runs on an IO whose remove deletes nothing', async () => {
+  const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url))
+  const io = src.slice(src.indexOf('function checkIO('), src.indexOf('function sweepIO('))
+  assert(/remove: \(_bucket, keys\) => Promise\.resolve\(keys\.length\)/.test(io), io)
+  assert(!/\.remove\(/.test(io), 'checkIO calls a real remove')
+  const branch = src.slice(src.indexOf("if (verdict === 'check') {"), src.indexOf('const report = await runSweep(sweepIO(admin)'))
+  assert(branch.includes('runSweep(checkIO(admin)'), branch)
+  assert(branch.includes('asOf: runStartOf(startedAt)'), branch)
+  assert(!branch.includes('sweepIO('), 'the check branch reaches the deleting IO')
 })

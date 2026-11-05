@@ -147,6 +147,11 @@ export interface SweepIO {
 
 export interface SweepRunOptions {
   now: () => number
+  // The instant a file's age is judged at (fileVerdict). Defaults to now(). Only the
+  // daily check (CUL-2521) sets it, to the morning run's start, so "due" means "was
+  // already due when the scheduled run began". Timing (deadline, cutoff, rotation)
+  // always reads now().
+  asOf?: number
   // Epoch ms after which no new folder starts.
   deadline?: number
   // Epoch ms by which every call must have ended.
@@ -444,7 +449,7 @@ async function sweepFolder(c: Candidate, io: SweepIO, report: SweepReport, opts:
     bump(report, rule.bucket, 'folder_walk_gap')
     return
   }
-  const now = opts.now()
+  const now = opts.asOf ?? opts.now()
   const doomed: string[] = []
   for (const key of keys) {
     const v = fileVerdict(key, rule.segments, stamps.get(key), now)
@@ -529,11 +534,80 @@ export const RUN_HOUR_UTC = 9
 export const RUN_MINUTE_UTC = 23
 export const RUN_WINDOW_MIN = 15
 
-export type GateVerdict = 'run' | 'not_a_run' | 'outside_window'
+// CUL-2521 — the daily check. GitHub Actions (.github/workflows/orphan-sweep-check.yml)
+// asks, hours after the run window, whether the scheduled run did its job. The body is
+// `{ check: CHECK_MARKER }`, as public as RUN_MARKER. A check never removes anything
+// (index.ts swaps Storage's remove for a counter), but it lists every bucket and reads
+// owners, so it gets its own bounded window, the same F2 posture as the run. The window
+// is two hours, not fifteen minutes, because a GitHub schedule can start late; a check
+// that misses it is reported as one that could not run, never skipped.
+export const CHECK_MARKER = 'overdue'
+export const CHECK_HOUR_UTC = 12
+export const CHECK_MINUTE_UTC = 7
+export const CHECK_WINDOW_MIN = 120
+
+export type GateVerdict = 'run' | 'check' | 'not_a_run' | 'outside_window'
+
+function minutesPast(now: number, hour: number, minute: number): number {
+  const d = new Date(now)
+  return d.getUTCHours() * 60 + d.getUTCMinutes() - (hour * 60 + minute)
+}
 
 export function gate(body: unknown, now: number): GateVerdict {
-  if (typeof body !== 'object' || body === null || (body as { run?: unknown }).run !== RUN_MARKER) return 'not_a_run'
+  if (typeof body !== 'object' || body === null) return 'not_a_run'
+  if ((body as { run?: unknown }).run === RUN_MARKER) {
+    const minutes = minutesPast(now, RUN_HOUR_UTC, RUN_MINUTE_UTC)
+    return minutes >= 0 && minutes < RUN_WINDOW_MIN ? 'run' : 'outside_window'
+  }
+  if ((body as { check?: unknown }).check === CHECK_MARKER) {
+    const minutes = minutesPast(now, CHECK_HOUR_UTC, CHECK_MINUTE_UTC)
+    return minutes >= 0 && minutes < CHECK_WINDOW_MIN ? 'check' : 'outside_window'
+  }
+  return 'not_a_run'
+}
+
+// The start of the UTC day's scheduled run: the instant the check judges age at. A file
+// whose newest timestamp was past grace at that instant was due at the run, so if a
+// proved-gone folder still holds it now, the run did not remove it. Starting at the
+// window's FIRST minute is the generous end: the run may begin up to 15 minutes later
+// and still see the same files as due, never fewer.
+export function runStartOf(now: number): number {
   const d = new Date(now)
-  const minutes = d.getUTCHours() * 60 + d.getUTCMinutes() - (RUN_HOUR_UTC * 60 + RUN_MINUTE_UTC)
-  return minutes >= 0 && minutes < RUN_WINDOW_MIN ? 'run' : 'outside_window'
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), RUN_HOUR_UTC, RUN_MINUTE_UTC)
+}
+
+// The reasons that mean the check itself could not see everything: a listing, an owner
+// read or the time budget failed. Any of them makes the answer "could not tell", which
+// reaches a person the same as "overdue". The rest (`folder_owner_may_return`,
+// `file_in_grace`, a bucket the project has that this module does not know, ...) are a
+// correct sweep's normal leftovers.
+export const CHECK_BLIND_REASONS: ReadonlyArray<LeftReason> = [
+  'bucket_list_failed',
+  'bucket_not_reached',
+  'folder_owner_unread',
+  'folder_walk_gap',
+  'folder_not_reached',
+]
+
+export interface CheckVerdict {
+  // At least one file of a proved-gone owner was due at the run's start and is still here.
+  overdue: boolean
+  // The check could not read everything, so a clean answer would prove nothing.
+  incomplete: boolean
+}
+
+// `removed` in a check's report counts the files a real run WOULD remove (index.ts's
+// counter answers every key as removed), so any count there is a file the morning run
+// left behind.
+export function checkVerdict(report: SweepReport): CheckVerdict {
+  const overdue = Object.values(report.removed).some((n) => n > 0)
+  const incomplete = Object.values(report.left).some((reasons) =>
+    CHECK_BLIND_REASONS.some((r) => (reasons[r] ?? 0) > 0),
+  )
+  return { overdue, incomplete }
+}
+
+// The check's log line: counts and reason codes only, like runLine.
+export function checkLine(report: SweepReport): string {
+  return JSON.stringify({ event: 'sweep-orphaned-storage.check', ...checkVerdict(report), ...report })
 }
