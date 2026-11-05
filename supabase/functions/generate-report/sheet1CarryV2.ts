@@ -147,11 +147,11 @@ export function carriedSectionsOf(input: ReportSnapshot, episodesHtml: string | 
 }
 
 /**
- * The signs whose halves comparison sheet 1 leaves out, pending the PM's ruling (CUL-2551): a trial's
- * own sign whose later half counts fewer entries than its earlier one. v2's extraction rule (spec §8,
+ * The signs whose halves comparison sheet 1 leaves out (PM ruling (a) on CUL-2564): a trial's own
+ * sign whose later half counts fewer entries than its earlier one. v2's extraction rule (spec §8,
  * AC 7 rule 3) holds that no sentence states a decline in a trial's own sign; v1's page 1 prints
- * "first 23 d 11 → last 23 d 5" for it. Until the PM rules, the quieter reading (the fall, which reads
- * as the diet working) stays off sheet 1; the count, the lead chart's weekly bars and v1's notes
+ * "first 23 d 11 → last 23 d 5" for it. A fall over halves with uneven logging is weak evidence that
+ * reads as the diet working, so it stays off sheet 1; the count, the lead chart's weekly bars and v1's notes
  * still print. Read off the snapshot's own `trendHalves`, never computed here.
  */
 export function fallingTrialSignLabels(snap: ReportSnapshot): string[] {

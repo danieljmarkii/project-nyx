@@ -383,6 +383,26 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 /* CUL-2551: v1's two-column rows on sheet 1 read label, then words, so a PDF extractor (pdfminer)
    never interleaves a row with its neighbour. */
 .carry .kv,.trialread .kv{display:block;}
+/* CUL-2585 ruling (a): v1's own trend and tile styles, so a carried block keeps v1's weight (a
+   rising halves count reads as loud as it does on v1). Scoped to .carry; v1's --muted is --ink2. */
+.carry .tiles{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+.carry .tile{padding:6pt 8pt;}
+.carry .tile + .tile{border-left:1px solid var(--hair);}
+.carry .tile .v{font-size:16pt;font-weight:600;line-height:1.05;}
+.carry .tile .v small{font-size:9pt;color:var(--ink2);font-weight:600;}
+.carry .tile .v .arw{color:var(--faint);font-weight:400;}
+.carry .tile .l{font-size:8pt;color:var(--ink2);margin-top:3pt;line-height:1.35;}
+.carry .trend + .trend{margin-top:7pt;border-top:1px solid var(--hair);padding-top:7pt;}
+.carry .trend .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12pt;}
+.carry .trend .who{font-size:10pt;font-weight:700;}
+.carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:8pt;margin-left:2px;}
+.carry .trend .big{text-align:right;line-height:1.1;}
+.carry .trend .big .n{font-size:16pt;font-weight:600;}
+.carry .trend .big .n small{font-size:9pt;color:var(--ink2);font-weight:600;}
+.carry .trend .big .delta{font-size:8pt;color:var(--ink2);margin-top:1px;}
+.carry .trend .big .delta b{color:var(--ink);font-weight:700;}
+.carry .trend .big .delta-caveat{font-size:7.5pt;color:var(--ink2);margin-top:1px;font-style:italic;}
+.carry .trend .subnote{font-size:8pt;color:var(--ink2);margin:2px 0 4pt;}
 .carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}

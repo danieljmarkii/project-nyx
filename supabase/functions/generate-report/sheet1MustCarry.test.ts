@@ -226,7 +226,7 @@ const REFORMATS: ReadonlyArray<{ name: string; top: string; when?: (leaf: V1Leaf
   { name: 'an undrawn chart’s caption → the lead chart', top: '*', when: (l) => captionCut(l) !== null, v2: 'lead-chart', check: captionCarries },
   { name: 'identity → masthead', top: 'ident', v2: 'masthead', check: mastheadCarries },
   { name: 'safety band → band', top: 'safetyband', v2: 'band', check: bandCarries },
-  { name: 'a falling trial sign’s halves → off sheet 1, pending the PM', top: 'sec:symptom frequency & trend', v2: 'lead-chart', check: fallingHalvesCut },
+  { name: 'a falling trial sign’s halves → off sheet 1 (PM ruling (a) on CUL-2564)', top: 'sec:symptom frequency & trend', v2: 'lead-chart', check: fallingHalvesCut },
 ]
 
 /** v1 page 1's furniture: not report content. Asserted exactly (each key must be seen). */
@@ -462,4 +462,24 @@ Deno.test('CUL-2579, mutation — a masthead without the stamp reds the guard (t
   const bare: DocumentV2 = { ...doc, blocks: doc.blocks.map((b) => (b.kind === 'masthead' ? { ...b, stamp: '' } : b)) }
   const m = checkSheet1('cooper', s, bare).missing
   assert.ok(m.some((x) => x.includes('letter/stamp') && x.includes('prepared for veterinary review')), m.join('\n'))
+})
+
+// ── CUL-2585 ruling (a): carried blocks keep v1's weight ──────────────────────
+
+Deno.test('CUL-2585 — v1’s trend and tile styles reach the carried blocks, in print and on the phone (each selector meets v1’s markup)', () => {
+  const s = nyxLiveSnapshot()
+  const doc = buildDocumentV2(s, OPTS)
+  const trend = doc.blocks.find((b) => b.id === 'symptom-trend')
+  const glance = doc.blocks.find((b) => b.id === 'at-a-glance')
+  assert.ok(trend && trend.kind === 'carried' && glance && glance.kind === 'carried')
+  // The markup the rules are written for: v1's own classes, carried word for word.
+  for (const cls of ['class="trend"', 'class="top"', 'class="who"', 'class="big"', 'class="delta"']) assert.ok(trend.html.includes(cls), `trend: ${cls}`)
+  for (const cls of ['class="tiles"', 'class="tile"', 'class="v num"', 'class="l"']) assert.ok(glance.html.includes(cls), `glance: ${cls}`)
+  for (const [name, html] of [['print', renderPrintV2(doc)], ['phone', renderPhoneV2(doc)]] as const) {
+    const css = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? ''
+    assert.match(css, /\.carry \.trend \.big \.delta b\{color:var\(--ink\);font-weight:700;\}/, `${name}: the halves count is bold ink`)
+    assert.match(css, /\.carry \.trend \.big \.n\{font-size:[^;]+;font-weight:600;\}/, `${name}: the sign's count is v1's large figure`)
+    assert.match(css, /\.carry \.tiles\{display:grid;/, `${name}: At a glance is a grid of tiles`)
+    assert.match(css, /\.carry \.tile \.v\{font-size:[^;]+;font-weight:600;/, `${name}: each tile's figure is large`)
+  }
 })

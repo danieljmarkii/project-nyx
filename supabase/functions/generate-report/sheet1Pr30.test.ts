@@ -165,7 +165,7 @@ Deno.test('CUL-2535 (brief 4a) — a zero-sign chart draws the concern-word days
   for (const t of sheet1Texts(docOf(fx('looks-only')))) assert.match(t, /Diet No active diet trial in this window/)
 })
 
-Deno.test('pending the PM — a trial’s own falling sign prints its count but not v1’s falling halves; a rising one keeps them', () => {
+Deno.test('CUL-2564 ruling (a) — a trial’s own falling sign prints its count but not v1’s falling halves; a rising one keeps them', () => {
   const clean = fx('trial-report-clean')
   assert.deepEqual(fallingTrialSignLabels(clean), ['Itching'])
   for (const t of sheet1Texts(docOf(clean))) {

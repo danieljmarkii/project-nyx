@@ -371,6 +371,29 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .trialread .trow{margin:0.35rem 0 0;}
 .keep{margin:1rem 0 0;}
 .carry .kv,.trialread .kv{display:block;}
+/* CUL-2585 ruling (a): v1's own trend and tile styles, so a carried block keeps v1's weight (a
+   rising halves count reads as loud as it does on v1). Scoped to .carry; v1's --muted is --ink2.
+   Tiles wrap to two columns, and a trend's count drops under its name, so nothing scrolls sideways
+   at 320pt and large text. */
+.carry .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);}
+.carry .tile{padding:0.5rem 0.6rem;min-width:0;overflow-wrap:anywhere;}
+.carry .tile:nth-child(even){border-left:1px solid var(--hair);}
+.carry .tile:nth-child(n+3){border-top:1px solid var(--hair);}
+.carry .tile .v{font-size:1.375rem;font-weight:600;line-height:1.05;}
+.carry .tile .v small{font-size:0.75rem;color:var(--ink2);font-weight:600;}
+.carry .tile .v .arw{color:var(--faint);font-weight:400;}
+.carry .tile .l{font-size:0.75rem;color:var(--ink2);margin-top:0.25rem;line-height:1.35;}
+.carry .trend + .trend{margin-top:0.6rem;border-top:1px solid var(--hair);padding-top:0.6rem;}
+.carry .trend .top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:0.25rem 1rem;}
+.carry .trend .who{font-size:0.9rem;font-weight:700;min-width:0;overflow-wrap:anywhere;}
+.carry .trend .who .win{font-weight:500;color:var(--ink2);font-size:0.75rem;margin-left:2px;}
+.carry .trend .big{text-align:right;line-height:1.1;min-width:0;overflow-wrap:anywhere;}
+.carry .trend .big .n{font-size:1.375rem;font-weight:600;}
+.carry .trend .big .n small{font-size:0.75rem;color:var(--ink2);font-weight:600;}
+.carry .trend .big .delta{font-size:0.75rem;color:var(--ink2);margin-top:1px;}
+.carry .trend .big .delta b{color:var(--ink);font-weight:700;}
+.carry .trend .big .delta-caveat{font-size:0.7rem;color:var(--ink2);margin-top:1px;font-style:italic;}
+.carry .trend .subnote{font-size:0.75rem;color:var(--ink2);margin:2px 0 0.4rem;}
 .carry .kv .k,.trialread .kv .k{display:block;font-weight:650;}
 /* CUL-2551: v1's Noticed strip, carried in At a glance, wraps at large text rather than run past the
    screen (28 day cells in one row clipped at 320pt × 2.35); its key labels may break. .carry.back
