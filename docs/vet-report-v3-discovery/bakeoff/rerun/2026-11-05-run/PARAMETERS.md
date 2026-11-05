@@ -1,0 +1,10 @@
+# The re-run's parameters (CUL-2306, Vet report v2 PR-26, after PR-35)
+
+**Written 2026-11-05, before any model call in this run.** The rule is `../PREREGISTRATION.md`, unedited; this file fixes only the run's parameters. Nothing here is edited after a result is seen; anything learned afterwards goes in `RESULT.md`.
+
+- **Configuration:** `main` at `3171cd4` (PR-35 merged as #1443; #1445 since, outside `aiLead/`), unedited. `harness.ts` loads the shipped modules at runtime and stands in for the database only: an empty draft row, a gate that allows, the draft write captured in memory.
+- **Fixtures:** the round's seven, 5 runs each (35), at most 6 in flight. The thin pair `thin-juniper-4d` and `thin-juniper-14d`, built by the report code from `juniper()` into `thin-record.json`, through the whole pipeline; each must record `not_eligible` with zero model calls.
+- **The set:** `set.json` version 2 (99 items, 11 controls); the harness refuses any other version. Each item goes through the checker as step 7 calls it: `requestBody('checker', { ...payload, draft })`, the 25 s checker budget, then `checkerDecision(verdict, { table, draft })`. `modelDecision(verdict)` is stored beside it. Then the shipped `verifyLead`.
+- **Checker errors:** a hazard item whose checker call errors is re-run once (`harness.ts recheck`); the re-run's result is kept beside the first.
+- **Judges:** `harness.ts blind` writes `blind/items.json` (every printed lead and each fixture's arm A, the payload's lines numbered as printed: band, record lines, trial line, record edge) and `blind-key.json`, ids drawn from a fixed seed. Two isolated reviewers, `dr-chen` and `skeptic`, each read `../../rubric.md` and `../../vet-chen.md` or `../../vet-skeptic.md` and score every item into `blind/judge-<name>.json`. They see no arm, model, verifier or checker output.
+- **Score:** `harness.ts score` needs no key and no model call; it writes `score.json` from the stored files with the shipped verifier and checker decision.

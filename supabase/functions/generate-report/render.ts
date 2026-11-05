@@ -2530,7 +2530,7 @@ function safetyBand(snap: ReportSnapshot): string {
     return `
   <div class="limit checked">${body}</div>`
   }
-  const rows = flags.map((f) => safetyFlagRow(f, snap)).join('') + (body === null ? '' : flagRow('Not triggered', body))
+  const rows = flags.map((f) => safetyFlagRow(f, snap, flagRow, V1_FLAG_POINTERS, true)).join('') + (body === null ? '' : flagRow('Not triggered', body))
   const warnIcon = `<svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg>`
   return `
   <div class="safetyband">
@@ -2645,6 +2645,10 @@ export function safetyFlagRow(
   snap: ReportSnapshot,
   row: (tag: string, body: string) => string = flagRow,
   ptr: FlagPointers = V1_FLAG_POINTERS,
+  // CUL-2529: v1's band only. The weight flag's recency and intake coverage, and the refusal flag's
+  // named feedings, are v1 sheet-1 fixes; v2's sheet 1 and the AI lead's fact table read this same
+  // row and stay byte-identical until v2 adopts them (filed against v2's go-live).
+  v1FirstSheet = false,
 ): string {
   const tz = snap.timezone
   switch (f.kind) {
@@ -2786,12 +2790,18 @@ export function safetyFlagRow(
         bits.push(
           `<b>${num(r.refusedFeedings)} of ${num(r.ratedFeedings)} ${noun}${
             r.ratedFeedings === 1 ? '' : 's'
-          }${of} left unfinished</b>${population}${when}${since}.`,
+          }${of} left unfinished</b>${population}${when}${wide || !v1FirstSheet ? '' : refusalUnfinishedNamed(snap, r.refusedFeedings, r.ratedFeedings)}${since}.`,
         )
       }
       // The food names, after the finding, never under a `meal_record` population (B-530).
+      // CUL-2529 (PM ruling (a), 2026-11-05): past two foods the list moves to the diet-trial block,
+      // which leads with the same names, so the drugs and the off-diet protein fit on sheet 1.
       if (!wide && f.trialDietLabels.length > 0) {
-        bits.push(`Trial diet: ${h(f.trialDietLabels.join(' / '))}.`)
+        bits.push(
+          f.trialDietLabels.length <= 2 || !v1FirstSheet
+            ? `Trial diet: ${h(f.trialDietLabels.join(' / '))}.`
+            : `Trial diet: the ${num(f.trialDietLabels.length)} trial-diet foods named in the diet-trial block.`,
+        )
       }
       // ⚠️ NO SENTENCE HERE ABOUT WHAT THE RECORD DOES NOT CONTAIN. A repair pass added
       // "The trial ran to this window with no intake ratings logged against it" to this
@@ -3235,9 +3245,9 @@ export function safetyFlagRow(
         `<b>Weighed ${reading(f.latest)}, down from ${reading(f.highBefore)} &mdash; ${weightLossPctText(
           f.latest.kg,
           f.highBefore.kg,
-        )}${plan}.</b> The latest reading against the highest before it in the last ${num(
+        )}${plan}.</b>${v1FirstSheet ? weightFlagRecency(f, snap) : ''} The latest reading against the highest before it in the last ${num(
           f.windowDays,
-        )} days, not a diagnosis; body condition was not assessed.${scales}${after} ${told}`,
+        )} days, not a diagnosis; body condition was not assessed.${scales}${after} ${told}${v1FirstSheet && (f.asOf === 'now' || !todayRow) ? weightFlagIntakeBit(snap) : ''}`,
       )
     }
     case 'weight_unchecked':
@@ -3482,19 +3492,199 @@ function headline(snap: ReportSnapshot): string {
     // the demo's headline read "Tracking … day 19 of 42" over four off-diet feedings that only
     // the exposure tile mentioned. Same count and span as that tile, so the two cannot differ.
     const offDiet = tb && !tb.allowedSetUnavailable ? tb.exposures.offDiet : 0
+    // CUL-2529 instance 2 (QUIET) — NAME WHAT THEY CARRIED, AND WHEN. Nyx's sheet 1 read "11 of 167
+    // … did not match" and never said chicken, while the vomiting that rose after chicken came back
+    // (Oct 18–19) sat on printed pages 3–4. Read off the same items appendix C lists, so the two
+    // cannot disagree; a feeding carrying no recorded off-trial protein is counted, never dropped.
+    const carriedBit = tb && offDiet > 0 ? headlineOffDietCarried(tb) : ''
     const offDietBit =
       offDiet > 0 && tb
-        ? ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b> (${h(
+        ? ` <b>${num(offDiet)} of ${num(tb.exposures.totalFeedings)} logged feedings did not match the trial diet</b>${carriedBit} (${h(
             fmtRange(tb.evidenceStartDate, tb.evidenceEndDate),
           )}; a floor)${breachBit ? '.' : ' — see the diet section before reading the trial as a result.'}`
         : ''
+    const medsBit = tb ? headlineMedicationBit(snap, tb) : ''
     return `
-  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${offDietBit}${breachBit}</div>`
+  <div class="headline">${lead} &mdash; ${trialDayPhrase(tb, t.targetDurationDays)}${windowMovedBit}. Primary sign logged: <b>${primPhrase}</b>.${windowBit}${offDietBit}${breachBit}${medsBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
   return `
   <div class="headline">Owner monitoring <b>${primPhrase}</b> over this window — no diet trial; symptom monitoring only.${chronicBit}</div>`
+}
+
+/**
+ * CUL-2529 instance 2 — the off-diet feedings' proteins, each with its count and days: ", carrying
+ * Chicken (11) on Oct 18, Oct 19 and Oct 20". A food carrying several proteins counts once for each,
+ * as the antigen tally does. Feedings carrying no recorded off-trial protein (an unread panel, or a
+ * listed food fed before its date) are counted under their own words, never folded into a protein.
+ */
+export function headlineOffDietCarried(t: NonNullable<ReportSnapshot['trial']>): string {
+  const off = t.exposures.items.filter((x) => x.classification.offDiet)
+  if (off.length === 0) return ''
+  const byProtein = new Map<string, { n: number; days: string[] }>()
+  const none: string[] = []
+  for (const x of off) {
+    const day = dayKeyOfIndex(x.dayIndex)
+    const antigens = [...new Set(x.classification.antigens.map((a) => a.toLowerCase()))]
+    if (antigens.length === 0) none.push(day)
+    for (const a of antigens) {
+      const g = byProtein.get(a) ?? { n: 0, days: [] }
+      g.n++
+      g.days.push(day)
+      byProtein.set(a, g)
+    }
+  }
+  const named = [...byProtein.entries()]
+    .sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]))
+    .map(([p, g]) => `${h(capProtein(p))} (${num(g.n)}) ${dayListText(g.days)}`)
+  if (none.length > 0) {
+    named.push(`${num(none.length)} with no off-trial protein recorded ${dayListText(none)}`)
+  }
+  return `, carrying ${named.join('; ')}`
+}
+
+/**
+ * CUL-2529 instance 1 (QUIET) — THE DRUGS ON THE FIRST SHEET. Nyx's sheet 1 printed the trial result
+ * with no steroid in view: prednisolone Sep 21–Oct 11 first appeared on printed page 3, and a steroid
+ * course and a working elimination draw the same improving curve. One clause per drug, from the same
+ * overlap rows the trial block's "Medication during the trial" row prints, so the two cannot differ;
+ * the partial-dose count rides with a course that has one (CUL-2440), so a vet never reads full dosing.
+ */
+export function headlineMedicationBit(snap: ReportSnapshot, t: NonNullable<ReportSnapshot['trial']>): string {
+  const groups = new Map<string, { rows: TrialMedicationOverlap[]; supplement: boolean }>()
+  for (const m of t.medicationOverlap) {
+    const g = groups.get(m.drugName)
+    if (g) g.rows.push(m)
+    else groups.set(m.drugName, { rows: [m], supplement: m.isSupplement })
+  }
+  const clauses: string[] = []
+  for (const [name, g] of groups) {
+    const route = routeOfOverlap(snap, g.rows[0])
+    const bits: string[] = []
+    if (route) bits.push(h(routeLabel(route)))
+    if (g.rows.length > 1) bits.push(`${num(g.rows.length)} courses`)
+    else {
+      const m = g.rows[0]
+      if (m.recordStart || m.adHocDoses) bits.push('ad-hoc doses')
+      else {
+        const start = m.startedAt !== null && m.startedAt.slice(0, 10) < m.fromDate ? m.startedAt.slice(0, 10) : m.fromDate
+        const still = m.activeAtWindowEnd ? ', still running' : ''
+        bits.push(`${h(fmtDay(start))}&ndash;${h(fmtDay(m.toDate))}${still}`)
+      }
+    }
+    // Each overlap row's OWN regimen (same name and start day, as `routeOfOverlap` matches), never a
+    // same-name course that did not overlap (adversarial pass 1); an ad-hoc row has no course to count.
+    const matched = g.rows
+      .filter((m) => !m.recordStart && !m.adHocDoses && m.startedAt !== null)
+      .map((m) => snap.medications.find((r) => r.drugName === name && r.startedAt.slice(0, 10) === m.startedAt!.slice(0, 10)))
+      .filter((r): r is MedicationAdherence => r !== undefined)
+    // Cold read at f8acadc: what the drug was for, from its own course(s) — a steroid given for the
+    // cough the trial is also measuring is the confound a vet weighs first.
+    const withInd = matched.filter((r) => !!r.indication?.trim())
+    const indications = [...new Set(withInd.map((r) => r.indication!.trim().toLowerCase()))]
+    // Every course carries it → "for X"; only some → say how many, so one course's indication is
+    // never lent to another (final cold read: Motozol's second course has none on record).
+    if (indications.length > 0 && withInd.length === g.rows.length) {
+      bits.splice(route ? 1 : 0, 0, `for ${h(indications.join(' and '))}`)
+    } else if (indications.length > 0) {
+      const at = bits.findIndex((b) => b.endsWith(' courses'))
+      const note = `${num(withInd.length)} for ${h(indications.join(' and '))}`
+      if (at >= 0) bits[at] = `${bits[at]}, ${note}`
+      else bits.push(`${note} of ${num(g.rows.length)}`)
+    }
+    const parts = matched.map((r) => ({ r, p: partialOf(r) })).filter((x) => x.p !== null)
+    if (parts.length > 0) {
+      const n = parts.reduce((a, x) => a + x.p!.n, 0)
+      const whole = parts.every((x) => x.p!.wholeCourse) && matched.length === g.rows.length
+      bits.push(
+        whole
+          ? `${num(n)} of ${num(matched.reduce((a, r) => a + r.lifetimeDosesLogged, 0))} doses partial`
+          : `${num(n)} partial doses in this window`,
+      )
+    }
+    if (g.supplement) bits.unshift('entered as a supplement')
+    clauses.push(`${h(name)}${bits.length ? ` (${bits.join(', ')})` : ''}`)
+  }
+  for (const r of t.recordOnlyOverlap ?? []) {
+    if (groups.has(r.drugName)) continue
+    const bits = [
+      r.isSupplement ? 'entered as a supplement' : null,
+      r.route ? h(routeLabel(r.route)) : null,
+      'ad-hoc doses on record across the trial',
+    ].filter(Boolean)
+    clauses.push(`${h(r.drugName)} (${bits.join(', ')})`)
+  }
+  if (clauses.length === 0) return ''
+  const list = clauses.length === 1 ? clauses[0] : `${clauses.slice(0, -1).join(', ')} and ${clauses[clauses.length - 1]}`
+  return ` <b>Medication overlapping the trial: ${list}</b>, so a change in the signs cannot be attributed to the diet alone (diet-trial block).`
+}
+
+/** Days from one 'YYYY-MM-DD' to a later one; null when either does not parse. */
+function daysBetweenKeys(from: string, to: string): number | null {
+  const a = Date.parse(`${from.slice(0, 10)}T00:00:00Z`)
+  const b = Date.parse(`${to.slice(0, 10)}T00:00:00Z`)
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.round((b - a) / 86_400_000) : null
+}
+
+/** Past this, the Weight flag says how old its latest reading is (CUL-2529 instance 6). */
+export const WEIGHT_STALE_DAYS = 14
+
+/**
+ * CUL-2529 instance 6 (QUIET) — HOW OLD THE LATEST READING IS, ON THE FLAG. Nyx's 15% loss rested on
+ * one weigh-in, 50 days before the report, and only the trial block's prose said none followed. A vet
+ * reads "3.73 kg" as her weight today. Record-anchored dates, so a date may reach outside the window
+ * (C-19); the gap is days between two named dates, never a duration re-derived from a detector.
+ *
+ * The anchor is the row's own tense (adversarial pass 1): a row about today counts to the day the
+ * report was generated (a past custom window silenced the line on a 50-day-old reading), and a
+ * window-end row counts to the window's end. "No weigh-in after it" is said only when this reading is
+ * the latest on record; otherwise the line names the gap and that a later reading exists.
+ */
+export function weightRecencyBit(
+  latestDay: string,
+  anchorDay: string,
+  anchor: 'generated' | 'window_end',
+  latestOnRecord: boolean,
+): string {
+  const gap = daysBetweenKeys(latestDay, anchorDay)
+  if (gap === null || gap <= WEIGHT_STALE_DAYS) return ''
+  const weeks = Math.floor(gap / 7)
+  const span = `${num(gap)} days (${num(weeks)} week${weeks === 1 ? '' : 's'}) before ${h(fmtDayYear(anchorDay))}, ${
+    anchor === 'generated' ? 'when this report was generated' : 'the end of this report&rsquo;s window'
+  }`
+  return latestOnRecord
+    ? ` <b>No weigh-in is recorded after it:</b> it is ${span}.`
+    : ` <b>This reading is ${span}</b>; a later weigh-in is on record.`
+}
+
+function weightFlagRecency(f: Extract<SafetyFlag, { kind: 'weight_loss' }>, snap: ReportSnapshot): string {
+  const generated = localDayKeyOf(snap.generatedAt, snap.timezone)
+  const latestOnRecord = !snap.weight.latest || snap.weight.latest.date <= f.latest.day
+  // Adversarial pass 2 (QUIET): a window-end row whose reading is still the latest on record counts
+  // to the generation day too, or a 93-day-old reading on a past window printed no age beside "it
+  // does not read so today". Only a reading a later one superseded is counted to the window's end.
+  const toGenerated = f.asOf === 'now' || latestOnRecord
+  return weightRecencyBit(f.latest.day, toGenerated ? generated : snap.scope.endDate, toGenerated ? 'generated' : 'window_end', latestOnRecord)
+}
+
+/**
+ * CUL-2529 instance 8 (QUIET) — INTAKE COVERAGE WHERE THE WEIGHT LOSS IS READ. "Intake recorded for 3
+ * of 241 meals" sat in the Feeding row on printed page 7 and in appendix E, while the 15% loss led
+ * sheet 1: a vet weighing inadequate intake read the loss with no word that intake was barely
+ * recorded. Same counts as the Feeding row (`mealCounts`), so the two cannot differ. Silent only when
+ * every meal carries a rating, or none was logged (the Feeding row says that).
+ */
+export function weightFlagIntakeBit(snap: ReportSnapshot): string {
+  const { logged, rated } = mealCounts(snap.diet)
+  // Adversarial pass 2 (QUIET): no meal logged at all is the extreme case, never a silence.
+  if (logged === 0) {
+    return ` <b>No meal is logged in this window</b>, so this record cannot show how much ${h(snap.signalment.name)} is eating.`
+  }
+  if (rated >= logged) return ''
+  return ` <b>Intake was recorded for ${num(rated)} of ${num(logged)} meal${logged === 1 ? '' : 's'} logged in this window</b>, so this record cannot show how much ${h(
+    snap.signalment.name,
+  )} is eating.`
 }
 
 // ── The diet-trial block (B-417 §7) ──────────────────────────────────────────
@@ -5960,6 +6150,14 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
     // which reads as continuous cover.
     const route = routeOfOverlap(snap, m)
     const routeBit = route ? ` &middot; ${h(routeLabel(route))}` : ''
+    // CUL-2529 (final cold read): what the course was for, from the same regimen the headline reads,
+    // so the first sheet's "for ear infection" has a row to trace to (appendix B lists indications of
+    // courses inside the window only, and this course can sit before it).
+    const ownCourse =
+      !m.recordStart && !m.adHocDoses && m.startedAt !== null
+        ? snap.medications.find((r) => r.drugName === m.drugName && r.startedAt.slice(0, 10) === m.startedAt!.slice(0, 10))
+        : undefined
+    const forBit = ownCourse?.indication?.trim() ? ` &middot; for ${h(ownCourse.indication.trim().toLowerCase())}` : ''
     const length = m.adHocDoses
       ? `ad-hoc, dosed on ${num(m.adHocDoses.inTrialInWindowDays)} of the trial days this report covers; ${num(
           m.adHocDoses.onRecord,
@@ -5979,7 +6177,7 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>, snap: Re
           : m.adHocEarlierTrialDoseDays === null
             ? `; its dosing in the ${num(before)} earlier trial days this report leaves out <b>could not be counted</b>`
             : ''
-    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
+    return `${h(m.drugName)}${m.isSupplement ? ' (entered as a supplement)' : ''}${routeBit}${forBit} &middot; ${span} &middot; ${length}${earlier}${still}.${adHoc}${abx}`
   })
   // EXPLICITLY NOT JUDGED, and the sentence saying so is not optional: antipruritics
   // are permitted throughout a trial and a 2–3 week prednisolone course is a
@@ -8663,7 +8861,7 @@ function medicationLine(m: MedicationAdherence): string {
             m.courseDays.given > 0 ? `, on ${courseDaysGiven(m, false)}` : `; ${courseDaysNoneGiven(m, false)}`
           }${courseDaysTail(m)}.${outsideCourseNote(m)} Other doses against this course in this window: ${extras.join(', ')}.`
 
-  return `${regimen}. ${adherenceClaim(m)}${dosingSpan(m)} ${windowClause}`
+  return `${regimen}. ${adherenceClaim(m)}${partialVehicleSentence(m)}${dosingSpan(m)} ${windowClause}`
 }
 
 /**
@@ -8993,6 +9191,41 @@ function adherenceClaim(m: MedicationAdherence): string {
   return `Adherence: ${n} dose${m.lifetimeDosesLogged === 1 ? '' : 's'} administered across the whole course${partialClause(
     m,
   )}; ${why}.`
+}
+
+/**
+ * CUL-2529 instance 5 (QUIET) — the partial doses, joined to the meal each rode in and that meal's
+ * intake. Nyx's prednisolone read "15 of 15 … 11 of them partial" in a cat down 15%, with nothing
+ * saying the dosed food's intake was unrecorded: a vet could not tell an owner's split tablet from a
+ * cat leaving the dosed food. Absent on a stored copy: nothing, never a zero. The buckets partition
+ * the partial doses, so the sentence never names more doses than it counts.
+ */
+export function partialVehicleSentence(m: Pick<MedicationAdherence, 'partialDoseVehicles'>): string {
+  const v = m.partialDoseVehicles
+  if (!v || v.partial === 0) return ''
+  const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
+  const parts: string[] = []
+  if (v.inMeal > 0) {
+    const inner: string[] = []
+    if (v.unrated > 0) inner.push(`not recorded for ${num(v.unrated)}`)
+    for (const r of v.rated) inner.push(`rated &ldquo;${h(intakeLabel(r.rating).toLowerCase())}&rdquo; for ${num(r.n)}`)
+    const joined = inner.length === 1 ? inner[0] : `${inner.slice(0, -1).join(', ')} and ${inner[inner.length - 1]}`
+    parts.push(`${doses(v.inMeal)} given inside a meal or treat, whose intake was ${joined}`)
+  }
+  if (v.notPaired > 0) parts.push(`${doses(v.notPaired)} not logged with a meal`)
+  if (v.pairedUnread > 0) parts.push(`${doses(v.pairedUnread)} logged with a meal this report did not read`)
+  const unknownIntake = v.unrated + v.pairedUnread
+  // Below "ate most", the threshold the flag and appendix E use (`feedingWasFinished`).
+  const notFinished = v.rated.filter((r) => flagCountsUnfinished(r.rating)).reduce((a, r) => a + r.n, 0)
+  const why =
+    notFinished > 0 || unknownIntake > 0
+      ? ` A partial dose inside food that was ${
+          notFinished > 0 ? 'left unfinished' : v.unrated > 0 ? 'never rated' : 'not read by this report'
+        } may be the food going uneaten, not a smaller dose${
+          notFinished > 0 && unknownIntake > 0 ? '; where intake was not recorded, this record cannot tell the two apart' : ''
+        }.`
+      : ''
+  return ` <b>Of the ${doses(v.partial)} logged as partial:</b> ${parts.join('; ')}.${why}`
 }
 
 /** ", 11 of them partial" / "; 3 partial in this window" (CUL-2440, `partialOf`). */
@@ -9880,8 +10113,94 @@ function mealsAppendix(snap: ReportSnapshot): string {
     // table (a few rows) does.
     log.length > 0 ? mealItemsBlock : sectionTail(mealItemsBlock, foot)
   }
-  ${log.length > 0 ? intakeDetailTable(snap, log, foot) : ''}
+  ${log.length > 0 ? intakeDetailTable(snap, log, foot) : trialDietRatingsBlock(snap, [])}
 </section>`
+}
+
+/** The narrow Diet-not-eaten flag's refusal fact, when one leads the band (CUL-2529). */
+function narrowTrialRefusal(snap: ReportSnapshot): { refused: number; rated: number } | null {
+  for (const f of snap.safetyFlags) {
+    if (f.kind !== 'trial_diet_refusal' || !f.refusal || f.refusal.population === 'meal_record') continue
+    return { refused: f.refusal.refusedFeedings, rated: f.refusal.ratedFeedings }
+  }
+  return null
+}
+
+/** Below "ate most": the flag's unfinished threshold (`feedingWasFinished` reads most/all as finished). */
+function flagCountsUnfinished(r: string): boolean {
+  const k = r.trim().toLowerCase()
+  return k !== 'all' && k !== 'most'
+}
+
+/**
+ * CUL-2529 instance 7 (QUIET) — THE FLAG'S POPULATION, TRACEABLE. "2 of 4 rated feedings carrying the
+ * trial diet" pointed at this appendix, whose intake table lists meals only: Nyx's two treat ratings
+ * (Sep 28, and Oct 8, one of the two unfinished) appeared nowhere. This lists the rated trial-diet
+ * feedings the table above does not show, and says how the two add up to the flag's count, or that
+ * they do not (different spans), never hiding the gap. Printed only beside a narrow Diet-not-eaten
+ * flag; part of the shared intake table, so v2's reprint carries it too.
+ */
+function trialDietRatingsBlock(snap: ReportSnapshot, log: readonly IntakeLogEntry[]): string {
+  const fact = narrowTrialRefusal(snap)
+  const all = snap.provenance.trialDietRatings
+  if (!fact || !all || all.length === 0) return ''
+  const shown = new Set(log.map((e) => e.eventId))
+  const extra = all.filter((r) => !shown.has(r.eventId))
+  if (extra.length === 0) return ''
+  const tz = snap.timezone
+  const inTable = all.length - extra.length
+  const unfinished = all.filter((r) => flagCountsUnfinished(r.intakeRating)).length
+  const reconciles = all.length === fact.rated && unfinished === fact.refused
+  const body = extra
+    .map((r) => {
+      const cell = flagCountsUnfinished(r.intakeRating)
+        ? `<b>${h(intakeLabel(r.intakeRating))}</b>`
+        : h(intakeLabel(r.intakeRating))
+      return `<tr><td class="num">${h(fmtLocalDay(r.occurredAt, tz))}</td><td class="num">${h(
+        fmtLocalTime(r.occurredAt, tz),
+      )}</td><td>${r.foodLabel ? h(r.foodLabel) : '&mdash;'}${r.isTreat ? ' <span class="conf">treat</span>' : ''}</td><td>${cell}</td></tr>`
+    })
+    .join('')
+  const sum = inTable > 0
+    ? `With the ${num(inTable)} trial-diet ${inTable === 1 ? 'meal' : 'meals'} in the table above, these are`
+    : 'These are'
+  const note = reconciles
+    ? `${sum} the ${num(fact.rated)} rated feedings behind the Diet not eaten flag; it counts the ${num(
+        fact.refused,
+      )} rated below &ldquo;ate most&rdquo; (${all
+        .filter((r) => flagCountsUnfinished(r.intakeRating))
+        .map((r) => h(fmtLocalDay(r.occurredAt, tz)))
+        .join(', ')}) as left unfinished, and ${num(
+        all.filter((r) => r.intakeRating.trim().toLowerCase() === 'all').length,
+      )} of the ${num(fact.rated)} were rated &ldquo;ate it all&rdquo;.`
+    : `The Diet not eaten flag counts ${num(fact.refused)} of ${num(
+        fact.rated,
+      )} rated feedings over the trial days it covers; these rows and the trial-diet meals above are the rated feedings of the trial diet in this report&rsquo;s window. The two are taken over different spans, so their counts can differ.`
+  return `
+  <p class="note lead" style="margin-top:16px"><b>Rated feedings carrying the trial diet, not in the table above</b> &mdash; treats included, oldest first. ${note}</p>
+  <table>
+    <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table>`
+}
+
+/**
+ * CUL-2529 instance 7 — the flag's unfinished feedings, named by day and kind, when the listed rows
+ * reconcile with its count and there are at most three. Otherwise nothing: appendix E lists them.
+ */
+export function refusalUnfinishedNamed(snap: ReportSnapshot, refused: number, rated: number): string {
+  const rows = snap.provenance.trialDietRatings
+  if (!rows || rows.length !== rated) return ''
+  const un = rows.filter((r) => flagCountsUnfinished(r.intakeRating))
+  if (un.length !== refused || un.length === 0 || un.length > 3) return ''
+  const tz = snap.timezone
+  // Cold read at f8acadc (QUIET stopgap, filed for a ruling): the flag counts "ate most" as finished,
+  // so "2 of 4 left unfinished" stood over a record where none of the 4 was eaten in full. The
+  // fully-eaten count rides beside it; the flag's own count and threshold are unchanged.
+  const full = rows.filter((r) => r.intakeRating.trim().toLowerCase() === 'all').length
+  return ` (${un
+    .map((r) => `${h(fmtLocalDay(r.occurredAt, tz))}, ${r.isTreat ? 'a treat' : 'a meal'}, ${h(intakeLabel(r.intakeRating).toLowerCase())}`)
+    .join('; ')}; ${num(full)} of the ${num(rated)} rated &ldquo;ate it all&rdquo;)`
 }
 
 /** A share the record holds only as a proportion (§6): a common fraction when it is one,
@@ -10292,7 +10611,7 @@ export function intakeDetailTable(snap: ReportSnapshot, log: IntakeLogEntry[], f
     <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  ${sectionTail(`<p class="note" style="margin-top:9px">${readingBit}</p>`, foot)}`
+  ${sectionTail(`<p class="note" style="margin-top:9px">${readingBit}</p>${trialDietRatingsBlock(snap, log)}`, foot)}`
 }
 
 function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
@@ -11095,9 +11414,9 @@ export function offDietAppendix(snap: ReportSnapshot): string {
         )} feedings logged ${h(
           fmtRange(snap.trial!.evidenceStartDate, snap.trial!.evidenceEndDate),
         )} matched the trial diet or a permitted food. This describes the record and is a floor, not a total.`
-      : 'No feeding in this window is listed here. See the diet-trial block on page 1 before reading that as a clean elimination.'
+      : 'No feeding in this window is listed here. See the diet-trial block on page&nbsp;1 before reading that as a clean elimination.'
     : hasTrial
-      ? 'Nothing is listed here. This report has no allowed-food list for the trial, so no feeding has been checked against one &mdash; see the diet-trial block on page 1.'
+      ? 'Nothing is listed here. This report has no allowed-food list for the trial, so no feeding has been checked against one &mdash; see the diet-trial block on page&nbsp;1.'
       : 'No treats or table food are recorded in this window.'
   return `
   <p class="appx-title serif">Appendix C — ${
@@ -11894,6 +12213,34 @@ function appendixF(snap: ReportSnapshot): string {
 </section>`
 }
 
+// ── "Page 1" is a section, not a sheet (CUL-2529 instance 3) ──────────────────────
+
+/**
+ * The phrases v1's shared fragments use for the clinical summary, each with the words a reader can
+ * find. The summary the fragments call "page 1" runs to seven printed pages on Nyx's record, so a
+ * vet sent to "page 1" for Timing vs symptoms turned to the first sheet and found the safety band.
+ * Applied to v1's document ONLY, after assembly: v2 reprints the same fragments and rewrites "page 1"
+ * by exact phrase (`backSheetsV2.ts`), so the fragments themselves stay byte-identical. Specific
+ * phrases first, then the grammatical forms; the render test pins that none survives.
+ */
+export const V1_SUMMARY_POINTER_REWRITES: ReadonlyArray<readonly [RegExp, string]> = [
+  // The one plain-space phrase, kept because v2 rewrites it by this exact text; no owner writes it.
+  [/only an activity word, which page 1 never lists/g, 'only an activity word, which this line never lists'],
+  [/A page-1 &ldquo;time since/g, 'The clinical summary&rsquo;s &ldquo;time since'],
+  // The &nbsp; form only: the code writes every remaining pointer that way, and an owner's own note
+  // (escaped, with an ordinary space) is never rewritten.
+  [/\bon page&nbsp;1\b/g, 'in the clinical summary'],
+  [/\bpage&nbsp;1&rsquo;s/g, 'the clinical summary&rsquo;s'],
+  [/\bpage&nbsp;1\b/g, 'the clinical summary'],
+]
+
+/** v1's "page 1" pointers, renamed to the section they mean (CUL-2529). */
+export function v1SummaryPointers(html: string): string {
+  let out = html
+  for (const [re, to] of V1_SUMMARY_POINTER_REWRITES) out = out.replace(re, to)
+  return out
+}
+
 // ── The document ─────────────────────────────────────────────────────────────────
 
 /**
@@ -11945,13 +12292,13 @@ export function renderReport(input: ReportSnapshot): string {
 <style>${SHIPPED_STYLE}</style>
 </head>
 <body>
-${page1}
+${v1SummaryPointers(`${page1}
 ${appendixA(snap)}
 ${appendixBCD(snap)}
 ${mealsAppendix(snap)}
 ${incidentPhotosAppendix(snap)}
 ${noticedAppendix(snap)}
-${appendixF(snap)}
+${appendixF(snap)}`)}
 </body>
 </html>`
 }

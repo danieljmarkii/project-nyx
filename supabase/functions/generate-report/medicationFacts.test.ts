@@ -175,7 +175,7 @@ Deno.test('adversarial 1 — a prescribed course is never relabelled ad-hoc by a
   const cc = out.concurrentChanges.find((c) => c.label === 'Prednisolone')!
   assert.equal(cc.recordStart, undefined)
   const t = plain(renderReport(s))
-  assert.match(t, /Prednisolone · (by mouth · )?Sep 21–Oct 11 · 21 d still running at the end of this window/)
+  assert.match(t, /Prednisolone · (by mouth · )?(for coughing · )?Sep 21–Oct 11 · 21 d still running at the end of this window/)
   assert.doesNotMatch(t, /Prednisolone · doses on record/)
 })
 
@@ -298,8 +298,8 @@ Deno.test('CUL-2480 instance 2 — "supplement" is never said bare (nyx-live, v1
 
 Deno.test('CUL-2480 (#1428) — the overlap line carries the route, and an ad-hoc row its doses, never a day span', () => {
   const t = v1('nyx-live')
-  assert.match(t, /Motozol · in the ear · since Jul 16, overlapping Jul 26–Aug 9 · 15 d\./)
-  assert.match(t, /Prednisolone · by mouth · Sep 21–Oct 11 · 21 d\./)
+  assert.match(t, /Motozol · in the ear · (for ear infection · )?since Jul 16, overlapping Jul 26–Aug 9 · 15 d\./)
+  assert.match(t, /Prednisolone · by mouth · (for coughing · )?Sep 21–Oct 11 · 21 d\./)
   assert.match(t, /overlapping Jul 26–Oct 20 · ad-hoc, dosed on 4 of the trial days this report covers; 21 doses on record in all/)
   assert.doesNotMatch(t, /Cetirizine[^.]*· 87 d/)
 })
@@ -318,7 +318,7 @@ Deno.test('adversarial B1 — the route is the row’s own record’s, never poo
   for (const m of s.medications) if (m.drugName === 'Prednisolone') m.route = null
   s.unlinkedMedications.push({ ...s.unlinkedMedications[0], itemId: 'pred-eye', drugName: 'Prednisolone', route: 'ophthalmic', firstDate: '2026-10-15', lastDate: '2026-10-15', doseDays: ['2026-10-15'] })
   const t = plain(renderReport(s))
-  assert.match(t, /Prednisolone · Sep 21–Oct 11 · 21 d\./)
+  assert.match(t, /Prednisolone · (for coughing · )?Sep 21–Oct 11 · 21 d\./)
   assert.doesNotMatch(t, /Prednisolone · in the eye/)
 })
 

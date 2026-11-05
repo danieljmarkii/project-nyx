@@ -197,3 +197,48 @@ describe('usePet — cross-pet banner archived-exclusion (B-151)', () => {
     expect(petsEqCalls).toContainEqual(['is_active', true]);
   });
 });
+
+// CUL-2542: the archived pet ids the widget inbox treats as the account's own.
+describe('usePet archived pet ids (CUL-2542)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { notifySignedOut } = require('../lib/signOutEpoch');
+
+  function mockWithArchived(archived: Promise<ReadResult>) {
+    mockedFrom.mockImplementation((table: string) => {
+      if (table === 'user_profiles') {
+        const maybeSingle = jest.fn().mockResolvedValue({ data: { onboarding_completed_at: 'x' }, error: null });
+        return { select: jest.fn(() => ({ eq: jest.fn(() => ({ maybeSingle })) })) };
+      }
+      return {
+        select: jest.fn((cols: string) =>
+          cols === 'id'
+            ? { eq: jest.fn(() => ({ eq: jest.fn(() => archived) })) }
+            : {
+                eq: jest.fn(() => ({
+                  eq: jest.fn(() => ({ order: jest.fn().mockResolvedValue({ data: [PET], error: null }) })),
+                })),
+              },
+        ),
+      };
+    });
+  }
+
+  beforeEach(() => usePetStore.setState({ archivedPetIds: [] }));
+
+  it("adds the account's archived pet ids to the store", async () => {
+    mockWithArchived(Promise.resolve({ data: [{ id: 'arch-1' }], error: null }));
+    renderHook(() => usePet());
+    await waitFor(() => expect(usePetStore.getState().archivedPetIds).toEqual(['arch-1']));
+  });
+
+  it('drops a read that answers after a sign-out began (never carries ids into the next account)', async () => {
+    let answer: (r: ReadResult) => void = () => undefined;
+    mockWithArchived(new Promise<ReadResult>((r) => { answer = r; }));
+    renderHook(() => usePet());
+    await waitFor(() => expect(setOnboarded).toHaveBeenCalledWith(true));
+    notifySignedOut();
+    answer({ data: [{ id: 'arch-1' }], error: null });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(usePetStore.getState().archivedPetIds).toEqual([]);
+  });
+});

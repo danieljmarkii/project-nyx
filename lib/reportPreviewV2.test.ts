@@ -9,7 +9,9 @@ import {
   isBareV2Report,
   PREVIEW_TOGGLE_LABEL,
   REPORT_FRAME_PROPS,
+  SCRIPTED_REPORT_FRAME_PROPS,
   reportFrameLoadAllowed,
+  scriptedReportFrameLoadAllowed,
 } from './reportPreviewV2';
 
 const ROOT = join(__dirname, '..');
@@ -111,15 +113,45 @@ describe('REPORT_FRAME_PROPS: the props every v2 report WebView spreads (CUL-246
     'app/reports/[id].tsx': 1,
     'app/report.tsx': 1,
   };
-  it.each(Object.entries(FRAMES))('%s: every WebView spreads REPORT_FRAME_PROPS and overrides none of it', (file, count) => {
+  // A frame that runs script spreads the scripted props (CUL-2553); a JS-off one the plain props.
+  it.each(Object.entries(FRAMES))('%s: every WebView spreads the frame props for its JS and overrides none of them', (file, count) => {
     const src = readFileSync(join(ROOT, file), 'utf8');
     const tags = src.split('<WebView').slice(1).map((t) => t.slice(0, t.indexOf('/>')));
     expect(tags).toHaveLength(count);
     for (const tag of tags) {
-      expect(tag).toContain('{...REPORT_FRAME_PROPS}');
+      const js = /\bjavaScriptEnabled(?!=\{false\})\b/.test(tag);
+      if (!js) expect(tag).toMatch(/\bjavaScriptEnabled=\{false\}/);
+      expect(tag).toContain(js ? '{...SCRIPTED_REPORT_FRAME_PROPS}' : '{...REPORT_FRAME_PROPS}');
+      expect(tag).not.toContain(js ? '{...REPORT_FRAME_PROPS}' : '{...SCRIPTED_REPORT_FRAME_PROPS}');
       for (const prop of Object.keys(REPORT_FRAME_PROPS)) expect(tag).not.toMatch(new RegExp(`\\b${prop}=`));
     }
     expect(src).not.toMatch(/isPreviewLoadAllowed|savedCopyLoadAllowed/);
+  });
+});
+
+describe('scriptedReportFrameLoadAllowed: a frame that runs script cannot send itself to about:blank on Android (CUL-2553)', () => {
+  it('Android refuses about:blank, and everything the shared check refuses', () => {
+    const android = scriptedReportFrameLoadAllowed('android');
+    expect(android({ url: 'about:blank' })).toBe(false);
+    expect(android({ url: 'about:blank', isTopFrame: true })).toBe(false);
+    for (const url of ['data:text/html,x', 'https://x.test/', 'about:srcdoc', 'nyx://x']) expect(android({ url })).toBe(false);
+  });
+  it('iOS keeps the shared check: it reports the inline document as about:blank', () => {
+    expect(scriptedReportFrameLoadAllowed('ios')).toBe(reportFrameLoadAllowed);
+  });
+  it('the scripted props differ from the plain ones by the load check only', () => {
+    const { onShouldStartLoadWithRequest: a, ...restScripted } = SCRIPTED_REPORT_FRAME_PROPS;
+    const { onShouldStartLoadWithRequest: b, ...restPlain } = REPORT_FRAME_PROPS;
+    expect(restScripted).toEqual(restPlain);
+    expect(typeof a).toBe('function');
+    expect(b).toBe(reportFrameLoadAllowed);
+  });
+  it('the installed Android WebView loads inline HTML with loadDataWithBaseURL, which never reaches the load check', () => {
+    const lib = join(ROOT, 'node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview');
+    const impl = readFileSync(join(lib, 'RNCWebViewManagerImpl.kt'), 'utf8');
+    const html = impl.slice(impl.indexOf('if (source.hasKey("html"))'), impl.indexOf('if (source.hasKey("uri"))'));
+    expect(html).toContain('view.loadDataWithBaseURL(');
+    expect(html).not.toMatch(/loadUrl\(/);
   });
 });
 

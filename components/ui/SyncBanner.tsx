@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSyncStore } from '../../store/syncStore';
+import { useAppActive } from '../../hooks/useAppActive';
 import { theme } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 
@@ -46,8 +48,40 @@ export function syncBannerText(
   return "Some logs haven't synced in over a day. Connect to the internet to update your records.";
 }
 
+/**
+ * CUL-2547: how long until the pending line's answer changes on its own, or null when it
+ * never will without a store change (nothing pending, already past the threshold, the
+ * quarantined line leading, an unreadable stamp). The banner reads `Date.now()` only when
+ * it renders, and the store changes only after a sync cycle, so an app held open and
+ * offline across the 24-hour mark stayed quiet until something else redrew it. One timer
+ * to this moment is the redraw. One millisecond past the mark, so the render it forces
+ * reads strictly past it.
+ */
+export function msUntilPendingLineDue(
+  state: { pendingCount: number; oldestPendingAt: string | null; quarantinedCount: number },
+  now: number,
+): number | null {
+  if (state.quarantinedCount > 0 || !state.oldestPendingAt) return null;
+  const ageMs = now - new Date(state.oldestPendingAt).getTime();
+  if (Number.isNaN(ageMs) || ageMs >= STALE_THRESHOLD_MS) return null;
+  return STALE_THRESHOLD_MS - ageMs + 1;
+}
+
 export function SyncBanner() {
   const { pendingCount, oldestPendingAt, quarantinedCount } = useSyncStore();
+  // CUL-2547: the redraw at the moment the oldest pending entry turns a day old. Cleared
+  // and re-armed on any store change; paused while the app is not in the foreground (no
+  // timer runs then, and coming back re-renders through `active` anyway). `tick` re-arms
+  // it should a render land early (a clock moved), so the moment is never missed.
+  const active = useAppActive();
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const delay = msUntilPendingLineDue({ pendingCount, oldestPendingAt, quarantinedCount }, Date.now());
+    if (delay === null) return undefined;
+    const timer = setTimeout(() => setTick((n) => n + 1), delay);
+    return () => clearTimeout(timer);
+  }, [active, tick, pendingCount, oldestPendingAt, quarantinedCount]);
 
   const text = syncBannerText({ pendingCount, oldestPendingAt, quarantinedCount }, Date.now());
   if (!text) return null;

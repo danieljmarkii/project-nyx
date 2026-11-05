@@ -14,9 +14,20 @@
 // captureInbox imports ./appGroup (expo-file-system) and ./signal (which pulls
 // in the supabase client and its env guard); neither is used by the core ingest
 // under test, so import-graph stubs are sufficient.
+// CUL-2542: `File` records each sidecar stamp write, so the wrapper suite can assert the
+// first-deferral stamp the ingest leaves beside a record.
+const mockStampWrites: { name: string; text: string }[] = [];
 jest.mock('expo-file-system', () => ({
   Directory: class {},
-  File: class {},
+  File: class {
+    name: string;
+    constructor(_dir: unknown, name: string) {
+      this.name = name;
+    }
+    write(text: string) {
+      mockStampWrites.push({ name: this.name, text });
+    }
+  },
   Paths: { appleSharedContainers: {} },
 }));
 jest.mock('expo-sqlite', () => ({ openDatabaseSync: jest.fn() }));
@@ -48,7 +59,9 @@ import {
   inboxFileSortKey,
   CAPTURE_INBOX_SCHEMA_VERSION,
   INBOX_MAX_AGE_DAYS,
+  INBOX_DEFERRAL_STAMP_SUFFIX,
   MAX_INGEST_PER_PASS,
+  withArchivedPetIds,
   type BowlTopUpCaptureRecord,
   type CaptureRecord,
   type MealCaptureRecord,
@@ -58,6 +71,7 @@ import { getCaptureInboxDirectory } from './appGroup';
 import { getDb } from './db';
 import { notifySignedOut } from './signOutEpoch';
 import { triggerSignalRegenDebounced } from './signal';
+import { usePetStore } from '../store/petStore';
 
 type RawDb = InstanceType<typeof DatabaseSync>;
 
@@ -239,6 +253,10 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       name: `${i}.json`,
       raw: typeof r === 'string' ? r : JSON.stringify(r),
     }));
+  // CUL-2542: the same files, each carrying a first-deferral stamp (the sidecar's time).
+  const stampedFiles = (firstDeferredAt: string, ...records: (CaptureRecord | string)[]) =>
+    files(...records).map((f) => ({ ...f, firstDeferredAt }));
+  const daysBefore = (days: number) => new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
 
   it('writes the insertMeal-shaped event+meal pair: queued (synced=0), provenance stamped, unrated', async () => {
     const decisions = await ingestCaptureRecords(db, files(validRecord()), new Set([PET]), NOW);
@@ -318,7 +336,12 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       petId: '99999999-9999-4999-9999-999999999999',
       createdAt: staleCreated,
     });
-    const decisions = await ingestCaptureRecords(db, files(stale), new Set([PET]), NOW);
+    const decisions = await ingestCaptureRecords(
+      db,
+      stampedFiles(daysBefore(INBOX_MAX_AGE_DAYS + 1), stale),
+      new Set([PET]),
+      NOW,
+    );
     expect(decisions[0].action).toBe('dropped');
   });
 
@@ -361,7 +384,7 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
         createdAt: staleCreated(),
         foodItemId: '55555555-5555-4555-9555-555555555555',
       });
-      const decisions = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      const decisions = await ingestCaptureRecords(db, stampedFiles(staleCreated(), old), new Set([PET]), NOW);
       expect(decisions[0].action).toBe('dropped');
       expect(decisions[0].reason).toBe('aged out (food not in cache)');
     });
@@ -414,6 +437,69 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     });
   });
 
+  // CUL-2542: the 45 days run from the FIRST pass that found a record unusable (its sidecar
+  // stamp), never from its tap. Every fixture here is a capture tapped long ago whose food
+  // is missing for the moment: the case the tap-age rule dropped on first sight.
+  describe('age-out counts from the first deferral, never the tap (CUL-2542)', () => {
+    const MISSING_FOOD = '55555555-5555-4555-9555-555555555555';
+    const tappedLongAgo = () =>
+      validRecord({ foodItemId: MISSING_FOOD, createdAt: daysBefore(200), occurredAt: daysBefore(200) });
+
+    it('defers a 200-day-old capture on its first unusable pass, marked for a stamp', async () => {
+      const decisions = await ingestCaptureRecords(db, files(tappedLongAgo()), new Set([PET]), NOW);
+      expect(decisions).toEqual([
+        { name: '0.json', action: 'deferred', reason: 'food not in cache', unusable: true },
+      ]);
+    });
+
+    it('keeps it through day 45 of deferral and drops it after', async () => {
+      // Derived from the shipped constant, one second either side of the boundary.
+      const inside = new Date(NOW.getTime() - INBOX_MAX_AGE_DAYS * 86_400_000 + 1000).toISOString();
+      const past = new Date(NOW.getTime() - INBOX_MAX_AGE_DAYS * 86_400_000 - 1000).toISOString();
+      const kept = await ingestCaptureRecords(db, stampedFiles(inside, tappedLongAgo()), new Set([PET]), NOW);
+      expect(kept[0]).toMatchObject({ action: 'deferred', unusable: true });
+      const gone = await ingestCaptureRecords(db, stampedFiles(past, tappedLongAgo()), new Set([PET]), NOW);
+      expect(gone[0]).toMatchObject({ action: 'dropped', reason: 'aged out (food not in cache)' });
+    });
+
+    it('a stamp it cannot read, cut off, or in the future never ages the record', async () => {
+      // '2026' and '1' parse as dates (Jan 2026, 2001): a truncated write must not age a record.
+      for (const stamp of ['not-a-date', '', '2026', '1', daysBefore(400).slice(0, 10), daysBefore(-400)]) {
+        const d = await ingestCaptureRecords(db, stampedFiles(stamp, tappedLongAgo()), new Set([PET]), NOW);
+        expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+      }
+    });
+
+    it('never ages from a stamp earlier than the tap (the record did not exist yet)', async () => {
+      const recent = validRecord({ foodItemId: MISSING_FOOD, createdAt: daysBefore(2), occurredAt: daysBefore(2) });
+      const d = await ingestCaptureRecords(db, stampedFiles(daysBefore(400), recent), new Set([PET]), NOW);
+      expect(d[0]).toMatchObject({ action: 'deferred', unusable: true });
+    });
+
+    it('applies a long-deferred capture the moment its food arrives, however old the stamp', async () => {
+      raw
+        .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'B', 'P', 'dry')`)
+        .run(MISSING_FOOD);
+      const d = await ingestCaptureRecords(db, stampedFiles(daysBefore(400), tappedLongAgo()), new Set([PET]), NOW);
+      expect(d[0].action).toBe('applied');
+    });
+
+    it('a deferral about the pass (cap, sign-out, no pets) is never marked for a stamp', async () => {
+      const capped = await ingestCaptureRecords(
+        db,
+        files(validRecord(), validRecord({ id: uuidAt(1, 'a'), mealId: uuidAt(1, 'b') })),
+        new Set([PET]),
+        NOW,
+        1,
+      );
+      expect(capped[1]).toEqual({ name: '1.json', action: 'deferred', reason: 'pass cap' });
+      const fenced = await ingestCaptureRecords(db, files(validRecord()), new Set([PET]), NOW, 200, () => true);
+      expect(fenced[0].unusable).toBeUndefined();
+      const empty = await ingestCaptureRecords(db, files(validRecord()), new Set(), NOW);
+      expect(empty[0].unusable).toBeUndefined();
+    });
+  });
+
   it('caps APPLIES per pass, not classification — a deferral never consumes the budget', async () => {
     const second = validRecord({
       id: '66666666-6666-4666-9666-666666666666',
@@ -455,7 +541,7 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     it('CUL-2503: applies a 46-day-old top-up while its free-fed bowl is active, drops it once none is', async () => {
       const stale = new Date(NOW.getTime() - (INBOX_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
       const old = topUpRecord({ createdAt: stale, occurredAt: stale });
-      const none = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      const none = await ingestCaptureRecords(db, stampedFiles(stale, old), new Set([PET]), NOW);
       expect(none[0]).toMatchObject({ action: 'dropped', reason: 'aged out (no active free-fed arrangement)' });
       insertArrangement();
       const some = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
@@ -1102,5 +1188,239 @@ describe('summarizeUnclaimedInboxPayloads / readUnclaimedInbox / withUnclaimedIn
   it('an empty inbox changes nothing', () => {
     const rows = { pendingCount: 2, oldestPendingAt: 'not-a-date', quarantinedCount: 3 };
     expect(withUnclaimedInbox(rows, { count: 0, oldestAt: null, unknownAge: 0 })).toBe(rows);
+  });
+});
+
+// ── CUL-2542: the first-deferral stamp's lifecycle, through the wrapper ────────────────
+describe('ingestCaptureInbox: the first-deferral stamp (CUL-2542)', () => {
+  const MISSING_FOOD = '55555555-5555-4555-9555-555555555555';
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const recordFile = (name: string, overrides: Partial<MealCaptureRecord> = {}) =>
+    fakeFile(name, JSON.stringify(validRecord({ createdAt: daysAgo(200), occurredAt: daysAgo(200), ...overrides })));
+  const stampFile = (record: string, at: string) => fakeFile(`${record}${INBOX_DEFERRAL_STAMP_SUFFIX}`, at);
+
+  beforeEach(() => {
+    const raw = freshDb();
+    raw
+      .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'Hill''s', 'z/d', 'wet')`)
+      .run(FOOD);
+    (getDb as jest.Mock).mockReturnValue(asyncAdapter(raw));
+    mockStampWrites.length = 0;
+  });
+  afterEach(() => {
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue(null);
+  });
+  const install = (entries: FakeFile[]) =>
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => entries });
+
+  it('stamps a record on its first unusable pass and keeps it, however old its tap', async () => {
+    const waiting = recordFile('w.json', { foodItemId: MISSING_FOOD });
+    install([waiting]);
+    const before = Date.now();
+    await ingestCaptureInbox(new Set([PET]));
+    expect(waiting.deleted).toBe(false);
+    expect(mockStampWrites).toHaveLength(1);
+    expect(mockStampWrites[0].name).toBe(`w.json${INBOX_DEFERRAL_STAMP_SUFFIX}`);
+    expect(Date.parse(mockStampWrites[0].text)).toBeGreaterThanOrEqual(before);
+  });
+
+  it('never rewrites a readable stamp, so the clock does not restart', async () => {
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', daysAgo(10))]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites).toHaveLength(0);
+  });
+
+  it('replaces an unreadable stamp rather than ageing from it', async () => {
+    const stamp = stampFile('w.json', 'garbage');
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stamp]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites.map((w) => w.name)).toEqual([`w.json${INBOX_DEFERRAL_STAMP_SUFFIX}`]);
+    expect(stamp.deleted).toBe(false);
+  });
+
+  it('replaces a cut-off stamp (a truncated write) rather than keeping it', async () => {
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), stampFile('w.json', '2026')]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites.map((w) => w.name)).toEqual([`w.json${INBOX_DEFERRAL_STAMP_SUFFIX}`]);
+  });
+
+  it('drops a record 46 days after its first deferral, with its stamp', async () => {
+    const record = recordFile('w.json', { foodItemId: MISSING_FOOD });
+    const stamp = stampFile('w.json', daysAgo(INBOX_MAX_AGE_DAYS + 1));
+    install([record, stamp]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(record.deleted).toBe(true);
+    expect(stamp.deleted).toBe(true);
+  });
+
+  it('deletes the stamp of a record that applies, and an orphan stamp, and nothing else', async () => {
+    const landing = recordFile('a.json');
+    const landingStamp = stampFile('a.json', daysAgo(3));
+    const orphan = stampFile('gone.json', daysAgo(3));
+    const other = fakeFile('readme.txt', 'x');
+    install([landing, landingStamp, orphan, other]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(landing.deleted).toBe(true);
+    expect(landingStamp.deleted).toBe(true);
+    expect(orphan.deleted).toBe(true);
+    expect(other.deleted).toBe(false);
+  });
+
+  it('a record whose file cannot be read keeps its stamp', async () => {
+    const unreadable: FakeFile = {
+      name: 'u.json',
+      deleted: false,
+      textSync: () => {
+        throw new Error('io');
+      },
+      delete() {
+        this.deleted = true;
+      },
+    };
+    const stamp = stampFile('u.json', daysAgo(3));
+    install([unreadable, stamp]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(stamp.deleted).toBe(false);
+  });
+
+  it('the stamp is never read as a record by the count', () => {
+    install([stampFile('w.json', daysAgo(3))]);
+    expect(countUnclaimedInbox(new Set([PET]))).toBe(0);
+  });
+
+  it('a sign-out leaves even a lone orphan stamp alone (the wipe owns the inbox)', async () => {
+    const orphan = stampFile('gone.json', daysAgo(3));
+    install([orphan]);
+    await ingestCaptureInbox(new Set([PET]), () => true);
+    expect(orphan.deleted).toBe(false);
+  });
+
+  it('a sign-out mid-pass writes and deletes no stamp', async () => {
+    const orphan = stampFile('gone.json', daysAgo(3));
+    install([recordFile('w.json', { foodItemId: MISSING_FOOD }), orphan]);
+    await ingestCaptureInbox(new Set([PET]), () => true);
+    expect(mockStampWrites).toHaveLength(0);
+    expect(orphan.deleted).toBe(false);
+  });
+});
+
+// ── CUL-2542: an archived pet's capture is the owner's ──────────────────────────────────
+describe('archived pets count as the account (CUL-2542)', () => {
+  const ARCHIVED = '12121212-1212-4212-9212-121212121212';
+  const STRANGER = '99999999-9999-4999-9999-999999999999';
+  let raw: RawDb;
+
+  beforeEach(() => {
+    raw = freshDb();
+    raw
+      .prepare(`INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'Hill''s', 'z/d', 'wet')`)
+      .run(FOOD);
+    (getDb as jest.Mock).mockReturnValue(asyncAdapter(raw));
+    usePetStore.getState().reset();
+  });
+  afterEach(() => {
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue(null);
+    usePetStore.getState().reset();
+  });
+
+  it('withArchivedPetIds adds the archived ids, and leaves an empty (not loaded) set empty', () => {
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    expect([...withArchivedPetIds(new Set([PET]))].sort()).toEqual([ARCHIVED, PET].sort());
+    expect(withArchivedPetIds(new Set()).size).toBe(0);
+  });
+
+  it("applies a waiting capture for a pet archived before the app took it in", async () => {
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    const entry = fakeFile(
+      'a.json',
+      JSON.stringify(validRecord({ petId: ARCHIVED, createdAt: new Date().toISOString() })),
+    );
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => [entry] });
+    await ingestCaptureInbox(new Set([PET]));
+    expect(entry.deleted).toBe(true);
+    expect(raw.prepare('SELECT pet_id FROM events').all()).toEqual([{ pet_id: ARCHIVED }]);
+  });
+
+  it('archiving a pet in the app (removePet) adds it to the set', () => {
+    usePetStore.getState().setPets([
+      { id: PET, name: 'A' } as never,
+      { id: ARCHIVED, name: 'B' } as never,
+    ]);
+    usePetStore.getState().removePet(ARCHIVED);
+    expect(usePetStore.getState().archivedPetIds).toEqual([ARCHIVED]);
+    usePetStore.getState().reset();
+    expect(usePetStore.getState().archivedPetIds).toEqual([]);
+  });
+
+  it('until the archived ids are read, the count treats an unknown pet as ours (errs loud)', () => {
+    const at = new Date().toISOString();
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => [fakeFile('s.json', JSON.stringify(validRecord({ petId: STRANGER, createdAt: at })))],
+    });
+    expect(usePetStore.getState().archivedPetIdsLoaded).toBe(false);
+    expect(countUnclaimedInbox(new Set([PET]))).toBe(1);
+    usePetStore.getState().addArchivedPetIds([]);
+    expect(countUnclaimedInbox(new Set([PET]))).toBe(0);
+  });
+
+  it('until the archived ids are read, an unknown pet starts no age-out clock', async () => {
+    mockStampWrites.length = 0;
+    const entry = fakeFile('s.json', JSON.stringify(validRecord({ petId: STRANGER, createdAt: new Date().toISOString() })));
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => [entry] });
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites).toHaveLength(0);
+    usePetStore.getState().addArchivedPetIds([]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(mockStampWrites.map((w) => w.name)).toEqual([`s.json${INBOX_DEFERRAL_STAMP_SUFFIX}`]);
+    expect(entry.deleted).toBe(false);
+  });
+
+  it('never ages out an already-stamped capture for an unknown pet while the archived ids are unread (pass 2)', async () => {
+    // Stamped while its pet was active (a food miss), the pet archived since, the archived
+    // read not answered on this pass: it may be the owner's, so it stays.
+    const entry = fakeFile(
+      'a.json',
+      JSON.stringify(validRecord({ petId: ARCHIVED, createdAt: new Date(Date.now() - 200 * 86_400_000).toISOString() })),
+    );
+    const stamp = fakeFile(
+      `a.json${INBOX_DEFERRAL_STAMP_SUFFIX}`,
+      new Date(Date.now() - (INBOX_MAX_AGE_DAYS + 5) * 86_400_000).toISOString(),
+    );
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => [entry, stamp] });
+    await ingestCaptureInbox(new Set([PET]));
+    expect(entry.deleted).toBe(false);
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    await ingestCaptureInbox(new Set([PET]));
+    expect(raw.prepare('SELECT pet_id FROM events').all()).toEqual([{ pet_id: ARCHIVED }]);
+  });
+
+  it("keeps the caller's fence live: once the caller's set goes empty, no archived id matches", () => {
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    let signedOut = false;
+    const fencedView = {
+      get size() {
+        return 1;
+      },
+      has: (id: string) => !signedOut && id === PET,
+      [Symbol.iterator]: () => (signedOut ? new Set<string>() : new Set([PET]))[Symbol.iterator](),
+    } as unknown as ReadonlySet<string>;
+    const view = withArchivedPetIds(fencedView);
+    expect(view.has(ARCHIVED)).toBe(true);
+    signedOut = true;
+    expect(view.has(ARCHIVED)).toBe(false);
+    expect(view.has(PET)).toBe(false);
+    expect([...view]).toEqual([]);
+  });
+
+  it('the inbox count counts an archived pet’s capture and still skips a stranger’s', () => {
+    usePetStore.getState().addArchivedPetIds([ARCHIVED]);
+    const at = new Date().toISOString();
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => [
+        fakeFile('a.json', JSON.stringify(validRecord({ petId: ARCHIVED, createdAt: at }))),
+        fakeFile('s.json', JSON.stringify(validRecord({ id: uuidAt(2, 'a'), petId: STRANGER, createdAt: at }))),
+      ],
+    });
+    expect(countUnclaimedInbox(new Set([PET]))).toBe(1);
   });
 });

@@ -213,3 +213,15 @@ it('boxedV1Html renames every refused tag inert, and leaves escaped text alone',
   expect(out).toContain('&lt;iframe&gt;');
   expect(out).toContain(PREFETCH_OFF_META);
 });
+
+// CUL-2552: the v1 frame admits `about:blank` (how iOS reports the inline document), so an
+// injected refresh there would blank the report. JS is off; the rename is what stops it.
+it('boxedV1Html renames a meta refresh inert, so the v1 preview cannot be blanked by its own content', () => {
+  const out = boxedV1Html(
+    '<html><head><meta charset="utf-8" /><meta name="viewport" content="width=794" /></head><body><META HTTP-EQUIV=refresh content="0;url=about:blank"><meta content="0" http-equiv="refresh"></body></html>',
+  );
+  expect(out).not.toMatch(/<meta[^>]*http-equiv=["']?refresh/i);
+  expect(out).toContain('<meta charset="utf-8" />');
+  expect(out).toContain('<meta name="viewport" content="width=794" />');
+  expect(out.match(/<x-refused-meta/gi)).toHaveLength(2);
+});

@@ -26,6 +26,11 @@ jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
 // CUL-2522: the sent-report keeps still waiting on this phone, counted with the unsent entries.
 const mockPendingKeeps = jest.fn(async () => 0);
 jest.mock('./reportKeep', () => ({ pendingKeepsBeforeSignOut: () => mockPendingKeeps() }));
+// CUL-2508: the pre-sign-out ingest and inbox count. Default: nothing waiting.
+jest.mock('./captureInbox', () => ({
+  ingestCaptureInbox: jest.fn().mockResolvedValue(undefined),
+  countUnclaimedInbox: jest.fn(() => 0),
+}));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
 jest.mock('./widgetSnapshot', () => ({ fenceWidgetPublish: jest.fn() }));
 // lib/notifications imports expo-notifications (throws at import without the
@@ -64,6 +69,7 @@ import { wipeLocalSession, flushForSignOut, unsentSignOutWarning } from './sessi
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
+import { countUnclaimedInbox, ingestCaptureInbox } from './captureInbox';
 import { clearWidgetTimeline } from './widgetBridge';
 import { fenceWidgetPublish } from './widgetSnapshot';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
@@ -90,6 +96,7 @@ import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
 import { useAiConsentStore } from '../store/aiConsentStore';
+import { usePetStore } from '../store/petStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -639,6 +646,67 @@ describe('flushForSignOut (B-430)', () => {
     const counts = await flushForSignOut();
     expect(counts.pendingCount + counts.quarantinedCount).toBeGreaterThan(0);
     expect(unsentSignOutWarning(counts)).not.toBeNull();
+  });
+});
+
+describe('flushForSignOut counts the widget inbox (CUL-2508)', () => {
+  const PET_ID = 'pet-a';
+  beforeEach(() => {
+    (flushPendingForSignOut as jest.Mock).mockResolvedValue(undefined);
+    (getSyncStatus as jest.Mock).mockResolvedValue({ pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 });
+    (ingestCaptureInbox as jest.Mock).mockResolvedValue(undefined);
+    (countUnclaimedInbox as jest.Mock).mockReturnValue(0);
+    usePetStore.setState({ pets: [{ id: PET_ID } as never] });
+  });
+  afterEach(() => usePetStore.setState({ pets: [] }));
+
+  it('warns about a capture still waiting in the inbox when every row has synced', async () => {
+    (countUnclaimedInbox as jest.Mock).mockReturnValue(2);
+    const counts = await flushForSignOut();
+    expect(counts).toEqual({ pendingCount: 2, quarantinedCount: 0, keepCount: 0 });
+    expect(unsentSignOutWarning(counts)?.message).toMatch(/^2 entries/);
+  });
+
+  it('adds the inbox to the rows still unsent', async () => {
+    (getSyncStatus as jest.Mock).mockResolvedValue({ pendingCount: 3, oldestPendingAt: null, quarantinedCount: 1 });
+    (countUnclaimedInbox as jest.Mock).mockReturnValue(2);
+    expect(await flushForSignOut()).toEqual({ pendingCount: 5, quarantinedCount: 1, keepCount: 0 });
+  });
+
+  it('an inbox it cannot list counts one (CUL-2507), so the owner is asked', async () => {
+    (countUnclaimedInbox as jest.Mock).mockImplementation(() => {
+      throw new Error('list failed');
+    });
+    const counts = await flushForSignOut();
+    expect(counts.pendingCount).toBe(1);
+    expect(unsentSignOutWarning(counts)).not.toBeNull();
+  });
+
+  it('keeps the inbox count when the row status read fails too', async () => {
+    (countUnclaimedInbox as jest.Mock).mockReturnValue(2);
+    (getSyncStatus as jest.Mock).mockRejectedValue(new Error('sqlite gone'));
+    expect((await flushForSignOut()).pendingCount).toBe(3);
+  });
+
+  it("ingests first, pushes, then counts the inbox BEFORE the rows, for the account's pets", async () => {
+    const order: string[] = [];
+    (ingestCaptureInbox as jest.Mock).mockImplementation(async () => { order.push('ingest'); });
+    (flushPendingForSignOut as jest.Mock).mockImplementation(async () => { order.push('flush'); });
+    (countUnclaimedInbox as jest.Mock).mockImplementation(() => { order.push('inbox'); return 0; });
+    (getSyncStatus as jest.Mock).mockImplementation(async () => {
+      order.push('rows');
+      return { pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 };
+    });
+    await flushForSignOut();
+    expect(order).toEqual(['ingest', 'flush', 'inbox', 'rows']);
+    expect([...(ingestCaptureInbox as jest.Mock).mock.calls[0][0]]).toEqual([PET_ID]);
+    expect([...(countUnclaimedInbox as jest.Mock).mock.calls[0][0]]).toEqual([PET_ID]);
+  });
+
+  it('a failed ingest never blocks the warning', async () => {
+    (ingestCaptureInbox as jest.Mock).mockRejectedValue(new Error('boom'));
+    (countUnclaimedInbox as jest.Mock).mockReturnValue(1);
+    expect((await flushForSignOut()).pendingCount).toBe(1);
   });
 });
 

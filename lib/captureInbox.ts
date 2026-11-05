@@ -28,7 +28,9 @@
 // in-app write.
 
 import { getDb } from './db';
+import { File } from 'expo-file-system';
 import { getCaptureInboxDirectory } from './appGroup';
+import { usePetStore } from '../store/petStore';
 import { triggerSignalRegenDebounced } from './signal';
 import { currentSignOutEpoch } from './signOutEpoch';
 import { isInboxLoggedVia } from './loggedVia';
@@ -58,6 +60,59 @@ export {
 // hydrated), and the cost of keeping a file for weeks is trivial next to the
 // cost of destroying a real capture too early.
 export const INBOX_MAX_AGE_DAYS = 45;
+
+// CUL-2542: the 45 days run from the FIRST pass that found a record unusable, never from
+// its tap. Aged from the tap, a capture older than 45 days met one transient miss (a food
+// the cache had not loaded yet, a pet list missing an archived pet) and was deleted on
+// first sight, with no second look. The first-deferral time lives in a sidecar file beside
+// the record, `<record>.json` + this suffix, so it never ends in `.json` and the ingest,
+// the counts and the extension never read it as a record. It goes when its record is
+// applied or dropped, and an orphan (no record beside it) is deleted.
+export const INBOX_DEFERRAL_STAMP_SUFFIX = '.deferred';
+
+// The one stamp form the wrapper writes (`toISOString()`); anything else reads as no stamp.
+const INBOX_STAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * CUL-2542: the pet ids an inbox pass treats as this account's: the set the caller hands
+ * over (the active pets) plus the account's ARCHIVED pets (`usePetStore.archivedPetIds`).
+ * A capture tapped for a pet that was archived before the app took it in is the owner's
+ * and can be restored, so it is applied, never deferred as foreign and aged out. An empty
+ * handed set stays empty: it means the pet list has not loaded, and both the ingest's skip
+ * and the count's "unknown is ours" rest on reading it that way.
+ */
+export function withArchivedPetIds(petIds: ReadonlySet<string>): ReadonlySet<string> {
+  if (petIds.size === 0) return petIds;
+  const archived = new Set(usePetStore.getState().archivedPetIds);
+  if (archived.size === 0) return petIds;
+  // A LIVE view, never a copy: the caller's set may itself be a view that goes empty once a
+  // sign-out starts (lib/widgetBridge.ts `fencedAllowlist`). An archived id counts only
+  // while the caller's set still yields a member, so that fence holds for it too
+  // (adversarial review, CUL-2542).
+  const live = () => !petIds[Symbol.iterator]().next().done;
+  const union = (): Set<string> => (live() ? new Set([...petIds, ...archived]) : new Set<string>());
+  return {
+    get size() {
+      return union().size;
+    },
+    has: (id: string) => petIds.has(id) || (archived.has(id) && live()),
+    forEach: (cb, thisArg) => union().forEach((v) => cb.call(thisArg, v, v, union())),
+    entries: () => union().entries(),
+    keys: () => union().keys(),
+    values: () => union().values(),
+    [Symbol.iterator]: () => union()[Symbol.iterator](),
+  } as ReadonlySet<string>;
+}
+
+/**
+ * CUL-2542 (adversarial pass 1): whether the account's archived pets have been read. Until
+ * they have, a record naming a pet outside the active set may be an archived pet's, so it
+ * is never shown to be foreign: the counts count it (errs loud) and its deferral starts no
+ * age-out clock.
+ */
+export function archivedPetIdsKnown(): boolean {
+  return usePetStore.getState().archivedPetIdsLoaded;
+}
 
 // Defense against a runaway writer filling the inbox: one pass APPLIES at most
 // this many records; the rest stay in the inbox for the next foreground. The
@@ -192,6 +247,12 @@ export interface InboxDb {
 export interface InboxFilePayload {
   name: string;
   raw: string;
+  /**
+   * CUL-2542: when a pass first found this record unusable (its sidecar stamp), or
+   * absent when none has. Age-out reads only this: absent, unparseable or in the
+   * future, the record defers and is never aged out.
+   */
+  firstDeferredAt?: string | null;
 }
 
 export type InboxAction = 'applied' | 'deferred' | 'dropped';
@@ -202,6 +263,12 @@ export interface InboxDecision {
   /** Set only for applied records — the pet whose Signal should refresh. */
   petId?: string;
   reason?: string;
+  /**
+   * CUL-2542: set on a deferral for a reason about the record (foreign pet, no active
+   * bowl, food not cached), never on one about the pass (cap, sign-out, nothing loaded).
+   * The wrapper stamps the first such deferral; only a stamped record can age out.
+   */
+  unusable?: true;
 }
 
 // Core ingest over already-read payloads. Beyond the pure classification, two
@@ -237,6 +304,10 @@ export async function ingestCaptureRecords(
   now: Date = new Date(),
   maxApplies: number = MAX_INGEST_PER_PASS,
   fenced: () => boolean = () => false,
+  // CUL-2542 (adversarial pass 2): whether the account's archived pets are known. Until they
+  // are, a record naming a pet outside `validPetIds` may be an archived pet's, so that branch
+  // never ages out, whatever its stamp says. Defaults to known for direct callers and tests.
+  archivedKnown: boolean = true,
 ): Promise<InboxDecision[]> {
   if (validPetIds.size === 0) {
     return files.map((f) => ({ name: f.name, action: 'deferred', reason: 'no pets loaded' }));
@@ -271,14 +342,30 @@ export async function ingestCaptureRecords(
     // The pass cap and the sign-out fence never age a record out: neither says
     // anything about the record, and it applies on the next pass. A classify-level
     // defer (newer schema, unknown kind) returned above and never ages out either.
-    const aged = now.getTime() - Date.parse(record.createdAt) > maxAgeMs;
+    //
+    // CUL-2542: and the age is read from the record's FIRST deferral (its sidecar stamp),
+    // never from its tap, so a record is dropped only after 45 days in which every pass
+    // found it unusable. With no readable stamp it defers (the wrapper writes one), and a
+    // stamp in the future never ages: both err toward keeping a capture.
+    //
+    // Only a whole stamp in the exact form the wrapper writes counts (a cut-off "2026" parses
+    // as January), and never one earlier than the tap: the record cannot have deferred before
+    // it existed, so the later of the two is the clock (adversarial pass 1).
+    const stampMs =
+      file.firstDeferredAt && INBOX_STAMP_RE.test(file.firstDeferredAt) ? Date.parse(file.firstDeferredAt) : NaN;
+    const firstDeferredMs = Number.isNaN(stampMs) ? NaN : Math.max(stampMs, Date.parse(record.createdAt));
+    const aged = !Number.isNaN(firstDeferredMs) && now.getTime() - firstDeferredMs > maxAgeMs;
     const unusable = (reason: string): InboxDecision =>
       aged
         ? { name: file.name, action: 'dropped', reason: `aged out (${reason})` }
-        : { name: file.name, action: 'deferred', reason };
+        : { name: file.name, action: 'deferred', reason, unusable: true };
 
     if (!validPetIds.has(record.petId)) {
-      decisions.push(unusable('pet not in account'));
+      decisions.push(
+        archivedKnown
+          ? unusable('pet not in account')
+          : { name: file.name, action: 'deferred', reason: 'pet not in account (archived pets not read)' },
+      );
       continue;
     }
 
@@ -459,6 +546,8 @@ export async function ingestCaptureInbox(
 ): Promise<void> {
   const epoch = currentSignOutEpoch();
   const fenced = () => currentSignOutEpoch() !== epoch || callerFenced();
+  // Read once, with the allowlist below, so the age check and the stamp agree on one answer.
+  const archivedKnown = archivedPetIdsKnown();
   const inbox = getCaptureInboxDirectory();
   if (!inbox) return; // Android / no entitlement — the surface doesn't exist here.
 
@@ -472,11 +561,28 @@ export async function ingestCaptureInbox(
 
   const files: InboxFilePayload[] = [];
   const byName = new Map<string, { delete(): void }>();
+  // CUL-2542: every listed record name (read or not), and each first-deferral stamp by the
+  // record it belongs to. A stamp whose record is not listed is an orphan.
+  const recordNames = new Set<string>();
+  const stamps = new Map<string, { entry: { delete(): void }; at: string | null }>();
   for (const entry of entries) {
+    if (!('textSync' in entry)) continue;
+    if (entry.name.endsWith(INBOX_DEFERRAL_STAMP_SUFFIX)) {
+      let at: string | null = null;
+      try {
+        const text = entry.textSync().trim();
+        at = INBOX_STAMP_RE.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
+      } catch (e) {
+        console.warn(`[captureInbox] stamp read failed for ${entry.name}:`, e);
+      }
+      stamps.set(entry.name.slice(0, -INBOX_DEFERRAL_STAMP_SUFFIX.length), { entry, at });
+      continue;
+    }
     // Only files, only .json — the extension writes nothing else; anything else
     // is left alone rather than guessed at. Every file is READ (records are
     // tiny); only applies are capped, inside ingestCaptureRecords.
-    if (!('textSync' in entry) || !entry.name.endsWith('.json')) continue;
+    if (!entry.name.endsWith('.json')) continue;
+    recordNames.add(entry.name);
     try {
       files.push({ name: entry.name, raw: entry.textSync() });
       byName.set(entry.name, entry);
@@ -484,7 +590,11 @@ export async function ingestCaptureInbox(
       console.warn(`[captureInbox] read failed for ${entry.name}:`, e);
     }
   }
-  if (files.length === 0) return;
+  for (const f of files) f.firstDeferredAt = stamps.get(f.name)?.at ?? null;
+  if (files.length === 0) {
+    if (!fenced()) deleteOrphanStamps(stamps, recordNames);
+    return;
+  }
 
   // Oldest capture first, so the queue drains FIFO and a backlog can never
   // starve a record behind newer arrivals across passes.
@@ -495,10 +605,11 @@ export async function ingestCaptureInbox(
     decisions = await ingestCaptureRecords(
       getDb(),
       files,
-      validPetIds,
+      withArchivedPetIds(validPetIds),
       new Date(),
       MAX_INGEST_PER_PASS,
       fenced,
+      archivedKnown,
     );
   } catch (e) {
     // A throw mid-pass leaves every file in place; the next foreground retries
@@ -511,11 +622,24 @@ export async function ingestCaptureInbox(
   if (fenced()) return;
 
   const regenPets = new Set<string>();
+  const stampAt = new Date().toISOString();
   for (const d of decisions) {
     if (d.action === 'deferred') {
       // Deferrals are expected to be transient; log so a stuck record (e.g. a
       // genuinely foreign pet waiting on the age-out) is visible in the trail.
       console.warn(`[captureInbox] deferred ${d.name}: ${d.reason}`);
+      // CUL-2542: the first unusable pass starts the 45 days. An existing readable stamp
+      // is never rewritten (that would restart the clock); an unreadable one is replaced.
+      // A failed write leaves the record unstamped, so it defers again and never ages.
+      // A pet outside the active set while the archived ids are unread is not marked
+      // unusable by the ingest, so no clock starts on it until they are read.
+      if (d.unusable && !stamps.get(d.name)?.at) {
+        try {
+          new File(inbox, `${d.name}${INBOX_DEFERRAL_STAMP_SUFFIX}`).write(stampAt);
+        } catch (e) {
+          console.warn(`[captureInbox] stamp write failed for ${d.name}:`, e);
+        }
+      }
       continue;
     }
     if (d.action === 'dropped') {
@@ -527,12 +651,32 @@ export async function ingestCaptureInbox(
     } catch (e) {
       // Delete failed after a durable apply — the re-ingest next pass no-ops.
       console.warn(`[captureInbox] delete failed for ${d.name}:`, e);
+      continue; // the record stays, so its stamp stays with it
     }
+    recordNames.delete(d.name);
   }
+  deleteOrphanStamps(stamps, recordNames);
 
   // A new meal can change the cached insight set (same reasoning as insertMeal);
   // debounced so a burst of widget taps collapses into one regen per pet.
   for (const petId of regenPets) triggerSignalRegenDebounced(petId);
+}
+
+// CUL-2542: a stamp whose record is gone (applied, dropped, or deleted before the stamp
+// was) is deleted. `recordNames` is every `.json` the listing held minus what this pass
+// deleted, so a record that failed to read keeps its stamp.
+function deleteOrphanStamps(
+  stamps: ReadonlyMap<string, { entry: { delete(): void } }>,
+  recordNames: ReadonlySet<string>,
+): void {
+  for (const [name, { entry }] of stamps) {
+    if (recordNames.has(name)) continue;
+    try {
+      entry.delete();
+    } catch (e) {
+      console.warn(`[captureInbox] stamp delete failed for ${name}:`, e);
+    }
+  }
 }
 
 // CUL-2468 — "is anything from the widget still waiting here?", for the vet report's two unsent
@@ -623,7 +767,14 @@ export function readUnclaimedInbox(petIds: ReadonlySet<string>): UnclaimedInboxS
       unreadable += 1;
     }
   }
-  const s = summarizeUnclaimedInboxPayloads(raws, petIds);
+  // CUL-2542: the account's archived pets count as its own here too, the same set the
+  // ingest applies for, so the two cannot disagree about whose capture this is.
+  // Until the archived ids are read, nothing can be shown to be another pet's, so every
+  // record that will not drop counts (the empty set's "unknown is ours").
+  const s = summarizeUnclaimedInboxPayloads(
+    raws,
+    archivedPetIdsKnown() ? withArchivedPetIds(petIds) : new Set<string>(),
+  );
   return { count: s.count + unreadable, oldestAt: s.oldestAt, unknownAge: s.unknownAge + unreadable };
 }
 
