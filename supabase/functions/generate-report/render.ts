@@ -186,6 +186,91 @@ function vehicleDosesOf(snap: ReportSnapshot): number {
 }
 
 /**
+ * CUL-2525 — appendix B's vehicle row quotes page 1's two counts over the trial days, so the
+ * row's window-wide feedings cannot read as page 1's population, or the reverse. Empty when
+ * the trial block counts no dose given in food.
+ */
+function trialVehicleSplit(snap: ReportSnapshot): string {
+  const t = snap.trial
+  if (!t) return ''
+  const on = onListDosesOf(snap)
+  const noFood = t.oralRoute.filter((o) => o.trigger === 'food_vehicle' && o.noFoodRecorded).length
+  const off = vehicleDosesOf(snap) - noFood
+  if (on + off + noFood === 0) return ''
+  const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
+  const parts = [
+    ...(on > 0 ? [`${doses(on)} given inside a food on the allowed list`] : []),
+    ...(off > 0 ? [`${doses(off)} given in a food off the list or not identified`] : []),
+    ...(noFood > 0 ? [`${doses(noFood)} logged as given in food with no food recorded`] : []),
+  ]
+  // COLD READ, 22cae53: the row's feedings and page 1's doses read as two unexplained numbers (20
+  // beside 18 + 1), and a chicken-treat vehicle dosed after the trial read as an in-trial exposure. The
+  // row says its own span first, so the difference is visibly a window, not a disagreement.
+  const scope = trialCountScope(t)
+  return ` This row counts the whole report window, ${h(fmtSpanFromTo(snap.scope.startDate, snap.scope.endDate))}; ${scope} (to ${h(
+    fmtDayYear(t.rangeEndDate),
+  )}), page&nbsp;1 counts ${parts.join(' and ')}.`
+}
+
+/** CUL-2525 — doses the same detector read as given inside a food ON the allowed list. */
+function onListDosesOf(snap: ReportSnapshot): number {
+  return snap.trial?.oralRouteOnList?.length ?? 0
+}
+
+/**
+ * CUL-2525 — the doses given inside an ALLOWED food, page 1's words for them. Not an exposure
+ * (the pill hidden in the prescribed diet), and still stated: a page silent about it read as
+ * "no dose went in food" beside an appendix B that counted twenty dosed feedings. The same
+ * `doseRouteOf` decision feeds this and the oral-route sentence, so the two partition the doses
+ * given in food in the trial days (C-4), and appendix B's split quotes both counts.
+ */
+function onListDosesSentence(t: NonNullable<ReportSnapshot['trial']>, tz: string | null): string | null {
+  const on = t.oralRouteOnList ?? []
+  if (on.length === 0) return null
+  // The owner's local day (C-10), never the UTC slice of the instant.
+  const days = on.map((o) => localDayKeyOf(o.occurredAt, tz)).sort()
+  const byFood = new Map<string, number>()
+  for (const o of on) byFood.set(o.vehicleLabel, (byFood.get(o.vehicleLabel) ?? 0) + 1)
+  const foods = [...byFood.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label, n]) => `${h(label)} &times;&nbsp;${num(n)}`)
+    .join('; ')
+  const drugs = [...new Set(on.map((o) => o.drugLabel ?? 'a medication'))].map((d) => h(d)).join(', ')
+  const span = days[0] === days[days.length - 1] ? `on ${h(fmtDayYear(days[0]))}` : h(fmtSpanFromTo(days[0], days[days.length - 1]))
+  // NO CLAIM ABOUT THE VEHICLE'S PROTEIN (adversarial pass 1, QUIET). The first cut closed on "a
+  // food on the list carries no protein the trial excludes": false beside a permitted jerky whose
+  // label lists chicken, a trial diet whose label does, or a diet nobody read. Being on the list is
+  // what keeps a dose out of the count; whether the list is clean is the contamination fact's
+  // question, so where a vehicle is named there the sentence points at it, and otherwise says
+  // nothing about protein at all.
+  const flagged = [...byFood.keys()].filter((label) => t.contamination.some((c) => c.food.label === label))
+  const flaggedBit =
+    flagged.length > 0
+      ? ` <b>${flagged.map((l) => h(l)).join(', ')} ${flagged.length === 1 ? 'is' : 'are'} named above as listing a protein beyond the trial&rsquo;s</b>, so the doses given in ${
+          flagged.length === 1 ? 'it' : 'them'
+        } went in with that protein.`
+      : ''
+  // COLD READ, 22cae53 (QUIET): on Nyx both vehicles were foods whose ingredient panel was never
+  // captured, and the sentence said "on the list" with nothing beside it, so "on the list" read as
+  // "clean". The same test as the trial block's own "panel read for N of M" line (`panelComplete`);
+  // a vehicle with no matching entry is unread, the louder reading.
+  const unread = [...byFood.keys()].filter(
+    (label) => !flagged.includes(label) && t.permittedFoods.find((f) => f.label === label)?.panelComplete !== true,
+  )
+  const unreadBit =
+    unread.length > 0
+      ? ` <b>The ingredient panel${unread.length === 1 ? '' : 's'} of ${unread.map((l) => h(l)).join(' and ')} ${unread.length === 1 ? 'was' : 'were'} never captured</b>, so this record cannot say what else the doses given in ${
+          unread.length === 1 ? 'it' : 'them'
+        } went in with.`
+      : ''
+  return `<b>${num(on.length)} dose${on.length === 1 ? '' : 's'} by mouth</b> ${
+    on.length === 1 ? 'was' : 'were'
+  } logged as given inside a food on the allowed list (${foods}), ${span} (${drugs}). Being on the list, ${on.length === 1 ? 'it is' : 'they are'} not counted as ${
+    on.length === 1 ? 'an exposure' : 'exposures'
+  }.${flaggedBit}${unreadBit}`
+}
+
+/**
  * The partial doses behind a course's count (CUL-2440): every section that counts a course's
  * doses says how many were partial, or a vet reads the bare count as full dosing. The window's
  * count is exact for the whole course only when every dose on record falls inside the window;
@@ -3970,9 +4055,12 @@ export function dietTrialSection(snap: ReportSnapshot): string {
       // "Dosing should continue exactly as prescribed", a treatment instruction in a document that
       // states it makes none. The instruction is removed, not softened: §6.8's rule (never a
       // reason to skip a dose) is kept by saying nothing about the next dose at all.
-      oralRouteSentence(t.oralRoute, pet, drugs),
+      oralRouteSentence(t.oralRoute, pet, drugs, snap.timezone),
     )
   }
+  // CUL-2525: the doses given inside an ALLOWED food, beside the ones that were exposures.
+  const onList = onListDosesSentence(t, snap.timezone)
+  if (onList) blind.push(onList)
   if (t.arrangementExposures.length > 0) {
     // §5.6. A free-choice bowl of something off the list is a CONTINUOUS exposure
     // that emits no meal events at all, so it is invisible to every count above.
@@ -5747,22 +5835,33 @@ function oralRouteSentence(
   oral: NonNullable<ReportSnapshot['trial']>['oralRoute'],
   pet: string,
   drugs: readonly string[],
+  tz: string | null,
 ): string {
   const chew = oral.filter((o) => o.trigger === 'chewable').length
-  const food = oral.length - chew
+  // CUL-2525 (cold read): a dose logged in food with NO food recorded is said as exactly that, and
+  // dated. "Off the allowed list or not identified" left a chicken treat dosed after the trial open
+  // as its vehicle; the record says no food, so the page says no food.
+  const noFood = oral.filter((o) => o.trigger === 'food_vehicle' && o.noFoodRecorded)
+  const offList = oral.length - chew - noFood.length
   const doses = (n: number): string => `${num(n)} dose${n === 1 ? '' : 's'}`
-  const how =
-    chew > 0 && food > 0
-      ? `${doses(chew)} ${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour, and ${doses(food)} ${
-          food === 1 ? 'was' : 'were'
-        } logged as given inside a food off the allowed list or not identified`
-      : chew > 0
-        ? `${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour`
-        : `${food === 1 ? 'was' : 'were'} logged as given inside a food off the allowed list or not identified`
-  const lead = chew > 0 && food > 0 ? `<b>${doses(oral.length)} by mouth</b> reached ${pet}: ${how}` : `<b>${doses(oral.length)} by mouth</b> ${how}`
+  const was = (n: number): string => (n === 1 ? 'was' : 'were')
+  const noFoodDays = [...new Set(noFood.map((o) => localDayKeyOf(o.occurredAt, tz)))].sort()
+  const noFoodWhen =
+    noFoodDays.length <= 3 ? noFoodDays.map((d) => h(fmtDay(d))).join(', ') : h(fmtSpanFromTo(noFoodDays[0], noFoodDays[noFoodDays.length - 1]))
+  const parts: Array<{ n: number; text: string }> = [
+    ...(chew > 0 ? [{ n: chew, text: `${chew === 1 ? 'was a chewable, which carries' : 'were chewables, which carry'} a flavour` }] : []),
+    ...(offList > 0 ? [{ n: offList, text: `${was(offList)} logged as given inside a food off the allowed list or not identified` }] : []),
+    ...(noFood.length > 0
+      ? [{ n: noFood.length, text: `${was(noFood.length)} logged as given in food with no food recorded (${noFoodWhen})` }]
+      : []),
+  ]
+  const how = parts.length === 1 ? parts[0].text : parts.map((p) => `${doses(p.n)} ${p.text}`).join(', and ')
+  const lead = parts.length > 1 ? `<b>${doses(oral.length)} by mouth</b> reached ${pet}: ${how}` : `<b>${doses(oral.length)} by mouth</b> ${how}`
   return `${lead} (${drugs.map((d) => h(d)).join(', ')}). <b>The protein ${
     oral.length === 1 ? 'it' : 'they'
-  } carried is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them.`
+  } carried is not recorded anywhere</b>, so ${
+    oral.length === 1 ? 'this exposure is' : 'these exposures are'
+  } not in the antigen tally above and that tally does not describe ${oral.length === 1 ? 'it' : 'them'}.`
 }
 
 /**
@@ -11301,11 +11400,19 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
   const unresolved = veh?.unresolvedDoses ?? 0
   const unresolvedBit = `${num(unresolved)} dose${unresolved === 1 ? ' was' : 's were'} logged in this window as given in food or a treat that does not resolve to a meal logged here, so the food is not named.`
   const named = veh && veh.feedings > 0 ? veh : null
+  // CUL-2525 (cold read): each vehicle with its count and dates, so a chicken treat dosed after the
+  // trial can be placed against the trial's last day, which the split below names.
+  const byFoodBit = (v: NonNullable<typeof named>): string => {
+    if (!v.byFood || v.byFood.length === 0) return distinctLabels(v.labels.map((label) => ({ label })), 4)
+    const shown = v.byFood.slice(0, 4).map((f) => {
+      const a = localDayKeyOf(f.firstAt, snap.timezone)
+      const b = localDayKeyOf(f.lastAt, snap.timezone)
+      return `${h(f.label)} &times;&nbsp;${num(f.feedings)} (${a === b ? h(fmtDayYear(a)) : h(fmtSpanFromTo(a, b))})`
+    })
+    return `${shown.join('; ')}${v.byFood.length > 4 ? `; +${v.byFood.length - 4} more` : ''}`
+  }
   const vehicleBit = named
-    ? `${distinctLabels(
-        named.labels.map((label) => ({ label })),
-        4,
-      )} (${num(named.feedings)} feeding${named.feedings === 1 ? '' : 's'} carried a dose). ${
+    ? `${byFoodBit(named)} (${num(named.feedings)} feeding${named.feedings === 1 ? '' : 's'} carried a dose). ${
         named.countedInTally === 0
           ? 'Not counted among the off-diet exposures in appendix&nbsp;C, so the protein tally there does not describe them.'
           : named.countedInTally === named.feedings
@@ -11313,21 +11420,29 @@ export function dietHistoryAppendix(snap: ReportSnapshot): string {
             : `${num(named.countedInTally)} of these ${
                 named.countedInTally === 1 ? 'is' : 'are'
               } counted among the off-diet exposures in appendix&nbsp;C; the rest are not, so the protein tally there does not describe those.`
-      }${unresolved > 0 ? ` ${unresolvedBit}` : ''}`
+      }${unresolved > 0 ? ` ${unresolvedBit}` : ''}${trialVehicleSplit(snap)}`
     : // An absence here means different things depending on whether there was anything to
       // give, and the vet is reading this row to decide whether a pill vehicle is in play.
       // CUL-2440: NOT WHILE THE TRIAL BLOCK COUNTS ONE. The oral-route detector reads each dose's
       // paired food directly, including a pairing to a meal this row cannot resolve, so on the
       // live record page 1 counted 18 doses given inside a food while this row said none was.
       // The louder of the two stands.
-      unresolved > vehicleDosesOf(snap)
-      ? unresolvedBit
+      // CUL-2525: on a tie the row keeps its own window's words and quotes page 1's count after them.
+      // The two are different populations (this row: the report window, any adherence; page 1: the
+      // trial days, missed and refused excluded), so both numbers are printed and neither replaces
+      // the other.
+      unresolved > 0 && unresolved >= vehicleDosesOf(snap)
+      ? `${unresolvedBit}${trialVehicleSplit(snap)}`
       : vehicleDosesOf(snap) > 0
       ? `${num(vehicleDosesOf(snap))} dose${vehicleDosesOf(snap) === 1 ? ' was' : 's were'} logged ${
           // The trial block's own scope phrase, so the two counts cannot read as two populations
           // ("during the trial" read as the whole 87-day trial beside "the 35 trial days").
           snap.trial ? trialCountScope(snap.trial) : 'during the trial'
-        } as given inside a food off the allowed list or not identified, which does not resolve to a meal logged in this window, so the food is not named here (counted among the trial&rsquo;s doses by mouth).`
+        } as given inside a food off the allowed list or not identified, which does not resolve to a meal logged in this window, so the food is not named here (counted among the trial&rsquo;s doses by mouth).${
+          onListDosesOf(snap) > 0 ? trialVehicleSplit(snap) : ''
+        }`
+      : onListDosesOf(snap) > 0
+      ? trialVehicleSplit(snap).trim()
       : snap.medications.length > 0 || snap.unlinkedMedications.length > 0
       ? 'Not recorded &mdash; no dose in this window was logged as given in food.'
       : 'Not recorded.'
