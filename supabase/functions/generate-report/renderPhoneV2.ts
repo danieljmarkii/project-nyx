@@ -277,7 +277,9 @@ function block(b: BlockV2, lead: string | null): string {
     }
     case 'trial_reading':
       // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
-      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2><p>${b.html}</p></section>`
+      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
+        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
+        .join('')}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -349,6 +351,7 @@ ul,ol{margin:0;padding:0;list-style:none;}
 .lede{font-size:1.2rem;line-height:1.3;margin:1rem 0 0;}
 .lede.body{font-size:1rem;line-height:1.4;margin:0.6rem 0 0;}
 .changes .lede{margin:0.2rem 0 0.4rem;}
+.trialread .trow{margin:0.35rem 0 0;}
 .keep{margin:1rem 0 0;}
 .keep > section:first-child{margin-top:0;}
 .leadchart .flagh{color:var(--concern);}

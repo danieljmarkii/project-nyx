@@ -313,7 +313,9 @@ function block(b: BlockV2, aiLead: string | null = null): string {
     }
     case 'trial_reading':
       // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
-      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2><p>${b.html}</p></section>`
+      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
+        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
+        .join('')}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
@@ -371,6 +373,7 @@ h2{font-size:9pt;margin:0 0 4pt;font-weight:650;letter-spacing:.02em;}
 .lede{font-size:13pt;line-height:1.3;margin:10pt 0 0;}
 .lede.body{font-size:9.5pt;line-height:1.38;margin:6pt 0 0;}
 .changes .lede{margin:2pt 0 4pt;}
+.trialread .trow{margin:3pt 0 0;}
 .ailead{margin:10pt 0 0;}
 .ailead .ailabel{font-size:7.5pt;letter-spacing:.04em;color:var(--ink2);margin:0;}
 .ailead .beta{text-transform:uppercase;letter-spacing:.1em;border:.5pt solid var(--ink2);padding:0 2pt;}

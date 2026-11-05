@@ -720,6 +720,51 @@ export function trialReadingOf(snap: ReportSnapshot): string | null {
   return v2Pointers(body, snap, null).trim()
 }
 
+/** The v1 trial rows (`kv` in `dietTrialSection`) that state what breaks a trial, by their keys. */
+const TRIAL_ROW_KEYS: readonly RegExp[] = [
+  /^Antigen exposure$/,
+  /^Also (?:during the trial|in the [\s\S]* trial days this report covers)$/,
+  /^Off-list foods after the trial$/,
+]
+
+/**
+ * CUL-2514 (the cold read at PR-29's head): v1 page 1's trial section also states the off-diet
+ * protein by name ("Antigen exposure: Chicken ×11"), the doses given inside a food with the drugs
+ * named ("Also in the 35 trial days … (Prednisolone, Zyrtec)"), and the off-list foods fed after the
+ * trial with the symptoms that followed ("Applaws Chicken … Vomiting ×6"). The callout alone left
+ * them sheets later. These rows, word for word, in that order, for sheet 1 beside the callout.
+ *
+ * Only their fixed v1 pointer phrases move: "the antigen tally above" stays true when the antigen
+ * row prints above it here, and "counted on neither side above" (the trial's matched and unmatched
+ * counts) points at the diet sheet, which reprints the whole section. Throws only on markup it cannot
+ * lift whole, never on content.
+ */
+export function trialRowsOf(snap: ReportSnapshot): Array<{ labelHtml: string; html: string }> {
+  const section = dietTrialSection(snap)
+  if (section === '') return []
+  const diet = `on ${sheetHeaded(DIET_SHEET_TITLE)}`
+  const rows: Array<{ labelHtml: string; html: string; key: number }> = []
+  for (const m of section.matchAll(/<div class="kv"><span class="k">([\s\S]*?)<\/span><span>([\s\S]*?)<\/span><\/div>/g)) {
+    const keyText = m[1].replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
+    const key = TRIAL_ROW_KEYS.findIndex((r) => r.test(keyText))
+    if (key === -1) continue
+    if (m[2].includes('<div')) throw new Error(`trialRowsOf: the “${keyText}” row could not be lifted whole`)
+    rows.push({ labelHtml: m[1], html: m[2], key })
+  }
+  rows.sort((a, b) => a.key - b.key)
+  const antigenFirst = rows[0]?.key === 0
+  return rows.map((r) => ({
+    labelHtml: r.labelHtml,
+    html: v2Pointers(
+      r.html
+        .replace(/ counted on neither side above\./g, ` counted on neither side of the trial’s feeding counts (${diet}).`)
+        .replace(/ the antigen tally above /g, antigenFirst ? ' the antigen tally above ' : ` the antigen tally ${diet} `),
+      snap,
+      null,
+    ).trim(),
+  }))
+}
+
 function sectionBlock(id: SectionBlockId, heading: string | null, v1Html: string, snap: ReportSnapshot, here: string): BackBlockV2 | null {
   if (v1Html.trim() === '') return null
   const html = v2Pointers(v1Html, snap, here).trim()

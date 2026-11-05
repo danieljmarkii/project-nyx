@@ -62,7 +62,7 @@ import {
   type LeadSign,
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
-import { backSheetsOf, TRIAL_READING_LABEL, trialReadingOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { backSheetsOf, TRIAL_READING_LABEL, trialReadingOf, trialRowsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
 import { adHocGroupOf, withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -267,7 +267,10 @@ export type BlockV2 =
       kind: 'trial_reading'
       id: 'trial-reading'
       label: string
-      html: string
+      /** The callout's sentences; null when v1 prints the rows but no callout. */
+      html: string | null
+      /** v1's trial rows that name the breaks (`trialRowsOf`), word for word, after the callout. */
+      rows: Array<{ labelHtml: string; html: string }>
     }
   | { kind: 'record_lines'; id: 'record-lines'; lines: RecordLine[] }
   | { kind: 'gap_lines'; id: 'gap-lines'; heading: string; lines: GapLine[] }
@@ -1290,7 +1293,10 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
 
   // CUL-2514: the trial's bottom line as v1's page 1 states it, beside the overlap it qualifies.
   const reading = trialReadingOf(snap)
-  if (reading !== null) blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading })
+  const trialRows = trialRowsOf(snap)
+  if (reading !== null || trialRows.length > 0) {
+    blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading, rows: trialRows })
+  }
 
   if (lines.length > 1) blocks.push({ kind: 'record_lines', id: 'record-lines', lines: lines.slice(1) })
 
@@ -1381,7 +1387,7 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         fixed.disclosure += words(textOf(b.html))
         break
       case 'trial_reading':
-        fixed.trialReading += words(`${b.label} ${textOf(b.html)}`)
+        fixed.trialReading += words(`${b.label} ${textOf(b.html ?? '')} ${b.rows.map((r) => `${textOf(r.labelHtml)} ${textOf(r.html)}`).join(' ')}`)
         break
       case 'questions':
         fixed.questions += words(b.items.map((q) => q.text).join(' '))

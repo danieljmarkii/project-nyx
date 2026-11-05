@@ -133,7 +133,8 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
       case 'trial_reading':
         // CUL-2514: v1 page 1's bottom line on the trial, carried on sheet 1 word for word.
         add(b.id, b.label)
-        add(b.id, textOf(b.html))
+        add(b.id, b.html === null ? null : textOf(b.html))
+        for (const r of b.rows) add(b.id, `${textOf(r.labelHtml)}: ${textOf(r.html)}`)
         break
       case 'record_lines':
         for (const l of b.lines) add(b.id, l.text)

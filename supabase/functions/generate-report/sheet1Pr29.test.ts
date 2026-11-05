@@ -10,7 +10,7 @@ import { ABSENCE_SENTENCE, bandFlagOf, buildDocumentV2, dayPos, textOf, type Blo
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
 import { dietTrialSection } from './render.ts'
-import { trialReadingOf } from './backSheetsV2.ts'
+import { trialReadingOf, trialRowsOf } from './backSheetsV2.ts'
 import { BAND_LEAD_KINDS, bandMembersOf, bandOrder, isZeroSignSheet, leadSignOf } from './v2Predicates.ts'
 import { cooperInput } from './cooperDemo.testutil.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
@@ -274,7 +274,7 @@ Deno.test('pass 1 — an owner-typed name with "above" in it builds, prints verb
     const d = docOf(s) // threw before the fix: the whole v2 report failed
     const r = block(d, 'trial_reading')
     assert.ok(r)
-    assert.ok(textOf(r.html).includes(name), `“${name}” prints as the owner typed it`)
+    assert.ok(textOf(r.html ?? '').includes(name), `“${name}” prints as the owner typed it`)
   }
 })
 
@@ -290,4 +290,40 @@ Deno.test('pass 1 — the intake row’s short last column stays filled: a share
   // The vomiting row (not the lead here) in that column still draws its outline, and the twin says so.
   assert.match(renderPrintV2(d), /class="bar sofar"/)
   assert.match(c.twin, /so far, its bars drawn as outlines/)
+})
+
+// ── Cold read at 7025c6d: v1 page 1's trial rows that name the breaks ───────
+
+Deno.test('cold read — sheet 1 names the off-diet protein, the doses given in food with their drugs, and the off-list foods after the trial (Nyx)', () => {
+  const d = docOf(nyxLiveSnapshot())
+  // textOf spaces out v1's number spans ("Chicken × 11 ."); read it as printed.
+  const squash = (x: string): string => textOf(x).replace(/×\s+/g, '×').replace(/\s+([.,;:)])/g, '$1').replace(/\(\s+/g, '(')
+  for (const html of [sheet1(renderPrintV2(d)), renderPhoneV2(d)]) {
+    const t = squash(html)
+    assert.match(t, /Antigen exposure: Chicken ×11\. Proteins fed in the 35 trial days this report covers that the trial diet does not contain/)
+    assert.match(t, /trial days this report covers: 18 doses by mouth were logged as given inside a food off the allowed list or not identified \(Prednisolone, Zyrtec\)/)
+    assert.match(t, /so these exposures are not in the antigen tally above/)
+    assert.match(t, /Off-list foods after the trial: Applaws Chicken Breast in broth: 12 feedings on 8 days after the trial, Oct 21 – Oct 28/)
+    assert.match(t, /Vomiting ×6/)
+  }
+  assert.match(squash(sheet1(renderPrintV2(docOf(cooper())))), /Antigen exposure: Beef ×4\./)
+})
+
+Deno.test('cold read — the rows are v1’s words, only pointers moved; nothing on sheet 1 points up or down at a v1 neighbour', () => {
+  const DIET = 'the sheet headed “Diet, weight and food exposure”'
+  let rows = 0
+  for (const [name, s] of v2DocFixtures()) {
+    for (const r of trialRowsOf(s)) {
+      const t = textOf(r.html)
+      assert.doesNotMatch(t, /\bappendix\b|\bpage 1\b/i, `${name}: ${textOf(r.labelHtml)}`)
+      assert.doesNotMatch(t.replace(/the antigen tally above/g, ''), /\b(above|below)\b/, `${name}: ${textOf(r.labelHtml)}: “${t}”`)
+      assert.ok(!t.includes(`the antigen tally ${DIET}`) || !trialRowsOf(s).some((x) => /^Antigen exposure/.test(textOf(x.labelHtml))), `${name}: the tally points up only when it prints above`)
+      // v1's own words: the section still holds this row with the same text but its pointers.
+      const v1 = textOf(dietTrialSection(s))
+      const core = t.replace(/\s*\((?:on |dated )?[^()]*sheet headed “[^”]+”\)/g, '').slice(0, 60)
+      assert.ok(v1.includes(core.slice(0, 40)), `${name}: “${core}” is v1’s`)
+      rows++
+    }
+  }
+  assert.ok(rows >= 6, `rows exercised (${rows})`)
 })
