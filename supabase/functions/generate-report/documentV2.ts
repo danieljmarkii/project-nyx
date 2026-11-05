@@ -62,7 +62,8 @@ import {
   type LeadSign,
 } from './v2Predicates.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
-import { backSheetsOf, TRIAL_READING_LABEL, trialReadingOf, trialRowsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { backSheetsOf, episodesBlock, TRIAL_READING_LABEL, trialHeadingOf, trialReadingOf, trialRowsOf, v2FlagPointersOf, type BackSheetV2 } from './backSheetsV2.ts'
+import { carriedSectionsOf } from './sheet1CarryV2.ts'
 import { adHocGroupOf, withRecordOverlaps } from './medicationFacts.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -271,10 +272,14 @@ export type BlockV2 =
       label: string
       /** The callout's sentences; null when v1 prints the rows but no callout. */
       html: string | null
-      /** v1's trial rows that name the breaks (`trialRowsOf`), word for word, after the callout. */
+      /** CUL-2551: every v1 trial row (`trialRowsOf`), word for word in v1's order, before the callout. */
       rows: Array<{ labelHtml: string; html: string }>
+      /** v1's section heading ("Diet trial" and its aside), already-escaped html. */
+      heading: string | null
     }
   | { kind: 'record_lines'; id: 'record-lines'; lines: RecordLine[] }
+  /** CUL-2551: a v1 page-1 section, word for word with v2's pointers (`sheet1CarryV2.ts`). */
+  | { kind: 'carried'; id: string; html: string }
   | { kind: 'gap_lines'; id: 'gap-lines'; heading: string; lines: GapLine[] }
   | { kind: 'questions'; id: 'questions'; heading: string; items: QuestionItem[] }
   | { kind: 'colophon'; id: 'colophon'; text: string }
@@ -1313,13 +1318,19 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   const reading = trialReadingOf(snap)
   const trialRows = trialRowsOf(snap)
   if (reading !== null || trialRows.length > 0) {
-    blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading, rows: trialRows })
+    blocks.push({ kind: 'trial_reading', id: 'trial-reading', label: TRIAL_READING_LABEL, html: reading, rows: trialRows, heading: trialHeadingOf(snap) })
   }
 
   if (lines.length > 1) blocks.push({ kind: 'record_lines', id: 'record-lines', lines: lines.slice(1) })
 
   const gaps = gapLinesOf(snap)
   if (gaps.length > 0) blocks.push({ kind: 'gap_lines', id: 'gap-lines', heading: 'Not in this record', lines: gaps })
+
+  // CUL-2551 (PM ruling (a), briefs 1a to 5a): every other block of v1's page 1, word for word in
+  // v1's order, so sheet 1 never says less than v1's page 1 (`sheet1MustCarry.test.ts`).
+  const ep = episodesBlock(snap)
+  const episodes = ep ? `<h2>${h(ep.heading)}</h2>${ep.html}` : null
+  for (const c of carriedSectionsOf(input, episodes)) blocks.push({ kind: 'carried', id: c.id, html: c.html })
 
   const questions = opts.questions
     .map((q) => q.trim())
@@ -1356,6 +1367,8 @@ export interface WordCount {
     questions: number
     /** v1's trial bottom line (CUL-2514): never cut, so never in the cuttable budget. */
     trialReading: number
+    /** v1 page 1's carried sections (CUL-2551): never cut. */
+    carried: number
   }
 }
 
@@ -1366,7 +1379,7 @@ function words(text: string): number {
 
 export function wordCountOf(doc: DocumentV2): WordCount {
   let cuttable = 0
-  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0, trialReading: 0 }
+  const fixed = { masthead: 0, band: 0, scopeLine: 0, twin: 0, colophon: 0, changes: 0, recordEdge: 0, disclosure: 0, questions: 0, trialReading: 0, carried: 0 }
   for (const b of doc.blocks) {
     switch (b.kind) {
       case 'lead_sentence':
@@ -1405,7 +1418,10 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         fixed.disclosure += words(textOf(b.html))
         break
       case 'trial_reading':
-        fixed.trialReading += words(`${b.label} ${textOf(b.html ?? '')} ${b.rows.map((r) => `${textOf(r.labelHtml)} ${textOf(r.html)}`).join(' ')}`)
+        fixed.trialReading += words(`${textOf(b.heading ?? '')} ${b.label} ${textOf(b.html ?? '')} ${b.rows.map((r) => `${textOf(r.labelHtml)} ${textOf(r.html)}`).join(' ')}`)
+        break
+      case 'carried':
+        fixed.carried += words(textOf(b.html))
         break
       case 'questions':
         fixed.questions += words(b.items.map((q) => q.text).join(' '))

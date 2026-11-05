@@ -131,10 +131,20 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
         add(b.id, b.text)
         break
       case 'trial_reading':
-        // CUL-2514: v1 page 1's bottom line on the trial, carried on sheet 1 word for word.
+        // CUL-2514, CUL-2551: v1 page 1's trial section on sheet 1 word for word: its heading, each
+        // row's label and words (v1's two columns, so two runs), then the bottom line.
+        add(b.id, b.heading === null ? null : textOf(b.heading))
+        for (const r of b.rows) {
+          add(b.id, textOf(r.labelHtml))
+          for (const run of blockRuns(r.html)) add(b.id, run)
+        }
         add(b.id, b.label)
         add(b.id, b.html === null ? null : textOf(b.html))
-        for (const r of b.rows) add(b.id, `${textOf(r.labelHtml)}: ${textOf(r.html)}`)
+        break
+      case 'carried':
+        // CUL-2551: a v1 page-1 section word for word; every run of text between v1's own block
+        // boundaries is one line a reader must get back whole.
+        for (const run of blockRuns(b.html)) add(b.id, run)
         break
       case 'record_lines':
         for (const l of b.lines) add(b.id, l.text)
@@ -160,6 +170,15 @@ export function sheet1Lines(doc: DocumentV2): ExpectedLine[] {
     }
   }
   return out
+}
+
+/** The runs of text between block boundaries in a fragment of v1's markup (a chart's SVG left out). */
+function blockRuns(html: string): string[] {
+  return html
+    .replace(/<svg\b[\s\S]*?<\/svg>/g, '\u0000')
+    .split(/<\/?(?:div|p|h[1-6]|li|ul|ol|table|thead|tbody|tr|td|th|dl|dt|dd|section|caption|br)\b[^>]*>|\u0000/)
+    .map((x) => textOf(x).trim())
+    .filter((x) => x !== '')
 }
 
 function bandItemText(tag: string, html: string): string {
@@ -278,6 +297,20 @@ const DESCENT = new RegExp(
  *  14:00 on Jun 25 to 14:00 on Jul 2" is a window, not a count going from 25 to 14. */
 const DATES_AND_TIMES = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.? \d{1,2}(?:, \d{4})?\b|\b\d{1,2}:\d{2}\b/g
 
+/**
+ * v1's halves comparison ("first 23 d 22 logged 6 → last 23 d 10", CUL-2551): the counts are the two
+ * numbers beside "first" and "last", never the logged-days count between them. A rising or flat pair
+ * is cut, since it states no decline; a falling one is rewritten to the bare pair, so it still fails
+ * as a descent. Direction-aware on purpose: a carve-out that cut every halves line would hide the one
+ * shape this test exists for.
+ */
+const HALVES = /\bfirst (\d+) d(?: (\d+) logged)? (\d+) \u2192 last (\d+) d(?: (\d+) logged)? (\d+)/g
+function halvesRising(s: string): string {
+  return s.replace(HALVES, (_m, _d1: string, _l1: string | undefined, a: string, _d2: string, _l2: string | undefined, b: string) =>
+    Number(b) >= Number(a) ? ' ' : ` ${a} \u2192 ${b} `,
+  )
+}
+
 function hasDescent(s: string): boolean {
   for (const m of s.replace(DATES_AND_TIMES, ' ; ').matchAll(DESCENT)) {
     const nums = m.slice(1).filter((x) => x !== undefined).map(Number)
@@ -314,6 +347,10 @@ const NOT_A_COURSE = [
   /\bthe highest before it in the last \d+ days\b/gi, // the weight block's comparison, not a sign
   /\bdown from \d+\.\d{2} kg\b/gi, // a weight reading (kg at 2 dp), not a sign
   /\bthe less this marker means\b/gi, // the exposures' timing-marker footnote: the marker, not a sign
+  // CUL-2551 carries v1's page 1 onto sheet 1; each of these is a measured false hit there:
+  /\bof the trial[’']s \d+ days fall outside it\b/gi, // the headline: the trial's scope beside this window
+  /\ba fall (?:here|across such a week) may be less logging, not fewer entries\b/gi, // a decline DENIED: the opposite of reassurance
+  /\bmarks the week one stopped\b/gi, // the trend chart's legend: a course's end marker, not a sign
   // "How this record was kept": a clearance DENIED, the opposite of a decline (pdfminer ran the
   // Noticed log's "vomit logged" into the kept sheet's first term).
   /\b(?:is not|never) an all-clear\b/gi,
@@ -353,8 +390,11 @@ function cutSpanWords(s: string, pats: readonly RegExp[], spanWords: readonly st
 export function declineSentences(text: string, signs: readonly string[], lineLabels: readonly string[] = [], spanWords: readonly string[] = []): string[] {
   if (signs.length === 0) return []
   const pats = signs.map(signPattern)
-  const flat = text.normalize('NFKC').replace(/\s+/g, ' ')
-  const sentences = flat.split(/(?<=[.;!?])\s+(?=[A-Z0-9"'(])/)
+  // A paragraph separator (U+2029) is a block boundary the caller marked (the HTML check marks each
+  // block): v1's tiles carry no full stop, and run together they made one "sentence" of a tile's sign
+  // and a neighbour's numbers (CUL-2551).
+  const flat = halvesRising(text.normalize('NFKC').replace(/[^\S\u2029]+/g, ' '))
+  const sentences = flat.split(/(?<=[.;!?])\s+(?=[A-Z0-9"'(])|\s*\u2029\s*/).filter((x) => x !== '')
   const out: string[] = []
   sentences.forEach((sent, i) => {
     if (!pats.some((p) => p.test(sent))) return

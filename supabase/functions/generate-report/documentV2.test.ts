@@ -76,11 +76,14 @@ const ORDER = [
   'trial-reading',
   'record-lines',
   'gap-lines',
+  // CUL-2551: v1 page 1's other blocks, word for word in v1's order (`sheet1CarryV2.ts`).
+  'carried',
   'questions',
   'colophon',
 ]
 
 function orderKey(b: BlockV2): string {
+  if (b.kind === 'carried') return 'carried'
   return b.kind === 'changes' ? `changes@${b.placement === 'band_slot' ? 'slot' : 'under'}` : b.id
 }
 
@@ -90,7 +93,7 @@ Deno.test('order — every fixture prints its blocks in spec §5 order, each id 
   for (const [name, s] of fixtures()) {
     const d = docOf(s)
     const keys = d.blocks.map(orderKey)
-    assert.equal(new Set(keys).size, keys.length, `${name}: no block twice`)
+    assert.equal(new Set(d.blocks.map((b) => b.id)).size, keys.length, `${name}: no block twice`)
     const idx = keys.map((k) => ORDER.indexOf(k))
     assert.ok(idx.every((i) => i >= 0), `${name}: only known blocks (${keys})`)
     assert.deepEqual(idx, [...idx].sort((a, b) => a - b), `${name}: spec order (${keys})`)
@@ -153,14 +156,15 @@ Deno.test('superset — every v1 page-1 band finding prints on v2 sheet 1, word 
     const ptr = v2FlagPointersOf(d.backSheets, s)
     for (const f of s.safetyFlags) {
       // CUL-2381 part 2: a refusal row with a long trial-food list prints it short; the rest of the
-      // row is v1's, and every name the band leaves out prints on the diet sheet (below).
+      // row is v1's, and every name the band leaves out prints in the trial block's rows on sheet 1
+      // (CUL-2551 brief 2a; it printed on the diet sheet before).
       const v1 = v1RowOf(bandFlagOf(f), s)
       const want = swapPointers(v1, V1_FLAG_POINTERS, ptr)
       if (want !== v1) swapped++
       assert.ok(html.includes(want), `${name}: the ${f.kind} finding prints on sheet 1`)
       if (f.kind === 'trial_diet_refusal') {
-        const back = html.slice(html.indexOf('</main>'))
-        for (const l of f.trialDietLabels) assert.ok(back.includes(h(l)), `${name}: trial food “${l}” prints on a back sheet`)
+        const rows = html.slice(html.indexOf('data-block="trial-reading"'), html.indexOf('</main>'))
+        for (const l of f.trialDietLabels) assert.ok(rows.includes(h(l)), `${name}: trial food “${l}” prints in sheet 1’s trial rows`)
       }
       flags++
     }

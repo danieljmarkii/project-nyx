@@ -29,6 +29,12 @@ export const SKIN_TRIAL_SIGNS: readonly ReportSymptomType[] = ['itch', 'scratch'
 /** A gi trial's own signs, for the lead ladder's step 2 only (never a band decision). */
 const GI_TRIAL_SIGNS: readonly ReportSymptomType[] = ['vomit', 'diarrhea']
 
+/** A gi or skin trial's own signs (the lead ladder's list), empty without one. */
+export function trialOwnSignsOf(snap: ReportSnapshot): readonly ReportSymptomType[] {
+  const indication = snap.trial?.indication ?? null
+  return indication === 'skin' ? SKIN_TRIAL_SIGNS : indication === 'gi' ? GI_TRIAL_SIGNS : []
+}
+
 /** The lead-eligible set (v2 spec §4): the report's symptom types plus the intake measure.
  *  Exposures and Noticed looks never lead. */
 export type LeadSign = ReportSymptomType | 'intake'

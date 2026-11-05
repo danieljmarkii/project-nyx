@@ -312,10 +312,14 @@ function block(b: BlockV2, aiLead: string | null = null): string {
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${chartSvg(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
     case 'trial_reading':
-      // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
-      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
-        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
-        .join('')}</section>`
+      // CUL-2551: v1's trial section as v1 prints it: its heading, every row in v1's order, then
+      // "Interpreting this record", so v1's own "(above)" stays true (already-escaped html).
+      return `${open('section', 'back trialread')}${b.heading !== null ? `<h2>${b.heading}</h2>` : ''}<div class="kvcol">${b.rows
+        .map((r) => `<div class="kv"><span class="k">${r.labelHtml}</span> <span>${r.html}</span></div>`)
+        .join('')}</div>${b.html !== null ? `<div class="callout"><span class="k">${h(b.label)}</span> ${b.html}</div>` : ''}</section>`
+    case 'carried':
+      // CUL-2551: a v1 page-1 section word for word; the back sheets' v1 styles dress it (`.back`).
+      return `${open('section', `back v1sec carry v1-${b.id}`)}${b.html}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':

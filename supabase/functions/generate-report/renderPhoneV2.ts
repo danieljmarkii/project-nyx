@@ -27,7 +27,7 @@
 // scroll can rest anywhere, and only the pinned sentence is beside the bars at every position
 // (adversarial pass on CUL-2295; the PM rules whether it may hide).
 // Frames are known only on the device (its height and text size), so the script measures there.
-import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml } from './renderBackV2.ts'
+import { BACK_STYLE_PHONE_PRINT, BACK_STYLE_PHONE_SCREEN, backSheetHtml, bandPhotosHtml, labelTableCells } from './renderBackV2.ts'
 import { h, notReadCol, soFarCol, type BlockV2, type ChartColumn, type ChartRow, type DocumentV2, type LeadChart } from './documentV2.ts'
 import { COUNT_AXIS_MIN_MAX } from './renderPrintV2.ts'
 import { fmtDay } from './render.ts'
@@ -276,10 +276,14 @@ function block(b: BlockV2, lead: string | null): string {
       }${c.reasonLine ? `<p class="why">${h(c.reasonLine)}</p>` : ''}${rep}${chartHtml(c)}<p class="twin">${h(c.twin)}</p></section>`
     }
     case 'trial_reading':
-      // v1's callout label, then its sentences as v1 wrote them (already-escaped html).
-      return `${open('section', 'trialread')}<h2 class="sech">${h(b.label)}</h2>${b.html !== null ? `<p>${b.html}</p>` : ''}${b.rows
-        .map((r) => `<p class="trow"><b>${r.labelHtml}:</b> ${r.html}</p>`)
-        .join('')}</section>`
+      // CUL-2551: v1's trial section as v1 prints it: its heading, every row in v1's order, then
+      // "Interpreting this record", so v1's own "(above)" stays true (already-escaped html).
+      return `${open('section', 'back trialread')}${b.heading !== null ? `<h2>${b.heading}</h2>` : ''}<div class="kvcol">${b.rows
+        .map((r) => `<div class="kv"><span class="k">${r.labelHtml}</span> <span>${r.html}</span></div>`)
+        .join('')}</div>${b.html !== null ? `<div class="callout"><span class="k">${h(b.label)}</span> ${b.html}</div>` : ''}</section>`
+    case 'carried':
+      // CUL-2551: a v1 page-1 section word for word; the back sheets' v1 styles dress it (`.back`).
+      return `${open('section', `back v1sec carry v1-${b.id}`)}${labelTableCells(b.html)}</section>`
     case 'confounder':
       return `${open('p', 'conf')}${h(b.text)}</p>`
     case 'record_lines':
