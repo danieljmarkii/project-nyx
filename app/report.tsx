@@ -47,7 +47,7 @@ import {
   REPORT_FRAME_PROPS,
   type PreviewView,
 } from '../lib/reportPreviewV2';
-import { EXAM_CSP_META, PREFETCH_OFF_META } from '../lib/examRoom';
+import { EXAM_CSP_META, PREFETCH_OFF_META, neutralizeRefusedTags } from '../lib/examRoom';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
 //
@@ -147,10 +147,17 @@ const V1_HEAD = `${EXAM_CSP_META}${PREFETCH_OFF_META}`;
 /**
  * The v1 report boxed the way the v2 preview boxes its documents (CUL-2486, CUL-2527): the room's
  * CSP and the prefetch switch in a real `<head>` when there is one (never a `<header>`, CUL-2470),
- * else at the very top, after a doctype, where the parser places them in the implied head. Never
- * shown without them.
+ * else at the very top, after a doctype, where the parser places them in the implied head; and
+ * every refused tag renamed inert (`neutralizeRefusedTags`). With JS off no lock script runs, so
+ * the rename is what stops an injected `<link rel=preconnect>` hint, and an `<iframe
+ * src=about:blank>` that iOS reports as the top frame. The v1 renderer emits none of those tags.
+ * Never shown without them.
  */
 export function boxedV1Html(html: string): string {
+  return neutralizeRefusedTags(withV1Head(html));
+}
+
+function withV1Head(html: string): string {
   const head = /<head(\s[^>]*)?>/i.exec(html);
   if (head !== null) {
     const at = head.index + head[0].length;

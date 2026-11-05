@@ -199,3 +199,17 @@ it('boxedV1Html: the policy and the prefetch switch land in a real head, never i
   expect(boxedV1Html('<!DOCTYPE html><body><header>h</header></body>')).toBe(`<!DOCTYPE html>${head}<body><header>h</header></body>`);
   expect(boxedV1Html('<body>x</body>')).toBe(`${head}<body>x</body>`);
 });
+
+// CUL-2527 privacy pass F1/F2: JS is off, so no lock script removes an injected hint or frame; the
+// rename does. A preconnect is a path out the CSP does not close; an about:blank iframe passes the
+// iOS check as the top frame.
+it('boxedV1Html renames every refused tag inert, and leaves escaped text alone', () => {
+  const out = boxedV1Html(
+    '<html><head></head><body><link rel=preconnect href=https://x.test><IFRAME src=about:blank></IFRAME><a href=https://y.test>a</a><object></object>&lt;iframe&gt;</body></html>',
+  );
+  expect(out).not.toMatch(/<(link|iframe|a|object)[\s>]/i);
+  expect(out).toContain('<x-refused-link rel=preconnect');
+  expect(out).toContain('<x-refused-IFRAME src=about:blank>');
+  expect(out).toContain('&lt;iframe&gt;');
+  expect(out).toContain(PREFETCH_OFF_META);
+});
