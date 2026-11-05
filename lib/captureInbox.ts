@@ -209,7 +209,8 @@ export interface InboxDecision {
 //   • petId must be one of the account's own pets — a record naming a foreign
 //     pet DEFERS (the pet list may simply not have loaded/hydrated yet; a truly
 //     foreign record ages out via INBOX_MAX_AGE_DAYS rather than being written
-//     into this account's record);
+//     into this account's record; CUL-2503: age is read only here and at the
+//     other unusable branches, never ahead of a record that can land);
 //   • foodItemId must exist in food_items_cache — otherwise the pushed meal
 //     would FK-fail against food_items forever (the pre-sync can only re-upsert
 //     foods the cache knows), poisoning the queue. Defers for the same
@@ -259,16 +260,25 @@ export async function ingestCaptureRecords(
     }
     const record = classified.record;
 
-    // Age-out: a record that has deferred past the window is unclaimable.
-    // Checked before the defer paths below so a stale foreign-pet/missing-food
-    // record eventually leaves the inbox instead of deferring forever.
-    if (now.getTime() - Date.parse(record.createdAt) > maxAgeMs) {
-      decisions.push({ name: file.name, action: 'dropped', reason: 'aged out' });
-      continue;
-    }
+    // Age-out (CUL-2503): only a record that CANNOT land ages out. A record the
+    // app can apply (its pet in this account, its food cached, or its free-fed
+    // bowl active) is applied however old it is: before this, the age check ran
+    // first, and a 46-day-old treat for the owner's own pet with its food cached
+    // was dropped, a lost tap the record and the report then never mentioned.
+    // So age is read only at the three "unusable" defer branches below (foreign
+    // pet, no arrangement, food not cached), where it turns a defer into a drop
+    // so a stale record eventually leaves the inbox instead of deferring forever.
+    // The pass cap and the sign-out fence never age a record out: neither says
+    // anything about the record, and it applies on the next pass. A classify-level
+    // defer (newer schema, unknown kind) returned above and never ages out either.
+    const aged = now.getTime() - Date.parse(record.createdAt) > maxAgeMs;
+    const unusable = (reason: string): InboxDecision =>
+      aged
+        ? { name: file.name, action: 'dropped', reason: `aged out (${reason})` }
+        : { name: file.name, action: 'deferred', reason };
 
     if (!validPetIds.has(record.petId)) {
-      decisions.push({ name: file.name, action: 'deferred', reason: 'pet not in account' });
+      decisions.push(unusable('pet not in account'));
       continue;
     }
 
@@ -294,7 +304,7 @@ export async function ingestCaptureRecords(
       if (arrangements.length === 0) {
         // Usually transient (arrangements not yet hydrated on a fresh install);
         // a tap on a genuinely-ended bowl ages out via INBOX_MAX_AGE_DAYS.
-        decisions.push({ name: file.name, action: 'deferred', reason: 'no active free-fed arrangement' });
+        decisions.push(unusable('no active free-fed arrangement'));
         continue;
       }
       if (applied >= maxApplies) {
@@ -335,7 +345,7 @@ export async function ingestCaptureRecords(
       [record.foodItemId],
     );
     if (!food) {
-      decisions.push({ name: file.name, action: 'deferred', reason: 'food not in cache' });
+      decisions.push(unusable('food not in cache'));
       continue;
     }
 
@@ -361,6 +371,16 @@ export async function ingestCaptureRecords(
     // occurred_at_confidence 'witnessed' + occurred_at_source 'now': a widget
     // tap is the owner logging in the moment; the surface stamps the clock.
     const nowIso = now.toISOString();
+    // updated_at is the TAP time, not the ingest time (CUL-2489 adversarial pass 1): every
+    // pending count ages a row from its local updated_at (SYNC_QUEUES' pendingSince), and
+    // the SyncBanner speaks only once the oldest is over a day old. Stamped `now`, a capture
+    // tapped three days ago and still unsent restarted that clock here and silenced the
+    // banner for another day. The server restamps updated_at on INSERT (migration 107), and
+    // hydration never overwrites an unpushed row, so the local stamp only ages the row.
+    // Clamped to now: a tap stamped ahead (the phone's clock was fast at the tap) would
+    // otherwise hold the banner silent until that future date, and block remote edits to the
+    // row from hydrating until then (adversarial pass 2).
+    const tapIso = Date.parse(record.createdAt) > now.getTime() ? nowIso : record.createdAt;
     if (fenced()) {
       stoppedAt = index;
       break;
@@ -371,7 +391,7 @@ export async function ingestCaptureRecords(
           occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
           logged_via, created_at, updated_at, synced)
        VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', 'now', 'witnessed', NULL, NULL, ?, ?, ?, 0)`,
-      [record.id, record.petId, record.occurredAt, record.loggedVia, record.createdAt, nowIso],
+      [record.id, record.petId, record.occurredAt, record.loggedVia, record.createdAt, tapIso],
     );
     // Assumed portion, unrated (spec §2.3): quantity 'unknown', no
     // intake_rating — a widget tap is not a witnessed rating, and the engine
@@ -384,7 +404,7 @@ export async function ingestCaptureRecords(
       `INSERT OR IGNORE INTO meals
          (id, event_id, pet_id, food_item_id, quantity, logged_via, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, 'unknown', ?, ?, ?, 0)`,
-      [record.mealId, record.id, record.petId, record.foodItemId, record.loggedVia, record.createdAt, nowIso],
+      [record.mealId, record.id, record.petId, record.foodItemId, record.loggedVia, record.createdAt, tapIso],
     );
     if (fenced()) {
       stoppedAt = index;
@@ -525,34 +545,74 @@ export async function ingestCaptureInbox(
 // Counted: anything that is, or may yet become, a record for one of `petIds`. Not counted: a
 // file the ingest will drop (it can never land), and one naming another pet (a foreign record
 // ages out over 45 days, and a "waiting to upload" line standing that long would be a lie).
-// An empty `petIds` counts nothing, as the ingest applies nothing.
+// An empty `petIds` means the pet list has not loaded, so every record that will not drop
+// counts (CUL-2489): unknown is never evidence of "not ours".
 export function countUnclaimedInboxPayloads(raws: readonly string[], petIds: ReadonlySet<string>): number {
-  let n = 0;
+  return summarizeUnclaimedInboxPayloads(raws, petIds).count;
+}
+
+/**
+ * CUL-2489: what the inbox still holds for this account, with WHEN. The SyncBanner's pending line
+ * keys on the oldest unsent entry being over a day old, not on the count, so a count alone would
+ * change nothing it says. Same population as `countUnclaimedInboxPayloads` (that function is
+ * this one's `.count`). `oldestAt` is the earliest counted capture's `createdAt`, the tap time
+ * the extension stamped; a counted record whose `createdAt` cannot be read is in `unknownAge`.
+ */
+export interface UnclaimedInboxSummary {
+  count: number;
+  /** Earliest `createdAt` among counted records whose time could be read; canonical UTC. */
+  oldestAt: string | null;
+  /** Counted entries with no readable time (an unreadable file, a deferred record's bad stamp). */
+  unknownAge: number;
+}
+
+export function summarizeUnclaimedInboxPayloads(
+  raws: readonly string[],
+  petIds: ReadonlySet<string>,
+  now: Date = new Date(),
+): UnclaimedInboxSummary {
+  let count = 0;
+  let unknownAge = 0;
+  let oldestMs = Number.POSITIVE_INFINITY;
   for (const raw of raws) {
     const c = classifyInboxPayload(raw);
     if (c.status === 'drop') continue;
-    const petId =
-      c.status === 'valid'
-        ? c.record.petId
-        : (() => {
-            try {
-              const p = (JSON.parse(raw) as { petId?: unknown }).petId;
-              return typeof p === 'string' ? p : null;
-            } catch {
-              return null;
-            }
-          })();
-    if (petId !== null && petIds.has(petId)) n += 1;
+    let petId: string | null;
+    let createdMs: number;
+    if (c.status === 'valid') {
+      petId = c.record.petId;
+      createdMs = Date.parse(c.record.createdAt);
+    } else {
+      // A classify-level defer (newer schema, unknown kind) parsed as JSON, or it would drop.
+      const p = JSON.parse(raw) as { petId?: unknown; createdAt?: unknown };
+      petId = typeof p.petId === 'string' ? p.petId : null;
+      createdMs = typeof p.createdAt === 'string' ? Date.parse(p.createdAt) : NaN;
+    }
+    // Not counted only when the record provably names ANOTHER pet. An empty pet list is "not
+    // loaded yet" (an offline cold launch never fills it), not "none of ours", and a deferred
+    // record with no readable pet id cannot be shown to be foreign: both count (adversarial
+    // pass 1, CUL-2489). Errs loud, as CUL-2507's ruling does for an unreadable inbox.
+    if (petId !== null && petIds.size > 0 && !petIds.has(petId)) continue;
+    count += 1;
+    if (Number.isNaN(createdMs)) unknownAge += 1;
+    // A tap stamped in the future (a fast clock at the tap) ages from now, never from that
+    // future date, which would hold the banner silent until it passed.
+    else if (Math.min(createdMs, now.getTime()) < oldestMs) oldestMs = Math.min(createdMs, now.getTime());
   }
-  return n;
+  return {
+    count,
+    oldestAt: Number.isFinite(oldestMs) ? new Date(oldestMs).toISOString() : null,
+    unknownAge,
+  };
 }
 
-// The file-system half. A file that cannot be read counts: it is most likely a real capture,
-// and over-warning is the safe direction. A listing that fails THROWS, so the caller's count
-// fails as a whole and takes its own "no evidence" path. No inbox (Android, no entitlement) is 0.
-export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
+// The file-system half. A file that cannot be read counts (with no known age): it is most likely
+// a real capture, and over-warning is the safe direction. A listing that fails THROWS, so the
+// caller's count fails as a whole and takes its own "no evidence" path. No inbox (Android, no
+// entitlement) is empty.
+export function readUnclaimedInbox(petIds: ReadonlySet<string>): UnclaimedInboxSummary {
   const inbox = getCaptureInboxDirectory();
-  if (!inbox) return 0;
+  if (!inbox) return { count: 0, oldestAt: null, unknownAge: 0 };
   const raws: string[] = [];
   let unreadable = 0;
   for (const entry of inbox.list()) {
@@ -563,5 +623,45 @@ export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
       unreadable += 1;
     }
   }
-  return unreadable + countUnclaimedInboxPayloads(raws, petIds);
+  const s = summarizeUnclaimedInboxPayloads(raws, petIds);
+  return { count: s.count + unreadable, oldestAt: s.oldestAt, unknownAge: s.unknownAge + unreadable };
+}
+
+export function countUnclaimedInbox(petIds: ReadonlySet<string>): number {
+  return readUnclaimedInbox(petIds).count;
+}
+
+/**
+ * CUL-2489: the SyncBanner's pending status with the inbox counted. `inbox` is null when the
+ * listing could not be read: that counts as ONE pending entry, the stopgap the PM ruled for the
+ * report's freshness line (CUL-2507, ruling (a)), kept the same here.
+ *
+ * AN ENTRY OF UNKNOWN AGE READS AS PAST THE BANNER'S THRESHOLD. The banner shows its pending line
+ * only once the oldest unsent entry is over a day old; an entry whose time cannot be read has no
+ * honest age, and treating it as new would hold the banner silent for as long as it stays
+ * unreadable. So it reads as old, and the banner errs loud. The store carries only a timestamp, so
+ * that is spelled as the earliest instant (`UNKNOWN_AGE_PENDING_AT`); SyncBanner compares it as an
+ * age and never prints it.
+ */
+export const UNKNOWN_AGE_PENDING_AT = new Date(0).toISOString();
+
+export function withUnclaimedInbox(
+  rows: { pendingCount: number; oldestPendingAt: string | null; quarantinedCount: number },
+  inbox: UnclaimedInboxSummary | null,
+): { pendingCount: number; oldestPendingAt: string | null; quarantinedCount: number } {
+  const box = inbox ?? { count: 1, oldestAt: null, unknownAge: 1 };
+  if (box.count === 0) return rows;
+  let oldest = rows.oldestPendingAt;
+  if (box.unknownAge > 0) {
+    oldest = UNKNOWN_AGE_PENDING_AT;
+  } else if (box.oldestAt !== null) {
+    // Parsed, never compared as text (C-40): a row's stamp may be PostgREST's '+00:00' form.
+    const rowMs = oldest === null ? NaN : Date.parse(oldest);
+    if (Number.isNaN(rowMs) || Date.parse(box.oldestAt) < rowMs) oldest = box.oldestAt;
+  }
+  return {
+    pendingCount: rows.pendingCount + box.count,
+    oldestPendingAt: oldest,
+    quarantinedCount: rows.quarantinedCount,
+  };
 }

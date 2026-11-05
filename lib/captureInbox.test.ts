@@ -39,6 +39,10 @@ import {
   classifyInboxPayload,
   countUnclaimedInbox,
   countUnclaimedInboxPayloads,
+  readUnclaimedInbox,
+  summarizeUnclaimedInboxPayloads,
+  withUnclaimedInbox,
+  UNKNOWN_AGE_PENDING_AT,
   ingestCaptureRecords,
   ingestCaptureInbox,
   inboxFileSortKey,
@@ -318,6 +322,98 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     expect(decisions[0].action).toBe('dropped');
   });
 
+  // CUL-2503: the age check used to run FIRST, so a capture the app could apply was dropped
+  // once it was 45 days old. Only a record that cannot land ages out now.
+  describe('age-out drops only what cannot land (CUL-2503)', () => {
+    const staleCreated = () =>
+      new Date(NOW.getTime() - (INBOX_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+
+    it("applies a 46-day-old treat for the account's own pet whose food is cached", async () => {
+      const old = validRecord({ kind: 'treat', createdAt: staleCreated(), occurredAt: staleCreated() });
+      const decisions = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(decisions).toEqual([{ name: '0.json', action: 'applied', petId: PET }]);
+      expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(1);
+    });
+
+    it('clamps a tap stamped in the future to the ingest time (adversarial pass 2)', async () => {
+      const ahead = new Date(NOW.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
+      await ingestCaptureRecords(db, files(validRecord({ createdAt: ahead })), new Set([PET]), NOW);
+      const evt = raw.prepare('SELECT updated_at FROM events WHERE id = ?').get(EVT) as { updated_at: string };
+      const meal = raw.prepare('SELECT updated_at FROM meals WHERE id = ?').get(MEAL) as { updated_at: string };
+      expect(evt.updated_at).toBe(NOW.toISOString());
+      expect(meal.updated_at).toBe(NOW.toISOString());
+    });
+
+    it('stamps the TAP time as updated_at, so an old capture still pending ages from its tap (CUL-2489)', async () => {
+      // Every pending count (and the SyncBanner's over-a-day line) ages a row from updated_at.
+      // Stamped with the ingest time, a capture tapped days ago restarted that clock.
+      const tapped = '2026-07-21T08:00:00.000Z';
+      await ingestCaptureRecords(db, files(validRecord({ createdAt: tapped })), new Set([PET]), NOW);
+      const evt = raw.prepare('SELECT updated_at FROM events WHERE id = ?').get(EVT) as { updated_at: string };
+      const meal = raw.prepare('SELECT updated_at FROM meals WHERE id = ?').get(MEAL) as { updated_at: string };
+      expect(evt.updated_at).toBe(tapped);
+      expect(meal.updated_at).toBe(tapped);
+      expect(NOW.toISOString()).not.toBe(tapped);
+    });
+
+    it('drops the same record when its food is not cached (it cannot land)', async () => {
+      const old = validRecord({
+        createdAt: staleCreated(),
+        foodItemId: '55555555-5555-4555-9555-555555555555',
+      });
+      const decisions = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('dropped');
+      expect(decisions[0].reason).toBe('aged out (food not in cache)');
+    });
+
+    it('defers, never drops, an old valid record held back only by the pass cap', async () => {
+      const second = validRecord({
+        id: '66666666-6666-4666-9666-666666666666',
+        mealId: '77777777-7777-4777-9777-777777777777',
+        createdAt: staleCreated(),
+      });
+      const decisions = await ingestCaptureRecords(
+        db,
+        files(validRecord({ createdAt: staleCreated() }), second),
+        new Set([PET]),
+        NOW,
+        1,
+      );
+      expect(decisions.map((d) => [d.action, d.reason])).toEqual([
+        ['applied', undefined],
+        ['deferred', 'pass cap'],
+      ]);
+    });
+
+    it('defers, never drops, an old valid record the sign-out fence stopped', async () => {
+      const decisions = await ingestCaptureRecords(
+        db,
+        files(validRecord({ createdAt: staleCreated() })),
+        new Set([PET]),
+        NOW,
+        MAX_INGEST_PER_PASS,
+        () => true,
+      );
+      expect(decisions).toEqual([{ name: '0.json', action: 'deferred', reason: 'signed out' }]);
+    });
+
+    it('keeps a classify-level deferral (a newer schema) however old it is', async () => {
+      const newer = validRecord({
+        schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1,
+        createdAt: staleCreated(),
+      });
+      const decisions = await ingestCaptureRecords(db, files(newer), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('deferred');
+    });
+
+    it('a record one second inside the window still defers when it cannot land', async () => {
+      const edge = new Date(NOW.getTime() - INBOX_MAX_AGE_DAYS * 24 * 60 * 60 * 1000 + 1000).toISOString();
+      const foreign = validRecord({ petId: '99999999-9999-4999-9999-999999999999', createdAt: edge });
+      const decisions = await ingestCaptureRecords(db, files(foreign), new Set([PET]), NOW);
+      expect(decisions[0]).toMatchObject({ action: 'deferred', reason: 'pet not in account' });
+    });
+  });
+
   it('caps APPLIES per pass, not classification — a deferral never consumes the budget', async () => {
     const second = validRecord({
       id: '66666666-6666-4666-9666-666666666666',
@@ -355,6 +451,16 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
         )
         .run(ARR, PET, FOOD, overrides.active_until ?? null, overrides.deleted_at ?? null, OLD_STAMP, OLD_STAMP);
     }
+
+    it('CUL-2503: applies a 46-day-old top-up while its free-fed bowl is active, drops it once none is', async () => {
+      const stale = new Date(NOW.getTime() - (INBOX_MAX_AGE_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+      const old = topUpRecord({ createdAt: stale, occurredAt: stale });
+      const none = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(none[0]).toMatchObject({ action: 'dropped', reason: 'aged out (no active free-fed arrangement)' });
+      insertArrangement();
+      const some = await ingestCaptureRecords(db, files(old), new Set([PET]), NOW);
+      expect(some[0].action).toBe('applied');
+    });
 
     it('bumps the active arrangement to the TAP time, queues the push, writes no event/meal/rating', async () => {
       insertArrangement();
@@ -834,8 +940,17 @@ describe('countUnclaimedInboxPayloads / countUnclaimedInbox (CUL-2468)', () => {
     expect(countUnclaimedInboxPayloads(['{not json', forged], mine)).toBe(0);
   });
 
-  it('an empty pet set counts nothing, as the ingest applies nothing', () => {
-    expect(countUnclaimedInboxPayloads([treat()], new Set())).toBe(0);
+  it('an empty pet set (the list not loaded yet) counts every record that will not drop (CUL-2489)', () => {
+    // An offline cold launch never fills the pet list; "unknown" is not "not ours".
+    expect(countUnclaimedInboxPayloads([treat(), treat(OTHER_PET), '{not json'], new Set())).toBe(2);
+  });
+
+  it('a deferred record with no readable pet id counts: it cannot be shown to be foreign', () => {
+    const { petId: _drop, ...rest } = validRecord();
+    void _drop;
+    const noPet = JSON.stringify({ ...rest, schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1, petIds: [PET] });
+    expect(classifyInboxPayload(noPet).status).toBe('defer');
+    expect(countUnclaimedInboxPayloads([noPet], mine)).toBe(1);
   });
 
   it('reads the directory: .json files only, an unreadable one counts', () => {
@@ -859,5 +974,133 @@ describe('countUnclaimedInboxPayloads / countUnclaimedInbox (CUL-2468)', () => {
       },
     });
     expect(() => countUnclaimedInbox(mine)).toThrow('list');
+  });
+});
+
+// CUL-2489: the SyncBanner's half. The banner's pending line keys on the OLDEST unsent entry being
+// over a day old, so the inbox has to hand over WHEN, not only how many.
+describe('summarizeUnclaimedInboxPayloads / readUnclaimedInbox / withUnclaimedInbox (CUL-2489)', () => {
+  const mine = new Set([PET]);
+  const OTHER_PET = '55555555-5555-4555-9555-555555555555';
+  const at = (createdAt: string, petId = PET) => JSON.stringify(validRecord({ kind: 'treat', petId, createdAt }));
+  const ROWS_NONE = { pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0 };
+
+  afterEach(() => {
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue(null);
+  });
+
+  it('counts the same population as countUnclaimedInboxPayloads, and names the oldest counted capture', () => {
+    const raws = [
+      at('2026-07-10T08:00:00.000Z'),
+      at('2026-07-01T08:00:00.000Z', OTHER_PET), // not counted, so not the oldest either
+      at('2026-07-05T08:00:00.000Z'),
+      '{not json',
+    ];
+    expect(summarizeUnclaimedInboxPayloads(raws, mine)).toEqual({
+      count: countUnclaimedInboxPayloads(raws, mine),
+      oldestAt: '2026-07-05T08:00:00.000Z',
+      unknownAge: 0,
+    });
+    expect(countUnclaimedInboxPayloads(raws, mine)).toBe(2);
+  });
+
+  it('a version-skew deferral reads its own createdAt; an offset stamp is normalised to UTC', () => {
+    const newer = JSON.stringify({
+      ...validRecord(),
+      schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1,
+      createdAt: '2026-07-01T04:00:00-04:00',
+    });
+    expect(summarizeUnclaimedInboxPayloads([newer], mine)).toEqual({
+      count: 1,
+      oldestAt: '2026-07-01T08:00:00.000Z',
+      unknownAge: 0,
+    });
+  });
+
+  it('a capture stamped in the future ages from now, never from that future date', () => {
+    const now = new Date('2026-11-05T12:00:00.000Z');
+    expect(summarizeUnclaimedInboxPayloads([at('2027-03-01T08:00:00.000Z')], mine, now)).toEqual({
+      count: 1,
+      oldestAt: '2026-11-05T12:00:00.000Z',
+      unknownAge: 0,
+    });
+  });
+
+  it('a version-skew deferral with no readable time counts with unknown age', () => {
+    const newer = JSON.stringify({
+      ...validRecord(),
+      schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION + 1,
+      createdAt: 'later',
+    });
+    expect(summarizeUnclaimedInboxPayloads([newer], mine)).toEqual({ count: 1, oldestAt: null, unknownAge: 1 });
+  });
+
+  it('reads the directory: an unreadable file counts with unknown age', () => {
+    const unreadable = {
+      name: 'b.json',
+      textSync: () => {
+        throw new Error('io');
+      },
+      delete: () => undefined,
+    };
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => [fakeFile('a.json', at('2026-07-05T08:00:00.000Z')), unreadable],
+    });
+    expect(readUnclaimedInbox(mine)).toEqual({ count: 2, oldestAt: '2026-07-05T08:00:00.000Z', unknownAge: 1 });
+    expect(countUnclaimedInbox(mine)).toBe(2);
+  });
+
+  it('no inbox (Android) is empty; a listing that fails throws for the caller', () => {
+    expect(readUnclaimedInbox(mine)).toEqual({ count: 0, oldestAt: null, unknownAge: 0 });
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({
+      list: () => {
+        throw new Error('list');
+      },
+    });
+    expect(() => readUnclaimedInbox(mine)).toThrow('list');
+  });
+
+  it('adds a deferred capture to an empty queue: the banner now has an oldest entry to age', () => {
+    const out = withUnclaimedInbox(ROWS_NONE, { count: 1, oldestAt: '2026-07-01T08:00:00.000Z', unknownAge: 0 });
+    expect(out).toEqual({ pendingCount: 1, oldestPendingAt: '2026-07-01T08:00:00.000Z', quarantinedCount: 0 });
+  });
+
+  it('takes the earlier of the two, comparing instants, never text (C-40)', () => {
+    // The same instant in both spellings: the row's PostgREST form must not lose to the inbox's Z
+    // form as text ('+' sorts before '.'), and an earlier inbox capture must win.
+    const rows = { pendingCount: 2, oldestPendingAt: '2026-07-03T08:00:00+00:00', quarantinedCount: 1 };
+    expect('2026-07-03T08:00:00+00:00' < '2026-07-03T08:00:00.000Z').toBe(true);
+    expect(withUnclaimedInbox(rows, { count: 1, oldestAt: '2026-07-03T08:00:00.000Z', unknownAge: 0 })).toEqual({
+      pendingCount: 3,
+      oldestPendingAt: '2026-07-03T08:00:00+00:00',
+      quarantinedCount: 1,
+    });
+    expect(
+      withUnclaimedInbox(rows, { count: 1, oldestAt: '2026-07-02T08:00:00.000Z', unknownAge: 0 }).oldestPendingAt,
+    ).toBe('2026-07-02T08:00:00.000Z');
+    expect(
+      withUnclaimedInbox(rows, { count: 1, oldestAt: '2026-07-04T08:00:00.000Z', unknownAge: 0 }).oldestPendingAt,
+    ).toBe('2026-07-03T08:00:00+00:00');
+  });
+
+  it('an entry of unknown age reads as old, so the banner errs loud', () => {
+    const out = withUnclaimedInbox(
+      { pendingCount: 1, oldestPendingAt: '2026-07-03T08:00:00.000Z', quarantinedCount: 0 },
+      { count: 1, oldestAt: null, unknownAge: 1 },
+    );
+    expect(out).toEqual({ pendingCount: 2, oldestPendingAt: UNKNOWN_AGE_PENDING_AT, quarantinedCount: 0 });
+  });
+
+  it('an unreadable listing counts as ONE pending entry of unknown age (CUL-2507 ruling (a))', () => {
+    expect(withUnclaimedInbox(ROWS_NONE, null)).toEqual({
+      pendingCount: 1,
+      oldestPendingAt: UNKNOWN_AGE_PENDING_AT,
+      quarantinedCount: 0,
+    });
+  });
+
+  it('an empty inbox changes nothing', () => {
+    const rows = { pendingCount: 2, oldestPendingAt: 'not-a-date', quarantinedCount: 3 };
+    expect(withUnclaimedInbox(rows, { count: 0, oldestAt: null, unknownAge: 0 })).toBe(rows);
   });
 });

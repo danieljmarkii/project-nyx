@@ -1125,16 +1125,26 @@ export async function getSyncStatus(): Promise<{
   oldestPendingAt: string | null;
   quarantinedCount: number;
 }> {
-  const db = getDb();
-  const pending = await db.getFirstAsync<{ count: number; oldest: string | null }>(
-    pendingStatusSql(),
+  const row = await getDb().getFirstAsync<{ count: number; oldest: string | null; quarantined: number }>(
+    syncStatusSql(),
   );
-  const quarantined = await db.getFirstAsync<{ count: number }>(quarantineCountSql());
   return {
-    pendingCount: pending?.count ?? 0,
-    oldestPendingAt: pending?.oldest ?? null,
-    quarantinedCount: quarantined?.count ?? 0,
+    pendingCount: row?.count ?? 0,
+    oldestPendingAt: row?.oldest ?? null,
+    quarantinedCount: row?.quarantined ?? 0,
   };
+}
+
+/** CUL-2489: the banner's pending and refused counts from ONE statement, so one SQLite snapshot.
+ *  Two reads let a drain that re-arms a refused child between them (refused → pending) make both
+ *  answer zero while the child is still on this phone (the CUL-2471 hazard `countRecordGaps`
+ *  closed for the report). Same two queries as before, joined as derived tables; the banner keeps
+ *  the oldest pending time it keys on, which `countRecordGaps` does not carry. */
+export function syncStatusSql(): string {
+  return (
+    'SELECT p.count AS count, p.oldest AS oldest, q.count AS quarantined FROM\n' +
+    `(${pendingStatusSql()}) AS p,\n(${quarantineCountSql()}) AS q`
+  );
 }
 
 /** Q14 (CUL-772) / CUL-2037: rows a Signal rebuild must treat as missing from the server, from
