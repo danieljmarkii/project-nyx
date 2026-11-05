@@ -1,0 +1,47 @@
+# The daily orphaned-storage check (CUL-2521, PM ruling 2026-11-05: an outcome check).
+#
+# Asks sweep-orphaned-storage, in its afternoon check window (12:07–14:07 UTC), whether any file the 09:23 UTC
+# run should have removed is still stored, or whether the check could not read everything. Opens a Linear issue
+# (team Culprit) when either holds or the function cannot answer; a later day comments on the open issue instead
+# of opening another. Why it reads the outcome rather than the run's log line is scripts/ops/orphanSweepCheck.ts.
+#
+# NEVER A REQUIRED CHECK, NEVER ON A PULL REQUEST: its own workflow, on a schedule and by hand only, like
+# report-drafts-check.yml. A run by hand outside 12:07–14:07 UTC gets a 400 from the function's gate and goes red.
+#
+# THE KEY. LINEAR_API_KEY is the ops-alerts environment secret (docs/secrets-register.md), readable from `main`
+# only. Until it is set (CUL-2518) a finding exits non-zero, so GitHub's failed-run email is the alert.
+name: Orphaned storage check
+
+on:
+  schedule:
+    # Daily, 12:07 UTC: the check window's first minute, leaving two hours for a late GitHub schedule.
+    - cron: '7 12 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: orphan-sweep-check
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Orphaned files the sweep left
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ops-alerts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      # No npm ci: the script imports only node:fs and its sibling modules.
+      - name: Ask the sweep, and tell Linear if it needs a person
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        run: node --experimental-strip-types scripts/ops/orphanSweepCheck.cli.ts
