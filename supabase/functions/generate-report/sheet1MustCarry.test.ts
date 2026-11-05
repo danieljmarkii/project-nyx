@@ -195,6 +195,8 @@ function captionCut(leaf: V1Leaf): { rest: string; items: string | null } | null
   if (/^under each date: days with a meal logged, of [^.]*\. a treat alone does not count as a meal\.$/.test(leaf.text)) return { rest: '', items: null }
   if (/^: a week with (?:no off-diet feeding recorded that is still not read as clean|meals logged on fewer than)/.test(leaf.text)) return { rest: '', items: null }
   const cut = leaf.text
+    .replace(/^(?:pre|post)-trial(?: and post-trial)? columns? falls? outside the trial days this report covers \([^)]*\) and are not counted here\. /, '')
+    .replace(", so a week's stack can total more than its feedings.", '.')
     .replace('; each bar is one week, stacked by protein.', '.')
     .replace(' colour is a convenience — every protein also carries a texture, so this reads in black & white.', '')
   return cut === leaf.text ? null : { rest: cut, items: null }
@@ -428,12 +430,13 @@ Deno.test('CUL-2579 — v1’s headline prints straight under the band (or the c
 Deno.test('CUL-2579 — no caption of an undrawn chart prints, and the counts beside it still do (nyx-live)', () => {
   const s = nyxLiveSnapshot()
   const t = sheet1Text(buildDocumentV2(s, OPTS))
-  for (const gone of ['a dashed vertical marks', 'each bar is one week', 'under each date:', 'colour is a convenience', ': a week with no off-diet feeding']) {
+  for (const gone of ['a dashed vertical marks', 'each bar is one week', 'under each date:', 'colour is a convenience', ': a week with no off-diet feeding', 'columns fall outside', "a week's stack"]) {
     assert.ok(!t.print.includes(gone) && !t.phone.includes(gone), gone)
   }
   assert.ok(has(t, 'off-diet feedings (feedings not matched to the trial diet or the allowed list) over'), 'the protein chart’s count still prints')
   assert.ok(has(t, 'a food containing several proteins counts once for each'), 'its counting rule still prints')
-  assert.equal(UNDRAWN_CHART_CAPTIONS.length, 5)
+  assert.ok(has(t, 'treats logged outside the trial are counted'), 'the outside-columns note’s pointer still prints')
+  assert.equal(UNDRAWN_CHART_CAPTIONS.length, 7)
 })
 
 Deno.test('CUL-2579, mutation — a caption cut that takes a count with it, or a key whose change is not on the sheet, reds the guard', () => {
