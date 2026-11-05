@@ -44,7 +44,8 @@ Deno.test('the keep settles the lead in its own one write, with only what run.ts
   const mark = saved.slice(saved.indexOf('markKept: async'), saved.indexOf('restamp: async'))
   assert.equal(mark.split('.update(').length - 1, 1, 'the keep is one UPDATE')
   assert.match(mark, /\.update\(\{ \.\.\.lead\.set, status: 'kept', shared_via: via, shared_at: atIso, content_sha256: sha \}\)/)
-  assert.match(mark, /for \(const \[column, value\] of Object\.entries\(lead\.unchanged\)\) q = q\.eq\(column, value\)/)
+  // A null pin is IS NULL, a value is =: every column run.ts read is pinned on both branches (CUL-2523).
+  assert.match(mark, /for \(const \[column, value\] of Object\.entries\(lead\.unchanged\)\) q = value === null \? q\.is\(column, null\) : q\.eq\(column, value\)/)
   assert.ok(mark.indexOf('lead.unchanged') < mark.indexOf(".select('id')"), 'the pins are in the WHERE of that same statement')
   // run.ts's settle reads and never writes: the one lead `.update(` stays writeDraft's.
   const run = files.find((f) => f.rel === 'generate-report/aiLead/run.ts')!.src
@@ -75,7 +76,7 @@ Deno.test('the pipeline is reachable only through run.ts, and run.ts only from i
   assert.deepEqual(importers(/^import (?!type )[^\n]*from '\.\/aiLead\/run\.ts'/m), ['generate-report/index.ts'])
   assert.deepEqual(importers(/from '\.\/aiLead\/run\.ts'/), ['generate-report/index.ts', 'generate-report/savedCopy.ts'])
   const saved = files.find((f) => f.rel === 'generate-report/savedCopy.ts')!.src
-  assert.deepEqual(saved.match(/^import .*from '\.\/aiLead\/run\.ts'.*$/gm), ["import type { KeepLead } from './aiLead/run.ts'"])
+  assert.deepEqual(saved.match(/^import .*from '\.\/aiLead\/run\.ts'.*$/gm), ["import type { KeepLead, KeepRefusal } from './aiLead/run.ts'"])
   assert.deepEqual(importers(/from '\.\/model\.ts'/), ['generate-report/aiLead/leadPipeline.ts', 'generate-report/aiLead/run.ts'])
   // The renderer may know the lead's shape, never its pipeline.
   const render = files.find((f) => f.rel === 'generate-report/renderPrintV2.ts')!.src

@@ -26,7 +26,9 @@ import {
   type SavedCopyIO,
   type SharedVia,
 } from './savedCopy.ts'
-import { LEAD_SLOT_MARK, settleLeadForKeep, type KeepLead } from './aiLead/run.ts'
+import { NEW_PREVIEW_ERROR } from './savedCopy.ts'
+import { LEAD_SLOT_MARK, PIN_TEXT_URL_BUDGET, settleLeadForKeep, type KeepLead, type KeepRefusal } from './aiLead/run.ts'
+import { h } from './documentV2.ts'
 
 const PET = '11111111-2222-4333-8444-555555555555'
 const ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -47,6 +49,17 @@ interface Row extends Partial<DraftRow> {
 
 /** A settle that leaves the lead columns as they are: the fake rows here hold none. */
 const NO_LEAD: KeepLead = { set: {}, unchanged: {} }
+
+/** A pinned column as PostgREST reads it: `col` as stored (absent is NULL), `col->>key` the
+ *  verdict's field as text (a missing field or a NULL verdict is NULL). */
+function pinnedValue(r: Record<string, unknown>, key: string): unknown {
+  const [col, field] = key.split('->>')
+  const v = r[col] ?? null
+  if (field === undefined) return v
+  if (v === null || typeof v !== 'object') return null
+  const f = (v as Record<string, unknown>)[field]
+  return f === undefined || f === null ? null : String(f)
+}
 
 function fakeIO(opts: { failInsert?: boolean; failUpload?: boolean; failStamp?: boolean; takenShortIds?: string[] } = {}) {
   const rows = new Map<string, Row>()
@@ -97,7 +110,7 @@ function fakeIO(opts: { failInsert?: boolean; failUpload?: boolean; failStamp?: 
     },
     readRow: async (id) => {
       const r = rows.get(id)
-      return r ? { status: r.status, storage_path: r.storage_path, content_sha256: r.content_sha256, created_at: r.created_at } : null
+      return r ? { status: r.status, storage_path: r.storage_path, content_sha256: r.content_sha256, created_at: r.created_at, shared_at: r.shared_at } : null
     },
     download: async (path) => objects.get(path) ?? null,
     markKept: async (id, via, at, sha, lead) => {
@@ -105,7 +118,7 @@ function fakeIO(opts: { failInsert?: boolean; failUpload?: boolean; failStamp?: 
       // the lead's settled columns and the keep together.
       const r = rows.get(id) as (Row & Record<string, unknown>) | undefined
       if (!r || r.status !== 'draft' || r.content_sha256 !== sha) return false
-      if (Object.entries(lead.unchanged).some(([k, v]) => r[k] !== v)) return false
+      if (Object.entries(lead.unchanged).some(([k, v]) => pinnedValue(r, k) !== v)) return false
       Object.assign(r, lead.set, { status: 'kept', shared_via: via, shared_at: at })
       return true
     },
@@ -158,10 +171,13 @@ Deno.test('the stored snapshot drops photo bytes and keeps everything else', () 
 
 Deno.test('a keep request names a well-formed id and a known route, or is refused', () => {
   assert.equal(parseKeepRequest({ mode: 'ai_lead' }), null)
-  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID.toUpperCase(), sharedVia: 'email' }), { reportId: ID, sharedVia: 'email' })
-  assert.deepEqual(parseKeepRequest({ mode: 'keep', report_id: 'nope', shared_via: 'fax' }), { reportId: null, sharedVia: null })
+  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID.toUpperCase(), sharedVia: 'email' }), { reportId: ID, sharedVia: 'email', sharedAt: null })
+  assert.deepEqual(parseKeepRequest({ mode: 'keep', report_id: 'nope', shared_via: 'fax' }), { reportId: null, sharedVia: null, sharedAt: null })
   // Exam-room mode is a departure (CUL-2434, PM go (a) 2026-11-04).
-  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'shown' }), { reportId: ID, sharedVia: 'shown' })
+  assert.deepEqual(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'shown' }), { reportId: ID, sharedVia: 'shown', sharedAt: null })
+  // The phone's retry names its send time (CUL-2522); a malformed one reads as none.
+  assert.equal(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'email', sharedAt: '2026-11-05T12:00:00.000Z' })?.sharedAt, '2026-11-05T12:00:00.000Z')
+  assert.equal(parseKeepRequest({ mode: 'keep', reportId: ID, sharedVia: 'email', sharedAt: 'soon' })?.sharedAt, null)
 })
 
 // ── Saving at Preview ────────────────────────────────────────────────────────
@@ -307,48 +323,169 @@ Deno.test('a missing file, an unknown id, a failed lead settle or a bad request 
 
 // ── The lead on a kept copy (aiLead/run.ts) ──────────────────────────────────
 
-function leadIO(text: string | null, verdict: unknown) {
-  return { readDraft: async () => ({ found: true, text, verdict }) } as unknown as Parameters<typeof settleLeadForKeep>[0]
+type SettleIO = Parameters<typeof settleLeadForKeep>[0]
+const ALLOW = { allow: true } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+const DENY = { allow: false, reason: 'consent_declined', scope: 'report_summary' } as unknown as Awaited<ReturnType<SettleIO['runGate']>>
+const AT = '2026-11-05T12:00:00.000Z'
+
+function leadIO(text: string | null, verdict: unknown, model: string | null = null, gate = ALLOW) {
+  const io = { readDraft: async () => ({ found: true, text, verdict, model }), runGate: async (spend: boolean) => {
+    assert.equal(spend, false, 'the keep never spends a count')
+    io.gateCalls++
+    return gate
+  }, gateCalls: 0 }
+  return io as SettleIO & { gateCalls: number }
 }
 
-Deno.test('a lead the sent copy does not print is cleared, and the verdict says why', async () => {
-  const lead = await settleLeadForKeep(leadIO('Cooper vomited on 3 days.', { outcome: 'printed', fact_hash: 'h' }), '<html>no lead</html>')
+/** The copy as renderPrintV2 stores it when it prints the lead (aiLeadSlot's shape). */
+function slotHtml(sentences: string[]): string {
+  const body = sentences.map((t) => `<span class="ais">${h(t)}</span><sup class="cite"> Line 1</sup>`).join(' ')
+  return `<html><section class="ailead" ${LEAD_SLOT_MARK}><p class="ailabel">AI summary <span class="beta">beta</span></p><p class="lede serif">${body}</p></section></html>`
+}
+
+function isLead(x: KeepLead | KeepRefusal | null): KeepLead {
+  assert.ok(x !== null && !('refused' in x), `a lead, not ${JSON.stringify(x)}`)
+  return x as KeepLead
+}
+
+Deno.test('a lead the sent copy does not print is cleared, the verdict says why, and every column read is pinned', async () => {
+  const lead = await settleLeadForKeep(leadIO('Cooper vomited on 3 days.', { outcome: 'printed', fact_hash: 'h', at: AT }, 'm'), '<html>no lead</html>')
   assert.deepEqual(lead, {
-    set: { ai_lead_text: null, ai_lead_verdict: { outcome: 'printed', fact_hash: 'h', at_send: { printed: false, reason: 'not_on_sent_copy' } }, ai_lead_model: null },
-    unchanged: {},
+    set: { ai_lead_text: null, ai_lead_verdict: { outcome: 'printed', fact_hash: 'h', at: AT, at_send: { printed: false, reason: 'not_on_sent_copy' } }, ai_lead_model: null },
+    unchanged: {
+      ai_lead_model: 'm',
+      'ai_lead_verdict->>at': AT,
+      'ai_lead_verdict->>outcome': 'printed',
+      'ai_lead_verdict->>fact_hash': 'h',
+      ai_lead_text: 'Cooper vomited on 3 days.',
+    },
   })
 })
 
 Deno.test('a cleared lead leaves no model output in the verdict it freezes (CUL-2377, pass 2)', async () => {
   // A verdict whose sentences and checker quotes are model text: none of it may ride into the
   // kept row, and migration 118 refuses a draft write that still carries it after a "no".
-  const lead = await settleLeadForKeep(leadIO('Cooper vomited on 3 days.', {
+  const lead = isLead(await settleLeadForKeep(leadIO('Cooper vomited on 3 days.', {
     outcome: 'printed', fact_hash: 'h', sentences: [{ text: 'Cooper vomited on 3 days.' }],
     checker: { takeaway: 'x', quotes: { H1: 'Cooper vomited' } }, verifier_errors: [],
-  }), '<html>no lead</html>')
-  assert.deepEqual(lead?.set, {
+  }), '<html>no lead</html>'))
+  assert.deepEqual(lead.set, {
     ai_lead_text: null,
     ai_lead_verdict: { outcome: 'printed', fact_hash: 'h', verifier_errors: [], at_send: { printed: false, reason: 'not_on_sent_copy' } },
     ai_lead_model: null,
   })
-  const rejected = await settleLeadForKeep(leadIO(null, { outcome: 'rejected', sentences: [{ text: 'x' }], checker: { quotes: {} } }), '<html></html>')
-  assert.deepEqual(rejected?.set.ai_lead_verdict, { outcome: 'rejected', at_send: { printed: false, reason: 'not_printed' } })
+  const rejected = isLead(await settleLeadForKeep(leadIO(null, { outcome: 'rejected', sentences: [{ text: 'x' }], checker: { quotes: {} } }), '<html></html>'))
+  assert.deepEqual(rejected.set.ai_lead_verdict, { outcome: 'rejected', at_send: { printed: false, reason: 'not_printed' } })
 })
 
-Deno.test('no lead yet is recorded as not ready; a declined one keeps its verdict', async () => {
-  const none = await settleLeadForKeep(leadIO(null, null), '<html></html>')
-  assert.deepEqual(none?.set.ai_lead_verdict, { at_send: { printed: false, reason: 'not_ready' } })
-  const declined = await settleLeadForKeep(leadIO(null, { outcome: 'declined' }), '<html></html>')
-  assert.deepEqual(declined?.set.ai_lead_verdict, { outcome: 'declined', at_send: { printed: false, reason: 'not_printed' } })
+Deno.test('no lead yet is recorded as not ready and pinned as all-null; a declined one keeps its verdict', async () => {
+  const none = isLead(await settleLeadForKeep(leadIO(null, null), '<html></html>'))
+  assert.deepEqual(none.set.ai_lead_verdict, { at_send: { printed: false, reason: 'not_ready' } })
+  assert.deepEqual(none.unchanged, { ai_lead_model: null, ai_lead_verdict: null, ai_lead_text: null })
+  const declined = isLead(await settleLeadForKeep(leadIO(null, { outcome: 'declined' }), '<html></html>'))
+  assert.deepEqual(declined.set.ai_lead_verdict, { outcome: 'declined', at_send: { printed: false, reason: 'not_printed' } })
 })
 
-Deno.test('a lead the stored copy prints is pinned, never rewritten', async () => {
-  const lead = await settleLeadForKeep(leadIO('Cooper vomited on 3 days.', { outcome: 'printed' }), `<section ${LEAD_SLOT_MARK}>`)
-  assert.deepEqual(lead, { set: {}, unchanged: { ai_lead_text: 'Cooper vomited on 3 days.' } })
+Deno.test('a lead the stored copy prints is pinned on text, verdict and model, never rewritten', async () => {
+  const text = 'Cooper vomited on 3 days. He ate <less> & slept.'
+  const io = leadIO(text, { outcome: 'printed', at: AT, fact_hash: 'h' }, 'writer-1')
+  const lead = await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.', 'He ate <less> & slept.']))
+  assert.deepEqual(lead, {
+    set: {},
+    unchanged: { ai_lead_model: 'writer-1', 'ai_lead_verdict->>at': AT, 'ai_lead_verdict->>outcome': 'printed', 'ai_lead_verdict->>fact_hash': 'h', ai_lead_text: text },
+  })
+  assert.equal(io.gateCalls, 1, 'consent is re-checked before a pinned keep')
+})
+
+Deno.test('a slot that does not hold the draft text refuses the keep for good (CUL-2523)', async () => {
+  const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT })
+  assert.deepEqual(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 4 days.'])), { refused: 'mismatch' })
+  // The mark with no sentence spans, two slots, or a draft whose text was cleared after the render.
+  assert.deepEqual(await settleLeadForKeep(io, `<section ${LEAD_SLOT_MARK}>`), { refused: 'mismatch' })
+  assert.deepEqual(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.']) + slotHtml(['Cooper vomited on 3 days.'])), { refused: 'mismatch' })
+  assert.deepEqual(await settleLeadForKeep(leadIO(null, null), slotHtml(['Cooper vomited on 3 days.'])), { refused: 'mismatch' })
+  assert.equal(io.gateCalls, 0)
+})
+
+Deno.test('a pinned keep after a withdrawal is refused, never frozen with the summary (PM ruling (a))', async () => {
+  const io = leadIO('Cooper vomited on 3 days.', { outcome: 'printed', at: AT }, 'm', DENY)
+  assert.deepEqual(await settleLeadForKeep(io, slotHtml(['Cooper vomited on 3 days.'])), { refused: 'withdrawn' })
+})
+
+Deno.test('a refused settle answers 409 and leaves the draft a draft', async () => {
+  const f = await savedOne()
+  for (const refused of ['withdrawn', 'mismatch'] as const) {
+    const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, async () => ({ refused }))
+    assert.deepEqual(out, { status: 409, body: { error: NEW_PREVIEW_ERROR } }, 'the phone says "Preview the report again"')
+    assert.equal(f.rows.get(ID)!.status, 'draft')
+  }
+})
+
+Deno.test('a replayed keep stamps the phone send time, bounded by the Preview and now (rls F3, CUL-2522)', async () => {
+  const f = await savedOne()
+  f.rows.get(ID)!.created_at = new Date(NOW - 60_000).toISOString()
+  const created = Date.parse(f.rows.get(ID)!.created_at)
+  const sent = new Date(created + 5_000).toISOString()
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email', sharedAt: sent }, async () => NO_LEAD)
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: true } })
+  assert.equal(f.rows.get(ID)!.shared_at, sent, 'the departure is the send, not the next open')
+  // A claimed time before the Preview, or in the future, is clamped into the window.
+  const g = await savedOne()
+  g.rows.get(ID)!.created_at = new Date(NOW - 60_000).toISOString()
+  await keepCopy(g.io, { reportId: ID, sharedVia: 'email', sharedAt: '2000-01-01T00:00:00.000Z' }, async () => NO_LEAD)
+  assert.equal(Date.parse(g.rows.get(ID)!.shared_at as string), Date.parse(g.rows.get(ID)!.created_at))
+  const k = await savedOne()
+  await keepCopy(k.io, { reportId: ID, sharedVia: 'email', sharedAt: '2099-01-01T00:00:00.000Z' }, async () => NO_LEAD)
+  assert.equal(Date.parse(k.rows.get(ID)!.shared_at as string), NOW)
+})
+
+Deno.test('a replay of a LATER send the app died on still stamps that departure (rls R1)', async () => {
+  const f = await savedOne()
+  f.rows.get(ID)!.created_at = new Date(NOW - 600_000).toISOString()
+  // Email kept a while ago, then a share whose keep the app died on.
+  await keepCopy(f.io, { reportId: ID, sharedVia: 'email', sharedAt: new Date(NOW - 300_000).toISOString() }, async () => NO_LEAD)
+  const later = new Date(NOW - 60_000).toISOString()
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'share', sharedAt: later }, async () => NO_LEAD)
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: false } })
+  assert.equal(f.rows.get(ID)!.shared_at, later)
+  assert.equal(f.rows.get(ID)!.shared_via, 'share')
+})
+
+Deno.test('a replay of a keep that already landed changes nothing on the kept copy (rls F3)', async () => {
+  const f = await savedOne()
+  await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, async () => NO_LEAD)
+  const before = { ...f.rows.get(ID)! }
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email', sharedAt: new Date(NOW - 60_000).toISOString() }, async () => NO_LEAD)
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: false } })
+  assert.equal(f.rows.get(ID)!.shared_at, before.shared_at)
+  assert.equal(f.rows.get(ID)!.shared_via, 'print')
+})
+
+Deno.test('an unreadable verdict is no pin: the keep is refused rather than guessed', async () => {
+  assert.equal(await settleLeadForKeep(leadIO(null, ['not', 'an', 'object']), '<html></html>'), null)
+  assert.equal(await settleLeadForKeep(leadIO(null, { at: 12 }), '<html></html>'), null)
+})
+
+Deno.test('the pin fits a request URL: a 2000-character non-ASCII lead pins by its verdict, under 4 KB', async () => {
+  // aiLead caps a lead at 2000 characters; three-byte characters percent-encode to nine bytes each,
+  // ~18 KB, which a gateway may refuse. Past PIN_TEXT_URL_BUDGET the text is pinned by the
+  // verdict's `at` (every write of the three columns moves it) and left out of the URL.
+  const text = '猫'.repeat(2000)
+  const lead = isLead(await settleLeadForKeep(leadIO(text, { outcome: 'printed', at: AT, fact_hash: 'a'.repeat(64) }, 'claude-model-id'), '<html></html>'))
+  assert.ok(!('ai_lead_text' in lead.unchanged), 'the long text is not in the filter')
+  assert.equal(lead.unchanged['ai_lead_verdict->>at'], AT)
+  const url = new URL('https://x.supabase.co/rest/v1/vet_reports')
+  for (const [k, v] of Object.entries(lead.unchanged)) url.searchParams.append(k, v === null ? 'is.null' : `eq.${v}`)
+  assert.ok(url.href.length < 4096, `${url.href.length} bytes`)
+  // At the budget the text is still pinned, and that URL is bounded by it.
+  const short = 'a'.repeat(PIN_TEXT_URL_BUDGET)
+  const pinned = isLead(await settleLeadForKeep(leadIO(short, { outcome: 'printed', at: AT }), '<html></html>'))
+  assert.equal(pinned.unchanged.ai_lead_text, short)
+  assert.equal('ai_lead_text' in isLead(await settleLeadForKeep(leadIO(short + 'a', { outcome: 'printed', at: AT }), '<html></html>')).unchanged, false)
 })
 
 Deno.test('an unreadable draft fails the settle, so the keep is refused', async () => {
-  const io = { readDraft: async () => ({ found: false, text: null, verdict: null }) } as unknown as Parameters<typeof settleLeadForKeep>[0]
+  const io = { readDraft: async () => ({ found: false, text: null, verdict: null }), runGate: async () => ALLOW } as unknown as SettleIO
   assert.equal(await settleLeadForKeep(io, '<html></html>'), null)
 })
 
@@ -358,14 +495,25 @@ Deno.test('an unreadable draft fails the settle, so the keep is refused', async 
 // writes. The settle reads through the fake row, as draftLeadIO's readDraft does; the race is
 // injected exactly in that gap, as the real lead's update (draft only) would land.
 
-const RACED = { text: 'Cooper vomited on 3 days.', verdict: { outcome: 'printed', fact_hash: 'h', sentences: [{ text: 'Cooper vomited on 3 days.' }] }, model: 'm' }
+const RACED = { text: 'Cooper vomited on 3 days.', verdict: { outcome: 'printed', fact_hash: 'h', at: '2026-11-05T12:00:01.000Z', sentences: [{ text: 'Cooper vomited on 3 days.' }] }, model: 'm' }
+
+function plainSettleIO(f: ReturnType<typeof fakeIO>) {
+  return {
+    readDraft: async () => {
+      const r = f.rows.get(ID)!
+      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null }
+    },
+    runGate: async () => ALLOW,
+  } as unknown as Parameters<typeof settleLeadForKeep>[0]
+}
 
 function racedSettle(f: ReturnType<typeof fakeIO>) {
   const io = {
     readDraft: async () => {
       const r = f.rows.get(ID)!
-      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null }
+      return { found: true, text: r.ai_lead_text ?? null, verdict: r.ai_lead_verdict ?? null, model: r.ai_lead_model ?? null }
     },
+    runGate: async () => ALLOW,
   } as unknown as Parameters<typeof settleLeadForKeep>[0]
   const writeDraft = () => {
     const r = f.rows.get(ID)!
@@ -380,15 +528,19 @@ function racedSettle(f: ReturnType<typeof fakeIO>) {
   }
 }
 
-Deno.test('a summary written between the settle and the keep never freezes on the kept copy', async () => {
+Deno.test('a summary written between the settle and the keep never freezes: the keep is refused, and the retry settles fresh', async () => {
   const f = await savedOne()
   const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, racedSettle(f))
-  assert.deepEqual(out, { status: 200, body: { kept: true, first: true } })
+  assert.equal(out.status, 500, 'the cleared branch pinned the NULL it read; the race moved it (CUL-2523)')
+  assert.equal(f.rows.get(ID)!.status, 'draft')
+  // The client's retry: the settle reads the raced lead, the copy does not print it, so it clears.
+  const retry = await keepCopy(f.io, { reportId: ID, sharedVia: 'email' }, (html) => settleLeadForKeep(plainSettleIO(f), html))
+  assert.deepEqual(retry, { status: 200, body: { kept: true, first: true } })
   const row = f.rows.get(ID)!
   assert.equal(row.status, 'kept')
   assert.equal(row.ai_lead_text, null, 'the stored copy prints no lead, so the kept row claims none')
   assert.equal(row.ai_lead_model, null)
-  assert.deepEqual(row.ai_lead_verdict, { at_send: { printed: false, reason: 'not_ready' } })
+  assert.deepEqual(row.ai_lead_verdict, { outcome: 'printed', fact_hash: 'h', at: RACED.verdict.at, at_send: { printed: false, reason: 'not_on_sent_copy' } })
 })
 
 Deno.test('the old two writes, replayed against the same race, froze the summary (the test can fail)', async () => {
@@ -405,16 +557,41 @@ Deno.test('the old two writes, replayed against the same race, froze the summary
   assert.equal(f.rows.get(ID)!.ai_lead_text, RACED.text)
 })
 
+async function printingCopy(f: ReturnType<typeof fakeIO>, text: string, verdict: Record<string, unknown>, model: string) {
+  // Make the stored copy one that prints a lead, with that lead on the draft.
+  const html = new TextEncoder().encode(slotHtml([text]))
+  f.objects.set(`${PET}/${ID}.html`, html)
+  Object.assign(f.rows.get(ID)!, { content_sha256: await sha256Hex(html), ai_lead_text: text, ai_lead_verdict: verdict, ai_lead_model: model })
+}
+
 Deno.test('a pinned lead rewritten between the settle and the keep refuses the keep', async () => {
   const f = await savedOne()
-  // Make the stored copy one that prints a lead, with that lead on the draft.
-  const path = `${PET}/${ID}.html`
-  const html = new TextEncoder().encode(`<html><section ${LEAD_SLOT_MARK}>Cooper ate well.</section></html>`)
-  f.objects.set(path, html)
-  Object.assign(f.rows.get(ID)!, { content_sha256: await sha256Hex(html), ai_lead_text: 'Cooper ate well.', ai_lead_verdict: { outcome: 'printed' }, ai_lead_model: 'm' })
+  await printingCopy(f, 'Cooper ate well.', { outcome: 'printed', at: AT }, 'm')
   const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, racedSettle(f))
   assert.equal(out.status, 500)
   assert.equal(f.rows.get(ID)!.status, 'draft', 'never kept over text the vet did not get')
+})
+
+Deno.test('a rewrite with the SAME text but a new verdict or model still refuses the pinned keep (CUL-2523)', async () => {
+  for (const change of [{ ai_lead_verdict: { outcome: 'printed', at: '2026-11-05T12:00:09.000Z' } }, { ai_lead_model: 'other-model' }]) {
+    const f = await savedOne()
+    await printingCopy(f, 'Cooper ate well.', { outcome: 'printed', at: AT }, 'm')
+    const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, async (html) => {
+      const lead = await settleLeadForKeep(plainSettleIO(f), html)
+      Object.assign(f.rows.get(ID)!, change) // lands in the gap; the text is untouched
+      return lead
+    })
+    assert.equal(out.status, 500, JSON.stringify(change))
+    assert.equal(f.rows.get(ID)!.status, 'draft')
+  }
+})
+
+Deno.test('an unraced pinned keep goes through, with the summary as printed', async () => {
+  const f = await savedOne()
+  await printingCopy(f, 'Cooper ate well.', { outcome: 'printed', at: AT }, 'm')
+  const out = await keepCopy(f.io, { reportId: ID, sharedVia: 'print' }, (html) => settleLeadForKeep(plainSettleIO(f), html))
+  assert.deepEqual(out, { status: 200, body: { kept: true, first: true } })
+  assert.equal(f.rows.get(ID)!.ai_lead_text, 'Cooper ate well.')
 })
 
 Deno.test('a failed undo leaves the row for the reaper: never an object no row names (F1)', async () => {

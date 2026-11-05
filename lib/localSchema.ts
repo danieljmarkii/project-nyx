@@ -659,6 +659,19 @@ export const BASE_SCHEMA_SQL = `
       table_name    TEXT PRIMARY KEY,
       watermark     TEXT NOT NULL
     );
+
+    -- Vet report v2 PR-32 (CUL-2522) pending_report_keeps — a sent report's keep that has
+    -- not answered yet. Written before the keep's first try and deleted on its final answer
+    -- in the same session, so a row that survives is a keep the app was closed on: the next
+    -- open tries it again (lib/reportKeep.ts drainPendingKeeps) or tells the owner it missed.
+    -- Local only, never synced. Wiped on sign-out (LOCAL_WIPE_TABLES): a row names a pet's
+    -- report and says when it left the phone.
+    CREATE TABLE IF NOT EXISTS pending_report_keeps (
+      report_id     TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      shared_via    TEXT NOT NULL,
+      queued_at     TEXT NOT NULL
+    );
 `;
 
 // ── The column-upgrade path, as data (B-398) ─────────────────────────────────

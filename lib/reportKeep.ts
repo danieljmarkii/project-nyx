@@ -15,19 +15,29 @@
 // confirmation, but its outcome is handed back (`keepAfterSend`'s promise) so the screen can say
 // "not saved" when it was not: an offline or failed keep (after a short, bounded retry), a report
 // whose Preview save failed (no `reportId`), and a Preview held past the server's keep window.
-// The retry lives in this session only; one that survives the app being closed needs the sync
-// queue and is a filed follow-up, so until then the line is the owner's signal.
+//
+// A KEEP THE APP CLOSED ON IS TRIED AGAIN, OR THE OWNER IS TOLD (CUL-2522). The keep writes a
+// row to the phone's ledger (lib/reportKeepLedger.ts) before its first try and deletes it on its
+// final answer in this session, whatever that answer is: the in-session line already told the
+// owner, so nothing later may contradict it. Only a keep the app was closed on (Mail and the
+// share sheet hand control to another app, and the phone may kill this one) leaves its row, and
+// `drainPendingKeeps` tries it at the next open, foreground or reconnect: kept is silent, a
+// passing failure stays for the next drain, and a refusal or a keep past the window is a miss
+// said once (`pendingKeepMissNotice`).
 
 import { supabase } from './supabase';
 import type { VetReport } from './pdf';
 import type { SendResult } from './reportSend';
+import { keepsAnswered, keepsInFlight, missesAwaitingAck, sqliteKeepLedger, type KeepLedger, type PendingKeep } from './reportKeepLedger';
+import { currentSignOutEpoch } from './signOutEpoch';
 
 export type KeepVia = 'email' | 'print' | 'share' | 'shown';
 
 /**
  * How a keep ended. `kept`: the server holds the copy. `not_saved`: the Preview's save failed, so
- * there was nothing to keep. `expired`: the Preview was held past the keep window. `failed`: the
- * server could not be reached or could not keep it, after the retries.
+ * there was nothing to keep. `expired`: only a new Preview can make a kept copy (the keep window
+ * passed, the draft is gone, its file no longer matches, or its AI summary can no longer be kept).
+ * `failed`: the server could not be reached or could not keep it, after the retries.
  */
 export type KeepOutcome = 'kept' | 'not_saved' | 'expired' | 'failed';
 
@@ -53,32 +63,25 @@ export interface KeepAnswer {
 
 type Invoke = (body: Record<string, unknown>) => Promise<KeepAnswer>;
 
-/** savedCopy.ts's `keepCopy` answer for a draft past its keep window. */
-const EXPIRED_ERROR = 'Saved copy expired';
+// `expired` means "only a new Preview makes a kept copy" (the line "Preview the report again"),
+// read off the status alone: a 404 (the draft is gone), and every 409 savedCopy.ts answers (the
+// keep window passed, the stored file no longer matches, or the copy's AI summary can no longer be
+// kept, CUL-2523). Sending the same copy again can never fix any of them (adversarial pass 2).
 
 // The status is read structurally off supabase-js's FunctionsHttpError, whose `context` is the
 // Response (lib/account.ts's precedent); a transport or relay error has no status.
-async function answerOf(error: unknown): Promise<KeepAnswer['error']> {
+function answerOf(error: unknown): KeepAnswer['error'] {
   const message = error instanceof Error ? error.message : String(error);
   const context = error && typeof error === 'object' && 'context' in error ? (error as { context?: unknown }).context : null;
   const status = context && typeof context === 'object' && 'status' in context && typeof (context as { status?: unknown }).status === 'number'
     ? (context as { status: number }).status
     : null;
-  let expired = false;
-  if (status === 409 && context && typeof (context as { json?: unknown }).json === 'function') {
-    try {
-      const body = (await (context as { json: () => Promise<unknown> }).json()) as { error?: unknown } | null;
-      expired = body?.error === EXPIRED_ERROR;
-    } catch {
-      expired = false;
-    }
-  }
-  return { message, status, expired };
+  return { message, status, expired: status === 404 || status === 409 };
 }
 
 const invokeKeep: Invoke = async (body) => {
   const { error } = await supabase.functions.invoke('generate-report', { body });
-  return { error: error ? await answerOf(error) : null };
+  return { error: error ? answerOf(error) : null };
 };
 
 /** Waits between tries: a transport failure or a 5xx is tried three times in all. */
@@ -91,6 +94,28 @@ function retryable(error: NonNullable<KeepAnswer['error']>): boolean {
   return error.status === null || error.status >= 500;
 }
 
+/** One keep call. Never throws: a thrown invoke reads as a transport failure. */
+async function tryKeep(
+  invoke: Invoke,
+  body: { petId: string; reportId: string; sharedVia: string; sharedAt?: string },
+): Promise<KeepAnswer['error']> {
+  try {
+    return (await invoke({ mode: 'keep', ...body })).error;
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e), status: null, expired: false };
+  }
+}
+
+/** The ledger's own failures never block or change a keep: the in-session try is still made and
+ *  its line still said. A lost ledger write only costs the next open's retry. */
+async function quietly(what: string, step: () => Promise<unknown>): Promise<void> {
+  try {
+    await step();
+  } catch (e) {
+    console.warn(`[reportKeep] ledger ${what} failed:`, e instanceof Error ? e.message : String(e));
+  }
+}
+
 /** Keep `report`'s draft as sent by `via`. Never throws. */
 export async function keepReportCopy(
   report: VetReport,
@@ -98,20 +123,162 @@ export async function keepReportCopy(
   invoke: Invoke = invokeKeep,
   delays: readonly number[] = KEEP_RETRY_DELAYS_MS,
   wait: (ms: number) => Promise<void> = sleep,
+  ledger: KeepLedger = sqliteKeepLedger(),
+  now: () => number = Date.now,
 ): Promise<KeepOutcome> {
-  if (!report.reportId || !report.petId) return 'not_saved';
+  const { reportId, petId } = report;
+  if (!reportId || !petId) return 'not_saved';
+  keepsInFlight.add(reportId);
+  try {
+    // Written BEFORE the first try (CUL-2522): if the app is closed at any moment from here on,
+    // the row is what the next open finds.
+    const queuedAt = new Date(now()).toISOString();
+    await quietly('write', () => ledger.record({ reportId, petId, sharedVia: via, queuedAt }));
+    // Every try names the send's own time: iOS pauses timers in the background, so a retry can
+    // fire hours later, and the copy must still say when it left (adversarial pass 2).
+    const outcome = await keepWithRetries(invoke, { petId, reportId, sharedVia: via, sharedAt: queuedAt }, delays, wait);
+    // Only a kept copy clears its row. Any other answer leaves it for the NEXT LAUNCH's drain
+    // (adversarial-reviewer findings 1 and 2): the screen may say the line, but it may also be
+    // gone (Done tapped mid-retry, a later send's line replacing this one), and nothing here can
+    // tell which. So a miss can be said twice (the screen, then once at the next launch), never
+    // not at all; and a later drain may still keep a copy the screen called unsaved (loud).
+    if (outcome === 'kept') await quietly('clear', () => ledger.clear(reportId));
+    else keepsAnswered.add(reportId);
+    return outcome;
+  } finally {
+    keepsInFlight.delete(reportId);
+  }
+}
+
+async function keepWithRetries(
+  invoke: Invoke,
+  body: { petId: string; reportId: string; sharedVia: string; sharedAt: string },
+  delays: readonly number[],
+  wait: (ms: number) => Promise<void>,
+): Promise<Exclude<KeepOutcome, 'not_saved'>> {
   for (let attempt = 0; ; attempt++) {
-    let error: KeepAnswer['error'];
-    try {
-      ({ error } = await invoke({ mode: 'keep', petId: report.petId, reportId: report.reportId, sharedVia: via }));
-    } catch (e) {
-      error = { message: e instanceof Error ? e.message : String(e), status: null, expired: false };
-    }
+    const error = await tryKeep(invoke, body);
     if (error === null) return 'kept';
     console.warn('[reportKeep] the copy was not kept:', error.message);
     if (error.expired) return 'expired';
     if (!retryable(error) || attempt >= delays.length) return 'failed';
     await wait(delays[attempt]);
+  }
+}
+
+/** savedCopy.ts's KEEP_WINDOW_MS (DRAFT_TTL_MS less an hour): the same question, how long a
+ *  draft stays keepable. Here it only bounds how long a PASSING failure is retried: the drain always
+ *  asks the server, which answers 200 for a copy already kept whatever its age, and "expired" for a
+ *  draft past its window (adversarial-reviewer finding 6). */
+export const KEEP_WINDOW_MS = 23 * 60 * 60 * 1000;
+
+/** A keep the drain could not make. Its row stays until the owner dismisses the notice
+ *  (`acknowledgeKeepMisses`): a notice that never showed is said again, never lost. */
+export interface KeepMiss {
+  reportId: string;
+  petId: string;
+  sharedVia: string;
+}
+
+// A 401 is a session mid-refresh, not a refusal of this copy: the row waits for the next drain.
+function retryOnDrain(error: NonNullable<KeepAnswer['error']>): boolean {
+  return retryable(error) || error.status === 401;
+}
+
+let drainInFlight: { epoch: number; run: Promise<KeepMiss[]> } | null = null;
+
+/**
+ * At open, foreground or reconnect: try each keep this launch did not make itself, once. Returns
+ * the misses to say. One drain at a time: a caller arriving mid-drain waits for it and gets NO
+ * misses (the drain's starter says them, so two callers never alert twice; adversarial-reviewer
+ * finding 8), and the next open or reconnect is the trailing run. A drain belongs to the account
+ * it started under (rls-privacy-reviewer F1). Never throws.
+ */
+export function drainPendingKeeps(
+  invoke: Invoke = invokeKeep,
+  ledger: KeepLedger = sqliteKeepLedger(),
+  now: () => number = Date.now,
+  lastChance = false,
+): Promise<KeepMiss[]> {
+  const epoch = currentSignOutEpoch();
+  if (drainInFlight && drainInFlight.epoch === epoch) return drainInFlight.run.then(() => []);
+  const run = drainOnce(invoke, ledger, now, epoch, lastChance).finally(() => {
+    if (drainInFlight?.run === run) drainInFlight = null;
+  });
+  drainInFlight = { epoch, run };
+  return run;
+}
+
+/** `lastChance`: the drain before a sign-out wipes the ledger. It tries every row this launch is
+ *  not still making (an answered row included: this is its last try), and parks no miss, since the
+ *  caller counts what is left (adversarial pass 2, S1 and S2). */
+async function drainOnce(invoke: Invoke, ledger: KeepLedger, now: () => number, epoch: number, lastChance: boolean): Promise<KeepMiss[]> {
+  let rows: PendingKeep[];
+  try {
+    rows = await ledger.list();
+  } catch (e) {
+    console.warn('[reportKeep] ledger read failed:', e instanceof Error ? e.message : String(e));
+    return [];
+  }
+  const misses: KeepMiss[] = [];
+  for (const row of rows) {
+    // Signed out mid-drain: the wipe took these rows, and nothing more is sent under the next
+    // account's token, nor any miss said to it.
+    if (currentSignOutEpoch() !== epoch) return [];
+    // This launch's own keeps (running, or answered on the screen) wait for the next launch; a
+    // miss already on screen waits for its dismissal.
+    if (keepsInFlight.has(row.reportId)) continue;
+    if (!lastChance && (keepsAnswered.has(row.reportId) || missesAwaitingAck.has(row.reportId))) continue;
+    const miss = { reportId: row.reportId, petId: row.petId, sharedVia: row.sharedVia };
+    keepsInFlight.add(row.reportId);
+    try {
+      // `sharedAt`: the send's own time, so the kept copy never says it left at this open (and a
+      // keep that already landed is left as it is; rls-privacy-reviewer F3).
+      const error = await tryKeep(invoke, { petId: row.petId, reportId: row.reportId, sharedVia: row.sharedVia, sharedAt: row.queuedAt });
+      if (error === null) {
+        await quietly('clear', () => ledger.clear(row.reportId));
+        keepsAnswered.delete(row.reportId);
+        continue;
+      }
+      console.warn('[reportKeep] a pending copy was not kept:', error.message);
+      const queued = new Date(row.queuedAt).getTime();
+      // An unreadable time reads as past the window: said, never retried forever.
+      const inWindow = Number.isFinite(queued) && now() - queued <= KEEP_WINDOW_MS;
+      if (!error.expired && retryOnDrain(error) && inWindow) continue;
+      if (!lastChance) missesAwaitingAck.add(row.reportId);
+      misses.push(miss);
+    } finally {
+      keepsInFlight.delete(row.reportId);
+    }
+  }
+  return currentSignOutEpoch() === epoch ? misses : [];
+}
+
+/** The owner dismissed the notice: its rows are said, so they go. Never throws. */
+export async function acknowledgeKeepMisses(misses: readonly KeepMiss[], ledger: KeepLedger = sqliteKeepLedger()): Promise<void> {
+  for (const m of misses) {
+    await quietly('clear', () => ledger.clear(m.reportId));
+    missesAwaitingAck.delete(m.reportId);
+  }
+}
+
+/**
+ * Before a sign-out (lib/session.ts flushForSignOut): one last try of EVERY waiting keep, then the
+ * number still not kept, which the sign-out warning names as report copies (not "entries"), since
+ * the wipe would take them (rls-privacy-reviewer F2; adversarial pass 2, S1 and S2). An unreadable
+ * ledger counts as one, so the owner is asked rather than assumed-at. Never throws.
+ */
+export async function pendingKeepsBeforeSignOut(
+  invoke: Invoke = invokeKeep,
+  ledger: KeepLedger = sqliteKeepLedger(),
+  now: () => number = Date.now,
+): Promise<number> {
+  await drainPendingKeeps(invoke, ledger, now, true);
+  try {
+    return (await ledger.list()).length;
+  } catch (e) {
+    console.warn('[reportKeep] ledger read before sign-out failed:', e instanceof Error ? e.message : String(e));
+    return 1;
   }
 }
 
@@ -147,4 +314,24 @@ export function keepMissLine(outcome: KeepOutcome, petName: string, via: KeepVia
     case 'expired':
       return `This copy wasn’t saved to ${reports}. Preview the report again and send it to save one.`;
   }
+}
+
+/**
+ * The next open's notice for keeps the app was closed on and could not make (CUL-2522), or null
+ * for none. One notice for any number: the pet by name when every miss is one pet's. nyx-voice:
+ * calm, what happened, one action. `petName` maps an id to the name on this phone ('' unknown).
+ */
+export function pendingKeepMissNotice(
+  misses: readonly KeepMiss[],
+  petName: (petId: string) => string,
+): { title: string; body: string } | null {
+  if (misses.length === 0) return null;
+  const names = new Set(misses.map((m) => petName(m.petId)));
+  const name = names.size === 1 ? [...names][0] : '';
+  const reports = name ? `${name}’s vet reports` : 'your vet reports';
+  const copy = misses.length === 1 ? 'A copy of a vet report you sent wasn’t' : `${misses.length} copies of vet reports you sent weren’t`;
+  return {
+    title: misses.length === 1 ? 'A report copy wasn’t saved' : 'Some report copies weren’t saved',
+    body: `${copy} saved to ${reports}. Preview the report again and send it to save one.`,
+  };
 }
