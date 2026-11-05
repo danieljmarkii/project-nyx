@@ -245,7 +245,7 @@ function block(b: BlockV2, lead: string | null): string {
       // At font scale 1.6 the full signalment, the conditions and the window fold behind one line
       // (spec §6.3), so the band still starts in the first frame. What decides urgency never folds:
       // species, sex, age and weight (the model's brief; cold read on CUL-2295), and the last entry.
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><p class="stamp">${h(b.stamp)}</p><h1>${h(b.name)}</h1><p class="brief">${h(b.signalmentBrief)}</p><button class="more" type="button" aria-expanded="false" aria-controls="v2more">More details</button><div class="fold" id="v2more"><p class="sig">${h(b.signalment)}</p>${
         b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
       }<p class="win">${h(b.window)}</p></div><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -346,6 +346,7 @@ body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto
 .sheet{padding:1rem 16px 2rem;max-width:40rem;margin:0 auto;}
 #v2probe{position:absolute;left:-999rem;top:0;display:block;font-size:1rem;line-height:1;visibility:hidden;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.mast .stamp{font-size:0.75rem;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:0.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:1.6rem;line-height:1.15;margin:0.15rem 0 0.3rem;font-weight:650;}
 .mast p{margin:0 0 0.2rem;}

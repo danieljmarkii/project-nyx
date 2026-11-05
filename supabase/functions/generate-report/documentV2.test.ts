@@ -66,6 +66,8 @@ const ORDER = [
   'disclosure',
   'band',
   'checks',
+  // CUL-2579 ruling (a): v1's headline, straight under the band.
+  'carried@headline',
   'scope-line',
   'changes@slot',
   'record-edge',
@@ -83,7 +85,7 @@ const ORDER = [
 ]
 
 function orderKey(b: BlockV2): string {
-  if (b.kind === 'carried') return 'carried'
+  if (b.kind === 'carried') return b.id === 'headline' ? 'carried@headline' : 'carried'
   return b.kind === 'changes' ? `changes@${b.placement === 'band_slot' ? 'slot' : 'under'}` : b.id
 }
 
@@ -369,7 +371,7 @@ Deno.test('colophon — the surname only from last_name, never the email; no id 
   assert.doesNotMatch(none.text, /@|report [0-9A-Z]{4}/)
   const named = block(docOf(s, { owner: { firstName: 'Zoë', lastName: 'Müller-Ñúñez' }, shortId: 'N3XR', questions: [] }), 'colophon')
   assert.ok(named)
-  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 8')
+  assert.equal(named.text, 'Kept by Zoë Müller-Ñúñez · owner-reported observations · associational, not a diagnosis · generated Oct 31, 2026 · report N3XR · sheet 1 of 8')
 })
 
 Deno.test('colophon — the sheet count is the sheets printed, on every fixture (computed, never typed: WBC-11)', () => {

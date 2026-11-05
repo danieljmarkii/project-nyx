@@ -231,6 +231,9 @@ export type BlockV2 =
       kind: 'masthead'
       id: 'masthead'
       eyebrow: string
+      /** v1's letterhead stamp, word for word (CUL-2579 ruling (a)): the sheet says what it is
+       *  before it says anything else. */
+      stamp: string
       name: string
       signalment: string
       /** Species, sex, age and the latest weight: the part of the signalment that decides urgency,
@@ -451,13 +454,18 @@ export function ownerNameOf(owner: DocumentV2Options['owner']): string | null {
   return name === '' ? null : name
 }
 
+/** v1's letterhead stamp, its first two lines (the third, the generated date, is the colophon's). */
+export const MASTHEAD_STAMP = 'Prepared for veterinary review · Not a diagnosis · owner-reported observations'
+
 /** The ONE colophon template (spec §5.10). The sheet count is computed from the sheets printed. */
 export function colophonOf(snap: ReportSnapshot, opts: DocumentV2Options, sheets = 1): string {
   const owner = ownerNameOf(opts.owner)
   const generated = textOf(fmtDayYear(snap.atAGlance.recordEdge.reportDate))
   return [
     `Kept by ${owner ?? 'the owner'}`,
-    'owner-reported, not a diagnosis',
+    // CUL-2579 ruling (a): v1's page footer, word for word ("associational" included).
+    'owner-reported observations',
+    'associational, not a diagnosis',
     `generated ${generated}`,
     ...(opts.shortId ? [`report ${opts.shortId}`] : []),
     `sheet 1 of ${sheets}`,
@@ -1448,6 +1456,7 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
     kind: 'masthead',
     id: 'masthead',
     eyebrow: 'Owner’s home log',
+    stamp: MASTHEAD_STAMP,
     name: snap.signalment.name,
     signalment: signalmentLineOf(snap),
     signalmentBrief: signalmentBriefOf(snap),
@@ -1478,6 +1487,14 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   } else if (checks !== null) {
     blocks.push({ kind: 'checks', id: 'checks', html: checks })
   }
+
+  // CUL-2551 (PM ruling (a), briefs 1a to 5a): every other block of v1's page 1, word for word in
+  // v1's order, so sheet 1 never says less than v1's page 1 (`sheet1MustCarry.test.ts`). v1's
+  // headline prints straight under the band, where v1 put it (CUL-2579 ruling (a)).
+  const ep = episodesBlock(snap)
+  const episodes = ep ? `<h2>${h(ep.heading)}</h2>${ep.html}` : null
+  const carried = carriedSectionsOf(input, episodes)
+  for (const c of carried) if (c.id === 'headline') blocks.push({ kind: 'carried', id: c.id, html: c.html })
 
   const thin = thinRecordLineOf(snap)
   if (thin) blocks.push({ kind: 'scope_line', id: 'scope-line', text: thin.text })
@@ -1528,11 +1545,7 @@ export function buildDocumentV2(input: ReportSnapshot, opts: DocumentV2Options):
   const gaps = gapLinesOf(snap)
   if (gaps.length > 0) blocks.push({ kind: 'gap_lines', id: 'gap-lines', heading: 'Not in this record', lines: gaps })
 
-  // CUL-2551 (PM ruling (a), briefs 1a to 5a): every other block of v1's page 1, word for word in
-  // v1's order, so sheet 1 never says less than v1's page 1 (`sheet1MustCarry.test.ts`).
-  const ep = episodesBlock(snap)
-  const episodes = ep ? `<h2>${h(ep.heading)}</h2>${ep.html}` : null
-  for (const c of carriedSectionsOf(input, episodes)) blocks.push({ kind: 'carried', id: c.id, html: c.html })
+  for (const c of carried) if (c.id !== 'headline') blocks.push({ kind: 'carried', id: c.id, html: c.html })
 
   const questions = opts.questions
     .map((q) => q.trim())
@@ -1595,7 +1608,7 @@ export function wordCountOf(doc: DocumentV2): WordCount {
         cuttable += b.lines.reduce((n, l) => n + words(l.text), 0)
         break
       case 'masthead':
-        fixed.masthead += words([b.eyebrow, b.name, b.signalment, b.conditions ?? '', b.window, textOf(b.lastEntryHtml)].join(' '))
+        fixed.masthead += words([b.eyebrow, b.stamp, b.name, b.signalment, b.conditions ?? '', b.window, textOf(b.lastEntryHtml)].join(' '))
         break
       case 'band':
         fixed.band += words([b.heading, ...b.items.map((i) => `${i.tag} ${textOf(i.html)}`), textOf(b.checksHtml ?? '')].join(' '))

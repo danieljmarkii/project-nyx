@@ -370,6 +370,9 @@ const NOT_A_COURSE = [
   /\bstarted (?:[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?), stopped (?:[A-Z][a-z]{2} \d{1,2}(?:, \d{4})?)/g,
   /\ba fall (?:here|across such a week) may be less logging, not fewer entries\b/gi, // a decline DENIED: the opposite of reassurance
   /\bmarks the week one stopped\b/gi, // the trend chart's legend: a course's end marker, not a sign
+  // CUL-2579 puts v1's headline under the band; the checks line ("Ongoing vomiting: not checked …")
+  // then meets v1's weight block in a PDF's text, and its "fell" is a weigh-in's, never a sign's.
+  /\bno weigh-ins fell inside this window\b/gi,
   // "How this record was kept": a clearance DENIED, the opposite of a decline (pdfminer ran the
   // Noticed log's "vomit logged" into the kept sheet's first term).
   /\b(?:is not|never) an all-clear\b/gi,

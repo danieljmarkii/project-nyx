@@ -15,7 +15,8 @@
 //   - every other block (the headline, the weight, At a glance, the symptom trend, the off-diet
 //     protein chart's notes, the diet-and-medication block with Timing vs symptoms, and any block v1
 //     adds later): carried here, word for word, in v1's order. A chart's SVG is left out (brief 3a:
-//     v2's lead chart draws it); every word printed around it stays.
+//     v2's lead chart draws it), and so is a caption that describes only the drawing (CUL-2579);
+//     every count and caveat printed around it stays.
 //
 // THE RULES (the same as `documentV2.ts`): no clinical number is computed and no finding is worded
 // here; pointers move through `v2Pointers` only; `html` is v1's already-escaped markup.
@@ -172,9 +173,23 @@ function withoutFallingHalves(div: string, snap: ReportSnapshot): string {
   })
 }
 
-/** v1's words with v2's pointers; a chart's SVG and v1's contents line left out (see the header). */
+/**
+ * v1's captions that describe a chart sheet 1 does not draw (CUL-2579 ruling (a), amending brief 3a:
+ * a caption goes with its chart). Each is left out as a named reformat into the lead chart, which
+ * draws each change with its dates; every count and caveat beside them still prints. The must-carry
+ * guard checks each cut on its own terms (`sheet1MustCarry.test.ts`, "an undrawn chart's caption").
+ */
+export const UNDRAWN_CHART_CAPTIONS: ReadonlyArray<{ name: string; re: RegExp; to: string }> = [
+  { name: 'the change marks’ key', re: /\s*<div class="chartlegend">[\s\S]*?<\/div>/g, to: '' },
+  { name: 'the protein chart’s date row', re: /\s*<div class="subnote">Under each date: [\s\S]*?<\/div>/g, to: '' },
+  { name: 'the protein chart’s unread-week glyph', re: /\s*<div class="subnote"><svg class="key"[\s\S]*?<\/div>/g, to: '' },
+  { name: 'the protein chart’s bars', re: /; each bar is one week, stacked by protein\./g, to: '.' },
+  { name: 'the protein chart’s colours', re: / Colour is a convenience — every protein also carries a texture, so this reads in black &amp; white\./g, to: '' },
+]
+
+/** v1's words with v2's pointers; a chart's SVG, its captions and v1's contents line left out (see the header). */
 function carry(div: string, input: ReportSnapshot): string {
-  const html = withoutFallingHalves(div, input)
+  const html = UNDRAWN_CHART_CAPTIONS.reduce((acc, c) => acc.replace(c.re, c.to), withoutFallingHalves(div, input))
     .replace(/<svg\b(?![^>]*class="spark")[\s\S]*?<\/svg>/g, '')
     .replace(/\s*<p class="ref">Full event log, [\s\S]*?<\/p>/g, '')
   return v2Pointers(html, input, SHEET1_HERE).trim()

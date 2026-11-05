@@ -16,10 +16,10 @@ import type { ReportSnapshot } from './report.ts'
 import { buildDocumentV2, signalmentLineOf, type BlockV2, type DocumentV2, type DocumentV2Options } from './documentV2.ts'
 import { renderPrintV2 } from './renderPrintV2.ts'
 import { renderPhoneV2 } from './renderPhoneV2.ts'
-import { classOf, fallingTrialSignLabels, topLevelDivs, v1Page1Html } from './sheet1CarryV2.ts'
+import { classOf, fallingTrialSignLabels, topLevelDivs, UNDRAWN_CHART_CAPTIONS, v1Page1Html } from './sheet1CarryV2.ts'
 import { fold, pointerFold, v1Page1Leaves, type V1Leaf } from './sheet1MustCarry.testutil.ts'
 import { trialOwnSignsOf } from './v2Predicates.ts'
-import { symptomLabel } from './render.ts'
+import { renderReport, symptomLabel } from './render.ts'
 import { nyxLiveSnapshot } from './nyxLive.testutil.ts'
 import { v2DocFixtures } from '../../../scripts/report-phone/fixtures.deno.ts'
 
@@ -183,8 +183,45 @@ function fallingHalvesCut(leaf: V1Leaf, c: Ctx): string[] {
   return miss
 }
 
-/** The named reformats: a v1 block kind, the v2 block that carries it, and its check. */
-const REFORMATS: ReadonlyArray<{ name: string; top: string; v2: string; check: (leaf: V1Leaf, c: Ctx) => string[] }> = [
+/**
+ * v1's captions that describe only a chart sheet 1 does not draw (CUL-2579 ruling (a): a caption
+ * goes with its chart). Written here in v1's folded words, apart from the cut list in
+ * `sheet1CarryV2.ts`, so a cut that grows past its caption leaves words this list does not name.
+ * `rest` is what must still print verbatim; `items` is the change list a key names.
+ */
+function captionCut(leaf: V1Leaf): { rest: string; items: string | null } | null {
+  const key = /^a dashed vertical marks the week a treatment or diet change started; a flat-headed vertical marks the week one stopped: (.*)\. timing and overlap are in "reading the trend" below\.$/.exec(leaf.text)
+  if (key) return { rest: '', items: key[1] }
+  if (/^under each date: days with a meal logged, of [^.]*\. a treat alone does not count as a meal\.$/.test(leaf.text)) return { rest: '', items: null }
+  if (/^: a week with (?:no off-diet feeding recorded that is still not read as clean|meals logged on fewer than)/.test(leaf.text)) return { rest: '', items: null }
+  const cut = leaf.text
+    .replace('; each bar is one week, stacked by protein.', '.')
+    .replace(' colour is a convenience — every protein also carries a texture, so this reads in black & white.', '')
+  return cut === leaf.text ? null : { rest: cut, items: null }
+}
+
+/** A caption left out: the lead chart prints, the rest of the leaf is verbatim, and each change the key names is on the sheet with its dates. */
+function captionCarries(leaf: V1Leaf, c: Ctx): string[] {
+  const cut = captionCut(leaf)
+  if (!cut) return ['a caption this reformat names']
+  const miss: string[] = []
+  if (!blockOf(c.doc, 'lead_chart')) miss.push('the lead chart')
+  if (cut.rest !== '' && !has(c.text, pointerFold(cut.rest))) miss.push(`"${cut.rest.slice(0, 120)}"`)
+  for (const item of (cut.items ?? '').split(/; (?![^(]*\))/).filter((x) => x !== '')) {
+    const label = item
+      .replace(/^(?:the medication|the trial diet|free-fed|the allowed food|the food) /, '')
+      .split(/ on | from |, stopped |, permitted |, permit ended | \(|, first logged/)[0]
+    if (!has(c.text, label)) miss.push(`the change "${label}"`)
+    for (const d of item.match(/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec) \d{1,2}(?:, \d{4})?\b/g) ?? []) {
+      if (!has(c.text, d)) miss.push(`${label}'s date ${d}`)
+    }
+  }
+  return miss
+}
+
+/** The named reformats: a v1 block kind (and, where it is narrower, the leaf), the v2 block that carries it, and its check. */
+const REFORMATS: ReadonlyArray<{ name: string; top: string; when?: (leaf: V1Leaf) => boolean; v2: string; check: (leaf: V1Leaf, c: Ctx) => string[] }> = [
+  { name: 'an undrawn chart’s caption → the lead chart', top: '*', when: (l) => captionCut(l) !== null, v2: 'lead-chart', check: captionCarries },
   { name: 'identity → masthead', top: 'ident', v2: 'masthead', check: mastheadCarries },
   { name: 'safety band → band', top: 'safetyband', v2: 'band', check: bandCarries },
   { name: 'a falling trial sign’s halves → off sheet 1, pending the PM', top: 'sec:symptom frequency & trend', v2: 'lead-chart', check: fallingHalvesCut },
@@ -193,7 +230,6 @@ const REFORMATS: ReadonlyArray<{ name: string; top: string; v2: string; check: (
 /** v1 page 1's furniture: not report content. Asserted exactly (each key must be seen). */
 const NOT_CLINICAL: Readonly<Record<string, string>> = {
   'letter/brand': 'the wordmark and the document kind',
-  'letter/stamp': 'the letterhead stamp (prepared for review, not a diagnosis, generated date: v2’s colophon states each)',
   'letter/hqrblock': 'the QR code’s caption',
   'orient/orient': 'v1’s contents line; v2’s sheets carry their own titles',
   'ref': 'the diet block’s contents line ("Full event log, …: appendices A–E")',
@@ -201,6 +237,9 @@ const NOT_CLINICAL: Readonly<Record<string, string>> = {
   'foot/pg': 'v1’s page footer range and section label',
   'foot/fw': 'v1’s page footer wordmark',
 }
+
+/** v1's page 1 html, the letterhead included. */
+const renderReportPage1 = (s: ReportSnapshot): string => renderReport(s).split('<section class="page">')[1] ?? ''
 
 function notClinicalKey(l: V1Leaf): string | null {
   if (l.cls === 'ref') return 'ref'
@@ -234,7 +273,7 @@ function checkSheet1(name: string, snap: ReportSnapshot, doc: DocumentV2, leaves
       v.verbatim++
       continue
     }
-    const r = REFORMATS.find((x) => x.top === l.top)
+    const r = REFORMATS.find((x) => (x.top === '*' || x.top === l.top) && (x.when?.(l) ?? true))
     if (!r) {
       const where = [c.text.print.includes(pointerFold(l.text)) ? '' : 'print', c.text.phone.includes(pointerFold(l.text)) ? '' : 'phone'].filter(Boolean).join(' and ')
       v.missing.push(`${name}: ${l.top}/${l.cls} missing from sheet 1 (${where}): "${l.text.slice(0, 160)}"`)
@@ -342,4 +381,82 @@ Deno.test('sheet 1 must-carry, mutation — a leaf that prints in print but not 
   assert.ok(has(text, pointerFold(leaf.text)))
   const phoneless: Sheet1Text = { print: text.print, phone: text.phone.replace(pointerFold(leaf.text), '') }
   assert.equal(has(phoneless, pointerFold(leaf.text)), false)
+})
+
+// ── CUL-2579 ruling (a): v1's framing where v1 put it ────────────────────────
+
+const mastOf = (html: string): string => fold(html.slice(html.indexOf('<header'), html.indexOf('</header>')))
+
+Deno.test('CUL-2579 — the masthead carries v1’s stamp line word for word, in print and on the phone, read off v1’s letterhead', () => {
+  for (const [name, s] of fixtures()) {
+    const doc = buildDocumentV2(s, OPTS)
+    const stamp = /<div class="stamp">([\s\S]*?)<\/div>\s*<\/div>/.exec(renderReportPage1(s))?.[1] ?? ''
+    const lines = [...stamp.matchAll(/<div>([\s\S]*?)<\/div>/g)].map((m) => fold(m[1])).filter((l) => !l.startsWith('generated'))
+    assert.equal(lines.length, 2, `${name}: v1's stamp lines`)
+    for (const html of [renderPrintV2(doc), renderPhoneV2(doc)]) {
+      const mast = mastOf(html)
+      for (const l of lines) assert.ok(mast.includes(l), `${name}: "${l}" in the masthead`)
+      // Above the fold on the phone: before the "More details" fold opens.
+      assert.ok(mast.indexOf(lines[1]) < (mast.indexOf('more details') === -1 ? Infinity : mast.indexOf('more details')), `${name}: the stamp is not folded away`)
+    }
+  }
+})
+
+Deno.test('CUL-2579 — the colophon carries v1’s page footer word for word, "associational" included', () => {
+  for (const [name, s] of fixtures()) {
+    const foot = /<div class="scan">[^<]*?&middot; (owner-reported observations &middot; associational, not a diagnosis)\.<\/div>/.exec(renderReportPage1(s))
+    assert.ok(foot, `${name}: v1's footer`)
+    const col = buildDocumentV2(s, OPTS).blocks.find((b) => b.kind === 'colophon')
+    assert.ok(col && col.kind === 'colophon')
+    assert.ok(fold(col.text).includes(fold(foot[1])), `${name}: ${col.text}`)
+  }
+})
+
+Deno.test('CUL-2579 — v1’s headline prints straight under the band (or the checks line), never after the lead chart', () => {
+  let seen = 0
+  for (const [name, s] of fixtures()) {
+    const ids = buildDocumentV2(s, OPTS).blocks.map((b) => b.id)
+    const h = ids.indexOf('headline')
+    if (h < 0) continue
+    seen++
+    const anchor = Math.max(ids.indexOf('band'), ids.indexOf('checks'), ids.indexOf('disclosure'), ids.indexOf('masthead'))
+    assert.equal(h, anchor + 1, `${name}: ${ids.join(' ')}`)
+  }
+  assert.ok(seen >= 10, `${seen} fixtures with a headline`)
+})
+
+Deno.test('CUL-2579 — no caption of an undrawn chart prints, and the counts beside it still do (nyx-live)', () => {
+  const s = nyxLiveSnapshot()
+  const t = sheet1Text(buildDocumentV2(s, OPTS))
+  for (const gone of ['a dashed vertical marks', 'each bar is one week', 'under each date:', 'colour is a convenience', ': a week with no off-diet feeding']) {
+    assert.ok(!t.print.includes(gone) && !t.phone.includes(gone), gone)
+  }
+  assert.ok(has(t, 'off-diet feedings (feedings not matched to the trial diet or the allowed list) over'), 'the protein chart’s count still prints')
+  assert.ok(has(t, 'a food containing several proteins counts once for each'), 'its counting rule still prints')
+  assert.equal(UNDRAWN_CHART_CAPTIONS.length, 5)
+})
+
+Deno.test('CUL-2579, mutation — a caption cut that takes a count with it, or a key whose change is not on the sheet, reds the guard', () => {
+  const s = nyxLiveSnapshot()
+  const doc = buildDocumentV2(s, OPTS)
+  assert.deepEqual(checkSheet1('nyx-live-real', s, doc).missing, [])
+  const greedy: DocumentV2 = {
+    ...doc,
+    blocks: doc.blocks.map((b) => (b.kind === 'carried' && b.id === 'protein-timeline' ? { ...b, html: b.html.replace(/<div class="subnote"><span class="num">\d+<\/span> off-diet feeding[\s\S]*?<\/div>/, '') } : b)),
+  }
+  const mg = checkSheet1('nyx-live-real', s, greedy).missing
+  assert.ok(mg.some((x) => x.includes('an undrawn chart’s caption') && x.includes('off-diet feeding')), mg.join('\n'))
+  const key = v1Page1Leaves(s).find((l) => l.text.startsWith('a dashed vertical marks'))
+  assert.ok(key, 'nyx-live prints a change key')
+  const extra: V1Leaf = { ...key, text: key.text.replace('. timing and overlap', '; the medication gabapentin on oct 9. timing and overlap') }
+  const mk = checkSheet1('nyx-live-real', s, doc, [...v1Page1Leaves(s).filter((l) => l !== key), extra]).missing
+  assert.ok(mk.some((x) => x.includes('the change "gabapentin"')), mk.join('\n'))
+})
+
+Deno.test('CUL-2579, mutation — a masthead without the stamp reds the guard (the stamp is no longer exempt)', () => {
+  const s = cooperSnap()
+  const doc = buildDocumentV2(s, OPTS)
+  const bare: DocumentV2 = { ...doc, blocks: doc.blocks.map((b) => (b.kind === 'masthead' ? { ...b, stamp: '' } : b)) }
+  const m = checkSheet1('cooper', s, bare).missing
+  assert.ok(m.some((x) => x.includes('letter/stamp') && x.includes('prepared for veterinary review')), m.join('\n'))
 })

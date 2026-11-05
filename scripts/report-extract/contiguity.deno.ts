@@ -320,6 +320,8 @@ Deno.test('declineSentences — dates, times and the measured carve-outs are not
   assertEquals(declineSentences('9 of 14 timed vomiting episodes fell within ~30 min of eating.', ['vomit']), [])
   assertEquals(declineSentences('Vomiting fell within two weeks of the switch.', ['vomit']).length, 1)
   assertEquals(declineSentences('Diarrhoea (active). No weigh-in falls inside this window.', ['diarrhea']), [])
+  assertEquals(declineSentences('Ongoing vomiting: not checked, too few episodes (1 episode in 31 logged days). 15.40 kg (34.0 lb) No weigh-ins fell inside this window.', ['vomit']), [])
+  assertEquals(declineSentences('Vomiting episodes fell inside this window to 2.', ['vomit']).length, 1)
   assertEquals(declineSentences('Vomiting in 4 of 4 episodes, vs 0 of 4 matched control windows.', ['vomit']), [])
   assertEquals(declineSentences('Vomiting went from 4 of 4 days to 0 of 4.', ['vomit']).length, 1)
   assertEquals(declineSentences('For pruritus. The highest before it in the last 365 days: 31.80 kg, down from 32.40 kg.', ['itch']), [])

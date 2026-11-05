@@ -280,7 +280,7 @@ function block(b: BlockV2, aiLead: string | null = null): string {
   const open = (tag: string, cls: string) => `<${tag} class="${cls}" data-block="${b.id}">`
   switch (b.kind) {
     case 'masthead':
-      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><h1>${h(b.name)}</h1><p class="sig">${h(b.signalment)}</p>${
+      return `${open('header', 'mast')}<div class="eyebrow">${h(b.eyebrow)}</div><p class="stamp">${h(b.stamp)}</p><h1>${h(b.name)}</h1><p class="sig">${h(b.signalment)}</p>${
         b.conditions ? `<p class="cond">${h(b.conditions)}</p>` : ''
       }<p class="win">${h(b.window)}</p><p class="last">${b.lastEntryHtml}.</p></header>`
     case 'disclosure':
@@ -356,6 +356,7 @@ html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);}
 body{font-family:"Geist",ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:9.5pt;line-height:1.38;orphans:3;widows:3;}
 .sheet{width:515pt;margin:0 auto;}
 .serif{font-family:"Newsreader",Georgia,"Iowan Old Style",serif;}
+.mast .stamp{font-size:7.5pt;color:var(--ink2);margin:0;}
 .mast .eyebrow{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);}
 .mast h1{font-size:20pt;line-height:1.1;margin:2pt 0 3pt;font-weight:650;}
 .mast p{margin:0 0 1.5pt;}
