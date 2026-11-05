@@ -343,6 +343,12 @@ export function textOf(html: string): string {
     .replace(/&rsquo;/g, '’')
     .replace(/&ldquo;/g, '“')
     .replace(/&rdquo;/g, '”')
+    // v1's callout carries these since sheet 1 reprints it (CUL-2514): "Jun 15 → Sep 16".
+    .replace(/&rarr;/g, '→')
+    .replace(/&times;/g, '×')
+    .replace(/&hellip;/g, '…')
+    .replace(/&dagger;/g, '†')
+    .replace(/&asymp;/g, '≈')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
